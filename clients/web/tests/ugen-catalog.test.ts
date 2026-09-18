@@ -159,19 +159,19 @@ function params(fn: Function): Param[] {
     }
     assert.ok(end > open, "unbalanced parameter list");
     const inner = src.slice(open + 1, end);
-    const pieces: string[] = [];
+    const parts: string[] = [];
     let d = 0;
     let start = 0;
     for (let i = 0; i <= inner.length; i++) {
         const c = inner[i];
         if (i === inner.length || (c === "," && d === 0)) {
-            const piece = inner.slice(start, i).trim().replace(/\s+/g, " ");
-            if (piece) pieces.push(piece);
+            const part = inner.slice(start, i).trim().replace(/\s+/g, " ");
+            if (part) parts.push(part);
             start = i + 1;
         } else if ("([{".includes(c)) d++;
         else if (")]}".includes(c)) d--;
     }
-    return pieces.map((p) => {
+    return parts.map((p) => {
         // A destructured parameter is an options object whatever is inside it.
         if (p.startsWith("{")) return { name: "{…}", options: true };
         const eq = p.indexOf("=");

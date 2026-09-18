@@ -27,7 +27,7 @@
 model, and every verb between them.
 
 <code>score.html</code> plays an engraved phrase and drags a note;
-<code>compose.html</code> builds a piece by operating on it; this one opens a
+<code>compose.html</code> builds a score by operating on it; this one opens a
 document <i>somebody else typed</i> and edits it the way a score editor does.
 
 <b>A document becomes a model.</b> The phrase below is ABC. Until it is
@@ -52,7 +52,7 @@ here reads the marks, changes one, and writes them back.
 
 <b>A gesture names a place; the model names the note.</b> A click reports the
 <i>element</i> under the cursor and <code>notation.itemId</code> turns it into
-the model item it was written from — <code>n7</code>, <code>n7-2</code> (a piece
+the model item it was written from — <code>n7</code>, <code>n7-2</code> (a part
 split across a barline) and <code>n7-p1</code> (one pitch of a chord) are all
 item 7. From there every verb applies.
 
@@ -66,7 +66,7 @@ around it moves — which is how two lines written as one come apart. A note
 written <i>after</i> one of those joins the line it follows, since
 <code>insert</code> puts a new item in the voice of the item it comes after.
 
-<b>What is written is what is heard</b>, because the piece is read out of the
+<b>What is written is what is heard</b>, because the score is read out of the
 model: a staccato you just added shortens the sound and moves no attack.
 
 <b>Click</b> a note to select and hear it; the status line says what is
@@ -355,15 +355,15 @@ B c d e | f2 e d | c B A B | G4 |
       // One playback pass, read out of the model as it stands right now: the
       // symbols are what is played, so a staccato added a moment ago is
       // honoured and every attack after it stays where it was.
-      const piece = () => {
+      const timeline = () => {
         // The model as it stands right now, read into a timeline at `TEMPO`.
         const timeline = notation.toTimeline(score.sheet());
         timeline.map = new TempoMap(TEMPO);
         return timeline;
       };
-      const pass = (at) => piece().play({ at, destination: server });
+      const pass = (at) => timeline().play({ at, destination: server });
 
-      // Where the piece ends, in beats — the last note's onset plus its written
+      // Where the score ends, in beats — the last note's onset plus its written
       // value. The transport parks the cursor there when a pass runs out.
       const extent = () => {
         let end = 0.0;
@@ -377,7 +377,7 @@ B c d e | f2 e d | c B A B | G4 |
       //
       // `"element"` is a click: the page names the element under the cursor, and
       // `notation.itemId` turns it into the model item it was written from —
-      // `n7`, `n7-2` (a piece split across a barline) and `n7-p1` (one pitch of
+      // `n7`, `n7-2` (a part split across a barline) and `n7-p1` (one pitch of
       // a chord) are all item 7, which is what lets a gesture anywhere on a note
       // reach the note.
       //
@@ -473,7 +473,7 @@ B c d e | f2 e d | c B A B | G4 |
         // The decisions that are the writer's, not the engraver's, and the two
         // spans no single note could carry. None of them changes a note; all of
         // them are statements, and a statement is stored. (Ask for the double
-        // bar that ends any piece and nothing is stored: `set_barline` on the
+        // bar that ends any score and nothing is stored: `set_barline` on the
         // final measure says what the page already says.)
         score.apply({ op: "set_header",
           header: notation.header({ title: "Eight bars", composer: "typed, then operated on" }) });
@@ -500,7 +500,7 @@ B c d e | f2 e d | c B A B | G4 |
         win = await scene(engraved, SR).open(el("stage"));
 
         transport = notation.playheadSync(host, win.widget("score").id, {
-          source: pass, structure: piece, extent,
+          source: pass, structure: timeline, extent,
           sampleRate: SR,
         });
         transport.locate(0.0);

@@ -295,7 +295,7 @@ def test_a_timeline_is_never_read_half_rewritten():
     timeline empty in between, and a script reading it from its own thread sees
     that: 87.7% of reads at 4000 notes, and none at all at 8 -- CPython's switch
     interval hides a short rebuild, which is what makes it invisible in a small
-    test and systematic in a real piece. `Timeline.replace` binds the new order
+    test and systematic in a real run. `Timeline.replace` binds the new order
     in one step instead.
     """
     n = 2000

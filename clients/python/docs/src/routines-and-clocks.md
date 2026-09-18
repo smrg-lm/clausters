@@ -44,9 +44,9 @@ A few things worth knowing:
 - `clock.run(seconds)` starts the real-time driver, waits, and stops it. Use `clock.start()` / `clock.stop()` to keep one clock running across several routines. The pair is a **transport, not a reset**: `stop` holds the beat the clock reached and `start` resumes from it, so whatever is still queued keeps its place in the music (`clock.clear()` is what drops it).
 - `clock.locate(beat)` **moves the logical beat without moving physical time**: from then on, `beat` falls on now. Stopped, the clock holds it and `start` resumes there. Running, what is queued keeps its absolute beat — a locate forward wakes every routine due before `beat` at once, late, and a locate back makes each one wait the difference — and bundles already sent sound where they were. The tempo map does not change, `quant` on the clock's own grid follows the new beat, a frozen clock stays frozen, and from inside a routine on the clock that routine's next `yield` counts from `beat`. It is what a `Timeline` plays its seeks and loops with.
 - `clock.set_tempo(bps)` changes tempo **pinning the current instant**: the beat the clock is on keeps mapping to the second it already mapped to, and the new tempo governs from there — so nothing already scheduled jumps.
-- `clock.set_tempo(bps, over=beats)` is the same verb writing a **shape over a stretch**: an accelerando or a ritardando, from the tempo now to `bps` across `over` beats, holding it after. `unit="seconds"` gives the stretch in wall clock instead, solved exactly rather than searched for, and `curve=` picks the shape — `"linear"`, `"exponential"` or a numeric curvature, `Env`'s own vocabulary. Both are plain strings, like every other small option in the client: there is nothing to import. Hand it an `Env` of tempos and the whole shape is written in one call; it must be of finite duration, since a piece's tempo has no gate to sustain on. The formulas behind all of it are in `clausters.base.time`, whose grid conversions (`bar`, `beat_in_bar`, `quant_delay`, `secs_to_samples`, `samples_to_secs`) are also at the top level.
+- `clock.set_tempo(bps, over=beats)` is the same verb writing a **shape over a stretch**: an accelerando or a ritardando, from the tempo now to `bps` across `over` beats, holding it after. `unit="seconds"` gives the stretch in wall clock instead, solved exactly rather than searched for, and `curve=` picks the shape — `"linear"`, `"exponential"` or a numeric curvature, `Env`'s own vocabulary. Both are plain strings, like every other small option in the client: there is nothing to import. Hand it an `Env` of tempos and the whole shape is written in one call; it must be of finite duration, since a tempo has no gate to sustain on. The formulas behind all of it are in `clausters.base.time`, whose grid conversions (`bar`, `beat_in_bar`, `quant_delay`, `secs_to_samples`, `samples_to_secs`) are also at the top level.
 - Both write on the clock's **tempo map** (`clock.map`), the function that says which second a beat falls on. A beat is a logical coordinate, so that answer depends on the whole tempo history before it, not on the tempo in force now — which is why a tempo change is *recorded* rather than replacing what came before, and why the beats *before* one still convert correctly afterwards. Under a single tempo the map is the plain line `seconds = beats / tempo` it always was.
-- The map is a plain function of a beat, so it also answers questions with nothing playing — how long an accelerando lasts, how many beats fit in thirty seconds, when bar 40 arrives. A piece can hold a map that no clock ever read, and a view drawing a piece is handed the same one (`tempo_map=clock.map`) so the line on screen and the sound come from one function.
+- The map is a plain function of a beat, so it also answers questions with nothing playing — how long an accelerando lasts, how many beats fit in thirty seconds, when bar 40 arrives. A document can hold a map that no clock ever read, and a view drawing it is handed the same one (`tempo_map=clock.map`) so the line on screen and the sound come from one function.
 
 ### The map as an object
 
@@ -67,10 +67,10 @@ tempo.beats_at(5.0)              # 8.0 — the inverse, which a playhead asks pe
 
 Two of its answers are worth knowing by name, because the arithmetic people reach for instead is wrong:
 
-- **`span_secs(b0, b1)` — a length in beats is not a duration.** The same eight beats last eight seconds early in that piece and 2.77 s once the tempo has doubled and ramped. So seconds always come from **two positions**, never from a beat count times a tempo, and every conversion in the client takes a position for this reason. `span_beats(b0, secs)` is the same question the other way: how many beats fit in the next thirty seconds, starting here.
+- **`span_secs(b0, b1)` — a length in beats is not a duration.** The same eight beats last eight seconds early in that map and 2.77 s once the tempo has doubled and ramped. So seconds always come from **two positions**, never from a beat count times a tempo, and every conversion in the client takes a position for this reason. `span_beats(b0, secs)` is the same question the other way: how many beats fit in the next thirty seconds, starting here.
 - **An accelerando is a logarithm.** Over beats 8 to 16, from 2 to 4 beats per second, the true length is `ln(T1/T0) / k`. Averaging the two tempos says 2.67 s against the real 2.77 — out by a tenth of a second, which is audible and, drawn, visible.
 
-`segments()` reads the whole recorded history back, and `dump()`/`load()` carry it as JSON. `examples/basics/tempo_map.py` runs all of it and then plays the piece, so the acceleration is heard rather than asserted; `examples/basics/tempo_canon.py` is its sibling about one gesture — ten ramps in wall clock, landing together.
+`segments()` reads the whole recorded history back, and `dump()`/`load()` carry it as JSON. `examples/basics/tempo_map.py` runs all of it and then plays the line, so the acceleration is heard rather than asserted; `examples/basics/tempo_canon.py` is its sibling about one gesture — ten ramps in wall clock, landing together.
 - A routine optionally receives the clock as its argument (`def melody(clock):`) if it needs it, but for playing events you rarely do — the Server finds the logical beat itself.
 - This clock paces against wall-clock OSC time, the default. To make the same routine drift-free and sample-accurate, or to phase-align several clients, lock it to the server — see [Timing models](timing-models.md).
 
@@ -156,14 +156,14 @@ Everything here works unchanged offline. Build the `Server` with an `OscNrtInter
 
 **Offline, the system clock is logical, and the script runs as it does live.** A `LogicalTimebase` stands in for physical time: seconds that advance only when whatever is due next is woken. Every clock of an offline session shares it and has its origin on it, as a live clock has its origin on the monotonic clock. So what a script sets up before rendering happens at second 0, a clock a routine starts at second 4 starts at second 4, and a render wakes what is due across **all** the started clocks in order of seconds. A clock that is never started does not play, offline as live; the one being rendered is started by rendering it. And a clock never changes mode: rendering one made on another timebase raises, since its queue is measured against the time it was made on. `locate` and a timeline's loop are the same operation on that time, so beats may repeat while the score's seconds go on.
 
-Because it is the same interface, one distinction matters as much offline as live: **a message has no time; a bundle does.** In a bundle a message would carry the *immediate* timetag, and on its own it means exactly that — so `Synth(…)`, `node.set(…)`, `node.free()` are untimed wherever you call them. Reach for them for what has no place in a timeline: sending defs, allocating buffers, opening the groups a piece is built on.
+Because it is the same interface, one distinction matters as much offline as live: **a message has no time; a bundle does.** In a bundle a message would carry the *immediate* timetag, and on its own it means exactly that — so `Synth(…)`, `node.set(…)`, `node.free()` are untimed wherever you call them. Reach for them for what has no place in a timeline: sending defs, allocating buffers, opening the groups a session is built on.
 
-Placing something *in time* is the other path: **`send_bundle`** stamps the beat the routine has accumulated by yielding (plus an optional `delay_beats=` lookahead), and an `Event` — so every **pattern** — does it for you. Creating a node with `send_msg` from inside a routine is therefore an error, not a thing that renders differently: live you cannot see it, because "immediately" and the logical beat are close enough to pass; offline it is the difference between a piece and a chord.
+Placing something *in time* is the other path: **`send_bundle`** stamps the beat the routine has accumulated by yielding (plus an optional `delay_beats=` lookahead), and an `Event` — so every **pattern** — does it for you. Creating a node with `send_msg` from inside a routine is therefore an error, not a thing that renders differently: live you cannot see it, because "immediately" and the logical beat are close enough to pass; offline it is the difference between a phrase and a chord.
 
 ## The application's clock: `app_clock()`
 
 There are two clocks here, and they answer different questions. The
-`TempoClock` above keeps **musical** time — beats, tempo, what a piece plays
+`TempoClock` above keeps **musical** time — beats, tempo, what the music plays
 on. The other keeps the **application's** time: seconds, on the thread the
 windows are drained on, and it is where anything that touches a window belongs.
 
@@ -190,7 +190,7 @@ must never block its own thread, so what it wants to do to a window it hands
 over instead:
 
 ```python
-def piece(clock):
+def line(clock):
     for beat in range(8):
         Event(instrument="default", freq=330).play()
         app_clock().defer(lambda beat=beat: counter.set(value=beat))

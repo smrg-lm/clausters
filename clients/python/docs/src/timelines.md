@@ -181,7 +181,7 @@ server.transport_group(group.id)     # the transport owns the nodes it plays
 timeline.transport = server          # and from here the transport is the time
 ```
 
-The verbs do not change: `play`, `pause`, `stop` and `locate` are the transport's own commands — `/transport_play`, `/transport_stop`, `/transport_locateSample` — exactly as the multitrack's playback uses them. What the timeline adds is the **plan**: every item from the position, stamped on the transport's clock (`/sched_atTransport`) through the timeline's own map. So a pause freezes the queue with the piece rather than stopping a scan, a resume carries the frozen sound on with nothing re-planned, and a locate clears the transport queue (`server.sched_clear("transport")`) and re-cues from the new position, `latency` ahead so nothing regenerated is late.
+The verbs do not change: `play`, `pause`, `stop` and `locate` are the transport's own commands — `/transport_play`, `/transport_stop`, `/transport_locateSample` — exactly as the multitrack's playback uses them. What the timeline adds is the **plan**: every item from the position, stamped on the transport's clock (`/sched_atTransport`) through the timeline's own map. So a pause freezes the queue with the composed rather than stopping a scan, a resume carries the frozen sound on with nothing re-planned, and a locate clears the transport queue (`server.sched_clear("transport")`) and re-cues from the new position, `latency` ahead so nothing regenerated is late.
 
 | In transport mode | What it is |
 | --- | --- |
@@ -199,7 +199,7 @@ The verbs do not change: `play`, `pause`, `stop` and `locate` are the transport'
 
 ## Seeing a timeline as a score
 
-A timeline is timed pitches — the same thing a score draws. `clausters.gui.notation.from_timeline` engraves one as music notation: events sharing a beat become a chord, gaps become rests, and each event's written `dur` becomes its note value. It returns the score as text (MEI), which the `score` widget's engraver reads — the inverse of the usual score→sound direction, so the piece you hear is the piece you see.
+A timeline is timed pitches — the same thing a score draws. `clausters.gui.notation.from_timeline` engraves one as music notation: events sharing a beat become a chord, gaps become rests, and each event's written `dur` becomes its note value. It returns the score as text (MEI), which the `score` widget's engraver reads — the inverse of the usual score→sound direction, so the composed you hear is the composed you see.
 
 ```python
 from clausters.gui import notation
@@ -279,12 +279,12 @@ score:
 motif = notation.sheet_from_voice(
     [{"midis": [p], "ticks": 8} for p in (60, 64, 67, 64)])
 
-piece = motif
+composed = motif
 for section in (notation.invert(motif),          # turned about its first note
                 notation.retrograde(motif),      # backwards
                 notation.stretch(motif, (2, 1)), # twice as slow
                 notation.transpose(motif, 4)):   # up a major third
-    piece = notation.concat(piece, section)
+    composed = notation.concat(composed, section)
 ```
 
 `concat` puts one score after another and `stack` puts one against another —
@@ -306,9 +306,9 @@ An edit names its item by **id**, never by position, so an id you kept still
 names the same note after any number of other edits:
 
 ```python
-first = piece["staves"][0]["voices"][0]["items"][0]["id"]
-piece = notation.set_dur(piece, first, (1, 2))         # a half note
-piece = notation.set_pitches(piece, first, [notation.pitch("b", 3, 1)])
+first = composed["staves"][0]["voices"][0]["items"][0]["id"]
+composed = notation.set_dur(composed, first, (1, 2))         # a half note
+composed = notation.set_pitches(composed, first, [notation.pitch("b", 3, 1)])
 ```
 
 Beside those: `insert` writes a new note, chord or rest; `tie` ties one into the
@@ -354,7 +354,7 @@ signature already implies them, and not twice in a bar. A natural is a *sign*
 where the key alters that step, and `notation.pitch(..., forced=True)`-style
 courtesy accidentals are what the pitch's own `forced` flag is for.
 
-`examples/notation/compose.py` builds a whole piece this way and plays it.
+`examples/notation/compose.py` builds a whole score this way and plays it.
 
 ### Opening a score that was only a document
 
@@ -430,7 +430,7 @@ middle line in E flat writes a B flat.
 
 **A gesture names an element; a verb names an item**, and `notation.item_id` is
 the step between them. The page reports the element under the cursor the way the
-emitter spelled it — `n7` is the item, `n7-2` a piece of it split across a
+emitter spelled it — `n7` is the item, `n7-2` a part of it split across a
 barline, `n7-p1` one pitch of a chord — and all three are item 7, which is what
 lets a gesture anywhere on a note reach the note:
 

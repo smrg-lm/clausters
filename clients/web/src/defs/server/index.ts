@@ -814,7 +814,7 @@ export class Server {
      * carry the immediate timetag, and alone it means exactly that. Logical
      * time belongs to the bundle path, which a later milestone brings; use
      * this for what has no place in a timeline — sending defs, allocating
-     * buffers, opening the groups a piece is built on.
+     * buffers, opening the groups a session is built on.
      */
     sendMsg(addr: string, ...args: MsgArg[]): void {
         log.debug("-> %s %s", addr, args);
@@ -864,7 +864,7 @@ export class Server {
         if (axis) {
             // The moment's clock names the **transport** axis: a timeline
             // playing on a server transport stamps every bundle on the
-            // transport clock, so a pause freezes the queue with the piece and
+            // transport clock, so a pause freezes the queue with the sound and
             // a locate clears it (`schedClear("transport")`). It is asked
             // first because it is the one axis a caller states outright.
             this.sendSchedTransport(axis(when.secs() + this.latency), messages);
@@ -1048,7 +1048,7 @@ export class Server {
     ): Promise<OscMessage> {
         if (this.scoring) {
             // Nothing answers a score. The command still goes in — it is part
-            // of the piece — and the confirmation this call is named for
+            // of the take — and the confirmation this call is named for
             // simply does not exist offline.
             this.sendMsg(addr, ...args);
             return { addr: "/done", args: [addr] };
@@ -1124,7 +1124,7 @@ export class Server {
      * the clock first and then calls this.
      *
      * Schedule a closing bundle — freeing the root group, or whatever ends the
-     * piece — so the render has a defined length: it stops when the score
+     * session — so the render has a defined length: it stops when the score
      * does, and commands do not sound.
      */
     async render(options: RenderOptions = {}): Promise<RenderStats> {

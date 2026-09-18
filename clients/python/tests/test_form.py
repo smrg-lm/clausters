@@ -227,7 +227,7 @@ def test_a_sequence_of_sequences_advances_by_what_each_one_reaches():
     """An item that states no length is as long as what it lays down.
 
     Read as zero, every member of a `Sequence` of `Sequence`s landed on the
-    first beat -- four bars played at once, which is what "the piece is drawn as
+    first beat -- four bars played at once, which is what "the aggregate is drawn as
     an unreadable clip" was.
     """
     def bar(pitch):
@@ -275,7 +275,7 @@ def test_a_frozen_generator_is_structure_and_emits_nothing():
     # document named an algorithm and nobody could supply one, so the element
     # carries the reference (or nothing). It draws and contributes its extent
     # like a vector with no instrument, and flattening it emits no event --
-    # raising instead would make the whole piece unplayable over one lane.
+    # raising instead would make the whole aggregate unplayable over one lane.
     frozen = Aggregate([(0.0, Sequence("<Pbind object>")), (0.0, Generator(None))])
     assert flatten(frozen) == []
 
@@ -283,7 +283,7 @@ def test_a_frozen_generator_is_structure_and_emits_nothing():
 def test_a_resolved_leaf_plays_the_same_whichever_element_holds_it():
     # The conversion writes an element it has no body for as a generator leaf,
     # so opening one back gives a `Generator` where the author wrote a bare
-    # `Element`. Both flatten to the same thing, or a reopened piece would sound
+    # `Element`. Both flatten to the same thing, or a reopened aggregate would sound
     # different from the one that was saved.
     class _Plays:
         def play(self, dest):
@@ -533,7 +533,7 @@ def test_an_aggregate_is_locatable_only_if_every_member_is():
 
 # ---- mixing: what the composition says about being heard ----
 
-def _piece():
+def _aggregate():
     """Two lanes of one event each, so what is heard is countable."""
     from clausters.form import Track
     from clausters.seq import Timeline
@@ -547,41 +547,41 @@ def _piece():
 def test_a_muted_branch_contributes_nothing_and_its_members_with_it():
     from clausters.form import flatten
 
-    piece, a, _b = _piece()
-    assert len(flatten(piece)) == 2
+    aggregate, a, _b = _aggregate()
+    assert len(flatten(aggregate)) == 2
     a.mute = True
-    assert [item.get("midinote") for _, item in flatten(piece)] == [48]
-    piece.mute = True
-    assert flatten(piece) == [], "muting the piece mutes what is inside it"
+    assert [item.get("midinote") for _, item in flatten(aggregate)] == [48]
+    aggregate.mute = True
+    assert flatten(aggregate) == [], "muting the aggregate mutes what is inside it"
 
 
 def test_one_soloed_lane_silences_every_branch_that_is_not_on_a_soloed_path():
     from clausters.form import flatten
 
-    piece, a, b = _piece()
+    aggregate, a, b = _aggregate()
     b.solo = True
-    assert [item.get("midinote") for _, item in flatten(piece)] == [48]
+    assert [item.get("midinote") for _, item in flatten(aggregate)] == [48]
     a.solo = True
-    assert len(flatten(piece)) == 2, "solo says *only these*, and there can be two"
+    assert len(flatten(aggregate)) == 2, "solo says *only these*, and there can be two"
 
 
 def test_a_level_multiplies_into_the_amp_of_what_is_under_it():
     from clausters.form import flatten
 
-    piece, a, _b = _piece()
+    aggregate, a, _b = _aggregate()
     a.level = 0.5
-    piece.level = 0.5
-    heard = {item.get("midinote"): item.get("amp") for _, item in flatten(piece)}
+    aggregate.level = 0.5
+    heard = {item.get("midinote"): item.get("amp") for _, item in flatten(aggregate)}
     assert heard[60] == pytest.approx(0.125), "0.5 * 0.5 over the event's own 0.5"
-    assert heard[48] == pytest.approx(0.5), "the piece's level alone"
+    assert heard[48] == pytest.approx(0.5), "the aggregate's level alone"
 
 
 def test_a_mix_never_rewrites_the_event_it_measures():
     from clausters.form import flatten
 
-    piece, a, _b = _piece()
+    aggregate, a, _b = _aggregate()
     a.level = 0.5
-    flatten(piece)
+    flatten(aggregate)
     assert a.wraps[0][1].get("amp") == 0.5, "the element's own event is shared"
 
 
@@ -590,7 +590,7 @@ def test_drawing_reads_the_composition_unmixed():
     # emptied when the toggle was pressed would report silence as absence.
     from clausters.form import flatten
 
-    piece, a, _b = _piece()
+    aggregate, a, _b = _aggregate()
     a.mute = True
-    piece.handles[1].element.solo = True
-    assert len(flatten(piece, mixed=False)) == 2
+    aggregate.handles[1].element.solo = True
+    assert len(flatten(aggregate, mixed=False)) == 2

@@ -30,7 +30,7 @@ export interface TransportGrid {
  *
  * `originSample` and `tempo` are `null` until a client has defined a grid —
  * the transport exists whether or not anyone has, because rolling, stopping
- * and saying where the piece is need no beats.
+ * and saying where the transport is need no beats.
  */
 export interface TransportState {
     /** Beat 0 of the grid on the sample clock, or `null` with no grid. */
@@ -51,22 +51,22 @@ export interface TransportState {
      * The transport clock: samples elapsed under the transport, held while it
      * is stopped. The device clock (`/clock_query`, the taps, the streams)
      * never stops, and this one holds — but it is monotonic all the same, so a
-     * locate does not move it. For where the piece *is*, read
+     * locate does not move it. For where the transport *is*, read
      * `positionSample`.
      */
     transportSample: number;
     /**
-     * Where the transport is **in the piece**, in samples of the piece —
+     * Where the transport stands, in samples of its own axis —
      * what a playhead draws. Not a clock: it jumps to wherever a locate puts
      * it and wraps inside `loop`. Read from the engine as of its last
      * completed block — except right after a locate, which the server answers
      * with the place it located to until a block has applied it, so a reply in
      * the same breath as a locate (its own broadcast above all) never reports
-     * the place the piece is leaving.
+     * the place the transport is leaving.
      */
     positionSample: number;
     /**
-     * The half-open span of the piece the transport loops inside, or `null`
+     * The half-open span the transport loops inside, or `null`
      * when looping is off.
      */
     loop: [number, number] | null;
@@ -152,7 +152,7 @@ export class ServerTransport {
      * subtree and the server's transport clock, `transportPlay` thaws them.
      * Every node in the subtree keeps its internal state across the freeze, so
      * a resume continues the sound rather than restarting it — which is the
-     * only thing a pause can mean for a piece the server generates itself.
+     * only thing a pause can mean for sound the server generates itself.
      *
      * Freeing the group unbinds the transport, and unbinding thaws whatever it
      * governed, so no frozen subtree is left with nobody to resume it.
@@ -237,7 +237,7 @@ export class ServerTransport {
     }
 
     /**
-     * Seeks on the piece's own **sample** axis (`/transport_locateSample`).
+     * Seeks on the transport's own **sample** axis (`/transport_locateSample`).
      *
      * The sibling of `transportLocate`, which takes a beat: a sequencer locates
      * by beat and an audio editor by frame, and converting either into the
@@ -259,12 +259,12 @@ export class ServerTransport {
     }
 
     /**
-     * Sets — or clears, with `null` — the span of the piece the transport loops
+     * Sets — or clears, with `null` — the span the transport loops
      * inside (`/transport_loop`), in samples.
      *
      * The span is **half-open**: `[0, n]` over an `n`-sample take plays every
      * frame exactly once and joins its own start with no repeated frame.
-     * Turning a loop on does not move the piece; it keeps playing and wraps
+     * Turning a loop on does not move the transport; it keeps playing and wraps
      * when it first reaches the end, in the engine, so nothing has to be sent
      * once a pass completes. An empty or inverted span fails. What a loop
      * toggle remembers is the caller's to keep: clearing forgets the span.

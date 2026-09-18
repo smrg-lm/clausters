@@ -14,9 +14,9 @@ is on top, a composite region placing the general tree, an automation curve on a
 track and another on a region, whose point shapes nothing here reads, a tempo
 map that ramps, a meter change,
 markers sharing a beat, a loop and a punch, and a field a newer writer added.
-The session it also writes carries **two views** of that one piece, which is
+The session it also writes carries **two views** of that one multitrack, which is
 where the presentation lives: parallel to the model, never inside it, and two
-because a piece drawn in two windows has two and they disagree on purpose.
+because a multitrack drawn in two windows has two and they disagree on purpose.
 
 Run from the repo root, and commit whatever moves:
 
@@ -44,15 +44,15 @@ def window(source: int, start: float = 0.0, duration: float = 4.0) -> dict:
 
 
 def build() -> Multitrack:
-    piece = Multitrack()
-    piece.set_tempo(Tempo(at=0.0, tempo=1.6))
-    piece.set_tempo(Tempo(at=32.0, tempo=2.0, ramp=True))
-    piece.set_meter(Meter(at=0.0, beats=4, unit=4))
-    piece.set_meter(Meter(at=32.0, beats=7, unit=8))
-    piece.add_marker(Marker(id=1, at=0.0, name="intro"))
-    piece.add_marker(Marker(id=2, at=32.0, name="B"))
-    piece.loop_span = Span(start=0.0, end=32.0)
-    piece.punch = Span(start=8.0, end=16.0)
+    multitrack = Multitrack()
+    multitrack.set_tempo(Tempo(at=0.0, tempo=1.6))
+    multitrack.set_tempo(Tempo(at=32.0, tempo=2.0, ramp=True))
+    multitrack.set_meter(Meter(at=0.0, beats=4, unit=4))
+    multitrack.set_meter(Meter(at=32.0, beats=7, unit=8))
+    multitrack.add_marker(Marker(id=1, at=0.0, name="intro"))
+    multitrack.add_marker(Marker(id=2, at=32.0, name="B"))
+    multitrack.loop_span = Span(start=0.0, end=32.0)
+    multitrack.punch = Span(start=8.0, end=16.0)
 
     # Comped from three takes, playing the second.
     vocals = Track(id=10, name="vocals", active=1, lanes=[
@@ -97,16 +97,16 @@ def build() -> Multitrack:
             "members": [{"offset": 0.0, "node": {"id": 44, "kind": "clang"}}],
         })))
 
-    # A field a newer writer added, on the region and on the piece.
+    # A field a newer writer added, on the region and on the multitrack.
     sections.lanes[0].regions[0].extra["warp"] = {"mode": "beats"}
-    piece.extra["groove"] = {"name": "mpc60"}
+    multitrack.extra["groove"] = {"name": "mpc60"}
 
-    piece.tracks.extend([vocals, guitars, sections])
-    return piece
+    multitrack.tracks.extend([vocals, guitars, sections])
+    return multitrack
 
 
 def views() -> list:
-    """How the piece was being looked at: two windows over one piece.
+    """How the multitrack was being looked at: two windows over one multitrack.
 
     They disagree on purpose -- that is what a second window is for -- and the
     pair is here rather than one view because a format that could carry only one
@@ -132,8 +132,8 @@ def views() -> list:
 
 
 def saved() -> Session:
-    """The same piece as a **session**: the arrangement plus where its samples
-    are, which is the half the piece deliberately does not carry.
+    """The same multitrack as a **session**: the arrangement plus where its samples
+    are, which is the half the multitrack deliberately does not carry.
 
     It covers the three states a table has to be able to say, because a save
     that could not say them would either block or decide for the person: a file

@@ -85,26 +85,26 @@ test("an unknown grouping kind is refused", () => {
 });
 
 test("an aggregate can be seeded with elements, pairs and triples", () => {
-    const piece = new Aggregate([
+    const aggregate = new Aggregate([
         new Clang(note(60)),
         [2.0, new Clang(note(62))],
         [4.0, 0.5, new Clang(note(64))],
     ]);
     assert.deepEqual(
-        piece.members.map(([offset, dur]) => [offset, dur]),
+        aggregate.members.map(([offset, dur]) => [offset, dur]),
         [[0.0, null], [2.0, null], [4.0, 0.5]],
     );
 });
 
 test("a handle stays valid across other edits", () => {
-    const piece = new Aggregate();
-    const first = piece.add(new Clang(note(60)), 0.0);
-    const second = piece.add(new Clang(note(62)), 1.0);
-    piece.add(new Clang(note(64)), 2.0);
-    piece.remove(first);
-    piece.move(second, 8.0, 2.0);
-    assert.equal(piece.length, 2);
-    assert.deepEqual(piece.handles[0], second);
+    const aggregate = new Aggregate();
+    const first = aggregate.add(new Clang(note(60)), 0.0);
+    const second = aggregate.add(new Clang(note(62)), 1.0);
+    aggregate.add(new Clang(note(64)), 2.0);
+    aggregate.remove(first);
+    aggregate.move(second, 8.0, 2.0);
+    assert.equal(aggregate.length, 2);
+    assert.deepEqual(aggregate.handles[0], second);
     assert.equal(second.offset, 8.0);
     assert.equal(second.length, 2.0);
 });
@@ -114,35 +114,35 @@ test("the relation of an empty aggregate is nothing at all", () => {
 });
 
 test("members that start and end together are simultaneous", () => {
-    const piece = new Aggregate();
-    piece.add(new Clang(note(60, 2.0)), 1.0);
-    piece.add(new Clang(note(64, 2.0)), 1.0);
-    assert.equal(piece.temporalRelation(), SIMULTANEOUS);
+    const aggregate = new Aggregate();
+    aggregate.add(new Clang(note(60, 2.0)), 1.0);
+    aggregate.add(new Clang(note(64, 2.0)), 1.0);
+    assert.equal(aggregate.temporalRelation(), SIMULTANEOUS);
 });
 
 test("members with no known length are simultaneous only if none has one", () => {
-    const piece = new Aggregate();
-    piece.add(new Element(null), 0.0);
-    piece.add(new Element(null), 0.0);
-    assert.equal(piece.temporalRelation(), SIMULTANEOUS);
-    piece.add(new Clang(note(60, 1.0)), 0.0);
-    assert.equal(piece.temporalRelation(), MIXED);
+    const aggregate = new Aggregate();
+    aggregate.add(new Element(null), 0.0);
+    aggregate.add(new Element(null), 0.0);
+    assert.equal(aggregate.temporalRelation(), SIMULTANEOUS);
+    aggregate.add(new Clang(note(60, 1.0)), 0.0);
+    assert.equal(aggregate.temporalRelation(), MIXED);
 });
 
 test("members that tile contiguously are successive, and a gap is mixed", () => {
-    const piece = new Aggregate();
-    piece.add(new Clang(note(60, 1.0)), 0.0);
-    piece.add(new Clang(note(62, 2.0)), 1.0);
-    assert.equal(piece.temporalRelation(), SUCCESSIVE);
-    piece.add(new Clang(note(64, 1.0)), 4.0);
-    assert.equal(piece.temporalRelation(), MIXED);
+    const aggregate = new Aggregate();
+    aggregate.add(new Clang(note(60, 1.0)), 0.0);
+    aggregate.add(new Clang(note(62, 2.0)), 1.0);
+    assert.equal(aggregate.temporalRelation(), SUCCESSIVE);
+    aggregate.add(new Clang(note(64, 1.0)), 4.0);
+    assert.equal(aggregate.temporalRelation(), MIXED);
 });
 
 test("a placement's length is what the relation is derived from", () => {
-    const piece = new Aggregate();
-    piece.add(new Clang(note(60, 8.0)), 0.0, 1.0);
-    piece.add(new Clang(note(62, 8.0)), 1.0, 1.0);
-    assert.equal(piece.temporalRelation(), SUCCESSIVE);
+    const aggregate = new Aggregate();
+    aggregate.add(new Clang(note(60, 8.0)), 0.0, 1.0);
+    aggregate.add(new Clang(note(62, 8.0)), 1.0, 1.0);
+    assert.equal(aggregate.temporalRelation(), SUCCESSIVE);
 });
 
 // ---- flattening ----
@@ -150,17 +150,17 @@ test("a placement's length is what the relation is derived from", () => {
 test("nested placement offsets accumulate into absolute beats", () => {
     const inner = new Aggregate();
     inner.add(new Clang(note(60)), 1.0);
-    const piece = new Aggregate();
-    piece.add(inner, 4.0);
-    assert.deepEqual(flatten(piece).map(([beat]) => beat), [5.0]);
+    const aggregate = new Aggregate();
+    aggregate.add(inner, 4.0);
+    assert.deepEqual(flatten(aggregate).map(([beat]) => beat), [5.0]);
 });
 
 test("a track's timeline is shifted by where the track is placed", () => {
     const timeline = new Timeline();
     timeline.add(0.5, note(60));
-    const piece = new Aggregate();
-    piece.add(new Track(timeline), 2.0);
-    assert.deepEqual(flatten(piece).map(([beat]) => beat), [2.5]);
+    const aggregate = new Aggregate();
+    aggregate.add(new Track(timeline), 2.0);
+    assert.deepEqual(flatten(aggregate).map(([beat]) => beat), [2.5]);
 });
 
 test("a sequence of elements is laid out successively by their durations", () => {
@@ -175,7 +175,7 @@ test("a sequence of elements is laid out successively by their durations", () =>
 test("a sequence of sequences advances by what each one reaches", () => {
     // An item that states no length is as long as what it lays down. Read as
     // zero, every member of a `Sequence` of `Sequence`s landed on the first
-    // beat — four bars played at once, which is what "the piece is drawn as an
+    // beat — four bars played at once, which is what "the aggregate is drawn as an
     // unreadable clip" was.
     const bar = (pitch: number) =>
         new Sequence([0, 1, 2, 3].map(() => new Clang(note(pitch, 1.0))));
@@ -197,10 +197,10 @@ test("a sequence lays a muted member out where it would have been", () => {
 });
 
 test("a flattened timeline comes out sorted", () => {
-    const piece = new Aggregate();
-    piece.add(new Clang(note(60)), 4.0);
-    piece.add(new Clang(note(62)), 1.0);
-    assert.deepEqual([...toTimeline(piece)].map(([beat]) => beat), [1.0, 4.0]);
+    const aggregate = new Aggregate();
+    aggregate.add(new Clang(note(60)), 4.0);
+    aggregate.add(new Clang(note(62)), 1.0);
+    assert.deepEqual([...toTimeline(aggregate)].map(([beat]) => beat), [1.0, 4.0]);
 });
 
 test("an abstract element contributes context and no event", () => {
@@ -235,9 +235,9 @@ test("a placement's length trims what the element plays", () => {
 
 test("trimming copies the event rather than rewriting the element's own", () => {
     const clang = new Clang(note(60, 4.0));
-    const piece = new Aggregate();
-    piece.add(clang, 0.0, 1.0);
-    flatten(piece);
+    const aggregate = new Aggregate();
+    aggregate.add(clang, 0.0, 1.0);
+    flatten(aggregate);
     assert.equal((clang.wraps as SeqEvent).get("dur"), 4.0);
 });
 
@@ -266,11 +266,11 @@ test("a resident generator has no position, and takes its aggregate with it", ()
     const drone = new Generator("drone");
     drone.resident = true;
     assert.equal(drone.locatable, false);
-    const piece = new Aggregate();
-    piece.add(new Clang(note(60)), 0.0);
-    assert.equal(piece.locatable, true);
-    piece.add(drone, 1.0);
-    assert.equal(piece.locatable, false);
+    const aggregate = new Aggregate();
+    aggregate.add(new Clang(note(60)), 0.0);
+    assert.equal(aggregate.locatable, true);
+    aggregate.add(drone, 1.0);
+    assert.equal(aggregate.locatable, false);
 });
 
 // ---- the logical path ----
@@ -321,9 +321,9 @@ test("a generator names its def by string or by object", () => {
 // ---- the document bridge ----
 
 function aComposition(): Aggregate {
-    const piece = new Aggregate(null, "concrete", { name: "piece" });
-    piece.add(new Clang(note(60)), 0.0, 1.0);
-    piece.add(new Vector(buffer(100), null, 4.0, { instrument: "take" }), 2.0, 4.0);
-    return piece;
+    const aggregate = new Aggregate(null, "concrete", { name: "aggregate" });
+    aggregate.add(new Clang(note(60)), 0.0, 1.0);
+    aggregate.add(new Vector(buffer(100), null, 4.0, { instrument: "take" }), 2.0, 4.0);
+    return aggregate;
 }
 

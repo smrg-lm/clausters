@@ -20,7 +20,7 @@
     <main>
       <div id="note">The web port of the Python client's
 <code>tempo_canon.py</code>: <b>ten clocks accelerating to ten different tempos,
-and arriving together</b> — the same piece, voice for voice.
+and arriving together</b> — the same canon, voice for voice.
 
 A <b>tempo canon</b>: one line, played by ten voices at once, each on a tempo of
 its own. Every voice starts slow — a beat every one to four seconds — and rushes
@@ -38,7 +38,7 @@ own, and the gesture is one call:
 stretch of <b>wall clock</b>, not of beats. The same request in beats would not
 do it. A beat is a logical coordinate, so thirty beats of a voice rushing to 10
 is a far shorter <i>time</i> than thirty beats of one rising to 2 — the ten
-would finish accelerating at ten different moments, and the piece would dissolve
+would finish accelerating at ten different moments, and the canon would dissolve
 instead of landing. With ten different starting tempos as well, the beat each
 voice reaches is nowhere near the others; the <b>seconds</b> are the only thing
 they share, and that is exactly what the call asks for. Nothing about it is
@@ -46,7 +46,7 @@ approximate either: the width in beats a request in seconds implies is solved in
 closed form, so a ramp ends on the second it was asked for.
 
 <b>Ten clocks, one server.</b> A <code>Session</code> owns a server and as many
-clocks as the piece has tempos, so this page makes ten. Each is made while the
+clocks as the music has tempos, so this page makes ten. Each is made while the
 session is active, so it is made on <b>the session's timebase</b> — the engine's
 own sample counter — and kept in the session: they are in
 <code>session.clocks</code>, <code>session.start()</code> starts them together,
@@ -105,7 +105,7 @@ this directory and open the page.</div>
       const SECONDS_TO_PLAY = SPREAD + 8.0;
 
       // ---- the two units, before anything sounds ----
-      // A `TempoMap` is a pure function of a beat: it answers about a piece
+      // A `TempoMap` is a pure function of a beat: it answers about music
       // nobody is playing. So the choice of unit can be *read* rather than
       // argued about. Asked for over 30 seconds, every voice takes 30 seconds
       // and arrives at a different beat; asked for over 30 beats, every voice
@@ -165,7 +165,7 @@ this directory and open the page.</div>
         // The ten clocks: a clock, its ramp, its routine. Each is made on the
         // ambient session's timebase and kept in it, so by the end of this loop
         // `session.clocks` holds all eleven — the session's own default clock,
-        // which this piece does not use, and these ten.
+        // which this canon does not use, and these ten.
         const clocks = [];
         for (const [i, start] of STARTS.entries()) {
           const clock = new TempoClock(start);   // on the session's sample clock

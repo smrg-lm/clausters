@@ -30,7 +30,7 @@
         - a resume brings the same sound back (it continued, it was not
           restarted: the node was never freed);
         - `clock.freeze()` holds the page's beat for exactly as long, and
-          `thaw()` does not charge the piece for the pause;
+          `thaw()` does not charge the music for the pause;
         - unbinding thaws whatever the transport governed.
       Verdict beaconed as a fetch, read from the HTTP access log.
     -->
@@ -82,16 +82,16 @@
           .send(server);
 
         // The grid, and the group it governs.
-        const piece = new Group({ server });
+        const governed = new Group({ server });
         await server.setTransport(0, 2.0);
-        await server.transportGroup(piece);
+        await server.transportGroup(governed);
         const state = await server.transportState();
-        if (state.group !== piece.id) {
-          throw new Error(`group ${state.group}, expected ${piece.id}`);
+        if (state.group !== governed.id) {
+          throw new Error(`group ${state.group}, expected ${governed.id}`);
         }
         await server.transportPlay();
         const drone = new Synth("page_drone", { freq: 220.0 }, {
-          target: piece, server,
+          target: governed, server,
         });
 
         const sounding = await peak();
@@ -120,7 +120,7 @@
           throw new Error(`the page's beat advanced frozen: ${clock.beats()}`);
         }
         // The node is frozen, not freed: it is still in the tree.
-        const tree = await server.queryTree(piece);
+        const tree = await server.queryTree(governed);
         if (!JSON.stringify(tree).includes(String(drone.id))) {
           throw new Error("the frozen node left the tree");
         }
@@ -135,7 +135,7 @@
         const afterThaw = clock.beats();
         if (Math.abs(afterThaw - heldBeat) > 0.05) {
           throw new Error(
-            `the pause was charged to the piece: ${afterThaw} vs ${heldBeat}`);
+            `the pause was charged to the music: ${afterThaw} vs ${heldBeat}`);
         }
         const resumed = await peak();
         if (resumed < 0.05) throw new Error(`silent after resume (${resumed})`);
@@ -156,7 +156,7 @@
         }
 
         drone.free();
-        piece.free();
+        governed.free();
         clock.close();
         verdict(`PASS: governed transport — rolling ${sounding.toFixed(3)}, `
           + `frozen ${frozen.toFixed(3)} with the clock held at ${first} samples `

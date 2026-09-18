@@ -209,7 +209,7 @@ export class Session extends Environment {
      * Every clock this session owns, the default ({@link Session.clock})
      * first.
      *
-     * A session is one server and *as many clocks as the piece has tempos*.
+     * A session is one server and *as many clocks as the music has tempos*.
      * {@link Session.adopt} is what puts one here, and a clock built while this
      * session is ambient adopts it by itself, so ten hand-made clocks are
      * already the session's without a line saying so.
@@ -461,7 +461,7 @@ export class Session extends Environment {
             // A host of this session's own, wired to this session's engine —
             // and this session's to close, unlike the page's shared one. **It
             // allocates on that engine too** (its voices, its take monitor, the
-            // piece it plays), so the session's ids are split with it: the
+            // multitrack it plays), so the session's ids are split with it: the
             // session keeps the first half and the host takes the second.
             this.ownedGui = await newGuiHost({
                 engine: this.ownedEngine,
@@ -528,7 +528,7 @@ export class Session extends Environment {
      *
      * Advances the clock logically, with no real-time waiting, so everything
      * scheduled lands in the score, and then renders that score. Schedule a
-     * closing event — freeing the root group, or whatever ends the piece — so
+     * closing event — freeing the root group, or whatever ends the take — so
      * the render has a defined length: the renderer stops when the score does,
      * and commands do not sound.
      *
@@ -561,7 +561,7 @@ export class Session extends Environment {
      * time; returns `this`. A restart **resumes** at the beat `stop` left each
      * clock on.
      *
-     * A piece with one clock reads exactly as it always did. A piece with
+     * A session with one clock reads exactly as it always did. One with
      * several starts them together, which is what makes them start together —
      * starting ten clocks in a loop staggers them by whatever the loop costs.
      */

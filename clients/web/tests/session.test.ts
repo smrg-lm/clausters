@@ -223,7 +223,7 @@ test("a group orders and parallelizes itself", () =>
         group.parallel(false);
         assert.deepEqual(sent(packets).at(-1), ["/group_parallel", [group.id, 0]]);
 
-        // Chained onto the creation, which is how a piece reads: one
+        // Chained onto the creation, which is how a script reads: one
         // expression that makes the group and says how it runs.
         const band = new Group({ server: session.server }).parallel();
         assert.deepEqual(sent(packets).slice(-2), [

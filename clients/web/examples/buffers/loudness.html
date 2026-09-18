@@ -26,14 +26,14 @@ broadcast measures it</b>.
 A peak says how close a signal came to full scale; it says nothing about how
 loud it <i>sounds</i>. <b>Loudness</b> does, and it is the number a delivery
 specification asks for: EBU R 128 wants a programme at <b>-23 LUFS</b> with its
-true peak under <b>-1 dBTP</b>. This page renders a short piece offline and
+true peak under <b>-1 dBTP</b>. This page renders a short take offline and
 measures it through the shared core, with the algorithms ITU-R BS.1770 and the
 EBU define: the <b>integrated</b> loudness, gated so that silence and the quiet
 passages do not pull it down; the <b>loudness range</b>, how far the 3 s
 loudness spreads; the loudest <b>momentary</b> (400 ms) and <b>short-term</b>
 (3 s) readings; and the <b>true peak</b> of each channel beside them.
 
-The piece is a verse and a chorus of one arpeggio, eight seconds each, the
+The take is a verse and a chorus of one arpeggio, eight seconds each, the
 chorus about 20 dB louder than the verse. The integrated loudness sits near the
 chorus, because the verse falls under the relative gate; the range is the
 distance between the two; and the difference between the integrated loudness
@@ -65,10 +65,10 @@ over HTTP (<code>python3 -m http.server</code>) and open
       const TARGET_LUFS = -23.0;
       const CEILING_DBTP = -1.0;
 
-      // ---- the piece ----
+      // ---- the take ----
       // One arpeggio, a verse at `amp` 0.03 and a chorus at 0.3: 64 notes each,
       // a quarter beat apart, so eight seconds apiece at two beats a second.
-      const piece = new seq.Pbind({
+      const arpeggio = new seq.Pbind({
         freq: new seq.Pseq([523.25, 659.25, 783.99, 1046.5, 783.99, 659.25], 22),
         dur: 0.25,
         amp: new seq.Pseq([new seq.Pn(0.03, 64), new seq.Pn(0.3, 64)], 1),
@@ -87,7 +87,7 @@ over HTTP (<code>python3 -m http.server</code>) and open
         $("render").disabled = true;
         const session = (await Session.nrt()).activate();
         session.clock.setTempo(2.0);
-        session.play(piece);
+        session.play(arpeggio);
 
         new Routine(function* close() {
           yield PIECE_BEATS + TAIL;

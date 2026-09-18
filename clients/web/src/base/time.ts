@@ -1,8 +1,8 @@
 /**
- * Time: the piece's beat↔second map, and the questions it answers.
+ * Time: the beat↔second map, and the questions it answers.
  *
  * A **beat is not a unit of time**. It is a logical coordinate, and what turns
- * one into a second is the tempo — which can change along the piece. So the two
+ * one into a second is the tempo — which can change as it goes. So the two
  * things the word "tempo" covers are kept apart here:
  *
  * - the **tempo function**, what a user writes: the tempo at a beat, and how it
@@ -20,7 +20,7 @@
  *
  * A {@link TempoClock} holds a map and reads it to pace and to stamp; this
  * module is the other half — the same map read as a **question about the
- * piece**, with no clock running and nothing playing:
+ * music**, with no clock running and nothing playing:
  *
  * ```ts
  * const tempo = new TempoMap(1.0);        // one beat a second
@@ -98,7 +98,7 @@ import {
 } from "../core/clausters_core_web.js";
 
 /**
- * The piece's beat↔second map (see the module comment).
+ * The beat↔second map (see the module comment).
  *
  * The core's own class, behind a guard: constructing one before `loadCore` has
  * resolved says so, rather than failing as an unreadable read of an
@@ -106,7 +106,7 @@ import {
  * down with no message at all.
  */
 /**
- * One entry of a piece's authored tempo list, as {@link TempoMap.fromChanges}
+ * One entry of a document's authored tempo list, as {@link TempoMap.fromChanges}
  * reads it: the beat it takes effect on, the tempo in beats **per second** (a
  * document writing beats per minute divides once, where it reads its own
  * field), and whether it ramps to the next entry rather than stepping.
@@ -136,7 +136,7 @@ export class TempoMap extends CoreTempoMap {
     }
 
     /**
-     * **A map from a piece's authored tempo entries**, plus the tempo a piece
+     * **A map from a document's authored tempo entries**, plus the tempo one
      * that never said one leaves to its reader.
      *
      * The bridge a reader of a document would otherwise take three decisions to
@@ -175,7 +175,7 @@ export class TempoMap extends CoreTempoMap {
     /**
      * An independent copy — a **fork**, for when two tempi should stop being
      * one. Handing a map to a clock does not copy: a clock adopts what it is
-     * given, which is what lets two clocks read one piece.
+     * given, which is what lets two clocks read one map.
      */
     copy(): TempoMap {
         return super.copy() as TempoMap;
@@ -236,7 +236,7 @@ export interface TempoEnvelope {
     times: number[];
     /** The shape of each segment, or one for all of them. */
     curves?: CurveSpec[] | CurveSpec;
-    /** Refused for a tempo: a piece's tempo has no gate to sustain on. */
+    /** Refused for a tempo: a document's tempo has no gate to sustain on. */
     releaseNode?: number | null;
     /** Refused for a tempo, for the same reason. */
     loopNode?: number | null;

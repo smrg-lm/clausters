@@ -172,7 +172,7 @@ def pass_from(at):
     return phrase_timeline(dl["notes"]).play(at=at, destination=server)
 
 def phrase_end():
-    """Where the piece ends, in beats: the last note's onset plus its
+    """Where the music ends, in beats: the last note's onset plus its
     length. The transport parks the cursor there when a pass runs out."""
     last = dl["notes"][-1]
     return (last["t"] + last["dur"]) / 1000.0

@@ -324,8 +324,8 @@ test("a saved session loads its takes and then its join", { skip: !hasServer }, 
             });
             // Saved beside its takes and opened again, so the load finds them
             // against the folder the session came from.
-            const saved = await Session.open(await written.save(join(folder, "piece.json")));
-            assert.equal(saved.path, join(folder, "piece.json"));
+            const saved = await Session.open(await written.save(join(folder, "take.json")));
+            assert.equal(saved.path, join(folder, "take.json"));
 
             const before = server.buffers.inUse;
             const loaded = await saved.load(server);

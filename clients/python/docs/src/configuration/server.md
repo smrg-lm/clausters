@@ -122,6 +122,6 @@ midi = "studio"          # the virtual port shows up under this name
 ```toml
 # ./clausters.toml — this project, overlaying the above
 [server]
-control_buses = 4096     # a small piece; the rest of the machine's file stands
+control_buses = 4096     # a small share; the rest of the machine's file stands
 persist = false          # this project's defs are built from source every run
 ```

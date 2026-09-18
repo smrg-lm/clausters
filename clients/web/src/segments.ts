@@ -4,7 +4,7 @@
 // A **segment** is a window: which source, from where, for how long. A **run**
 // of them is what a **join** assembles and what a **split** takes apart, read
 // back to back as a single thing. Neither idea belongs to the arrangement — a
-// window is about the *contents*, not about where they sit in a piece
+// window is about the *contents*, not about where they sit in time
 // — so they live here, beside the structures, and `form` reads them like any
 // other reader.
 //
@@ -44,7 +44,7 @@ export interface SourceLike {
     /**
      * The **file these samples came from**, when they came from one. Carried and
      * never acted on: what it is for is saying where the samples are when a
-     * piece is written down, which is exactly what a session's source table
+     * session is written down, which is exactly what its source table
      * needs and the one thing a bare slot number cannot tell it.
      */
     readonly path?: string | null;

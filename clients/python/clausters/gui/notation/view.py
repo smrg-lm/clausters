@@ -87,7 +87,7 @@ def playhead_sync(host, score_id: int, *, source, structure=None,
     rest of the arguments as they are — ``source(at)`` starts a pass at beat
     ``at`` and returns the `clausters.seq.Timeline` it plays, ``structure`` is
     that timeline (or a callable returning it) for when nothing is playing, and
-    ``extent()`` gives the piece's length in beats.
+    ``extent()`` gives the score's length in beats.
 
     The conversion goes through the timeline's own map like every other one,
     not through a division of its own: a page is engraved on the beat axis, and

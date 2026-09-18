@@ -75,7 +75,7 @@ export class Buffer {
      * The **file these samples came from**, when they came from one — `read` and
      * `readChannels` set it, `alloc` leaves it `null`. It is carried and never
      * acted on: nothing re-reads it behind your back. What it is for is saying
-     * where the samples are when a piece is written down, which is exactly what
+     * where the samples are when a session is written down, which is exactly what
      * a session's source table needs and the one thing a bare slot number cannot
      * tell it.
      */

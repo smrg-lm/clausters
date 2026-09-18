@@ -35,10 +35,10 @@ def test_a_clocks_tempo_is_a_reading_and_the_verb_is_set_tempo():
 
 
 def test_two_clocks_handed_one_map_are_reading_one_piece():
-    piece = TempoMap(1.0)
-    piece.push(4.0, 2.0)  # written ahead of any clock: the NRT half
-    lead = TempoClock(tempo_map=piece)
-    second = TempoClock(tempo_map=piece)
+    written = TempoMap(1.0)
+    written.push(4.0, 2.0)  # written ahead of any clock: the NRT half
+    lead = TempoClock(tempo_map=written)
+    second = TempoClock(tempo_map=written)
     assert lead.beats2secs(8.0) == 6.0
     assert second.beats2secs(8.0) == 6.0
 
@@ -50,21 +50,21 @@ def test_two_clocks_handed_one_map_are_reading_one_piece():
 
 
 def test_a_fork_stops_the_two_being_one():
-    piece = TempoMap(1.0)
-    own = TempoClock(tempo_map=piece.copy())
+    written = TempoMap(1.0)
+    own = TempoClock(tempo_map=written.copy())
     own.set_tempo(9.0)
     assert own.tempo == 9.0
-    assert piece.tempo_at(0.0) == 1.0
+    assert written.tempo_at(0.0) == 1.0
 
 
 def test_a_live_gesture_lands_on_a_map_written_ahead_of_the_clock():
     # The append-only rule is the map's and stays: push refuses to go
     # backwards. Saying "from here on" is the gesture's job.
-    piece = TempoMap(1.0)
-    piece.push(4.0, 2.0)
+    written = TempoMap(1.0)
+    written.push(4.0, 2.0)
     with pytest.raises(ValueError):
-        piece.push(1.0, 3.0)
-    clock = TempoClock(tempo_map=piece)
+        written.push(1.0, 3.0)
+    clock = TempoClock(tempo_map=written)
     clock.set_tempo(3.0)  # at beat 0, under the breakpoint at 4
     assert clock.tempo == 3.0
     assert clock.beats2secs(8.0) == 8.0 / 3.0  # the plan after it is gone
@@ -88,7 +88,7 @@ def test_a_stored_map_is_checked_by_the_door_that_reads_it():
 
 
 def test_a_gesture_says_where_it_is_written():
-    # A piece's tempo, written before any clock has run: `at` is the whole of
+    # A document's tempo, written before any clock has run: `at` is the whole of
     # what makes that possible from the clock's own verb.
     clock = TempoClock(1.0)
     clock.set_tempo(2.0, at=8.0)
@@ -118,7 +118,7 @@ def test_a_gesture_inside_a_routine_is_written_at_the_routines_own_beat():
 
 
 def test_a_clock_is_saved_as_a_name_and_a_map():
-    # What of a clock belongs to the piece: the tempo, and the name a lane
+    # What of a clock a document keeps: the tempo, and the name a lane
     # refers to it by. Not its position, not its queue, not its timebase.
     clock = TempoClock(2.0, name="lead")
     clock.set_tempo(4.0, over=8.0, at=4.0, curve="exponential")
@@ -152,7 +152,7 @@ def test_a_pieces_authored_tempo_entries_become_a_map():
     assert tempo_map.tempo_at(4.0) == 4.0
     assert tempo_map.secs_at(4.0) == 2.0
 
-    # A piece that said nothing is the default alone.
+    # A document that said nothing is the default alone.
     bare = TempoMap.from_changes([], 2.0)
     assert bare.secs_at(4.0) == 2.0, "four beats at two a second"
 

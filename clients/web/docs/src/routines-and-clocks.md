@@ -54,7 +54,7 @@ A routine has its own transport, and it is not the clock's — `clock.stop()` ha
 
 A routine that throws is dropped the same way, with the error on the console: it loses its place in the schedule and nothing else does. The clock keeps driving the other routines — an error escaping the driver would leave it armed for no next wake, running and firing nothing.
 
-There is no `run(seconds)` here, because nothing in a page may block: a script that waited would freeze the same thread the clock, the engine's messages and the whole document run on. The clock runs until you stop it, and the piece ends when its routines do.
+There is no `run(seconds)` here, because nothing in a page may block: a script that waited would freeze the same thread the clock, the engine's messages and the whole document run on. The clock runs until you stop it, and the music ends when its routines do.
 
 ### The one rule
 
@@ -79,7 +79,7 @@ The rule the clock keeps either way: **it reads the timebase, and never talks to
 
 ## The wake-up
 
-One more piece is the browser's alone. The clock is woken through a `Ticker`, and the default in a tab is a **shared worker**, because a page's own timers are throttled to roughly one second when the tab is in the background — a routine paced by `setTimeout` would simply stop being music the moment the user changed tabs. The worker's wake-ups are not throttled that way, and since the exactness lives in the timetag, all the wake-up has to do is arrive inside the headroom.
+One more part is the browser's alone. The clock is woken through a `Ticker`, and the default in a tab is a **shared worker**, because a page's own timers are throttled to roughly one second when the tab is in the background — a routine paced by `setTimeout` would simply stop being music the moment the user changed tabs. The worker's wake-ups are not throttled that way, and since the exactness lives in the timetag, all the wake-up has to do is arrive inside the headroom.
 
 The seam is also what makes the layer testable: a test supplies its own ticker and its own timebase and drives the real driver by hand, deterministically, with no audio device and no waiting.
 
@@ -104,7 +104,7 @@ Each routine gets its **own** generator when it is created, derived from the con
 
 ## Automation: a curve driving a control
 
-A note is not the only thing a piece places in time. An **`Automation`** is a break-point curve that drives one or more `[node, control]` targets — a filter sweep, a fade, a glissando — and it is played the way an event is: it has a duration, it goes on a timeline, and `play` starts it.
+A note is not the only thing placed in time. An **`Automation`** is a break-point curve that drives one or more `[node, control]` targets — a filter sweep, a fade, a glissando — and it is played the way an event is: it has a duration, it goes on a timeline, and `play` starts it.
 
 How it is rendered is worth knowing, because it is machinery you already have. The curve is discretized on the **server** into a control buffer (`/buffer_gen "env"`, evaluated through the same envelope-shape math the `EnvGen` UGen plays), and at play time a small internal synth reads that buffer onto a **control bus** over the curve's duration; the targets follow that bus with `/node_map`. So the curve is computed where the sound is, not stepped from the page.
 
@@ -171,7 +171,7 @@ The page cannot open a UDP socket, so a destination here rides a `Connection` ex
 ## The application's clock: `appClock()`
 
 There are **two** clocks, and they are not two implementations of one thing.
-`TempoClock` keeps musical time: beats, a tempo, and a piece plays on it.
+`TempoClock` keeps musical time: beats, a tempo, and the music plays on it.
 `AppClock` keeps the **application's** time — seconds on the page's own loop —
 and it is where anything that touches a *window* belongs: an animation, a
 periodic read-out, a redraw, a follow-up to a gesture.

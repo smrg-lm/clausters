@@ -16,7 +16,7 @@ gesture is one call::
 **wall clock**, not of beats. The same request in beats would not do it. A beat
 is a logical coordinate, so thirty beats of a voice rushing to 10 is a far
 shorter *time* than thirty beats of one rising to 2 — the ten would finish
-accelerating at ten different moments, and the piece would dissolve instead of
+accelerating at ten different moments, and the canon would dissolve instead of
 landing. With ten different starting tempos as well, the beat each voice reaches
 is nowhere near the others; the **seconds** are the only thing they share, and
 that is exactly what the call asks for. The first cell prints both columns side by side, so the difference
@@ -26,10 +26,10 @@ width in beats a request in seconds implies is solved in closed form
 was asked for.
 
 **Ten clocks, one server.** A `Session` owns a server and as many clocks as the
-piece has tempos, so this file makes ten. Each is made while the session is
+music has tempos, so this file makes ten. Each is made while the session is
 active, so it is made on **the session's timebase** — for a live session, the
 server's own sample counter — and kept in the session: ten clocks drifting
-apart on ten OS timers would be a different and much less interesting piece.
+apart on ten OS timers would be a different and much less interesting canon.
 
 Being kept there is not bookkeeping either: they are in ``session.clocks``,
 ``session.start()`` starts them together, ``session.close()`` closes them, and
@@ -75,7 +75,7 @@ SECONDS_TO_PLAY = float(sys.argv[1]) if len(sys.argv) > 1 else SPREAD + 8.0
 
 # %% [markdown]
 # ## The two units, before anything sounds
-# A `TempoMap` is a pure function of a beat: it answers about a piece nobody is
+# A `TempoMap` is a pure function of a beat: it answers about music nobody is
 # playing. So the choice of unit can be *read* rather than argued about. Asked
 # for over 30 seconds, every voice takes 30 seconds and arrives at a different
 # beat; asked for over 30 beats, every voice takes a different time — which is
@@ -132,7 +132,7 @@ def line(pitch: float):
 # Built here, in the open: a clock, its ramp, its routine. Each one is made on
 # the ambient session's timebase and kept in it, so by the end of this cell
 # `session.clocks` holds all eleven — the session's own default clock, which
-# this piece does not use, and these ten.
+# this canon does not use, and these ten.
 
 # %%
 clocks = []

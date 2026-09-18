@@ -10,7 +10,7 @@
 // What has to match is what leaves the layer, never the source: the two clients
 // are one client in two languages, so a rule that drifts into one of them —
 // a trim rounding differently, a config key spelled the language's way rather
-// than the file's — fails here rather than in a piece that reopens wrong.
+// than the file's — fails here rather than in an aggregate that reopens wrong.
 //
 // Run with `npm test`; this suite needs nothing staged.
 
@@ -59,7 +59,7 @@ const buffer = (bufnum: number): SourceLike => ({ bufnum });
 /**
  * The two event keys this language spells differently, on their way to the
  * comparison — the document and the Python client both say `add_action` and
- * `has_gate`, which is what a saved piece carries.
+ * `has_gate`, which is what a saved aggregate carries.
  */
 const asFile = (props: Record<string, unknown>): Record<string, unknown> => {
     const out: Record<string, unknown> = {};
@@ -81,18 +81,18 @@ function flat(element: Element): unknown[] {
 
 /** The same compositions `gen-form-vectors.py` builds, in this language. */
 const cases: Record<string, () => Aggregate> = {
-    a_piece() {
-        const piece = new Aggregate(null, "concrete", { name: "piece" });
-        piece.add(new Clang(new SeqEvent({ midinote: 60, dur: 1.0 })), 0.0, 1.0);
-        piece.add(
+    an_aggregate() {
+        const aggregate = new Aggregate(null, "concrete", { name: "aggregate" });
+        aggregate.add(new Clang(new SeqEvent({ midinote: 60, dur: 1.0 })), 0.0, 1.0);
+        aggregate.add(
             new Vector(buffer(100), null, 4.0, { instrument: "take" }),
             2.0,
             4.0,
         );
         const inner = new Aggregate();
         inner.add(new Clang(new SeqEvent({ midinote: 67, dur: 0.5 })), 0.0, 0.5);
-        piece.add(inner, 8.0, 2.0);
-        return piece;
+        aggregate.add(inner, 8.0, 2.0);
+        return aggregate;
     },
 
     a_trimmed_placement() {
@@ -100,23 +100,23 @@ const cases: Record<string, () => Aggregate> = {
         held.add(new Clang(new SeqEvent({ midinote: 60, dur: 2.0 })), 0.0);
         held.add(new Clang(new SeqEvent({ midinote: 64, dur: 2.0 })), 2.0);
         held.add(new Clang(new SeqEvent({ midinote: 67, dur: 2.0 })), 4.0);
-        const piece = new Aggregate();
-        piece.add(held, 1.0, 3.0);
-        return piece;
+        const aggregate = new Aggregate();
+        aggregate.add(held, 1.0, 3.0);
+        return aggregate;
     },
 
     a_track() {
         const timeline = new Timeline();
         timeline.add(0.0, new SeqEvent({ midinote: 48, dur: 1.0 }));
         timeline.add(1.5, new SeqEvent({ midinote: 55, dur: 0.5 }));
-        const piece = new Aggregate();
-        piece.add(new Track(timeline, null, null, { name: "bass" }), 4.0);
-        return piece;
+        const aggregate = new Aggregate();
+        aggregate.add(new Track(timeline, null, null, { name: "bass" }), 4.0);
+        return aggregate;
     },
 
     a_window() {
-        const piece = new Aggregate();
-        piece.add(
+        const aggregate = new Aggregate();
+        aggregate.add(
             new Vector(buffer(7), null, 2.0, {
                 instrument: "take",
                 start: 44100.0,
@@ -126,7 +126,7 @@ const cases: Record<string, () => Aggregate> = {
             0.0,
             2.0,
         );
-        piece.add(
+        aggregate.add(
             new Segments(
                 [
                     [buffer(7), 0.0, 1.0],
@@ -138,20 +138,20 @@ const cases: Record<string, () => Aggregate> = {
             ),
             2.0,
         );
-        return piece;
+        return aggregate;
     },
 
     a_frozen_generator() {
         const rendered = new Aggregate();
         rendered.add(new Clang(new SeqEvent({ midinote: 72, dur: 0.25 })), 0.0, 0.25);
-        const piece = new Aggregate();
-        piece.add(
+        const aggregate = new Aggregate();
+        aggregate.add(
             new Generator("melody", null, 4.0, { name: "melody", rendered }),
             0.0,
             4.0,
         );
-        piece.add(new Sequence(null, null, 1.0, { name: "unheld" }), 4.0);
-        return piece;
+        aggregate.add(new Sequence(null, null, 1.0, { name: "unheld" }), 4.0);
+        return aggregate;
     },
 
     a_curve_on_its_event() {
@@ -160,8 +160,8 @@ const cases: Record<string, () => Aggregate> = {
             null,
             { name: "freq" },
         );
-        const piece = new Aggregate();
-        piece.add(
+        const aggregate = new Aggregate();
+        aggregate.add(
             new Aggregate(
                 [
                     [0.0, new Clang(new SeqEvent({ instrument: "drone", dur: 4.0 }))],
@@ -172,10 +172,10 @@ const cases: Record<string, () => Aggregate> = {
             ),
             0.0,
         );
-        return piece;
+        return aggregate;
     },
 
-    a_mixed_piece() {
+    a_mixed_aggregate() {
         const quiet = new Track(
             new Timeline([[0.0, new SeqEvent({ midinote: 36, dur: 1.0 })]]),
             null,
@@ -197,13 +197,13 @@ const cases: Record<string, () => Aggregate> = {
             null,
             { name: "pad" },
         );
-        const piece = new Aggregate(
+        const aggregate = new Aggregate(
             [[0.0, quiet], [0.0, lead], [0.0, pad]],
             "concrete",
             { name: "mix" },
         );
-        piece.level = 0.5;
-        return piece;
+        aggregate.level = 0.5;
+        return aggregate;
     },
 };
 

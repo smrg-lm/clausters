@@ -2,7 +2,7 @@
 
 `linlin` and its seven siblings are SuperCollider's, and they are asserted
 against sclang's own values rather than described — the point of having them is
-that a piece written against SuperCollider's numbers gets SuperCollider's
+that a script written against SuperCollider's numbers gets SuperCollider's
 numbers. They are computed in the shared core, in f32, so a value mapped here
 and the same map on the audio thread agree by construction.
 

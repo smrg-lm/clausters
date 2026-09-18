@@ -10,7 +10,7 @@ The base layer:
   ``yield`` coroutine layer).
 - `clock` — `TempoClock` (native-backed, RT + NRT
   drives).
-- `time` — the piece's beat<->second map (`TempoMap`) and the beat-grid and
+- `time` — the beat<->second map (`TempoMap`) and the beat-grid and
   sample-axis conversions: the questions about time a clock is not needed to
   answer.
 - `environment` — `Environment`, an isolated place to make sound (server +

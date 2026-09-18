@@ -103,7 +103,7 @@ are the shared crate's, so a level reads the same in every window that draws it:
   `decay` decibels per second, drawn as a hairline across the column — the mark
   is still there when an eye gets to it.
 - **The scale is decibels**, down to a floor the reader states: `floorDb`, or
-  the dynamic range of the resolution the piece is rendered at (`bits` 16 is
+  the dynamic range of the resolution the take is rendered at (`bits` 16 is
   -96 dB, 24 is -144, and a 32-bit float takes 24, its significand).
   Half of unity is -6 dB, a tenth of the way down a 60 dB strip — a linear
   column spends nine tenths of its height on the top 20 dB nobody mixes in.

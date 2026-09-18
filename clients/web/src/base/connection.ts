@@ -348,7 +348,7 @@ export class Score {
  * drains it).
  *
  * There is no server at the other end and nothing ever replies, which is the
- * whole point — an offline piece is written by the same code that plays a live
+ * whole point — an offline session is written by the same code that plays a live
  * one, and the difference is which carrier the `Server` was opened over.
  */
 export class ScoreConnection implements Connection {

@@ -89,7 +89,7 @@ class Bus:
         """Names an existing run of buses by index — bus 0 is the first
         hardware output on every server, so a fixed index is a meaningful thing
         to write down. To take a **free** run out of the server's pool instead,
-        use `audio` or `control`, which is what a piece normally wants.
+        use `audio` or `control`, which is what a script normally wants.
 
         Args:
             index: the run's first slot.

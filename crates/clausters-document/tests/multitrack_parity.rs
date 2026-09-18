@@ -22,12 +22,12 @@ fn vector() -> Multitrack {
 
 #[test]
 fn the_clients_arrangement_parses_and_survives_a_round_trip() {
-    let piece = vector();
+    let multitrack = vector();
 
     // Lossless rather than byte-identical: key order in JSON carries no
     // information, and the client writes what it holds in its own order.
     let out: serde_json::Value =
-        serde_json::from_str(&serde_json::to_string(&piece).unwrap()).unwrap();
+        serde_json::from_str(&serde_json::to_string(&multitrack).unwrap()).unwrap();
     let original: serde_json::Value = serde_json::from_str(VECTOR).unwrap();
     assert_eq!(out, original);
 }
@@ -36,21 +36,21 @@ fn the_clients_arrangement_parses_and_survives_a_round_trip() {
 fn the_two_sides_agree_about_what_the_piece_is() {
     // Named one at a time, because a whole-value comparison that fails says
     // only that something moved.
-    let piece = vector();
-    assert_eq!(piece.tracks.len(), 3);
-    assert_eq!(piece.end(), Second(48.0));
-    assert_eq!(piece.tempo_at(Beat(40.0)).unwrap().tempo, 2.0);
-    assert!(piece.tempo_at(Beat(40.0)).unwrap().ramp);
-    assert_eq!(piece.meter_at(Beat(40.0)).unwrap().beats, 7);
-    assert_eq!(piece.markers.len(), 2);
-    assert_eq!(piece.loop_span.unwrap().length(), Second(32.0));
-    assert_eq!(piece.punch.unwrap().start, Second(8.0));
+    let multitrack = vector();
+    assert_eq!(multitrack.tracks.len(), 3);
+    assert_eq!(multitrack.end(), Second(48.0));
+    assert_eq!(multitrack.tempo_at(Beat(40.0)).unwrap().tempo, 2.0);
+    assert!(multitrack.tempo_at(Beat(40.0)).unwrap().ramp);
+    assert_eq!(multitrack.meter_at(Beat(40.0)).unwrap().beats, 7);
+    assert_eq!(multitrack.markers.len(), 2);
+    assert_eq!(multitrack.loop_span.unwrap().length(), Second(32.0));
+    assert_eq!(multitrack.punch.unwrap().start, Second(8.0));
 }
 
 #[test]
 fn a_comped_track_keeps_every_take_and_plays_the_one_it_names() {
-    let piece = vector();
-    let vocals = piece.track(NodeId(10)).expect("the vocal track");
+    let multitrack = vector();
+    let vocals = multitrack.track(NodeId(10)).expect("the vocal track");
     assert_eq!(vocals.lanes.len(), 3, "the takes nobody chose are kept");
     assert_eq!(vocals.active, 1);
     assert_eq!(
@@ -78,8 +78,8 @@ fn a_comped_track_keeps_every_take_and_plays_the_one_it_names() {
 
 #[test]
 fn an_overlap_keeps_its_crossfade_its_layer_and_its_playrate() {
-    let piece = vector();
-    let lane = &piece.track(NodeId(30)).unwrap().lanes[0];
+    let multitrack = vector();
+    let lane = &multitrack.track(NodeId(30)).unwrap().lanes[0];
     assert!(lane.regions[0].overlaps(&lane.regions[1]));
     assert_eq!(
         lane.regions[0].fade_out.as_ref().unwrap().length,
@@ -98,8 +98,8 @@ fn an_overlap_keeps_its_crossfade_its_layer_and_its_playrate() {
 
 #[test]
 fn a_composite_region_arrives_as_the_general_tree() {
-    let piece = vector();
-    let region = &piece.track(NodeId(40)).unwrap().lanes[0].regions[0];
+    let multitrack = vector();
+    let region = &multitrack.track(NodeId(40)).unwrap().lanes[0].regions[0];
     let node = region.content.as_node().expect("the tree, placed");
     assert_eq!(node.id, NodeId(43));
     assert!(matches!(node.body, Body::Aggregate { .. }));
@@ -107,8 +107,8 @@ fn a_composite_region_arrives_as_the_general_tree() {
 
 #[test]
 fn an_automation_curve_keeps_the_shapes_neither_side_reads() {
-    let piece = vector();
-    let curve = &piece.track(NodeId(30)).unwrap().automation[0];
+    let multitrack = vector();
+    let curve = &multitrack.track(NodeId(30)).unwrap().automation[0];
     assert!(curve.visible && curve.enabled);
     assert_eq!(curve.target.0["ctl"], "level");
     assert_eq!(curve.points[1].data.0["shape"], "exp");
@@ -120,31 +120,34 @@ fn a_region_carries_curves_of_its_own_and_they_are_not_its_tracks() {
     // and is drawn in a lane beside it, a region's runs the length of the
     // region and is drawn inside it. One type, so one reader — which is what
     // this asserts, since the Python client wrote both through one class.
-    let piece = vector();
-    let region = &piece.track(NodeId(30)).unwrap().lanes[0].regions[0];
+    let multitrack = vector();
+    let region = &multitrack.track(NodeId(30)).unwrap().lanes[0].regions[0];
     let own = &region.automation[0];
     assert_eq!(own.id, NodeId(35));
     assert_eq!(own.target.0["ctl"], "gain");
     assert_eq!(own.points.len(), 2);
     assert_eq!(
-        piece.automations().count(),
+        multitrack.automations().count(),
         2,
         "the track's and the region's, and one walk finds both"
     );
-    assert_eq!(piece.automation(NodeId(35)).map(|a| a.id), Some(NodeId(35)));
+    assert_eq!(
+        multitrack.automation(NodeId(35)).map(|a| a.id),
+        Some(NodeId(35))
+    );
 }
 
 #[test]
 fn a_field_the_client_added_and_this_build_has_no_name_for_survives() {
-    let piece = vector();
-    assert_eq!(piece.extra["groove"]["name"], "mpc60");
-    let region = &piece.track(NodeId(40)).unwrap().lanes[0].regions[0];
+    let multitrack = vector();
+    assert_eq!(multitrack.extra["groove"]["name"], "mpc60");
+    let region = &multitrack.track(NodeId(40)).unwrap().lanes[0].regions[0];
     assert_eq!(region.extra["warp"]["mode"], "beats");
 }
 
 use clausters_document::{Body, Lifetime, Location, NodeId, Session, SourceId};
 
-// ---- the session: the piece, and where its samples are ----
+// ---- the session: the multitrack, and where its samples are ----
 
 const SESSION: &str = include_str!("multitrack_session_vector.json");
 
@@ -208,19 +211,19 @@ fn the_piece_inside_the_session_is_the_same_piece() {
     assert_eq!(session.dangling(), Vec::<SourceId>::new());
 }
 
-// ---- the presentation, which is parallel to the piece and never inside it ----
+// ---- the presentation, which is parallel to the multitrack and never inside it ----
 
 #[test]
 fn the_session_carries_two_views_of_one_piece_and_they_disagree_on_purpose() {
     // The prerequisite `O23` asked for, crossing: screen state written by the
     // Python client, parsed here, and read back by the web client. What makes
-    // it worth a vector is that a view is *not* the piece -- a reader that
+    // it worth a vector is that a view is *not* the multitrack -- a reader that
     // dropped the field would open the same music and lose the window.
     let session = saved();
     assert_eq!(
         session.views.len(),
         2,
-        "a piece in two windows has two views"
+        "a multitrack in two windows has two views"
     );
 
     let arranger = &session.views[0];
@@ -241,7 +244,11 @@ fn the_session_carries_two_views_of_one_piece_and_they_disagree_on_purpose() {
 
     let editor = &session.views[1];
     assert_eq!(editor.visible.unwrap().start, Second(8.0));
-    assert_eq!(editor.quant, Beat(0.25), "the same piece, a finer grid");
+    assert_eq!(
+        editor.quant,
+        Beat(0.25),
+        "the same multitrack, a finer grid"
+    );
     assert!(!editor.autofit, "an editor's window is the reader's");
     assert_eq!(editor.scroll, 140.0);
     assert_eq!(editor.selection.unwrap().length(), Second(4.0));
@@ -251,25 +258,28 @@ fn the_session_carries_two_views_of_one_piece_and_they_disagree_on_purpose() {
 #[test]
 fn a_view_says_nothing_about_what_plays() {
     // The whole argument for parallel rather than a field on the model: drop
-    // every view and the piece is the same piece, byte for byte.
+    // every view and the multitrack is the same multitrack, byte for byte.
     let mut session = saved();
-    let piece = serde_json::to_value(&session.multitrack).unwrap();
+    let multitrack = serde_json::to_value(&session.multitrack).unwrap();
     session.views.clear();
-    assert_eq!(serde_json::to_value(&session.multitrack).unwrap(), piece);
+    assert_eq!(
+        serde_json::to_value(&session.multitrack).unwrap(),
+        multitrack
+    );
     assert_eq!(session.multitrack, vector());
 }
 
 #[test]
 fn a_view_of_a_track_that_is_gone_goes_with_it() {
-    // State goes when the thing goes. Pruning against a piece that no longer
+    // State goes when the thing goes. Pruning against a multitrack that no longer
     // holds the guitars drops their height, their colour and the selection that
-    // named their region -- and leaves everything the piece still holds.
+    // named their region -- and leaves everything the multitrack still holds.
     let session = saved();
     let mut view = session.views[0].clone();
-    let mut piece = session.multitrack.clone();
-    piece.tracks.retain(|t| t.id != NodeId(30));
+    let mut multitrack = session.multitrack.clone();
+    multitrack.tracks.retain(|t| t.id != NodeId(30));
 
-    assert!(view.prune(&piece));
+    assert!(view.prune(&multitrack));
     assert!(view.tracks.contains_key(&NodeId(10)), "the vocals stay");
     assert!(!view.tracks.contains_key(&NodeId(30)), "the guitars go");
     assert_eq!(

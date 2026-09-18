@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Editing a buffer from the client: read the samples, change them, write them back.
 
-A buffer is the one thing a piece keeps with **random access** — so unlike a
+A buffer is the one thing a session keeps with **random access** — so unlike a
 stream of events it can be read backwards, sliced and edited in place. What was
 missing until now was the last step: samples came *out* of a buffer
 (`Buffer.get_samples`) and could only get *in* by asking the server to fill one.

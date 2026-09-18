@@ -196,7 +196,7 @@ class ShmClient:
         """Samples elapsed **under the transport**, held while it is stopped.
 
         The counterpart of `clock`, which never stops. A view drawing where the
-        piece is reads this one; anything pacing on the device reads `clock`.
+        the transport is reads this one; anything pacing on the device reads `clock`.
         The two only differ while a transport with a governed group is
         stopped.
         """
@@ -204,10 +204,10 @@ class ShmClient:
 
     @property
     def transport_position(self) -> int:
-        """Where the transport is **in the piece**, in samples of the samples.
+        """Where the transport stands, in samples of the samples.
 
         Not a clock. `transport_clock` counts what has elapsed and only goes
-        forward; this says where the piece is, so it jumps to wherever
+        forward; this says where the transport is, so it jumps to wherever
         `/transport_locate` puts it and wraps at the end of a loop. A playhead
         reads this one.
         """

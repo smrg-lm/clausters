@@ -21,11 +21,11 @@
 // timelines that ride on it.
 //
 // A `Session` bundles one server, one clock and one GUI host into the handle
-// a piece is written against, and the **default session** (`defaultSession`)
+// a session is written against, and the **default session** (`defaultSession`)
 // is the ambient one everything falls back to — which is what lets `play(...)`
 // and a bare `new Synth(...)` name no server at all.
 //
-// What this module exports flat is what you name while writing a piece: the
+// What this module exports flat is what you name while playing: the
 // hosts (`Server`, `GuiHost`), the server's resources, the three def formats,
 // the timing types and the verbs. Everything enumerative — the UGen and signal
 // callables, the value patterns, the GUI builders — is named through its
@@ -170,7 +170,7 @@ export type {
 export { Rng, choice, currentRng, seed, spawnRng, uniform } from "./base/rand.ts";
 export * as builtins from "./base/builtins.ts";
 export * as seq from "./seq/index.ts";
-// The names a piece types without a namespace, as the Python facade exports
+// The names a script types without a namespace, as the Python facade exports
 // them; the enumerative half (the value patterns) stays behind `seq`.
 export { Event, rest } from "./seq/event.ts";
 export { Timeline } from "./seq/timeline.ts";
@@ -214,7 +214,7 @@ export * as form from "./form/index.ts";
  * A **window onto contents** and a run of windows read as one: what a join
  * assembles and a split takes apart, over samples (`BufferSegments`) or over a
  * timeline of events (`NoteSegments`). A window is about the contents, not
- * about where it sits in a piece, which is why it is here and not in the
+ * about where it sits in time, which is why it is here and not in the
  * arrangement. See `./segments.ts`.
  */
 export * as segments from "./segments.ts";

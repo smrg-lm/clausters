@@ -455,7 +455,7 @@ export class Timeline {
      * at. Setting it needs a **governed group** bound (`Server.transportGroup`),
      * since that is what makes a transport own the nodes it plays — and what
      * the timeline's synths are placed under, so a pause freezes them with the
-     * piece.
+     * transport.
      *
      * Assigning halts whatever was playing: a timeline plays in one place. It
      * also starts listening to the transport's broadcasts, because the mode
@@ -867,7 +867,7 @@ class TimelineNode {
  * `/transport_play`, `/transport_stop` and `/transport_locateSample`, and what
  * this adds is the **plan**: every item from a position, stamped on the
  * transport's clock through the timeline's own map, so a pause holds the queue
- * with the piece. A locate clears the transport queue
+ * with the sound. A locate clears the transport queue
  * (`schedClear("transport")`) and re-plans from the new position, `latency`
  * ahead so nothing regenerated is late.
  *
@@ -890,7 +890,7 @@ export class TransportPlayer implements TreeDriver {
     /**
      * The transport as this client last heard it — from a verb it sent, a
      * broadcast, or `refresh`. Read rather than asked for, the way
-     * `PlayheadSync` reads the piece: asking is a round trip and reading a
+     * `PlayheadSync` reads the transport: asking is a round trip and reading a
      * position is not.
      */
     private reported: { playing: boolean; positionSample: number } =
@@ -954,7 +954,7 @@ export class TransportPlayer implements TreeDriver {
     }
 
     /**
-     * Where the piece is, in this timeline's beats, as this client last heard
+     * Where the transport is, in this timeline's beats, as this client last heard
      * it — a wrap inside the transport's loop and a locate some other client
      * sent are both where it says, since both are broadcast. `refresh` asks
      * again.
@@ -992,7 +992,7 @@ export class TransportPlayer implements TreeDriver {
         this.reported = { ...this.reported, playing: true };
         this.queue(async () => {
             // Nothing is re-planned: a pause froze the transport's queue with
-            // the piece, so what was queued is still queued in its exact
+            // the transport, so what was queued is still queued in its exact
             // relative place — the whole difference between a resume and a play.
             await this.server.transportPlay();
         });

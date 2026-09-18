@@ -135,7 +135,7 @@ export function tempoMapOf(tempoMap?: TempoMap | null, tempo = 1.0): TempoMap {
  * Two positions, never a length and a ratio. A length in **beats** is already
  * on the axis and simply lands at `at + length`; a length in **seconds** is a
  * wall-clock fact whose end depends on how the tempo runs across it, which is
- * what the piece's map ({@link TempoMap}) answers.
+ * what the aggregate's map ({@link TempoMap}) answers.
  */
 export function endBeat(at: number, length: number, unit: string, tempoMap: TempoMap): number {
     if (unit !== SECONDS) return at + length;
@@ -143,7 +143,7 @@ export function endBeat(at: number, length: number, unit: string, tempoMap: Temp
 }
 
 // The windows are **not** the arrangement's: a segment is about the contents,
-// not about where it sits in a piece, so `Segment`, the runs and what they read
+// not about where it sits in an aggregate, so `Segment`, the runs and what they read
 // live beside the structures (`../segments.ts`) and this module reads them like
 // any other reader. Re-exported here because `Segments` is the element that
 // places one.
@@ -211,9 +211,9 @@ export class Element {
      * the gain its events sound at (`level`, a factor over an event's own
      * `amp`). They are set by the editor's lane header and by hand, they are
      * honoured by {@link flatten}, and they travel in the node's configuration —
-     * so a piece reopens muted the way it was left. A lane's *height* is the
+     * so an aggregate reopens muted the way it was left. A lane's *height* is the
      * other kind of thing and is deliberately absent: it says nothing about what
-     * the piece is, so no document carries it.
+     * the aggregate is, so no document carries it.
      */
     mute = false;
     solo = false;
@@ -598,7 +598,7 @@ export interface SegmentsOptions extends ElementOptions {
  * whose length is the samples' own.
  *
  * This is where recording lands. A `RecordingStream` follows takes as they are
- * written and a `Buffer` holds them, but neither puts one in a piece — and the
+ * written and a `Buffer` holds them, but neither puts one in an aggregate — and the
  * arithmetic that does (frames over the rate they were recorded at) was left to
  * every caller, which is one conversion written once per script and wrong in the
  * one that forgot the channel count is not in it.
@@ -606,7 +606,7 @@ export interface SegmentsOptions extends ElementOptions {
  * `duration` is in **seconds**, for a caller who knows better than the buffer
  * does — a take still recording, whose buffer is as long as it will be rather
  * than as long as it is. Without an `instrument` the take is structure (it draws
- * and it extends the piece, and it emits no event), which is the `Vector` rule
+ * and it extends the aggregate, and it emits no event), which is the `Vector` rule
  * and not a special case here. `sampleRate` is the rate to measure the length
  * at, for a source that does not know its own; when nothing knows it the
  * duration is `null`, which is the honest answer — the length is then the
@@ -719,7 +719,7 @@ export class Segments extends Element {
      * from the seconds the windows are measured in, because what comes out of
      * this is played by a clock.
      *
-     * `tempoMap` is the piece's, and `at` the beat this element starts on: each
+     * `tempoMap` is the aggregate's, and `at` the beat this element starts on: each
      * window is placed and sized from where it actually falls, so a tempo change
      * inside the element moves the segments after it and not the ones before.
      */

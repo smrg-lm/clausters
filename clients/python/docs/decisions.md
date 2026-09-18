@@ -24,7 +24,7 @@ item's own; and the rule is applied only to a document this layer wrote, because
 a document from anywhere else has ids of another shape and every rest in it was
 written by somebody.
 
-**Split pieces rejoin.** A note that overruns a barline is written as two tied
+**Split parts rejoin.** A note that overruns a barline is written as two tied
 elements sharing one model id, so the reader folds a run of same-id elements back
 into the one item they came from. Without that, a note across a barline becomes
 two notes on every trip, and the model drifts from the score by being saved.

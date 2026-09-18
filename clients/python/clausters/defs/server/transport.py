@@ -41,7 +41,7 @@ class ServerTransport:
 
         **Always a dict**: the transport exists whether or not anyone has
         defined a beat grid, because rolling, stopping and saying where the
-        piece is need no beats. ``origin_sample`` and ``tempo`` are ``None``
+        the transport is need no beats. ``origin_sample`` and ``tempo`` are ``None``
         while there is no grid, and ``position`` — the song-position *beat* —
         is 0 there, since there is nothing to measure it against; the sample
         spelling below is live either way. Read the grid alone with
@@ -54,17 +54,17 @@ class ServerTransport:
         ``group`` is the governed group (`transport_group`) or ``None`` when
         nothing is bound.
 
-        The last three are the piece's own axis. ``transport_sample`` is the
+        The last three are the transport's own axis. ``transport_sample`` is the
         transport **clock** — samples elapsed under the transport, held while it
         is stopped and monotonic, so a locate does not move it — while
-        ``position_sample`` is where the transport **is in the piece**, which is
+        ``position_sample`` is where the transport **stands**, which is
         what a playhead draws: it jumps to wherever a locate puts it and wraps
         inside ``loop``, a ``(start, end)`` pair of samples or ``None`` when
         looping is off. ``position_sample`` is read from the engine as of its
         last completed block -- except right after a locate, which the server
         answers with the place it located to until a block has applied it, so a
         reply in the same breath as a locate (its own broadcast above all) never
-        reports the place the piece is leaving."""
+        reports the place the transport is leaving."""
         _, args = self.request("/transport_query", timeout=timeout, expect=("/transport_query.reply",))
         defined = bool(int(args[2]))
         group = int(args[5])
@@ -91,7 +91,7 @@ class ServerTransport:
         subtree and the server's transport clock, `transport_play` thaws them.
         Every node in the subtree keeps its internal state across the freeze, so
         a resume continues the sound rather than restarting it — which is the
-        only thing a pause can mean for a piece the server generates itself.
+        only thing a pause can mean for sound the server generates itself.
 
         Freeing the group unbinds the transport, and unbinding thaws whatever it
         governed, so no frozen subtree is left with nobody to resume it."""
@@ -142,7 +142,7 @@ class ServerTransport:
         return self
 
     def transport_locate_sample(self, sample: int, timeout: "float | None" = None):
-        """Seek on the piece's own **sample** axis (``/transport_locateSample``).
+        """Seek on the transport's own **sample** axis (``/transport_locateSample``).
 
         The sibling of `transport_locate`, which takes a beat: a sequencer
         locates by beat and an audio editor by frame, and converting either into
@@ -157,12 +157,12 @@ class ServerTransport:
 
     def transport_loop(self, span: "tuple[int, int] | None" = None,
                        timeout: "float | None" = None):
-        """Set (or clear, with ``None``) the span of the piece the transport
+        """Set (or clear, with ``None``) the span of the axis the transport
         loops inside (``/transport_loop``), in samples.
 
         The span is **half-open**: ``(0, n)`` over an ``n``-sample take plays
         every frame exactly once and joins its own start with no repeated frame.
-        Turning a loop on does not move the piece — it keeps playing and wraps
+        Turning a loop on does not move the transport — it keeps playing and wraps
         when it first reaches the end — and the wrap happens in the engine, so
         nothing has to be sent once a pass completes. An empty or inverted span
         raises. What a loop toggle remembers is the client's to keep: clearing

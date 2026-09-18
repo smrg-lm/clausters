@@ -354,7 +354,7 @@ class Timeline:
         is at. Setting it needs a **governed group** bound
         (`clausters.defs.Server.transport_group`), since that is what makes a
         transport own the nodes it plays -- and what the timeline's synths are
-        placed under, so a pause freezes them with the piece.
+        placed under, so a pause freezes them with the sound.
 
         Assigning halts whatever was playing: a timeline plays in one place.
         """
@@ -448,7 +448,7 @@ class Timeline:
 
         On a server transport it is what this client last heard (a verb it
         sent, a broadcast, a `refresh`) rather than a round trip, the way
-        `clausters.gui.PlayheadSync` reads the piece."""
+        `clausters.gui.PlayheadSync` reads the transport."""
         return 0.0 if self._player is None else self._player.position()
 
     def refresh(self):
@@ -684,7 +684,7 @@ class _TransportPlayer:
     `locate` are `/transport_play`, `/transport_stop` and
     `/transport_locateSample`, and what this adds is the **plan**: every item
     from a position, stamped on the transport's clock through the timeline's own
-    map, so a pause holds the queue with the piece. A locate clears the
+    map, so a pause holds the queue with the sound. A locate clears the
     transport queue (`sched_clear("transport")`) and re-plans from the new
     position, `latency` ahead so nothing regenerated is late.
     """
@@ -714,7 +714,7 @@ class _TransportPlayer:
         self._follow = None
         #: The transport as this client last heard it -- from a verb it sent, a
         #: broadcast, or `refresh`. Read rather than asked for, the way
-        #: `clausters.gui.PlayheadSync` reads the piece: asking is a round trip
+        #: `clausters.gui.PlayheadSync` reads the transport: asking is a round trip
         #: and reading a position is not.
         self._reported = {"playing": False, "position_sample": 0}
 
@@ -766,7 +766,7 @@ class _TransportPlayer:
         return state.get("position_sample", 0) / self._rate() - self.timeline.transport_at
 
     def position(self):
-        """Where the piece is, in this timeline's beats, as this client last
+        """Where the transport is, in this timeline's beats, as this client last
         heard it -- a wrap inside the transport's loop and a locate some other
         client sent are both where it says, since both are broadcast. `refresh`
         asks again."""
@@ -782,7 +782,7 @@ class _TransportPlayer:
 
     def resume(self, quant=None):  # noqa: D401
         """Roll again with **nothing re-planned**: a pause froze the transport's
-        queue with the piece, so what was queued is still queued in its exact
+        queue with the transport, so what was queued is still queued in its exact
         relative place -- which is the whole difference between a resume and a
         play here."""
         self._refuse_quant(quant)

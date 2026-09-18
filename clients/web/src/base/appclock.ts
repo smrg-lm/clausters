@@ -5,7 +5,7 @@
  * with two scheduling vocabularies:
  *
  * - {@link TempoClock} keeps **musical** time. It is in beats, it is what a
- *   piece plays on, and a routine on it must never block.
+ *   music plays on, and a routine on it must never block.
  * - **`AppClock` keeps the application's time.** It is in **seconds**, it runs
  *   on the page's own loop, and it is where anything that touches a window
  *   belongs: an animation, a periodic read-out, a redraw, a follow-up to a

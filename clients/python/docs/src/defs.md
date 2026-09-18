@@ -1,6 +1,6 @@
 # Defining instruments: FaustDef and SynthDef
 
-An instrument is a **def** — a named processing graph the server compiles once and then instantiates many times as nodes. The client builds two kinds, both living in `clausters.defs`, and they are **peers**: neither is the "real" one, and a piece routinely uses both.
+An instrument is a **def** — a named processing graph the server compiles once and then instantiates many times as nodes. The client builds two kinds, both living in `clausters.defs`, and they are **peers**: neither is the "real" one, and a script routinely uses both.
 
 - **`FaustDef`** — a Faust definition, sent with `/def_send faust` and JIT-compiled by the server into a node. Its graph is the full Faust language, so it reaches **below the unit**: per-sample recursion, tables, foreign constants, and the whole Faust library ecosystem. Build it three ways — the **Signal API** (`signals`), the **Box API** (`boxes`), or **Faust source** — all equal citizens (see [Building one](#building-one)). Like the SynthDef family, it works out of the box: the wheel bundles Faust (see [What the server must support](#what-the-server-must-support)).
 - **`SynthDef`** — a UGen graph, sent with `/def_send synth`. It wires the server's UGens (oscillator, noise, impulse, bus I/O, buffer playback, feedback, FFT chains) and the full unary/binary **maths** — the arithmetic operators plus `%`, `min`/`max`, comparisons, `.sin()`, `.midicps()`, `.distort()` … — which compose the generic operator UGens (see [Maths on a UGen graph](#maths-on-a-ugen-graph)). The graph is an **assembly of ready-made units**: it composes what the server already implements, needs no JIT, and works on **any** server build, since the SynthDef family is on by default.
@@ -171,7 +171,7 @@ The composition surface mirrors the server's box schema one to one: `seq` / `par
 
 ### Choosing a form
 
-The three forms are interchangeable on the wire, so the choice is about which one *says what you mean* — and they mix freely inside one piece (and even inside one def, since `box.faust` embeds source into a box tree).
+The three forms are interchangeable on the wire, so the choice is about which one *says what you mean* — and they mix freely inside one script (and even inside one def, since `box.faust` embeds source into a box tree).
 
 | Write it as | When the graph is |
 | --- | --- |

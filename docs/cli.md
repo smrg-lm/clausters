@@ -92,7 +92,7 @@ allocators from these, so a server launched with other numbers is worth
 | Flag | Value | Default | What it does |
 | --- | --- | --- | --- |
 | `--shm` | path | off | The shared-memory segment local clients map — put it on `/dev/shm`. A segment that already exists is **attached to**, not truncated: the first server on it owns the command plane and the samples, and any later one plays what the owner published. See [Local transports & embedding](ipc.md). |
-| `--id-share` | `i/of` | `0/1` (the whole space) | The share of the audio server's node ids, buses and buffers the host allocates from — its voices, its take monitor, the piece it plays. A script that launches a host on its own server keeps `0/2` and passes `1/2`, which is what `Session.gui` does; a host with no script beside it takes the whole space. |
+| `--id-share` | `i/of` | `0/1` (the whole space) | The share of the audio server's node ids, buses and buffers the host allocates from — its voices, its take monitor, the multitrack it plays. A script that launches a host on its own server keeps `0/2` and passes `1/2`, which is what `Session.gui` does; a host with no script beside it takes the whole space. |
 | `--data-dir` | dir | the XDG data dir | Where defs are persisted and reloaded. Several servers may share one. |
 | `--no-persist` | — | — | Disables def persistence for this run. |
 | `--prune-defs` | — | — | Drops the persisted defs that no longer load, instead of warning about them. Only the families this build has are pruned, so a build without a def family never eats its library. |
@@ -129,7 +129,7 @@ clausters-gui [--port <n>] [--server <host:port>] [--shm <path>] [--headless]
               [--ws [[addr:]port]] [--max-frame <bytes>]
               [--data-dir <dir>] [--standalone [name]] [--config <path>]
               [--theme <path>] [--font <path>] [--msaa <n>]
-              [--clock <device|piece>] [--follow-block <seconds>]
+              [--clock <device|transport>] [--follow-block <seconds>]
               [--id-share <i/of>]
 ```
 
@@ -154,7 +154,7 @@ is assumed, and `--data-dir` names the *host's* GuiDef store.
 | `--server` | host:port | off | Also attach the client leg to a running audio server. Needed for widgets that reference a server buffer number, and for bound widgets (`/gui_bind`) to forward their value. |
 | `--shm` | path | off | Map the audio server's shared-memory segment (its own `--shm` path) for meters and scopes with no per-frame messages. Unix only. |
 | `--data-dir` | dir | the XDG data dir | The GuiDef store: named GuiDefs persist there and `/gui_load` reads from it. |
-| `--clock` | `device` \| `piece` | `device` (`piece` under `--session`) | Which counter every playhead is drawn from. `device` is the engine's sample clock, which never stops — what a host watching a live server wants. `piece` is the transport's **position**: it holds while stopped, jumps on `/transport_locate` and wraps at a `/transport_loop`'s end, all in the engine, so an editor draws the piece's own time and computes none of it. The wire spelling is `/gui_headClock`. |
+| `--clock` | `device` \| `transport` | `device` (`transport` under `--session`) | Which counter every playhead is drawn from. `device` is the engine's sample clock, which never stops — what a host watching a live server wants. `transport` is the transport's **position**: it holds while stopped, jumps on `/transport_locate` and wraps at a `/transport_loop`'s end, all in the engine, so an editor draws that time and computes none of it. The wire spelling is `/gui_headClock`. |
 | `--standalone` | name (optional) | — | Boot the saved GuiDef against an **embedded** audio server — no separate server, no language client. With no name, `[standalone].gui` from the configuration is used. |
 | `--config` | path | the user+project chain | Read the configuration from this TOML file instead. |
 | `--theme` | path | — | Read the color theme from this TOML file, laid over `[gui.theme]`. A flat, partial table of `role = "#rrggbb[aa]"`. |

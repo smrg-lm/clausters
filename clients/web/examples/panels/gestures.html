@@ -101,7 +101,7 @@ right one is switched live by the menu under it.</div>
         const samples = gui.source(take.samples);
 
         // The take on the server, because a multitrack's box draws a **buffer**:
-        // it names what the piece plays rather than data of its own, which is
+        // it names what the timeline plays rather than data of its own, which is
         // the whole difference between placing audio and looking at it.
         const session = await Session.embed();
         await session.gui();

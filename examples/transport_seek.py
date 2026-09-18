@@ -3,10 +3,10 @@
 
 A buffer player normally carries its own position: it starts at frame 0 and
 runs. This shows the other shape — a reader whose phase *is* the transport's
-position in the piece (`TransportPos` -> `BufRd`), so the three things an
+position (`TransportPos` -> `BufRd`), so the three things an
 editor wants belong to the transport and not to the def:
 
-- **seek** is `/transport_locateSample`, which moves where the piece is;
+- **seek** is `/transport_locateSample`, which moves where the transport is;
 - **loop** is `/transport_loop`, a half-open span the engine wraps inside, so
   nothing is sent once a pass completes and there is no seam to hear;
 - **pause** is `/transport_stop` over a governed group (`/transport_group`),
@@ -29,7 +29,7 @@ card). Run it:
 
 `docs/sample-clock.md` explains the transport's two quantities: the clock,
 which counts elapsed samples and never jumps, and the position, which is where
-the piece is and does nothing but.
+the transport is and does nothing but.
 """
 
 import math
@@ -65,16 +65,16 @@ def samples():
 
 def follower_def():
     """The reader: its phase is the transport's position, so it plays wherever
-    the piece is standing.
+    the transport is standing.
 
-    `offset` is where these samples start in the piece — 0 here, since the
-    take *is* the piece — and it is subtracted inside `transport_pos` rather
-    than after it, which is what keeps the position exact in a long piece (a
+    `offset` is where these samples start on that axis — 0 here, since the
+    take *is* the whole of it — and it is subtracted inside `transport_pos` rather
+    than after it, which is what keeps the position exact in a long take (a
     signal is 32-bit, and beyond about six minutes at 48 kHz it can no longer
     count single frames).
 
     `loop` on the reader stays off: the wrapping is the transport's, and a
-    reader that also wrapped would be a second opinion about where the piece
+    reader that also wrapped would be a second opinion about where the transport
     is.
     """
     bufnum = control("bufnum", 0.0)
@@ -85,7 +85,7 @@ def follower_def():
 
 
 def report(server, what):
-    """Where the server says the piece is, in seconds. It is read from the
+    """Where the server says the transport is, in seconds. It is read from the
     engine as of its last completed block, so it is the truth about what is
     coming out of the speaker rather than about what was last asked for."""
     state = server.transport_state()
@@ -103,7 +103,7 @@ def main():
         buf.set_samples(samples())
         follower_def().send(server)
 
-        # No `set_transport` anywhere below: this piece is measured in frames,
+        # No `set_transport` anywhere below: this take is measured in frames,
         # and the transport needs a beat grid only for the commands that speak
         # beats. An editor has no tempo to declare and does not declare one.
 

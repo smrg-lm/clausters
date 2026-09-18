@@ -98,7 +98,7 @@ A follower puts its timeline on that transport, and that is the whole of followi
 timeline.transport = server     # needs a governed group bound
 ```
 
-From then on `timeline.play`, `pause`, `stop` and `locate` are the transport's own commands, and the timeline **plans** its items onto the transport's clock (`/sched_atTransport`) from the position it is at — so a freeze holds them with the piece and a locate clears the transport queue (`server.sched_clear("transport")`) and re-cues from the new position, `latency` ahead. A locate or a play somebody *else* sent arrives as a broadcast (`/transport_query.reply`, the [responder layer](responders.md)), and the plan is written again from where it says. Every follower reads the **one** position the engine holds, so they are in lockstep by construction rather than by each computing its own. `conductor.py` ([Examples](examples.md)) shows two followers on one transport; `timeline.transport = None` gives it back its own clock.
+From then on `timeline.play`, `pause`, `stop` and `locate` are the transport's own commands, and the timeline **plans** its items onto the transport's clock (`/sched_atTransport`) from the position it is at — so a freeze holds them with the governed and a locate clears the transport queue (`server.sched_clear("transport")`) and re-cues from the new position, `latency` ahead. A locate or a play somebody *else* sent arrives as a broadcast (`/transport_query.reply`, the [responder layer](responders.md)), and the plan is written again from where it says. Every follower reads the **one** position the engine holds, so they are in lockstep by construction rather than by each computing its own. `conductor.py` ([Examples](examples.md)) shows two followers on one transport; `timeline.transport = None` gives it back its own clock.
 
 What the mode refuses, and why: a `quant` (the start is the transport's), a `loop` (the wrap is the engine's, and a timeline's events would have to be re-cued on every one of them), and a **forward-only item** — a routine or a pattern cannot be planned from a position. Those are the client-clock mode's.
 
@@ -143,7 +143,7 @@ These are the honest edges of a small, composable feature: shared bars, a shared
 | Roll a playhead from a conductor | `server.transport_play()` / `transport_stop()` / `transport_locate(beat)`; followers put a timeline on it, `timeline.transport = server` |
 | Read the rolling state | `server.transport_state()` → `{tempo, playing, position, …}` |
 
-## Freezing a piece: when the transport governs the sound
+## Freezing the sound: when the transport governs it
 
 Everything above is a transport clients obey **by choice** — a shared grid and a
 rolling state the server broadcasts, which each client reads to start on the
@@ -157,9 +157,9 @@ their memory, phasors their phase, envelopes their position. So a resume
 **continues** the sound rather than starting it again:
 
 ```python
-piece = Group(server=server)
+governed = Group(server=server)
 server.set_transport(0, 2.0)
-server.transport_group(piece)
+server.transport_group(governed)
 server.transport_play()
 ...
 server.transport_stop()    # the subtree freezes, mid-gesture
@@ -191,7 +191,7 @@ one live one waits entirely — the one way a message aimed at a live node ends 
 waiting.
 
 The clock follows too. `TempoClock.freeze()` holds the beat where it is and
-`thaw()` picks it up there, so a client does not run away from a piece that is
+`thaw()` picks it up there, so a client does not run away from a transport that is
 not moving; `clausters.gui.PlayheadSync` does this for you, and its `resume()` is
 deliberately **not** `play()` — play re-renders from a position, resume
 continues the frozen sound.
@@ -201,7 +201,7 @@ continues the frozen sound.
 | Let the engine enforce the transport | `server.transport_group(group)` |
 | Give it back | `server.transport_group(None)` (thaws what it governed) |
 | Freeze / carry on | `server.transport_stop()` / `server.transport_play()` |
-| Read the piece's own clock | `server.transport_state()["transport_sample"]` |
+| Read the transport's own clock | `server.transport_state()["transport_sample"]` |
 | Continue rather than restart, client-side | `transport.resume()` (not `play()`) |
 | Ask whether a seek means anything | `editor.locatable` |
 

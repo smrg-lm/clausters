@@ -31,8 +31,8 @@ carries `clausters.form.element.Element.mute`, `solo` and `level`, all three
 inherited down the tree: a muted branch contributes nothing, one soloed element
 anywhere silences every branch that is not on a soloed path, and a level
 multiplies into the ``amp`` of the events below it. They travel in the
-document, so a piece reopens mixed the way it was left — unlike a lane's
-*height*, which says nothing about what the piece is and is carried by no
+document, so an aggregate reopens mixed the way it was left — unlike a lane's
+*height*, which says nothing about what the aggregate is and is carried by no
 document.
 
 A `Vector` is *data*: it sounds through the **instrument** that plays it (a def
@@ -40,7 +40,7 @@ whose ``buf`` control takes the buffer number), so a `Vector` with an
 ``instrument`` emits one event playing it — the audio clip — and one without
 contributes structure only. A `Segments` is the same rule over several windows:
 one event per segment, at its own offset inside the element, so what sounds
-assembled from pieces of different buffers sounds continuous on one instrument. An `Aggregate{logical}` takes the other path entirely (it
+assembled from aggregates of different buffers sounds continuous on one instrument. An `Aggregate{logical}` takes the other path entirely (it
 becomes a `GraphDef`); instancing a bare def still needs an instrument of its own
 and raises a clear `NotImplementedError` here.
 """
@@ -57,7 +57,7 @@ def flatten(element, base: float = 0.0, *, tempo: float = 1.0, tempo_map=None,
     accumulating nested placement offsets onto ``base``. The items are playable
     (they follow the ``play(destination)`` protocol).
 
-    The piece's tempo is where the tree's two units meet. An onset is in beats
+    The aggregate's tempo is where the tree's two units meet. An onset is in beats
     and a length is in the unit of its own data
     (`clausters.form.element.Element.duration_unit`: a take's is seconds), and a
     timeline is ordered by **one** number — so the conversion belongs to the
@@ -65,7 +65,7 @@ def flatten(element, base: float = 0.0, *, tempo: float = 1.0, tempo_map=None,
     second the two coincide, which is what a script that never set a tempo has
     always been running under.
 
-    ``tempo_map`` (the piece's `clausters.base.TempoMap`, the clock's when
+    ``tempo_map`` (the aggregate's `clausters.base.TempoMap`, the clock's when
     there is one) is what the crossing goes through, so a length in seconds
     lands where it actually ends rather than where a single tempo would put it;
     ``tempo`` alone is that tempo as one segment.
@@ -87,7 +87,7 @@ def to_timeline(element, base: float = 0.0, *, tempo: float = 1.0, tempo_map=Non
     """Flatten ``element`` into a flat `clausters.seq.Timeline` in absolute
     beats — the structure that plays itself and a transport seeks. ``tempo``
     is the clock's, in beats per second, and ``tempo_map`` its map when the
-    tempo changes along the piece (see `flatten`)."""
+    tempo changes along the aggregate (see `flatten`)."""
     from ..seq.timeline import Timeline
 
     timeline = Timeline()
@@ -145,7 +145,7 @@ def render_logical(aggregate, server, *, ports=None):
 
 class _Mix:
     """The mixing in force at one point of the walk: whether anything in the
-    piece is soloed, whether this branch is, and the gain accumulated down to
+    aggregate is soloed, whether this branch is, and the gain accumulated down to
     it.
 
     It is threaded through the walk rather than read off each element because
@@ -171,7 +171,7 @@ class _Mix:
 
     @classmethod
     def over(cls, element, mixed: bool = True) -> "_Mix":
-        """The mix a whole piece starts under. Solo is piece-wide by
+        """The mix a whole aggregate starts under. Solo is tree-wide by
         definition -- it says *only these* -- so whether anything is soloed is
         a question about the tree and not about the element being walked."""
         return cls(mixed and _any_solo(element), False, 1.0, mixed)
@@ -379,7 +379,7 @@ def _emit_sequence(wrapped, base: float, out: list, tempo_map, mix: _Mix):
         # script hands over. The conversion writes every element it has no body
         # for as a *generator* leaf, so resolving one back on open gives a
         # `Generator` where the author wrote a bare `Element`; the two must play
-        # the same thing or a reopened piece would sound different from the one
+        # the same thing or a reopened aggregate would sound different from the one
         # that was saved.
         _heard(out, base, wrapped, mix)
     elif not isinstance(wrapped, (list, tuple)):

@@ -2,13 +2,13 @@
 """Composing a score **algorithmically**: the sheet and its operations.
 
 ``score.py`` types a phrase by hand and ``score_from_data.py`` engraves a
-timeline. This is the third thing, and the one the model exists for: a piece
+timeline. This is the third thing, and the one the model exists for: a score
 built by *operating on a score*. A four-note motif is stated, and everything
 after it is that motif under an operation -- repeated, inverted, turned
 backwards, augmented, transposed, and finally stacked against itself as a coda
 on two staves.
 
-The whole piece is written in six lines of operators, and none of the arithmetic
+The whole thing is written in six lines of operators, and none of the arithmetic
 is in Python. A **sheet** is a plain dict a caller holds, an operation is a
 payload it sends, and both cross to `clausters_core::notation`, which is the
 same core the web client binds and the same one a standalone host with no
@@ -88,9 +88,9 @@ print("motif      ", steps(motif))
 
 
 # %% [markdown]
-# ## Six operations, one piece
+# ## Six operations, one score
 # Each line is the motif under one operation, and `concat` joins them in time.
-# Read the phrases printed below against the page: they are the same music.
+# Read the phrases printed below against the page: they are the same composed.
 
 # %%
 # The motif, then the same motif turned about its own first note.
@@ -108,12 +108,12 @@ slow = notation.stretch(motif, (2, 1))
 up = notation.transpose(motif, 4)
 print("up a third ", steps(up))
 
-# One after another: the piece.
-piece = motif
+# One after another: the whole score.
+composed = motif
 for section in (turned, backwards, slow, up):
-    piece = notation.concat(piece, section)
+    composed = notation.concat(composed, section)
 
-print(f"the piece is {notation.to_mei(piece).count('<measure')} measures")
+print(f"the score is {notation.to_mei(composed).count('<measure')} measures")
 
 
 # %% [markdown]
@@ -145,9 +145,9 @@ coda = notation.set_marks(coda, upper[0]["id"],
                           notation.marks(articulations=["stacc"], dynamic="mf"))
 coda = notation.add_spanner(coda, "slur", upper[0]["id"], upper[-1]["id"])
 
-piece = notation.concat(piece, coda)
-print(f"with the coda: {notation.to_mei(piece).count('<measure')} measures, "
-      f"{len(piece['spanners'])} slur")
+composed = notation.concat(composed, coda)
+print(f"with the coda: {notation.to_mei(composed).count('<measure')} measures, "
+      f"{len(composed['spanners'])} slur")
 
 
 # %% [markdown]
@@ -179,7 +179,7 @@ except ValueError as refusal:
 # the same `Score` every other example uses.
 
 # %%
-score = notation.Score(notation.to_mei(piece), page_width=1600)
+score = notation.Score(notation.to_mei(composed), page_width=1600)
 dl = score.display_list()
 print(f"engraved {len(dl['notes'])} notes into {len(dl['prims'])} primitives")
 
@@ -222,7 +222,7 @@ win = scene(dl, sr).open()
 # ``sustain`` heard. Pass ``instruments=`` to say what plays each staff; left
 # out, as here, they take the client's default, because the notation itself
 # never says.
-timeline = notation.to_timeline(piece)
+timeline = notation.to_timeline(composed)
 timeline.map = TempoMap(TEMPO)
 
 

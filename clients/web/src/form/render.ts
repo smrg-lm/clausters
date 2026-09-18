@@ -25,16 +25,16 @@
 // carries `mute`, `solo` and `level`, all three inherited down the tree: a muted
 // branch contributes nothing, one soloed element anywhere silences every branch
 // that is not on a soloed path, and a level multiplies into the `amp` of the
-// events below it. They travel in the document, so a piece reopens mixed the way
+// events below it. They travel in the document, so an aggregate reopens mixed the way
 // it was left — unlike a lane's *height*, which says nothing about what the
-// piece is and is carried by no document.
+// aggregate is and is carried by no document.
 //
 // A `Vector` is *data*: it sounds through the **instrument** that plays it (a
 // def whose `buf` control takes the buffer number), so a `Vector` with an
 // `instrument` emits one event playing it — the audio clip — and one without
 // contributes structure only. A `Segments` is the same rule over several
 // windows: one event per segment, at its own offset inside the element, so what
-// sounds assembled from pieces of different buffers sounds continuous on one
+// sounds assembled from aggregates of different buffers sounds continuous on one
 // instrument. An `Aggregate{logical}` takes the other path entirely (it becomes
 // a `GraphDef`); instancing a bare def still needs an instrument of its own and
 // raises a clear error here.
@@ -217,7 +217,7 @@ export async function renderLogical(
  * it was written for.
  */
 /**
- * The mixing in force at one point of the walk: whether anything in the piece is
+ * The mixing in force at one point of the walk: whether anything in the aggregate is
  * soloed, whether this branch is, and the gain accumulated down to it.
  *
  * It is threaded through the walk rather than read off each element because all
@@ -246,7 +246,7 @@ class Mix {
     }
 
     /**
-     * The mix a whole piece starts under. Solo is piece-wide by definition — it
+     * The mix a whole aggregate starts under. Solo is tree-wide by definition — it
      * says *only these* — so whether anything is soloed is a question about the
      * tree and not about the element being walked.
      */
@@ -474,7 +474,7 @@ function emitSequence(
         // script hands over. The conversion writes every element it has no body
         // for as a *generator* leaf, so resolving one back on open gives a
         // `Generator` where the author wrote a bare `Element`; the two must play
-        // the same thing or a reopened piece would sound different from the one
+        // the same thing or a reopened aggregate would sound different from the one
         // that was saved.
         heard(out, base, wrapped, mix);
     } else if (!Array.isArray(wrapped)) {

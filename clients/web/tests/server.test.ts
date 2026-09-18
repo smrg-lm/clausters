@@ -438,10 +438,10 @@ test("the shared transport is defined, read, rolled and located", {
 
 test("a governed group freezes the transport clock", { skip: !hasServer }, async () => {
     await withServer(async (server) => {
-        const piece = new Group({ server });
+        const governed = new Group({ server });
         await server.setTransport(0, 2.0);
-        await server.transportGroup(piece);
-        assert.equal((await server.transportState())!.group, piece.id);
+        await server.transportGroup(governed);
+        assert.equal((await server.transportState())!.group, governed.id);
 
         // Bound and stopped: the transport clock is frozen, so two reads
         // spanning real time report the same sample. The device clock, which
@@ -462,7 +462,7 @@ test("a governed group freezes the transport clock", { skip: !hasServer }, async
         // `null` unbinds — and thaws whatever it governed.
         await server.transportGroup(null);
         assert.equal((await server.transportState())!.group, null);
-        piece.free();
+        governed.free();
     });
 });
 
@@ -470,15 +470,15 @@ test("/sched_atTransport verifies the axis it is told", { skip: !hasServer }, as
     await withServer(async (server) => {
         await new SynthDef("ts_hold", out(0.0, sine(control("freq", 220.0)).mul(0.0)))
             .send(server);
-        const piece = new Group({ server });
+        const governed = new Group({ server });
         await server.setTransport(0, 2.0);
-        await server.transportGroup(piece);
+        await server.transportGroup(governed);
 
         // A message aimed inside the governed subtree rides the transport
         // axis, which is what the declaration claims.
         const inside = server.nodes.alloc();
         await server.schedAtTransport(0, [
-            ["/synth_new", "ts_hold", ["i", inside], ["i", 0], ["i", piece.id]],
+            ["/synth_new", "ts_hold", ["i", inside], ["i", 0], ["i", governed.id]],
         ]);
 
         // One aimed outside it does not, and the server says so rather than
@@ -492,7 +492,7 @@ test("/sched_atTransport verifies the axis it is told", { skip: !hasServer }, as
         );
 
         await server.transportGroup(null);
-        piece.free();
+        governed.free();
     });
 });
 

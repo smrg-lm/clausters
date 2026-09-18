@@ -205,7 +205,7 @@ export interface TempoClockOptions {
     /**
      * A map to **read** instead of building one. Every clock builds its own,
      * so nothing has to be passed for the ordinary case; this is how two
-     * clocks come to be reading one piece.
+     * clocks come to be reading one map.
      */
     tempoMap?: TempoMap;
     /**
@@ -234,18 +234,18 @@ export interface SetTempoOptions {
 /** A scheduler that keeps musical time in beats and resumes routines on it. */
 export class TempoClock {
     /**
-     * The piece's beat→second map, and the clock's whole relation to time. It
+     * The beat→second map, and the clock's whole relation to time. It
      * starts as one constant-tempo segment, which computes exactly the affine
      * expression this clock always used; {@link TempoClock.setTempo} records a
      * breakpoint on it instead of overwriting the one anchor there used to be,
      * so what a tempo change moved stays knowable afterwards.
      *
      * It is a pure function of a beat — it knows nothing of *now* — which is
-     * what lets an editor draw the piece from the same one the clock plays by.
+     * what lets an editor draw the structure from the same one the clock plays by.
      *
-     * Assigning it hands the clock a piece's own tempo, and the map is
+     * Assigning it hands the clock a document's own tempo, and the map is
      * **adopted, not copied**: a second clock assigned the same map is reading
-     * the same piece, and a gesture written on either is written on both. Pass
+     * the same map, and a gesture written on either is written on both. Pass
      * `m.copy()` to fork instead.
      *
      * Do it before `start` — replacing the map under a running clock moves
@@ -273,11 +273,11 @@ export class TempoClock {
     /**
      * The clock as JSON: its name and its tempo map.
      *
-     * **What of a clock belongs to the piece, and it is only these two.** Its
+     * **What of a clock a document keeps, and it is only these two.** Its
      * position is transport, its queue is what happens to be scheduled, and
      * its timebase is a choice of the *run* — whether it paces against the
      * page's clock or a server's sample counter says nothing about the music.
-     * What the piece owns is the tempo, and the name a lane refers to it by.
+     * What a document owns is the tempo, and the name a lane refers to it by.
      *
      * This is what an arrangement written at a tempo saves: not "the" tempo,
      * which would make polytempo unwritable, but a named clock per tempo, with
@@ -315,7 +315,7 @@ export class TempoClock {
      * another holder of a **shared** map.
      *
      * A clock's own gesture ({@link TempoClock.setTempo}) does this for you.
-     * This is the call for the other direction: a piece's map edited by an
+     * This is the call for the other direction: a document's map edited by an
      * editor, or by a second clock, and this one still asleep on a wait
      * computed before the edit.
      */
@@ -402,7 +402,7 @@ export class TempoClock {
      *
      * Under a constant tempo, and after a ramp has finished, this is the last
      * change's tempo. *Inside* a ramp it is the tempo reached so far, not the
-     * one being ramped to: the destination is `map.last()`, and a piece whose
+     * one being ramped to: the destination is `map.last()`, and a map whose
      * map has changes still ahead of the playhead has not reached them.
      *
      * It is a reading, and assigning it throws a `TypeError`: a tempo change
@@ -422,7 +422,7 @@ export class TempoClock {
     }
 
     /**
-     * A beat position in seconds, through the piece's time map. Under one tempo
+     * A beat position in seconds, through the structure's time map. Under one tempo
      * this is the affine conversion it has always been; across a tempo change it
      * is the integral, so a beat before the change still reports the second it
      * actually fell on.
@@ -524,7 +524,7 @@ export class TempoClock {
      * (`Server.transportStop` on a governed group). The timebase only decides
      * how long to sleep between events and how to stamp one, so a page whose
      * server froze would otherwise keep advancing beats and scheduling events
-     * ahead — running away from a piece that is not moving. Freezing stops the
+     * ahead — running away from a transport that is not moving. Freezing stops the
      * beat instead of stopping the playhead: what was already scheduled stays
      * scheduled, and the server's frozen queue holds it.
      *
@@ -559,7 +559,7 @@ export class TempoClock {
      * Resumes from where `freeze` left the beat.
      *
      * The pacing origin shifts by the time spent frozen, so those seconds are
-     * not part of the piece: the beat picks up where it stopped rather than
+     * not part of the music: the beat picks up where it stopped rather than
      * jumping forward by the length of the pause.
      */
     thaw(): this {
@@ -635,7 +635,7 @@ export class TempoClock {
      *
      * A tempo envelope is of **finite duration** — after its last segment the
      * tempo it reached holds. A sustain or a loop point is refused rather than
-     * ignored: those are a gate's ideas, and a piece's tempo has no gate.
+     * ignored: those are a gate's ideas, and a document's tempo has no gate.
      *
      * A change is **recorded** rather than overwriting what came before, so the
      * beats before it stay convertible afterwards.
@@ -646,17 +646,17 @@ export class TempoClock {
      * anywhere else at `beats()`. The two differ by however far the driver has
      * paced past the wake, which is inaudible and is not nothing: it is what
      * writes a breakpoint at 3.00034 instead of 3, and a map that will be
-     * **saved as the piece's tempo** carries that forever. Pass `at` to say
+     * **saved as a document's tempo** carries that forever. Pass `at` to say
      * where explicitly, in beats, which is also how a tempo is written for a
-     * piece before any clock has run.
+     * document before any clock has run.
      *
-     * **Against a map that was written ahead of the clock** — a piece's tempo
+     * **Against a map that was written ahead of the clock** — a document's tempo
      * track, a shared map, anything with breakpoints still in front of the
      * playhead — the gesture says *from here on*, and what was planned after
      * this beat is dropped. That is what a live change means: the past is
      * untouched and stays convertible, and the future is the one being played
-     * now. A rehearsal that must not rewrite the piece runs on
-     * `clock.map = piece.map.copy()` — adopting is authoring, forking is
+     * now. A rehearsal that must not rewrite the document runs on
+     * `clock.map = timeline.map.copy()` — adopting is authoring, forking is
      * performing.
      */
     setTempo(
@@ -735,9 +735,9 @@ export class TempoClock {
         const grid = await server.transport(timeout);
         if (grid === null) return this;
         // The shared grid is affine by construction (`/transport_set` is an
-        // origin and one tempo), so joining one *declares the piece affine*: the
+        // origin and one tempo), so joining one *declares the map affine*: the
         // map is replaced by that single segment rather than gaining a
-        // breakpoint. A piece with a tempo curve phase-aligns by sample instead.
+        // breakpoint. A map with a tempo curve phase-aligns by sample instead.
         this.tempoMapHeld = new TempoMap(grid.tempo);
         this.wakeSoon();
         if (this.timebase instanceof SampleClockTimebase) {
@@ -987,7 +987,7 @@ export class TempoClock {
      * Returns when nothing is due (or the next item falls after `untilBeat`, a
      * beat of this clock). What the routines emit lands wherever their `Server`
      * puts it; against a score carrier that is a score, which is what makes a
-     * piece written for a live take renderable without changing a line of it.
+     * session written for a live take renderable without changing a line of it.
      *
      * `untilBeat` is required for an endless source: an infinite pattern
      * never drains on its own, and nothing here is watching a clock to stop

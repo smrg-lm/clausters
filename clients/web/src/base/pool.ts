@@ -22,7 +22,7 @@
 // from it, a `Server` attached to the page's engine with no share of its own
 // draws from it, and when the page's GUI host boots the page splits it once
 // (`splitPageIds`) — the page keeps the first half and the host, which
-// allocates on the same engine for its voices, its take monitor and the piece
+// allocates on the same engine for its voices, its take monitor and the multitrack
 // it plays, takes the second. It is the page's form of what a script does when
 // it launches a host with `--id-share`.
 

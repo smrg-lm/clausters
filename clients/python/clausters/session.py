@@ -113,7 +113,7 @@ class Session(Environment):
         #: the physical time every clock of this session paces against; see
         #: `timebase`.
         self._timebase = timebase
-        #: every clock this session owns, in the order it took them. A piece
+        #: every clock this session owns, in the order it took them. A session
         #: with several independent tempos has several clocks, and they belong
         #: to the session the same way its server does: kept here, and closed
         #: with it.
@@ -168,7 +168,7 @@ class Session(Environment):
     def clocks(self) -> tuple:
         """Every clock this session owns, the default (`clock`) first.
 
-        A session is one server and *as many clocks as the piece has tempos*.
+        A session is one server and *as many clocks as the music has tempos*.
         `adopt` is what puts one here, and a clock built while this session is
         ambient adopts it by itself, so ten hand-made clocks are already the
         session's without a line saying so.
@@ -435,7 +435,7 @@ class Session(Environment):
         # of two on its host as well.
         widgets = self.server.share
         # **The host allocates on this server too** -- its voices, its take
-        # monitor, the piece it plays -- so the session's ids are split with
+        # monitor, the multitrack it plays -- so the session's ids are split with
         # it: the session keeps the first half and the host takes the second.
         self._gui = GuiHost(
             port=DEFAULT_PORT if port is None else port, transport=transport,
@@ -589,7 +589,7 @@ class Session(Environment):
         wait and stop in one call. A restart **resumes** at the beat `stop` left
         each clock on.
 
-        A piece with one clock reads exactly as it always did. A piece with
+        A session with one clock reads exactly as it always did. One with
         several starts them together, which is what makes them start together —
         starting ten clocks in a Python loop staggers them by whatever the loop
         costs."""

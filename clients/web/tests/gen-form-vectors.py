@@ -13,7 +13,7 @@ freezes both for each one; `tests/form-parity.test.ts` rebuilds the same
 compositions with the TypeScript surface and asserts the same two results. A
 rule that drifts into one client — a trim rounding differently, a config key
 spelled the language's way rather than the file's — fails here instead of in a
-piece that reopens wrong.
+aggregate that reopens wrong.
 
 The JSON is committed; regenerate with:
 
@@ -43,15 +43,15 @@ class Buffer:
         self.bufnum = bufnum
 
 
-def a_piece():
+def an_aggregate():
     """Every leaf kind at once, placed and nested."""
-    piece = Aggregate(name="piece")
-    piece.add(Clang(SeqEvent(midinote=60, dur=1.0)), offset=0.0, dur=1.0)
-    piece.add(Vector(Buffer(100), instrument="take", duration=4.0), offset=2.0, dur=4.0)
+    aggregate = Aggregate(name="aggregate")
+    aggregate.add(Clang(SeqEvent(midinote=60, dur=1.0)), offset=0.0, dur=1.0)
+    aggregate.add(Vector(Buffer(100), instrument="take", duration=4.0), offset=2.0, dur=4.0)
     inner = Aggregate()
     inner.add(Clang(SeqEvent(midinote=67, dur=0.5)), offset=0.0, dur=0.5)
-    piece.add(inner, offset=8.0, dur=2.0)
-    return piece
+    aggregate.add(inner, offset=8.0, dur=2.0)
+    return aggregate
 
 
 def a_trimmed_placement():
@@ -61,9 +61,9 @@ def a_trimmed_placement():
     held.add(Clang(SeqEvent(midinote=60, dur=2.0)), offset=0.0)
     held.add(Clang(SeqEvent(midinote=64, dur=2.0)), offset=2.0)
     held.add(Clang(SeqEvent(midinote=67, dur=2.0)), offset=4.0)
-    piece = Aggregate()
-    piece.add(held, offset=1.0, dur=3.0)
-    return piece
+    aggregate = Aggregate()
+    aggregate.add(held, offset=1.0, dur=3.0)
+    return aggregate
 
 
 def a_track():
@@ -73,25 +73,25 @@ def a_track():
     timeline.add(0.0, SeqEvent(midinote=48, dur=1.0))
     timeline.add(1.5, SeqEvent(midinote=55, dur=0.5))
     track = Track(timeline, name="bass")
-    piece = Aggregate()
-    piece.add(track, offset=4.0)
-    return piece
+    aggregate = Aggregate()
+    aggregate.add(track, offset=4.0)
+    return aggregate
 
 
 def a_window():
     """A trimmed, looping take, and a join of two windows read as one thing."""
-    piece = Aggregate()
-    piece.add(
+    aggregate = Aggregate()
+    aggregate.add(
         Vector(Buffer(7), duration=2.0, instrument="take", start=44100.0, loop=True,
                controls={"amp": 0.5}),
         offset=0.0, dur=2.0,
     )
-    piece.add(
+    aggregate.add(
         Segments([(Buffer(7), 0.0, 1.0), (Buffer(8), 22050.0, 1.5)],
                  instrument="take"),
         offset=2.0,
     )
-    return piece
+    return aggregate
 
 
 def a_frozen_generator():
@@ -99,13 +99,13 @@ def a_frozen_generator():
     rendered: the floor a host with no language attached draws."""
     rendered = Aggregate()
     rendered.add(Clang(SeqEvent(midinote=72, dur=0.25)), offset=0.0, dur=0.25)
-    piece = Aggregate()
-    piece.add(
+    aggregate = Aggregate()
+    aggregate.add(
         Generator("melody", duration=4.0, name="melody", rendered=rendered),
         offset=0.0, dur=4.0,
     )
-    piece.add(Sequence(None, duration=1.0, name="unheld"), offset=4.0)
-    return piece
+    aggregate.add(Sequence(None, duration=1.0, name="unheld"), offset=4.0)
+    return aggregate
 
 
 def a_curve_on_its_event():
@@ -119,14 +119,14 @@ def a_curve_on_its_event():
     """
     curve = Automation.from_points([(0.0, 200.0, 1, 0.0), (2.0, 900.0, 2, 0.0),
                                     (4.0, 300.0, 1, 0.0)], None, name="freq")
-    piece = Aggregate()
-    piece.add(Aggregate([(0.0, Clang(SeqEvent(instrument="drone", dur=4.0))),
+    aggregate = Aggregate()
+    aggregate.add(Aggregate([(0.0, Clang(SeqEvent(instrument="drone", dur=4.0))),
                          (0.0, Element(curve, duration=4.0))], name="sweep"),
               offset=0.0)
-    return piece
+    return aggregate
 
 
-def a_mixed_piece():
+def a_mixed_aggregate():
     """The composition's own mixing: a muted lane, a soloed one, and a level.
 
     Both halves travel — the document (mixing rides in the node's configuration,
@@ -141,20 +141,20 @@ def a_mixed_piece():
     lead.solo = True
     lead.level = 0.5
     pad = Track(Timeline([(0.0, SeqEvent(midinote=60, dur=1.0))]), name="pad")
-    piece = Aggregate([(0.0, quiet), (0.0, lead), (0.0, pad)], name="mix")
-    piece.level = 0.5
-    return piece
+    aggregate = Aggregate([(0.0, quiet), (0.0, lead), (0.0, pad)], name="mix")
+    aggregate.level = 0.5
+    return aggregate
 
 
 #: (name, builder). Each is built twice — once here, once in TypeScript.
 CASES = [
-    ("a_piece", a_piece),
+    ("an_aggregate", an_aggregate),
     ("a_trimmed_placement", a_trimmed_placement),
     ("a_track", a_track),
     ("a_window", a_window),
     ("a_frozen_generator", a_frozen_generator),
     ("a_curve_on_its_event", a_curve_on_its_event),
-    ("a_mixed_piece", a_mixed_piece),
+    ("a_mixed_aggregate", a_mixed_aggregate),
 ]
 
 

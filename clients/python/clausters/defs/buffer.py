@@ -55,7 +55,7 @@ class Buffer:
 
     Where a `Bus` is a patch point that forgets everything each block, a
     buffer **stays**: it is memory on the server, addressed by a slot number,
-    that outlives every node touching it. That makes it the one place a piece
+    that outlives every node touching it. That makes it the one place a session
     keeps something with random access — a sound file to play back or granulate,
     a wavetable an oscillator scans, a delay line, an impulse response, a
     recording being written while it plays.
@@ -118,7 +118,7 @@ class Buffer:
         holds — one another client allocated, or one `Server.query_buffers`
         reported. Sends nothing, and knows nothing about the shape until you
         ask (`info`). To get a **new** buffer, use `alloc` (empty) or `read`
-        (from a sound file), which is what a piece normally wants.
+        (from a sound file), which is what a script normally wants.
 
         Args:
             bufnum: the slot number.
@@ -139,7 +139,7 @@ class Buffer:
         #: The **file these samples came from**, when they came from one --
         #: `read` and `read_channels` set it, `alloc` leaves it `None`. It is
         #: carried and never acted on: nothing re-reads it behind your back.
-        #: What it is for is saying where the samples are when a piece is
+        #: What it is for is saying where the samples are when a session is
         #: written down, which is exactly what a session's source table needs
         #: and the one thing a bare slot number cannot tell it.
         self.path = None

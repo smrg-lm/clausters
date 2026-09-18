@@ -2,7 +2,7 @@
 
 A `Timeline` places items at beats and plays them. That is enough to
 sequence, but not enough to *compose*: a composition is not a flat list of events,
-it is an element inside an element — a phrase inside a section inside a piece, a
+it is an element inside an element — a phrase inside a section inside a multitrack, a
 take placed against a melody, a generator that has not been evaluated yet.
 
 The `form` namespace is one such layer — a small, self-contained set of
@@ -74,7 +74,7 @@ it where they were.)
 A `Vector` is *data*, so it has no sound of its own: it sounds through the
 **instrument** named to play it — a def whose `buf` control takes the buffer
 number. That is the whole rule for an audio clip. A `Segments` is the same rule
-over several of them: it is what assembling samples out of pieces looks like when
+over several of them: it is what assembling samples out of multitracks looks like when
 nothing is copied.
 
 ```ts
@@ -189,7 +189,7 @@ without a window, for a caller composing one. It is `await`ed where the referenc
 client's `edit` is not, for the reason `plot` and `View.open` are — resolving the
 ambient host may have to boot it.
 
-Nothing is handed back: the object passed in *is* the edited one. A **piece** is
+Nothing is handed back: the object passed in *is* the edited one. A **multitrack** is
 one of them, and what opens is the multitrack editor — the second half of this
 chapter is what it edits.
 
@@ -263,24 +263,24 @@ The vocabulary is the field's own:
 - A **track** holds several lanes and **plays one**, which is what comping is:
   record six passes into six lanes, then take from each.
 - An **automation** is a curve over one parameter, in the arrangement's time.
-- The **arrangement** is the tracks plus what the piece has one of: the tempo
+- The **arrangement** is the tracks plus what the multitrack has one of: the tempo
   map, the meter map, the markers, the loop. They are there and not on a track
   precisely so that no two tracks can disagree about them.
 
 ```javascript
 import { Content, Lane, Multitrack, Region, Tempo, Track } from "clausters";
 
-const piece = new Multitrack();
-piece.setTempo(new Tempo({ at: 0, tempo: 1.6 }));   // beats per second: 96 a minute
-const bar = piece.tempoMap().secsAt(4);             // where the second bar begins
+const multitrack = new Multitrack();
+multitrack.setTempo(new Tempo({ at: 0, tempo: 1.6 }));   // beats per second: 96 a minute
+const bar = multitrack.tempoMap().secsAt(4);             // where the second bar begins
 
 const drums = new Track({ id: 1, name: "drums", lanes: [new Lane({ id: 2 })] });
 drums.activeLane.place(new Region({
     id: 3, position: bar, length: 2.5, content: Content.onto(take),
 }));
-piece.tracks.push(drums);
+multitrack.tracks.push(drums);
 
-const written = piece.write();   // the crate's JSON
+const written = multitrack.write();   // the crate's JSON
 Multitrack.read(written);
 ```
 
@@ -289,26 +289,26 @@ row, a waveform are what the host draws; a region is what an edit names. And
 everything placed is placed in **seconds** — a region, its fades, a curve's
 points, a marker, the loop — while what fills a region is measured in its own
 source's units, so the two are not the same axis. The tempo and meter maps are
-structures the piece holds rather than its axis: a ruler draws beats and bars
+structures the multitrack holds rather than its axis: a ruler draws beats and bars
 from them and a snap reads them, and an edit of the tempo moves no region. A
 session saved in beats, before this, is converted when it is read.
 
-### Editing a piece: the verbs a multitrack admits
+### Editing a multitrack: the verbs a multitrack admits
 
-The piece has an edit vocabulary of its own, and it is reached through the same
+The multitrack has an edit vocabulary of its own, and it is reached through the same
 door every other structure is — `domainEdit`, with `ARRANGEMENT` as the
-vocabulary. Hand over the piece as the crate's JSON and the edit; take back the
-piece as it now stands and the edit that puts it back.
+vocabulary. Hand over the multitrack as the crate's JSON and the edit; take back the
+multitrack as it now stands and the edit that puts it back.
 
 ```javascript
 import { Arrangement, document as doc } from "clausters";
 
-const edited = doc.domainEdit(doc.ARRANGEMENT, piece.write(), {
+const edited = doc.domainEdit(doc.ARRANGEMENT, multitrack.write(), {
     intent: "placeregion", region: 3, track: 1, lane: 2,
     position: 16, layer: 0,
 });
 edited.applied;                     // true
-Arrangement.read(edited.state);     // the piece with the region moved
+Arrangement.read(edited.state);     // the multitrack with the region moved
 edited.current;                     // the edit that puts it back
 ```
 
@@ -316,7 +316,7 @@ Fourteen verbs, in three groups. What a **track** is: `settracks` (the tracks
 now, whole — adding, removing and reordering are one verb, because all three
 say the same thing) and `setactivelane`, which is comping's one verb. What a
 **region** is: `setlane` (a lane's regions, whole), `placeregion`, `trimregion`,
-`splitregion`, `joinregions` and `faderegion`. What the **piece** holds:
+`splitregion`, `joinregions` and `faderegion`. What the **multitrack** holds:
 `setautomation`, `setmarker`, `removemarker`, `setrange` (the loop or the punch
 span), `settempomap` and `setmetermap`.
 
@@ -343,12 +343,12 @@ Both also invert as `setlane`, the lane's previous contents: nothing smaller
 describes putting back a region that was made out of two.
 
 Everything else the vocabulary does it does the way the tree's does — absolute,
-idempotent, refused rather than merged when it was made against a piece that has
-moved. The piece carries **its own version** for exactly that: an editor of the
-piece is not editing the tree, so one counter for both would make every edit to
+idempotent, refused rather than merged when it was made against a multitrack that has
+moved. The multitrack carries **its own version** for exactly that: an editor of the
+multitrack is not editing the tree, so one counter for both would make every edit to
 either look like a change to both.
 
-## Editing a piece: `edit(piece)`, and what it plays
+## Editing a multitrack: `edit(multitrack)`, and what it plays
 
 A `Multitrack` opens with the same verb the others do, and what opens is the
 multitrack **editor**: one widget drawing its own ruler, its own track headers,
@@ -357,27 +357,27 @@ reading of a gesture the standalone host uses.
 
 ```ts
 await session.gui();
-const editor = await gui.edit(piece, {
+const editor = await gui.edit(multitrack, {
     sampleRate: 48_000, server, sources: { 1: take, 2: other },
-    title: "piece", stage: element,
+    title: "multitrack", stage: element,
 });
 ```
 
-`sources` is the one fact about a piece that is not in the piece: the document
+`sources` is the one fact about a multitrack that is not in the multitrack: the document
 names a **source id**, never a path and never a buffer number, so which buffer
 each source was read into travels beside it. The same table answers what a box
 opens as when it is entered — double click one and its take opens in the sample
-editor, on the piece's own undo order.
+editor, on the multitrack's own undo order.
 
-**Given a `server`, the piece sounds.** The editor keeps one resident reader per
-box in a group the server's transport governs, and puts them where the piece says
+**Given a `server`, the multitrack sounds.** The editor keeps one resident reader per
+box in a group the server's transport governs, and puts them where the multitrack says
 on every edit whoever made it — this window's gesture, a second window over the
-same piece, or a step of the history. Moving a box while it plays is one
+same multitrack, or a step of the history. Moving a box while it plays is one
 `/node_set` on a node that is already running, so it is heard where it was
 dropped with nothing that is sounding cut. The window carries the transport row
-that goes with it (rewind, play/pause, stop, and where the piece is), and
+that goes with it (rewind, play/pause, stop, and where the multitrack is), and
 `editor.play()`, `pause()`, `stop()` and `rewind()` are the same verbs from a
-page. A piece opened with
+page. A multitrack opened with
 no server still edits; it is simply not heard.
 
 Two cursors, and only one of them is placed: a click on the ruler — or on the
@@ -390,7 +390,7 @@ not about the transport.
 **A curve is heard.** A track's level, its mute and its solo reach the readers,
 and so do the automation drawn on a track and the envelope drawn inside a box:
 each names the `gain` port of the node it is on -- the same port the header's
-knob writes -- so a point dragged while the piece plays is heard where it is
+knob writes -- so a point dragged while the multitrack plays is heard where it is
 drawn.
 
 **And a track shows what it produces.** The strip in each header is one column
@@ -402,10 +402,10 @@ reached held beside it.
 
 `examples/editors/edit-multitrack.html` is the whole of it, by ear and by eye.
 
-## The presentation: what a window shows, beside what the piece is
+## The presentation: what a window shows, beside what the multitrack is
 
 Where a window is looking, how far it is zoomed, what the hand is holding, how
-tall each track is drawn — none of that is what the piece *is*, and all of it is
+tall each track is drawn — none of that is what the multitrack *is*, and all of it is
 state a person loses on a reopen unless something writes it down.
 
 So it is a **`View`**, and it sits **beside** the model rather than inside it.
@@ -428,28 +428,28 @@ window.trackView(10).lanesShown = true;      // comping open
 window.selected = [20, 32];
 
 const session = new Session();
-session.arrangement = piece;
+session.arrangement = multitrack;
 session.views = [window];
 ```
 
-**There is more than one of them.** A piece drawn in two windows has two views
+**There is more than one of them.** A multitrack drawn in two windows has two views
 and they disagree on purpose — the arranger snapping to a bar, the editor below
 it to a sixteenth — which is why a session carries a list rather than a view.
 
-**A view entry for something the piece no longer holds is dropped.** `prune`
+**A view entry for something the multitrack no longer holds is dropped.** `prune`
 does it, and the rule is the one this project already fixed a class of defects
 by adopting: state goes when the thing goes. Keeping it is worse than losing it,
 because a height kept for a track that is not the same track is a defect that
 looks like a feature.
 
 ```javascript
-window.prune(piece);     // true when something went
+window.prune(multitrack);     // true when something went
 ```
 
 **What a view never reaches.** Not the document, and not the history: a view is
 not edited through an intent, an undo never puts a scroll back, and nothing here
 is consulted when an edit is applied. A session file may carry one because
-reopening a piece into the window it was left in is what every program in the
+reopening a multitrack into the window it was left in is what every program in the
 field does — and a reader that ignores the field opens exactly the same music.
 
 ## The document: what the composition *is*
@@ -462,7 +462,7 @@ no language attached at all.
 **`form` has no door to it, and that is deliberate.** It had one until
 2026-09-06 — a bridge that converted its elements to the crate's JSON — and it
 was removed with the turn that made the arrangement a model of its own. What a
-piece is written with now is `arrangement`, above; what the crate's own document
+multitrack is written with now is `arrangement`, above; what the crate's own document
 holds is a **leaf as an id, a kind and a configuration it never interprets**, and
 a generator travels as a *reference* the way a project file references a plugin
 rather than serializing it. A generator *is code*, in the language that wrote it,
@@ -486,7 +486,7 @@ that missing half:
 
 ```ts
 const session = new Session();
-session.arrangement = piece;
+session.arrangement = multitrack;
 session.provenance = { page: "song.html" };
 session.sources.set(7, Source.file("takes/vocal.wav", "external"));
 
@@ -502,7 +502,7 @@ page's own storage (`opfs`) in a tab.
 A source's **lifetime** is what makes saving honest: `external` is the user's own
 file, which is never written; `session` is persisted beside the document;
 `temporary` is a destructive edit's working copy. A session whose table does not
-cover its own piece is what `session.dangling()` reports, rather than reopening
+cover its own multitrack is what `session.dangling()` reports, rather than reopening
 with a take that draws nothing and nothing saying why.
 
 `provenance` is a reference to whatever produced something, carried and never
@@ -512,7 +512,7 @@ how, which is the same rule the opaque generator follows one level down.
 Three questions a save asks the table, and each has an answer rather than an
 exception: `session.volatile()` is what is not written down anywhere,
 `session.openEdits()` is what is still undecided, and `session.dangling()` is
-what the piece names and the table does not hold — **every** lane walked, not
+what the multitrack names and the table does not hold — **every** lane walked, not
 only the ones that play, because an alternate take names its source whether or
 not anyone has chosen it yet.
 
@@ -525,7 +525,7 @@ session never claims to own the user's file.
 
 ## Reopening: structures, not a description
 
-`Session.read` gives the piece and its table back, and by itself that is half a
+`Session.read` gives the multitrack and its table back, and by itself that is half a
 verb: every take is a bare source number and nothing has loaded it. `load` is
 the other half — what a source *is* in a running system is not the document's to
 decide, so it is said by loading the table into a server:
@@ -547,7 +547,7 @@ is read and in what order is the shared crate's, so the Python client and the GU
 host open the same session the same way.
 
 A *volatile* source is left out with a warning rather than returned as a lie,
-and the rest of the piece opens: half a session is worth opening. A file that is
+and the rest of the multitrack opens: half a session is worth opening. A file that is
 not there is the server's refusal of its read, and `load` rejects after freeing
 what it had made. And a generator whose reference `defs` does not have keeps what
 it last **rendered** as its floor, which is the same thing a host with no
@@ -568,7 +568,7 @@ bassLane.mute = true;
 leadLane.level = 0.5;
 ```
 
-They ride in the node's **configuration**, so a piece reopens mixed the way it
+They ride in the node's **configuration**, so a multitrack reopens mixed the way it
 was left, and the editor's lane header is drawing the composition rather than
 remembering something of its own — pressing mute there goes through the log and
 undoes like any other edit. What is *drawn* is read unmixed: a muted lane keeps
@@ -576,12 +576,12 @@ its clips, its notes and its length, because a picture that emptied when the
 toggle was pressed would report silence as absence.
 
 A lane's **height** is the other kind of thing and is in no document. It says
-nothing about what the piece is; resizing a lane (Ctrl+wheel) changes the view
+nothing about what the multitrack is; resizing a lane (Ctrl+wheel) changes the view
 and no file.
 
-## What a piece is as nodes: the channel strip, three times
+## What a multitrack is as nodes: the channel strip, three times
 
-A piece is a picture and a sound, and this is the second one. What plays it is
+A multitrack is a picture and a sound, and this is the second one. What plays it is
 not a driver a script writes: it is three GraphDefs over **one** shape, the
 channel strip every fixed-channel mixer has had for fifty years.
 
@@ -595,7 +595,7 @@ track's gain are both real and they are different stages -- the first corrects
 the take, the second mixes it -- which is why an envelope on a clip is not
 another name for the track's fader.
 
-The pieces of it are named once, in `clausters_core::mixer`, and both clients
+The multitracks of it are named once, in `clausters_core::mixer`, and both clients
 bind the same names: `gain`, `pan`, `width`, `mute`, and a box's own `at`,
 `span` and `start`. **The knob in the header, the automation curve and a
 `/node_set` all write the same port of the same instance** -- that is what makes
@@ -614,20 +614,20 @@ bug and `pan` is one name for both:
 
 Which one applies follows from the source's width -- `Track.channels` and
 `Multitrack.channels`, both fields of the document, because the width decides
-the mix and reopening a piece has to give back the mix it was left with.
-A track's fader is `Track.level`, a field for the same reason: what a piece
-sounds like is the piece's, not a key one client reads out of a table it was
+the mix and reopening a multitrack has to give back the mix it was left with.
+A track's fader is `Track.level`, a field for the same reason: what a multitrack
+sounds like is the multitrack's, not a key one client reads out of a table it was
 only meant to carry.
 
 A strip writes an output bus of its own and a **send** carries it onward at a
 gain -- one node between a track and the master. That is what lets a meter mean
 something: every track writes into the master's mix, so a meter there would read
-the sum and call it the track. A meter is a **slot** on a strip, so a piece
+the sum and call it the track. A meter is a **slot** on a strip, so a multitrack
 nobody is looking at holds none, and each one writes one control bus per channel
 -- one number a block, with the fall and the peak hold applied on the server, so
 two clients cannot draw two different falls off one signal.
 
-And the transport plays the piece rather than a client stepping it: each reader
+And the transport plays the multitrack rather than a client stepping it: each reader
 reads the position the engine publishes, so moving a box is one `set` and a
 locate is no message at all.
 
@@ -648,7 +648,7 @@ const cut = await Buffer.stitch(
 Without it a reader would have to change which buffer it reads with sample
 accuracy, and the buffer a reader reads is an initial-rate control: every seam
 would be a new node and a control message in the middle of playback -- which is
-exactly what a piece that plays itself from the transport must not need. The
+exactly what a multitrack that plays itself from the transport must not need. The
 fades on a part are the few milliseconds an editor puts on a cut; a source is
 held for as long as the join exists, so freeing a take something was cut from
 does not silence it.
@@ -664,7 +664,7 @@ it holds.
 ## Where a recording lands
 
 A `Buffer` holds a take and a `RecordingStream` follows one as it is written, and
-neither puts one in a piece. `take` does:
+neither puts one in a multitrack. `take` does:
 
 ```ts
 song.add(form.take(recorded, null, null, { instrument: "player" }), 8.0);
@@ -672,5 +672,5 @@ song.add(form.take(recorded, null, null, { instrument: "player" }), 8.0);
 
 It is a `Vector` whose length is the samples' own — frames over the rate they
 were recorded at — which is the one line every script used to write by hand.
-Without an `instrument` it is structure: it draws and it extends the piece, and
+Without an `instrument` it is structure: it draws and it extends the multitrack, and
 it emits no event, which is the `Vector` rule rather than a special case.

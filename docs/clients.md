@@ -177,7 +177,7 @@ What a view contributes is a single conversion (its cursor's unit: timeline
 samples for a lane, score milliseconds for a page); everything else is the same
 two numbers the host already understands. A port keeps that shape: the anchor
 arithmetic is small, but splitting it per view is how a client ends up with three
-transports that disagree about the end of a piece.
+transports that disagree about where the sound ends.
 
 ## The GUI host in the browser
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate score-vectors.json from the Python client's reference NRT session.
 
-The acceptance W13 is written against is "one piece, one score": a piece
+The acceptance W13 is written against is "one session, one score": a session
 written once emits a score **byte-identical** to the Python client's for the
 same input. This script freezes that side of it — the Python client plays a few
 small pieces into an offline session and the accumulated score bytes are

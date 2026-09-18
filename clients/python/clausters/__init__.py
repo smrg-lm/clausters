@@ -4,7 +4,7 @@ A high-level client for the Clausters audio server, ported selectively from
 SuperCollider's class library (sc3). It covers both of the server's def
 formats as peers: FaustDefs and UGen-graph SynthDefs.
 
-What the top level holds is what you name while writing a piece: the free
+What the top level holds is what you name while playing: the free
 verbs (``play``, ``render``, ``plot``, ``scope``), the three hosts (`Session`,
 `Server`, `GuiHost`), the server's resources, the three def formats, the
 timing types, the handful of grid and unit conversions beside them (``bar``,
@@ -59,7 +59,7 @@ The layers:
 - `clausters.segments` — a **window onto contents** and a run of windows read
   as one: what a join assembles and a split takes apart, over samples
   (`BufferSegments`) or over a timeline of events (`NoteSegments`). A window is
-  about the contents, not about where they sit in a piece, which is why it is
+  about the contents, not about where they sit in time, which is why it is
   here and not in the arrangement.
 - `clausters.responders` — `OscFunc`/`MidiFunc`, callbacks on incoming OSC
   replies and live MIDI.

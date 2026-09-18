@@ -24,12 +24,12 @@ operations.
 
 <code>score.html</code> types a phrase by hand and
 <code>score-from-data.html</code> engraves a timeline. This is the third thing,
-and the one the model exists for: a piece built by <i>operating on a score</i>. A
+and the one the model exists for: a score built by <i>operating on a score</i>. A
 four-note motif is stated, and everything after it is that motif under an
 operation — repeated, inverted, turned backwards, augmented, transposed, and
 finally stacked against itself as a coda on two staves.
 
-The whole piece is written in six lines of operators, and none of the arithmetic is
+The whole thing is written in six lines of operators, and none of the arithmetic is
 in TypeScript. A <b>sheet</b> is a plain object a caller holds, an operation is a
 payload it sends, and both cross to <code>clausters_core::notation</code> — the
 same core the Python client binds and the same one a standalone host with no
@@ -53,7 +53,7 @@ refused by name.</div>
     <!--
       The web sibling of clients/python/examples/notation/compose.py, call for
       call: the motif from a voice, the five operations in the same order, the
-      concatenation into a piece, the two-staff coda with its marks and slur,
+      concatenation into a score, the two-staff coda with its marks and slur,
       the tuplet that is refused for crossing a barline, `toMei` into the
       ordinary `Score` path, `toTimeline` reading the sheet back into what it
       sounds, and the same minimal transport with the by-hand cursor anchor.
@@ -131,12 +131,12 @@ refused by name.</div>
         const up = notation.transpose(motif, 4);
         log(`up a third  ${steps(up)}`);
 
-        // One after another: the piece.
-        let piece = motif;
+        // One after another: the whole score.
+        let composed = motif;
         for (const section of [turned, backwards, slow, up]) {
-          piece = notation.concat(piece, section);
+          composed = notation.concat(composed, section);
         }
-        log(`the piece is ${notation.toMei(piece).match(/<measure/g).length} measures`);
+        log(`the score is ${notation.toMei(composed).match(/<measure/g).length} measures`);
 
         // `stack` puts the motif against itself an octave down. It goes on a
         // staff of its own, in the bass clef the register asks for: written as
@@ -160,9 +160,9 @@ refused by name.</div>
         }));
         coda = notation.addSpanner(coda, "slur", upper[0].id, upper.at(-1).id);
 
-        piece = notation.concat(piece, coda);
-        log(`with the coda: ${notation.toMei(piece).match(/<measure/g).length} measures, `
-            + `${piece.spanners.length} slur`);
+        composed = notation.concat(composed, coda);
+        log(`with the coda: ${notation.toMei(composed).match(/<measure/g).length} measures, `
+            + `${composed.spanners.length} slur`);
 
         // A tuplet cannot be split, so one that would cross a barline is
         // refused by name rather than written into bars nobody meant.
@@ -180,7 +180,7 @@ refused by name.</div>
         }
 
         // From here it is the ordinary notation path.
-        const score = await notation.Score.open(notation.toMei(piece), { pageWidth: 1600 });
+        const score = await notation.Score.open(notation.toMei(composed), { pageWidth: 1600 });
         const dl = score.displayList();
         log(`engraved ${dl.notes.length} notes into ${dl.prims.length} primitives`);
 
@@ -197,7 +197,7 @@ refused by name.</div>
         // both lengths, `dur` written and `sustain` heard. Pass `instruments`
         // to say what plays each staff; left out, as here, they take the
         // client's default, because the notation itself never says.
-        const timeline = notation.toTimeline(piece);
+        const timeline = notation.toTimeline(composed);
         timeline.map = new TempoMap(TEMPO);
 
         win.widget("play").onClick(async () => {

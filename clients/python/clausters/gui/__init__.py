@@ -117,7 +117,7 @@ from .playhead_sync import PlayheadSync
 #: `clausters.gui.multitrack` got a module it could not call. Re-bound here,
 #: after every submodule is in, because the widget is what the name means on
 #: this surface: the module is reached as `clausters.gui.multitrack` only by
-#: `import`, and everything else about a piece is `Multitrack`.
+#: `import`, and everything else about it is `Multitrack`.
 multitrack = guidef.multitrack
 
 #: The host registered by `set_ambient_host`, if any.

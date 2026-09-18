@@ -34,7 +34,7 @@ clock face over the timers; the loop knows about neither.
 one.** Measured before this existed: a timeline a projection rebuilt in place
 was seen half-rebuilt in 87.7% of reads at 4000 notes -- and in none at all at 8,
 because CPython's switch interval hides a short mutation, which is exactly what
-makes this the class of bug that passes every small test and fails a real piece.
+makes this the class of bug that passes every small test and fails a real run.
 
 Two things answer it, and the order matters. **What a handler writes, it writes
 in one step**: `clausters.seq.Timeline.replace` binds a new order rather than

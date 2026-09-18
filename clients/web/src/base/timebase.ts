@@ -44,7 +44,7 @@ import {
 // which is a clock's own internal state and not something a caller holds — and
 // under a changing tempo the affine form is the wrong answer, since the same
 // stretch of seconds reaches a different beat depending on where it starts.
-// A clock's owner wants `TempoClock.beats2secs`/`secs2beats` and a piece's
+// A clock's owner wants `TempoClock.beats2secs`/`secs2beats` and a document's
 // owner wants the map (`TempoMap.secsAt`/`beatsAt`); both of those already go
 // through the map. Python keeps them behind `_native` for the same reason.
 // What is below is the pair a caller *does* hold both arguments for.

@@ -2,7 +2,7 @@
 
 This is how a server transport's pause reaches a client. The sample timebase
 only decides how long to sleep, so without the gate a client whose server froze
-would keep advancing beats and scheduling ahead of a piece that is not moving.
+would keep advancing beats and scheduling ahead of a transport that is not moving.
 """
 
 import time
@@ -32,7 +32,7 @@ def test_thawing_continues_rather_than_jumping():
         at_freeze = clock.beats()
         time.sleep(0.3)
         clock.thaw()
-        # The 0.3 s spent frozen is not in the piece: the beat picks up where it
+        # The 0.3 s spent frozen is not in the music: the beat picks up where it
         # stopped, not 0.6 beats later.
         assert abs(clock.beats() - at_freeze) < 0.05
     finally:

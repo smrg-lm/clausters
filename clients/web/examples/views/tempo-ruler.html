@@ -32,21 +32,21 @@ one, because a break-point function's values belong to whatever parameter it
 drives. <b>bottom</b>, seconds: the axis itself, evenly spaced, because time is
 what the axis measures. <b>top</b>, beats: <i>not</i> an axis. A beat is a
 <b>logical coordinate</b>, so those marks say where the beats fall — they crowd
-where the piece is fast and spread where it is slow, over an axis that never
+where the music is fast and spread where it is slow, over an axis that never
 stopped measuring samples. It counts in ones (<code>quant: 1</code>), so every
 mark is a beat and its label reads <code>4:1</code> — the fourth of them, on its
 first beat.
 
 <b>Drag a break-point and the top ruler re-rules under your hand.</b> That is
 the whole example. The curve reports its new shape
-(<code>/gui_event id "points" …</code>), this page rebuilds the piece's
+(<code>/gui_event id "points" …</code>), this page rebuilds the timeline's
 <code>TempoMap</code> from it — one <code>tempoEnv</code> call, extents in
 seconds — and sets it back on the ruler, which redraws. Nothing else moves: the
 seconds do not change, because seconds are not what a tempo edit changes.
 
 Drag a corner <b>up</b> and watch the marks on top narrow; drag it <b>down</b>
 and they open out. Bend a segment (drag it vertically between two corners) and
-the crowding follows the bend. The piece gets longer or shorter <i>in beats</i>
+the crowding follows the bend. The timeline gets longer or shorter <i>in beats</i>
 as you work, which is what changing a tempo means, so the top ruler renumbers
 itself.
 
@@ -110,7 +110,7 @@ Both are refused quietly — the ruler simply does not move.</div>
 
       // The envelope, in beats per minute against seconds: the corners and the
       // stretches between them, so there is one more tempo than extent. A
-      // finite shape, which is what a piece's tempo is — no sustain, no loop, a
+      // finite shape, which is what a tempo is — no sustain, no loop, a
       // tempo has no gate.
       const BPM = [30.0, 90.0];
       const EXTENTS = [60.0];                                  // seconds
@@ -124,7 +124,7 @@ Both are refused quietly — the ruler simply does not move.</div>
       const BPM_LO = 30.0, BPM_HI = 90.0;
 
       /**
-       * The piece's tempo, from an envelope written in **seconds**.
+       * The timeline's tempo, from an envelope written in **seconds**.
        *
        * `tempoEnv` takes the tempos and the stretches between them, and
        * `"seconds"` reads those stretches as wall clock — so each segment's
@@ -154,7 +154,7 @@ Both are refused quietly — the ruler simply does not move.</div>
         await loadCore();   // the wasm core, fetched — see the note above
 
         // ---- the map, before there is a window ----
-        // `TempoMap` is a pure function of a beat: it answers about a piece
+        // `TempoMap` is a pure function of a beat: it answers about music
         // nobody is playing. Ask it where each beat falls and the drawing is
         // already decided.
         const tempo = tempoOf(CORNERS, BPM, SHAPES);
@@ -198,7 +198,7 @@ Both are refused quietly — the ruler simply does not move.</div>
         // ---- the edit, and what it re-rules ----
         // The curve owns nothing: it reports the whole break-point list in its
         // own units and this page decides what that means. Here it means the
-        // piece's tempo, so the map is rebuilt and handed back to the ruler — a
+        // timeline's tempo, so the map is rebuilt and handed back to the ruler — a
         // `/gui_set` value is a scalar, hence the JSON the map writes with
         // `dump`.
         const onPoints = (tag, ...payload) => {

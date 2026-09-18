@@ -216,7 +216,7 @@ def test_a_tempo_change_leaves_the_beats_before_it_convertible():
     do: after the change, the beats **before** it still report the seconds they
     actually fell on.
 
-    The clock never asks — it only reads its own now — but a view of the piece
+    The clock never asks — it only reads its own now — but a view of the structure
     asks constantly, and a clock that extrapolated its current slope backwards
     would answer that beat 4 happened at a second it did not.
     """

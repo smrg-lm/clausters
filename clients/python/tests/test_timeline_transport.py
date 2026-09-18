@@ -79,7 +79,7 @@ class TransportServer(Server):
 
     def onsets(self):
         """The plan's samples, in order, with the base and latency taken off:
-        seconds of the piece from where the plan started."""
+        seconds of the transport from where the plan started."""
         base = BASE + LATENCY * SR
         return sorted(round((sample - base) / SR, 6) for sample, _a in self.planned())
 

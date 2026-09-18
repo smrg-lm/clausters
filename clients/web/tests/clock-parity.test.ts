@@ -145,7 +145,7 @@ test("beat arithmetic matches the Python client", () => {
     }
 });
 
-test("the piece's time map matches the Python client", () => {
+test("the tempo map matches the Python client", () => {
     // The same map, built by the same calls in the same order — a step and a
     // ramp, which is the shape where a scalar tempo and the integral part
     // company. Equality, not approximation: there is one implementation of the

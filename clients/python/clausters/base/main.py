@@ -20,7 +20,7 @@ to an offline NRT render, each with its own configuration) coexist in one proces
 without touching each other or the default session. A session can hold **several
 clocks** at different tempos, including the default one.
 
-The process-wide pieces are thread-local: `current_routine`, "which routine is
+The process-wide parts are thread-local: `current_routine`, "which routine is
 running on this thread", and `current_session`, "which explicit session is
 active on this thread" (set by a `Session` while it plays/renders or as a
 context manager). Neither is a swapper of global state (as sclang's global rng

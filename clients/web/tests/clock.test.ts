@@ -327,14 +327,14 @@ test("a routine that throws is dropped, and the clock keeps driving the rest", a
     assert.equal(bad.state, "done", "...and the raising one lost its place");
 });
 
-test("freeze holds the beat, and thaw does not charge the piece for the pause", async () => {
+test("freeze holds the beat, and thaw does not charge the music for the pause", async () => {
     const { clock, run } = harness();
     clock.start();
     await run(0.5);
     assert.equal(clock.beats(), 0.5);
 
     // A governed transport stopped on the server: the page holds its beat
-    // rather than running away from a piece that is not moving.
+    // rather than running away from a transport that is not moving.
     clock.freeze();
     assert.equal(clock.frozen, true);
     await run(2);
@@ -346,7 +346,7 @@ test("freeze holds the beat, and thaw does not charge the piece for the pause", 
 
     clock.thaw();
     assert.equal(clock.frozen, false);
-    assert.equal(clock.beats(), 0.5, "the frozen seconds are not part of the piece");
+    assert.equal(clock.beats(), 0.5, "the frozen seconds are not part of the music");
     await run(0.25);
     assert.ok(Math.abs(clock.beats() - 0.75) < 1e-9);
 });

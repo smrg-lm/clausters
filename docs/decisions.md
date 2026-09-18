@@ -8700,7 +8700,7 @@ made on the session's timebase and kept in it: the server's sample clock for a
 live or embedded session, and `LogicalTimebase` for an offline one — the only
 time an offline session can have. The context manager is how a session is
 switched on the same thread, including inside a running routine, which is what
-makes an offline render inside a live piece a plain block. One subtlety came out
+makes an offline render inside a live session a plain block. One subtlety came out
 of the port: in a page everything runs on one thread, so a session merely
 *activated* at top level must not take over the wakes of another session's
 clock. A context wins over a routine's own session only when it was entered in
@@ -8708,3 +8708,43 @@ that routine; both clients record the routine a context was entered in, and
 restore it with the session when the block ends. A timeline's hidden clock
 belongs to the session it sounds in, and is made again when it plays in another.
 
+
+## The work has no name, so the prose names the structure
+
+*2026-09-17.*
+
+"Piece" named no structure and stood for whichever one a module happened to
+hold, some four thousand times across Rust, Python and TypeScript: a
+`Multitrack` in the projection and the editors, the transport's axis in the
+server and the shm segment, a tempo map's owner in the clocks, a fragment of a
+split note in the notation model, and the work in general in the books. A
+reader had to decide, every time, which of those was meant -- and the code did
+too, which is how `HeadClock::Piece` came to name the transport and
+`edit::Piece` the multitrack in the same tree.
+
+The rule is the one CLAUDE.md already stated for "material": **name the
+structure**. So the word is retired, in both senses. "The piece" is not a term
+of art here, and neither is "the composition": no structure is the work, so the
+prose names a `Multitrack`, a `Timeline`, a document, a session, a take, a
+score, a pass, a part. A sentence that resists the substitution is a sentence
+that did not know which one it meant, which is what the rename was for -- and
+several did not: the `PlayheadSync` modules alone used the one word for the
+transport, the pass in flight and the multitrack a playback sounds, three
+paragraphs apart.
+
+**What moved on the wire**, since a word a client types is not prose:
+`/gui_headClock` takes `"transport"` where it took `"piece"` (with `--clock
+transport`, and `--session` implying it); the editing request and outcome key
+`piece` is `multitrack`; the mixer's graph is `clausters.multitrack.N`; the
+transport row's controls are `transport_rewind`, `transport_play`,
+`transport_stop`, `transport_clock`. The recorded vectors are regenerated with
+them.
+
+**The record keeps the old word.** `docs/history/build-log.md`, the `PLAN.md`
+set and the entries of this file above were written when it meant something,
+and a record that is rewritten is not one -- as with `buy`, which survives in
+the plans for the same reason. Everything a reader types against, and every
+page explaining it, uses the structure's name.
+
+Plain English survives: one piece of code, a turn metered in pieces, a file
+written in two pieces. What is retired is the *term of art*.

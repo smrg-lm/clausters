@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""The tempo map: a piece's whole tempo history, as a function you can ask.
+"""The tempo map: a document's whole tempo history, as a function you can ask.
 
 A beat is not a unit of time. It is a **logical coordinate**, and what turns one
-into a second is the tempo -- which changes along the piece. So "when does beat 8
+into a second is the tempo -- which changes as it goes. So "when does beat 8
 happen?" has no answer from the tempo in force *now*: it depends on every tempo
-change before it. That function is the piece's `clausters.TempoMap`, and this
+change before it. That function is the document's `clausters.TempoMap`, and this
 example is about using it as a **thing you interrogate** rather than as a number
 a clock happens to hold.
 
@@ -21,7 +21,7 @@ wrong.
   its current slope backwards and report that beat 1 happened at a second it did
   not.
 - **A length in beats is not a duration.** The same eight beats last eight
-  seconds early in this piece and rather less once the tempo has doubled, so
+  seconds early on and rather less once the tempo has doubled, so
   seconds always come from **two positions** (`span_secs`), never from a beat
   count times a tempo. Every conversion in the client takes a position for this
   reason.
@@ -55,14 +55,14 @@ from clausters.seq.event import Event
 #: easy to count against a watch.
 TEMPO = 1.0
 
-#: How long to let the piece run, in seconds.
+#: How long to let the line run, in seconds.
 SECONDS_TO_PLAY = float(sys.argv[1]) if len(sys.argv) > 1 else 20.0
 
 # %% [markdown]
 # ## A map, before there is a clock
-# `TempoMap` is a plain function of a beat. It answers about a piece nobody is
+# `TempoMap` is a plain function of a beat. It answers about music nobody is
 # playing, so the whole first half of this file needs no server at all: build the
-# tempo of a piece, then ask it questions.
+# tempo of a document, then ask it questions.
 #
 # `push` is a **step** at a beat; `ramp` is a stretch between two. Both are
 # recorded on top of what came before.
@@ -78,16 +78,16 @@ print("beat 16 falls at", tempo.secs_at(16.0), "s")
 
 # %% [markdown]
 # ## And the question runs both ways
-# `beats_at` is `secs_at` inverted: given a second, which beat is the piece on?
+# `beats_at` is `secs_at` inverted: given a second, which beat the line is on?
 # A transport that has to draw a playhead asks this one on every frame.
 
 # %%
-print("at 5 s the piece is on beat", tempo.beats_at(5.0))
+print("at 5 s the line is on beat", tempo.beats_at(5.0))
 print("the recorded history:", tempo.segments())
 
 # %% [markdown]
 # ## A length in beats is not a duration
-# The same eight beats are eight seconds at the start of this piece and rather
+# The same eight beats are eight seconds at the start and rather
 # less after the tempo has doubled. So seconds come from **two positions**, never
 # from a beat count and a tempo -- which is what `span_secs` is, and why every
 # conversion in the client takes a position.
@@ -111,7 +111,7 @@ print("the average says ", average, "s   (wrong by", round(average - ramp, 4), "
 print("closed form      ", math.log(4.0 / 2.0) / ((4.0 - 2.0) / (16.0 - 8.0)))
 
 # %% [markdown]
-# ## The piece
+# ## The timeline
 # Sixteen beats of one note each, on a `Timeline` -- the static, random-access
 # sequencing structure, so the notes are placed at beats and the map decides when
 # each of those beats arrives. Four bars, one pitch per bar, so the accelerando
@@ -128,15 +128,15 @@ for beat in range(16):
 print(f"{len(line)} notes over {line.duration()} beats")
 
 # %% [markdown]
-# ## The piece's tempo, handed to the timeline
-# The map above **is** the piece's tempo, written before anything played.
+# ## The timeline's tempo, handed to the timeline
+# The map above **is** the timeline's tempo, written before anything played.
 # Assigning it is the whole of the handover, and from here there is one function:
 # the same one this file asked its questions of, and the one the notes are played
 # by. The tempo is the timeline's data, like its notes: nothing else holds it.
 
 # %%
 session = Session.live(latency=0.1).activate()
-line.map = tempo                        # the piece's tempo is the timeline's
+line.map = tempo                        # the map is the timeline's tempo
 
 print("the timeline's map:", line.map.segments())
 

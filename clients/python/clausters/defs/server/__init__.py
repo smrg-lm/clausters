@@ -390,7 +390,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         a node with `send_msg` from inside a routine is an **error**, not
         something that behaves differently offline. Use it for what has no place
         in a timeline: sending defs, allocating buffers, opening the groups a
-        piece is built on."""
+        session is built on."""
         log.debug("-> %s %s", addr, args)
         self.interface.send_msg(self.target, addr, *args)
 
@@ -417,7 +417,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         if axis is not None:
             # The moment's clock names the **transport** axis: a timeline
             # playing on a server transport stamps every bundle on the
-            # transport clock, so a pause freezes the queue with the piece and
+            # transport clock, so a pause freezes the queue with the souce and
             # a locate clears it (`sched_clear("transport")`). It is asked
             # first because it is the one axis a caller states outright.
             self._send_sched_transport(axis(when.secs() + self.latency), messages)

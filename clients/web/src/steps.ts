@@ -3,7 +3,7 @@
  *
  * A verb of the shared crate answers **steps** — a message to send, a `/done`
  * the rest waits for, a barrier — and {@link runSteps} is the one walk of them
- * in this client: a piece's playback and a session's load go through it. Which
+ * in this client: a multitrack's playback and a session's load go through it. Which
  * reply releases what is the runner's (`StepRunner`), as it is the script's and
  * the GUI host's; what is left here is a socket and waiting on it.
  *

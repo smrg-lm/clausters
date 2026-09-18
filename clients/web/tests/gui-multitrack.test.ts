@@ -1,8 +1,8 @@
-// `gui.Multitrack` — the piece a `multitrack` widget draws, held here.
+// `gui.Multitrack` — the multitrack a `multitrack` widget draws, held here.
 //
 // No host and no window: a fake widget records what is set on it and hands back
 // the event a hand's gesture would have sent. What is checked is that the object
-// is the piece — that a report replaces it whole, and that a script never has to
+// is the multitrack — that a report replaces it whole, and that a script never has to
 // parse a payload or carry an id.
 //
 // The same cases the Python client's `test_gui_multitrack.py` checks, in the
@@ -29,14 +29,14 @@ class FakeWidget implements MultitrackWidget {
         return this;
     }
 
-    /** What the widget would have sent after a hand edited the piece. */
+    /** What the widget would have sent after a hand edited the multitrack. */
     report(tag: string, ...vals: unknown[]): void {
         assert.ok(this.handler !== null, "nothing subscribed");
         this.handler(tag, ...vals);
     }
 }
 
-function piece(): Multitrack {
+function multitrack(): Multitrack {
     return new Multitrack({
         lanes: [["noise"], ["tone"]],
         clips: [["a", "noise", 0.0, 500.0], ["b", "tone", 500.0, 500.0]],
@@ -44,7 +44,7 @@ function piece(): Multitrack {
 }
 
 test("the tuples a script types become the objects it reads", () => {
-    const mt = piece();
+    const mt = multitrack();
     assert.deepEqual(mt.lanes.map((l) => l.name), ["noise", "tone"]);
     assert.equal(mt.lanes[0].height, 96.0);
     assert.equal(mt.lanes[0].gain, 1.0);
@@ -54,11 +54,11 @@ test("the tuples a script types become the objects it reads", () => {
     assert.deepEqual(mt.on("noise").map((c) => c.name), ["a"]);
 });
 
-test("one subscription carries the whole piece", () => {
-    // **The object is the piece.** A gesture reports what the widget now holds,
+test("one subscription carries the whole multitrack", () => {
+    // **The object is the multitrack.** A gesture reports what the widget now holds,
     // so this replaces the lists -- there is nothing per clip to register, and a
     // script never sees a widget id or parses a payload.
-    const mt = piece();
+    const mt = multitrack();
     const w = new FakeWidget();
     const seen: string[] = [];
     mt.onChange = (what) => seen.push(what);
@@ -81,7 +81,7 @@ test("one subscription carries the whole piece", () => {
 });
 
 test("a change from the script reaches the widget", () => {
-    const mt = piece();
+    const mt = multitrack();
     const w = new FakeWidget();
     mt.attach(w);
 
@@ -91,7 +91,7 @@ test("a change from the script reaches the widget", () => {
     const clips = w.sets[w.sets.length - 1].clips as unknown[][];
     assert.deepEqual(clips[clips.length - 1], ["c", "noise", 1000.0, 200.0, 0.0, "", -1]);
 
-    // `place` is one verb: the piece is a statement, so moving is saying where.
+    // `place` is one verb: the multitrack is a statement, so moving is saying where.
     mt.place("c", "tone", 1200.0, 200.0);
     assert.equal(mt.clips.length, 3);
     assert.equal(mt.clip("c")?.lane, "tone");
@@ -106,14 +106,14 @@ test("a change from the script reaches the widget", () => {
 test("removing a lane keeps the clips that were on it", () => {
     // Losing them silently is the one thing a removal must not do: they name a
     // lane that is not there, draw nowhere, and come back to be re-homed.
-    const mt = piece();
+    const mt = multitrack();
     mt.removeLane("noise");
     assert.deepEqual(mt.lanes.map((l) => l.name), ["tone"]);
     assert.equal(mt.clip("a")?.lane, "noise");
 });
 
 test("a partial group is dropped rather than half read", () => {
-    const mt = piece();
+    const mt = multitrack();
     const w = new FakeWidget();
     mt.attach(w);
     w.report("clips", "a", "noise", 0.0, 500.0, 0.0, "", -1, "b", "tone", 500.0);
@@ -126,18 +126,18 @@ test("the view is built from what the object holds", () => {
         clips: [new Clip("x", "one", 0.0, 10.0)],
         snap: 4.0,
     });
-    const spec = mt.view({ name: "piece", weight: 1.0 }) as Record<string, unknown>;
+    const spec = mt.view({ name: "multitrack", weight: 1.0 }) as Record<string, unknown>;
     assert.equal(spec.type, "multitrack");
     assert.deepEqual(spec.lanes, ["one", "", 60.0, 0, 0, 1.0]);
     assert.deepEqual(spec.clips, ["x", "one", 0.0, 10.0, 0.0, "", -1]);
     assert.equal(spec.snap, 4.0);
-    assert.equal(spec.name, "piece");
+    assert.equal(spec.name, "multitrack");
 });
 
-test("an unattached piece is still a piece", () => {
+test("an unattached multitrack is still a multitrack", () => {
     // A script may build one before its window exists; nothing is sent, and
     // nothing raises.
-    const mt = piece();
+    const mt = multitrack();
     mt.place("c", "noise", 0.0, 10.0).mix("noise", { gain: 0.5 });
     assert.ok(mt.clip("c") !== null);
     assert.equal(mt.lane("noise")?.gain, 0.5);
@@ -148,16 +148,16 @@ test("attach takes the window and remembers its own name", () => {
     // window is being watched has to be said. The **name** does not: the object
     // built the node, so it knows what it called it.
     const w = new FakeWidget();
-    const win = { widget: (name: string) => { assert.equal(name, "piece"); return w; } };
+    const win = { widget: (name: string) => { assert.equal(name, "multitrack"); return w; } };
 
-    const mt = piece();
-    mt.view({ name: "piece" });
+    const mt = multitrack();
+    mt.view({ name: "multitrack" });
     mt.attach(win);
     w.report("clips", "a", "tone", 7.0, 500.0, 0.0, "", -1);
     assert.equal(mt.clip("a")?.lane, "tone");
 
     // A view with no name cannot be searched for, and says so.
-    const nameless = piece();
+    const nameless = multitrack();
     nameless.view({ weight: 1.0 });
     assert.throws(() => nameless.attach(win), /no name/);
 });

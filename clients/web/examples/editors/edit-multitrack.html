@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>clausters: edit(piece)</title>
+    <title>clausters: edit(multitrack)</title>
     <link rel="icon" href="data:," />
     <style>
       html, body { margin: 0; min-height: 100%; background: #0d0d12;
@@ -19,14 +19,14 @@
   </head>
   <body>
     <main>
-      <div id="note"><code>edit(piece)</code>: a multitrack of audio, drawn,
+      <div id="note"><code>edit(multitrack)</code>: a multitrack of audio, drawn,
 edited and played.
 
 The fourth structure, and the one that holds the other three: a
 <code>Multitrack</code> — the document the three applications share — opened with
 <code>gui.edit</code> like a buffer or a timeline. <b>One verb, and the editor is
 the application</b>: the picture, the gestures, the history, the readers on the
-server and the transport are all its, so this page writes a piece and hands it
+server and the transport are all its, so this page writes a multitrack and hands it
 over.
 
 <b>Move a box</b>, drag its edge to trim it, drag it onto another lane, sweep a
@@ -41,21 +41,21 @@ that finds nothing to do.
 cursor</b>, which is where the next play starts. The playhead is never placed:
 stopped, it stands on the mark.
 
-<b>Reach a tall piece</b>: <b>Shift</b>+wheel <b>scrolls the stack</b>, so a
+<b>Reach a tall multitrack</b>: <b>Shift</b>+wheel <b>scrolls the stack</b>, so a
 track that fell off the bottom comes back; <b>Ctrl</b>+wheel <b>zooms the row
 under the pointer</b> — a track or one of the automation rows, each on its own.
 A track is also zoomed by dragging its header's <b>bottom edge</b>; a curve row
 has no edge to pull, which is what the wheel is for. A plain wheel is still the
 time axis'. <b>A</b> in a track's header shows and hides that track's
 <b>automation rows</b> — and on a track that has none, the first press
-<b>makes</b> one: a <code>gain</code> curve, flat at unity across the piece,
+<b>makes</b> one: a <code>gain</code> curve, flat at unity across the multitrack,
 heard like any other. Try it on <b>bass</b>, which this page gives no
 automation. <b>rewind</b>, <b>play/pause</b> and
 <b>stop</b> are the window's own row: stop goes back to the mark, and rewind
 puts the mark itself back at the top.
 
 <b>Double click a box</b> to enter it: what a box holds is a structure like any
-other, so entering one opens the take in the sample editor — on the piece's own
+other, so entering one opens the take in the sample editor — on the multitrack's own
 undo order, so <b>Ctrl+Z</b> walks a stroke drawn inside a box and a box dragged
 on the stack as one history.
 
@@ -70,7 +70,7 @@ sit in the green and the amber.
 <b>The curves are heard.</b> The row under the first track is a track automation
 and the line inside the first box is a clip envelope; each names the
 <code>gain</code> port of the node it sits on — the same port the header's knob
-writes — so a point dragged while the piece plays is heard where it is drawn.
+writes — so a point dragged while the multitrack plays is heard where it is drawn.
 
 <b>The last box is a join</b>: one buffer whose samples are spans of two takes,
 crossfaded at the seam, which is what a comping pass cut by hand is. It plays as
@@ -78,19 +78,19 @@ crossfaded at the seam, which is what a comping pass cut by hand is. It plays as
 reader finds the span it lands in once and reads it like a plain buffer from
 there.</div>
 
-      <button id="run">open the piece</button>
+      <button id="run">open the multitrack</button>
       <div id="stage"></div>
       <pre id="log"></pre>
     </main>
 
     <!--
       The web sibling of clients/python/examples/editors/edit_multitrack.py,
-      call for call: the same five takes rendered offline, the same piece
+      call for call: the same five takes rendered offline, the same multitrack
       written plainly, and the same one `edit` over it.
 
       The platform's differences are the usual two: the host is the wasm one in
       this tab and draws into an element, and nothing is pumped. And one more:
-      the script also writes the piece down as a session -- its takes as files,
+      the script also writes the multitrack down as a session -- its takes as files,
       the join as its parts -- so the standalone editor can open the same
       material, and a tab has no filesystem to write a take into, so this page
       has no such cell.
@@ -135,7 +135,7 @@ there.</div>
         });
       }
 
-      // source id -> the take it names, so the piece and the table below are
+      // source id -> the take it names, so the multitrack and the table below are
       // written against one list.
       const SOURCES = { 1: "white", 2: "glide", 3: "saw", 4: "pink", 5: "comp",
                         6: "loud" };
@@ -178,11 +178,11 @@ there.</div>
           { sampleRate: SR, server });
         await server.sync();
 
-        // ---- the piece ----
+        // ---- the multitrack ----
         // A **source id** is what the document names — never a path and never a
-        // buffer number — because a piece must open in a program that has no
+        // buffer number — because a multitrack must open in a program that has no
         // JavaScript in it. Which buffer each source was read into is the one
-        // thing about a piece that is not in the piece, and it travels beside it
+        // thing about a multitrack that is not in it, and it travels beside it
         // in `Sources`.
         const noiseGain = new Automation({
           id: 100, name: "gain", visible: true,
@@ -197,8 +197,8 @@ there.</div>
         const first = box(20, 0.0, 1, "white");
         first.automation.push(whiteFade);
 
-        const piece = new Multitrack();
-        piece.tracks = [
+        const multitrack = new Multitrack();
+        multitrack.tracks = [
           new Track({
             id: 10, name: "noise", automation: [noiseGain],
             lanes: [new Lane({ id: 11, regions: [first, box(21, 6.0, 4, "pink")] })],
@@ -211,7 +211,7 @@ there.</div>
             })],
           }),
           // **The fader is the track's own field**, like its width: what a
-          // piece sounds like is the piece's, so it is saved with it and
+          // multitrack sounds like is the multitrack's, so it is saved with it and
           // reopens as it was.
           new Track({
             id: 14, name: "bass", level: 0.7,
@@ -224,20 +224,20 @@ there.</div>
         // with its own ruler and its own transport row, the crate's picture and
         // the crate's reading of every gesture. Given a **server** it also
         // sounds: one resident reader per box, in a group the server's transport
-        // governs, put where the piece says on every edit whoever made it.
+        // governs, put where the multitrack says on every edit whoever made it.
         await session.gui();
         const sources = {};
         for (const [id, take] of Object.entries(SOURCES)) sources[id] = bufs[take];
-        const editor = await gui.edit(piece, {
+        const editor = await gui.edit(multitrack, {
           sampleRate: SR, server, sources,
-          title: "piece", width: 1000, height: 560, stage: $("stage"),
+          title: "multitrack", width: 1000, height: 560, stage: $("stage"),
         });
 
         log("drag the boxes, click the ruler to place the cursor, play/pause to hear it");
         // The script's ending: there `wait()` blocks so the process stays alive
         // while the window is on screen. Here nothing exits and nothing may
         // block, so the same verb is a promise.
-        editor.wait().then(() => log("the window is closed; the piece kept the edits"));
+        editor.wait().then(() => log("the window is closed; the multitrack kept the edits"));
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));

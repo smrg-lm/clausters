@@ -19,13 +19,13 @@
   <body>
     <main>
       <div id="note">The web port of the Python client's
-<code>tempo_map.py</code>: <b>a piece's whole tempo history, as a function you
-can ask</b> — the same piece, question for question.
+<code>tempo_map.py</code>: <b>a document's whole tempo history, as a function you
+can ask</b> — the same map, question for question.
 
 A beat is not a unit of time. It is a <b>logical coordinate</b>, and what turns
-one into a second is the tempo — which changes along the piece. So "when does
+one into a second is the tempo — which changes as it goes. So "when does
 beat 8 happen?" has no answer from the tempo in force <i>now</i>: it depends on
-every tempo change before it. That function is the piece's
+every tempo change before it. That function is the document's
 <code>TempoMap</code>, and this page is about using it as a <b>thing you
 interrogate</b> rather than as a number a clock happens to hold.
 
@@ -35,7 +35,7 @@ wall clock, landing together. This one is about the map underneath that gesture.
 <b>Three things it shows, and the third is the one that catches people.</b> A
 tempo change is <b>recorded</b>, never a replacement, so the beats <i>before</i>
 one still convert correctly afterwards. <b>A length in beats is not a
-duration</b>: the same eight beats last eight seconds early in this piece and
+duration</b>: the same eight beats last eight seconds early on and
 rather less once the tempo has doubled, so seconds always come from <b>two
 positions</b>. And <b>an accelerando is a logarithm</b> — averaging the two
 tempos is out by a tenth of a second over four bars.
@@ -80,11 +80,11 @@ this directory and open the page.</div>
       // bars are easy to count against a watch.
       const TEMPO = 1.0;
 
-      // How long to let the piece run, in seconds.
+      // How long to let the line run, in seconds.
       const SECONDS_TO_PLAY = 20.0;
 
       // ---- a map, before there is a clock ----
-      // `TempoMap` is a plain function of a beat. It answers about a piece
+      // `TempoMap` is a plain function of a beat. It answers about music
       // nobody is playing, so the whole first half needs no engine at all.
       // `push` is a **step** at a beat; `ramp` is a stretch between two. Both
       // are recorded on top of what came before.
@@ -98,11 +98,11 @@ this directory and open the page.</div>
 
       // And the question runs both ways: `beatsAt` is `secsAt` inverted, which
       // is what a transport drawing a playhead asks on every frame.
-      log(`at 5 s the piece is on beat ${tempo.beatsAt(5.0)}`);
+      log(`at 5 s the line is on beat ${tempo.beatsAt(5.0)}`);
       log(`the recorded history: ${JSON.stringify(tempoSegments(tempo))}`);
 
       // ---- a length in beats is not a duration ----
-      // The same eight beats are eight seconds at the start of this piece and
+      // The same eight beats are eight seconds at the start and
       // rather less after the tempo has doubled. So seconds come from **two
       // positions**, never from a beat count and a tempo — which is what
       // `spanSecs` is, and why every conversion in the client takes a position.
@@ -119,7 +119,7 @@ this directory and open the page.</div>
       log(`the average says  ${average} s   (wrong by ${(average - ramp).toFixed(4)} s)`);
       log(`closed form       ${Math.log(4.0 / 2.0) / ((4.0 - 2.0) / (16.0 - 8.0))}`);
 
-      // ---- the piece ----
+      // ---- the timeline ----
       // Sixteen beats of one note each, on a `Timeline` — the static,
       // random-access sequencing structure, so the notes are placed at beats and
       // the map decides when each of those beats arrives.
@@ -138,8 +138,8 @@ this directory and open the page.</div>
       el("start").onclick = async () => {
         el("start").disabled = true;
 
-        // ---- the piece's tempo, handed to the timeline ----
-        // The map above **is** the piece's tempo, written before anything
+        // ---- the tempo, handed to the timeline ----
+        // The map above **is** the timeline's tempo, written before anything
         // played. Assigning it is the whole of the handover, and from here
         // there is one function: the same one this page asked its questions of,
         // and the one the notes are played by. The tempo is the timeline's

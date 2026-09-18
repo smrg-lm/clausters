@@ -2383,9 +2383,9 @@ def multitrack(*, lanes=(), clips=(), notes=(), curves=(), layers=(),
     """A **multitrack**: one widget holding a stack of lanes and the clips on
     them, drawn on one shared time axis.
 
-    It is the `pianoroll` of a piece. A roll is one widget holding its notes;
+    It is the `pianoroll` of a multitrack. A roll is one widget holding its notes;
     this is one widget holding its lanes and its clips — so you **describe** the
-    piece rather than composing a tree of `track` and `clip` widgets, and there
+    multitrack rather than composing a tree of `track` and `clip` widgets, and there
     is exactly one thing that owns it. A lane cannot sit in a void: it is a row
     of this widget, never a box you place somewhere.
 
@@ -2444,7 +2444,7 @@ def multitrack(*, lanes=(), clips=(), notes=(), curves=(), layers=(),
                           ("bass", "", 96, 0, 0, 0.8)],
                    clips=[("hit", "drums", 0, 48000, 0, ""),
                           ("walk", "bass", 48000, 96000, 0, "")],
-                   name="piece", weight=1.0)
+                   name="multitrack", weight=1.0)
     """
     extra = _drop_none(lanes=_held(lanes or None, _flat_lanes),
                        clips=_held(clips or None, _flat_clips),

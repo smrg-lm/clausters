@@ -3,7 +3,7 @@
 A **segment** is a window: which source, from where, for how long. A **run** of
 them is what a **join** assembles and what a **split** takes apart, read back to
 back as a single thing. Neither idea belongs to the arrangement -- a window is
-about the *contents*, not about where they sit in a piece -- so they
+about the *contents*, not about where they sit in time -- so they
 live here, beside the structures, and `clausters.form` reads them like any other
 reader.
 

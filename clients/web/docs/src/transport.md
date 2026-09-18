@@ -1,4 +1,4 @@
-# The transport: a shared grid, and a piece that freezes
+# The transport: a shared grid, and sound that freezes
 
 The server keeps one **transport**: a beat grid several clients phase-align on, plus a DAW-style rolling state (playing, and a song position). It has two intensities, and which one you get depends on a single call.
 
@@ -31,7 +31,7 @@ const state = await server.transportState();
 // { originSample, tempo, playing, position, group, transportSample }
 ```
 
-`group` is the governed group or `null`, and `transportSample` is the transport clock — samples elapsed *under the transport*, held while it is stopped. It is the time of the piece, as against the device clock (the taps, the bus streams, `/clock_query`), which never stops. The two are one physical clock and cannot drift apart; they differ only while a governed transport is stopped.
+`group` is the governed group or `null`, and `transportSample` is the transport clock — samples elapsed *under the transport*, held while it is stopped. It is the time of the governed, as against the device clock (the taps, the bus streams, `/clock_query`), which never stops. The two are one physical clock and cannot drift apart; they differ only while a governed transport is stopped.
 
 ## Joining the grid
 
@@ -63,14 +63,14 @@ The subscription is an [`OscFunc`](responders.md) on the server's receiver, as i
 
 `examples/transport/sync.html` runs two independent clients on one grid and a timeline following the conductor, which is how to *hear* that a late joiner still lands on the bar.
 
-## Freezing a piece
+## Freezing the sound
 
 Binding a group is what gives the transport teeth:
 
 ```js
-const piece = new Group({ server });
+const governed = new Group({ server });
 await server.setTransport(0, 2.0);
-await server.transportGroup(piece);   // null unbinds
+await server.transportGroup(governed);   // null unbinds
 await server.transportPlay();
 ```
 
@@ -82,7 +82,7 @@ Unbinding thaws whatever the transport governed, and so does freeing the group �
 
 ## The page's half of the pause
 
-A clock's beats come from a timebase that only decides how long to sleep before the next wake. A page whose server froze would keep advancing beats and scheduling samples ahead — running away from a piece that is not moving. So the clock freezes too:
+A clock's beats come from a timebase that only decides how long to sleep before the next wake. A page whose server froze would keep advancing beats and scheduling samples ahead — running away from a governed that is not moving. So the clock freezes too:
 
 ```js
 await server.transportStop();
@@ -92,7 +92,7 @@ await server.transportPlay();
 clock.thaw();                   // and pick it up there
 ```
 
-`freeze()` holds the logical beat without stopping the clock, and `thaw()` shifts the pacing origin by the time spent frozen, so those seconds are not part of the piece. Your reaction does not have to be precise: between the server's stop and the call, a little look-ahead has already gone out, and it lands in the server's frozen queue to fire on the resume in its exact relative place. The exactness is the engine's, not the page's.
+`freeze()` holds the logical beat without stopping the clock, and `thaw()` shifts the pacing origin by the time spent frozen, so those seconds are not part of the governed. Your reaction does not have to be precise: between the server's stop and the call, a little look-ahead has already gone out, and it lands in the server's frozen queue to fire on the resume in its exact relative place. The exactness is the engine's, not the page's.
 
 `examples/transport/freeze.html` freezes a generative texture and resumes it, which is the way to *hear* the difference between continuing and restarting.
 
@@ -100,11 +100,11 @@ clock.thaw();                   // and pick it up there
 
 Every sample count on the wire belongs to one of the two clocks, and which one a scheduled bundle rides is decided by where its messages point: a bundle targeting a node at or under the governed group waits out a pause, and everything else fires on the device clock as always. Classification happens once, when the bundle is queued.
 
-A client naming an absolute sample of the *piece* declares that axis:
+A client naming an absolute sample of the *transport* declares that axis:
 
 ```js
 await server.schedAtTransport(sample, [
-  ["/synth_new", "grain", ["i", node], ["i", 0], ["i", piece.id]],
+  ["/synth_new", "grain", ["i", node], ["i", 0], ["i", governed.id]],
 ]);
 ```
 

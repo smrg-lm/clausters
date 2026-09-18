@@ -1,7 +1,7 @@
-"""Time: the piece's beat↔second map, and the questions it answers.
+"""Time: the beat↔second map, and the questions it answers.
 
 A **beat is not a unit of time**. It is a logical coordinate, and what turns
-one into a second is the tempo — which can change along the piece. So the two
+one into a second is the tempo — which can change as it goes. So the two
 things the word "tempo" covers are kept apart here:
 
 - the **tempo function**, what a user writes: the tempo at a beat, and how it
@@ -19,7 +19,7 @@ tempo.
 
 A `clausters.base.TempoClock` holds a map and reads it to pace and to stamp;
 this module is the other half — the same map read as a **question about the
-piece**, with no clock running and nothing playing:
+music**, with no clock running and nothing playing:
 
     >>> from clausters.base.time import TempoMap, secs_to_samples
     >>> tempo = TempoMap(1.0)              # one beat a second

@@ -51,7 +51,7 @@ into ``clausters-core`` in a future port).
 from .._native import BEATS, SECONDS  # noqa: E402  (the vocabulary's one home)
 
 #: The windows are **not** the arrangement's: a segment is about the contents,
-#: not about where it sits in a piece, so `Segment` and the runs live beside the
+#: not about where it sits in an aggregate, so `Segment` and the runs live beside the
 #: structures (`clausters.segments`) and this module reads them like any other
 #: reader. Re-exported here because `Segments` is the element that places one.
 from ..segments import (BufferSegments, NoteSegments, Segment,  # noqa: E402,F401
@@ -87,7 +87,7 @@ def end_beat(at: float, length: float, unit: str, tempo_map) -> float:
     Two positions, never a length and a ratio. A length in **beats** is already
     on the axis and simply lands at ``at + length``; a length in **seconds** is a
     wall-clock fact whose end depends on how the tempo runs across it, which is
-    what the piece's map (`clausters.base.TempoMap`) answers.
+    what the aggregate's map (`clausters.base.TempoMap`) answers.
     """
     if unit != SECONDS:
         return float(at) + float(length)
@@ -159,9 +159,9 @@ class Element:
         #: (`solo`), and the gain its events sound at (`level`, a factor over
         #: an event's own ``amp``). They are set by the editor's lane header and
         #: by hand, they are honoured by `clausters.form.render.flatten`, and
-        #: they travel in the node's configuration -- so a piece reopens muted
+        #: they travel in the node's configuration -- so an aggregate reopens muted
         #: the way it was left. A lane's *height* is the other kind of thing and
-        #: is deliberately absent: it says nothing about what the piece is, so
+        #: is deliberately absent: it says nothing about what the aggregate is, so
         #: no document carries it.
         self.mute = False
         self.solo = False
@@ -444,7 +444,7 @@ def take(buffer, onset=None, duration=None, *, instrument=None, controls=None,
 
     This is where recording lands. `clausters.data.RecordingStream` follows
     takes as they are written and `clausters.defs.Buffer` holds them, but
-    neither puts one in a piece — and the arithmetic that does (frames over the
+    neither puts one in an aggregate — and the arithmetic that does (frames over the
     rate they were recorded at) was left to every caller, which is one
     conversion written once per script and wrong in the one that forgot the
     channel count is not in it.
@@ -459,7 +459,7 @@ def take(buffer, onset=None, duration=None, *, instrument=None, controls=None,
             the buffer does — a take still recording, whose buffer is as long
             as it will be rather than as long as it is.
         instrument: the def that plays it; without one the take is structure
-            (it draws and it extends the piece, and it emits no event), which
+            (it draws and it extends the aggregate, and it emits no event), which
             is the `Vector` rule and not a special case here.
         controls: what that def is given.
         start: the frame the window opens at, and ``loop`` whether it wraps.
@@ -576,7 +576,7 @@ class Segments(Element):
         converted here from the seconds the windows are measured in, because
         what comes out of this is played by a clock.
 
-        ``tempo_map`` is the piece's, and ``at`` the beat this element starts
+        ``tempo_map`` is the aggregate's, and ``at`` the beat this element starts
         on: each window is placed and sized from where it actually falls, so a
         tempo change inside the element moves the segments after it and not the
         ones before."""

@@ -163,7 +163,7 @@ def phasor(trig=0.0, rate=1.0, start=0.0, end=1.0, reset_pos=0.0) -> Ugen:
 
 
 def transport_pos(offset=0.0) -> Ugen:
-    """The **transport's position in the piece**, in frames, minus ``offset``.
+    """The **transport's position**, in frames, minus ``offset``.
 
     A buffer reader whose phase is this one follows the transport instead of
     carrying a position of its own, so seeking
@@ -173,10 +173,10 @@ def transport_pos(offset=0.0) -> Ugen:
     readers, one time — and it is why a locate never has to reach into a node.
 
     It ramps one frame per sample while the transport rolls and holds while it
-    is stopped. ``offset`` is where this signal starts in the piece, so a clip
+    is stopped. ``offset`` is where this signal starts on that axis, so a clip
     reads its own frame 0 when the transport reaches it; the subtraction happens
     in double precision inside the UGen, which is what keeps the value exact
-    deep into a long piece (a signal is 32-bit, and past about six minutes at
+    deep into a long take (a signal is 32-bit, and past about six minutes at
     48 kHz it can no longer count single frames — subtracting afterwards with
     `sub` has already lost that).
 

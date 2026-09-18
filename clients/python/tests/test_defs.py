@@ -296,7 +296,7 @@ def test_a_group_orders_and_parallelizes_itself():
     group.parallel(False)
     assert iface.sent[-1] == ("/group_parallel", [group.id, 0])
 
-    # Chained onto the creation, which is how a piece reads: one expression
+    # Chained onto the creation, which is how a script reads: one expression
     # that makes the group and says how it runs.
     band = Group(server=srv).parallel()
     assert iface.sent[-2] == ("/group_new", [band.id, 1, 0])

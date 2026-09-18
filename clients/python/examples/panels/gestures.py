@@ -121,7 +121,7 @@ def column(tag: str, gestures: dict | None):
 
 
 # The take on the server, because a multitrack's box draws a **buffer**: it
-# names what the piece plays rather than a file of its own, which is the whole
+# names what the timeline plays rather than a file of its own, which is the whole
 # difference between placing audio and looking at it.
 session = Session.live()
 gui = session.gui()

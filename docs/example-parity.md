@@ -286,7 +286,7 @@ in the middle of an example.
 
 | Only in | Call | Why |
 |---|---|---|
-| web | `stop` (first) | the page's stop button ends the routine that drives the piece; the script's process exit ends it |
+| web | `stop` (first) | the page's stop button ends the routine that drives the sound; the script's process exit ends it |
 
 ### `basics/typed_controls`
 
@@ -479,8 +479,8 @@ in the middle of an example.
 
 | Only in | Call | Why |
 |---|---|---|
-| python | `save` | the script saves the piece as a session in `examples/out/`, so `clausters-gui --session` opens the standalone editor on the same material: each take becomes a file. A tab has no filesystem to write a take into |
-| python | `Session` | the same cell: the session the piece and its source table are written as |
+| python | `save` | the script saves the multitrack as a session in `examples/out/`, so `clausters-gui --session` opens the standalone editor on the same material: each take becomes a file. A tab has no filesystem to write a take into |
+| python | `Session` | the same cell: the session the multitrack and its source table are written as |
 | python | `file` | the same cell: a take's entry in the source table, naming the file it was written to |
 | python | `shaped` ×2 | the same cell: the shape a take's entry and the join's entry state |
 | python | `Source` | the same cell: the join's entry, stated as the parts it is made of rather than as a file |

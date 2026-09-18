@@ -13,7 +13,7 @@ What is left to check here is therefore not arithmetic but **granularity**,
 which is what the change hands to the caller: a `/gui_def` names any widget, so
 an edit publishes the one it touched. The measurement at the bottom is what
 says that matters, and it is what decided that a client holds no picture --
-the cost of publishing the widget an edit named does not grow with the piece,
+the cost of publishing the widget an edit named does not grow with the multitrack,
 and the cost of publishing the window does.
 """
 
@@ -156,7 +156,7 @@ def test_a_window_republished_after_it_closed_is_no_special_case():
 # The measurement the granularity of a redraw was decided by. What it asserts is the
 # **shape** of the answer rather than a byte count, because the shape is the
 # load-bearing part: the cost of publishing the widget an edit named does not
-# grow with the piece, and the cost of publishing the window does.
+# grow with the multitrack, and the cost of publishing the window does.
 
 class Weigher:
     """A host that weighs what it is told instead of drawing it."""
@@ -206,8 +206,8 @@ def a_multitrack(lanes: int, clips: int, moved: float) -> dict:
 def _drag_cost(lanes: int, clips: int, frames: int = 60) -> tuple:
     """What one frame of a drag costs both ways: publishing the widget the edit
     named, and publishing the window it is in."""
-    piece = a_multitrack(lanes, clips, 0.0)
-    touched = piece["children"][0]["children"][0]
+    multitrack = a_multitrack(lanes, clips, 0.0)
+    touched = multitrack["children"][0]["children"][0]
 
     part = Weigher()
     app = an_app(part)
@@ -225,7 +225,7 @@ def _drag_cost(lanes: int, clips: int, frames: int = 60) -> tuple:
 
 def test_publishing_what_an_edit_touched_costs_the_same_in_any_size_of_piece():
     # The finding, and the reason the client's picture could go at all:
-    # dragging one clip costs the same whether the piece has sixteen clips or
+    # dragging one clip costs the same whether the multitrack has sixteen clips or
     # six thousand, *if* what is published is the widget the edit named.
     small, _ = _drag_cost(4, 4)
     large, _ = _drag_cost(64, 100)
@@ -239,5 +239,5 @@ def test_publishing_the_window_instead_costs_the_whole_piece_every_frame():
     # not this module -- that has the knowledge to avoid it.
     _, small = _drag_cost(4, 4)
     _, large = _drag_cost(64, 100)
-    assert large > 100 * small, "it grows with the piece, and steeply"
+    assert large > 100 * small, "it grows with the multitrack, and steeply"
     assert large > 500_000, "which at drag rates is megabytes a second of JSON"

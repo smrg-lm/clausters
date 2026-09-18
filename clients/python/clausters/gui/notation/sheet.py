@@ -216,7 +216,7 @@ def item_id(element_id: str) -> int | None:
 
     The step between a selection on the page and a verb on the model. The page
     names elements the way the emitter wrote them — ``n7`` is the item,
-    ``n7-2`` a piece of it split across a barline, ``n7-p1`` one pitch of a
+    ``n7-2`` a part of it split across a barline, ``n7-p1`` one pitch of a
     chord — and all three are item 7, which is what lets a gesture anywhere on
     a note reach the note.
 
@@ -357,7 +357,7 @@ def set_meter(sheet: dict, measure: int, count: int, unit: int) -> dict:
     """Put ``count``/``unit`` in force from ``measure`` (counting from 1).
 
     The grid alone changes: the same notes fall in different measures afterwards,
-    which is what changing the meter of a piece means.
+    which is what changing the meter of a score means.
     """
     return apply(sheet, {"op": "set_meter", "measure": measure,
                          "count": count, "unit": unit})
@@ -411,7 +411,7 @@ def delete(sheet: dict, id: int) -> dict:
     """Take an item out; everything after it moves earlier by its value.
 
     Not `silence` — that leaves a rest and nothing moves. Confusing the two is
-    how a piece comes out shorter than it was with no obvious sign of where.
+    how a score comes out shorter than it was with no obvious sign of where.
     """
     return apply(sheet, {"op": "delete", "id": id})
 
@@ -476,7 +476,7 @@ def marks(*, articulations: list | None = None, dynamic: str | None = None,
     ``"down"``; ``sounding`` is how long it **sounds** when that is not how long
     it is written — a staccato quarter that sounds an eighth carries both, and
     the two are kept apart because a page that shortened the written value would
-    be a different piece of music.
+    be a different rhythm.
 
     Every one of them is a fact about the note, not an instruction to the
     engraver, which is what lets a player read them back.

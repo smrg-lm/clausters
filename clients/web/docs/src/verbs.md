@@ -84,9 +84,9 @@ const stats = await session.render({ channels: 2 });
 
 `Session.nrt()` gives a `Server` whose connection accumulates every command as a timestamped **score** instead of sending it; `session.render()` drains the clock — logically, with no sleeping — and hands that score to the engine's own renderer, the same wasm that makes this page's sound, running as fast as the machine manages. No `AudioContext`, no gesture, no socket and no server process.
 
-Nothing above the carrier changes: the same patterns, defs and routines play into it, because only the connection under the `Server` is different. That is what makes a piece written for a live take renderable without editing a line of it — and the score it writes is **byte-identical** to the one the Python client writes for the same piece, which the package asserts against committed vectors.
+Nothing above the carrier changes: the same patterns, defs and routines play into it, because only the connection under the `Server` is different. That is what makes a session written for a live take renderable without editing a line of it — and the score it writes is **byte-identical** to the one the Python client writes for the same session, which the package asserts against committed vectors.
 
-Schedule a closing event — freeing the root group, or whatever ends the piece — so the render has a defined length: it stops when the score does, and commands do not sound. `until` bounds the drain in beats, which an endless source needs (an infinite pattern never drains on its own); with none, `render` refuses an event pattern after a million events rather than rendering it forever.
+Schedule a closing event — freeing the root group, or whatever ends the take — so the render has a defined length: it stops when the score does, and commands do not sound. `until` bounds the drain in beats, which an endless source needs (an infinite pattern never drains on its own); with none, `render` refuses an event pattern after a million events rather than rendering it forever.
 
 ## What a render gives back
 
@@ -97,7 +97,7 @@ const stats = await render(myPattern, { defs: [myInstrument], channels: 2 });
 
 `peak` and `rms` are **per channel**, measured by the shared core, so they are the same numbers the server and the Python client report for the same audio. `samples` is interleaved `Float32Array`.
 
-`seed` is the one this take's stochastic UGens started from. Unless you asked for a seed you got a fresh one, so **this is how you get a take back**: pass it as `seed` and the render repeats sample for sample. (The engine's own entropy source does not exist on wasm, so the client draws the word from the platform's `crypto` and forwards it — without that, every take of a noisy piece in a browser would be the same take.) A pattern's own jitter — a `Pwhite` — is a different randomness: it is the *session's* seeded stream, reproduced with `session.seed(n)`.
+`seed` is the one this take's stochastic UGens started from. Unless you asked for a seed you got a fresh one, so **this is how you get a take back**: pass it as `seed` and the render repeats sample for sample. (The engine's own entropy source does not exist on wasm, so the client draws the word from the platform's `crypto` and forwards it — without that, every take of a noisy score in a browser would be the same take.) A pattern's own jitter — a `Pwhite` — is a different randomness: it is the *session's* seeded stream, reproduced with `session.seed(n)`.
 
 Every offline path with no `clock` starts from an **empty** session of its own, so whatever the samples names has to ride along in `defs`.
 

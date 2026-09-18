@@ -28,14 +28,14 @@ from clausters.multitrack import (Multitrack, Content, Lane,  # noqa: E402
                                    Region, Track)
 
 
-def piece() -> dict:
-    """The piece the arrangement's edits are applied to, built with the client.
+def multitrack() -> dict:
+    """The multitrack the arrangement's edits are applied to, built with the client.
 
     Written through `clausters.multitrack` rather than by hand, unlike the
-    composition below, and on purpose: what crosses here is a whole piece as
+    composition below, and on purpose: what crosses here is a whole multitrack as
     JSON state, so the vector is worth more if the state is the one this client
     actually writes. Two tracks, two lanes on the first, one region on each --
-    the smallest piece a move between tracks has somewhere to move to.
+    the smallest multitrack a move between tracks has somewhere to move to.
     """
     vocals = Track(id=10, name="vocals", lanes=[Lane(id=11), Lane(id=12)])
     vocals.lanes[0].place(Region(id=100, position=0.0, length=4.0,
@@ -63,7 +63,7 @@ def composition() -> dict:
     It used to be built with `clausters.form` and converted; that door is gone,
     and building it by hand is the honest shape anyway — what this vector is
     about is the **edits**, so the composition it starts from should be a fixed
-    piece of JSON both sides read rather than the output of a conversion that
+    multitrack of JSON both sides read rather than the output of a conversion that
     could itself drift.
     """
     return {
@@ -152,14 +152,14 @@ DOMAIN_PAYLOADS = [
 #: the tree and a span of samples on purpose, a misspelling because a typo has
 #: to stop being silent.
 DOMAIN_EDITS = [
-    # The piece: a whole multitrack state across the seam, edited and inverted
+    # The multitrack: a whole multitrack state across the seam, edited and inverted
     # in one call. This is the crossing O22 is worth having -- the client writes
-    # the piece, the crate moves the region, and the other client reads back the
+    # the multitrack, the crate moves the region, and the other client reads back the
     # same two answers.
-    (_native.MULTITRACK, piece(), MOVE_BETWEEN_TRACKS),
-    (_native.MULTITRACK, piece(), {"intent": "splitregion", "region": 100,
+    (_native.MULTITRACK, multitrack(), MOVE_BETWEEN_TRACKS),
+    (_native.MULTITRACK, multitrack(), {"intent": "splitregion", "region": 100,
                                     "at": 2.0, "left": 110, "right": 111}),
-    (_native.MULTITRACK, piece(), {"intent": "placeregion", "region": 999,
+    (_native.MULTITRACK, multitrack(), {"intent": "placeregion", "region": 999,
                                     "track": 20, "lane": 21, "position": 0.0}),
     (_native.POINTS,
      [{"at": 0.0, "value": 1.0}, {"at": 1.0, "value": 0.0}],
@@ -187,7 +187,7 @@ LOGGED = [
 #: Selections resolved against the **starting** composition, as
 #: `(start, len, in_beats)` — the mapping is what is under test, not the edit
 #: history, and a stable document keeps the cases readable. The buffer sits at
-#: beat 2 for four beats, so these are: inside it, over the whole piece, a frame
+#: beat 2 for four beats, so these are: inside it, over the whole multitrack, a frame
 #: span landing in its second beat, and one that misses everything.
 SELECTIONS = [
     (2.0, 2.0, True),

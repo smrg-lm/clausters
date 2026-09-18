@@ -88,7 +88,7 @@ export async function writeFile(
 }
 
 /**
- * A byte range of a file, for reading it a piece at a time. `length` past the
+ * A byte range of a file, for reading it a part at a time. `length` past the
  * end simply returns what is there — a short read is the end of the file, not
  * an error.
  *

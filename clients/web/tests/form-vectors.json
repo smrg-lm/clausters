@@ -1,6 +1,6 @@
 {
  "cases": {
-  "a_piece": {
+  "an_aggregate": {
    "flat": [
     {
      "beat": 0.0,
@@ -321,7 +321,7 @@
    ],
    "relation": "simultaneous"
   },
-  "a_mixed_piece": {
+  "a_mixed_aggregate": {
    "flat": [
     {
      "beat": 0.0,

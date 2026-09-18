@@ -15,7 +15,7 @@ The visual sibling has its own tour (``views/plotting.py``); the arrangement, be
 (see the book's "The ambient verbs" for why the split).
 
 A `clausters.Session` bundles a server, a clock and (if you ask for one) a GUI
-host into the handle a piece is written against. `activate` makes it the
+host into the handle a session is written against. `activate` makes it the
 ambient session — server, clock and random root — which is what lets every verb
 below run with nothing wired.
 

@@ -17,7 +17,7 @@ no way to say and the events carried what the page has no way to hold. Going
 out, the exact onsets snap to written values; coming back, a written value
 becomes an exact duration and a symbol becomes a decision -- which is the
 interpreter's, and is data a caller can replace
-(`clausters.gui.notation.interpretation`). The piece you hear is the piece you
+(`clausters.gui.notation.interpretation`). The music you hear is the music you
 see, cursor locked to it.
 
 **The events say more than pitch and length.** Each one here also carries what

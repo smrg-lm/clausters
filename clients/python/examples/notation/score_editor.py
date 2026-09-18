@@ -3,7 +3,7 @@
 
 The third of the notation examples, and the one that closes the loop.
 ``score.py`` plays an engraved phrase and drags a note; ``compose.py`` builds a
-piece by operating on it; this one opens a document *somebody else typed* and
+score by operating on it; this one opens a document *somebody else typed* and
 edits it the way a score editor does -- with the mouse on the page, and one of
 the model's verbs behind every gesture.
 
@@ -37,7 +37,7 @@ What it shows, roughly in the order it does it:
   it moves -- which is how two lines written as one come apart. A note written
   *after* one of those joins the line it follows, since `insert` puts a new item
   in the voice of the item it comes after.
-* **What is written is what is heard.** Play at any point: the piece is read
+* **What is written is what is heard.** Play at any point: the score is read
   out of the *model*, so a staccato you just added shortens the sound and moves
   no attack, and a dynamic governs the notes after it.
 * **One undo stack, and it is the model's.** Every edit is one
@@ -130,7 +130,7 @@ score.apply({"op": "stack", "sheet": lower, "as_staff": True})
 # note; all of them are statements, and a statement is stored. What the
 # engraver decides when nobody decided -- where the lines would otherwise
 # break, how the eighths would otherwise beam, the double bar that ends any
-# piece -- is not stored and is not loss.
+# score -- is not stored and is not loss.
 
 # %%
 score.apply({"op": "set_header",
@@ -397,13 +397,13 @@ def slur_four() -> None:
 
 # %% [markdown]
 # ## Playing what is written
-# The piece comes out of the **model**, not out of the engraving: `to_timeline`
+# The timeline comes out of the **model**, not out of the engraving: `to_timeline`
 # reads what the symbols mean, so a staccato added a moment ago is honoured, a
 # dynamic governs the notes after it, and every attack stays where it was.
 # `instruments` binds a staff to what plays it, since the notation never says.
 
 # %%
-def piece():
+def timeline():
     """The model as it stands right now, read into a timeline at `TEMPO`."""
     timeline = notation.to_timeline(score.sheet())
     timeline.map = TempoMap(TEMPO)
@@ -412,18 +412,18 @@ def piece():
 
 def pass_from(at: float):
     """One playback pass, read out of the model as it stands right now."""
-    return piece().play(at=at, destination=server)
+    return timeline().play(at=at, destination=server)
 
 
 def phrase_end() -> float:
-    """Where the piece ends, in beats -- the last note's onset plus its written
+    """Where the score ends, in beats -- the last note's onset plus its written
     value. The transport parks the cursor there when a pass runs out."""
     notes = notation.to_notes(score.sheet())
     return max((n["t"] + n["dur"] for n in notes), default=0.0)
 
 
 transport = notation.playhead_sync(gui, win["score"].id, source=pass_from,
-                                   structure=piece, sample_rate=sr,
+                                   structure=timeline, sample_rate=sr,
                                    extent=phrase_end)
 transport.locate(0.0)
 
@@ -436,7 +436,7 @@ def on_score(tag, *payload):
 
     ``"element"`` is a click: the page names the element under the cursor, and
     `clausters.gui.notation.item_id` turns it into the model item it was
-    written from -- ``n7``, ``n7-2`` (a piece split across a barline) and
+    written from -- ``n7``, ``n7-2`` (a part split across a barline) and
     ``n7-p1`` (one pitch of a chord) are all item 7, which is what lets a
     gesture anywhere on a note reach the note.
 

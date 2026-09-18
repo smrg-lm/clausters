@@ -29,7 +29,7 @@ class AddAction(IntEnum):
     tree front to back within a block, so a node only hears what was written
     *earlier in the same pass*. Put an effect after its sources and it reads
     this block; put it before them and it reads last block's, one block late.
-    A piece with the right defs in the wrong order is a piece that sounds
+    A score with the right defs in the wrong order is one that sounds
     wrong, and nothing reports it.
 
     ```python
@@ -338,7 +338,7 @@ class Group(Node):
     """A node that holds other nodes: an order, a handle and a boundary.
 
     A group makes no sound of its own. What it gives you is the three things a
-    piece needs once it has more than one voice:
+    script needs once it has more than one voice:
 
     - **A handle for many.** A group *is* a `Node`, so every command on `Node`
       applies to everything inside it at once — `Node.set` reaches all the

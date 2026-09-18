@@ -1,13 +1,13 @@
 """Write the multitrack vector this package's parity test reads.
 
-The piece itself is **not** defined here. It is built by the generator the Rust
+The multitrack itself is **not** defined here. It is built by the generator the Rust
 suite already uses (`crates/clausters-document/tests/gen-multitrack-vector.py`)
 and only written out again in this directory, because two definitions of "the
-piece the parity tests use" is exactly the divergence these tests exist to
+multitrack the parity tests use" is exactly the divergence these tests exist to
 catch: the two would drift, each side would pass, and the thing neither covered
 would be whatever the other one had.
 
-So there is one piece, three readers -- the Python client that built it, the
+So there is one multitrack, three readers -- the Python client that built it, the
 Rust crate that parses it, and the web client that reads and rewrites it.
 
 Run from the repo root, and commit whatever moves:

@@ -57,7 +57,7 @@ from clausters.defs import sine
 stats = render(sine(440.0) * 0.2, dur=2.0)
 render(Pbind(degree=Pseq([0, 2, 4]), dur=0.5), path="phrase.wav")
 render(Pseq([1, 2, 3], 2))                          # [1, 2, 3, 1, 2, 3]
-render(my_piece, until=64.0, path="piece.wav")     # an arrangement, bounced
+render(multitrack, until=64.0, path="take.wav")    # an arrangement, bounced
 ```
 """
 
@@ -75,7 +75,7 @@ __all__ = ["render", "bounce_def", "RenderStats", "read_soundfile",
 #: source is endless, when no ``until`` (or ``count``) bounds it.
 #:
 #: A render holds what it generated in memory, so a million is already past any
-#: real piece and nowhere near a legitimate one — which is what makes the cap
+#: real run and nowhere near a legitimate one — which is what makes the cap
 #: honest *here* and wrong inside `clausters.base.TempoClock.render`, where a
 #: long offline render of a real score is exactly the thing that runs for a very
 #: long time on purpose.

@@ -4,7 +4,7 @@ Three clocks are three questions, and mixing them is how a program ends up with
 two scheduling vocabularies:
 
 - `clausters.base.clock.TempoClock` keeps **musical** time. It is in beats, it
-  is what a piece plays on, and a routine on it must never block.
+  is what the music plays on, and a routine on it must never block.
 - **`AppClock` keeps the application's time.** It is in **seconds**, it runs on
   the loop that drains the windows, and it is where anything that touches a
   window belongs: an animation, a periodic read-out, a redraw, a follow-up to a

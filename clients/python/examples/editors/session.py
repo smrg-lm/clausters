@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""A **session**: the piece, where its samples are, and reading it back.
+"""A **session**: the multitrack, where its samples are, and reading it back.
 
-A piece says what plays when; a *session* is that plus the table saying where
+A multitrack says what plays when; a *session* is that plus the table saying where
 its samples live, and the format lives in the shared crate precisely so that
 more than one program can write it. This writes one, reads it back, and reopens
 its take onto a running server -- the loop a save and an open actually are.
 
 What it shows, in the order the cells run:
 
-- **The piece.** Two tracks, one of them muted, and a region on each. A region
+- **The multitrack.** Two tracks, one of them muted, and a region on each. A region
   is one placed thing: where it starts, how long it occupies, and what fills it.
   Six regions over one source would be six identities and one source -- nothing
   is copied -- which is the whole of non-destructive editing.
 - **A take, which is samples rather than description.** The example writes its
   own stereo WAV, so it needs no material found anywhere, and the session's
-  table is what says where those samples are. The piece names a source **id**
+  table is what says where those samples are. The multitrack names a source **id**
   and never a path: that is the split that lets one file be opened by a program
   that has no Python in it.
 - **What a save can and cannot promise.** The table says three things a save
@@ -25,16 +25,16 @@ What it shows, in the order the cells run:
   it names is read onto the server **once per source**, however many regions
   draw it, and the region that names it plays. A source the table calls volatile
   comes back frozen -- drawn, placed, silent -- rather than as a lie.
-- **What is the piece's and what is the view's.** A muted track reopens muted,
+- **What is the multitrack's and what is the view's.** A muted track reopens muted,
   because mute is the composition's. A track's *height* is not: it says nothing
-  about what the piece is, so no session carries it.
+  about what the multitrack is, so no session carries it.
 
 **Handing it to a host with no language attached** is the other half, and it
 does not need this script: what it writes is the format, so ::
 
     clausters-gui --session examples/out/session.json
 
-opens the same piece in a window with no Python behind it -- the tracks, the
+opens the same multitrack in a window with no Python behind it -- the tracks, the
 boxes and their curves, edited and saved by the host itself. It is worth doing
 once after a change to the editing path, because it is the configuration where
 anything the client fills in for the host stops being filled in.
@@ -78,7 +78,7 @@ os.makedirs(OUT, exist_ok=True)
 # %% [markdown]
 # ## A take, which is samples rather than description
 #
-# The piece names a source **id** and never a path. Where the samples are is the
+# The multitrack names a source **id** and never a path. Where the samples are is the
 # session's table, and keeping the two apart is what lets one file be opened by
 # a program that has no Python in it.
 
@@ -117,17 +117,17 @@ take_seconds = take_frames / SAMPLE_RATE
 print(f"wrote {take_path} ({take_frames} frames)")
 
 # %% [markdown]
-# ## The piece
+# ## The multitrack
 #
 # Two tracks, each with one lane, each with one region. The region's `position`
 # and `length` are in **seconds** -- a multitrack is placed in physical time --
 # while what fills it is measured in its own source's units. The tempo map the
-# piece holds places nothing: it says where the beats and bars of a ruler fall
-# over those seconds, and it is saved with the piece like everything else it
+# multitrack holds places nothing: it says where the beats and bars of a ruler fall
+# over those seconds, and it is saved with the multitrack like everything else it
 # holds.
 
 # %%
-#: The source id the piece names. The table below is what says where it is.
+#: The source id the multitrack names. The table below is what says where it is.
 TAKE = 1
 
 
@@ -137,8 +137,8 @@ def window(start: float = 0.0, duration: float = take_seconds) -> dict:
             "start": start, "duration": duration}
 
 
-piece = Multitrack()
-piece.set_tempo(Tempo(at=0.0, tempo=2.0))     # beats per second: 120 a minute
+multitrack = Multitrack()
+multitrack.set_tempo(Tempo(at=0.0, tempo=2.0))     # beats per second: 120 a minute
 
 #: The take, twice, at two places: two regions, two identities, **one** source.
 #: Nothing is copied, and trimming one leaves the other where it was.
@@ -149,19 +149,19 @@ tone.active_lane.place(Region(id=13, position=8.0, length=2.0, name="again",
                               content=Content.onto(window(start=0.5))))
 
 #: **Mute is the composition's.** A track left muted here reopens muted, because
-#: it says something about the piece. A track's *height* does not, so no session
+#: it says something about the multitrack. A track's *height* does not, so no session
 #: carries one.
 echo = Track(id=20, name="echo", muted=True, lanes=[Lane(id=21)])
 echo.active_lane.place(Region(id=22, position=4.0, length=4.0,
                               content=Content.onto(window())))
 
-piece.tracks.extend([tone, echo])
-print(f"the piece is {piece.end:.0f} s long, over {len(piece.tracks)} tracks")
+multitrack.tracks.extend([tone, echo])
+print(f"the multitrack is {multitrack.end:.0f} s long, over {len(multitrack.tracks)} tracks")
 
 # %% [markdown]
 # ## Editing it: one edit, one undo
 #
-# The piece has a vocabulary of its own, reached through the door every other
+# The multitrack has a vocabulary of its own, reached through the door every other
 # structure is reached through. Two things about it are worth seeing rather than
 # reading: **where a region is** means track, lane and second together, so moving
 # one to the other track is a single edit -- there is no moment in between where
@@ -170,7 +170,7 @@ print(f"the piece is {piece.end:.0f} s long, over {len(piece.tracks)} tracks")
 
 # %%
 moved = domain_edit(
-    MULTITRACK, piece.write(),
+    MULTITRACK, multitrack.write(),
     {"intent": "placeregion", "region": 13, "track": 20, "lane": 21,
      "position": 12.0, "layer": 0},
 )
@@ -181,12 +181,12 @@ print(f"  moved:  region 13 is on track {where[0].id}, lane {where[1].id}, "
       f"at {where[2].position:.0f} s")
 print(f"  and to put it back: {moved['current']}")
 
-#: The other direction, through the same door -- and the piece is exactly the
+#: The other direction, through the same door -- and the multitrack is exactly the
 #: one that was built above, which is what "absolute" buys.
-piece = Multitrack.read(domain_edit(MULTITRACK, moved["state"],
+multitrack = Multitrack.read(domain_edit(MULTITRACK, moved["state"],
                                      moved["current"])["state"])
-print(f"  undone: the piece is {piece.end:.0f} s long again, "
-      f"over {len(piece.tracks)} tracks")
+print(f"  undone: the multitrack is {multitrack.end:.0f} s long again, "
+      f"over {len(multitrack.tracks)} tracks")
 
 # %% [markdown]
 # ## Written as a session
@@ -201,14 +201,14 @@ print(f"  undone: the piece is {piece.end:.0f} s long again, "
 #: grid, what the hand was holding and how tall each track was drawn are not the
 #: composition -- nothing here can change what plays -- and all of it is state
 #: the person loses on a reopen unless the file carries it. A list, because a
-#: piece drawn in two windows has two views and they disagree on purpose.
-window = View(name="arranger", visible=Span(0.0, piece.end), quant=1.0)
+#: multitrack drawn in two windows has two views and they disagree on purpose.
+window = View(name="arranger", visible=Span(0.0, multitrack.end), quant=1.0)
 window.track_view(10).height = 96.0
 window.track_view(10).lanes_shown = True
 window.track_view(20).color = "#4488cc"
 window.selected = [12]
 
-session = Session(multitrack=piece, views=[window])
+session = Session(multitrack=multitrack, views=[window])
 session.sources[TAKE] = Source.file(os.path.basename(take_path)).shaped(
     2, take_frames, float(SAMPLE_RATE))
 
@@ -230,13 +230,13 @@ print(f"wrote {path} ({os.path.getsize(path)} B)")
 # %%
 print(f"  volatile:   {session.volatile()}  (samples nobody wrote down)")
 print(f"  open edits: {session.open_edits()}  (a working copy still undecided)")
-print(f"  dangling:   {session.dangling()}  (named by the piece, absent from "
+print(f"  dangling:   {session.dangling()}  (named by the multitrack, absent from "
       "the table)")
 
 # %% [markdown]
 # ## Read back, onto a running server
 #
-# Reopening is two steps: the file gives the piece and its table, and the table
+# Reopening is two steps: the file gives the multitrack and its table, and the table
 # is resolved. Each file is read **once per source**, however many regions name
 # it -- two regions over one take are two windows onto one buffer, and reading
 # it twice would give them two that drift apart on the first edit.
@@ -246,7 +246,7 @@ def reopen(live=None) -> tuple:
     """Reads the session back and resolves its table onto the server of
     `live`, a running `clausters.Session`.
 
-    Returns the piece and the buffers by source id. A source the table cannot
+    Returns the multitrack and the buffers by source id. A source the table cannot
     locate is simply absent from the second: half a session is worth opening,
     and the region that names it comes back placed and silent rather than the
     whole file failing.
@@ -271,7 +271,7 @@ def run() -> None:
               f"{len(reopened.multitrack.tracks)} tracks, "
               f"{len(buffers)} source(s) read, "
               f"{reopened.volatile()} still volatile")
-        #: The window comes back too, and it is *not* the piece: the track
+        #: The window comes back too, and it is *not* the multitrack: the track
         #: heights and the grid are the person's, and a reader that ignored
         #: them would open the same music into a window that had forgotten
         #: everything about how it was left.

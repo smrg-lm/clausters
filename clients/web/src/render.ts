@@ -76,7 +76,7 @@ import { renderScoreBytes } from "./engine/render.ts";
  * is endless, when no `until` (or `count`) bounds it.
  *
  * A render holds what it generated in memory, so a million is already past any
- * real piece and nowhere near a legitimate one — which is what makes the cap
+ * real run and nowhere near a legitimate one — which is what makes the cap
  * honest *here* and wrong inside `TempoClock.render`, where a long offline
  * render of a real score is exactly the thing that runs for a very long time on
  * purpose.

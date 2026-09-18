@@ -21,12 +21,12 @@
   <body>
     <main>
       <div id="note">The web port of the Python client's
-<code>offline_render.py</code>: <b>a piece rendered faster than real time in
+<code>offline_render.py</code>: <b>a session rendered faster than real time in
 this tab, with no audio device and no server anywhere</b>.
 
 The third carrier is not a carrier at all. <code>Session.nrt()</code> gives a
 <code>Server</code> whose connection <i>writes time</i> instead of waiting for
-it: every command a piece emits is accumulated as a timestamped score, and
+it: every command a session emits is accumulated as a timestamped score, and
 <code>session.render()</code> drains the clock — logically, with no sleeping —
 and hands that score to the engine's own renderer, the same wasm that makes
 this page's sound, running as fast as the machine manages.
@@ -38,7 +38,7 @@ any other session. The <i>server's</i> seed is a separate one, reported as
 for sample.
 
 Nothing here needs a gesture except hearing it: an offline render has no
-<code>AudioContext</code> to unlock. That is the point of it — the piece is
+<code>AudioContext</code> to unlock. That is the point of it — the sessioe is
 evaluated, not performed. Needs <code>./build.sh</code> in
 <code>clients/web</code> first (<code>dist/</code> is git-ignored); serve it
 over HTTP (<code>python3 -m http.server</code>) and open

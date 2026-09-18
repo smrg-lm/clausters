@@ -22,14 +22,14 @@ Two conventions carry the whole family:
   on, and restarts it when it comes round to it again. That is the whole reason
   the family exists — a sequence of *phrases* rather than of numbers.
 
-The file has two halves. The first is a short piece; the second is a bench that
+The file has two halves. The first is a short sequence; the second is a bench that
 plays each claim above as a stream straight onto a bus and then **measures it
 off the render** rather than asking you to take it on faith.
 
 It renders **offline**, so it needs no audio hardware and no running server:
 
-    python3 examples/demand.py             # play the piece, run the bench
-    python3 examples/demand.py out.wav     # ...and write the piece
+    python3 examples/demand.py             # play the sequence, run the bench
+    python3 examples/demand.py out.wav     # ...and write the sequence
 
 Read it top to bottom; each section is one idea.
 """
@@ -50,7 +50,7 @@ from clausters.defs.ugens import (
 from clausters.seq import Pbind, Pseq
 
 SR = 48000.0
-SECTION = 2.5    # seconds per section of the piece
+SECTION = 2.5    # seconds per section of the sequence
 SLOT = 0.05      # the bench's clock: one pulled value per slot
 BENCH = 1.0      # seconds per bench row (20 slots)
 
@@ -308,7 +308,7 @@ def drift_check():
             if abs(last + 1 - ideal) > 1.5 else [])
 
 
-# ---- 9. render the piece --------------------------------------------------------
+# ---- 9. render the sequence --------------------------------------------------------
 
 def render_piece(path=None):
     server = Server(interface=OscNrtInterface())
@@ -324,7 +324,7 @@ def render_piece(path=None):
         server.render(sample_rate=SR, channels=2).samples
 
     peak = max(stats.peak)
-    print(f"the piece: {len(parts)} sections, {stats.frames} frames "
+    print(f"the sequence: {len(parts)} sections, {stats.frames} frames "
           f"({stats.duration:.2f} s) | peak {peak:.3f}")
     if peak == 0.0:
         sys.exit("the render is silent - something is wrong")
@@ -340,7 +340,7 @@ def render_piece(path=None):
         print(f"\nwrote {path} - listen with: pw-play {path}")
 
 
-#: One line per section of the piece, printed beside its measured level.
+#: One line per section of the sequence, printed beside its measured level.
 NOTES = {
     "melody": "five pitches against three durations - they realign after 15",
     "phrase": "a stream inside a stream: a phrase per slot, restarted each pass",

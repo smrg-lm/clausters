@@ -229,7 +229,7 @@
           await def.send(nrtServer);
           voices.push(new Synth(def.name, { out: 0.0 }, { server: nrtServer }));
         }
-        // A score ends at its last bundle, so the piece has to say when it is
+        // A score ends at its last bundle, so the score has to say when it is
         // over: one closing event a beat in, which at the default tempo is a
         // second of sound. The frees go out as a *bundle* -- `free()` means
         // "now", and in a score now is time 0 -- which is the same call the

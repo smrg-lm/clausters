@@ -717,7 +717,7 @@ def test_a_page_element_names_the_model_item_it_was_written_from():
     # All three spellings the emitter uses are the same item, which is what lets
     # a gesture anywhere on a note reach the note.
     assert notation.item_id("n7") == 7
-    assert notation.item_id("n7-2") == 7      # a piece split across a barline
+    assert notation.item_id("n7-2") == 7      # a part split across a barline
     assert notation.item_id("n7-p1") == 7     # one pitch of a chord
     # An element from a document this layer did not write names nothing.
     assert notation.item_id("m3f9a") is None

@@ -843,10 +843,10 @@ Scroll one; the other follows.
 
 ## The multitrack, and the ruler over it
 
-A **piece is one widget**. `multitrack` holds the stack of lanes and the boxes
+A **multitrack is one widget**. `multitrack` holds the stack of lanes and the boxes
 on them as *props* — flat lists, the way a roll holds its notes — so a script
-**describes** the piece and never composes a tree of lanes: a lane cannot sit in
-a void, and there is exactly one thing that owns the piece.
+**describes** the multitrack and never composes a tree of lanes: a lane cannot sit in
+a void, and there is exactly one thing that owns it.
 
 A `field` is what is left of the old three-in-one container: the free-standing
 **ruler** of a navigation group (`timeruler`), a strip with nothing placed on
@@ -860,7 +860,7 @@ BEAT = 24_000.0          # samples per beat at 48 kHz, two beats a second
 v = view(
     timeruler(link=1, ruler="beats", tempo=2.0, h=22.0),
     multitrack(
-        name="piece", link=1, ruler="beats", tempo=2.0, snap=BEAT,
+        name="multitrack", link=1, ruler="beats", tempo=2.0, snap=BEAT,
         lanes=[("drums", "drums"), ("filter", "filter")],
         # name, lane, offset, dur, start, label, source (a server buffer)
         clips=[("a", "drums", 0.0, 4 * BEAT, 0.0, "take", take.bufnum),
@@ -883,18 +883,18 @@ so six boxes over one take are one download. A negative number is a box with no
 contents — negative and not zero, because buffer 0 is a buffer.
 
 The ruler is its **own** strip above the stack rather than part of the
-multitrack, so ruling a piece costs no lane a pixel. A ruler with no `link`
+multitrack, so ruling a multitrack costs no lane a pixel. A ruler with no `link`
 joins the window's own group.
 
 ### Edits come back as intents
 
 Drag a box, or its edge. The host draws the move as it happens and, on release,
-emits **the piece as it now stands** — not pixels, and not the gesture:
+emits **the multitrack as it now stands** — not pixels, and not the gesture:
 
 ```python
-win["piece"].on_event(lambda tag, *payload: print(tag, payload))
+win["multitrack"].on_event(lambda tag, *payload: print(tag, payload))
 # "clips" (name, lane, offset, dur, start, label, source, ...)
-#                       the whole piece, after any gesture at all -- a move, a
+#                       the whole multitrack, after any gesture at all -- a move, a
 #                       trim, a block drag, a lane crossing, a split, a delete
 # "lanes" (name, label, height, mute, solo, gain, ...)
 #                       the lanes as they now stand, after a header control
@@ -1089,7 +1089,7 @@ Everything so far kept Python in the loop. A **bundle** is the other posture:
 the instrument written to a directory, and the script gone. The GUI is what
 drives it, because its widgets are bound.
 
-The pieces are the ones you have already seen, plus two kinds of hole. A
+The parts are the ones you have already seen, plus two kinds of hole. A
 **symbol** is something the instrument allocates — a bus, a node, a buffer —
 and a **parameter** is a value the mount supplies:
 

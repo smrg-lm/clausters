@@ -202,7 +202,7 @@ def main():
             for (n, r) in [(48000, 48000.0), (22050, 44100.0), (1, 48000.0),
                            (0, 48000.0), (-48000, 48000.0)]
         ],
-        # The piece's time map: the same three questions every caller asks, over
+        # The tempo map: the same three questions every caller asks, over
         # a map with a step and a ramp in it -- the shape where a scalar tempo
         # and the integral part company.
         "tempoMap": _tempo_map_vectors(),

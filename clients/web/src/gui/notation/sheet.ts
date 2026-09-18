@@ -279,7 +279,7 @@ export function toNotes(sheet: Sheet, interp?: Interpretation): PerformedNote[] 
  *
  * The step between a selection on the page and a verb on the model. The page
  * names elements the way the emitter wrote them — `n7` is the item, `n7-2` a
- * piece of it split across a barline, `n7-p1` one pitch of a chord — and all
+ * part of it split across a barline, `n7-p1` one pitch of a chord — and all
  * three are item 7, which is what lets a gesture anywhere on a note reach the
  * note.
  *
@@ -455,7 +455,7 @@ export function stretch(
  * Put `count`/`unit` in force from `measure` (counting from 1).
  *
  * The grid alone changes: the same notes fall in different measures afterwards,
- * which is what changing the meter of a piece means.
+ * which is what changing the meter of a score means.
  */
 export function setMeter(sheet: Sheet, measure: number, count: number, unit: number): Sheet {
     return apply(sheet, { op: "set_meter", measure, count, unit });
@@ -519,7 +519,7 @@ export function insert(
  * Take an item out; everything after it moves earlier by its value.
  *
  * Not {@link silence} — that leaves a rest and nothing moves. Confusing the two
- * is how a piece comes out shorter than it was with no obvious sign of where.
+ * is how a score comes out shorter than it was with no obvious sign of where.
  */
 export function del(sheet: Sheet, id: number): Sheet {
     return apply(sheet, { op: "delete", id });
@@ -594,7 +594,7 @@ export interface MarkOptions {
  * Every one of them is a fact about the note, not an instruction to the
  * engraver, which is what lets a player read them back. `sounding` is kept apart
  * from the written value because a page that shortened the value would be a
- * different piece of music.
+ * different rhythm.
  */
 export function marks(options: MarkOptions = {}): unknown {
     const out: Record<string, unknown> = {};

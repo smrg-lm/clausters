@@ -325,7 +325,7 @@ time 0 maps to — and the host sweeps from it every frame, so a pass costs one
 message and not one per frame. A pause writes the other half of that number, the
 static cursor where the music stopped. `update` is the one thing a script owes
 it: a pass ends when its last item *starts*, so the transport keeps sweeping
-that last note's tail and parks only at the piece's extent.
+that last note's tail and parks only at the score's extent.
 
 The example is `examples/notation/score.html`.
 
@@ -356,12 +356,12 @@ tuplet, an accidental past a double, more than one voice.
 Every operation is a function from a score to a score, so they compose:
 
 ```js
-let piece = motif;
+let composed = motif;
 for (const section of [notation.invert(motif),        // about its first note
                        notation.retrograde(motif),    // backwards
                        notation.stretch(motif, [2, 1]), // twice as slow
                        notation.transpose(motif, 4)]) { // up a major third
-    piece = notation.concat(piece, section);
+    composed = notation.concat(composed, section);
 }
 ```
 
@@ -471,13 +471,13 @@ the note: its pitch and spelling, its written value, its marks, and their order.
 
 **A gesture names an element; a verb names an item**, and `notation.itemId` is
 the step between them. The page reports the element under the cursor the way the
-emitter spelled it — `n7` is the item, `n7-2` a piece of it split across a
+emitter spelled it — `n7` is the item, `n7-2` a part of it split across a
 barline, `n7-p1` one pitch of a chord — and all three are item 7, which is what
 lets a gesture anywhere on a note reach the note. It comes from the core because
 the answer is the *emitter's*: a client reading the ids itself would disagree the
 first time a split was spelled differently.
 
-`examples/notation/compose.html` builds a whole piece this way and plays it, and
+`examples/notation/compose.html` builds a whole score this way and plays it, and
 `examples/notation/score-editor.html` opens a document, edits it by hand through
 the model's verbs, and plays it back from the model.
 

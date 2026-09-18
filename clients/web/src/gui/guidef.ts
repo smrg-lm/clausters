@@ -762,9 +762,9 @@ export interface TimelineOptions extends WidgetOptions {
     /** Musical time: beats per second, the beat at sample 0, beats per bar. */
     tempo?: number;
     /**
-     * **The piece's beat-to-second map**, where its tempo changes along it.
+     * **The beat-to-second map**, where the tempo changes along it.
      *
-     * A beat is a logical coordinate, and `tempo` is the answer for a piece
+     * A beat is a logical coordinate, and `tempo` is the answer where a tempo
      * that keeps one: with a map the ruler places every tick by asking where
      * that beat actually falls, so the marks crowd through an accelerando and
      * spread through a ritardando over an axis that goes on measuring samples.
@@ -2852,9 +2852,9 @@ export function flatCurvePoints(points: CurvePointSpec): (number | string)[] {
  * A **multitrack**: one widget holding a stack of lanes and the clips on them,
  * drawn on one shared time axis.
  *
- * It is the {@link pianoroll} of a piece. A roll is one widget holding its
+ * It is the {@link pianoroll} of a multitrack. A roll is one widget holding its
  * notes; this is one widget holding its lanes and its clips — so you
- * **describe** the piece rather than composing a tree of `track` and `clip`
+ * **describe** the multitrack rather than composing a tree of `track` and `clip`
  * widgets, and there is exactly one thing that owns it. A lane
  * cannot sit in a void: it is a row of this widget, never a box you place.
  *

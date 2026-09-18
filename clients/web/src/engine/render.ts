@@ -133,7 +133,7 @@ export async function renderScoreBytes(
  *
  * The engine's own entropy source is `SystemTime`, which wasm does not have —
  * so a render given no seed would take a **fixed** one there and every take of
- * a noisy piece would be the same take. The platform that does have entropy is
+ * a noisy take would be the same take. The platform that does have entropy is
  * this one, so the shell forwards a word from it and the rule the reference
  * client states holds here too: a render with no seed is a new take, and
  * `stats.seed` is how you get it back.

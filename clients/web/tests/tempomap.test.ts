@@ -34,11 +34,11 @@ test("a clock's tempo is a reading, and the verb is setTempo", () => {
     assert.equal(clock.tempo, 2.0);
 });
 
-test("two clocks handed one map are reading one piece", () => {
-    const piece = new TempoMap(1.0);
-    piece.push(4.0, 2.0); // written ahead of any clock: the NRT half
-    const lead = new TempoClock(1.0, { tempoMap: piece });
-    const second = new TempoClock(1.0, { tempoMap: piece });
+test("two clocks handed one map are reading one map", () => {
+    const written = new TempoMap(1.0);
+    written.push(4.0, 2.0); // written ahead of any clock: the NRT half
+    const lead = new TempoClock(1.0, { tempoMap: written });
+    const second = new TempoClock(1.0, { tempoMap: written });
     assert.equal(lead.beats2secs(8.0), 6.0);
     assert.equal(second.beats2secs(8.0), 6.0);
 
@@ -50,20 +50,20 @@ test("two clocks handed one map are reading one piece", () => {
 });
 
 test("a fork stops the two being one", () => {
-    const piece = new TempoMap(1.0);
-    const own = new TempoClock(1.0, { tempoMap: piece.copy() });
+    const written = new TempoMap(1.0);
+    const own = new TempoClock(1.0, { tempoMap: written.copy() });
     own.setTempo(9.0);
     assert.equal(own.tempo, 9.0);
-    assert.equal(piece.tempoAt(0.0), 1.0);
+    assert.equal(written.tempoAt(0.0), 1.0);
 });
 
 test("a live gesture lands on a map written ahead of the clock", () => {
     // The append-only rule is the map's and stays: push refuses to go
     // backwards. Saying "from here on" is the gesture's job.
-    const piece = new TempoMap(1.0);
-    piece.push(4.0, 2.0);
-    assert.equal(piece.push(1.0, 3.0), false); // the wasm push answers, it does not throw
-    const clock = new TempoClock(1.0, { tempoMap: piece });
+    const written = new TempoMap(1.0);
+    written.push(4.0, 2.0);
+    assert.equal(written.push(1.0, 3.0), false); // the wasm push answers, it does not throw
+    const clock = new TempoClock(1.0, { tempoMap: written });
     clock.setTempo(3.0); // at beat 0, under the breakpoint at 4
     assert.equal(clock.tempo, 3.0);
     assert.equal(clock.beats2secs(8.0), 8.0 / 3.0); // the plan after it is gone
@@ -89,7 +89,7 @@ test("a stored map is checked by the door that reads it", () => {
 });
 
 test("a gesture says where it is written", () => {
-    // A piece's tempo, written before any clock has run: `at` is the whole of
+    // A document's tempo, written before any clock has run: `at` is the whole of
     // what makes that possible from the clock's own verb.
     const clock = new TempoClock(1.0);
     clock.setTempo(2.0, { at: 8.0 });
@@ -119,7 +119,7 @@ test("a gesture inside a routine is written at the routine's own beat", async ()
 });
 
 test("a clock is saved as a name and a map", () => {
-    // What of a clock belongs to the piece: the tempo, and the name a lane
+    // What of a clock a document keeps: the tempo, and the name a lane
     // refers to it by. Not its position, not its queue, not its timebase.
     const clock = new TempoClock(2.0, { name: "lead" });
     clock.setTempo(4.0, { over: 8.0, at: 4.0, curve: "exponential" });
@@ -141,7 +141,7 @@ test("polytempo is several named clocks", () => {
     assert.deepEqual(read.map((c) => c.tempo), [1.0, 1.5, 2.0]);
 });
 
-test("a piece's authored tempo entries become a map", () => {
+test("a document's authored tempo entries become a map", () => {
     // The three decisions a reader of a document would otherwise write: the
     // default holds until the first entry, a ramp reaches the next one, and
     // the last entry holds past itself.
@@ -154,7 +154,7 @@ test("a piece's authored tempo entries become a map", () => {
     assert.equal(map.tempoAt(4.0), 4.0);
     assert.equal(map.secsAt(4.0), 2.0);
 
-    // A piece that said nothing is the default alone, and the JSON the wasm
+    // A document that said nothing is the default alone, and the JSON the wasm
     // boundary reads is taken as well as the list.
     const bare = TempoMap.fromChanges("[]", 2.0);
     assert.ok(bare);

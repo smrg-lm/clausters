@@ -4,7 +4,7 @@
 A peak says how close a signal came to full scale; it says nothing about how
 loud it *sounds*. **Loudness** does, and it is the number a delivery
 specification asks for: EBU R 128 wants a programme at **-23 LUFS** with its
-true peak under **-1 dBTP**. This example renders a short piece offline and
+true peak under **-1 dBTP**. This example renders a short take offline and
 measures it through the shared core, with the algorithms ITU-R BS.1770 and the
 EBU define:
 
@@ -14,7 +14,7 @@ EBU define:
 - the loudest **momentary** (400 ms) and **short-term** (3 s) readings;
 - the **true peak** of each channel, beside them, since R 128 asks for both.
 
-The piece is a verse and a chorus of one arpeggio, eight seconds each, the
+The take is a verse and a chorus of one arpeggio, eight seconds each, the
 chorus about 20 dB louder than the verse. Read the numbers against that: the
 integrated loudness sits near the chorus, because the verse falls under the
 relative gate; the range is the distance between the two; and the difference
@@ -48,12 +48,12 @@ TARGET_LUFS = -23.0
 CEILING_DBTP = -1.0
 
 # %% [markdown]
-# ## The piece
+# ## The take
 # One arpeggio, a verse at ``amp`` 0.03 and a chorus at 0.3: 64 notes each, a
 # quarter beat apart, so eight seconds apiece at two beats a second.
 
 # %%
-piece = Pbind(
+arpeggio = Pbind(
     freq=Pseq([523.25, 659.25, 783.99, 1046.5, 783.99, 659.25], repeats=22),
     dur=0.25,
     amp=Pseq([Pn(0.03, 64), Pn(0.3, 64)], repeats=1),
@@ -68,7 +68,7 @@ piece = Pbind(
 # %%
 session = Session.nrt().activate()
 session.clock.set_tempo(2.0)
-session.play(piece)
+session.play(arpeggio)
 
 PIECE_BEATS = 128 * 0.25        # two sections of 64 notes, a quarter beat each
 TAIL = 1.0                      # beats: the release, and room

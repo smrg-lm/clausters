@@ -262,10 +262,10 @@ sweeping a filter — renders **differently every time**:
 ```python
 a = session.render(channels=2)
 b = session.render(channels=2)
-a.samples == b.samples      # False: two performances of the same piece
+a.samples == b.samples      # False: two performances of the same take
 ```
 
-That is the point of writing a random process into a piece. Playing it again is
+That is the point of writing a random process into a take. Playing it again is
 another performance, and a renderer that quietly gave you the same one would be
 hiding the thing you asked for.
 
@@ -283,7 +283,7 @@ again.samples == take.samples               # True, sample for sample
 
 So the working habit is: render until you like what you hear, write down
 `stats.seed`, and from then on that take is a value you can pass around — into a
-golden file, into a bounce, into a piece that has to sound the same tomorrow.
+golden file, into a bounce, into a take that has to sound the same tomorrow.
 The seed sequence belongs to the render, so a fixed seed reproduces in any
 process, at any worker count, in memory or through a file.
 
@@ -291,5 +291,5 @@ This is the same rule the client's own random context has always followed: a
 `Pwhite` draws unpredictably until `main.seed(n)` or `session.seed(n)` pins it
 (see [Routines and clocks](routines-and-clocks.md)). The two seeds are
 independent — one is the server's noise UGens, the other is the client's
-patterns — but they answer to the same idea, so a piece that has to repeat
+patterns — but they answer to the same idea, so a take that has to repeat
 exactly pins both.

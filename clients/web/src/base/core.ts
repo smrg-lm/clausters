@@ -151,7 +151,7 @@ export function nodeIdPartition(maxNodes: number): NodeIdPartition {
  *
  * A share of what the server was configured with rather than a fixed number,
  * so ask with the counts *that* server reports: booting one with more buses
- * has to give both sides more, or raising the count would buy a piece not one
+ * has to give both sides more, or raising the count would buy a multitrack not one
  * extra track. Requires a prior `loadCore()`.
  */
 export function graphBusReserved(

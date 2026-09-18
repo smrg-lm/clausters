@@ -336,12 +336,12 @@ function positionalParams(src: string): string[] {
     for (let i = 0; i <= inner.length; i++) {
         const c = inner[i];
         if (i === inner.length || (c === "," && d === 0)) {
-            const piece = inner.slice(start, i).trim().replace(/\s+/g, " ");
+            const part = inner.slice(start, i).trim().replace(/\s+/g, " ");
             start = i + 1;
-            if (!piece) continue;
+            if (!part) continue;
             // An options object carries named fields, not a positional input.
-            if (piece.startsWith("{")) break;
-            const name = piece.split("=")[0]!.trim();
+            if (part.startsWith("{")) break;
+            const name = part.split("=")[0]!.trim();
             if (name) out.push(name);
         } else if ("([{".includes(c!)) d++;
         else if (")]}".includes(c!)) d--;

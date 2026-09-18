@@ -127,7 +127,7 @@ export function scoreView(
  * samples, so this fills in that conversion and leaves the rest as it is —
  * `source(at)` starts a pass at beat `at` and answers the `Timeline` it plays,
  * `structure` is that timeline (or a callable returning it) for when nothing is
- * playing, and `extent()` gives the piece's length in beats.
+ * playing, and `extent()` gives the score's length in beats.
  *
  * The conversion goes through the timeline's own map like every other one, not
  * through a division of its own: a page is engraved on the beat axis, and the

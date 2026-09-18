@@ -451,7 +451,7 @@ test("a page element names the model item it was written from", () => {
     // All three spellings the emitter uses are the same item, which is what lets
     // a gesture anywhere on a note reach the note.
     assert.equal(itemId("n7"), 7);
-    assert.equal(itemId("n7-2"), 7); // a piece split across a barline
+    assert.equal(itemId("n7-2"), 7); // a part split across a barline
     assert.equal(itemId("n7-p1"), 7); // one pitch of a chord
     // An element from a document this layer did not write names nothing.
     assert.equal(itemId("m3f9a"), undefined);

@@ -11,20 +11,20 @@ move the curve:
 - **bottom**, seconds: the axis itself, evenly spaced, because time is what the
   axis measures;
 - **top**, beats: *not* an axis. A beat is a **logical coordinate**, so those
-  marks say where the beats fall — they crowd where the piece is fast and
+  marks say where the beats fall — they crowd where the music is fast and
   spread where it is slow, over an axis that never stopped measuring samples.
   It counts in ones (``quant=1``), so every mark is a beat and its label reads
   ``4:1`` — the fourth of them, on its first beat.
 
 **Drag a break-point and the top ruler re-rules under your hand.** That is the
 whole example. The curve reports its new shape (``/gui_event id "points" …``),
-this script rebuilds the piece's `TempoMap` from it — one `env` call, extents in
+this script rebuilds the timeline's `TempoMap` from it — one `env` call, extents in
 seconds — and sets it back on the ruler, which redraws. Nothing else moves: the
 seconds do not change, because seconds are not what a tempo edit changes.
 
 Drag a corner **up** and watch the bars on top narrow; drag it **down** and they
 open out. Bend a segment (drag it vertically between two corners) and the
-crowding follows the bend. The piece gets longer or shorter *in beats* as you
+crowding follows the bend. The timeline gets longer or shorter *in beats* as you
 work, which is what changing a tempo means, so the top ruler renumbers itself.
 
 The starting shape is the plainest one that shows the whole apparatus: two
@@ -60,7 +60,7 @@ QUANT = 1.0                  # what the top ruler counts on: one mark, one beat
 
 # The envelope, in beats per minute against seconds: the corners and the
 # stretches between them, so there is one more tempo than extent. A finite
-# shape, which is what a piece's tempo is — no sustain, no loop, a tempo has no
+# shape, which is what a tempo is — no sustain, no loop, a tempo has no
 # gate.
 BPM = [30.0, 90.0]
 EXTENTS = [60.0]                                       # seconds
@@ -74,7 +74,7 @@ BPM_LO, BPM_HI = 30.0, 90.0
 
 
 def tempo_of(corners, bpm, shapes) -> TempoMap:
-    """The piece's tempo, from an envelope written in **seconds**.
+    """The timeline's tempo, from an envelope written in **seconds**.
 
     ``env`` takes the tempos and the stretches between them, and
     ``unit="seconds"`` reads those stretches as wall clock — so each segment's
@@ -89,7 +89,7 @@ def tempo_of(corners, bpm, shapes) -> TempoMap:
 
 # %% [markdown]
 # ## The map, before there is a window
-# `TempoMap` is a pure function of a beat: it answers about a piece nobody is
+# `TempoMap` is a pure function of a beat: it answers about music nobody is
 # playing. Ask it where each beat falls and the drawing is already decided.
 
 # %%
@@ -132,7 +132,7 @@ print(f"opened window {win} — drag a corner and watch the top ruler")
 # %% [markdown]
 # ## The edit, and what it re-rules
 # The curve owns nothing: it reports the whole break-point list in its own units
-# and this script decides what that means. Here it means the piece's tempo, so
+# and this script decides what that means. Here it means the timeline's tempo, so
 # the map is rebuilt and handed back to the ruler — a `/gui_set` value is a
 # scalar, hence the JSON the map writes with `dump`.
 
@@ -147,7 +147,7 @@ def _shape_of(shape: int, curvature: float):
 
 
 def on_points(tag, *payload):
-    """The envelope was edited: rebuild the piece's tempo from what the hand
+    """The envelope was edited: rebuild the timeline's tempo from what the hand
     left, and re-rule the beats above it."""
     if tag != "points":
         return
