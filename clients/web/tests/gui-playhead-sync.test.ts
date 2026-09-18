@@ -470,7 +470,7 @@ class HeadClockHost extends FakeHost {
     }
 }
 
-function pieceTransport(host?: HeadClockHost): PlayheadSync {
+function transportSync(host?: HeadClockHost): PlayheadSync {
     const tp = new PlayheadSync((host ?? new HeadClockHost()) as unknown as GuiHost, 7, {
         headClock: "transport",
         structure: TIMELINE,
@@ -484,14 +484,14 @@ test("a transport sync tells the host which counter to draw", async () => {
     // The two halves of one decision, so they cannot disagree: the client stops
     // computing the line and the host starts reading the transport's position.
     const host = new HeadClockHost();
-    const tp = pieceTransport(host);
+    const tp = transportSync(host);
     assert.equal(host.head, "transport");
     await tp.play();
     assert.equal(host.last("playhead_at"), 0.0);
 });
 
 test("a transport sync's verbs are the server's", async () => {
-    const tp = pieceTransport();
+    const tp = transportSync();
     const server = tp.server as unknown as TransportServer;
     await tp.play();
     tp.pause();
@@ -509,7 +509,7 @@ test("a transport sync's verbs are the server's", async () => {
 test("a transport sync reads where it is instead of keeping it", async () => {
     // The whole point: the position is the engine's, so a locate nobody here
     // sent -- a loop's wrap, another client's seek -- is still where it says.
-    const tp = pieceTransport();
+    const tp = transportSync();
     const server = tp.server as unknown as TransportServer;
     server.state.positionSample = Math.trunc(5 * BEAT);
     server.state.playing = true;
@@ -522,7 +522,7 @@ test("a transport sync reads where it is instead of keeping it", async () => {
 test("a locate while the transport plays does not re-cue anything", async () => {
     // A device-clock transport throws the pass away and starts another; the
     // transport's seeks in the engine, so the sound carries on from there.
-    const tp = pieceTransport();
+    const tp = transportSync();
     const server = tp.server as unknown as TransportServer;
     await tp.play();
     server.calls.length = 0;
@@ -531,7 +531,7 @@ test("a locate while the transport plays does not re-cue anything", async () => 
 });
 
 test("a transport sync loops in the engine", () => {
-    const tp = pieceTransport();
+    const tp = transportSync();
     const server = tp.server as unknown as TransportServer;
     tp.loop(1.0, 3.0);
     assert.deepEqual(server.calls.at(-1), [

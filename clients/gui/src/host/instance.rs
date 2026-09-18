@@ -434,7 +434,7 @@ impl Host {
     /// at `position` samples of the multitrack: the label the editor names, set when
     /// what the editor says it reads changed. Answers the window to repaint when
     /// it did.
-    pub fn tick_piece_clock(&mut self, position: f64) -> Option<i32> {
+    pub fn tick_multitrack_clock(&mut self, position: f64) -> Option<i32> {
         let secs = self
             .instance
             .multitrack
@@ -623,7 +623,7 @@ mod tests {
     /// defs, the barrier that closes them, the transport's group made and
     /// bound, the multitrack's graph inside it, and its slots.
     #[test]
-    fn a_piece_becomes_the_messages_that_play_it() {
+    fn a_multitrack_becomes_the_messages_that_play_it() {
         let (mut playing, mut ids) = (Playing::default(), spaces());
         sync(&mut playing, &multitrack(), &mut ids);
         let first = ready(&mut playing);
@@ -670,7 +670,7 @@ mod tests {
     /// **An edit reaches a node that is already running**: an unchanged multitrack
     /// says nothing, and a moved box is a `/node_set`.
     #[test]
-    fn an_edit_sets_a_live_node_and_an_unchanged_piece_says_nothing() {
+    fn an_edit_sets_a_live_node_and_an_unchanged_multitrack_says_nothing() {
         let (mut playing, mut ids) = (Playing::default(), spaces());
         let mut multitrack = multitrack();
         sync(&mut playing, &multitrack, &mut ids);
@@ -752,7 +752,7 @@ mod tests {
     /// once, behind the multitrack's own steps -- so it follows the one transport
     /// without sharing the multitrack's group.
     #[test]
-    fn the_take_monitor_goes_inside_the_pieces_transport_group() {
+    fn the_take_monitor_goes_inside_the_transport_group() {
         let mut host = Host::new();
         let steps = host
             .instance

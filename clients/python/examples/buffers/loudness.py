@@ -70,12 +70,12 @@ session = Session.nrt().activate()
 session.clock.set_tempo(2.0)
 session.play(arpeggio)
 
-PIECE_BEATS = 128 * 0.25        # two sections of 64 notes, a quarter beat each
+SEQUENCE_BEATS = 128 * 0.25     # two sections of 64 notes, a quarter beat each
 TAIL = 1.0                      # beats: the release, and room
 
 
 def close():
-    yield PIECE_BEATS + TAIL
+    yield SEQUENCE_BEATS + TAIL
     session.server.send_bundle(("/node_free", 0))
 
 

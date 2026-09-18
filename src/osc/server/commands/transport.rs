@@ -64,7 +64,7 @@ impl OscServer {
     /// own 0 by definition, so a song position in beats is just
     /// `b * rate / tempo`. Keeping the two apart is also what keeps the open
     /// T2 (whose subject is that origin) out of this conversion.
-    fn beats_to_piece_samples(&self, beats: f64) -> u64 {
+    fn beats_to_transport_samples(&self, beats: f64) -> u64 {
         let t = self.transport;
         if !t.defined || t.tempo <= 0.0 || !beats.is_finite() || beats <= 0.0 {
             return 0;
@@ -181,7 +181,7 @@ impl OscServer {
         // the engine must be standing at the right sample before time starts
         // moving, or the first block plays from wherever it was.
         if let Some(pos) = located {
-            let sample = self.beats_to_piece_samples(pos);
+            let sample = self.beats_to_transport_samples(pos);
             self.locate_engine(sample);
         }
         // With a group bound this is no longer an advisory: it thaws the
@@ -231,7 +231,7 @@ impl OscServer {
         }
         let beats = args.double()?;
         self.transport.position = beats;
-        let sample = self.beats_to_piece_samples(beats);
+        let sample = self.beats_to_transport_samples(beats);
         self.locate_engine(sample);
         self.reply(
             from,

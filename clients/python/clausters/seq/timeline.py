@@ -761,7 +761,7 @@ class _TransportPlayer:
     def _rate(self):
         return float(self.server.query_info().nominal_sample_rate)
 
-    def _piece_secs(self, state):
+    def _timeline_secs(self, state):
         """Where the transport is, in seconds of **this timeline's** axis."""
         return state.get("position_sample", 0) / self._rate() - self.timeline.transport_at
 
@@ -770,7 +770,7 @@ class _TransportPlayer:
         heard it -- a wrap inside the transport's loop and a locate some other
         client sent are both where it says, since both are broadcast. `refresh`
         asks again."""
-        return self.root_beat(max(self._piece_secs(self._reported), 0.0))
+        return self.root_beat(max(self._timeline_secs(self._reported), 0.0))
 
     @property
     def running(self):

@@ -34,7 +34,7 @@ def test_a_clocks_tempo_is_a_reading_and_the_verb_is_set_tempo():
     assert clock.tempo == 2.0
 
 
-def test_two_clocks_handed_one_map_are_reading_one_piece():
+def test_two_clocks_handed_one_map_are_reading_one_map():
     written = TempoMap(1.0)
     written.push(4.0, 2.0)  # written ahead of any clock: the NRT half
     lead = TempoClock(tempo_map=written)
@@ -140,7 +140,7 @@ def test_polytempo_is_several_named_clocks():
     assert [c.tempo for c in read] == [1.0, 1.5, 2.0]
 
 
-def test_a_pieces_authored_tempo_entries_become_a_map():
+def test_a_multitracks_authored_tempo_entries_become_a_map():
     # The three decisions a reader of a document would otherwise write: the
     # default holds until the first entry, a ramp reaches the next one, and
     # the last entry holds past itself.

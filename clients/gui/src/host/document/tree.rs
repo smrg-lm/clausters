@@ -1429,7 +1429,7 @@ mod depth_tests {
     /// drew the containers and called it a picture, which is an empty clip
     /// where the music was.
     #[test]
-    fn a_piece_of_aggregates_of_tracks_draws_the_leaves_and_not_the_containers() {
+    fn aggregates_of_tracks_draw_the_leaves_and_not_the_containers() {
         let doc = Document::new(aggregate(
             1,
             vec![

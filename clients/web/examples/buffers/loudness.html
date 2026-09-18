@@ -74,8 +74,8 @@ over HTTP (<code>python3 -m http.server</code>) and open
         amp: new seq.Pseq([new seq.Pn(0.03, 64), new seq.Pn(0.3, 64)], 1),
       });
 
-      const PIECE_BEATS = 128 * 0.25;   // two sections of 64 notes, a quarter beat each
-      const TAIL = 1.0;                 // beats: the release, and room
+      const SEQUENCE_BEATS = 128 * 0.25; // two sections of 64 notes, a quarter beat each
+      const TAIL = 1.0;                  // beats: the release, and room
 
       // ---- render, then measure ----
       // The clock drives a score the engine's renderer turns into samples. A
@@ -90,7 +90,7 @@ over HTTP (<code>python3 -m http.server</code>) and open
         session.play(arpeggio);
 
         new Routine(function* close() {
-          yield PIECE_BEATS + TAIL;
+          yield SEQUENCE_BEATS + TAIL;
           session.server.sendBundle([["/node_free", ["i", 0]]]);
         }).play();
 

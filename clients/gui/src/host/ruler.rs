@@ -1620,7 +1620,7 @@ mod tests {
     /// `d=60 --> d=30` spreads its beat ticks as it slows, over an axis that
     /// never stopped measuring samples. The marks move; the axis does not.
     #[test]
-    fn a_slowing_piece_spreads_its_beat_ticks() {
+    fn a_slowing_tempo_spreads_its_beat_ticks() {
         // Eight beats at 1 beat/s, decelerating to half that over the last
         // four -- one bar at tempo, then a bar of ritardando.
         let mut map = TempoMap::new(1.0);

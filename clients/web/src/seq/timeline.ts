@@ -960,10 +960,10 @@ export class TransportPlayer implements TreeDriver {
      * again.
      */
     position(): number {
-        return this.rootBeat(Math.max(this.pieceSecs(this.reported.positionSample), 0));
+        return this.rootBeat(Math.max(this.timelineSecs(this.reported.positionSample), 0));
     }
 
-    private pieceSecs(positionSample: number): number {
+    private timelineSecs(positionSample: number): number {
         const rate = this.rate || 48_000;
         return positionSample / rate - this.timeline.transportAt;
     }
@@ -1156,7 +1156,7 @@ export class TransportPlayer implements TreeDriver {
         // and plan again from where it says.
         this.queue(async () => {
             this.server.schedClear("transport");
-            await this.plan(this.rootBeat(Math.max(this.pieceSecs(position), 0)));
+            await this.plan(this.rootBeat(Math.max(this.timelineSecs(position), 0)));
         });
     }
 }

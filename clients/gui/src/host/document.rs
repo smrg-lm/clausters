@@ -1985,7 +1985,7 @@ mod window_verb_tests {
     /// multitrack and the transport row under it, every widget of it registered —
     /// a composition of the host's own had neither.
     #[test]
-    fn a_piece_opens_in_the_multitrack_editors_own_window() {
+    fn a_multitrack_opens_in_its_editors_own_window() {
         let (host, def_id, view) =
             with_multitrack(clausters_document::multitrack::Multitrack::default());
         let tree = host.window_def(def_id).expect("the window is defined");
@@ -2005,7 +2005,7 @@ mod window_verb_tests {
     /// anchor stated only on the multitrack was dropped; a client hid it by setting
     /// one afterwards.
     #[test]
-    fn a_piece_window_opens_with_its_head_anchored() {
+    fn a_multitrack_window_opens_with_its_head_anchored() {
         let (host, _def_id, view) =
             with_multitrack(clausters_document::multitrack::Multitrack::default());
         let key = host
@@ -2024,7 +2024,7 @@ mod window_verb_tests {
     /// the playback has made the tracks; a client's editor is handed them on
     /// every turn, and the host's is handed them here.
     #[test]
-    fn a_sounding_piece_tells_its_window_where_the_meters_are() {
+    fn a_sounding_multitrack_tells_its_window_where_the_meters_are() {
         use clausters_document::multitrack::{Multitrack, Track};
 
         let multitrack = Multitrack {
@@ -2172,7 +2172,7 @@ mod window_verb_tests {
     /// A tag list written twice is the shape of it, which is why the fix is to
     /// ask the domain rather than to add two words here.
     #[test]
-    fn the_pieces_own_vocabulary_reaches_the_owner_whole() {
+    fn the_multitracks_own_vocabulary_reaches_the_owner_whole() {
         use clausters_document::multitrack::{Automation, Multitrack, Track};
         use clausters_document::{Opaque, Point};
 
@@ -2495,7 +2495,7 @@ mod window_verb_tests {
     /// read the intents and dropped the `Err`, which is a key that does nothing
     /// and says nothing.
     #[test]
-    fn a_piece_that_refuses_a_verb_says_so_on_the_bar() {
+    fn a_multitrack_that_refuses_a_verb_says_so_on_the_bar() {
         use clausters_document::multitrack::{Multitrack, Track};
 
         let mut track = Track::new(NodeId(10), NodeId(11));
@@ -2788,7 +2788,7 @@ mod window_verb_tests {
     /// the leg being walked off, a session carries none, and a host that read
     /// only the tree drew nothing and said so in one log line.
     #[test]
-    fn a_piece_is_drawn_edited_and_undone_by_a_host_that_owns_it() {
+    fn a_multitrack_is_drawn_edited_and_undone_by_a_host_that_owns_it() {
         use clausters_document::multitrack::{Content, Multitrack, Region, Track};
         use clausters_document::{Lifetime, SourceRef};
         use clausters_document::{Opaque as Op, Second, SegmentRef, SegmentSource, SourceId};

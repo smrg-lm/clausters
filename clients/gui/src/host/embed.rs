@@ -104,7 +104,7 @@ mod tests {
     /// runner is: the boot failing is not this test's subject, and a session
     /// with no server is a case the host already handles out loud.
     #[test]
-    fn the_embedded_segment_reads_the_pieces_position() {
+    fn the_embedded_segment_reads_the_transports_position() {
         let Ok(embed) = EmbedServer::open() else {
             eprintln!("no audio device: skipping the embedded-segment read");
             return;

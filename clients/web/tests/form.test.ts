@@ -320,7 +320,7 @@ test("a generator names its def by string or by object", () => {
 
 // ---- the document bridge ----
 
-function aComposition(): Aggregate {
+function anAggregate(): Aggregate {
     const aggregate = new Aggregate(null, "concrete", { name: "aggregate" });
     aggregate.add(new Clang(note(60)), 0.0, 1.0);
     aggregate.add(new Vector(buffer(100), null, 4.0, { instrument: "take" }), 2.0, 4.0);

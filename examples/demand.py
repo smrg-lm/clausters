@@ -310,7 +310,7 @@ def drift_check():
 
 # ---- 9. render the sequence --------------------------------------------------------
 
-def render_piece(path=None):
+def render_sequence(path=None):
     server = Server(interface=OscNrtInterface())
     parts = [melody(), phrase(), stutter(), shuffle(), walk(), perc()]
     for sdef in parts:
@@ -357,7 +357,7 @@ def rms(x):
 
 if __name__ == "__main__":
     try:
-        render_piece(sys.argv[1] if len(sys.argv) > 1 else None)
+        render_sequence(sys.argv[1] if len(sys.argv) > 1 else None)
         problems = run_bench() + drift_check()
     except (OSError, RuntimeError) as e:
         sys.exit(str(e))

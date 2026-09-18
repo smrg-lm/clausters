@@ -104,7 +104,7 @@ def test_the_widget_is_told_the_flat_rows_and_not_one_row_per_number():
     assert drawn["clips"][:2] == ["12", "10"]
 
 
-def test_the_piece_is_ruled_from_above_by_a_strip_of_its_own():
+def test_the_multitrack_is_ruled_from_above_by_a_strip_of_its_own():
     """An editor is where a position is read, and the widget draws no ruler —
     so the view places one above it, on the multitrack's own axis.
 
@@ -113,10 +113,10 @@ def test_the_piece_is_ruled_from_above_by_a_strip_of_its_own():
     zoom away from the lanes it is ruling.
     """
     children = editor(multitrack()).draw()["children"]
-    ruler, piece_node = children[0], children[1]
+    ruler, multitrack_node = children[0], children[1]
     assert ruler["type"] == "field", "the free-standing time ruler, above"
-    assert piece_node["type"] == "multitrack"
-    assert ruler["axes"]["x"]["link"] == piece_node["link"], "one axis, not two"
+    assert multitrack_node["type"] == "multitrack"
+    assert ruler["axes"]["x"]["link"] == multitrack_node["link"], "one axis, not two"
     assert ruler["axes"]["x"]["unit"] == "beats"
 
 
@@ -188,7 +188,7 @@ def test_a_tempo_moves_no_box():
 
 # ---- the report, and the history ----
 
-def test_a_move_reaches_the_piece_and_undoes():
+def test_a_move_reaches_the_multitrack_and_undoes():
     held = multitrack()
     ed = editor(held)
     assert report(ed, [("12", "10", 2.0 * SR, 2.0 * SR),
@@ -228,7 +228,7 @@ def test_a_clip_that_crossed_changes_track_and_undoes():
     assert any(r.id == 12 for r in held.track(10).lanes[0].regions)
 
 
-def test_a_box_the_piece_does_not_know_becomes_a_region():
+def test_a_box_the_multitrack_does_not_know_becomes_a_region():
     """A split names its halves after the box they came from, which is no
     region id — and that is how a new box is told from a moved one."""
     held = multitrack()
@@ -254,7 +254,7 @@ def test_a_report_of_what_holds_is_not_an_edit():
     assert not ed.undo(), "and nothing was recorded to undo"
 
 
-def test_the_strip_is_the_pieces_and_undoes():
+def test_the_strip_is_the_multitracks_and_undoes():
     held = multitrack()
     ed = editor(held)
     ed.draw()
@@ -269,14 +269,14 @@ def test_the_strip_is_the_pieces_and_undoes():
     assert not held.track(20).muted
 
 
-def test_edit_opens_a_piece():
+def test_edit_opens_a_multitrack():
     """`edit` dispatches on what the structure is, and a multitrack is one of the
     structures it opens now that its picture and its reading are the crate's."""
     ed = edit(multitrack(), sample_rate=SR, open=False, sources={1: 7})
     assert isinstance(ed, MultitrackEditor)
 
 
-def test_two_windows_over_one_piece_walk_one_stack():
+def test_two_windows_over_one_multitrack_walk_one_stack():
     held = multitrack()
     one, two = editor(held), editor(held)
     assert report(one, [("12", "10", 2.0 * SR, 2.0 * SR),
@@ -352,7 +352,7 @@ def test_a_point_dragged_is_one_edit_and_the_curve_that_did_not_move_is_not():
     assert gain.points[0]["value"] == pytest.approx(1.0)
 
 
-def test_a_curve_the_piece_hid_is_drawn_nowhere():
+def test_a_curve_the_multitrack_hid_is_drawn_nowhere():
     """Which curves a person had open is part of reopening the multitrack as they
     left it, so it is read out of the document rather than kept in the view."""
     written = curved()
@@ -381,7 +381,7 @@ class FakeTake:
         self.frames = list(samples)
 
 
-def test_entering_a_box_opens_its_contents_on_the_piece_s_history():
+def test_entering_a_box_opens_its_contents_on_the_multitrack_s_history():
     """The multitrack places; a box is entered to edit. What a box holds is a
     structure like any other, so entering one is `edit` over that structure —
     and it is opened on the **multitrack's** editing context, so one undo order
@@ -445,7 +445,7 @@ class Take(FakeTake):
                 self.frames[start + i] = float(v)
 
 
-def test_a_reopened_box_undoes_its_own_edit_and_not_the_pieces():
+def test_a_reopened_box_undoes_its_own_edit_and_not_the_multitracks():
     """**One order, and a leg belonging to the take is still the take's.**
 
     Closing a box's window and opening it again builds a *fresh* editor over
@@ -489,7 +489,7 @@ def test_a_reopened_box_undoes_its_own_edit_and_not_the_pieces():
     assert _region_at(written, 12).position == moved, "the multitrack did not move"
 
 
-def test_a_box_closed_does_not_block_the_piece_s_undo():
+def test_a_box_closed_does_not_block_the_multitrack_s_undo():
     """**The pile's scope is the context's, not a window's.**
 
     An entry names a structure, and what puts an edit back onto one is its
@@ -556,7 +556,7 @@ def test_a_box_with_nothing_to_open_opens_nothing():
     assert ed.enter("nowhere") is None
 
 
-def test_the_windows_entered_from_a_piece_close_with_it():
+def test_the_windows_entered_from_a_multitrack_close_with_it():
     """A window entered *from* the multitrack is part of looking at the multitrack. What
     outlives both is the history, which is the data's and was never a
     window's."""
@@ -769,7 +769,7 @@ def _wired(ed) -> _AdoptingHost:
     return host
 
 
-def test_a_name_the_host_minted_is_answered_with_the_one_the_piece_kept():
+def test_a_name_the_host_minted_is_answered_with_the_one_the_multitrack_kept():
     """The host makes a **track** from a double click and a **box** from a
     split, and in both it mints the word while the document mints the id.
 

@@ -314,7 +314,7 @@ const tp = notation.playheadSync(host, win.widget("page").id, {
     source: (at) => timelineOf(score).play({ at, destination: server }),
     structure: () => timelineOf(score),
     sampleRate: engine.context.sampleRate,
-    extent: () => endOfPiece(score),
+    extent: () => endOfScore(score),
 });
 tp.play(server);                 // and pause / stop / locate
 setInterval(() => tp.update(), 100);   // parks the cursor when the pass ends

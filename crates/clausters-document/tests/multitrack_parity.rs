@@ -33,7 +33,7 @@ fn the_clients_arrangement_parses_and_survives_a_round_trip() {
 }
 
 #[test]
-fn the_two_sides_agree_about_what_the_piece_is() {
+fn the_two_sides_agree_about_what_the_multitrack_is() {
     // Named one at a time, because a whole-value comparison that fails says
     // only that something moved.
     let multitrack = vector();
@@ -204,7 +204,7 @@ fn a_save_that_cannot_promise_everything_says_which_part() {
 }
 
 #[test]
-fn the_piece_inside_the_session_is_the_same_piece() {
+fn the_multitrack_inside_the_session_is_the_same_multitrack() {
     let session = saved();
     assert_eq!(session.multitrack, vector());
     // ...and the table covers what it plays.
@@ -214,7 +214,7 @@ fn the_piece_inside_the_session_is_the_same_piece() {
 // ---- the presentation, which is parallel to the multitrack and never inside it ----
 
 #[test]
-fn the_session_carries_two_views_of_one_piece_and_they_disagree_on_purpose() {
+fn the_session_carries_two_views_of_one_multitrack_and_they_disagree_on_purpose() {
     // The prerequisite `O23` asked for, crossing: screen state written by the
     // Python client, parsed here, and read back by the web client. What makes
     // it worth a vector is that a view is *not* the multitrack -- a reader that
