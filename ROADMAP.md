@@ -123,14 +123,6 @@ already carry it.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-- ⬜ **One WebSocket test fails only when the whole suite runs**
-  (`clients/web/PLAN.md`, Found by use). `seq-ws.test.ts`'s transport timeline
-  test failed two of four full-suite runs and passed every time it ran alone,
-  near its own timeout.
-  **The decision:** raise that test's timeout, cut what it waits for, or stop
-  running the server-backed files concurrently with the rest — the third one
-  costs the whole suite time and is the only one that fixes the class.
-
 - ⬜ **The page suite is one browser, and the second one found a defect it had
   been passing over** (`clients/web/PLAN.md`, Found by use). Chrome and Firefox
   disagree about what an API **refuses**, so a page that is wrong everywhere

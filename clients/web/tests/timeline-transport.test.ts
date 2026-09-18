@@ -281,6 +281,41 @@ test("a conductor's locate re-plans from where it says", async () => {
         "the re-cue clears first");
 });
 
+test("a re-cue that fails is kept for refresh, not thrown at the console", async () => {
+    // A verb is queued by a caller who will `refresh`; a **re-cue** is queued
+    // by a broadcast, which has no caller at all. So a re-cue that fails --
+    // every request in flight rejecting because the server is closing, which
+    // is what ends a page or a test -- had nobody to reject to, and surfaced
+    // as an unhandled rejection in whatever was running at the time.
+    const server = new TransportServer();
+    const tl = timeline();
+    tl.transport = server;
+    tl.play({ at: 0, destination: server });
+    await tl.refresh();
+    // From here the server is the one a close leaves behind: every command it
+    // is handed fails.
+    server.schedClear = () => { throw new Error("the server was closed"); };
+
+    const unhandled: unknown[] = [];
+    const watch = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", watch);
+    try {
+        server.state.positionSample = 1.5 * SR;
+        const reply = ["/transport_query.reply", 0, 2.0, 1, 1, 0.0, 7, BASE, 1.5 * SR, -1, -1];
+        (tl.player as unknown as { broadcast(msg: unknown[]): void }).broadcast(reply);
+        // A rejection with no handler is reported at the end of the turn, so
+        // give the loop one before reading the count.
+        await new Promise((done) => setImmediate(done));
+        assert.deepEqual(unhandled, [], "a queued re-cue rejected with nobody watching");
+    } finally {
+        process.off("unhandledRejection", watch);
+    }
+
+    // And it is not swallowed: the failure is still the chain's, so the next
+    // refresh is where it reaches the caller.
+    await assert.rejects(() => tl.refresh(), /the server was closed/);
+});
+
 test("with no destination the items go to the transport's server", async () => {
     // A plan a broadcast writes runs where no session is ambient: the items go
     // to the server whose transport this is.
