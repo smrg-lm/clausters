@@ -7,6 +7,7 @@ same ones in the same order.
 """
 
 import json
+import time
 
 import pytest
 
@@ -99,10 +100,10 @@ def test_a_gesture_says_where_it_is_written():
 
 
 def test_a_gesture_inside_a_routine_is_written_at_the_routines_own_beat():
-    # `beats()` is the paced beat and the routine's is the yield-exact one; a
-    # breakpoint at 3.00034 is inaudible and stays in the map forever. So a
-    # gesture made from inside a routine on this clock is written where the
-    # routine is -- exactly where its notes are.
+    # The paced beat and the routine's yield-exact one differ by the wake's
+    # lateness; a breakpoint at 3.00034 is inaudible and stays in the map
+    # forever. So a gesture made from inside a routine on this clock is written
+    # where the routine is -- exactly where its notes are.
     clock = TempoClock(100.0)  # fast, so the run is short and the pacing drifts
     written = []
 
@@ -114,7 +115,31 @@ def test_a_gesture_inside_a_routine_is_written_at_the_routines_own_beat():
 
     Routine(melody).play(clock)
     clock.run(0.2)
-    assert written == [3.0]  # not 3.0004, which is where `beats()` would be
+    assert written == [3.0]  # not 3.0004, which is where the paced beat is
+
+
+def test_a_routine_reads_its_own_clock_at_its_own_beat():
+    # sclang's rule: from inside a routine the clock is waking, `beats()` and
+    # `tempo` answer the routine's logical beat, however late the code runs --
+    # the same numbers an offline render reads. Anywhere else, the paced beat.
+    clock = TempoClock(1.0)
+    clock.map.push(1.0, 4.0)  # four beats a second from beat 1
+    read = []
+
+    def late():
+        started = clock.beats()  # where `play` placed it: the paced beat then
+        yield 0.999 - started
+        time.sleep(0.2)  # physical time passes beat 1 while the routine is at 0.999
+        read.append((clock.beats(), clock.tempo))
+
+    clock.start()
+    try:
+        Routine(late).play(clock)
+        time.sleep(1.5)
+        assert read == [(pytest.approx(0.999, abs=1e-12), 1.0)]
+        assert clock.beats() > 1.0, "outside the routine, the paced beat"
+    finally:
+        clock.stop()
 
 
 def test_a_clock_is_saved_as_a_name_and_a_map():

@@ -164,7 +164,8 @@ class TempoClock:
     @property
     def tempo(self) -> float:
         """Beats per second **at the beat the clock is on** — the tempo that is
-        sounding, read from the map (`map.tempo_at(beats())`).
+        sounding, read from the map (`map.tempo_at(beats())`). Inside a routine
+        this clock is waking, that beat is the routine's logical one (`beats`).
 
         Under a constant tempo, and after a ramp has finished, this is the last
         change's tempo. *Inside* a ramp it is the tempo reached so far, not the
@@ -277,10 +278,25 @@ class TempoClock:
         return self._map.beats_at(secs)
 
     def beats(self) -> float:
-        """The clock's current beat: the monotonic-paced elapsed beat while
-        running in RT (what scheduling relative to "now" reads), else the
-        yield-driven logical beat — while rendering, before the first `start`,
-        and after a `stop`, which holds the beat it reached."""
+        """The clock's current beat.
+
+        **Inside a routine this clock is waking, the routine's logical beat**:
+        the yield-exact instant the wake is for, which `Moment` stamps on what
+        it emits and `set_tempo` writes at -- not wherever physical time has got
+        to by the time the code reads it. That is sclang's rule, and it is what
+        makes a routine read the same numbers live and offline.
+
+        Anywhere else, the paced elapsed beat while running in RT (what
+        scheduling relative to "now" reads), else the yield-driven logical beat
+        -- while rendering, before the first `start`, and after a `stop`, which
+        holds the beat it reached."""
+        from .main import main
+
+        routine = main.current_routine
+        if getattr(routine, "clock", None) is self:
+            beat = getattr(routine, "_logical_beat", None)
+            if beat is not None:
+                return float(beat)
         if isinstance(self.timebase, LogicalTimebase):
             return self._offline_beats()
         if self._mode == "nrt" or not self._running or self._mono_start is None:
@@ -435,23 +451,6 @@ class TempoClock:
         absolute sample for ``/sched_at``."""
         return self._mono_start
 
-    def _gesture_at(self):
-        """The beat a tempo gesture with no ``at`` is written at.
-
-        Inside a routine **on this clock**, the routine's own logical beat: the
-        yield-exact instant `Moment` already stamps on everything that wake
-        emits, so a tempo change made beside a note is written where the note
-        is. Anywhere else -- from the main thread, from another clock's routine
-        -- the clock's current beat, which is what "now" means there.
-        """
-        from .main import main
-
-        routine = main.current_routine
-        beat = getattr(routine, "_logical_beat", None)
-        if beat is not None and getattr(routine, "clock", None) is self:
-            return float(beat)
-        return self.beats()
-
     def set_tempo(self, tempo, over=None, unit="beats", curve="linear", at=None):
         """**The tempo gesture**, from the beat the clock is on.
 
@@ -504,7 +503,7 @@ class TempoClock:
         ``clock.map = timeline.map.copy()`` — adopting is authoring, forking is
         performing.
         """
-        at = self._gesture_at() if at is None else float(at)
+        at = self.beats() if at is None else float(at)
         # A gesture is anchored where it is written, so anything the map still
         # holds past that beat is a plan this gesture replaces. The map itself
         # stays append-only -- refusing to go backwards is right for a value;

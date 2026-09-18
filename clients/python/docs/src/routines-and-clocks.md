@@ -16,6 +16,8 @@ A routine `yield`s numbers, and each one is a wait *in beats* before the clock r
 
 The Server stamps every event from the routine's **logical** time, not from "now". So even though the routine is woken at slightly irregular physical instants, the timing it asks the server for is precise. That is the only way to get jitter-free rhythmic sequences in real time, and every timing model builds on it.
 
+**Reading the clock from inside a routine gives the same logical time.** A routine that asks its own clock `clock.beats()` or `clock.tempo` gets its logical beat and the tempo there, not wherever physical time has got to by the time the code runs — the rule `thisThread.beats` follows in sclang, and the reading an offline render already gives. So a routine that computes where the next bar falls, schedules with `clock.sched`, or reads the tempo beside a tempo change reads exact numbers, live as offline. From anywhere else — the main thread, another clock's routine — `beats()` is the clock's paced beat, which is what "now" means there.
+
 ## A routine by hand
 
 An `Event` is a dict of note parameters that knows how to play itself: `Event(...).play(server)` creates a synth at the routine's current logical beat and schedules its release after the note's sustain. Build it with keywords or from a plain dict — an `Event` *is* a dict — and play it from inside a routine, yielding the gap to the next note:

@@ -396,7 +396,8 @@ export class TempoClock {
 
     /**
      * Beats per second **at the beat the clock is on** — the tempo that is
-     * sounding, read from the map (`map.tempoAt(beats())`).
+     * sounding, read from the map (`map.tempoAt(beats())`). Inside a routine
+     * this clock is waking, that beat is the routine's logical one (`beats`).
      *
      * Under a constant tempo, and after a ramp has finished, this is the last
      * change's tempo. *Inside* a ramp it is the tempo reached so far, not the
@@ -435,12 +436,22 @@ export class TempoClock {
     }
 
     /**
-     * The clock's current beat: the paced elapsed beat while running (what
-     * scheduling relative to "now" reads), else the yield-driven logical beat
-     * — before the first `start`, and after a `stop`, which holds the beat it
-     * reached.
+     * The clock's current beat.
+     *
+     * **Inside a routine this clock is waking, the routine's logical beat**:
+     * the yield-exact instant the wake is for, which everything it emits is
+     * stamped at and {@link TempoClock.setTempo} writes at — not wherever
+     * physical time has got to by the time the code reads it. That is sclang's
+     * rule, and it is what makes a routine read the same numbers live and
+     * offline.
+     *
+     * Anywhere else, the paced elapsed beat while running (what scheduling
+     * relative to "now" reads), else the yield-driven logical beat — before the
+     * first `start`, and after a `stop`, which holds the beat it reached.
      */
     beats(): number {
+        const routine = currentRoutine();
+        if (routine !== null && routine.clock === this) return routine.logicalBeat;
         const timebase = this.timebase;
         if (timebase instanceof LogicalTimebase) {
             // Offline: the exact beat while this clock is being woken, the held
@@ -603,21 +614,6 @@ export class TempoClock {
     }
 
     /**
-     * The beat a tempo gesture with no `at` is written at.
-     *
-     * Inside a routine **on this clock**, the routine's own logical beat: the
-     * yield-exact instant already stamped on everything that wake emits, so a
-     * tempo change made beside a note is written where the note is. Anywhere
-     * else — from the page's own turn, from another clock's routine — the
-     * clock's current beat, which is what "now" means there.
-     */
-    private gestureAt(): number {
-        const routine = currentRoutine();
-        if (routine !== null && routine.clock === this) return routine.logicalBeat;
-        return this.beats();
-    }
-
-    /**
      * **The tempo gesture**, from the beat the clock is on.
      *
      * With no `over` it is a **step**: the tempo changes from here, pinning the
@@ -667,7 +663,7 @@ export class TempoClock {
         tempo: number | TempoEnvelope,
         { over, unit = "beats", curve = "linear", at: writeAt }: SetTempoOptions = {},
     ): this {
-        const at = writeAt ?? this.gestureAt();
+        const at = writeAt ?? this.beats();
         // A gesture is anchored where it is written, so anything the map still
         // holds past that beat is a plan this gesture replaces. The map itself stays
         // append-only -- refusing to go backwards is right for a value; saying
