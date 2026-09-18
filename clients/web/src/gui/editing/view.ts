@@ -62,6 +62,9 @@ export abstract class View<S = unknown> {
      * same three steps in the same order, and because the Python client and the
      * standalone host take them too: what a picture *is* has one answer, and
      * the place a client differs is what it wraps that picture in.
+     *
+     * @throws Error with the crate's reason when it draws no view of `kind`, or
+     *   cannot read `facts` as one — rather than a widget with nothing on it.
      */
     catalogue(
         editor: Editor<S>,
@@ -71,10 +74,11 @@ export abstract class View<S = unknown> {
         facts: Record<string, unknown>,
         key = "",
     ): GuiNode {
-        const answered = JSON.parse(viewProps(kind, JSON.stringify(facts)) || "{}") as Record<
+        const answered = JSON.parse(viewProps(kind, JSON.stringify(facts))) as Record<
             string,
             PropValue
         >;
+        if (typeof answered.error === "string") throw new Error(answered.error);
         const { type, ...props } = answered;
         const id = this.widget(editor, role, showing, key);
         return node(typeof type === "string" ? type : kind, { id, ...props });

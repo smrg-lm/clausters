@@ -151,7 +151,7 @@ fn an_empty_roll_states_no_window_and_no_notes() {
 }
 
 #[test]
-fn the_door_names_the_view_and_a_kind_it_does_not_draw_is_nothing() {
+fn the_door_names_the_view_and_says_why_it_draws_nothing() {
     let asked = props("bpf", &json!({"points": [0.0, 1.0, 1.0, 0.0], "max": 1.0})).unwrap();
     assert_eq!(asked["type"], "curve");
     let roll = props("pianoroll", &json!({"notes": [0.0, 1.0, 60.0, 100.0, 0.0]})).unwrap();
@@ -159,11 +159,13 @@ fn the_door_names_the_view_and_a_kind_it_does_not_draw_is_nothing() {
         roll.get("notes_editable").is_none(),
         "a caller that says nothing means yes"
     );
+    let other = props("multitrack", &json!({})).unwrap_err();
     assert!(
-        props("multitrack", &json!({})).is_none(),
-        "the multitrack has its own door"
+        other.contains("\"multitrack\""),
+        "the multitrack has its own door: {other}"
     );
-    assert!(props("waveform", &json!(["not", "facts"])).is_none());
+    let unread = props("waveform", &json!(["not", "facts"])).unwrap_err();
+    assert!(unread.starts_with("a waveform cannot be drawn"), "{unread}");
 }
 
 /// **A marker is a time and a label, and a label is text.** The lane arrives as
@@ -184,4 +186,14 @@ fn a_labelled_marker_keeps_the_roll_it_sits_beside() {
     .expect("a roll with a labelled marker is still a roll");
     assert_eq!(roll["notes"], json!([0.0, 48000.0, 60.0, 100.0, 0.0]));
     assert_eq!(roll["osc"], json!([144000.0, "/mark"]));
+}
+
+/// **A fact that does not read says which one.** The door used to answer
+/// nothing, which both clients stamped into a bare widget; the reason names
+/// the field, so the caller can be told what it wrote wrong.
+#[test]
+fn a_fact_that_does_not_read_is_named_in_the_refusal() {
+    let why = props("pianoroll", &json!({"notes": "sixty"})).unwrap_err();
+    assert!(why.starts_with("a pianoroll cannot be drawn"), "{why}");
+    assert!(why.contains("string"), "serde says what it found: {why}");
 }

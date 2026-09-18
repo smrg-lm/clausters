@@ -1543,8 +1543,8 @@ export function viewNotAnEdit(): string;
 
 /**
  * **One catalogue view's props**, as JSON — the widget a waveform, a curve or
- * a roll *is*, and what is on it, or an empty string for a kind this crate
- * does not draw.
+ * a roll *is*, and what is on it; `{"error": reason}` for a kind this crate
+ * does not draw or facts that will not read as that kind's.
  *
  * `kind` is the view's name (`"waveform"`, `"bpf"`, `"pianoroll"`) and `facts`
  * the JSON that kind is written from. The answer carries the widget's `type`

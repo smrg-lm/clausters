@@ -459,7 +459,15 @@ pub use time::*;
 /// `clausters_editing_default_bpm` becomes `clausters_editing_default_tempo`, in
 /// beats per second, which only a ruler reads. `clausters_session_migrate` reads
 /// a session written in an older format as this one writes it. **Breaking**.
-pub const CORE_ABI_VERSION: u32 = 67;
+/// **v68 the structure is named, and a refusal says why.** The editing request
+/// and outcome key `piece` is `multitrack`, the instance handle a playback
+/// makes is `"multitrack"`, the mixer's graph is `clausters.multitrack.N`, and
+/// the multitrack window's transport controls are `transport_rewind`,
+/// `transport_play`, `transport_stop` and `transport_clock`.
+/// `clausters_view_props` answers `{"error": reason}` for a kind it does not
+/// draw or facts that will not read, where it answered nothing -- which both
+/// clients stamped into a widget with nothing on it. **Breaking**.
+pub const CORE_ABI_VERSION: u32 = 68;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

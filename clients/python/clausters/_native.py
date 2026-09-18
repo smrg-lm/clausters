@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 67
+CORE_ABI_VERSION = 68
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -1927,10 +1927,19 @@ def view_props(kind: str, facts) -> dict:
         facts: what that kind is written from, as plain JSON-able data.
 
     Returns:
-        The props, or ``{}`` for a kind the crate does not draw.
+        The props.
+
+    Raises:
+        ValueError: the crate draws no view of ``kind``, or cannot read
+            ``facts`` as one -- with its reason, which names the field. A widget
+            stamped from nothing would be drawn with nothing on it.
     """
     answer = _read_json(lib().clausters_view_props, kind, facts)
-    return answer if isinstance(answer, dict) else {}
+    if not isinstance(answer, dict):
+        raise ValueError(f"the crate answered no {kind} view")
+    if "error" in answer:
+        raise ValueError(answer["error"])
+    return answer
 
 
 def mixer_defs(widths, master: int = 2) -> dict:

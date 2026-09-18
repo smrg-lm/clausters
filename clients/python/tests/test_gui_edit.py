@@ -528,7 +528,25 @@ def test_a_catalogue_view_is_described_by_the_crate_and_not_by_this_client():
     # the picture: one note is its own window, padded.
     roll = _native.view_props("pianoroll", {"notes": [0.0, 1.0, 60.0, 100.0, 0.0]})
     assert roll["axes"]["y"] == {"min": 56.0, "max": 64.0}
-    assert _native.view_props("clip", {}) == {}, "a kind the crate does not draw"
+    with pytest.raises(ValueError, match='"clip"'):
+        _native.view_props("clip", {})
+    with pytest.raises(ValueError, match="cannot be drawn"):
+        _native.view_props("pianoroll", {"notes": "sixty"})
+
+
+def test_a_timeline_with_a_marker_still_draws_its_notes():
+    # The marker lane is `time label` pairs, and a label is text: typed as
+    # numbers alone, one `OscItem` refused the whole roll and the window opened
+    # with nothing on it.
+    from clausters.seq.timeline import OscItem
+
+    timeline = Timeline([(0.0, SeqEvent(midinote=60, dur=1.0)),
+                         (3.0, OscItem("/mark", 1, "cue"))])
+    editor = NotesEditor(timeline, sample_rate=SR)
+    roll = editor.view.build(editor)["children"][0]
+    assert roll["type"] == "notes"
+    assert len(roll["notes"]) == 5, "the one note is on the roll"
+    assert roll["osc"][1] == "/mark", "and the marker beside it, by its label"
 
 
 # ---- the axis a curve is drawn against ----

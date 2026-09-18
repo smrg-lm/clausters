@@ -531,8 +531,10 @@ pub unsafe extern "C" fn clausters_view_not_an_edit(out: *mut u8, out_cap: usize
 /// [`clausters_domain_edit`](crate::history::clausters_domain_edit) names its
 /// vocabulary: a client
 /// binds it once and every view the crate learns to draw arrives without a new
-/// symbol. `0` for a kind this crate does not draw, or facts that will not read
-/// as that kind's.
+/// symbol. A kind this crate does not draw, or facts that will not read as that
+/// kind's, answer `{"error": reason}` -- the reason naming the field -- rather
+/// than nothing, so a client refuses the build instead of drawing a widget
+/// with nothing on it.
 ///
 /// Sizes with a null `out` and fills with a second call, like the rest of the
 /// JSON surface.
@@ -556,13 +558,14 @@ pub unsafe extern "C" fn clausters_view_props(
     }) else {
         return 0;
     };
-    let Ok(facts) = serde_json::from_str::<serde_json::Value>(&facts) else {
-        return 0;
+    let answer = match serde_json::from_str::<serde_json::Value>(&facts)
+        .map_err(|e| format!("the facts are not JSON: {e}"))
+        .and_then(|facts| clausters_document::view::catalogue::props(&kind, &facts))
+    {
+        Ok(props) => serde_json::Value::Object(props),
+        Err(reason) => serde_json::json!({ "error": reason }),
     };
-    let Some(props) = clausters_document::view::catalogue::props(&kind, &facts) else {
-        return 0;
-    };
-    let Ok(answer) = serde_json::to_string(&props) else {
+    let Ok(answer) = serde_json::to_string(&answer) else {
         return 0;
     };
     // SAFETY: forwarded from this function's own contract. A pure read, so
@@ -1037,19 +1040,23 @@ mod tests {
         assert!(props.get("id").is_none(), "the id is the caller's");
 
         let bad = "clip";
-        assert_eq!(
-            unsafe {
-                clausters_view_props(
-                    bad.as_ptr(),
-                    bad.len(),
-                    facts.as_ptr(),
-                    facts.len(),
-                    std::ptr::null_mut(),
-                    0,
-                )
-            },
-            0,
-            "a kind the crate does not draw is nothing"
+        let refuse = |out: *mut u8, cap: usize| unsafe {
+            clausters_view_props(
+                bad.as_ptr(),
+                bad.len(),
+                facts.as_ptr(),
+                facts.len(),
+                out,
+                cap,
+            )
+        };
+        let n = refuse(std::ptr::null_mut(), 0);
+        let mut buf = vec![0u8; n];
+        refuse(buf.as_mut_ptr(), buf.len());
+        let answer: serde_json::Value = serde_json::from_slice(&buf).unwrap();
+        assert!(
+            answer["error"].as_str().unwrap().contains("\"clip\""),
+            "a kind the crate does not draw says so: {answer}"
         );
     }
 }

@@ -2943,8 +2943,8 @@ pub fn session_migrate(session: &str) -> String {
 }
 
 /// **One catalogue view's props**, as JSON — the widget a waveform, a curve or
-/// a roll *is*, and what is on it, or an empty string for a kind this crate
-/// does not draw.
+/// a roll *is*, and what is on it; `{"error": reason}` for a kind this crate
+/// does not draw or facts that will not read as that kind's.
 ///
 /// `kind` is the view's name (`"waveform"`, `"bpf"`, `"pianoroll"`) and `facts`
 /// the JSON that kind is written from. The answer carries the widget's `type`
@@ -2957,12 +2957,14 @@ pub fn session_migrate(session: &str) -> String {
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = viewProps)]
 pub fn view_props(kind: &str, facts: &str) -> String {
-    let Ok(facts) = serde_json::from_str::<serde_json::Value>(facts) else {
-        return String::new();
+    let answer = match serde_json::from_str::<serde_json::Value>(facts)
+        .map_err(|e| format!("the facts are not JSON: {e}"))
+        .and_then(|facts| clausters_document::view::catalogue::props(kind, &facts))
+    {
+        Ok(props) => serde_json::Value::Object(props),
+        Err(reason) => serde_json::json!({ "error": reason }),
     };
-    clausters_document::view::catalogue::props(kind, &facts)
-        .and_then(|props| serde_json::to_string(&props).ok())
-        .unwrap_or_default()
+    answer.to_string()
 }
 
 /// **The tags a view reports that are not edits**, as a JSON array of strings.

@@ -96,6 +96,11 @@ class View:
         same three steps in the same order, and because the standalone host and
         the web client take them too: what a picture *is* has one answer, and
         the place a client differs is what it wraps that picture in.
+
+        Raises:
+            ValueError: the crate draws no view of ``kind``, or cannot read
+                ``facts`` as one, with its reason -- rather than a widget with
+                nothing on it.
         """
         props = dict(_native.view_props(kind, facts))
         widget = self.widget(editor, role, showing, key)

@@ -570,7 +570,31 @@ test("a catalogue view is described by the crate and not by this client", async 
         viewProps("pianoroll", JSON.stringify({ notes: [0.0, 1.0, 60.0, 100.0, 0.0] })),
     ) as { axes: { y: unknown } };
     assert.deepEqual(roll.axes.y, { min: 56.0, max: 64.0 });
-    assert.equal(viewProps("clip", "{}"), "", "a kind the crate does not draw");
+    assert.match(
+        (JSON.parse(viewProps("clip", "{}")) as { error: string }).error,
+        /"clip"/,
+        "a kind the crate does not draw says so",
+    );
+    assert.match(
+        (JSON.parse(viewProps("pianoroll", JSON.stringify({ notes: "sixty" }))) as { error: string }).error,
+        /cannot be drawn/,
+    );
+});
+
+test("a timeline with a marker still draws its notes", async () => {
+    // The marker lane is `time label` pairs, and a label is text: typed as
+    // numbers alone, one `OscItem` refused the whole roll and the window opened
+    // with nothing on it.
+    await loadCore();
+    const timeline = new Timeline([
+        [0.0, new SeqEvent({ midinote: 60, dur: 1.0 })],
+        [3.0, new OscItem("/mark", 1, "cue")],
+    ]);
+    const editor = new NotesEditor(timeline, { sampleRate: SR });
+    const roll = (editor.view!.build(editor).children as GuiNode[])[0] as unknown as Record<string, unknown>;
+    assert.equal(roll.type, "notes");
+    assert.equal((roll.notes as number[]).length, 5, "the one note is on the roll");
+    assert.equal((roll.osc as unknown[])[1], "/mark", "and the marker beside it, by its label");
 });
 
 test("two editors in one application keep their own floor", async () => {

@@ -293,22 +293,28 @@ pub fn pitch_window(notes: &[f64]) -> (f64, f64) {
 /// the door a binding crosses, since a caller there holds JSON and not a
 /// struct.
 ///
-/// `None` for a kind this crate does not draw, or facts that will not read as
-/// that kind's: a caller is told it asked for nothing rather than handed an
-/// empty picture.
-#[must_use]
-pub fn props(kind: &str, facts: &Value) -> Option<Map<String, Value>> {
+/// # Errors
+///
+/// The reason, for a kind this crate does not draw or for facts that will not
+/// read as that kind's (serde's message, which names the field). Never an empty
+/// picture: a widget stamped from nothing is drawn with nothing on it, and a
+/// roll whose marker lane did not read opened blank that way, with no word in
+/// any log.
+pub fn props(kind: &str, facts: &Value) -> Result<Map<String, Value>, String> {
+    let unread = |e: serde_json::Error| format!("a {kind} cannot be drawn from these facts: {e}");
     match kind {
         "waveform" => serde_json::from_value(facts.clone())
-            .ok()
-            .map(|f: Waveform| waveform(&f)),
+            .map(|f: Waveform| waveform(&f))
+            .map_err(unread),
         "bpf" => serde_json::from_value(facts.clone())
-            .ok()
-            .map(|f: Curve| bpf(&f)),
+            .map(|f: Curve| bpf(&f))
+            .map_err(unread),
         "pianoroll" => serde_json::from_value(facts.clone())
-            .ok()
-            .map(|f: Roll| pianoroll(&f)),
-        _ => None,
+            .map(|f: Roll| pianoroll(&f))
+            .map_err(unread),
+        _ => Err(format!(
+            "the catalogue draws no {kind:?} view: it draws \"waveform\", \"bpf\" and \"pianoroll\""
+        )),
     }
 }
 

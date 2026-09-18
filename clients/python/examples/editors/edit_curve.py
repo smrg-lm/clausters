@@ -40,6 +40,7 @@ server, because a curve is data and this example never plays it.
 import sys
 
 from clausters import Session
+from clausters.base import MonotonicTimebase
 from clausters.gui import edit
 
 # %% [markdown]
@@ -66,7 +67,9 @@ curve = Automation.from_points(
 # ``points`` vocabulary, and the curve's own editing context.
 
 # %%
-session = Session.live(boot=False)
+# Nothing here plays, so nothing is booted -- and with no server there is no
+# sample clock to put the session's clocks on, so they keep wall-clock time.
+session = Session.live(boot=False, timebase=MonotonicTimebase())
 editor = edit(curve, sample_rate=48_000.0, title="cutoff")
 
 

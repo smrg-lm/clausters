@@ -4379,7 +4379,7 @@ work, where a pending item reads as done.)*
   and a new decisions entry says why. Plain English survives -- one piece of
   code, a file written in two pieces.
 
-- ⬜ **A catalogue view whose facts do not read is drawn as a bare widget, and
+- ✅ **A catalogue view whose facts do not read is drawn as a bare widget, and
   says nothing** *(found 2026-09-17 by the user: "notes no muestra nada", on
   `editors/edit_notes`)*. The roll's marker lane is `time label` pairs, and the
   crate's `Roll` typed it as numbers, so a timeline holding one `OscItem` failed
@@ -4392,6 +4392,10 @@ work, where a pending item reads as done.)*
   that will not read -- and neither should become a widget. The door should
   answer with the reason (serde's error names the field), and both clients
   should refuse the build with it, in one commit.
+
+  **Fixed 2026-09-17, the same day.** `catalogue::props` answers `Result`,
+  the FFI and the wasm doors carry the reason as `{"error": reason}` (core ABI
+  v68), and `_native.view_props` and the page's `View.catalogue` raise it.
 
 ## Future directions (a design that is not a fix)
 
