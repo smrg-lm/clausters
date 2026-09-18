@@ -234,8 +234,8 @@ on trust, so that is where drift accumulates:
   needed, the arrangement already has one (**element**, and a clip's
   **contents**), and the concrete word is still preferred when the code knows
   which it is. The same rule catches "the material" standing in for "the
-  piece", "the audio" or "whatever is played" — say which. The verb goes the
-  same way: **"materialize" names no act** — the change of state is
+  multitrack", "the audio" or "whatever is played" — say which. The verb
+  goes the same way: **"materialize" names no act** — the change of state is
   **rendered**, memory is **built** or **allocated**, an iterable is **read**,
   a spilled payload is **restored**. Only "materialize an iterable" in its
   plain Python/TS sense survives, and only where nothing is being generated.
@@ -252,8 +252,9 @@ on trust, so that is where drift accumulates:
   "a session's samples lives", "the samples's shape") and a few meaningless
   (a roll's contents are notes, not samples). After any vocabulary change,
   re-read the sentences it touched: agreement, the possessive, and whether the
-  new word is the right one *there* — often it is `buffer`, `take`, `piece`,
-  `contents` or `audio` rather than the one word the rename reached for.
+  new word is the right one *there* — often it is `buffer`, `take`,
+  `multitrack`, `contents` or `audio` rather than the one word the rename
+  reached for.
 - **A word this domain already owns never names a language construct.**
   `rest` is a **silence** here, so it never names varargs or a leftover: an
   event handler's tail is the `payload` (`def on_score(tag, *payload)`,
@@ -296,9 +297,13 @@ on trust, so that is where drift accumulates:
   regions and the timeline they sit on, which are the multitrack editor's
   elements and nobody else's *(renamed 2026-09-08; it was `Arrangement`, which
   was `FormEditor`'s word for a layer that no longer exists, and "arrangement"
-  is retired as a term of art)*. The work itself is *"the composition"* /
-  *"the piece"*. Never the bare "the model" (it reads as the node tree or a
-  def). The verb for a generator becoming material is
+  is retired as a term of art)*. **The work has no name of its own**: there is
+  no structure that is *the piece*, so "the piece" and "the composition" are
+  both retired as terms of art *(decided 2026-09-17)* and the prose names the
+  structure it means — a `Multitrack`, a `Timeline`, a document, a session, a
+  take. A sentence that resists the substitution is a sentence that did not
+  know which one it meant. Never the bare "the model" either (it reads as the
+  node tree or a def). The verb for a generator becoming material is
   **render**, never "realize"; the *graphic* direction is **draw**.
 
 - **`clausters.form` is a frozen, secondary module and is not that model.** It is

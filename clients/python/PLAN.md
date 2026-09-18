@@ -2381,8 +2381,13 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
       whose only timebase is `LogicalTimebase` ("Phase 6 decided", above).
   13. **`Automation`.** Its place in the frame (a curve in seconds). The fix of
       its scalar conversion has landed.
-  14. **What the work is called.** CLAUDE.md names it "the composition" / "the
-      piece"; whether it has a name at all. The "piece" rename depends on it.
+  14. **What the work is called.** **Decided 2026-09-17 (Phase 7): it is
+      called nothing.** No structure is the work, so the prose names the
+      structure it means -- a `Multitrack`, a `Timeline`, a document, a
+      session, a take -- and both "the piece" and "the composition" are retired
+      as terms of art. CLAUDE.md, which licensed them, says so instead. A
+      sentence that resists the substitution is a sentence that did not know
+      which structure it meant, which is what the rename is for.
   15. **The web port.** The shape it must follow, written in
       `clients/web/PLAN.md`.
 
@@ -4353,7 +4358,9 @@ work, where a pending item reads as done.)*
   - **Prose.** The books, `docs/schemas.md` ("where the piece is") and
     CLAUDE.md, which names the work "the composition" / "the piece" and so
     licenses the word. What the work is called, if anything, is decided there
-    first, since every other rename follows it.
+    first, since every other rename follows it. **Decided 2026-09-17 (Phase
+    7): nothing** -- the word is retired and the prose names the structure
+    (decision 14 of the tempo entry, and CLAUDE.md's vocabulary section).
 
   A rename is not a search-and-replace (CLAUDE.md): each sentence it touches is
   re-read for which structure it means.
