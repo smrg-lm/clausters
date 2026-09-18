@@ -1,21 +1,22 @@
 /**
- * What makes a piece **sound**, kept in step with what the editor draws.
+ * What makes a multitrack **sound**, kept in step with what the editor draws.
  *
- * The multitrack editor's other half. {@link MultitrackView} says what a piece
- * looks like and {@link MultitrackDomain} says what a gesture makes of it; this
- * says what it is heard as.
+ * The multitrack editor's other half. {@link MultitrackView} says what a
+ * multitrack looks like and {@link MultitrackDomain} says what a gesture makes
+ * of it; this says what it is heard as.
  *
  * **It decides nothing.** What a track and a clip *are* on the server is the
- * shared core's; which of them a given piece needs, the difference between that
- * and what is already sounding, the messages that carry it out and **how the
- * piece is played** — the sample a second of the multitrack is when the
+ * shared core's; which of them a given multitrack needs, the difference between
+ * that and what is already sounding, the messages that carry it out and **how
+ * it is played** — the sample a second of the multitrack is when the
  * transport is located, what play, pause, stop and cue send, and that a paused
  * meter is zeroed — are `MultitrackPlayback`, in the shared crate.
  * The GUI host playing a session with no page behind it holds the same object,
  * so the two are one program. What is left here is what a language genuinely
  * owns: a socket, and waiting on it.
  *
- * **Why a diff and not a rebuild.** A piece plays itself from the transport:
+ * **Why a diff and not a rebuild.** A multitrack plays itself from the
+ * transport:
  * every reader reads the engine's own position, so a locate is no message at all
  * and moving a box is one `set`. That only holds if the nodes **stay**:
  * rebuilding the tree on every edit would restart everything that is sounding,
@@ -30,7 +31,7 @@
  * the server's id spaces, and answers **steps**: a message to send, a `/done`
  * the rest waits for, a barrier. A buffer's fill waiting for its allocation is
  * one of those steps, stated once, and every endpoint — this page, the Python
- * client and the GUI host playing a piece on its own — carries out the same
+ * client and the GUI host playing one on its own — carries out the same
  * list.
  *
  * @module
@@ -52,10 +53,10 @@ export class Playback {
     /** The master's own level. */
     readonly gain: number;
     /**
-     * The piece as it is playing — the crate's, as the host's is. Made in
+     * The multitrack as it is playing — the crate's, as the host's is. Made in
      * `prepare`, which knows how many samples one fill may carry on this server.
      */
-    private piece: MultitrackPlayback | null = null;
+    private instance: MultitrackPlayback | null = null;
     /**
      * The steps not carried out yet — the crate's walk, as the script's and the
      * GUI host's are. Made in `prepare`, beside the playback.
@@ -81,7 +82,7 @@ export class Playback {
             host,
             () => (editor.pieceWidget === null ? [] : [editor.pieceWidget]),
             {
-                headClock: "piece",
+                headClock: "transport",
                 governed: true,
                 sampleRate: bridge.rate,
                 extent: () => editor.structure.end,
@@ -91,15 +92,15 @@ export class Playback {
     }
 
     /**
-     * Instantiate the piece, bind the group the transport governs, and put
-     * every track, clip and reader where the piece says.
+     * Instantiate the multitrack, bind the group the transport governs, and
+     * put every track, clip and reader where it says.
      *
      * The half of building one that talks to the server, which in a page is a
      * promise: the same calls the script makes in its constructor, made where
      * they can be waited for.
      */
     async prepare(): Promise<this> {
-        this.piece = new MultitrackPlayback(await this.server.bulkChunk());
+        this.instance = new MultitrackPlayback(await this.server.bulkChunk());
         this.runner = new StepRunner();
         // Node ids come back on their `/node_end`, which only a registered
         // client hears.
@@ -110,17 +111,18 @@ export class Playback {
     }
 
     /**
-     * The piece went on screen: draw the line from the engine's own position.
+     * The multitrack went on screen: draw the line from the engine's own
+     * position.
      *
-     * A playback is built before the window is — a piece can be played by a page
-     * that never draws it — so this is where the two meet, and it is one
+     * A playback is built before the window is — a multitrack can be played by a
+     * page that never draws it — so this is where the two meet, and it is one
      * statement: `GuiHost.headClock` and the transport's own are the same
      * decision, and letting them disagree draws a line nobody put there.
      */
     attach(host: GuiHost | null): void {
         if (host === null) return;
         this.transport.host = host;
-        host.headClock("piece");
+        host.headClock("transport");
         this.locate(this.transport.position);
     }
 
@@ -137,8 +139,8 @@ export class Playback {
      */
     get meters(): Map<number, [number, number]> {
         const out = new Map<number, [number, number]>();
-        if (this.piece === null) return out;
-        const rows = JSON.parse(this.piece.meters()) as {
+        if (this.instance === null) return out;
+        const rows = JSON.parse(this.instance.meters()) as {
             track: number;
             bus: number;
             channels: number;
@@ -152,7 +154,7 @@ export class Playback {
      *
      * The whole of it, and it runs on every edit whoever made it. Everything
      * that is already right is left alone, which is what lets a hand drag a box
-     * without hearing the rest of the piece restart.
+     * without hearing the rest of it restart.
      */
     sync(): void {
         void this.syncAsync();
@@ -160,10 +162,10 @@ export class Playback {
 
     /** {@link Playback.sync}, waited for — what a page's own setup uses. */
     async syncAsync(): Promise<void> {
-        if (this.piece === null) return;
+        if (this.instance === null) return;
         const bridge = this.editor.bridge;
         await this.run(
-            this.piece.sync(
+            this.instance.sync(
                 JSON.stringify(this.editor.structure.write()),
                 bridge.rate,
                 JSON.stringify(bridge.sources.table()),
@@ -193,7 +195,7 @@ export class Playback {
     // ---- the transport ----
 
     /**
-     * Whether the piece is rolling, as the engine last answered — the answer
+     * Whether it is rolling, as the engine last answered — the answer
      * that is already known. Asking afresh is {@link Playback.refresh}, for the
      * reason every request in a page is a promise: a page waits for an answer
      * instead of blocking on it.
@@ -202,12 +204,12 @@ export class Playback {
         return this.transport.playing;
     }
 
-    /** Where the piece is, in seconds, as the engine last answered. */
+    /** Where the transport is, in seconds, as the engine last answered. */
     get position(): number {
         return this.transport.position;
     }
 
-    /** Ask the engine where the piece is, and remember it. */
+    /** Ask the engine where the transport is, and remember it. */
     async refresh(): Promise<this> {
         await this.transport.refresh();
         return this;
@@ -218,17 +220,17 @@ export class Playback {
      * resuming is the same verb as starting and nothing is re-cued.
      */
     async play(): Promise<this> {
-        if (this.piece !== null) await this.run(this.piece.play());
+        if (this.instance !== null) await this.run(this.instance.play());
         this.transport.reported({ playing: true });
         return this;
     }
 
     /**
-     * Freeze the piece where it stands, with every node's state intact, and its
+     * Freeze it where it stands, with every node's state intact, and its
      * meters at zero.
      */
     pause(): this {
-        if (this.piece !== null) void this.run(this.piece.pause());
+        if (this.instance !== null) void this.run(this.instance.pause());
         this.transport.reported({ playing: false });
         return this;
     }
@@ -242,11 +244,11 @@ export class Playback {
      */
     stop(): this {
         const mark = this.editor.cursor ?? 0.0;
-        if (this.piece === null) return this;
-        void this.run(this.piece.stop(mark));
+        if (this.instance === null) return this;
+        void this.run(this.instance.stop(mark));
         this.transport.reported({
             playing: false,
-            positionSample: this.piece.secsToSamples(mark),
+            positionSample: this.instance.secsToSamples(mark),
         });
         return this;
     }
@@ -262,10 +264,10 @@ export class Playback {
 
     /** {@link Playback.locate}, waited for. */
     private async locateAsync(secs: number): Promise<void> {
-        if (this.piece === null) return;
-        const positionSample = this.piece.secsToSamples(secs);
+        if (this.instance === null) return;
+        const positionSample = this.instance.secsToSamples(secs);
         this.transport.reported({ positionSample });
-        await this.run(this.piece.locate(secs));
+        await this.run(this.instance.locate(secs));
     }
 
     /**
@@ -277,21 +279,21 @@ export class Playback {
      * starts; moving the mark mid-pass must not move the music.
      */
     cue(secs: number): this {
-        if (this.piece === null) return this;
-        this.piece.setRolling(this.playing);
-        const answer = this.piece.cue(secs);
+        if (this.instance === null) return this;
+        this.instance.setRolling(this.playing);
+        const answer = this.instance.cue(secs);
         if (answer !== '{"steps":[]}') {
-            this.transport.reported({ positionSample: this.piece.secsToSamples(secs) });
+            this.transport.reported({ positionSample: this.instance.secsToSamples(secs) });
             void this.run(answer);
         }
         return this;
     }
 
     /**
-     * Free the piece's instance. The piece itself is untouched: what a playback
-     * holds is nodes, and nodes are not the composition.
+     * Free the instance. The multitrack itself is untouched: what a playback
+     * holds is nodes, and nodes are not the structure they play.
      */
     close(): void {
-        if (this.piece !== null) void this.run(this.piece.close(this.server.ids));
+        if (this.instance !== null) void this.run(this.instance.close(this.server.ids));
     }
 }

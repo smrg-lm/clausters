@@ -331,12 +331,12 @@ pub fn draw(document: &Document, look: &Look<'_>, title: &str) -> Drawn {
     // window stays put.
     props.insert("autofit".into(), json!(false));
     // **The head is anchored at 0, and that is the whole of drawing it.** A
-    // session's clock is the *piece's position* rather than the device's
-    // (`HeadClock::Piece`), so the sweep from an anchor of 0 is the position
+    // session's clock is the *transport's position* rather than the device's
+    // (`HeadClock::Transport`), so the sweep from an anchor of 0 is the position
     // itself: it stands still while the transport is stopped, jumps where a
     // locate puts it and wraps where the engine wraps it. Without the anchor
-    // there is no line at all -- which is what a piece that plays with nothing
-    // moving on screen looks like.
+    // there is no line at all -- which is what a multitrack that plays with
+    // nothing moving on screen looks like.
     props.insert("playhead_at".into(), json!(0.0));
     // **Every prop the picture has**, not the two this used to name: a session
     // with automation opened with no curve drawn at all, because the def was
@@ -572,8 +572,8 @@ fn take_editors(
             // its ruler counts frames because it is beside a document that does.
             //
             // **The head is anchored at 0, and that is the whole of drawing it.**
-            // A session's clock is the *piece's position* rather than the device's
-            // (`HeadClock::Piece`), so the sweep from an anchor of 0 is the
+            // A session's clock is the *transport's position* rather than the device's
+            // (`HeadClock::Transport`), so the sweep from an anchor of 0 is the
             // position itself: it stands still while the transport is stopped,
             // jumps where a locate puts it and wraps where the engine wraps it.
             // No `playhead_loop` here for the same reason — the loop is the

@@ -20,7 +20,7 @@ TEMPO = 2.0          # beats per second (120 bpm)
 BEAT = SR / TEMPO    # 24000 samples per beat
 CLOCK = 1_000_000.0  # the sample-clock value the fake server reports
 #: What the passes play, as far as the line is concerned: its map is the tempo.
-PIECE = Timeline(tempo=TEMPO)
+TIMELINE = Timeline(tempo=TEMPO)
 
 
 class FakeHost:
@@ -66,7 +66,7 @@ class Pass:
 
     def __init__(self, clock, at=0.0):
         self.clock = clock
-        self.map = PIECE.map
+        self.map = TIMELINE.map
         self._at = float(at)
         self.playing = True
         self.finished = False
@@ -101,7 +101,7 @@ def transport(host=None, clock=None, **kw) -> PlayheadSync:
         return Pass(clock, at)
 
     return PlayheadSync(FakeHost() if host is None else host, 7, source=source,
-                     structure=PIECE, sample_rate=SR, **kw)
+                     structure=TIMELINE, sample_rate=SR, **kw)
 
 
 # ---- the static cursor: the stopped half of the line ----
@@ -214,9 +214,9 @@ def test_the_end_of_a_pass_parks_the_cursor_at_the_extent():
     tp.play(FakeServer(), at=0.0)
     tp.playhead.drain()                     # the plan runs out
 
-    assert tp.update(), "the piece just ended"
+    assert tp.update(), "the pass just ended"
     assert not tp.playing
-    assert tp.position == pytest.approx(3.0), "parked at the piece's end"
+    assert tp.position == pytest.approx(3.0), "parked at the pass's end"
     assert host.last("playhead") == pytest.approx(3 * BEAT)
     assert host.last("playhead_at") == -1.0
 
@@ -240,7 +240,7 @@ class ClockedHost(FakeHost):
 def test_a_play_puts_the_end_of_the_pass_on_the_application_clock():
     """`update` used to be "call it once per pass of the script's loop", which is
     a hand-written pump by another name. A play schedules it on the host's own
-    clock instead, and it stops asking when the piece stops sounding."""
+    clock instead, and it stops asking when the pass stops sounding."""
     host = ClockedHost()
     clock = TempoClock(TEMPO)
     tp = transport(host, clock=clock, extent=lambda: 3.0)
@@ -325,10 +325,10 @@ def test_the_last_item_keeps_the_line_until_the_piece_actually_ends():
     clock.advance(0.5)                      # half a beat into that last item
     assert not tp.update()
     assert tp.position == pytest.approx(2.5)
-    assert tp.playing, "the piece is still sounding, so the button says pause"
+    assert tp.playing, "the last note is still sounding, so the button says pause"
 
-    clock.advance(0.6)                      # past the piece's end
-    assert tp.update(), "the piece ended"
+    clock.advance(0.6)                      # past the pass's end
+    assert tp.update(), "the pass ended"
     assert not tp.playing
     assert tp.position == pytest.approx(3.0)
     assert host.last("playhead") == pytest.approx(3 * BEAT)
@@ -410,7 +410,7 @@ def test_resume_does_not_re_render():
         return Pass(clock, at)
 
     server = FakeGovernedServer()
-    tp = PlayheadSync(FakeHost(), 7, source=source, structure=PIECE, sample_rate=SR,
+    tp = PlayheadSync(FakeHost(), 7, source=source, structure=TIMELINE, sample_rate=SR,
                    clock=clock, governed=True)
     tp.server = server
 
@@ -430,7 +430,7 @@ def test_play_still_re_renders():
         calls.append(at)
         return Pass(clock, at)
 
-    tp = PlayheadSync(FakeHost(), 7, source=source, structure=PIECE, sample_rate=SR)
+    tp = PlayheadSync(FakeHost(), 7, source=source, structure=TIMELINE, sample_rate=SR)
     tp.play(at=0.0)
     tp.pause()
     tp.play()
@@ -446,7 +446,7 @@ def test_a_governed_pause_starves_the_playhead_instead_of_stopping_it():
         heads.append(ph)
         return ph
 
-    tp = PlayheadSync(FakeHost(), 7, source=source, structure=PIECE, sample_rate=SR,
+    tp = PlayheadSync(FakeHost(), 7, source=source, structure=TIMELINE, sample_rate=SR,
                    clock=clock, governed=True)
     tp.server = FakeGovernedServer()
     tp.play(at=0.0)
@@ -464,16 +464,16 @@ def test_an_ungoverned_pause_still_stops_the_playhead():
         heads.append(ph)
         return ph
 
-    tp = PlayheadSync(FakeHost(), 7, source=source, structure=PIECE, sample_rate=SR)
+    tp = PlayheadSync(FakeHost(), 7, source=source, structure=TIMELINE, sample_rate=SR)
     tp.play(at=0.0)
     tp.pause()
     assert not heads[0].playing
 
 
-# ---- the piece: the server owns the position, and the host reads it ----
+# ---- the transport: the server owns the position, and the host reads it ----
 
 class TransportServer(FakeServer):
-    """A server whose transport is the piece's: it records the commands and
+    """A server that answers for its transport: it records the commands and
     answers where it is."""
 
     def __init__(self):
@@ -511,26 +511,26 @@ class HeadClockHost(FakeHost):
         self.head = which
 
 
-def piece_transport(host=None, server=None):
+def transport_sync(host=None, server=None):
     host = HeadClockHost() if host is None else host
-    tp = PlayheadSync(host, 7, head_clock="piece", structure=PIECE, sample_rate=SR)
+    tp = PlayheadSync(host, 7, head_clock="transport", structure=TIMELINE, sample_rate=SR)
     tp.server = TransportServer() if server is None else server
     return tp
 
 
-def test_a_piece_transport_tells_the_host_which_counter_to_draw():
+def test_a_transport_sync_tells_the_host_which_counter_to_draw():
     """The two halves of one decision, so they cannot disagree: the client stops
-    computing the line and the host starts reading the piece's position."""
+    computing the line and the host starts reading the transport's position."""
     host = HeadClockHost()
-    tp = piece_transport(host)
-    assert host.head == "piece"
-    # And the anchor is 0, because the counter already *is* the piece's time.
+    tp = transport_sync(host)
+    assert host.head == "transport"
+    # And the anchor is 0, because the counter already *is* the transport's time.
     tp.play()
     assert host.last("playhead_at") == 0.0
 
 
-def test_a_piece_transports_verbs_are_the_servers():
-    tp = piece_transport()
+def test_a_transport_syncs_verbs_are_the_servers():
+    tp = transport_sync()
     tp.play()
     tp.pause()
     tp.locate(3.0)
@@ -544,10 +544,10 @@ def test_a_piece_transports_verbs_are_the_servers():
     ]
 
 
-def test_a_piece_transport_reads_where_it_is_instead_of_keeping_it():
+def test_a_transport_sync_reads_where_it_is_instead_of_keeping_it():
     """The whole point: the position is the engine's, so a locate nobody here
     sent -- a loop's wrap, another client's seek -- is still where it says."""
-    tp = piece_transport()
+    tp = transport_sync()
     tp.server.state["position_sample"] = int(5 * BEAT)
     tp.server.state["playing"] = True
     assert tp.position == 0.0, "nothing was asked yet, so nothing is known yet"
@@ -558,8 +558,8 @@ def test_a_piece_transport_reads_where_it_is_instead_of_keeping_it():
 
 def test_a_locate_while_the_piece_plays_does_not_re_cue_anything():
     """A device-clock transport throws the pass away and starts another; the
-    piece's seeks in the engine, so the sound carries on from there."""
-    tp = piece_transport()
+    transport's seeks in the engine, so the sound carries on from there."""
+    tp = transport_sync()
     tp.play()
     tp.server.calls.clear()
     tp.locate(4.0)
@@ -567,8 +567,8 @@ def test_a_locate_while_the_piece_plays_does_not_re_cue_anything():
         "one seek, and no second play"
 
 
-def test_a_piece_transport_loops_in_the_engine():
-    tp = piece_transport()
+def test_a_transport_sync_loops_in_the_engine():
+    tp = transport_sync()
     tp.loop(1.0, 3.0)
     assert tp.server.calls[-1] == ("loop", (int(1 * BEAT), int(3 * BEAT)))
     tp.loop(None)
@@ -586,13 +586,13 @@ def test_a_piece_still_cues_a_pass_of_voices_and_only_on_a_locate():
         return None
 
     host = HeadClockHost()
-    tp = PlayheadSync(host, 7, head_clock="piece", source=source,
-                   structure=PIECE, sample_rate=SR)
+    tp = PlayheadSync(host, 7, head_clock="transport", source=source,
+                   structure=TIMELINE, sample_rate=SR)
     tp.server = TransportServer()
     tp.play()
     assert cued == [0.0]
     tp.locate(2.0)
-    assert cued == [0.0, 2.0], "the one re-cue the piece keeps"
+    assert cued == [0.0, 2.0], "the one re-cue the transport keeps"
     tp.pause()
     tp.locate(4.0)
     assert cued == [0.0, 2.0], "stopped, there is no pass to cue"
@@ -613,11 +613,11 @@ def test_the_map_is_asked_of_what_plays_and_never_kept():
         def pause(self):
             self.playing = False
 
-    piece = Timeline(tempo=TEMPO)
+    timeline = Timeline(tempo=TEMPO)
     tp = PlayheadSync(FakeHost(), 7, source=lambda at, **_: Pass(),
-                      structure=piece, sample_rate=SR)
+                      structure=timeline, sample_rate=SR)
     assert tp.beats_to_samples(1.0) == pytest.approx(BEAT)
-    piece.map.push(0.0, 1.0)                 # edited on the structure: followed
+    timeline.map.push(0.0, 1.0)                 # edited on the structure: followed
     assert tp.beats_to_samples(1.0) == pytest.approx(SR)
     tp.play(FakeServer(), at=0.0)
     assert tp.beats_to_samples(1.0) == pytest.approx(SR / 4.0)

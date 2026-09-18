@@ -27,7 +27,7 @@
 // the one the line follows.
 //
 // **A pass ends by itself.** A `Timeline` reports that it finished, so `update`
-// parks the cursor at the piece's end without the script timing it.
+// parks the cursor at the pass's end without the script timing it.
 
 import { secs_to_samples } from "../core/clausters_core_web.js";
 import type { TempoMap } from "../base/time.ts";
@@ -70,15 +70,15 @@ export interface PlayheadSyncOptions {
      */
     toUnits?: (beats: number) => number;
     /**
-     * `extent()` → the piece's length, in its own units, where {@link PlayheadSync.update}
-     * parks the cursor when a pass ends. Read on each use, so a piece that grew
+     * `extent()` → the structure's length, in its own units, where {@link PlayheadSync.update}
+     * parks the cursor when a pass ends. Read on each use, so a structure that grew
      * (a clip dragged past the end) ends where it now ends.
      */
     extent?: () => number;
     /** The clock the pass runs on. A governed pause freezes it. */
     clock?: TempoClock | null;
     /**
-     * Whether a **server** transport governs the piece (its transport group is
+     * Whether a **server** transport governs the samples (its transport group is
      * bound). Governed, a pause freezes the server's subtree and this clock
      * rather than stopping the playhead, so `resume` continues the sound where
      * it stopped instead of re-rendering it.
@@ -87,14 +87,14 @@ export interface PlayheadSyncOptions {
     /**
      * Which counter the view's line is drawn from — `"device"` (the default:
      * the engine's sample clock, which never stops, so this class owns the
-     * piece's time and anchors the line to it) or `"piece"` (the **server's
+     * position and anchors the line to it) or `"transport"` (the **server's
      * transport position**, so the server owns it and this class sends
-     * commands). Setting `"piece"` also tells the host
+     * commands). Setting `"transport"` also tells the host
      * ({@link GuiHost.headClock}), because the two are one decision and letting
      * them disagree draws a line nobody put there. A view whose axis is not
-     * samples keeps `"device"`: the piece's position is measured in frames.
+     * samples keeps `"device"`: the transport's position is measured in frames.
      */
-    headClock?: "device" | "piece";
+    headClock?: "device" | "transport";
 }
 
 /**
@@ -111,13 +111,13 @@ export interface PlayheadSyncOptions {
  * `anchor` hand back promises; a script that does not await them still gets the
  * pass — what arrives late is the line, not the sound.
  *
- * **Or the server owns all of it** (`headClock: "piece"`). Then none of that
+ * **Or the server owns all of it** (`headClock: "transport"`). Then none of that
  * applies: the transport is the audio server's, the position is the engine's
  * `positionSample` — held while stopped, moved by a locate, wrapped inside a
  * loop in the engine — and this class is four commands and a read. Play, pause,
  * seek and loop stop being a line kept in step and become `/transport_play`,
  * `/transport_stop`, `/transport_locateSample` and `/transport_loop`; the anchor
- * is 0, because the counter the host draws already *is* the piece's time. That
+ * is 0, because the counter the host draws already *is* the transport's time. That
  * is the shape a multitrack wants, where many readers follow one time
  * (`TransportPos`), and it is why an editor sends a locate and reads a position
  * back instead of computing one.
@@ -126,7 +126,7 @@ export interface PlayheadSyncOptions {
  * How often a rolling transport asks itself whether the pass has ended, in
  * seconds. It is not the line's frame rate — the host sweeps that from the
  * engine's clock without being told — only how sharply the cursor parks at the
- * end of the piece.
+ * end of the pass.
  */
 const TICK = 0.05;
 
@@ -137,18 +137,18 @@ export class PlayheadSync {
     /** What is played, asked for its map when no pass is in flight. */
     structure: MapHolder | (() => MapHolder) | null;
     /**
-     * Which counter the line is drawn from: `"device"` or `"piece"`, the same
-     * two words {@link GuiHost.headClock} takes. On `"piece"` the position, the
+     * Which counter the line is drawn from: `"device"` or `"transport"`, the
+     * same two words {@link GuiHost.headClock} takes. On `"transport"` the position, the
      * rolling state, the seek and the loop are all the audio server's, and this
      * class holds none of them.
      */
-    headClock: "device" | "piece";
+    headClock: "device" | "transport";
     sampleRate: number;
     toUnits: (beats: number) => number;
     extent: (() => number) | null;
     /** The clock the pass runs on, when there is one. */
     clock: TempoClock | null;
-    /** Whether a server transport governs the piece. */
+    /** Whether a server transport governs the samples. */
     governed: boolean;
     /**
      * The server the anchor queries for its clock — the destination of the last
@@ -163,15 +163,15 @@ export class PlayheadSync {
     /**
      * The **tail**: `[clock beat, timeline beat]` at the moment the scan
      * drained. A scan runs out when it renders its *last item*, not when the
-     * piece is over — the last clip is still sounding, and the line must go on
+     * sound is over — the last clip is still sounding, and the line must go on
      * crossing it. `null` outside that stretch.
      */
     private tail: [number, number] | null = null;
     /**
      * The last answer {@link PlayheadSync.refresh} got from the server's
-     * transport, on the piece. Empty until one is asked for.
+     * transport. Empty until one is asked for.
      */
-    private piece: { playing?: boolean; positionSample?: number } = {};
+    private transportState: { playing?: boolean; positionSample?: number } = {};
 
     constructor(
         host: GuiHost | null,
@@ -197,7 +197,7 @@ export class PlayheadSync {
         this.extent = extent ?? null;
         this.clock = clock;
         this.governed = Boolean(governed);
-        if (this.headClock === "piece") this.host?.headClock("piece");
+        if (this.headClock === "transport") this.host?.headClock("transport");
     }
 
     // ---- the unit bridge ----
@@ -217,7 +217,7 @@ export class PlayheadSync {
     }
 
     /**
-     * Beats → samples of the engine clock, through the piece's time map (and the
+     * Beats → samples of the engine clock, through the structure's time map (and the
      * core's seconds→samples rounding every client shares).
      *
      * Where the line's origin comes from, so it must be the map and not a ratio:
@@ -247,26 +247,26 @@ export class PlayheadSync {
     }
 
     /**
-     * Whether the piece is sounding: a pass is rolling, **or** its scan has
+     * Whether anything is sounding: a pass is rolling, **or** its scan has
      * drained and the last item is still ringing (the tail). It goes false on
-     * its own at the end of the piece — where the last item ends, not where it
+     * its own at the end of the pass — where the last item ends, not where it
      * started — which is what {@link PlayheadSync.update} decides.
      *
      * The tail counts as playing because everything a caller does with this
      * answer is true of it: a pause holds where the music is, a seek starts a
      * fresh pass from there, and a button reads "pause" rather than "play".
      *
-     * On the **piece** it is the engine's last answer ({@link
+     * On the **transport** it is the engine's last answer ({@link
      * PlayheadSync.refresh}) and none of the above: the transport is rolling or it
      * is not, and nothing here has an opinion.
      */
     get playing(): boolean {
-        if (this.headClock === "piece") return Boolean(this.piece.playing);
+        if (this.headClock === "transport") return Boolean(this.transportState.playing);
         return (this.head !== null && this.head.playing) || this.tail !== null;
     }
 
     /**
-     * Ask the server where the piece is, and remember it.
+     * Ask the server where the transport is, and remember it.
      *
      * **The read is separate from the answer** because asking is a round trip
      * and {@link PlayheadSync.position} is not: a counter refreshes on its own
@@ -280,9 +280,9 @@ export class PlayheadSync {
      * The call is the same call.)
      */
     async refresh(): Promise<this> {
-        if (this.headClock === "piece" && this.server !== null) {
+        if (this.headClock === "transport" && this.server !== null) {
             const state = await this.server.transportState();
-            this.piece = {
+            this.transportState = {
                 playing: state.playing,
                 positionSample: state.positionSample,
             };
@@ -291,23 +291,23 @@ export class PlayheadSync {
     }
 
     /**
-     * **What the engine was just told**, on the piece: whether it rolls and
+     * **What the engine was just told**, on the transport: whether it rolls and
      * where it stands, remembered as {@link PlayheadSync.refresh} would have
-     * answered, and every target's line drawn from the piece's position again.
+     * answered, and every target's line drawn from the transport's position again.
      *
      * For a caller that sent the transport's commands itself — a playback whose
      * verbs are the shared crate's — so the answers this object gives before
      * the next refresh are the ones the commands made true.
      */
     reported({ playing, positionSample }: { playing?: boolean; positionSample?: number }): this {
-        if (playing !== undefined) this.piece.playing = playing;
-        if (positionSample !== undefined) this.piece.positionSample = positionSample;
-        this.pieceAnchor();
+        if (playing !== undefined) this.transportState.playing = playing;
+        if (positionSample !== undefined) this.transportState.positionSample = positionSample;
+        this.transportAnchor();
         return this;
     }
 
     /**
-     * Samples of the piece → beats, through the same map
+     * Samples of the transport → beats, through the same map
      * {@link PlayheadSync.beatsToSamples} goes the other way — so what the engine
      * reports and what the ruler draws are one function read in two directions.
      * Seconds, where what plays holds no map.
@@ -319,13 +319,13 @@ export class PlayheadSync {
     }
 
     /**
-     * Draw every target's line straight from the piece's position: the anchor
+     * Draw every target's line straight from the transport's position: the anchor
      * is 0, because the counter the host reads already is that time.
      *
      * Re-applied rather than set once, because a view that redraws has new
      * widgets and they come up with no line at all.
      */
-    private pieceAnchor(): void {
+    private transportAnchor(): void {
         if (this.host === null) return;
         for (const id of this.targets()) {
             this.host.set(id, { playhead_at: 0.0, playhead: -1.0 });
@@ -338,7 +338,7 @@ export class PlayheadSync {
      * where it got to while the last item is still ringing, and where the next
      * `play` starts when neither.
      *
-     * On the **piece** it is what the engine last said ({@link
+     * On the **transport** it is what the engine last said ({@link
      * PlayheadSync.refresh}), not something kept here, which is the whole point: a
      * wrap at a loop's end and a seek some other client sent are both where it
      * says, and neither passed through this object. Asking is a round trip and
@@ -347,8 +347,8 @@ export class PlayheadSync {
      * every frame.
      */
     get position(): number {
-        if (this.headClock === "piece") {
-            return this.samplesToBeats(this.piece.positionSample ?? 0);
+        if (this.headClock === "transport") {
+            return this.samplesToBeats(this.transportState.positionSample ?? 0);
         }
         if (this.head !== null && this.head.playing) return this.head.position();
         const tail = this.tailPosition();
@@ -356,12 +356,12 @@ export class PlayheadSync {
     }
 
     /**
-     * Where the line is between the scan draining and the piece ending: the last
+     * Where the line is between the scan draining and the sound ending: the last
      * item's beat plus what the clock has advanced since, never past the end.
      * `null` when there is no tail to be in.
      *
      * The clock is the **pass's own**, and it has to be *rolling*: an offline
-     * render computes the whole piece in an instant and its beat is the queue's,
+     * render computes the whole pass in an instant and its beat is the queue's,
      * not the wall's, so there is no tail to sweep and the cursor parks straight
      * away.
      */
@@ -396,7 +396,7 @@ export class PlayheadSync {
      *
      * The pass starts before the promise settles: what is awaited is the anchor.
      *
-     * On the **piece** it is `/transport_play`, and a bare one: the engine keeps
+     * On the **transport** it is `/transport_play`, and a bare one: the engine keeps
      * where it stopped, so resuming is the same verb as starting and nothing is
      * re-rendered. Given an `at` it seeks there first.
      */
@@ -405,18 +405,18 @@ export class PlayheadSync {
         { at }: { at?: number } = {},
     ): Promise<Pass | null> {
         if (server !== null) this.server = server;
-        if (this.headClock === "piece") {
+        if (this.headClock === "transport") {
             if (at !== undefined) this.locate(at);
-            this.pieceAnchor();
+            this.transportAnchor();
             // A `source` is still called, and it is the **events** half: what
             // follows the transport by itself (a reader on `TransportPos`)
             // needs no pass, and what fires voices does. So the two halves of a
-            // piece meet here — the engine's readers, and a client pass the
+            // sound meet here — the engine's readers, and a client pass the
             // transport's verbs cue.
             this.halt();
             this.head = this.source?.(at === undefined ? this.position : at) ?? null;
             await this.server?.transportPlay();
-            this.piece.playing = true;
+            this.transportState.playing = true;
             return this.head;
         }
         const beat = at === undefined ? this.atBeat : Number(at);
@@ -436,18 +436,18 @@ export class PlayheadSync {
      * stopping a playhead is not a panic button (the script owns its voices).
      * Answers the position it stopped at.
      *
-     * **Governed** (a server transport holds the piece), the playhead is not
+     * **Governed** (a server transport holds the samples), the playhead is not
      * stopped at all — it is starved of time. `/transport_stop` freezes the
      * server's subtree and its queue, the clock freezes with them, and the scan
      * simply stops making progress. That is what lets `resume` continue the
      * sound rather than start it again.
      */
     pause(): number {
-        if (this.headClock === "piece") {
+        if (this.headClock === "transport") {
             // Nothing to park and nothing to compute: the engine holds the
             // position where it froze, and the line holds with it.
             void this.server?.transportStop();
-            this.piece.playing = false;
+            this.transportState.playing = false;
             // Governed, the pass is starved of time rather than stopped, so
             // resuming continues it; ungoverned there is nothing to starve.
             if (this.governed) this.clock?.freeze();
@@ -498,19 +498,19 @@ export class PlayheadSync {
      * there (so a seek also picks up any edit); stopped, it just moves the
      * cursor the view draws. This is what a click on a ruler does.
      *
-     * On the **piece** it is one `/transport_locateSample`, playing or not: the
+     * On the **transport** it is one `/transport_locateSample`, playing or not: the
      * seek happens in the engine, so nothing is re-cued and what is already
      * sounding carries on from there rather than being cut and started again.
      */
     locate(beat: number): this {
         const at = Math.max(Number(beat), 0.0);
-        if (this.headClock === "piece") {
+        if (this.headClock === "transport") {
             const sample = Math.trunc(this.beatsToSamples(at));
             void this.server?.transportLocateSample(sample);
-            this.piece.positionSample = sample;
-            this.pieceAnchor();
+            this.transportState.positionSample = sample;
+            this.transportAnchor();
             // The readers seek in the engine and need nothing; a pass of voices
-            // has to be cued again, which is the one re-cue the piece keeps —
+            // has to be cued again, which is the one re-cue the transport keeps —
             // on a locate, and not on every edit.
             if (this.playing && this.source !== null) {
                 this.halt();
@@ -541,19 +541,19 @@ export class PlayheadSync {
      * `update` as the manual call it always was.
      */
     /**
-     * The span of the piece the position wraps inside, in beats — or, with no
+     * The span the position wraps inside, in beats — or, with no
      * arguments (or `null`), looping off.
      *
-     * **The piece's only**, because it is the only one the engine can wrap: the
+     * **The transport's only**, because it is the only one the engine can wrap: the
      * wrap happens on its exact sample, so a pass repeats with no seam and no
      * client in the loop. A device-clock transport folds the *drawn* line
      * instead (`playhead_loop_*`), which is a different thing and stays the
      * view's.
      */
     loop(start: number | null = null, end: number | null = null): this {
-        if (this.headClock !== "piece") {
+        if (this.headClock !== "transport") {
             throw new Error(
-                'a loop is the piece\'s: build the transport with headClock: "piece"',
+                'a loop is the transport\'s: build it with headClock: "transport"',
             );
         }
         if (start === null || end === null) {
@@ -585,7 +585,7 @@ export class PlayheadSync {
      * "Still something to notice" is **not** `playing`: a scan that has just run
      * out is not playing and is exactly the moment `update` exists for, so
      * stopping there would leave the cursor sweeping off the end forever. It is
-     * the piece sounding, or a drained scan that has not been parked yet — and a
+     * something sounding, or a drained scan that has not been parked yet — and a
      * `pause`, which keeps its playhead without ending it, stops the asking
      * until the next `play`.
      *
@@ -604,17 +604,17 @@ export class PlayheadSync {
     };
 
     /**
-     * Park the cursor when the pass ends by itself; it answers whether the piece
+     * Park the cursor when the pass ends by itself; it answers whether the pass
      * just ended.
      *
      * **Nothing has to call this.** A `play` schedules it on the host's
-     * application clock for as long as the piece is sounding, so a caller
+     * application clock for as long as the pass is sounding, so a caller
      * neither loops nor ticks. It stays public because a transport built before
      * its host exists has no clock to schedule on, and because asking the
      * question once more is always legal.
      *
      * The pass says when it ran out, so the end needs no timing here:
-     * the cursor stops at the piece's extent rather than sweeping off the view,
+     * the cursor stops at the extent rather than sweeping off the view,
      * and stays there — the transport is *at the end*, so it is a locate (a
      * rewind) that goes back to the top.
      */

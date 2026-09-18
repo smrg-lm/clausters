@@ -70,7 +70,7 @@ const fakeServer = (over: Record<string, unknown> = {}) =>
 /** A destination that swallows what a pass renders. */
 const recorder = { playEvent: () => null, sendMsg: () => {}, sendBundle: () => {} };
 
-/** Three notes, one per beat: the piece ends at beat 2. */
+/** Three notes, one per beat: the pass ends at beat 2. */
 const arp = () =>
     new Timeline(
         [0, 1, 2].map((i) => [i, new SeqEvent({ midinote: 60 + i, dur: 1.0 })] as const),
@@ -299,9 +299,9 @@ test("without an extent it parks on the last item", async () => {
     assert.equal(tp.position, 2.0, "the last item's onset");
 });
 
-// ---- the tail: a drained scan is not the end of the piece ----
+// ---- the tail: a drained scan is not the end of the sound ----
 
-test("the last item keeps the line until the piece actually ends", async () => {
+test("the last item keeps the line until the sound actually ends", async () => {
     const host = new FakeHost();
     const clock = new RollingClock(TEMPO, {
         timebase: new ManualTimebase(0),
@@ -321,8 +321,8 @@ test("the last item keeps the line until the piece actually ends", async () => {
     assert.equal(tp.position, 2.5);
     assert.ok(tp.playing, "still sounding, so the button says pause");
 
-    clock.advance(0.6); // past the piece's end
-    assert.equal(tp.update(), true, "the piece ended");
+    clock.advance(0.6); // past the pass's end
+    assert.equal(tp.update(), true, "the pass ended");
     assert.equal(tp.playing, false);
     assert.equal(tp.position, 3.0);
     assert.equal(host.last("playhead"), 3 * BEAT);
@@ -392,7 +392,7 @@ test("a play puts the end of the pass on the application clock", async () => {
     // `update` used to be "call it once per pass of the caller's loop", which is
     // a hand-written tick by another name and is why every example had one. A
     // play schedules it on the host's own clock instead, and it stops asking
-    // when the piece stops sounding.
+    // when the pass stops sounding.
     const host = new ClockedHost();
     const clock = makeClock();
     const tp = new PlayheadSync(host as unknown as GuiHost, 7, {
@@ -411,7 +411,7 @@ test("a play puts the end of the pass on the application clock", async () => {
 
     (tp.playhead as unknown as Pass).drain();   // the plan runs out
     assert.equal(tick(), delay, "the drained scan is what it is there to notice");
-    assert.equal(tp.position, 3.0, "so the cursor parks at the piece's end");
+    assert.equal(tp.position, 3.0, "so the cursor parks at the pass's end");
     assert.equal(tick(), undefined, "and having parked, it stops asking");
 
     await tp.play(fakeServer(), { at: 0.0 });
@@ -428,9 +428,9 @@ test("a transport with no host clock keeps update manual", async () => {
     assert.equal(tp.update(), true);
 });
 
-// ---- the piece: the server owns the position, and the host reads it ----
+// ---- the transport: the server owns the position, and the host reads it ----
 
-/** A server whose transport is the piece's: records the commands, answers where
+/** A server that answers for its transport: records the commands, answers where
  * it is. */
 class TransportServer {
     calls: unknown[][] = [];
@@ -472,7 +472,7 @@ class HeadClockHost extends FakeHost {
 
 function pieceTransport(host?: HeadClockHost): PlayheadSync {
     const tp = new PlayheadSync((host ?? new HeadClockHost()) as unknown as GuiHost, 7, {
-        headClock: "piece",
+        headClock: "transport",
         structure: PIECE,
         sampleRate: SR,
     });
@@ -480,17 +480,17 @@ function pieceTransport(host?: HeadClockHost): PlayheadSync {
     return tp;
 }
 
-test("a piece transport tells the host which counter to draw", async () => {
+test("a transport sync tells the host which counter to draw", async () => {
     // The two halves of one decision, so they cannot disagree: the client stops
-    // computing the line and the host starts reading the piece's position.
+    // computing the line and the host starts reading the transport's position.
     const host = new HeadClockHost();
     const tp = pieceTransport(host);
-    assert.equal(host.head, "piece");
+    assert.equal(host.head, "transport");
     await tp.play();
     assert.equal(host.last("playhead_at"), 0.0);
 });
 
-test("a piece transport's verbs are the server's", async () => {
+test("a transport sync's verbs are the server's", async () => {
     const tp = pieceTransport();
     const server = tp.server as unknown as TransportServer;
     await tp.play();
@@ -506,7 +506,7 @@ test("a piece transport's verbs are the server's", async () => {
     ]);
 });
 
-test("a piece transport reads where it is instead of keeping it", async () => {
+test("a transport sync reads where it is instead of keeping it", async () => {
     // The whole point: the position is the engine's, so a locate nobody here
     // sent -- a loop's wrap, another client's seek -- is still where it says.
     const tp = pieceTransport();
@@ -519,9 +519,9 @@ test("a piece transport reads where it is instead of keeping it", async () => {
     assert.ok(tp.playing);
 });
 
-test("a locate while the piece plays does not re-cue anything", async () => {
+test("a locate while the transport plays does not re-cue anything", async () => {
     // A device-clock transport throws the pass away and starts another; the
-    // piece's seeks in the engine, so the sound carries on from there.
+    // transport's seeks in the engine, so the sound carries on from there.
     const tp = pieceTransport();
     const server = tp.server as unknown as TransportServer;
     await tp.play();
@@ -530,7 +530,7 @@ test("a locate while the piece plays does not re-cue anything", async () => {
     assert.deepEqual(server.calls, [["locate", Math.trunc(4 * BEAT)]]);
 });
 
-test("a piece transport loops in the engine", () => {
+test("a transport sync loops in the engine", () => {
     const tp = pieceTransport();
     const server = tp.server as unknown as TransportServer;
     tp.loop(1.0, 3.0);
@@ -542,14 +542,14 @@ test("a piece transport loops in the engine", () => {
     assert.deepEqual(server.calls.at(-1), ["loop", null]);
 });
 
-test("a piece still cues a pass of voices, and only on a locate", async () => {
+test("a transport still cues a pass of voices, and only on a locate", async () => {
     // The two halves meet in `play`: what follows the transport by itself needs
     // no pass, and what fires voices does -- so a source is still called, and a
     // locate cues it again while nothing re-cues on an edit.
     const cued: number[] = [];
     const host = new HeadClockHost();
     const tp = new PlayheadSync(host as unknown as GuiHost, 7, {
-        headClock: "piece",
+        headClock: "transport",
         source: (at) => {
             cued.push(at);
             return null;
@@ -561,7 +561,7 @@ test("a piece still cues a pass of voices, and only on a locate", async () => {
     await tp.play();
     assert.deepEqual(cued, [0.0]);
     tp.locate(2.0);
-    assert.deepEqual(cued, [0.0, 2.0], "the one re-cue the piece keeps");
+    assert.deepEqual(cued, [0.0, 2.0], "the one re-cue the transport keeps");
     tp.pause();
     tp.locate(4.0);
     assert.deepEqual(cued, [0.0, 2.0], "stopped, there is no pass to cue");
@@ -580,14 +580,14 @@ test("the map is asked of what plays and never kept", async () => {
         stop() { this.playing = false; },
         locate() {},
     };
-    const piece = new Timeline([], { tempo: TEMPO });
+    const timeline = new Timeline([], { tempo: TEMPO });
     const tp = new PlayheadSync(new FakeHost() as unknown as GuiHost, 7, {
         source: () => pass as unknown as Timeline,
-        structure: piece,
+        structure: timeline,
         sampleRate: SR,
     });
     assert.ok(Math.abs(tp.beatsToSamples(1.0) - BEAT) < 1e-6);
-    piece.map.push(0.0, 1.0); // edited on the structure: followed
+    timeline.map.push(0.0, 1.0); // edited on the structure: followed
     assert.ok(Math.abs(tp.beatsToSamples(1.0) - SR) < 1e-6);
     await tp.play(fakeServer(), { at: 0.0 });
     assert.ok(Math.abs(tp.beatsToSamples(1.0) - SR / 4.0) < 1e-6);

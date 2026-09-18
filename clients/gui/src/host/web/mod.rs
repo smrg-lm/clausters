@@ -554,10 +554,10 @@ impl WebApp {
         // page, however many canvases show one.
         if wants_clock && let Some(server) = self.host.server() {
             // Which counter the line is drawn from decides which one is worth
-            // a message: the piece's position is the transport's to report.
+            // a message: the position is the transport's own to report.
             let addr = match self.host.head_clock() {
                 crate::host::HeadClock::Device => "/clock_query",
-                crate::host::HeadClock::Piece => "/transport_query",
+                crate::host::HeadClock::Transport => "/transport_query",
             };
             let _ = server.send(OscMessage {
                 addr: addr.into(),

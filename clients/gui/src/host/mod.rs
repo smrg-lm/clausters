@@ -527,10 +527,10 @@ pub enum HeadClock {
     /// all on that axis.
     #[default]
     Device,
-    /// The transport's **position in the piece**: it holds while stopped,
-    /// jumps on a locate and wraps in a loop. What an editor wants, because it
-    /// is the time of the samples rather than of the machine.
-    Piece,
+    /// The transport's **position**: it holds while stopped, jumps on a
+    /// locate and wraps in a loop. What an editor wants, because it is the
+    /// time of the samples rather than of the machine.
+    Transport,
 }
 
 // The `/gui_*` vocabulary (canonical tables in clients/gui/PLAN.md).
@@ -590,17 +590,17 @@ pub const GUI_THEME: &str = "/gui_theme";
 /// the reserved `scale` key regenerating the whole set at a density. Same
 /// reasoning, same shape, same absence before this verb.
 pub const GUI_METRICS: &str = "/gui_metrics";
-/// `/gui_headClock <"device"|"piece">` — which of the engine's counters every
+/// `/gui_headClock <"device"|"transport">` — which of the engine's counters every
 /// playhead in this **host** is drawn from.
 ///
 /// The third of the host-wide verbs, and here for the reason the other two
 /// are: a native host could say it at launch (`--clock`) and a page could not
-/// say it at all, so a script driving a piece had no way to ask for the only
-/// counter that means anything to an editor.
+/// say it at all, so a script driving a multitrack had no way to ask for the
+/// only counter that means anything to an editor.
 ///
 /// `device` is the sample clock, which never stops — what a host watching a
 /// live server wants, since its meters, scopes and taps are all on that axis.
-/// `piece` is the transport's **position**: it holds while the transport is
+/// `transport` is the transport's **position**: it holds while it is
 /// stopped, jumps wherever `/transport_locate` puts it and wraps at a loop's
 /// end, all in the engine. A window drawing it needs no anchor of its own
 /// (`playhead_at` of `0`) and no message per frame, which is what lets a client
@@ -925,8 +925,8 @@ impl Host {
     ///
     /// It takes effect on the next frame and touches nothing else: a window's
     /// `playhead_at` anchor keeps its meaning, and under
-    /// [`Piece`](HeadClock::Piece) an anchor of `0` is what a script
-    /// wants, because the counter is already the time of the piece.
+    /// [`Transport`](HeadClock::Transport) an anchor of `0` is what a script
+    /// wants, because the counter is already the transport's own time.
     pub fn set_head_clock(&mut self, head: HeadClock) {
         self.head_clock = head;
     }
@@ -941,7 +941,7 @@ impl Host {
         let Some(bus) = bus else { return 0.0 };
         match self.head_clock {
             HeadClock::Device => bus.sample_clock(),
-            HeadClock::Piece => bus.transport_position(),
+            HeadClock::Transport => bus.transport_position(),
         }
     }
 
@@ -1681,7 +1681,7 @@ impl Host {
         };
         let head = match which {
             "device" => HeadClock::Device,
-            "piece" => HeadClock::Piece,
+            "transport" => HeadClock::Transport,
             other => {
                 return diag::warn!(
                     "{from}: {GUI_CLOCK}: no counter called {other:?}; still drawing the \
@@ -3631,7 +3631,7 @@ mod tests {
         let mut host = Host::new();
         let bus = Both;
         assert_eq!(host.playhead_clock(Some(&bus as &dyn BusSource)), 48_000.0);
-        host.set_head_clock(HeadClock::Piece);
+        host.set_head_clock(HeadClock::Transport);
         assert_eq!(host.playhead_clock(Some(&bus as &dyn BusSource)), 1_200.0);
         // No source at all is the same answer either way: nothing to read.
         assert_eq!(host.playhead_clock(None), 0.0);
@@ -3640,8 +3640,8 @@ mod tests {
     /// **A client says which counter the playheads read**, the way it says
     /// which typeface and which theme. Before this the choice was fixed where
     /// the segment was opened, so a host launched by a script drew the device
-    /// clock and nothing else -- and a script driving a piece had to anchor the
-    /// line itself, which cannot express a locate or a loop.
+    /// clock and nothing else -- and a script driving the transport had to
+    /// anchor the line itself, which cannot express a locate or a loop.
     #[test]
     fn a_client_says_which_counter_the_playheads_read() {
         let mut host = Host::new();
@@ -3655,14 +3655,14 @@ mod tests {
             })
         };
         assert!(
-            !host.handle_packet(clock("piece"), from()).is_empty(),
+            !host.handle_packet(clock("transport"), from()).is_empty(),
             "the open window redraws: the line it draws now means something else"
         );
-        assert_eq!(host.head_clock(), HeadClock::Piece);
+        assert_eq!(host.head_clock(), HeadClock::Transport);
 
         // A word the host does not know leaves it drawing what it was drawing.
         assert!(host.handle_packet(clock("nonsense"), from()).is_empty());
-        assert_eq!(host.head_clock(), HeadClock::Piece);
+        assert_eq!(host.head_clock(), HeadClock::Transport);
 
         host.handle_packet(clock("device"), from());
         assert_eq!(host.head_clock(), HeadClock::Device);

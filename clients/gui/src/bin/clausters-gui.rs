@@ -87,11 +87,11 @@ usage:
                             passes 1/2; default the whole space
       --clock <which>       which counter every playhead is drawn from:
                             `device` (default) is the engine's sample clock,
-                            what a host watching a live server wants; `piece`
-                            is the transport's position in the piece, which
+                            what a host watching a live server wants;
+                            `transport` is the transport's position, which
                             holds while stopped, jumps on a locate and wraps in
                             a loop -- what an editor wants. --session implies
-                            `piece`. The wire spelling is /gui_headClock.
+                            `transport`. The wire spelling is /gui_headClock.
       --data-dir <dir>      data directory for the GuiDef store (named GuiDefs
                             persist there; /gui_load reads from it). Defaults to
                             the same place the server uses ($CLAUSTERS_DATA_DIR,
@@ -298,13 +298,13 @@ fn run(args: &[String]) -> Result<(), String> {
             "--clock" => {
                 let v = it
                     .next()
-                    .ok_or_else(|| format!("--clock needs device or piece\n{USAGE}"))?;
+                    .ok_or_else(|| format!("--clock needs device or transport\n{USAGE}"))?;
                 cli_head = Some(match v.as_str() {
                     "device" => HeadClock::Device,
-                    "piece" => HeadClock::Piece,
+                    "transport" => HeadClock::Transport,
                     other => {
                         return Err(format!(
-                            "--clock takes device or piece, not {other}\n{USAGE}"
+                            "--clock takes device or transport, not {other}\n{USAGE}"
                         ));
                     }
                 });
@@ -469,9 +469,9 @@ fn run(args: &[String]) -> Result<(), String> {
         return run_session(&path, save_to.as_deref(), udp_bind, look, shm, server, {
             let mut host = Host::new();
             host.set_id_share(cli_id_share).map_err(|e| e.to_string())?;
-            // A session editor's time is the piece's, which is what the
+            // A session editor's time is the transport's, which is what the
             // head reads unless the launch said otherwise.
-            host.set_head_clock(cli_head.unwrap_or(HeadClock::Piece));
+            host.set_head_clock(cli_head.unwrap_or(HeadClock::Transport));
             host
         });
     }

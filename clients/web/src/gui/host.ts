@@ -743,12 +743,12 @@ export class GuiHost {
      *
      * `"device"` (the default) is the engine's sample clock, which never stops:
      * what a host watching a live server wants, since its meters, scopes and
-     * taps are all on that axis. `"piece"` is the **transport's position** — it
+     * taps are all on that axis. `"transport"` is the **transport's position** — it
      * holds while the transport is stopped, jumps wherever `/transport_locate`
      * puts it and wraps at a loop's end, all inside the engine.
      *
      * That is the one an editor wants, and it changes what a script has to do:
-     * drawing the piece needs no anchor (`playhead_at` of `0`) and no message
+     * drawing it needs no anchor (`playhead_at` of `0`) and no message
      * per frame, because seeking, looping and pausing become transport commands
      * rather than a line the script keeps in step. Host-wide and id-less, like
      * {@link GuiHost.theme} and {@link GuiHost.font}, because it says what the
@@ -756,11 +756,11 @@ export class GuiHost {
      *
      * A word the host does not know is logged and ignored, so the line keeps
      * drawing what it was drawing. The native launch-time spelling is
-     * `--clock <device|piece>`. It is `headClock` and not `clock` because a
+     * `--clock <device|transport>`. It is `headClock` and not `clock` because a
      * host already has one — its application clock — and this names a counter,
      * not a scheduler.
      */
-    headClock(which: "device" | "piece"): void {
+    headClock(which: "device" | "transport"): void {
         this.send("/gui_headClock", which);
     }
 
