@@ -7,12 +7,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { Tree, parseBufferList, parseNodeInfo, parseQueryTree } from "../src/defs/info.ts";
+import {
+    formatNodeInfo,
+    parseBufferList,
+    parseNodeInfo,
+    parseQueryTree,
+    Tree,
+} from "../src/defs/info.ts";
 
 test("a queried tree carries a full node record per entry", () => {
     // detail=2; root 0 -> group 1000 "voices" -> synth 1001 (beep, freq
-    // mapped to c5). Every entry is id, childCount, name.
-    const args = [2, 0, 1, "", 1000, 1, "voices", 1001, -1, "beep", 2,
+    // mapped to c5). Every entry is id, childCount, name -- and at this detail
+    // a group's name is followed by the two modes it runs under, the root's
+    // included. "voices" is auto-ordered and sequential.
+    const args = [2, 0, 1, "", 0, 0, 1000, 1, "voices", 1, 0, 1001, -1, "beep", 2,
         "freq", 330.0, "amp", 0.2, 1, 0, 5, 0, "-", "0"];
     const tree = parseQueryTree(args);
     assert.equal(tree.id, 0);
@@ -23,6 +31,10 @@ test("a queried tree carries a full node record per entry", () => {
     assert.ok(group.info.isGroup);
     assert.equal(group.info.parent, 0);
     assert.deepEqual([group.info.head, group.info.tail], [1001, 1001]);
+    // The modes are read, not inferred: the group is the auto-ordered one and
+    // the root is neither.
+    assert.deepEqual([group.info.autoOrder, group.info.parallel], [true, false]);
+    assert.deepEqual([tree.info.autoOrder, tree.info.parallel], [false, false]);
 
     // Every entry is a full NodeInfo: what the tree adds is the nesting, and
     // the siblings and head/tail follow from it.
@@ -42,7 +54,7 @@ test("a queried tree carries a full node record per entry", () => {
     assert.equal(group.info.name, "voices");
     assert.deepEqual(String(tree).split("\n"), [
         "group 0",
-        '  group 1000 "voices"',
+        '  group 1000 "voices" (auto)',
         "    1001 beep  freq<-c5 amp=0.2",
     ]);
 });
@@ -64,10 +76,14 @@ test("a resource that is not there is a record, not a throw", () => {
     assert.equal(gone.id, 4242);
     assert.equal(gone.exists, false);
 
-    // A group carries its /group_name after the scsynth fields.
-    const group = parseNodeInfo([1000, 0, -1, -1, 1, 1001, 1001, "voices"]);
+    // A group carries its /group_name after the scsynth fields, and then the
+    // two modes it runs under -- the one place they are readable: the wire
+    // sets them and nothing else reports them.
+    const group = parseNodeInfo([1000, 0, -1, -1, 1, 1001, 1001, "voices", 1, 1]);
     assert.ok(group.isGroup);
     assert.equal(group.name, "voices");
+    assert.deepEqual([group.autoOrder, group.parallel], [true, true]);
+    assert.equal(formatNodeInfo(group), 'group 1000 "voices" (auto, parallel)');
 
     const [buffer] = parseBufferList([7, -1, 0, 0.0]);
     assert.equal(buffer!.bufnum, 7);

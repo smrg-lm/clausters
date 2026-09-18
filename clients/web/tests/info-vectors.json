@@ -254,6 +254,8 @@
       "head": -1,
       "tail": -1,
       "name": "",
+      "autoOrder": false,
+      "parallel": false,
       "defname": "beep",
       "controls": {
         "freq": 440.0,
@@ -283,6 +285,8 @@
       "head": 1001,
       "tail": 1001,
       "name": "voices",
+      "autoOrder": false,
+      "parallel": false,
       "defname": "",
       "controls": {},
       "maps": [],
@@ -290,6 +294,50 @@
       "writes": "-"
     },
     "line": "group 1000 \"voices\""
+  },
+  {
+    "kind": "node",
+    "record": {
+      "id": 1000,
+      "parent": 0,
+      "prev": -1,
+      "next": -1,
+      "isGroup": true,
+      "exists": true,
+      "head": 1001,
+      "tail": 1001,
+      "name": "mixer",
+      "autoOrder": true,
+      "parallel": true,
+      "defname": "",
+      "controls": {},
+      "maps": [],
+      "reads": "-",
+      "writes": "-"
+    },
+    "line": "group 1000 \"mixer\" (auto, parallel)"
+  },
+  {
+    "kind": "node",
+    "record": {
+      "id": 1002,
+      "parent": 0,
+      "prev": -1,
+      "next": -1,
+      "isGroup": true,
+      "exists": true,
+      "head": 1003,
+      "tail": 1003,
+      "name": "",
+      "autoOrder": true,
+      "parallel": false,
+      "defname": "",
+      "controls": {},
+      "maps": [],
+      "reads": "-",
+      "writes": "-"
+    },
+    "line": "group 1002 (auto)"
   },
   {
     "kind": "node",
@@ -303,6 +351,8 @@
       "head": -1,
       "tail": -1,
       "name": "",
+      "autoOrder": false,
+      "parallel": false,
       "defname": "",
       "controls": {},
       "maps": [],
@@ -323,6 +373,8 @@
       "head": -1,
       "tail": -1,
       "name": "",
+      "autoOrder": false,
+      "parallel": false,
       "defname": "",
       "controls": {},
       "maps": [],
