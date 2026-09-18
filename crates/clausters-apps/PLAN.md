@@ -74,6 +74,15 @@ opened it.
     write replaced, which was decided for short strokes — cut and paste over large
     files is not designed.
 
+  - **A history step re-reads what it changed, not the whole take.** Today the
+    samples editor answers undo and redo with `reload`, which re-reads the
+    whole buffer for a stroke of a thousand samples. `/gui_ack` already carries
+    `source generation` pairs that the host keeps and nothing reads, and no
+    client sends one (`clients/gui/PLAN.md`, Found by use, "A generation is
+    carried, stored, and read by nothing"). What it waits on is what a source
+    id is on that path -- a document's source, or a widget's `buffer=N` -- and
+    this application is where that is answered.
+
   **Open, and not decided here:** what goes to memory and what to disk, and at
   which threshold; whether an operation over segments records only the segment
   list rather than samples; where the segment model lives once it is Rust's.

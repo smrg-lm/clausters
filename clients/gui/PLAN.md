@@ -4824,6 +4824,12 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   Related: the standalone host has no such gap -- it owns the document, so an
   undo goes through `replay_writes` and its picture moves with the write.
 
+  **Deferred to the audio editor** *(decided by the user 2026-09-18)*. Not
+  fixed on its own: the samples editor is the part of the Rust audio editor
+  that is still to be written (`crates/clausters-apps/PLAN.md`, `X1`), and the
+  answer to what a source id is depends on how that application holds its
+  takes. It is taken there, and `reload` stays until then.
+
 - ✅ **The time range is the ruler's, and the two selections coexist**
   *(stated 2026-09-03 by the user closing the marquee's unification, decided and
   done 2026-09-04 — the gesture table is the user's)*. Landed for the
