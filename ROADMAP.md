@@ -147,16 +147,7 @@ already carry it.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-- ⬜ **A generation is carried, stored, and read by nothing**
-  *(`clients/gui/PLAN.md`, Found by use)*. `/gui_ack` takes `source generation`
-  pairs, the host keeps them, nothing reads them and no client sends one -- so
-  the only thing that can say *these samples changed while their identity
-  stayed put* says it to nobody. The samples editor answers a history step with
-  `reload` instead, which is correct and re-reads a whole take for a stroke.
-  **The decision**: what a source id is on this path, since the pairs are named
-  for the document's sources and a script-driven window has widgets over a
-  `buffer=N` rather than a document. That is the likeliest reason neither
-  client ever filled the field.
+None open.
 
 ## 3. Tests and reviews pending
 
@@ -204,7 +195,8 @@ its plan; the plan is where its acceptance is read.
   what exists under it and what is open, and each opens on a decision:
   **`X1`** the audio editor, whose requirements are stated (cut, copy and paste
   over segments, mix, a history in memory and on disk) and whose memory/disk
-  split and segment model are not; **`X2`** a buffer editor that draws a table by
+  split and segment model are not, and which takes the generation `/gui_ack`
+  carries and nothing reads (`clients/gui/PLAN.md`, Found by use); **`X2`** a buffer editor that draws a table by
   hand, where the wavetable conversion and what the hand edits are open; **`X3`**
   the notes editor, decided to be an application, opening on what the crate
   edits; **`X4`** whether the points editor is one; **`X5`** the score editor over
