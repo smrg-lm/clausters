@@ -36,13 +36,13 @@ use clausters_editing::multitrack::{self as projection, Look};
 pub mod editor;
 
 /// The name of the transport row's rewind button.
-pub const REWIND: &str = "multitrack_rewind";
+pub const REWIND: &str = "transport_rewind";
 /// The name of the transport row's play/pause button.
-pub const PLAY: &str = "multitrack_play";
+pub const PLAY: &str = "transport_play";
 /// The name of the transport row's stop button.
-pub const STOP: &str = "multitrack_stop";
+pub const STOP: &str = "transport_stop";
 /// The name of the label that reads where the multitrack is.
-pub const CLOCK: &str = "multitrack_clock";
+pub const CLOCK: &str = "transport_clock";
 
 /// The strip that rules the multitrack, in logical pixels.
 const RULER_H: f64 = 20.0;
