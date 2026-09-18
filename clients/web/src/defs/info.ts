@@ -126,8 +126,9 @@ export interface NodeMap {
  * mapped control follows its bus, a `doneAction` frees the node. It is a
  * photograph, which is why no handle keeps one.
  *
- * A **group** carries `head`/`tail` (`-1` when empty) and its children are the
- * `Tree`'s business; a **synth** carries `defname`, its `controls` by name,
+ * A **group** carries `head`/`tail` (`-1` when empty), the two modes it runs
+ * under (`autoOrder`, `parallel`) and its children are the `Tree`'s business;
+ * a **synth** carries `defname`, its `controls` by name,
  * its `maps` and the `reads`/`writes` bus lists the server infers (`"-"` when
  * none). A node that is gone comes back with `exists` false and nothing else
  * filled in.
@@ -143,6 +144,15 @@ export interface NodeInfo {
     tail: number;
     /** A group's `/group_name`, `""` when it has none. Never a synth's. */
     name: string;
+    /**
+     * A group's `/group_sortMode`: the server keeps its children in the order
+     * the buses imply, and the manual moves are refused there. Always `false`
+     * for a synth, and for a tree read below `detail` 2, which does not carry
+     * it.
+     */
+    autoOrder: boolean;
+    /** A group's `/group_parallel`, read the same way as `autoOrder`. */
+    parallel: boolean;
     defname: string;
     controls: Record<string, number>;
     maps: NodeMap[];
@@ -213,12 +223,23 @@ export function formatNodeMap(map: NodeMap): string {
     return `#${map.control}<-${map.audio ? "a" : "c"}${map.bus}`;
 }
 
+/**
+ * The modes a group runs under, as the suffix its line carries: ` (auto)`,
+ * ` (parallel)`, ` (auto, parallel)` or nothing at all. What is not said is the
+ * default -- a group ordered by hand, one stage at a time.
+ */
+function groupModes(info: NodeInfo): string {
+    const modes = [info.autoOrder ? "auto" : "", info.parallel ? "parallel" : ""]
+        .filter(Boolean);
+    return modes.length ? ` (${modes.join(", ")})` : "";
+}
+
 /** A node at one moment: `1001 beep  freq=440 amp<-c3`, or a group's line. */
 export function formatNodeInfo(info: NodeInfo): string {
     if (!info.exists) return `${info.id} (gone)`;
     if (info.isGroup) {
         const named = info.name ? ` "${info.name}"` : "";
-        return `group ${info.id}${named}${info.head < 0 ? " (empty)" : ""}`;
+        return `group ${info.id}${named}${groupModes(info)}${info.head < 0 ? " (empty)" : ""}`;
     }
     const mapped = new Map(info.maps.map((m) => [m.control, m]));
     const parts = Object.entries(info.controls).map(([name, value], i) => {
@@ -287,7 +308,8 @@ export class Tree {
             // from them rather than from the record's `head` — the one line a
             // group's own formatter cannot write for it.
             const named = info.name ? ` "${info.name}"` : "";
-            const head = `${pad}group ${info.id}${named}${this.children.length ? "" : " (empty)"}`;
+            const head = `${pad}group ${info.id}${named}${groupModes(info)}`
+                + (this.children.length ? "" : " (empty)");
             return [head, ...this.children.flatMap((c) => c.lines(depth + 1))];
         }
         return [pad + formatNodeInfo(info)];
@@ -315,6 +337,8 @@ function emptyNode(id: number): NodeInfo {
         head: -1,
         tail: -1,
         name: "",
+        autoOrder: false,
+        parallel: false,
         defname: "",
         controls: {},
         maps: [],
@@ -366,6 +390,8 @@ export function parseNodeInfo(args: ReplyArgs): NodeInfo {
         info.head = Number(args[5]);
         info.tail = Number(args[6]);
         info.name = String(args[7]);
+        info.autoOrder = Number(args[8]) !== 0;
+        info.parallel = Number(args[9]) !== 0;
         return info;
     }
     info.defname = String(args[5]);
@@ -410,12 +436,19 @@ function parseTreeNodes(
             out.push(new Tree(info));
         } else {
             const name = String(args[i++]);
+            // The group's two modes ride at detail 2, where this reply stops
+            // being scsynth's.
+            let modes: [boolean, boolean] = [false, false];
+            if (detail >= 2) {
+                modes = [Number(args[i++]) !== 0, Number(args[i++]) !== 0];
+            }
             const [kids, next] = parseTreeNodes(args, i, childCount, detail, id);
             i = next;
             const info = emptyNode(id);
             info.parent = parent;
             info.isGroup = true;
             info.name = name;
+            [info.autoOrder, info.parallel] = modes;
             info.head = kids.length ? kids[0]!.info.id : -1;
             info.tail = kids.length ? kids[kids.length - 1]!.info.id : -1;
             out.push(new Tree(info, kids));
@@ -432,10 +465,17 @@ function parseTreeNodes(
 export function parseQueryTree(args: ReplyArgs): Tree {
     const detail = Number(args[0]);
     const rootId = Number(args[1]);
-    const [children] = parseTreeNodes(args, 4, Number(args[2]), detail, rootId);
+    // The queried group is a group like any other: at detail 2 its own two
+    // modes follow its name, before the first child.
+    const first = detail >= 2 ? 6 : 4;
+    const [children] = parseTreeNodes(args, first, Number(args[2]), detail, rootId);
     const root = emptyNode(rootId);
     root.isGroup = true;
     root.name = String(args[3]);
+    if (detail >= 2) {
+        root.autoOrder = Number(args[4]) !== 0;
+        root.parallel = Number(args[5]) !== 0;
+    }
     root.head = children.length ? children[0]!.info.id : -1;
     root.tail = children.length ? children[children.length - 1]!.info.id : -1;
     return new Tree(root, children);

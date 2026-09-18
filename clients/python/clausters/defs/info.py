@@ -199,7 +199,8 @@ class NodeInfo:
     photograph, which is why no handle keeps one.
 
     A **group** carries ``head``/``tail`` (``-1`` when empty), its ``name``
-    (``""`` when it has none) and its children are the `Tree`'s business; a
+    (``""`` when it has none), the two modes it runs under (``auto_order``,
+    ``parallel``) and its children are the `Tree`'s business; a
     **synth** carries ``defname``, its
     ``controls`` by name, its ``maps`` and the ``reads``/``writes`` bus lists
     the server infers (``"-"`` when none). A node that is gone comes back with
@@ -214,6 +215,13 @@ class NodeInfo:
     head: int = -1
     tail: int = -1
     name: str = ""
+    #: A group's ``/group_sortMode``: the server keeps its children in the
+    #: order the buses imply, and the manual moves are refused there. Always
+    #: ``False`` for a synth, and for a tree read below ``detail`` 2, which
+    #: does not carry it.
+    auto_order: bool = False
+    #: A group's ``/group_parallel``, read the same way as ``auto_order``.
+    parallel: bool = False
     defname: str = ""
     controls: dict = field(default_factory=dict)
     maps: "list[NodeMap]" = field(default_factory=list)
@@ -225,7 +233,7 @@ class NodeInfo:
             return f"{self.id} (gone)"
         if self.is_group:
             named = f' "{self.name}"' if self.name else ""
-            return (f"group {self.id}{named}"
+            return (f"group {self.id}{named}{_group_modes(self)}"
                     + (" (empty)" if self.head < 0 else ""))
         mapped = {m.control: m for m in self.maps}
         parts = []
@@ -288,7 +296,7 @@ class Tree:
         info = self.info
         if info.is_group:
             named = f' "{info.name}"' if info.name else ""
-            head = f"{pad}group {info.id}{named}"
+            head = f"{pad}group {info.id}{named}{_group_modes(info)}"
             if not self.children:
                 head += " (empty)"
             out = [head]
@@ -383,6 +391,16 @@ def _parse_maps(args, i):
     return maps, i
 
 
+def _group_modes(info) -> str:
+    """The modes a group runs under, as the suffix its line carries:
+    ``" (auto)"``, ``" (parallel)"``, ``" (auto, parallel)"`` or nothing at
+    all. What is not said is the default -- a group ordered by hand, one stage
+    at a time."""
+    modes = [name for name, on in (("auto", info.auto_order),
+                                   ("parallel", info.parallel)) if on]
+    return f" ({', '.join(modes)})" if modes else ""
+
+
 def parse_n_info(args) -> NodeInfo:
     """``/node_query.reply`` -> one `NodeInfo` (see ``CmdTranslator::node_info``).
     ``is_group`` -1 is how the server says the node is not there."""
@@ -393,7 +411,8 @@ def parse_n_info(args) -> NodeInfo:
     if kind == 1:
         return NodeInfo(id=id_, parent=parent, prev=prev, next=next_,
                         is_group=True, head=int(args[5]), tail=int(args[6]),
-                        name=str(args[7]))
+                        name=str(args[7]), auto_order=bool(int(args[8])),
+                        parallel=bool(int(args[9])))
     info = NodeInfo(id=id_, parent=parent, prev=prev, next=next_,
                     defname=str(args[5]))
     info.controls, i = _parse_controls(args, 6)
@@ -427,8 +446,15 @@ def _parse_tree_nodes(args, i, count, detail, parent):
         else:
             name = str(args[i])
             i += 1
+            # The group's two modes ride at detail 2, where this reply stops
+            # being scsynth's.
+            modes = (False, False)
+            if detail >= 2:
+                modes = (bool(int(args[i])), bool(int(args[i + 1])))
+                i += 2
             children, i = _parse_tree_nodes(args, i, child_count, detail, node_id)
             info = NodeInfo(id=node_id, parent=parent, is_group=True, name=name,
+                            auto_order=modes[0], parallel=modes[1],
                             head=children[0].info.id if children else -1,
                             tail=children[-1].info.id if children else -1)
             out.append(Tree(info=info, children=children))
@@ -445,8 +471,13 @@ def parse_query_tree(args) -> Tree:
     root_id = int(args[1])
     count = int(args[2])
     root_name = str(args[3])
-    children, _ = _parse_tree_nodes(args, 4, count, detail, root_id)
+    # The queried group is a group like any other: at detail 2 its own two
+    # modes follow its name, before the first child.
+    modes = (bool(int(args[4])), bool(int(args[5]))) if detail >= 2 else (False, False)
+    first = 6 if detail >= 2 else 4
+    children, _ = _parse_tree_nodes(args, first, count, detail, root_id)
     root = NodeInfo(id=root_id, is_group=True, name=root_name,
+                    auto_order=modes[0], parallel=modes[1],
                     head=children[0].info.id if children else -1,
                     tail=children[-1].info.id if children else -1)
     return Tree(info=root, children=children)

@@ -16,7 +16,9 @@
 //! group's children follow inline. Every node reads `id, count, name`, one
 //! shape for both kinds, which is what keeps the walk in step. Detail 2 appends
 //! what a full node info carries (maps, inferred bus lists), which this view
-//! does not draw and skips; the host asks for 1. Parsing tolerates a short or
+//! does not draw and skips, and at that level a group carries the two modes it
+//! runs under between its name and its children, skipped the same way; the host
+//! asks for 1. Parsing tolerates a short or
 //! malformed reply by returning `None` rather than panicking.
 
 use clausters_core::osc::OscType;
@@ -78,6 +80,12 @@ impl NodeTree {
         let group = next_int(&mut it)?;
         let count = next_int(&mut it)?.max(0) as usize;
         let name = next_string(&mut it)?;
+        // The queried group is a group like any other: its two modes follow its
+        // name at detail 2, before the first child.
+        if detail >= 2 {
+            next_int(&mut it)?;
+            next_int(&mut it)?;
+        }
         let root = parse_children(&mut it, count, detail)?;
         Some(NodeTree { group, name, root })
     }
@@ -132,6 +140,13 @@ fn parse_children<'a>(
             }
             NodeBody::Synth { def_name, controls }
         } else {
+            // A group at detail 2 carries the two modes it runs under (sort
+            // mode, parallel) between its name and its children. This view does
+            // not draw them, but it has to step over them or the walk desyncs.
+            if detail >= 2 {
+                next_int(it)?;
+                next_int(it)?;
+            }
             NodeBody::Group {
                 name,
                 children: parse_children(it, child_count as usize, detail)?,
@@ -315,6 +330,45 @@ mod tests {
             OscType::String("amp".into()),
             OscType::Float(0.2),
         ]
+    }
+
+    #[test]
+    fn detail_two_steps_over_a_group_s_modes() {
+        // The host asks for detail 1, but the reply at 2 carries two more
+        // things this view does not draw: a synth's full-record tail, and a
+        // group's two modes between its name and its children. Both are
+        // skipped, and the walk has to stay aligned — a group read as a synth
+        // is how a missed field shows up.
+        let reply = vec![
+            OscType::Int(2),            // detail 2
+            OscType::Int(0),            // queried group
+            OscType::Int(1),            // one child
+            OscType::String("".into()), // unnamed
+            OscType::Int(0),            // ... ordered by hand
+            OscType::Int(0),            // ... one stage at a time
+            // group 1 "mixer", auto-ordered and parallel, one child
+            OscType::Int(1),
+            OscType::Int(1),
+            OscType::String("mixer".into()),
+            OscType::Int(1),
+            OscType::Int(1),
+            // synth 1000 "sine", one control, then the detail-2 tail
+            OscType::Int(1000),
+            OscType::Int(-1),
+            OscType::String("sine".into()),
+            OscType::Int(1),
+            OscType::String("freq".into()),
+            OscType::Float(440.0),
+            OscType::Int(0),             // no maps
+            OscType::String("-".into()), // reads
+            OscType::String("0".into()), // writes
+        ];
+        let tree = NodeTree::parse(&reply).expect("a detail-2 reply parses");
+        let NodeBody::Group { name, children } = &tree.root[0].body else {
+            panic!("the group's modes were read as the next node");
+        };
+        assert_eq!(name, "mixer");
+        assert_eq!(children[0].id, 1000);
     }
 
     #[test]

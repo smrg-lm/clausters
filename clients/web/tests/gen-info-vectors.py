@@ -113,7 +113,8 @@ case("nodeMap", {"control": 0, "bus": 3, "audio": False}, NodeMap(0, 3))
 case("nodeMap", {"control": 2, "bus": 8, "audio": True}, NodeMap(2, 8, True))
 case("node",
      {"id": 1001, "parent": 1000, "prev": -1, "next": -1, "isGroup": False,
-      "exists": True, "head": -1, "tail": -1, "name": "", "defname": "beep",
+      "exists": True, "head": -1, "tail": -1, "name": "", "autoOrder": False,
+      "parallel": False, "defname": "beep",
       "controls": {"freq": 440.0, "amp": 0.2},
       "maps": [{"control": 1, "bus": 3, "audio": False}],
       "reads": "-", "writes": "0"},
@@ -123,16 +124,33 @@ case("node",
 case("node",
      {"id": 1000, "parent": 0, "prev": -1, "next": -1, "isGroup": True,
       "exists": True, "head": 1001, "tail": 1001, "name": "voices",
+      "autoOrder": False, "parallel": False,
       "defname": "", "controls": {}, "maps": [], "reads": "-", "writes": "-"},
      NodeInfo(1000, 0, is_group=True, head=1001, tail=1001, name="voices"))
+# The two modes a group runs under, which its line says and nothing else does.
+case("node",
+     {"id": 1000, "parent": 0, "prev": -1, "next": -1, "isGroup": True,
+      "exists": True, "head": 1001, "tail": 1001, "name": "mixer",
+      "autoOrder": True, "parallel": True,
+      "defname": "", "controls": {}, "maps": [], "reads": "-", "writes": "-"},
+     NodeInfo(1000, 0, is_group=True, head=1001, tail=1001, name="mixer",
+              auto_order=True, parallel=True))
+case("node",
+     {"id": 1002, "parent": 0, "prev": -1, "next": -1, "isGroup": True,
+      "exists": True, "head": 1003, "tail": 1003, "name": "",
+      "autoOrder": True, "parallel": False,
+      "defname": "", "controls": {}, "maps": [], "reads": "-", "writes": "-"},
+     NodeInfo(1002, 0, is_group=True, head=1003, tail=1003, auto_order=True))
 case("node",
      {"id": 100, "parent": 0, "prev": -1, "next": -1, "isGroup": True,
-      "exists": True, "head": -1, "tail": -1, "name": "", "defname": "",
+      "exists": True, "head": -1, "tail": -1, "name": "", "autoOrder": False,
+      "parallel": False, "defname": "",
       "controls": {}, "maps": [], "reads": "-", "writes": "-"},
      NodeInfo(100, 0, is_group=True))
 case("node",
      {"id": 4242, "parent": -1, "prev": -1, "next": -1, "isGroup": False,
-      "exists": False, "head": -1, "tail": -1, "name": "", "defname": "",
+      "exists": False, "head": -1, "tail": -1, "name": "", "autoOrder": False,
+      "parallel": False, "defname": "",
       "controls": {}, "maps": [], "reads": "-", "writes": "-"},
      NodeInfo(4242, exists=False))
 

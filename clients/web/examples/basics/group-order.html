@@ -47,7 +47,9 @@ they are added <b>backwards</b> — the mixer first, so it reads buses nobody ha
 written yet. You hear four turns: silence, the chord the hand puts in order,
 silence again when the hand puts it back wrong, and the chord the moment
 <code>autoOrder</code> lands; the tree below is the server's answer printed
-back.
+back — and a group's line says which modes it is under, so
+<code>group 1000 (parallel)</code> becomes <code>group 1000 (auto, parallel)</code>
+exactly when the last turn lands.
 
 The two ways do not mix, and that is the point of doing both here: once
 <code>autoOrder</code> owns the group the manual verbs reply <code>/fail</code>

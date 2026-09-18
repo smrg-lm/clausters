@@ -110,12 +110,7 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-- ⬜ **A group's sort mode is in no structured reply** (root `PLAN.md`, Found by
-  use). `/group_sortMode` sets it and nothing reads it back: the tree reply
-  carries no flag and `/group_dumpGraph` says it only inside a debug string. So
-  a client that now has both ways of ordering cannot say which one a group is
-  under. A reply change, so both clients' parsers and `docs/schemas.md` move
-  with it.
+None open.
 
 
 ## 2. Fixes that need a decision first

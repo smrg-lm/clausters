@@ -158,6 +158,9 @@ impl CmdTranslator {
             OscType::Int(children.len() as i32),
             OscType::String(self.mirror.name_of(group).into()),
         ];
+        if detail >= 2 {
+            self.group_modes(group, &mut args);
+        }
         self.query_children(group, detail, &mut args);
         Ok(args)
     }
@@ -176,6 +179,9 @@ impl CmdTranslator {
             if let Some(grandchildren) = self.mirror.children(child) {
                 args.push(OscType::Int(grandchildren.len() as i32));
                 args.push(OscType::String(self.mirror.name_of(child).into()));
+                if detail >= 2 {
+                    self.group_modes(child, args);
+                }
                 self.query_children(child, detail, args);
             } else if let Some((def_name, _)) = self.mirror.synth_info(child) {
                 args.push(OscType::Int(-1));
@@ -185,6 +191,22 @@ impl CmdTranslator {
                 }
             }
         }
+    }
+
+    /// The two modes a **group** runs under, as the pair of flags that follows
+    /// its name: `/group_sortMode` (1 = the server orders the children by the
+    /// buses they touch) and `/group_parallel` (1 = the independent ones run on
+    /// the DSP workers). They are set by command and were readable nowhere but
+    /// inside `/group_dumpGraph`'s debug string, which is the one thing a
+    /// client must not parse — so a client with both ways of ordering could not
+    /// say which one it was looking at, and found out from a `/fail`.
+    ///
+    /// In the tree reply they ride at `detail >= 2`, which is where that reply
+    /// stops being scsynth's; in `/node_query.reply` they follow the group's
+    /// name, which is already past scsynth's record.
+    fn group_modes(&self, group: i32, args: &mut Vec<OscType>) {
+        args.push(OscType::Int(self.mirror.is_auto_group(group) as i32));
+        args.push(OscType::Int(self.mirror.is_parallel_group(group) as i32));
     }
 
     /// The per-synth payload shared by `/node_query.reply` and a detailed
@@ -258,6 +280,7 @@ impl CmdTranslator {
                 args.push(OscType::Int(children.first().copied().unwrap_or(-1)));
                 args.push(OscType::Int(children.last().copied().unwrap_or(-1)));
                 args.push(OscType::String(name.as_deref().unwrap_or("").into()));
+                self.group_modes(id, &mut args);
             }
             MirrorBody::Synth { def_name, .. } => {
                 args.push(OscType::Int(0));

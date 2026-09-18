@@ -468,12 +468,15 @@ fn query_tree_detail_two_carries_a_full_node_info_per_entry() {
     let tree = server.recv_until("/group_queryTree.reply").args;
 
     assert_eq!(tree[0], OscType::Int(2), "the detail level is echoed");
+    // At detail 2 the queried group's own two modes follow its name, before
+    // the first child: manual and sequential here, which is a group's default.
+    assert_eq!(&tree[4..6], &[OscType::Int(0), OscType::Int(0)]);
     // /node_query.reply: id, parent, prev, next, isGroup, defName, then the payload.
     // The tree entry: id, -1 (synth marker), defName, then the same payload.
-    assert_eq!(tree[4], OscType::Int(1001));
-    assert_eq!(tree[5], OscType::Int(-1));
-    assert_eq!(tree[6], OscType::String("default".into()));
-    assert_eq!(&tree[7..], &info[6..], "same payload as /node_query.reply");
+    assert_eq!(tree[6], OscType::Int(1001));
+    assert_eq!(tree[7], OscType::Int(-1));
+    assert_eq!(tree[8], OscType::String("default".into()));
+    assert_eq!(&tree[9..], &info[6..], "same payload as /node_query.reply");
     // And that payload really carries the map, as (control, bus, audio) after
     // the three controls: freq is control 0, mapped to control bus 3.
     let maps = &info[info.len() - 5..info.len() - 2];

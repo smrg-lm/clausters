@@ -36,7 +36,9 @@ and the output is silent.
 What you hear, in four turns: silence, the chord the hand puts in order,
 silence again when the hand puts it back wrong, and the chord the moment
 `auto_order` lands. What you read: the tree at each turn, which is the server's
-answer printed back.
+answer printed back -- and a group's line says which modes it is under, so
+``group 1000 (parallel)`` becomes ``group 1000 (auto, parallel)`` exactly when
+the last turn lands.
 
 The two ways do not mix, and that is the point of doing both here: once
 `auto_order` owns the group the manual verbs reply ``/fail`` there, because the

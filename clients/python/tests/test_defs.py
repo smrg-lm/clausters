@@ -579,14 +579,20 @@ if __name__ == "__main__":
 def test_parse_query_tree():
     from clausters.defs.info import parse_query_tree
     # detail=2; root 0 -> group 1000 "voices" -> synth 1001 (beep, freq
-    # mapped to c5). Every entry is id, childCount, name.
-    args = [2, 0, 1, "", 1000, 1, "voices", 1001, -1, "beep", 2,
+    # mapped to c5). Every entry is id, childCount, name -- and at this detail
+    # a group's name is followed by the two modes it runs under, the root's
+    # included. "voices" is auto-ordered and sequential.
+    args = [2, 0, 1, "", 0, 0, 1000, 1, "voices", 1, 0, 1001, -1, "beep", 2,
             "freq", 330.0, "amp", 0.2, 1, 0, 5, 0, "-", "0"]
     tree = parse_query_tree(args)
     assert tree.id == 0 and tree.info.is_group and tree.info.head == 1000
     group = tree.children[0]
     assert group.info.is_group and group.info.parent == 0
     assert (group.info.head, group.info.tail) == (1001, 1001)
+    # The modes are read, not inferred: the group is the auto-ordered one and
+    # the root is neither.
+    assert (group.info.auto_order, group.info.parallel) == (True, False)
+    assert (tree.info.auto_order, tree.info.parallel) == (False, False)
 
     # Every entry is a full NodeInfo: what the tree adds is the nesting, and
     # the siblings and head/tail follow from it.
@@ -603,7 +609,7 @@ def test_parse_query_tree():
     assert group.info.name == "voices"
     assert str(tree).splitlines() == [
         "group 0",
-        '  group 1000 "voices"',
+        '  group 1000 "voices" (auto)',
         "    1001 beep  freq<-c5 amp=0.2",
     ]
 
@@ -630,10 +636,14 @@ def test_parse_n_info_synth_group_and_absent():
     assert info.maps == [NodeMap(control=0, bus=5, audio=False)]
     assert info.reads == "-" and info.writes == "0"
 
-    group = [1000, 0, -1, -1, 1, 1001, 1001, "voices"]
+    # A group's record ends with the two modes it runs under, which is the one
+    # place they are readable: the wire sets them and nothing else reports them.
+    group = [1000, 0, -1, -1, 1, 1001, 1001, "voices", 1, 1]
     g = parse_n_info(group)
     assert g.is_group and g.head == 1001 and g.tail == 1001 and g.exists
     assert g.name == "voices"
+    assert (g.auto_order, g.parallel) == (True, True)
+    assert str(g) == 'group 1000 "voices" (auto, parallel)'
 
     # isGroup = -1: the node is not there. A state, not an exception.
     gone = parse_n_info([4242, -1, -1, -1, -1])

@@ -2299,10 +2299,10 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
-- ⬜ **A group's sort mode is in no structured reply** *(found 2026-09-18 while
+- ✅ **A group's sort mode is in no structured reply** *(found 2026-09-18 while
   giving both clients the manual ordering verbs, whose docstrings have to say
   "refused inside an auto-ordered group" and leave the reader no way to ask
-  which kind a group is)*. `/group_sortMode` sets it and nothing reads it back:
+  which kind a group is; fixed the same day)*. `/group_sortMode` sets it and nothing reads it back:
   `/group_queryTree.reply` carries `ID, count, name` per node and no flag, and
   `/node_query.reply` carries none either. The one place the answer exists is
   `/group_dumpGraph.reply`, which prints `group 1000 (auto)` inside a debug
@@ -2315,6 +2315,25 @@ finished work, where a pending item reads as done.
   place (it is already the structured tree), and it moves the reply's shape, so
   both clients' parsers and `docs/schemas.md` move with it. Whether `parallel`
   rides along is the same question asked twice, and the two are one decision.
+
+  **What shipped.** Both flags, both replies, and they are one pair: sort mode
+  and parallel are the two modes a group *runs under*, and reporting one without
+  the other would have left the same hole one question over. A group's record in
+  `/node_query.reply` ends with them, after the name -- which was already past
+  scsynth's record, so nothing there had to move. In `/group_queryTree.reply`
+  they ride at **`detail = 2`**, after each group's name and after the queried
+  group's own, which is what keeps 0 and 1 exactly the shape scsynth replies
+  with; the level-2 reply's first entry therefore starts at argument 6 rather
+  than 4. Both clients carry them on the node record (`auto_order`/`autoOrder`,
+  `parallel`) and **print them on a group's line** -- `group 1000 "mixer" (auto,
+  parallel)` -- which is how `basics/group_order.py` and its page now show the
+  mode changing under the same tree they already printed.
+
+  **Every walker of that reply had to move, including the one that does not read
+  the field.** The GUI host's node-tree view asks for detail 1 and would not have
+  broken today, but its parser handles detail 2, so it now steps over the two
+  ints there: a group read as a synth is what a missed field looks like, and it
+  would have surfaced as a corrupt drawing long after this change.
 
 - ⬜ **The disk threads are the one worker the load table cannot see** *(found
   2026-09-15 while wiring M34: every other long-lived thread reaches the table,
