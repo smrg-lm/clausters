@@ -16,6 +16,8 @@ A routine `yield`s numbers, and each one is a wait *in beats* before the clock r
 
 The `Server` stamps every event from the routine's **logical** time, not from "now". The wake-up only has to arrive within the emission headroom (`server.latency`); the exact instant rides on the bundle's timetag, which is already in the server's future when it is sent. That is why a page can hold a steady pulse while it is also drawing, and it is the whole reason the sequencing layer is worth having in a tab at all.
 
+**Reading the clock from inside a routine gives the same logical time.** A routine that asks its own clock `clock.beats()` or `clock.tempo` gets its logical beat and the tempo there, not wherever physical time has got to by the time the code runs — the rule `thisThread.beats` follows in sclang, and the reading an offline render already gives. So a routine that computes where the next bar falls, schedules with `clock.sched`, or reads the tempo beside a tempo change reads exact numbers, live as offline. From anywhere else — the page's own turn, another clock's routine — `beats()` is the clock's paced beat, which is what "now" means there.
+
 ## A routine by hand
 
 An `Event` is a bag of note parameters that knows how to play itself: `event.play(server)` creates a synth at the routine's current logical beat and schedules its release after the note's sustain. Play it from inside a routine, yielding the gap to the next note:

@@ -101,10 +101,10 @@ test("a gesture says where it is written", () => {
 });
 
 test("a gesture inside a routine is written at the routine's own beat", async () => {
-    // `beats()` is the paced beat and the routine's is the yield-exact one; a
-    // breakpoint at 3.00034 is inaudible and stays in the map forever. So a
-    // gesture made from inside a routine on this clock is written where the
-    // routine is -- exactly where its notes are.
+    // The paced beat and the routine's yield-exact one differ by the wake's
+    // lateness; a breakpoint at 3.00034 is inaudible and stays in the map
+    // forever. So a gesture made from inside a routine on this clock is written
+    // where the routine is -- exactly where its notes are.
     const clock = new TempoClock(100.0); // fast, so the run is short
     const written: number[] = [];
     new Routine(function* () {
@@ -115,7 +115,7 @@ test("a gesture inside a routine is written at the routine's own beat", async ()
         yield 1.0;
     }).play(clock);
     await clock.run(0.2);
-    assert.deepEqual(written, [3.0]); // not 3.02, which is where beats() would be
+    assert.deepEqual(written, [3.0]); // not 3.02, which is where the paced beat is
 });
 
 test("a clock is saved as a name and a map", () => {

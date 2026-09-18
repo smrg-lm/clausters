@@ -4456,7 +4456,7 @@ work, where a pending item reads as done.)*
   each client holds a routine through a freeze and checks it resumes a beat
   apart.
 
-- ⬜ **A clock read from inside its own routine answers the physical beat**
+- ✅ **A clock read from inside its own routine answers the physical beat**
   *(found 2026-09-16 by the tempo audit, filed on its own 2026-09-18 when that
   entry closed)*. `TempoClock.beats()` and `TempoClock.tempo` read the paced
   now, even from a routine the clock is waking, so a routine that yields to
@@ -4469,6 +4469,18 @@ work, where a pending item reads as done.)*
   **The decision:** whether `beats()` and `tempo` answer the routine's logical
   beat when read from a routine on that clock (sclang's rule), or whether that
   reading is a separate verb and `beats()` stays physical everywhere.
+
+  **Decided and fixed 2026-09-18, in both clients: sclang's rule.** Read from
+  a routine the clock is waking, `beats()` and `tempo` answer that routine's
+  logical beat; anywhere else, the paced beat. The routine is the ambient one
+  (`main.current_routine`, `currentRoutine()`) and its `clock` is the one
+  asked -- the test `locate`, `Moment` and a timeline's child view already made.
+  `set_tempo` lost its own copy of the rule, since `beats()` now says it. What
+  reads `beats()` from a routine follows: `sched` counts from the logical beat
+  (a late wake no longer pushes what it schedules later by its lateness), and
+  so do `bar`, `beat_in_bar`, `quant` and the beat `stop` holds. `locate` is
+  unchanged -- it never read `beats()` -- and still puts the beat on the
+  physical now. No physical reading for a routine was added; nothing needs one.
 
 ## Future directions (a design that is not a fix)
 

@@ -147,13 +147,6 @@ already carry it.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-- ⬜ **A clock read from inside its own routine answers the physical beat**
-  *(`clients/python/PLAN.md`, Found by use)*. The one defect of the tempo
-  audit still standing once that entry closed: `beats()` and `tempo` read the
-  paced now even from a routine the clock is waking, while `set_tempo` writes
-  at the routine's logical beat. **The decision**: whether they answer the
-  logical beat there, as sclang does, or that reading is a verb of its own.
-
 - ⬜ **A generation is carried, stored, and read by nothing**
   *(`clients/gui/PLAN.md`, Found by use)*. `/gui_ack` takes `source generation`
   pairs, the host keeps them, nothing reads them and no client sends one -- so

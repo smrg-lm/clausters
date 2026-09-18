@@ -351,6 +351,25 @@ test("freeze holds the beat, and thaw does not charge the music for the pause", 
     assert.ok(Math.abs(clock.beats() - 0.75) < 1e-9);
 });
 
+test("a routine reads its own clock at its own beat, however late it runs", async () => {
+    // sclang's rule: from inside a routine the clock is waking, `beats()` and
+    // `tempo` answer the routine's logical beat -- the same numbers an offline
+    // render reads. Anywhere else, the paced beat.
+    const { clock, run } = harness();
+    clock.map.push(1.0, 4.0); // four beats a second from beat 1
+    const read: [number, number][] = [];
+    clock.start();
+    clock.play(
+        new Routine(function* () {
+            yield 0.999;
+            read.push([clock.beats(), clock.tempo]);
+        }),
+    );
+    await run(1.5, { late: 0.2 }); // woken 0.2 s after it asked: past beat 1
+    assert.deepEqual(read, [[0.999, 1.0]]);
+    assert.ok(clock.beats() > 1.0, "outside the routine, the paced beat");
+});
+
 test("a frozen clock wakes nothing, and thaw does not burst what was due", async () => {
     // What a frozen clock must not do: keep waking its routines while the beat
     // is held. They would stamp their events into the server's frozen queue,
