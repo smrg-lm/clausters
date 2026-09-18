@@ -4323,7 +4323,7 @@ work, where a pending item reads as done.)*
   view should hold a map at all is the ownership entry above ("Nothing
   fundamental holds the tempo map").
 
-- ⬜ **"piece" names no structure, yet it names types, variables, a wire word
+- ✅ **"piece" names no structure, yet it names types, variables, a wire word
   and prose** *(found 2026-09-17 by the user, reviewing the tempo entry: "no
   hay definida una estructura que sea 'la pieza'", and on `PiecePlayback`: "el
   nombre debería referir a la estructura de datos")*. No structure is *the
@@ -4364,6 +4364,20 @@ work, where a pending item reads as done.)*
 
   A rename is not a search-and-replace (CLAUDE.md): each sentence it touches is
   re-read for which structure it means.
+
+  **Closed 2026-09-17 (Phase 7), in every package.** The wire word is
+  `"transport"` in `/gui_headClock`, `--clock transport` and
+  `head_clock="transport"`, since what it selects is the transport's position;
+  the editing request and outcome key `piece` is `multitrack`, the mixer's
+  graph is `clausters.multitrack.N`, the transport row's controls are
+  `transport_*`, and the recorded vectors are regenerated with them. Beyond the
+  types already renamed: `edit::Piece` is `MultitrackEdit`, `instance::PIECE`
+  is `MULTITRACK`, the host's `document/piece.rs` is `document/multitrack.rs`
+  and the description it draws is `tree::Picture`. The prose names the
+  structure everywhere a reader types against it; the record (the build log,
+  this plan set, the existing `docs/decisions.md` entries) keeps the old word,
+  and a new decisions entry says why. Plain English survives -- one piece of
+  code, a file written in two pieces.
 
 ## Future directions (a design that is not a fix)
 

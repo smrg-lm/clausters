@@ -88,11 +88,8 @@ nobody took. That is written down, as an open item, and the bug is not. Closing
 a checkbox that was **already** open is the other case and stays right: that
 entry was pending, and it keeps the record of what was wrong.
 
-The six sections, and the line between them:
+The five sections, and the line between them:
 
-0. **Do first** — a working sequence taken ahead of everything below, because
-   what it changes is read by several entries below. Its phases name the
-   entries they carry out; what each phase does is in those entries.
 1. **Fixes** — something is wrong, missing or duplicated, and what to do about
    it is already known. No decision stands in front of the work.
 2. **Fixes that need a decision first** — the same kind of small work, except
@@ -105,25 +102,6 @@ The six sections, and the line between them:
    otherwise closed, again split by whether a decision comes first.
 5. **Tracks not started, or incomplete** — whole tracks, named and referred to
    their plan, not enumerated here.
-
----
-
-## 0. Do first
-
-The time design worked out on 2026-09-16 and 17. Its content, its decisions
-and their positions are all in one entry, **"Nothing fundamental holds the
-tempo map, so every structure that needs it reaches for a scalar"**
-(`clients/python/PLAN.md`, Found by use) -- "the tempo entry" below, whose
-numbered **decisions to take** are each reviewed when the phase that needs it
-starts, never earlier. Every phase closes in both clients (decision 15), with
-tests, an example and the books.
-
-- ⬜ **Phase 7 — vocabulary.** Order: last, once the structures it names have
-  settled. Carries out the rest of **"piece" names no structure, yet it names
-  types, variables, a wire word and prose** (the wire word `"piece"` and the
-  prose) and reviews the tempo entry's decision 14.
-
----
 
 ## 1. Fixes
 
@@ -177,8 +155,9 @@ on each one; none of them is being taken by this file.
   time across the client: a frame, a `Timeline` design, and fifteen decisions
   to take, each to be reviewed when it is taken up. All of it is read there.
 
-  **Its work is sequenced in section 0**, "Do first", phase by phase, with the
-  entries of this file each phase re-reads.
+  **Its phases have all landed** (the last, the vocabulary one, on 2026-09-17),
+  so what is left of the entry is the design and the decisions it records, not a
+  sequence: its remaining points are read in the plan.
 
 - ⬜ **A generation is carried, stored, and read by nothing**
   *(`clients/gui/PLAN.md`, Found by use)*. `/gui_ack` takes `source generation`
