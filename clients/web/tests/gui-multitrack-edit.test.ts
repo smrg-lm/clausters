@@ -144,11 +144,11 @@ test("the multitrack is ruled from above by a strip of its own", () => {
         children: Record<string, unknown>[];
     }).children;
     const ruler = children[0];
-    const pieceNode = children[1];
+    const multitrackNode = children[1];
     assert.equal(ruler.type, "field", "the free-standing time ruler, above");
-    assert.equal(pieceNode.type, "multitrack");
+    assert.equal(multitrackNode.type, "multitrack");
     const x = (ruler.axes as { x: Record<string, unknown> }).x;
-    assert.equal(x.link, pieceNode.link, "one axis, not two");
+    assert.equal(x.link, multitrackNode.link, "one axis, not two");
     assert.equal(x.unit, "beats");
 });
 
@@ -656,7 +656,7 @@ test("a box closed does not block the multitrack's undo", async () => {
     // correct given a view-shaped participant, and the participant was wrong.
     //
     // The Python twin is
-    // `test_gui_multitrack_edit.py::test_a_box_closed_does_not_block_the_piece_s_undo`.
+    // `test_gui_multitrack_edit.py::test_a_box_closed_does_not_block_the_multitrack_s_undo`.
     const take = new Take();
     const held = multitrack();
     const ed = new MultitrackEditor(held, { sampleRate: SR, sources: { 1: take } });

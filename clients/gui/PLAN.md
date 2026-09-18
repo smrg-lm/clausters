@@ -4248,6 +4248,14 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   "only a seekable transport gets a cursor", and the roll, the waveform and the
   engraved page all say so the same way.
 
+  *Re-read 2026-09-18, after the tempo entry's phases*
+  (`clients/python/PLAN.md`, "Nothing fundamental holds the tempo map").
+  `Transport` is `PlayheadSync` and holds no tempo, `Playhead` is gone, and a
+  `Timeline` plays itself and reports its position -- so a roll whose notes are
+  played as a timeline can drive the line today, with no verb missing. The
+  question this side owns is unchanged: a pattern player is still forward-only
+  and has no position.
+
 - ⬜ **Copying an *element* needs a door the protocol does not have.** The typed
   clipboard has an `elements` kind — a piece of the tree, placed members — and
   nothing builds one, because neither side can. The **host** cannot: it owns no

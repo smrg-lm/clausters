@@ -48,7 +48,7 @@ def test_the_tuples_a_script_types_become_the_objects_it_reads():
     assert [c.name for c in mt.on("noise")] == ["a"]
 
 
-def test_one_subscription_carries_the_whole_piece():
+def test_one_subscription_carries_the_whole_multitrack():
     """**The object is the multitrack.** A gesture reports what the widget now holds,
     so this replaces the lists — there is nothing per clip to register, and a
     script never sees a widget id or parses a payload."""
@@ -119,7 +119,7 @@ def test_the_view_is_built_from_what_the_object_holds():
     assert spec["snap"] == 4.0 and spec["name"] == "multitrack"
 
 
-def test_an_unattached_piece_is_still_a_piece():
+def test_an_unattached_multitrack_is_still_a_multitrack():
     """A script may build one before its window exists; nothing is sent, and
     nothing raises."""
     mt = multitrack()

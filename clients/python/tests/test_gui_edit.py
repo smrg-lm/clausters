@@ -184,7 +184,7 @@ def test_something_none_of_the_three_reads_says_what_they_are():
 
 # ---- a curve ----
 
-def test_a_curve_is_drawn_edited_and_read_back_with_no_composition():
+def test_a_curve_is_drawn_edited_and_read_back_with_no_multitrack():
     curve = a_curve()
     editor = edit(curve, sample_rate=SR, open=False)
     host, wid = opened(editor)

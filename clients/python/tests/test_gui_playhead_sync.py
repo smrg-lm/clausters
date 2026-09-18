@@ -306,7 +306,7 @@ class RollingClock(TempoClock):
         self._beat += beats
 
 
-def test_the_last_item_keeps_the_line_until_the_piece_actually_ends():
+def test_the_last_item_keeps_the_line_until_the_sound_actually_ends():
     """A scan runs out when it renders its **last item**, and the last clip is
     still sounding then. Parking the cursor there jumps the line to the end
     while the sound goes on — so the drained scan starts a *tail* the line
@@ -556,7 +556,7 @@ def test_a_transport_sync_reads_where_it_is_instead_of_keeping_it():
     assert tp.playing
 
 
-def test_a_locate_while_the_piece_plays_does_not_re_cue_anything():
+def test_a_locate_while_the_transport_plays_does_not_re_cue_anything():
     """A device-clock transport throws the pass away and starts another; the
     transport's seeks in the engine, so the sound carries on from there."""
     tp = transport_sync()
@@ -575,7 +575,7 @@ def test_a_transport_sync_loops_in_the_engine():
     assert tp.server.calls[-1] == ("loop", None)
 
 
-def test_a_piece_still_cues_a_pass_of_voices_and_only_on_a_locate():
+def test_a_source_still_cues_a_pass_of_voices_and_only_on_a_locate():
     """The two halves meet in `play`: what follows the transport by itself needs
     no pass, and what fires voices does — so a source is still called, and a
     locate cues it again while nothing re-cues on an edit."""

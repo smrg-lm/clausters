@@ -308,7 +308,7 @@ mod tests {
     /// **A row is a track, showing the lane it plays**, and every name on the
     /// wire is an id — which is what lets an edit-back be read with no map.
     #[test]
-    fn a_piece_draws_a_row_per_track_naming_ids() {
+    fn a_multitrack_draws_a_row_per_track_naming_ids() {
         let shown = shown(&multitrack(), &look());
         assert_eq!(
             shown.lanes.iter().map(|l| l.node).collect::<Vec<_>>(),
@@ -470,7 +470,7 @@ mod tests {
     /// shortened the original — a cut that silently truncated a region and lost
     /// the rest of it.
     #[test]
-    fn a_box_the_piece_does_not_know_becomes_a_region_on_its_lane() {
+    fn a_box_the_multitrack_does_not_know_becomes_a_region_on_its_lane() {
         let multitrack = multitrack();
         let takes = {
             let mut takes = Takes::default();

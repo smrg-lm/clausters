@@ -223,7 +223,7 @@ def _drag_cost(lanes: int, clips: int, frames: int = 60) -> tuple:
     return part.bytes / frames, whole.bytes / frames
 
 
-def test_publishing_what_an_edit_touched_costs_the_same_in_any_size_of_piece():
+def test_publishing_what_an_edit_touched_costs_the_same_in_any_size_of_multitrack():
     # The finding, and the reason the client's picture could go at all:
     # dragging one clip costs the same whether the multitrack has sixteen clips or
     # six thousand, *if* what is published is the widget the edit named.
@@ -233,7 +233,7 @@ def test_publishing_what_an_edit_touched_costs_the_same_in_any_size_of_piece():
     assert small < 200, "and a drag is one small message a frame"
 
 
-def test_publishing_the_window_instead_costs_the_whole_piece_every_frame():
+def test_publishing_the_window_instead_costs_the_whole_multitrack_every_frame():
     # The other side of it, which is why the granularity is not a refinement:
     # publishing the window is correct and unusable, and it is the caller --
     # not this module -- that has the knowledge to avoid it.

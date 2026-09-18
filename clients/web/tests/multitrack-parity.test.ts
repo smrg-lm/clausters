@@ -291,7 +291,7 @@ test("a format 2 session opens in seconds", async () => {
 
 // ---- the presentation: what a window shows of a multitrack ----
 
-function aPiece(): Multitrack {
+function aMultitrack(): Multitrack {
     const multitrack = new Multitrack();
     const vocals = new Track({ id: 10, lanes: [new Lane({ id: 11 }), new Lane({ id: 12 })] });
     vocals.lanes[0].place(new Region({
@@ -336,7 +336,7 @@ test("a view that says nothing writes an empty object", () => {
 
 test("a view says nothing about what plays", () => {
     // The whole argument for parallel rather than a field on the model.
-    const multitrack = aPiece();
+    const multitrack = aMultitrack();
     const written = multitrack.write();
     const view = new View();
     view.name = "arranger";
@@ -368,13 +368,13 @@ test("state goes when the thing goes", () => {
     view.focused = 777;
     view.detail = 20;
 
-    assert.equal(view.prune(aPiece()), true);
+    assert.equal(view.prune(aMultitrack()), true);
     assert.deepEqual([...view.tracks.keys()], [10]);
     assert.deepEqual([...view.lanes.keys()], [11]);
     assert.deepEqual(view.selected, [20]);
     assert.equal(view.focused, undefined);
     assert.equal(view.detail, 20);
-    assert.equal(view.prune(aPiece()), false, "and pruning twice finds nothing to do");
+    assert.equal(view.prune(aMultitrack()), false, "and pruning twice finds nothing to do");
 });
 
 test("a field a newer window wrote survives a load and a save", () => {
@@ -391,7 +391,7 @@ test("a field a newer window wrote survives a load and a save", () => {
 
 test("a session written without views reads back without them", () => {
     const session = new Session();
-    session.multitrack = aPiece();
+    session.multitrack = aMultitrack();
     assert.equal(session.write().views, undefined);
     assert.deepEqual(Session.read(session.write()).views, []);
 });

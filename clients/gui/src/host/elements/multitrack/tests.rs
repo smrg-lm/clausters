@@ -332,7 +332,7 @@ fn a_lane_added_never_changes_how_big_the_widget_wants_to_be() {
 /// there is nothing for a reader to choose between, and no state a gesture
 /// can put it in where the report changes shape.
 #[test]
-fn every_gesture_reports_the_piece_and_never_the_gesture() {
+fn every_gesture_reports_the_multitrack_and_never_the_gesture() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;

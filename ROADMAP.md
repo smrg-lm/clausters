@@ -147,17 +147,12 @@ already carry it.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-- ⬜ **Nothing fundamental holds the tempo map, so every structure that needs
-  it reaches for a scalar** *(`clients/python/PLAN.md`, Found by use)*.
-  **Still open, and no longer the question it names.** Designing it (2026-09-16
-  and 17) answered who owns the map -- a `Timeline`, through the clock it holds
-  internally -- and turned the entry into the design of logical and physical
-  time across the client: a frame, a `Timeline` design, and fifteen decisions
-  to take, each to be reviewed when it is taken up. All of it is read there.
-
-  **Its phases have all landed** (the last, the vocabulary one, on 2026-09-17),
-  so what is left of the entry is the design and the decisions it records, not a
-  sequence: its remaining points are read in the plan.
+- ⬜ **A clock read from inside its own routine answers the physical beat**
+  *(`clients/python/PLAN.md`, Found by use)*. The one defect of the tempo
+  audit still standing once that entry closed: `beats()` and `tempo` read the
+  paced now even from a routine the clock is waking, while `set_tempo` writes
+  at the routine's logical beat. **The decision**: whether they answer the
+  logical beat there, as sclang does, or that reading is a verb of its own.
 
 - ⬜ **A generation is carried, stored, and read by nothing**
   *(`clients/gui/PLAN.md`, Found by use)*. `/gui_ack` takes `source generation`
@@ -169,41 +164,6 @@ on each one; none of them is being taken by this file.
   for the document's sources and a script-driven window has widgets over a
   `buffer=N` rather than a document. That is the likeliest reason neither
   client ever filled the field.
-
-**Otherwise nothing open here.** One entry left this section without being
-closed: the layered clip drop, which on 2026-09-03 stopped being a question about
-drops and became a defect of the lane's drawing -- it is in section 1 now, under
-its new title. The five that came before are closed: three on
-2026-08-27, and two on 2026-09-01 — the tempo map's owner, and how an editable
-structure is identified across the seam, whose answer (the registry mints it)
-moved the edit stack to section 4. The tempo one is worth naming because it did
-not get an answer, it stopped being a question: **who owns a piece's tempo map** —
-neither the clock nor the document, since a `TempoMap` is a *value* on the beat axis, the
-peer of a `Timeline`, and a clock is the process that moves over one. What that
-left is an identity, so a save can name a map, and that half waits on what a
-document is rather than on this. The two fixes it was blocking moved to
-section 1. The other three: the page's missing *real* constant,
-measured to cost nothing and answered by a verb both clients already have; who
-builds `libfaust-wasm`, answered by the release; and where a node example lives
-— a web example is a page for what a page can do and a node script (`.mjs`)
-beside it for authoring, which is the one thing it cannot, with every
-generator's output in an ignored `out/`. Their plans' checkboxes, the
-`examples` skill and `docs/decisions.md` carry the record — the example rule
-being the skill's, since that is where the three directories and their forms
-are written down.
-
-- ⬜ **A pass re-cued from the playhead drops the clip the playhead is inside**
-  *(`clients/python/PLAN.md`, Found by use)*. `Playhead.play(at=…)` starts the
-  scan at the first item **at or after** that beat, so an item spanning the
-  cursor is not rendered at all — and every driver that re-cues on each edit
-  pays it, which is what makes a clip moved onto the line fall silent. Found
-  2026-09-07, in the visual review's second sitting; both clients at once, since
-  `clausters.seq` is ported verbatim.
-  **The decision**: what a `Playhead` does with a clip it enters in the middle.
-  The seek primitive is right for what it says; what is missing beside it is the
-  items *live* at a beat with how far into each the cursor has gone, and then
-  whether an `Event` can be rendered from its middle at all — a shorter event at
-  an offset the item itself has to know how to take.
 
 ## 3. Tests and reviews pending
 
@@ -332,11 +292,17 @@ its plan; the plan is where its acceptance is read.
 
   **Its first question was answered on 2026-09-08 and most of it moved into
   `O24`.** The multitrack plays through the **server's transport** rather than
-  scanning a queue in a client, so the audio half needs no player anywhere and
-  `Timeline` is untouched. What is still `C54`/`W31` is the **events** half -- a
-  region of notes fires voices, so it keeps a queue on `/sched_atTransport` and a
-  re-cue on a locate -- which is now near `O24` rather than before it, and small
-  enough to land with the multitrack's roll lane.
+  scanning a queue in a client, so the audio half needs no player anywhere. What
+  is still `C54`/`W31` is the **events** half -- a region of notes fires voices,
+  so it keeps a queue on `/sched_atTransport` and a re-cue on a locate -- which
+  is now near `O24` rather than before it, and small enough to land with the
+  multitrack's roll lane. Its reproduction is the plan's "A pass re-cued from
+  the playhead drops the clip the playhead is inside", whose rule (discrete
+  contents start at the next onset) was decided with the `Timeline` on
+  2026-09-17. **The ground moved under it that day**: `Playhead` is gone, and a
+  `Timeline` on a server transport re-cues on a locate with `/sched_clear
+  "transport"`, so the milestone's "what is there today" is to be re-read
+  against that before it is taken up.
 
 - ⬜ **Try cubic instead of straight segments where the samples are joined**
   *(`clients/gui/PLAN.md`, "Found by use")*. A drawing trial for the sample
@@ -406,18 +372,17 @@ its plan; the plan is where its acceptance is read.
 
 - ⬜ **The mapping exists and is private to the `Editor`, so every example that
   plays writes a worse one** *(`clients/python/PLAN.md`, Future directions)*. A
-  design, not a fix. The entry records what already works — a `Timeline` under a
-  `Playhead` plays polyphonically and seeks — and narrows the gap to three
-  things: `session.play` takes only a pattern, the roll's notes → timeline
-  conversion is private to the editor, and `Ppar`/`Pmono` are a separate
-  pattern-side question. What is open is the shape of the public verb.
+  design, not a fix. The public verb it asked for is answered — a `Timeline`
+  plays itself and seeks — and two things stand: the roll's notes → timeline
+  conversion is private to the notes editor, and `Ppar`/`Pmono` are a separate
+  pattern-side question.
 
 - ⬜ **A roll that sounds shows no cursor, and what can drive the line is a
   `Playhead`** *(`clients/gui/PLAN.md`, Future directions)*. **Related:** the
-  same question from the view's side, and it closes with the entry above. The
-  host's half is done and general (`Transport` drives any widget's line); what
-  it cannot do is follow a pattern player, which is forward-only and has no
-  position — the question this one owns.
+  same question from the view's side. The host's half is done and general
+  (`PlayheadSync` drives any widget's line, and a timeline gives it a
+  position); what it cannot do is follow a pattern player, which is
+  forward-only and has no position — the question this one owns.
 
 - ⬜ **A drawn curve is a list of points, and `Env` is an envelope for
   `EnvGen`** *(`clients/python/PLAN.md`, Future directions)*. A design. The two

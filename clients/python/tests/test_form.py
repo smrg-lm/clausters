@@ -585,7 +585,7 @@ def test_a_mix_never_rewrites_the_event_it_measures():
     assert a.wraps[0][1].get("amp") == 0.5, "the element's own event is shared"
 
 
-def test_drawing_reads_the_composition_unmixed():
+def test_drawing_reads_the_aggregate_unmixed():
     # A muted lane keeps its clips, its notes and its length: a picture that
     # emptied when the toggle was pressed would report silence as absence.
     from clausters.form import flatten

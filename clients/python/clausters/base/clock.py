@@ -191,10 +191,10 @@ class TempoClock:
         function, readable without a clock running and shared with whatever
         draws the structure, so a line and the sound come from one map.
 
-        Assigning it hands the clock a document's own tempo, and the map is
-        **adopted, not copied**: a second clock assigned the same map is reading
-        the same map, and a gesture written on either is written on both. Pass
-        ``m.copy()`` to fork instead.
+        Assigning it hands the clock a tempo written elsewhere -- a timeline's
+        map, a multitrack's -- and the map is **adopted, not copied**: a second
+        clock assigned the same map is reading the same map, and a gesture
+        written on either is written on both. Pass ``m.copy()`` to fork instead.
 
         Do it before `start` — replacing the map under a running clock moves
         every beat that has not fired yet, which is a seek and not a tempo
@@ -219,15 +219,13 @@ class TempoClock:
     def dump(self) -> str:
         """The clock as JSON: its name and its tempo map.
 
-        **What of a clock a document keeps, and it is only these two.** Its
-        position is transport, its queue is what happens to be scheduled, and
-        its `timebase` is a choice of the *run* -- whether it paces against the
-        OS clock or the server's sample counter says nothing about the music.
-        What a document owns is the tempo, and the name a lane refers to it by.
+        **Only these two are worth keeping.** Its position is transport, its
+        queue is what happens to be scheduled, and its `timebase` is a choice of
+        the *run* -- whether it paces against the OS clock or the server's
+        sample counter says nothing about the tempo. `load` reads it back.
 
-        This is what an arrangement written at a tempo saves: not "the" tempo,
-        which would make polytempo unwritable, but a named clock per tempo,
-        with lanes naming which one they run on.
+        A structure that holds a tempo saves its own map rather than a clock: a
+        `Timeline` its `map`, a `Multitrack` its tempo entries.
         """
         return _json.dumps({"name": self.name, "map": _json.loads(self._map.dump())})
 

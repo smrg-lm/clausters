@@ -817,13 +817,13 @@ mod tests {
 
         // An unparseable document is a null handle rather than an empty one:
         // opening something that is not a document must not look like opening
-        // an empty composition.
+        // an empty document.
         let bad = "not json";
         assert!(unsafe { clausters_document_open(bad.as_ptr(), bad.len()) }.is_null());
     }
 
     #[test]
-    fn an_opened_nothing_is_an_empty_composition() {
+    fn an_opened_nothing_is_an_empty_document() {
         let doc = unsafe { clausters_document_open(std::ptr::null(), 0) };
         assert!(!doc.is_null());
         assert_eq!(unsafe { clausters_document_version(doc) }, 1);

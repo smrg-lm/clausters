@@ -587,7 +587,7 @@ impl ApplicationHandler<UserEvent> for App {
         // **A multitrack's clock reads where the transport is**, for a host that
         // edits one with nobody else in the process to write the label.
         if let Some(position) = self.shm.as_deref().map(|bus| bus.transport_position())
-            && let Some(def_id) = self.host.tick_piece_clock(position)
+            && let Some(def_id) = self.host.tick_multitrack_clock(position)
             && let Some(ws) = self.windows.get(&def_id)
         {
             ws.gpu.window.request_redraw();

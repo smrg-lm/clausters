@@ -1680,7 +1680,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   doubling at beat 1 and finds the free three beats later, where the scalar
   said two.
 
-- ⬜ **Nothing fundamental holds the tempo map, so every structure that needs
+- ✅ **Nothing fundamental holds the tempo map, so every structure that needs
   it reaches for a scalar** *(found 2026-09-05 by the user, reading the
   tempo-map prop that had just been wired through to the host: "que el tempo lo
   tenga el editor es un problema. El editor representa acciones de edición
@@ -2390,6 +2390,32 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
       which structure it meant, which is what the rename is for.
   15. **The web port.** The shape it must follow, written in
       `clients/web/PLAN.md`.
+
+  **Closed 2026-09-18.** Every phase landed on 2026-09-17, in both clients, but
+  the commit that closed the last one ticked the "piece" entry and left this one
+  open, saying only that its remaining points were read here -- and nothing
+  here said which. Re-read against the tree:
+
+  - **The decisions.** Thirteen of the fifteen say *Decided* above. 13 is
+    answered by its fix: an `Automation` is a curve in seconds, and the free
+    that ends it is scheduled through the map at the routine's beat. 15 is
+    answered by every phase having landed in both clients.
+  - **The audit's defects, fixed by the phases:** `Playhead`'s clock-beat
+    position (the `Playhead` is gone), the views copying and replacing a map
+    (Phase 3), the multitrack editor's stale map (Phase 4), the scalar in
+    `Automation.play`, `render(tempo=)` and `Session.nrt(tempo=)` (Phase 6), the
+    bpm/beats-per-second split (Phase 4), and both offline defects (Phase 2).
+  - **Not defects under the frame:** `join_transport` giving the clock the
+    grid's single tempo (a bare clock's map is its own; a content map is a
+    timeline's), and two clocks on one map started at different beats (each
+    clock has its own access point; a tree of timelines plays on one engine).
+    `form.element.tempo_map_of` still invents a constant map, and `form` is
+    frozen and takes no work.
+  - **Fixed the same day:** `TempoClock.map` and `TempoClock.dump` still
+    described the map as a document's and a clock per lane as what an
+    arrangement saves; both docstrings say what they are now, in both clients.
+  - **One stands, and is its own entry now**: "A clock read from inside its
+    own routine answers the physical beat", below.
 
 - ⬜ **A play onto a stopped clock is silent, and says nothing** *(found
   2026-09-05 by the user, pressing a button that did nothing)*.
@@ -4379,6 +4405,12 @@ work, where a pending item reads as done.)*
   and a new decisions entry says why. Plain English survives -- one piece of
   code, a file written in two pieces.
 
+  **What the rename missed, found 2026-09-18** while closing the tempo entry:
+  the pass searched the word standing alone, so every name carrying it inside
+  (`tick_piece_clock`, `beats_to_piece_samples`, `_piece_secs`, `render_piece`,
+  `PIECE_BEATS`, `endOfPiece` in the web book, and some fifty test names and
+  helpers) kept it. They are renamed for the structure each one holds.
+
 - ✅ **A catalogue view whose facts do not read is drawn as a bare widget, and
   says nothing** *(found 2026-09-17 by the user: "notes no muestra nada", on
   `editors/edit_notes`)*. The roll's marker lane is `time label` pairs, and the
@@ -4414,6 +4446,20 @@ work, where a pending item reads as done.)*
   `thaw` shifts both origins by the pause and wakes the driver, and a test in
   each client holds a routine through a freeze and checks it resumes a beat
   apart.
+
+- ⬜ **A clock read from inside its own routine answers the physical beat**
+  *(found 2026-09-16 by the tempo audit, filed on its own 2026-09-18 when that
+  entry closed)*. `TempoClock.beats()` and `TempoClock.tempo` read the paced
+  now, even from a routine the clock is waking, so a routine that yields to
+  beat 0.999 and reads the clock sees wherever physical time has got to --
+  verified: 1.80 beats and a tempo of 4.0, the one written at beat 1, where
+  the routine's logical beat is still 0.999. `set_tempo` already takes the
+  routine's logical beat (`_gesture_at`), so the write and the read disagree
+  about where "now" is. SuperCollider answers the logical time inside a
+  routine. Both clients behave alike today.
+  **The decision:** whether `beats()` and `tempo` answer the routine's logical
+  beat when read from a routine on that clock (sclang's rule), or whether that
+  reading is a separate verb and `beats()` stays physical everywhere.
 
 ## Future directions (a design that is not a fix)
 
@@ -4640,6 +4686,13 @@ than being ticked here.
   (`gui/editing/events.py`). The gap stands as written: `Timeline` has no `play`
   (a `Playhead` does), `session.play` takes a pattern only, `Ppar`/`Pmono` do not
   exist, and `editors/pianoroll` still plays a monophonic `Pbind`.
+
+  *Re-read 2026-09-18, after the tempo entry's phases.* The verb is answered:
+  a `Timeline` plays itself (`Timeline.play`, and `clausters.play(timeline)`),
+  seeks and reports its position, and there is no `Playhead` left to hand
+  back. What stands is the other two points -- the roll's notes to a
+  `Timeline` are still `NotesEditor`'s and private, and `Ppar`/`Pmono` still do
+  not exist -- and `editors/pianoroll` still plays a monophonic `Pbind`.
 
 - ✅ **A tempo map and an automation are one structure read two ways** *(a
   design, worked out with the user on 2026-09-01 while settling where a tempo

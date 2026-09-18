@@ -83,7 +83,7 @@ def test_a_domain_that_is_not_a_document_answers_here_too():
 
 # ---- the multitrack: a whole multitrack state across the seam ----
 
-def a_piece() -> dict:
+def a_multitrack() -> dict:
     """Two tracks, two lanes on the first, a region on each — the smallest
     multitrack a move between tracks has somewhere to move to."""
     vocals = Track(id=10, name="vocals", lanes=[Lane(id=11), Lane(id=12)])
@@ -103,7 +103,7 @@ def test_a_region_moves_between_tracks_in_one_edit_and_comes_back_in_one():
     # hands back with it is what puts it on the lane it came from.
     move = {"intent": "placeregion", "region": 100, "track": 20, "lane": 21,
             "position": 16.0, "layer": 1}
-    edited = domain_edit(MULTITRACK, a_piece(), move)
+    edited = domain_edit(MULTITRACK, a_multitrack(), move)
     assert edited is not None and edited["applied"]
 
     moved = Multitrack.read(edited["state"])
@@ -119,7 +119,7 @@ def test_a_region_moves_between_tracks_in_one_edit_and_comes_back_in_one():
 
 
 def test_a_refusal_says_why_rather_than_failing():
-    edited = domain_edit(MULTITRACK, a_piece(),
+    edited = domain_edit(MULTITRACK, a_multitrack(),
                          {"intent": "placeregion", "region": 999, "track": 20,
                           "lane": 21, "position": 0.0})
     assert edited is not None
@@ -127,7 +127,7 @@ def test_a_refusal_says_why_rather_than_failing():
     assert edited["reason"] == "no such region"
 
 
-def test_the_pieces_coalesce_key_is_asked_here_and_not_spelled_again():
+def test_the_multitracks_coalesce_key_is_asked_here_and_not_spelled_again():
     assert domain_coalesce_key(
         MULTITRACK, {"intent": "trimregion", "region": 100, "position": 0.0,
                       "length": 2.0}) == "trimregion:100"
@@ -135,7 +135,7 @@ def test_the_pieces_coalesce_key_is_asked_here_and_not_spelled_again():
                                              "points": []}) == ""
 
 
-def test_an_unedited_piece_writes_nothing_and_reads_back_at_the_first_version():
+def test_an_unedited_multitrack_writes_nothing_and_reads_back_at_the_first_version():
     # The counter stays out of the file while it is the first version, so a
     # multitrack that says nothing still writes an empty object.
     assert Multitrack().write() == {}

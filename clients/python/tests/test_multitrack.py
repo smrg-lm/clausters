@@ -91,7 +91,7 @@ def test_the_tempo_map_is_where_the_beats_fall_over_the_seconds():
     assert multitrack.tempo_map().secs_at(6.0) == pytest.approx(4.0)
 
 
-def test_a_piece_that_never_said_a_tempo_says_nothing():
+def test_a_multitrack_that_never_said_a_tempo_says_nothing():
     # No 120 invented: naming a default would decide a musical question the
     # document has no business in.
     assert Multitrack().tempo_at(0.0) is None
@@ -127,7 +127,7 @@ def test_nothing_said_is_nothing_written():
     assert "playrate" not in written["content"]
 
 
-def test_the_piece_carries_its_own_version_and_keeps_it_out_of_an_empty_file():
+def test_the_multitrack_carries_its_own_version_and_keeps_it_out_of_an_empty_file():
     # The counter a stale edit is stale against, and it is the multitrack's rather
     # than the document's: an editor of one is not editing the other. It stays
     # out of the file while it is the first version, so an unedited multitrack still
@@ -140,7 +140,7 @@ def test_the_piece_carries_its_own_version_and_keeps_it_out_of_an_empty_file():
     assert Multitrack.read(edited.write()).version == 4
 
 
-def test_a_whole_piece_round_trips():
+def test_a_whole_multitrack_round_trips():
     multitrack = Multitrack()
     multitrack.set_tempo(Tempo(at=0.0, tempo=1.6))
     multitrack.set_meter(Meter(at=0.0, beats=7, unit=8))
@@ -311,7 +311,7 @@ def test_a_format_2_session_opens_in_seconds():
 from clausters.multitrack import LaneView, TrackView, View  # noqa: E402
 
 
-def a_piece() -> Multitrack:
+def a_multitrack() -> Multitrack:
     multitrack = Multitrack()
     vocals = Track(id=10, lanes=[Lane(id=11), Lane(id=12)])
     vocals.lanes[0].place(region(20, 0.0, 4.0, source=700))
@@ -328,7 +328,7 @@ def test_a_view_that_says_nothing_writes_an_empty_object():
 def test_a_view_says_nothing_about_what_plays():
     # The whole argument for parallel rather than a field on the model: drop
     # every view and the multitrack is the same multitrack.
-    multitrack = a_piece()
+    multitrack = a_multitrack()
     written = multitrack.write()
     view = View(name="arranger", visible=Span(0.0, 32.0))
     view.track_view(10).height = 96.0
@@ -338,12 +338,12 @@ def test_a_view_says_nothing_about_what_plays():
     assert back.views[0].track(10).height == 96.0
 
 
-def test_two_windows_over_one_piece_are_two_views_and_disagree_on_purpose():
+def test_two_windows_over_one_multitrack_are_two_views_and_disagree_on_purpose():
     arranger = View(name="arranger", visible=Span(0.0, 64.0), quant=4.0)
     editor = View(name="editor", visible=Span(8.0, 20.0), quant=0.25,
                   autofit=False)
     editor.detail = 20
-    session = Session(multitrack=a_piece(), views=[arranger, editor])
+    session = Session(multitrack=a_multitrack(), views=[arranger, editor])
     back = Session.read(session.write())
     assert len(back.views) == 2
     assert back.views[0].quant == 4.0
@@ -373,13 +373,13 @@ def test_state_goes_when_the_thing_goes():
     view.focused = 777
     view.detail = 20
 
-    assert view.prune(a_piece()) is True
+    assert view.prune(a_multitrack()) is True
     assert list(view.tracks) == [10]
     assert list(view.lanes) == [11]
     assert view.selected == [20]
     assert view.focused is None
     assert view.detail == 20
-    assert view.prune(a_piece()) is False, "and pruning twice finds nothing to do"
+    assert view.prune(a_multitrack()) is False, "and pruning twice finds nothing to do"
 
 
 def test_a_field_a_newer_window_wrote_survives_a_load_and_a_save():
@@ -392,6 +392,6 @@ def test_a_field_a_newer_window_wrote_survives_a_load_and_a_save():
 
 
 def test_a_session_written_without_views_reads_back_without_them():
-    session = Session(multitrack=a_piece())
+    session = Session(multitrack=a_multitrack())
     assert "views" not in session.write()
     assert Session.read(session.write()).views == []
