@@ -224,6 +224,63 @@ class Node:
         """Resumes this node (``/node_run … 1``). See `run`."""
         self.run(True)
 
+    def before(self, target) -> "Node":
+        """Moves this node **immediately before** ``target``, as its sibling
+        (``/node_before``). Answers this node.
+
+        This is `AddAction.BEFORE` applied to a node that already exists: the
+        constructor places a node when it is made, and this is how one is moved
+        afterwards. Running earlier in the pass, it is now read by ``target``
+        rather than reading it — the same trade the placement always was.
+
+        The move is refused inside an auto-sorted group (see
+        `Group.auto_order`), which computes the order itself and replies
+        ``/fail`` to a hand that contradicts it.
+        """
+        self._server().send_msg("/node_before", self.id, _target_id(target))
+        return self
+
+    def after(self, target) -> "Node":
+        """Moves this node **immediately after** ``target``, as its sibling
+        (``/node_after``). Answers this node.
+
+        `AddAction.AFTER` for a node that already exists, and the usual
+        placement for an effect: running later in the pass, it reads what
+        ``target`` wrote this block. Refused inside an auto-sorted group
+        (`Group.auto_order`).
+        """
+        self._server().send_msg("/node_after", self.id, _target_id(target))
+        return self
+
+    def order(self, *nodes, action: AddAction = AddAction.AFTER) -> "Node":
+        """Moves several nodes to one place at once, **keeping the order they
+        are given in** (``/node_order``), with this node as the target. Answers
+        this node.
+
+        The first node lands where ``action`` says relative to this one; each
+        one after it lands right behind the previous, so a chain arrives as a
+        chain rather than as a race between five commands:
+
+        ```python
+        voice.order(filter, reverb, limiter)   # in that order, after `voice`
+        mixer.order(drums, bass, action=AddAction.HEAD)
+        ```
+
+        ``action`` takes the four placements a move admits — `AddAction.HEAD`
+        and `AddAction.TAIL` put them inside this node, which must then be a
+        group, `AddAction.BEFORE` and `AddAction.AFTER` beside it.
+        `AddAction.REPLACE` is not one of them: it frees what it replaces, and
+        this command moves. Refused inside an auto-sorted group
+        (`Group.auto_order`).
+        """
+        if AddAction(action) is AddAction.REPLACE:
+            raise ValueError("order() moves nodes: REPLACE frees the target, "
+                             "so it is not one of the four placements")
+        ids = [_target_id(node) for node in nodes]
+        if ids:
+            self._server().send_msg("/node_order", int(action), self.id, *ids)
+        return self
+
     def __repr__(self):
         return f"{type(self).__name__}(id={self.id})"
 
@@ -450,10 +507,9 @@ class Group(Node):
         (`Node.map`).
 
         The two ways of ordering do not mix, and the server says so: inside an
-        auto-ordered group a manual move (``/node_before``, ``/node_after``,
-        ``/node_order``, ``/group_head``, ``/group_tail`` -- wire commands this
-        client has no verb for yet) replies ``/fail``. Pass ``False`` to hand
-        the order back.
+        auto-ordered group a manual move (`clausters.defs.Node.before`,
+        `clausters.defs.Node.after`, `clausters.defs.Node.order`, `head`,
+        `tail`) replies ``/fail``. Pass ``False`` to hand the order back.
 
         What the server inferred is readable, which is the point of a rule
         nobody typed: `clausters.defs.Server.query_tree` reports the order it
@@ -485,6 +541,37 @@ class Group(Node):
         Pass ``False`` to return to strict order.
         """
         self._server().send_msg("/group_parallel", self.id, 1 if mode else 0)
+        return self
+
+    def head(self, *nodes) -> "Group":
+        """Moves each node to the **head** of this group (``/group_head``) —
+        first in the order, before everything already there. Answers this group.
+
+        `AddAction.HEAD` for nodes that already exist, and the way a node is
+        moved *into* a group rather than beside one. Each node is placed at the
+        head in turn, so ``g.head(a, b)`` leaves ``b`` first; `order` is the
+        verb that keeps a list's order instead. Refused when this group is
+        auto-sorted (`auto_order`).
+        """
+        return self._move_into("/group_head", nodes)
+
+    def tail(self, *nodes) -> "Group":
+        """Moves each node to the **tail** of this group (``/group_tail``) —
+        last in the order, after everything already there. Answers this group.
+
+        `AddAction.TAIL` for nodes that already exist. Refused when this group
+        is auto-sorted (`auto_order`).
+        """
+        return self._move_into("/group_tail", nodes)
+
+    def _move_into(self, addr: str, nodes) -> "Group":
+        """The shared body of `head` and `tail`: both send (groupID, nodeID)
+        pairs, so one node or twenty is one message."""
+        args = []
+        for node in nodes:
+            args += [self.id, _target_id(node)]
+        if args:
+            self._server().send_msg(addr, *args)
         return self
 
     @classmethod

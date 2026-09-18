@@ -303,6 +303,51 @@ def test_a_group_orders_and_parallelizes_itself():
     assert iface.sent[-1] == ("/group_parallel", [band.id, 1])
 
 
+def test_the_manual_moves_are_verbs_and_they_chain():
+    # The other half of placement: `AddAction` puts a node somewhere when it is
+    # made, and these five move one afterwards. Each answers a node, so a move
+    # reads as one expression.
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    group = Group(server=srv)
+    voice = Synth.from_id(1000, "beep", srv)
+    verb = Synth.from_id(1001, "verb", srv)
+    limiter = Synth.from_id(1002, "limiter", srv)
+
+    assert verb.after(voice) is verb
+    assert iface.sent[-1] == ("/node_after", [verb.id, voice.id])
+    assert voice.before(verb) is voice
+    assert iface.sent[-1] == ("/node_before", [voice.id, verb.id])
+
+    # A target is a handle or a bare id, as everywhere else.
+    verb.after(voice.id)
+    assert iface.sent[-1] == ("/node_after", [verb.id, voice.id])
+
+    # One message for the chain, so the order it is written in is the order it
+    # arrives in -- the reason this is not three `after` calls.
+    assert voice.order(verb, limiter) is voice
+    assert iface.sent[-1] == ("/node_order", [int(AddAction.AFTER), voice.id,
+                                              verb.id, limiter.id])
+    group.order(voice, verb, action=AddAction.HEAD)
+    assert iface.sent[-1] == ("/node_order", [int(AddAction.HEAD), group.id,
+                                              voice.id, verb.id])
+
+    # REPLACE frees what it replaces, which is not a move; and a move with
+    # nothing to move sends nothing rather than a malformed message.
+    with pytest.raises(ValueError):
+        voice.order(verb, action=AddAction.REPLACE)
+    sent = len(iface.sent)
+    assert voice.order() is voice
+    assert group.head() is group
+    assert len(iface.sent) == sent
+
+    assert group.tail(voice, verb) is group
+    assert iface.sent[-1] == ("/group_tail", [group.id, voice.id,
+                                              group.id, verb.id])
+    group.head(limiter)
+    assert iface.sent[-1] == ("/group_head", [group.id, limiter.id])
+
+
 def test_a_wait_for_done_ignores_another_commands_done():
     """A ``/done`` names the command it closes, so one left in flight by an
     earlier async send is not the next wait's to take.

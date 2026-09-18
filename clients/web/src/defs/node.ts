@@ -193,6 +193,83 @@ export class Node {
     resume(): void {
         this.run(true);
     }
+
+    /**
+     * Moves this node **immediately before** `target`, as its sibling
+     * (`/node_before`). Answers this node.
+     *
+     * This is `AddAction.BEFORE` applied to a node that already exists: the
+     * constructor places a node when it is made, and this is how one is moved
+     * afterwards. Running earlier in the pass, it is now read by `target`
+     * rather than reading it — the same trade the placement always was.
+     *
+     * The move is refused inside an auto-sorted group (see
+     * {@link Group.autoOrder}), which computes the order itself and replies
+     * `/fail` to a hand that contradicts it.
+     */
+    before(target: NodeLike): this {
+        this.srv().sendMsg("/node_before", ["i", this.id], ["i", nodeId(target)]);
+        return this;
+    }
+
+    /**
+     * Moves this node **immediately after** `target`, as its sibling
+     * (`/node_after`). Answers this node.
+     *
+     * `AddAction.AFTER` for a node that already exists, and the usual placement
+     * for an effect: running later in the pass, it reads what `target` wrote
+     * this block. Refused inside an auto-sorted group
+     * ({@link Group.autoOrder}).
+     */
+    after(target: NodeLike): this {
+        this.srv().sendMsg("/node_after", ["i", this.id], ["i", nodeId(target)]);
+        return this;
+    }
+
+    /**
+     * Moves several nodes to one place at once, **keeping the order they are
+     * given in** (`/node_order`), with this node as the target. Answers this
+     * node.
+     *
+     * The first node lands where `action` says relative to this one; each one
+     * after it lands right behind the previous, so a chain arrives as a chain
+     * rather than as a race between five commands:
+     *
+     * ```ts
+     * voice.order([filter, reverb, limiter]);   // in that order, after `voice`
+     * mixer.order([drums, bass], { action: AddAction.HEAD });
+     * ```
+     *
+     * `action` takes the four placements a move admits — `AddAction.HEAD` and
+     * `AddAction.TAIL` put them inside this node, which must then be a group,
+     * `AddAction.BEFORE` and `AddAction.AFTER` beside it. `AddAction.REPLACE`
+     * is not one of them: it frees what it replaces, and this command moves.
+     * Refused inside an auto-sorted group ({@link Group.autoOrder}).
+     *
+     * @param nodes - the nodes to move, in the order they must end up in.
+     * @param action - where they go relative to this node; the tail of the
+     *   list, `AddAction.AFTER`, by default.
+     */
+    order(
+        nodes: readonly NodeLike[],
+        { action = AddAction.AFTER }: { action?: AddAction } = {},
+    ): this {
+        if (action === AddAction.REPLACE) {
+            throw new RangeError(
+                "order() moves nodes: REPLACE frees the target, so it is not "
+                    + "one of the four placements",
+            );
+        }
+        if (nodes.length > 0) {
+            this.srv().sendMsg(
+                "/node_order",
+                ["i", action],
+                ["i", this.id],
+                ...nodes.map((node): MsgArg => ["i", nodeId(node)]),
+            );
+        }
+        return this;
+    }
 }
 
 export class Synth extends Node {
@@ -288,10 +365,9 @@ export class Group extends Node {
      * ({@link Node.map}).
      *
      * The two ways of ordering do not mix, and the server says so: inside an
-     * auto-ordered group a manual move (`/node_before`, `/node_after`,
-     * `/node_order`, `/group_head`, `/group_tail` — wire commands this client
-     * has no verb for yet) replies `/fail`. Pass `false` to hand the order
-     * back.
+     * auto-ordered group a manual move ({@link Node.before}, {@link Node.after},
+     * {@link Node.order}, {@link Group.head}, {@link Group.tail}) replies
+     * `/fail`. Pass `false` to hand the order back.
      *
      * What the server inferred is readable, which is the point of a rule
      * nobody typed: {@link Server.queryTree} reports the order it chose and
@@ -329,6 +405,46 @@ export class Group extends Node {
      */
     parallel(mode = true): this {
         this.srv().sendMsg("/group_parallel", ["i", this.id], ["i", mode ? 1 : 0]);
+        return this;
+    }
+
+    /**
+     * Moves each node to the **head** of this group (`/group_head`) — first in
+     * the order, before everything already there. Answers this group.
+     *
+     * `AddAction.HEAD` for nodes that already exist, and the way a node is
+     * moved *into* a group rather than beside one. Each node is placed at the
+     * head in turn, so `g.head(a, b)` leaves `b` first; {@link Node.order} is
+     * the verb that keeps a list's order instead. Refused when this group is
+     * auto-sorted ({@link Group.autoOrder}).
+     */
+    head(...nodes: NodeLike[]): this {
+        return this.moveInto("/group_head", nodes);
+    }
+
+    /**
+     * Moves each node to the **tail** of this group (`/group_tail`) — last in
+     * the order, after everything already there. Answers this group.
+     *
+     * `AddAction.TAIL` for nodes that already exist. Refused when this group is
+     * auto-sorted ({@link Group.autoOrder}).
+     */
+    tail(...nodes: NodeLike[]): this {
+        return this.moveInto("/group_tail", nodes);
+    }
+
+    /**
+     * The shared body of {@link Group.head} and {@link Group.tail}: both send
+     * (groupID, nodeID) pairs, so one node or twenty is one message.
+     */
+    private moveInto(addr: string, nodes: readonly NodeLike[]): this {
+        if (nodes.length > 0) {
+            const args: MsgArg[] = [];
+            for (const node of nodes) {
+                args.push(["i", this.id], ["i", nodeId(node)]);
+            }
+            this.srv().sendMsg(addr, ...args);
+        }
         return this;
     }
 

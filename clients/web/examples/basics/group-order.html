@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>clausters: one analysis, two uses</title>
+    <title>clausters: the hand and the analysis</title>
     <link rel="icon" href="data:," />
     <style>
       html, body { margin: 0; min-height: 100%; background: #0d0d12;
@@ -18,7 +18,17 @@
   </head>
   <body>
     <main>
-      <div id="note">The server reads which buses each node touches and infers
+      <div id="note">Order is meaning: the server processes the tree front to
+back, so a node only hears what was written earlier in the same pass. There are
+two ways to get it right, and this page does both to the same graph.
+
+<b>By hand.</b> <code>AddAction</code> places a node when it is made, and five
+verbs move one afterwards — <code>before</code>, <code>after</code>,
+<code>order</code>, <code>head</code> and <code>tail</code>.
+<code>node.order()</code> is the one to reach for when a whole chain moves: it
+is one message, so the order it is written in is the order it arrives in.
+
+<b>By analysis.</b> The server reads which buses each node touches and infers
 who depends on whom. The same reading answers two different questions, and each
 is a verb on the group:
 
@@ -34,8 +44,15 @@ take them. The samples are the same either way.
 
 Four voices write four private buses and one mixer sums them to the output, and
 they are added <b>backwards</b> — the mixer first, so it reads buses nobody has
-written yet. You hear silence, then a chord the moment <code>autoOrder</code>
-lands; the tree below is the server's answer printed back.</div>
+written yet. You hear four turns: silence, the chord the hand puts in order,
+silence again when the hand puts it back wrong, and the chord the moment
+<code>autoOrder</code> lands; the tree below is the server's answer printed
+back.
+
+The two ways do not mix, and that is the point of doing both here: once
+<code>autoOrder</code> owns the group the manual verbs reply <code>/fail</code>
+there, because the server recomputes the order and a hand that contradicts it
+would be undone on the next change.</div>
 
       <button id="run">boot and play</button>
       <pre id="log"></pre>
@@ -44,7 +61,8 @@ lands; the tree below is the server's answer printed back.</div>
     <!--
       The web sibling of clients/python/examples/basics/group_order.py, call for
       call: the same two defs, the same four voices on four private buses under
-      one mixer, added backwards, sorted by one `autoOrder`.
+      one mixer, added backwards, put in order by hand, broken again, and
+      sorted by one `autoOrder`.
 
       The one line that cannot be the same is the session: `Session.embed` is
       this client's `live`, and it takes no `workers` because the engine in a
@@ -95,7 +113,7 @@ lands; the tree below is the server's answer printed back.</div>
         return new SynthDef(name, out(0.0, sig), out(1.0, sig));
       }
 
-      async function run(seconds = 4.0) {
+      async function run(seconds = 6.0) {
         const session = (await Session.embed()).activate();
         await voice().send();
         await mixer().send();
@@ -114,13 +132,28 @@ lands; the tree below is the server's answer printed back.</div>
         await session.server.sync();
         log("added backwards -- the mixer reads buses nobody has written yet:");
         log(String(await session.server.queryTree(bank)));
-        await session.run(seconds / 2);      // silence
+        await session.run(seconds / 4);      // silence
+
+        // By hand: the four voices move in front of the mixer, in one message,
+        // so they arrive in the order they are written in.
+        mix.order(voices, { action: AddAction.BEFORE });
+        await session.server.sync();
+        log("after order(..., BEFORE) -- the hand put the voices in front of it:");
+        log(String(await session.server.queryTree(bank)));
+        await session.run(seconds / 4);      // the chord
+
+        // And back: one node moved before another is the whole undoing.
+        mix.before(voices[0]);
+        await session.server.sync();
+        log("after before() -- the mixer is back in front, and silent again:");
+        log(String(await session.server.queryTree(bank)));
+        await session.run(seconds / 4);      // silence
 
         bank.autoOrder();
         await session.server.sync();
         log("after autoOrder -- the server put the voices in front of it:");
         log(String(await session.server.queryTree(bank)));
-        await session.run(seconds / 2);      // the chord
+        await session.run(seconds / 4);      // the chord
 
         for (const node of [...voices, mix]) node.free();
         for (const bus of buses) bus.free();

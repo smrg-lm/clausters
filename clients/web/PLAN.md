@@ -3073,6 +3073,23 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 
 ## Found by use: the running list of fixes
 
+- ⬜ **One WebSocket test fails only when the whole suite runs** *(found
+  2026-09-18, running `./test.sh` after adding the manual ordering verbs)*.
+  `tests/seq-ws.test.ts`, "a timeline on the server's transport follows the
+  conductor over the wire", failed two of four full-suite runs today with
+  `ReplyTimeout: the server was closed` (from `withServer`'s `close`, so a
+  request was still in flight when the test ended), and passed every time it was
+  run alone -- 877 ms against the 812 ms it failed at, which is the tell: the
+  test is near its own timeout and the full suite, which runs the files
+  concurrently, is what pushes it over. Nothing in the change it was found under
+  touches timelines or the transport; a run of the same suite without it failed
+  nothing, and a later run with it failed nothing either.
+
+  It is written down rather than fixed because the fix is a decision: raise that
+  test's timeout, cut what it waits for, or stop running the server-backed files
+  concurrently with the rest. What must not happen is the third time it is seen
+  being read as new.
+
 - ✅ **The GuiDef sweep vectors are stale, and regenerated they show `waveform`
   disagreeing on two loudness options** *(found 2026-09-17, regenerating every
   parity vector after the timeline work; fixed 2026-09-18)*.

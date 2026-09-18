@@ -125,7 +125,7 @@ Every bound may itself be a signal, so a range can be modulated. sclang's bipola
 
 `diskIn`/`diskOut` are the one pair that only means something against a **native** server: they stream the server's own filesystem, which a tab does not have.
 
-A group also says **how** its members run: `group.autoOrder()` has the server order them by the buses each one reads and writes rather than by the order they were added in, and `group.parallel()` has it run the independent ones on the DSP worker threads, bit-identically. Both are the same analysis, and either can be handed back with `false`.
+A group also says **how** its members run: `group.autoOrder()` has the server order them by the buses each one reads and writes rather than by the order they were added in, and `group.parallel()` has it run the independent ones on the DSP worker threads, bit-identically. Both are the same analysis, and either can be handed back with `false`. Where the order is kept by hand, `AddAction` places a node when it is made and five verbs move one afterwards: `node.before(other)`, `node.after(other)`, `node.order([a, b, …])` — a whole chain in one message, so it arrives in the order it was written — and `group.head(…)` / `group.tail(…)`, which move nodes into the group. They are refused inside an auto-ordered group, which computes the order itself.
 
 One more thing a tab does not have, the platform's and not silent: **parallel groups do not run in parallel** (`/group_parallel` is accepted and serializes, which produces the same samples). The whole list, with the reason for each, is [What a tab cannot do](platform.md).
 

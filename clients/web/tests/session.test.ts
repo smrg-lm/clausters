@@ -21,7 +21,7 @@ import type { ManualTicker } from "../src/base/clock.ts";
 import { Routine } from "../src/base/stream.ts";
 import { main } from "../src/base/main.ts";
 import { Bus } from "../src/defs/bus.ts";
-import { Group, Synth } from "../src/defs/node.ts";
+import { AddAction, Group, Synth } from "../src/defs/node.ts";
 import { Server } from "../src/defs/server/index.ts";
 import { Session } from "../src/session.ts";
 import { play } from "../src/play.ts";
@@ -230,6 +230,58 @@ test("a group orders and parallelizes itself", () =>
             ["/group_new", [band.id, 1, 0]],
             ["/group_parallel", [band.id, 1]],
         ]);
+        session.close();
+    }));
+
+test("the manual moves are verbs and they chain", () =>
+    withCleanDefault(async () => {
+        // The other half of placement: `AddAction` puts a node somewhere when
+        // it is made, and these five move one afterwards. Same verbs, same
+        // messages, same order as the reference client's
+        // `before`/`after`/`order`/`head`/`tail`.
+        const { session, packets } = await fakeSession();
+        const group = new Group({ server: session.server });
+        const voice = Synth.fromId(1000, "beep", session.server);
+        const verb = Synth.fromId(1001, "verb", session.server);
+        const limiter = Synth.fromId(1002, "limiter", session.server);
+
+        assert.equal(verb.after(voice), verb);
+        assert.deepEqual(sent(packets).at(-1), ["/node_after", [verb.id, voice.id]]);
+        assert.equal(voice.before(verb), voice);
+        assert.deepEqual(sent(packets).at(-1), ["/node_before", [voice.id, verb.id]]);
+
+        // A target is a handle or a bare id, as everywhere else.
+        verb.after(voice.id);
+        assert.deepEqual(sent(packets).at(-1), ["/node_after", [verb.id, voice.id]]);
+
+        // One message for the chain, so the order it is written in is the
+        // order it arrives in -- the reason this is not three `after` calls.
+        assert.equal(voice.order([verb, limiter]), voice);
+        assert.deepEqual(sent(packets).at(-1), [
+            "/node_order",
+            [AddAction.AFTER, voice.id, verb.id, limiter.id],
+        ]);
+        group.order([voice, verb], { action: AddAction.HEAD });
+        assert.deepEqual(sent(packets).at(-1), [
+            "/node_order",
+            [AddAction.HEAD, group.id, voice.id, verb.id],
+        ]);
+
+        // REPLACE frees what it replaces, which is not a move; and a move with
+        // nothing to move sends nothing rather than a malformed message.
+        assert.throws(() => voice.order([verb], { action: AddAction.REPLACE }), RangeError);
+        const before = packets.length;
+        assert.equal(voice.order([]), voice);
+        assert.equal(group.head(), group);
+        assert.equal(packets.length, before);
+
+        assert.equal(group.tail(voice, verb), group);
+        assert.deepEqual(sent(packets).at(-1), [
+            "/group_tail",
+            [group.id, voice.id, group.id, verb.id],
+        ]);
+        group.head(limiter);
+        assert.deepEqual(sent(packets).at(-1), ["/group_head", [group.id, limiter.id]]);
         session.close();
     }));
 

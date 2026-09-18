@@ -2299,6 +2299,23 @@ Anything unresolved lives here or under "Future directions", both **after** the
 tracks: never inside the milestone that happened to be open, and never among
 finished work, where a pending item reads as done.
 
+- ⬜ **A group's sort mode is in no structured reply** *(found 2026-09-18 while
+  giving both clients the manual ordering verbs, whose docstrings have to say
+  "refused inside an auto-ordered group" and leave the reader no way to ask
+  which kind a group is)*. `/group_sortMode` sets it and nothing reads it back:
+  `/group_queryTree.reply` carries `ID, count, name` per node and no flag, and
+  `/node_query.reply` carries none either. The one place the answer exists is
+  `/group_dumpGraph.reply`, which prints `group 1000 (auto)` inside a debug
+  **string** -- the one thing both books tell a client never to scrape. So a
+  client that now has both ways of ordering cannot say which one it is looking
+  at, and a script that moves a node by hand finds out from a `/fail`.
+
+  The shape is a reply change, and that is why it is here rather than in a
+  client's plan: a flag per group in `/group_queryTree.reply` is the obvious
+  place (it is already the structured tree), and it moves the reply's shape, so
+  both clients' parsers and `docs/schemas.md` move with it. Whether `parallel`
+  rides along is the same question asked twice, and the two are one decision.
+
 - ⬜ **The disk threads are the one worker the load table cannot see** *(found
   2026-09-15 while wiring M34: every other long-lived thread reaches the table,
   these do not)*. `DiskIn::open`/`DiskOut::open` (`src/dsp/disk.rs`) spawn their
