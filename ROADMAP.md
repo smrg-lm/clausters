@@ -110,17 +110,27 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-- ⬜ **The page suite is one browser, and the second one found a defect it had
-  been passing over** (`clients/web/PLAN.md`, Found by use). Chrome and Firefox
-  disagree about what an API refuses, so a page that is wrong everywhere passes
-  here whenever Chrome is the lenient one. Needs a decision: a rule for how the
-  pages assert, and whether a by-hand Firefox pass joins the release checks.
-
 - ⬜ **The manual ordering family is in neither client either: `/node_before`,
   `/node_after`, `/node_order`, `/group_head`, `/group_tail`**
   (`clients/python/PLAN.md`, Found by use). The older half of the subject the
   two group verbs closed: `AddAction` places a node when it is made and nothing
   moves one afterwards. Verbs on `Node` and `Group`, both clients in one commit.
+
+
+## 2. Fixes that need a decision first
+
+Same size of work, except the shape depends on an answer. The decision is named
+on each one; none of them is being taken by this file.
+
+- ⬜ **The page suite is one browser, and the second one found a defect it had
+  been passing over** (`clients/web/PLAN.md`, Found by use). Chrome and Firefox
+  disagree about what an API **refuses**, so a page that is wrong everywhere
+  passes here whenever Chrome is the lenient one — two known instances, the
+  wheel's units and closing an `AudioContext` twice.
+  **The decision:** the rule the pages assert by (the mechanism, rather than the
+  absence of an exception), and whether a by-hand Firefox pass over the same
+  pages joins the release checks the way the feature matrix does. The plan
+  prices both halves; neither is typing.
 
 - ⬜ **A clone: a new sequence made from a clip, or from a segment of one**
   *(`clients/python/PLAN.md`, Future directions)*. The arrangement can only make
@@ -129,25 +139,11 @@ already carry it.
   alternative to the windows the split now cuts (a split that clones needs no
   crate change, at the price of a cut that deletes instead of hiding), and that
   half is decided and recorded in `docs/decisions.md`; what is left here is the
-  verb itself, whose three shapes are named in the plan. **`O21`(a) asks it from
-  the model's side**: if a region is two objects rather than one, swapping what
-  fills a slot while keeping the slot is a copy by construction, and the verb's
-  shape follows that answer.
+  verb itself, whose three shapes are named in the plan. **The decision is
+  `O21`(a), asked from the model's side**: if a region is two objects rather
+  than one, swapping what fills a slot while keeping the slot is a copy by
+  construction, and the verb's shape follows that answer.
 
-- ⬜ **The GuiDef sweep vectors are stale, and regenerated they show `waveform`
-  disagreeing on two loudness options** (`clients/web/PLAN.md`, Found by use).
-  `waveform` puts `loudness_ruler`/`loudness_stats` on the tree in the web
-  client and not in Python; the committed vectors predate the options, so the
-  parity suite does not see it. Fix the lagging client and commit the
-  regenerated vectors together.
-
-
-## 2. Fixes that need a decision first
-
-Same size of work, except the shape depends on an answer. The decision is named
-on each one; none of them is being taken by this file.
-
-None open.
 
 ## 3. Tests and reviews pending
 

@@ -3122,6 +3122,54 @@
  },
  {
   "builder": "scope",
+  "option": "loudness_target",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "rate": "audio",
+   "view": "trace",
+   "loudness_target": 3.5
+  }
+ },
+ {
+  "builder": "scope",
+  "option": "loudness_scale",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "rate": "audio",
+   "view": "trace",
+   "loudness_scale": 3.5
+  }
+ },
+ {
+  "builder": "scope",
+  "option": "loudness_ruler",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "rate": "audio",
+   "view": "trace",
+   "loudness_ruler": 1
+  }
+ },
+ {
+  "builder": "scope",
+  "option": "loudness_stats",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "bus": 0,
+   "rate": "audio",
+   "view": "trace",
+   "loudness_stats": 1
+  }
+ },
+ {
+  "builder": "scope",
   "option": "window_ms",
   "value": 3.5,
   "tree": {
@@ -3642,6 +3690,42 @@
   "tree": {
    "type": "signal",
    "fills": 1
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "loudness_target",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "loudness_target": 3.5
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "loudness_scale",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "loudness_scale": 3.5
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "loudness_ruler",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "loudness_ruler": 1
+  }
+ },
+ {
+  "builder": "signal",
+  "option": "loudness_stats",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "loudness_stats": 1
   }
  },
  {
@@ -5032,6 +5116,46 @@
    "type": "signal",
    "view": "trace",
    "fills": 1
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "loudness_target",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "loudness_target": 3.5
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "loudness_scale",
+  "value": 3.5,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "loudness_scale": 3.5
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "loudness_ruler",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "loudness_ruler": 1
+  }
+ },
+ {
+  "builder": "waveform",
+  "option": "loudness_stats",
+  "value": true,
+  "tree": {
+   "type": "signal",
+   "view": "trace",
+   "loudness_stats": 1
   }
  },
  {
