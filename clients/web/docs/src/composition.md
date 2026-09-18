@@ -1,147 +1,28 @@
 # The document: what a multitrack is, and who edits it
 
 A `Timeline` places items at beats and plays them. That is enough to
-sequence, but not everything a script places is a flat list of events: often it
-is an element inside an element — a phrase inside a section inside a multitrack, a
-take placed against a melody, a generator that has not been evaluated yet.
+sequence, but not enough to *compose*: a multitrack places recorded and
+generated contents in time, with tracks, takes and curves that are **authored,
+durable and undoable** — state a picture cannot hold, because a picture is
+drawn and drawing frees.
 
-The `form` namespace is one such layer — a small, self-contained set of
-client-side data structures for placing elements in time. It is the same layer the
-Python client has, in this language: the two write the same document and flatten
-to the same timeline, and a parity suite holds them to it.
+That state lives in the **document** (`crates/clausters-document`), and this
+chapter is about it: the model a multitrack editor edits, the presentation beside
+it, and how an edit is applied, inverted and saved. It is one crate, bound by
+every client and by the `standalone` host, so what an edit *means* is defined
+once rather than re-derived per language.
 
-It is **relegated**: it has no view, it takes no new work, and the arrangement an
-application is built on lives in the **document** described in the second half of
-this chapter.
+**The data is what is fundamental.** Samples, notes, events, curves — they are
+edited and drawn with no arrangement anywhere near them: `edit(x)` opens a
+buffer, a timeline or a curve on its own. So the pictures are independent of the
+model too — **a clip is a view configured by what it holds**, and the edits it
+admits (move, trim, split, join) come from the structure inside it, in the unit
+that structure measures. A clip over samples and a clip over a timeline of notes
+take the same actions; only the arithmetic differs.
 
-## Elements
-
-An **element** is any bounded thing that produces a unit of meaning and can be
-decomposed or combined — and it comes in two modes, which is the axis the whole
-layer turns on. An element is either **generated** (the rendered thing: samples in
-a buffer, a bounced timeline of events — data you can edit directly) or a
-**generator** (the algorithm that renders it: a def, a pattern, a routine).
-Evaluating a generator produces a generated element; that is the *change of
-state*, and it is what rendering does.
-
-The difference is not merely data versus process — it is what you can *do* with
-each. A generated element is **random-access**: an audio file can be read
-backwards, sliced, scrubbed, edited in place. A generator is **forward-only**: it
-can be evaluated, in order, and that is all. An element carries two optional
-temporal properties — an `onset` (where it starts, in beats, relative to its
-context) and a `duration` — and delegates the actual playing to the object it
-wraps.
-
-**The two are not in the same unit, and each takes its own from what it answers
-to.** An onset is in **beats**, always: placing something is a musical decision,
-and it takes the unit of what contains it. A duration is in the unit of the
-element's own data — **seconds** for a `Vector`, a `Segments` or a curve, because
-a recording's length is `frames / sampleRate` and no tempo change makes it
-shorter; **beats** for a `Clang`, a `Sequence` or a `Track`, because a note *is*
-musical and a tempo change is supposed to shorten it. `Element.durationUnit` says
-which, derived from what the element holds rather than stored beside it. The
-conversion happens where the tree is flattened for playback (`render`, which
-reads the clock's tempo) and never in the tree, since a timeline is ordered by
-one number and cannot hold two bases. The arrangement is a thin adornment over what the client already has, not
-a second implementation of it.
-
-Which of the two properties are present gives an element its temporal
-*character*: both is a **segment**, an onset alone is **punctual**, a duration
-alone is **relative** (it has a length but no place yet), neither is **abstract**
-— pure context, which only a parent gives concrete time.
-
-There are five kinds, and they map one to one onto objects you already use
-(`Segments` is not a sixth: it is the `Vector` primitive — a list at constant
-time — assembled from more than one window):
-
-| Element     | What it is                                       | Wraps                              |
-| ----------- | ------------------------------------------------ | ---------------------------------- |
-| `Clang`     | parameters grouped into one action               | `Event`                            |
-| `Sequence`  | strict order, no concrete time — only sequence   | an array, or a `Pattern`           |
-| `Vector`    | a list at constant time (samples)                | `Buffer`                           |
-| `Segments`  | several windows onto samples, read as one        | `[buffer, start, duration]` triples |
-| `Track`     | mixed placement of elements — a DAW track        | `Timeline`                         |
-| `Generator` | a *process*: server DSP, or a sequence generator | a def, or a `Pbind`/`Routine`      |
-
-A `Sequence` of elements is laid out **one after another**, and what it advances
-by is each item's own `duration` — its stated length in its own unit. An item
-that states none is as long as *what it lays down*, which is what a `Sequence`
-of `Sequence`s relies on: a bar says nothing about its length, and the four
-notes in it say everything. (Mute and solo do not enter: they say what is
-heard, never where anything is, so silencing one member leaves the ones after
-it where they were.)
-
-A `Vector` is *data*, so it has no sound of its own: it sounds through the
-**instrument** named to play it — a def whose `buf` control takes the buffer
-number. That is the whole rule for an audio clip. A `Segments` is the same rule
-over several of them: it is what assembling samples out of multitracks looks like when
-nothing is copied.
-
-```ts
-import { form } from "clausters";
-
-// a def that plays a buffer, sounding two seconds of it
-const take = new form.Vector(buf, null, 2.0, { instrument: "take" });
-```
-
-The two positional arguments after what an element wraps are always its `onset`
-and its `duration`; everything else is named.
-
-## Grouping: the one new structure
-
-An `Aggregate` places elements by an offset, recursively — and that recursion is
-the whole idea. It comes in two kinds. A **concrete** aggregate is a relation *in
-time* between its members (a section holding clips, a melody holding notes). A
-**logical** aggregate is a relation of *processing*: the members are wired to each
-other through buses, which is exactly what a `GraphDef` expresses, so
-`aggregate.toGraphdef()` translates one into it.
-
-```ts
-const song = new form.Aggregate([
-    [0.0, new form.Aggregate([[0.0, take], [4.0, take]], "concrete", { name: "drums" })],
-    [2.0, new form.Aggregate([[0.0, melody]], "concrete", { name: "lead" })],
-], "concrete", { name: "song" });
-```
-
-The `take` above is placed **twice**, which is the ordinary thing to write and
-means what it says: two clips, one take. A placement is a **window onto samples** —
-editing the samples through either window edits the one take, and moving one clip
-moves that clip. What can be placed twice is samples the element only *names*: a
-`Vector` over a server buffer, a `Generator` over a pattern or a def. An element
-that carries its samples *inside* it — a `Clang`, a `Track`, an `Aggregate` — is
-refused, because two placements of one of those would be two copies that diverge
-the moment you edit one.
-
-From how its members sit in time, an aggregate *derives* its temporal
-**relation**: `successive` when they tile contiguously, `simultaneous` when they
-start and end together, `mixed` otherwise. You do not set it; it is read from the
-placements.
-
-A placement may also carry a length of its own, and that length is what you hear
-of what it holds: events past its end are dropped and a single-event element
-sounds for exactly that long — the DAW rule, and what resizing a clip changes.
-
-## Rendering: the change of state
-
-Rendering an aggregate **flattens** it — a tree-walk accumulating the nested
-offsets into absolute beats — into a flat `Timeline`, which then plays
-itself. A generator contained in it is *bounced* in the same pass: that evaluation,
-the change from a process into a generated element, is the *change of state*.
-
-```ts
-const timeline = song.render(server, clock);   // live: the timeline it flattened to
-```
-
-There is no second rendering path: what differs between destinations is the
-destination, not the flattening.
-
-A **logical** aggregate takes the other path entirely — its `GraphDef` is sent and
-instanced on the server — so `render` there answers with a promise of the
-instance group rather than a timeline. Sending a def is a round trip, and this
-client awaits one rather than blocking the page's single thread.
-
-An element is *rendered*, never played: `play` is for what already sounds
-directly, and a flat `Timeline`, being already generated, is playable.
+The `form` namespace is a **relegated** client-side layer for placing elements
+in time, kept frozen and taking no new work; it has no view and nothing is
+designed around it. See [`form`](form.md).
 
 ## What an editor is
 
@@ -190,7 +71,7 @@ client's `edit` is not, for the reason `plot` and `View.open` are — resolving 
 ambient host may have to boot it.
 
 Nothing is handed back: the object passed in *is* the edited one. A **multitrack** is
-one of them, and what opens is the multitrack editor — the second half of this
+one of them, and what opens is the multitrack editor — the rest of this
 chapter is what it edits.
 
 Reading it back **after the hand is done** is `wait`:
@@ -221,33 +102,9 @@ run it replaced. The page's buffer calls are asynchronous, so a stroke's write i
 **queued in order** rather than awaited; the Python client writes synchronously,
 and that is the only difference between the two.
 
-## The view it had, and where the multitrack went
-
-The `form` namespace had a multitrack editor projected out of it, and it does not
-any more: `FormEditor` was removed on 2026-09-06 in both clients, with its
-examples and this chapter's pages about it. The namespace itself stays,
-self-contained, as the data structures described above — it simply has no view.
-
-The reason is structural rather than a defect count. A multitrack's own state —
-which track a thing is on, its order within the track, its placement and its
-identity — is **authored, durable and undoable**, and a projection has nowhere to
-keep it: it ended up in the widget tree, which is drawn, and drawing frees.
-
-What replaces it is a **session** in the same document crate the rest of this
-chapter is about — source, region, playlist, track, automation — with three
-classic applications built over it: an audio editor, a multitrack editor and a
-score editor, each programmable from the GUI host and driven identically from
-every client. `crates/clausters-document/PLAN.md` carries that design.
-
-**What did not change** is everything below: the document, where undo lives, and
-what a saved session is. Those are the crate's, they were never `form`'s, and
-they are what the three applications are built on.
-
-
 ## The arrangement: tracks, lanes, regions
 
-Everything above is the general tree. **Beside** it there is the model a
-multitrack editor actually edits, and it is the one the three classic
+The model a multitrack editor edits is the one the three classic
 applications are built over — the audio editor, the multitrack editor and the
 score editor, over one document.
 

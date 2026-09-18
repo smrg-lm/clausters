@@ -141,11 +141,6 @@ already carry it.
   parity suite does not see it. Fix the lagging client and commit the
   regenerated vectors together.
 
-- ⬜ **The web book's document chapter still opens with `form`'s pages, and
-  holds two sections the Python book has nowhere** (`clients/web/PLAN.md`,
-  Found by use). The two books teach `edit` in different places, and the web
-  one still presents `form` ahead of the document. A `form.md` page there, and
-  the editor sections in both books.
 
 ## 2. Fixes that need a decision first
 

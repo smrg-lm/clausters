@@ -4446,7 +4446,7 @@ sound.
 
 - ✅ **`editors/edit-multitrack.html` is not call for call its script** *(fixed 2026-09-14: of the three, one was a port that drifted and two were spellings nobody had declared. The page had lost the script's hot take -- the `sine` at 1.4 that fills a meter, source 6 and box 25 -- and has it now. `Part` is a named tuple in Python and an interface in TypeScript, so a page's span is an object literal: a row in the idiom table. And `push` is `Array.push`, the script's `list.append`, which the audit reads as the host's verb: a row in the pair's own table. The audit reports the pair clean.)* *(found 2026-09-13, auditing the pair while the script learned to write its piece as a session)*. `scripts/audit-example-pairs.py editors/edit_multitrack` reports three differences nobody declared and nobody decided: the script calls `sine` where the page does not (the hot take's oscillator), the script builds its join's two spans with `Part` where the page does not, and the page calls `push` where the script does not. Each is either a port that drifted or a spelling the idiom table is missing; which is to be read side by side before either file changes. The session cell the script gained the same day is declared (`docs/example-parity.md`), because a tab has no filesystem to write a take into.
 
-- ⬜ **The web book's document chapter still opens with `form`'s pages, and
+- ✅ **The web book's document chapter still opens with `form`'s pages, and
   holds two sections the Python book has nowhere** *(found 2026-09-18, retiring
   "the composition" from both books)*. `docs/src/composition.md` begins with
   `form`'s elements, grouping and rendering -- the tutorial the Python book
@@ -4457,4 +4457,13 @@ sound.
   them still presents `form` ahead of the document. **To do:** a `form.md` in
   this book the size of the Python one, and the two editor sections in both
   books, in the chapter where each reader looks for `edit`.
+
+  **Fixed 2026-09-18, the same day.** This book has a `form.md` the size of
+  the Python one, and the tutorial pages are gone from here as they are from
+  there. Both document chapters open the same way and then carry "What an
+  editor is" and "`edit(x)`: one verb over the four structures", before the
+  multitrack sections -- where a reader of either book looking for `edit`
+  arrives. The two chapters' shared opening also lost "Everything above is the
+  general tree", a sentence about the `form` pages that had stood over nothing
+  in the Python book since they were deleted.
 

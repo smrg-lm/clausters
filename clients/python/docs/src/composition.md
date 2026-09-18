@@ -24,10 +24,88 @@ take the same actions; only the arithmetic differs.
 time, kept frozen and taking no new work; it has no view and nothing is designed
 around it. See [`clausters.form`](form.md).
 
+## What an editor is
+
+`clausters.gui.editing.Editor` edits **one structure** — a buffer's samples, a
+break-point curve, a timeline of events — and it knows nothing about any
+arrangement. That is the whole of it, and it is deliberately the plain case:
+editing a curve is what an editor is for.
+
+An editor orchestrates rather than performs, and it is four collaborators
+(`clausters.gui.editing`):
+
+| | what it is | what it deliberately is not |
+|---|---|---|
+| `View` | the picture of one structure, and the registry from widget id to what it shows | not the vocabulary: one structure is drawn several ways |
+| `Domain` | what a gesture needs read with it, and the applied payload written onto the client object | not **what a gesture means** and not **how an edit inverts** — both are the shared crate's, so neither is written once per language — and it does not draw |
+| `Echo` | the acknowledgement: the stamp, the version, the corrections, the reason | not anything about what was edited |
+| `Editing` | the editing context: the history, and the views to tell | **not the editor's** — it is asked for, never built, which is what makes two windows walk one undo order |
+
+The rule that fixes all four: an editor owns **neither the data nor the
+history**. `View` here is not `clausters.gui.guidef.View`, which is a tree you
+can open.
+
+## `edit(x)`: one verb over the four structures
+
+`clausters.gui.edit` opens whichever editor the structure asks for, and it
+dispatches on **what the structure is** — that being the question a caller has
+already answered by holding one:
+
+| `edit(x)` where x is | opens | over | its vocabulary |
+|---|---|---|---|
+| a `Buffer` | `SamplesEditor` | a `waveform` | `samples` |
+| an `Automation` | `PointsEditor` | a `bpf` | `points` |
+| a `Timeline` | `NotesEditor` | a `pianoroll` | `events` |
+| a `Multitrack` | `MultitrackEditor` | a `multitrack` | `clips`/`lanes` |
+
+```python
+from clausters.gui import edit
+
+editor = edit(curve, sample_rate=48_000.0)
+
+curve.to_points()      # the edited curve, out of the object you already held
+```
+
+**It opens.** The window is up and listening when that returns, so the
+structure you already hold is the edited one from that moment: read it whenever,
+and it says what the hand has left there. `open=False` builds the editor without
+a window, for a caller composing one.
+
+Nothing is handed back: the object passed in *is* the edited one. A
+**multitrack** is one of them, and what opens is the multitrack editor — the
+rest of this chapter is what it edits.
+
+Reading it back **after the hand is done** is `wait`:
+
+```python
+editor.wait()          # returns when the window is closed
+curve.to_points()      # the curve, as it was left
+```
+
+`editor.closed` is the same question asked without waiting, and
+`editor.close()` closes the window from the script — the history is not closed
+with it, since an undo order belongs to the data.
+
+**Two calls over one structure give two windows and one stack.** The editing
+context belongs to the data, so an undo in either window steps the one order both
+of them made. And a window composing several structures passes one context
+(`edit(x, context=...)`), which is what makes it undo across a curve and a roll
+in the order the edits happened.
+
+**How an edit inverts is the shared crate's.** For a curve and a timeline the
+state goes in with the payload and comes back as what the structure now is *plus*
+what puts it back — one call, because the inverse has to be read before the edit
+lands. A span of samples is the exception, and a real one rather than an
+omission: the frames are in a server buffer, so the crate holds no state to
+invert. What it shares there is the payload's shape and its coalesce key, and the
+inverse rides on the wire — a stroke's event carries the run it wrote *and* the
+run it replaced. This client writes a stroke's samples synchronously; a page's
+buffer calls are asynchronous, so the web client queues them in order instead,
+and that is the only difference between the two.
+
 ## The arrangement: tracks, lanes, regions
 
-Everything above is the general tree. **Beside** it there is the model a
-multitrack editor actually edits, and it is the one the three classic
+The model a multitrack editor edits is the one the three classic
 applications are built over — the audio editor, the multitrack editor and the
 score editor, over one document.
 
