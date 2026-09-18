@@ -1575,10 +1575,11 @@ def waveform(*, autofit: bool | None = None,
                        playhead_loop_start=playhead_loop_start,
                        playhead_loop_len=playhead_loop_len,
                        y_start=y_start, y_len=y_len, link=link))
-    if overlay is not None:
-        extra["overlay"] = 1 if overlay else 0
-    if fills is not None:
-        extra["fills"] = 1 if fills else 0
+    for key, flag in (("overlay", overlay), ("fills", fills),
+                      ("loudness_ruler", loudness_ruler),
+                      ("loudness_stats", loudness_stats)):
+        if flag is not None:
+            extra[key] = 1 if flag else 0
     return node("signal", id=id, view="trace", **extra, **props)
 
 
