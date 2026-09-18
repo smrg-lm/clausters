@@ -139,7 +139,7 @@ pub enum Turn {
 }
 
 /// What the acknowledgement is: the sentence a refused edit carries.
-const OVERTAKEN: &str = "the composition changed since this edit";
+const OVERTAKEN: &str = "the data changed since this edit";
 
 /// **One view's end of the conversation**: the floor, and the version the last
 /// answered event left behind.
@@ -151,7 +151,7 @@ const OVERTAKEN: &str = "the composition changed since this edit";
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct Conversation {
     /// The **oldest version an incoming edit may name**, raised whenever the
-    /// composition moves by a route that is not a host event, and by nothing
+    /// data moves by a route that is not a host event, and by nothing
     /// else.
     #[serde(default)]
     pub floor: i64,
@@ -181,7 +181,7 @@ impl Conversation {
         against != 0 && against < self.floor
     }
 
-    /// The composition moved by a route no gesture took, so what is in flight
+    /// The data moved by a route no gesture took, so what is in flight
     /// was made against a picture that is gone.
     ///
     /// **The only way the floor moves.**

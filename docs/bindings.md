@@ -245,7 +245,7 @@ measurement rather than by taste. The first binding passed the whole document in
 and took the whole new one back, on the reasoning that a handle would make every
 accessor a tree has — and a tree has dozens — a call to design, bind and keep in
 step. What that reasoning did not do was price "a serialization per edit": **205
-ms** for one placement on a 10240-event composition (3.3 MB of JSON), against 6
+ms** for one placement on a 10240-event multitrack (3.3 MB of JSON), against 6
 ms on the 320-event one an example builds — linear in the whole document and
 independent of the edit, so a destructive stroke touching fifty samples paid the
 same as a clip drag.
@@ -264,7 +264,7 @@ apply → snapshot → free, and pays the serialization where it asked for it.
 | `clausters_document_free` | — | `n/a` — wasm frees by `Drop` |
 | `clausters_document_apply` | `JsDocument.apply` | |
 | `clausters_document_resolve` | `JsDocument.resolve` | |
-| `clausters_document_snapshot` | `JsDocument.snapshot` | the one call still the size of the composition, and asked for rather than paid per edit |
+| `clausters_document_snapshot` | `JsDocument.snapshot` | the one call still the size of the document, and asked for rather than paid per edit |
 | `clausters_document_version` | `JsDocument.version` | `idiom` — a getter |
 | `clausters_document_inverse` | `JsDocument.inverse` | the edit that would put a node back, read before anything lands — what a caller recording its **own** entry needs |
 | `clausters_document_coalesce_key` | `JsDocument.coalesce_key` | `idiom` — a free function in C, a static on the class in JS; it is the *multitrack's* sentence for "the same thing done the same way", so it lives with the document and not with the history. The Python client offers **both** spellings (`document_coalesce_key` and `Document.coalesce_key`, as it does for `inverse`), so a reader who learned one client's shape finds it in the other |
@@ -282,7 +282,7 @@ call commits **only when the bytes are written**, so a sizing pass changes
 nothing and repeating one is harmless — which matters more now than it did, since
 the tree is no longer the caller's to compare against. A **pure read caches**
 between the pair instead: `snapshot` keeps what the sizing pass serialized and
-the fill copies it out, so a composition is serialized once per pair rather than
+the fill copies it out, so a document is serialized once per pair rather than
 twice. Caching a mutating call that way would be wrong — the mutation would land
 on the sizing pass, and a caller that sized and then gave up would have edited
 without knowing.

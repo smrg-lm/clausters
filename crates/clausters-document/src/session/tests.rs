@@ -35,9 +35,9 @@ fn take(id: u64, source: u64) -> Node {
     )
 }
 
-/// A composition with samples, a generator holding its last rendered result,
+/// A document with samples, a generator holding its last rendered result,
 /// and a plain clang -- one of everything the format has to carry.
-fn composition() -> Document {
+fn a_document() -> Document {
     let rendered = Node {
         id: NodeId(20),
         name: None,
@@ -97,7 +97,7 @@ fn composition() -> Document {
 }
 
 fn saved() -> Session {
-    Session::new(composition())
+    Session::new(a_document())
         .with_source(
             SourceId(100),
             Source::file("/home/someone/takes/vocal.wav", Lifetime::External)
@@ -150,9 +150,9 @@ fn a_generators_last_rendered_result_is_part_of_the_format() {
 #[test]
 fn a_rendered_result_is_reachable_to_a_reader_and_not_to_an_edit() {
     // The line the field draws: a reader must see it, and an intent must not
-    // -- a rendering is not the composition, and editing one writes over what
+    // -- a rendering is not the document, and editing one writes over what
     // the next render replaces.
-    let document = composition();
+    let document = a_document();
     assert!(
         document.find(NodeId(21)).is_some(),
         "a reader walks into it"

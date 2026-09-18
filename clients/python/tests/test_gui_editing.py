@@ -1,7 +1,7 @@
 """The generic editor and its collaborators (`clausters.gui.editing`).
 
 `Editor` edits **one structure** and imports nothing from the arrangement, so
-this drives one with no composition anywhere: a plain object, a domain that
+this drives one with no multitrack anywhere: a plain object, a domain that
 says what a gesture means to it, and a view that draws it. What is checked is
 the orchestration — the gesture becomes a payload, the payload becomes an
 entry, the entry inverts — and the two collaborators that are testable with no

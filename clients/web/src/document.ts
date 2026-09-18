@@ -1,5 +1,5 @@
 /**
- * The document: the composition's authoritative model, and the one place an
+ * The document: the multitrack's authoritative model, and the one place an
  * edit is applied.
  *
  * The model lives in a Rust crate (`crates/clausters-document`) and every
@@ -10,7 +10,7 @@
  *
  * That is not how this started. The first binding passed the whole document in
  * and took the whole new one back, which cost a serialization of the entire
- * composition per edit — 205 ms for one placement on a 10240-event multitrack,
+ * document per edit — 205 ms for one placement on a 10240-event multitrack,
  * whatever the edit touched. It is not an accessor handle either: the same
  * three verbs, plus `snapshot`.
  *
@@ -136,7 +136,7 @@ export interface Selection {
 }
 
 /**
- * One composition, held by the crate.
+ * The tree, held by the crate.
  *
  * ```ts
  * const doc = await Document.open(json);
@@ -149,7 +149,7 @@ export class Document {
     #inner: CoreDocument;
 
     /**
-     * Open a document from its JSON (or an empty composition), **with the core
+     * Open a document from its JSON (or an empty one), **with the core
      * already loaded** — `await loadCore()` once, then build as many as you
      * like. {@link Document.open} is the same thing for a caller that has not.
      *
@@ -174,7 +174,7 @@ export class Document {
     }
 
     /**
-     * Opens a document from its JSON, or an empty composition from nothing.
+     * Opens a document from its JSON, or an empty one from nothing.
      *
      * @throws if the JSON is not a document.
      */
@@ -185,7 +185,7 @@ export class Document {
 
     /**
      * The whole tree as JSON — to save it, or to rebuild the client's own
-     * objects from it. The one call still the size of the composition, and it
+     * objects from it. The one call still the size of the document, and it
      * is asked for rather than paid on every edit.
      */
     snapshot(): ClaustersDocument {
@@ -294,7 +294,7 @@ export class Document {
  *
  * The convenience form, built out of {@link Document} — open, apply, snapshot,
  * free — for a caller that has a document in hand and wants the edited one
- * back. It costs a serialization of the whole composition either way, which is
+ * back. It costs a serialization of the whole document either way, which is
  * why it is a wrapper rather than the binding: an editor applying a gesture per
  * drag holds a `Document` instead and pays nothing per edit.
  */
@@ -703,7 +703,7 @@ export interface Walked {
  *
  * A history holds the structures registered in it and **one ordered pile** over
  * them, so what you decide by choosing a history is *what shares an undo
- * order*: a structure you built with no composition behind it is a history with
+ * order*: a structure you built with no multitrack behind it is a history with
  * one structure in it; an application composing several editable views
  * registers them all in one, and the interleaved order its undo walks **is**
  * the pile; two views of one structure hold one history between them, which is

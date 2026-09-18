@@ -89,7 +89,7 @@ class Aggregate(Element):
     handle returned by `add` stays valid across other edits (like
     `clausters.seq.Timeline`).
 
-    A `LOGICAL` aggregate additionally names the composition and may declare internal
+    A `LOGICAL` aggregate additionally carries a name and may declare internal
     buses; `to_graphdef` translates it into a `clausters.defs.GraphDef` (the
     bus-wired configuration the server already expresses).
 
@@ -98,7 +98,7 @@ class Aggregate(Element):
             ``(offset, element)`` pair, a ``(offset, dur, element)`` triple, or
             a bare `Element` (placed at offset 0).
         kind: `CONCRETE` (default) or `LOGICAL`.
-        name: the composition's name — the GraphDef name for a logical aggregate.
+        name: the aggregate's name — the GraphDef name for a logical aggregate.
         buses: internal buses for a logical aggregate — each a ``name`` (audio,
             1 channel) or a ``(name, rate)`` / ``(name, rate, channels)`` tuple.
         onset: the aggregate's own onset in its parent context, or ``None``.

@@ -11,7 +11,7 @@
 - [The transport: a shared grid, and sound that freezes](transport.md)
 - [Reading the server: buses and buffers](data.md)
 - [Receiving: responders](responders.md)
-- [The document: what a composition is, and who edits it](composition.md)
+- [The document: what a multitrack is, and who edits it](composition.md)
 - [The visual elements in a page](gui.md)
 - [Components: an instrument in the page](components.md)
 - [What a tab cannot do](platform.md)

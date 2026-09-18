@@ -2,7 +2,7 @@
 """``edit(curve)``: a break-point curve in a window of its own.
 
 The smallest of the three structures `clausters.gui.edit` opens, and the one
-that shows what the verb is for. There is **no composition here** — no
+that shows what the verb is for. There is **no multitrack here** — no
 arrangement, no document, no track. A script builds a
 `clausters.seq.Automation`, hands it to ``edit``, and reads the edited curve
 back out of the object it already holds.

@@ -5,7 +5,7 @@
 //! reading it (`docs/decisions.md`). A host that draws a take therefore needs a
 //! def of its own to hear one, and it is deliberately the smallest one that
 //! could be — read one channel of the buffer at the transport's position, scale
-//! it, out to one bus. Nothing here is a synthesis surface: a composition's
+//! it, out to one bus. Nothing here is a synthesis surface: a multitrack's
 //! instruments are the client's, and this is the editor's monitor.
 //!
 //! **The reader follows the transport; it does not carry a position.** Its
@@ -57,7 +57,7 @@ pub struct Monitor {
 }
 
 /// The def name the host plays a take through. Namespaced, because it is loaded
-/// into the same server a composition's own defs live in.
+/// into the same server a multitrack's own defs live in.
 pub const TAKE_DEF: &str = "clausters-gui-take";
 
 /// The span a reader with no stated end lasts, in frames: past any multitrack

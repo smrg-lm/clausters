@@ -3,14 +3,14 @@
 
 The arrangement is one layer written twice — `clausters/form/` and
 `clients/web/src/form/` — and what has to agree is not the source but the two
-things that leave it: the **document** a composition is written as (a shared
+things that leave it: the **document** a tree is written as (a shared
 format three languages read) and the **flattened timeline** it renders to (the
 absolute beats, and the events at them, including what a placement's length
 trims).
 
-So this script builds a handful of compositions with the Python surface and
+So this script builds a handful of trees with the Python surface and
 freezes both for each one; `tests/form-parity.test.ts` rebuilds the same
-compositions with the TypeScript surface and asserts the same two results. A
+trees with the TypeScript surface and asserts the same two results. A
 rule that drifts into one client — a trim rounding differently, a config key
 spelled the language's way rather than the file's — fails here instead of in a
 aggregate that reopens wrong.
@@ -127,7 +127,7 @@ def a_curve_on_its_event():
 
 
 def a_mixed_aggregate():
-    """The composition's own mixing: a muted lane, a soloed one, and a level.
+    """The tree's own mixing: a muted lane, a soloed one, and a level.
 
     Both halves travel — the document (mixing rides in the node's configuration,
     and what is at its default states nothing) and the flattened timeline (one

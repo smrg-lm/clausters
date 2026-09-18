@@ -1,6 +1,6 @@
 """`edit(x)` over the three fundamental structures.
 
-One verb, three editors, and no composition anywhere: a curve a script built,
+One verb, three editors, and no multitrack anywhere: a curve a script built,
 a timeline it filled, a buffer it holds. What is checked is the acceptance the
 track was opened with — two windows over one structure share one stack, an edit
 read back is the edit that was drawn, and a window composing two structures
@@ -207,7 +207,7 @@ def test_an_edit_made_against_a_picture_an_undo_replaced_is_refused():
     # every event with the version it was last told, and it is told only when an
     # acknowledgement reaches it -- a round trip a hand outruns -- so an edit
     # naming an older version is the ordinary case and applies. What does not is
-    # an edit made against a picture the composition has moved away from by a
+    # an edit made against a picture the data has moved away from by a
     # route the host never saw: here an undo.
     curve = a_curve()
     editor = edit(curve, sample_rate=SR, open=False)
@@ -231,7 +231,7 @@ def test_an_edit_made_against_a_picture_an_undo_replaced_is_refused():
                                        0.0, 900.0, 1, 0.0,
                                        2.0, 900.0, 1, 0.0]) is False
     assert curve.to_points()[0:2] == pytest.approx([0.0, 200.0]), "the undo stands"
-    assert host.acks[-1][2] == "the composition changed since this edit"
+    assert host.acks[-1][2] == "the data changed since this edit"
 
     # And a gesture made against the picture that now holds applies.
     assert editor.apply("/gui_event", [wid, 3, Editing.of(curve).version, "points",

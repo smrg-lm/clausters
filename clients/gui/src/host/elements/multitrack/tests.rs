@@ -1464,7 +1464,7 @@ fn a_click_on_a_box_selects_that_one_and_nothing_leaves() {
     assert_eq!(mt.selected, vec![0], "the one it landed on, alone");
     assert!(
         events.into_messages().is_empty(),
-        "a selection is the hand's, not the composition's"
+        "a selection is the hand's, not the document's"
     );
     assert_eq!(mt.clips[0].place.offset, 0.0, "and nothing moved");
 

@@ -234,7 +234,7 @@ impl Gestures {
     /// no addressable past — **declines, visibly**, because putting silence on
     /// the clipboard is the one answer worse than saying no. A **cut** and a
     /// **paste** change data, which the host does not own, so they leave as
-    /// intents and the owner answers with what the composition now is.
+    /// intents and the owner answers with what the document now is.
     ///
     /// A paste carries the clipboard **with** it (`"paste" position kind json
     /// [blob…]`), rather than the owner keeping a clipboard of its own: the

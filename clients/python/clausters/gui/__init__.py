@@ -24,9 +24,9 @@ time axis — the DAW-style track editor, whose clip bodies are a take, a
 piano-roll or an editable automation curve) and a ``patch`` **patcher** of a
 directed, typed signal graph (drag an outlet onto an inlet to wire it);
 live updates flow through ``/gui_set`` and interactions come back as
-``/gui_event``/``/gui_closed``. `clausters.gui.editing.Editor` drives that
-multitrack view from a `clausters.form` composition — drawing the arrangement
-tree as a GuiDef, applying the clip edit-backs onto it, and re-rendering it.
+``/gui_event``/``/gui_closed``. `clausters.gui.edit` opens an editor over a
+structure -- a buffer, a curve, a timeline, a `Multitrack` -- and the edit-backs
+land on that structure, never on the widget tree.
 `clausters.gui.playhead_sync.PlayheadSync` is the play/pause/stop/locate machinery
 every time view shares: it keeps the views' playhead line in step with what
 plays (a `clausters.seq.Timeline`, or the server's transport), whatever the view is — a lane, a piano-roll, an engraved

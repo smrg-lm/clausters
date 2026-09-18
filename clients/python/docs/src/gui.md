@@ -1166,7 +1166,7 @@ two phases, several instruments in one document — is the
   properties — is the server guide's
   [GUI protocol chapter](https://clausters.readthedocs.io/en/latest/gui-protocol.html).
 - The arrangement model draws itself through these same `field` containers:
-  the [composition chapter](composition.md) is the layer above.
+  the [document chapter](composition.md) is the layer above.
 - The runnable demos live in `clients/python/examples/`, one capability each;
   `window.py` is the "first pixels" one to start from.
 - Everything above used the shortcuts, which is what a script reaches for.

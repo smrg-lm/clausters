@@ -18,7 +18,7 @@
 //! 2. **What does an extra slot cost?** After E2, a slot is a vertex buffer and
 //!    a texture; the pipelines belong to the window. Before it, every waveform
 //!    widget compiled a shader module and two pipelines, and a spectrogram did
-//!    the same *per channel*. This counts the objects a composition allocates,
+//!    the same *per channel*. This counts the objects a window of elements allocates,
 //!    which is the number E6/E7 multiply by the element count.
 //! 3. **What does a retained waterfall upload per tick?** After E18, the new
 //!    columns; before it, the whole magnitude image. Counted below, because the
@@ -178,7 +178,7 @@ fn pipelines_belong_to_the_window_not_to_the_element() {
     assert_eq!(after, 2);
 
     // The property that actually matters is not that the split is cheaper at
-    // any given size but that one count **follows the composition and the other
+    // any given size but that one count **follows the element count and the other
     // does not**. That is what the clip bodies need, since they turn every body
     // into an element that wants a slot.
     let one = pipeline_objects(1, 1, false);

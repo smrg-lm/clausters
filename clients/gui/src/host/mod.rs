@@ -75,7 +75,7 @@ pub mod layers;
 pub mod play;
 // What the multitrack is playing through: the instance, the handle tables and the
 // allocators. Beside `play` and not under `document`, because what it holds is
-// the server's -- nodes, buses, buffers -- and nodes are not the composition.
+// the server's -- nodes, buses, buffers -- and nodes are not the document.
 pub mod instance;
 // The node ids, buses and buffers this host allocates on its server, by the
 // one policy every client allocates by, and the replies that give them back.

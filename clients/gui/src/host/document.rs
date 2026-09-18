@@ -94,7 +94,7 @@ fn long_at(args: &[OscType], n: usize) -> Option<u64> {
 
 /// What the host holds when it is the one answering its own gestures.
 pub struct Owner {
-    /// The composition, as the crate keeps it.
+    /// The document, as the crate keeps it.
     ///
     /// **The leg being walked off**, and the crate says so: a session written
     /// today carries [`Owner::multitrack`] and leaves this empty. It stays because
@@ -198,7 +198,7 @@ pub struct Applied {
 }
 
 impl Owner {
-    /// An owner of `document`, with no session behind it (a composition built
+    /// An owner of `document`, with no session behind it (a multitrack built
     /// in memory) and no grid.
     pub fn new(document: Document) -> Self {
         let mut editing = Editing::new();
@@ -873,7 +873,7 @@ impl Owner {
                 Some((Intent::Place { node, offset, dur }, "move a clip"))
             }
 
-            // A lane header's toggle or fader. **The composition's**, not the
+            // A lane header's toggle or fader. **The document's**, not the
             // window's: what is muted is a fact about the multitrack, so it goes
             // through the log like a clip's move and survives a save. It is the
             // same `Configure` a client emits, which is why the undo comes out
@@ -1250,7 +1250,7 @@ mod tests {
         assert!(!owner.can_redo(), "and there is nothing further forward");
     }
 
-    /// A lane header's toggle is the composition's, so it travels the road a
+    /// A lane header's toggle is the document's, so it travels the road a
     /// clip's move does: one `Configure`, through the log, undoable out of the
     /// document — the same intent a client emits, which is what makes the two
     /// undo alike.
@@ -1983,7 +1983,7 @@ mod window_verb_tests {
 
     /// **A session host opens the editor a script opens**: the ruler above the
     /// multitrack and the transport row under it, every widget of it registered —
-    /// a composition of the host's own had neither.
+    /// an editor of the host's own had neither.
     #[test]
     fn a_multitrack_opens_in_its_editors_own_window() {
         let (host, def_id, view) =
@@ -2312,7 +2312,7 @@ mod window_verb_tests {
                 .last()
                 .and_then(|a| a.reason.clone())
                 .as_deref(),
-            Some("the composition changed since this edit"),
+            Some("the data changed since this edit"),
             "and the window is told why"
         );
     }

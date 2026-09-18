@@ -10,9 +10,9 @@ processing, a chain wired through buses).
 It is **relegated**, and this page is its whole documentation. It takes no new
 work, nothing is designed around it, and it has **no view**: do not extend it,
 do not project a picture out of it, and do not read its shape as the model a
-composition is built on. What is fundamental is the data — samples, notes,
+multitrack is built on. What is fundamental is the data — samples, notes,
 events, curves — and the model an application edits is the **document**
-([Composition](composition.md)).
+([The document](composition.md)).
 
 ## What happened, and why it is structural
 
@@ -36,5 +36,5 @@ client. `crates/clausters-document/PLAN.md` carries that design.
 
 Placing objects in time in a script, with no picture and no editor: the
 structures are self-contained and the module still works exactly as it did. If
-you want a composition an application can open, edit and save, that is the
+you want a multitrack an application can open, edit and save, that is the
 document, not this.

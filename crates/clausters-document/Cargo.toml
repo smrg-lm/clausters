@@ -3,7 +3,7 @@ name = "clausters-document"
 version.workspace = true
 edition = "2024"
 license = "GPL-3.0-or-later"
-description = "The Clausters document: the single authoritative model of a composition -- the tree of elements and their placements, shared by every client and by the standalone GUI host."
+description = "The Clausters document: the single authoritative model of a multitrack -- the tree of elements and their placements, shared by every client and by the standalone GUI host."
 
 [dependencies]
 # The document is a serde tree: it is the normative format, and every client

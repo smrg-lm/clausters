@@ -424,7 +424,7 @@ The arrangement model and its multitrack editor are **client-side** — the serv
 knows nothing of them, and nothing in this section runs on the audio thread. What
 makes the layer thin is that every one of its concepts is a name for something the
 system already had; this is the map, for when you have to change one and want to
-know what else it touches. (The user-facing explanation is the composition chapter
+know what else it touches. (The user-facing explanation is the document chapter
 of the Python client's book; the reasoning behind it is in
 [Design decisions](decisions.md).)
 
@@ -530,14 +530,14 @@ knows its `path`; one allocated in this run is written volatile), and a
 a session opened with no resolver from being saved back with its own contents
 marked volatile.
 
-**Mixing is the composition's; height is the view's.** An element carries
+**Mixing is the document's; height is the view's.** An element carries
 `mute`, `solo` and `level`, all three inherited down the tree, honoured by
 `form.render.flatten` (a muted branch contributes nothing; one soloed element
 anywhere silences every branch not on a soloed path; a level multiplies into the
 `amp` of the events below it) and carried in the node's **configuration**, which
 is the same opaque door a leaf's code and a track's restrictions use — so a
 a multitrack reopens mixed the way it was left, and an editor's `Configure` starts from
-`leaf_config` and cannot silently unmute a lane. Drawing reads the composition
+`leaf_config` and cannot silently unmute a lane. Drawing reads the tree
 **unmixed** (`flatten(..., mixed=False)`): a muted lane keeps its clips, its
 notes and its length, or the picture would report silence as absence. A lane's
 `height`, which the host emits on Ctrl+wheel, is deliberately in no document: it
@@ -601,7 +601,7 @@ The paths above are the Python client's, and the model now exists **twice**: the
 web client carries the same layer at mirrored paths (`clients/web/src/form/`
 — `element.ts`, `aggregate.ts`, `render.ts`, `document.ts`), so a rule changed
 in one is changed in both. What holds them together is not review: the two
-things that leave the layer — the **document** a composition is written as and
+things that leave the layer — the **document** a tree is written as and
 the **flattened timeline** it renders to — are frozen from the Python side
 (`clients/web/tests/gen-form-vectors.py`) and asserted from the TypeScript one
 (`form-parity.test.ts`), so a rule that drifts into one client fails a test
@@ -709,8 +709,8 @@ reasoning:
   and those restrictions ride in the set's opaque `config` — carried, never
   read — rather than becoming a variant of the tree.
 - **One document, held, and both directions of the history are projections.**
-  An editor opens one `Document` for the composition's life and applies every
-  edit to it, so a gesture costs the edit rather than the composition (107 ms →
+  An editor opens one `Document` for the multitrack's life and applies every
+  edit to it, so a gesture costs the edit rather than the document (107 ms →
   0.020 ms on a 10240-event multitrack). Undo *and* redo hand back the intents they
   applied (`undone` / `redone`), so a client projects both the same way and
   never adopts a whole document to find what moved. The price is that a script
@@ -733,7 +733,7 @@ Undo is two modules, and the split is the interesting part. **`history` is the
 pile, and it knows no vocabulary at all** — not even the arrangement's. One
 `History` is one *editing context*: the structures registered in it, one ordered
 list of entries over them, and one cursor. That is what lets it serve the three
-shapes an editor actually has — a structure the client built with no composition
+shapes an editor actually has — a structure the client built with no multitrack
 behind it (a curve, a buffer, a roll) has a working undo with no `Document`
 anywhere; an application composing several editable views registers them all in
 one history, and the interleaved order its undo walks *is* the list; and two
@@ -1068,7 +1068,7 @@ split, and every rule below falls out of it:
 | `src/host/document/` + `document.rs` | **The host as an owner** — what a `--session` host is and what a script-driven one never has. `document.rs` is the `Owner`: the document, its log, the widget→node bindings, and the two doors a tree's event goes through (read a gesture's payload as an `Intent`, apply it through `clausters_document::apply_logged`). Every event reaches it as the `/gui_event` a client would have received — built by `Host::event_message` on both fronts, stamped and versioned, and handed over by `Host::deliver`, which gives a gesture on a multitrack's window to the multitrack editor instead. `tree.rs` draws a document as an ordinary GuiDef — **one `multitrack`** holding every lane and every clip as data, plus one **editor** per resolved take, all `{id, type, props}` a script could have sent; a lane also carries the **mixing** its element holds (`mute`/`solo`/`level`), so a strip pressed on it is a `Configure` on the multitrack and not a state of the window. **A name on the wire is a node id**, which is why there is no per-clip binding to keep: the multitrack reports the whole of it — `"clips"` or `"lanes"`, the whole list either way — and the owner reads which nodes moved by comparing that list against the document. A clip that crossed the stack is not a placement at all (it left one aggregate and joined another), so it comes out as a pair of `SetMembers`; the run applies as one log entry, because a block move is one thing a hand did. Only the take editors are bound one by one, since each is a second widget drawing a node the multitrack also draws. `multitrack.rs` is the same drawing over the **other** description — a session written today carries `Multitrack` (tracks, lanes, regions) and leaves the general tree empty, so a host that read only the tree opened a real session as an empty window: a row is a **track** showing the lane it plays, a box is a **region**, both named by their ids, and an edit-back comes back as the multitrack's own vocabulary (`PlaceRegion` for a move or a track crossing, `TrimRegion` for a width, `SetLane` for a removal, `SetTracks` for a strip). The two descriptions are **two structures in one history**, so a multitrack's move and a tree's stroke undo in the order the hand made them rather than in two orders. **What goes back onto the widget is the whole picture**, not a list of keys written at the call site: the projection produces seven props (`lanes`, `clips`, `curves`, `layers`, `points`, `hidden`, `loops`) and both the def that opens the window and the adopt that follows an edit push every one of them. Keeping two of them is what made the header's `A` — whose whole job is to *make* a track's gain curve — apply the edit, keep it in the document and push back nothing that draws it, so the row never appeared and the toggle read as a dead key. Only ever visible with no client attached, because a client answers with all of them. **Which payloads are the multitrack's is asked, never listed**: `clausters_editing::multitrack::answers` declares the vocabulary and the host's dispatch consults it, after the host's own copy of that list turned out to have two of the four words — a curve dragged in a host with no client attached reported `points` to a reader with no arm for it, and a `j` reported `join` the same way. The reading carries the **refusal** with the edits (`Reading`), so a verb the document refuses says why in the window that asked, which is the line a client's `/gui_ack` reason would have put there. `sources.rs` resolves the session's source table to server buffers through `clausters_editing::load`, the same load both clients' `Session.load` plan (`/buffer_allocRead` per take and `/buffer_stitch` per join, read through `clausters_editing::sources::stitch` and walked by the runner so a join waits for its reads); what is the host's is its buffer space and looking for the file — walking the multitrack as well as the tree, since a region is where a source is named today — which is what lets a clip draw a take at all. Nothing here is a widget or a protocol addition: an owner is a host that answers its own events instead of emitting them |
 | `src/host/instance.rs` | **What the multitrack is playing through.** A standalone host plays a multitrack the way every other endpoint does: `nodes::plan` says what it needs, `clausters_editing::instance::Instance` answers the difference as `Op`s, and `clausters_editing::apply::Applier` turns them into **steps** — messages, and the replies some of them wait for (a buffer's `/done` before its fill, a `/server_sync` barrier). This module is the socket: it pushes the steps into the crate's `clausters_editing::run::Runner`, sends what it says may go out — each to its server, the session that holds the samples or the player that sounds — and hands it every reply `Host::on_server_reply` brings from either front, with the leg it came in on. The ids are the host's spaces (`ids.rs`). The transport is the crate's, as it is every endpoint's: the playback makes the transport's group at the top, binds it and makes the multitrack inside it, and the take monitor makes a group of its own inside that one (`Host::monitor_group`), so one transport governs both — a host with no multitrack binds a group for its monitor itself. It also makes a source an edit mints (a join) before the picture is redrawn: session table, take table, and a `/buffer_stitch` in the session that the player's `/buffer_attach` waits behind. Beside `play.rs` and not under `document/`, because what it holds is the server's and nodes are not the structure they play |
 | `src/host/ids.rs` | **The node ids, buses and buffers the host allocates** on the server it plays through, by the one client policy (`clausters_core::ids::IdSpaces`): sized by `ServerShape::DEFAULT` until the `/server_query.reply` reshapes it, and sliced by the share a launcher gives (`--id-share`, the page bridge's `id_share`) when a script allocates on the same server. `Host::on_server_reply` is the door both fronts call for every reply: a `/node_end` gives a node id back, the server's shape reshapes the spaces, and the multitrack's waiting step is offered the rest. `Host::on_link_attached` registers for node ends and asks the shape; `Host::govern_transport` allocates and binds the governed group |
-| `src/host/play.rs` | The **take monitor**: the buffer-player def a session host loads into its embedded server, and the nodes it plays on — **one reader per channel**, which is the server's own convention rather than a shape chosen here (the buffer readers are mono; `PlayBuf`'s `chan` picks the channel), each out on the bus of the same number and freed together. A buffer is data and does not sound — an instrument reads it — so a host that draws samples needs a def of its own to hear one, and it is the smallest that could be (`BufRateScale → PlayBuf → Out`). The composition's own instruments are the client's; this is the editor's monitor |
+| `src/host/play.rs` | The **take monitor**: the buffer-player def a session host loads into its embedded server, and the nodes it plays on — **one reader per channel**, which is the server's own convention rather than a shape chosen here (the buffer readers are mono; `PlayBuf`'s `chan` picks the channel), each out on the bus of the same number and freed together. A buffer is data and does not sound — an instrument reads it — so a host that draws samples needs a def of its own to hear one, and it is the smallest that could be (`BufRateScale → PlayBuf → Out`). A multitrack's own instruments are the client's; this is the editor's monitor |
 | `src/host/voices.rs` | The voices the host plays on an element's behalf: the `/synth_new`/`gate 0` a held key sends. The node id is the host's like any other (`ids.rs`) and comes back on the `/node_end` of the def freeing itself. An element only **declares** a voice (`Element::voice`); allocating, sending, remembering and releasing it is the host's, which is why the OSC is here and not in the keyboard's drawing — a model may not name the wire |
 | `src/host/graphics/signal/` | The four pictures the signal element can be, the stack that layers them and the one column source under all of them: `layers.rs` (**the layer stack**: what is drawn on one body, back to front, at what weight and on which vertical — with the axis-claim rule that refuses two layers measuring two quantities on one y), `trace.rs` (**the** renderer of a signal against time — the single min/max-per-column answer and the one drawing pass over it, which the navigable waveform, a clip's inline take, the static plot and a meter's history all reach the screen through, differing only in the three coordinate maps they hand it), `plot.rs` (the framed static view: rulers, lanes, auto-fitted range, cursor readout), `spectrum.rs` (the per-frame magnitude curve with its averaging and peak-hold traces), `phasescope.rs` (the mid/side Lissajous figure and its correlation readout), `waterfall.rs` (the rolling transform of a retained live view) |
 | `src/host/graphics/{controls,meters,textedit,nodetree,piano,pianoroll,bpf,patch,track}.rs`, `score/` | The rest of the models. `controls` is one drawing for eight elements; `pianoroll` is the note core (the notes, their mapping, drawing, hit-test, editing) **shared** by the `notes` element and the multitrack `clip`'s roll body, so the two never disagree; `bpf` is the same reuse for `curve` and a clip's automation body; `track` draws a container and no element at all |
@@ -1380,7 +1380,7 @@ the screen through the editor driver (`clausters/gui/editing/formeditor.py` and
 `clients/web/src/gui/editing/formeditor.ts`, one driver in two languages
 likewise), which is
 the only module that knows both the arrangement and the widget tree. Its user
-documentation is the composition chapter of each client's book.
+documentation is the document chapter of each client's book.
 
 ## Extending the server: the plugin question
 

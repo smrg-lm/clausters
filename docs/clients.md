@@ -118,7 +118,7 @@ numbers, buttons, toggles, text, menus) through the live meters and scopes
 views: the heavy `waveform` and `spectrogram` (multichannel lanes, adaptive
 rulers, a draggable selection, a playhead tracking the engine clock, linked
 navigation groups), the drawable `bpf` envelope editor, a static `plot`, a
-shader `canvas`, an engraved `score` page — and the **composition** views below.
+shader `canvas`, an engraved `score` page — and the **editor** views below.
 Their reference is the Python builders' documentation, since that is how a
 script names them.
 
@@ -136,14 +136,14 @@ the score — applies it, re-engraves and sends the page back. A cursor track
 engraved beside the drawing lets the page follow playback off the engine clock,
 like the timeline views.
 
-### The composition views: a multitrack editor and a patcher
+### The editor views: a multitrack editor and a patcher
 
-The newest arc of the GUI is a **DAW-style multitrack editor**, and it exists to
-put a *client-side arrangement model* on screen: a `track` is a lane, a `clip`
-is a placed rectangle spanning `[offset, offset + dur]` on a time axis the lanes
-of a window **share** (they zoom and pan as one navigation group, and the axis
-spans the composition). A clip's body is one of three, and the choice is the only
-thing that differs between them:
+The newest arc of the GUI is a **DAW-style multitrack editor** over the
+document (`crates/clausters-document`): a `track` is a lane, a `clip` is a
+placed rectangle spanning `[offset, offset + dur]` on a time axis the lanes of a
+window **share** (they zoom and pan as one navigation group, and the axis spans
+every lane). A clip's body is one of three, and the choice is the only thing
+that differs between them:
 
 - a **take** — a server buffer, a mapped file or a prebuilt peak cache, decimated
   to the clip's pixel width through the shared peak pyramid, so a minutes-long
@@ -154,8 +154,8 @@ thing that differs between them:
   envelope-shape math the server's `EnvGen` plays.
 
 Everything is editable back: dragging a clip or its edge emits `"clip"`, dragging
-a break-point emits `"points"`, and the script's model — not the widget tree — is
-what those events change. A **logical** group (members wired to each other through
+a break-point emits `"points"`, and the document — not the widget tree — is what
+those events change. A graph of processors (members wired to each other through
 buses, the shape a `GraphDef` expresses) is not a timeline at all, so it draws as
 a `patch` **patcher** instead: directed, typed boxes with inlets on top and
 outlets on the bottom, and a cord per `outlet -> inlet` connection (the buses are
@@ -163,10 +163,10 @@ not drawn — a cord *is* a bus). Direction is structural, read from the def (a
 control feeding an `In` is an inlet, one feeding an `Out` an outlet), so dragging
 an outlet onto an inlet draws the cord (see [Design decisions](decisions.md)).
 
-The Python side of all this is `clausters.gui.Editor`: it draws a composition
-into that window, applies the edit-backs onto the arrangement, and re-renders it — so
-the graphic is not a picture of the music, it *is* the music. Its user
-documentation is the composition chapter of the Python client's book.
+The client side of all this is `edit(multitrack)`: it opens the multitrack
+editor the shared crates draw and edit, and the edit-backs land on the document —
+so the picture is not a copy of the multitrack, it *is* the multitrack. Its user
+documentation is the document chapter of each client's book.
 
 **Playing any of these views is one shared object**, not a per-view transport:
 `clausters.gui.PlayheadSync` keeps the views' line in step with what plays, and

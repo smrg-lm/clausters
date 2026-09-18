@@ -307,7 +307,7 @@ fn a_placement_with_no_length_takes_it_from_the_trim() {
 #[test]
 fn a_placement_with_neither_a_length_nor_a_trim_gives_no_span() {
     // There is nothing to bound the read with, and guessing "the whole file"
-    // would be an operation reading samples the composition never used.
+    // would be an operation reading samples the document never used.
     let document = Document::new(aggregate(vec![placed(0.0, None, take(2, 100, None))]));
     assert!(
         resolve(

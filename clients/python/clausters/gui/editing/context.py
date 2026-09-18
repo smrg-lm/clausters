@@ -1,7 +1,7 @@
 """The editing context of one structure — **whose history it is**.
 
 An undo stack belongs to the data, not to the view. Two windows over one
-composition share a history, and an undo in either updates both; a stack minted
+structure share a history, and an undo in either updates both; a stack minted
 per editor sees only the gestures *that* editor made, so stepping one of them
 reverts across the other's edits and writes a state nobody was ever in. The
 crate placed its pile beside the data for exactly that reason, and this is the

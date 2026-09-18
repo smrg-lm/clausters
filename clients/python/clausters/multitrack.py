@@ -944,7 +944,7 @@ class View:
     zoomed, what the hand is holding, how tall each track is drawn.
 
     None of that is what the multitrack *is* -- a selection and a zoom are each
-    window's and never the composition's -- and all of it is state a person
+    window's and never the multitrack's -- and all of it is state a person
     loses on a reopen unless something writes it down. A session carries a
     **list** of these, because a multitrack drawn in two windows has two views and
     they disagree on purpose.
@@ -1086,7 +1086,7 @@ class View:
 
 @dataclass
 class Session:
-    """A composition, saved: the arrangement, and where its samples are.
+    """A session: the multitrack, saved, and where its samples are.
 
     An `Multitrack` says *what plays when* and deliberately does not say where
     a source lives, because inside a running system a source is a server buffer,

@@ -28,7 +28,7 @@ So the boundaries are:
   none of it.
 
 A multitrack application is this class plus what only a tree has: a
-held document, several views of one composition, the lanes and clips, and a
+held document, several views of one multitrack, the lanes and clips, and a
 transport. **Transport and render are not here** — a bare structure at most
 sounds; it has no multitrack to move over.
 """
@@ -625,7 +625,7 @@ class Editor:
             # **Whoever has the transport is told**, and that is this editor
             # when it has one and the multitrack it is composed inside when it does
             # not: a structure has no transport of its own, and a window inside a
-            # composition is not a second place to keep a position.
+            # multitrack is not a second place to keep a position.
             self.locate(self.cursor)
             if self.composed_in is not None:
                 self.composed_in.locate(self.cursor)

@@ -1664,7 +1664,7 @@ impl JsInstance {
 
     /// **Everything this made, given back** — the operations that stop the
     /// multitrack. The multitrack itself is untouched: what an instance holds is nodes,
-    /// and nodes are not the composition.
+    /// and nodes are not the document.
     pub fn teardown(&mut self) -> String {
         self.0.teardown_json()
     }
@@ -1985,7 +1985,7 @@ mod tests {
 // A class rather than free functions taking the tree, and the reason is a
 // measurement rather than a preference. The first binding passed the whole
 // document in and took the whole new one back: 205 ms for one placement on a
-// 10240-event composition, linear in the document and independent of the edit.
+// 10240-event multitrack, linear in the document and independent of the edit.
 // The tree now stays in Rust and only the intent and the outcome cross, which
 // is the same shape `History` already had and for the same reason.
 //
@@ -1994,7 +1994,7 @@ mod tests {
 // field of the tree -- it is the same three verbs the by-value binding had,
 // with `snapshot` for whoever wants the JSON.
 
-/// One composition, held in Rust — the JS face of
+/// One document, held in Rust — the JS face of
 /// [`clausters_document::Document`].
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = Document)]
@@ -2003,7 +2003,7 @@ pub struct JsDocument(clausters_document::Document);
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_class = Document)]
 impl JsDocument {
-    /// Open a document from its JSON, or an empty composition from `undefined`.
+    /// Open a document from its JSON, or an empty one from `undefined`.
     #[wasm_bindgen(constructor)]
     pub fn new(json: Option<String>) -> Result<JsDocument, JsError> {
         let document = match json {
@@ -2023,7 +2023,7 @@ impl JsDocument {
     }
 
     /// The whole tree as JSON — for saving it, or for a caller that wants it.
-    /// The one call that still costs the size of the composition, and it is
+    /// The one call that still costs the size of the document, and it is
     /// asked for rather than paid on every edit.
     pub fn snapshot(&self) -> Result<String, JsError> {
         serde_json::to_string(&self.0).map_err(|e| JsError::new(&e.to_string()))
@@ -2163,7 +2163,7 @@ impl JsDocument {
 ///
 /// A history holds the structures registered in it and one ordered pile over
 /// them, so what a caller decides by choosing an instance is *what shares an
-/// undo order*: a structure it built with no composition behind it is a history
+/// undo order*: a structure it built with no multitrack behind it is a history
 /// with one structure in it, an application composing several editable views
 /// registers them all in one, and two views of one structure hold one history
 /// between them.

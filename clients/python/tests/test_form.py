@@ -531,7 +531,7 @@ def test_an_aggregate_is_locatable_only_if_every_member_is():
     assert not g.locatable
 
 
-# ---- mixing: what the composition says about being heard ----
+# ---- mixing: what the tree says about being heard ----
 
 def _aggregate():
     """Two lanes of one event each, so what is heard is countable."""

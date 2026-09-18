@@ -2,7 +2,7 @@
 /* eslint-disable */
 
 /**
- * One composition, held in Rust — the JS face of
+ * One document, held in Rust — the JS face of
  * [`clausters_document::Document`].
  */
 export class Document {
@@ -43,7 +43,7 @@ export class Document {
      */
     inverse(intent: string): string | undefined;
     /**
-     * Open a document from its JSON, or an empty composition from `undefined`.
+     * Open a document from its JSON, or an empty one from `undefined`.
      */
     constructor(json?: string | null);
     /**
@@ -55,7 +55,7 @@ export class Document {
     resolve(request: string): string;
     /**
      * The whole tree as JSON — for saving it, or for a caller that wants it.
-     * The one call that still costs the size of the composition, and it is
+     * The one call that still costs the size of the document, and it is
      * asked for rather than paid on every edit.
      */
     snapshot(): string;
@@ -88,7 +88,7 @@ export class EditingCore {
  *
  * A history holds the structures registered in it and one ordered pile over
  * them, so what a caller decides by choosing an instance is *what shares an
- * undo order*: a structure it built with no composition behind it is a history
+ * undo order*: a structure it built with no multitrack behind it is a history
  * with one structure in it, an application composing several editable views
  * registers them all in one, and two views of one structure hold one history
  * between them.
@@ -332,7 +332,7 @@ export class Instance {
     /**
      * **Everything this made, given back** — the operations that stop the
      * multitrack. The multitrack itself is untouched: what an instance holds is nodes,
-     * and nodes are not the composition.
+     * and nodes are not the document.
      */
     teardown(): string;
 }

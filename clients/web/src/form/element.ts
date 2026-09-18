@@ -206,7 +206,7 @@ export class Element {
      */
     resident: boolean;
     /**
-     * **Mixing: the composition's, not the view's.** Whether this element is
+     * **Mixing: the tree's, not the view's.** Whether this element is
      * silenced (`mute`), whether it is one of the elements soloed (`solo`), and
      * the gain its events sound at (`level`, a factor over an event's own
      * `amp`). They are set by the editor's lane header and by hand, they are
@@ -904,7 +904,7 @@ export class Generator extends Element {
     maps: Record<string, string> | null;
     /**
      * The last rendered result, or `null` before there is one. Read-only as far
-     * as editing goes: it is a rendering, not the composition, so an edit to it
+     * as editing goes: it is a rendering, not the tree, so an edit to it
      * would be written over by the next render.
      */
     rendered: Element | null;

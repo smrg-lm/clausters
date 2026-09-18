@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""``edit(timeline)``: a roll over a timeline, with no composition under it.
+"""``edit(timeline)``: a roll over a timeline, with no multitrack under it.
 
 The same gesture that edits a track's notes in the multitrack, over a
 `clausters.seq.Timeline` a script filled — no arrangement, no document, no

@@ -53,7 +53,7 @@ impl Target {
 /// Keeping one per *element* — which is what a view used to do, compiling its
 /// own shader module and pipelines on construction, and the spectrogram one set
 /// per channel — makes a slot expensive exactly where the element library wants
-/// it cheap: a composition should be able to give a slot to every clip body it
+/// it cheap: a multitrack should be able to give a slot to every clip body it
 /// shows. The per-element state that remains is real (a vertex buffer and its
 /// ranges, a magnitude texture, uniforms), and lives in the views.
 ///

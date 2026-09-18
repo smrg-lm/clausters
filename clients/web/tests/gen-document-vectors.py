@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Generate document-vectors.json: the same composition, the same edits.
+"""Generate document-vectors.json: the same document, the same edits.
 
 The document lives in a Rust crate and every client binds *that one* — this
 client over wasm, the Python client over the C ABI, a `standalone` host by
 linking it. That is the design, and this is what proves it rather than assuming
-it: the Python client builds a composition, applies a run of edits through the
+it: the Python client builds a document, applies a run of edits through the
 crate, and freezes the document after each one. `document-parity.test.ts` runs
 the identical edits through the wasm door and compares.
 
@@ -32,7 +32,7 @@ def multitrack() -> dict:
     """The multitrack the arrangement's edits are applied to, built with the client.
 
     Written through `clausters.multitrack` rather than by hand, unlike the
-    composition below, and on purpose: what crosses here is a whole multitrack as
+    document below, and on purpose: what crosses here is a whole multitrack as
     JSON state, so the vector is worth more if the state is the one this client
     actually writes. Two tracks, two lanes on the first, one region on each --
     the smallest multitrack a move between tracks has somewhere to move to.
@@ -57,12 +57,12 @@ MOVE_BETWEEN_TRACKS = {"intent": "placeregion", "region": 100, "track": 20,
                        "lane": 21, "position": 16.0, "layer": 1}
 
 
-def composition() -> dict:
+def starting_document() -> dict:
     """The document the edits are applied to, written out directly.
 
     It used to be built with `clausters.form` and converted; that door is gone,
     and building it by hand is the honest shape anyway — what this vector is
-    about is the **edits**, so the composition it starts from should be a fixed
+    about is the **edits**, so the document it starts from should be a fixed
     multitrack of JSON both sides read rather than the output of a conversion that
     could itself drift.
     """
@@ -184,7 +184,7 @@ LOGGED = [
     ("retune it", {"intent": "configure", "node": 2, "config": {"midinote": 65}}, 0.0),
 ]
 
-#: Selections resolved against the **starting** composition, as
+#: Selections resolved against the **starting** document, as
 #: `(start, len, in_beats)` — the mapping is what is under test, not the edit
 #: history, and a stable document keeps the cases readable. The buffer sits at
 #: beat 2 for four beats, so these are: inside it, over the whole multitrack, a frame
@@ -197,7 +197,7 @@ SELECTIONS = [
 ]
 
 if __name__ == "__main__":
-    document = composition()
+    document = starting_document()
     edits = []
     for label, intent, offset, quant in CASES:
         against = None if offset is None else {"version": document["version"] + offset}
@@ -212,7 +212,7 @@ if __name__ == "__main__":
         })
         document = result["document"]
 
-    start_document = composition()
+    start_document = starting_document()
     resolutions = []
     for start, length, in_beats in SELECTIONS:
         selection = {"start": start, "len": length}
@@ -236,7 +236,7 @@ if __name__ == "__main__":
     # keeps freezing it, because the document is what the two sides are being
     # compared on.
     logged = {"applies": [], "undos": [], "redos": []}
-    with Log() as log, _native.Document(composition()) as doc:
+    with Log() as log, _native.Document(starting_document()) as doc:
         for label, intent, quant in LOGGED:
             outcome = log.apply(doc, intent, quant=quant, label=label)
             logged["applies"].append({
@@ -275,7 +275,7 @@ if __name__ == "__main__":
 
     out = pathlib.Path(__file__).with_name("document-vectors.json")
     out.write_text(json.dumps({
-        "start": composition(),
+        "start": starting_document(),
         "edits": edits,
         "final": document,
         "resolutions": resolutions,

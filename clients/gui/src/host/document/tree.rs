@@ -435,7 +435,7 @@ struct ClipBuild {
 ///
 /// The rule is the shape of the multitrack rather than a depth: an aggregate whose
 /// members are leaves is a lane of clips (that is what a lane *is*), and an
-/// aggregate of aggregates is not one lane but each of theirs. A composition is
+/// aggregate of aggregates is not one lane but each of theirs. A multitrack is
 /// nested as deeply as the author nested it — a multitrack of aggregates of tracks
 /// of clangs is three deep before a single note is reached — so anything that
 /// stops at a fixed depth draws the containers and calls it a picture, which is
@@ -1422,7 +1422,7 @@ mod depth_tests {
         }
     }
 
-    /// **A composition is nested as deeply as its author nested it**, and this
+    /// **A multitrack is nested as deeply as its author nested it**, and this
     /// draws the leaves wherever they are. The shape that found the bug is the
     /// ordinary one: a multitrack of aggregates of tracks of clangs, three
     /// aggregates deep before a single note — and a walk that stopped at two

@@ -154,7 +154,7 @@ class Element:
         #: server** rather than by messages the arrangement flattens. Such an
         #: element is a generator with no index (see `locatable`).
         self.resident = bool(resident)
-        #: **Mixing: the composition's, not the view's.** Whether this element
+        #: **Mixing: the tree's, not the view's.** Whether this element
         #: is silenced (`mute`), whether it is one of the elements soloed
         #: (`solo`), and the gain its events sound at (`level`, a factor over
         #: an event's own ``amp``). They are set by the editor's lane header and
@@ -718,7 +718,7 @@ class Generator(Element):
         self.controls = controls
         self.maps = maps
         #: The last rendered result, or ``None`` before there is one. Read-only
-        #: as far as editing goes: it is a rendering, not the composition, so an
+        #: as far as editing goes: it is a rendering, not the tree, so an
         #: edit to it would be written over by the next render.
         self.rendered = rendered
 
