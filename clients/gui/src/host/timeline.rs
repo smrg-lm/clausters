@@ -155,7 +155,7 @@ pub struct GroupState {
     pub playhead_loop_start: f64,
     pub playhead_loop_len: f64,
     /// **The extent this window was last clamped against.** Not a fact about
-    /// the composition — that is `timeline_total`, read from the members — but
+    /// the content — that is `timeline_total`, read from the members — but
     /// about *this window*: it is what says whether the view was showing
     /// everything or was zoomed into part of it, which is a question only
     /// answerable against the total that was in force when the hand left it.
@@ -465,7 +465,7 @@ impl Host {
 
     /// How far past its content an **authoring** group may be navigated: a lane
     /// or a roll must be zoomable *out* into empty time, or there is nowhere to
-    /// drag a clip to and nowhere to record into — the composition would only
+    /// drag a clip to and nowhere to record into — the multitrack would only
     /// ever grow by dropping something beyond the visible edge. The heavy views
     /// keep their content-bound axis (there is no signal out there to look at),
     /// so the headroom applies only to a group that holds an authoring surface.
@@ -690,7 +690,7 @@ impl Host {
     }
 
     /// Registers every `track` lane's extent — the end of its last clip — with
-    /// its navigation group, so the shared axis spans the composition. A lane's
+    /// its navigation group, so the shared axis spans every lane. A lane's
     /// "data" is its clips, so this is the lane's answer to the data extent the
     /// fronts register for a loaded waveform, and it must be re-run whenever a
     /// clip moves or resizes (a `/gui_def`, a `/gui_set`, or a drag).
@@ -1050,7 +1050,7 @@ impl Host {
         // *refits* every window to the new extent, so a state taken after it
         // has already lost what was on screen — and the comparison against the
         // new total then always says "this view was showing everything". The
-        // window survived a redefine only while the composition's length did
+        // window survived a redefine only while the content's length did
         // not change, which is exactly the case where nothing needed surviving.
         let mut carried: HashMap<GroupKey, (GroupState, usize)> = HashMap::new();
         if let Some(def) = redefined {
@@ -1065,7 +1065,7 @@ impl Host {
                 {
                     // The total it was *showing* against, since that is what
                     // says whether the view was zoomed in or showing the whole
-                    // composition -- and the totals below are about to change.
+                    // content -- and the totals below are about to change.
                     let was = state.total;
                     carried.insert(m.key, (state, was));
                 }

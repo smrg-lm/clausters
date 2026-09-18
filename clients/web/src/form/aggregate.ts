@@ -135,7 +135,7 @@ export interface Bus {
 
 /** {@link Aggregate}'s options. */
 export interface AggregateOptions {
-    /** The composition's name — the GraphDef name for a logical aggregate. */
+    /** The aggregate's name — the GraphDef name for a logical aggregate. */
     name?: string | null;
     /** Internal buses for a logical aggregate. */
     buses?: Iterable<BusSpec> | null;
@@ -153,7 +153,7 @@ export interface AggregateOptions {
  * {@link Aggregate.remove}, {@link Aggregate.move}; a handle returned by `add`
  * stays valid across other edits (like `seq.Timeline`).
  *
- * A `LOGICAL` aggregate additionally names the composition and may declare
+ * A `LOGICAL` aggregate additionally carries a name and may declare
  * internal buses; {@link Aggregate.toGraphdef} translates it into a `GraphDef`
  * (the bus-wired configuration the server already expresses).
  *

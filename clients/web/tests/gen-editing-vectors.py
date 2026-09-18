@@ -198,7 +198,7 @@ def answers():
     return [
         ("an unasked push with nothing to say is not sent", 0, 3, None, []),
         ("an answered gesture is an ack", 2, 3, None, []),
-        ("a refusal rides with it", 2, 3, "the composition changed since this edit", []),
+        ("a refusal rides with it", 2, 3, "the data changed since this edit", []),
         ("corrections make it a push", 2, 3, None,
          [(7, {"points": [0.0, 0.5, 1.0, 0.0]})]),
         ("and an unasked push carries them with a stamp of zero", 0, 3, None,

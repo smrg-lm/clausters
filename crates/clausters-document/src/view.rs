@@ -5,7 +5,7 @@
 //! looking, how far it is zoomed, what the hand is holding, how tall each track
 //! is drawn. None of that is what the multitrack *is* — the four-layer rule, and this
 //! project has said three times that a selection and a zoom are each window's
-//! and never the composition's — and all of it is state a person loses on a
+//! and never the multitrack's — and all of it is state a person loses on a
 //! reopen unless something writes it down.
 //!
 //! # Parallel to the model, never a field on it
@@ -264,7 +264,7 @@ impl View {
 /// is looking at, and where the hand is.
 ///
 /// This module says the rule in prose — a selection and a zoom are each
-/// window's and never the composition's — and the routing table is that rule as
+/// window's and never the multitrack's — and the routing table is that rule as
 /// a value, so a client can obey it without restating it. It is here rather
 /// than in a client because it was written twice, once per language, and two
 /// copies of a list of words drift the way every duplicated table drifts: a tag

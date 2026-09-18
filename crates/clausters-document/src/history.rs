@@ -14,7 +14,7 @@
 //! the three shapes this has to serve come out of:
 //!
 //! - an **independent structure** — a curve, a buffer, a roll the caller built
-//!   with no composition behind it — is a history with one structure in it, and
+//!   with no multitrack behind it — is a history with one structure in it, and
 //!   has a working undo without a [`Document`](crate::Document) existing
 //!   anywhere;
 //! - a **combination** — an application composing several editable views — is

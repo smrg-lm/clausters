@@ -179,10 +179,10 @@ That asymmetry runs through the whole feature:
 - **Pause and resume work on anything.** They are a freeze, so they do not care
   what produced the sound.
 - **Locate does not.** `transport_locate(beat)` moves the position and never a
-  node's state, and locating over a composition holding a resident generator is
+  node's state, and locating over a multitrack holding a resident generator is
   refused instead of moving a cursor the sound will not follow.
   Render the element first and it becomes samples like any other — the change
-  of state the [composition](composition.md) chapter is built around.
+  of state the [document](composition.md) chapter is built around.
 
 Anything **scheduled** against a governed node waits out the pause with it and
 fires on resume in its right relative place, so a look-ahead already in flight

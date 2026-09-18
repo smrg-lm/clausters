@@ -1,6 +1,6 @@
 // `edit(x)` over the three fundamental structures.
 //
-// One verb, three editors, and no composition anywhere: a curve a page built, a
+// One verb, three editors, and no multitrack anywhere: a curve a page built, a
 // timeline it filled, a buffer it holds. What is checked is the acceptance the
 // track was opened with — two windows over one structure share one stack, an
 // edit read back is the edit that was drawn, and a window composing two
@@ -176,7 +176,7 @@ test("the verb opens on the host it is given", async () => {
 
 // ---- a curve ----
 
-test("a curve is drawn, edited and read back with no composition", async () => {
+test("a curve is drawn, edited and read back with no multitrack", async () => {
     const curve = aCurve();
     const editor = await edit(curve, { sampleRate: SR, open: false });
     const { wid } = await opened(editor);
@@ -201,7 +201,7 @@ test("an edit made against a picture an undo replaced is refused", async () => {
     // stamps every event with the version it was last told, and it is told only
     // when an acknowledgement reaches it — a round trip a hand outruns — so an
     // edit naming an older version is the ordinary case and applies. What does
-    // not is an edit made against a picture the composition has moved away from
+    // not is an edit made against a picture the data has moved away from
     // by a route the host never saw: here an undo.
     const curve = aCurve();
     const editor = await edit(curve, { sampleRate: SR, open: false });
@@ -229,7 +229,7 @@ test("an edit made against a picture an undo replaced is refused", async () => {
         false,
     );
     assert.deepEqual(curve.toPoints().slice(0, 2), [0.0, 200.0], "the undo stands");
-    assert.equal(host.acks[host.acks.length - 1]![2], "the composition changed since this edit");
+    assert.equal(host.acks[host.acks.length - 1]![2], "the data changed since this edit");
 
     // And a gesture made against the picture that now holds applies.
     assert.equal(

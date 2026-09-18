@@ -432,7 +432,7 @@ impl Source {
     }
 }
 
-/// A composition, saved: the multitrack, and where its samples are.
+/// A session: the multitrack, saved, and where its samples are.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Session {
     /// The format this was written in. See [`FORMAT`].

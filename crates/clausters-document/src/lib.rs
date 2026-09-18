@@ -1,7 +1,7 @@
-//! The Clausters **document**: the single authoritative model of a composition.
+//! The Clausters **document**: the single authoritative model of a multitrack.
 //!
 //! This crate is the owner every editing path talks to. A GUI host draws and
-//! emits intents but holds no data; a client writes a composition through its
+//! emits intents but holds no data; a client writes a multitrack through its
 //! own idiomatic surface (`clausters.form` in Python) but does not define what
 //! an edit *means*; the audio server stores sources and never edits at all.
 //! What sits between them — the tree, what an edit does to it, and what an
@@ -514,7 +514,7 @@ pub enum Body {
         ///
         /// It is reachable by [`Node::walk`] and [`Node::find`], because a
         /// reader must see it, and **not** by an intent: a rendering is not
-        /// the composition, and editing one would write over what the next
+        /// the document, and editing one would write over what the next
         /// render replaces.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         rendered: Option<Box<Node>>,
@@ -790,7 +790,7 @@ impl Body {
     }
 }
 
-/// A composition, and the version that says which edit produced it.
+/// A tree, and the version that says which edit produced it.
 ///
 /// The version is the document half of the two counters (the other is each
 /// [`SourceRef`]'s `generation`). It is what lets an intent made against a
@@ -808,7 +808,7 @@ impl Body {
 pub struct Document {
     /// Monotonic, bumped by every applied edit. Never zero.
     pub version: u64,
-    /// The composition.
+    /// The tree.
     pub root: Node,
     /// **Content the tree reads rather than places**: the nodes a
     /// [`SegmentSource::Node`] names.

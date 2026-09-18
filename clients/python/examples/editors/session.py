@@ -26,7 +26,7 @@ What it shows, in the order the cells run:
   draw it, and the region that names it plays. A source the table calls volatile
   comes back frozen -- drawn, placed, silent -- rather than as a lie.
 - **What is the multitrack's and what is the view's.** A muted track reopens muted,
-  because mute is the composition's. A track's *height* is not: it says nothing
+  because mute is the multitrack's. A track's *height* is not: it says nothing
   about what the multitrack is, so no session carries it.
 
 **Handing it to a host with no language attached** is the other half, and it
@@ -148,7 +148,7 @@ tone.active_lane.place(Region(id=12, position=0.0, length=4.0, name="first",
 tone.active_lane.place(Region(id=13, position=8.0, length=2.0, name="again",
                               content=Content.onto(window(start=0.5))))
 
-#: **Mute is the composition's.** A track left muted here reopens muted, because
+#: **Mute is the multitrack's.** A track left muted here reopens muted, because
 #: it says something about the multitrack. A track's *height* does not, so no session
 #: carries one.
 echo = Track(id=20, name="echo", muted=True, lanes=[Lane(id=21)])
@@ -199,7 +199,7 @@ print(f"  undone: the multitrack is {multitrack.end:.0f} s long again, "
 # %%
 #: **How it was being looked at**, beside what it is. A window's zoom, its
 #: grid, what the hand was holding and how tall each track was drawn are not the
-#: composition -- nothing here can change what plays -- and all of it is state
+#: multitrack -- nothing here can change what plays -- and all of it is state
 #: the person loses on a reopen unless the file carries it. A list, because a
 #: multitrack drawn in two windows has two views and they disagree on purpose.
 window = View(name="arranger", visible=Span(0.0, multitrack.end), quant=1.0)

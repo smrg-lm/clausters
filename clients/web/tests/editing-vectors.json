@@ -1745,7 +1745,7 @@
       "owns": true
     },
     "turn": {
-      "reason": "the composition changed since this edit",
+      "reason": "the data changed since this edit",
       "seq": 3,
       "turn": "stale",
       "widget": 7
@@ -1771,7 +1771,7 @@
       "owns": true
     },
     "turn": {
-      "reason": "the composition changed since this edit",
+      "reason": "the data changed since this edit",
       "seq": 4,
       "turn": "stale",
       "widget": 7
@@ -1934,13 +1934,13 @@
     "kind": "answer",
     "seq": 2,
     "docVersion": 3,
-    "reason": "the composition changed since this edit",
+    "reason": "the data changed since this edit",
     "corrections": [],
     "answer": {
       "answer": "ack",
       "seq": 2,
       "docVersion": 3,
-      "reason": "the composition changed since this edit"
+      "reason": "the data changed since this edit"
     }
   },
   {
@@ -3052,7 +3052,7 @@
             "push",
             9,
             4,
-            "the composition changed since this edit",
+            "the data changed since this edit",
             [
               [
                 "multitrack",

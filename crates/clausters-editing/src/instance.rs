@@ -500,7 +500,7 @@ impl Instance {
     }
 
     /// **Everything, freed.** The multitrack itself is untouched: what an instance
-    /// holds is nodes, and nodes are not the composition.
+    /// holds is nodes, and nodes are not the document.
     pub fn teardown(&mut self) -> Vec<Op> {
         let mut ops = Vec::new();
         // Everything the two groups take with them, read before the tables are

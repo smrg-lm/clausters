@@ -20,7 +20,7 @@ from clausters.document import FIRST_VERSION
 
 
 def a_document() -> dict:
-    """A composition with the three shapes the cases name: an event at node 2,
+    """A document with the three shapes the cases name: an event at node 2,
     a take at node 3, and a nested set at node 4."""
     return {
         "version": FIRST_VERSION,
@@ -281,7 +281,7 @@ def test_a_closed_log_is_closed_twice_without_complaint():
 
 def test_the_document_handle_edits_in_place_and_hands_back_only_the_outcome():
     """The shape since the tree stopped crossing on every call: a handle holds
-    the composition, an intent goes over, and what comes back is what happened.
+    the tree, an intent goes over, and what comes back is what happened.
     `snapshot` is how the JSON leaves — asked for rather than paid per edit."""
     from clausters import _native
 
@@ -329,7 +329,7 @@ def test_a_refused_edit_leaves_the_document_where_it_was():
 
 def test_opening_something_that_is_not_a_document_is_an_error_not_an_empty_one():
     """The distinction worth having: a handle that opened nothing would look
-    exactly like a handle onto an empty composition."""
+    exactly like a handle onto an empty document."""
     from clausters import _native
 
     with pytest.raises(ValueError):

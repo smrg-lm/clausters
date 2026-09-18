@@ -459,7 +459,7 @@ pub(super) const EDGE_MARGIN: f64 = 28.0;
 /// How much of the visible window one second pinned against the edge scrolls.
 /// Deliberately a *fraction of the window* rather than a pixel rate: zoomed in,
 /// a clip must still travel at a usable speed, and zoomed out the same gesture
-/// must not fly off the composition.
+/// must not fly off past the content.
 pub(super) const EDGE_SCROLL_PER_SEC: f64 = 0.9;
 
 /// Writes timeline view `id`'s vertical display window (clamped) into its

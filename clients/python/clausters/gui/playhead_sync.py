@@ -381,7 +381,7 @@ class PlayheadSync:
         """Continue from where `pause` left off, **without re-rendering**.
 
         The difference from `play` is MIDI's `continue` versus `start`: play
-        reads the composition as it now stands and starts it again from `at`,
+        reads what it plays as it now stands and starts it again from `at`,
         resume picks the frozen sound back up. Governed, the server still holds
         every node's internal state and every scheduled bundle, so what comes
         back is the same sound carried on — a stochastic texture continues

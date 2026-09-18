@@ -129,7 +129,7 @@ impl MultitrackPlayback {
     }
 
     /// Frees everything the multitrack made. The multitrack itself is untouched: what a
-    /// playback holds is nodes, and nodes are not the composition.
+    /// playback holds is nodes, and nodes are not the document.
     pub fn close(&mut self, ids: &mut IdSpaces) -> Result<Vec<Step>, IdError> {
         self.rolling = false;
         let ops = self.instance.teardown();

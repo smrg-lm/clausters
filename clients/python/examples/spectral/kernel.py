@@ -25,7 +25,7 @@ with ``/node_set`` — a kernel stays fully modulatable.
 
 What an expression can NOT do — state across frames (freeze), moving energy
 between bins (shift), reading another chain (combiners) — stays with the
-dedicated ``pv_*`` filters; see the composition docs ("Writing your own
+dedicated ``pv_*`` filters; see the defs chapter of the book ("Writing your own
 spectral operation").
 
 This file is organized as ``# %%`` cells (the VS Code / Jupyter convention).

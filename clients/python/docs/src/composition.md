@@ -227,7 +227,7 @@ is consulted when an edit is applied. A session file may carry one because
 reopening a multitrack into the window it was left in is what every program in the
 field does — and a reader that ignores the field opens exactly the same music.
 
-## The document: what the composition *is*, and who edits it
+## The document, and who edits it
 
 Everything above is this client's own surface. Underneath it there is one
 authoritative model — the **document** — and it lives in a Rust crate that every
@@ -350,7 +350,7 @@ split, a cut, an undo of one) redraws them whole, for the same reason a redefine
 is not what answers a drag.
 
 That holds for a window over a *part* of the multitrack too — a dedicated roll of one
-track edits through the composition's history rather than opening a second one
+track edits through the multitrack's history rather than opening a second one
 over the same notes. What each window keeps for itself is what a window can see:
 its selection, its zoom, which layer the hand is on. None of that is ever an
 entry in a history, which is the same line drawn twice.
@@ -364,7 +364,7 @@ backwards, and the window adopts the result exactly as it adopts a snap.
 
 ### The selection: what was swept, and what is under it
 
-A sweep on a lane is not an edit — nothing in the composition changes — but it
+A sweep on a lane is not an edit — nothing in the multitrack changes — but it
 is the **value** an operation is handed, so the editor keeps it typed:
 
 ```python
@@ -514,7 +514,7 @@ what it had made. And a generator whose reference `defs` does not have keeps wha
 it last **rendered** as its floor, which is the same thing a host with no
 language attached shows.
 
-### Mixing is the composition's
+### Mixing is the multitrack's
 
 Every element carries `mute`, `solo` and `level`, and all three are inherited
 down the tree: muting an aggregate silences its members, one soloed element
@@ -527,7 +527,7 @@ lead_lane.level = 0.5
 ```
 
 They ride in the node's **configuration**, so a multitrack reopens mixed the way it
-was left, and the editor's lane header is drawing the composition rather than
+was left, and the editor's lane header is drawing the multitrack rather than
 remembering something of its own — pressing mute there goes through the log and
 undoes like any other edit. What is *drawn* is read unmixed: a muted lane keeps
 its clips, its notes and its length, because a picture that emptied when the
@@ -652,7 +652,7 @@ A name is a label, not an identity: nothing addresses an element by it, and two
 elements may share one — which is what naming *the same algorithm used twice*
 looks like. An **unnamed** leaf is written with no reference at all and comes
 back **frozen**: drawn, placed, silent, contributing its extent and emitting
-nothing. That is not the file being lossy; it is what a composition means
+nothing. That is not the file being lossy; it is what a multitrack means
 somewhere its language is not running, and it is what a `standalone` host with
 no interpreter shows for every generator in the multitrack.
 

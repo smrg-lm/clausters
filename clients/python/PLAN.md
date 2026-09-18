@@ -4411,6 +4411,15 @@ work, where a pending item reads as done.)*
   `PIECE_BEATS`, `endOfPiece` in the web book, and some fifty test names and
   helpers) kept it. They are renamed for the structure each one holds.
 
+  **And "the composition" was never reached**, though decision 14 retired it
+  with "the piece": some hundred and fifty sentences across the crates, both
+  clients, both books and `docs/` still named the work that way. Each is
+  re-read for the structure it means -- the document, the multitrack, `form`'s
+  tree, or the data an editor edits, whose overtaken-edit reason is now "the
+  data changed since this edit" -- and the uses that mean something else (a
+  layout's composition of sizes, an input method's, Faust's composition
+  operators, a window of widgets) stay.
+
 - ✅ **A catalogue view whose facts do not read is drawn as a bare widget, and
   says nothing** *(found 2026-09-17 by the user: "notes no muestra nada", on
   `editors/edit_notes`)*. The roll's marker lane is `time label` pairs, and the

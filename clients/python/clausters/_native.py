@@ -588,7 +588,7 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_core_patch_compile.argtypes = [u8p, ctypes.c_size_t, u8p, ctypes.c_size_t]
     # The document (ABI v18): a **handle**. The tree stays in Rust and only the
     # intent and the outcome cross, so an edit costs the edit -- the by-value
-    # binding this replaces was linear in the whole composition (205 ms for one
+    # binding this replaces was linear in the whole document (205 ms for one
     # placement on 10240 events). One implementation of what an edit *means*,
     # bound rather than re-derived.
     lib.clausters_document_open.restype = ctypes.c_void_p
@@ -1080,7 +1080,7 @@ def _why_refused(document) -> str:
 
 
 class Document:
-    """One composition, held by the shared crate — the **only** implementation
+    """One document, held by the shared crate — the **only** implementation
     of what an edit means.
 
     A client does not apply an edit and then report it: it hands an intent over
@@ -1088,14 +1088,14 @@ class Document:
     three different things by the same edit.
 
     **The tree stays in Rust.** It used to cross on every call, and the cost was
-    linear in the whole composition rather than in the edit: 205 ms for one
+    linear in the whole document rather than in the edit: 205 ms for one
     placement on a 10240-event multitrack, the same for a stroke touching fifty
     samples. This is not an accessor handle — there is no call per field of the
     tree, just the same three verbs — and `snapshot` is how the JSON leaves,
     asked for rather than paid per edit.
 
     Args:
-        document: a document as JSON, or ``None`` for an empty composition.
+        document: a document as JSON, or ``None`` for an empty one.
 
     Usage::
 
@@ -1142,7 +1142,7 @@ class Document:
         """The whole tree as JSON — to save it, or to rebuild the client's own
         objects from it.
 
-        The one call still the size of the composition. It is a pure read, so
+        The one call still the size of the document. It is a pure read, so
         the crate serializes once per call rather than twice.
         """
         fn = lib().clausters_document_snapshot
@@ -1241,7 +1241,7 @@ def document_apply(document: dict, intent: dict, *, against=None, quant: float =
 
     The convenience form, built out of `Document` — open, apply, snapshot, free
     — for a script that has a document in hand and wants the edited one back.
-    It costs a serialization of the whole composition either way, which is why
+    It costs a serialization of the whole document either way, which is why
     it is a wrapper here rather than the binding: an editor applying a gesture
     per drag holds a `Document` instead and pays nothing per edit.
 
@@ -1673,7 +1673,7 @@ class Instance:
         """The operations that give back everything this made.
 
         The multitrack itself is untouched: what an instance holds is nodes, and
-        nodes are not the composition.
+        nodes are not the document.
         """
         if not self._handle:
             return []
@@ -2058,7 +2058,7 @@ class History:
     over them, so what you decide by choosing a history is *what shares an undo
     order*:
 
-    - a structure you built with no composition behind it — a curve, a buffer, a
+    - a structure you built with no multitrack behind it — a curve, a buffer, a
       roll — is a history with one structure in it, and has a working undo with
       no document anywhere;
     - an application composing several editable views registers them all in one,

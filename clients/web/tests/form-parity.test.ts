@@ -1,11 +1,11 @@
 // The arrangement against the Python client's, on the shared vectors.
 //
-// `gen-form-vectors.py` builds a handful of compositions with the Python
+// `gen-form-vectors.py` builds a handful of trees with the Python
 // surface and freezes the two things that leave the layer: the **document**
 // each is written as (a shared format three languages read) and the
 // **flattened timeline** it renders to — the absolute beats, the events at
 // them, and what a placement's length trims. Each case here rebuilds the same
-// composition through the TypeScript surface and asserts the same two results.
+// tree through the TypeScript surface and asserts the same two results.
 //
 // What has to match is what leaves the layer, never the source: the two clients
 // are one client in two languages, so a rule that drifts into one of them —
@@ -79,7 +79,7 @@ function flat(element: Element): unknown[] {
     );
 }
 
-/** The same compositions `gen-form-vectors.py` builds, in this language. */
+/** The same trees `gen-form-vectors.py` builds, in this language. */
 const cases: Record<string, () => Aggregate> = {
     an_aggregate() {
         const aggregate = new Aggregate(null, "concrete", { name: "aggregate" });

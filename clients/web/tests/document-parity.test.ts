@@ -1,7 +1,7 @@
 // The document model against the Python client's, on the shared vectors.
 //
 // This is the one that proves the crate is *the* model rather than a model
-// each client copies. `gen-document-vectors.py` builds a composition with the
+// each client copies. `gen-document-vectors.py` builds a document with the
 // Python client, applies a run of edits through the C ABI, and freezes the
 // document after each. Here the identical edits go through the wasm door and
 // the documents must match byte for byte.

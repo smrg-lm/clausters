@@ -1,4 +1,4 @@
-"""Editing a **timeline of events**: the roll, with no composition under it.
+"""Editing a **timeline of events**: the roll, with no multitrack under it.
 
 A `clausters.seq.Timeline` a script filled is edited by the same gesture that
 edits a track's notes in the multitrack, and until now the only way to write one

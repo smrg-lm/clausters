@@ -1,8 +1,8 @@
-# Composition: the arrangement, and the document under it
+# The document: what a multitrack is, and who edits it
 
 A `Timeline` places items at beats and plays them. That is enough to
-sequence, but not enough to *compose*: a composition is not a flat list of events,
-it is an element inside an element — a phrase inside a section inside a multitrack, a
+sequence, but not everything a script places is a flat list of events: often it
+is an element inside an element — a phrase inside a section inside a multitrack, a
 take placed against a melody, a generator that has not been evaluated yet.
 
 The `form` namespace is one such layer — a small, self-contained set of
@@ -123,7 +123,7 @@ sounds for exactly that long — the DAW rule, and what resizing a clip changes.
 
 ## Rendering: the change of state
 
-Rendering a composition **flattens** it — a tree-walk accumulating the nested
+Rendering an aggregate **flattens** it — a tree-walk accumulating the nested
 offsets into absolute beats — into a flat `Timeline`, which then plays
 itself. A generator contained in it is *bounced* in the same pass: that evaluation,
 the change from a process into a generated element, is the *change of state*.
@@ -452,7 +452,7 @@ is consulted when an edit is applied. A session file may carry one because
 reopening a multitrack into the window it was left in is what every program in the
 field does — and a reader that ignores the field opens exactly the same music.
 
-## The document: what the composition *is*
+## The document, and who edits it
 
 Everything above is this client's own surface. Underneath it there is one
 authoritative model — the **document** — and it lives in a Rust crate that every
@@ -470,7 +470,7 @@ so no format owns one; what the document guarantees is that it does not lose it.
 
 A leaf whose reference nothing here can resolve is **frozen** — it draws, it
 holds its place, and it makes no sound. That is the floor, not a failure: it is
-what a composition means where the language that wrote it is not running.
+what a multitrack means where the language that wrote it is not running.
 
 Because a document is one format for several languages, the two event keys this
 language spells its own way (`addAction`, `hasGate`) are written the way the file
@@ -556,7 +556,7 @@ language attached shows.
 Loading is asynchronous here and not in the Python client, so the `await` is the
 language's and not a different call.
 
-## Mixing is the composition's
+## Mixing is the multitrack's
 
 Every element carries `mute`, `solo` and `level`, and all three are inherited
 down the tree: muting an aggregate silences its members, one soloed element
@@ -569,7 +569,7 @@ leadLane.level = 0.5;
 ```
 
 They ride in the node's **configuration**, so a multitrack reopens mixed the way it
-was left, and the editor's lane header is drawing the composition rather than
+was left, and the editor's lane header is drawing the multitrack rather than
 remembering something of its own — pressing mute there goes through the log and
 undoes like any other edit. What is *drawn* is read unmixed: a muted lane keeps
 its clips, its notes and its length, because a picture that emptied when the

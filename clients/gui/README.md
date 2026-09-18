@@ -125,6 +125,6 @@ widget — is in the developer guide (below), not here.
 | --- | --- |
 | The wire: `/gui_*` commands, the GuiDef document, props, edit-back events | [`docs/gui-protocol.md`](../../docs/gui-protocol.md) |
 | Development: the host's structure, module map, how to add a widget | [`docs/architecture.md`](../../docs/architecture.md), "The GUI host" |
-| Usage from Python: the arrangement and the multitrack editor | the [Python client book](https://clausters-python.readthedocs.io/), composition chapters |
+| Usage from Python: the arrangement and the multitrack editor | the [Python client book](https://clausters-python.readthedocs.io/), the document chapter |
 | Crate API reference | `cargo doc --no-deps` |
 | Roadmap | [`PLAN.md`](PLAN.md) |

@@ -220,7 +220,7 @@ export * as form from "./form/index.ts";
 export * as segments from "./segments.ts";
 
 /**
- * The document: the composition's authoritative model, applied by the shared
+ * The document: the multitrack's authoritative model, applied by the shared
  * crate rather than by any client. See `./document.ts`.
  */
 export * as document from "./document.ts";

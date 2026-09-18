@@ -2,7 +2,7 @@
  * The editing context of one structure — **whose history it is**.
  *
  * An undo stack belongs to the data, not to the view. Two windows over one
- * composition share a history, and an undo in either updates both; a stack
+ * structure share a history, and an undo in either updates both; a stack
  * minted per editor sees only the gestures *that* editor made, so stepping one
  * of them reverts across the other's edits and writes a state nobody was ever
  * in. The crate placed its pile beside the data for exactly that reason, and
@@ -65,7 +65,7 @@ export interface StepHandler extends Applier {
  */
 export interface Adopting {
     /**
-     * Another view of this composition edited it: bring this window in step.
+     * Another view of this structure edited it: bring this window in step.
      *
      * It carries nothing: what {@link Editor.adopt} does is already props, one
      * correction per widget and never a redefine.
@@ -184,7 +184,7 @@ export class Editing {
     protected changedInTurn = false;
 
     /**
-     * The context of this composition, made on first ask.
+     * The context of this structure, made on first ask.
      *
      * Every editor over one element gets the same one — the whole point, and
      * the reason this is a static rather than a constructor.

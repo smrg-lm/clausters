@@ -18,7 +18,7 @@
 - [A DAW-style transport](transport.md)
 - [The visual elements: a GUI the script builds](gui.md)
   - [Building from the model alone](gui/model.md)
-- [The document: what a composition is, and who edits it](composition.md)
+- [The document: what a multitrack is, and who edits it](composition.md)
 - [`clausters.form`: a frozen layer](form.md)
 - [Bundles: an instrument you can hand to a page](bundles.md)
 - [Reading the server: buses, taps and takes](data.md)

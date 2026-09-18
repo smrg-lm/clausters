@@ -156,7 +156,7 @@ impulse response rendered to be loaded back) — that is scratch, not a product.
 topic: they are the same example, and the pair carries the non-divergence rule the way
 the clients do. So the second one is **ported, not re-invented**:
 
-- **Same composition, same material, same names.** The lanes, the defs, the
+- **Same structures, same material, same names.** The lanes, the defs, the
   notes, the buffers, the labels a reader sees on screen. A lane called
   `bassline` in one is called `bassline` in the other; a take bounced offline
   from a two-beat note is bounced offline from a two-beat note, not filled with

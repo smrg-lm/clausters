@@ -26,7 +26,7 @@ Scope of this phase (the concrete path):
 - An **abstract** element (no onset/duration, no content) contributes context,
   not an event.
 
-**Mixing is part of the composition, and it is honoured here.** An element
+**Mixing is part of the tree, and it is honoured here.** An element
 carries `clausters.form.element.Element.mute`, `solo` and `level`, all three
 inherited down the tree: a muted branch contributes nothing, one soloed element
 anywhere silences every branch that is not on a soloed path, and a level
@@ -70,7 +70,7 @@ def flatten(element, base: float = 0.0, *, tempo: float = 1.0, tempo_map=None,
     lands where it actually ends rather than where a single tempo would put it;
     ``tempo`` alone is that tempo as one segment.
 
-    ``mixed`` is whether the composition's mixing is in force — mute, solo and
+    ``mixed`` is whether the tree's mixing is in force — mute, solo and
     level, all inherited down the tree. It is on for what sounds and off for
     what is **drawn**: a muted lane keeps its clips, its notes and its length,
     and a picture that emptied when the toggle was pressed would be reporting
@@ -141,7 +141,7 @@ def render_logical(aggregate, server, *, ports=None):
     return NodeGroup.graph(gdef.name, ports, server=server)
 
 
-# ---- mixing: what the composition says about being heard ----
+# ---- mixing: what the tree says about being heard ----
 
 class _Mix:
     """The mixing in force at one point of the walk: whether anything in the
@@ -162,7 +162,7 @@ class _Mix:
         self.soloing = soloing
         self.soloed = soloed
         self.gain = gain
-        #: Whether the mix is in force at all. **Drawing reads the composition
+        #: Whether the mix is in force at all. **Drawing reads the tree
         #: unmixed**: a muted lane still has its clips, its notes and its
         #: length, and a picture that vanished when the toggle was pressed
         #: would be reporting silence as absence. So a view flattens with

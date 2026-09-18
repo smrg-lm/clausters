@@ -1,4 +1,4 @@
-"""The document: the composition's authoritative model, and the one place an
+"""The document: the multitrack's authoritative model, and the one place an
 edit is applied.
 
 The model lives in a Rust crate (`crates/clausters-document`) and every client
@@ -24,7 +24,7 @@ secondary module the arrangement no longer goes through.
 What is here
 ------------
 
-- `Document` — one composition, held by the crate. `Document.apply` hands over
+- `Document` — the tree, held by the crate. `Document.apply` hands over
   an intent and takes back what happened; `Document.snapshot` is how the JSON
   leaves, asked for rather than paid per edit.
 - `History` and `Log` — the edit pile. A `Log` is a history over one document,

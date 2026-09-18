@@ -3,7 +3,7 @@
  *
  * A host draws what the hand did and then waits to be told what actually
  * happened — the edit as applied, snapped, or refused — and every editor owes it
- * the same three things: the **version** the composition is at, the
+ * the same three things: the **version** the data is at, the
  * **corrections** its own gesture did not survive intact, and the **reason**
  * when one is owed. That triple is the whole of this module, and it knows
  * nothing about what was edited: a stamp, a floor and a list of props.
@@ -85,9 +85,9 @@ export class Echo {
     readonly #version: () => number;
 
     /**
-     * `version` answers the composition's current version. A callable rather
+     * `version` answers the data's current version. A callable rather
      * than a number because the version belongs to the **editing context** and
-     * moves under this object: two windows over one composition read one
+     * moves under this object: two windows over one structure read one
      * counter, and a copy kept here would be a second answer to a question with
      * one.
      */
@@ -99,7 +99,7 @@ export class Echo {
 
     /**
      * The **oldest version an incoming edit may name**, raised whenever the
-     * composition moves by a route that is not a host event and by nothing
+     * data moves by a route that is not a host event and by nothing
      * else — which is what makes staleness a monotone test rather than a race.
      */
     get floor(): number {
@@ -163,7 +163,7 @@ export class Echo {
      * An editor snaps a placement to the musical grid and refuses an edit to a
      * generator, and without this the host could learn neither. The stamp closes
      * both, because it lets the host retire what it drew and adopt what actually
-     * happened. Every acknowledgement carries the composition's version, which
+     * happened. Every acknowledgement carries the data's version, which
      * is what the host names back on its next gesture — that round trip is the
      * whole of the staleness check, and it costs one integer.
      */

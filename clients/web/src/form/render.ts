@@ -21,7 +21,7 @@
 // - An **abstract** element (no onset/duration, no content) contributes context,
 //   not an event.
 //
-// **Mixing is part of the composition, and it is honoured here.** An element
+// **Mixing is part of the tree, and it is honoured here.** An element
 // carries `mute`, `solo` and `level`, all three inherited down the tree: a muted
 // branch contributes nothing, one soloed element anywhere silences every branch
 // that is not on a soloed path, and a level multiplies into the `amp` of the
@@ -98,7 +98,7 @@ export type RenderResult = Timeline | Promise<Group>;
  * default tempo of one beat a second the two coincide, which is what a script
  * that never set a tempo has always been running under.
  *
- * `mixed` is whether the composition's mixing is in force — mute, solo and
+ * `mixed` is whether the tree's mixing is in force — mute, solo and
  * level, all inherited down the tree. It is on for what sounds and off for what
  * is **drawn**: a muted lane keeps its clips, its notes and its length, and a
  * picture that emptied when the toggle was pressed would be reporting silence as
@@ -231,7 +231,7 @@ class Mix {
     readonly soloed: boolean;
     readonly gain: number;
     /**
-     * Whether the mix is in force at all. **Drawing reads the composition
+     * Whether the mix is in force at all. **Drawing reads the tree
      * unmixed**: a muted lane still has its clips, its notes and its length, and
      * a picture that vanished when the toggle was pressed would be reporting
      * silence as absence.

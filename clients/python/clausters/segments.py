@@ -166,7 +166,7 @@ class SegmentRun:
 
         What makes a join the inverse of a split rather than a pile of
         wrappers -- a run like this *is* the single window it was cut from, and
-        says so, so cutting and rejoining leaves the composition it started
+        says so, so cutting and rejoining leaves the samples it started
         with. A run of one is trivially one run. The tolerance is half a unit of
         whatever the source is addressed in, which for frames is half a frame
         and for beats is far finer than anything a hand writes.

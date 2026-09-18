@@ -123,7 +123,7 @@ impl Multitrack {
     /// A press on a lane's header: the two toggles land on the press, the fader
     /// takes the drag.
     ///
-    /// **The mixer state is the composition's**, so all three report — and they
+    /// **The mixer state is the document's**, so all three report — and they
     /// report the `"lanes"` list, not the one lane, because what a report says
     /// here is the multitrack as it now stands.
     pub(super) fn press_header(
@@ -575,7 +575,7 @@ impl Multitrack {
             // depending on what happens next, and collapsing the selection at
             // the press would let go of a block the hand was about to move.
             //
-            // Nothing leaves: a selection is the hand's, not the composition's.
+            // Nothing leaves: a selection is the hand's, not the document's.
             self.selected = vec![grab.clip];
             return Events::none();
         }

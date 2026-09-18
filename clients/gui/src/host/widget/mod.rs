@@ -285,7 +285,7 @@ pub struct Widget {
     /// the tree, so the only place its mark can live is the node.
     ///
     /// **Native view state, and it does not travel.** A selection is what a
-    /// hand is holding, not what the composition is — the document is explicit
+    /// hand is holding, not what the multitrack is — the document is explicit
     /// that what a view is currently editing is never part of it — so nothing
     /// on the wire sets or reports this, exactly as nothing reports which notes
     /// a roll has selected.
@@ -390,7 +390,7 @@ impl Widget {
     /// A free-standing ruler exists to rule what is beside it, so one dropped
     /// into a window with nothing said is asking for that window's axis. Every
     /// other timeline view stays out — a `waveform` beside a multitrack is
-    /// showing its own buffer, and joining it to the composition's axis would
+    /// showing its own buffer, and joining it to the multitrack's axis would
     /// be a guess; a `multitrack` owns its own stack, so its lanes share an
     /// axis by construction rather than by being linked one to another.
     fn link_lanes(widget: &mut Widget, root_id: i32) {

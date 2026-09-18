@@ -13,7 +13,7 @@
 //! mean each client holding pointers into a Rust object graph, and a tree has
 //! dozens of accessors to design, bind and keep in step. What it did not do was
 //! put a number on "a serialization per edit". The number is **205 ms** for one
-//! placement on a 10240-event composition (3.3 MB of JSON), against 6 ms on the
+//! placement on a 10240-event multitrack (3.3 MB of JSON), against 6 ms on the
 //! 320-event one an example builds — linear in the whole document and
 //! independent of the edit, so a destructive stroke touching fifty samples paid
 //! the same as a drag.
@@ -40,7 +40,7 @@
 //!   call returns is the *outcome* — a few hundred bytes — and no longer the
 //!   document.
 //! - **A pure read caches between the pair.** `snapshot` is the one call whose
-//!   payload is still the size of the composition, and it changes nothing, so
+//!   payload is still the size of the document, and it changes nothing, so
 //!   the sizing pass keeps the bytes it produced and the fill copies them out.
 //!   Caching a *mutating* call this way would be wrong — the mutation would
 //!   land on the sizing pass, and a caller that sized and then gave up would
@@ -263,7 +263,7 @@ pub unsafe extern "C" fn clausters_document_version(h: *mut FfiDocument) -> u64 
 /// process, for a client that wants the tree.
 ///
 /// A **pure read**, so the sizing pass keeps what it serialized and the fill
-/// copies it out: the composition is serialized once per pair, not twice.
+/// copies it out: the document is serialized once per pair, not twice.
 ///
 /// Returns the byte count the document needs, or `0` when the handle is null.
 ///
@@ -343,7 +343,7 @@ pub unsafe extern "C" fn clausters_document_apply(
 ///
 /// **The edit runs in place and is rolled back rather than run on a copy**,
 /// which is the difference between costing the edit and costing the
-/// composition: cloning the tree to protect a sizing pass is O(document), and
+/// document: cloning the tree to protect a sizing pass is O(document), and
 /// on a 10240-event multitrack that is 14 ms per gesture whatever the gesture
 /// touched. The rollback is the intent's own inverse — the same one the log
 /// records — plus restoring the version by hand, since applying an inverse
@@ -830,7 +830,7 @@ mod tests {
         unsafe { clausters_document_free(doc) };
     }
 
-    /// The sizing pass caches, so a snapshot serializes the composition once
+    /// The sizing pass caches, so a snapshot serializes the document once
     /// per pair -- and the cache has to be dropped by an edit, or the second
     /// reader sees the tree from before it.
     #[test]

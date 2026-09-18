@@ -294,7 +294,7 @@ python clients/python/build_native.py            # release; --debug for the debu
 ## Documentation
 
 📖 **[clausters-python.readthedocs.io](https://clausters-python.readthedocs.io/)**
-— the client's book online: the guide, the composition tutorial and the API
+— the client's book online: the guide, the document chapter and the API
 reference. The server's own book (the OSC protocol, the wire formats, the
 engine) is at **[clausters.readthedocs.io](https://clausters.readthedocs.io/)**,
 and the web client's — the same client model in a browser — at

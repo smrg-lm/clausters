@@ -295,7 +295,7 @@ pub unsafe extern "C" fn clausters_editing_instance_reconcile(
 /// **Everything this made, given back** — the operations that stop the multitrack.
 ///
 /// The multitrack itself is untouched: what an instance holds is nodes, and nodes
-/// are not the composition. Afterwards it believes nothing is sounding, and the
+/// are not the document. Afterwards it believes nothing is sounding, and the
 /// defs it sent stay known, since they are on the server whatever this holds.
 ///
 /// # Safety

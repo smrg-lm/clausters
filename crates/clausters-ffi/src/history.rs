@@ -17,7 +17,7 @@
 //!
 //! A history holds the structures registered in it and one ordered pile over
 //! them, so what a caller decides by choosing a handle is *what shares an undo
-//! order*. A structure the client built with no composition behind it is a
+//! order*. A structure the client built with no multitrack behind it is a
 //! history with one structure in it; an application composing several editable
 //! views registers them all in one; two views of one structure hold one handle
 //! between them, which is the arrangement the crate exists to make the only
