@@ -4379,6 +4379,20 @@ work, where a pending item reads as done.)*
   and a new decisions entry says why. Plain English survives -- one piece of
   code, a file written in two pieces.
 
+- ⬜ **A catalogue view whose facts do not read is drawn as a bare widget, and
+  says nothing** *(found 2026-09-17 by the user: "notes no muestra nada", on
+  `editors/edit_notes`)*. The roll's marker lane is `time label` pairs, and the
+  crate's `Roll` typed it as numbers, so a timeline holding one `OscItem` failed
+  to deserialize and `catalogue::props` answered `None`. Both clients turn that
+  `None` into `{}` (`_native.view_props`, the page's `viewProps(...) || "{}"`),
+  and `View.catalogue` stamps an id on it: a `pianoroll` with no notes, no ruler
+  and no map, on screen, with nothing in any log. The lane's type is fixed; the
+  silence is not, so the next fact a caller gets wrong fails the same way.
+  `None` means two things there -- a kind the crate does not draw, and facts
+  that will not read -- and neither should become a widget. The door should
+  answer with the reason (serde's error names the field), and both clients
+  should refuse the build with it, in one commit.
+
 ## Future directions (a design that is not a fix)
 
 - ⬜ **A clone: a new sequence made from a clip, or from a segment of one**

@@ -165,3 +165,23 @@ fn the_door_names_the_view_and_a_kind_it_does_not_draw_is_nothing() {
     );
     assert!(props("waveform", &json!(["not", "facts"])).is_none());
 }
+
+/// **A marker is a time and a label, and a label is text.** The lane arrives as
+/// the wire carries it, a number then a string; typed as numbers alone, one
+/// labelled marker refused the whole roll through the door, and a timeline
+/// with an OSC item opened as a roll with nothing on it.
+#[test]
+fn a_labelled_marker_keeps_the_roll_it_sits_beside() {
+    let roll = props(
+        "pianoroll",
+        &json!({
+            "notes": [0.0, 48000.0, 60.0, 100.0, 0.0],
+            "osc": [144000.0, "/mark"],
+            "ruler": "beats",
+            "sample_rate": 48000.0,
+        }),
+    )
+    .expect("a roll with a labelled marker is still a roll");
+    assert_eq!(roll["notes"], json!([0.0, 48000.0, 60.0, 100.0, 0.0]));
+    assert_eq!(roll["osc"], json!([144000.0, "/mark"]));
+}

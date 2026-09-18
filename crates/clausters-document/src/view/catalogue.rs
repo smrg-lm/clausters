@@ -181,8 +181,11 @@ pub fn bpf(curve: &Curve) -> Map<String, Value> {
 pub struct Roll {
     /// The flat `start dur pitch velocity channel` quintuples.
     pub notes: Vec<f64>,
-    /// The flat marker lane.
-    pub osc: Vec<f64>,
+    /// The flat marker lane: `time label` pairs, a number and then a string,
+    /// as the wire carries it. Mixed on purpose, so it is kept as the values it
+    /// arrived as: typed as numbers, a single label refused the whole roll and
+    /// the widget was drawn with no props at all.
+    pub osc: Vec<Value>,
     /// What the ruler counts.
     pub ruler: String,
     /// The tempo the grid is drawn at, in beats per second: the ruler's
