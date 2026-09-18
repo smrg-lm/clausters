@@ -1,9 +1,21 @@
 #!/usr/bin/env python3
-"""One analysis, two uses: ``Group.auto_order`` and ``Group.parallel``.
+"""The hand and the analysis: ``Node.order``, ``Group.auto_order`` and
+``Group.parallel``.
 
-The server reads which buses each node touches and infers who depends on
-whom. The same reading answers two different questions, and each is a verb on
-the group:
+Order is meaning: the server processes the tree front to back, so a node only
+hears what was written earlier in the same pass. There are two ways to get it
+right, and this example does both to the same graph.
+
+**By hand.** `AddAction` places a node when it is made, and five verbs move one
+afterwards -- `clausters.defs.Node.before`, `clausters.defs.Node.after`,
+`clausters.defs.Node.order`, `clausters.defs.Group.head` and
+`clausters.defs.Group.tail`. `Node.order` is the one to reach for when a whole
+chain moves: it is one message, so the order it is written in is the order it
+arrives in.
+
+**By analysis.** The server reads which buses each node touches and infers who
+depends on whom. The same reading answers two different questions, and each is
+a verb on the group:
 
 - `Group.auto_order` (``/group_sortMode``) -- *in what order must these run?*
   A node that reads a bus runs after the node that writes it. Add the members
@@ -21,8 +33,15 @@ other (parallel can spread them) and all four come before the mixer
 first, so that before the sort the mixer reads buses nobody has written yet
 and the output is silent.
 
-What you hear: silence, then a chord the moment `auto_order` lands. What you
-read: the tree before and after, which is the server's answer printed back.
+What you hear, in four turns: silence, the chord the hand puts in order,
+silence again when the hand puts it back wrong, and the chord the moment
+`auto_order` lands. What you read: the tree at each turn, which is the server's
+answer printed back.
+
+The two ways do not mix, and that is the point of doing both here: once
+`auto_order` owns the group the manual verbs reply ``/fail`` there, because the
+server recomputes the order and a hand that contradicts it would be undone on
+the next change.
 
 `Group.parallel` is the second half, and this example is honest about what it
 can show. Whether it *helps* is a measurement and belongs to one
@@ -95,12 +114,13 @@ buses = [Bus.audio() for _ in range(VOICES)]
 # %% [markdown]
 # ## Backwards on purpose
 # The mixer is added first, so it runs before anything has written the buses it
-# reads: silence. Then one `auto_order` and the server puts the voices in front
-# of it.
+# reads: silence. Then the hand puts the voices in front of it, puts the mixer
+# back, and finally `auto_order` does the same job from the server's side.
 
 # %%
-def run(seconds: float = 4.0):
-    """Sound the chord wrong, then let the server order it."""
+def run(seconds: float = 6.0):
+    """Sound the chord wrong, put it in order by hand, break it again, then let
+    the server order it."""
     mix = Synth("mixer", {f"b{n}": bus.index for n, bus in enumerate(buses)},
                 target=bank)
     voices = [
@@ -111,13 +131,28 @@ def run(seconds: float = 4.0):
     session.server.sync()
     print("added backwards -- the mixer reads buses nobody has written yet:")
     print(session.server.query_tree(bank))
-    session.run(seconds / 2)      # silence
+    session.run(seconds / 4)      # silence
+
+    # By hand: the four voices move in front of the mixer, in one message, so
+    # they arrive in the order they are written in.
+    mix.order(*voices, action=AddAction.BEFORE)
+    session.server.sync()
+    print("after order(..., BEFORE) -- the hand put the voices in front of it:")
+    print(session.server.query_tree(bank))
+    session.run(seconds / 4)      # the chord
+
+    # And back: one node moved before another is the whole undoing.
+    mix.before(voices[0])
+    session.server.sync()
+    print("after before() -- the mixer is back in front, and silent again:")
+    print(session.server.query_tree(bank))
+    session.run(seconds / 4)      # silence
 
     bank.auto_order()
     session.server.sync()
     print("after auto_order -- the server put the voices in front of it:")
     print(session.server.query_tree(bank))
-    session.run(seconds / 2)      # the chord
+    session.run(seconds / 4)      # the chord
 
     for node in [*voices, mix]:
         node.free()

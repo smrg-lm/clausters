@@ -110,17 +110,26 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-- ⬜ **The manual ordering family is in neither client either: `/node_before`,
-  `/node_after`, `/node_order`, `/group_head`, `/group_tail`**
-  (`clients/python/PLAN.md`, Found by use). The older half of the subject the
-  two group verbs closed: `AddAction` places a node when it is made and nothing
-  moves one afterwards. Verbs on `Node` and `Group`, both clients in one commit.
+- ⬜ **A group's sort mode is in no structured reply** (root `PLAN.md`, Found by
+  use). `/group_sortMode` sets it and nothing reads it back: the tree reply
+  carries no flag and `/group_dumpGraph` says it only inside a debug string. So
+  a client that now has both ways of ordering cannot say which one a group is
+  under. A reply change, so both clients' parsers and `docs/schemas.md` move
+  with it.
 
 
 ## 2. Fixes that need a decision first
 
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
+
+- ⬜ **One WebSocket test fails only when the whole suite runs**
+  (`clients/web/PLAN.md`, Found by use). `seq-ws.test.ts`'s transport timeline
+  test failed two of four full-suite runs and passed every time it ran alone,
+  near its own timeout.
+  **The decision:** raise that test's timeout, cut what it waits for, or stop
+  running the server-backed files concurrently with the rest — the third one
+  costs the whole suite time and is the only one that fixes the class.
 
 - ⬜ **The page suite is one browser, and the second one found a defect it had
   been passing over** (`clients/web/PLAN.md`, Found by use). Chrome and Firefox

@@ -49,7 +49,12 @@ See [Routines and clocks](routines-and-clocks.md) for driving these directly —
   by the buses each one reads and writes rather than by the order they were
   added in, and `group.parallel()` has it run the independent ones on the DSP
   worker threads (`workers`), bit-identically. Both are the same analysis, and
-  either can be handed back with `False`.
+  either can be handed back with `False`. Where the order is kept by hand,
+  `AddAction` places a node when it is made and five verbs move one afterwards:
+  `node.before(other)`, `node.after(other)`, `node.order(a, b, …)` — a whole
+  chain in one message, so it arrives in the order it was written — and
+  `group.head(…)` / `group.tail(…)`, which move nodes into the group. They are
+  refused inside an auto-ordered group, which computes the order itself.
 - `clocksync` — models the server's sample clock over UDP (`Server.sample_clock()`) for drift-free `/sched_at` timing without shared memory.
 - **Introspection** — `Server.query_tree()` and `node.info()` read what is *playing* (the server is asked about every node it holds, a node about itself; every entry of the tree is the same record, and `print(tree)` draws it); `Server.query_defs()`, `query_buffers()` and `query_ugens()` read what the server **holds**: the loaded defs with their control surface, the allocated buffers, and the UGen catalog with named inputs and defaults. Worth asking rather than assuming — the def store persists across restarts, so a server can hold defs this client never sent. All blocking, so never from a routine.
 - `Server` — **owns the communication interface and emits through it.** Swapping its interface retargets a routine from a live RT server to an NRT score without touching the clock or the routine. Interfaces include `OscUdpInterface`, `OscTcpInterface` (length-prefixed OSC; start the server with `--tcp`), and `OscWsInterface` (OSC over WebSocket, the browser-reachable transport; start the server with `--ws`), all drop-in.

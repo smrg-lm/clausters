@@ -1546,7 +1546,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   bus is what makes an auto-ordered def work. The first draft had exactly that
   bug and printed an unchanged tree.
 
-- ⬜ **The manual ordering family is in neither client either: `/node_before`,
+- ✅ **The manual ordering family is in neither client either: `/node_before`,
   `/node_after`, `/node_order`, `/group_head`, `/group_tail`** *(found
   2026-09-16 while documenting `auto_order`, whose docstring wanted to name the
   verbs it disables and found there were none -- a dangling `{@link}` in the
@@ -1560,6 +1560,32 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   with the fact that auto-ordered groups refuse them: a client that has both
   should say which one a group is under, which is a reading of
   `Server.query_tree` and not a new command.
+
+  **What shipped (2026-09-18).** `Node.before(target)`, `Node.after(target)` and
+  `Node.order(*nodes, action=AddAction.AFTER)`, `Group.head(*nodes)` and
+  `Group.tail(*nodes)` in Python, the same five in TypeScript (`order` takes the
+  list and an options object, the shape every other method of that client
+  takes), each answering the node so a move is one expression. `order` is the
+  one that earns the batch: the first node lands where `action` says and each
+  one after it behind the previous, so a chain arrives as a chain rather than as
+  a race between five commands. `AddAction.REPLACE` is refused in both clients
+  before anything is sent -- it frees what it replaces, which is not a move --
+  and a call with no nodes sends nothing rather than a malformed message.
+
+  The pair of examples is the one the group verbs left: `basics/group_order.py`
+  / `basics/group-order.html` now do the same graph **twice**, by hand
+  (`mix.order(*voices, action=BEFORE)`, then `mix.before(voices[0])` to put it
+  back wrong) and then by analysis, which is also what shows that the two do not
+  mix. Both print the same four trees, node id for node id -- checked by running
+  them, the page in a headless browser.
+
+  **The other half did not come free.** "Which order a group is under is a
+  reading of `Server.query_tree`" is wrong about today's wire:
+  `/group_queryTree.reply` carries no sort mode, and `/group_dumpGraph` says
+  `auto`/`manual` only inside its debug string, which is the one thing the books
+  tell a client never to scrape. So it is a reply change, not a client verb, and
+  it is written down in the root `PLAN.md` ("Found by use", "A group's sort mode
+  is in no structured reply").
 
 - ✅ **The multitrack example is a driver with an editor in it, and it should be
   `edit_multitrack.py`** *(the user, 2026-09-10: "el ejemplo multitrack_audio.py
