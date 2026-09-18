@@ -1,4 +1,4 @@
-// Editing a **piece**: the picture, the report and the history.
+// Editing a **multitrack**: the picture, the report and the history.
 //
 // `MultitrackEditor` is the multitrack as one of the fundamental structures —
 // which is what gives it the undo every other editor has. What is checked here
@@ -34,7 +34,7 @@ function window(source: number, start = 0.0, duration = 2.0): Content {
 }
 
 /** Two tracks: the first holding two regions, the second one. */
-function piece(): Multitrack {
+function multitrack(): Multitrack {
     const held = new Multitrack();
     held.tracks = [
         new Track({
@@ -101,7 +101,7 @@ const near = (a: number, b: number, why?: string) =>
 // ---- the picture ----
 
 test("a row per track and a box per region", () => {
-    const ed = editor(piece());
+    const ed = editor(multitrack());
     const lanes = props(ed).lanes as unknown[];
     assert.deepEqual([lanes[0], lanes[7]], ["10", "20"], "named by their track ids");
     assert.equal(lanes[1], "one");
@@ -124,7 +124,7 @@ test("the widget is told the flat rows and not one row per number", () => {
     // Found 2026-09-09 reading the two clients against each other, which is the
     // only place it was visible: every test read `view.props` and none read the
     // tree that is actually published.
-    const ed = editor(piece());
+    const ed = editor(multitrack());
     const drawn = (ed.draw() as unknown as { children: Record<string, unknown>[] })
         .children.find((c) => c.type === "multitrack")!;
     assert.equal((drawn.lanes as unknown[]).length, 2 * 7, "two tracks, seven numbers each");
@@ -133,14 +133,14 @@ test("the widget is told the flat rows and not one row per number", () => {
     assert.deepEqual((drawn.clips as unknown[]).slice(0, 2), ["12", "10"]);
 });
 
-test("the piece is ruled from above by a strip of its own", () => {
+test("the multitrack is ruled from above by a strip of its own", () => {
     // An editor is where a position is read, and the widget draws no ruler — so
-    // the view places one above it, on the piece's own axis.
+    // the view places one above it, on the multitrack's own axis.
     //
     // The two have to be in **one navigation group**: an unlinked widget is a
     // group of one keyed by itself, so a ruler that joined nothing would pan and
     // zoom away from the lanes it is ruling.
-    const children = (editor(piece()).draw() as unknown as {
+    const children = (editor(multitrack()).draw() as unknown as {
         children: Record<string, unknown>[];
     }).children;
     const ruler = children[0];
@@ -160,7 +160,7 @@ test("the position cursor is kept and told and is not an edit", () => {
     // it — the playhead is where the *music* is and moves on its own, and an
     // anchor that moved on its own would not be an anchor. It is not an edit and
     // reaches no history.
-    const ed = editor(piece());
+    const ed = editor(multitrack());
     ed.draw();
     // **It arrives on the ruler**, which is where it is placed and nowhere else
     // — so the strip is a named widget of this picture like any other, or the
@@ -179,9 +179,9 @@ test("the position cursor is kept and told and is not an edit", () => {
     near(ed.cursor!, 4.0);
     assert.equal(told.length, 1);
     near(told[0], 4.0);
-    // And a piece opens with the reader at the top: the cursor is stated, so
+    // And a multitrack opens with the reader at the top: the cursor is stated, so
     // there is somewhere to play from before anything is clicked.
-    const fresh = editor(piece());
+    const fresh = editor(multitrack());
     fresh.draw();
     const start = (fresh.view as MultitrackView).props(fresh, (fresh.view as MultitrackView).ruler!);
     assert.equal(start.cursor, 0.0);
@@ -222,15 +222,15 @@ function wired(ed: MultitrackEditor): AdoptingHost {
     return host;
 }
 
-test("a name the host minted is answered with the one the piece kept", () => {
+test("a name the host minted is answered with the one the multitrack kept", () => {
     // The host makes a **track** from a double click and a **box** from a
     // split, and in both it mints the word while the document mints the id.
     //
     // Until the picture goes back the two are naming the same thing
-    // differently, and a name the piece does not know is not ignored — it is
+    // differently, and a name the multitrack does not know is not ignored — it is
     // read as something *new*. So the next report about that box minted it
     // again, and again after that.
-    const held = piece();
+    const held = multitrack();
     const ed = editor(held);
     const host = wired(ed);
     const wid = [...ed.view!.widgets.keys()][0];
@@ -260,7 +260,7 @@ test("a name the host minted is answered with the one the piece kept", () => {
     const split = ids();
     assert.equal(split.length, 4, "the split landed");
     assert.equal(host.pushes, 1, "and the picture went back with it");
-    assert.deepEqual(host.names, split.map(String), "under the ids the piece kept");
+    assert.deepEqual(host.names, split.map(String), "under the ids the multitrack kept");
 
     // The next gesture, reported with the names the host was just given.
     const again: unknown[] = [];
@@ -284,7 +284,7 @@ test("rewind puts the cursor back at the top", () => {
     // The cursor's own verb. Stop goes back to the **mark** — which is what
     // tells it from pause — so with nothing else the way back to the top is
     // finding beat zero on screen and clicking it.
-    const ed = editor(piece());
+    const ed = editor(multitrack());
     ed.cursor = 12.0;
     ed.rewind();
     assert.equal(ed.cursor, 0.0);
@@ -296,14 +296,14 @@ test("buffer zero is a buffer", () => {
     // one take its boxes could not draw.
     //
     // Found by use 2026-09-10, on the box the example loads first.
-    const ed = new MultitrackEditor(piece(), { sampleRate: SR, sources: { 1: { bufnum: 0 } } });
+    const ed = new MultitrackEditor(multitrack(), { sampleRate: SR, sources: { 1: { bufnum: 0 } } });
     assert.equal(ed.bridge.sources.bufnum(1), 0);
     assert.ok(clips(ed).every((b) => b[6] === 0), "the boxes over it name it");
     assert.equal(ed.bridge.sources.bufnum(9), -1, "and a source nobody loaded is none");
 });
 
 test("a source nobody loaded draws an empty box", () => {
-    const ed = editor(piece(), {});
+    const ed = editor(multitrack(), {});
     assert.ok(
         clips(ed).every((b) => b[6] === -1),
         "negative and not zero: buffer 0 is a buffer",
@@ -313,7 +313,7 @@ test("a source nobody loaded draws an empty box", () => {
 test("a tempo moves no box", () => {
     // The multitrack is in seconds: a box is drawn at its seconds times the
     // rate, and a tempo the multitrack holds is a ruler's to read.
-    const held = piece();
+    const held = multitrack();
     held.setTempo(new Tempo({ at: 0.0, tempo: 1.0 }));
     held.setTempo(new Tempo({ at: 4.0, tempo: 0.5 }));
     const boxes = clips(editor(held));
@@ -324,8 +324,8 @@ test("a tempo moves no box", () => {
 
 // ---- the report, and the history ----
 
-test("a move reaches the piece and undoes", () => {
-    const held = piece();
+test("a move reaches the multitrack and undoes", () => {
+    const held = multitrack();
     const ed = editor(held);
     assert.ok(report(ed, [
         ["12", "10", 2.0 * SR, 2.0 * SR],
@@ -340,16 +340,16 @@ test("a move reaches the piece and undoes", () => {
 });
 
 test("a block move is one entry", () => {
-    // A report is the piece, so one message can mean several edits — and they are
+    // A report is the multitrack, so one message can mean several edits — and they are
     // one thing a hand did, so Ctrl+Z walks back over all of it.
-    const held = piece();
+    const held = multitrack();
     const ed = editor(held);
     assert.ok(report(ed, [
         ["12", "10", 2.0 * SR, 2.0 * SR],
         ["13", "10", 6.0 * SR, 2.0 * SR],
         ["22", "20", 0.0, 2.0 * SR],
     ]));
-    // Read through the piece each time: an edit replaces what the piece holds,
+    // Read through the multitrack each time: an edit replaces what the multitrack holds,
     // so a reference taken before one is a reference to what it held then.
     const at = () => held.track(10)!.lanes[0].regions.map((r) => r.position);
     assert.deepEqual(at(), [2.0, 6.0]);
@@ -358,7 +358,7 @@ test("a block move is one entry", () => {
 });
 
 test("a clip that crossed changes track and undoes", () => {
-    const held = piece();
+    const held = multitrack();
     const ed = editor(held);
     assert.ok(report(ed, [
         ["12", "20", 0.0, 2.0 * SR],
@@ -370,10 +370,10 @@ test("a clip that crossed changes track and undoes", () => {
     assert.ok(held.track(10)!.lanes[0].regions.some((r) => r.id === 12));
 });
 
-test("a box the piece does not know becomes a region", () => {
+test("a box the multitrack does not know becomes a region", () => {
     // A split names its halves after the box they came from, which is no region
     // id — and that is how a new box is told from a moved one.
-    const held = piece();
+    const held = multitrack();
     const ed = editor(held);
     assert.ok(report(ed, [
         ["12", "10", 0.0, 1.0 * SR],
@@ -389,7 +389,7 @@ test("a box the piece does not know becomes a region", () => {
 });
 
 test("a report of what holds is not an edit", () => {
-    const held = piece();
+    const held = multitrack();
     const ed = editor(held);
     assert.equal(report(ed, [
         ["12", "10", 0.0, 2.0 * SR],
@@ -399,8 +399,8 @@ test("a report of what holds is not an edit", () => {
     assert.equal(ed.undo(), false, "and nothing was recorded to undo");
 });
 
-test("the strip is the piece's and undoes", () => {
-    const held = piece();
+test("the strip is the multitrack's and undoes", () => {
+    const held = multitrack();
     const ed = editor(held);
     ed.draw();
     const wid = [...ed.view!.widgets.keys()][0];
@@ -418,15 +418,15 @@ test("the strip is the piece's and undoes", () => {
     assert.equal(held.track(20)!.muted, false);
 });
 
-test("edit opens a piece", async () => {
-    // `edit` dispatches on what the structure is, and a piece is one of the
+test("edit opens a multitrack", async () => {
+    // `edit` dispatches on what the structure is, and a multitrack is one of the
     // structures it opens now that its picture and its reading are the crate's.
-    const ed = await edit(piece(), { sampleRate: SR, open: false });
+    const ed = await edit(multitrack(), { sampleRate: SR, open: false });
     assert.ok(ed instanceof MultitrackEditor);
 });
 
-test("two windows over one piece walk one stack", () => {
-    const held = piece();
+test("two windows over one multitrack walk one stack", () => {
+    const held = multitrack();
     const one = editor(held);
     const two = editor(held);
     assert.ok(report(one, [
@@ -440,10 +440,10 @@ test("two windows over one piece walk one stack", () => {
 
 // ---- the curves: the light views, in the two places one lives ----
 
-/** The same piece, with a track automation on the first track and an envelope
+/** The same multitrack, with a track automation on the first track and an envelope
  * inside its first box. */
 function curved(): Multitrack {
-    const written = piece();
+    const written = multitrack();
     written.tracks[0].automation.push(new Automation({
         id: 30,
         name: "gain",
@@ -510,8 +510,8 @@ test("a point dragged is one edit and the curve that did not move is not", () =>
     near(Number(gain().points[0].value), 1.0);
 });
 
-test("a curve the piece hid is drawn nowhere", () => {
-    // Which curves a person had open is part of reopening the piece as they
+test("a curve the multitrack hid is drawn nowhere", () => {
+    // Which curves a person had open is part of reopening the multitrack as they
     // left it, so it is read out of the document rather than kept in the view.
     const written = curved();
     written.tracks[0].automation[0].visible = false;
@@ -537,19 +537,19 @@ class FakeTake {
     }
 }
 
-test("entering a box opens its contents on the piece's history", async () => {
+test("entering a box opens its contents on the multitrack's history", async () => {
     // The multitrack places; a box is entered to edit. What a box holds is a
     // structure like any other, so entering one is `edit` over that structure —
-    // and it is opened on the **piece's** editing context, so one undo order
+    // and it is opened on the **multitrack's** editing context, so one undo order
     // walks both.
     const take = new FakeTake();
-    const ed = new MultitrackEditor(piece(), { sampleRate: SR, sources: { 1: take } });
+    const ed = new MultitrackEditor(multitrack(), { sampleRate: SR, sources: { 1: take } });
     const opened = await ed.enter("12");
     assert.ok(opened, "the box opened");
     assert.equal(
         (opened as unknown as { editing: unknown }).editing,
         (ed as unknown as { editing: unknown }).editing,
-        "one undo order, and it is the piece's",
+        "one undo order, and it is the multitrack's",
     );
     // A second double click on the same box raises the one already open.
     assert.equal(await ed.enter("12"), opened);
@@ -603,7 +603,7 @@ class Take extends FakeTake {
 /** Lets the samples domain's write queue drain — its writes are a promise chain. */
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-test("a reopened box undoes its own edit and not the piece's", async () => {
+test("a reopened box undoes its own edit and not the multitrack's", async () => {
     // **One order, and a leg belonging to the take is still the take's.**
     //
     // Closing a box's window and opening it again builds a *fresh* editor over
@@ -615,7 +615,7 @@ test("a reopened box undoes its own edit and not the piece's", async () => {
     // an undo in a reopened box's window stepping the multitrack's last edit.
     // It does not reproduce here either.
     const take = new Take();
-    const ed = new MultitrackEditor(piece(), { sampleRate: SR, sources: { 1: take } });
+    const ed = new MultitrackEditor(multitrack(), { sampleRate: SR, sources: { 1: take } });
     ed.draw();
     const wid = [...ed.view!.widgets.keys()][0];
     const route = (e: unknown, args: unknown[]) =>
@@ -640,15 +640,15 @@ test("a reopened box undoes its own edit and not the piece's", async () => {
     assert.deepEqual(take.frames.slice(2, 4), [0.0, 0.0], "the stroke is undone");
 });
 
-test("a box closed does not block the piece's undo", async () => {
+test("a box closed does not block the multitrack's undo", async () => {
     // **The pile's scope is the context's, not a window's.**
     //
     // An entry names a structure, and what puts an edit back onto one is its
     // *vocabulary* — neither of which is on screen. When the applier was a
-    // **view** instead, a box entered from a piece and then closed left an entry
+    // **view** instead, a box entered from a multitrack and then closed left an entry
     // nobody could apply: the step was refused, and since a refused step puts
     // the cursor back, the very next undo hit the same entry. The pile was not
-    // missing one step, it was **blocked** — every edit the piece had made
+    // missing one step, it was **blocked** — every edit the multitrack had made
     // behind that entry was unreachable until the box was opened again.
     //
     // Found by use 2026-09-12, by hand, in the Python example. The earlier
@@ -658,7 +658,7 @@ test("a box closed does not block the piece's undo", async () => {
     // The Python twin is
     // `test_gui_multitrack_edit.py::test_a_box_closed_does_not_block_the_piece_s_undo`.
     const take = new Take();
-    const held = piece();
+    const held = multitrack();
     const ed = new MultitrackEditor(held, { sampleRate: SR, sources: { 1: take } });
     ed.draw();
     const wid = [...ed.view!.widgets.keys()][0];
@@ -676,10 +676,10 @@ test("a box closed does not block the piece's undo", async () => {
     box.close();
     ed.entered.delete("12");
 
-    // The stroke is still the top of the pile, and an undo in the **piece's**
+    // The stroke is still the top of the pile, and an undo in the **multitrack's**
     // window performs it: the take and its vocabulary are registered in the
     // context, and neither went with the window.
-    assert.equal(ed.undo(), true, "the piece can put back an edit made inside a box");
+    assert.equal(ed.undo(), true, "the multitrack can put back an edit made inside a box");
     await settled();
     assert.deepEqual(take.frames.slice(2, 4), [0.0, 0.0], "and it is the stroke");
     assert.equal(ed.app.refusal, null);
@@ -710,17 +710,17 @@ function regionAt(held: Multitrack, id: number) {
 test("a box with nothing to open opens nothing", async () => {
     // A source named by number alone is a box the caller gave no structure for,
     // and a name no region has is no box at all.
-    const ed = editor(piece());
+    const ed = editor(multitrack());
     assert.equal(await ed.enter("12"), null, "the source is a bare buffer number");
     assert.equal(await ed.enter("nowhere"), null);
 });
 
-test("the windows entered from a piece close with it", async () => {
-    // A window entered *from* the piece is part of looking at the piece. What
+test("the windows entered from a multitrack close with it", async () => {
+    // A window entered *from* the multitrack is part of looking at the multitrack. What
     // outlives both is the history, which is the data's and was never a
     // window's.
     const take = new FakeTake();
-    const ed = new MultitrackEditor(piece(), { sampleRate: SR, sources: { 1: take } });
+    const ed = new MultitrackEditor(multitrack(), { sampleRate: SR, sources: { 1: take } });
     const opened = await ed.enter("12");
     ed.close();
     assert.ok(opened!.closed);
@@ -731,7 +731,7 @@ test("a gesture that changed the data says so once", () => {
     // The page's door onto an edit: one call per gesture however many edits it
     // took, because that is what a hand did — and a window is not exempt from
     // being told about its own gesture.
-    const ed = editor(piece());
+    const ed = editor(multitrack());
     let told = 0;
     ed.onChange = () => {
         told += 1;
@@ -766,7 +766,7 @@ test("a layer's points are its box's own time", () => {
     // A track automation runs the timeline and is measured from the origin; a
     // clip envelope is drawn inside its box and is measured from where that box
     // starts. It is the one thing that differs between the two on the wire.
-    const written = piece();
+    const written = multitrack();
     const late = written.tracks[1].lanes[0].regions[0];
     late.position = 4.0;
     late.automation.push(new Automation({
@@ -794,7 +794,7 @@ test("a layer's points are its box's own time", () => {
     assert.deepEqual(points.get("41"), [4.0 * SR], "from the origin");
 
     // ...and back: a point dragged inside the box comes back as a beat from the
-    // box's start, not from the piece's.
+    // box's start, not from the multitrack's.
     ed.draw();
     const wid = [...ed.view!.widgets.keys()][0];
     const edited = [...flat];
@@ -803,20 +803,20 @@ test("a layer's points are its box's own time", () => {
     }
     assert.ok((ed as unknown as { route(args: unknown[]): boolean })
         .route([wid, "points", ...edited]));
-    // The piece is re-read on an edit, so the region is looked up again.
+    // The multitrack is re-read on an edit, so the region is looked up again.
     const fade = written.tracks[1].lanes[0].regions[0].automation[0];
     near(Number(fade.points[0].at), 0.0);
     near(Number(fade.points[0].value), 0.25);
     near(Number(fade.points[1].at), 2.0);
 });
 
-// ---- what the piece is heard as ----
+// ---- what the multitrack is heard as ----
 
 /**
- * The instance plan for an editor's piece, the way `Playback` asks for it.
+ * The instance plan for an editor's multitrack, the way `Playback` asks for it.
  *
  * The plan itself is the crate's and is tested there; what these check is the
- * **crossing** — that this client hands it the piece, the axis and the source
+ * **crossing** — that this client hands it the multitrack, the axis and the source
  * table it actually holds, which is the half a client can get wrong on its own.
  */
 /**
@@ -865,9 +865,9 @@ function plan(ed: MultitrackEditor): Plan {
 }
 
 test("a box is planned in frames from where its window opens", () => {
-    // The crossing from the piece to the readers: a box is placed in seconds and
+    // The crossing from the multitrack to the readers: a box is placed in seconds and
     // read in frames, and a trimmed one reads on rather than restarting.
-    const ed = editor(piece());
+    const ed = editor(multitrack());
     const region = ed.structure.tracks[0].lanes[0].regions[1];
     region.content = window(1, 0.5, 2.0);
     const reader = plan(ed).tracks[0].clips[1].readers[0];
@@ -880,9 +880,9 @@ test("a box is planned in frames from where its window opens", () => {
 
 test("a muted box and an unloaded source are not read", () => {
     // Two different answers: a muted box is planned at nothing, and a box whose
-    // source nobody loaded is not planned at all — the second is a piece that
+    // source nobody loaded is not planned at all — the second is a multitrack that
     // arrived without its takes, which is not the same as a silent one.
-    const ed = editor(piece());
+    const ed = editor(multitrack());
     const region = ed.structure.tracks[0].lanes[0].regions[0];
     region.muted = true;
     assert.equal(plan(ed).tracks[0].clips[0].mute, 1.0);
@@ -897,7 +897,7 @@ test("the source table carries the width that picks the wiring", () => {
     // A mono take is panned into its track and a stereo one is balanced, so
     // which clip def a box goes in follows from the source's width — and the
     // width is the client's to report, since only it loaded the samples.
-    const ed = editor(piece());
+    const ed = editor(multitrack());
     const table = ed.bridge.sources.table();
     assert.equal(table["1"].buffer, 7);
     assert.ok(table["1"].channels >= 1);
@@ -909,7 +909,7 @@ test("the mixer rules reach the plan and a solo silences the rest", () => {
     // The document holds the flags and never reads them: what a track
     // contributes is the mixer's rule, and the mixer is in the crate — so both
     // clients get the same answer instead of each writing one.
-    const ed = editor(piece());
+    const ed = editor(multitrack());
     const [one, two] = ed.structure.tracks;
     assert.equal(plan(ed).tracks[0].gain, 1.0, "a track that said nothing is at full");
     assert.equal(plan(ed).tracks[0].mute, 0.0);
@@ -933,8 +933,8 @@ test("a metered track names the buses the host reads", () => {
     //
     // The host reads those buses itself every frame, which is why a level that
     // moves every block costs no message at all.
-    const ed = editor(piece());
-    assert.deepEqual(props(ed).meters, [], "a piece nobody plays has no meters");
+    const ed = editor(multitrack());
+    assert.deepEqual(props(ed).meters, [], "a multitrack nobody plays has no meters");
     (ed as unknown as { playback: unknown }).playback = {
         meters: new Map([[10, [40, 2]]]),
     };
@@ -944,7 +944,7 @@ test("a metered track names the buses the host reads", () => {
 test("the playback sends the crate's steps and waits where they say", async () => {
     // **What is left in a client is a socket, and waiting on it.**
     //
-    // What a piece needs, the messages that carry it out and how it is played
+    // What a multitrack needs, the messages that carry it out and how it is played
     // are the crate's (`MultitrackPlayback`), and so is which reply releases what
     // (`StepRunner`), tested there because they are one implementation for
     // every endpoint. This is the other half: the message a step waits on goes
@@ -985,14 +985,14 @@ test("the playback sends the crate's steps and waits where they say", async () =
         "the fill waits for the allocation",
     );
 
-    const piece = new MultitrackPlayback(8192);
+    const multitrack = new MultitrackPlayback(8192);
     log.length = 0;
-    await held.run(piece.locate(2.0));
+    await held.run(multitrack.locate(2.0));
     assert.equal(log.length, 1);
     assert.deepEqual(log[0]!.slice(0, 2), ["request", "/transport_locateSample"]);
     assert.deepEqual(
         log[0]![2],
-        ["h", BigInt(piece.secsToSamples(2.0))],
+        ["h", BigInt(multitrack.secsToSamples(2.0))],
         "a sample rides as 64 bits",
     );
 });

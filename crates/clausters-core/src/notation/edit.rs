@@ -16,7 +16,7 @@
 //! confusing them is how time goes missing: [`delete`] takes the item out and
 //! everything after it moves earlier by its value; [`silence`] leaves a rest of
 //! the same length, so nothing moves at all. A caller who wanted the second and
-//! got the first has a piece that is shorter than it was and no obvious sign of
+//! got the first has a score that is shorter than it was and no obvious sign of
 //! where.
 //!
 //! **Nothing here reaches the engraver.** An edit rewrites the model and the

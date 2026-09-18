@@ -3,7 +3,7 @@
 //!
 //! `tests/buffer_stitch.rs` measures one read against one read, and a
 //! microbenchmark of nothing but the load exaggerates every added operation.
-//! This measures what a piece actually is: many `PlayBuf` readers running in
+//! This measures what a multitrack actually is: many `PlayBuf` readers running in
 //! one engine, once over plain buffers and once over joins of the same samples,
 //! timed by `process_block` — the budget the audio thread is actually spending.
 //!

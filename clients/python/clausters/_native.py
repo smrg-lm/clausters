@@ -472,7 +472,7 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_sched_len.argtypes = [ctypes.c_void_p]
     lib.clausters_sched_clear.restype = None
     lib.clausters_sched_clear.argtypes = [ctypes.c_void_p]
-    # The piece's time map: beats <-> seconds under a tempo that changes along
+    # The multitrack's time map: beats <-> seconds under a tempo that changes along
     # it. An opaque handle like the queue above -- only beats, seconds and
     # tempos cross, and the integral is computed once, in Rust.
     lib.clausters_tempomap_new.restype = ctypes.c_void_p
@@ -1089,7 +1089,7 @@ class Document:
 
     **The tree stays in Rust.** It used to cross on every call, and the cost was
     linear in the whole composition rather than in the edit: 205 ms for one
-    placement on a 10240-event piece, the same for a stroke touching fifty
+    placement on a 10240-event multitrack, the same for a stroke touching fifty
     samples. This is not an accessor handle — there is no call per field of the
     tree, just the same three verbs — and `snapshot` is how the JSON leaves,
     asked for rather than paid per edit.
@@ -1307,8 +1307,8 @@ def document_coalesce_key(intent: dict) -> str:
 #: spelled at each call site so a typo cannot quietly mint a structure in a
 #: domain nobody reads.
 TREE = "tree"
-#: The **piece's** vocabulary — what a multitrack editor does. A domain of its
-#: own rather than more of the tree's: the piece and the tree are two
+#: The **multitrack's** vocabulary — what a multitrack editor does. A domain of its
+#: own rather than more of the tree's: the multitrack and the tree are two
 #: descriptions, and one history holds both without either knowing the other's
 #: words.
 MULTITRACK = "multitrack"
@@ -1363,11 +1363,11 @@ def points_props(points, kept=None, held: float = 0.0) -> dict:
     return json.loads(raw) if raw else {}
 
 
-def multitrack_props(piece: dict, rate: float, sources: dict) -> dict:
-    """A piece as **the props the multitrack widget is drawn with**.
+def multitrack_props(multitrack: dict, rate: float, sources: dict) -> dict:
+    """A multitrack as **the props the multitrack widget is drawn with**.
 
     The rows, the boxes, the automations over both, their break-points, which
-    of them are hidden and which boxes loop — everything a piece has from the
+    of them are hidden and which boxes loop — everything a multitrack has from the
     document alone, in the flat shapes the wire carries
     (`clausters_editing_multitrack_props`). What a caller adds is what is a
     function of something *else*: the position cursor, the meter buses, the
@@ -1377,7 +1377,7 @@ def multitrack_props(piece: dict, rate: float, sources: dict) -> dict:
     drawn from and what it is played from are the same samples.
     """
     _lib = lib()
-    body = json.dumps(piece).encode("utf-8")
+    body = json.dumps(multitrack).encode("utf-8")
     table = json.dumps({str(k): v for k, v in sources.items()}).encode("utf-8")
     raw = size_then_fill(_lib.clausters_editing_multitrack_props,
                          as_u8(body), len(body), float(rate),
@@ -1399,7 +1399,7 @@ def editing_intake(domain: str, tag: str, **request) -> dict:
         domain: which vocabulary the answer comes back in.
         tag: the ``/gui_event`` tag the report arrived under.
         request: what that domain reads — ``values`` always; ``state`` for the
-            two that need the structure (the piece, the timeline);
+            two that need the structure (the multitrack, the timeline);
             ``unitsPerBeat`` and ``editable`` for a roll; ``rate`` and
             ``sources`` for a multitrack.
 
@@ -1503,18 +1503,18 @@ class StepRunner:
 
 
 class MultitrackPlayback:
-    """**One piece, as it is playing** (`clausters_editing_playback_*`): its
+    """**One multitrack, as it is playing** (`clausters_editing_playback_*`): its
     instance, its applier and its transport, answering every verb as steps.
 
     A step is ``{"send": {"addr", "args"}}``, ``{"await": {"command",
     "index"}}`` after a send whose ``/done`` the rest waits for, or ``{"sync":
-    id}`` for a barrier; the caller sends and waits. Nothing about *how* a piece
+    id}`` for a barrier; the caller sends and waits. Nothing about *how* a multitrack
     is played is decided by the caller: the default tempo, a locate's sample,
     what a stop and a pause send.
 
-    Where the piece is made and how the transport is bound are the crate's
+    Where the multitrack is made and how the transport is bound are the crate's
     too, the same for every endpoint: a group at the top, bound as the
-    transport's, with the piece inside it.
+    transport's, with the multitrack inside it.
 
     Args:
         chunk: how many samples one ``/buffer_setRange`` carries.
@@ -1542,15 +1542,15 @@ class MultitrackPlayback:
             raise ValueError(answer["error"])
         return answer["steps"]
 
-    def sync(self, piece: dict, sample_rate: float, sources: dict, gain: float,
+    def sync(self, multitrack: dict, sample_rate: float, sources: dict, gain: float,
              ids: "IdSpaces") -> list:
-        """The steps that make what sounds be what ``piece`` says, allocating
+        """The steps that make what sounds be what ``multitrack`` says, allocating
         from ``ids``.
 
         Raises:
             ValueError: when an id space is exhausted; nothing changes then.
         """
-        body = json.dumps(piece).encode("utf-8")
+        body = json.dumps(multitrack).encode("utf-8")
         table = json.dumps({str(k): v for k, v in sources.items()}).encode("utf-8")
         return self._steps(lib().clausters_editing_playback_sync,
                            as_u8(body), len(body), float(sample_rate),
@@ -1562,7 +1562,7 @@ class MultitrackPlayback:
         return self._steps(lib().clausters_editing_playback_play)
 
     def pause(self) -> list:
-        """The steps that freeze the piece and zero its meters."""
+        """The steps that freeze the multitrack and zero its meters."""
         return self._steps(lib().clausters_editing_playback_pause)
 
     def stop(self, mark: float) -> list:
@@ -1579,7 +1579,7 @@ class MultitrackPlayback:
         return self._steps(lib().clausters_editing_playback_cue, float(secs))
 
     def close(self, ids: "IdSpaces") -> list:
-        """The steps that free everything the piece made."""
+        """The steps that free everything the multitrack made."""
         return self._steps(lib().clausters_editing_playback_close,
                            ctypes.c_void_p(ids._handle))
 
@@ -1619,11 +1619,11 @@ class MultitrackPlayback:
 
 
 class Instance:
-    """**What is sounding of one piece**, held across edits.
+    """**What is sounding of one multitrack**, held across edits.
 
     The instance projection's state (`clausters_editing_instance_*`). The other
     two projections are functions of a structure alone and this one is a
-    function of a structure *and* of what a server already holds: a piece plays
+    function of a structure *and* of what a server already holds: a multitrack plays
     itself from the transport, so the nodes have to **stay**, and what this
     answers is the **difference**.
 
@@ -1650,18 +1650,18 @@ class Instance:
         if handle:
             lib().clausters_editing_instance_free(ctypes.c_void_p(handle))
 
-    def reconcile(self, piece: dict, sample_rate: float, sources: dict,
+    def reconcile(self, multitrack: dict, sample_rate: float, sources: dict,
                   gain: float) -> list:
-        """The difference between what is sounding and what ``piece`` says.
+        """The difference between what is sounding and what ``multitrack`` says.
 
         The same three arguments `multitrack_plan` takes, plus the master's own
-        level, which is the caller's and not the piece's. Everything already
+        level, which is the caller's and not the multitrack's. Everything already
         right is left alone, which is what lets a hand drag a box without
-        hearing the rest of the piece restart.
+        hearing the rest of the multitrack restart.
         """
         if not self._handle:
             return []
-        body = json.dumps(piece).encode("utf-8")
+        body = json.dumps(multitrack).encode("utf-8")
         table = json.dumps({str(k): v for k, v in sources.items()}).encode("utf-8")
         raw = size_then_fill(lib().clausters_editing_instance_reconcile,
                              ctypes.c_void_p(self._handle), as_u8(body), len(body),
@@ -1672,7 +1672,7 @@ class Instance:
     def teardown(self) -> list:
         """The operations that give back everything this made.
 
-        The piece itself is untouched: what an instance holds is nodes, and
+        The multitrack itself is untouched: what an instance holds is nodes, and
         nodes are not the composition.
         """
         if not self._handle:
@@ -1740,11 +1740,11 @@ def conversation_answer(seq: int, doc_version: int, reason: "str | None",
     return json.loads(raw) if raw else {"answer": "silent"}
 
 
-def multitrack_names(piece: dict) -> dict:
-    """**What a piece calls its rows, its boxes and its curves**, by the names
+def multitrack_names(multitrack: dict) -> dict:
+    """**What a multitrack calls its rows, its boxes and its curves**, by the names
     the wire carries them under (`clausters_editing_multitrack_names`).
 
-    The minting correction's half that is a fact about the piece: a host that
+    The minting correction's half that is a fact about the multitrack: a host that
     made a track or split a box minted the *word* while the document minted the
     *id*, so a view keeps what it was last told and answers with the picture
     when the two stop agreeing.
@@ -1753,7 +1753,7 @@ def multitrack_names(piece: dict) -> dict:
     made is one the host cannot have drawn, because it did not make it.
     """
     _lib = lib()
-    body = json.dumps(piece).encode("utf-8")
+    body = json.dumps(multitrack).encode("utf-8")
     raw = size_then_fill(_lib.clausters_editing_multitrack_names,
                          as_u8(body), len(body))
     return json.loads(raw) if raw else {"rows": [], "boxes": [], "curves": []}
@@ -1821,7 +1821,7 @@ def domain_edit(domain: str, state, payload: dict) -> "dict | None":
 
     Args:
         domain: the vocabulary — `MULTITRACK`, `POINTS` or `EVENTS`.
-        state: the structure in that vocabulary (a piece, a curve's points, a
+        state: the structure in that vocabulary (a multitrack, a curve's points, a
             timeline's events), as plain JSON-able data.
         payload: the edit.
 
@@ -1833,11 +1833,11 @@ def domain_edit(domain: str, state, payload: dict) -> "dict | None":
         buffer, never in a string — reading a span back is what its inverse
         costs).
 
-        A **piece** is served, and it is the case that shows what the `TREE`
+        A **multitrack** is served, and it is the case that shows what the `TREE`
         entry is really about: its whole state is one JSON value the caller
         holds, version included, so the door works — it applies against whatever
         that state says and snaps to nothing, which is what a client that just
-        read the piece wants.
+        read the multitrack wants.
     """
     _lib = lib()
     u8p = ctypes.POINTER(ctypes.c_ubyte)
@@ -1934,13 +1934,13 @@ def view_props(kind: str, facts) -> dict:
 
 
 def mixer_defs(widths, master: int = 2) -> dict:
-    """The defs a piece of these widths is played by, in the order they must be
+    """The defs a multitrack of these widths is played by, in the order they must be
     sent: ``{"synth": [...], "graph": [...]}``.
 
     ``widths`` is a list of ``(source channels, track channels)`` pairs and
-    ``master`` the piece's own width. What a track and a clip *are* on the
+    ``master`` the multitrack's own width. What a track and a clip *are* on the
     server is the shared core's and there is one of it -- two clients writing
-    their own channel strips is two mixers, which is how the same piece comes to
+    their own channel strips is two mixers, which is how the same multitrack comes to
     sound different in two places.
 
     Answers ``{}`` for a width nothing is written for: past stereo is a downmix
@@ -1951,12 +1951,12 @@ def mixer_defs(widths, master: int = 2) -> dict:
     return answer if isinstance(answer, dict) else {}
 
 
-def multitrack_plan(piece: dict, sample_rate: float, sources: dict) -> dict:
-    """What to instantiate to play ``piece`` -- the instance plan.
+def multitrack_plan(multitrack: dict, sample_rate: float, sources: dict) -> dict:
+    """What to instantiate to play ``multitrack`` -- the instance plan.
 
     ``sources`` maps a source id to ``{"buffer": n, "channels": n}``: where a
     source's samples actually are on a running server, which is the one fact
-    about a piece that is not in the piece. No tempo is asked for: a multitrack
+    about a multitrack that is not in the multitrack. No tempo is asked for: a multitrack
     is placed in seconds.
 
     Three rules live in it and each was written twice before it did: seconds
@@ -1964,7 +1964,7 @@ def multitrack_plan(piece: dict, sample_rate: float, sources: dict) -> dict:
     clip's wiring, and what a solo anywhere does to everything else.
     """
     table = {str(k): v for k, v in sources.items()}
-    answer = _read_json(lib().clausters_multitrack_plan, piece,
+    answer = _read_json(lib().clausters_multitrack_plan, multitrack,
                         float(sample_rate), table)
     return answer if isinstance(answer, dict) else {}
 
@@ -2855,7 +2855,7 @@ class Scheduler:
             pass
 
 
-# ---- the piece's time map ----
+# ---- the multitrack's time map ----
 
 
 #: The canonical value for a length measured on the **beat** axis — what
@@ -2921,7 +2921,7 @@ def _unshape(number: float, curvature: float):
 
 
 class TempoMap:
-    """The piece's **beat -> second map** under a tempo that changes along it.
+    """The multitrack's **beat -> second map** under a tempo that changes along it.
 
     A beat is a logical coordinate, not a unit of time; this is the function
     that turns one into the other. It is the integral of ``1 / tempo`` over the
@@ -2929,8 +2929,8 @@ class TempoMap:
     what an editor draws and what a clock plays come from one implementation.
 
     It is **pure**: it knows nothing of *now*, answers the same for the same
-    beat forever, and is meaningful for a piece that has never been played.
-    A `clausters.base.TempoClock` holds one; so can a piece that no clock ever
+    beat forever, and is meaningful for a multitrack that has never been played.
+    A `clausters.base.TempoClock` holds one; so can a multitrack that no clock ever
     read.
 
     The rule it exists to enforce: a length in beats is **not** a duration.
@@ -2963,7 +2963,7 @@ class TempoMap:
     def copy(self) -> "TempoMap":
         """An independent copy — a **fork**, for when two tempi should stop
         being one. Handing a map to a clock does not copy: a clock adopts what
-        it is given, which is what lets two clocks read one piece."""
+        it is given, which is what lets two clocks read one multitrack."""
         return TempoMap(_handle=self._lib.clausters_tempomap_clone(self._handle))
 
     @property
@@ -2992,8 +2992,8 @@ class TempoMap:
 
     @classmethod
     def from_changes(cls, changes, default_tempo: float = 1.0) -> "TempoMap":
-        """A map from a piece's **authored** tempo entries, plus the tempo a
-        piece that never said one leaves to its reader.
+        """A map from a multitrack's **authored** tempo entries, plus the tempo a
+        multitrack that never said one leaves to its reader.
 
         The bridge a reader of a document would otherwise take three decisions
         to write: a ramp reaches the *next* entry, the default is prepended when
@@ -3107,7 +3107,7 @@ class TempoMap:
 
         The envelope is of **finite duration**: after its last segment the
         tempo it reached holds. There is no sustain and no loop, which are a
-        gate's ideas and a piece's tempo has no gate.
+        gate's ideas and a multitrack's tempo has no gate.
 
         ``unit`` says what the extents measure — `BEATS` or `SECONDS`. In
         seconds each segment's width in beats is solved exactly rather than
@@ -3483,7 +3483,7 @@ def graph_bus_reserved(audio_buses: int, control_buses: int) -> tuple[int, int]:
 
     A share of what the server was configured with rather than a fixed number,
     so ask with the counts *that* server reports: booting one with more buses
-    has to give both sides more, or raising the count would buy a piece not one
+    has to give both sides more, or raising the count would buy a multitrack not one
     extra track.
     """
     l = lib()

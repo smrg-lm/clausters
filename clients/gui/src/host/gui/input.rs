@@ -250,12 +250,12 @@ impl App {
                 return true;
             }
         }
-        // **A piece is the window's, not the pointer's.** Its readers are
+        // **A multitrack is the window's, not the pointer's.** Its readers are
         // resident and follow the transport, so there is nothing to point at --
         // and requiring a pointer is what made the first press after opening a
         // window do nothing at all, since the cursor is unknown until it moves.
         // So the window is told, the way `Ctrl`+`Z` and `Ctrl`+`S` tell it, and
-        // whoever edits the piece answers: this host's own editor, or a
+        // whoever edits the multitrack answers: this host's own editor, or a
         // script's.
         self.window_verb(def_id, clausters_apps::multitrack::editor::PLAY_KEY);
         true

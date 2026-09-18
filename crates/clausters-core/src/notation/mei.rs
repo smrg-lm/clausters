@@ -22,7 +22,7 @@
 //! rounded to a 32nd is a wrong score that looks right.
 //!
 //! Two seams stay deliberately narrow so the emission milestone extends rather
-//! than rewrites them: the value decomposition ([`pieces`]) and the projection
+//! than rewrites them: the value decomposition ([`parts`]) and the projection
 //! of flat content onto the grid ([`sheet_to_mei`]).
 
 use serde::Deserialize;
@@ -189,7 +189,7 @@ impl Slot {
 }
 
 /// Engrave a voice into a minimal MEI document, splitting notes across barlines
-/// and tying the pieces.
+/// and tying the parts.
 ///
 /// The **v1 wire form**, kept as it was: `meter` is `"num/den"` (e.g. `"4/4"`),
 /// `clef` is a shape+line like `"G2"`, `"F4"` or `"C3"`, and `key` selects the
@@ -428,7 +428,7 @@ fn index_of(voice: &Voice, id: u64) -> Option<usize> {
 }
 
 /// Whether this rendered element is `id`'s — its own `xml:id`, or one of the
-/// suffixed ids a split piece of it carries.
+/// suffixed ids a split part of it carries.
 fn cell_is(cell: &str, id: u64) -> bool {
     let stem = format!("xml:id=\"n{id}");
     match cell.find(&stem) {
@@ -672,7 +672,7 @@ fn project(
                         measures[measure].push(format!("<mRest{id}/>"));
                     } else {
                         let suffix = (!first).then_some(2);
-                        for (value, dots) in pieces(take) {
+                        for (value, dots) in parts(take) {
                             measures[measure]
                                 .push(element(item, value, dots, None, suffix, printed)?);
                         }
@@ -685,7 +685,7 @@ fn project(
             }
             Unit::Plain(item) => {
                 let total = ticks(item.dur())?;
-                // (value, dots, measure) for every piece the item spans.
+                // (value, dots, measure) for every part the item spans.
                 let mut specs: Vec<(i32, i32, usize)> = Vec::new();
                 let mut remaining = total;
                 while remaining > 0 {
@@ -698,7 +698,7 @@ fn project(
                         bar = bar_ticks(grid, measure)?;
                     }
                     let take = remaining.min(bar - pos);
-                    for (value, dots) in pieces(take) {
+                    for (value, dots) in parts(take) {
                         specs.push((value, dots, measure));
                     }
                     pos += take;
@@ -708,7 +708,7 @@ fn project(
                 let tied_out = matches!(item, Item::Note { tie: true, .. });
                 let n = specs.len();
                 for (idx, (value, dots, m)) in specs.iter().copied().enumerate() {
-                    // A piece opens a tie when it is not the last of a split
+                    // A part opens a tie when it is not the last of a split
                     // item, or when the caller tied this item to the next; it
                     // closes one when it is not the first, or when the previous
                     // item tied into this one.
@@ -747,7 +747,7 @@ fn project(
                 id: 0,
                 dur: Ratio::ZERO,
             };
-            for (value, dots) in pieces(bar - pos) {
+            for (value, dots) in parts(bar - pos) {
                 measures[measure].push(element(&rest, value, dots, None, None, printed)?);
             }
         }
@@ -756,7 +756,7 @@ fn project(
     Ok(measures)
 }
 
-/// MEI's `@tie` from the two facts a piece knows: whether a tie starts here and
+/// MEI's `@tie` from the two facts a part knows: whether a tie starts here and
 /// whether one ends here.
 fn tie_of(opens: bool, closes: bool) -> Option<&'static str> {
     match (opens, closes) {
@@ -776,7 +776,7 @@ fn measure_xml(
     grid: &Grid,
 ) -> String {
     // A barline somebody chose wins over the final one the last measure gets by
-    // default: a piece that ends on a repeat ends on a repeat.
+    // default: a score that ends on a repeat ends on a repeat.
     let right = match grid.barlines.iter().find(|(m, _)| *m == index) {
         Some((_, kind)) => format!(" right=\"{kind}\""),
         None if last => " right=\"end\"".to_string(),
@@ -832,7 +832,7 @@ fn bar_ticks(grid: &Grid, measure: usize) -> Result<i32, String> {
 /// largest-first, to be tied. A count that is one plain or dotted value is that
 /// single value; otherwise the largest value that fits is split off and the
 /// remainder decomposed on.
-fn pieces(mut ticks: i32) -> Vec<(i32, i32)> {
+fn parts(mut ticks: i32) -> Vec<(i32, i32)> {
     if let Some(single) = single_value(ticks) {
         return vec![single];
     }
@@ -1074,7 +1074,7 @@ fn accid_of(alter: i32) -> Result<&'static str, i32> {
 /// The `xml:id` an element is written under: the model's own item id, with a
 /// suffix when one item draws more than one thing.
 ///
-/// `n7` is item 7; `n7-2` is the second piece of an item split across a
+/// `n7` is item 7; `n7-2` is the second part of an item split across a
 /// barline; `n7-p1` is the first pitch of a chord. Every one of them maps back
 /// to exactly one item, which is what a gesture on the page needs and what a
 /// re-engraving has to preserve. Item `0` is the emitter's own filler — a rest
@@ -1112,7 +1112,7 @@ fn element(
     Ok(match item.pitches() {
         // Nothing to sound draws as a rest, however the caller spelled it.
         [] => format!("<rest{id} dur=\"{value}\"{d}/>"),
-        // Only the first piece of a split item prints its accidental: the tie
+        // Only the first part of a split item prints its accidental: the tie
         // carries it across the barline, and restating it is what a reader
         // reads as a second, different alteration.
         [one] => note_xml(
@@ -1272,11 +1272,11 @@ mod tests {
     #[test]
     fn a_duration_decomposes_into_tied_note_values() {
         // ticks: whole=32, half=16, quarter=8, eighth=4 (32nd-note resolution)
-        assert_eq!(pieces(8), vec![(4, 0)]); // a quarter (one beat)
-        assert_eq!(pieces(4), vec![(8, 0)]); // an eighth
-        assert_eq!(pieces(16), vec![(2, 0)]); // a half
-        assert_eq!(pieces(12), vec![(4, 1)]); // 1.5 beats -> a dotted quarter
-        assert_eq!(pieces(20), vec![(2, 0), (8, 0)]); // 2.5 beats -> half + eighth
+        assert_eq!(parts(8), vec![(4, 0)]); // a quarter (one beat)
+        assert_eq!(parts(4), vec![(8, 0)]); // an eighth
+        assert_eq!(parts(16), vec![(2, 0)]); // a half
+        assert_eq!(parts(12), vec![(4, 1)]); // 1.5 beats -> a dotted quarter
+        assert_eq!(parts(20), vec![(2, 0), (8, 0)]); // 2.5 beats -> half + eighth
     }
 
     #[test]

@@ -426,7 +426,7 @@ fn a_top_level_field_a_newer_writer_added_survives_a_save() {
 /// alternate lanes, overlapping layered regions, crossfades and automation
 /// round-trips losslessly.
 ///
-/// Written as one piece rather than as six assertions because the thing being
+/// Written as one multitrack rather than as six assertions because the thing being
 /// checked is that they survive *together*: a format can round-trip each of
 /// these alone and still lose the layer order when two regions share a beat, or
 /// drop the fade on the one that is not on top.

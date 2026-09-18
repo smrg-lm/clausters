@@ -65,8 +65,8 @@ impl Lane {
             mute: false,
             solo: false,
             gain: 1.0,
-            // **Shown unless something says otherwise.** A row a piece drew is
-            // a row a piece meant to be seen, and whether a *curve* is drawn is
+            // **Shown unless something says otherwise.** A row a multitrack drew is
+            // a row a multitrack meant to be seen, and whether a *curve* is drawn is
             // the `hidden` set's answer, not this one's.
             curves: true,
         }
@@ -110,7 +110,7 @@ pub struct Clip {
     /// A number and not a payload: the samples are the *server's*, and the host
     /// either maps them out of the shared segment or fetches them over the leg.
     /// So two clips over one take cost one download and one pyramid, which is
-    /// what makes a piece of six views of one recording cheap.
+    /// what makes a multitrack of six views of one recording cheap.
     pub source: i32,
 }
 
@@ -141,10 +141,10 @@ impl Clip {
     }
 }
 
-/// Where the piece ends: the furthest clip end, `0` when there are none.
+/// Where the multitrack ends: the furthest clip end, `0` when there are none.
 ///
 /// The **end**, not the last onset — a clip dragged past everything else
-/// lengthens the piece by its whole length, which is the number a ruler and a
+/// lengthens the multitrack by its whole length, which is the number a ruler and a
 /// scroll have to size themselves against.
 pub fn extent(clips: &[Clip]) -> f64 {
     clips.iter().map(Clip::end).fold(0.0, f64::max)
@@ -294,7 +294,7 @@ mod tests {
     }
 
     /// **The extent is where the last clip ends**, not where it starts: a ruler
-    /// and a scroll size themselves against the piece, and a clip dragged past
+    /// and a scroll size themselves against the multitrack, and a clip dragged past
     /// everything lengthens it by its whole length.
     #[test]
     fn the_extent_is_the_furthest_end_and_not_the_last_onset() {

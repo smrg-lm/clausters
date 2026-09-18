@@ -256,7 +256,7 @@ pub enum Location {
     /// when the segments were designed: something a reader reads like a
     /// recording, which owns no samples.
     ///
-    /// It is in the source table rather than in the piece because that is what
+    /// It is in the source table rather than in the multitrack because that is what
     /// the table is: the document says what plays when and deliberately not
     /// where a source's samples are, since inside a running system a source is
     /// a server buffer, a mapped file or a rendered result. A source whose
@@ -294,7 +294,7 @@ pub enum Location {
 /// **Frames, not seconds**, unlike [`crate::SegmentRef`]: a part of a join is a
 /// statement about samples — the unit `/buffer_stitch` takes it in and the unit
 /// [`crate::SourceRef::range`] already speaks. A `SegmentRef` measures a
-/// *window a piece places*, which is the musical side of the same fact and is
+/// *window a multitrack places*, which is the musical side of the same fact and is
 /// where seconds belong.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Part {
@@ -437,7 +437,7 @@ impl Source {
 pub struct Session {
     /// The format this was written in. See [`FORMAT`].
     pub format: u32,
-    /// **The piece**: its tracks, and the timeline they are placed on.
+    /// **The multitrack**: its tracks, and the timeline they are placed on.
     #[serde(
         default,
         skip_serializing_if = "is_empty_multitrack",
@@ -463,15 +463,15 @@ pub struct Session {
         skip_serializing_if = "Document::is_empty"
     )]
     pub document: Document,
-    /// How the piece was being **looked at**: one entry per window.
+    /// How the multitrack was being **looked at**: one entry per window.
     ///
     /// Presentation, parallel to the model and never inside it
     /// ([`crate::view`]). A session carries it for the reason every program in
-    /// the field does — reopening a piece into the window it was left in is
+    /// the field does — reopening a multitrack into the window it was left in is
     /// what a person expects — and a reader that ignores the field opens the
-    /// same piece, since nothing here can change what plays.
+    /// same multitrack, since nothing here can change what plays.
     ///
-    /// A **list** because a piece drawn in two windows has two views, and they
+    /// A **list** because a multitrack drawn in two windows has two views, and they
     /// disagree on purpose. Empty is the ordinary case: nothing was saved, so
     /// the window opens on its own defaults.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -517,7 +517,7 @@ impl Session {
         self
     }
 
-    /// Carries how the piece was being looked at. See [`Session::views`].
+    /// Carries how the multitrack was being looked at. See [`Session::views`].
     pub fn with_view(mut self, view: View) -> Self {
         self.views.push(view);
         self
@@ -559,7 +559,7 @@ impl Session {
             .collect()
     }
 
-    /// Sources the piece names but the table does not hold — what an opening
+    /// Sources the multitrack names but the table does not hold — what an opening
     /// reader reports rather than discovering one element at a time.
     ///
     /// Both halves are walked: the arrangement's regions and the general tree.

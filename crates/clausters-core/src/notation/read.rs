@@ -21,9 +21,9 @@
 //! the plan says so rather than the reader swallowing it.
 //!
 //! **Ids are how a page names a note**, so they survive: an element written by
-//! this layer carries the model's own id (`n7`, and `n7-2` for a piece of one
+//! this layer carries the model's own id (`n7`, and `n7-2` for a part of one
 //! split across a barline), and reading it back recovers the item — the split
-//! pieces rejoin into the one item they came from, which is what makes a sheet
+//! parts rejoin into the one item they came from, which is what makes a sheet
 //! written out and read back the sheet that was written. A document from
 //! anywhere else has ids of its own shape; those are dropped and fresh ones
 //! minted, because an id is only meaningful inside the model that minted it.
@@ -140,7 +140,7 @@ pub fn mei_to_sheet(mei: &str) -> Result<Sheet, String> {
     // emitter's padding goes first, while "it has no id" still identifies it
     // and before anything has renumbered; it is always trailing, so dropping it
     // moves no position anything else holds. Then ids, so a beam read as a run
-    // of *positions* can name its ends before rejoining the split pieces moves
+    // of *positions* can name its ends before rejoining the split parts moves
     // them.
     drop_padding(&mut sheet);
     sheet.assign_ids();
@@ -547,7 +547,7 @@ fn id_of(node: Node) -> u64 {
     let Some(rest) = id.strip_prefix('n') else {
         return 0;
     };
-    // `n7` is the item; `n7-2` is a piece of it split across a barline.
+    // `n7` is the item; `n7-2` is a part of it split across a barline.
     rest.split('-').next().unwrap_or("").parse().unwrap_or(0)
 }
 
@@ -611,7 +611,7 @@ fn drop_padding(sheet: &mut Sheet) {
     }
 }
 
-/// Rejoin the pieces a barline split, and size the measure rests.
+/// Rejoin the parts a barline split, and size the measure rests.
 ///
 /// The emitter splits an item that overruns a barline and ties the halves, so a
 /// document holds two elements where the model held one. Both carry the same
@@ -792,7 +792,7 @@ mod tests {
         assert_eq!(
             back.staves[0].voices[0].items.len(),
             sheet.staves[0].voices[0].items.len(),
-            "a split piece rejoined into the item it came from"
+            "a split part rejoined into the item it came from"
         );
         round_trips(&sheet).unwrap();
     }

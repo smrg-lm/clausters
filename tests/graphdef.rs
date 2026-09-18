@@ -614,7 +614,7 @@ fn def_info_lists_every_family_together() {
 
 /// A graph over one source, with its output bus **provided by whoever
 /// instantiates it** and its `level` re-exported as `gain`. This is the shape
-/// every nested piece of a piece has: it does not decide where it goes.
+/// every nested graph of a multitrack has: it does not decide where it goes.
 const VOICE_CHAIN: &str = r#"{
     "name": "sub",
     "buses": [{"name": "out", "rate": "audio", "external": true}],

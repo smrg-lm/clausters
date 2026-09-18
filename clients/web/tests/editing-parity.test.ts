@@ -60,7 +60,7 @@ type Vector = {
     kept?: [number, number] | null;
     held?: number;
     // `multitrack_props`
-    piece?: unknown;
+    multitrack?: unknown;
     rate?: number;
     bpm?: number;
     sources?: Record<string, unknown>;
@@ -107,14 +107,14 @@ test("a curve's props are the same props in both clients", async () => {
     }
 });
 
-test("and a piece's props are the same props in both clients", async () => {
+test("and a multitrack's props are the same props in both clients", async () => {
     await loadCore();
     const cases = of("multitrack_props");
     assert.ok(cases.length > 0, "the vectors were generated");
     for (const v of cases) {
         const got = JSON.parse(
             multitrackProps(
-                JSON.stringify(v.piece),
+                JSON.stringify(v.multitrack),
                 v.rate ?? 0,
                 JSON.stringify(v.sources ?? {}),
             ),
@@ -177,15 +177,15 @@ test("and the multitrack editor answers a recorded exchange the same in both cli
     // The acceptance of the multitrack application, stated as data: each client
     // holds a handle over the applications crate and carries out what it
     // answers, so a hand's gestures come to the same messages to the host, the
-    // same calls on the playback and the same piece whichever client carries
+    // same calls on the playback and the same multitrack whichever client carries
     // them. The gestures ran through the Python client's `MultitrackEditor` and
     // run here through this one's; widgets are named by role, since which id an
     // allocator hands out is each client's own.
     await loadCore();
     const [v] = of("editor_exchange");
     assert.ok(v !== undefined, "the vectors were generated");
-    const piece = Multitrack.read(v.piece as Record<string, unknown>);
-    const ed = new MultitrackEditor(piece, {
+    const multitrack = Multitrack.read(v.multitrack as Record<string, unknown>);
+    const ed = new MultitrackEditor(multitrack, {
         sampleRate: v.rate ?? 48_000,
         sources: v.sources as Record<number, number>,
     });
@@ -245,12 +245,12 @@ test("and the multitrack editor answers a recorded exchange the same in both cli
     inner.controls = { ...(v.controls as Record<string, number>) };
     const view = ed.view as MultitrackView;
     const ids: Record<string, number> = {
-        piece: view.piece!,
+        multitrack: view.multitrack!,
         ruler: view.ruler!,
         window: 1,
         ...(v.controls as Record<string, number>),
     };
-    const roles = new Map<unknown, string>([[view.piece, "piece"], [view.ruler, "ruler"]]);
+    const roles = new Map<unknown, string>([[view.multitrack, "multitrack"], [view.ruler, "ruler"]]);
     for (const turn of v.turns ?? []) {
         messages.length = 0;
         calls.length = 0;
@@ -278,7 +278,7 @@ test("and the multitrack editor answers a recorded exchange the same in both cli
         );
         assert.deepEqual(calls, turn.playback, turn.name);
         assert.deepEqual(
-            piece.tracks.flatMap((t) =>
+            multitrack.tracks.flatMap((t) =>
                 t.lanes.flatMap((l) => l.regions.map((r) => [t.id, r.id, r.position, r.length]))
             ),
             turn.regions,
@@ -287,12 +287,12 @@ test("and the multitrack editor answers a recorded exchange the same in both cli
     }
 });
 
-test("and a piece calls its rows and boxes the same in both clients", async () => {
+test("and a multitrack calls its rows and boxes the same in both clients", async () => {
     await loadCore();
     const cases = of("names");
     assert.ok(cases.length > 0, "the vectors were generated");
     for (const v of cases) {
-        const got = JSON.parse(multitrackNames(JSON.stringify(v.piece))) as Record<
+        const got = JSON.parse(multitrackNames(JSON.stringify(v.multitrack))) as Record<
             string,
             unknown
         >;

@@ -465,12 +465,12 @@ impl UGen for Phasor {
     }
 }
 
-/// The **transport's position in the piece**, as a signal — what a buffer
+/// The **transport's position**, as a signal — what a buffer
 /// reader follows so that seeking, looping and pausing are the transport's
 /// and not each reader's.
 ///
 /// One input, `offset` in frames, subtracted from the position: a clip that
-/// starts at sample `offset` of the piece reads its own samples from frame 0
+/// starts at sample `offset` of the transport reads its own samples from frame 0
 /// when the transport reaches it. That is what the input is *for*, but it is
 /// also what keeps the output precise — see below.
 ///
@@ -487,7 +487,7 @@ impl UGen for Phasor {
 /// internally and outputs `f32` just the same, and `BufRd` takes its phase as
 /// a signal), and the `offset` input is the answer to it: the subtraction
 /// happens here in `f64`, so a reader positioned at its own buffer's start
-/// sees small numbers however deep into a long piece it sits. A graph that
+/// sees small numbers however deep into a long take it sits. A graph that
 /// subtracts with a `Sub` UGen instead has already lost the precision by the
 /// time it does.
 pub struct TransportPos;

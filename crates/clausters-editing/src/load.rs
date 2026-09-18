@@ -2,13 +2,13 @@
 //!
 //! A document says what plays when and deliberately never says where its
 //! samples are; a session's `sources` table is that other half, and loading it
-//! is how a saved piece is opened by anything that means to sound it or draw
+//! is how a saved multitrack is opened by anything that means to sound it or draw
 //! it. The answer is a server buffer per source: `/buffer_allocRead` for a file,
 //! `/buffer_stitch` for a join, each followed by the `/done` of that very buffer
 //! so that a join is stitched only after the reads it is made of.
 //!
 //! It was the GUI host's alone, which left a session one endpoint could open and
-//! sound and neither client could: a script reopening a piece loaded its takes
+//! sound and neither client could: a script reopening a multitrack loaded its takes
 //! by hand, and a join could not be loaded at all without reading its recipe a
 //! second time. Every endpoint now plans the load here and walks the steps
 //! through its [`Runner`](crate::run::Runner).
@@ -103,7 +103,7 @@ pub struct Load {
     /// each join after the sources it is over. The caller sends them, through
     /// [`Load::steps`].
     pub messages: Vec<OscMessage>,
-    /// Sources the piece names that could not be resolved, with why. Reported
+    /// Sources the multitrack names that could not be resolved, with why. Reported
     /// rather than swallowed: a box with no samples is going to draw as an
     /// empty rectangle, and the reader deserves to know it is missing rather
     /// than empty.
@@ -357,7 +357,7 @@ pub fn stitch_message(bufnum: i32, made: &Stitch) -> OscMessage {
 /// Every source the session actually names, in a stable order, and the sources
 /// a join names beside them.
 ///
-/// The table may hold more than the piece uses (a source of a deleted box still
+/// The table may hold more than the multitrack uses (a source of a deleted box still
 /// has its row until something prunes it), and loading those would read files
 /// nothing draws. What a join is made of is named by the join, so a take only a
 /// join reads is loaded too.
@@ -368,7 +368,7 @@ fn referenced(session: &Session) -> Vec<SourceId> {
             found.push(source);
         }
     };
-    // **The piece names sources too**, and a session written today names them
+    // **The multitrack names sources too**, and a session written today names them
     // *only* there: a region is a window onto a source, so a reader that walked
     // the general tree alone read nothing in and drew every box empty.
     for track in &session.multitrack.tracks {
@@ -512,8 +512,8 @@ mod tests {
         dir
     }
 
-    /// A piece of one track whose boxes window `sources`, in order.
-    fn piece(sources: &[u64]) -> Value {
+    /// A multitrack of one track whose boxes window `sources`, in order.
+    fn multitrack(sources: &[u64]) -> Value {
         let regions: Vec<Value> = sources
             .iter()
             .enumerate()
@@ -531,7 +531,7 @@ mod tests {
 
     fn session(sources: &[u64], table: Value) -> Session {
         serde_json::from_value(json!({
-            "format": 3, "multitrack": piece(sources), "sources": table,
+            "format": 3, "multitrack": multitrack(sources), "sources": table,
         }))
         .expect("a session")
     }
@@ -587,7 +587,7 @@ mod tests {
     /// file nothing draws is work the person did not ask for, and a table
     /// outlives the boxes that used it.
     #[test]
-    fn only_what_the_piece_names_is_read() {
+    fn only_what_the_multitrack_names_is_read() {
         let session = session(
             &[1],
             json!({"1": file("used.wav"), "2": file("unused.wav")}),

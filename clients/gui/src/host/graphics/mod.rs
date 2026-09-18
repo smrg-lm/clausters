@@ -84,7 +84,7 @@ pub(crate) fn corner_text(d: &mut Draw, s: &str, body: Rect) {
 /// a signal is written in one color and the signal draws in another, so
 /// wherever the two meet the text disappears into the trace — and the denser
 /// the drawing the less of the name survives. A ground of its own is what a
-/// label over a picture needs, and it is one piece rather than one per widget
+/// label over a picture needs, and it is one multitrack rather than one per widget
 /// because the pixels a clip's name sits on and the ones a read-out sits on are
 /// the same problem. The alpha keeps the picture legible *through* it (the
 /// plate says "text here", it does not erase the picture under it), and the corners are

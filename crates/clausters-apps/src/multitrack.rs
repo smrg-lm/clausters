@@ -1,14 +1,14 @@
-//! **The multitrack editor**: the window a piece opens in.
+//! **The multitrack editor**: the window a multitrack opens in.
 //!
 //! What the editor shows is three things composed in one window, and only one
-//! of them is the piece:
+//! of them is the multitrack:
 //!
-//! - a **time ruler** above it, on the piece's own axis, which is where the
+//! - a **time ruler** above it, on the multitrack's own axis, which is where the
 //!   position cursor is placed and nowhere else;
 //! - the **multitrack** widget, which draws the rows and the boxes and draws no
 //!   ruler of its own;
-//! - when the piece can be heard, the **transport row**: rewind, play/pause,
-//!   stop, and a clock reading where the piece is.
+//! - when the multitrack can be heard, the **transport row**: rewind, play/pause,
+//!   stop, and a clock reading where the multitrack is.
 //!
 //! That arrangement is the application's and not the widget's. A widget draws
 //! one structure; an editor is what puts a structure beside the controls that
@@ -17,7 +17,7 @@
 //! # The ids are the caller's
 //!
 //! A widget id is a running host's fact, so the window is composed around the
-//! ids it is handed. The ruler and the piece are always numbered, because what a
+//! ids it is handed. The ruler and the multitrack are always numbered, because what a
 //! hand does on them has to come back to the editor that drew them. The
 //! transport row's widgets are addressed by **name** ([`REWIND`], [`PLAY`],
 //! [`STOP`], [`CLOCK`]), so a caller that numbers id-less widgets on the way out
@@ -36,15 +36,15 @@ use clausters_editing::multitrack::{self as projection, Look};
 pub mod editor;
 
 /// The name of the transport row's rewind button.
-pub const REWIND: &str = "piece_rewind";
+pub const REWIND: &str = "multitrack_rewind";
 /// The name of the transport row's play/pause button.
-pub const PLAY: &str = "piece_play";
+pub const PLAY: &str = "multitrack_play";
 /// The name of the transport row's stop button.
-pub const STOP: &str = "piece_stop";
-/// The name of the label that reads where the piece is.
-pub const CLOCK: &str = "piece_clock";
+pub const STOP: &str = "multitrack_stop";
+/// The name of the label that reads where the multitrack is.
+pub const CLOCK: &str = "multitrack_clock";
 
-/// The strip that rules the piece, in logical pixels.
+/// The strip that rules the multitrack, in logical pixels.
 const RULER_H: f64 = 20.0;
 
 /// The ids of the transport row, for a caller that numbers them itself.
@@ -68,7 +68,7 @@ pub struct TransportIds {
 /// Whether the window carries the transport row, and who numbers it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Transport {
-    /// A piece nobody can play: it still edits, and it has nothing to play
+    /// A multitrack nobody can play: it still edits, and it has nothing to play
     /// with.
     Absent,
     /// The row, with its widgets named and unnumbered — for a caller that
@@ -82,7 +82,7 @@ pub enum Transport {
 /// held mark are written to, `channels` of each, the level first.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 pub struct Meter {
-    /// The track, by its id in the piece.
+    /// The track, by its id in the multitrack.
     pub track: u64,
     /// The first bus of the level run.
     pub bus: i32,
@@ -90,25 +90,25 @@ pub struct Meter {
     pub channels: usize,
 }
 
-/// Everything a window over a piece is composed from.
+/// Everything a window over a multitrack is composed from.
 pub struct Window<'a> {
-    /// The piece.
-    pub piece: &'a Multitrack,
+    /// The multitrack.
+    pub multitrack: &'a Multitrack,
     /// The rate a second lands at and which buffer each source was read into.
     pub look: &'a Look<'a>,
-    /// The tempo map the piece holds, which is what the ruler draws its beats
-    /// and bars from. It places nothing: the piece is in seconds.
+    /// The tempo map the multitrack holds, which is what the ruler draws its beats
+    /// and bars from. It places nothing: the multitrack is in seconds.
     pub tempo: &'a TempoMap,
-    /// The id of the piece's own widget.
+    /// The id of the multitrack's own widget.
     pub widget: i32,
     /// The id of the strip that rules it.
     pub ruler: i32,
-    /// The navigation group the piece and its ruler share, when the caller names
+    /// The navigation group the multitrack and its ruler share, when the caller names
     /// one.
     pub link: Option<i64>,
     /// The position cursor, in seconds — `None` until a hand places one.
     pub cursor: Option<f64>,
-    /// Where each track's meters are read from; empty for a piece nobody plays.
+    /// Where each track's meters are read from; empty for a multitrack nobody plays.
     pub meters: &'a [Meter],
     /// The transport row.
     pub transport: Transport,
@@ -119,18 +119,18 @@ pub struct Window<'a> {
 }
 
 impl Window<'_> {
-    /// **The navigation group the piece and its ruler share.**
+    /// **The navigation group the multitrack and its ruler share.**
     ///
     /// A ruler rules by being on the same axis as what it is beside, and an
     /// unlinked widget is a group of one keyed by itself — so the two would pan
-    /// and zoom apart. The piece's own widget id names the group when the caller
+    /// and zoom apart. The multitrack's own widget id names the group when the caller
     /// did not name one, which is the id nothing else can collide with.
     pub fn group(&self) -> i64 {
         self.link.unwrap_or(i64::from(self.widget))
     }
 
     /// The position cursor in timeline samples: where it was placed, and the
-    /// top of the piece until a hand places one. A piece that stated no cursor
+    /// top of the multitrack until a hand places one. A multitrack that stated no cursor
     /// would otherwise open with nowhere to play from.
     pub fn cursor_units(&self) -> f64 {
         secs_to_samples(self.cursor.unwrap_or(0.0), self.look.rate) as f64
@@ -146,7 +146,7 @@ impl Window<'_> {
 
 /// **The window**, as a GuiDef rooted at a `window` node.
 ///
-/// The ruler first, the piece under it and the transport row under that. The
+/// The ruler first, the multitrack under it and the transport row under that. The
 /// root carries no id: a GuiDef's id is the one its `/gui_def` names.
 ///
 /// **A script's own widgets are not composed here.** A client may append some
@@ -154,11 +154,11 @@ impl Window<'_> {
 /// source keeps a binding no JSON carries — so it appends them to the children
 /// this answers.
 pub fn window(w: &Window<'_>) -> Value {
-    let mut piece = Map::new();
-    piece.insert("type".into(), json!("multitrack"));
-    piece.insert("id".into(), json!(w.widget));
-    piece.extend(piece_props(w));
-    let mut children = vec![ruler(w), Value::Object(piece)];
+    let mut multitrack = Map::new();
+    multitrack.insert("type".into(), json!("multitrack"));
+    multitrack.insert("id".into(), json!(w.widget));
+    multitrack.extend(multitrack_props(w));
+    let mut children = vec![ruler(w), Value::Object(multitrack)];
     match w.transport {
         Transport::Absent => {}
         Transport::Unnumbered => children.push(transport(None)),
@@ -179,23 +179,23 @@ pub fn window(w: &Window<'_>) -> Value {
 /// Not only what a gesture touched: a correction is the answer to an edit that
 /// arrived too late or was refused, which is the one case where the host's
 /// whole picture of a widget is in doubt. The ruler's own state is its cursor
-/// and nothing else; every other id is answered as the piece.
+/// and nothing else; every other id is answered as the multitrack.
 pub fn props(w: &Window<'_>, widget: i32) -> Map<String, Value> {
     if widget == w.ruler {
         let mut out = Map::new();
         out.insert("cursor".into(), json!(w.cursor_units()));
         return out;
     }
-    piece_props(w)
+    multitrack_props(w)
 }
 
-/// The piece widget's props: the projection's, and what the window adds to it.
-fn piece_props(w: &Window<'_>) -> Map<String, Value> {
-    // **The piece's own props are the projection's**: the rows, the boxes, the
+/// The multitrack widget's props: the projection's, and what the window adds to it.
+fn multitrack_props(w: &Window<'_>) -> Map<String, Value> {
+    // **The multitrack's own props are the projection's**: the rows, the boxes, the
     // automations over both, their break-points, which are hidden and which
     // boxes loop. What is added here is a function of something other than the
-    // piece.
-    let mut props = projection::props(w.piece, w.look);
+    // multitrack.
+    let mut props = projection::props(w.multitrack, w.look);
     // **Where each track's level is read from**: the control buses its meters
     // write, read by the host every frame straight out of the shared segment.
     let meters: Vec<Value> = w
@@ -218,9 +218,9 @@ fn piece_props(w: &Window<'_>) -> Map<String, Value> {
     // the reader's own edit, so the axis does not re-frame itself on one.
     props.insert("autofit".into(), json!(false));
     // The head is anchored at 0 because the counter it sweeps from is already
-    // the piece's position.
+    // the multitrack's position.
     props.insert("playhead_at".into(), json!(0.0));
-    // The ruler's beats and bars are the piece's own tempo map drawn over its
+    // The ruler's beats and bars are the multitrack's own tempo map drawn over its
     // seconds: the ruler's configuration, which moves no box.
     props.insert("tempo_map".into(), json!(w.tempo_map()));
     props.insert("cursor".into(), json!(w.cursor_units()));
@@ -228,7 +228,7 @@ fn piece_props(w: &Window<'_>) -> Map<String, Value> {
     props
 }
 
-/// The free-standing strip that rules the piece from above: its marks hug its
+/// The free-standing strip that rules the multitrack from above: its marks hug its
 /// bottom edge, which is a ruler's default there.
 fn ruler(w: &Window<'_>) -> Value {
     json!({
@@ -240,7 +240,7 @@ fn ruler(w: &Window<'_>) -> Value {
             "tempo_map": w.tempo_map(),
             "sample_rate": w.look.rate,
             "link": w.group(),
-            // **The same anchor as the piece's**, because the ruler comes
+            // **The same anchor as the multitrack's**, because the ruler comes
             // first: a linked group is seeded by its first member, so a ruler
             // with no anchor left the whole window's head parked and only a
             // client's later `/gui_set` ever swept it.
@@ -250,7 +250,7 @@ fn ruler(w: &Window<'_>) -> Value {
     })
 }
 
-/// **The transport row**: rewind, play/pause, stop, and where the piece is.
+/// **The transport row**: rewind, play/pause, stop, and where the multitrack is.
 ///
 /// **Rewind is not stop.** Stop goes back to the *mark* — which is what tells
 /// it from pause — and the mark is wherever a hand last put it, so with nothing
@@ -293,7 +293,7 @@ mod tests {
     use std::collections::HashMap;
 
     /// One track holding one box, at a tempo of two beats a second.
-    fn piece() -> Multitrack {
+    fn multitrack() -> Multitrack {
         let region = Region::new(
             NodeId(3),
             Second(4.0),
@@ -302,10 +302,10 @@ mod tests {
         );
         let mut track = Track::new(NodeId(1), NodeId(2));
         track.lanes[0].regions.push(region);
-        let mut piece = Multitrack::default();
-        piece.tracks.push(track);
-        piece.tempo.push(Tempo::at(Beat(0.0), 2.0));
-        piece
+        let mut multitrack = Multitrack::default();
+        multitrack.tracks.push(track);
+        multitrack.tempo.push(Tempo::at(Beat(0.0), 2.0));
+        multitrack
     }
 
     fn compose<T>(
@@ -313,8 +313,8 @@ mod tests {
         cursor: Option<f64>,
         f: impl FnOnce(&Window<'_>) -> T,
     ) -> T {
-        let piece = piece();
-        let tempo = projection::tempo_map(&piece);
+        let multitrack = multitrack();
+        let tempo = projection::tempo_map(&multitrack);
         let table: HashMap<SourceId, i64> = HashMap::new();
         let look = Look {
             rate: 48_000.0,
@@ -326,7 +326,7 @@ mod tests {
             channels: 2,
         }];
         f(&Window {
-            piece: &piece,
+            multitrack: &multitrack,
             look: &look,
             tempo: &tempo,
             widget: 7,
@@ -335,31 +335,31 @@ mod tests {
             cursor,
             meters: &meters,
             transport,
-            title: "piece",
+            title: "multitrack",
             size: (1000, 560),
         })
     }
 
-    /// **A ruler above the piece, on its axis, and the transport under it.**
+    /// **A ruler above the multitrack, on its axis, and the transport under it.**
     #[test]
-    fn the_window_is_a_ruler_above_the_piece_and_the_transport_below() {
+    fn the_window_is_a_ruler_above_the_multitrack_and_the_transport_below() {
         let def = compose(Transport::Unnumbered, None, window);
         assert_eq!(def["type"], "window");
         assert_eq!(def["flow"], "col");
         let children = def["children"].as_array().unwrap();
         assert_eq!(children.len(), 3);
-        let (ruler, piece, row) = (&children[0], &children[1], &children[2]);
+        let (ruler, multitrack, row) = (&children[0], &children[1], &children[2]);
         assert_eq!(ruler["type"], "field");
         assert_eq!(ruler["id"], 8);
-        assert_eq!(piece["type"], "multitrack");
-        assert_eq!(piece["id"], 7);
+        assert_eq!(multitrack["type"], "multitrack");
+        assert_eq!(multitrack["id"], 7);
         assert_eq!(
-            ruler["axes"]["x"]["link"], piece["link"],
+            ruler["axes"]["x"]["link"], multitrack["link"],
             "one axis, not two"
         );
         assert_eq!(ruler["axes"]["x"]["unit"], "beats");
         assert_eq!(
-            ruler["axes"]["x"]["playhead_at"], piece["playhead_at"],
+            ruler["axes"]["x"]["playhead_at"], multitrack["playhead_at"],
             "the first member seeds the group's anchor, so the ruler states it too"
         );
         let names: Vec<&str> = row["children"]
@@ -375,9 +375,9 @@ mod tests {
         );
     }
 
-    /// A piece nobody can play has no transport row.
+    /// A multitrack nobody can play has no transport row.
     #[test]
-    fn a_piece_nobody_plays_has_no_transport() {
+    fn a_multitrack_nobody_plays_has_no_transport() {
         let def = compose(Transport::Absent, None, window);
         assert_eq!(def["children"].as_array().unwrap().len(), 2);
     }
@@ -403,11 +403,11 @@ mod tests {
         assert_eq!(unnumbered(&def), 1, "only the root, whose id is the def's");
     }
 
-    /// **The piece's props are the projection's and the window's**: the rows
+    /// **The multitrack's props are the projection's and the window's**: the rows
     /// and boxes, the meters as the widget's quadruples, and a cursor in
     /// seconds that crosses to samples by the rate alone, whatever the tempo.
     #[test]
-    fn the_piece_is_drawn_from_the_projection_and_the_window() {
+    fn the_multitrack_is_drawn_from_the_projection_and_the_window() {
         let props = compose(Transport::Absent, Some(2.0), |w| props(w, w.widget));
         assert!(props.contains_key("lanes") && props.contains_key("clips"));
         assert_eq!(props["meters"], json!(["1", 20, 22, 2]));
@@ -419,7 +419,7 @@ mod tests {
         assert_eq!(
             props["link"],
             json!(7),
-            "the piece's own id names the group"
+            "the multitrack's own id names the group"
         );
         let ruler = compose(Transport::Absent, None, |w| super::props(w, w.ruler));
         assert_eq!(

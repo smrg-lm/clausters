@@ -100,7 +100,7 @@ pub(super) fn on_press(
         Some(id) => set(host, out, ctx, Some(id)),
         // **A press on the axis' own ruler is not a press somewhere else.**
         // The position cursor is placed on the ruler and nowhere else, so
-        // dropping the focus there would take the piece's keys away with every
+        // dropping the focus there would take the multitrack's keys away with every
         // mark a reader puts down: point at the box, place the cursor, split.
         // A ruler takes no focus of its own -- it is chrome, not a sink -- and
         // it takes none away from what it rules.

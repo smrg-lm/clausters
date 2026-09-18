@@ -98,7 +98,7 @@ impl Mapping {
     ///
     /// A `Mapping` states its own `frames_per_beat`, so its tempo is a
     /// **constant by construction** and the multiplication is the right one
-    /// here — which is why this does not take the piece's converter. A
+    /// here — which is why this does not take the multitrack's converter. A
     /// selection resolved across a tempo change is a wider question than this
     /// mapping expresses, and it is written down in the plan rather than
     /// assumed away.
@@ -129,7 +129,7 @@ impl Mapping {
     }
 }
 
-/// One piece of samples a selection landed on.
+/// One multitrack of samples a selection landed on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Resolved {
     /// The element the span belongs to.
@@ -142,7 +142,7 @@ pub struct Resolved {
     /// The span **within the source**, in frames: trim and placement both
     /// applied.
     pub range: Range,
-    /// Where this piece starts inside the selection, in frames from the
+    /// Where this multitrack starts inside the selection, in frames from the
     /// selection's own start.
     ///
     /// What a copy of several takes needs in order to lay them back down in the
@@ -151,7 +151,7 @@ pub struct Resolved {
     pub at: u64,
 }
 
-/// Every piece of samples a selection lands on, in tree order.
+/// Every multitrack of samples a selection lands on, in tree order.
 ///
 /// A selection may cross several elements — that is what a marquee over a
 /// multitrack *is* — so this returns all of them. `selection.nodes` narrows it
@@ -209,7 +209,7 @@ fn walk(
     for member in node.members() {
         let at = base + member.offset;
         if (selection.nodes.is_empty() || selection.nodes.contains(&member.node.id))
-            && let Some(resolved) = piece(member, at, mapping, start, end)
+            && let Some(resolved) = multitrack(member, at, mapping, start, end)
         {
             out.push(resolved);
         }
@@ -217,13 +217,13 @@ fn walk(
         // selection reaches, because each of them is a different part of a
         // different source and a caller that copied them as one span would be
         // copying frames nobody placed there.
-        pieces_of_segments(member, at, mapping, start, end, out);
+        parts_of_segments(member, at, mapping, start, end, out);
         walk(&member.node, at, selection, mapping, start, end, out);
     }
 }
 
 /// One placed member against the selection's span.
-fn piece(
+fn multitrack(
     member: &Member,
     at: Beats,
     mapping: &Mapping,
@@ -281,10 +281,10 @@ fn piece(
 /// Every window of a [`Body::Segments`] the selection lands on, in reading
 /// order.
 ///
-/// The same arithmetic [`piece`] does, once per segment, against the stretch of
+/// The same arithmetic [`multitrack`] does, once per segment, against the stretch of
 /// the placement that segment occupies — and bounded by the placement, which is
 /// a window onto the element like every other placement here.
-fn pieces_of_segments(
+fn parts_of_segments(
     member: &Member,
     at: Beats,
     mapping: &Mapping,

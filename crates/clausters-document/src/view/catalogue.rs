@@ -265,7 +265,7 @@ pub fn pianoroll(roll: &Roll) -> Map<String, Value> {
 /// The pitch window a roll of these notes is drawn in: the outermost pitches
 /// with [`PITCH_PAD`] of air, and never so far from middle C that the fallback
 /// window is out of sight — the bottom is at most [`PITCH_CEIL`] and the top at
-/// least [`PITCH_FLOOR`], so a piece written high still shows where the
+/// least [`PITCH_FLOOR`], so a multitrack written high still shows where the
 /// ordinary range was. Notes at all is what makes a window: with none, the
 /// fallback is the whole answer.
 #[must_use]

@@ -1,8 +1,8 @@
-// `Multitrack`: the piece a `multitrack` widget draws, kept here.
+// `Multitrack`: the multitrack a `multitrack` widget draws, kept here.
 //
-// The widget owns the lanes and the clips and reports **the piece as it now
+// The widget owns the lanes and the clips and reports **the multitrack as it now
 // stands** after any gesture; this is the object that holds that on the
-// client's side, so a script says what the piece *is* and never what a hand did
+// client's side, so a script says what the multitrack *is* and never what a hand did
 // to it.
 //
 // **It wires nothing that a script would otherwise have to.** `attach`
@@ -130,7 +130,7 @@ export interface MultitrackOptions {
     /** The drag grid in axis units; `0` is no grid. */
     snap?: number;
     /**
-     * `onChange(what)` after a hand edited the piece, with `what` being
+     * `onChange(what)` after a hand edited the multitrack, with `what` being
      * `"clips"` or `"lanes"`. It is called *after* this object's lists are
      * already the new ones, so a handler reads them rather than parsing
      * anything.
@@ -138,7 +138,7 @@ export interface MultitrackOptions {
     onChange?: (what: string) => void;
     /**
      * `onLocate(at)` when a click placed the window's cursor on this widget's
-     * axis, in axis units. It is **not** an edit — the piece did not change —
+     * axis, in axis units. It is **not** an edit — the multitrack did not change —
      * but it arrives here because the widget owns the axis, so this hands it on
      * rather than swallowing it.
      */
@@ -146,7 +146,7 @@ export interface MultitrackOptions {
 }
 
 /**
- * The piece: its lanes, its clips, and the one widget that draws them.
+ * The multitrack: its lanes, its clips, and the one widget that draws them.
  */
 export class Multitrack {
     /** The rows, top to bottom. */
@@ -155,7 +155,7 @@ export class Multitrack {
     clips: Clip[];
     /** The drag grid in axis units. */
     snap: number;
-    /** Called after a hand edited the piece. */
+    /** Called after a hand edited the multitrack. */
     onChange: ((what: string) => void) | null;
     /** Called when a click placed the window's cursor. */
     onLocate: ((at: number) => void) | null;
@@ -191,10 +191,10 @@ export class Multitrack {
     }
 
     /**
-     * Where the piece ends: the furthest clip end, `0` for none.
+     * Where the multitrack ends: the furthest clip end, `0` for none.
      *
      * The **end**, not the last onset — a clip dragged past everything else
-     * lengthens the piece by its whole length.
+     * lengthens the multitrack by its whole length.
      */
     get extent(): number {
         return this.clips.reduce((far, c) => Math.max(far, c.end), 0.0);
@@ -225,7 +225,7 @@ export class Multitrack {
 
     /**
      * Put a clip where you say — adding it, or moving the one of that name. The
-     * verb is one because *the piece is a statement*: what you hand over is
+     * verb is one because *the multitrack is a statement*: what you hand over is
      * where the clip is, not how it got there.
      */
     place(
@@ -276,7 +276,7 @@ export class Multitrack {
     // ---- the widget ----
 
     /**
-     * The `multitrack` widget drawing this piece, built from what this object
+     * The `multitrack` widget drawing this multitrack, built from what this object
      * holds. Any widget prop (`name`, `weight`, `link`, `ruler`, `sampleRate`,
      * `playheadAt`…) passes through.
      */
@@ -293,16 +293,16 @@ export class Multitrack {
     }
 
     /**
-     * Subscribe to the widget drawing this piece: pass the **window**
+     * Subscribe to the widget drawing this multitrack: pass the **window**
      * `view().open()` gave back, or the widget handle itself.
      *
      * It is a second step because a view is a *definition* and an id names a
      * *live* widget — one view opens as many times as you like, each window
-     * with ids of its own — so which opened window this piece is watching has
+     * with ids of its own — so which opened window this multitrack is watching has
      * to be said. What does not have to be said again is the name: `view`
      * remembered it.
      *
-     * **One subscription, for the whole piece.** The widget reports what it now
+     * **One subscription, for the whole multitrack.** The widget reports what it now
      * holds, so this replaces the lists and calls `onChange`; there is nothing
      * per clip to register and no id for a script to carry.
      */
@@ -313,7 +313,7 @@ export class Multitrack {
         } else {
             if (this.builtAs === null) {
                 throw new Error(
-                    "this piece's view was built with no name, so a window " +
+                    "this multitrack's view was built with no name, so a window " +
                     "cannot be searched for it: pass the widget handle, or " +
                     "build the view with a name",
                 );
@@ -325,7 +325,7 @@ export class Multitrack {
         return this;
     }
 
-    /** Both edit-backs, each the whole list — the piece as it now stands. */
+    /** Both edit-backs, each the whole list — the multitrack as it now stands. */
     private edited(tag: string, vals: unknown[]): void {
         if (tag === "clips") {
             this.clips = groups(vals, 7).map(

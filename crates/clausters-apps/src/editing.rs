@@ -1,6 +1,6 @@
 //! **One undo order over every application open in it**: the editing context.
 //!
-//! A piece, a take and whatever else is on screen walk one history, and no
+//! A multitrack, a take and whatever else is on screen walk one history, and no
 //! application holds one of its own. An editor is always opened *in* an
 //! [`Editing`]; one opened alone is an `Editing` with one member, and two opened
 //! in the same one walk one order — which is the whole of how two applications
@@ -16,13 +16,13 @@
 //! pile, hands each leg to the member that owns the structure, puts the cursor
 //! back when nothing could apply it, and moves the version.
 //!
-//! What a running system does is handed back ([`Effect`]): a piece to write
+//! What a running system does is handed back ([`Effect`]): a multitrack to write
 //! back, the steps a write takes on a buffer, the payloads an external member
 //! applies, and the answers every window is corrected with.
 //!
 //! # A structure is named by its key
 //!
-//! A member declares what it edits — a take by its buffer, a piece by the piece
+//! A member declares what it edits — a take by its buffer, a multitrack by the multitrack
 //! — and a second member declaring the same key is the same structure in the
 //! order. Two windows over one take are one structure, so an undo in either
 //! walks the edit the other made.
@@ -52,7 +52,7 @@ pub type MemberId = u32;
 /// **What sits in a context.**
 #[derive(Clone, Debug)]
 pub enum Member {
-    /// A multitrack editor over a piece.
+    /// A multitrack editor over a multitrack.
     Multitrack(Box<MultitrackEditor>),
     /// A samples editor over a take.
     Samples(SamplesEditor),
@@ -166,12 +166,12 @@ pub struct Corrected {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Effect {
-    /// A multitrack editor applied a payload to its piece.
+    /// A multitrack editor applied a payload to its multitrack.
     #[serde(rename_all = "camelCase")]
     Multitrack {
         /// The member.
         member: MemberId,
-        /// What applying it did: the piece as it now stands, a source minted.
+        /// What applying it did: the multitrack as it now stands, a source minted.
         applied: multitrack::Applied,
     },
     /// Writes to a take's buffer, in order: `write` payloads, which the member
@@ -426,7 +426,7 @@ impl Editing {
     /// **One step of the history**, handed round the members.
     ///
     /// Each leg goes to the members holding its structure: every multitrack
-    /// editor over the piece applies it to the piece it draws; a write to a take
+    /// editor over the multitrack applies it to the multitrack it draws; a write to a take
     /// and an external member's payloads are carried out once, by the caller. A
     /// step nothing could apply is not a step: the cursor goes back, and the
     /// entry is still there.
@@ -583,7 +583,7 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
     match verb.as_str() {
         "openMultitrack" => match multitrack::new_json(&request.to_string()) {
             Some(editor) => joined(editing, &key, Member::Multitrack(Box::new(editor))),
-            None => json!({ "error": "the request names no piece" }).to_string(),
+            None => json!({ "error": "the request names no multitrack" }).to_string(),
         },
         "openSamples" => match samples::new_json(&request.to_string()) {
             Ok(editor) => joined(editing, &key, Member::Samples(editor)),
@@ -704,20 +704,20 @@ mod tests {
         region
     }
 
-    /// A piece of one track holding box 12, drawn by widget 40 in window 39.
-    fn a_piece() -> Member {
+    /// A multitrack of one track holding box 12, drawn by widget 40 in window 39.
+    fn a_multitrack() -> Member {
         let mut track = Track::new(NodeId(10), NodeId(11));
         track.lanes[0].regions = vec![region(12, 0.0)];
-        let piece = Multitrack {
+        let multitrack = Multitrack {
             tracks: vec![track],
             ..Multitrack::default()
         };
-        let mut editor = MultitrackEditor::new(piece, SR, FIRST_VERSION);
+        let mut editor = MultitrackEditor::new(multitrack, SR, FIRST_VERSION);
         editor.set_sources(HashMap::from([(SourceId(1), 7)]));
         editor.chrome(
             None,
             crate::multitrack::Transport::Unnumbered,
-            "piece",
+            "multitrack",
             (1000, 560),
         );
         editor.window(40, 41);
@@ -761,7 +761,7 @@ mod tests {
     fn position(editing: &mut Editing, member: MemberId) -> f64 {
         match editing.member_mut(member) {
             Some(Member::Multitrack(editor)) => {
-                editor.piece().tracks[0].lanes[0].regions[0].position.0
+                editor.multitrack().tracks[0].lanes[0].regions[0].position.0
             }
             _ => f64::NAN,
         }
@@ -822,11 +822,11 @@ mod tests {
     #[test]
     fn two_applications_in_one_context_walk_one_order() {
         let mut editing = Editing::default();
-        let piece = editing.join("piece", a_piece());
+        let multitrack = editing.join("multitrack", a_multitrack());
         let take = editing.join("buffer:7", a_take());
 
         let first = editing
-            .event(piece, &event(40, 1, "clips", moved_to(2.0)))
+            .event(multitrack, &event(40, 1, "clips", moved_to(2.0)))
             .unwrap();
         assert!(first.outcome.changed());
         assert!(
@@ -837,20 +837,20 @@ mod tests {
             .event(take, &event(50, 1, "draw", stroke(0.5, 0.0)))
             .unwrap();
         editing
-            .event(piece, &event(40, 2, "clips", moved_to(4.0)))
+            .event(multitrack, &event(40, 2, "clips", moved_to(4.0)))
             .unwrap();
-        assert_eq!(position(&mut editing, piece), 4.0);
+        assert_eq!(position(&mut editing, multitrack), 4.0);
 
         let back = editing.step(Direction::Undo);
         assert!(matches!(back.effects[..], [Effect::Multitrack { .. }]));
-        assert_eq!(position(&mut editing, piece), 2.0);
+        assert_eq!(position(&mut editing, multitrack), 2.0);
 
         let back = editing.step(Direction::Undo);
         assert_eq!(written(&back), [json!([0.0])], "the stroke, in between");
-        assert_eq!(position(&mut editing, piece), 2.0);
+        assert_eq!(position(&mut editing, multitrack), 2.0);
 
         editing.step(Direction::Undo);
-        assert_eq!(position(&mut editing, piece), 0.0);
+        assert_eq!(position(&mut editing, multitrack), 0.0);
         assert!(!editing.can_undo());
 
         editing.step(Direction::Redo);
@@ -975,7 +975,7 @@ mod tests {
     #[test]
     fn a_step_nothing_could_apply_puts_the_cursor_back() {
         let mut editing = Editing::default();
-        let piece = editing.join("piece", a_piece());
+        let multitrack = editing.join("multitrack", a_multitrack());
         let record = Record {
             label: "move nothing".into(),
             legs: vec![crate::turn::Leg {
@@ -984,7 +984,7 @@ mod tests {
                 key: String::new(),
             }],
         };
-        editing.record(piece, &record, false);
+        editing.record(multitrack, &record, false);
         let version = editing.version();
         let refused = editing.step(Direction::Undo);
         assert!(!refused.stepped);

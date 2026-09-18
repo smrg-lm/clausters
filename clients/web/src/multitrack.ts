@@ -23,7 +23,7 @@
  *   comping is: record six passes into six lanes, then take from each.
  * - An {@link Automation} is a curve over one parameter, in the arrangement's
  *   time.
- * - An {@link Multitrack} is the tracks plus what the **piece** has one of:
+ * - An {@link Multitrack} is the tracks plus what the **multitrack** has one of:
  *   the tempo map, the meter map, the markers, the loop and punch spans. They
  *   are here and not on a track precisely so that no two tracks can disagree
  *   about them.
@@ -434,7 +434,7 @@ export class Automation {
     points: Extra[];
     /**
      * Whether the lane is shown. The **view's**, and kept here because which
-     * curves a person had open is part of reopening the piece as they left it.
+     * curves a person had open is part of reopening the multitrack as they left it.
      */
     visible: boolean;
     /**
@@ -509,15 +509,15 @@ export class Track {
     soloed: boolean;
     /**
      * Where this track's fader is, as a linear gain. A field of its own for the
-     * reason {@link Track.channels} is one: what a piece sounds like is the
-     * piece's, not a key one client reads out of a table it was only meant to
+     * reason {@link Track.channels} is one: what a multitrack sounds like is the
+     * multitrack's, not a key one client reads out of a table it was only meant to
      * carry.
      */
     level: number;
     /**
      * How wide this track is, in channels. A field of its own rather than a
      * line in {@link Track.config}, because it decides the mix: reopening a
-     * piece has to give back the mix it was left with, and both clients have to
+     * multitrack has to give back the mix it was left with, and both clients have to
      * write it the same way. Two unless the track says otherwise.
      */
     channels: number;
@@ -561,7 +561,7 @@ export class Track {
     /**
      * Where the track's last region ends, across **every** lane — what it spans
      * rather than what it plays, since an alternate take is still part of the
-     * piece.
+     * multitrack.
      */
     get end(): number {
         return this.lanes.reduce((most, lane) => Math.max(most, lane.end), 0);
@@ -701,7 +701,7 @@ export class Marker {
 }
 
 /**
- * A span of the timeline: the loop, the punch, a named region of the piece.
+ * A span of the timeline: the loop, the punch, a named region of the multitrack.
  *
  * Half-open, so two spans that meet cover no instant twice. In seconds.
  */
@@ -730,22 +730,22 @@ export class Span {
 /**
  * The tracks, and the timeline they are placed on.
  *
- * What is here rather than on a track is what the **piece** has one of: the
+ * What is here rather than on a track is what the **multitrack** has one of: the
  * tempo map, the meter map, the markers, the loop. A track has none of them and
  * never disagrees with another track about them, which is the whole argument
  * for where they live.
  */
 export class Multitrack {
     /**
-     * What this piece is *at*, and the whole of what a stale edit is stale
+     * What this multitrack is *at*, and the whole of what a stale edit is stale
      * against — the twin of the document's own version, and deliberately a
-     * second counter: an editor of the piece is not editing the tree, so one
+     * second counter: an editor of the multitrack is not editing the tree, so one
      * number would make every edit to either look like a change to both.
      */
     version = FIRST_VERSION;
     tracks: Track[] = [];
     /**
-     * How wide the piece is, in channels — the master's own width, and what a
+     * How wide the multitrack is, in channels — the master's own width, and what a
      * track's output is mixed into. Here for the reason {@link Track.channels}
      * is.
      */
@@ -764,7 +764,7 @@ export class Multitrack {
 
     /**
      * Where the last region ends, across every track and every lane — how long
-     * the piece is.
+     * the multitrack is.
      */
     get end(): number {
         return this.tracks.reduce((most, t) => Math.max(most, t.end), 0);
@@ -845,7 +845,7 @@ export class Multitrack {
     /** The arrangement as the crate's JSON. Nothing said is nothing written. */
     write(): Extra {
         const out: Extra = {};
-        // Out of the file while it is the first version, so an unedited piece
+        // Out of the file while it is the first version, so an unedited multitrack
         // still writes an empty object: the reader defaults back to the same
         // number, so nothing is lost by leaving it out.
         if (this.version !== FIRST_VERSION) out.version = this.version;
@@ -861,22 +861,22 @@ export class Multitrack {
 
     /** An arrangement from the crate's JSON. */
     static read(written: Extra): Multitrack {
-        const piece = new Multitrack();
-        piece.version = (written.version as number) ?? FIRST_VERSION;
-        piece.tracks = ((written.tracks as Extra[]) ?? []).map(Track.read);
-        piece.channels = written.channels === undefined ? 2 : num(written.channels);
-        piece.tempo = ((written.tempo as Extra[]) ?? []).map(Tempo.read);
-        piece.meter = ((written.meter as Extra[]) ?? []).map(Meter.read);
-        piece.markers = ((written.markers as Extra[]) ?? []).map(Marker.read);
-        if (written.loop_span) piece.loopSpan = Span.read(written.loop_span as Extra);
-        if (written.punch) piece.punch = Span.read(written.punch as Extra);
-        piece.extra = rest(written, "version", "tracks", "channels", "tempo", "meter",
+        const multitrack = new Multitrack();
+        multitrack.version = (written.version as number) ?? FIRST_VERSION;
+        multitrack.tracks = ((written.tracks as Extra[]) ?? []).map(Track.read);
+        multitrack.channels = written.channels === undefined ? 2 : num(written.channels);
+        multitrack.tempo = ((written.tempo as Extra[]) ?? []).map(Tempo.read);
+        multitrack.meter = ((written.meter as Extra[]) ?? []).map(Meter.read);
+        multitrack.markers = ((written.markers as Extra[]) ?? []).map(Marker.read);
+        if (written.loop_span) multitrack.loopSpan = Span.read(written.loop_span as Extra);
+        if (written.punch) multitrack.punch = Span.read(written.punch as Extra);
+        multitrack.extra = rest(written, "version", "tracks", "channels", "tempo", "meter",
                            "markers", "loop_span", "punch");
-        return piece;
+        return multitrack;
     }
 }
 
-// ---- the session: the piece, and where its samples are ----
+// ---- the session: the multitrack, and where its samples are ----
 //
 // Lifted out of `form/document.ts` rather than written again. What was worth
 // keeping there was never the element-to-node conversion -- that is form's
@@ -1018,7 +1018,7 @@ export class Source {
  * buffer answers with, plus what the table said about where the samples are and
  * what shape they have, so a re-save keeps every location it was given.
  *
- * Without it, a piece opened with no way to read its files would be written back
+ * Without it, a multitrack opened with no way to read its files would be written back
  * with every source marked volatile, which is a format that loses its own
  * contents on the second save.
  */
@@ -1048,7 +1048,7 @@ export class FrozenSource {
     }
 }
 
-// ---- the presentation: what a window shows of a piece ----
+// ---- the presentation: what a window shows of a multitrack ----
 //
 // Parallel to the model and never inside it, which is Live's shape and
 // deliberate: `Song.View`, `Track.View` and `Application.View` are objects
@@ -1116,13 +1116,13 @@ export class LaneView {
 }
 
 /**
- * One window's picture of one piece: where it is looking, how far it is zoomed,
+ * One window's picture of one multitrack: where it is looking, how far it is zoomed,
  * what the hand is holding, how tall each track is drawn.
  *
- * None of that is what the piece *is* — a selection and a zoom are each
+ * None of that is what the multitrack *is* — a selection and a zoom are each
  * window's and never the composition's — and all of it is state a person loses
  * on a reopen unless something writes it down. A session carries a **list** of
- * these, because a piece drawn in two windows has two views and they disagree
+ * these, because a multitrack drawn in two windows has two views and they disagree
  * on purpose.
  *
  * Nothing here ever reaches the document or the history: a view is not edited
@@ -1134,14 +1134,14 @@ export class View {
     /**
      * The stretch of the timeline on screen, in seconds — the zoom and the
      * horizontal scroll, which are one fact and not two. Absent shows the whole
-     * piece.
+     * multitrack.
      */
     visible?: Span;
     /** How far down the tracks the window is scrolled, in its own units. */
     scroll = 0;
     /**
      * The grid this window snaps to, in beats. Zero snaps nothing. It is here
-     * rather than in the piece because two windows over one piece may snap
+     * rather than in the multitrack because two windows over one multitrack may snap
      * differently — the arranger to a bar, the editor below it to a sixteenth.
      * A musical grid over a multitrack in seconds, taken through its tempo map by
      * the window: the ruler's configuration, not a unit of the placement.
@@ -1156,7 +1156,7 @@ export class View {
     selection?: Span;
     /**
      * What the hand is holding: regions, lanes or tracks, by id. One list
-     * rather than one per kind, because the piece has one id space.
+     * rather than one per kind, because the multitrack has one id space.
      */
     selected: number[] = [];
     /** What a keystroke is aimed at, which is not the same as what is selected. */
@@ -1203,16 +1203,16 @@ export class View {
     }
 
     /**
-     * Drops everything this view says about objects the piece no longer holds,
+     * Drops everything this view says about objects the multitrack no longer holds,
      * and answers whether anything went.
      *
      * **State goes when the thing goes.** Keeping it is worse than losing it: a
      * height kept for a track that is not the same track is a defect that looks
      * like a feature.
      */
-    prune(piece: Multitrack): boolean {
+    prune(multitrack: Multitrack): boolean {
         const held = new Set<number>();
-        for (const track of piece.tracks) {
+        for (const track of multitrack.tracks) {
             held.add(track.id);
             for (const lane of track.lanes) {
                 held.add(lane.id);
@@ -1299,8 +1299,8 @@ export class View {
  *
  * An {@link Multitrack} says *what plays when* and deliberately does not say
  * where a source lives, because inside a running system a source is a server
- * buffer, a mapped file or a rendered result and the piece has no business
- * knowing which. A session is the piece plus exactly that missing half.
+ * buffer, a mapped file or a rendered result and the multitrack has no business
+ * knowing which. A session is the multitrack plus exactly that missing half.
  *
  * Not the client's `Session`, which is a connection to a running server. Two
  * nouns, two modules; this one is a **file**.
@@ -1314,15 +1314,15 @@ export class Session {
      */
     format = SESSION_FORMAT;
     /**
-     * The piece. Always present, possibly empty — which mirrors the crate,
+     * The multitrack. Always present, possibly empty — which mirrors the crate,
      * where an absent arrangement reads as an empty one rather than as nothing.
      */
     multitrack = new Multitrack();
     /**
-     * How the piece was being **looked at**: one entry per window. Carried for
-     * the reason every program in the field carries it — reopening a piece into
+     * How the multitrack was being **looked at**: one entry per window. Carried for
+     * the reason every program in the field carries it — reopening a multitrack into
      * the window it was left in is what a person expects — and a reader that
-     * ignores it opens the same piece.
+     * ignores it opens the same multitrack.
      */
     views: View[] = [];
     /**
@@ -1398,7 +1398,7 @@ export class Session {
     }
 
     /**
-     * Sources the piece names but the table does not hold — what an opening
+     * Sources the multitrack names but the table does not hold — what an opening
      * reader reports rather than discovering one element at a time.
      *
      * **Every** lane is walked and not only the ones that play: an alternate
@@ -1443,8 +1443,8 @@ export class Session {
     /** The session as the crate's JSON. */
     write(): Extra {
         const out: Extra = { format: this.format };
-        const piece = this.multitrack.write();
-        if (Object.keys(piece).length) out.multitrack = piece;
+        const multitrack = this.multitrack.write();
+        if (Object.keys(multitrack).length) out.multitrack = multitrack;
         if (this.views.length) out.views = this.views.map((v) => v.write());
         if (this.document !== undefined) out.document = this.document;
         if (this.sources.size) {
@@ -1487,7 +1487,7 @@ export class Session {
     }
 
     /**
-     * Loads the sources the piece names into `server`: every take read from its
+     * Loads the sources the multitrack names into `server`: every take read from its
      * file, and every join stitched from the takes it is made of once those are
      * there.
      *
@@ -1566,10 +1566,10 @@ export interface Curve {
 }
 
 /**
- * **A piece as the props the multitrack widget is drawn with.**
+ * **A multitrack as the props the multitrack widget is drawn with.**
  *
  * The rows, the boxes, the automations over both, their break-points, which of
- * them are hidden and which boxes loop — everything a piece has from the
+ * them are hidden and which boxes loop — everything a multitrack has from the
  * document alone, in the flat shapes the wire carries. What a caller adds is
  * what is a function of something *else*: the position cursor, the meter buses,
  * the widget's own chrome.
@@ -1578,28 +1578,28 @@ export interface Curve {
  * is drawn from and what it is played from are the same samples.
  */
 export function multitrackProps(
-    piece: string,
+    multitrack: string,
     rate: number,
     sources: string,
 ): string {
-    return coreProps(piece, rate, sources);
+    return coreProps(multitrack, rate, sources);
 }
 
 /**
- * **What a piece calls its rows, its boxes and its curves**, by the names the
+ * **What a multitrack calls its rows, its boxes and its curves**, by the names the
  * wire carries
  * them under.
  *
- * The minting correction's half that is a fact about the piece: a host that
+ * The minting correction's half that is a fact about the multitrack: a host that
  * made a track or split a box minted the *word* while the document minted the
  * *id*, so a view keeps what it was last told and answers with the picture when
  * the two stop agreeing. Reading it here rather than striding the props is what
  * keeps a flat array's shape out of a call site.
  */
 export function multitrackNames(
-    piece: Multitrack | unknown,
+    multitrack: Multitrack | unknown,
 ): { rows: string[]; boxes: string[]; curves: string[] } {
-    const body = piece instanceof Multitrack ? piece.write() : piece;
+    const body = multitrack instanceof Multitrack ? multitrack.write() : multitrack;
     const answer = coreNames(JSON.stringify(body));
     if (!answer) return { rows: [], boxes: [], curves: [] };
     return JSON.parse(answer) as {

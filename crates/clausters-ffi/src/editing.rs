@@ -46,10 +46,10 @@ pub unsafe extern "C" fn clausters_editing_points_props(
     unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
 }
 
-/// **A piece as the props the multitrack widget is drawn with**, as JSON.
+/// **A multitrack as the props the multitrack widget is drawn with**, as JSON.
 ///
 /// The rows, the boxes, the automations over both, their break-points, which
-/// are hidden and which boxes loop — everything a piece has from the document
+/// are hidden and which boxes loop — everything a multitrack has from the document
 /// alone. What a caller adds is what is a function of something else: the
 /// position cursor, the meter buses, the widget's own chrome.
 ///
@@ -58,12 +58,12 @@ pub unsafe extern "C" fn clausters_editing_points_props(
 /// with a second call.
 ///
 /// # Safety
-/// `piece` and `sources` must be null or readable for their lengths, and `out`
+/// `multitrack` and `sources` must be null or readable for their lengths, and `out`
 /// null or writable for `out_cap` bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_editing_multitrack_props(
-    piece: *const u8,
-    piece_len: usize,
+    multitrack: *const u8,
+    multitrack_len: usize,
     rate: f64,
     sources: *const u8,
     sources_len: usize,
@@ -71,14 +71,13 @@ pub unsafe extern "C" fn clausters_editing_multitrack_props(
     out_cap: usize,
 ) -> usize {
     // SAFETY: forwarded from this function's own contract.
-    let (Some(piece), Some(sources)) =
-        (unsafe { crate::document::text(piece, piece_len) }, unsafe {
-            crate::document::text(sources, sources_len)
-        })
-    else {
+    let (Some(multitrack), Some(sources)) = (
+        unsafe { crate::document::text(multitrack, multitrack_len) },
+        unsafe { crate::document::text(sources, sources_len) },
+    ) else {
         return 0;
     };
-    let answer = clausters_editing::multitrack::props_json(&piece, rate, &sources);
+    let answer = clausters_editing::multitrack::props_json(&multitrack, rate, &sources);
     // SAFETY: forwarded from this function's own contract. A pure read, so
     // there is nothing to commit.
     unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
@@ -192,7 +191,7 @@ pub unsafe extern "C" fn clausters_editing_load(
     unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
 }
 
-/// **What is sounding of a piece**, held across edits.
+/// **What is sounding of a multitrack**, held across edits.
 ///
 /// The instance projection's state: an opaque handle, because it is the one
 /// projection with memory and shipping it out and back in on every edit would
@@ -200,7 +199,7 @@ pub unsafe extern "C" fn clausters_editing_load(
 /// [`clausters_editing_instance_free`].
 pub struct FfiInstance(std::sync::Mutex<clausters_editing::instance::Instance>);
 
-/// A new instance: nothing of the piece is sounding yet.
+/// A new instance: nothing of the multitrack is sounding yet.
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_editing_instance_new() -> *mut FfiInstance {
     Box::into_raw(Box::new(FfiInstance(std::sync::Mutex::new(
@@ -225,14 +224,14 @@ pub unsafe extern "C" fn clausters_editing_instance_free(i: *mut FfiInstance) {
     }
 }
 
-/// **The difference between what is sounding and what the piece says**, as the
+/// **The difference between what is sounding and what the multitrack says**, as the
 /// JSON list of operations a client applies.
 ///
-/// The same four arguments the instance plan takes — the piece, the rate, the
-/// tempo a piece that states none is read at, and the source table — plus the
-/// master's own level, which is the caller's and not the piece's. Everything
+/// The same four arguments the instance plan takes — the multitrack, the rate, the
+/// tempo a multitrack that states none is read at, and the source table — plus the
+/// master's own level, which is the caller's and not the multitrack's. Everything
 /// already right is left alone, which is what lets a hand drag a box without
-/// hearing the rest of the piece restart.
+/// hearing the rest of the multitrack restart.
 ///
 /// An operation names what it acts on by a **handle**, never by a node id, a
 /// bus index or a buffer number: this allocates none of those, and the client
@@ -242,13 +241,13 @@ pub unsafe extern "C" fn clausters_editing_instance_free(i: *mut FfiInstance) {
 ///
 /// # Safety
 /// `i` must be null or a live pointer from `clausters_editing_instance_new`,
-/// `piece` and `sources` null or readable for their lengths, and `out` null or
+/// `multitrack` and `sources` null or readable for their lengths, and `out` null or
 /// writable for `out_cap` bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_editing_instance_reconcile(
     i: *mut FfiInstance,
-    piece: *const u8,
-    piece_len: usize,
+    multitrack: *const u8,
+    multitrack_len: usize,
     sample_rate: f64,
     sources: *const u8,
     sources_len: usize,
@@ -260,11 +259,10 @@ pub unsafe extern "C" fn clausters_editing_instance_reconcile(
         return 0;
     }
     // SAFETY: forwarded from this function's own contract.
-    let (Some(piece), Some(sources)) =
-        (unsafe { crate::document::text(piece, piece_len) }, unsafe {
-            crate::document::text(sources, sources_len)
-        })
-    else {
+    let (Some(multitrack), Some(sources)) = (
+        unsafe { crate::document::text(multitrack, multitrack_len) },
+        unsafe { crate::document::text(sources, sources_len) },
+    ) else {
         return 0;
     };
     // SAFETY: caller guarantees `i` is live.
@@ -279,8 +277,13 @@ pub unsafe extern "C" fn clausters_editing_instance_reconcile(
     // Without that, the sizing call did the reconciling and the filling call
     // found nothing left to do.
     let mut next = held.clone();
-    let answer =
-        clausters_editing::instance::reconcile_json(&mut next, &piece, sample_rate, &sources, gain);
+    let answer = clausters_editing::instance::reconcile_json(
+        &mut next,
+        &multitrack,
+        sample_rate,
+        &sources,
+        gain,
+    );
     // SAFETY: forwarded from this function's own contract.
     unsafe {
         crate::document::fill(answer.as_bytes(), out, out_cap, || {
@@ -289,9 +292,9 @@ pub unsafe extern "C" fn clausters_editing_instance_reconcile(
     }
 }
 
-/// **Everything this made, given back** — the operations that stop the piece.
+/// **Everything this made, given back** — the operations that stop the multitrack.
 ///
-/// The piece itself is untouched: what an instance holds is nodes, and nodes
+/// The multitrack itself is untouched: what an instance holds is nodes, and nodes
 /// are not the composition. Afterwards it believes nothing is sounding, and the
 /// defs it sent stay known, since they are on the server whatever this holds.
 ///
@@ -428,14 +431,14 @@ pub unsafe extern "C" fn clausters_editing_runner_call(
     }
 }
 
-/// **One piece, as it is playing**: its instance, its applier and its
+/// **One multitrack, as it is playing**: its instance, its applier and its
 /// transport, answering every verb as steps. Free it with
 /// [`clausters_editing_playback_free`].
 pub struct FfiPlayback(std::sync::Mutex<clausters_editing::playback::MultitrackPlayback>);
 
 /// A new playback; `chunk` is how many samples one `/buffer_setRange` carries.
-/// Where it makes the piece and how it binds the transport are the crate's, the
-/// same for every endpoint: a group at the top, bound, with the piece inside.
+/// Where it makes the multitrack and how it binds the transport are the crate's, the
+/// same for every endpoint: a group at the top, bound, with the multitrack inside.
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_editing_playback_new(chunk: usize) -> *mut FfiPlayback {
     use clausters_editing::apply::Endpoint;
@@ -522,19 +525,19 @@ unsafe fn playback_ids_verb(
     }
 }
 
-/// **Makes what sounds be what the piece says**: the steps, as JSON
-/// (`{"steps": [...]}` or `{"error": "..."}`), allocating from `ids`. The piece
+/// **Makes what sounds be what the multitrack says**: the steps, as JSON
+/// (`{"steps": [...]}` or `{"error": "..."}`), allocating from `ids`. The multitrack
 /// is the document's JSON and `sources` the table of source id → buffer and
 /// channels. Sizes with a null `out` and fills with a second call.
 ///
 /// # Safety
-/// `p` and `ids` null or live, `piece` and `sources` null or readable for their
+/// `p` and `ids` null or live, `multitrack` and `sources` null or readable for their
 /// lengths, `out` null or writable for `out_cap` bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_editing_playback_sync(
     p: *mut FfiPlayback,
-    piece: *const u8,
-    piece_len: usize,
+    multitrack: *const u8,
+    multitrack_len: usize,
     sample_rate: f64,
     sources: *const u8,
     sources_len: usize,
@@ -544,11 +547,10 @@ pub unsafe extern "C" fn clausters_editing_playback_sync(
     out_cap: usize,
 ) -> usize {
     // SAFETY: forwarded from this function's own contract.
-    let (Some(piece), Some(sources)) =
-        (unsafe { crate::document::text(piece, piece_len) }, unsafe {
-            crate::document::text(sources, sources_len)
-        })
-    else {
+    let (Some(multitrack), Some(sources)) = (
+        unsafe { crate::document::text(multitrack, multitrack_len) },
+        unsafe { crate::document::text(sources, sources_len) },
+    ) else {
         return 0;
     };
     // SAFETY: forwarded from this function's own contract.
@@ -556,7 +558,7 @@ pub unsafe extern "C" fn clausters_editing_playback_sync(
         playback_ids_verb(p, ids, out, out_cap, |playback, ids| {
             clausters_editing::playback::sync_json(
                 playback,
-                &piece,
+                &multitrack,
                 sample_rate,
                 &sources,
                 gain,
@@ -581,7 +583,7 @@ pub unsafe extern "C" fn clausters_editing_playback_play(
     unsafe { playback_verb(p, out, out_cap, |pb| answer_json(Ok(pb.play()))) }
 }
 
-/// The steps that freeze the piece and zero its meters.
+/// The steps that freeze the multitrack and zero its meters.
 ///
 /// # Safety
 /// As [`clausters_editing_playback_sync`].
@@ -644,7 +646,7 @@ pub unsafe extern "C" fn clausters_editing_playback_cue(
     unsafe { playback_verb(p, out, out_cap, |pb| answer_json(Ok(pb.cue(secs)))) }
 }
 
-/// The steps that free everything the piece made, releasing into `ids`.
+/// The steps that free everything the multitrack made, releasing into `ids`.
 ///
 /// # Safety
 /// As [`clausters_editing_playback_sync`].
@@ -660,7 +662,7 @@ pub unsafe extern "C" fn clausters_editing_playback_close(
     unsafe { playback_ids_verb(p, ids, out, out_cap, |pb, ids| answer_json(pb.close(ids))) }
 }
 
-/// The meters the piece writes, `[{"track", "bus", "channels"}]`.
+/// The meters the multitrack writes, `[{"track", "bus", "channels"}]`.
 ///
 /// # Safety
 /// As [`clausters_editing_playback_sync`].
@@ -817,30 +819,30 @@ pub unsafe extern "C" fn clausters_editing_conversation_answer(
     unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
 }
 
-/// **What a piece calls its rows and its boxes** — `{"rows": [...], "boxes":
+/// **What a multitrack calls its rows and its boxes** — `{"rows": [...], "boxes":
 /// [...]}`, by the names the wire carries them under.
 ///
-/// The minting correction's half that is a fact about the piece: a host that
+/// The minting correction's half that is a fact about the multitrack: a host that
 /// made a track or split a box minted the *word* while the document minted the
 /// *id*, so a view keeps what it was last told and answers with the picture
 /// when the two stop agreeing. Reading it here rather than striding the props
 /// is what keeps a flat array's shape out of a call site.
 ///
 /// # Safety
-/// `piece` must be null or readable for `piece_len` bytes, and `out` null or
+/// `multitrack` must be null or readable for `multitrack_len` bytes, and `out` null or
 /// writable for `out_cap` bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_editing_multitrack_names(
-    piece: *const u8,
-    piece_len: usize,
+    multitrack: *const u8,
+    multitrack_len: usize,
     out: *mut u8,
     out_cap: usize,
 ) -> usize {
     // SAFETY: forwarded from this function's own contract.
-    let Some(piece) = (unsafe { crate::document::text(piece, piece_len) }) else {
+    let Some(multitrack) = (unsafe { crate::document::text(multitrack, multitrack_len) }) else {
         return 0;
     };
-    let answer = clausters_editing::multitrack::names_json(&piece);
+    let answer = clausters_editing::multitrack::names_json(&multitrack);
     // SAFETY: forwarded from this function's own contract. A pure read.
     unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
 }
@@ -934,11 +936,11 @@ mod tests {
         assert_eq!(read("clips")["payloads"], serde_json::json!([]));
     }
 
-    /// The instance keeps what it made: a second pass over the same piece has
+    /// The instance keeps what it made: a second pass over the same multitrack has
     /// nothing to do.
     #[test]
     fn an_instance_remembers_across_two_calls() {
-        let piece = br#"{"version":1,"tracks":[{"id":1,"lanes":[{"id":2,"regions":[]}]}]}"#;
+        let multitrack = br#"{"version":1,"tracks":[{"id":1,"lanes":[{"id":2,"regions":[]}]}]}"#;
         let sources = b"{}";
         let instance = clausters_editing_instance_new();
         let read = |cap: usize| {
@@ -946,8 +948,8 @@ mod tests {
             let n = unsafe {
                 clausters_editing_instance_reconcile(
                     instance,
-                    piece.as_ptr(),
-                    piece.len(),
+                    multitrack.as_ptr(),
+                    multitrack.len(),
                     48_000.0,
                     sources.as_ptr(),
                     sources.len(),
@@ -965,8 +967,8 @@ mod tests {
         let sized = unsafe {
             clausters_editing_instance_reconcile(
                 instance,
-                piece.as_ptr(),
-                piece.len(),
+                multitrack.as_ptr(),
+                multitrack.len(),
                 48_000.0,
                 sources.as_ptr(),
                 sources.len(),

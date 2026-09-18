@@ -81,11 +81,11 @@ def test_a_domain_that_is_not_a_document_answers_here_too():
     assert isinstance(domain_coalesce_key(POINTS, payload), str)
 
 
-# ---- the piece: a whole multitrack state across the seam ----
+# ---- the multitrack: a whole multitrack state across the seam ----
 
 def a_piece() -> dict:
     """Two tracks, two lanes on the first, a region on each — the smallest
-    piece a move between tracks has somewhere to move to."""
+    multitrack a move between tracks has somewhere to move to."""
     vocals = Track(id=10, name="vocals", lanes=[Lane(id=11), Lane(id=12)])
     vocals.lanes[0].place(Region(id=100, position=0.0, length=4.0,
                                  content=Content.composite(
@@ -96,7 +96,7 @@ def a_piece() -> dict:
 
 
 def test_a_region_moves_between_tracks_in_one_edit_and_comes_back_in_one():
-    # The piece is a vocabulary of its own, reached through the door every
+    # The multitrack is a vocabulary of its own, reached through the door every
     # other domain is reached through -- no new binding, in either language.
     # One intent moves the region, because where a region is means track, lane
     # and beat and an absolute edit states all three; the inverse the crate
@@ -109,7 +109,7 @@ def test_a_region_moves_between_tracks_in_one_edit_and_comes_back_in_one():
     moved = Multitrack.read(edited["state"])
     assert moved.track(20).lanes[0].regions[0].id == 100
     assert moved.track(10).lanes[0].regions == []
-    assert moved.version == 2, "and the piece carries its own counter"
+    assert moved.version == 2, "and the multitrack carries its own counter"
 
     back = domain_edit(MULTITRACK, edited["state"], edited["current"])
     assert back is not None
@@ -137,6 +137,6 @@ def test_the_pieces_coalesce_key_is_asked_here_and_not_spelled_again():
 
 def test_an_unedited_piece_writes_nothing_and_reads_back_at_the_first_version():
     # The counter stays out of the file while it is the first version, so a
-    # piece that says nothing still writes an empty object.
+    # multitrack that says nothing still writes an empty object.
     assert Multitrack().write() == {}
     assert Multitrack.read({}).version == 1

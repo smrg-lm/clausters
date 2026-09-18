@@ -11,7 +11,7 @@
 //! [`TransportSample::to_device`], which both take the frozen total explicitly.
 //!
 //! Beside them is a third quantity that is **not a clock**: the
-//! [`TransportPosition`], where the transport is in the piece. A clock counts
+//! [`TransportPosition`], where the transport stands. A clock counts
 //! what has happened and only goes forward; a position says where you are and
 //! moves wherever a locate puts it. Keeping them apart is what lets a
 //! scheduler stay on an axis that cannot jump while a playhead sits on one
@@ -31,24 +31,24 @@ pub struct DeviceSample(u64);
 ///
 /// It is monotonic, which is what the transport scheduler queue needs — "due"
 /// only means anything on an axis that cannot jump. It is therefore *not*
-/// where the piece is: a locate leaves this untouched. That is
+/// where the transport stands: a locate leaves this untouched. That is
 /// [`TransportPosition`].
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
 pub struct TransportSample(u64);
 
-/// Where the transport is **in the piece**: a sample index of it.
+/// Where the transport stands: a sample index of its own axis.
 ///
 /// Not a clock. It advances with the transport clock while rolling, holds
 /// while stopped, jumps wherever `/transport_locate` puts it and wraps at a
 /// loop's end. A playhead and a buffer reader following the transport want
 /// this; a scheduled bundle wants [`TransportSample`].
 ///
-/// Non-negative, like the clocks: locating before the start of the piece
+/// Non-negative, like the clocks: locating before the start of the axis
 /// clamps to 0.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
 pub struct TransportPosition(u64);
 
-/// What ties the piece's position to the transport clock: the position the
+/// What ties the position to the transport clock: the position the
 /// transport was last located to, and the transport sample it was located at.
 ///
 /// Every read is `position + (now - since)`, so **a locate is one store of
@@ -141,7 +141,7 @@ impl PositionAnchor {
         }
     }
 
-    /// Where the piece is at transport sample `now`.
+    /// Where the transport stands at transport sample `now`.
     ///
     /// Saturating on both halves: `now` before the anchor cannot happen (the
     /// transport clock does not run backwards), and saturating there means a
@@ -152,7 +152,7 @@ impl PositionAnchor {
             .saturating_add(now.saturating_sub_axis(self.since))
     }
 
-    /// The transport sample at which the piece reaches `position`, or `None`
+    /// The transport sample at which it reaches `position`, or `None`
     /// when it already has — what the engine asks in order to cut its block at
     /// a loop's end.
     pub const fn reaching(
@@ -168,14 +168,14 @@ impl PositionAnchor {
         }
     }
 
-    /// Re-anchored at `now` without moving the piece: the same position, tied
+    /// Re-anchored at `now` without moving the transport: the same position, tied
     /// to a fresh transport sample. What a loop wrap and a resume both do.
     pub const fn wrapped_to(self, position: TransportPosition, now: TransportSample) -> Self {
         Self::located(position, now)
     }
 }
 
-/// A loop over the piece: the span the position wraps inside while looping is
+/// A loop over the axis: the span the position wraps inside while looping is
 /// on. Half-open — the end sample is the first one *not* played, so a loop of
 /// `0..n` over an `n`-sample take plays every sample exactly once and joins
 /// its own start with no repeated frame.
@@ -232,7 +232,7 @@ mod tests {
         );
     }
 
-    /// A locate moves the piece and leaves the clock alone -- the distinction
+    /// A locate moves the transport and leaves the clock alone -- the distinction
     /// the two types exist for. Both anchors are read at the same transport
     /// sample and give different positions.
     #[test]
@@ -252,7 +252,7 @@ mod tests {
         assert_eq!(
             a.reaching(TransportPosition::new(150), now),
             Some(TransportSample::new(50)),
-            "the piece is at 110, so 40 samples to play and 40 of the clock"
+            "the transport is at 110, so 40 samples to play and 40 of the clock"
         );
         assert_eq!(
             a.reaching(TransportPosition::new(110), now),

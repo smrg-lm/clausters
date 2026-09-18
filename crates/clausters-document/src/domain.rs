@@ -27,7 +27,7 @@ use crate::events::{EVENTS, Events};
 use crate::history::Editable;
 use crate::log::TREE;
 use crate::multitrack::Multitrack;
-use crate::multitrack::edit::{MULTITRACK, Piece};
+use crate::multitrack::edit::{MULTITRACK, MultitrackEdit};
 use crate::points::{POINTS, Points};
 use crate::samples::SAMPLES;
 
@@ -109,27 +109,27 @@ pub struct Edited {
 ///   costs.
 ///
 /// [`MULTITRACK`] is served, and it is the case that shows what the [`TREE`]
-/// entry above is really about. A piece's whole state *is* one JSON value the
+/// entry above is really about. A multitrack's whole state *is* one JSON value the
 /// caller holds, version included, so the door works — it simply applies
 /// against whatever that state says and snaps to nothing, which is exactly what
-/// a client that just read the piece wants. An editor that has a grid, or a
+/// a client that just read the multitrack wants. An editor that has a grid, or a
 /// claim about a picture drawn a moment ago, uses the typed door
 /// ([`multitrack::edit::apply`](crate::multitrack::edit::apply)) instead. The
 /// tree cannot be served this way for a different reason: what it edits is a
 /// handle that lives across the seam, not a value.
 ///
-/// So this serves the domains whose state *is* the data — the piece, a curve's
+/// So this serves the domains whose state *is* the data — the multitrack, a curve's
 /// points, a timeline's events — which is also every domain a client holds as
 /// an ordinary list.
 pub fn edit(domain: &str, state: &Opaque, payload: &Opaque) -> Option<Edited> {
     match domain {
         MULTITRACK => {
-            let mut piece: Multitrack = serde_json::from_value(state.0.clone()).ok()?;
-            let mut editing = Piece::new(&mut piece);
+            let mut multitrack: Multitrack = serde_json::from_value(state.0.clone()).ok()?;
+            let mut editing = MultitrackEdit::new(&mut multitrack);
             let current = editing.current(payload);
             let applied = editing.apply(payload);
             Some(Edited {
-                state: Opaque(serde_json::to_value(&piece).ok()?),
+                state: Opaque(serde_json::to_value(&multitrack).ok()?),
                 applied: applied.applied,
                 reason: applied.reason,
                 current,

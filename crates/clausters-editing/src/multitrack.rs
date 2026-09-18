@@ -1,4 +1,4 @@
-//! **A piece as the props the multitrack widget is drawn with.**
+//! **A multitrack as the props the multitrack widget is drawn with.**
 //!
 //! The projection over [`clausters_document::multitrack::picture`]: that module
 //! says what a row and a box *are*, and this says how they reach a host. Every
@@ -18,7 +18,7 @@
 //!
 //! # What is here and what is the caller's
 //!
-//! Here: everything a piece has **from the document alone** — the rows, the
+//! Here: everything a multitrack has **from the document alone** — the rows, the
 //! boxes, the automations over both, their break-points, which of them are
 //! hidden and which boxes loop. Not here: the position cursor (a window's), the
 //! meter buses (a playback's, so the instance projection's) and the widget's
@@ -94,9 +94,9 @@ pub trait Buffers {
 
     /// **Every source this holds samples for**, in no particular order.
     ///
-    /// What minting a source needs and a piece cannot answer: a source stops
-    /// being named by the piece the moment nothing windows it, while whoever
-    /// loaded it still holds the buffer. An id handed out off the piece alone
+    /// What minting a source needs and a multitrack cannot answer: a source stops
+    /// being named by the multitrack the moment nothing windows it, while whoever
+    /// loaded it still holds the buffer. An id handed out off the multitrack alone
     /// can therefore already have samples behind it, and a box over it is then
     /// a window onto whatever that was.
     ///
@@ -107,7 +107,7 @@ pub trait Buffers {
     }
 
     /// **The other direction**: the source a buffer number came from, or `None`
-    /// for a buffer this piece knows nothing about.
+    /// for a buffer this multitrack knows nothing about.
     ///
     /// Both are here because a box is *drawn* from a buffer and *read back*
     /// into a source, and a caller that answered only one of them would have
@@ -130,7 +130,7 @@ pub trait Buffers {
     /// What lets a join be refused as an edit instead of applied and left
     /// hollow: a box trimmed past the end of its take reads frames the take
     /// does not have, and a stitch asking for them is refused by the server
-    /// after the piece already holds the joined box. Defaulted to unknown, which
+    /// after the multitrack already holds the joined box. Defaulted to unknown, which
     /// checks nothing.
     fn frames(&self, _source: SourceId) -> Option<u64> {
         None
@@ -264,9 +264,9 @@ fn domain(curve: &picture::Curve) -> (f64, f64) {
 
 /// The rows as the widget's flat sextuples: name, label, height, mute, solo,
 /// gain.
-pub fn lanes(piece: &Multitrack) -> Vec<Value> {
+pub fn lanes(multitrack: &Multitrack) -> Vec<Value> {
     let mut out = Vec::new();
-    for row in picture::rows(piece) {
+    for row in picture::rows(multitrack) {
         out.extend([
             json!(row.track.0.to_string()),
             json!(row.label),
@@ -293,9 +293,9 @@ pub fn lanes(piece: &Multitrack) -> Vec<Value> {
 /// buffer is never downloaded. A box whose source is not a join this caller
 /// knows is not named; nor is one with a span this caller cannot resolve to a
 /// buffer and a length, which is then drawn from its own buffer as any box is.
-pub fn segments(piece: &Multitrack, look: &Look<'_>) -> Vec<Value> {
+pub fn segments(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
     let mut out = Vec::new();
-    for box_ in picture::boxes(piece) {
+    for box_ in picture::boxes(multitrack) {
         let Some(parts) = box_.source.and_then(|id| look.sources.parts(id)) else {
             continue;
         };
@@ -325,9 +325,9 @@ pub fn segments(piece: &Multitrack, look: &Look<'_>) -> Vec<Value> {
     out
 }
 
-pub fn clips(piece: &Multitrack, look: &Look<'_>) -> Vec<Value> {
+pub fn clips(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
     let mut out = Vec::new();
-    for box_ in picture::boxes(piece) {
+    for box_ in picture::boxes(multitrack) {
         out.extend([
             json!(box_.region.0.to_string()),
             json!(box_.row.0.to_string()),
@@ -343,9 +343,9 @@ pub fn clips(piece: &Multitrack, look: &Look<'_>) -> Vec<Value> {
 
 /// The **track automations** as flat sextuples: a row of its own under the
 /// track it names — name, owner, label, low, high, height.
-pub fn curves(piece: &Multitrack) -> Vec<Value> {
+pub fn curves(multitrack: &Multitrack) -> Vec<Value> {
     let mut out = Vec::new();
-    for curve in picture::curves(piece) {
+    for curve in picture::curves(multitrack) {
         let (lo, hi) = domain(&curve);
         out.extend([
             json!(curve.automation.0.to_string()),
@@ -361,9 +361,9 @@ pub fn curves(piece: &Multitrack) -> Vec<Value> {
 
 /// The **region automations** as flat quintuples: a layer inside the box it
 /// names, and no height, because it is as tall as that box.
-pub fn layers(piece: &Multitrack) -> Vec<Value> {
+pub fn layers(multitrack: &Multitrack) -> Vec<Value> {
     let mut out = Vec::new();
-    for curve in picture::layers(piece) {
+    for curve in picture::layers(multitrack) {
         let (lo, hi) = domain(&curve);
         out.extend([
             json!(curve.automation.0.to_string()),
@@ -384,9 +384,12 @@ pub fn layers(piece: &Multitrack) -> Vec<Value> {
 /// the origin, and a clip envelope is drawn inside its box and is measured from
 /// where that box starts. Both are seconds, and a length of seconds is the same
 /// frames wherever it starts, so the difference reaches no number here.
-pub fn points(piece: &Multitrack, look: &Look<'_>) -> Vec<Value> {
+pub fn points(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
     let mut out = Vec::new();
-    for curve in picture::curves(piece).iter().chain(&picture::layers(piece)) {
+    for curve in picture::curves(multitrack)
+        .iter()
+        .chain(&picture::layers(multitrack))
+    {
         for point in &curve.points {
             let data = point.data.0.as_object();
             let read = |key: &str, default: f64| {
@@ -406,12 +409,15 @@ pub fn points(piece: &Multitrack, look: &Look<'_>) -> Vec<Value> {
     out
 }
 
-/// The automations a hand has folded away, by name — **read out of the piece**,
-/// because which curves a person had showing is part of reopening the piece as
+/// The automations a hand has folded away, by name — **read out of the multitrack**,
+/// because which curves a person had showing is part of reopening the multitrack as
 /// they left it.
-pub fn hidden(piece: &Multitrack) -> String {
+pub fn hidden(multitrack: &Multitrack) -> String {
     let mut names = Vec::new();
-    for curve in picture::curves(piece).iter().chain(&picture::layers(piece)) {
+    for curve in picture::curves(multitrack)
+        .iter()
+        .chain(&picture::layers(multitrack))
+    {
         if !curve.visible {
             names.push(curve.automation.0.to_string());
         }
@@ -422,8 +428,8 @@ pub fn hidden(piece: &Multitrack) -> String {
 /// Which boxes wrap, by name. A box that loops has always more past its end,
 /// which is what an edge drag may do and how the samples draw under a box
 /// longer than they are.
-pub fn loops(piece: &Multitrack) -> String {
-    picture::boxes(piece)
+pub fn loops(multitrack: &Multitrack) -> String {
+    picture::boxes(multitrack)
         .iter()
         .filter(|b| b.looping)
         .map(|b| b.region.0.to_string())
@@ -431,19 +437,19 @@ pub fn loops(piece: &Multitrack) -> String {
         .join(" ")
 }
 
-/// **What the piece calls its rows and its boxes**, by the names the wire
+/// **What the multitrack calls its rows and its boxes**, by the names the wire
 /// carries them under.
 ///
-/// The minting correction's half that is a fact about the piece. A gesture is
+/// The minting correction's half that is a fact about the multitrack. A gesture is
 /// normally answered with an acknowledgement and nothing else, because the
-/// report described the result: the host drew what it sent and the piece
+/// report described the result: the host drew what it sent and the multitrack
 /// agreed. The cases where it does not are the ones where the host **makes**
 /// something — a track from a double click, a box from a split or a paste.
 /// There the host mints the word (`track 1`, `white 2`) and the document mints
 /// the id, so until the picture goes back the two are naming the same thing
 /// differently.
 ///
-/// And a name the piece does not know is not ignored: it is read as something
+/// And a name the multitrack does not know is not ignored: it is read as something
 /// *new*. So the next report about that row or that box mints it again, and
 /// again after that — a split box took a fresh id on every drag, losing
 /// whatever was hung on it, and a box dropped on a new track landed on a track
@@ -452,13 +458,13 @@ pub fn loops(piece: &Multitrack) -> String {
 /// So a view keeps what it was last told and compares. It is here rather than
 /// read off the props by striding them because a stride is a flat array's
 /// shape restated at the call site, and the shape is this module's.
-pub fn names(piece: &Multitrack) -> Value {
+pub fn names(multitrack: &Multitrack) -> Value {
     json!({
-        "rows": picture::rows(piece)
+        "rows": picture::rows(multitrack)
             .iter()
             .map(|row| row.track.0.to_string())
             .collect::<Vec<_>>(),
-        "boxes": picture::boxes(piece)
+        "boxes": picture::boxes(multitrack)
             .iter()
             .map(|box_| box_.region.0.to_string())
             .collect::<Vec<_>>(),
@@ -471,42 +477,42 @@ pub fn names(piece: &Multitrack) -> Value {
         // screen — until the next gesture that added a *row* fired the
         // correction, which then carried the previous track's curve with it.
         // That is why the two lists were never enough: they are not "what the
-        // piece is called", they are "what the host was told", and the host is
+        // multitrack is called", they are "what the host was told", and the host is
         // told about rows, boxes **and** curves.
-        "curves": picture::curves(piece)
+        "curves": picture::curves(multitrack)
             .iter()
-            .chain(&picture::layers(piece))
+            .chain(&picture::layers(multitrack))
             .map(|curve| curve.automation.0.to_string())
             .collect::<Vec<_>>(),
     })
 }
 
-/// [`names`] against a piece given as JSON.
-pub fn names_json(piece: &str) -> String {
-    let Ok(piece) = serde_json::from_str::<Multitrack>(piece) else {
+/// [`names`] against a multitrack given as JSON.
+pub fn names_json(multitrack: &str) -> String {
+    let Ok(multitrack) = serde_json::from_str::<Multitrack>(multitrack) else {
         return r#"{"rows":[],"boxes":[],"curves":[]}"#.into();
     };
-    names(&piece).to_string()
+    names(&multitrack).to_string()
 }
 
-/// Every prop a piece has **from the document alone**, in one object.
+/// Every prop a multitrack has **from the document alone**, in one object.
 ///
-/// What a caller adds is what is a function of something other than the piece:
+/// What a caller adds is what is a function of something other than the multitrack:
 /// the position cursor, the meter buses, and the widget's own chrome.
-pub fn props(piece: &Multitrack, look: &Look<'_>) -> Map<String, Value> {
+pub fn props(multitrack: &Multitrack, look: &Look<'_>) -> Map<String, Value> {
     let mut out = Map::new();
-    out.insert("lanes".into(), Value::Array(lanes(piece)));
-    out.insert("clips".into(), Value::Array(clips(piece, look)));
-    out.insert("curves".into(), Value::Array(curves(piece)));
-    out.insert("layers".into(), Value::Array(layers(piece)));
-    out.insert("points".into(), Value::Array(points(piece, look)));
-    out.insert("hidden".into(), json!(hidden(piece)));
-    out.insert("loops".into(), json!(loops(piece)));
-    out.insert("segments".into(), Value::Array(segments(piece, look)));
+    out.insert("lanes".into(), Value::Array(lanes(multitrack)));
+    out.insert("clips".into(), Value::Array(clips(multitrack, look)));
+    out.insert("curves".into(), Value::Array(curves(multitrack)));
+    out.insert("layers".into(), Value::Array(layers(multitrack)));
+    out.insert("points".into(), Value::Array(points(multitrack, look)));
+    out.insert("hidden".into(), json!(hidden(multitrack)));
+    out.insert("loops".into(), json!(loops(multitrack)));
+    out.insert("segments".into(), Value::Array(segments(multitrack, look)));
     out
 }
 
-/// [`props`] against a piece and a source table given as JSON, which is how the
+/// [`props`] against a multitrack and a source table given as JSON, which is how the
 /// two client doors carry them.
 ///
 /// `sources` is **the same table the instance plan takes** — source id to
@@ -514,10 +520,10 @@ pub fn props(piece: &Multitrack, look: &Look<'_>) -> Map<String, Value> {
 /// client that had to keep two would eventually keep two that disagree, and
 /// what a box is drawn from and what it is played from are the same samples.
 ///
-/// An unreadable piece answers an empty object rather than an error: a
+/// An unreadable multitrack answers an empty object rather than an error: a
 /// projection has nothing to refuse.
-pub fn props_json(piece: &str, rate: f64, sources: &str) -> String {
-    let Ok(piece) = serde_json::from_str::<Multitrack>(piece) else {
+pub fn props_json(multitrack: &str, rate: f64, sources: &str) -> String {
+    let Ok(multitrack) = serde_json::from_str::<Multitrack>(multitrack) else {
         return "{}".into();
     };
     let table = table(&serde_json::from_str::<Value>(sources).unwrap_or(Value::Null));
@@ -525,7 +531,7 @@ pub fn props_json(piece: &str, rate: f64, sources: &str) -> String {
         rate,
         sources: &table,
     };
-    Value::Object(props(&piece, &look)).to_string()
+    Value::Object(props(&multitrack, &look)).to_string()
 }
 
 /// The tempo map a multitrack holds, with [`DEFAULT_TEMPO`] where it states
@@ -551,7 +557,7 @@ pub const POINT_QUINTUPLE: usize = 5;
 /// number in seconds.
 ///
 /// A row is named by its **track's id** and never renamed, so a name that is
-/// not one names no row this piece has and the box on it is dropped rather than
+/// not one names no row this multitrack has and the box on it is dropped rather than
 /// placed somewhere it was not.
 fn placed(values: &[Value], look: &Look<'_>) -> Vec<picture::Placed> {
     let mut out = Vec::new();
@@ -618,7 +624,7 @@ fn curved(values: &[Value], look: &Look<'_>) -> Vec<picture::Curved> {
 ///
 /// The label and the height are **dropped rather than reported**: a row's label
 /// is the track's name where it has one and a made-up one where it has not, and
-/// its height is this window's. Neither is a fact about the piece.
+/// its height is this window's. Neither is a fact about the multitrack.
 fn strips(values: &[Value]) -> Vec<picture::Strip> {
     groups(values, LANE_FIELDS)
         .map(|group| picture::Strip {
@@ -631,7 +637,7 @@ fn strips(values: &[Value]) -> Vec<picture::Strip> {
         .collect()
 }
 
-/// **What an undo menu calls each of the piece's verbs.**
+/// **What an undo menu calls each of the multitrack's verbs.**
 ///
 /// One table, because a menu entry a hand reads is part of what an edit *is* to
 /// the person who made it — and a verb named two ways in two clients is the same
@@ -645,14 +651,14 @@ pub fn label(intent: &MultitrackIntent) -> &'static str {
         MultitrackIntent::SplitRegion { .. } => "split a clip",
         MultitrackIntent::JoinRegions { .. } => "join the clips",
         MultitrackIntent::SetAutomation { .. } => "draw a curve",
-        _ => "edit the piece",
+        _ => "edit the multitrack",
     }
 }
 
 /// **The words this domain answers for**, and the only place they are listed.
 ///
-/// A tag is a domain's vocabulary, so *which* tags are the piece's is a fact
-/// about the piece and not about whoever is routing a report to it. It was
+/// A tag is a domain's vocabulary, so *which* tags are the multitrack's is a fact
+/// about the multitrack and not about whoever is routing a report to it. It was
 /// written twice — here, and in the GUI host's own dispatch, which knew about
 /// `clips` and `lanes` and had never heard of the other two — and the second
 /// list was two tags short: a curve dragged in a host with no client attached
@@ -664,15 +670,15 @@ pub fn answers(tag: &str) -> bool {
 /// **What a report came to**: the edits, or the reason there are none.
 ///
 /// The two are one answer because a caller has to tell them apart: no edits
-/// because the hand changed nothing, and no edits because the piece **refused**,
+/// because the hand changed nothing, and no edits because the multitrack **refused**,
 /// are the same empty list and opposite things to say to the person who made the
 /// gesture. Everything that reads a report goes through here, so neither door
 /// can quietly drop the half the other keeps.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Reading {
-    /// The edits, in the piece's own vocabulary.
+    /// The edits, in the multitrack's own vocabulary.
     pub intents: Vec<MultitrackIntent>,
-    /// Why there are none, when the piece refused the verb rather than finding
+    /// Why there are none, when the multitrack refused the verb rather than finding
     /// nothing to do.
     pub refusal: Option<&'static str>,
 }
@@ -686,7 +692,7 @@ impl Reading {
         }
     }
 
-    /// A verb the piece refused, and why.
+    /// A verb the multitrack refused, and why.
     fn refused(why: &'static str) -> Self {
         Reading {
             intents: Vec::new(),
@@ -697,11 +703,11 @@ impl Reading {
     /// The label one entry in the pile takes: the **first** payload's, because
     /// the payloads of one report are one thing a hand did.
     pub fn label(&self) -> &'static str {
-        self.intents.first().map_or("edit the piece", label)
+        self.intents.first().map_or("edit the multitrack", label)
     }
 }
 
-/// **What a gesture over a piece means**, in the piece's own vocabulary.
+/// **What a gesture over a multitrack means**, in the multitrack's own vocabulary.
 ///
 /// Four tags, and three of them report the **whole** structure rather than the
 /// gesture: every box, every row, every break-point. So a move, a block drag, a
@@ -709,12 +715,12 @@ impl Reading {
 /// apart is one rule, [`clausters_document::multitrack::picture`]'s, written
 /// once — and what comes back is the *difference*, which is why a hand that
 /// looked without editing produces nothing at all.
-pub fn reading(piece: &Multitrack, tag: &str, values: &[Value], look: &Look<'_>) -> Reading {
+pub fn reading(multitrack: &Multitrack, tag: &str, values: &[Value], look: &Look<'_>) -> Reading {
     match tag {
         "clips" => Reading::of(picture::read(
-            piece,
+            multitrack,
             &placed(values, look),
-            picture::fresh_id(piece),
+            picture::fresh_id(multitrack),
             &|source| {
                 look.sources
                     .frames(source)
@@ -722,8 +728,8 @@ pub fn reading(piece: &Multitrack, tag: &str, values: &[Value], look: &Look<'_>)
                     .map(|frames| frames as f64 / look.rate)
             },
         )),
-        "lanes" => Reading::of(picture::read_rows(piece, &strips(values))),
-        "points" => Reading::of(picture::read_points(piece, &curved(values, look))),
+        "lanes" => Reading::of(picture::read_rows(multitrack, &strips(values))),
+        "points" => Reading::of(picture::read_points(multitrack, &curved(values, look))),
         // **The one verb that is stated rather than differenced**, and the one
         // that can be refused on the *material*: a join and a "delete one,
         // lengthen the other" leave a lane holding the same thing, and a box in
@@ -734,7 +740,7 @@ pub fn reading(piece: &Multitrack, tag: &str, values: &[Value], look: &Look<'_>)
         // than a list.
         "join" => {
             match picture::read_join(
-                piece,
+                multitrack,
                 &held(values),
                 look.rate,
                 &look.sources.taken(),
@@ -751,12 +757,12 @@ pub fn reading(piece: &Multitrack, tag: &str, values: &[Value], look: &Look<'_>)
 
 /// [`reading`]'s edits alone, for a caller with nothing to say about a refusal.
 pub fn read(
-    piece: &Multitrack,
+    multitrack: &Multitrack,
     tag: &str,
     values: &[Value],
     look: &Look<'_>,
 ) -> Vec<MultitrackIntent> {
-    reading(piece, tag, values, look).intents
+    reading(multitrack, tag, values, look).intents
 }
 
 /// The flat `join` report: the boxes to join, by the names the picture gave
@@ -769,11 +775,11 @@ fn held(values: &[Value]) -> Vec<String> {
 ///
 /// The label is the **first** intent's, because the intents of one report are
 /// one thing a hand did and go into the pile as one entry.
-pub fn intake(piece: &Multitrack, tag: &str, values: &[Value], look: &Look<'_>) -> Intake {
+pub fn intake(multitrack: &Multitrack, tag: &str, values: &[Value], look: &Look<'_>) -> Intake {
     if !answers(tag) {
         return Intake::nothing();
     }
-    let reading = reading(piece, tag, values, look);
+    let reading = reading(multitrack, tag, values, look);
     // **A refusal that reaches nobody is indistinguishable from a key that does
     // not work**, which is why the reading carries one and this passes it on.
     if let Some(why) = reading.refusal {
@@ -788,20 +794,20 @@ pub fn intake(piece: &Multitrack, tag: &str, values: &[Value], look: &Look<'_>) 
     Intake::edits(payloads, named)
 }
 
-/// [`intake`] against a piece and a source table given as JSON values, which
+/// [`intake`] against a multitrack and a source table given as JSON values, which
 /// is how the one door carries them.
 ///
-/// An unreadable piece answers [`Intake::nothing`]: there is no piece to say
+/// An unreadable multitrack answers [`Intake::nothing`]: there is no multitrack to say
 /// what the gesture meant, and inventing one would write an edit against a
 /// structure nobody has.
 pub fn intake_value(
-    piece: &Value,
+    multitrack: &Value,
     tag: &str,
     values: &[Value],
     rate: f64,
     sources: &Value,
 ) -> Intake {
-    let Ok(piece) = serde_json::from_value::<Multitrack>(piece.clone()) else {
+    let Ok(multitrack) = serde_json::from_value::<Multitrack>(multitrack.clone()) else {
         return Intake::nothing();
     };
     let held = Held::of(sources);
@@ -809,7 +815,7 @@ pub fn intake_value(
         rate,
         sources: &held,
     };
-    intake(&piece, tag, values, &look)
+    intake(&multitrack, tag, values, &look)
 }
 
 /// **How many frames each source holds**, off the same table [`table`] reads:
@@ -833,7 +839,7 @@ pub fn lengths(sources: &Value) -> HashMap<SourceId, u64> {
 /// The instance plan's source table as the buffer question this crate asks.
 ///
 /// Public because an application reads the same table off the same request: a
-/// window over a piece is drawn from the buffers the piece is played from.
+/// window over a multitrack is drawn from the buffers the multitrack is played from.
 pub fn table(sources: &Value) -> HashMap<SourceId, i64> {
     serde_json::from_value::<HashMap<String, SourceInfo>>(sources.clone())
         .unwrap_or_default()
@@ -858,7 +864,7 @@ mod tests {
 
     /// One track at half gain with one box on it, a track automation over the
     /// timeline and an envelope inside the box.
-    fn piece() -> Multitrack {
+    fn multitrack() -> Multitrack {
         let mut region = Region::new(
             NodeId(3),
             Second(4.0),
@@ -871,9 +877,9 @@ mod tests {
         track.level = 0.5;
         track.lanes[0].regions.push(region);
         track.automation.push(curve(NodeId(4), 1.0));
-        let mut piece = Multitrack::default();
-        piece.tracks.push(track);
-        piece
+        let mut multitrack = Multitrack::default();
+        multitrack.tracks.push(track);
+        multitrack
     }
 
     /// A curve with one point at the origin and one `at` seconds along.
@@ -897,7 +903,7 @@ mod tests {
 
     /// What the wire says about a segment, which is what the widget reports
     /// back: linear, with no bend. A point that carries it round-trips exactly,
-    /// which is the case a real piece is in after its first edit.
+    /// which is the case a real multitrack is in after its first edit.
     fn shape() -> Opaque {
         Opaque(json!({ "shape": 1, "curve": 0.0 }))
     }
@@ -913,11 +919,11 @@ mod tests {
     /// values and a box seven, and they are not the same seven.
     #[test]
     fn a_row_is_seven_values_and_a_box_is_seven() {
-        let piece = piece();
+        let multitrack = multitrack();
         let table = HashMap::new();
         let look = look(&table);
 
-        let lanes = lanes(&piece);
+        let lanes = lanes(&multitrack);
         assert_eq!(lanes.len(), LANE_FIELDS);
         assert_eq!(lanes[0], json!("1"), "a row is named by its track's id");
         assert_eq!(lanes[1], json!("drums"));
@@ -929,7 +935,7 @@ mod tests {
             "and says whether its automation is shown -- this curve is not"
         );
 
-        let clips = clips(&piece, &look);
+        let clips = clips(&multitrack, &look);
         assert_eq!(clips.len(), 7);
         assert_eq!(clips[0], json!("3"), "and a box by its region's");
         assert_eq!(clips[1], json!("1"), "on the row it is on");
@@ -943,13 +949,13 @@ mod tests {
     /// over a source nobody read is honest about it rather than empty.
     #[test]
     fn a_box_names_the_buffer_its_source_was_read_into() {
-        let piece = piece();
+        let multitrack = multitrack();
         let mut table = HashMap::new();
         table.insert(SourceId(77), 12);
-        assert_eq!(clips(&piece, &look(&table))[6], json!(-1));
+        assert_eq!(clips(&multitrack, &look(&table))[6], json!(-1));
 
-        let mut piece = piece;
-        piece.tracks[0].lanes[0].regions[0].content = Content::Window {
+        let mut multitrack = multitrack;
+        multitrack.tracks[0].lanes[0].regions[0].content = Content::Window {
             window: SegmentRef {
                 source: SegmentSource::Samples(SourceRef {
                     source: SourceId(77),
@@ -964,7 +970,7 @@ mod tests {
             args: Opaque::none(),
             looping: false,
         };
-        assert_eq!(clips(&piece, &look(&table))[6], json!(12));
+        assert_eq!(clips(&multitrack, &look(&table))[6], json!(12));
     }
 
     /// **A layer's break-points are its box's own time, and a row's are the
@@ -973,9 +979,9 @@ mod tests {
     /// at its start — silently, since both are valid positions.
     #[test]
     fn a_layer_is_measured_from_its_box_and_a_row_from_the_origin() {
-        let piece = piece();
+        let multitrack = multitrack();
         let table = HashMap::new();
-        let points = points(&piece, &look(&table));
+        let points = points(&multitrack, &look(&table));
 
         // Five values a point, the track's curve first, then the box's.
         let at = |i: usize| points[i * 5..i * 5 + 5].to_vec();
@@ -996,28 +1002,28 @@ mod tests {
     /// unlabelled level means.
     #[test]
     fn a_curve_is_drawn_over_the_range_its_target_states() {
-        let mut piece = piece();
-        assert_eq!(curves(&piece)[3..5], [json!(0.0), json!(1.0)]);
+        let mut multitrack = multitrack();
+        assert_eq!(curves(&multitrack)[3..5], [json!(0.0), json!(1.0)]);
 
-        piece.tracks[0].automation[0].target = Opaque(json!({"min": -1.0, "max": 1.0}));
-        let drawn = curves(&piece);
+        multitrack.tracks[0].automation[0].target = Opaque(json!({"min": -1.0, "max": 1.0}));
+        let drawn = curves(&multitrack);
         assert_eq!(drawn[3..5], [json!(-1.0), json!(1.0)]);
         assert_eq!(drawn[5], json!(CURVE_H), "and it has a row of its own");
-        assert_eq!(layers(&piece).len(), 5, "a layer has no height");
+        assert_eq!(layers(&multitrack).len(), 5, "a layer has no height");
     }
 
-    /// The JSON door is the same answer, and an unreadable piece is an empty
+    /// The JSON door is the same answer, and an unreadable multitrack is an empty
     /// object rather than an error: a projection has nothing to refuse.
     #[test]
     fn the_door_answers_the_same_thing_and_refuses_nothing() {
-        let piece = piece();
-        let body = serde_json::to_string(&piece).expect("a piece");
+        let multitrack = multitrack();
+        let body = serde_json::to_string(&multitrack).expect("a multitrack");
         let answer: Map<String, Value> =
             serde_json::from_str(&props_json(&body, 48_000.0, "{}")).expect("JSON");
         let table = HashMap::new();
-        assert_eq!(answer, props(&piece, &look(&table)));
+        assert_eq!(answer, props(&multitrack, &look(&table)));
 
-        assert_eq!(props_json("not a piece", 48_000.0, "{}"), "{}");
+        assert_eq!(props_json("not a multitrack", 48_000.0, "{}"), "{}");
     }
 
     /// **A gesture goes out and comes back on the same axis.** The props are
@@ -1026,13 +1032,13 @@ mod tests {
     /// written once per client before this existed.
     #[test]
     fn a_box_dragged_in_frames_comes_back_in_seconds() {
-        let piece = piece();
+        let multitrack = multitrack();
         let table = HashMap::new();
         let look = look(&table);
-        let mut drawn = clips(&piece, &look);
+        let mut drawn = clips(&multitrack, &look);
         drawn[2] = json!(number(&drawn[2]) + 4.0 * 48_000.0);
 
-        let taken = intake(&piece, "clips", &drawn, &look);
+        let taken = intake(&multitrack, "clips", &drawn, &look);
         assert_eq!(taken.payloads.len(), 1);
         assert_eq!(taken.label, "move a clip");
         let moved = &taken.payloads[0];
@@ -1050,12 +1056,12 @@ mod tests {
     /// edit at all, and it only is if both halves measure from the box.
     #[test]
     fn a_curve_reported_back_unchanged_is_not_an_edit() {
-        let piece = piece();
+        let multitrack = multitrack();
         let table = HashMap::new();
         let look = look(&table);
-        let drawn = points(&piece, &look);
+        let drawn = points(&multitrack, &look);
 
-        let taken = intake(&piece, "points", &drawn, &look);
+        let taken = intake(&multitrack, "points", &drawn, &look);
         assert!(
             taken.payloads.is_empty(),
             "a hand that looked without editing moved nothing: {:?}",
@@ -1065,21 +1071,21 @@ mod tests {
         // And one that did move a layer's point names that layer alone.
         let mut dragged = drawn.clone();
         dragged[3 * 5 + 2] = json!(0.75);
-        let taken = intake(&piece, "points", &dragged, &look);
+        let taken = intake(&multitrack, "points", &dragged, &look);
         assert_eq!(taken.payloads.len(), 1);
         assert_eq!(taken.payloads[0]["intent"], json!("setautomation"));
         assert_eq!(taken.payloads[0]["automation"], json!(5));
         assert_eq!(taken.label, "draw a curve");
     }
 
-    /// A tag no hand over a piece makes is nothing, and a row named by
+    /// A tag no hand over a multitrack makes is nothing, and a row named by
     /// something that is no track's id places no box.
     #[test]
-    fn a_report_this_piece_cannot_place_is_dropped_and_not_guessed_at() {
-        let piece = piece();
+    fn a_report_this_multitrack_cannot_place_is_dropped_and_not_guessed_at() {
+        let multitrack = multitrack();
         let table = HashMap::new();
         let look = look(&table);
-        assert_eq!(intake(&piece, "meters", &[], &look), Intake::nothing());
+        assert_eq!(intake(&multitrack, "meters", &[], &look), Intake::nothing());
 
         let stray = vec![
             json!("n9"),
@@ -1090,15 +1096,15 @@ mod tests {
             json!("stray"),
             json!(-1),
         ];
-        let taken = intake(&piece, "clips", &stray, &look);
+        let taken = intake(&multitrack, "clips", &stray, &look);
         assert_eq!(
             taken.payloads[0]["intent"],
             json!("setlane"),
-            "the piece lost the box it had and gained none"
+            "the multitrack lost the box it had and gained none"
         );
     }
 
-    /// The names a view keeps to tell a minted word from the piece's own id.
+    /// The names a view keeps to tell a minted word from the multitrack's own id.
     ///
     /// **The curves are in it** *(found 2026-09-12 by the user)*: an automation
     /// the owner made is one the host cannot have drawn, so a view that
@@ -1107,8 +1113,8 @@ mod tests {
     /// automation changed nothing on screen until some later gesture added a
     /// row and carried the curve back with it.
     #[test]
-    fn a_piece_says_what_it_calls_its_rows_boxes_and_curves() {
-        let named = names(&piece());
+    fn a_multitrack_says_what_it_calls_its_rows_boxes_and_curves() {
+        let named = names(&multitrack());
         assert_eq!(named["rows"], json!(["1"]));
         assert_eq!(named["boxes"], json!(["3"]));
         assert_eq!(
@@ -1117,15 +1123,15 @@ mod tests {
             "the track's row and the box's layer, which are one question"
         );
         assert_eq!(
-            serde_json::from_str::<Value>(&names_json("not a piece")).expect("JSON"),
+            serde_json::from_str::<Value>(&names_json("not a multitrack")).expect("JSON"),
             json!({ "rows": [], "boxes": [], "curves": [] })
         );
     }
 
-    /// A piece with one take cut in two on one lane: the head reads the take's
+    /// A multitrack with one take cut in two on one lane: the head reads the take's
     /// first second, the tail its second, laid out in that order.
     fn halves() -> Multitrack {
-        let mut piece = Multitrack::default();
+        let mut multitrack = Multitrack::default();
         let mut track = Track::new(NodeId(1), NodeId(2));
         for (id, at, start) in [(NodeId(10), 0.0, 0.0), (NodeId(11), 1.0, 1.0)] {
             let mut region =
@@ -1142,8 +1148,8 @@ mod tests {
             });
             track.lanes[0].regions.push(region);
         }
-        piece.tracks.push(track);
-        piece
+        multitrack.tracks.push(track);
+        multitrack
     }
 
     /// **The halves of a cut put back in order are the join they always were**:
@@ -1151,9 +1157,14 @@ mod tests {
     /// one take says nothing the take does not.
     #[test]
     fn halves_that_read_on_from_each_other_join_without_minting_anything() {
-        let piece = halves();
+        let multitrack = halves();
         let sources = HashMap::new();
-        let intents = read(&piece, "join", &[json!("10"), json!("11")], &look(&sources));
+        let intents = read(
+            &multitrack,
+            "join",
+            &[json!("10"), json!("11")],
+            &look(&sources),
+        );
         assert!(matches!(
             intents.as_slice(),
             [MultitrackIntent::JoinRegions {
@@ -1181,7 +1192,7 @@ mod tests {
             let at = 7_919.0 * f64::from(step) + 3.0;
             let cut = 13_331.0 + 97.0 * f64::from(step);
             let tail = 48_000.0 - cut;
-            let mut piece = halves();
+            let mut multitrack = halves();
             let report = [
                 json!("10"),
                 json!("1"),
@@ -1198,16 +1209,21 @@ mod tests {
                 json!(""),
                 json!(-1),
             ];
-            for intent in read(&piece, "clips", &report, &look) {
-                apply(&mut piece, &intent, &Against::default(), &Rules::none());
+            for intent in read(&multitrack, "clips", &report, &look) {
+                apply(
+                    &mut multitrack,
+                    &intent,
+                    &Against::default(),
+                    &Rules::none(),
+                );
             }
-            let drawn = clips(&piece, &look);
+            let drawn = clips(&multitrack, &look);
             assert_eq!(
                 (number(&drawn[2]), number(&drawn[3]), number(&drawn[9])),
                 (at, cut, at + cut),
                 "drawn back at the samples it was reported at (step {step})"
             );
-            let joined = reading(&piece, "join", &[json!("10"), json!("11")], &look);
+            let joined = reading(&multitrack, "join", &[json!("10"), json!("11")], &look);
             assert_eq!(joined.refusal, None, "step {step}: {joined:?}");
             assert_eq!(joined.intents.len(), 1);
         }
@@ -1216,11 +1232,11 @@ mod tests {
     /// The two halves with the tail moved in front of the head: the gesture
     /// the user reported, and the shape every join test below is over.
     fn swapped() -> Multitrack {
-        let mut piece = halves();
-        let regions = &mut piece.tracks[0].lanes[0].regions;
+        let mut multitrack = halves();
+        let regions = &mut multitrack.tracks[0].lanes[0].regions;
         regions[0].position = Second(1.0);
         regions[1].position = Second(0.0);
-        piece
+        multitrack
     }
 
     /// **The gesture the user reported twice** *(2026-09-11 and 2026-09-12)*:
@@ -1235,9 +1251,14 @@ mod tests {
     fn halves_put_back_in_the_other_order_mint_the_source_they_are_a_window_onto() {
         // The tail at the front, the head behind it: what a hand does with a
         // drag and the proximity snap.
-        let piece = swapped();
+        let multitrack = swapped();
         let sources = HashMap::new();
-        let intents = read(&piece, "join", &[json!("10"), json!("11")], &look(&sources));
+        let intents = read(
+            &multitrack,
+            "join",
+            &[json!("10"), json!("11")],
+            &look(&sources),
+        );
         let [
             MultitrackIntent::JoinRegions {
                 regions,
@@ -1303,11 +1324,11 @@ mod tests {
     /// take, and the server refused the whole stitch.
     #[test]
     fn a_trimmed_box_joins_as_what_it_shows() {
-        let mut piece = swapped();
+        let mut multitrack = swapped();
         // The box in front, its left edge pulled in by half a second: it plays
         // from 1.5 s to the end of the take, while its window still says one
         // second from 1.5 s -- up to 2.5 s of a take that is two.
-        let front = piece.tracks[0].lanes[0]
+        let front = multitrack.tracks[0].lanes[0]
             .regions
             .iter_mut()
             .find(|r| r.id == NodeId(11))
@@ -1318,7 +1339,12 @@ mod tests {
             window.start = 1.5;
         }
         let sources = HashMap::new();
-        let intents = read(&piece, "join", &[json!("10"), json!("11")], &look(&sources));
+        let intents = read(
+            &multitrack,
+            "join",
+            &[json!("10"), json!("11")],
+            &look(&sources),
+        );
         let [
             MultitrackIntent::JoinRegions {
                 content: Some(content),
@@ -1358,15 +1384,15 @@ mod tests {
     /// **A join over a box that reads past its take is refused as an edit**
     /// (found 2026-09-13). A trim is not bounded by its take, so a box can
     /// play past the end of the samples; minted, that join was a source the
-    /// server refused to stitch, and the piece held a joined box over nothing.
+    /// server refused to stitch, and the multitrack held a joined box over nothing.
     /// A caller that knows the take's length refuses it with its reason; one
     /// that does not checks nothing, as before.
     #[test]
     fn a_join_past_the_end_of_a_take_is_refused() {
-        let mut piece = swapped();
+        let mut multitrack = swapped();
         // The box in front plays from 1.5 s for three quarters of a second,
         // up to 2.25 s of a take that is two.
-        let front = piece.tracks[0].lanes[0]
+        let front = multitrack.tracks[0].lanes[0]
             .regions
             .iter_mut()
             .find(|r| r.id == NodeId(11))
@@ -1382,7 +1408,7 @@ mod tests {
             _ => None,
         }
         .expect("a window onto a take");
-        piece.tracks[0].lanes[0]
+        multitrack.tracks[0].lanes[0]
             .regions
             .iter_mut()
             .find(|r| r.id == NodeId(10))
@@ -1396,7 +1422,7 @@ mod tests {
             rate: 48_000.0,
             sources: &held,
         };
-        let refused = reading(&piece, "join", &[json!("10"), json!("11")], &known);
+        let refused = reading(&multitrack, "join", &[json!("10"), json!("11")], &known);
         assert!(refused.intents.is_empty(), "{:?}", refused.intents);
         assert_eq!(
             refused.refusal,
@@ -1405,7 +1431,12 @@ mod tests {
 
         // Not knowing the length checks nothing.
         let sources = HashMap::new();
-        let joined = read(&piece, "join", &[json!("10"), json!("11")], &look(&sources));
+        let joined = read(
+            &multitrack,
+            "join",
+            &[json!("10"), json!("11")],
+            &look(&sources),
+        );
         assert_eq!(joined.len(), 1, "joined as before: {joined:?}");
     }
 
@@ -1491,7 +1522,7 @@ mod tests {
         );
         over_take.content = window(7, 0.0);
         track.lanes[0].regions = vec![over_join, over_take];
-        let piece = Multitrack {
+        let multitrack = Multitrack {
             tracks: vec![track],
             ..Multitrack::default()
         };
@@ -1499,7 +1530,7 @@ mod tests {
             rate: 48_000.0,
             sources: &table,
         };
-        let intents = read(&piece, "join", &[json!("20"), json!("21")], &look);
+        let intents = read(&multitrack, "join", &[json!("20"), json!("21")], &look);
         let [
             MultitrackIntent::JoinRegions {
                 source: Some(minted),
@@ -1542,7 +1573,7 @@ mod tests {
     /// second.
     #[test]
     fn asking_a_bare_track_to_show_its_automation_makes_one() {
-        let mut piece = Multitrack::default();
+        let mut multitrack = Multitrack::default();
         let mut track = Track::new(NodeId(1), NodeId(2));
         track.lanes[0].regions.push(Region::new(
             NodeId(3),
@@ -1550,22 +1581,22 @@ mod tests {
             Second(4.0),
             Content::Unknown(Value::Null),
         ));
-        piece.tracks.push(track);
+        multitrack.tracks.push(track);
         let sources = HashMap::new();
         let look = look(&sources);
 
         // As drawn: no automation, so the toggle reads as off.
-        let drawn = lanes(&piece);
+        let drawn = lanes(&multitrack);
         assert_eq!(drawn[6], json!(false));
         assert!(
-            read(&piece, "lanes", &drawn, &look).is_empty(),
+            read(&multitrack, "lanes", &drawn, &look).is_empty(),
             "the rows as they were drawn are not an edit"
         );
 
-        // The toggle goes on, and the piece gains the curve.
+        // The toggle goes on, and the multitrack gains the curve.
         let mut asked = drawn.clone();
         asked[6] = json!(true);
-        let edits = read(&piece, "lanes", &asked, &look);
+        let edits = read(&multitrack, "lanes", &asked, &look);
         let [MultitrackIntent::SetTracks { tracks }] = edits.as_slice() else {
             panic!("one settracks");
         };
@@ -1574,7 +1605,7 @@ mod tests {
         assert_eq!(made[0].name.as_deref(), Some("gain"));
         assert_eq!(made[0].target.0["port"], json!("gain"));
         assert!(made[0].visible && made[0].enabled);
-        // **Flat at unity across the piece**, so there is a line to grab and
+        // **Flat at unity across the multitrack**, so there is a line to grab and
         // nothing is heard differently for having asked.
         assert_eq!(
             made[0]
@@ -1588,25 +1619,26 @@ mod tests {
 
         // It is **heard**: a curve with a port and points reaches the plan,
         // which is what makes the toggle a document edit rather than a view's.
-        let mut piece = piece.clone();
-        piece.tracks = tracks.clone();
-        let plan = clausters_document::multitrack::nodes::plan(&piece, 48_000.0, &HashMap::new());
+        let mut multitrack = multitrack.clone();
+        multitrack.tracks = tracks.clone();
+        let plan =
+            clausters_document::multitrack::nodes::plan(&multitrack, 48_000.0, &HashMap::new());
         assert_eq!(plan.tracks[0].curves.len(), 1, "the server gets the curve");
         assert_eq!(plan.tracks[0].curves[0].port, "gain");
 
         // And the second press hides it rather than making a second.
-        let drawn = lanes(&piece);
+        let drawn = lanes(&multitrack);
         assert_eq!(drawn[6], json!(true), "shown now");
         let mut asked = drawn.clone();
         asked[6] = json!(false);
-        let edits = read(&piece, "lanes", &asked, &look);
+        let edits = read(&multitrack, "lanes", &asked, &look);
         let [MultitrackIntent::SetTracks { tracks }] = edits.as_slice() else {
             panic!("one settracks");
         };
         assert_eq!(tracks[0].automation.len(), 1, "the same one");
         assert!(!tracks[0].automation[0].visible);
         // Hidden is a view's word: it still sounds.
-        let mut hidden = piece.clone();
+        let mut hidden = multitrack.clone();
         hidden.tracks = tracks.clone();
         let plan = clausters_document::multitrack::nodes::plan(&hidden, 48_000.0, &HashMap::new());
         assert_eq!(
@@ -1616,10 +1648,10 @@ mod tests {
         );
     }
 
-    /// **A source the piece stopped naming is still a source** *(found
+    /// **A source the multitrack stopped naming is still a source** *(found
     /// 2026-09-12 by the user: a second join left an empty box)*.
     ///
-    /// A join's id was minted off the piece alone, and the piece stops naming a
+    /// A join's id was minted off the multitrack alone, and the multitrack stops naming a
     /// source the moment nothing windows it — an undo, a box deleted, a joined
     /// box cut back up. The client still holds the buffer it made, so the next
     /// join was handed an id that already had samples behind it: the client saw
@@ -1628,23 +1660,23 @@ mod tests {
     /// both.
     #[test]
     fn a_join_never_mints_a_source_whoever_holds_the_samples_is_already_using() {
-        let piece = swapped();
+        let multitrack = swapped();
         let held = [json!("10"), json!("11")];
 
-        // Nobody holding anything: clear of the piece, which names 7.
+        // Nobody holding anything: clear of the multitrack, which names 7.
         let none: HashMap<SourceId, i64> = HashMap::new();
-        assert_eq!(minted(&piece, &held, &look(&none)), SourceId(8));
+        assert_eq!(minted(&multitrack, &held, &look(&none)), SourceId(8));
 
         // The client holds 8 already -- the join it made a moment ago, which
-        // this piece no longer names because the box was undone.
+        // this multitrack no longer names because the box was undone.
         let mut sources: HashMap<SourceId, i64> = HashMap::new();
         sources.insert(SourceId(8), 1);
-        assert_eq!(minted(&piece, &held, &look(&sources)), SourceId(9));
+        assert_eq!(minted(&multitrack, &held, &look(&sources)), SourceId(9));
     }
 
     /// The source one `join` report mints.
-    fn minted(piece: &Multitrack, values: &[Value], look: &Look<'_>) -> SourceId {
-        let intents = read(piece, "join", values, look);
+    fn minted(multitrack: &Multitrack, values: &[Value], look: &Look<'_>) -> SourceId {
+        let intents = read(multitrack, "join", values, look);
         match intents.as_slice() {
             [
                 MultitrackIntent::JoinRegions {
@@ -1656,24 +1688,24 @@ mod tests {
         }
     }
 
-    /// **A box the hand holds and the piece does not have is refused.**
+    /// **A box the hand holds and the multitrack does not have is refused.**
     ///
     /// Joining the rest would leave that one where it is, under the box that
     /// now spans over it. Every bug this seam has produced has had this shape:
     /// a verb quietly acting on less than it was given.
     #[test]
-    fn a_join_over_a_box_the_piece_does_not_have_is_refused_rather_than_partial() {
-        let piece = swapped();
+    fn a_join_over_a_box_the_multitrack_does_not_have_is_refused_rather_than_partial() {
+        let multitrack = swapped();
         let sources = HashMap::new();
         assert_eq!(
             intake(
-                &piece,
+                &multitrack,
                 "join",
                 &[json!("10"), json!("11"), json!("a 2")],
                 &look(&sources)
             )
             .to_json()["refusal"],
-            json!("one of these boxes is not one the piece has")
+            json!("one of these boxes is not one the multitrack has")
         );
     }
 
@@ -1687,23 +1719,23 @@ mod tests {
         let sources = HashMap::new();
         let held = [json!("10"), json!("11")];
 
-        let mut piece = halves();
-        piece.tracks[0].lanes[0].regions[1].position = Second(2.0);
+        let mut multitrack = halves();
+        multitrack.tracks[0].lanes[0].regions[1].position = Second(2.0);
         assert_eq!(
-            intake(&piece, "join", &held, &look(&sources)).to_json()["refusal"],
+            intake(&multitrack, "join", &held, &look(&sources)).to_json()["refusal"],
             json!("there is a gap between these boxes, and a join cannot state silence yet")
         );
 
-        let mut piece = halves();
-        piece.tracks[0].lanes[0].regions[1].position = Second(0.5);
+        let mut multitrack = halves();
+        multitrack.tracks[0].lanes[0].regions[1].position = Second(0.5);
         assert_eq!(
-            intake(&piece, "join", &held, &look(&sources)).to_json()["refusal"],
+            intake(&multitrack, "join", &held, &look(&sources)).to_json()["refusal"],
             json!("these boxes overlap, and a join cannot state a mix yet")
         );
 
-        let piece = halves();
+        let multitrack = halves();
         assert_eq!(
-            intake(&piece, "join", &[json!("10")], &look(&sources)).to_json()["refusal"],
+            intake(&multitrack, "join", &[json!("10")], &look(&sources)).to_json()["refusal"],
             json!("a join needs two boxes or more in hand")
         );
     }

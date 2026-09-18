@@ -1,17 +1,17 @@
 //! The `multitrack` widget: one element that owns a stack of lanes and the
 //! clips on them.
 //!
-//! It is the `pianoroll`'s shape applied to a piece. A roll is one widget
+//! It is the `pianoroll`'s shape applied to a multitrack. A roll is one widget
 //! holding its notes; this is one widget holding its lanes and clips, drawing
 //! its own headers, its own stack and its own boxes on the shared time axis.
 //! What that replaces is a *tree* of `Track` widgets under whatever generic
-//! container a script picked — a shape with nobody in it that owned the piece,
-//! so a gesture had nowhere to report *the piece* and reported what the hand
+//! container a script picked — a shape with nobody in it that owned the multitrack,
+//! so a gesture had nowhere to report *the multitrack* and reported what the hand
 //! did to whichever widget it touched. `clients/gui/PLAN.md`'s `G34` carries
 //! the whole argument.
 //!
 //! **The lanes and the clips are props**, flat like a roll's `notes`: a client
-//! describes the piece and never composes a tree of it, never registers a
+//! describes the multitrack and never composes a tree of it, never registers a
 //! handler per box, and never learns a widget id. Identity is the client's own
 //! name, so what comes back names what the script already knows.
 //!
@@ -155,7 +155,7 @@ pub struct Multitrack {
     ///
     /// Screen state, like the scroll and the box selection: nothing on the wire
     /// sets or reports it, so it is kept here and laid over whatever a `lanes`
-    /// payload says. A client that redraws its piece says `height` on every row
+    /// payload says. A client that redraws its multitrack says `height` on every row
     /// because the wire has always carried one, and a reader who zoomed a track
     /// in must not lose it to the next fader move.
     zoom: HashMap<String, f32>,
@@ -164,7 +164,7 @@ pub struct Multitrack {
     ///
     /// A table of its own rather than one keyed by "whatever the row is called"
     /// because the two names come out of one id space: a lane is named by its
-    /// track's id and a curve by its automation's, and nothing stops a piece
+    /// track's id and a curve by its automation's, and nothing stops a multitrack
     /// from having both. One table would make zooming a row silently resize an
     /// unrelated one, which is the kind of defect nobody finds by reading.
     curve_zoom: HashMap<String, f32>,
@@ -176,14 +176,14 @@ pub struct Multitrack {
     /// only half of it a client could know, since it is the client that
     /// allocated the buses and put the meters on the track.
     ///
-    /// Empty is the ordinary state: a piece nobody is playing has no meters,
+    /// Empty is the ordinary state: a multitrack nobody is playing has no meters,
     /// and a header with nothing to read draws no strip.
     meters: HashMap<String, LaneMeter>,
     /// **Which boxes wrap**, by name — the `loops` prop, a name set exactly as
     /// `hidden` is.
     ///
     /// Not a field of the `clips` septuple, because nothing here changes it: a
-    /// box loops because the *piece* says so, and a report that carried the
+    /// box loops because the *multitrack* says so, and a report that carried the
     /// flag would be reporting a fact this widget cannot edit. What it decides
     /// here is what an edge drag may do and how the samples are drawn under a
     /// box longer than they are.
@@ -204,7 +204,7 @@ pub struct Multitrack {
     /// when the press landed — what says on release whether anything changed.
     holding: Option<(String, Value)>,
     /// Which clips the hand is holding, by index. **The hand's, not the
-    /// piece's**: nothing on the wire sets or reports it, exactly as nothing
+    /// multitrack's**: nothing on the wire sets or reports it, exactly as nothing
     /// reports which notes a roll has selected.
     pub(crate) selected: Vec<usize>,
     /// Which **track** the hand is on, by row index — the second coordinate a
@@ -212,7 +212,7 @@ pub struct Multitrack {
     /// what Delete acts on when there is one.
     ///
     /// The hand's, like the box selection and for the same reason: nothing on
-    /// the wire sets or reports it, because it is not a fact about the piece.
+    /// the wire sets or reports it, because it is not a fact about the multitrack.
     /// One at a time — a paste has one anchor, and a mixer strip wanting
     /// several is a different question than this one.
     pub(crate) track: Option<usize>,
@@ -548,7 +548,7 @@ impl OnAxis for Multitrack {
     }
 
     /// **The empty bars after the last clip are ordinary time.** A view of a
-    /// signal stops at its last sample; a piece is composed into the space
+    /// signal stops at its last sample; a multitrack is composed into the space
     /// after what it already holds, so the axis is not bounded by the boxes on
     /// it — which is also where its authoring headroom comes from.
     fn unbounded_axis(&self) -> bool {
@@ -583,7 +583,7 @@ impl OnAxis for Multitrack {
         header.width(m)
     }
 
-    /// How far the piece reaches on the axis — what an autofit and a scroll
+    /// How far the multitrack reaches on the axis — what an autofit and a scroll
     /// size themselves against.
     fn content_span(&self) -> Option<f64> {
         Some(model::extent(&self.clips))

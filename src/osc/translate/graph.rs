@@ -645,7 +645,7 @@ impl CmdTranslator {
 
     /// The instance an id means when a slot is added to it.
     ///
-    /// A slot group that *is* one nested graph — a track inside a piece, a clip
+    /// A slot group that *is* one nested graph — a track inside a multitrack, a clip
     /// inside a track — stands for that graph, because that is what the caller
     /// was handed and what everything else about it already answers to. Any
     /// other id is itself.

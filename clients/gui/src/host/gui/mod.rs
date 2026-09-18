@@ -163,7 +163,7 @@ pub fn run(
     // The host <- audio-server reply path: a background thread only for the UDP
     // leg (the embed link is polled in the event loop, no socket to drain).
     // A player apart from the server leg answers on a socket of its own, and
-    // the piece's steps wait on what it says.
+    // the multitrack's steps wait on what it says.
     let legs = [
         (
             crate::host::instance::Leg::Server,
@@ -231,7 +231,7 @@ fn server_reply_loop(
             }
             // A read timeout is not the leg going away: whoever set one on this
             // socket (a probe waiting for a player to boot) shares it with this
-            // loop, and returning here left every later reply unheard -- a piece
+            // loop, and returning here left every later reply unheard -- a multitrack
             // whose steps waited on a `/done` forever and never sounded.
             Err(e)
                 if matches!(

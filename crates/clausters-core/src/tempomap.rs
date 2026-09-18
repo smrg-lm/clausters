@@ -1,5 +1,5 @@
 //! The time map: beats (logical time) ↔ seconds (wall-clock time) under a
-//! tempo that changes along the piece.
+//! tempo that changes as it goes.
 //!
 //! A beat is **not** a unit of time. It is a logical coordinate that only
 //! becomes time by passing through this map, and the scale that converts it
@@ -316,7 +316,7 @@ fn step_curve() -> Curve {
     Curve::Step
 }
 
-/// **One entry of a piece's tempo map, as a document keeps it**: from here on,
+/// **One entry of a tempo map, as a document keeps it**: from here on,
 /// this tempo, stepping or ramping to the next one.
 ///
 /// The other spelling of a [`Breakpoint`], and the one an *authored* map has.
@@ -497,11 +497,11 @@ impl fmt::Display for TempoError {
 
 impl std::error::Error for TempoError {}
 
-/// The piece's beat→second map: an ordered list of tempo segments with the
+/// The beat→second map: an ordered list of tempo segments with the
 /// seconds cached at every breakpoint.
 ///
 /// It is a **pure function**, not a running thing: it knows nothing of now,
-/// answers the same for the same beat forever, and is meaningful for a piece
+/// answers the same for the same beat forever, and is meaningful for a structure
 /// that has never been played. That is what lets an editor, an offline render
 /// and a live clock share one.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -540,7 +540,7 @@ impl TryFrom<Vec<Breakpoint>> for TempoMap {
 
 impl TempoMap {
     /// A map of one constant-tempo segment with beat 0 at second 0 — the
-    /// affine clock every piece starts as.
+    /// affine clock every map starts as.
     ///
     /// A non-positive or non-finite tempo falls back to 1.0 rather than
     /// failing, so an infallible constructor stays infallible; [`Self::try_new`]
@@ -614,7 +614,7 @@ impl TempoMap {
     /// file is the door that checks it.
     ///
     /// An empty list is refused: a map always maps.
-    /// A map from a piece's **authored** tempo entries, with the tempo a piece
+    /// A map from a document's **authored** tempo entries, with the tempo one
     /// that never said one leaves to its reader.
     ///
     /// Three rules live here rather than in each reader of a document, which is
@@ -796,7 +796,7 @@ impl TempoMap {
     /// The envelope is of **finite duration** — it has as many segments as it
     /// has extents, and after the last one the tempo it reached simply holds.
     /// There is no sustain and no loop: those make sense for a gate, and a
-    /// piece's tempo has no gate to hold.
+    /// document's tempo has no gate to hold.
     ///
     /// `unit` says what the extents measure. In [`Extent::Beats`] each one is a
     /// stretch of the beat axis; in [`Extent::Seconds`] it is a stretch of wall
@@ -889,7 +889,7 @@ impl TempoMap {
 
     /// **The time map**: the second beat `b` falls on.
     ///
-    /// Defined for every finite beat, before and after the piece: a beat
+    /// Defined for every finite beat, before and after the entries: a beat
     /// earlier than the first breakpoint extrapolates on the first segment's
     /// tempo, which is what makes a map built mid-performance still answer
     /// about the music that already happened.
@@ -958,10 +958,10 @@ mod change_tests {
     }
 
     /// **No entries is the default alone**, which is the affine ratio every
-    /// caller used before there was a map — so a piece that never said a tempo
+    /// caller used before there was a map — so a document that never said a tempo
     /// behaves exactly as it did.
     #[test]
-    fn a_piece_with_no_tempo_is_one_segment_at_the_default() {
+    fn a_document_with_no_tempo_is_one_segment_at_the_default() {
         let map = TempoMap::from_changes(&[], 2.0).expect("a map");
         assert_eq!(map.len(), 1);
         assert_eq!(map.tempo_at(0.0), 2.0);

@@ -10,7 +10,7 @@ use super::super::*;
 /// What the two commands that speak **beats** refuse with when no grid has been
 /// defined: `/transport_locate`, and `/transport_play` given a position.
 ///
-/// Nothing else here needs one. Rolling, stopping, saying where the piece is
+/// Nothing else here needs one. Rolling, stopping, saying where the transport is
 /// and looping a span of it are all in samples, and an audio editor has no
 /// tempo to declare — asking it to invent one so that `/transport_play` will
 /// answer is asking it to write down a number nobody reads.
@@ -56,11 +56,11 @@ impl OscServer {
         ]
     }
 
-    /// Beat `b` of the **piece** as a sample of the piece.
+    /// Beat `b` of the grid as a sample of the transport.
     ///
     /// Deliberately **not** through `origin_sample`: that origin anchors the
     /// beat grid on the *device* axis, which is what lets several clients
-    /// phase-align on one running server. The piece's own axis starts at its
+    /// phase-align on one running server. The transport's own axis starts at its
     /// own 0 by definition, so a song position in beats is just
     /// `b * rate / tempo`. Keeping the two apart is also what keeps the open
     /// T2 (whose subject is that origin) out of this conversion.
@@ -72,7 +72,7 @@ impl OscServer {
         (beats * self.info.nominal_sample_rate / t.tempo).round() as u64
     }
 
-    /// Sends the engine a locate, so the piece moves and not only the number
+    /// Sends the engine a locate, so the transport moves and not only the number
     /// this server broadcasts.
     fn locate_engine(&mut self, position: u64) {
         self.transport.pending_locate = Some((position, self.handle.current_transport_samples()));
@@ -131,11 +131,11 @@ impl OscServer {
             // could see.
             loop_span: self.transport.loop_span,
             group: self.transport.group,
-            // Setting the grid locates the piece to 0 below, and that locate
+            // Setting the grid locates the transport to 0 below, and that locate
             // records itself.
             pending_locate: None,
         };
-        // Redefining the grid puts the piece back at its start, which is what
+        // Redefining the grid puts the transport back at its start, which is what
         // "stopped at position 0" has always meant -- it just had nowhere to
         // say it before.
         self.locate_engine(0);
@@ -242,7 +242,7 @@ impl OscServer {
         Ok(())
     }
 
-    /// `/transport_locateSample <sample:int64>` — locate on the piece's own
+    /// `/transport_locateSample <sample:int64>` — locate on the transport's own
     /// **sample** axis, which is what an audio editor addresses.
     ///
     /// The sibling of [`Self::handle_transport_locate`] and not a replacement:
@@ -279,7 +279,7 @@ impl OscServer {
         Ok(())
     }
 
-    /// `/transport_loop [<start:int64> <end:int64>]` — the span of the piece
+    /// `/transport_loop [<start:int64> <end:int64>]` — the span of the transport's axis
     /// the position wraps inside, in samples; **no arguments turns looping
     /// off**.
     ///
@@ -295,7 +295,7 @@ impl OscServer {
     /// fails rather than being silently ignored — it is always a mistake, and
     /// the engine's wrap would not terminate over one.
     ///
-    /// Turning a loop on does **not** move the piece: it keeps playing from
+    /// Turning a loop on does **not** move the transport: it keeps playing from
     /// where it is and wraps when it first reaches the end.
     pub(in crate::osc::server) fn handle_transport_loop(
         &mut self,

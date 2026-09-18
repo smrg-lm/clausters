@@ -26,7 +26,7 @@ use crate::ratio::Ratio;
 
 /// Split a run of items at `t`, measured from the run's start.
 ///
-/// An item straddling the cut is divided in two: the first piece keeps the id
+/// An item straddling the cut is divided in two: the first part keeps the id
 /// and, if it sounds, ties into the second, which takes a fresh one. That is
 /// the tie a *musical* split makes — the note goes on sounding across the cut —
 /// as against the tie an emitter adds at a barline, which is made from the
@@ -451,7 +451,7 @@ pub fn stretch(mut sheet: Sheet, factor: Ratio, span: &Span) -> Result<Sheet, St
 /// Put a meter in force from `measure` onward.
 ///
 /// The grid alone changes: the same notes fall in different measures
-/// afterwards, which is what changing the meter of a piece means. Setting the
+/// afterwards, which is what changing the meter of a score means. Setting the
 /// meter a measure already carries replaces it rather than stacking a second.
 pub fn set_meter(mut sheet: Sheet, measure: usize, count: i64, unit: i64) -> Result<Sheet, String> {
     if measure == 0 {

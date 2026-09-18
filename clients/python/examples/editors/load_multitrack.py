@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Reopening a multitrack: a saved session opened, loaded and edited.
 
-`edit_multitrack.py` builds its piece in memory and saves it as a **session** --
-its takes as files, the join as the parts it is made of, and the piece that
+`edit_multitrack.py` builds its multitrack in memory and saves it as a **session** --
+its takes as files, the join as the parts it is made of, and the multitrack that
 names them. This opens that file the way any program would.
 
-- **Opening** (`Session.open`) gives the piece and its source table back, and
+- **Opening** (`Session.open`) gives the multitrack and its source table back, and
   nothing more: every box names a source id and nothing has been loaded.
 - **Loading** (`Session.load`) reads each take from the file beside the session
   and stitches the join from the takes it is made of, once they are there. What
@@ -33,7 +33,7 @@ from clausters.multitrack import Session as SavedSession
 # %% [markdown]
 # ## Open
 #
-# The piece and its table, as the file says them.
+# The multitrack and its table, as the file says them.
 
 # %%
 saved = SavedSession.open("clients/python/examples/out/edit_multitrack.json")
@@ -59,7 +59,7 @@ for id, source in saved.sources.items():
 # %% [markdown]
 # ## Edit
 #
-# The piece and the buffers it was loaded into, at the rate the table states for
+# The multitrack and the buffers it was loaded into, at the rate the table states for
 # its takes.
 
 # %%

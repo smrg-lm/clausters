@@ -313,39 +313,39 @@ export class Instance {
      */
     meters(): string;
     /**
-     * A new instance: nothing of the piece is sounding yet.
+     * A new instance: nothing of the multitrack is sounding yet.
      */
     constructor();
     /**
-     * **The difference between what is sounding and what the piece says**, as
+     * **The difference between what is sounding and what the multitrack says**, as
      * the JSON list of operations a client applies.
      *
-     * The same three arguments `multitrackPlan` takes — the piece, the rate
+     * The same three arguments `multitrackPlan` takes — the multitrack, the rate
      * and the source table —
-     * plus the master's own level, which is the caller's and not the piece's.
+     * plus the master's own level, which is the caller's and not the multitrack's.
      *
      * An operation names what it acts on by a **handle**, never by a node id,
      * a bus index or a buffer number: this allocates none of those, and the
      * client keeps the one table from handle to whatever it made.
      */
-    reconcile(piece: string, sample_rate: number, sources: string, gain: number): string;
+    reconcile(multitrack: string, sample_rate: number, sources: string, gain: number): string;
     /**
      * **Everything this made, given back** — the operations that stop the
-     * piece. The piece itself is untouched: what an instance holds is nodes,
+     * multitrack. The multitrack itself is untouched: what an instance holds is nodes,
      * and nodes are not the composition.
      */
     teardown(): string;
 }
 
 /**
- * **One piece, as it is playing**: its instance, its applier and its
+ * **One multitrack, as it is playing**: its instance, its applier and its
  * transport, answering every verb as steps (JSON).
  */
 export class MultitrackPlayback {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * The steps that free everything the piece made.
+     * The steps that free everything the multitrack made.
      */
     close(ids: IdSpaces): string;
     /**
@@ -357,16 +357,16 @@ export class MultitrackPlayback {
      */
     locate(secs: number): string;
     /**
-     * The meters the piece writes, as JSON.
+     * The meters the multitrack writes, as JSON.
      */
     meters(): string;
     /**
      * A playback; `chunk` is how many samples one fill carries. Where the
-     * piece is made and how the transport is bound are the crate's.
+     * multitrack is made and how the transport is bound are the crate's.
      */
     constructor(chunk: number);
     /**
-     * The steps that freeze the piece and zero its meters.
+     * The steps that freeze the multitrack and zero its meters.
      */
     pause(): string;
     /**
@@ -394,9 +394,9 @@ export class MultitrackPlayback {
      */
     stop(mark: number): string;
     /**
-     * The steps that make what sounds be what the piece says.
+     * The steps that make what sounds be what the multitrack says.
      */
-    sync(piece: string, sample_rate: number, sources: string, gain: number, ids: IdSpaces): string;
+    sync(multitrack: string, sample_rate: number, sources: string, gain: number, ids: IdSpaces): string;
 }
 
 /**
@@ -744,11 +744,11 @@ export class StepRunner {
 }
 
 /**
- * The piece's beat↔second time map, the JS face of
+ * The multitrack's beat↔second time map, the JS face of
  * [`clausters_core::tempomap::TempoMap`].
  *
  * A beat is a logical coordinate, not a unit of time; this is the function
- * that turns one into the other under a tempo that changes along the piece.
+ * that turns one into the other under a tempo that changes along the multitrack.
  * It is pure — it knows nothing of *now* — so an editor, an offline render
  * and a live clock share one, and there is a single implementation of the
  * integral behind all of them.
@@ -769,7 +769,7 @@ export class TempoMap {
     /**
      * An independent copy — a fork, for when two tempi should stop being one.
      * Handing a map to a clock does **not** copy: a clock adopts what it is
-     * given, which is what lets two clocks read one piece.
+     * given, which is what lets two clocks read one multitrack.
      */
     copy(): TempoMap;
     /**
@@ -785,8 +785,8 @@ export class TempoMap {
      */
     env(at: number, tempos: Float64Array, extents: Float64Array, shapes: Uint32Array, curvatures: Float64Array, seconds: boolean): boolean;
     /**
-     * **A map from a piece's authored tempo entries** — the JSON array a
-     * document's `tempo` list is, plus the tempo a piece that never said one
+     * **A map from a multitrack's authored tempo entries** — the JSON array a
+     * document's `tempo` list is, plus the tempo a multitrack that never said one
      * leaves to its reader. `undefined` when the text is not such a list.
      *
      * The bridge a reader of a document would otherwise take three decisions
@@ -1096,11 +1096,11 @@ export function domainCoalesceKey(domain: string, payload: string): string;
 export function domainEdit(domain: string, state: string, payload: string): string;
 
 /**
- * JS face: **what is sounding of a piece**, held across edits.
+ * JS face: **what is sounding of a multitrack**, held across edits.
  *
  * The instance projection's state. The other two projections are functions of
  * a structure alone and this one is a function of a structure *and* of what a
- * server already holds: a piece plays itself from the transport, so the nodes
+ * server already holds: a multitrack plays itself from the transport, so the nodes
  * have to stay, and what this answers is the **difference**.
  * The tempo a multitrack that states none is drawn at, in beats per second:
  * what its ruler reads, and nothing it places.
@@ -1193,7 +1193,7 @@ export function interpretation(): string;
  * was not written from one.
  *
  * The page names elements the way the emitter wrote them: `n7` is the item,
- * `n7-2` a piece of it split across a barline, `n7-p1` one pitch of a chord.
+ * `n7-2` a part of it split across a barline, `n7-p1` one pitch of a chord.
  * All three are the same item, which is what lets a gesture anywhere on a note
  * reach the note — and it is the step a client takes between a page's
  * selection and a model verb.
@@ -1260,55 +1260,55 @@ export function midiWriteClip(ticks: Uint32Array, msgs: Uint8Array, ppq: number)
 export function midiWriteSmf(ticks: Uint32Array, msgs: Uint8Array, ppq: number): Uint8Array;
 
 /**
- * **The defs a piece of these widths is played by** — `{"synth": [...],
+ * **The defs a multitrack of these widths is played by** — `{"synth": [...],
  * "graph": [...]}`, each list in the order it must be sent, or an empty string
  * for a width nothing is written for.
  *
  * `widths` is a JSON array of `[source channels, track channels]` pairs and
- * `master` the piece's own width. What a track and a clip *are* on the server
+ * `master` the multitrack's own width. What a track and a clip *are* on the server
  * is `clausters_core::mixer`'s and there is one of it: two clients writing
- * their own channel strips is two mixers, which is how the same piece comes to
+ * their own channel strips is two mixers, which is how the same multitrack comes to
  * sound different in two places.
  */
 export function mixerDefs(widths: string, master: number): string;
 
 /**
- * JS face: **what a piece calls its rows and its boxes** — `{"rows": [...],
+ * JS face: **what a multitrack calls its rows and its boxes** — `{"rows": [...],
  * "boxes": [...]}`, by the names the wire carries them under.
  *
- * The minting correction's half that is a fact about the piece: a host that
+ * The minting correction's half that is a fact about the multitrack: a host that
  * made a track or split a box minted the *word* while the document minted the
  * *id*, so a view keeps what it was last told and answers with the picture
  * when the two stop agreeing.
  */
-export function multitrackNames(piece: string): string;
+export function multitrackNames(multitrack: string): string;
 
 /**
- * **What to instantiate to play a piece** — the instance plan, or an empty
- * string for a piece that will not parse.
+ * **What to instantiate to play a multitrack** — the instance plan, or an empty
+ * string for a multitrack that will not parse.
  *
  * `sources` is a JSON object from source id to `{"buffer": n, "channels": n}`:
  * where a source's samples actually are on a running server, which is the one
- * fact about a piece that is not in the piece. No tempo is asked for: a
+ * fact about a multitrack that is not in the multitrack. No tempo is asked for: a
  * multitrack is placed in seconds.
  *
  * Three rules live in it and each was written twice before it did: seconds
  * crossed to frames at the rate, the source's width picking the
  * clip's wiring, and what a solo anywhere does to everything else.
  */
-export function multitrackPlan(piece: string, sample_rate: number, sources: string): string;
+export function multitrackPlan(multitrack: string, sample_rate: number, sources: string): string;
 
 /**
- * JS face: **a piece as the props the multitrack widget is drawn with**, as a
+ * JS face: **a multitrack as the props the multitrack widget is drawn with**, as a
  * JSON string.
  *
  * The rows, the boxes, the automations over both, their break-points, which
- * are hidden and which boxes loop — everything a piece has from the document
+ * are hidden and which boxes loop — everything a multitrack has from the document
  * alone. `sources` is the same table `multitrack_plan` takes, source id to
  * `{"buffer", "channels"}`, because what a box is drawn from and what it is
  * played from are the same samples.
  */
-export function multitrackProps(piece: string, sample_rate: number, sources: string): string;
+export function multitrackProps(multitrack: string, sample_rate: number, sources: string): string;
 
 /**
  * JS face: the boot-derived node-id partition for a node table of

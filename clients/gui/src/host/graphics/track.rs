@@ -66,7 +66,7 @@ pub struct Header {
     /// the mark that waits, both linear amplitudes as the server's ballistics
     /// left them ([`clausters_core::measure::Ballistics`]).
     ///
-    /// Empty when the lane is not metered, which is the ordinary case: a piece
+    /// Empty when the lane is not metered, which is the ordinary case: a multitrack
     /// nobody is playing has no meters to read. The *length* is what the layout
     /// depends on, so a hit test builds this with the same number of silent
     /// entries the drawing reads live values into -- otherwise a press would
@@ -138,8 +138,8 @@ pub enum HeaderPart {
     Level,
     /// **The automation toggle**: show or hide the rows under this track.
     ///
-    /// A facility rather than a design — which rows a piece shows is the
-    /// piece's, and reaching every one of them from a track's header is the
+    /// A facility rather than a design — which rows a multitrack shows is the
+    /// multitrack's, and reaching every one of them from a track's header is the
     /// shortest thing that makes an arrangement with automation readable while
     /// the rules that replace it are worked out.
     Curves,
@@ -325,7 +325,7 @@ fn draw_header_controls(d: &mut Draw, band: Rect, header: &Header) {
 /// edge of the header, over the amplitude the track is making *after
 /// everything has been applied* — its clips' gains, its curves and its fader.
 ///
-/// It is the one place in a piece where the picture is of the **sound** rather
+/// It is the one place in a multitrack where the picture is of the **sound** rather
 /// than of the description, which is why it is worth the strip: everything else
 /// in a header says what was asked for, and this says what came out.
 ///

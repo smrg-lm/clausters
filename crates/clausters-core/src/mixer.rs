@@ -1,14 +1,14 @@
-//! **What a piece is as nodes and groups** — the multitrack's node system,
+//! **What a multitrack is as nodes and groups** — its node system,
 //! written once.
 //!
 //! An automation whose target says `gain` has to drive the *same* `gain` the
 //! track's knob shows, and until something says what a track and a clip **are**
 //! on the server those are two words that happen to be spelled alike. This
-//! module is that something: the defs a piece is made of, and the names their
+//! module is that something: the defs a multitrack is made of, and the names their
 //! surfaces answer to.
 //!
 //! It is here, and not in a client, for the reason [`crate::patch`] is here —
-//! every client that plays a piece needs the identical wiring, and a wiring
+//! every client that plays a multitrack needs the identical wiring, and a wiring
 //! written twice is two answers waiting to differ. A caller states the facts
 //! (how many channels a track has, which buffer a box reads) and gets the
 //! specs; the caller sends them, stamps the ids and instantiates, because ids
@@ -101,7 +101,7 @@ pub const SOURCE_SLOT: &str = "source";
 pub fn clip_slot(inputs: usize) -> String {
     format!("clips.{inputs}")
 }
-/// The slot a piece's tracks fill.
+/// The slot a multitrack's tracks fill.
 pub const TRACK_SLOT: &str = "tracks";
 /// The slot an effect chain fills. Declared and empty -- see the module docs.
 pub const FX_SLOT: &str = "fx";
@@ -116,7 +116,7 @@ pub const MIX_BUS: &str = "mix";
 /// A strip could write straight into whatever it feeds, and until something
 /// wanted to *listen to one strip* that was enough. A meter is that something:
 /// every track writes into the master's mix bus, so a meter there would read
-/// the whole piece and call it the track. So the output has a place of its own
+/// the whole multitrack and call it the track. So the output has a place of its own
 /// and what leaves it is a [`send_def`] -- one node per strip, which is also
 /// exactly the shape an extra send wants.
 pub const POST_BUS: &str = "post";
@@ -135,7 +135,7 @@ pub const SEND_GAIN: &str = "send/gain";
 
 /// The slot a strip's meters fill.
 ///
-/// A slot and not a member, so a piece nobody is looking at costs no meters at
+/// A slot and not a member, so a multitrack nobody is looking at costs no meters at
 /// all -- and so both halves of what a meter shows (the level, and the mark
 /// that waits) are two instances of one def rather than a second def.
 pub const METER_SLOT: &str = "meters";
@@ -180,9 +180,9 @@ pub fn track_name(channels: usize) -> String {
     format!("{PREFIX}.track.{channels}")
 }
 
-/// The name of the piece graph for a piece of `channels`.
-pub fn piece_name(channels: usize) -> String {
-    format!("{PREFIX}.piece.{channels}")
+/// The name of the multitrack graph for one of `channels`.
+pub fn multitrack_name(channels: usize) -> String {
+    format!("{PREFIX}.multitrack.{channels}")
 }
 
 /// Refuses a width this module has no wiring for, saying which it has.
@@ -212,9 +212,9 @@ fn lagged(name: &str, default: f32) -> Value {
 /// place on the transport the box sits, and silence everywhere else.
 ///
 /// It is *resident*: it is created when the box is, and it stays. Where the
-/// piece is playing from is `TransportPos`'s to say, so moving the box is a
+/// transport is playing from is `TransportPos`'s to say, so moving the box is a
 /// `/node_set` of `at` and a locate is no message at all -- the reader is
-/// wherever the transport says it is. That is the whole reason a piece plays
+/// wherever the transport says it is. That is the whole reason a multitrack plays
 /// itself rather than being driven.
 ///
 /// The window is a gate rather than a schedule for the same reason: `at` and
@@ -277,7 +277,7 @@ pub const CURVE_STEP: f64 = 64.0;
 /// reason worth stating: a locate would leave the curve wherever the last
 /// message put it, so every seek would need the whole thing re-sent, and the
 /// resolution of the automation would be the resolution of a socket. Read from
-/// the transport instead, the curve is simply *at* wherever the piece is --
+/// the transport instead, the curve is simply *at* wherever the transport is --
 /// a locate costs nothing at all, and it works the same offline.
 ///
 /// `BufRd` clamps a phase past either end when it is not looping, which is
@@ -293,7 +293,7 @@ pub fn curve_def() -> Value {
             control("step", CURVE_STEP as f32),
         ],
         "ugens": [
-            // 0..1: how far into the curve the piece is, in table samples.
+            // 0..1: how far into the curve the transport is, in table samples.
             {"kind": "TransportPos", "inputs": [{"control": 2}]},
             {"kind": "Div", "inputs": [{"ugen": 0}, {"control": 3}]},
             // 2..3: the value there, onto the control bus the port is mapped to.
@@ -475,7 +475,7 @@ pub fn strip_def(inputs: usize, outputs: usize) -> Result<Value, String> {
         // A balance *attenuates one side* and leaves the centre alone, which is
         // what `Balance2` is not: that applies the equal-power pan law to a
         // stereo pair, so a centred strip comes out 3 dB down and three strips
-        // in series -- clip, track, master -- take 9 dB off a piece for
+        // in series -- clip, track, master -- take 9 dB off a mix for
         // nothing. So the law is written here: `min(1, 1 ∓ pan)`, unity at the
         // centre and silence at the far end.
         (2, 2, Some(right_in)) => {
@@ -665,7 +665,7 @@ pub fn track_graph(channels: usize) -> Result<Value, String> {
     }))
 }
 
-/// **The piece**: tracks onto the master bus, then the master strip onto its
+/// **The multitrack**: tracks onto the master bus, then the master strip onto its
 /// own output, and a send from there onto the hardware.
 ///
 /// The master is the same strip as everything else, which is the point -- the
@@ -676,12 +676,12 @@ pub fn track_graph(channels: usize) -> Result<Value, String> {
 /// is not a nicety: a track's output is a bus, the master's mix bus is private
 /// to the master's instance, and a graph instantiated on its own could never
 /// name it. Containment is what lets the master hand each track the bus it
-/// writes to -- so a whole piece is *one* `/graph_new`, and every track, clip
+/// writes to -- so a whole multitrack is *one* `/graph_new`, and every track, clip
 /// and reader after it is a slot added to what is already sounding.
-pub fn piece_graph(channels: usize) -> Result<Value, String> {
-    check(channels, "piece")?;
+pub fn multitrack_graph(channels: usize) -> Result<Value, String> {
+    check(channels, "multitrack")?;
     Ok(json!({
-        "name": piece_name(channels),
+        "name": multitrack_name(channels),
         "buses": [
             {"name": MIX_BUS, "rate": "audio", "channels": channels},
             {"name": POST_BUS, "rate": "audio", "channels": channels},
@@ -701,7 +701,7 @@ pub fn piece_graph(channels: usize) -> Result<Value, String> {
     }))
 }
 
-/// Every def a piece of these widths needs, **in the order they must be sent**:
+/// Every def a multitrack of these widths needs, **in the order they must be sent**:
 /// the SynthDefs first, then the graphs that name them, then the graphs that
 /// name those.
 ///
@@ -709,7 +709,7 @@ pub fn piece_graph(channels: usize) -> Result<Value, String> {
 /// and a caller that got it wrong would find out at instantiation, in another
 /// process, as a missing member.
 pub fn defs_for(widths: &[(usize, usize)], master: usize) -> Result<Defs, String> {
-    check(master, "piece")?;
+    check(master, "multitrack")?;
     let mut strips: Vec<(usize, usize)> = widths.to_vec();
     strips.push((master, master));
     for &(_, outputs) in widths {
@@ -730,7 +730,7 @@ pub fn defs_for(widths: &[(usize, usize)], master: usize) -> Result<Defs, String
     }
     let mut graph = Vec::new();
     // A track declares a clip slot per source width, so every one of those clip
-    // graphs has to exist before it -- not only the widths a piece happens to
+    // graphs has to exist before it -- not only the widths a multitrack happens to
     // use today, since a take of the other width is one import away.
     let mut tracks: Vec<usize> = widths.iter().map(|&(_, out)| out).collect();
     tracks.push(master);
@@ -748,11 +748,11 @@ pub fn defs_for(widths: &[(usize, usize)], master: usize) -> Result<Defs, String
     for &channels in &tracks {
         graph.push(track_graph(channels)?);
     }
-    graph.push(piece_graph(master)?);
+    graph.push(multitrack_graph(master)?);
     Ok(Defs { synth, graph })
 }
 
-/// The defs a piece needs, split by the family they are sent as.
+/// The defs a multitrack needs, split by the family they are sent as.
 pub struct Defs {
     /// `/def_send synth`, in order.
     pub synth: Vec<Value>,
@@ -772,7 +772,7 @@ mod tests {
         for graph in [
             clip_graph(1, 2).unwrap(),
             track_graph(2).unwrap(),
-            piece_graph(2).unwrap(),
+            multitrack_graph(2).unwrap(),
         ] {
             let surface = graph["surface"].as_object().expect("a surface");
             for port in [GAIN, PAN, WIDTH, MUTE] {
@@ -863,6 +863,6 @@ mod tests {
             }
             sent.push(graph["name"].as_str().unwrap().to_string());
         }
-        assert!(sent.contains(&piece_name(2)));
+        assert!(sent.contains(&multitrack_name(2)));
     }
 }

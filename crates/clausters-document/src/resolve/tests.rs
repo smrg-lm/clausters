@@ -209,7 +209,7 @@ fn a_nested_placement_accumulates_its_base() {
     );
     assert_eq!(
         resolved[1].at, 48_000,
-        "and each piece says where it sits inside the selection"
+        "and each multitrack says where it sits inside the selection"
     );
 }
 

@@ -1,11 +1,11 @@
-//! **The piece as a multitrack view holds it**: rows and boxes, and a hand's
+//! **The multitrack as a multitrack view holds it**: rows and boxes, and a hand's
 //! answer read back.
 //!
 //! The mapping between the model and the picture, in one place because there is
 //! one of it. A multitrack view — the standalone host's, the Python client's,
 //! the web client's — draws a **row** per track and a **box** per region, and
 //! reports the whole list after any gesture. Which verb that list stands for is
-//! not obvious (a move and a trim are different edits; a box the piece has no
+//! not obvious (a move and a trim are different edits; a box the multitrack has no
 //! region for is a new one), and a reader written per client is a reader that
 //! disagrees per client.
 //!
@@ -91,7 +91,7 @@ pub struct Box {
     /// Whether the window **wraps**: past the end of the source it begins
     /// again. What a box longer than what it reads means, and the only one of
     /// the three answers to that question which changes what *sounds* — so it
-    /// is the piece's and travels with the box.
+    /// is the multitrack's and travels with the box.
     pub looping: bool,
 }
 
@@ -99,15 +99,15 @@ pub struct Box {
 ///
 /// The key a track's fader was carried under before it was a field.
 ///
-/// Kept because a piece written by an older build has it in [`Track::config`],
+/// Kept because a multitrack written by an older build has it in [`Track::config`],
 /// and [`level_of`] still reads it when the field is at unity -- what a file
 /// said is what a file meant. Nothing writes it any more: the fader is
 /// [`Track::level`].
 pub const LEVEL: &str = "level";
 
-/// The rows a piece draws as, top to bottom.
-pub fn rows(piece: &Multitrack) -> Vec<Row> {
-    piece
+/// The rows a multitrack draws as, top to bottom.
+pub fn rows(multitrack: &Multitrack) -> Vec<Row> {
+    multitrack
         .tracks
         .iter()
         .filter_map(|track| {
@@ -123,7 +123,7 @@ pub fn rows(piece: &Multitrack) -> Vec<Row> {
                 solo: track.soloed,
                 gain: level_of(track),
                 // **Shown when any of them is.** A track's automations are one
-                // toggle in a header, and the piece records visibility per
+                // toggle in a header, and the multitrack records visibility per
                 // curve -- so the row says what the header would draw, and the
                 // header says what the whole set becomes.
                 curves: track.automation.iter().any(|a| a.visible),
@@ -132,10 +132,10 @@ pub fn rows(piece: &Multitrack) -> Vec<Row> {
         .collect()
 }
 
-/// The boxes a piece draws as, in the order the rows hold them.
-pub fn boxes(piece: &Multitrack) -> Vec<Box> {
+/// The boxes a multitrack draws as, in the order the rows hold them.
+pub fn boxes(multitrack: &Multitrack) -> Vec<Box> {
     let mut out = Vec::new();
-    for track in &piece.tracks {
+    for track in &multitrack.tracks {
         let Some(lane) = active_lane(track) else {
             continue;
         };
@@ -189,7 +189,7 @@ pub struct Curve {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub points: Vec<Point>,
     /// Whether the row or layer is shown — the view's own state, kept in the
-    /// piece because which curves a person had open is part of reopening it as
+    /// multitrack because which curves a person had open is part of reopening it as
     /// they left it.
     pub visible: bool,
     /// Whether the curve is being applied.
@@ -197,8 +197,8 @@ pub struct Curve {
 }
 
 /// The **track automations**: one row of its own under each track that has one.
-pub fn curves(piece: &Multitrack) -> Vec<Curve> {
-    piece
+pub fn curves(multitrack: &Multitrack) -> Vec<Curve> {
+    multitrack
         .tracks
         .iter()
         .flat_map(|track| track.automation.iter().map(|a| curve(a, track.id)))
@@ -209,8 +209,8 @@ pub fn curves(piece: &Multitrack) -> Vec<Curve> {
 ///
 /// Only the boxes that are drawn — the active lane's — because a layer with no
 /// box under it has nowhere to be.
-pub fn layers(piece: &Multitrack) -> Vec<Curve> {
-    piece
+pub fn layers(multitrack: &Multitrack) -> Vec<Curve> {
+    multitrack
         .tracks
         .iter()
         .filter_map(active_lane)
@@ -244,7 +244,7 @@ pub struct Curved {
     pub points: Vec<Point>,
 }
 
-/// **What a `"points"` report means**, as edits in the piece's own vocabulary.
+/// **What a `"points"` report means**, as edits in the multitrack's own vocabulary.
 ///
 /// The report is every curve there is, rows and layers alike, for the same
 /// reason a box report is every box: applying what came back is the identity.
@@ -253,14 +253,14 @@ pub struct Curved {
 /// and nothing at all for a hand that looked without editing.
 ///
 /// A name that is no automation's id is dropped rather than minted: a curve is
-/// declared by whoever holds the piece, and a hand that dragged a break-point
+/// declared by whoever holds the multitrack, and a hand that dragged a break-point
 /// made no new one.
-pub fn read_points(piece: &Multitrack, reported: &[Curved]) -> Vec<MultitrackIntent> {
+pub fn read_points(multitrack: &Multitrack, reported: &[Curved]) -> Vec<MultitrackIntent> {
     reported
         .iter()
         .filter_map(|curve| {
             let id = curve.name.parse::<u64>().ok().map(NodeId)?;
-            let held = piece.automation(id)?;
+            let held = multitrack.automation(id)?;
             (!same_points(&held.points, &curve.points)).then(|| MultitrackIntent::SetAutomation {
                 automation: id,
                 points: curve.points.clone(),
@@ -336,9 +336,9 @@ fn unity() -> f64 {
     1.0
 }
 
-/// **What a `"rows"` report means**, as edits in the piece's own vocabulary.
+/// **What a `"rows"` report means**, as edits in the multitrack's own vocabulary.
 ///
-/// The report is the *piece* — every row, in the order they are shown — for the
+/// The report is the *multitrack* — every row, in the order they are shown — for the
 /// same reason a box report is every box: applying what came back is the
 /// identity, and there is no gesture to ask about. What comes out is the
 /// difference, and it is **one** [`MultitrackIntent::SetTracks`] whatever
@@ -356,7 +356,7 @@ fn unity() -> f64 {
 ///   the other.
 ///
 /// The minting walks up from [`fresh_id`], two at a time: a track and its lane.
-/// Unlike [`read`] this asks the piece for that itself — a row report carries
+/// Unlike [`read`] this asks the multitrack for that itself — a row report carries
 /// no ids a caller had to reserve, so there is nothing for one to say.
 ///
 /// **The label is not read.** A row's label is the track's name where it has
@@ -364,12 +364,12 @@ fn unity() -> f64 {
 /// report would write that made-up string into the document the first time
 /// anything else on the row moved. Renaming a track is its own verb, and the
 /// wire has no gesture for it yet.
-pub fn read_rows(piece: &Multitrack, reported: &[Strip]) -> Vec<MultitrackIntent> {
-    let mut next = fresh_id(piece);
-    // **How far the piece reaches**, for a curve that has to span it. A piece
+pub fn read_rows(multitrack: &Multitrack, reported: &[Strip]) -> Vec<MultitrackIntent> {
+    let mut next = fresh_id(multitrack);
+    // **How far the multitrack reaches**, for a curve that has to span it. A multitrack
     // with nothing on it has no extent, and a flat line over nothing would be a
     // row with one point in the corner.
-    let span = piece
+    let span = multitrack
         .tracks
         .iter()
         .flat_map(|track| track.lanes.iter())
@@ -383,7 +383,7 @@ pub fn read_rows(piece: &Multitrack, reported: &[Strip]) -> Vec<MultitrackIntent
             .parse::<u64>()
             .ok()
             .map(NodeId)
-            .and_then(|id| piece.tracks.iter().find(|t| t.id == id));
+            .and_then(|id| multitrack.tracks.iter().find(|t| t.id == id));
         let mut track = match held {
             Some(track) => track.clone(),
             None => {
@@ -397,14 +397,14 @@ pub fn read_rows(piece: &Multitrack, reported: &[Strip]) -> Vec<MultitrackIntent
         // **Only when the toggle actually moved.** A row reports its automation
         // as shown when *any* of its curves is, so writing every curve on every
         // report would flatten a track that shows one and hides another the
-        // first time somebody moved its fader -- and would make a piece that
+        // first time somebody moved its fader -- and would make a multitrack that
         // changed nothing look edited.
         if track.automation.iter().any(|a| a.visible) != strip.curves {
             // **Asking to see what is not there makes it.** A track with no
             // automation has nothing to show, and the toggle is how one is
             // added -- the same way a double click on a header adds a track
             // rather than opening a dialogue about one. It is the *gain*
-            // curve, flat at unity across the piece, because that is the one
+            // curve, flat at unity across the multitrack, because that is the one
             // every track has a port for and the one a hand reaches for first.
             //
             // Provisional, and the shape rather than the design: what a track
@@ -442,12 +442,12 @@ pub fn read_rows(piece: &Multitrack, reported: &[Strip]) -> Vec<MultitrackIntent
         // it. Compared at `f64` the report of an untouched header was an edit,
         // the answer rewrote the level, and the next report differed again.
         // A track that never named a level sits at unity, so writing one
-        // unconditionally would make a piece that changed nothing look edited —
+        // unconditionally would make a multitrack that changed nothing look edited —
         // which is the same rule, at the precision it has to be read at.
         let gain = strip.gain.max(0.0);
         if gain as f32 != level_of(&track) as f32 {
             track.level = gain;
-            // What an older piece carried in the table is now the field's, and
+            // What an older multitrack carried in the table is now the field's, and
             // leaving it would be two answers to one question.
             if let Some(table) = track.config.0.as_object_mut() {
                 table.remove(LEVEL);
@@ -455,7 +455,7 @@ pub fn read_rows(piece: &Multitrack, reported: &[Strip]) -> Vec<MultitrackIntent
         }
         tracks.push(track);
     }
-    if tracks == piece.tracks {
+    if tracks == multitrack.tracks {
         return Vec::new();
     }
     vec![MultitrackIntent::SetTracks { tracks }]
@@ -486,9 +486,9 @@ pub struct Placed {
     pub source: Option<SourceId>,
 }
 
-/// **What a `"boxes"` report means**, as edits in the piece's own vocabulary.
+/// **What a `"boxes"` report means**, as edits in the multitrack's own vocabulary.
 ///
-/// The report is the *piece*, not the gesture — a move, a block drag, a trim, a
+/// The report is the *multitrack*, not the gesture — a move, a block drag, a trim, a
 /// split, a delete and a paste all arrive as one list — so nothing here asks
 /// which gesture ran. What comes out is the difference:
 ///
@@ -498,13 +498,13 @@ pub struct Placed {
 /// - a box that moved, or changed row, is a
 ///   [`MultitrackIntent::PlaceRegion`] — one verb for both, which is why a
 ///   crossing is not a second mechanism;
-/// - a row that gained a box the piece has no region for, or lost one the
+/// - a row that gained a box the multitrack has no region for, or lost one the
 ///   report no longer names, is stated **whole**
-///   ([`MultitrackIntent::SetLane`]), which is the piece's own verb for a
+///   ([`MultitrackIntent::SetLane`]), which is the multitrack's own verb for a
 ///   lane's contents and what a split, a join and a paste all invert to.
 ///
 /// `next_id` is where minted region ids start; a caller with nothing better to
-/// say passes [`fresh_id`]. Ids are the piece's and a hand that made a box has
+/// say passes [`fresh_id`]. Ids are the multitrack's and a hand that made a box has
 /// none to offer.
 ///
 /// `reach_of` answers how long a source is, in seconds, where the caller knows:
@@ -512,17 +512,17 @@ pub struct Placed {
 /// duration its window is written with (see [`crate::SegmentRef::duration`]).
 /// Unknown, it falls back to what the box shows.
 pub fn read(
-    piece: &Multitrack,
+    multitrack: &Multitrack,
     placed: &[Placed],
     next_id: u64,
     reach_of: &dyn Fn(SourceId) -> Option<f64>,
 ) -> Vec<MultitrackIntent> {
-    let rows = rows(piece);
+    let rows = rows(multitrack);
     let mut out = Vec::new();
     let mut seen: Vec<NodeId> = Vec::new();
     let mut fresh: Vec<(NodeId, Placed)> = Vec::new();
     for box_ in placed {
-        // A box naming a row the piece has none of is **kept where it is**: the
+        // A box naming a row the multitrack has none of is **kept where it is**: the
         // view hands back what it could not place so it can be re-homed, and
         // acting on it would be moving a region onto a track that is not there.
         let Some(row) = rows.iter().find(|r| r.track == box_.row) else {
@@ -533,7 +533,7 @@ pub fn read(
             .parse::<u64>()
             .ok()
             .map(NodeId)
-            .and_then(|id| find_region(piece, id).map(|f| (id, f)));
+            .and_then(|id| find_region(multitrack, id).map(|f| (id, f)));
         let Some((region_id, (track, region))) = found else {
             fresh.push((row.lane, box_.clone()));
             continue;
@@ -556,7 +556,7 @@ pub fn read(
                 position: box_.position,
                 length: box_.length,
                 // Only what actually moved: the window's own **duration** is
-                // left as the piece states it, since a flat report says how
+                // left as the multitrack states it, since a flat report says how
                 // long the box is and not how much of the source is behind it.
                 content: rewound.then(|| rewound_content(region, box_)),
             });
@@ -572,20 +572,20 @@ pub fn read(
         }
     }
     out.extend(lane_lists(
-        piece, &rows, &seen, &fresh, next_id, placed, reach_of,
+        multitrack, &rows, &seen, &fresh, next_id, placed, reach_of,
     ));
     out
 }
 
-/// An id past everything the piece already names — its tracks, its lanes, its
+/// An id past everything the multitrack already names — its tracks, its lanes, its
 /// regions **and its automations**, which share one id space.
 ///
-/// The curves are in the count because they are in the space: a piece looks an
+/// The curves are in the count because they are in the space: a multitrack looks an
 /// id up by number ([`Multitrack::automation`]) and does not ask what kind of
 /// thing it expected, so handing out an id a curve already holds is how two
 /// things come to answer to one name.
-pub fn fresh_id(piece: &Multitrack) -> u64 {
-    piece
+pub fn fresh_id(multitrack: &Multitrack) -> u64 {
+    multitrack
         .tracks
         .iter()
         .flat_map(|track| {
@@ -615,22 +615,22 @@ pub fn fresh_id(piece: &Multitrack) -> u64 {
 /// continuous.
 pub const SEAM: f64 = 0.010;
 
-/// A source id nothing is using — neither this piece **nor whoever holds the
+/// A source id nothing is using — neither this multitrack **nor whoever holds the
 /// samples**.
 ///
-/// Minted the way a region's id is: from what is there, so the same piece
+/// Minted the way a region's id is: from what is there, so the same multitrack
 /// answers the same way twice and a test can say what a join will be called.
 ///
 /// **`taken` is not an optimization and leaving it out was a defect** *(found
 /// 2026-09-12 by the user: a second join left an empty box)*. A source stops
-/// being named by the piece the moment nothing windows it — an undo, a box
+/// being named by the multitrack the moment nothing windows it — an undo, a box
 /// deleted — while the client still holds the buffer it made for it. Minted off
-/// the piece alone, the next join hands back an id that already has samples
+/// the multitrack alone, the next join hands back an id that already has samples
 /// behind it, and the box is then a window onto **the previous join**: the
 /// client sees an id it knows, makes nothing, and the box draws and plays
-/// whatever that was. The piece cannot see the table, so the table says.
-pub fn fresh_source(piece: &Multitrack, taken: &[SourceId]) -> SourceId {
-    let used = piece
+/// whatever that was. The multitrack cannot see the table, so the table says.
+pub fn fresh_source(multitrack: &Multitrack, taken: &[SourceId]) -> SourceId {
+    let used = multitrack
         .tracks
         .iter()
         .flat_map(|track| track.lanes.iter())
@@ -647,7 +647,7 @@ pub fn fresh_source(piece: &Multitrack, taken: &[SourceId]) -> SourceId {
 ///
 /// The one verb of the multitrack that cannot be read out of the picture it
 /// leaves. A move, a trim, a split and a delete are all differences — the
-/// report is the piece and [`read`] says what changed — but a join and a
+/// report is the multitrack and [`read`] says what changed — but a join and a
 /// "delete one, lengthen the other" leave a lane holding exactly the same
 /// thing, and a box in the report names **one** source and one start. So a join
 /// is stated, and this is the statement.
@@ -673,7 +673,7 @@ pub fn fresh_source(piece: &Multitrack, taken: &[SourceId]) -> SourceId {
 /// than dropped: a verb that does nothing and says nothing is indistinguishable
 /// from one that does not work.
 pub fn read_join(
-    piece: &Multitrack,
+    multitrack: &Multitrack,
     names: &[String],
     rate: f64,
     taken: &[SourceId],
@@ -682,18 +682,17 @@ pub fn read_join(
 ) -> Result<Vec<MultitrackIntent>, &'static str> {
     let mut held: Vec<(NodeId, NodeId, &Region)> = Vec::new();
     for name in names {
-        // **A box the hand is holding and the piece does not have is refused,
+        // **A box the hand is holding and the multitrack does not have is refused,
         // not dropped.** Joining the rest would leave that one where it is,
         // under the box that now spans over it -- and a verb that quietly acts
         // on less than it was given is the shape of every bug this seam has
         // produced.
-        let found = name
-            .parse::<u64>()
-            .ok()
-            .map(NodeId)
-            .and_then(|id| lane_of_region(piece, id).map(|(lane, region)| (id, lane, region)));
+        let found =
+            name.parse::<u64>().ok().map(NodeId).and_then(|id| {
+                lane_of_region(multitrack, id).map(|(lane, region)| (id, lane, region))
+            });
         let Some(found) = found else {
-            return Err("one of these boxes is not one the piece has");
+            return Err("one of these boxes is not one the multitrack has");
         };
         held.push(found);
     }
@@ -719,7 +718,7 @@ pub fn read_join(
             return Err("a box that wraps cannot be one span of a join");
         }
         // **What the box shows, not what its window claims.** A trim slides the
-        // window's start and leaves its duration as the piece had it (`read`),
+        // window's start and leaves its duration as the multitrack had it (`read`),
         // so after a left-hand trim or a split a window claims more of its
         // source than the box plays -- and a part built from that claim asked
         // the server for samples the take does not have, which refused the
@@ -766,7 +765,7 @@ pub fn read_join(
             source: None,
         }]);
     }
-    let id = fresh_source(piece, taken);
+    let id = fresh_source(multitrack, taken);
     let frames = |secs: f64| (secs * rate).round().max(0.0) as u64;
     let seam = frames(SEAM);
     let mut parts = Vec::new();
@@ -788,23 +787,23 @@ pub fn read_join(
         // join of joins nested one source inside another until the server
         // refused it (found 2026-09-13: `sources are stitched more than 4
         // deep`).
-        let mut pieces = segments_of(
+        let mut segments = segments_of(
             *source,
             frames(*start),
             frames(start + duration),
             parts_of,
             frames_of,
         )?;
-        let last = pieces.len() - 1;
-        for (k, piece) in pieces.iter_mut().enumerate() {
+        let last = segments.len() - 1;
+        for (k, multitrack) in segments.iter_mut().enumerate() {
             if k == 0 {
-                piece.fade_in = if cut_before { seam } else { 0 };
+                multitrack.fade_in = if cut_before { seam } else { 0 };
             }
             if k == last {
-                piece.fade_out = if cut_after { seam } else { 0 };
+                multitrack.fade_out = if cut_after { seam } else { 0 };
             }
         }
-        parts.extend(pieces);
+        parts.extend(segments);
     }
     let total: f64 = spans.iter().map(|(_, _, duration, _)| duration).sum();
     Ok(vec![MultitrackIntent::JoinRegions {
@@ -860,7 +859,7 @@ fn segments_of(
     let Some(parts) = parts_of(source) else {
         // **A box trimmed past the end of its take is refused here**, as an
         // edit with its reason, rather than minted into a source the server
-        // then refuses to stitch -- which left the piece holding a joined box
+        // then refuses to stitch -- which left the multitrack holding a joined box
         // over nothing (found 2026-09-13). A trim is not bounded by its take,
         // so this is the first place the two meet. One frame over is the
         // rounding of seconds to frames, and is cut rather than refused.
@@ -902,18 +901,18 @@ fn segments_of(
         if a >= b {
             continue;
         }
-        let mut piece = part.clone();
-        piece.source.range = Some(Range {
+        let mut multitrack = part.clone();
+        multitrack.source.range = Some(Range {
             start: range.start + (a - lo),
             end: range.start + (b - lo),
         });
         if a != lo {
-            piece.fade_in = 0;
+            multitrack.fade_in = 0;
         }
         if b != hi {
-            piece.fade_out = 0;
+            multitrack.fade_out = 0;
         }
-        out.push(piece);
+        out.push(multitrack);
     }
     if out.is_empty() {
         return Err("one of these boxes reads past the end of the join it is a window onto");
@@ -922,8 +921,8 @@ fn segments_of(
 }
 
 /// The lane a region is on, and the region.
-fn lane_of_region(piece: &Multitrack, region: NodeId) -> Option<(NodeId, &Region)> {
-    piece.tracks.iter().find_map(|track| {
+fn lane_of_region(multitrack: &Multitrack, region: NodeId) -> Option<(NodeId, &Region)> {
+    multitrack.tracks.iter().find_map(|track| {
         track.lanes.iter().find_map(|lane| {
             lane.regions
                 .iter()
@@ -934,9 +933,9 @@ fn lane_of_region(piece: &Multitrack, region: NodeId) -> Option<(NodeId, &Region
 }
 
 /// **What each lane now holds**, for the two changes a placement cannot state:
-/// a region the report no longer names, and a box the piece has no region for.
+/// a region the report no longer names, and a box the multitrack has no region for.
 fn lane_lists(
-    piece: &Multitrack,
+    multitrack: &Multitrack,
     rows: &[Row],
     seen: &[NodeId],
     fresh: &[(NodeId, Placed)],
@@ -946,7 +945,7 @@ fn lane_lists(
 ) -> Vec<MultitrackIntent> {
     let mut out = Vec::new();
     for row in rows {
-        let Some(lane) = piece
+        let Some(lane) = multitrack
             .tracks
             .iter()
             .find(|t| t.id == row.track)
@@ -955,7 +954,7 @@ fn lane_lists(
             continue;
         };
         // **A box over samples nobody resolved is not invented**: the document
-        // would name a source that cannot be opened, and a piece that will not
+        // would name a source that cannot be opened, and a multitrack that will not
         // reopen is worse than a box that did not stick. Dropped here rather
         // than while building, so a lane that gained only such boxes is not
         // rewritten to say nothing.
@@ -968,9 +967,9 @@ fn lane_lists(
         if added.is_empty() && !gone {
             continue;
         }
-        // **A kept region is kept as the report left it**, not as the piece
+        // **A kept region is kept as the report left it**, not as the multitrack
         // still holds it. A lane stated whole is stated *last*, so a clone of
-        // what the piece says would undo the trim and the move the same report
+        // what the multitrack says would undo the trim and the move the same report
         // asked for a moment earlier — which is what made a split leave its
         // first half at full length, playing over the second.
         let mut regions: Vec<Region> = lane
@@ -1037,7 +1036,7 @@ fn active_lane(track: &Track) -> Option<&Lane> {
 }
 
 /// The fader a track is at: its own field, falling back to the key an older
-/// piece carried it under (see [`LEVEL`]).
+/// multitrack carried it under (see [`LEVEL`]).
 pub fn level_of(track: &Track) -> f64 {
     if track.level != 1.0 {
         return track.level;
@@ -1083,8 +1082,8 @@ fn window_of(region: &Region) -> (Option<SourceId>, f64, f64, bool) {
 }
 
 /// The track a region is on, and the region itself.
-fn find_region(piece: &Multitrack, region: NodeId) -> Option<(NodeId, &Region)> {
-    piece.tracks.iter().find_map(|track| {
+fn find_region(multitrack: &Multitrack, region: NodeId) -> Option<(NodeId, &Region)> {
+    multitrack.tracks.iter().find_map(|track| {
         track
             .lanes
             .iter()
@@ -1098,9 +1097,9 @@ mod tests {
     use super::*;
     use crate::multitrack::{Automation, Track};
 
-    /// A piece of one track with one box on it, a track automation and a box
+    /// A multitrack of one track with one box on it, a track automation and a box
     /// envelope.
-    fn piece() -> Multitrack {
+    fn multitrack() -> Multitrack {
         let mut region = Region::new(
             NodeId(3),
             Second(0.0),
@@ -1111,9 +1110,9 @@ mod tests {
         let mut track = Track::new(NodeId(1), NodeId(2));
         track.lanes[0].regions.push(region);
         track.automation.push(curve_at(NodeId(4), 0.5));
-        let mut piece = Multitrack::default();
-        piece.tracks.push(track);
-        piece
+        let mut multitrack = Multitrack::default();
+        multitrack.tracks.push(track);
+        multitrack
     }
 
     fn curve_at(id: NodeId, value: f64) -> Automation {
@@ -1132,9 +1131,9 @@ mod tests {
     /// them somewhere different, so it never has to tell them apart.
     #[test]
     fn a_track_curve_is_a_row_and_a_region_curve_is_a_layer() {
-        let piece = piece();
-        let rows = curves(&piece);
-        let layers = layers(&piece);
+        let multitrack = multitrack();
+        let rows = curves(&multitrack);
+        let layers = layers(&multitrack);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].automation, NodeId(4));
         assert_eq!(rows[0].owner, NodeId(1), "the track it is under");
@@ -1147,29 +1146,29 @@ mod tests {
     /// something a header can draw, and the identity stays the id.
     #[test]
     fn a_nameless_curve_is_labelled_by_its_id() {
-        let mut piece = piece();
-        piece.tracks[0].automation[0].name = None;
-        assert_eq!(curves(&piece)[0].label, "automation 4");
+        let mut multitrack = multitrack();
+        multitrack.tracks[0].automation[0].name = None;
+        assert_eq!(curves(&multitrack)[0].label, "automation 4");
     }
 
     /// **What a report of the points means**: one edit per curve that actually
     /// moved, and nothing at all for a hand that looked without editing.
     #[test]
     fn the_points_report_is_read_as_the_difference() {
-        let piece = piece();
-        let same: Vec<Curved> = curves(&piece)
+        let multitrack = multitrack();
+        let same: Vec<Curved> = curves(&multitrack)
             .into_iter()
-            .chain(layers(&piece))
+            .chain(layers(&multitrack))
             .map(|c| Curved {
                 name: c.automation.0.to_string(),
                 points: c.points,
             })
             .collect();
-        assert!(read_points(&piece, &same).is_empty(), "nothing moved");
+        assert!(read_points(&multitrack, &same).is_empty(), "nothing moved");
 
         let mut moved = same.clone();
         moved[0].points[0].value = 0.9;
-        let intents = read_points(&piece, &moved);
+        let intents = read_points(&multitrack, &moved);
         assert_eq!(intents.len(), 1, "the one that moved");
         assert!(matches!(
             &intents[0],
@@ -1179,7 +1178,7 @@ mod tests {
     }
 
     /// A name that is no automation's id is dropped rather than minted: a
-    /// curve is declared by whoever holds the piece.
+    /// curve is declared by whoever holds the multitrack.
     /// **A trim of the left edge slides the window over the source.** That is
     /// what makes an edge drag a trim and not a squeeze, so a report whose
     /// `start` moved is saying the box reads from somewhere else now — and
@@ -1188,8 +1187,8 @@ mod tests {
     /// the beginning.
     #[test]
     fn a_report_that_moved_the_window_says_what_the_box_now_reads() {
-        let mut piece = piece();
-        piece.tracks[0].lanes[0].regions[0].content = Content::window(crate::SegmentRef {
+        let mut multitrack = multitrack();
+        multitrack.tracks[0].lanes[0].regions[0].content = Content::window(crate::SegmentRef {
             source: crate::SegmentSource::Samples(crate::SourceRef {
                 source: crate::SourceId(1),
                 lifetime: crate::Lifetime::Session,
@@ -1199,7 +1198,7 @@ mod tests {
             start: 0.0,
             duration: 8.0,
         });
-        let held = boxes(&piece)[0].clone();
+        let held = boxes(&multitrack)[0].clone();
         let placed = |start: f64| Placed {
             name: held.region.0.to_string(),
             row: held.row,
@@ -1210,11 +1209,15 @@ mod tests {
             source: held.source,
         };
         // What is already true is no edit at all.
-        let out = read(&piece, &[placed(0.0)], fresh_id(&piece), &|_| None);
+        let out = read(&multitrack, &[placed(0.0)], fresh_id(&multitrack), &|_| {
+            None
+        });
         assert!(out.is_empty(), "nothing moved: {out:?}");
 
         // The window slid: the box reads from two seconds in.
-        let out = read(&piece, &[placed(2.0)], fresh_id(&piece), &|_| None);
+        let out = read(&multitrack, &[placed(2.0)], fresh_id(&multitrack), &|_| {
+            None
+        });
         let [MultitrackIntent::TrimRegion { content, .. }] = &out[..] else {
             panic!("one trim, carrying what it now reads: {out:?}");
         };
@@ -1232,8 +1235,8 @@ mod tests {
     /// shows, as before.
     #[test]
     fn a_new_box_windows_its_whole_source() {
-        let piece = piece();
-        let held = boxes(&piece)[0].clone();
+        let multitrack = multitrack();
+        let held = boxes(&multitrack)[0].clone();
         let made = Placed {
             name: "new".into(),
             row: held.row,
@@ -1255,23 +1258,23 @@ mod tests {
                 .expect("the new box, windowing its source")
         };
         let known = read(
-            &piece,
+            &multitrack,
             std::slice::from_ref(&made),
-            fresh_id(&piece),
+            fresh_id(&multitrack),
             &|s| (s == crate::SourceId(1)).then_some(8.0),
         );
         let window = window_of_new(&known);
         assert_eq!((window.start, window.duration), (1.0, 8.0));
 
-        let unknown = read(&piece, &[made], fresh_id(&piece), &|_| None);
+        let unknown = read(&multitrack, &[made], fresh_id(&multitrack), &|_| None);
         assert_eq!(window_of_new(&unknown).duration, 2.0);
     }
 
     /// **A lane stated whole is stated as the report left it**, not as the
-    /// piece still holds it.
+    /// multitrack still holds it.
     ///
     /// A lane's whole list is the *last* intent a report produces, so a clone
-    /// of what the piece says undoes the trim and the move the same report
+    /// of what the multitrack says undoes the trim and the move the same report
     /// asked for a moment earlier. That is what made a split leave its first
     /// half at full length, playing over the second — the picture was right and
     /// the document was not.
@@ -1279,8 +1282,8 @@ mod tests {
     /// Found by use 2026-09-10.
     #[test]
     fn a_split_leaves_the_first_half_short() {
-        let mut piece = piece();
-        piece.tracks[0].lanes[0].regions[0].content = Content::window(crate::SegmentRef {
+        let mut multitrack = multitrack();
+        multitrack.tracks[0].lanes[0].regions[0].content = Content::window(crate::SegmentRef {
             source: crate::SegmentSource::Samples(crate::SourceRef {
                 source: crate::SourceId(1),
                 lifetime: crate::Lifetime::Session,
@@ -1290,7 +1293,7 @@ mod tests {
             start: 0.0,
             duration: 8.0,
         });
-        let held = boxes(&piece)[0].clone();
+        let held = boxes(&multitrack)[0].clone();
         let same = |name: &str, at: f64, len: f64, start: f64| Placed {
             name: name.into(),
             row: held.row,
@@ -1303,20 +1306,20 @@ mod tests {
         // The report a split sends: the original shortened, and a tail beside
         // it under a name that is no region's id.
         let out = read(
-            &piece,
+            &multitrack,
             &[same("3", 0.0, 2.0, 0.0), same("3 2", 2.0, 2.0, 2.0)],
-            fresh_id(&piece),
+            fresh_id(&multitrack),
             &|_| None,
         );
         for intent in &out {
             crate::multitrack::edit::apply(
-                &mut piece,
+                &mut multitrack,
                 intent,
                 &Default::default(),
                 &Default::default(),
             );
         }
-        let lane = &piece.tracks[0].lanes[0];
+        let lane = &multitrack.tracks[0].lanes[0];
         assert_eq!(
             lane.regions.len(),
             2,
@@ -1342,7 +1345,7 @@ mod tests {
     }
 
     /// **A curve holds an id like anything else does.** `fresh_id` answers
-    /// with an id past everything the piece names, and a piece looks one up by
+    /// with an id past everything the multitrack names, and a multitrack looks one up by
     /// number without asking what kind of thing it expected — so a count that
     /// skipped the automations would hand out an id a curve already had.
     ///
@@ -1350,9 +1353,9 @@ mod tests {
     /// minted onto the track curve's id.
     #[test]
     fn a_fresh_id_is_past_the_curves_too() {
-        let piece = piece();
+        let multitrack = multitrack();
         // Track 1, lane 2, region 3, the track curve 4, the box envelope 5.
-        assert_eq!(fresh_id(&piece), 6);
+        assert_eq!(fresh_id(&multitrack), 6);
     }
 
     /// **A header nobody touched is not an edit** *(found 2026-09-12 by use: a
@@ -1366,8 +1369,8 @@ mod tests {
     /// the answer can be trusted to.
     #[test]
     fn a_level_that_only_crossed_an_f32_is_not_a_fader_that_moved() {
-        let mut piece = piece();
-        piece.tracks[0].level = 0.7;
+        let mut multitrack = multitrack();
+        multitrack.tracks[0].level = 0.7;
         let held = Strip {
             name: "1".into(),
             mute: false,
@@ -1376,13 +1379,13 @@ mod tests {
             curves: false,
         };
         assert!(
-            read_rows(&piece, std::slice::from_ref(&held)).is_empty(),
+            read_rows(&multitrack, std::slice::from_ref(&held)).is_empty(),
             "the same level, through the width it was drawn at"
         );
         // And a fader that did move is still an edit, at the width a hand can
         // put it at.
         let moved = Strip { gain: 0.5, ..held };
-        assert_eq!(read_rows(&piece, &[moved]).len(), 1);
+        assert_eq!(read_rows(&multitrack, &[moved]).len(), 1);
     }
 
     /// **A rows report is the tracks, whole.** A name that is an id is that
@@ -1391,17 +1394,17 @@ mod tests {
     /// because the tracks are one list and a hand did one thing to it.
     #[test]
     fn the_rows_report_states_the_tracks_and_a_new_name_makes_one() {
-        let piece = piece();
+        let multitrack = multitrack();
         let held = Strip {
             name: "1".into(),
             mute: false,
             solo: false,
             gain: 1.0,
-            // What this piece's own row reports: its curve is not visible.
+            // What this multitrack's own row reports: its curve is not visible.
             curves: false,
         };
         // What is already true is no edit at all.
-        assert!(read_rows(&piece, std::slice::from_ref(&held)).is_empty());
+        assert!(read_rows(&multitrack, std::slice::from_ref(&held)).is_empty());
 
         // The mixer: one verb over a track, and the level lands in the config
         // table the client reads it out of.
@@ -1410,7 +1413,7 @@ mod tests {
             gain: 0.5,
             ..held.clone()
         };
-        let out = read_rows(&piece, &[muted]);
+        let out = read_rows(&multitrack, &[muted]);
         let [MultitrackIntent::SetTracks { tracks }] = &out[..] else {
             panic!("one whole statement, whatever changed: {out:?}");
         };
@@ -1419,9 +1422,9 @@ mod tests {
 
         // A name that is no track's id is a track a hand added — with a lane,
         // since a track that could hold nothing is not one — and the ids come
-        // from the piece's own counter.
+        // from the multitrack's own counter.
         let out = read_rows(
-            &piece,
+            &multitrack,
             &[
                 held.clone(),
                 Strip {
@@ -1434,11 +1437,15 @@ mod tests {
             panic!("one statement: {out:?}");
         };
         assert_eq!(tracks.len(), 2);
-        assert_eq!(tracks[1].id, NodeId(6), "past everything the piece names");
+        assert_eq!(
+            tracks[1].id,
+            NodeId(6),
+            "past everything the multitrack names"
+        );
         assert_eq!(tracks[1].lanes.len(), 1, "and it can hold a box");
 
         // A track the report leaves out is gone, and it takes its boxes.
-        let out = read_rows(&piece, &[]);
+        let out = read_rows(&multitrack, &[]);
         let [MultitrackIntent::SetTracks { tracks }] = &out[..] else {
             panic!("one statement: {out:?}");
         };
@@ -1450,9 +1457,9 @@ mod tests {
     /// that string into the document the first time anything else moved.
     #[test]
     fn a_rows_label_is_drawn_and_never_written_back() {
-        let piece = piece();
+        let multitrack = multitrack();
         let out = read_rows(
-            &piece,
+            &multitrack,
             &[Strip {
                 name: "1".into(),
                 mute: false,
@@ -1462,13 +1469,17 @@ mod tests {
             }],
         );
         assert!(out.is_empty(), "the picture's own label is not a change");
-        assert_eq!(rows(&piece)[0].label, "track 1", "which is what it draws");
-        assert!(piece.tracks[0].name.is_none(), "and not what it holds");
+        assert_eq!(
+            rows(&multitrack)[0].label,
+            "track 1",
+            "which is what it draws"
+        );
+        assert!(multitrack.tracks[0].name.is_none(), "and not what it holds");
     }
 
     #[test]
-    fn a_curve_the_piece_never_declared_is_not_made_by_dragging_it() {
-        let piece = piece();
+    fn a_curve_the_multitrack_never_declared_is_not_made_by_dragging_it() {
+        let multitrack = multitrack();
         let stray = vec![Curved {
             name: "hello".into(),
             points: vec![Point {
@@ -1477,7 +1488,7 @@ mod tests {
                 data: Opaque::none(),
             }],
         }];
-        assert!(read_points(&piece, &stray).is_empty());
+        assert!(read_points(&multitrack, &stray).is_empty());
     }
 
     /// **A number compares by value, not by spelling.** A page writes `0.0` as
@@ -1485,7 +1496,7 @@ mod tests {
     /// was drawn is no edit in either.
     #[test]
     fn a_point_s_data_compares_by_what_it_says() {
-        let mut piece = Multitrack::default();
+        let mut multitrack = Multitrack::default();
         let mut track = Track::new(NodeId(1), NodeId(2));
         let mut curve = Automation::new(NodeId(4), Opaque::none());
         curve.points = vec![Point {
@@ -1494,7 +1505,7 @@ mod tests {
             data: Opaque(serde_json::json!({ "shape": 1, "curve": 0.0 })),
         }];
         track.automation.push(curve);
-        piece.tracks.push(track);
+        multitrack.tracks.push(track);
 
         let spelled = vec![Curved {
             name: "4".into(),
@@ -1504,7 +1515,7 @@ mod tests {
                 data: Opaque(serde_json::json!({ "shape": 1.0, "curve": 0 })),
             }],
         }];
-        assert!(read_points(&piece, &spelled).is_empty());
+        assert!(read_points(&multitrack, &spelled).is_empty());
 
         let moved = vec![Curved {
             name: "4".into(),
@@ -1514,6 +1525,6 @@ mod tests {
                 data: Opaque(serde_json::json!({ "shape": 1, "curve": 0.5 })),
             }],
         }];
-        assert_eq!(read_points(&piece, &moved).len(), 1);
+        assert_eq!(read_points(&multitrack, &moved).len(), 1);
     }
 }

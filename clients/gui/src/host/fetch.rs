@@ -245,7 +245,7 @@ struct DetailAsk {
 ///
 /// It lives here rather than in a front because it needs what the downloads
 /// need — a reply that never arrives must not stop it. A summary is asked for
-/// once and answered in pieces; a piece lost on a carrier that is allowed to
+/// once and answered in multitracks; a multitrack lost on a carrier that is allowed to
 /// lose one would otherwise leave a hole in the picture for the rest of the
 /// session, with nothing to notice it.
 struct PeaksWalk {
@@ -354,7 +354,7 @@ impl BufferFetches {
         }
         // **The carrier is what bounds this, not the number of takes on
         // screen.** Our own traffic is what fills the reply ring, and a reply
-        // that does not fit is dropped rather than delayed, so a piece with six
+        // that does not fit is dropped rather than delayed, so a multitrack with six
         // clips used to start six conversations and keep whichever three the
         // ring happened to hold — the rest drawing an empty box for the rest of
         // the session. The shape is kept and the download starts when a slot
@@ -752,7 +752,7 @@ impl BufferFetches {
     /// - a **summary walk** repeats its request, with nothing to undo: the
     ///   answer is folded where the frame it names says it belongs, so a
     ///   duplicate writes the same buckets twice;
-    /// - a **download owed a slot** starts, which is how a piece with more
+    /// - a **download owed a slot** starts, which is how a multitrack with more
     ///   takes than [`MAX_IN_FLIGHT`] draws all of them rather than the three
     ///   that happened to fit the ring.
     pub(crate) fn tick(&mut self) -> Vec<OscMessage> {
@@ -810,7 +810,7 @@ impl BufferFetches {
         }
         // **What was owed a slot takes one.** A buffer nothing waits on any
         // more (its window closed while it queued) is simply forgotten; the
-        // rest start in buffer order, so a piece fills in left to right rather
+        // rest start in buffer order, so a multitrack fills in left to right rather
         // than in whatever order a hash map happens to hold.
         // **What the server said is not there is asked for again**, on the same
         // clock, and let go of when it stays away (see [`ABSENT_ASKS`]).
@@ -1385,7 +1385,7 @@ mod tests {
         }
     }
 
-    /// **A piece with more takes than the ring holds draws all of them.** Six
+    /// **A multitrack with more takes than the ring holds draws all of them.** Six
     /// clips used to start six downloads at once, and the reply ring dropped
     /// whatever did not fit: three takes drawn, three boxes empty for the rest
     /// of the session, and which three was a race. The shape is answered once
@@ -1483,7 +1483,7 @@ mod tests {
         assert!(samples.iter().all(|s| *s == 0.5));
     }
 
-    /// **A summary arrives in pieces and the walk survives losing one.** The
+    /// **A summary arrives in multitracks and the walk survives losing one.** The
     /// carrier may drop a reply — a full ring drops rather than blocks — so a
     /// walk that hears nothing asks again instead of leaving a hole in the
     /// picture that nothing would ever notice.
@@ -1506,7 +1506,7 @@ mod tests {
             "it continues where the answer ended, not where the request did"
         );
 
-        // Nothing comes back. The frame ticks, and the same piece is asked for
+        // Nothing comes back. The frame ticks, and the same multitrack is asked for
         // again once the silence has gone on long enough.
         for _ in 0..STALLED_ASKS - 1 {
             assert!(fetches.tick().is_empty(), "a moment's wait is not a loss");
@@ -1516,7 +1516,7 @@ mod tests {
         assert_eq!(
             ints(&again[0]),
             vec![3, 256, 10 * 256, -1],
-            "the same piece"
+            "the same multitrack"
         );
 
         // The rest lands, and the walk ends rather than asking past the take.

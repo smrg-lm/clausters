@@ -132,7 +132,7 @@ impl Multitrack {
     /// The two placements differ in exactly two facts, and this is where they
     /// are decided. A **row** spans the whole timeline — a track's gain does not
     /// begin and end with a box — so it is handed the shared window over the
-    /// piece's own extent. A **layer** spans its box, so it is handed the box's
+    /// multitrack's own extent. A **layer** spans its box, so it is handed the box's
     /// local window over the box's own duration, the same [`TimeSpace`] the base
     /// view under it draws through.
     pub(super) fn curves_on_screen(
@@ -259,7 +259,7 @@ impl Multitrack {
             // onto something nobody loaded.
             let space = TimeSpace::of(local, clip.place.dur).with_window(SourceWindow {
                 start: clip.place.start,
-                // A box longer than its samples **wraps** where the piece says
+                // A box longer than its samples **wraps** where the multitrack says
                 // it loops, and shows nothing past their end where it does not:
                 // the picture is what the box reads, and it reads this.
                 looping: self.wraps(&clip.name),

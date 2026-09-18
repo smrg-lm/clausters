@@ -279,7 +279,7 @@ impl App {
         let OscPacket::Message(msg) = packet else {
             return; // bundles are not used on the reply path yet
         };
-        // The ids and the piece's waiting steps hear every reply first, with
+        // The ids and the multitrack's waiting steps hear every reply first, with
         // the leg it came in on (`Host::on_server_reply`, which the page's leg
         // calls too).
         self.host.on_server_reply(from, &msg);
@@ -617,7 +617,7 @@ impl App {
     /// one download per buffer, which is what bounds this).
     ///
     /// The summary walks are ticked here too, for the same reason and against
-    /// the same clock: a piece of a summary that never came back is asked for
+    /// the same clock: a multitrack of a summary that never came back is asked for
     /// again rather than leaving a hole in the picture.
     pub(super) fn fetch_wanted_spans(&mut self) {
         for msg in self.fetches.tick() {

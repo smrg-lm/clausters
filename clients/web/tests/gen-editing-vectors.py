@@ -55,15 +55,15 @@ def curves():
     ]
 
 
-def pieces():
-    """The pieces, and the table of what their sources were read into.
+def multitracks():
+    """The multitracks, and the table of what their sources were read into.
 
     One track with a box on it, an automation over the timeline and an envelope
-    inside the box -- the smallest piece that exercises both curve kinds, the
+    inside the box -- the smallest multitrack that exercises both curve kinds, the
     two time bases they are measured from, and a box over a source that was
     read against one that was not.
     """
-    # `visible` is off unless the piece says otherwise, so one of the two is
+    # `visible` is off unless the multitrack says otherwise, so one of the two is
     # open and the other folded away: `hidden` names exactly the second.
     # Every point carries the segment the wire states, so a curve reported back
     # untouched is byte-for-byte what went out -- which is what makes the
@@ -84,20 +84,20 @@ def pieces():
     }
     track = {"id": 1, "name": "drums", "level": 0.5, "muted": True,
              "lanes": [{"id": 2, "regions": [region]}], "automation": [curve]}
-    piece = {"version": 1, "tracks": [track]}
-    ramped = json.loads(json.dumps(piece))
+    multitrack = {"version": 1, "tracks": [track]}
+    ramped = json.loads(json.dumps(multitrack))
     ramped["tempo"] = [{"at": 0.0, "tempo": 1.0},
                        {"at": 4.0, "tempo": 2.0, "ramp": True}]
     return [
-        ("a piece with no tempo", piece,
+        ("a multitrack with no tempo", multitrack,
          {"77": {"buffer": 12, "channels": 1}}),
-        ("the same piece over a source nobody read", piece, {}),
+        ("the same multitrack over a source nobody read", multitrack, {}),
         ("and with a tempo that moves, which moves no box",
          ramped, {"77": {"buffer": 12, "channels": 1}}),
     ]
 
 
-def gestures(piece, sources):
+def gestures(multitrack, sources):
     """The gestures, and what each domain needs beside the report.
 
     One per vocabulary, plus the cases that are *answers* rather than edits: a
@@ -106,7 +106,7 @@ def gestures(piece, sources):
     has to be told apart identically in both clients, because one leaves the
     picture alone and the other makes the host redraw it.
     """
-    props = _native.multitrack_props(piece, 48000.0,
+    props = _native.multitrack_props(multitrack, 48000.0,
                                      {int(k): v for k, v in sources.items()})
     clips = list(props["clips"])
     clips[2] = float(clips[2]) + 4.0 * 48_000.0
@@ -116,7 +116,7 @@ def gestures(piece, sources):
     points[len(points) - 3] = 0.75
     timeline = [{"at": 0.0, "data": {"midinote": 60, "instrument": "bell"}},
                 {"at": 1.0, "data": {"osc": "/cue", "args": [1]}}]
-    piece_request = {"state": piece, "rate": 48000.0,
+    multitrack_request = {"state": multitrack, "rate": 48000.0,
                      "sources": sources}
     return [
         ("a curve drawn back", "points", "points",
@@ -137,15 +137,15 @@ def gestures(piece, sources):
          {"values": [1440.0, "/cue", 1920.0, ""], "state": timeline,
           "unitsPerBeat": 480.0, "editable": True}),
         ("a box dragged four seconds along", "multitrack", "clips",
-         {"values": clips, **piece_request}),
+         {"values": clips, **multitrack_request}),
         ("a fader moved", "multitrack", "lanes",
-         {"values": lanes, **piece_request}),
+         {"values": lanes, **multitrack_request}),
         ("a layer's break-point, on its box's own axis", "multitrack", "points",
-         {"values": points, **piece_request}),
+         {"values": points, **multitrack_request}),
         ("and every curve reported back is no edit", "multitrack", "points",
-         {"values": list(props["points"]), **piece_request}),
-        ("a piece reported back unchanged is no edit", "multitrack", "clips",
-         {"values": list(props["clips"]), **piece_request}),
+         {"values": list(props["points"]), **multitrack_request}),
+        ("a multitrack reported back unchanged is no edit", "multitrack", "clips",
+         {"values": list(props["clips"]), **multitrack_request}),
     ]
 
 
@@ -174,7 +174,7 @@ def exchange():
          event("clips", 7, 1, 1, 1), 2),
         ("a second gesture inside one round trip still names the old version",
          event("clips", 7, 2, 1, 2), 3),
-        ("a script edited the piece: the version moved and no event moved it",
+        ("a script edited the multitrack: the version moved and no event moved it",
          event("clips", 7, 3, 2, 9), None),
         ("and a later gesture against the picture that is gone is refused too",
          event("clips", 7, 4, 8, 9), None),
@@ -213,11 +213,11 @@ def editor_exchange():
     The acceptance of the multitrack application stated as data: the clients
     hold a handle over the applications crate and carry out what it answers, so
     a hand's gestures come to **the same messages to the host, the same calls
-    on the playback and the same piece** whichever client carries them. The
+    on the playback and the same multitrack** whichever client carries them. The
     gestures run through the Python client's own `MultitrackEditor.apply`, and
     `editing-parity.test.ts` replays them through the web client's.
 
-    Widgets are named by role rather than by number -- `piece`, `ruler`, the
+    Widgets are named by role rather than by number -- `multitrack`, `ruler`, the
     window, the transport row -- because which id a client's allocator hands
     out is its own, and what is compared is what the editor decided.
     """
@@ -282,19 +282,19 @@ def editor_exchange():
         def sync(self):
             self.calls.append(["sync"])
 
-    piece = Multitrack.read(json.loads(json.dumps(written)))
-    ed = MultitrackEditor(piece, sample_rate=SR, sources={1: 7})
+    multitrack = Multitrack.read(json.loads(json.dumps(written)))
+    ed = MultitrackEditor(multitrack, sample_rate=SR, sources={1: 7})
     host, playback = Recorder(), Playback()
     ed._host = host
     ed._window = 1
     ed.playback = playback
     ed.draw()
     ed._controls = dict(controls)
-    ids = {"piece": ed.view.piece, "ruler": ed.view.ruler, "window": 1, **controls}
-    roles = {ed.view.piece: "piece", ed.view.ruler: "ruler"}
+    ids = {"multitrack": ed.view.multitrack, "ruler": ed.view.ruler, "window": 1, **controls}
+    roles = {ed.view.multitrack: "multitrack", ed.view.ruler: "ruler"}
 
     def septuples():
-        flat = ed.view.props(ed, ed.view.piece)["clips"]
+        flat = ed.view.props(ed, ed.view.multitrack)["clips"]
         return [list(flat[i:i + 7]) for i in range(0, len(flat), 7)]
 
     def moved(name, at):
@@ -319,8 +319,8 @@ def editor_exchange():
         return out
 
     script = [
-        ("a box moved on its lane", "piece", "clips", lambda: moved("12", 2.0), "now"),
-        ("a box split under a name the host minted", "piece", "clips",
+        ("a box moved on its lane", "multitrack", "clips", lambda: moved("12", 2.0), "now"),
+        ("a box split under a name the host minted", "multitrack", "clips",
          lambda: split("13"), "now"),
         ("the cursor placed on the ruler", "ruler", "locate", lambda: [4.0 * SR], "now"),
         ("play from the transport row", "play", "click", list, "now"),
@@ -328,7 +328,7 @@ def editor_exchange():
         ("rewind from the transport row", "rewind", "click", list, "now"),
         ("the space bar", "window", "play", list, "now"),
         ("an undo", "window", "undo", list, "now"),
-        ("an edit made against a picture that is gone", "piece", "clips",
+        ("an edit made against a picture that is gone", "multitrack", "clips",
          lambda: moved("22", 6.0), 1),
     ]
     turns = []
@@ -352,13 +352,13 @@ def editor_exchange():
                 for kind, s, version, reason, corrections in host.messages],
             "playback": list(playback.calls),
             "regions": [[t.id, r.id, r.position, r.length]
-                        for t in piece.tracks for lane in t.lanes
+                        for t in multitrack.tracks for lane in t.lanes
                         for r in lane.regions],
         })
     return {
         "name": "the multitrack editor answers a recorded exchange",
         "kind": "editor_exchange",
-        "piece": written,
+        "multitrack": written,
         "rate": SR,
         "sources": sources,
         "controls": controls,
@@ -377,18 +377,18 @@ def main() -> None:
             "held": held,
             "props": _native.points_props(points, kept, held),
         })
-    for name, piece, sources in pieces():
+    for name, multitrack, sources in multitracks():
         vectors.append({
             "name": name,
             "kind": "multitrack_props",
-            "piece": piece,
+            "multitrack": multitrack,
             "rate": 48000.0,
             "sources": sources,
-            "props": _native.multitrack_props(piece, 48000.0,
+            "props": _native.multitrack_props(multitrack, 48000.0,
                                               {int(k): v for k, v in sources.items()}),
         })
-    piece, sources = pieces()[0][1], pieces()[0][2]
-    for name, domain, tag, request in gestures(piece, sources):
+    multitrack, sources = multitracks()[0][1], multitracks()[0][2]
+    for name, domain, tag, request in gestures(multitrack, sources):
         vectors.append({
             "name": name,
             "kind": "intake",
@@ -421,12 +421,12 @@ def main() -> None:
             "corrections": [{"widget": w, "props": p} for w, p in corrections],
             "answer": _native.conversation_answer(seq, version, reason, corrections),
         })
-    for name, piece, _sources in pieces():
+    for name, multitrack, _sources in multitracks():
         vectors.append({
             "name": f"the names of {name}",
             "kind": "names",
-            "piece": piece,
-            "names": _native.multitrack_names(piece),
+            "multitrack": multitrack,
+            "names": _native.multitrack_names(multitrack),
         })
     vectors.append(editor_exchange())
     out = pathlib.Path(__file__).with_name("editing-vectors.json")

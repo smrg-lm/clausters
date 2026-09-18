@@ -10,7 +10,7 @@ crosses is the document and a handle.
 These used to live in `test_form_document.py` and build their documents through
 `clausters.form`'s converter. The converter is gone; the documents are written
 out here, which is the honest shape anyway -- what is under test is the edit,
-so what it starts from should be a fixed piece of JSON rather than the output of
+so what it starts from should be a fixed multitrack of JSON rather than the output of
 something else that could itself drift.
 """
 

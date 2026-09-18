@@ -402,7 +402,7 @@ fn options(scale: i32, page_width: i32, extra: Option<String>) -> EngraveOptions
 /// was not written from one.
 ///
 /// The page names elements the way the emitter wrote them: `n7` is the item,
-/// `n7-2` a piece of it split across a barline, `n7-p1` one pitch of a chord.
+/// `n7-2` a part of it split across a barline, `n7-p1` one pitch of a chord.
 /// All three are the same item, which is what lets a gesture anywhere on a note
 /// reach the note — and it is the step every client takes between a page's
 /// selection and a model verb, which is why it is answered here rather than

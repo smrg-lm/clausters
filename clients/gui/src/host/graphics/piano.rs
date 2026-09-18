@@ -13,7 +13,7 @@
 //! (`(4 − 3b)/4`), which is how the physical keyboard distributes them. All
 //! layout derives from the widget rect, so the drawing scales with it.
 //!
-//! Everything here is **display logic plus message shaping**; the one piece of
+//! Everything here is **display logic plus message shaping**; the one multitrack of
 //! general musical knowledge — note spelling and the MIDI↔hertz map — lives in
 //! `clausters_core::scale` per the placement rule.
 

@@ -30,7 +30,7 @@ So the boundaries are:
 A multitrack application is this class plus what only a tree has: a
 held document, several views of one composition, the lanes and clips, and a
 transport. **Transport and render are not here** — a bare structure at most
-sounds; it has no piece to move over.
+sounds; it has no multitrack to move over.
 """
 
 from ... import _native
@@ -128,7 +128,7 @@ class Editor:
         self.on_locate = None
         #: The editor this one was **composed inside**, when it was one.
         #:
-        #: A structure is not a piece: it has no transport, so a click on a
+        #: A structure is not a multitrack: it has no transport, so a click on a
         #: ruler here is a seek of whatever this is part of. An editor composed
         #: by nobody answers a transport gesture with nothing, which is the
         #: honest answer for a curve opened on its own.
@@ -222,7 +222,7 @@ class Editor:
         return self.beats_to_units(1.0) - self.beats_to_units(0.0)
 
     def beats_to_units(self, beats: float) -> float:
-        """Beats → timeline samples, through the piece's time map (and the
+        """Beats → timeline samples, through the multitrack's time map (and the
         core's seconds→samples rounding every client shares).
 
         The axis is real time, so this is where a beat stops being a logical
@@ -500,7 +500,7 @@ class Editor:
             #
             # **It no longer says "a window that is not open"**, which is what it
             # used to say and was the visible face of a worse thing: the applier
-            # was a *view*, so closing a box entered from a piece left an entry
+            # was a *view*, so closing a box entered from a multitrack left an entry
             # nobody could apply and the whole pile blocked behind it. The
             # applier is the structure's vocabulary now
             # (`clausters.gui.editing.Editing.identity`), which no window owns.
@@ -623,7 +623,7 @@ class Editor:
             # playhead is never placed.
             self.cursor = self._position(float(values[0]))
             # **Whoever has the transport is told**, and that is this editor
-            # when it has one and the piece it is composed inside when it does
+            # when it has one and the multitrack it is composed inside when it does
             # not: a structure has no transport of its own, and a window inside a
             # composition is not a second place to keep a position.
             self.locate(self.cursor)
@@ -652,7 +652,7 @@ class Editor:
         Nothing on its own — a structure's selection is that structure's. A view
         **composed** inside a bigger editor hands it up instead, because the
         range an operation is given must be the same value whichever of the
-        piece's windows it was swept in.
+        multitrack's windows it was swept in.
         """
         if self.composed_in is not None:
             self.composed_in.adopt_selection(self)
@@ -754,7 +754,7 @@ class Editor:
         another window's, or a step of the history.
 
         Separate from `adopt`, which is about *drawing*: a script that sounds a
-        piece or writes a file wants to be told whoever made the edit, and the
+        multitrack or writes a file wants to be told whoever made the edit, and the
         window that made it is not exempt from having changed.
         """
         if self.on_change is not None:

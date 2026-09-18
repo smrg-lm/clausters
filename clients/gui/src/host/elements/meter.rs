@@ -24,7 +24,7 @@
 //!   hairline across the column: the mark is still there when an eye gets to
 //!   it.
 //! - **The scale is decibels**, from a floor the reader states — the 60 dB
-//!   strip a mix is read on, or the dynamic range of the resolution the piece
+//!   strip a mix is read on, or the dynamic range of the resolution the multitrack
 //!   is rendered at (`bits`).
 //! - **An over is latched.** Clipping is a handful of samples and a person is
 //!   not, so the lamp over the column stays lit until a hand puts it out (a
@@ -403,7 +403,7 @@ impl Element for Meter {
     /// **A click puts the lamps out.** The one thing a hand does to a meter,
     /// and the reason the mark is latched at all: a reader clears it when they
     /// have seen it, and what happens after that is news. It reports nothing —
-    /// the latch is the reader's state, not the piece's — so a window full of
+    /// the latch is the reader's state, not the multitrack's — so a window full of
     /// meters is silent on the wire however much it is clicked.
     fn press(&mut self, _at: (f64, f64), _input: &Input) -> Claim {
         self.clear();
@@ -526,7 +526,7 @@ mod tests {
     }
 
     /// The floor is the reader's question: the mixing strip, a stated number,
-    /// or the dynamic range of the resolution the piece is rendered at.
+    /// or the dynamic range of the resolution the multitrack is rendered at.
     #[test]
     fn the_floor_is_the_strip_a_number_or_a_resolution() {
         let floor = |json: &str| match from_props(&props(json)).axis {

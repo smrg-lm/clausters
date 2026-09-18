@@ -37,8 +37,8 @@ pub const GRAPH_CONTROL_BUS_FLOOR: usize = 128;
 ///
 /// A share and not a number, because it is a *partition* of a configured
 /// resource: a server booted with more buses has to hand the extra ones to
-/// both sides, or raising the count would not buy a piece a single track. That
-/// is exactly what a fixed 32 did -- a piece spends four private buses per
+/// both sides, or raising the count would not buy a multitrack a single track.
+/// That is exactly what a fixed 32 did -- a multitrack spends four private buses per
 /// track and one or two per clip, so a multitrack ran out at seven tracks and
 /// no configuration could change it.
 ///

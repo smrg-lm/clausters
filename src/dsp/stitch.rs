@@ -6,7 +6,7 @@
 //! in another order — the reader would have to change *which buffer it reads*
 //! with sample accuracy, and `bufnum` is an initial-rate control: changing it
 //! is a new node. A new node per seam is a control message in the middle of
-//! playback, which is exactly what a piece that plays itself from the transport
+//! playback, which is exactly what a multitrack that plays itself from the transport
 //! must not need.
 //!
 //! So the join moves out of the reader and into the buffer. A [`Stitch`] is a

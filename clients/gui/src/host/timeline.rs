@@ -146,7 +146,7 @@ pub struct GroupState {
     /// above says where the *music* is, swept from the clock or parked where
     /// the transport stopped; this says where the *reader* is, and nothing but
     /// a click on the ruler moves it. Group-wide because a paste anchor that
-    /// differed between two lanes of one piece would not be an anchor.
+    /// differed between two lanes of one multitrack would not be an anchor.
     pub cursor: f64,
     /// The sweep's loop region (samples; `len <= 0` = the straight pass) — the
     /// same convention as `EditorProps::playhead_loop_start`/`_len`. Group-wide
@@ -227,7 +227,7 @@ impl GroupState {
         }
         // Clamped at the start rather than refused there. A clock of exactly 0
         // used to mean "the engine has not run yet", which is true of a device
-        // clock and **false of a transport position**: 0 is where a piece
+        // clock and **false of a transport position**: 0 is where a multitrack
         // sits before anyone has moved it, and a session that opens there
         // would draw no line at all until something played. A sweep is never
         // left of the contents either way, so the clamp costs the device case
@@ -645,7 +645,7 @@ impl Host {
     /// `refit` is what the *caller* would like ("it was showing it all, keep
     /// showing it all"); `autofit` is what the **view** allows, and it comes
     /// first. Off, the window is the reader's and nothing about the content
-    /// touches it — not a refit, and not the re-clamp either, since a piece
+    /// touches it — not a refit, and not the re-clamp either, since a multitrack
     /// that got shorter would otherwise pull a window back off the empty bars
     /// the reader had deliberately scrolled onto. The extent is still
     /// registered, so navigating still knows how far it can go: the clamp
@@ -910,7 +910,7 @@ impl Host {
     }
 
     /// **Places the position cursor** at `pos`, on a whole sample — the group's,
-    /// so every lane of the piece shows the one mark.
+    /// so every lane of the multitrack shows the one mark.
     ///
     /// It moves nothing else, and that is the whole rule. The playhead is not
     /// placed: it *starts* from here, and while the transport runs it is the
@@ -1106,8 +1106,8 @@ impl Host {
                         // it back onto the content, on every structural edit.
                         //
                         // Measured against the total it was showing, not the new
-                        // one: a view that filled a 400-long piece was showing
-                        // everything, and that is still true when the piece
+                        // one: a view that filled a 400-long multitrack was showing
+                        // everything, and that is still true when the multitrack
                         // becomes 800 long.
                         //
                         // And a view that does not `autofit` keeps its window
@@ -1121,7 +1121,7 @@ impl Host {
                             let mut nav = old;
                             // Re-clamped only where the view follows its
                             // content: with the switch off the window is the
-                            // reader's, and a piece that got shorter under a
+                            // reader's, and a multitrack that got shorter under a
                             // structural edit must not pull it back -- the same
                             // sentence `content_moved` says, at the one door
                             // that does not come through it.

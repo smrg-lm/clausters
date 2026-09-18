@@ -77,7 +77,7 @@ class Playback:
         #: tempo map, so its positions are the multitrack's own seconds.
         self.transport = PlayheadSync(
             editor._host,
-            lambda: [] if editor.piece_widget is None else [editor.piece_widget],
+            lambda: [] if editor.multitrack_widget is None else [editor.multitrack_widget],
             head_clock="transport", governed=True,
             sample_rate=bridge.rate,
             extent=lambda: editor.structure.end)

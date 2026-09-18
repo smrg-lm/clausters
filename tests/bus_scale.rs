@@ -2,7 +2,7 @@
 //!
 //! Buses are a configured resource (`--audio-buses`, `--control-buses`) and
 //! the count is a partition: half the space is private to GraphDef instances,
-//! so a piece's tracks come out of the same number a patch's scopes do. Raising
+//! so a multitrack's tracks come out of the same number a patch's scopes do. Raising
 //! it is not free -- every audio bus is a block of samples that is **cleared
 //! every block**, on the audio thread -- so the default is a measurement and
 //! not a taste.

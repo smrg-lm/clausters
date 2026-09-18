@@ -1,8 +1,8 @@
-//! **How a piece is played**: its instance, its applier and its transport, as
+//! **How a multitrack is played**: its instance, its applier and its transport, as
 //! the steps that carry every verb out.
 //!
 //! [`crate::instance`] answers what has to change on a server for it to hold
-//! what a piece says, and [`crate::apply`] what messages that is. What was left
+//! what a multitrack says, and [`crate::apply`] what messages that is. What was left
 //! over was *playing* it — which sample a second of the multitrack is when the
 //! transport is located, what play, pause, stop and cue send, and that a paused
 //! meter is zeroed — and it was written once in
@@ -33,12 +33,12 @@ use serde_json::{Value, json};
 use crate::apply::{Applier, Endpoint, Step, steps_json};
 use crate::instance::Instance;
 
-/// **One piece, as it is playing.**
+/// **One multitrack, as it is playing.**
 #[derive(Debug, Clone)]
 pub struct MultitrackPlayback {
     instance: Instance,
     applier: Applier,
-    /// The rate the piece was last planned at.
+    /// The rate the multitrack was last planned at.
     rate: f64,
     /// Whether the transport was last told to roll.
     rolling: bool,
@@ -56,20 +56,20 @@ impl MultitrackPlayback {
         }
     }
 
-    /// **Makes what sounds be what the piece says**: the plan at `rate`, the
+    /// **Makes what sounds be what the multitrack says**: the plan at `rate`, the
     /// difference from what is made, as steps, allocating from `ids`. It runs
-    /// on every change of the piece, whoever made it; a node that did not
+    /// on every change of the multitrack, whoever made it; a node that did not
     /// change costs nothing.
     pub fn sync(
         &mut self,
-        piece: &Multitrack,
+        multitrack: &Multitrack,
         rate: f64,
         sources: &HashMap<SourceId, SourceInfo>,
         gain: f32,
         ids: &mut IdSpaces,
     ) -> Result<Vec<Step>, IdError> {
         self.rate = rate;
-        let plan = nodes::plan(piece, rate, sources);
+        let plan = nodes::plan(multitrack, rate, sources);
         let ops = self.instance.reconcile(&plan, gain);
         self.applier.apply(ops, ids)
     }
@@ -81,7 +81,7 @@ impl MultitrackPlayback {
         command("/transport_play", vec![])
     }
 
-    /// **Freezes the piece where it stands**, every node's state intact — and
+    /// **Freezes the multitrack where it stands**, every node's state intact — and
     /// zeroes its meters, because a frozen meter gets no time to fall and would
     /// go on claiming the last level it wrote. The mark goes with the level.
     pub fn pause(&mut self) -> Vec<Step> {
@@ -128,7 +128,7 @@ impl MultitrackPlayback {
         }
     }
 
-    /// Frees everything the piece made. The piece itself is untouched: what a
+    /// Frees everything the multitrack made. The multitrack itself is untouched: what a
     /// playback holds is nodes, and nodes are not the composition.
     pub fn close(&mut self, ids: &mut IdSpaces) -> Result<Vec<Step>, IdError> {
         self.rolling = false;
@@ -147,19 +147,19 @@ impl MultitrackPlayback {
         self.rolling
     }
 
-    /// Whether anything of the piece is made.
+    /// Whether anything of the multitrack is made.
     pub fn is_sounding(&self) -> bool {
         self.instance.is_sounding()
     }
 
-    /// **The transport's group**, once the piece has made it: where an
+    /// **The transport's group**, once the multitrack has made it: where an
     /// endpoint puts anything else that has to follow the transport, as the GUI
     /// host's take monitor does.
     pub fn group(&self) -> Option<i32> {
         self.applier.node(crate::instance::TRANSPORT)
     }
 
-    /// How many nodes the piece holds.
+    /// How many nodes the multitrack holds.
     pub fn node_count(&self) -> usize {
         self.applier.node_count()
     }
@@ -176,7 +176,7 @@ impl MultitrackPlayback {
         samples_to_secs(samples, self.rate)
     }
 
-    /// The meters the piece writes, as `(track id, first bus, channels)`: a run
+    /// The meters the multitrack writes, as `(track id, first bus, channels)`: a run
     /// of `2 * channels`, the level first and the mark after it.
     pub fn meters(&self) -> Vec<(u64, i32, usize)> {
         self.instance
@@ -217,22 +217,22 @@ pub fn answer_json(steps: Result<Vec<Step>, IdError>) -> String {
     }
 }
 
-/// [`MultitrackPlayback::sync`] over JSON: the piece as the document's own JSON and
+/// [`MultitrackPlayback::sync`] over JSON: the multitrack as the document's own JSON and
 /// the source table as [`crate::instance::sources_table`] reads it.
 pub fn sync_json(
     playback: &mut MultitrackPlayback,
-    piece: &str,
+    multitrack: &str,
     rate: f64,
     sources: &str,
     gain: f32,
     ids: &mut IdSpaces,
 ) -> String {
-    let piece = match serde_json::from_str::<Multitrack>(piece) {
-        Ok(piece) => piece,
-        Err(e) => return json!({ "error": format!("not a piece: {e}") }).to_string(),
+    let multitrack = match serde_json::from_str::<Multitrack>(multitrack) {
+        Ok(multitrack) => multitrack,
+        Err(e) => return json!({ "error": format!("not a multitrack: {e}") }).to_string(),
     };
     let table = crate::instance::sources_table(sources);
-    answer_json(playback.sync(&piece, rate, &table, gain, ids))
+    answer_json(playback.sync(&multitrack, rate, &table, gain, ids))
 }
 
 /// [`MultitrackPlayback::meters`] as JSON: `[{"track", "bus", "channels"}]`.
@@ -268,7 +268,7 @@ mod tests {
             .collect()
     }
 
-    fn piece() -> Multitrack {
+    fn multitrack() -> Multitrack {
         Multitrack {
             tracks: vec![Track::new(NodeId(10), NodeId(11))],
             ..Multitrack::default()
@@ -281,7 +281,7 @@ mod tests {
     fn a_locate_is_the_seconds_sample_whatever_the_tempo() {
         let mut playback = MultitrackPlayback::new(Endpoint::default());
         playback
-            .sync(&piece(), 48_000.0, &HashMap::new(), 1.0, &mut spaces())
+            .sync(&multitrack(), 48_000.0, &HashMap::new(), 1.0, &mut spaces())
             .unwrap();
         assert_eq!(playback.secs_to_samples(2.0), 96_000);
         let steps = playback.locate(2.0);
@@ -294,7 +294,7 @@ mod tests {
             "and waits for it"
         );
 
-        let mut faster = piece();
+        let mut faster = multitrack();
         faster.tempo = vec![Tempo::at(Beat(0.0), 2.0)];
         playback
             .sync(&faster, 48_000.0, &HashMap::new(), 1.0, &mut spaces())
@@ -324,7 +324,7 @@ mod tests {
     }
 
     /// The JSON doors answer steps with 64-bit samples, and an error for what
-    /// is not a piece.
+    /// is not a multitrack.
     #[test]
     fn the_json_doors_answer_steps_or_an_error() {
         let mut playback = MultitrackPlayback::new(Endpoint::default());

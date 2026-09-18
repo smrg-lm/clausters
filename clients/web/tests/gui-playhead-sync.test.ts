@@ -32,7 +32,7 @@ await loadCore();
 const SR = 48_000.0;
 const TEMPO = 2.0; // beats per second (120 bpm)
 /** What the passes play, as far as the line is concerned: its map is the tempo. */
-const PIECE = new Timeline([], { tempo: TEMPO });
+const TIMELINE = new Timeline([], { tempo: TEMPO });
 const BEAT = SR / TEMPO; // 24000 samples per beat
 const CLOCK = 1_000_000.0; // the sample-clock value the fake server reports
 
@@ -106,7 +106,7 @@ class RollingClock extends TempoClock {
 class Pass {
     /** The beats its items sit on — the last is where a drained plan stops. */
     static readonly items = [0.0, 1.0, 2.0];
-    readonly map = PIECE.map;
+    readonly map = TIMELINE.map;
     playing = true;
     finished = false;
     scannedAt: number | null = null;
@@ -157,7 +157,7 @@ function makeTransport(
 ): PlayheadSync {
     return new PlayheadSync(host as unknown as GuiHost, 7, {
         source: (at) => new Pass(clock, at) as never,
-        structure: PIECE,
+        structure: TIMELINE,
         sampleRate: SR,
         extent,
         clock,
@@ -177,7 +177,7 @@ test("the cursor is drawn in the view's own unit", () => {
     const host = new FakeHost();
     const tp = new PlayheadSync(host as unknown as GuiHost, 7, {
         source: () => null,
-        structure: PIECE,
+        structure: TIMELINE,
         sampleRate: SR,
         // An engraved page: milliseconds, not timeline samples.
         toUnits: (beats) => (beats * 1000.0) / TEMPO,
@@ -202,7 +202,7 @@ test("stop returns to the top and pause keeps the position", () => {
 });
 
 test("no host, no line", () => {
-    const tp = new PlayheadSync(null, 7, { source: () => null, structure: PIECE, sampleRate: SR });
+    const tp = new PlayheadSync(null, 7, { source: () => null, structure: TIMELINE, sampleRate: SR });
     tp.locate(1.0); // must not throw
     assert.equal(tp.at, 1.0);
 });
@@ -397,7 +397,7 @@ test("a play puts the end of the pass on the application clock", async () => {
     const clock = makeClock();
     const tp = new PlayheadSync(host as unknown as GuiHost, 7, {
         source: (at) => new Pass(clock, at) as never,
-        structure: PIECE,
+        structure: TIMELINE,
         sampleRate: SR,
         extent: () => 3.0,
         clock,
@@ -473,7 +473,7 @@ class HeadClockHost extends FakeHost {
 function pieceTransport(host?: HeadClockHost): PlayheadSync {
     const tp = new PlayheadSync((host ?? new HeadClockHost()) as unknown as GuiHost, 7, {
         headClock: "transport",
-        structure: PIECE,
+        structure: TIMELINE,
         sampleRate: SR,
     });
     tp.server = new TransportServer() as unknown as Server;
@@ -554,7 +554,7 @@ test("a transport still cues a pass of voices, and only on a locate", async () =
             cued.push(at);
             return null;
         },
-        structure: PIECE,
+        structure: TIMELINE,
         sampleRate: SR,
     });
     tp.server = new TransportServer() as unknown as Server;

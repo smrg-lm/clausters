@@ -1437,7 +1437,7 @@ impl Claim {
 /// A leaf the renderer draws without knowing what it is.
 ///
 /// Object-safe and single-threaded on purpose (see the module docs).
-/// [`clone_box`](Element::clone_box) is the one piece of ceremony: the widget
+/// [`clone_box`](Element::clone_box) is the one multitrack of ceremony: the widget
 /// tree is `Clone` (a def is rebuilt by replacement, and the frame copies out
 /// of it), so a boxed element has to be too.
 ///

@@ -60,7 +60,7 @@ pub struct Monitor {
 /// into the same server a composition's own defs live in.
 pub const TAKE_DEF: &str = "clausters-gui-take";
 
-/// The span a reader with no stated end lasts, in frames: past any piece
+/// The span a reader with no stated end lasts, in frames: past any multitrack
 /// anybody edits (about 260 days at 48 kHz), and a number rather than a branch
 /// so the gate is one comparison whoever is playing.
 const NO_END: f64 = 1.0e12;
@@ -70,7 +70,7 @@ const NO_END: f64 = 1.0e12;
 ///
 /// Short enough that nobody hears it as a fade and long enough that nobody
 /// hears the edge as a click, which is the whole of what a declick is. It is
-/// **not** the fades a region carries: those are the piece's and are authored,
+/// **not** the fades a region carries: those are the multitrack's and are authored,
 /// and this is the one every edge needs whether or not anybody asked.
 const RAMP: f64 = 240.0;
 
@@ -85,9 +85,9 @@ const MAX_CHANNELS: usize = 32;
 /// loading it at the first press would race the `/synth_new` that wanted it.
 pub fn take_def_message() -> OscMessage {
     // `TransportPos` is the whole of the seek: the reader plays wherever the
-    // piece is, so this def has no start frame, no trigger and no loop of its
-    // own. `offset` is where this take sits in the piece — 0 while a take *is*
-    // the piece, and the door a multitrack clip goes through later.
+    // multitrack is, so this def has no start frame, no trigger and no loop of its
+    // own. `offset` is where this take sits in the multitrack — 0 while a take *is*
+    // the multitrack, and the door a multitrack clip goes through later.
     let spec = json!({
         "name": TAKE_DEF,
         "controls": [
@@ -106,7 +106,7 @@ pub fn take_def_message() -> OscMessage {
         ],
         "ugens": [
             {"kind": "TransportPos", "inputs": [{"control": 4}]},
-            // The frame of the source: the piece's position, shifted by the
+            // The frame of the source: the multitrack's position, shifted by the
             // window this reader opens at.
             {"kind": "Add", "inputs": [{"ugen": 0}, {"control": 5}]},
             {"kind": "BufRd", "inputs": [
@@ -115,7 +115,7 @@ pub fn take_def_message() -> OscMessage {
             // What it has to say is three things at once: a reader that has
             // not started is silent, one that is over is silent, and neither
             // edge is a step. Without the gate `BufRd` clamps past the end and
-            // holds the last sample -- a tone where the piece has silence --
+            // holds the last sample -- a tone where the multitrack has silence --
             // and without the ramp both edges click, which is what a hard cut
             // at a non-zero sample is.
             //
@@ -207,7 +207,7 @@ impl Host {
             .clamp(1, MAX_CHANNELS);
         // Stop before rebuilding: the readers are created into the frozen
         // group, so they stand at the new position rather than racing from
-        // wherever the last take left the piece.
+        // wherever the last take left the multitrack.
         self.stop_playback();
         // The readers' ids are the host's like any node's, and come back on
         // their `/node_end` once the stop frees them.
@@ -279,7 +279,7 @@ impl Host {
     /// The freeze is the server's: the governed group stops processing with its
     /// state intact, so a resume continues the sound instead of restarting it —
     /// and the position, and therefore the drawn head, holds with it. Nothing
-    /// here has to remember where the piece was, which is the whole reason a
+    /// here has to remember where the multitrack was, which is the whole reason a
     /// pause is a transport command and not a re-`/synth_new`.
     pub fn pause_playback(&mut self) -> Option<bool> {
         let mut monitor = self.playing?;
@@ -296,7 +296,7 @@ impl Host {
         Some(monitor.rolling)
     }
 
-    /// Moves the piece to `frame` — the seek, which is the transport's and not
+    /// Moves the multitrack to `frame` — the seek, which is the transport's and not
     /// the reader's. Safe to call while stopped, which is what a click on the
     /// ruler does.
     pub fn locate(&mut self, frame: u64) {
@@ -394,7 +394,7 @@ mod tests {
             spec["ugens"][2]["inputs"][3]["const"], 0.0,
             "the reader never wraps: the loop is the transport's too"
         );
-        // **The gate is the region's span**, and it is what a piece of many
+        // **The gate is the region's span**, and it is what a multitrack of many
         // regions needs: a reader before its own start and one past its end are
         // both silent, so the boxes on a lane do not bleed into each other.
         // The gate: the distance to the nearer edge, over the ramp, clamped

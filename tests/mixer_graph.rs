@@ -1,12 +1,12 @@
 //! **The multitrack's node system, heard rather than inspected.**
 //!
-//! `clausters_core::mixer` says what a piece *is* as nodes and groups, and a
+//! `clausters_core::mixer` says what a multitrack *is* as nodes and groups, and a
 //! def that is only read back as JSON proves nothing: what has to be true is
-//! that the whole nest — piece, track, clip, reader — compiles, instantiates and
-//! makes the sound the piece describes. So these render it offline and measure
+//! that the whole nest — multitrack, track, clip, reader — compiles, instantiates and
+//! makes the sound the multitrack describes. So these render it offline and measure
 //! what came out.
 //!
-//! What they check, in order: that a whole piece is one `/graph_new` and
+//! What they check, in order: that a whole multitrack is one `/graph_new` and
 //! everything after it is a slot added to what is already sounding; that a box
 //! is heard where the transport says it is and nowhere else; that a port
 //! written at any level reaches the control it names; and that a mono take on a
@@ -35,7 +35,7 @@ fn send(s: &mut NrtSession, addr: &str, args: Vec<OscType>) {
     assert!(s.send_msg(addr, args).expect("encode"), "ring full");
 }
 
-/// Sends every def a piece of these widths needs, in the order the module says.
+/// Sends every def a multitrack of these widths needs, in the order the module says.
 fn send_defs(s: &mut NrtSession, widths: &[(usize, usize)], master: usize) {
     let defs = mixer::defs_for(widths, master).expect("the widths are written");
     for def in &defs.synth {
@@ -119,15 +119,15 @@ fn peaks(s: &mut NrtSession, blocks: usize) -> (f32, f32) {
     (left, right)
 }
 
-/// Builds a piece with one stereo track holding one mono clip whose one reader
+/// Builds a multitrack with one stereo track holding one mono clip whose one reader
 /// plays buffer 0 from the transport's start, and answers the ids
-/// `(piece, track, clip, reader)`.
+/// `(multitrack, track, clip, reader)`.
 fn one_box(s: &mut NrtSession, span_frames: f32, at_frames: f32) -> (i32, i32, i32, i32) {
     send(
         s,
         "/graph_new",
         vec![
-            OscType::String(mixer::piece_name(2)),
+            OscType::String(mixer::multitrack_name(2)),
             OscType::Int(900),
             OscType::Int(0),
             OscType::Int(0),
@@ -166,8 +166,8 @@ fn one_box(s: &mut NrtSession, span_frames: f32, at_frames: f32) -> (i32, i32, i
             OscType::Float(span_frames),
         ],
     );
-    // **The piece's group is the transport's**, which is what makes the
-    // readers' `TransportPos` the piece's own position rather than a number
+    // **The multitrack's group is the transport's**, which is what makes the
+    // readers' `TransportPos` the multitrack's own position rather than a number
     // that never moves -- and what makes play, stop and locate the engine's
     // rather than a client's arithmetic.
     send(s, "/transport_group", vec![OscType::Int(900)]);
@@ -196,11 +196,11 @@ fn meter(s: &mut NrtSession, instance: i32, id: i32, bus: i32, hold: f32) {
     s.settle_for(4);
 }
 
-/// **A piece is one `/graph_new`, and everything else is added to what is
-/// already sounding.** Four levels of nesting — piece, track, clip, reader —
+/// **A multitrack is one `/graph_new`, and everything else is added to what is
+/// already sounding.** Four levels of nesting — multitrack, track, clip, reader —
 /// and the sound comes out of the hardware bus at the end of them.
 #[test]
-fn a_whole_piece_is_one_graph_and_it_sounds() {
+fn a_whole_multitrack_is_one_graph_and_it_sounds() {
     let mut s = session();
     send_defs(&mut s, &[(1, 2)], 2);
     dc(&mut s, 0, 4800, 0.5);
@@ -276,14 +276,14 @@ fn a_box_sounds_only_inside_its_own_window() {
 }
 
 /// **A port written at any level reaches the control it names.** The track's
-/// mute and the piece's gain are the same word on three different strips, which
+/// mute and the multitrack's gain are the same word on three different strips, which
 /// is what makes an automation's target resolvable at all.
 #[test]
 fn a_port_at_any_level_reaches_the_strip_it_names() {
     let mut s = session();
     send_defs(&mut s, &[(1, 2)], 2);
     dc(&mut s, 0, 48_000, 1.0);
-    let (piece, track, clip, _reader) = one_box(&mut s, 48_000.0, 0.0);
+    let (multitrack, track, clip, _reader) = one_box(&mut s, 48_000.0, 0.0);
     send(&mut s, "/transport_play", vec![]);
     s.settle_for(2);
     assert!(peaks(&mut s, 8).0 > 0.2, "it starts audible");
@@ -291,7 +291,7 @@ fn a_port_at_any_level_reaches_the_strip_it_names() {
     for (node, port) in [
         (track, mixer::MUTE),
         (clip, mixer::MUTE),
-        (piece, mixer::MUTE),
+        (multitrack, mixer::MUTE),
     ] {
         send(
             &mut s,
@@ -338,13 +338,13 @@ fn a_moved_box_sounds_through_its_new_track_and_keeps_its_map() {
     let mut s = session();
     send_defs(&mut s, &[(1, 2)], 2);
     dc(&mut s, 0, 48_000, 1.0);
-    let (piece, track, clip, _reader) = one_box(&mut s, 48_000.0, 0.0);
+    let (multitrack, track, clip, _reader) = one_box(&mut s, 48_000.0, 0.0);
     let other = 911;
     send(
         &mut s,
         "/graph_addSlot",
         vec![
-            OscType::Int(piece),
+            OscType::Int(multitrack),
             OscType::String(mixer::TRACK_SLOT.into()),
             OscType::Int(other),
             OscType::String(mixer::MUTE.into()),
@@ -408,7 +408,7 @@ fn a_moved_box_sounds_through_its_new_track_and_keeps_its_map() {
 }
 
 /// **A curve drives a port, and the port is a control of a node three levels
-/// down.** The whole of what a piece's automation is: a table read at the
+/// down.** The whole of what a multitrack's automation is: a table read at the
 /// transport's own position, written to a control bus, mapped onto whatever the
 /// curve names — so a locate costs no message and the member ids stay private.
 #[test]
@@ -416,7 +416,7 @@ fn a_curve_on_a_bus_drives_a_port() {
     let mut s = session();
     send_defs(&mut s, &[(1, 2)], 2);
     dc(&mut s, 0, 48_000, 1.0);
-    let (_piece, track, _clip, _reader) = one_box(&mut s, 48_000.0, 0.0);
+    let (_multitrack, track, _clip, _reader) = one_box(&mut s, 48_000.0, 0.0);
 
     // A table that rises from silence to unity over eight blocks, read one
     // sample a block.
@@ -612,7 +612,7 @@ fn a_meter_writes_a_readable_level_to_a_control_bus() {
     );
 }
 
-/// **A track's meter reads that track and not the piece.** Every track writes
+/// **A track's meter reads that track and not the multitrack.** Every track writes
 /// into the master's mix bus, so a meter there would read the sum and call it
 /// the track -- which is why a strip writes its own `post` bus and a send
 /// carries it the rest of the way.
@@ -621,7 +621,7 @@ fn a_track_is_metered_on_its_own_output() {
     let mut s = session();
     send_defs(&mut s, &[(1, 2)], 2);
     dc(&mut s, 0, 48_000, 1.0);
-    let (piece, loud_track, ..) = one_box(&mut s, (16 * BLOCK) as f32, 0.0);
+    let (multitrack, loud_track, ..) = one_box(&mut s, (16 * BLOCK) as f32, 0.0);
 
     // A second track with nothing on it, beside the one that sounds.
     let quiet_track = 911;
@@ -629,14 +629,14 @@ fn a_track_is_metered_on_its_own_output() {
         &mut s,
         "/graph_addSlot",
         vec![
-            OscType::Int(piece),
+            OscType::Int(multitrack),
             OscType::String(mixer::TRACK_SLOT.into()),
             OscType::Int(quiet_track),
         ],
     );
     meter(&mut s, loud_track, 970, 120, 0.0);
     meter(&mut s, quiet_track, 971, 122, 0.0);
-    meter(&mut s, piece, 972, 124, 0.0);
+    meter(&mut s, multitrack, 972, 124, 0.0);
     let refused = fails(&mut s);
     assert!(refused.is_empty(), "nothing was refused: {refused:?}");
 
@@ -649,7 +649,7 @@ fn a_track_is_metered_on_its_own_output() {
     );
     assert!(
         bus_value(&mut s, 122) < 1e-3,
-        "the track that does not sound reads nothing, not the piece"
+        "the track that does not sound reads nothing, not the multitrack"
     );
     assert!(
         bus_value(&mut s, 124) > 0.2,
@@ -776,14 +776,14 @@ fn where_the_transport_clicks() {
 /// The control bus carries one number a block and whoever reads it holds that
 /// number for the whole block, so writing the block's *last* sample handed the
 /// strip a value a block early: an envelope that says zero at the box's start
-/// put out the value a block after it, and a piece thawed from a stop has no
+/// put out the value a block after it, and a multitrack thawed from a stop has no
 /// smoothing left to hide it with.
 #[test]
 fn a_curve_starts_where_it_says_it_starts() {
     let mut s = session();
     send_defs(&mut s, &[(1, 2)], 2);
     dc(&mut s, 0, 48_000, 0.8);
-    let (_piece, _track, clip, _reader) = one_box(&mut s, 48_000.0, 0.0);
+    let (_multitrack, _track, clip, _reader) = one_box(&mut s, 48_000.0, 0.0);
 
     // The envelope: zero at the box's start, rising to unity over eight blocks,
     // one sample a block -- the clip envelope an editor draws.
@@ -854,7 +854,7 @@ fn a_curve_starts_where_it_says_it_starts() {
     );
 }
 
-/// **A stop is not a pause of the numbers.** The transport freezes the piece's
+/// **A stop is not a pause of the numbers.** The transport freezes the multitrack's
 /// subtree, so every smoother in it is starved of time and keeps the value it
 /// had when the music stopped -- while the curve that drives it, which is not
 /// in that subtree, goes on writing wherever the position now is. Play again
@@ -866,7 +866,7 @@ fn a_thawed_strip_does_not_glide_down_from_where_it_stopped() {
     let mut s = session();
     send_defs(&mut s, &[(1, 2)], 2);
     dc(&mut s, 0, 48_000, 0.8);
-    let (_piece, _track, clip, _reader) = one_box(&mut s, 48_000.0, 0.0);
+    let (_multitrack, _track, clip, _reader) = one_box(&mut s, 48_000.0, 0.0);
 
     // A curve flat at unity, then flat at zero: the envelope's first point
     // dragged to the floor while the transport stands still.
@@ -920,7 +920,7 @@ fn a_thawed_strip_does_not_glide_down_from_where_it_stopped() {
     let (heard, _) = peaks(&mut s, 8);
     assert!(heard > 0.5, "it played at unity first: {heard}");
 
-    // Stopped, the envelope's first point goes to zero, and the piece rewinds.
+    // Stopped, the envelope's first point goes to zero, and the multitrack rewinds.
     send(&mut s, "/transport_stop", vec![]);
     s.settle_for(2);
     for i in 0..4 {
@@ -944,16 +944,16 @@ fn a_thawed_strip_does_not_glide_down_from_where_it_stopped() {
 
 /// And the same is true of what the meter says. A held peak means "the loudest
 /// thing lately"; lately ended when the transport did, so a meter thawed with
-/// the last pass's mark still up draws a level the piece has not played a
+/// the last pass's mark still up draws a level the multitrack has not played a
 /// sample of.
 #[test]
 fn a_thawed_meter_does_not_report_the_pass_before_it() {
     let mut s = session();
     send_defs(&mut s, &[(1, 2)], 2);
     dc(&mut s, 0, 48_000, 1.0);
-    // The box is one block long, so a rewind puts the piece in front of
+    // The box is one block long, so a rewind puts the multitrack in front of
     // silence with the loud pass still in the meter's memory.
-    let (_piece, track, ..) = one_box(&mut s, BLOCK as f32, 0.0);
+    let (_multitrack, track, ..) = one_box(&mut s, BLOCK as f32, 0.0);
     meter(&mut s, track, 970, 120, mixer::METER_HOLD);
     let refused = fails(&mut s);
     assert!(refused.is_empty(), "nothing was refused: {refused:?}");

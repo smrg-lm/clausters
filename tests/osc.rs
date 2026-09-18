@@ -1833,7 +1833,7 @@ fn transport_query_and_set() {
     // Unset: defined flag 0, zeros. Reply is (origin, tempo, defined, playing,
     // position, group, transportSample, positionSample, loopStart, loopEnd) --
     // the grid, the rolling state, the governed group with the transport
-    // clock, and where the piece is with the loop it wraps in. Everything past
+    // clock, and where the transport is with the loop it wraps in. Everything past
     // the fifth field is appended, so a client reading the original five still
     // works.
     server.send("/transport_query", vec![]);
@@ -2005,7 +2005,7 @@ fn transport_pushes_on_change_to_notify_clients() {
 /// The sample-addressed half of the transport: an editor seeks by frame, and
 /// the beat position follows so the two spellings never disagree.
 /// A locate's **own broadcast** reports the place it located to, not the one
-/// the piece is leaving. The engine publishes its position once per block, so a
+/// the transport is leaving. The engine publishes its position once per block, so a
 /// reply built in the same breath as the locate would otherwise carry the old
 /// place -- and a follower re-cueing from a broadcast would plan from there.
 #[test]
@@ -2023,7 +2023,7 @@ fn a_locates_broadcast_carries_the_located_position() {
     server.send("/transport_play", vec![]);
     server.recv_until("/done");
     server.recv_until("/transport_query.reply");
-    // The piece rolls a while, so its published position is somewhere else.
+    // The transport rolls a while, so its published position is somewhere else.
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];
     for _ in 0..20 {
         server.engine.process_block(&mut out);
@@ -2094,7 +2094,7 @@ fn transport_locate_sample_moves_the_position_and_its_beat_reading() {
     assert_eq!(
         reply.args[7],
         OscType::Long(24_000),
-        "the piece is where it was sent, in samples"
+        "the transport is where it was sent, in samples"
     );
     let OscType::Double(beats) = reply.args[4] else {
         panic!("the beat position is a double")
@@ -2158,7 +2158,7 @@ fn transport_loop_sets_and_clears_a_span() {
 /// and asking it to invent one so the transport will answer was asking it to
 /// write down a number nobody reads.
 #[test]
-fn the_transport_drives_a_piece_in_samples_with_no_grid() {
+fn the_transport_drives_playback_in_samples_with_no_grid() {
     let mut server = TestServer::spawn();
 
     server.send(
@@ -2198,7 +2198,7 @@ fn the_transport_drives_a_piece_in_samples_with_no_grid() {
     assert_eq!(
         reply.args[7],
         OscType::Long(24_000),
-        "and the piece is placed"
+        "and the transport is placed"
     );
     assert_eq!(reply.args[9], OscType::Long(96_000), "and looping");
 

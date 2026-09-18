@@ -33,7 +33,7 @@ pub const SEED_STRIDE: u64 = 0x9E37_79B9_7F4A_7C15;
 /// Anything that starts a seed sequence without being told which one — a
 /// server booting, a render with no seed configured — calls this, so the same
 /// score sounds different every time it is played, the way a random process in
-/// a piece is meant to. Fixing the seed is the *caller's* deliberate act, and
+/// a take is meant to. Fixing the seed is the *caller's* deliberate act, and
 /// what it gives is the replay: `--seed`, `RenderConfig::seed`, `seed=` in the
 /// clients. The client's own random context (`clausters.base.rand`) has always
 /// worked this way; this is the server side of the same rule.

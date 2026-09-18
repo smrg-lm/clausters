@@ -32,7 +32,7 @@ being a tidier arrangement of the same code:
 
 - **Several editors can share one.** One host, one id space, one socket drain
   and one undo order across a bundle of subviews. That is an application in the
-  ordinary sense, and the multitrack is the one shaped like it: a piece plus the
+  ordinary sense, and the multitrack is the one shaped like it: a multitrack plus the
   boxes a hand entered out of it are one window set, and
   `clausters.gui.editing.MultitrackEditor.enter` hands each of them this.
 - **An editor with no window is not a special case.** An application with no
@@ -312,7 +312,7 @@ class Application:
         The history and the members are the crate's (`clausters.gui.editing.
         Editing`): it walks the pile, hands each leg to the member that owns the
         structure, and puts the cursor back — with the reason — when nothing
-        could apply it. What is left is the objects: a piece written back, a
+        could apply it. What is left is the objects: a multitrack written back, a
         take's writes, a curve's payloads.
 
         ``walker`` is whoever asked, and it is the one that draws afterwards:
@@ -371,7 +371,7 @@ class Application:
         for a reason.** ``/gui_def`` names any widget, so publish the one your
         edit touched — you know which, because an intent names a node and a
         widget id is derived from it. Measured over a drag, the subtree of the
-        clip that moved is flat in the size of the piece; the window is not, and
+        clip that moved is flat in the size of the multitrack; the window is not, and
         on a large one it is megabytes a second of JSON for a gesture that
         touched one rectangle. Name a ``window`` to publish a part of it: the
         names under the old subtree go and the rest of the window keeps the ones

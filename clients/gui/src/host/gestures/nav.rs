@@ -269,7 +269,7 @@ pub(super) fn set_selection(
 /// `place` is what separates the two moments a sweep speaks to the transport,
 /// and getting it wrong is audible. The **loop follows the drag live** — a span
 /// can be redrawn while the take repeats inside it, and setting one never moves
-/// the piece, so the sound goes on from where it is and simply wraps somewhere
+/// the multitrack, so the sound goes on from where it is and simply wraps somewhere
 /// else. The **head is placed once**, by the press: locating on every frame of
 /// a drag makes it chase the pointer, which a rolling transport hears as a
 /// retrigger per frame rather than as a selection being drawn.
@@ -278,7 +278,7 @@ pub(super) fn set_selection(
 /// the one that bound the governed group (`Host::owns_transport`) — a script
 /// owns its own transport, and a sweep in a window it happens to be drawing is
 /// not a request to seek it. And the view must draw **contents**: the
-/// transport's position is in frames of the piece, so a sweep on a lane
+/// transport's position is in frames of the multitrack, so a sweep on a lane
 /// measuring beats would send a number that means something else on an axis it
 /// does not belong to.
 ///

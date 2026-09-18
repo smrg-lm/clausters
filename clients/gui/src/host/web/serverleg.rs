@@ -216,7 +216,7 @@ impl WebApp {
         let OscPacket::Message(msg) = packet else {
             return; // bundles are not used on the reply path
         };
-        // The ids and the piece's waiting steps hear every reply first
+        // The ids and the multitrack's waiting steps hear every reply first
         // (`Host::on_server_reply`, which the native leg calls too).
         // A page has one server leg and no player apart from it.
         self.host
@@ -385,8 +385,8 @@ impl WebApp {
             }
             "/transport_query.reply" => {
                 // Field 7 is `positionSample`: where the transport is **in the
-                // piece**, which is what a playhead draws when the host was
-                // told to read the piece. The browser's stand-in for the
+                // multitrack**, which is what a playhead draws when the host was
+                // told to read the multitrack. The browser's stand-in for the
                 // segment's own field, polled on the same tick the device
                 // clock is.
                 if let Some(OscType::Long(samples)) = msg.args.get(7) {
@@ -785,7 +785,7 @@ impl WebApp {
     /// where the summary is the right answer and already on screen.
     ///
     /// The summary walks are ticked here too, for the same reason and against
-    /// the same clock: a piece of a summary that never came back is asked for
+    /// the same clock: a multitrack of a summary that never came back is asked for
     /// again rather than leaving a hole in the picture.
     pub(super) fn fetch_wanted_spans(&mut self, def_id: i32) {
         for msg in self.fetches.tick() {

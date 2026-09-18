@@ -252,7 +252,7 @@ pub struct Outcome<I = Intent> {
     /// The type parameter is which vocabulary the effective edit is written in:
     /// [`Intent`] for the tree, and
     /// [`MultitrackIntent`](crate::multitrack::edit::MultitrackIntent) for
-    /// the piece. One shape, because the rules it reports — verbatim,
+    /// the multitrack. One shape, because the rules it reports — verbatim,
     /// transformed, refused, stale — are the vocabulary's rules and not any one
     /// vocabulary's.
     pub applied: bool,
@@ -358,7 +358,7 @@ pub fn apply(
 ///
 /// A claim ahead of the document is stale too, and it is the worse case rather
 /// than a harmless one: it means the two are not talking about the same
-/// document at all, and applying would write an edit meant for another piece.
+/// document at all, and applying would write an edit meant for another multitrack.
 fn superseded(document: &Document, intent: &Intent, against: &Against) -> Option<Outcome> {
     // A node the document does not hold has an answer already, and it is a
     // better one than "stale": let the ordinary refusal say "no such node".
@@ -432,7 +432,7 @@ pub(crate) fn current(document: &Document, intent: &Intent) -> Option<Intent> {
 fn generation(document: &Document, id: NodeId) -> Option<u64> {
     match &document.find(id)?.body {
         Body::Vector { source, .. } => Some(source.generation),
-        // Assembled data is as fresh as its **stalest** piece: an edit made
+        // Assembled data is as fresh as its **stalest** multitrack: an edit made
         // against it was made against every window it shows, so any one of them
         // being rewritten is what a staleness check has to catch.
         Body::Segments { segments, .. } => segments

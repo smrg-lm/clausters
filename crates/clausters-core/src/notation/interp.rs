@@ -11,7 +11,7 @@
 //! **Two lengths, always.** A [`Note`] carries `dur` (what is written) and
 //! `sustain` (what is heard), and they are different numbers for exactly the
 //! reason a page keeps them apart: shortening the written value would move
-//! every attack after it and make the score a different piece. A client maps
+//! every attack after it and make the score a different one. A client maps
 //! the pair straight onto its event's `dur` and `sustain`.
 //!
 //! **The default interpretation is data, and replaceable.** Everything the

@@ -446,7 +446,7 @@ pub(crate) fn demand<'a>(
 pub struct StreamedBuses {
     values: Mutex<HashMap<usize, f32>>,
     /// The two counters a playhead can be drawn from, polled rather than
-    /// mapped: the device clock from `/clock_query.reply` and the piece's
+    /// mapped: the device clock from `/clock_query.reply` and the multitrack's
     /// position from `/transport_query.reply`. They live **here** and not on
     /// the front so that the browser answers
     /// [`BusSource::sample_clock`]/[`BusSource::transport_position`] the way
@@ -465,7 +465,7 @@ impl StreamedBuses {
         self.clocks.lock().unwrap().0 = samples;
     }
 
-    /// Stores the newest transport position in the piece
+    /// Stores the newest transport position in the multitrack
     /// (`/transport_query.reply`).
     pub fn set_position(&self, samples: f64) {
         self.clocks.lock().unwrap().1 = samples;

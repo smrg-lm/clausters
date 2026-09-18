@@ -1,16 +1,16 @@
 //! **The multitrack editor's turns**: what one message from the host is, what
-//! it does to the piece, and what the host is answered with.
+//! it does to the multitrack, and what the host is answered with.
 //!
 //! A host reports what a hand did and waits to be told what happened. The
 //! editor reads the message ([`Conversation`]), reads the gesture in the
-//! piece's vocabulary (the projection's intake), applies each edit with the
+//! multitrack's vocabulary (the projection's intake), applies each edit with the
 //! inverse read before it lands ([`domain::edit`]), keeps where the reader put
 //! the position cursor, and answers — an acknowledgement, the corrections a
 //! refused or overtaken gesture needs, the reason when one is owed.
 //!
 //! # What it hands back rather than does
 //!
-//! The undo order is **not** here. A piece and the boxes entered out of it walk
+//! The undo order is **not** here. A multitrack and the boxes entered out of it walk
 //! one history, and the editors of those boxes are not applications yet, so the
 //! history stays with whoever holds all of them: each turn answers the entry to
 //! record ([`Record`]), and a step of that history comes back as payloads to
@@ -54,13 +54,13 @@ pub struct Outcome {
     /// The entry to record, when the turn edited something recordable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub record: Option<Record>,
-    /// Whether the piece changed.
+    /// Whether the multitrack changed.
     pub changed: bool,
     /// The version after the turn.
     pub version: i64,
-    /// The piece as it now stands, when it changed.
+    /// The multitrack as it now stands, when it changed.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub piece: Option<Value>,
+    pub multitrack: Option<Value>,
     /// The sources an edit minted, in the order the edits named them.
     pub minted: Vec<Value>,
     /// Where the position cursor was placed, in seconds.
@@ -101,7 +101,7 @@ pub enum TransportVerb {
     },
 }
 
-/// What one payload of a history step did to the piece.
+/// What one payload of a history step did to the multitrack.
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct Applied {
     /// Whether anything moved.
@@ -109,16 +109,16 @@ pub struct Applied {
     /// The source it minted, if it minted one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub minted: Option<Value>,
-    /// The piece as it now stands, when it moved.
+    /// The multitrack as it now stands, when it moved.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub piece: Option<Value>,
+    pub multitrack: Option<Value>,
 }
 
-/// **The multitrack editor**: a piece, the window it is drawn in, and one
+/// **The multitrack editor**: a multitrack, the window it is drawn in, and one
 /// view's end of the conversation with the host.
 #[derive(Clone, Debug)]
 pub struct MultitrackEditor {
-    piece: Multitrack,
+    multitrack: Multitrack,
     rate: f64,
     sources: HashMap<SourceId, i64>,
     /// How many frames each take holds, where the caller said: what refuses a
@@ -148,11 +148,11 @@ pub struct MultitrackEditor {
 }
 
 impl MultitrackEditor {
-    /// An editor over `piece`, drawn on an axis of `rate` frames a second, whose
+    /// An editor over `multitrack`, drawn on an axis of `rate` frames a second, whose
     /// history is at `version`.
-    pub fn new(piece: Multitrack, rate: f64, version: i64) -> Self {
+    pub fn new(multitrack: Multitrack, rate: f64, version: i64) -> Self {
         Self {
-            piece,
+            multitrack,
             rate,
             sources: HashMap::new(),
             lengths: HashMap::new(),
@@ -201,15 +201,15 @@ impl MultitrackEditor {
         self.controls
     }
 
-    /// The piece.
-    pub fn piece(&self) -> &Multitrack {
-        &self.piece
+    /// The multitrack.
+    pub fn multitrack(&self) -> &Multitrack {
+        &self.multitrack
     }
 
-    /// Replaces the piece — a caller that edited it by a route that was not a
+    /// Replaces the multitrack — a caller that edited it by a route that was not a
     /// turn of this editor.
-    pub fn set_piece(&mut self, piece: Multitrack) {
-        self.piece = piece;
+    pub fn set_multitrack(&mut self, multitrack: Multitrack) {
+        self.multitrack = multitrack;
     }
 
     /// **The joins a caller holds**, by source -- the segments each is made
@@ -277,7 +277,7 @@ impl MultitrackEditor {
         self.window
     }
 
-    /// The id of the piece's own widget, once a window has been composed.
+    /// The id of the multitrack's own widget, once a window has been composed.
     pub fn widget(&self) -> Option<i32> {
         self.widget
     }
@@ -287,7 +287,7 @@ impl MultitrackEditor {
         self.ruler
     }
 
-    /// Whether this editor drew `widget`: the piece, its ruler, or a button of
+    /// Whether this editor drew `widget`: the multitrack, its ruler, or a button of
     /// the transport row.
     pub fn owns(&self, widget: i32) -> bool {
         self.widget == Some(widget)
@@ -348,7 +348,7 @@ impl MultitrackEditor {
     pub fn box_contents(&self, name: &str) -> Option<BoxContents> {
         let id = name.trim().parse::<u64>().ok()?;
         let region = self
-            .piece
+            .multitrack
             .tracks
             .iter()
             .flat_map(|track| &track.lanes)
@@ -364,12 +364,12 @@ impl MultitrackEditor {
         })
     }
 
-    /// **What the clock reads** with the piece at `position` seconds.
+    /// **What the clock reads** with the multitrack at `position` seconds.
     pub fn clock(&self, position: f64) -> String {
-        format!("{position:8.3} s   of {:.3} s", self.piece.end().0)
+        format!("{position:8.3} s   of {:.3} s", self.multitrack.end().0)
     }
 
-    /// **The window**, composed around the piece's widget and ruler ids, which
+    /// **The window**, composed around the multitrack's widget and ruler ids, which
     /// are the ones a hand's gestures come back on.
     pub fn window(&mut self, widget: i32, ruler: i32) -> Value {
         self.widget = Some(widget);
@@ -381,11 +381,11 @@ impl MultitrackEditor {
 
     /// **Everything `widget` should be drawing**, for a correction.
     pub fn props(&mut self, widget: i32) -> Map<String, Value> {
-        let (piece, ruler) = (
+        let (multitrack, ruler) = (
             self.widget.unwrap_or(widget),
             self.ruler.unwrap_or(i32::MIN),
         );
-        let props = self.composed(piece, ruler, |w| super::props(w, widget));
+        let props = self.composed(multitrack, ruler, |w| super::props(w, widget));
         if self.ruler != Some(widget) {
             self.remember_names();
         }
@@ -460,7 +460,7 @@ impl MultitrackEditor {
         out
     }
 
-    /// **One payload of a history step**, applied to the piece — the inverse
+    /// **One payload of a history step**, applied to the multitrack — the inverse
     /// of an edit this editor recorded, or the edit again.
     pub fn apply(&mut self, payload: &Value) -> Applied {
         let mut out = Applied {
@@ -472,13 +472,13 @@ impl MultitrackEditor {
         }
         if let Some((true, _)) = self.edit(payload) {
             out.applied = true;
-            out.piece = serde_json::to_value(&self.piece).ok();
+            out.multitrack = serde_json::to_value(&self.multitrack).ok();
         }
         out
     }
 
     /// **Every widget of the window, corrected**, with nothing to retire — what
-    /// a history step leaves behind, and what a second window over the piece
+    /// a history step leaves behind, and what a second window over the multitrack
     /// is told when this one edited it.
     pub fn resync_all(&mut self, version: i64) -> Answer {
         let mut corrections = Vec::new();
@@ -493,14 +493,14 @@ impl MultitrackEditor {
         conversation::answer(seq, version, reason, Vec::new())
     }
 
-    /// **A name the host minted is answered with the one the piece kept.**
+    /// **A name the host minted is answered with the one the multitrack kept.**
     ///
     /// A gesture is normally answered with an acknowledgement alone, because the
     /// report described the result. Where the host **makes** something — a
     /// track from a double click, a box from a split — the host mints the word
-    /// and the document mints the id, and a name the piece does not know is
+    /// and the document mints the id, and a name the multitrack does not know is
     /// read as something new on the next report. So when what the host was last
-    /// told differs from what the piece now holds, the piece goes back whole.
+    /// told differs from what the multitrack now holds, the multitrack goes back whole.
     ///
     /// Called once a changed turn has been carried out — after a minted source
     /// has a buffer, so the box that windows it draws.
@@ -518,7 +518,7 @@ impl MultitrackEditor {
 
     /// The window over the editor's state, handed to `f`.
     fn composed<T>(&self, widget: i32, ruler: i32, f: impl FnOnce(&Window<'_>) -> T) -> T {
-        let tempo = projection::tempo_map(&self.piece);
+        let tempo = projection::tempo_map(&self.multitrack);
         let table = Table {
             buffers: &self.sources,
             lengths: &self.lengths,
@@ -529,7 +529,7 @@ impl MultitrackEditor {
             sources: &table,
         };
         f(&Window {
-            piece: &self.piece,
+            multitrack: &self.multitrack,
             look: &look,
             tempo: &tempo,
             widget,
@@ -543,9 +543,9 @@ impl MultitrackEditor {
         })
     }
 
-    /// What the piece calls its rows, its boxes and its curves.
+    /// What the multitrack calls its rows, its boxes and its curves.
     fn names(&self) -> [HashSet<String>; 3] {
-        let named = projection::names(&self.piece);
+        let named = projection::names(&self.multitrack);
         let set = |key: &str| -> HashSet<String> {
             named[key]
                 .as_array()
@@ -585,7 +585,7 @@ impl MultitrackEditor {
         samples_to_secs(units.round() as i64, self.rate)
     }
 
-    /// One gesture onto the piece: screen state, the editor's own, or an edit.
+    /// One gesture onto the multitrack: screen state, the editor's own, or an edit.
     /// Answers the reason and the corrections the acknowledgement carries.
     fn route(
         &mut self,
@@ -594,7 +594,7 @@ impl MultitrackEditor {
         values: &[Value],
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
-        // **The space bar is the window's**, and it is play/pause: a piece's
+        // **The space bar is the window's**, and it is play/pause: a multitrack's
         // readers are resident and follow the transport, so there is nothing
         // under the pointer to aim it at.
         if self.window.map(i64::from) == Some(widget) && tag == PLAY_KEY {
@@ -639,12 +639,12 @@ impl MultitrackEditor {
                 rate: self.rate,
                 sources: &table,
             };
-            projection::intake(&self.piece, tag, values, &look)
+            projection::intake(&self.multitrack, tag, values, &look)
         };
         if taken.payloads.is_empty() {
             // Nothing, or a refusal. A refusal says why and hands the widget back
             // what it should be drawing, so the picture stops agreeing with the
-            // hand instead of with the piece.
+            // hand instead of with the multitrack.
             return match taken.refusal {
                 Some(why) => (Some(why), self.resync(widget)),
                 None => (None, Vec::new()),
@@ -684,7 +684,7 @@ impl MultitrackEditor {
             }
             out.version += 1;
             out.changed = true;
-            out.piece = serde_json::to_value(&self.piece).ok();
+            out.multitrack = serde_json::to_value(&self.multitrack).ok();
         }
         (None, Vec::new())
     }
@@ -715,15 +715,15 @@ impl MultitrackEditor {
     }
 
     /// Applies one payload, answering whether it moved anything and the payload
-    /// that puts it back. `None` for a payload the piece cannot read.
+    /// that puts it back. `None` for a payload the multitrack cannot read.
     fn edit(&mut self, payload: &Value) -> Option<(bool, Option<Value>)> {
-        let state = Opaque(serde_json::to_value(&self.piece).ok()?);
+        let state = Opaque(serde_json::to_value(&self.multitrack).ok()?);
         let edited = domain::edit(MULTITRACK, &state, &Opaque(payload.clone()))?;
         let current = edited.current.map(|c| c.0);
         if !edited.applied {
             return Some((false, current));
         }
-        self.piece = serde_json::from_value(edited.state.0).ok()?;
+        self.multitrack = serde_json::from_value(edited.state.0).ok()?;
         Some((true, current))
     }
 
@@ -808,12 +808,12 @@ fn minted(payload: &Value) -> Option<Value> {
         .cloned()
 }
 
-/// What [`call_json`] builds an editor from: the piece, its axis and its
+/// What [`call_json`] builds an editor from: the multitrack, its axis and its
 /// sources, the window's chrome, and the version its history is at.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct New {
-    piece: Value,
+    multitrack: Value,
     #[serde(default)]
     rate: f64,
     #[serde(default)]
@@ -835,11 +835,11 @@ fn outcome(outcome: &Outcome) -> String {
     serde_json::to_string(outcome).unwrap_or_else(|_| "{}".into())
 }
 
-/// An editor built from a JSON request, or `None` for one that names no piece.
+/// An editor built from a JSON request, or `None` for one that names no multitrack.
 pub fn new_json(request: &str) -> Option<MultitrackEditor> {
     let request: New = serde_json::from_str(request).ok()?;
-    let piece: Multitrack = serde_json::from_value(request.piece).ok()?;
-    let mut editor = MultitrackEditor::new(piece, request.rate, request.version);
+    let multitrack: Multitrack = serde_json::from_value(request.multitrack).ok()?;
+    let mut editor = MultitrackEditor::new(multitrack, request.rate, request.version);
     let transport = match request.transport {
         Value::Bool(true) => Transport::Unnumbered,
         Value::Object(_) => serde_json::from_value::<TransportIds>(request.transport)
@@ -861,7 +861,7 @@ pub fn new_json(request: &str) -> Option<MultitrackEditor> {
 /// surface, and a door per verb would be each binding restating it. `request`
 /// names the `verb` and carries its arguments:
 ///
-/// - `sync` — `piece`, `sources`, `meters`, `cursor` (beats or `null`),
+/// - `sync` — `multitrack`, `sources`, `meters`, `cursor` (beats or `null`),
 ///   `window`, `controls` (the transport row's ids): the state a caller holds,
 ///   handed over before the verbs that read it.
 /// - `rewind`, `toggle`, `stop` — `version`: the transport row's verbs, as a
@@ -891,8 +891,8 @@ pub fn call_json(editor: &mut MultitrackEditor, request: &str) -> String {
         .unwrap_or_default()
     {
         "sync" => {
-            if let Ok(piece) = serde_json::from_value::<Multitrack>(get("piece")) {
-                editor.set_piece(piece);
+            if let Ok(multitrack) = serde_json::from_value::<Multitrack>(get("multitrack")) {
+                editor.set_multitrack(multitrack);
             }
             if request.get("sources").is_some() {
                 editor.set_sources(projection::table(&get("sources")));
@@ -984,13 +984,13 @@ mod tests {
         first.lanes[0].regions = vec![region(12, 0.0), region(13, 4.0)];
         let mut second = Track::new(NodeId(20), NodeId(21));
         second.lanes[0].regions = vec![region(22, 0.0)];
-        let piece = Multitrack {
+        let multitrack = Multitrack {
             tracks: vec![first, second],
             ..Multitrack::default()
         };
-        let mut editor = MultitrackEditor::new(piece, SR, 1);
+        let mut editor = MultitrackEditor::new(multitrack, SR, 1);
         editor.set_sources(HashMap::from([(SourceId(1), 7)]));
-        editor.chrome(None, Transport::Unnumbered, "piece", (1000, 560));
+        editor.chrome(None, Transport::Unnumbered, "multitrack", (1000, 560));
         editor.window(40, 41);
         editor.set_window(Some(39));
         editor
@@ -1023,7 +1023,7 @@ mod tests {
     }
 
     fn position(editor: &MultitrackEditor) -> f64 {
-        editor.piece().tracks[0].lanes[0].regions[0].position.0
+        editor.multitrack().tracks[0].lanes[0].regions[0].position.0
     }
 
     /// **The editor joins cuts of its own joins flat** *(found 2026-09-13 by
@@ -1060,13 +1060,13 @@ mod tests {
             over_take(13, 1.0, 0.0),
             over_take(14, 2.0, 1.5),
         ];
-        let piece = Multitrack {
+        let multitrack = Multitrack {
             tracks: vec![track],
             ..Multitrack::default()
         };
-        let mut editor = MultitrackEditor::new(piece, SR, 1);
+        let mut editor = MultitrackEditor::new(multitrack, SR, 1);
         editor.set_sources(HashMap::from([(SourceId(1), 7)]));
-        editor.chrome(None, Transport::Unnumbered, "piece", (1000, 560));
+        editor.chrome(None, Transport::Unnumbered, "multitrack", (1000, 560));
         editor.window(40, 41);
         editor.set_window(Some(39));
 
@@ -1128,9 +1128,9 @@ mod tests {
     }
 
     /// **A move is applied, recorded with its inverse and acknowledged**, and
-    /// the inverse puts the piece back.
+    /// the inverse puts the multitrack back.
     #[test]
-    fn a_move_reaches_the_piece_and_its_inverse_puts_it_back() {
+    fn a_move_reaches_the_multitrack_and_its_inverse_puts_it_back() {
         let mut ed = editor();
         let moved = boxes(&[("12", "10", 2.0), ("13", "10", 4.0), ("22", "20", 0.0)]);
         let out = ed.event(&event(40, 5, 1, "clips", moved), 1);
@@ -1182,7 +1182,7 @@ mod tests {
     }
 
     /// **An edit made against a picture that is gone is refused**, and the
-    /// piece's props go back with the reason.
+    /// multitrack's props go back with the reason.
     #[test]
     fn an_overtaken_edit_is_handed_the_picture_back() {
         let mut ed = editor();
@@ -1219,8 +1219,8 @@ mod tests {
         );
     }
 
-    /// **A name the host minted is answered with the one the piece kept**, and
-    /// a piece whose names the host already has is answered with nothing.
+    /// **A name the host minted is answered with the one the multitrack kept**, and
+    /// a multitrack whose names the host already has is answered with nothing.
     #[test]
     fn a_minted_name_is_answered_with_the_picture() {
         let mut ed = editor();
@@ -1354,9 +1354,9 @@ mod tests {
         assert_eq!(ed.box_contents("99"), None);
     }
 
-    /// The clock reads the position and the piece's end, in the piece's beats.
+    /// The clock reads the position and the multitrack's end, in the multitrack's beats.
     #[test]
-    fn the_clock_reads_where_the_piece_is() {
+    fn the_clock_reads_where_the_multitrack_is() {
         let ed = editor();
         assert_eq!(ed.clock(1.5), "   1.500 s   of 6.000 s");
     }

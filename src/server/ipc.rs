@@ -470,7 +470,7 @@ impl Segment {
         self.view.transport_clock()
     }
 
-    /// The transport position: the sample of the *piece* being played. Holds
+    /// The transport position: the sample of the *transport's axis* being played. Holds
     /// while stopped, jumps on a locate, wraps at a loop's end.
     pub fn transport_position(&self) -> &AtomicU64 {
         self.view.transport_position()

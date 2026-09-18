@@ -154,9 +154,9 @@ pub use time::*;
 /// seconds** — `clausters_document_resolve` takes `frames_per_second` beside
 /// `frames_per_beat`, because the document now measures a placement in beats
 /// and what it places in the unit of that element's own data, so one ratio can no
-/// longer answer both questions. **v29 the piece's time map** —
+/// longer answer both questions. **v29 the multitrack's time map** —
 /// `clausters_tempomap_*`: a beat is a logical coordinate and the tempo that
-/// turns it into a second can change along the piece, so the conversion stops
+/// turns it into a second can change along the multitrack, so the conversion stops
 /// being a scalar and becomes an integral. Additive: the affine functions stay
 /// exactly as they were, and a one-segment map computes their expression.
 /// **v30 a tempo curve has a shape** — `clausters_tempomap_segment` writes
@@ -290,9 +290,9 @@ pub use time::*;
 /// a caller of it fails to link rather than diffing against a picture nobody is
 /// drawing.
 /// **v43 a multitrack's picture is the crate's.** `clausters_multitrack_picture`
-/// answers the rows and boxes a piece draws as, and
+/// answers the rows and boxes a multitrack draws as, and
 /// `clausters_multitrack_read` answers what a report of those boxes *means* in
-/// the piece's own vocabulary. Both are in beats and seconds, because the shape
+/// the multitrack's own vocabulary. Both are in beats and seconds, because the shape
 /// is the format's and the time is `tempomap`'s; a caller crosses to its own
 /// axis with the calls it already binds. **Additive**, and the reason the
 /// counter moves at all is that a client which cannot find them has no way to
@@ -315,7 +315,7 @@ pub use time::*;
 /// so a caller of the old pair fails to link rather than keeping its own copy
 /// of the two rules that moved: which side of an entry a direction reads, and
 /// which legs a structure owns.
-/// **v47 a piece's curves are in its picture, and a report of them is read
+/// **v47 a multitrack's curves are in its picture, and a report of them is read
 /// here.** `clausters_multitrack_picture` answers `curves` (a track's
 /// automations, each a row of its own) and `layers` (a region's, each inside
 /// its box) beside the rows and boxes, and `clausters_multitrack_read_points`
@@ -323,7 +323,7 @@ pub use time::*;
 /// curve whose break-points moved. **Additive**, and the counter moves for the
 /// reason v43's pair did: a client that cannot find them writes the mapping
 /// again in its own language.
-/// **v48 a report of a piece's rows is read here too.**
+/// **v48 a report of a multitrack's rows is read here too.**
 /// `clausters_multitrack_read_rows` answers what a report of every row *means*
 /// -- one `SetTracks` whatever changed, so adding a track, removing one with
 /// its boxes, reordering the stack and moving a fader are one verb and one
@@ -341,9 +341,9 @@ pub use time::*;
 /// client is one no compiler and no test reads against its twin, and that is
 /// where a page and a script come to draw one curve two ways. **Additive**, and
 /// the counter moves for v31's reason.
-/// **v51 a piece's props are one answer.** `clausters_editing_multitrack_props`
+/// **v51 a multitrack's props are one answer.** `clausters_editing_multitrack_props`
 /// hands back the rows, the boxes, the automations over both, their
-/// break-points, which are hidden and which boxes loop -- everything a piece
+/// break-points, which are hidden and which boxes loop -- everything a multitrack
 /// has from the document alone. It was written three times before it was
 /// written here, and the third was already in Rust: a standalone host draws the
 /// same picture with no client in the process, so `clients/gui` linked its own
@@ -352,7 +352,7 @@ pub use time::*;
 /// **v52 a gesture is read once, for every domain there is.**
 /// `clausters_editing_intake` is the second projection: a tag and a flat list
 /// of values become payloads in a structure's own vocabulary -- a curve's
-/// points, a stroke over samples, a roll's two lanes, a piece's boxes, rows and
+/// points, a stroke over samples, a roll's two lanes, a multitrack's boxes, rows and
 /// break-points. There were sixteen small readers before this, eight per
 /// language, each able to disagree with its twin about what a septuple means;
 /// it is **one** door for all four because a host reports every gesture the
@@ -378,7 +378,7 @@ pub use time::*;
 /// crosses once through `clausters_editing_intake`. Pure, both of them: the
 /// conversation's whole state is two integers, so a client keeps the pair and
 /// hands it back. `clausters_editing_multitrack_names` goes with them, the
-/// minting correction's half that is a fact about the piece. **Additive**, and
+/// minting correction's half that is a fact about the multitrack. **Additive**, and
 /// the counter moves for v31's reason.
 /// **v55 the superseded readers go, and the format is askable.** The four
 /// doors `O26` and `O27` replaced -- `clausters_multitrack_picture` and the
@@ -392,7 +392,7 @@ pub use time::*;
 /// exist.
 /// **v56 an editor's window is one composition.** `clausters_apps_multitrack_*`
 /// is the first door of the applications crate: the window the multitrack
-/// editor opens -- the time ruler above the piece, the piece, the transport row
+/// editor opens -- the time ruler above the multitrack, the multitrack, the transport row
 /// -- and the props any widget of it is corrected with. Each client composed it
 /// for itself and the standalone host composed a third, which had no ruler and
 /// no transport at all. **Additive**, and the counter moves for v31's reason.
@@ -411,8 +411,8 @@ pub use time::*;
 /// moves for v31's reason.
 /// **v59 one transport.** `clausters_editing_playback_new` takes only `chunk`:
 /// the playback makes the transport's group at the top, binds it and makes the
-/// piece inside it, the same for every endpoint. A client used to bind the
-/// piece's own graph and the GUI host a group of its own, and said which by
+/// multitrack inside it, the same for every endpoint. A client used to bind the
+/// multitrack's own graph and the GUI host a group of its own, and said which by
 /// passing `target` and `bind_transport`. **Breaking**: a caller of the
 /// three-argument door is a caller of a signature that no longer exists.
 /// **v60 a session is loaded once.** `clausters_editing_load` plans the reads

@@ -187,7 +187,7 @@ pub fn svg_to_display_list(svg: &str) -> DisplayList {
 type Xf = (f64, f64, f64, f64);
 const IDENTITY: Xf = (0.0, 0.0, 1.0, 1.0);
 
-/// The classes that name a *sounding element* rather than a piece of one; a
+/// The classes that name a *sounding element* rather than a part of one; a
 /// chord is absent on purpose, since its notes nest inside it and each one has
 /// to stay addressable on its own.
 fn is_element_class(class: &str) -> bool {

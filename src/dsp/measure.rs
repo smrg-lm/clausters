@@ -46,7 +46,7 @@ impl UGen for Meter {
     fn resume(&mut self) {
         // A held peak is "the loudest thing lately", and lately ended when the
         // transport did: a meter thawed with the old pass's peak still up
-        // reports a level the piece has not played yet.
+        // reports a level the transport has not played yet.
         self.state = Ballistics::new();
     }
 

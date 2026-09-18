@@ -9,7 +9,7 @@
 //! its own takes the whole space.
 //!
 //! What this replaced was three fixed windows — the voices at `0x1000_0000`,
-//! the monitor's readers and its group just past them, the piece's nodes past
+//! the monitor's readers and its group just past them, the multitrack's nodes past
 //! those — and a buffer base carried by hand from the session's load. None of
 //! them recycled, and none of them knew the server's size.
 //!
@@ -72,8 +72,8 @@ impl Host {
     }
 
     /// **Binds a group of this host's own to the server's transport** and
-    /// answers it: where the take monitor's readers are made **when no piece
-    /// plays**. A piece makes the transport's group itself, the same as it does
+    /// answers it: where the take monitor's readers are made **when no multitrack
+    /// plays**. A multitrack makes the transport's group itself, the same as it does
     /// for every endpoint, and the monitor's group then goes inside that one
     /// instead ([`Host::monitor_group`]).
     ///
@@ -100,7 +100,7 @@ impl Host {
 
     /// **Every reply from the audio server passes here first**, from both
     /// fronts, with the leg it came in on: a node this host made that ended,
-    /// the server's shape, and whatever the piece's steps are waiting on.
+    /// the server's shape, and whatever the multitrack's steps are waiting on.
     /// Anything else is not the ids' and costs a match.
     pub fn on_server_reply(&mut self, from: Leg, msg: &OscMessage) {
         match msg.addr.as_str() {
@@ -122,7 +122,7 @@ impl Host {
             }
             _ => {}
         }
-        self.piece_reply(from, msg);
+        self.multitrack_reply(from, msg);
     }
 }
 

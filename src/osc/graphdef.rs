@@ -107,7 +107,7 @@ pub fn bus_channel(reference: &str) -> (&str, usize) {
 /// What a member is an instance **of**.
 ///
 /// A graph made only of defs is one level of wiring, and one level is not what
-/// a piece is: a track holds clips, a clip holds an effect chain, and each of
+/// a multitrack is: a track holds clips, a clip holds an effect chain, and each of
 /// those is itself a wiring with a surface of its own. So a member may be
 /// another GraphDef, and "an effect chain" and "a nested graph" stop being two
 /// mechanisms.

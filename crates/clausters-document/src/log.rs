@@ -60,7 +60,7 @@ pub use crate::history::{DEFAULT_BUDGET, DEFAULT_SPILL_ABOVE, MemorySpill, Spill
 /// The domain name a document's structure is registered under.
 ///
 /// The tree's vocabulary is [`Intent`], and this is what a caller routing a
-/// history's payloads matches on to know it is holding one. The **piece** has a
+/// history's payloads matches on to know it is holding one. The **multitrack** has a
 /// vocabulary of its own
 /// ([`MultitrackIntent`](crate::multitrack::edit::MultitrackIntent), under
 /// [`MULTITRACK`](crate::multitrack::edit::MULTITRACK)); the two are

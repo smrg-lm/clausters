@@ -208,7 +208,7 @@ class Editing:
         return stepped
 
     def carry(self, stepped: dict) -> None:
-        """**Carry a step's effects out** on the structures they name: a piece
+        """**Carry a step's effects out** on the structures they name: a multitrack
         written back, a take's writes projected, an external member's payloads
         applied."""
         for effect in stepped.get("effects") or ():
@@ -298,7 +298,7 @@ class Editing:
                             view.adopt()
                     # ...and **every** view is told the data changed, the one
                     # that made the gesture included: a script driving something
-                    # off the data -- sounding a piece, writing a file -- wants
+                    # off the data -- sounding a multitrack, writing a file -- wants
                     # one answer per gesture whoever made it. The source is told
                     # whether or not it is **attached**, since an editor driving
                     # something off the data is entitled to be told before it is

@@ -1,8 +1,8 @@
-"""`clausters.gui.Multitrack` — the piece a `multitrack` widget draws, held here.
+"""`clausters.gui.Multitrack` — the multitrack a `multitrack` widget draws, held here.
 
 No host and no window: a fake widget records what is set on it and hands back
 the event a hand's gesture would have sent. What is checked is that the object
-is the piece — that a report replaces it whole, and that a script never has to
+is the multitrack — that a report replaces it whole, and that a script never has to
 parse a payload or carry an id.
 """
 
@@ -27,19 +27,19 @@ class FakeWidget:
         return self
 
     def report(self, tag, *vals):
-        """What the widget would have sent after a hand edited the piece."""
+        """What the widget would have sent after a hand edited the multitrack."""
         assert self.handler is not None, "nothing subscribed"
         self.handler(tag, *vals)
 
 
-def piece() -> Multitrack:
+def multitrack() -> Multitrack:
     return Multitrack(lanes=[("noise",), ("tone",)],
                       clips=[("a", "noise", 0.0, 500.0),
                              ("b", "tone", 500.0, 500.0)])
 
 
 def test_the_tuples_a_script_types_become_the_objects_it_reads():
-    mt = piece()
+    mt = multitrack()
     assert [l.name for l in mt.lanes] == ["noise", "tone"]
     assert mt.lanes[0].height == 96.0 and mt.lanes[0].gain == 1.0
     assert mt.clip("b").lane == "tone"
@@ -49,10 +49,10 @@ def test_the_tuples_a_script_types_become_the_objects_it_reads():
 
 
 def test_one_subscription_carries_the_whole_piece():
-    """**The object is the piece.** A gesture reports what the widget now holds,
+    """**The object is the multitrack.** A gesture reports what the widget now holds,
     so this replaces the lists — there is nothing per clip to register, and a
     script never sees a widget id or parses a payload."""
-    mt = piece()
+    mt = multitrack()
     w = FakeWidget()
     seen = []
     mt.on_change = seen.append
@@ -74,7 +74,7 @@ def test_one_subscription_carries_the_whole_piece():
 
 
 def test_a_change_from_the_script_reaches_the_widget():
-    mt = piece()
+    mt = multitrack()
     w = FakeWidget()
     mt.attach(w)
 
@@ -82,7 +82,7 @@ def test_a_change_from_the_script_reaches_the_widget():
     assert len(w.sets) == 1 and "clips" in w.sets[-1]
     assert w.sets[-1]["clips"][-1] == ("c", "noise", 1000.0, 200.0, 0.0, "", -1)
 
-    # `place` is one verb: the piece is a statement, so moving is saying where.
+    # `place` is one verb: the multitrack is a statement, so moving is saying where.
     mt.place("c", "tone", 1200.0, 200.0)
     assert len(mt.clips) == 3
     assert mt.clip("c").lane == "tone" and mt.clip("c").at == 1200.0
@@ -95,14 +95,14 @@ def test_a_change_from_the_script_reaches_the_widget():
 def test_removing_a_lane_keeps_the_clips_that_were_on_it():
     """Losing them silently is the one thing a removal must not do: they name a
     lane that is not there, draw nowhere, and come back to be re-homed."""
-    mt = piece()
+    mt = multitrack()
     mt.remove_lane("noise")
     assert [l.name for l in mt.lanes] == ["tone"]
     assert mt.clip("a") is not None and mt.clip("a").lane == "noise"
 
 
 def test_a_partial_group_is_dropped_rather_than_half_read():
-    mt = piece()
+    mt = multitrack()
     w = FakeWidget()
     mt.attach(w)
     w.report("clips", "a", "noise", 0.0, 500.0, 0.0, "", -1, "b", "tone", 500.0)
@@ -112,17 +112,17 @@ def test_a_partial_group_is_dropped_rather_than_half_read():
 def test_the_view_is_built_from_what_the_object_holds():
     mt = Multitrack(lanes=[Lane("one", height=60.0)],
                     clips=[Clip("x", "one", 0.0, 10.0)], snap=4.0)
-    spec = dict(mt.view(name="piece", weight=1.0))
+    spec = dict(mt.view(name="multitrack", weight=1.0))
     assert spec["type"] == "multitrack"
     assert spec["lanes"] == ["one", "", 60.0, 0, 0, 1.0]
     assert spec["clips"] == ["x", "one", 0.0, 10.0, 0.0, "", -1]
-    assert spec["snap"] == 4.0 and spec["name"] == "piece"
+    assert spec["snap"] == 4.0 and spec["name"] == "multitrack"
 
 
 def test_an_unattached_piece_is_still_a_piece():
     """A script may build one before its window exists; nothing is sent, and
     nothing raises."""
-    mt = piece()
+    mt = multitrack()
     mt.place("c", "noise", 0.0, 10.0).mix("noise", gain=0.5)
     assert mt.clip("c") is not None and mt.lane("noise").gain == 0.5
 
@@ -133,20 +133,20 @@ def test_attach_takes_the_window_and_remembers_its_own_name():
     built the node, so it knows what it called it."""
     class FakeWindow:
         def __init__(self, widget):
-            self._by_name = {"piece": widget}
+            self._by_name = {"multitrack": widget}
 
         def __getitem__(self, name):
             return self._by_name[name]
 
-    mt = piece()
+    mt = multitrack()
     w = FakeWidget()
-    mt.view(name="piece")
+    mt.view(name="multitrack")
     mt.attach(FakeWindow(w))
     w.report("clips", "a", "tone", 7.0, 500.0, 0.0, "", -1)
     assert mt.clip("a").lane == "tone"
 
     # A view with no name cannot be searched for, and says so.
-    nameless = piece()
+    nameless = multitrack()
     nameless.view(weight=1.0)
     with pytest.raises(ValueError, match="no name"):
         nameless.attach(FakeWindow(w))

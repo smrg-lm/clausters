@@ -78,7 +78,7 @@ pub use log::{
     Entry, Log, MemorySpill, Redone, Spill, Step, Tree, Undone, apply_logged, apply_logged_in,
     inverse_of,
 };
-pub use multitrack::edit::{MULTITRACK, MultitrackIntent, Piece, SpanKind};
+pub use multitrack::edit::{MULTITRACK, MultitrackEdit, MultitrackIntent, SpanKind};
 pub use multitrack::{
     Automation, Extra, Fade, Lane, Marker, Meter, Multitrack, Region, Span, Tempo, Track,
 };
@@ -124,14 +124,14 @@ pub enum TimeUnit {
 /// The crate does not do this itself, and that is the point. A beat is a
 /// logical coordinate, so under a changing tempo the same stretch of seconds
 /// reaches a different beat depending on where it starts: the conversion needs
-/// the piece's tempo map and a position, and the document transports
+/// the multitrack's tempo map and a position, and the document transports
 /// references without interpreting them. So it takes the onset and the length
 /// and hands back the answer.
 ///
 /// A length already in beats never reaches one of these.
 pub type SecsToBeats<'a> = &'a dyn Fn(Beats, f64) -> Beats;
 
-/// The conversion for a piece at **one constant tempo** — the only case where
+/// The conversion for a multitrack at **one constant tempo** — the only case where
 /// a length in seconds is a multiplication.
 ///
 /// Written out so a caller that genuinely has one number says so at the call
@@ -158,7 +158,7 @@ pub struct SourceId(pub u64);
 /// generator is code, a def is a def, a pattern is a pattern, and the document
 /// knows only that something is there and where it sits. A writer that does not
 /// understand a payload preserves it — losing a generator's configuration on a
-/// round trip through a host that cannot read it would lose the piece.
+/// round trip through a host that cannot read it would lose the multitrack.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Opaque(pub serde_json::Value);
@@ -259,7 +259,7 @@ pub struct SourceRef {
 /// Without the second variant a window onto events could only be a *copy*: the
 /// notes written once per window, with the same node ids in each, which is two
 /// parents for one identity and the one thing an edit log cannot address. This
-/// is what "a cut is a window, not a rewrite" means once the piece is written
+/// is what "a cut is a window, not a rewrite" means once the multitrack is written
 /// down.
 ///
 /// On the wire the two are told apart by shape, so **every document written
@@ -462,7 +462,7 @@ pub enum Body {
     /// Data at constant rate, assembled from **several windows**: which source,
     /// from which frame, for how long — read back to back as one thing.
     ///
-    /// It is the same primitive [`Body::Vector`] is, over more than one piece
+    /// It is the same primitive [`Body::Vector`] is, over more than one multitrack
     /// of samples: joining fragments of two files makes one, and cutting one
     /// apart gives back the windows it was made of. Nothing is copied, which is
     /// the whole point — the segments are references, exactly as a vector's own
@@ -491,7 +491,7 @@ pub enum Body {
         /// refuses ("the tree stays general; a view carries its own
         /// restrictions"). But a writer that has such an aggregate must be able to get
         /// it back, or a round trip through this format silently promotes a
-        /// track to a plain aggregate and the piece reopens with a level of nesting
+        /// track to a plain aggregate and the multitrack reopens with a level of nesting
         /// nobody wrote. So the *restriction* travels as opaque configuration,
         /// exactly as a leaf's code does: the document knows something is
         /// there, and not what it means.
@@ -569,7 +569,7 @@ pub struct Node {
     ///
     /// It is here rather than in a client because a name is what a **view**
     /// labels a lane with, and losing it on a round trip is what makes a
-    /// reopened piece anonymous in every writer at once.
+    /// reopened multitrack anonymous in every writer at once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     /// Start in beats relative to its context, when the element itself carries
@@ -756,7 +756,7 @@ impl Body {
     /// offset: an offset is in beats and a length is in the unit of the data it
     /// measures, so a lane of takes cannot be read against a lane of notes
     /// without it. A body whose members are all measured in beats never calls
-    /// it. [`at_tempo`] is the converter for a piece at one constant tempo.
+    /// it. [`at_tempo`] is the converter for a multitrack at one constant tempo.
     pub fn relation(&self, secs_to_beats: SecsToBeats) -> Option<Relation> {
         let members = match self {
             Body::Aggregate { members, .. } | Body::Sequence { members, .. } => members,
@@ -820,7 +820,7 @@ pub struct Document {
     /// Samples solve it by living outside the document entirely; a timeline of
     /// notes cannot, because its notes are nodes an intent has to be able to
     /// name, so it lives here instead — once, with its own ids, referred to by
-    /// as many windows as the piece has.
+    /// as many windows as the multitrack has.
     ///
     /// Empty in every document that has no shared content, which is why it is
     /// skipped when it is: a file written before this existed reads back

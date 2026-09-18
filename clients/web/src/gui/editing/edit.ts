@@ -2,17 +2,17 @@
  * `edit(x)`: the verb, and what it opens.
  *
  * One call over the fundamental structures — a buffer's samples, a break-point
- * curve, a timeline of events, and a **piece** — each of which is an
+ * curve, a timeline of events, and a **multitrack** — each of which is an
  * {@link Editor} with its own domain and its own view and nothing else. It
  * dispatches on **what the structure is** rather than on a keyword, because that
  * is the question a caller has already answered by holding one.
  *
- * **A piece is one of them.** It used to be excluded on the grounds that a
+ * **A multitrack is one of them.** It used to be excluded on the grounds that a
  * multitrack is an application rather than an editor over a structure — but what
  * made that true was that the picture and the reading of a gesture were written
- * per client, so a piece opened here would have been a second implementation of
+ * per client, so a multitrack opened here would have been a second implementation of
  * both. They are the crate's now (`multitrackProps`/`editingIntake`), so a
- * piece is a structure with a vocabulary, a picture and an inverse like any
+ * multitrack is a structure with a vocabulary, a picture and an inverse like any
  * other, and opening it here is what gives it the history every other editor
  * has.
  *
@@ -29,7 +29,7 @@ import type { Editing } from "./context.ts";
 import type { Editor } from "./editor.ts";
 import type { GuiHost, Stage } from "../host.ts";
 import { NotesEditor, isEvents } from "./events.ts";
-import { MultitrackEditor, isPiece } from "./multitrack.ts";
+import { MultitrackEditor, isMultitrack } from "./multitrack.ts";
 import type { MultitrackEditorOptions } from "./multitrack.ts";
 import type { Server } from "../../defs/server/index.ts";
 import { PointsEditor, isCurve } from "./points.ts";
@@ -69,10 +69,10 @@ export interface EditOptions {
      */
     open?: boolean;
     /**
-     * **A piece's own two**, ignored by every other structure: which server
-     * buffer each source was read into, and the server the piece sounds on.
+     * **A multitrack's own two**, ignored by every other structure: which server
+     * buffer each source was read into, and the server the multitrack sounds on.
      * Given a server the editor keeps a reader per box and draws the transport
-     * row; a piece opened with none still edits.
+     * row; a multitrack opened with none still edits.
      */
     sources?: MultitrackEditorOptions["sources"];
     server?: Server;
@@ -100,8 +100,8 @@ function editorFor(structure: unknown, options: EditOptions): Editor<never> {
             ...rest,
         }) as unknown as Editor<never>;
     }
-    if (isPiece(structure)) {
-        // A piece states its own tempo, like a timeline.
+    if (isMultitrack(structure)) {
+        // A multitrack states its own tempo, like a timeline.
         return new MultitrackEditor(structure, {
             sampleRate: sampleRate || 48_000,
             ...rest,
@@ -110,14 +110,14 @@ function editorFor(structure: unknown, options: EditOptions): Editor<never> {
     throw new TypeError(
         `nothing edits a ${(structure as object)?.constructor?.name ?? typeof structure}: ` +
             "`edit` opens a Buffer (its samples), an Automation (its curve), a " +
-            "Timeline (its notes) or a Multitrack (the piece).",
+            "Timeline (its notes) or a Multitrack (the multitrack).",
     );
 }
 
 /**
  * Opens `structure` in an editor of its own kind — a `Buffer` (its samples), an
  * `Automation` (its curve), a `Timeline` (its notes) or a `Multitrack` (the
- * piece) — and answers the open editor.
+ * multitrack) — and answers the open editor.
  *
  * **It opens.** The window is up and listening when this resolves, so the
  * structure the caller already holds is the edited one from that moment: read

@@ -526,7 +526,7 @@ impl<E: Engraver> Score<E> {
 /// element was not written from one.
 ///
 /// The page names elements the way the emitter wrote them: `n7` is the item,
-/// `n7-2` a piece of it split across a barline, `n7-p1` one pitch of a chord.
+/// `n7-2` a part of it split across a barline, `n7-p1` one pitch of a chord.
 /// All three are the same item, which is what lets a gesture anywhere on a note
 /// reach the note. An id of any other shape belongs to a document this layer
 /// did not write, and there is nothing in the model to move.
@@ -816,7 +816,7 @@ mod model_tests {
     }
 
     #[test]
-    fn a_chords_pitch_and_a_split_piece_both_name_the_note_they_belong_to() {
+    fn a_chords_pitch_and_a_split_part_both_name_the_note_they_belong_to() {
         assert_eq!(item_id("n7"), Some(7));
         assert_eq!(item_id("n7-2"), Some(7));
         assert_eq!(item_id("n7-p1"), Some(7));

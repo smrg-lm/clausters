@@ -376,7 +376,7 @@ export class Application {
      * **What that leaves the caller is the granularity, and it is the caller's
      * for a reason.** `/gui_def` names any widget, so publish the one your edit
      * touched. Measured over a drag, the subtree of the clip that moved is flat
-     * in the size of the piece; the window is not, and on a large one it is
+     * in the size of the multitrack; the window is not, and on a large one it is
      * megabytes a second of JSON for a gesture that touched one rectangle. Name
      * a `window` to publish a part of it: the names under the old subtree go and
      * the rest of the window keeps the ones it had.

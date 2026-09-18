@@ -125,7 +125,7 @@ impl Multitrack {
     ///
     /// **The mixer state is the composition's**, so all three report — and they
     /// report the `"lanes"` list, not the one lane, because what a report says
-    /// here is the piece as it now stands.
+    /// here is the multitrack as it now stands.
     pub(super) fn press_header(
         &mut self,
         lane: usize,
@@ -298,7 +298,7 @@ impl Multitrack {
     /// itself leaves on release, as every gesture here does. What the curve
     /// reports for itself is dropped: its payload is its own points, and the
     /// payload here is **every** curve's, so forwarding one would hand an owner
-    /// a list that is not the piece.
+    /// a list that is not the multitrack.
     pub(super) fn press_curve(&mut self, at: (f64, f64), input: &Input) -> Option<Claim> {
         let name = self.curve_at(at, input)?;
         let (rect, mut space) = self.curve_place(&name, input)?;
@@ -548,7 +548,7 @@ impl Multitrack {
         }
         if self.sizing.take().is_some() {
             // Nothing leaves: how tall a row is drawn is this window's, and the
-            // piece is not asked about it.
+            // multitrack is not asked about it.
             return Events::none();
         }
         if self.fading.take().is_some() {
@@ -642,7 +642,7 @@ impl Multitrack {
             // and it is the wrong one for a **modifier**, which is an address
             // rather than a place. Shift said *the stack*, so a stack already
             // at its end answers by doing nothing: reaching the last track and
-            // having the piece zoom under the hand is the gesture turning into
+            // having the multitrack zoom under the hand is the gesture turning into
             // a different gesture at the moment the hand leans on it.
             self.scroll = self.clamped_scroll(input.rect, self.scroll - steps as f32 * WHEEL_ROWS);
             return Some(Events::none());
@@ -777,7 +777,7 @@ impl Multitrack {
                 // track the hand had pointed at.
                 //
                 // With no track selected the rows are the ones it came from,
-                // which is what a paste back into the same piece means.
+                // which is what a paste back into the same multitrack means.
                 let rows: Vec<usize> = block.iter().map(|c| self.lane_of(c).unwrap_or(0)).collect();
                 let base = rows.iter().copied().min().unwrap_or(0);
                 let depth = rows.iter().copied().max().unwrap_or(0) - base;
@@ -785,7 +785,7 @@ impl Multitrack {
                 // **A block that does not fit is refused, not flattened.** It
                 // used to clamp every row past the last track onto that track,
                 // which silently made a block of four tracks into a pile on
-                // one -- the one thing a paste promises not to do. The piece
+                // one -- the one thing a paste promises not to do. The multitrack
                 // gains no track here either: making one is a verb of its own
                 // (a double click on a header), reported as `lanes`, and a
                 // paste is not the place to grow the thing it is pasting into.
@@ -794,7 +794,7 @@ impl Multitrack {
                     return Some(Events::refused(
                         "paste",
                         &format!(
-                            "this block is {} track(s) tall and needs {need} here; the piece has {}",
+                            "this block is {} track(s) tall and needs {need} here; the multitrack has {}",
                             depth + 1,
                             self.lanes.len()
                         ),

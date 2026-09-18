@@ -76,7 +76,7 @@ export interface Adopting {
      * step of the history.
      *
      * Separate from {@link Adopting.adopt}, which is about *drawing*: a page
-     * that sounds a piece or writes a file wants to be told whoever made the
+     * that sounds a multitrack or writes a file wants to be told whoever made the
      * edit, and the window that made it is not exempt from having changed.
      */
     dataChanged?(): void;
@@ -100,7 +100,7 @@ export interface Effect {
     kind: string;
     /** The member it is for. */
     member: number;
-    /** A multitrack member's: what applying the step did to the piece. */
+    /** A multitrack member's: what applying the step did to the multitrack. */
     applied?: Record<string, unknown>;
     /** A take's writes, or an external member's payloads. */
     payloads?: unknown[];
@@ -330,7 +330,7 @@ export class Editing {
     }
 
     /**
-     * **Carry a step's effects out** on the structures they name: a piece
+     * **Carry a step's effects out** on the structures they name: a multitrack
      * written back, a take's writes projected, an external member's payloads
      * applied.
      */
@@ -421,7 +421,7 @@ export class Editing {
      * On the way out, every **other** view of this data is told what it is
      * drawing has moved — which nothing else would do: an acknowledgement
      * goes to the window whose gesture it answered, so a second window would go
-     * on drawing a piece that had changed under it. Nested turns collapse into
+     * on drawing a multitrack that had changed under it. Nested turns collapse into
      * one, because a gesture that reaches here twice is still one gesture.
      */
     turn<T>(source: Adopting, run: () => T): T {

@@ -312,13 +312,13 @@ pub struct OscServer {
 }
 
 /// The shared transport: a DAW-style **rolling state** (play / stop / where the
-/// piece is), plus an optional beat grid clients read to phase-align on the
+/// the transport is), plus an optional beat grid clients read to phase-align on the
 /// master sample clock. The server stores and **broadcasts** all of it
 /// (in-memory; resets on restart); with a group bound the engine also enforces
 /// it. See [`OscServer::handle_transport`].
 ///
 /// **It always exists**, which is why this is not an `Option` on the server.
-/// Rolling, stopping and saying where the piece is need no beats — an audio
+/// Rolling, stopping and saying where the transport is need no beats — an audio
 /// editor addresses frames and has no tempo to declare — so the thing that is
 /// optional is the **grid**, not the transport. `defined` is what says whether
 /// `origin_sample` and `tempo` mean anything, and it is the wire field of the
@@ -334,11 +334,11 @@ struct Transport {
     origin_sample: i64,
     tempo: f64,
     playing: bool,
-    /// The song position in **beats** — the grid's spelling of the piece's
+    /// The song position in **beats** — the grid's spelling of the transport's
     /// position, which the engine keeps in samples. 0 while no grid is defined,
     /// where the sample spelling is still live.
     position: f64,
-    /// The loop the position wraps inside, in **samples of the piece**, or
+    /// The loop the position wraps inside, in **samples of the transport's axis**, or
     /// `None` when looping is off. Held here as well as in the engine so
     /// `/transport_query` can report it without asking the audio thread.
     loop_span: Option<(i64, i64)>,
@@ -346,7 +346,7 @@ struct Transport {
     /// yet: `(position, transport clock when it was sent)`. The engine
     /// publishes its position once per block, so a reply built in the same
     /// breath as a locate -- its own broadcast above all -- would otherwise
-    /// report the place the piece is leaving, and a follower would re-cue its
+    /// report the place the transport is leaving, and a follower would re-cue its
     /// plan from there. Answered with this until the transport clock has
     /// advanced past the send, which is when a block has applied it.
     pending_locate: Option<(u64, u64)>,

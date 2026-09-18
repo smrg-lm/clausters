@@ -5,7 +5,7 @@
 //! do and deliberately not how; this is the how, written once. It was written
 //! three times — the Python client's `Playback.apply`, the web client's, and
 //! the GUI host's own — and the host's copy was the one that sent a buffer's
-//! fill before its allocation and silenced the piece. The clients had it right
+//! fill before its allocation and silenced the multitrack. The clients had it right
 //! only because their `Buffer.from_samples` waited for the allocation inside
 //! itself, which is a rule nobody could read off the op.
 //!
@@ -61,8 +61,8 @@ pub enum Step {
 /// **What an endpoint arranges differently**: how many samples one fill may
 /// carry, which is its carrier's bound.
 ///
-/// Where the piece is made and how the transport is bound used to differ too --
-/// a client bound the piece's graph at the root, the GUI host a group of its
+/// Where the multitrack is made and how the transport is bound used to differ too --
+/// a client bound the multitrack's graph at the root, the GUI host a group of its
 /// own -- and they are the same everywhere now ([`Op::Transport`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Endpoint {
@@ -519,7 +519,7 @@ mod tests {
     ///
     /// The defect behind this module: an endpoint that sent the fill right
     /// after the allocation had every fill refused, and a curve over an empty
-    /// table silenced the piece. The wait is part of the answer now.
+    /// table silenced the multitrack. The wait is part of the answer now.
     #[test]
     fn a_buffer_is_allocated_awaited_filled_and_closed() {
         let mut applier = Applier::new(Endpoint { chunk: 2 });
@@ -560,18 +560,18 @@ mod tests {
                         handle: "transport".into(),
                     },
                     Op::Graph {
-                        handle: "piece".into(),
+                        handle: "multitrack".into(),
                         parent: "transport".into(),
-                        graph: "mt.piece".into(),
+                        graph: "mt.multitrack".into(),
                         ports: Ports::new(),
                     },
                     Op::Group {
                         handle: "curves".into(),
-                        before: "piece".into(),
+                        before: "multitrack".into(),
                     },
                     Op::Slot {
                         handle: "track:1".into(),
-                        target: "piece".into(),
+                        target: "multitrack".into(),
                         slot: "tracks".into(),
                         ports: Ports::new(),
                     },
@@ -602,7 +602,7 @@ mod tests {
         assert_eq!(
             graph.args[3],
             OscType::Int(1000),
-            "the piece inside the transport's group"
+            "the multitrack inside the transport's group"
         );
     }
 
@@ -619,20 +619,20 @@ mod tests {
                         handle: "transport".into(),
                     },
                     Op::Graph {
-                        handle: "piece".into(),
+                        handle: "multitrack".into(),
                         parent: "transport".into(),
-                        graph: "mt.piece.2".into(),
+                        graph: "mt.multitrack.2".into(),
                         ports: Ports::new(),
                     },
                     Op::Slot {
                         handle: "track:1".into(),
-                        target: "piece".into(),
+                        target: "multitrack".into(),
                         slot: "tracks".into(),
                         ports: Ports::new(),
                     },
                     Op::Slot {
                         handle: "track:2".into(),
-                        target: "piece".into(),
+                        target: "multitrack".into(),
                         slot: "tracks".into(),
                         ports: Ports::new(),
                     },
@@ -691,9 +691,9 @@ mod tests {
                         handle: "transport".into(),
                     },
                     Op::Graph {
-                        handle: "piece".into(),
+                        handle: "multitrack".into(),
                         parent: "transport".into(),
-                        graph: "mt.piece".into(),
+                        graph: "mt.multitrack".into(),
                         ports: [
                             ("gain".to_string(), Port::Number(0.5)),
                             (
@@ -721,7 +721,7 @@ mod tests {
         let steps = applier
             .apply(
                 vec![Op::Set {
-                    handle: "piece".into(),
+                    handle: "multitrack".into(),
                     ports: [(
                         "out".to_string(),
                         Port::Bus {
@@ -762,7 +762,7 @@ mod tests {
                         handle: "transport".into(),
                     },
                     Op::Graph {
-                        handle: "piece".into(),
+                        handle: "multitrack".into(),
                         parent: "transport".into(),
                         graph: "g".into(),
                         ports: Ports::new(),
@@ -777,7 +777,7 @@ mod tests {
                     Op::FreeBus { handle: "b".into() },
                     Op::FreeBuffer { handle: "t".into() },
                     Op::Free {
-                        handle: "piece".into(),
+                        handle: "multitrack".into(),
                         forget: vec![],
                     },
                 ],
@@ -790,7 +790,7 @@ mod tests {
         assert_eq!(
             spaces.in_use(Space::Nodes),
             2,
-            "the transport's group and the piece, until their /node_end"
+            "the transport's group and the multitrack, until their /node_end"
         );
     }
 

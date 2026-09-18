@@ -535,7 +535,7 @@ fn a_stale_rewrite_does_not_delete_what_arrived_in_between() {
 fn an_edit_from_ahead_of_the_document_is_stale_too() {
     // And it is the worse case rather than a harmless one: a version the
     // document has never reached means the two are not talking about the same
-    // piece, so applying would write an edit meant for another one.
+    // multitrack, so applying would write an edit meant for another one.
     let mut d = doc();
     let ahead = Against::at(d.version + 5);
     let outcome = apply(

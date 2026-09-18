@@ -246,7 +246,7 @@ impl CmdTranslator {
         let limits = limits.clamped();
         // The top half of each bus space is private to GraphDef instances --
         // a share of what was configured rather than a fixed count, so booting
-        // a server with more buses actually buys a piece more tracks.
+        // a server with more buses actually buys a multitrack more tracks.
         let audio_reserved = graph_audio_reserved(audio_buses);
         let control_reserved = graph_control_reserved(control_buses);
         // Every node-id range scales from the node table's capacity — the

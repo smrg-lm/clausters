@@ -263,7 +263,7 @@ impl Curve {
     /// props asked for them.
     ///
     /// The horizontal one is the ordinary time ruler, so a curve laid over a
-    /// piece can be read in seconds, samples or `bar:beat` -- through the axis'
+    /// multitrack can be read in seconds, samples or `bar:beat` -- through the axis'
     /// tempo map where it has one, which is what lets an envelope of tempo be
     /// read against the beats it produces. The vertical one is the plain value
     /// axis over `[min, max]`, the same one a plot draws: a break-point
@@ -298,7 +298,7 @@ impl Curve {
     /// list — the envelope's own units, which is what its owner applies.
     /// The break-points as they now stand — what a container holding this as
     /// a layer reports them *with its own identity* in front of, since there
-    /// the payload is the whole piece's curves and not this one's.
+    /// the payload is the whole multitrack's curves and not this one's.
     pub(crate) fn points(&self) -> &[BpfPoint] {
         &self.points
     }

@@ -1,8 +1,8 @@
-"""`Multitrack`: the piece a `clausters.gui.multitrack` widget draws, kept here.
+"""`Multitrack`: the multitrack a `clausters.gui.multitrack` widget draws, kept here.
 
-The widget owns the lanes and the clips and reports **the piece as it now
+The widget owns the lanes and the clips and reports **the multitrack as it now
 stands** after any gesture; this is the object that holds that on the client's
-side, so a script says what the piece *is* and never what a hand did to it.
+side, so a script says what the multitrack *is* and never what a hand did to it.
 
 **It wires nothing that a script would otherwise have to.** `attach` subscribes
 once, to one widget, and turns both edit-backs into this object's own lists —
@@ -72,18 +72,18 @@ class Clip:
 
 @dataclass
 class Multitrack:
-    """The piece: its lanes, its clips, and the one widget that draws them.
+    """The multitrack: its lanes, its clips, and the one widget that draws them.
 
     Args:
         lanes: the rows, top to bottom — `Lane`s, or the tuples one takes.
         clips: the boxes — `Clip`s, or the tuples one takes.
         snap: the drag grid in axis units; ``0`` is no grid.
-        on_change: ``on_change(what)`` after a hand edited the piece, with
+        on_change: ``on_change(what)`` after a hand edited the multitrack, with
             ``what`` being ``"clips"`` or ``"lanes"``. It is called *after* this
             object's lists are already the new ones, so a handler reads them
             rather than parsing anything.
         on_locate: ``on_locate(at)`` when a click placed the window's cursor on
-            this widget's axis, in axis units. It is **not** an edit — the piece
+            this widget's axis, in axis units. It is **not** an edit — the multitrack
             did not change — but it arrives here because the widget owns the
             axis, so this hands it on rather than swallowing it.
     """
@@ -116,10 +116,10 @@ class Multitrack:
 
     @property
     def extent(self) -> float:
-        """Where the piece ends: the furthest clip end, ``0.0`` for none.
+        """Where the multitrack ends: the furthest clip end, ``0.0`` for none.
 
         The **end**, not the last onset — a clip dragged past everything else
-        lengthens the piece by its whole length.
+        lengthens the multitrack by its whole length.
         """
         return max((c.end for c in self.clips), default=0.0)
 
@@ -144,7 +144,7 @@ class Multitrack:
     def place(self, name: str, lane: str, at: float, dur: float,
               start: float = 0.0, label: str = "", source: int = -1) -> "Multitrack":
         """Put a clip where you say — adding it, or moving the one of that
-        name. The verb is one because *the piece is a statement*: what you hand
+        name. The verb is one because *the multitrack is a statement*: what you hand
         over is where the clip is, not how it got there."""
         found = self.clip(name)
         if found is None:
@@ -177,7 +177,7 @@ class Multitrack:
     # ---- the widget ----
 
     def view(self, **props):
-        """The `clausters.gui.multitrack` widget drawing this piece, built from
+        """The `clausters.gui.multitrack` widget drawing this multitrack, built from
         what this object holds. Any widget prop (``name``, ``weight``, ``link``,
         ``ruler``, ``sample_rate``, ``playhead_at``…) passes through."""
         props.setdefault("snap", self.snap)
@@ -188,16 +188,16 @@ class Multitrack:
                                clips=self._clip_tuples(), **props)
 
     def attach(self, where) -> "Multitrack":
-        """Subscribe to the widget drawing this piece: pass the **window**
+        """Subscribe to the widget drawing this multitrack: pass the **window**
         `view.open` gave back, or the widget handle itself.
 
         It is a second step because a `view` is a *definition* and an id names a
         *live* widget — one view opens as many times as you like, each window
-        with ids of its own — so which opened window this piece is watching has
+        with ids of its own — so which opened window this multitrack is watching has
         to be said. What does not have to be said again is the name: `view`
         remembered it.
 
-        **One subscription, for the whole piece.** The widget reports what it now
+        **One subscription, for the whole multitrack.** The widget reports what it now
         holds, so this replaces the lists and calls `on_change`; there is nothing
         per clip to register and no id for a script to carry.
         """
@@ -205,7 +205,7 @@ class Multitrack:
         if hasattr(where, "__getitem__") and not hasattr(where, "on_event"):
             if self._name is None:
                 raise ValueError(
-                    "this piece's view was built with no name, so a window "
+                    "this multitrack's view was built with no name, so a window "
                     "cannot be searched for it: pass the widget handle, or "
                     "build the view with name=")
             widget = where[self._name]
@@ -214,7 +214,7 @@ class Multitrack:
         return self
 
     def _edited(self, tag, *vals):
-        """Both edit-backs, each the whole list — the piece as it now stands."""
+        """Both edit-backs, each the whole list — the multitrack as it now stands."""
         if tag == "clips":
             self.clips = [Clip(str(n), str(lane), float(at), float(dur),
                                float(start), str(label), int(source))

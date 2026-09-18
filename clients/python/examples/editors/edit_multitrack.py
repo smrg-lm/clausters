@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""``edit(piece)``: a multitrack of audio, drawn, edited and played.
+"""``edit(multitrack)``: a multitrack of audio, drawn, edited and played.
 
 The fourth structure, and the one that holds the other three: a
 `clausters.multitrack.Multitrack` — the document the three applications share —
 opened with `clausters.gui.edit` like a buffer or a timeline. **One verb, and
 the editor is the application**: the picture, the gestures, the history, the
-readers on the server and the transport are all its, so this file writes a piece
+readers on the server and the transport are all its, so this file writes a multitrack
 and hands it over.
 
 What to do in the window:
@@ -20,7 +20,7 @@ What to do in the window:
 - **Click the ruler** — or the slack between boxes — to place the **position
   cursor**, which is where the next play starts. The playhead is never placed:
   stopped, it stands on the mark.
-- **Reach a tall piece**: `Shift`+wheel **scrolls the stack**, so a track that
+- **Reach a tall multitrack**: `Shift`+wheel **scrolls the stack**, so a track that
   fell off the bottom comes back; `Ctrl`+wheel **zooms the row under the
   pointer** — a track or one of the automation rows, each on its own. A track
   is also zoomed by dragging its header's **bottom edge**; a curve row has no
@@ -28,7 +28,7 @@ What to do in the window:
   axis'.
 - **`A` in a track's header** shows and hides that track's **automation rows** —
   and on a track that has none, the first press **makes** one: a `gain` curve,
-  flat at unity across the piece, heard like any other. The same shape the
+  flat at unity across the multitrack, heard like any other. The same shape the
   double click that adds a track has, the verb making the thing rather than
   asking about it. Try it on **bass**, which this file gives no automation.
 - **rewind**, **play/pause** and **stop** are the window's own row. A pause
@@ -37,14 +37,14 @@ What to do in the window:
   puts the **mark** back at the top, which is the cursor's verb and not the
   transport's.
 - **Double click a box** to enter it: what a box holds is a structure like any
-  other, so entering one opens the take in the sample editor — on the **piece's**
+  other, so entering one opens the take in the sample editor — on the **multitrack's**
   own undo order, so `Ctrl`+`Z` walks a stroke drawn inside a box and a box
   dragged on the stack as one history.
 - **Watch the meters** while it plays: the strip in each track's header is one
   column per channel, in decibels, over what that track produces *after* its
   clips, its curves and its fader — with the peak it reached held beside it.
 
-**The takes are rendered here and the piece is written plainly**, which is all
+**The takes are rendered here and the multitrack is written plainly**, which is all
 this file is: six buffers, three tracks, six boxes and two curves. Everything
 after that is `edit`.
 
@@ -55,15 +55,15 @@ sit in the green and the amber.
 **The curves are heard.** The row under the first track is a track automation
 and the line inside the first box is a clip envelope; each names the ``gain``
 port of the node it sits on — the same port the header's knob writes — so a
-point dragged while the piece plays is heard where it is drawn.
+point dragged while the multitrack plays is heard where it is drawn.
 
 **The last box is a join**: one buffer whose samples are spans of two takes,
 crossfaded at the seam, which is what a comping pass cut by hand is. It plays as
 **one** reader like any other take. Put the cursor inside it and play: the reader
 finds the span it lands in once and reads it like a plain buffer from there.
 
-**The piece is also written down as a session** (``examples/out/``): its takes as
-files, the join as its parts, and the piece that names them. So
+**The multitrack is also written down as a session** (``examples/out/``): its takes as
+files, the join as its parts, and the multitrack that names them. So
 ``clausters-gui --session clients/python/examples/out/edit_multitrack.json``
 opens the standalone editor on exactly this material, with no Python behind it.
 
@@ -138,15 +138,15 @@ BUFS["comp"] = Buffer.stitch(
 server.sync()
 
 # %% [markdown]
-# ## The piece
+# ## The multitrack
 # Three tracks, one lane each, five boxes. A **source id** is what the document
-# names — never a path and never a buffer number — because a piece must open in
+# names — never a path and never a buffer number — because a multitrack must open in
 # a program that has no Python in it. Which buffer each source was read into is
-# the one thing about a piece that is not in the piece, and it travels beside it
+# the one thing about a multitrack that is not in the multitrack, and it travels beside it
 # in `clausters.gui.editing.Sources`.
 
 # %%
-#: source id -> the take it names, so the piece and the table below are written
+#: source id -> the take it names, so the multitrack and the table below are written
 #: against one list.
 SOURCES = {1: "white", 2: "glide", 3: "saw", 4: "pink", 5: "comp",
            6: "loud"}
@@ -180,24 +180,24 @@ white_fade = Automation(id=101, name="fade", visible=True,
 first = box(20, 0.0, 1, "white")
 first.automation.append(white_fade)
 
-piece = Multitrack(tracks=[
+multitrack = Multitrack(tracks=[
     Track(id=10, name="noise", automation=[noise_gain],
           lanes=[Lane(id=11, regions=[first, box(21, 6.0, 4, "pink")])]),
     Track(id=12, name="tone",
           lanes=[Lane(id=13, regions=[box(22, 2.0, 2, "glide"),
                                       box(24, 8.0, 5, "comp"),
                                       box(25, 10.0, 6, "loud")])]),
-    #: **The fader is the track's own field**, like its width: what a piece
-    #: sounds like is the piece's, so it is saved with it and reopens as it was.
+    #: **The fader is the track's own field**, like its width: what a multitrack
+    #: sounds like is the multitrack's, so it is saved with it and reopens as it was.
     Track(id=14, name="bass", level=0.7,
           lanes=[Lane(id=15, regions=[box(23, 4.0, 3, "saw")])]),
 ])
 
 # %% [markdown]
-# ## The same piece, for a host with no Python behind it
+# ## The same multitrack, for a host with no Python behind it
 # The takes above exist only on this server, so a program that cannot run this
-# file cannot open this piece. Written down as a **session** -- every take as a
-# file, the join as the parts it is made of, and the piece that names them -- it
+# file cannot open this multitrack. Written down as a **session** -- every take as a
+# file, the join as the parts it is made of, and the multitrack that names them -- it
 # opens with nothing else:
 #
 #     clausters-gui --session clients/python/examples/out/edit_multitrack.json
@@ -215,7 +215,7 @@ os.makedirs(OUT, exist_ok=True)
 FRAMES = int(TAKE_DUR * SR)
 ID = {take: id for id, take in SOURCES.items()}
 
-saved = SavedSession(multitrack=piece)
+saved = SavedSession(multitrack=multitrack)
 for id, take in SOURCES.items():
     if take == "comp":
         continue
@@ -248,18 +248,18 @@ print(f"wrote {saved.save(os.path.join(OUT, 'edit_multitrack.json'))}")
 # `clausters.gui.editing.MultitrackEditor` — one `multitrack` widget with its own
 # ruler and its own transport row, the crate's picture and the crate's reading of
 # every gesture. Given a **server** it also sounds: one resident reader per box,
-# in a group the server's transport governs, put where the piece says on every
+# in a group the server's transport governs, put where the multitrack says on every
 # edit whoever made it.
 
 # %%
 session.gui()          # the host wired to this session's server
-editor = edit(piece, sample_rate=SR, server=server,
+editor = edit(multitrack, sample_rate=SR, server=server,
               #: Which buffer each source was read into — and, given as the
               #: **objects**, what a box opens as when it is entered: the same
-              #: table answers both, because a piece names a source and only
+              #: table answers both, because a multitrack names a source and only
               #: whoever loaded it holds the take.
               sources={id: BUFS[take] for id, take in SOURCES.items()},
-              title="piece", width=1000, height=560)
+              title="multitrack", width=1000, height=560)
 
 # %%
 editor.wait()

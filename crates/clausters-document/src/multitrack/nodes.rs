@@ -1,9 +1,9 @@
-//! **From a piece to the nodes that play it** — the instance plan.
+//! **From a multitrack to the nodes that play it** — the instance plan.
 //!
 //! [`clausters_core::mixer`] says what a track and a clip *are* on the server;
 //! this says which of them a given [`Multitrack`] needs, wired to which
 //! buffers, at which frames, with which levels. Between the two there is
-//! nothing left for a client to decide, which is the point: a piece plays the
+//! nothing left for a client to decide, which is the point: a multitrack plays the
 //! same in both of them because neither of them works it out.
 //!
 //! What a caller still owns is what only a caller can know — where a source's
@@ -23,7 +23,7 @@
 //!   mixer.
 //! - **Which slot a box goes in.** A mono take is panned into a track and a
 //!   stereo take is balanced, so the source's width picks the clip def -- and a
-//!   client that guessed would produce a piece that sounds different in the
+//!   client that guessed would produce a multitrack that sounds different in the
 //!   other client.
 
 use std::collections::HashMap;
@@ -39,7 +39,7 @@ use crate::{NodeId, SourceId};
 /// What a caller knows about a source that the document does not: where its
 /// samples are on a running server, and how wide they are.
 ///
-/// A buffer number is not a property of a piece — the same piece opened twice
+/// A buffer number is not a property of a multitrack — the same multitrack opened twice
 /// has two of them — which is exactly why the document holds a source id and a
 /// session table holds this.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -125,16 +125,16 @@ pub struct PlannedTrack {
     pub curves: Vec<PlannedCurve>,
 }
 
-/// The whole piece as instances: one graph, and everything else a slot.
+/// The whole multitrack as instances: one graph, and everything else a slot.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Plan {
-    /// The graph to instantiate — `mt.piece.<channels>`.
+    /// The graph to instantiate — `mt.multitrack.<channels>`.
     pub graph: String,
     /// How wide the master is.
     pub channels: usize,
     /// The tracks, in the order the document shows them.
     pub tracks: Vec<PlannedTrack>,
-    /// Every `(source width, track width)` pair the piece uses, which is what
+    /// Every `(source width, track width)` pair the multitrack uses, which is what
     /// [`clausters_core::mixer::defs_for`] is handed.
     pub widths: Vec<(usize, usize)>,
 }
@@ -236,7 +236,7 @@ fn curves(automation: &[Automation], origin: f64, step: f64, rate: f64) -> Vec<P
 
 /// **What a track's fader is at**, as the mixer wants it.
 ///
-/// [`Track::level`] is the number and this is only its width: a piece is read
+/// [`Track::level`] is the number and this is only its width: a multitrack is read
 /// in `f64` because that is what a document says and played in `f32` because
 /// that is what a control is.
 pub fn track_gain(track: &Track) -> f32 {
@@ -247,12 +247,12 @@ pub fn track_gain(track: &Track) -> f32 {
 ///
 /// The document records that a track was *marked* soloed and stops there,
 /// because what a mark does to everything else is a rule about a mixer and not
-/// a fact about a piece. This is that rule, in one place: with nothing soloed
+/// a fact about a multitrack. This is that rule, in one place: with nothing soloed
 /// every unmuted track plays; with anything soloed, only the soloed ones do,
 /// and a track that is both soloed and muted is still muted — a mute is a
 /// statement about *this* track and a solo is a statement about the others.
-pub fn track_mute(piece: &Multitrack, track: &Track) -> f32 {
-    let soloing = piece.tracks.iter().any(|t| t.soloed);
+pub fn track_mute(multitrack: &Multitrack, track: &Track) -> f32 {
+    let soloing = multitrack.tracks.iter().any(|t| t.soloed);
     let silent = track.muted || (soloing && !track.soloed);
     if silent { 1.0 } else { 0.0 }
 }
@@ -277,21 +277,25 @@ pub fn tempo_map(multitrack: &Multitrack, default_tempo: f64) -> TempoMap {
     TempoMap::from_changes(&changes, default_tempo).unwrap_or_else(|_| TempoMap::new(default_tempo))
 }
 
-/// **The plan for a piece**: what to instantiate, wired to what, at what frame.
+/// **The plan for a multitrack**: what to instantiate, wired to what, at what frame.
 ///
 /// `sources` answers where a source's samples are; a region whose source it
 /// does not know is left out of the plan rather than planned as silence, so a
-/// take that has not finished loading is simply not playing yet and the piece
+/// take that has not finished loading is simply not playing yet and the multitrack
 /// is otherwise whole.
 ///
 /// No tempo is asked for: every position is in seconds, so the plan is the
 /// sample rate's alone.
-pub fn plan(piece: &Multitrack, sample_rate: f64, sources: &HashMap<SourceId, SourceInfo>) -> Plan {
+pub fn plan(
+    multitrack: &Multitrack,
+    sample_rate: f64,
+    sources: &HashMap<SourceId, SourceInfo>,
+) -> Plan {
     let frames = |secs: f64| secs * sample_rate;
     let mut widths: Vec<(usize, usize)> = Vec::new();
     let mut tracks = Vec::new();
 
-    for track in &piece.tracks {
+    for track in &multitrack.tracks {
         let channels = track.channels.max(1);
         let mut clips = Vec::new();
         let Some(lane) = track.active_lane() else {
@@ -299,7 +303,7 @@ pub fn plan(piece: &Multitrack, sample_rate: f64, sources: &HashMap<SourceId, So
                 track: track.id,
                 channels,
                 gain: track_gain(track),
-                mute: track_mute(piece, track),
+                mute: track_mute(multitrack, track),
                 clips,
                 curves: curves(&track.automation, 0.0, mixer::CURVE_STEP, sample_rate),
             });
@@ -310,7 +314,7 @@ pub fn plan(piece: &Multitrack, sample_rate: f64, sources: &HashMap<SourceId, So
                 window, looping, ..
             } = &region.content
             else {
-                // A window onto a node of the document is content the piece
+                // A window onto a node of the document is content the multitrack
                 // holds rather than samples, and nothing reads one yet. Named
                 // rather than silently dropped: it is the score's road in.
                 continue;
@@ -349,7 +353,7 @@ pub fn plan(piece: &Multitrack, sample_rate: f64, sources: &HashMap<SourceId, So
                 readers,
                 // A box's curves are the box's own time, so they start where it
                 // does: a fade drawn at its beginning is at *its* zero and not
-                // at the piece's.
+                // at the multitrack's.
                 curves: curves(
                     &region.automation,
                     region.position.get(),
@@ -362,7 +366,7 @@ pub fn plan(piece: &Multitrack, sample_rate: f64, sources: &HashMap<SourceId, So
             track: track.id,
             channels,
             gain: track_gain(track),
-            mute: track_mute(piece, track),
+            mute: track_mute(multitrack, track),
             clips,
             // A track's curves are on the timeline, which is the whole
             // difference between the two places a curve lives.
@@ -370,9 +374,9 @@ pub fn plan(piece: &Multitrack, sample_rate: f64, sources: &HashMap<SourceId, So
         });
     }
 
-    let channels = piece.channels.max(1);
+    let channels = multitrack.channels.max(1);
     Plan {
-        graph: mixer::piece_name(channels),
+        graph: mixer::multitrack_name(channels),
         channels,
         tracks,
         widths,
@@ -425,7 +429,7 @@ mod tests {
         Region::new(NodeId(id), Second(at), Second(len), content)
     }
 
-    fn piece() -> Multitrack {
+    fn multitrack() -> Multitrack {
         let mut track = Track::new(NodeId(1), NodeId(2));
         track.lanes[0] = Lane {
             regions: vec![region(3, 1, 0.0, 2.0), region(4, 2, 2.0, 2.0)],
@@ -441,7 +445,7 @@ mod tests {
     /// seconds in, which is two seconds of frames and not two of anything else.
     #[test]
     fn a_box_is_planned_in_frames_off_its_seconds() {
-        let plan = plan(&piece(), 48_000.0, &sources());
+        let plan = plan(&multitrack(), 48_000.0, &sources());
         let clips = &plan.tracks[0].clips;
         assert_eq!(clips[0].readers[0].at, 0.0);
         assert_eq!(clips[0].readers[0].span, 2.0 * 48_000.0);
@@ -457,12 +461,12 @@ mod tests {
     /// map is the plan without one.
     #[test]
     fn a_tempo_in_the_multitrack_moves_nothing_in_the_plan() {
-        let mut slower = piece();
+        let mut slower = multitrack();
         slower.set_tempo(Tempo::at(Beat(0.0), 2.0));
         slower.set_tempo(Tempo::at(Beat(1.0), 0.5).ramping());
         assert_eq!(
             plan(&slower, 48_000.0, &sources()),
-            plan(&piece(), 48_000.0, &sources())
+            plan(&multitrack(), 48_000.0, &sources())
         );
     }
 
@@ -470,7 +474,7 @@ mod tests {
     /// into the track and a stereo one is balanced — one reader against two.
     #[test]
     fn the_source_width_picks_the_slot_and_the_readers() {
-        let plan = plan(&piece(), 48_000.0, &sources());
+        let plan = plan(&multitrack(), 48_000.0, &sources());
         let clips = &plan.tracks[0].clips;
         assert_eq!(clips[0].slot, mixer::clip_slot(1));
         assert_eq!(clips[0].readers.len(), 1);
@@ -482,12 +486,12 @@ mod tests {
 
     /// **A source nobody can find is not planned**, rather than planned as
     /// silence: a take still loading is not playing yet, and the rest of the
-    /// piece is whole.
+    /// multitrack is whole.
     #[test]
     fn a_source_with_no_buffer_is_left_out() {
         let mut table = sources();
         table.remove(&SourceId(2));
-        let plan = plan(&piece(), 48_000.0, &table);
+        let plan = plan(&multitrack(), 48_000.0, &table);
         assert_eq!(plan.tracks[0].clips.len(), 1);
         assert_eq!(plan.widths, vec![(1, 2)]);
     }
@@ -496,7 +500,7 @@ mod tests {
     /// and the reason the document only records the mark.
     #[test]
     fn a_solo_anywhere_silences_the_tracks_that_are_not() {
-        let mut p = piece();
+        let mut p = multitrack();
         p.tracks.push(Track::new(NodeId(5), NodeId(6)));
         assert_eq!(
             track_mute(&p, &p.tracks[0]),
@@ -516,12 +520,12 @@ mod tests {
         );
     }
 
-    /// **A track that said nothing about its level is at full**, and a piece
+    /// **A track that said nothing about its level is at full**, and a multitrack
     /// written before the fader was a field still plays at the level it was
     /// saved with.
     #[test]
     fn a_tracks_fader_is_its_own_field_and_an_old_one_still_reads() {
-        let mut p = piece();
+        let mut p = multitrack();
         assert_eq!(track_gain(&p.tracks[0]), 1.0);
         p.tracks[0].level = 0.25;
         assert_eq!(track_gain(&p.tracks[0]), 0.25);
@@ -535,7 +539,7 @@ mod tests {
 mod json_tests {
     use super::*;
 
-    /// **The plan reads the piece a client writes**, including one that left out
+    /// **The plan reads the multitrack a client writes**, including one that left out
     /// a field it had nothing to say about.
     ///
     /// The two structures are one format in two languages, and a field that
@@ -545,15 +549,19 @@ mod json_tests {
     /// `SourceRef` missing a defaulted field does not fail — the window quietly
     /// becomes opaque content, drawn as a box and played by nothing.
     #[test]
-    fn a_piece_written_by_a_client_plans() {
+    fn a_multitrack_written_by_a_client_plans() {
         let written = r#"{"tracks":[{"id":1,"lanes":[{"id":2,"regions":[
             {"id":3,"position":0.0,"length":2.0,"content":{"fill":"window",
              "window":{"source":{"source":1,"lifetime":"session"},
                        "start":0.0,"duration":2.0}}}]}]}]}"#;
-        let piece: Multitrack = serde_json::from_str(written).expect("it reads");
-        assert_eq!(piece.tracks.len(), 1);
+        let multitrack: Multitrack = serde_json::from_str(written).expect("it reads");
+        assert_eq!(multitrack.tracks.len(), 1);
         assert_eq!(
-            piece.tracks[0].active_lane().expect("a lane").regions.len(),
+            multitrack.tracks[0]
+                .active_lane()
+                .expect("a lane")
+                .regions
+                .len(),
             1
         );
 
@@ -564,7 +572,7 @@ mod json_tests {
                 channels: 1,
             },
         )]);
-        let plan = plan(&piece, 48_000.0, &table);
+        let plan = plan(&multitrack, 48_000.0, &table);
         assert_eq!(plan.tracks[0].clips.len(), 1, "the box is planned");
         assert_eq!(plan.tracks[0].clips[0].readers[0].buffer, 7);
     }
@@ -606,12 +614,12 @@ mod curve_tests {
     /// its first point it is at the first value and after its last at the last.
     #[test]
     fn a_curve_is_sampled_into_a_table_that_holds_its_ends() {
-        let piece = track_with(vec![curve(
+        let multitrack = track_with(vec![curve(
             10,
             serde_json::json!({"port": "gain"}),
             &[(0.0, 0.0), (1.0, 1.0)],
         )]);
-        let plan = plan(&piece, 48_000.0, &HashMap::new());
+        let plan = plan(&multitrack, 48_000.0, &HashMap::new());
         let [table] = &plan.tracks[0].curves[..] else {
             panic!("one curve, got {:?}", plan.tracks[0].curves.len())
         };
@@ -641,8 +649,8 @@ mod curve_tests {
             &[(0.0, 0.0), (1.0, 1.0)],
         );
         bent.points[0].data = crate::Opaque(serde_json::json!({"shape": 5, "curve": 4.0}));
-        let piece = track_with(vec![bent]);
-        let plan = plan(&piece, 48_000.0, &HashMap::new());
+        let multitrack = track_with(vec![bent]);
+        let plan = plan(&multitrack, 48_000.0, &HashMap::new());
         let table = &plan.tracks[0].curves[0].table;
         let middle = table[table.len() / 2];
         let drawn = clausters_core::envshape::shape_value(5, 4.0, 0.0, 1.0, 0.5);
@@ -658,23 +666,23 @@ mod curve_tests {
     /// resolve, and guessing at it would drive a port nobody asked for.
     #[test]
     fn a_curve_whose_target_names_no_port_is_left_out() {
-        let piece = track_with(vec![
+        let multitrack = track_with(vec![
             curve(10, serde_json::json!({"plugin": 3}), &[(0.0, 1.0)]),
             curve(11, serde_json::Value::Null, &[(0.0, 1.0)]),
         ]);
-        let plan = plan(&piece, 48_000.0, &HashMap::new());
+        let plan = plan(&multitrack, 48_000.0, &HashMap::new());
         assert!(plan.tracks[0].curves.is_empty());
     }
 
     /// **A curve switched off is kept and not heard**, which is what
-    /// arming one means: the piece still holds it, and nothing drives the port.
+    /// arming one means: the multitrack still holds it, and nothing drives the port.
     #[test]
     fn a_disabled_curve_is_not_planned() {
         let mut held = curve(10, serde_json::json!({"port": "gain"}), &[(0.0, 1.0)]);
         held.enabled = false;
-        let piece = track_with(vec![held]);
+        let multitrack = track_with(vec![held]);
         assert!(
-            plan(&piece, 48_000.0, &HashMap::new()).tracks[0]
+            plan(&multitrack, 48_000.0, &HashMap::new()).tracks[0]
                 .curves
                 .is_empty()
         );
@@ -685,7 +693,7 @@ mod curve_tests {
     /// which is the whole difference between the two places a curve lives.
     #[test]
     fn a_clips_curve_starts_where_the_clip_does() {
-        let mut piece = track_with(Vec::new());
+        let mut multitrack = track_with(Vec::new());
         let mut region = crate::multitrack::Region::new(
             NodeId(3),
             Second(2.0),
@@ -711,7 +719,7 @@ mod curve_tests {
             serde_json::json!({"port": "gain"}),
             &[(0.0, 0.0), (1.0, 1.0)],
         )];
-        piece.tracks[0].lanes[0].regions = vec![region];
+        multitrack.tracks[0].lanes[0].regions = vec![region];
         let table = HashMap::from([(
             crate::SourceId(1),
             SourceInfo {
@@ -719,7 +727,7 @@ mod curve_tests {
                 channels: 1,
             },
         )]);
-        let plan = plan(&piece, 48_000.0, &table);
+        let plan = plan(&multitrack, 48_000.0, &table);
         let curve = &plan.tracks[0].clips[0].curves[0];
         assert_eq!(curve.at, 2.0 * 48_000.0, "two seconds in, in frames");
     }

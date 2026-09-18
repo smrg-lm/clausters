@@ -584,7 +584,7 @@ impl ApplicationHandler<UserEvent> for App {
         // window does — and it must run before the repaint below.
         self.advance_edge_scroll(FRAME.as_secs_f64());
 
-        // **A piece's clock reads where the transport is**, for a host that
+        // **A multitrack's clock reads where the transport is**, for a host that
         // edits one with nobody else in the process to write the label.
         if let Some(position) = self.shm.as_deref().map(|bus| bus.transport_position())
             && let Some(def_id) = self.host.tick_piece_clock(position)
@@ -863,7 +863,7 @@ impl ApplicationHandler<UserEvent> for App {
                     Key::Character(ref c) if c.eq_ignore_ascii_case("r") => {
                         self.reset_timelines(def_id)
                     }
-                    // The transport: the space bar rolls the piece, or plays
+                    // The transport: the space bar rolls the multitrack, or plays
                     // what the cursor is over and stops what is playing. Last
                     // among the window's own keys for the usual reason — a
                     // focused field types a space, and a widget that wanted it

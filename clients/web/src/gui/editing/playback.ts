@@ -80,7 +80,7 @@ export class Playback {
         // multitrack's own seconds.
         this.transport = new PlayheadSync(
             host,
-            () => (editor.pieceWidget === null ? [] : [editor.pieceWidget]),
+            () => (editor.multitrackWidget === null ? [] : [editor.multitrackWidget]),
             {
                 headClock: "transport",
                 governed: true,

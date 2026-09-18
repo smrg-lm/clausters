@@ -20,7 +20,7 @@ The vocabulary is the field's own and not this project's invention:
 - A `Track` holds several lanes and **plays one**, which is what comping is:
   record six passes into six lanes, then take from each.
 - An `Automation` is a curve over one parameter, in the arrangement's time.
-- An `Multitrack` is the tracks plus what the **piece** has one of: the tempo
+- An `Multitrack` is the tracks plus what the **multitrack** has one of: the tempo
   map, the meter map, the markers, the loop and punch spans. They are here and
   not on a track precisely so that no two tracks can disagree about them.
 
@@ -54,13 +54,13 @@ Usage::
 
     from clausters.multitrack import Multitrack, Region, Track, Tempo
 
-    piece = Multitrack()
-    piece.set_tempo(Tempo(at=0.0, tempo=1.6))     # 96 beats a minute
-    bar = piece.tempo_map().secs_at(4.0)          # where the second bar begins
+    multitrack = Multitrack()
+    multitrack.set_tempo(Tempo(at=0.0, tempo=1.6))     # 96 beats a minute
+    bar = multitrack.tempo_map().secs_at(4.0)          # where the second bar begins
     drums = Track(id=1, name="drums", lanes=[Lane(id=2)])
     drums.active_lane.place(Region(id=3, position=bar, length=2.5,
                                    content=Content.window(take)))
-    piece.tracks.append(drums)
+    multitrack.tracks.append(drums)
 """
 
 import json
@@ -93,7 +93,7 @@ __all__ = [
 def _rest(written: dict, *known: str) -> dict:
     """Whatever a newer writer wrote and this build has no field for.
 
-    Carried, never read. A reader that dropped it would lose a piece the next
+    Carried, never read. A reader that dropped it would lose a multitrack the next
     version of this client wrote, which for a format with two writers in two
     languages is not hypothetical.
     """
@@ -358,7 +358,7 @@ class Automation:
     name: "str | None" = None
     points: list = field(default_factory=list)
     #: Whether the lane is shown. The **view's**, and kept here because which
-    #: curves a person had open is part of reopening the piece as they left it.
+    #: curves a person had open is part of reopening the multitrack as they left it.
     visible: bool = False
     #: Whether the curve is being applied. A curve can be kept and switched off
     #: without being deleted, which is what an arm or a bypass is.
@@ -416,11 +416,11 @@ class Track:
     #: mixer's rule and not the document's.
     soloed: bool = False
     #: Where this track's fader is, as a linear gain. A field of its own for
-    #: the reason `channels` is one: what a piece sounds like is the piece's,
+    #: the reason `channels` is one: what a multitrack sounds like is the multitrack's,
     #: not a key one client reads out of a table it was only meant to carry.
     level: float = 1.0
     #: How wide this track is, in channels. A field of its own rather than a
-    #: line in `config`, because it decides the mix: reopening a piece has to
+    #: line in `config`, because it decides the mix: reopening a multitrack has to
     #: give back the mix it was left with, and both clients have to write it
     #: the same way. Two unless the track says otherwise.
     channels: int = 2
@@ -437,7 +437,7 @@ class Track:
     def end(self) -> float:
         """Where the track's last region ends, across **every** lane — what it
         spans rather than what it plays, since an alternate take is still part
-        of the piece."""
+        of the multitrack."""
         return max((lane.end for lane in self.lanes), default=0.0)
 
     def write(self) -> dict:
@@ -562,7 +562,7 @@ class Marker:
 
 @dataclass
 class Span:
-    """A span of the timeline: the loop, the punch, a named region of the piece.
+    """A span of the timeline: the loop, the punch, a named region of the multitrack.
 
     Half-open, so two spans that meet cover no instant twice. In seconds.
     """
@@ -587,19 +587,19 @@ class Span:
 class Multitrack:
     """The tracks, and the timeline they are placed on.
 
-    What is here rather than on a track is what the **piece** has one of: the
+    What is here rather than on a track is what the **multitrack** has one of: the
     tempo map, the meter map, the markers, the loop. A track has none of them
     and never disagrees with another track about them, which is the whole
     argument for where they live.
     """
 
-    #: What this piece is *at*, and the whole of what a stale edit is stale
+    #: What this multitrack is *at*, and the whole of what a stale edit is stale
     #: against — the twin of the document's own version, and deliberately a
-    #: second counter: an editor of the piece is not editing the tree, so one
+    #: second counter: an editor of the multitrack is not editing the tree, so one
     #: number would make every edit to either look like a change to both.
     version: int = FIRST_VERSION
     tracks: list = field(default_factory=list)
-    #: How wide the piece is, in channels — the master's own width, and what a
+    #: How wide the multitrack is, in channels — the master's own width, and what a
     #: track's output is mixed into. Here for the reason `Track.channels` is.
     channels: int = 2
     tempo: list = field(default_factory=list)
@@ -616,7 +616,7 @@ class Multitrack:
     @property
     def end(self) -> float:
         """Where the last region ends, across every track and every lane — how
-        long the piece is."""
+        long the multitrack is."""
         return max((t.end for t in self.tracks), default=0.0)
 
     def regions(self):
@@ -678,7 +678,7 @@ class Multitrack:
         """The arrangement as the crate's JSON. Nothing said is nothing
         written."""
         out: dict = {}
-        # Out of the file while it is the first version, so an unedited piece
+        # Out of the file while it is the first version, so an unedited multitrack
         # still writes an empty object: the reader defaults back to the same
         # number, so nothing is lost by leaving it out.
         if self.version != FIRST_VERSION:
@@ -720,7 +720,7 @@ class Multitrack:
         )
 
 
-# ---- the session: the piece, and where its samples are ----
+# ---- the session: the multitrack, and where its samples are ----
 #
 # Lifted out of `clausters.form.document` rather than written again. What was
 # worth keeping there was never the element-to-node conversion -- that is form's
@@ -835,7 +835,7 @@ class FrozenSource:
     plus what the table said about where the samples are and what shape they
     have, so a re-save keeps every location it was given.
 
-    Without it, a piece opened with no way to read its files would be written
+    Without it, a multitrack opened with no way to read its files would be written
     back with every source marked volatile, which is a format that loses its own
     contents on the second save.
     """
@@ -867,7 +867,7 @@ class FrozenSource:
 
 
 
-# ---- the presentation: what a window shows of a piece ----
+# ---- the presentation: what a window shows of a multitrack ----
 #
 # Parallel to the model and never inside it, which is Live's shape and
 # deliberate: `Song.View`, `Track.View` and `Application.View` are objects
@@ -940,13 +940,13 @@ class LaneView:
 
 @dataclass
 class View:
-    """One window's picture of one piece: where it is looking, how far it is
+    """One window's picture of one multitrack: where it is looking, how far it is
     zoomed, what the hand is holding, how tall each track is drawn.
 
-    None of that is what the piece *is* -- a selection and a zoom are each
+    None of that is what the multitrack *is* -- a selection and a zoom are each
     window's and never the composition's -- and all of it is state a person
     loses on a reopen unless something writes it down. A session carries a
-    **list** of these, because a piece drawn in two windows has two views and
+    **list** of these, because a multitrack drawn in two windows has two views and
     they disagree on purpose.
 
     Nothing here ever reaches the document or the history: a view is not edited
@@ -957,12 +957,12 @@ class View:
     name: "str | None" = None
     #: The stretch of the timeline on screen, in seconds -- the zoom and the
     #: horizontal scroll, which are one fact and not two. ``None`` shows the
-    #: whole piece.
+    #: whole multitrack.
     visible: "Span | None" = None
     #: How far down the tracks the window is scrolled, in its own units.
     scroll: float = 0.0
     #: The grid this window snaps to, in beats. Zero snaps nothing. It is here
-    #: rather than in the piece because two windows over one piece may snap
+    #: rather than in the multitrack because two windows over one multitrack may snap
     #: differently -- the arranger to a bar, the editor below it to a sixteenth.
     #: A musical grid over a multitrack in seconds, taken through its tempo map
     #: by the window: the ruler's configuration, not a unit of the placement.
@@ -973,7 +973,7 @@ class View:
     #: The time range the hand swept, in seconds, when it swept one.
     selection: "Span | None" = None
     #: What the hand is holding: regions, lanes or tracks, by id. One list
-    #: rather than one per kind, because the piece has one id space.
+    #: rather than one per kind, because the multitrack has one id space.
     selected: list = field(default_factory=list)
     #: What a keystroke is aimed at, which is not the same as what is selected.
     focused: "int | None" = None
@@ -1002,8 +1002,8 @@ class View:
         """How this lane is drawn, to be edited. See `track_view`."""
         return self.lanes.setdefault(int(id), LaneView())
 
-    def prune(self, piece: "Multitrack") -> bool:
-        """Drops everything this view says about objects the piece no longer
+    def prune(self, multitrack: "Multitrack") -> bool:
+        """Drops everything this view says about objects the multitrack no longer
         holds, and answers whether anything went.
 
         **State goes when the thing goes.** Keeping it is worse than losing it:
@@ -1011,7 +1011,7 @@ class View:
         looks like a feature.
         """
         held = set()
-        for track in piece.tracks:
+        for track in multitrack.tracks:
             held.add(track.id)
             for lane in track.lanes:
                 held.add(lane.id)
@@ -1090,8 +1090,8 @@ class Session:
 
     An `Multitrack` says *what plays when* and deliberately does not say where
     a source lives, because inside a running system a source is a server buffer,
-    a mapped file or a rendered result and the piece has no business knowing
-    which. A session is the piece plus exactly that missing half.
+    a mapped file or a rendered result and the multitrack has no business knowing
+    which. A session is the multitrack plus exactly that missing half.
 
     Not `clausters.Session`, which is a connection to a running server. Two
     nouns, two modules; this one is reached as `clausters.multitrack.Session`
@@ -1108,13 +1108,13 @@ class Session:
     #: format is migrated to this one first (`read`), since its numbers are
     #: read differently: format 2 placed the multitrack in beats.
     format: int = SESSION_FORMAT
-    #: The piece. Always present, possibly empty — which mirrors the crate,
+    #: The multitrack. Always present, possibly empty — which mirrors the crate,
     #: where an absent arrangement reads as an empty one rather than as nothing.
     multitrack: "Multitrack" = field(default_factory=lambda: Multitrack())
-    #: How the piece was being **looked at**: one entry per window. Carried for
-    #: the reason every program in the field carries it -- reopening a piece
+    #: How the multitrack was being **looked at**: one entry per window. Carried for
+    #: the reason every program in the field carries it -- reopening a multitrack
     #: into the window it was left in is what a person expects -- and a reader
-    #: that ignores it opens the same piece.
+    #: that ignores it opens the same multitrack.
     views: list = field(default_factory=list)
     document: "dict | None" = None
     #: Where each source is, keyed by source id.
@@ -1168,7 +1168,7 @@ class Session:
         return sorted(id for id, s in self.sources.items() if s.is_being_edited)
 
     def dangling(self) -> list:
-        """Sources the piece names but the table does not hold — what an opening
+        """Sources the multitrack names but the table does not hold — what an opening
         reader reports rather than discovering one element at a time.
 
         **Every** lane is walked and not only the ones that play: an alternate
@@ -1205,7 +1205,7 @@ class Session:
 
     def load(self, server=None, *, beside: "str | None" = None,
              timeout: "float | None" = None) -> dict:
-        """Loads the sources the piece names into ``server``: every take read
+        """Loads the sources the multitrack names into ``server``: every take read
         from its file, and every join stitched from the takes it is made of
         once those are there.
 

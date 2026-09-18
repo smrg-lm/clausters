@@ -815,7 +815,7 @@ mod tests {
 pub enum MeterAxis {
     /// Decibels, from `floor_db` up to full scale — what a meter of a signal
     /// stands on. The floor is the reader's question: the 60 dB strip a mix is
-    /// read on, or the dynamic range of the resolution the piece is rendered
+    /// read on, or the dynamic range of the resolution the multitrack is rendered
     /// at (`clausters_core::measure::floor_db_for_bits`).
     Decibels { floor_db: f32 },
     /// A plain value over `min..max` — a control bus carrying something that is

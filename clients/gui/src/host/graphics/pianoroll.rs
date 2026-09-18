@@ -22,7 +22,7 @@
 //!   on the shared time axis and the two never disagree on geometry.
 //!
 //! Everything here is **display logic** (pixel mapping, hit-testing, drag
-//! clamps): it stays gui-side per the placement rule. The one piece of general
+//! clamps): it stays gui-side per the placement rule. The one multitrack of general
 //! musical knowledge — the MIDI-note ↔ name/black-key spelling drawn on the
 //! keyboard and the pitch ruler — lives in `clausters_core::scale`.
 

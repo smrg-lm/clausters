@@ -462,7 +462,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let resolved_dir = store::resolve_data_dir(data_dir.as_deref());
 
     // A session: the host opens a document and owns it. No store, no embedded
-    // server and no script -- the piece is not played yet, which is what
+    // server and no script -- the multitrack is not played yet, which is what
     // separates this from `--standalone` and is named in the plan rather than
     // implied here.
     if let Some(path) = session_path {
@@ -725,18 +725,18 @@ fn run_session(
     };
     let def_id = 1;
     let mut owner = owner.with_takes(load.takes.clone());
-    // **A piece opens in the multitrack editor's own window**, the one a script
-    // and a page open: the ruler above the piece, the piece, the transport row.
+    // **A multitrack opens in the multitrack editor's own window**, the one a script
+    // and a page open: the ruler above the multitrack, the multitrack, the transport row.
     // It is the applications crate's, so this host composes nothing of its own
     // for it. The ids start past the window's own: a GuiDef's id *is* its root
     // widget's, so a child numbered 1 beside a def 1 collides and the registry
     // drops the whole subtree -- which is an empty window and one line in the
     // log.
     //
-    // A session written before the turn is a tree rather than a piece, and it
+    // A session written before the turn is a tree rather than a multitrack, and it
     // still draws through the tree's own walk, with a take editor per source
     // under the tracks.
-    let (def, drawn_clips, drawn_lanes, editors) = if owner.draws_piece() {
+    let (def, drawn_clips, drawn_lanes, editors) = if owner.draws_multitrack() {
         let def = owner.open_editor(def_id, &title, (1000, 640));
         let shown = owner.shown();
         (def, shown.clips.len(), shown.lanes.len(), 0)
@@ -751,18 +751,18 @@ fn run_session(
             &title,
         );
         // The take editors are bound one by one -- each is a widget drawing a
-        // node -- and the piece is bound once: the multitrack names its lanes
+        // node -- and the multitrack is bound once: the multitrack names its lanes
         // and clips by the nodes' own numbers, so there is nothing per clip to
         // record.
         for bound in &drawn.bindings {
             owner.bind(bound.widget, bound.node);
         }
-        owner.bind_multitrack(drawn.multitrack);
+        owner.bind_multitrack(drawn.widget);
         let editors = drawn.bindings.len();
         (
             drawn.def,
-            drawn.piece.clips.len(),
-            drawn.piece.lanes.len(),
+            drawn.picture.clips.len(),
+            drawn.picture.lanes.len(),
             editors,
         )
     };
@@ -787,10 +787,10 @@ fn run_session(
         }),
         origin,
     );
-    // **The piece sounds from the moment it opens**, and by the same call an
+    // **The multitrack sounds from the moment it opens**, and by the same call an
     // edit makes: a reader per region, following the transport, silent until a
     // hand presses play because the governed group is created stopped.
-    let readers = host.sound_piece();
+    let readers = host.sound_multitrack();
     tracing::info!(
         "session: opened {path} — {drawn_clips} clip(s) on {drawn_lanes} lane(s), \
          {editors} take editor(s), {readers} reader(s)",
@@ -1041,7 +1041,7 @@ fn attach_player(
     }
     host.set_player_link(ServerLink::Udp(leg));
     host.on_link_attached();
-    // No group is bound here. A piece makes the transport's group itself, as
+    // No group is bound here. A multitrack makes the transport's group itself, as
     // it does for every endpoint, and the take monitor's group goes inside it;
     // a session of takes binds one the first time the monitor needs it
     // (`Host::monitor_group`).

@@ -101,7 +101,7 @@ impl<'a> Samples<'a> {
     }
 
     /// Where in `data` frame `frame` of `channel` sits, or `None` when it is
-    /// outside them. The one piece of arithmetic the domain owns.
+    /// outside them. The one multitrack of arithmetic the domain owns.
     fn index(&self, channel: u32, frame: u64) -> Option<usize> {
         if channel >= self.channels {
             return None;

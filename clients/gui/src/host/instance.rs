@@ -1,7 +1,7 @@
-//! **What is sounding**: the piece's instance, and the steps that make it match.
+//! **What is sounding**: the multitrack's instance, and the steps that make it match.
 //!
-//! A standalone host plays a piece the way every other endpoint does — through
-//! [`clausters_document::multitrack::nodes::plan`], which says what a piece
+//! A standalone host plays a multitrack the way every other endpoint does — through
+//! [`clausters_document::multitrack::nodes::plan`], which says what a multitrack
 //! *needs*, [`clausters_editing::instance::Instance`], which answers the
 //! **difference** between that and what a server already holds, and
 //! [`clausters_editing::apply::Applier`], which turns that difference into the
@@ -77,55 +77,57 @@ pub(crate) struct Exchange {
     pub(crate) asked: Vec<serde_json::Value>,
 }
 
-/// **A piece, as it is playing**: the crate's playback, and the steps not yet
+/// **A multitrack, as it is playing**: the crate's playback, and the steps not yet
 /// carried out.
 #[derive(Debug, Default)]
 pub struct Playing {
     /// The instance, the applier and the transport — the crate's, as every
     /// endpoint holds it. Made on the first sync, and it makes the transport's
     /// group itself.
-    piece: Option<MultitrackPlayback>,
+    multitrack: Option<MultitrackPlayback>,
     /// The steps not carried out yet, across both servers — the crate's walk.
     run: Runner,
 }
 
 impl Playing {
-    /// The meters the piece is writing, as `(track id, first bus, channels)` —
+    /// The meters the multitrack is writing, as `(track id, first bus, channels)` —
     /// what a mixer strip is drawn from.
     pub fn meters(&self) -> Vec<(u64, i32, usize)> {
-        self.piece
+        self.multitrack
             .as_ref()
             .map_or_else(Vec::new, MultitrackPlayback::meters)
     }
 
     /// Whether anything is playing at all.
     pub fn is_sounding(&self) -> bool {
-        self.piece
+        self.multitrack
             .as_ref()
             .is_some_and(MultitrackPlayback::is_sounding)
     }
 
-    /// How many nodes the piece is holding.
+    /// How many nodes the multitrack is holding.
     pub fn nodes(&self) -> usize {
-        self.piece
+        self.multitrack
             .as_ref()
             .map_or(0, MultitrackPlayback::node_count)
     }
 
-    /// Whether the transport was last told to roll the piece.
+    /// Whether the transport was last told to roll the multitrack.
     pub fn rolling(&self) -> bool {
-        self.piece.as_ref().is_some_and(MultitrackPlayback::rolling)
+        self.multitrack
+            .as_ref()
+            .is_some_and(MultitrackPlayback::rolling)
     }
 
     /// The playback, made the first time.
     ///
     /// **The transport is the crate's, as it is every endpoint's**: the
-    /// playback makes its group at the top, binds it and makes the piece inside
+    /// playback makes its group at the top, binds it and makes the multitrack inside
     /// it. The take monitor's readers go inside that group too
     /// ([`Host::monitor_group`]), so one transport starts, stops and locates
     /// both.
     fn playback(&mut self) -> &mut MultitrackPlayback {
-        self.piece
+        self.multitrack
             .get_or_insert_with(|| MultitrackPlayback::new(Endpoint::default()))
     }
 }
@@ -136,7 +138,7 @@ impl Host {
     ///
     /// A join states *there is a source N made of these spans* and rides that
     /// statement on the intent, because a source table is the session's and a
-    /// piece is not. Three things follow from it and this does all three: the
+    /// multitrack is not. Three things follow from it and this does all three: the
     /// **session** learns it (so a save carries it), the **table** learns which
     /// buffer it is (so a box draws and the plan can play it), and the
     /// **server** is told to make it.
@@ -156,7 +158,7 @@ impl Host {
         let mut messages = Vec::new();
         for minted in made {
             // **Written over rather than skipped**: the document has just said
-            // what this source is, and what the piece now names is this.
+            // what this source is, and what the multitrack now names is this.
             if let Some(session) = owner.session.as_mut() {
                 session.sources.insert(minted.id, minted.source.clone());
             }
@@ -185,7 +187,7 @@ impl Host {
             );
             messages.push((bufnum, document::sources::stitch_message(bufnum, &stitch)));
         }
-        // **Where the samples are, and then where the piece sounds.** A host
+        // **Where the samples are, and then where the multitrack sounds.** A host
         // with two servers makes the join in the session, which owns the takes
         // and is what the picture reads, and points the player at it once the
         // session says it is made. Sent to the player instead, the join sounded
@@ -215,7 +217,7 @@ impl Host {
                 })],
             );
         }
-        self.send_piece();
+        self.send_multitrack();
     }
 
     /// **Which server a leg is**: the player sounds; the server leg holds the
@@ -229,33 +231,35 @@ impl Host {
         }
     }
 
-    /// **A reply the piece may be waiting on**, offered to the runner; what it
+    /// **A reply the multitrack may be waiting on**, offered to the runner; what it
     /// releases goes out at once. Called by [`Host::on_server_reply`].
-    pub(super) fn piece_reply(&mut self, from: Leg, msg: &OscMessage) {
+    pub(super) fn multitrack_reply(&mut self, from: Leg, msg: &OscMessage) {
         let server = self.server_of(from);
         match self.instance.run.reply(server, msg) {
             Reply::Unrelated => return,
-            Reply::Refused(args) => diag::warn!("a step the piece waited on was refused: {args:?}"),
+            Reply::Refused(args) => {
+                diag::warn!("a step the multitrack waited on was refused: {args:?}")
+            }
             Reply::Released => {}
         }
-        self.send_piece();
+        self.send_multitrack();
     }
 
     /// **Sends one message to the server that sounds, in order**: behind
-    /// whatever the piece's steps are still waiting on, so a reader made in a
+    /// whatever the multitrack's steps are still waiting on, so a reader made in a
     /// group is never sent before the group is.
     pub(crate) fn send_sound(&mut self, message: OscMessage) {
         self.instance.run.push(Server::Sound, [Step::Send(message)]);
-        self.send_piece();
+        self.send_multitrack();
     }
 
     /// **The group the take monitor makes its readers in**, made the first
     /// time it is asked for.
     ///
-    /// With a piece playing it is a group of the monitor's own **inside the
-    /// transport's group the piece made**: the server governs one group, and
+    /// With a multitrack playing it is a group of the monitor's own **inside the
+    /// transport's group the multitrack made**: the server governs one group, and
     /// what it freezes is that subtree, so the monitor follows the transport
-    /// without sharing the piece's group. With no piece -- a session of takes
+    /// without sharing the multitrack's group. With no multitrack -- a session of takes
     /// -- nothing else binds the transport, and this host binds a group of its
     /// own ([`Host::govern_transport`]).
     pub(crate) fn monitor_group(&mut self) -> Option<i32> {
@@ -264,7 +268,7 @@ impl Host {
         }
         let Some(transport) = self
             .instance
-            .piece
+            .multitrack
             .as_ref()
             .and_then(MultitrackPlayback::group)
         else {
@@ -284,7 +288,7 @@ impl Host {
     }
 
     /// Sends every step that may go out now, each to its server.
-    fn send_piece(&mut self) {
+    fn send_multitrack(&mut self) {
         for (to, message) in self.instance.run.ready() {
             match (to, self.server.as_ref()) {
                 (Server::Samples, Some(session)) => {
@@ -297,27 +301,27 @@ impl Host {
         }
     }
 
-    /// **Makes what sounds be what the piece says.**
+    /// **Makes what sounds be what the multitrack says.**
     ///
     /// One call, whether it is the first time or after any edit: the plan is
-    /// derived from the piece, the reconciler answers the difference, the
+    /// derived from the multitrack, the reconciler answers the difference, the
     /// applier turns it into steps, and this sends them. A node that did not
     /// change costs nothing, and an edit reaches a node that is already
-    /// running — so a box moved while the piece plays is heard where it was
+    /// running — so a box moved while the multitrack plays is heard where it was
     /// dropped, with nothing that is sounding cut.
     ///
-    /// It is a no-op for a host with no piece and for one with no server — a
+    /// It is a no-op for a host with no multitrack and for one with no server — a
     /// session opens, edits, undoes and saves without either.
-    pub fn sound_piece(&mut self) -> usize {
+    pub fn sound_multitrack(&mut self) -> usize {
         #[cfg(test)]
         self.exchange.asked.push(serde_json::json!(["sync"]));
         let Some(owner) = self.owner.as_ref() else {
             return 0;
         };
-        if !owner.draws_piece() || self.player().is_none() {
+        if !owner.draws_multitrack() || self.player().is_none() {
             return 0;
         }
-        let look = owner.piece_look();
+        let look = owner.multitrack_look();
         let sources: HashMap<SourceId, SourceInfo> = owner
             .takes
             .iter()
@@ -331,21 +335,24 @@ impl Host {
                 )
             })
             .collect();
-        let synced =
-            self.instance
-                .playback()
-                .sync(&owner.piece, look.rate, &sources, 1.0, &mut self.ids);
+        let synced = self.instance.playback().sync(
+            &owner.multitrack,
+            look.rate,
+            &sources,
+            1.0,
+            &mut self.ids,
+        );
         match synced {
             Ok(steps) => self.instance.run.push(Server::Sound, steps),
-            Err(e) => diag::warn!("the piece cannot be played: {e}"),
+            Err(e) => diag::warn!("the multitrack cannot be played: {e}"),
         }
-        self.send_piece();
+        self.send_multitrack();
         self.tell_meters();
-        diag::debug!("sound_piece: {} node(s)", self.instance.nodes());
+        diag::debug!("sound_multitrack: {} node(s)", self.instance.nodes());
         self.instance.nodes()
     }
 
-    /// **Tells the editor where the piece's meters are**, and the widget with
+    /// **Tells the editor where the multitrack's meters are**, and the widget with
     /// it, when that changed -- what a client's editor is handed on every turn
     /// (`sync`'s `meters`). The window is composed before anything sounds, so
     /// without this it never learns a bus and every strip reads nothing.
@@ -365,10 +372,10 @@ impl Host {
         let Some(owner) = self.owner.as_mut() else {
             return;
         };
-        let Some(widget) = owner.multitrack() else {
+        let Some(widget) = owner.multitrack_widget() else {
             return;
         };
-        let piece = owner.piece.clone();
+        let multitrack = owner.multitrack.clone();
         let Some(editor) = owner.editor_mut() else {
             return;
         };
@@ -376,7 +383,7 @@ impl Host {
             return;
         }
         editor.set_meters(meters);
-        editor.set_piece(piece);
+        editor.set_multitrack(multitrack);
         let Some(value) = editor.props(widget).remove("meters") else {
             return;
         };
@@ -384,64 +391,64 @@ impl Host {
         self.set_props(widget, vec![("meters".into(), value)], &mut fx);
     }
 
-    /// Frees everything the piece made — what closing a window owes the server,
-    /// and what a host that stops owning a piece owes it.
-    pub fn hush_piece(&mut self) {
-        let Some(piece) = self.instance.piece.as_mut() else {
+    /// Frees everything the multitrack made — what closing a window owes the server,
+    /// and what a host that stops owning a multitrack owes it.
+    pub fn hush_multitrack(&mut self) {
+        let Some(multitrack) = self.instance.multitrack.as_mut() else {
             return;
         };
-        match piece.close(&mut self.ids) {
+        match multitrack.close(&mut self.ids) {
             Ok(steps) => self.instance.run.push(Server::Sound, steps),
-            Err(e) => diag::warn!("the piece cannot be freed: {e}"),
+            Err(e) => diag::warn!("the multitrack cannot be freed: {e}"),
         }
-        self.send_piece();
+        self.send_multitrack();
     }
 
     /// **The position cursor was placed at `secs`**: a stopped transport is
     /// cued there and a rolling one is left alone.
-    pub fn cue_piece(&mut self, secs: f64) {
+    pub fn cue_multitrack(&mut self, secs: f64) {
         #[cfg(test)]
         self.exchange.asked.push(serde_json::json!(["cue", secs]));
-        let Some(piece) = self.instance.piece.as_mut() else {
+        let Some(multitrack) = self.instance.multitrack.as_mut() else {
             return;
         };
-        let steps = piece.cue(secs.max(0.0));
+        let steps = multitrack.cue(secs.max(0.0));
         self.instance.run.push(Server::Sound, steps);
-        self.send_piece();
+        self.send_multitrack();
     }
 
-    /// **Halts the piece and puts it back at `mark`**, in seconds: stop goes back
+    /// **Halts the multitrack and puts it back at `mark`**, in seconds: stop goes back
     /// to the mark, which is what tells it from pause.
-    pub fn stop_piece(&mut self, mark: f64) {
+    pub fn stop_multitrack(&mut self, mark: f64) {
         #[cfg(test)]
         self.exchange.asked.push(serde_json::json!(["stop"]));
-        let Some(piece) = self.instance.piece.as_mut() else {
+        let Some(multitrack) = self.instance.multitrack.as_mut() else {
             return;
         };
-        let steps = piece.stop(mark.max(0.0));
+        let steps = multitrack.stop(mark.max(0.0));
         self.instance.run.push(Server::Sound, steps);
-        self.send_piece();
+        self.send_multitrack();
     }
 
-    /// **The clock of a piece this host edits alone**, read with the transport
-    /// at `position` samples of the piece: the label the editor names, set when
+    /// **The clock of a multitrack this host edits alone**, read with the transport
+    /// at `position` samples of the multitrack: the label the editor names, set when
     /// what the editor says it reads changed. Answers the window to repaint when
     /// it did.
     pub fn tick_piece_clock(&mut self, position: f64) -> Option<i32> {
         let secs = self
             .instance
-            .piece
+            .multitrack
             .as_ref()?
             .samples_to_secs(position.max(0.0).round() as i64);
         let owner = self.owner.as_mut()?;
-        // The end the clock reads is the piece's, which an undo can move
+        // The end the clock reads is the multitrack's, which an undo can move
         // without a turn of the editor's.
-        let stale = owner.editor()?.piece().version != owner.piece.version;
-        let piece = stale.then(|| owner.piece.clone());
+        let stale = owner.editor()?.multitrack().version != owner.multitrack.version;
+        let multitrack = stale.then(|| owner.multitrack.clone());
         let editor = owner.editor_mut()?;
         let (clock, window) = (editor.controls()?.clock, editor.window_id()?);
-        if let Some(piece) = piece {
-            editor.set_piece(piece);
+        if let Some(multitrack) = multitrack {
+            editor.set_multitrack(multitrack);
         }
         let text = editor.clock(secs);
         if self.clock_shown.as_deref() == Some(text.as_str()) {
@@ -457,44 +464,44 @@ impl Host {
         Some(window)
     }
 
-    /// How many nodes the piece is playing through, for a caller reporting what
+    /// How many nodes the multitrack is playing through, for a caller reporting what
     /// it built.
     pub fn sounding_count(&self) -> usize {
         self.instance.nodes()
     }
 
-    /// **Rolls or freezes the piece**, answering which it did.
+    /// **Rolls or freezes the multitrack**, answering which it did.
     ///
     /// One verb, because the transport has one: `stop` freezes the governed
     /// group with every node's state intact and `play` thaws it, so pressing
-    /// twice *continues* rather than starting the piece over. There is no
+    /// twice *continues* rather than starting the multitrack over. There is no
     /// "load" step and nothing to re-cue -- the nodes are resident and the
     /// position is the engine's.
     ///
-    /// `None` when there is no piece sounding, which is what tells the caller
+    /// `None` when there is no multitrack sounding, which is what tells the caller
     /// to fall through to whatever else the key meant.
-    pub fn roll_piece(&mut self) -> Option<bool> {
-        let piece = self.instance.piece.as_mut()?;
-        if !piece.is_sounding() {
+    pub fn roll_multitrack(&mut self) -> Option<bool> {
+        let multitrack = self.instance.multitrack.as_mut()?;
+        if !multitrack.is_sounding() {
             return None;
         }
-        let steps = if piece.rolling() {
-            piece.pause()
+        let steps = if multitrack.rolling() {
+            multitrack.pause()
         } else {
-            piece.play()
+            multitrack.play()
         };
-        let rolling = piece.rolling();
+        let rolling = multitrack.rolling();
         self.instance.run.push(Server::Sound, steps);
-        self.send_piece();
+        self.send_multitrack();
         diag::info!(
-            "the piece is {}",
+            "the multitrack is {}",
             if rolling { "rolling" } else { "frozen" }
         );
         Some(rolling)
     }
 
-    /// Whether the piece is rolling.
-    pub fn piece_rolling(&self) -> bool {
+    /// Whether the multitrack is rolling.
+    pub fn multitrack_rolling(&self) -> bool {
         self.instance.rolling()
     }
 }
@@ -540,7 +547,7 @@ mod tests {
     }
 
     /// Two tracks, a box on each, over the one take.
-    fn piece() -> Multitrack {
+    fn multitrack() -> Multitrack {
         let mut first = Track::new(NodeId(10), NodeId(11));
         first.name = Some("one".into());
         first.lanes[0].regions = vec![Region::new(
@@ -566,11 +573,11 @@ mod tests {
         IdSpaces::new(ServerShape::DEFAULT, IdShare::WHOLE)
     }
 
-    /// The piece synced into the runner.
-    fn sync(playing: &mut Playing, piece: &Multitrack, ids: &mut IdSpaces) {
+    /// The multitrack synced into the runner.
+    fn sync(playing: &mut Playing, multitrack: &Multitrack, ids: &mut IdSpaces) {
         let steps = playing
             .playback()
-            .sync(piece, 48_000.0, &sources(), 1.0, ids)
+            .sync(multitrack, 48_000.0, &sources(), 1.0, ids)
             .unwrap();
         playing.run.push(Server::Sound, steps);
     }
@@ -612,13 +619,13 @@ mod tests {
         messages.iter().map(|m| m.addr.as_str()).collect()
     }
 
-    /// **A piece becomes the messages that play it**, in the crate's order: the
+    /// **A multitrack becomes the messages that play it**, in the crate's order: the
     /// defs, the barrier that closes them, the transport's group made and
-    /// bound, the piece's graph inside it, and its slots.
+    /// bound, the multitrack's graph inside it, and its slots.
     #[test]
     fn a_piece_becomes_the_messages_that_play_it() {
         let (mut playing, mut ids) = (Playing::default(), spaces());
-        sync(&mut playing, &piece(), &mut ids);
+        sync(&mut playing, &multitrack(), &mut ids);
         let first = ready(&mut playing);
         assert_eq!(
             addrs(&first).last(),
@@ -634,14 +641,14 @@ mod tests {
         let graph = messages
             .iter()
             .find(|m| m.addr == "/graph_new")
-            .expect("the piece is a graph");
+            .expect("the multitrack is a graph");
         assert_eq!(
             graph.args[3], bound.args[0],
-            "the piece inside the transport's group"
+            "the multitrack inside the transport's group"
         );
         assert_eq!(
             playing
-                .piece
+                .multitrack
                 .as_ref()
                 .and_then(MultitrackPlayback::group)
                 .map(OscType::Int),
@@ -651,31 +658,31 @@ mod tests {
     }
 
     /// **The nodes come from the host's one node space**, so a voice, the
-    /// monitor and the piece never name the same node.
+    /// monitor and the multitrack never name the same node.
     #[test]
     fn the_nodes_it_makes_are_the_host_s_spaces() {
         let (mut playing, mut ids) = (Playing::default(), spaces());
-        sync(&mut playing, &piece(), &mut ids);
+        sync(&mut playing, &multitrack(), &mut ids);
         assert!(playing.nodes() > 0);
         assert_eq!(ids.in_use(Space::Nodes), playing.nodes());
     }
 
-    /// **An edit reaches a node that is already running**: an unchanged piece
+    /// **An edit reaches a node that is already running**: an unchanged multitrack
     /// says nothing, and a moved box is a `/node_set`.
     #[test]
     fn an_edit_sets_a_live_node_and_an_unchanged_piece_says_nothing() {
         let (mut playing, mut ids) = (Playing::default(), spaces());
-        let mut piece = piece();
-        sync(&mut playing, &piece, &mut ids);
+        let mut multitrack = multitrack();
+        sync(&mut playing, &multitrack, &mut ids);
         drain(&mut playing);
         let made = playing.nodes();
-        sync(&mut playing, &piece, &mut ids);
+        sync(&mut playing, &multitrack, &mut ids);
         assert!(
             drain(&mut playing).is_empty(),
-            "a piece that did not move costs nothing"
+            "a multitrack that did not move costs nothing"
         );
-        piece.tracks[0].lanes[0].regions[0].position = Second(6.0);
-        sync(&mut playing, &piece, &mut ids);
+        multitrack.tracks[0].lanes[0].regions[0].position = Second(6.0);
+        sync(&mut playing, &multitrack, &mut ids);
         let messages = drain(&mut playing);
         assert!(!messages.is_empty(), "the box moved");
         assert!(addrs(&messages).iter().all(|a| *a == "/node_set"));
@@ -685,9 +692,9 @@ mod tests {
     /// **The transport verbs wait for their answers**, so a play sent right
     /// after the defs does not reach the server before them.
     #[test]
-    fn the_transport_waits_behind_the_piece() {
+    fn the_transport_waits_behind_the_multitrack() {
         let (mut playing, mut ids) = (Playing::default(), spaces());
-        sync(&mut playing, &piece(), &mut ids);
+        sync(&mut playing, &multitrack(), &mut ids);
         let steps = playing.playback().play();
         playing.run.push(Server::Sound, steps);
         let first = ready(&mut playing);
@@ -741,28 +748,31 @@ mod tests {
         );
     }
 
-    /// **The take monitor goes inside the transport's group the piece made**,
-    /// once, behind the piece's own steps -- so it follows the one transport
-    /// without sharing the piece's group.
+    /// **The take monitor goes inside the transport's group the multitrack made**,
+    /// once, behind the multitrack's own steps -- so it follows the one transport
+    /// without sharing the multitrack's group.
     #[test]
     fn the_take_monitor_goes_inside_the_pieces_transport_group() {
         let mut host = Host::new();
         let steps = host
             .instance
             .playback()
-            .sync(&piece(), 48_000.0, &sources(), 1.0, &mut host.ids)
+            .sync(&multitrack(), 48_000.0, &sources(), 1.0, &mut host.ids)
             .unwrap();
         host.instance.run.push(Server::Sound, steps);
         let transport = host
             .instance
-            .piece
+            .multitrack
             .as_ref()
             .and_then(MultitrackPlayback::group)
-            .expect("the piece made its transport's group");
+            .expect("the multitrack made its transport's group");
         let monitor = host.monitor_group().expect("a group for the monitor");
         assert_ne!(monitor, transport);
         assert_eq!(host.monitor_group(), Some(monitor), "made once");
-        assert!(!host.owns_transport, "the piece bound it, not the host");
+        assert!(
+            !host.owns_transport,
+            "the multitrack bound it, not the host"
+        );
         let sent = drain(&mut host.instance);
         let made = sent.last().expect("the monitor's group, last");
         assert_eq!(made.addr, "/group_new");
@@ -805,17 +815,17 @@ mod tests {
                 args: vec![OscType::Int(5)],
             })],
         );
-        host.send_piece();
+        host.send_multitrack();
         let done = OscMessage {
             addr: "/done".into(),
             args: vec![OscType::String("/buffer_stitch".into()), OscType::Int(5)],
         };
-        host.piece_reply(Leg::Player, &done);
+        host.multitrack_reply(Leg::Player, &done);
         assert!(
             host.instance.run.awaiting().is_some(),
             "the player did not make the join"
         );
-        host.piece_reply(Leg::Server, &done);
+        host.multitrack_reply(Leg::Server, &done);
         assert!(
             host.instance.run.is_idle(),
             "the session's done released the attach"

@@ -4,7 +4,7 @@
 //! of them: the document owns the model, a host draws it, a server sounds it.
 //! Each pair of those needs a *projection* — the structure as props, a gesture
 //! as payloads, the structure as what is sounding — and a projection with two
-//! implementations is how one curve comes to be drawn two ways and one piece
+//! implementations is how one curve comes to be drawn two ways and one multitrack
 //! comes to sound two. So there is one of each, here, and every client binds
 //! it while the host links it.
 //!
@@ -67,12 +67,12 @@ use crate::intake::Intake;
 /// `request` is one JSON object, and each domain reads the fields it needs:
 ///
 /// - `values` — the report, always.
-/// - `state` — the structure as its vocabulary holds it. The piece for
+/// - `state` — the structure as its vocabulary holds it. The multitrack for
 ///   `multitrack`, the timeline for `events`; the other two read the gesture
 ///   alone.
 /// - `unitsPerBeat`, `editable` — a roll's axis, and whether what it draws can
 ///   be written onto at all.
-/// - `rate`, `defaultBpm`, `sources` — a piece's axis and its buffer table, the
+/// - `rate`, `defaultBpm`, `sources` — a multitrack's axis and its buffer table, the
 ///   same three [`multitrack::props_json`] takes.
 ///
 /// The answer is [`Intake::to_json`]: `payloads`, `label`, and `inverse` or

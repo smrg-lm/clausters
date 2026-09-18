@@ -196,7 +196,7 @@ pub struct Marks {
     /// a staccato quarter that sounds an eighth carries both. A performance
     /// nuance a client already has (`sustain` against `dur`) reaches the page
     /// through here, and the two are kept apart because a page that shortened
-    /// the written value would be a different piece of music.
+    /// the written value would be a different rhythm.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sounding: Option<Ratio>,
 }
@@ -413,7 +413,7 @@ impl Meter {
 /// It does not sound and it holds no notes. What it holds is enough to answer
 /// where every barline falls: the meters in force, and any bar whose length is
 /// **not** its meter's — an anacrusis (which is simply the override at measure
-/// 0), or an irregular bar in the middle of a piece.
+/// 0), or an irregular bar in the middle of a score.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Grid {
     /// The meters, ordered by the measure they start at; the first is at `0`.
@@ -575,7 +575,7 @@ pub struct Spanner {
 /// invent.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Header {
-    /// What the piece is called.
+    /// What the score is called.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub title: String,
     /// A second line under the title.

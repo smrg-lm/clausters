@@ -99,7 +99,7 @@ pub enum Cmd {
     TransportGroup {
         id: i32,
     },
-    /// `/transport_locate`: moves the piece's position, leaving both clocks
+    /// `/transport_locate`: moves the transport's position, leaving both clocks
     /// alone. One store of the anchor — see `server::clock_axis`.
     TransportLocate {
         position: u64,
@@ -465,11 +465,11 @@ pub struct Engine {
     frozen_clock: Arc<AtomicU64>,
     /// The group the transport governs, frozen while the transport is stopped.
     transport_group: Option<i32>,
-    /// Where the piece is, as an anchor onto the transport clock: the position
+    /// Where the transport stands, as an anchor onto the transport clock: the position
     /// a locate put it at, and the transport sample that locate landed on. A
     /// read is one add, so the position costs the per-sample path nothing.
     position: PositionAnchor,
-    /// Block-accurate mirror of the piece's position for the network thread
+    /// Block-accurate mirror of the transport's position for the network thread
     /// and the segment.
     position_clock: Arc<AtomicU64>,
     /// The span the position wraps inside while looping. Always non-empty:
@@ -546,7 +546,7 @@ pub struct EngineHandle {
     /// `current_samples() - current_transport_samples()`, because those are two
     /// separate loads and can straddle a block.
     frozen_clock: Arc<AtomicU64>,
-    /// Block-accurate mirror of the piece's position (`/transport_locate`),
+    /// Block-accurate mirror of the transport's position (`/transport_locate`),
     /// which is not a clock: it jumps and it wraps. See `server::clock_axis`.
     position_clock: Arc<AtomicU64>,
     counters: Arc<Counters>,
@@ -720,7 +720,7 @@ impl Engine {
     /// the engine is standing, rather than at its first sample.
     ///
     /// A locate arrives inside a timed bundle and lands on an exact sample, so
-    /// anchoring it at the block's start would put the piece up to a block
+    /// anchoring it at the block's start would put the transport up to a block
     /// away from where the client asked. Same reason `frozen_total` is
     /// credited at the sample the transport flips rather than a block at a
     /// time. Outside the block-cut loop the cursor is 0 and this is
@@ -729,7 +729,7 @@ impl Engine {
         DeviceSample::new(self.now + self.cursor as u64).to_transport(self.frozen_total)
     }
 
-    /// Where the piece is at the cursor.
+    /// Where the transport stands at the cursor.
     fn position_here(&self) -> TransportPosition {
         self.position.at(self.transport_here())
     }
@@ -1137,7 +1137,7 @@ impl Engine {
             buffers: &self.buffers,
             offset,
             frames,
-            // Where the piece is at this slice's **first** frame. The block is
+            // Where the transport stands at this slice's **first** frame. The block is
             // cut at every loop wrap, so the position advances by exactly one
             // per sample for the whole slice and a UGen reading it only has to
             // ramp — no wrap arithmetic, and nothing needs to know the loop
@@ -1193,7 +1193,7 @@ impl Engine {
                     if let Some(group) = self.transport_group {
                         self.tree.set_paused(group, !rolling);
                         if rolling {
-                            // **A piece comes back where the transport is, not
+                            // **Playback comes back where the transport is, not
                             // where it stopped.** The subtree saw none of the
                             // time that passed, so every smoother in it still
                             // holds the value the music ended on while the
@@ -1227,7 +1227,7 @@ impl Engine {
                 }
                 Cmd::TransportLoop { span } => {
                     // Re-anchored at this sample, so turning a loop on does
-                    // not move the piece: it keeps playing from where it is
+                    // not move the transport: it keeps playing from where it is
                     // and wraps when it first reaches the end.
                     self.position = self.position.wrapped_to(
                         self.position.at(self.transport_here()),
@@ -1530,7 +1530,7 @@ impl EngineHandle {
         self.transport_clock.load(Ordering::Relaxed)
     }
 
-    /// Where the piece is, as of the last completed block. Unlike the two
+    /// Where the transport stands, as of the last completed block. Unlike the two
     /// clocks this one jumps: a locate moves it and a loop wraps it.
     pub fn current_transport_position(&self) -> u64 {
         self.position_clock.load(Ordering::Relaxed)

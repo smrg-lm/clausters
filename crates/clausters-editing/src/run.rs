@@ -392,7 +392,7 @@ mod tests {
     }
 
     /// **A join waits for its reads where the samples are, and is attached
-    /// where the piece sounds**: one queue across two servers, and only the
+    /// where the multitrack sounds**: one queue across two servers, and only the
     /// server a wait was sent to can release it.
     #[test]
     fn one_queue_orders_steps_across_two_servers() {

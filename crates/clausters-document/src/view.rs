@@ -1,9 +1,9 @@
-//! The **presentation**: what a window shows of a piece, beside the piece and
+//! The **presentation**: what a window shows of a multitrack, beside the multitrack and
 //! never inside it.
 //!
 //! A [`View`] is one window's picture of one [`Multitrack`]: where it is
 //! looking, how far it is zoomed, what the hand is holding, how tall each track
-//! is drawn. None of that is what the piece *is* — the four-layer rule, and this
+//! is drawn. None of that is what the multitrack *is* — the four-layer rule, and this
 //! project has said three times that a selection and a zoom are each window's
 //! and never the composition's — and all of it is state a person loses on a
 //! reopen unless something writes it down.
@@ -19,7 +19,7 @@
 //!
 //! Two things follow, and both are the point:
 //!
-//! - **The model stays clean.** A reader that wants the piece reads the piece.
+//! - **The model stays clean.** A reader that wants the multitrack reads the multitrack.
 //!   Nothing in this module can make a track sound different, and nothing here
 //!   is ever consulted by an edit.
 //! - **Screen state stops being an anonymous blob.** It was reachable only from
@@ -28,7 +28,7 @@
 //!
 //! # There is more than one of them
 //!
-//! A piece drawn in two windows has two views, and they disagree on purpose —
+//! A multitrack drawn in two windows has two views, and they disagree on purpose —
 //! that is what a second window is *for*. Live holds the same track as a column
 //! of slots in one picture and a timeline of clips in another; we hold a list.
 //! A format that could carry only one would push the second back to being
@@ -36,7 +36,7 @@
 //!
 //! # What survives, and what goes
 //!
-//! A view entry for an object the piece no longer holds is **dropped**
+//! A view entry for an object the multitrack no longer holds is **dropped**
 //! ([`View::prune`]), and that is the same rule the client's screen-state tables
 //! were fixed to obey: state goes when the thing goes. Keeping it is worse than
 //! losing it — a zoom that survives onto a lane which is not the same lane is a
@@ -45,7 +45,7 @@
 //! # Where a file may carry one, and where nothing may
 //!
 //! A session may hold views ([`crate::Session::views`]), because reopening a
-//! piece into the window it was left in is what every program in the field
+//! multitrack into the window it was left in is what every program in the field
 //! does. Nothing here ever reaches the **document** or the **history**: a view
 //! is not edited through an intent, an undo never puts a scroll back, and a
 //! [`crate::Log`] that recorded a zoom would make the person's own last edit
@@ -61,14 +61,14 @@ use crate::NodeId;
 use crate::multitrack::{Extra, Multitrack, Span};
 use crate::timebase::Beat;
 
-/// One window's picture of one piece.
+/// One window's picture of one multitrack.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct View {
     /// What the window is called, when a person named it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     /// The stretch of the timeline on screen — the zoom and the horizontal
-    /// scroll, which are one fact and not two. `None` shows the whole piece.
+    /// scroll, which are one fact and not two. `None` shows the whole multitrack.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visible: Option<Span>,
     /// How far down the tracks the window is scrolled, in its own units. Not a
@@ -82,14 +82,14 @@ pub struct View {
     /// it through the multitrack's tempo map to the seconds an edit snaps to,
     /// so it is the ruler's configuration and not a unit of the placement.
     ///
-    /// It is here rather than in the piece because two windows over one piece
+    /// It is here rather than in the multitrack because two windows over one multitrack
     /// may snap differently — the arranger to a bar, the editor below it to a
-    /// sixteenth — which is exactly the case a single grid on the piece could
+    /// sixteenth — which is exactly the case a single grid on the multitrack could
     /// not express.
     #[serde(default, skip_serializing_if = "is_origin")]
     pub quant: Beat,
     /// Whether the window follows its content: `true` refits a window that was
-    /// showing the whole piece when the piece grows. `false` says the window is
+    /// showing the whole multitrack when the multitrack grows. `false` says the window is
     /// the reader's, and nothing moves it — which is what an editor wants,
     /// since a content change is mostly the reader's own edit and a view that
     /// re-frames itself under the hand that edited it is the window starting
@@ -101,7 +101,7 @@ pub struct View {
     pub selection: Option<Span>,
     /// What the hand is holding: regions, lanes or tracks, by id.
     ///
-    /// One list rather than one per kind, because the piece has one id space —
+    /// One list rather than one per kind, because the multitrack has one id space —
     /// a region's identity is its own and not its source's, and so is a lane's
     /// and a track's. What a selected id *is* is answered by looking it up.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -183,7 +183,7 @@ fn is_origin(beat: &Beat) -> bool {
 }
 
 impl View {
-    /// A window that says nothing: the whole piece, no grid, nothing held.
+    /// A window that says nothing: the whole multitrack, no grid, nothing held.
     pub fn new() -> Self {
         Self {
             autofit: true,
@@ -218,7 +218,7 @@ impl View {
         self.lanes.entry(id).or_default()
     }
 
-    /// Drops everything this view says about objects the piece no longer holds,
+    /// Drops everything this view says about objects the multitrack no longer holds,
     /// and answers whether anything went.
     ///
     /// **State goes when the thing goes**, which is the rule the client's
@@ -227,9 +227,9 @@ impl View {
     /// be quieter and worse: an id is reused by a client that mints them, and a
     /// zoom kept for a lane that is not the same lane is a defect that looks
     /// like a feature.
-    pub fn prune(&mut self, piece: &Multitrack) -> bool {
+    pub fn prune(&mut self, multitrack: &Multitrack) -> bool {
         let mut held: Vec<NodeId> = Vec::new();
-        for track in &piece.tracks {
+        for track in &multitrack.tracks {
             held.push(track.id);
             for lane in &track.lanes {
                 held.push(lane.id);

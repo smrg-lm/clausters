@@ -121,10 +121,10 @@ struct Header {
     /// Samples elapsed *under the transport*, frozen while it is stopped. The
     /// sample clock above never stops, so a reader pacing on the device wants
     /// that one — but this one is monotonic too, which is what a scheduler
-    /// needs and what a **playhead does not**: for where the piece *is*, read
+    /// needs and what a **playhead does not**: for where the transport *is*, read
     /// `transport_position`.
     transport_clock: AtomicU64,
-    /// The sample of the *piece* the engine is playing, in the piece's own
+    /// The sample the engine is playing, on the *transport's* own
     /// axis. It advances with the clock while rolling, holds while stopped,
     /// jumps on a locate and wraps at a loop's end. A playhead wants this one;
     /// a scheduled bundle wants the clock above.
@@ -477,7 +477,7 @@ impl View {
         &self.header().transport_clock
     }
 
-    /// Where the piece *is*: the position a playhead draws.
+    /// Where the transport *is*: the position a playhead draws.
     #[inline]
     pub fn transport_position(&self) -> &AtomicU64 {
         &self.header().transport_position

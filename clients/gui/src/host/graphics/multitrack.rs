@@ -3,12 +3,12 @@
 //! This is the model half of the multitrack widget ([`crate::host::elements`]),
 //! and the thing that tells it from [`super::track`]: `track` draws a *widget
 //! tree* — a `Track` container holding `Clip` children, one widget per box —
-//! while this holds the piece as **data** the way [`super::pianoroll`]
+//! while this holds the multitrack as **data** the way [`super::pianoroll`]
 //! holds a roll's notes. A lane is a row of this structure, not a widget, so it
 //! cannot sit in a void and there is exactly one thing that owns it.
 //!
 //! That is the whole reason the type exists. With the lanes spread over N
-//! widgets there was nobody to report *the piece*, so a gesture reported
+//! widgets there was nobody to report *the multitrack*, so a gesture reported
 //! what the hand did to whichever widget it touched — under one of three tags,
 //! chosen by the gesture rather than by the clip, which two independent readers
 //! got wrong (`clients/gui/PLAN.md`, `G34`). One owner answers with the result

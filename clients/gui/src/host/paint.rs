@@ -491,7 +491,7 @@ impl Mesh {
     }
 
     /// One corner's arc as a strip between an outer and an inner radius (a fan
-    /// when `inner` is zero) — the piece both the filled box and the frame are
+    /// when `inner` is zero) — the multitrack both the filled box and the frame are
     /// built from, so a rounded border follows exactly the edge its fill drew.
     fn corner_ring(&mut self, cx: f32, cy: f32, from: f32, outer: f32, inner: f32, color: Color) {
         // The segment count follows the radius (a corner is never more than a

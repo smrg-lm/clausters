@@ -31,7 +31,7 @@
 //! edit is the previous value handed back, which is the crate's decision and
 //! the reason the caller can adopt the outcome unconditionally.
 
-pub mod piece;
+pub mod multitrack;
 pub mod sources;
 pub mod tree;
 
@@ -97,22 +97,22 @@ pub struct Owner {
     /// The composition, as the crate keeps it.
     ///
     /// **The leg being walked off**, and the crate says so: a session written
-    /// today carries [`Owner::piece`] and leaves this empty. It stays because
+    /// today carries [`Owner::multitrack`] and leaves this empty. It stays because
     /// what it holds — the general tree, its samples, its destructive edits —
     /// has nowhere else to be yet.
     pub document: Document,
-    /// **The piece**: the tracks and the timeline they sit on, which is what a
+    /// **The multitrack**: the tracks and the timeline they sit on, which is what a
     /// session written today actually carries.
     ///
     /// Two descriptions, one owner, and the picture comes from whichever is
-    /// filled ([`Owner::draws_piece`]). They are separate structures in one
-    /// history, so a piece's edit and a tree's edit undo in the order they were
+    /// filled ([`Owner::draws_multitrack`]). They are separate structures in one
+    /// history, so a multitrack's edit and a tree's edit undo in the order they were
     /// made rather than in two orders.
-    pub piece: Multitrack,
-    /// **The editing context**: the one undo order the tree, the piece and the
+    pub multitrack: Multitrack,
+    /// **The editing context**: the one undo order the tree, the multitrack and the
     /// multitrack editor share — the applications crate's, as a client's is, so
     /// an inverse is read out of what was edited rather than remembered by the
-    /// gesture that made it, and a piece's edit and a tree's undo in the order
+    /// gesture that made it, and a multitrack's edit and a tree's undo in the order
     /// they were made.
     pub editing: Editing,
     /// The session this document came from, when it came from one: the sources
@@ -158,21 +158,21 @@ pub struct Owner {
     /// The tree, as a member of [`Owner::editing`]: the crate does not apply the
     /// document's edits, so a step hands its payloads back to be applied here.
     tree: MemberId,
-    /// The piece, as a member of [`Owner::editing`] — joined whether or not a
+    /// The multitrack, as a member of [`Owner::editing`] — joined whether or not a
     /// window is ever opened over it, so its identity does not depend on what
     /// was edited first. A step hands its payloads back to be applied to
-    /// [`Owner::piece`].
-    piece_member: MemberId,
-    /// The widget drawing the whole piece, when the tree has one.
+    /// [`Owner::multitrack`].
+    multitrack_member: MemberId,
+    /// The widget drawing the whole multitrack, when the tree has one.
     ///
     /// Not a map, because there is nothing to map: the multitrack names its
     /// lanes and its clips by the nodes' own numbers, so a payload is read
     /// without asking anything which widget it came from. What the id is for is
     /// the other direction — writing an applied edit back onto the picture.
-    multitrack: Option<i32>,
-    /// **The multitrack editor** over the piece, once a window has been opened
+    multitrack_widget: Option<i32>,
+    /// **The multitrack editor** over the multitrack, once a window has been opened
     /// for it ([`Owner::open_editor`]): a member of [`Owner::editing`] under the
-    /// piece's key, so it is the same structure in the order as the piece.
+    /// multitrack's key, so it is the same structure in the order as the multitrack.
     editor_member: Option<MemberId>,
 }
 
@@ -183,7 +183,7 @@ pub struct Applied {
     /// when it applied verbatim, the transformed one when it was snapped, and
     /// the **previous** value when it was refused.
     ///
-    /// `None` for an edit written in the **piece's** vocabulary, which is not
+    /// `None` for an edit written in the **multitrack's** vocabulary, which is not
     /// an [`Intent`] and has nobody here to answer for it: the picture is
     /// redrawn from the owner rather than patched from what an edit said, so
     /// the only caller left that reads this is the one restoring samples
@@ -202,8 +202,8 @@ impl Owner {
     /// in memory) and no grid.
     pub fn new(document: Document) -> Self {
         let mut editing = Editing::new();
-        // The tree, and the piece as the second structure in the same order,
-        // joined whether or not this owner turns out to hold a piece: one
+        // The tree, and the multitrack as the second structure in the same order,
+        // joined whether or not this owner turns out to hold a multitrack: one
         // history is what makes an undo walk the two descriptions in the order
         // the hand made them, and joining lazily would mean an id that depends
         // on what was edited first.
@@ -213,18 +213,18 @@ impl Owner {
                 domain: TREE.into(),
             },
         );
-        let piece_member = editing.join(
-            "piece",
+        let multitrack_member = editing.join(
+            "multitrack",
             Member::External {
                 domain: MULTITRACK.into(),
             },
         );
         Self {
             document,
-            piece: Multitrack::default(),
+            multitrack: Multitrack::default(),
             editing,
             tree,
-            piece_member,
+            multitrack_member,
             session: None,
             rules: Rules::none(),
             units_per_beat: 48_000.0,
@@ -233,27 +233,27 @@ impl Owner {
             takes: sources::Takes::default(),
             nodes: HashMap::new(),
             headers: HashMap::new(),
-            multitrack: None,
+            multitrack_widget: None,
             editor_member: None,
         }
     }
 
-    /// Whether the picture comes from the **piece** rather than from the tree.
+    /// Whether the picture comes from the **multitrack** rather than from the tree.
     ///
     /// Read off what the session actually carries rather than from a flag a
     /// caller sets: a session written today has tracks and an empty document,
     /// one written before the turn has the other, and a host that asked which
     /// mode it was in would be asking the caller to know something the file
     /// already says.
-    pub fn draws_piece(&self) -> bool {
-        !self.piece.tracks.is_empty()
+    pub fn draws_multitrack(&self) -> bool {
+        !self.multitrack.tracks.is_empty()
     }
 
     /// An owner of a session's document, keeping the session so a save has the
     /// sources to write with it.
     pub fn from_session(session: Session) -> Self {
         let mut owner = Self::new(session.document.clone());
-        owner.piece = session.multitrack.clone();
+        owner.multitrack = session.multitrack.clone();
         owner.session = Some(session);
         owner
     }
@@ -364,7 +364,7 @@ impl Owner {
             .clone()
             .unwrap_or_else(|| Session::new(self.document.clone()));
         session.document = self.document.clone();
-        session.multitrack = self.piece.clone();
+        session.multitrack = self.multitrack.clone();
         let text = serde_json::to_string_pretty(&session).map_err(|e| e.to_string())?;
         std::fs::write(path.as_ref(), text).map_err(|e| format!("{}: {e}", path.as_ref().display()))
     }
@@ -408,18 +408,18 @@ impl Owner {
             .find_map(|(widget, bound)| (*bound == node).then_some(*widget))
     }
 
-    /// Says which widget draws **the whole piece**.
+    /// Says which widget draws **the whole multitrack**.
     ///
     /// The multitrack needs no per-clip binding — a clip's name on the wire is
     /// its node's number — so what is recorded is only the widget id, and only
     /// because an applied edit has to be written back onto *some* widget.
     pub fn bind_multitrack(&mut self, widget_id: i32) {
-        self.multitrack = Some(widget_id);
+        self.multitrack_widget = Some(widget_id);
     }
 
-    /// The widget drawing the piece, if one does.
-    pub fn multitrack(&self) -> Option<i32> {
-        self.multitrack
+    /// The widget drawing the multitrack, if one does.
+    pub fn multitrack_widget(&self) -> Option<i32> {
+        self.multitrack_widget
     }
 
     /// **What is on screen**, in the widget's own vocabulary — the lanes and
@@ -430,20 +430,20 @@ impl Owner {
     /// is the same walk the window was drawn with, so what an edit-back is
     /// resolved against cannot disagree with what a hand moved.
     ///
-    /// It comes from the **piece** when there is one and from the tree
-    /// otherwise ([`Self::draws_piece`]) — one widget, two descriptions, and
+    /// It comes from the **multitrack** when there is one and from the tree
+    /// otherwise ([`Self::draws_multitrack`]) — one widget, two descriptions, and
     /// the file says which.
-    pub fn shown(&self) -> tree::Piece {
-        if self.draws_piece() {
-            piece::shown(&self.piece, &self.piece_look())
+    pub fn shown(&self) -> tree::Picture {
+        if self.draws_multitrack() {
+            multitrack::shown(&self.multitrack, &self.multitrack_look())
         } else {
-            tree::piece(&self.document, &self.look())
+            tree::multitrack(&self.document, &self.look())
         }
     }
 
-    /// The scales the piece is drawn with.
-    pub fn piece_look(&self) -> piece::Look<'_> {
-        piece::Look {
+    /// The scales the multitrack is drawn with.
+    pub fn multitrack_look(&self) -> multitrack::Look<'_> {
+        multitrack::Look {
             rate: self.units_per_second,
             takes: Some(&self.takes),
             sources: self.session.as_ref().map(|session| &session.sources),
@@ -453,7 +453,7 @@ impl Owner {
     /// Reads a widget's `/gui_event` payload as **the edits it stands for**.
     ///
     /// The plural door, and the one the multitrack comes through. A payload
-    /// that states the piece — `"clips"`, `"lanes"` — is one message describing
+    /// that states the multitrack — `"clips"`, `"lanes"` — is one message describing
     /// every box or every strip, so what it means is however many intents it
     /// takes to make the document say that; a payload that states one thing is
     /// one intent, and goes through [`Self::read_event`] unchanged.
@@ -463,20 +463,20 @@ impl Owner {
     /// the run rather than the caller applying them one at a time.
     pub fn read_events(&self, widget_id: i32, args: &[OscType]) -> Vec<(Intent, &'static str)> {
         match args.first() {
-            Some(OscType::String(tag)) if tag == "clips" && !self.draws_piece() => {
+            Some(OscType::String(tag)) if tag == "clips" && !self.draws_multitrack() => {
                 self.read_clips(&args[1..])
             }
-            Some(OscType::String(tag)) if tag == "lanes" && !self.draws_piece() => {
+            Some(OscType::String(tag)) if tag == "lanes" && !self.draws_multitrack() => {
                 self.read_lanes(&args[1..])
             }
             _ => self.read_event(widget_id, args).into_iter().collect(),
         }
     }
 
-    /// **Opens the multitrack editor over the piece** — the one a script and a
+    /// **Opens the multitrack editor over the multitrack** — the one a script and a
     /// page open — and answers its window, as the GuiDef to define as `window`.
     ///
-    /// The piece is drawn at `window + 1` and ruled at `window + 2`, and the
+    /// The multitrack is drawn at `window + 1` and ruled at `window + 2`, and the
     /// transport row is numbered after them: a host composing a window for
     /// itself has nobody to number it on the way out. From here on a gesture on
     /// either widget is the editor's turn ([`super::Host::answer_own`]).
@@ -484,7 +484,7 @@ impl Owner {
         use clausters_apps::multitrack::{Transport, TransportIds};
 
         let mut editor = MultitrackEditor::new(
-            self.piece.clone(),
+            self.multitrack.clone(),
             self.units_per_second,
             self.editing.version(),
         );
@@ -505,7 +505,7 @@ impl Owner {
         editor.set_segments(self.segments());
         let def = editor.window(window + 1, window + 2);
         editor.set_window(Some(window));
-        // **One editor over the piece**: opening the window again replaces the
+        // **One editor over the multitrack**: opening the window again replaces the
         // editor in its seat rather than seating a second one.
         match self.editor_member {
             Some(member) => {
@@ -516,7 +516,7 @@ impl Owner {
             None => {
                 self.editor_member = Some(
                     self.editing
-                        .join("piece", Member::Multitrack(Box::new(editor))),
+                        .join("multitrack", Member::Multitrack(Box::new(editor))),
                 );
             }
         }
@@ -524,7 +524,7 @@ impl Owner {
         def
     }
 
-    /// The multitrack editor over the piece, once a window has been opened for
+    /// The multitrack editor over the multitrack, once a window has been opened for
     /// it.
     pub fn editor(&self) -> Option<&MultitrackEditor> {
         match self.editing.member(self.editor_member?)? {
@@ -620,13 +620,13 @@ impl Owner {
         learned.len()
     }
 
-    /// **The piece's clips, as they now stand** — the one payload every
+    /// **The multitrack's clips, as they now stand** — the one payload every
     /// placement gesture leaves.
     ///
     /// A move, a trim, a block drag and a lane change all arrive here, and
     /// nothing in the payload says which of them it was: what is compared is
     /// the list against the document, and what comes out is the difference.
-    /// That is the whole reason the widget reports the piece — the reader has
+    /// That is the whole reason the widget reports the multitrack — the reader has
     /// no case to get wrong.
     ///
     /// Two shapes come out of it. A clip that stayed on its lane is a
@@ -634,10 +634,10 @@ impl Owner {
     /// is not a placement at all — it left one aggregate and joined another —
     /// so it is a pair of [`Intent::SetMembers`], one per aggregate, stating
     /// what each now holds. Both are absolute, so applying the run twice leaves
-    /// the same piece.
+    /// the same multitrack.
     fn read_clips(&self, args: &[OscType]) -> Vec<(Intent, &'static str)> {
         let units = self.units_per_beat.max(f64::MIN_POSITIVE);
-        let now = tree::piece(&self.document, &self.look());
+        let now = tree::multitrack(&self.document, &self.look());
         // What each aggregate ends up holding, for the clips that crossed.
         let mut leaving: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
         let mut joining: HashMap<NodeId, Vec<clausters_document::Member>> = HashMap::new();
@@ -721,7 +721,7 @@ impl Owner {
         out
     }
 
-    /// **The piece's lanes, as they now stand** — the mixer's payload.
+    /// **The multitrack's lanes, as they now stand** — the mixer's payload.
     ///
     /// Separate from the clips for the reason they are two structures: a fader
     /// moved must not resend every clip. What is written is the *element's*
@@ -874,7 +874,7 @@ impl Owner {
             }
 
             // A lane header's toggle or fader. **The composition's**, not the
-            // window's: what is muted is a fact about the piece, so it goes
+            // window's: what is muted is a fact about the multitrack, so it goes
             // through the log like a clip's move and survives a save. It is the
             // same `Configure` a client emits, which is why the undo comes out
             // of the document identically whoever made the edit.
@@ -1091,14 +1091,14 @@ impl Owner {
     }
 
     /// **Carries out a step the context took**, on the descriptions this owner
-    /// holds: the payloads the step hands back for the piece and for the tree,
+    /// holds: the payloads the step hands back for the multitrack and for the tree,
     /// applied with the checks off — what the history holds is by definition
     /// against the state as it was left, and snapping something twice would
-    /// move it. The multitrack editor's own copy of the piece was stepped by
+    /// move it. The multitrack editor's own copy of the multitrack was stepped by
     /// the context already.
     ///
     /// **Each effect says which member it is for**, which is the whole reason
-    /// the two descriptions share one order: a piece's move and a tree's stroke
+    /// the two descriptions share one order: a multitrack's move and a tree's stroke
     /// walk back in the order the hand made them, not in two orders.
     pub fn carry(&mut self, stepped: &Stepped) -> Vec<Applied> {
         let mut out = Vec::new();
@@ -1111,20 +1111,20 @@ impl Owner {
             };
             for load in payloads {
                 let load = Opaque(load.clone());
-                if *member == self.piece_member {
+                if *member == self.multitrack_member {
                     let Some(intent) = clausters_document::multitrack::edit::intent_of(&load)
                     else {
                         continue;
                     };
                     let outcome = clausters_document::multitrack::edit::apply(
-                        &mut self.piece,
+                        &mut self.multitrack,
                         &intent,
                         &Against::default(),
                         &Rules::none(),
                     );
                     out.push(Applied {
                         effective: None,
-                        version: self.piece.version,
+                        version: self.multitrack.version,
                         applied: outcome.applied,
                     });
                 } else if *member == self.tree {
@@ -1608,7 +1608,7 @@ mod window_verb_tests {
         Member { offset, dur, node }
     }
 
-    /// One clang on the piece, at one unit to the beat: the verbs' own tests
+    /// One clang on the multitrack, at one unit to the beat: the verbs' own tests
     /// are about the verbs, not the scale.
     fn owner_with_a_clip() -> Owner {
         let doc = Document::new(aggregate(1, Value::Null, vec![at(0.0, None, clang(2))]));
@@ -1617,7 +1617,7 @@ mod window_verb_tests {
         owner
     }
 
-    /// The `"clips"` payload for one box: the piece as a hand left it.
+    /// The `"clips"` payload for one box: the multitrack as a hand left it.
     fn clips(entries: &[(&str, &str, f32, f32)]) -> Vec<OscType> {
         let mut args = vec![OscType::String("clips".into())];
         for (name, lane, at, dur) in entries {
@@ -1661,14 +1661,14 @@ mod window_verb_tests {
     /// A session host over `doc`, drawn the way `--session` draws it: the
     /// window opened on the real tree, the owner bound to the multitrack. The
     /// widget id comes back, because everything a hand does arrives on it.
-    /// A host drawing a **piece** — the standalone shape: the session carries
+    /// A host drawing a **multitrack** — the standalone shape: the session carries
     /// tracks, the document is empty, and the window is the same one the
     /// `--session` host opens.
-    fn with_piece(piece: clausters_document::multitrack::Multitrack) -> (Host, i32, i32) {
+    fn with_multitrack(multitrack: clausters_document::multitrack::Multitrack) -> (Host, i32, i32) {
         let def_id = 1;
         let doc = Document::new(aggregate(1, Value::Null, Vec::new()));
         let mut owner = Owner::new(doc).with_units_per_beat(100.0);
-        owner.piece = piece;
+        owner.multitrack = multitrack;
         let (def, view) = composed(&mut owner, def_id);
         let mut host = Host::new();
         host.handle_packet(
@@ -1685,9 +1685,9 @@ mod window_verb_tests {
         (host, def_id, view)
     }
 
-    /// **The multitrack editor's own window** over the owner's piece, numbered
+    /// **The multitrack editor's own window** over the owner's multitrack, numbered
     /// from past `def_id` the way `--session` numbers it, and the id of the
-    /// piece's widget in it.
+    /// multitrack's widget in it.
     fn composed(owner: &mut Owner, def_id: i32) -> (Value, i32) {
         (owner.open_editor(def_id, "t", (1000, 640)), def_id + 1)
     }
@@ -1699,12 +1699,12 @@ mod window_verb_tests {
     fn the_transport_row_and_the_space_bar_reach_the_editor() {
         use clausters_document::multitrack::{Multitrack, Track};
 
-        // A piece with a track, which is what makes a session a piece.
-        let piece = Multitrack {
+        // A multitrack with a track, which is what makes a session a multitrack.
+        let multitrack = Multitrack {
             tracks: vec![Track::new(NodeId(10), NodeId(11))],
             ..Multitrack::default()
         };
-        let (mut host, def_id, _view) = with_piece(piece);
+        let (mut host, def_id, _view) = with_multitrack(multitrack);
         let play = def_id + 5;
         let seq = host.outbox.borrow_mut().stamp(def_id, play);
         assert!(
@@ -1723,7 +1723,7 @@ mod window_verb_tests {
     /// were made through the Python client's `MultitrackEditor` and are replayed
     /// through the web client's; here they are delivered to the standalone
     /// host, and what it tells itself, what it asks of the playback and the
-    /// piece it is left with are the same, turn by turn. Widgets are compared
+    /// multitrack it is left with are the same, turn by turn. Widgets are compared
     /// by role, since which id an allocator hands out is each endpoint's own.
     ///
     /// Replaying them found two things the host did not do: settle a name it
@@ -1749,7 +1749,7 @@ mod window_verb_tests {
         let def_id = 1;
         let mut owner = Owner::new(Document::new(aggregate(1, Value::Null, Vec::new())))
             .with_units_per_second(v["rate"].as_f64().unwrap());
-        owner.piece = serde_json::from_value::<Multitrack>(v["piece"].clone()).unwrap();
+        owner.multitrack = serde_json::from_value::<Multitrack>(v["multitrack"].clone()).unwrap();
         let mut takes = Takes::default();
         for (source, bufnum) in v["sources"].as_object().unwrap() {
             takes.insert(
@@ -1776,11 +1776,11 @@ mod window_verb_tests {
         );
         host.owner = Some(owner);
 
-        // The window numbers itself from the def's id: the piece, the ruler,
+        // The window numbers itself from the def's id: the multitrack, the ruler,
         // then the transport row after its own layout.
         let id_of = |role: &str| match role {
             "window" => def_id,
-            "piece" => def_id + 1,
+            "multitrack" => def_id + 1,
             "ruler" => def_id + 2,
             "rewind" => def_id + 4,
             "play" => def_id + 5,
@@ -1789,7 +1789,7 @@ mod window_verb_tests {
             other => panic!("no widget plays {other}"),
         };
         let role_of = |widget: &Value| match widget.as_i64().map(|w| w - i64::from(def_id)) {
-            Some(1) => serde_json::json!("piece"),
+            Some(1) => serde_json::json!("multitrack"),
             Some(2) => serde_json::json!("ruler"),
             _ => widget.clone(),
         };
@@ -1803,7 +1803,7 @@ mod window_verb_tests {
         for turn in v["turns"].as_array().unwrap() {
             let name = turn["name"].as_str().unwrap();
             host.exchange = Default::default();
-            let before = host.owner.as_ref().unwrap().piece.version;
+            let before = host.owner.as_ref().unwrap().multitrack.version;
             let mut args = vec![OscType::String(turn["tag"].as_str().unwrap().into())];
             args.extend(turn["values"].as_array().unwrap().iter().map(atom));
             let mut message = host.event_message(
@@ -1819,14 +1819,14 @@ mod window_verb_tests {
                 "{name}: the host answers it"
             );
 
-            // `link` names the piece's own widget, which each endpoint numbers
+            // `link` names the multitrack's own widget, which each endpoint numbers
             // for itself: compared by role, like every other widget.
             let by_role = |said: &mut Value| {
                 for correction in said[4].as_array_mut().unwrap() {
                     if let Some(props) = correction[1].as_object_mut()
                         && props.contains_key("link")
                     {
-                        props.insert("link".into(), serde_json::json!("piece"));
+                        props.insert("link".into(), serde_json::json!("multitrack"));
                     }
                 }
             };
@@ -1853,13 +1853,13 @@ mod window_verb_tests {
                 turn["playback"],
                 "{name}: what the playback was asked"
             );
-            let piece = &host.owner.as_ref().unwrap().piece;
+            let multitrack = &host.owner.as_ref().unwrap().multitrack;
             assert_eq!(
-                piece.version != before,
+                multitrack.version != before,
                 turn["changed"].as_bool().unwrap(),
-                "{name}: whether the piece changed"
+                "{name}: whether the multitrack changed"
             );
-            let regions: Vec<Value> = piece
+            let regions: Vec<Value> = multitrack
                 .tracks
                 .iter()
                 .flat_map(|t| {
@@ -1870,14 +1870,18 @@ mod window_verb_tests {
                     })
                 })
                 .collect();
-            assert_eq!(Value::Array(regions), turn["regions"], "{name}: the piece");
+            assert_eq!(
+                Value::Array(regions),
+                turn["regions"],
+                "{name}: the multitrack"
+            );
         }
     }
 
     /// **A join's box is drawn over the buffer the host made for it**, after
     /// the whole turn and its settle (found 2026-09-13, measured in a
     /// standalone host: a joined box that sounded right drew empty until it was
-    /// moved to another track, because the settle projected the piece with the
+    /// moved to another track, because the settle projected the multitrack with the
     /// editor's table from before the join's source was minted).
     #[test]
     fn a_joined_box_is_drawn_over_the_buffer_its_source_was_made_in() {
@@ -1911,7 +1915,7 @@ mod window_verb_tests {
         let def_id = 1;
         let mut owner = Owner::new(Document::new(aggregate(1, Value::Null, Vec::new())))
             .with_units_per_second(48_000.0);
-        owner.piece = Multitrack {
+        owner.multitrack = Multitrack {
             tracks: vec![track],
             ..Multitrack::default()
         };
@@ -1952,7 +1956,7 @@ mod window_verb_tests {
             ],
         ));
         let owner = host.owner.as_ref().unwrap();
-        let joined = &owner.piece.tracks[0].lanes[0].regions;
+        let joined = &owner.multitrack.tracks[0].lanes[0].regions;
         assert_eq!(joined.len(), 1, "one box");
         let minted = match &joined[0].content {
             Content::Window { window, .. } => window.source.samples().map(|s| s.source),
@@ -1964,7 +1968,7 @@ mod window_verb_tests {
             .get(&minted)
             .copied()
             .expect("the host made the join a buffer");
-        let clips = host.registry().get(view).expect("the piece").props["clips"].clone();
+        let clips = host.registry().get(view).expect("the multitrack").props["clips"].clone();
         let clips = clips.as_array().expect("the boxes");
         let drawn = clips
             .chunks(7)
@@ -1978,14 +1982,14 @@ mod window_verb_tests {
     }
 
     /// **A session host opens the editor a script opens**: the ruler above the
-    /// piece and the transport row under it, every widget of it registered —
+    /// multitrack and the transport row under it, every widget of it registered —
     /// a composition of the host's own had neither.
     #[test]
     fn a_piece_opens_in_the_multitrack_editors_own_window() {
         let (host, def_id, view) =
-            with_piece(clausters_document::multitrack::Multitrack::default());
+            with_multitrack(clausters_document::multitrack::Multitrack::default());
         let tree = host.window_def(def_id).expect("the window is defined");
-        assert!(tree.find(view).is_some(), "the piece");
+        assert!(tree.find(view).is_some(), "the multitrack");
         for widget in 3..=7 {
             assert!(
                 tree.find(def_id + widget - 1).is_some(),
@@ -1998,18 +2002,23 @@ mod window_verb_tests {
     /// **The head sweeps from the moment the window opens** (found 2026-09-13,
     /// by eye: a standalone host placed the cursor and never moved a line). The
     /// ruler is the window's first timeline member and seeds the group, so an
-    /// anchor stated only on the piece was dropped; a client hid it by setting
+    /// anchor stated only on the multitrack was dropped; a client hid it by setting
     /// one afterwards.
     #[test]
     fn a_piece_window_opens_with_its_head_anchored() {
         let (host, _def_id, view) =
-            with_piece(clausters_document::multitrack::Multitrack::default());
-        let key = host.timeline_key(view).expect("the piece is on a timeline");
+            with_multitrack(clausters_document::multitrack::Multitrack::default());
+        let key = host
+            .timeline_key(view)
+            .expect("the multitrack is on a timeline");
         let state = host.timelines().state(key).expect("its group");
-        assert_eq!(state.playhead_at, 0.0, "anchored at the piece's position");
+        assert_eq!(
+            state.playhead_at, 0.0,
+            "anchored at the multitrack's position"
+        );
     }
 
-    /// **A piece that sounds tells its window where its meters are** (found
+    /// **A multitrack that sounds tells its window where its meters are** (found
     /// 2026-09-13, by eye: a standalone host's strips never moved). The window
     /// is composed before anything is played, so the buses are only known once
     /// the playback has made the tracks; a client's editor is handed them on
@@ -2018,23 +2027,23 @@ mod window_verb_tests {
     fn a_sounding_piece_tells_its_window_where_the_meters_are() {
         use clausters_document::multitrack::{Multitrack, Track};
 
-        let piece = Multitrack {
+        let multitrack = Multitrack {
             tracks: vec![Track::new(NodeId(10), NodeId(11))],
             ..Multitrack::default()
         };
-        let (mut host, _def_id, view) = with_piece(piece);
+        let (mut host, _def_id, view) = with_multitrack(multitrack);
         // A throwaway socket standing in for the server that sounds.
         let server = std::net::UdpSocket::bind(("127.0.0.1", 0)).unwrap();
         let leg = crate::host::ServerLeg::connect(server.local_addr().unwrap()).unwrap();
         host.set_server_link(crate::host::ServerLink::Udp(leg));
-        host.sound_piece();
+        host.sound_multitrack();
         let told = host
             .owner
             .as_ref()
             .and_then(|o| o.editor())
             .map_or(0, |e| e.meters().len());
         assert_eq!(told, 1, "the editor knows the track's buses");
-        let meters = &host.registry().get(view).expect("the piece").props["meters"];
+        let meters = &host.registry().get(view).expect("the multitrack").props["meters"];
         assert_eq!(
             meters.as_array().map_or(0, Vec::len),
             4,
@@ -2087,7 +2096,7 @@ mod window_verb_tests {
         for b in &drawn.bindings {
             owner.bind(b.widget, b.node);
         }
-        owner.bind_multitrack(drawn.multitrack);
+        owner.bind_multitrack(drawn.widget);
         let mut host = Host::new();
         host.handle_packet(
             crate::host::OscPacket::Message(crate::host::OscMessage {
@@ -2100,7 +2109,7 @@ mod window_verb_tests {
             ))),
         );
         host.owner = Some(owner);
-        (host, def_id, drawn.multitrack)
+        (host, def_id, drawn.widget)
     }
 
     /// What the **widget** holds, as groups — the picture, not the document.
@@ -2140,7 +2149,7 @@ mod window_verb_tests {
         assert!(host.answer_own(1, 50, seq, &clips(&[("2", "2", 4.0, 0.0)])));
         assert_eq!(offset(host.owner.as_ref().unwrap()), 4.0);
 
-        // Addressed to the window (id 1 here), not to the piece.
+        // Addressed to the window (id 1 here), not to the multitrack.
         let seq = host.outbox.borrow_mut().stamp(1, 1);
         assert!(host.answer_own(1, 1, seq, &[OscType::String("undo".into())]));
         assert_eq!(offset(host.owner.as_ref().unwrap()), 0.0, "taken back");
@@ -2150,7 +2159,7 @@ mod window_verb_tests {
         assert_eq!(offset(host.owner.as_ref().unwrap()), 4.0, "and put back");
     }
 
-    /// **A host that owns a piece answers for the piece's whole vocabulary**,
+    /// **A host that owns a multitrack answers for the multitrack's whole vocabulary**,
     /// and not for the two tags this happened to route by name.
     ///
     /// The defect this pins (found 2026-09-12, auditing the owner): the
@@ -2185,11 +2194,11 @@ mod window_verb_tests {
             visible: true,
             ..Automation::new(NodeId(30), Opaque::default())
         });
-        let piece = Multitrack {
+        let multitrack = Multitrack {
             tracks: vec![track],
             ..Multitrack::default()
         };
-        let (mut host, def_id, view) = with_piece(piece);
+        let (mut host, def_id, view) = with_multitrack(multitrack);
 
         // The payload a dragged break-point leaves: every curve there is, each
         // point a quintuple, in the axis' own unit (100 units a beat here).
@@ -2209,12 +2218,12 @@ mod window_verb_tests {
         let seq = host.outbox.borrow_mut().stamp(def_id, view);
         assert!(
             host.answer_own(def_id, view, seq, &args),
-            "the piece owns `points`, so the host answers for it"
+            "the multitrack owns `points`, so the host answers for it"
         );
         let moved = host
             .owner
             .as_ref()
-            .and_then(|o| o.piece.automation(NodeId(30)))
+            .and_then(|o| o.multitrack.automation(NodeId(30)))
             .map(|a| a.points[1].value);
         assert_eq!(moved, Some(0.25), "and the curve is where the hand left it");
     }
@@ -2246,11 +2255,11 @@ mod window_verb_tests {
             visible: true,
             ..Automation::new(NodeId(30), Opaque::default())
         });
-        let piece = Multitrack {
+        let multitrack = Multitrack {
             tracks: vec![track],
             ..Multitrack::default()
         };
-        let (mut host, def_id, view) = with_piece(piece);
+        let (mut host, def_id, view) = with_multitrack(multitrack);
         let points = |value: f32| {
             vec![
                 OscType::String("points".into()),
@@ -2269,7 +2278,7 @@ mod window_verb_tests {
         let second = |host: &Host| {
             host.owner
                 .as_ref()
-                .and_then(|o| o.piece.automation(NodeId(30)))
+                .and_then(|o| o.multitrack.automation(NodeId(30)))
                 .map(|a| a.points[1].value)
         };
 
@@ -2278,7 +2287,7 @@ mod window_verb_tests {
         let answered = host.outbox.borrow().version();
         assert!(answered > 0, "the answer stated the version it left");
 
-        // A route no gesture took moves the piece.
+        // A route no gesture took moves the multitrack.
         if let Some(owner) = host.owner.as_mut() {
             for _ in 0..5 {
                 owner.editing.moved();
@@ -2339,11 +2348,11 @@ mod window_verb_tests {
             window.start = 0.0;
         }
         track.lanes[0].regions = vec![first, second];
-        let piece = Multitrack {
+        let multitrack = Multitrack {
             tracks: vec![track],
             ..Multitrack::default()
         };
-        let (mut host, def_id, view) = with_piece(piece);
+        let (mut host, def_id, view) = with_multitrack(multitrack);
         // The take the two boxes read, as a session's open would have resolved
         // it: without this the join is over samples nobody loaded. Four
         // seconds, since the boxes read all four: a take stated shorter is a
@@ -2367,7 +2376,7 @@ mod window_verb_tests {
         let seq = host.outbox.borrow_mut().stamp(def_id, view);
         assert!(
             host.answer_own(def_id, view, seq, &args),
-            "the piece's verb"
+            "the multitrack's verb"
         );
 
         let owner = host.owner.as_ref().expect("an owner");
@@ -2391,7 +2400,7 @@ mod window_verb_tests {
     fn a_read_take_learns_its_length_and_keeps_a_stated_one() {
         use clausters_document::multitrack::Multitrack;
 
-        let (mut host, _def_id, _view) = with_piece(Multitrack::default());
+        let (mut host, _def_id, _view) = with_multitrack(Multitrack::default());
         let owner = host.owner.as_mut().expect("an owner");
         let take = |bufnum, frames| super::sources::Take {
             bufnum,
@@ -2432,7 +2441,7 @@ mod window_verb_tests {
     ///
     /// The defect this pins (found 2026-09-12 by the user, on a standalone host
     /// opened on a session: "no crea los lanes para las curvas al presionar A").
-    /// The header's `A` exists to **make** a track's gain curve, and the piece
+    /// The header's `A` exists to **make** a track's gain curve, and the multitrack
     /// made it: the edit applied, the document kept it, and what went back onto
     /// the widget was `lanes` and `clips` — so nothing that draws a curve ever
     /// arrived and the toggle read as a dead key. The projection had said
@@ -2448,11 +2457,11 @@ mod window_verb_tests {
         let mut track = Track::new(NodeId(10), NodeId(11));
         track.name = Some("t10".into());
         track.lanes[0].regions = vec![region(12, 0.0, 4.0)];
-        let piece = Multitrack {
+        let multitrack = Multitrack {
             tracks: vec![track],
             ..Multitrack::default()
         };
-        let (mut host, def_id, view) = with_piece(piece);
+        let (mut host, def_id, view) = with_multitrack(multitrack);
         assert!(
             drawn_prop(&host, def_id, view, "curves", 6).is_empty(),
             "the track starts with no automation"
@@ -2465,8 +2474,8 @@ mod window_verb_tests {
         assert!(
             host.owner
                 .as_ref()
-                .is_some_and(|o| o.piece.automations().count() == 1),
-            "the piece minted the gain curve"
+                .is_some_and(|o| o.multitrack.automations().count() == 1),
+            "the multitrack minted the gain curve"
         );
         let curves = drawn_prop(&host, def_id, view, "curves", 6);
         assert_eq!(curves.len(), 1, "and the widget was told about it");
@@ -2478,7 +2487,7 @@ mod window_verb_tests {
         );
     }
 
-    /// **And a verb the piece refuses says why, in the window of the host that
+    /// **And a verb the multitrack refuses says why, in the window of the host that
     /// refused it** — the same sentence a client would have put there.
     ///
     /// A join is the one tag whose refusal is about the *material* rather than
@@ -2492,11 +2501,11 @@ mod window_verb_tests {
         let mut track = Track::new(NodeId(10), NodeId(11));
         track.name = Some("t10".into());
         track.lanes[0].regions = vec![region(12, 0.0, 2.0), region(13, 4.0, 2.0)];
-        let piece = Multitrack {
+        let multitrack = Multitrack {
             tracks: vec![track],
             ..Multitrack::default()
         };
-        let (mut host, def_id, view) = with_piece(piece);
+        let (mut host, def_id, view) = with_multitrack(multitrack);
 
         // Two boxes with a gap between them: they are on one lane and they do
         // not touch, which the document refuses and the picture cannot say.
@@ -2508,7 +2517,7 @@ mod window_verb_tests {
         let seq = host.outbox.borrow_mut().stamp(def_id, view);
         assert!(
             host.answer_own(def_id, view, seq, &args),
-            "it is the piece's"
+            "it is the multitrack's"
         );
         let statuses = host.statuses();
         let line = statuses
@@ -2539,7 +2548,7 @@ mod window_verb_tests {
         let offset_of = |host: &Host| drawn_clips(host, def_id, view)[0][2].as_f64().unwrap();
         assert_eq!(offset_of(&host), 0.0);
 
-        // The edit a drag reports: the piece as it now stands, in the axis'
+        // The edit a drag reports: the multitrack as it now stands, in the axis'
         // own unit.
         let seq = host.outbox.borrow_mut().stamp(def_id, view);
         assert!(host.answer_own(def_id, view, seq, &clips(&[("2", "2", 400.0, 100.0)])));
@@ -2590,7 +2599,7 @@ mod window_verb_tests {
                 .and_then(|n| n.body.config())
                 .map(|c| c.0["mute"].clone()),
             Some(serde_json::json!(true)),
-            "the piece is muted, and it is the piece that says so"
+            "the multitrack is muted, and it is the multitrack that says so"
         );
 
         let seq = host.outbox.borrow_mut().stamp(def_id, def_id);
@@ -2770,7 +2779,7 @@ mod window_verb_tests {
         assert_eq!(placed(&host, 4), Some(1.0));
     }
 
-    /// **A session written today is a piece, and the host edits it.** The whole
+    /// **A session written today is a multitrack, and the host edits it.** The whole
     /// leg, end to end: the window is drawn from `Multitrack`, a hand's report
     /// arrives on the one widget, the crate's own vocabulary applies it, and
     /// `Ctrl`+`Z` walks it back.
@@ -2806,18 +2815,21 @@ mod window_verb_tests {
                 },
             )
         };
-        let mut piece = Multitrack::default();
+        let mut multitrack = Multitrack::default();
         let mut first = Track::new(NodeId(10), NodeId(11));
         first.lanes[0].regions = vec![region(12, 0.0), region(13, 4.0)];
         let second = Track::new(NodeId(20), NodeId(21));
-        piece.tracks = vec![first, second];
+        multitrack.tracks = vec![first, second];
 
         let mut session = clausters_document::Session::new(Document::empty());
-        session.multitrack = piece;
+        session.multitrack = multitrack;
         let owner = Owner::from_session(session)
             .with_units_per_beat(100.0)
             .with_units_per_second(48_000.0);
-        assert!(owner.draws_piece(), "the file carries a piece and no tree");
+        assert!(
+            owner.draws_multitrack(),
+            "the file carries a multitrack and no tree"
+        );
 
         let def_id = 1;
         let mut owner = owner;
@@ -2839,7 +2851,7 @@ mod window_verb_tests {
         assert_eq!(drawn_clips(&host).len(), 2, "two boxes on the first row");
         assert_eq!(drawn_clips(&host)[0][1], "10", "and both on it");
 
-        // The hand drags one onto the other row: the piece as it now stands.
+        // The hand drags one onto the other row: the multitrack as it now stands.
         let seq = host.outbox.borrow_mut().stamp(def_id, view);
         assert!(host.answer_own(
             def_id,
@@ -2849,7 +2861,7 @@ mod window_verb_tests {
         ));
         let on = |host: &Host, region: u64| {
             host.owner.as_ref().and_then(|o| {
-                o.piece.tracks.iter().find_map(|t| {
+                o.multitrack.tracks.iter().find_map(|t| {
                     t.lanes
                         .iter()
                         .any(|l| l.regions.iter().any(|r| r.id == NodeId(region)))
@@ -2864,7 +2876,7 @@ mod window_verb_tests {
                 .find(|c| c[0] == "12")
                 .map(|c| c[1].clone()),
             Some(Value::from("20")),
-            "and the picture says so, redrawn from the piece"
+            "and the picture says so, redrawn from the multitrack"
         );
 
         let seq = host.outbox.borrow_mut().stamp(def_id, def_id);

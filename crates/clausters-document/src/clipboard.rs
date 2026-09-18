@@ -53,7 +53,7 @@ pub enum Content {
         /// The string.
         text: String,
     },
-    /// A piece of the tree: notes, clips, whole subtrees. They are **placed
+    /// A multitrack of the tree: notes, clips, whole subtrees. They are **placed
     /// members**, so a copied selection keeps the relative offsets it had and
     /// the recursion is the tree's own rather than a second shape.
     Elements {
@@ -128,7 +128,7 @@ impl Clipboard {
         Self::of(Content::Text { text: text.into() })
     }
 
-    /// A piece of the tree.
+    /// A multitrack of the tree.
     pub fn elements(members: impl IntoIterator<Item = Member>) -> Self {
         Self::of(Content::Elements {
             members: members.into_iter().collect(),

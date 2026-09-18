@@ -52,7 +52,7 @@ pub trait SynthNode: Send {
 
     /// **The transport rolled again**: hand every UGen its
     /// [`resume`](crate::dsp::UGen::resume), which is where a smoother forgets
-    /// the value it was holding when the piece stopped. Called only on the
+    /// the value it was holding when the transport stopped. Called only on the
     /// subtree the transport governs, and only when it thaws. Default:
     /// ignored (a Faust synth's smoothing is its own and not reachable from
     /// here). Runs on the audio thread -- allocation-free.

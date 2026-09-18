@@ -4,7 +4,7 @@ use super::props::from_props;
 use super::*;
 use crate::host::widget::element::{Mods, TimeSpace};
 
-/// A widget placed on a navigation group whose window is the whole piece,
+/// A widget placed on a navigation group whose window is the whole multitrack,
 /// with a header gutter wide enough to have a body beside it.
 fn input<'a>(m: &'a Metrics, rect: Rect, len: f64) -> Input<'a> {
     Input {
@@ -20,8 +20,8 @@ fn input<'a>(m: &'a Metrics, rect: Rect, len: f64) -> Input<'a> {
 }
 
 /// Two lanes of 100, and a clip on each: `a` over the first half of the
-/// piece on `noise`, `b` over the second on `tone`.
-fn piece() -> Multitrack {
+/// multitrack on `noise`, `b` over the second on `tone`.
+fn multitrack() -> Multitrack {
     from_props(&props(
         r#"{"lanes": ["noise", "", 100, 0, 0, 1, 1, "tone", "", 100, 0, 0, 1, 1],
             "clips": ["a", "noise", 0, 500, 0, "", 0, "b", "tone", 500, 500, 0, "", 0]}"#,
@@ -235,7 +235,7 @@ fn a_roll_body_is_fitted_by_the_crates_own_rule() {
     assert_eq!((roll.range().0, roll.range().1), (min as f32, max as f32));
 }
 
-/// **A client describes the piece; it does not compose a tree of it.** The
+/// **A client describes the multitrack; it does not compose a tree of it.** The
 /// two structures arrive as flat arrays, like a roll's notes, and the widget
 /// is the one thing that holds them.
 #[test]
@@ -328,7 +328,7 @@ fn a_lane_added_never_changes_how_big_the_widget_wants_to_be() {
     assert_eq!(mt.content_span(), Some(144_000.0));
 }
 /// **The three tags are gone.** A move, a trim and a lane crossing each
-/// leave as one `"clips"` payload carrying the piece as it now stands — so
+/// leave as one `"clips"` payload carrying the multitrack as it now stands — so
 /// there is nothing for a reader to choose between, and no state a gesture
 /// can put it in where the report changes shape.
 #[test]
@@ -346,7 +346,7 @@ fn every_gesture_reports_the_piece_and_never_the_gesture() {
     };
 
     // A move inside its lane.
-    let mut mt = piece();
+    let mut mt = multitrack();
     let from = xy(&mt, &m, rect, 250.0, len, 0);
     let to = xy(&mt, &m, rect, 350.0, len, 0);
     assert!(matches!(
@@ -359,7 +359,7 @@ fn every_gesture_reports_the_piece_and_never_the_gesture() {
     assert_eq!(mt.clips[0].place.offset, 100.0, "it moved by the travel");
 
     // A trim, by the right edge.
-    let mut mt = piece();
+    let mut mt = multitrack();
     let edge = xy(&mt, &m, rect, 500.0, len, 0);
     let pulled = xy(&mt, &m, rect, 400.0, len, 0);
     assert!(matches!(
@@ -373,7 +373,7 @@ fn every_gesture_reports_the_piece_and_never_the_gesture() {
     assert_eq!(mt.clips[0].place.offset, 0.0, "and stayed where it began");
 
     // A lane crossed.
-    let mut mt = piece();
+    let mut mt = multitrack();
     let from = xy(&mt, &m, rect, 250.0, len, 0);
     let down = xy(&mt, &m, rect, 250.0, len, 1);
     assert!(matches!(
@@ -398,7 +398,7 @@ fn a_drag_that_came_back_reports_nothing() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
-    let mut mt = piece();
+    let mut mt = multitrack();
     let from = xy(&mt, &m, rect, 250.0, len, 0);
     let away = xy(&mt, &m, rect, 400.0, len, 0);
 
@@ -423,7 +423,7 @@ fn a_press_on_bare_lane_declines_rather_than_swallowing_it() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
-    let mut mt = piece();
+    let mut mt = multitrack();
     // Past `a`'s end, on its lane — bare lane, and `b` is on the other one.
     let bare = xy(&mt, &m, rect, 800.0, len, 0);
     assert!(matches!(
@@ -433,7 +433,7 @@ fn a_press_on_bare_lane_declines_rather_than_swallowing_it() {
     assert!(mt.grab.is_none());
 }
 
-/// A piece with both kinds of curve: a track automation under `noise` and
+/// A multitrack with both kinds of curve: a track automation under `noise` and
 /// an envelope inside the box `a`.
 fn curved() -> Multitrack {
     from_props(&props(
@@ -466,12 +466,12 @@ fn an_automation_is_a_row_and_an_envelope_is_a_layer() {
     let drawn = mt.curves_on_screen(rect, 100.0, &m, mt_time(500.0));
     let row = drawn.iter().find(|(n, ..)| *n == "gain").expect("the row");
     let layer = drawn.iter().find(|(n, ..)| *n == "env").expect("the layer");
-    assert_eq!(row.2.span, 1000.0, "a row is as long as the piece");
+    assert_eq!(row.2.span, 1000.0, "a row is as long as the multitrack");
     assert_eq!(layer.2.span, 500.0, "a layer is as long as its box");
     assert!(layer.1.w < row.1.w, "the box is narrower than the timeline");
 }
 
-/// The shared axis a curved piece is read against.
+/// The shared axis a curved multitrack is read against.
 fn mt_time(len: f64) -> Option<TimeSpace> {
     Some(TimeSpace::of(
         View {
@@ -520,7 +520,7 @@ fn a_press_beside_the_line_still_moves_the_box() {
 }
 
 /// **A break-point is grabbed on the pixels it was drawn on**, and moving
-/// one reports every curve there is — the payload is the piece's, so a
+/// one reports every curve there is — the payload is the multitrack's, so a
 /// `/gui_set points` of what came back is the identity.
 #[test]
 fn dragging_a_point_reports_every_curve() {
@@ -566,14 +566,14 @@ fn dragging_a_point_reports_every_curve() {
 ///
 /// The widget owns *where* things are and not what is inside them, so it
 /// says which box was opened and stops there: which editor that box asks
-/// for is a question about its contents, and whoever holds the piece is
+/// for is a question about its contents, and whoever holds the multitrack is
 /// the one that can answer it.
 #[test]
 fn a_second_press_on_a_box_enters_it() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
-    let mut mt = piece();
+    let mut mt = multitrack();
     let on_a = xy(&mt, &m, rect, 250.0, len, 0);
 
     let once = input(&m, rect, len);
@@ -595,7 +595,7 @@ fn a_second_press_on_a_box_enters_it() {
 }
 
 /// **A track is zoomed vertically by pulling its header's bottom edge**, and
-/// the height a hand set survives what the piece says next: a `lanes`
+/// the height a hand set survives what the multitrack says next: a `lanes`
 /// payload states a height on every row, so a fader moved or a track added
 /// would otherwise take the zoom away with it.
 #[test]
@@ -603,7 +603,7 @@ fn a_track_is_zoomed_by_its_bottom_edge_and_keeps_it() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 400.0);
     let len = 1000.0;
-    let mut mt = piece();
+    let mut mt = multitrack();
     let inp = input(&m, rect, len);
     let band = crate::host::timeline::gutter_band(mt.lane_rects(rect)[0], 100.0);
     let edge = (f64::from(band.x) + 4.0, f64::from(band.y + band.h) - 1.0);
@@ -618,7 +618,7 @@ fn a_track_is_zoomed_by_its_bottom_edge_and_keeps_it() {
         mt.release((edge.0, edge.1 + 60.0), true, &inp)
             .into_messages()
             .is_empty(),
-        "how tall a row is drawn is this window's: the piece is not asked"
+        "how tall a row is drawn is this window's: the multitrack is not asked"
     );
 
     // The client redraws its rows -- a fader moved, a track added -- and
@@ -653,7 +653,7 @@ fn the_wheel_scrolls_the_stack_and_zooms_one_row() {
     // there is something below to scroll to.
     let rect = Rect::new(0.0, 0.0, 600.0, 150.0);
     let len = 1000.0;
-    let mut mt = piece();
+    let mut mt = multitrack();
     mt.curves = vec![model::Curve {
         name: "c".into(),
         owner: "noise".into(),
@@ -688,7 +688,7 @@ fn the_wheel_scrolls_the_stack_and_zooms_one_row() {
     assert!(
         mt.wheel(on_lane, (0.0, -1.0), &plain(shift)).is_some(),
         "and is still taken there: a stack at its end does nothing, rather \
-         than letting the piece zoom under the hand"
+         than letting the multitrack zoom under the hand"
     );
     assert_eq!(mt.scroll, over, "and nothing moved");
     for _ in 0..60 {
@@ -735,7 +735,7 @@ fn the_wheel_scrolls_the_stack_and_zooms_one_row() {
 /// Every step of it passed on its own and the path did not, which is the
 /// third time this seam has done that — so this walks the whole thing: the
 /// double click that makes the row, the correction that renames it from the
-/// word this minted to the id the piece gave it, the press on `A`, and the
+/// word this minted to the id the multitrack gave it, the press on `A`, and the
 /// correction that carries the curve the owner made.
 /// **The toggle hides and shows the row it is about** *(found 2026-09-12 by
 /// the user: "la A sigue sin ocultar ni mostrar")*.
@@ -886,7 +886,7 @@ fn a_track_made_here_shows_the_automation_its_toggle_asked_for() {
 #[test]
 fn a_hidden_curve_gives_its_row_back() {
     let rect = Rect::new(0.0, 0.0, 600.0, 400.0);
-    let mut mt = piece();
+    let mut mt = multitrack();
     mt.curves = vec![model::Curve {
         name: "c".into(),
         owner: "noise".into(),
@@ -919,15 +919,15 @@ fn a_hidden_curve_gives_its_row_back() {
 /// for by the user 2026-09-12, as a facility for trying the example)*.
 ///
 /// It rides the `lanes` report the mute and the solo beside it ride, and
-/// the owner answers by saying which curves are visible — a row a piece
-/// shows is the piece's, and this is a control over that rather than a
+/// the owner answers by saying which curves are visible — a row a multitrack
+/// shows is the multitrack's, and this is a control over that rather than a
 /// second place for it to be recorded.
 #[test]
 fn the_headers_automation_toggle_reports_the_lanes() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 400.0);
     let len = 1000.0;
-    let mut mt = piece();
+    let mut mt = multitrack();
     // **The band the widget asks for**, which is what holds the controls:
     // a fourth cell is part of what the gutter has to be wide enough for,
     // and taking a number out of the air here would test a header nobody
@@ -1032,7 +1032,7 @@ fn a_paste_starts_at_the_selected_track_and_never_above_it() {
     assert_eq!(offsets, [100.0, 300.0, 0.0]);
 
     // With no track selected the rows are the ones it came from: a paste
-    // back into the same piece is the block where it was.
+    // back into the same multitrack is the block where it was.
     mt.track = None;
     keys(&mut mt, Key::Char('v'), Some(0.0)).expect("pasted");
     let landed: Vec<&str> = mt.clips[6..].iter().map(|c| c.lane.as_str()).collect();
@@ -1043,7 +1043,7 @@ fn a_paste_starts_at_the_selected_track_and_never_above_it() {
 ///
 /// It used to clamp every row past the last track onto that track, which
 /// turned a block several tracks tall into a pile on one — the one thing a
-/// paste promises not to do. The piece gains no track either: making one is
+/// paste promises not to do. The multitrack gains no track either: making one is
 /// a verb of its own, and a paste is not the place to grow the thing it is
 /// pasting into.
 #[test]
@@ -1053,7 +1053,7 @@ fn a_paste_that_runs_past_the_last_track_says_so() {
         ctrl: true,
         ..Mods::default()
     };
-    let mut mt = piece();
+    let mut mt = multitrack();
     let mut keys = |mt: &mut Multitrack, key: Key, cursor: Option<f64>| {
         mt.key(
             &key,
@@ -1072,7 +1072,7 @@ fn a_paste_that_runs_past_the_last_track_says_so() {
     let said = refusal(keys(&mut mt, Key::Char('v'), Some(100.0)));
     assert_eq!(
         said,
-        Some("this block is 2 track(s) tall and needs 3 here; the piece has 2".to_string())
+        Some("this block is 2 track(s) tall and needs 3 here; the multitrack has 2".to_string())
     );
     assert_eq!(mt.clips.len(), 2, "and nothing was pasted");
 
@@ -1126,7 +1126,7 @@ fn the_headers_level_is_a_knob_and_turns_by_the_drag() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
-    let mut mt = piece();
+    let mut mt = multitrack();
     mt.lanes[0].gain = 0.5;
     let inp = input(&m, rect, len);
     let at = mt.lane_rects(rect);
@@ -1222,7 +1222,7 @@ fn a_drag_meets_the_box_beside_it_and_j_joins_the_two() {
 // tests that stood here asserted a second copy of them.
 
 /// **A box is a window onto a source, and an edge stops where the source
-/// does** -- unless the piece says the box wraps, where past the end is the
+/// does** -- unless the multitrack says the box wraps, where past the end is the
 /// beginning again. The `loops` prop is that statement, a name set like
 /// `hidden`, and what it decides is what a drag may do and what is drawn
 /// under a box longer than its samples.
@@ -1233,7 +1233,7 @@ fn a_box_that_loops_may_be_pulled_past_its_source_and_one_that_does_not_may_not(
             "clips": ["a", "one", 0, 500, 0, "", 0, "b", "one", 500, 500, 0, "", 0],
             "loops": "a"}"#,
     ));
-    assert!(mt.wraps("a"), "the piece said this one wraps");
+    assert!(mt.wraps("a"), "the multitrack said this one wraps");
     assert!(!mt.wraps("b"));
     assert!(mt.contents_of(0).looping);
     assert!(!mt.contents_of(1).looping);
@@ -1250,7 +1250,7 @@ fn a_held_edge_draws_its_grip_wherever_the_pointer_went() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
-    let mut mt = piece();
+    let mut mt = multitrack();
     let inp = input(&m, rect, len);
     let (cr, ends) = {
         let (n, cr, local) = mt
@@ -1294,7 +1294,7 @@ fn the_header_selects_a_track_makes_one_and_delete_takes_it_away() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
-    let mut mt = piece();
+    let mut mt = multitrack();
     let inp = input(&m, rect, len);
     // The band beside the controls, on the second lane's row: the top of it,
     // which is where the name is drawn and no control is.
@@ -1326,7 +1326,7 @@ fn the_header_selects_a_track_makes_one_and_delete_takes_it_away() {
     assert_eq!(mt.track, Some(1), "and the hand holds what it asked for");
 
     // Delete with a track in hand is the track's, and the boxes on it go
-    // with it -- one payload, because the rows report is the piece's tracks
+    // with it -- one payload, because the rows report is the multitrack's tracks
     // and a track that is not in it is gone with its contents.
     mt.track = Some(0);
     let mut clipboard = crate::host::clipboard::Clip::default();
@@ -1356,7 +1356,7 @@ fn a_double_press_off_the_boxes_still_declines() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
-    let mut mt = piece();
+    let mut mt = multitrack();
     let bare = xy(&mt, &m, rect, 800.0, len, 0);
     let twice = Input {
         clicks: 2,
@@ -1405,14 +1405,14 @@ fn what_comes_back_is_what_a_set_would_take() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
-    let mut mt = piece();
+    let mut mt = multitrack();
     let from = xy(&mt, &m, rect, 250.0, len, 0);
     let to = xy(&mt, &m, rect, 350.0, len, 0);
     mt.press(from, &input(&m, rect, len));
     mt.drag(to, &input(&m, rect, len));
     let reported = mt.release(to, true, &input(&m, rect, len));
 
-    let mut echo = piece();
+    let mut echo = multitrack();
     let msgs = reported.into_messages();
     let args = msgs.first().expect("an edit");
     assert!(echo.set("clips", &model::clips_json(&mt.clips)));
@@ -1427,7 +1427,7 @@ fn a_sweep_catches_what_it_covered_across_the_stack() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
-    let mut mt = piece();
+    let mut mt = multitrack();
 
     let from = xy(&mt, &m, rect, 100.0, len, 0);
     let to = xy(&mt, &m, rect, 900.0, len, 1);
@@ -1453,7 +1453,7 @@ fn a_click_on_a_box_selects_that_one_and_nothing_leaves() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
-    let mut mt = piece();
+    let mut mt = multitrack();
     mt.selected = vec![0, 1];
 
     // Press and release on the same pixel: the block is let go of and the
@@ -1468,7 +1468,7 @@ fn a_click_on_a_box_selects_that_one_and_nothing_leaves() {
     );
     assert_eq!(mt.clips[0].place.offset, 0.0, "and nothing moved");
 
-    // A press that *did* move is a drag, and a drag reports the piece.
+    // A press that *did* move is a drag, and a drag reports the multitrack.
     let over = xy(&mt, &m, rect, 350.0, len, 0);
     mt.press(on_a, &input(&m, rect, len));
     mt.drag(over, &input(&m, rect, len));
@@ -1484,7 +1484,7 @@ fn a_block_moves_as_one_and_an_unselected_grab_moves_alone() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
-    let mut mt = piece();
+    let mut mt = multitrack();
     mt.selected = vec![0, 1];
 
     let from = xy(&mt, &m, rect, 250.0, len, 0);
@@ -1496,7 +1496,7 @@ fn a_block_moves_as_one_and_an_unselected_grab_moves_alone() {
     assert_eq!(mt.clips[1].place.offset, 600.0, "the other one came too");
 
     // Now grab the one that is *not* selected.
-    let mut mt = piece();
+    let mut mt = multitrack();
     mt.selected = vec![1];
     let on_a = xy(&mt, &m, rect, 250.0, len, 0);
     let over = xy(&mt, &m, rect, 350.0, len, 0);
@@ -1509,13 +1509,13 @@ fn a_block_moves_as_one_and_an_unselected_grab_moves_alone() {
 
 /// **The mixer is the second payload.** A fader and the two toggles report
 /// `"lanes"` — the lanes as they now stand — and never the clips, which is
-/// the whole reason the piece is written as two structures.
+/// the whole reason the multitrack is written as two structures.
 #[test]
 fn the_header_reports_the_lanes_and_never_the_clips() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
-    let mut mt = piece();
+    let mut mt = multitrack();
     let at = mt.lane_rects(rect);
     let band = crate::host::timeline::gutter_band(at[0], 100.0);
     let parts = track::header_parts(band, &mt.header(&mt.lanes[0], 100.0), &m);
@@ -1545,8 +1545,8 @@ fn the_header_reports_the_lanes_and_never_the_clips() {
 /// it — both reporting the clips as they now stand, which is the one
 /// payload every edit here has.
 #[test]
-fn the_key_verbs_act_on_the_held_set_and_report_the_piece() {
-    let mut mt = piece();
+fn the_key_verbs_act_on_the_held_set_and_report_the_multitrack() {
+    let mut mt = multitrack();
     mt.snap = 400.0;
     mt.selected = vec![0, 1];
     let mut clipboard = crate::host::clipboard::Clip::default();
@@ -1587,7 +1587,7 @@ fn the_key_verbs_act_on_the_held_set_and_report_the_piece() {
 /// and this only names them.
 #[test]
 fn a_clip_splits_at_the_cursor_and_joins_back() {
-    let mut mt = piece();
+    let mut mt = multitrack();
     let mut clipboard = crate::host::clipboard::Clip::default();
     fn ki(clip: &mut crate::host::clipboard::Clip, cursor: Option<f64>) -> KeyInput<'_> {
         KeyInput {
@@ -1632,7 +1632,7 @@ fn a_clip_splits_at_the_cursor_and_joins_back() {
 /// nothing to join.
 #[test]
 fn a_clips_correction_leaves_the_selection_where_it_was() {
-    let mut mt = piece();
+    let mut mt = multitrack();
     mt.selected = vec![0, 1];
     assert!(mt.set(
         "clips",
@@ -1663,7 +1663,7 @@ fn a_clips_correction_leaves_the_selection_where_it_was() {
 /// said nothing, so the key looked dead.
 #[test]
 fn a_split_survives_the_correction_that_renames_its_half_and_joins() {
-    let mut mt = piece();
+    let mut mt = multitrack();
     let mut clipboard = crate::host::clipboard::Clip::default();
     mt.selected = vec![0];
     mt.key(
@@ -1677,7 +1677,7 @@ fn a_split_survives_the_correction_that_renames_its_half_and_joins() {
     .expect("it cut");
     assert_eq!(mt.selected.len(), 2, "both halves stay in the hand");
 
-    // The client applied the split, the piece minted an id for the half,
+    // The client applied the split, the multitrack minted an id for the half,
     // and the whole picture comes back with that id in place of `a 2`.
     assert!(mt.set(
         "clips",
@@ -1689,11 +1689,11 @@ fn a_split_survives_the_correction_that_renames_its_half_and_joins() {
     assert_eq!(mt.selected.len(), 2, "and the hand still holds both");
     assert!(
         mt.selected.iter().any(|i| mt.clips[*i].name == "20"),
-        "the half is held under the name the piece kept"
+        "the half is held under the name the multitrack kept"
     );
 
     // So `j` names both -- the head under the name it kept and the half
-    // under the one the piece gave it, which is the whole point: a hand
+    // under the one the multitrack gave it, which is the whole point: a hand
     // re-found by name alone would have asked for a join of one box.
     let mut named = joined(mt.key(
         &Key::Char('j'),
@@ -1731,7 +1731,7 @@ fn a_verb_that_acts_on_nothing_says_why_rather_than_nothing() {
         ))
     };
 
-    let mut mt = piece();
+    let mut mt = multitrack();
     mt.selected = vec![0];
     assert_eq!(
         press(&mut mt, 'q'),
@@ -1760,7 +1760,7 @@ fn a_half_left_by_a_split_still_changes_lanes() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
-    let mut mt = piece();
+    let mut mt = multitrack();
     let mut clipboard = crate::host::clipboard::Clip::default();
     mt.selected = vec![0];
     mt.key(
@@ -1823,7 +1823,7 @@ fn refusal(events: Option<Events>) -> Option<String> {
 #[test]
 fn a_block_is_cut_and_pasted_at_the_cursor_with_its_shape() {
     let mut clipboard = crate::host::clipboard::Clip::default();
-    let mut mt = piece();
+    let mut mt = multitrack();
     mt.selected = vec![0, 1];
     let ctrl = Mods {
         ctrl: true,
@@ -1917,7 +1917,7 @@ fn a_drag_past_the_last_lane_stops_at_it() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 320.0);
     let len = 1000.0;
-    let mut mt = piece();
+    let mut mt = multitrack();
     let from = xy(&mt, &m, rect, 250.0, len, 0);
 
     mt.press(from, &input(&m, rect, len));
@@ -1943,7 +1943,7 @@ fn a_drag_off_a_group_reads_the_axis_the_press_found() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
-    let mut mt = piece();
+    let mut mt = multitrack();
     let mut bare = input(&m, rect, len);
     bare.time = None;
 
@@ -1955,7 +1955,7 @@ fn a_drag_off_a_group_reads_the_axis_the_press_found() {
         seen.push((step, mt.clips[0].place.offset));
     }
     // Equal ratios of travel give equal ratios of offset: the map held
-    // still even as the piece grew under it.
+    // still even as the multitrack grew under it.
     let (first_step, first) = seen[0];
     for (step, offset) in &seen {
         let want = first * step / first_step;
@@ -1964,7 +1964,10 @@ fn a_drag_off_a_group_reads_the_axis_the_press_found() {
             "step {step}: {offset} against {want} — the axis moved"
         );
     }
-    assert!(model::extent(&mt.clips) > len, "and the piece did grow");
+    assert!(
+        model::extent(&mt.clips) > len,
+        "and the multitrack did grow"
+    );
 }
 /// **A grip is hit on the pixels it is drawn on.** The press asks the same
 /// call the drawing made, so the handle and its hit area cannot disagree —
@@ -1974,7 +1977,7 @@ fn an_edge_is_grabbed_by_the_grip_that_is_drawn_there() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
-    let mt = piece();
+    let mt = multitrack();
 
     let body = track::lane_body(mt.lane_rects(rect)[0], false, 100.0, &m);
     let nav = View { start: 0.0, len };
@@ -2016,7 +2019,7 @@ fn an_edge_is_grabbed_by_the_grip_that_is_drawn_there() {
 /// samples were just made is asked for again after the host forgets it.
 #[test]
 fn a_take_is_asked_for_once_and_again_when_forgotten() {
-    let mut mt = piece();
+    let mut mt = multitrack();
     assert_eq!(mt.ask_takes(true), vec![0], "a window being built asks all");
     assert!(
         mt.ask_takes(false).is_empty(),
@@ -2043,7 +2046,7 @@ fn a_take_is_asked_for_once_and_again_when_forgotten() {
 /// **Buffer 0 is a buffer.** It is the first one an allocator hands out, so
 /// a zero sentinel would make the first take a script loads the one take it
 /// cannot draw — which is exactly how this was found, by eye, on the first
-/// clip of a piece.
+/// clip of a multitrack.
 #[test]
 fn a_clip_over_buffer_zero_has_a_source() {
     let mt = from_props(&props(
@@ -2069,7 +2072,7 @@ fn a_clip_over_buffer_zero_has_a_source() {
 #[test]
 fn the_lanes_ask_for_the_band_their_headers_need() {
     let m = Metrics::default();
-    let mt = piece();
+    let mt = multitrack();
     assert!(
         mt.gutter(&m) >= m.header_w,
         "a header carrying a name, two toggles and a fader is at least the role"
@@ -2081,7 +2084,7 @@ fn the_lanes_ask_for_the_band_their_headers_need() {
 /// a multitrack would ask for the frame it moves on.
 #[test]
 fn an_anchored_playhead_asks_the_window_for_frames() {
-    let mut mt = piece();
+    let mut mt = multitrack();
     assert!(!mt.needs().clock, "a stopped transport drives nothing");
     mt.set("playhead_at", &Value::from(0.0));
     assert!(mt.needs().clock, "and an anchored one drives the window");
@@ -2094,7 +2097,7 @@ fn the_grip_a_drag_is_holding_does_not_depend_on_the_pointer() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
-    let mut mt = piece();
+    let mut mt = multitrack();
 
     let body = track::lane_body(mt.lane_rects(rect)[0], false, 100.0, &m);
     let nav = View { start: 0.0, len };

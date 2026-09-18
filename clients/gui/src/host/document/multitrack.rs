@@ -1,4 +1,4 @@
-//! Drawing **the piece** as a multitrack, and reading a hand's answer back.
+//! Drawing **the multitrack** as a multitrack, and reading a hand's answer back.
 //!
 //! The twin of [`super::tree`] over the other description. A session written
 //! today carries [`Multitrack`] — tracks, lanes, regions, and the timeline they
@@ -37,7 +37,7 @@ use clausters_document::multitrack::picture;
 use clausters_editing::multitrack as projection;
 
 use super::sources::Takes;
-use super::tree::{ClipRow, LaneRow, Piece};
+use super::tree::{ClipRow, LaneRow, Picture};
 
 /// How the picture is scaled.
 #[derive(Debug, Clone)]
@@ -46,7 +46,7 @@ pub struct Look<'a> {
     pub rate: f64,
     /// The session's samples, once somebody resolved them to server buffers.
     pub takes: Option<&'a Takes>,
-    /// **What each source is**, when the piece came from a session: the table a
+    /// **What each source is**, when the multitrack came from a session: the table a
     /// join's spans are read out of, so a join is drawn from the takes it reads.
     pub sources:
         Option<&'a std::collections::BTreeMap<SourceId, clausters_document::session::Source>>,
@@ -89,30 +89,30 @@ impl Look<'_> {
     }
 }
 
-/// The piece as the `multitrack` widget takes it, and as an edit-back is
+/// The multitrack as the `multitrack` widget takes it, and as an edit-back is
 /// resolved against.
 ///
 /// **The shape is the crate's and the time is this host's**
 /// ([`clausters_document::multitrack::picture`]): what a row and a box *are* is
 /// the format's business and is written once for every client; turning seconds
 /// into frames on the shared axis is the rate's, which is what this adds.
-pub fn shown(piece: &Multitrack, look: &Look<'_>) -> Piece {
+pub fn shown(multitrack: &Multitrack, look: &Look<'_>) -> Picture {
     // **The props are the projection's**, and they are the same props the two
-    // clients send: one list of rows and one of boxes, in one shape, so a piece
-    // opened here and a piece opened from a script are the same picture rather
+    // clients send: one list of rows and one of boxes, in one shape, so a multitrack
+    // opened here and a multitrack opened from a script are the same picture rather
     // than two pictures that agree. What is left here is the *binding* -- which
     // node each row and box stands for -- which is this host's own, since it is
     // what an edit-back is resolved against.
-    let projected = projection::props(piece, &look.projection());
-    let rows = picture::rows(piece);
-    let boxes = picture::boxes(piece);
-    Piece {
+    let projected = projection::props(multitrack, &look.projection());
+    let rows = picture::rows(multitrack);
+    let boxes = picture::boxes(multitrack);
+    Picture {
         lanes: rows
             .iter()
             .map(|row| LaneRow {
                 node: row.track,
                 holder: row.lane,
-                // A track has no offset: the piece's timeline is one, and a
+                // A track has no offset: the multitrack's timeline is one, and a
                 // region states where it is on it.
                 base: 0.0,
             })
@@ -125,7 +125,7 @@ pub fn shown(piece: &Multitrack, look: &Look<'_>) -> Piece {
             })
             .collect(),
         // **All of it.** Which keys a picture has is the projection's to say,
-        // and a host that named a couple of them drew a piece with its curves
+        // and a host that named a couple of them drew a multitrack with its curves
         // missing.
         props: projected,
     }
@@ -161,23 +161,23 @@ impl projection::Buffers for Look<'_> {
     }
 }
 
-/// **What a report of the piece means**, in the piece's own vocabulary.
+/// **What a report of the multitrack means**, in the multitrack's own vocabulary.
 ///
 /// One reading for every tag a multitrack widget reports under — the boxes, the
 /// rows, the break-points — because a host reports every gesture the same way
-/// and the difference between them is the *piece's*, not the host's. It is
+/// and the difference between them is the *multitrack's*, not the host's. It is
 /// [`clausters_editing::multitrack::intake`]'s, which is the same reading both
 /// clients go through: this crate held its own copy of it until the projections
 /// moved, and a standalone host that read a septuple its own way would be
 /// exactly the divergence the shared crate exists to end.
 pub fn read(
-    piece: &Multitrack,
+    multitrack: &Multitrack,
     tag: &str,
     args: &[clausters_core::osc::OscType],
     look: &Look<'_>,
 ) -> Vec<(MultitrackIntent, &'static str)> {
     let values: Vec<serde_json::Value> = args.iter().map(atom).collect();
-    projection::read(piece, tag, &values, &look.projection())
+    projection::read(multitrack, tag, &values, &look.projection())
         .into_iter()
         .map(|intent| {
             let label = projection::label(&intent);
@@ -206,24 +206,24 @@ pub(crate) fn atom(value: &clausters_core::osc::OscType) -> serde_json::Value {
 
 /// [`read`] over a report of the boxes — every placement gesture's payload.
 pub fn read_clips(
-    piece: &Multitrack,
+    multitrack: &Multitrack,
     args: &[clausters_core::osc::OscType],
     look: &Look<'_>,
 ) -> Vec<(MultitrackIntent, &'static str)> {
-    read(piece, "clips", args, look)
+    read(multitrack, "clips", args, look)
 }
 
 /// [`read`] over a report of the rows — the mixer's payload.
 ///
 /// Mute, solo and the fader are one [`MultitrackIntent::SetTracks`] because the
-/// piece's only verb over a track is the whole list, which is what makes adding,
+/// multitrack's only verb over a track is the whole list, which is what makes adding,
 /// removing and reordering one verb and costs the inverse a copy of the tracks.
 pub fn read_lanes(
-    piece: &Multitrack,
+    multitrack: &Multitrack,
     args: &[clausters_core::osc::OscType],
     look: &Look<'_>,
 ) -> Vec<(MultitrackIntent, &'static str)> {
-    read(piece, "lanes", args, look)
+    read(multitrack, "lanes", args, look)
 }
 
 #[cfg(test)]
@@ -262,7 +262,7 @@ mod tests {
     }
 
     /// Two tracks, one lane each: the first holds two regions, the second one.
-    fn piece() -> Multitrack {
+    fn multitrack() -> Multitrack {
         let track = |id: u64, lane: u64, regions: Vec<Region>| {
             let mut track = Track::new(NodeId(id), NodeId(lane));
             track.lanes[0].regions = regions;
@@ -309,7 +309,7 @@ mod tests {
     /// wire is an id — which is what lets an edit-back be read with no map.
     #[test]
     fn a_piece_draws_a_row_per_track_naming_ids() {
-        let shown = shown(&piece(), &look());
+        let shown = shown(&multitrack(), &look());
         assert_eq!(
             shown.lanes.iter().map(|l| l.node).collect::<Vec<_>>(),
             vec![NodeId(10), NodeId(20)]
@@ -336,9 +336,9 @@ mod tests {
     fn a_tempo_change_moves_no_box() {
         use clausters_document::multitrack::Tempo;
 
-        let mut piece = piece();
-        piece.set_tempo(Tempo::at(Beat(0.0), 1.0));
-        piece.set_tempo(Tempo::at(Beat(4.0), 0.5));
+        let mut multitrack = multitrack();
+        multitrack.set_tempo(Tempo::at(Beat(0.0), 1.0));
+        multitrack.set_tempo(Tempo::at(Beat(4.0), 0.5));
         let look = Look {
             rate: 48_000.0,
             takes: None,
@@ -348,8 +348,8 @@ mod tests {
         assert_eq!(look.frame_at(2.0), 2.0 * 48_000.0);
         assert!((look.secs_at(8.0 * 48_000.0) - 8.0).abs() < 1e-9);
         assert_eq!(
-            shown(&piece, &look).props,
-            shown(&self::piece(), &look).props
+            shown(&multitrack, &look).props,
+            shown(&self::multitrack(), &look).props
         );
     }
 
@@ -358,10 +358,10 @@ mod tests {
     /// — it says where the boxes are — so this is where the two are told apart.
     #[test]
     fn a_move_a_cross_and_a_trim_are_each_their_own_verb() {
-        let piece = piece();
+        let multitrack = multitrack();
         // Nothing moved: an idempotent report of what already holds.
         let same = read_clips(
-            &piece,
+            &multitrack,
             &clips(&[
                 ("12", "10", 0.0, 200.0),
                 ("13", "10", 400.0, 200.0),
@@ -375,9 +375,9 @@ mod tests {
         );
 
         // One box dragged along its own row. **The payload always names every
-        // box** -- it is the piece as it now stands -- so these list all three.
+        // box** -- it is the multitrack as it now stands -- so these list all three.
         let moved = read_clips(
-            &piece,
+            &multitrack,
             &clips(&[
                 ("12", "10", 300.0, 200.0),
                 ("13", "10", 400.0, 200.0),
@@ -398,7 +398,7 @@ mod tests {
         // ...and dragged onto the other row: the same verb with a different
         // track, which is why a cross is not a second mechanism.
         let crossed = read_clips(
-            &piece,
+            &multitrack,
             &clips(&[
                 ("12", "20", 100.0, 200.0),
                 ("13", "10", 400.0, 200.0),
@@ -418,7 +418,7 @@ mod tests {
         // A width that changed is the trim, and it states the position too --
         // so a left-hand trim is one edit and not a move racing a resize.
         let trimmed = read_clips(
-            &piece,
+            &multitrack,
             &clips(&[
                 ("12", "10", 100.0, 100.0),
                 ("13", "10", 400.0, 200.0),
@@ -438,13 +438,13 @@ mod tests {
     }
 
     /// **A box the payload leaves out was deleted**, and that is the lane's own
-    /// whole-list verb — the piece has no "remove one region", for the same
+    /// whole-list verb — the multitrack has no "remove one region", for the same
     /// reason it has no "add one".
     #[test]
     fn a_clip_the_payload_does_not_name_is_removed_from_its_lane() {
-        let piece = piece();
+        let multitrack = multitrack();
         let edits = read_clips(
-            &piece,
+            &multitrack,
             &clips(&[("12", "10", 0.0, 200.0), ("22", "20", 0.0, 200.0)]),
             &look(),
         );
@@ -459,7 +459,7 @@ mod tests {
         );
     }
 
-    /// **A box the piece has no region for becomes one.** A split's tail, a
+    /// **A box the multitrack has no region for becomes one.** A split's tail, a
     /// paste, anything a hand made: the payload says which lane it landed on,
     /// which buffer it is a window onto and where in that buffer it opens,
     /// which is everything a region needs — so it is *built* rather than
@@ -471,7 +471,7 @@ mod tests {
     /// the rest of it.
     #[test]
     fn a_box_the_piece_does_not_know_becomes_a_region_on_its_lane() {
-        let piece = piece();
+        let multitrack = multitrack();
         let takes = {
             let mut takes = Takes::default();
             takes.insert(
@@ -489,7 +489,7 @@ mod tests {
             takes: Some(&takes),
             sources: None,
         };
-        // The piece as a split of region 12 leaves it: the original shortened,
+        // The multitrack as a split of region 12 leaves it: the original shortened,
         // and a tail beside it under a name that is not an id.
         let mut args = clips(&[("12", "10", 0.0, 48_000.0)]);
         args.extend([
@@ -501,12 +501,12 @@ mod tests {
             OscType::String(String::new()),
             OscType::Int(7),
         ]);
-        // The rest of the piece, in this look's own units (a beat a second).
+        // The rest of the multitrack, in this look's own units (a beat a second).
         args.extend(clips(&[
             ("13", "10", 4.0 * 48_000.0, 2.0 * 48_000.0),
             ("22", "20", 0.0, 2.0 * 48_000.0),
         ]));
-        let edits = read_clips(&piece, &args, &look);
+        let edits = read_clips(&multitrack, &args, &look);
 
         let lane = edits.iter().find_map(|(i, _)| match i {
             MultitrackIntent::SetLane { lane, regions } => Some((*lane, regions)),
@@ -519,8 +519,8 @@ mod tests {
         assert_eq!(regions.len(), 3, "the two that stayed and the new one");
         let made = regions.last().expect("the new one");
         assert!(
-            piece.regions().all(|r| r.id != made.id),
-            "it took an id the piece did not already use"
+            multitrack.regions().all(|r| r.id != made.id),
+            "it took an id the multitrack did not already use"
         );
         assert_eq!(made.position, Second(1.0), "where the payload put it");
         assert_eq!(made.length, Second(1.0));
@@ -543,10 +543,10 @@ mod tests {
 
     /// ...and a box naming a buffer this session never read is **not** made
     /// into a region: the document would name a source nobody can resolve, and
-    /// a piece that cannot be reopened is worse than a box that did not stick.
+    /// a multitrack that cannot be reopened is worse than a box that did not stick.
     #[test]
     fn a_box_over_a_buffer_nobody_loaded_is_not_invented() {
-        let piece = piece();
+        let multitrack = multitrack();
         let mut args = clips(&[("12", "10", 0.0, 200.0)]);
         args.extend([
             OscType::String("nowhere".into()),
@@ -561,7 +561,7 @@ mod tests {
             ("13", "10", 400.0, 200.0),
             ("22", "20", 0.0, 200.0),
         ]));
-        let edits = read_clips(&piece, &args, &look());
+        let edits = read_clips(&multitrack, &args, &look());
         assert!(
             !edits
                 .iter()
@@ -570,11 +570,11 @@ mod tests {
         );
     }
 
-    /// The strip: mute, solo and the fader travel in the piece's one verb over
+    /// The strip: mute, solo and the fader travel in the multitrack's one verb over
     /// a track, and a strip saying what the track already says is not an edit.
     #[test]
     fn only_the_strip_that_moved_rewrites_the_tracks() {
-        let piece = piece();
+        let multitrack = multitrack();
         let lanes = |entries: &[(&str, bool, f32)]| {
             let mut args = Vec::new();
             for (name, muted, level) in entries {
@@ -587,7 +587,7 @@ mod tests {
                     OscType::Float(*level),
                     // **What a track with no automation is drawn with.** The
                     // toggle asks for one where there is none, so a fixture
-                    // saying "shown" would be asking this piece for two curves
+                    // saying "shown" would be asking this multitrack for two curves
                     // it never had.
                     OscType::Int(0),
                 ]);
@@ -596,7 +596,7 @@ mod tests {
         };
         assert!(
             read_lanes(
-                &piece,
+                &multitrack,
                 &lanes(&[("10", false, 1.0), ("20", false, 1.0)]),
                 &look()
             )
@@ -604,7 +604,7 @@ mod tests {
             "the strips as they were drawn are not an edit"
         );
         let edits = read_lanes(
-            &piece,
+            &multitrack,
             &lanes(&[("10", false, 1.0), ("20", true, 0.5)]),
             &look(),
         );
@@ -617,12 +617,12 @@ mod tests {
     }
 
     /// End to end through the crate's own door: the edits this reads apply, and
-    /// the piece says what the hand said.
+    /// the multitrack says what the hand said.
     #[test]
-    fn the_edits_it_reads_apply_to_the_piece() {
-        let mut piece = piece();
+    fn the_edits_it_reads_apply_to_the_multitrack() {
+        let mut multitrack = multitrack();
         let edits = read_clips(
-            &piece.clone(),
+            &multitrack.clone(),
             &clips(&[
                 ("12", "20", 100.0, 200.0),
                 ("13", "10", 400.0, 200.0),
@@ -632,7 +632,7 @@ mod tests {
         );
         for (intent, _) in edits {
             let outcome = clausters_document::multitrack::edit::apply(
-                &mut piece,
+                &mut multitrack,
                 &intent,
                 &Against::default(),
                 &Rules::none(),
@@ -640,14 +640,14 @@ mod tests {
             assert!(outcome.applied, "{intent:?}");
         }
         assert!(
-            piece.tracks[1]
+            multitrack.tracks[1]
                 .lanes
                 .iter()
                 .any(|l| l.regions.iter().any(|r| r.id == NodeId(12))),
             "the region is on the second track now"
         );
         assert!(
-            piece.tracks[0]
+            multitrack.tracks[0]
                 .lanes
                 .iter()
                 .all(|l| l.regions.iter().all(|r| r.id != NodeId(12))),

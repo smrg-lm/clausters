@@ -60,7 +60,7 @@ pub(crate) enum TimeUnit<'a> {
     /// **A beat is not a length of time**, and `map` is what says where each
     /// one falls. With no map the axis is one tempo, so beats are evenly
     /// spaced and `tempo`/`beat_at` are the whole answer. With one, they are
-    /// not: the piece's [`TempoMap`] places every tick through `secs_at`, so
+    /// not: the multitrack's [`TempoMap`] places every tick through `secs_at`, so
     /// the marks crowd where it is fast and spread where it is slow, over an
     /// axis that never stopped measuring samples. The map also supplies its
     /// own anchoring, so `beat_at` says nothing where it is present.
@@ -299,7 +299,7 @@ fn beat_ticks(
     if blen <= 0.0 {
         return Vec::new();
     }
-    // Where a beat lands on the strip. Through the map it is the piece's own
+    // Where a beat lands on the strip. Through the map it is the multitrack's own
     // answer, run the one way the ruler needs it: beat to second to sample.
     let mapped = |b: f64| (m_secs(map, b) * rate - start) / len;
     let linear = |b: f64| (b - b0) / blen;
@@ -524,7 +524,7 @@ fn readout_decimals(step: f64, floor: usize, cap: usize) -> usize {
 /// answers about one pixel. It takes `secs_per_px` rather than beats per
 /// pixel because **under a map that is a local rate** — how much of a beat a
 /// pixel is worth depends on the tempo where the cursor is, not on an average
-/// of the piece — and deriving it here is what keeps the two read-outs (the
+/// of the multitrack — and deriving it here is what keeps the two read-outs (the
 /// waveform's and the roll's) from each doing that conversion their own way.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn readout_beats(
@@ -1616,7 +1616,7 @@ mod tests {
         assert_no_h_collisions(&ticks, 800.0, "zoomed 1s/800px");
     }
 
-    /// A ritardando, drawn: the piece your hand writes as
+    /// A ritardando, drawn: the multitrack your hand writes as
     /// `d=60 --> d=30` spreads its beat ticks as it slows, over an axis that
     /// never stopped measuring samples. The marks move; the axis does not.
     #[test]

@@ -2110,7 +2110,7 @@ fn key(g: &Gestures, host: &mut Host, ctx: &GestureCtx, k: Key) -> Option<Vec<Ge
 
 /// **A press on the axis' own ruler leaves the focus alone.** The position
 /// cursor is placed on the ruler and nowhere else, so dropping the focus there
-/// would take the piece's keys away with every mark a reader puts down — point
+/// would take the multitrack's keys away with every mark a reader puts down — point
 /// at a box, place the cursor, split. A ruler takes no focus of its own (it is
 /// **`A` in a track's header, through the whole machine** *(found 2026-09-12 by
 /// the user: "el boton A no funciona")*.

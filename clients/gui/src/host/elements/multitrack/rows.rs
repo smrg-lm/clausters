@@ -117,7 +117,7 @@ impl Multitrack {
             }
         }
         // A row that is gone takes its height with it, the way every other
-        // table here is pruned by what the piece now holds.
+        // table here is pruned by what the multitrack now holds.
         self.zoom
             .retain(|name, _| self.lanes.iter().any(|l| &l.name == name));
         self.curve_zoom
@@ -228,7 +228,7 @@ impl Multitrack {
             // that brings it into being and then hides and shows it.
             //
             // **A facility, and it says so**: what a track may automate is its
-            // own question, and this is the smallest thing that makes a piece
+            // own question, and this is the smallest thing that makes a multitrack
             // with automation editable while that is worked out. See
             // `clients/gui/PLAN.md`, "The whole interaction vocabulary is
             // provisional".

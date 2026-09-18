@@ -118,7 +118,7 @@ fn a_rolls_ruler_reads_the_timelines_map_when_it_is_given_one() {
 
 #[test]
 fn a_roll_written_high_still_shows_where_the_ordinary_range_was() {
-    // One note is its own window, padded: the piece is what is drawn.
+    // One note is its own window, padded: the multitrack is what is drawn.
     assert_eq!(pitch_window(&[0.0, 1.0, 60.0, 100.0, 0.0]), (56.0, 64.0));
     // Written two octaves up, the bottom is pulled back down to the fallback's
     // ceiling, so the eye keeps a reference the notes do not give it.
@@ -161,7 +161,7 @@ fn the_door_names_the_view_and_a_kind_it_does_not_draw_is_nothing() {
     );
     assert!(
         props("multitrack", &json!({})).is_none(),
-        "the piece has its own door"
+        "the multitrack has its own door"
     );
     assert!(props("waveform", &json!(["not", "facts"])).is_none());
 }

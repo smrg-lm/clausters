@@ -79,7 +79,7 @@ fn a_tree_round_trips_unchanged() {
 fn a_body_this_build_does_not_know_survives_whole() {
     // A document written by a newer writer: a body kind that does not exist
     // here, carrying fields nobody in this build can name. Losing it would lose
-    // the piece, so it is preserved rather than dropped -- the same rule the
+    // the multitrack, so it is preserved rather than dropped -- the same rule the
     // widget protocol runs on.
     let json =
         r#"{"version":4,"root":{"id":1,"kind":"constellation","spread":0.5,"seeds":[1,2,3]}}"#;

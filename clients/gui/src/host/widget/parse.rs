@@ -41,7 +41,7 @@ pub(crate) fn as_props(v: &Value) -> Option<serde_json::Map<String, Value>> {
     }
 }
 
-/// Parse an axis' `tempo_map` — the piece's beat-to-second function, as the
+/// Parse an axis' `tempo_map` — the multitrack's beat-to-second function, as the
 /// breakpoint list [`TempoMap`] serializes to. Takes the array as it stands or
 /// a JSON string of one, the same two forms every structural prop arrives in,
 /// since OSC carries no arrays. `None` for anything a map cannot be built

@@ -119,7 +119,7 @@ fn add_constant_synth_in_new_group(handle: &mut EngineHandle, group_id: i32, bus
         .unwrap();
 }
 
-/// A synth whose output *is* the transport's position in the piece: the one
+/// A synth whose output *is* the transport's position in the transport: the one
 /// thing that proves the position reaches a graph at all.
 #[cfg(feature = "synth")]
 fn position_def() -> Arc<SynthDef> {
@@ -214,7 +214,7 @@ fn resuming_continues_rather_than_restarting() {
         .unwrap();
     run_blocks(&mut engine, 4);
 
-    // 8 rolled blocks in total; the 6 frozen ones are not in the piece.
+    // 8 rolled blocks in total; the 6 frozen ones are not in the transport.
     assert_eq!(handle.current_transport_samples(), (BLOCK_SIZE * 8) as u64);
 }
 
@@ -237,7 +237,7 @@ fn the_position_advances_with_the_transport_and_holds_when_it_stops() {
     assert_eq!(
         handle.current_transport_position(),
         (BLOCK_SIZE * 4) as u64,
-        "rolling from 0, the piece is where the transport clock is"
+        "rolling from 0, the transport is where the transport clock is"
     );
 
     handle
@@ -248,11 +248,11 @@ fn the_position_advances_with_the_transport_and_holds_when_it_stops() {
     assert_eq!(
         handle.current_transport_position(),
         (BLOCK_SIZE * 4) as u64,
-        "stopped, the piece stays where it was"
+        "stopped, the transport stays where it was"
     );
 }
 
-/// The distinction the two quantities exist for: a locate moves the piece and
+/// The distinction the two quantities exist for: a locate moves the transport and
 /// leaves both clocks exactly where they are.
 #[test]
 fn a_locate_moves_the_position_and_neither_clock() {
@@ -337,7 +337,7 @@ fn the_position_wraps_inside_a_loop_to_the_sample() {
     assert_eq!(
         handle.current_transport_position(),
         10 + (256 % 100),
-        "the piece is 256 samples into a 100-sample loop starting at 10"
+        "the transport is 256 samples into a 100-sample loop starting at 10"
     );
 }
 
@@ -385,10 +385,10 @@ fn an_empty_or_inverted_loop_is_not_a_loop() {
     );
 }
 
-/// Turning a loop on does not move the piece: it keeps playing and wraps when
+/// Turning a loop on does not move the transport: it keeps playing and wraps when
 /// it first reaches the end.
 #[test]
-fn setting_a_loop_does_not_relocate_the_piece() {
+fn setting_a_loop_does_not_relocate_the_transport() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     handle
         .send(Cmd::TransportRun { rolling: true })
@@ -409,7 +409,7 @@ fn setting_a_loop_does_not_relocate_the_piece() {
     );
 }
 
-/// The claim the whole milestone rests on: a graph can read where the piece
+/// The claim the whole milestone rests on: a graph can read where the transport
 /// is, sample by sample.
 #[test]
 #[cfg(feature = "synth")]
@@ -474,7 +474,7 @@ fn a_stopped_transport_holds_the_position_a_graph_reads() {
     let block = block_of_bus_0(&mut engine);
     assert!(
         block.iter().all(|s| *s == 7.0),
-        "not rolling: the piece stands still and so does the signal"
+        "not rolling: the transport stands still and so does the signal"
     );
 }
 
@@ -514,7 +514,7 @@ fn the_offset_input_reads_a_clip_from_its_own_first_frame() {
     let block = block_of_bus_0(&mut engine);
     assert_eq!(
         block[0], 0.0,
-        "the piece is at the clip's start, so the clip is at its own frame 0"
+        "the transport is at the clip's start, so the clip is at its own frame 0"
     );
     assert_eq!(block[BLOCK_SIZE - 1], (BLOCK_SIZE - 1) as f32);
 }
@@ -758,9 +758,12 @@ fn a_bundle_to_a_governed_node_waits_out_the_pause() {
         .send(Cmd::TransportRun { rolling: true })
         .ok()
         .unwrap();
-    engine.process_block(&mut out); // block 1 of the piece
-    assert_eq!(out[0], 0.0, "not due yet: only two blocks of the piece ran");
-    engine.process_block(&mut out); // block 2 of the piece: due
+    engine.process_block(&mut out); // block 1 of the transport
+    assert_eq!(
+        out[0], 0.0,
+        "not due yet: only two blocks of the transport ran"
+    );
+    engine.process_block(&mut out); // block 2 of the transport: due
     assert!((out[0] - 0.5).abs() < 1e-6, "fires at its transport sample");
 }
 
@@ -942,7 +945,7 @@ fn an_ungoverned_server_never_enters_the_two_queue_path() {
 
 #[test]
 fn the_segment_publishes_the_transport_clock() {
-    // A local peer reads the piece's position with a load, the way it already
+    // A local peer reads the transport's position with a load, the way it already
     // reads the device clock -- and the two must differ while stopped, which is
     // the whole reason the second counter is in the header.
     let segment = Segment::in_memory();
@@ -1008,7 +1011,7 @@ fn the_segment_publishes_the_position_a_locate_moved() {
     assert_eq!(
         segment.transport_position().load(Ordering::Acquire),
         9_000 + (BLOCK_SIZE * 2) as u64,
-        "the piece is where it was located, plus what has played since"
+        "the transport is where it was located, plus what has played since"
     );
     assert_eq!(
         segment.transport_clock().load(Ordering::Acquire),
@@ -1017,12 +1020,12 @@ fn the_segment_publishes_the_position_a_locate_moved() {
     );
 }
 
-/// Renders `blocks` blocks of a small governed piece, optionally freezing the
+/// Renders `blocks` blocks of a small governed transport, optionally freezing the
 /// transport for the device-sample span `pause`. Returns the interleaved
-/// output. The piece is a seeded noise generator plus a scheduled control
+/// output. The transport is a seeded noise generator plus a scheduled control
 /// change, so both the stochastic and the message paths are exercised.
 #[cfg(feature = "synth")]
-fn render_piece(blocks: usize, pause: Option<(u64, u64)>) -> Vec<f32> {
+fn render_take(blocks: usize, pause: Option<(u64, u64)>) -> Vec<f32> {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     add_noise_synth_in_new_group(&mut handle, 100, 0);
     handle.send(Cmd::TransportGroup { id: 100 }).ok().unwrap();
@@ -1032,7 +1035,7 @@ fn render_piece(blocks: usize, pause: Option<(u64, u64)>) -> Vec<f32> {
         .unwrap();
 
     // Two governed control changes, on the transport axis: they must land at
-    // the same *piece* time in both renders, however long the pause was.
+    // the same *transport* time in both renders, however long the pause was.
     for (beat, amp) in [(7u64, 0.4f32), (23, 0.15)] {
         handle
             .send(Cmd::Schedule {
@@ -1072,7 +1075,7 @@ fn render_piece(blocks: usize, pause: Option<(u64, u64)>) -> Vec<f32> {
     all
 }
 
-/// Freezing and resuming must be **transparent** to the piece: cut the frozen
+/// Freezing and resuming must be **transparent** to the transport: cut the frozen
 /// span out of a paused render and it is the unpaused render, sample for
 /// sample.
 ///
@@ -1080,7 +1083,7 @@ fn render_piece(blocks: usize, pause: Option<(u64, u64)>) -> Vec<f32> {
 /// survived the freeze, the transport clock stopped exactly when the DSP did,
 /// and the transport queue neither lost nor advanced an event. Over a
 /// seeded-noise def it also proves the stochastic process **continued** rather
-/// than restarted, which is the case no DAW transport protocol covers: a piece
+/// than restarted, which is the case no DAW transport protocol covers: a transport
 /// that generates its own samples has no index to seek to, so continuing is
 /// the only thing a pause can mean.
 ///
@@ -1089,14 +1092,14 @@ fn render_piece(blocks: usize, pause: Option<(u64, u64)>) -> Vec<f32> {
 /// a block at a time shows zero error exactly when both ends sit on a boundary.
 #[cfg(feature = "synth")]
 #[test]
-fn a_pause_is_transparent_to_the_rendered_piece() {
+fn a_pause_is_transparent_to_the_rendered_take() {
     let block = BLOCK_SIZE as u64;
     let pause_start = 10 * block + 37;
     let pause_end = 27 * block + 5;
     let frozen = (pause_end - pause_start) as usize;
 
-    let straight = render_piece(40, None);
-    let paused = render_piece(58, Some((pause_start, pause_end)));
+    let straight = render_take(40, None);
+    let paused = render_take(58, Some((pause_start, pause_end)));
 
     // Cut the frozen span out of the paused render. Two channels, so a frame
     // index scales by the channel count.

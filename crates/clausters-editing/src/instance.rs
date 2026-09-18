@@ -3,14 +3,14 @@
 //! The third projection, and the one with memory. The other two are functions
 //! of a structure alone — the props it is drawn with, the payloads a gesture
 //! becomes — and this one is a function of the structure *and of what a server
-//! already holds*: a piece plays itself from the transport, so the nodes have
+//! already holds*: a multitrack plays itself from the transport, so the nodes have
 //! to **stay**. Rebuilding the tree on every edit would restart everything that
 //! is sounding, and a hand dragging a box would hear its own gesture as a
 //! stutter.
 //!
 //! # The shape: a reconciler, and the client is the host config
 //!
-//! [`clausters_document::multitrack::nodes::plan`] says what a piece *needs* —
+//! [`clausters_document::multitrack::nodes::plan`] says what a multitrack *needs* —
 //! which tracks, which clips, which readers, at which frames, with which
 //! levels — and it is pure. [`Instance`] holds what was made from the last one,
 //! and [`Instance::reconcile`] answers the **difference** as a list of
@@ -24,7 +24,7 @@
 //! resources, and everything hard is in the diff between them. What React calls
 //! a host config — who actually makes a node, who allocates — is here the
 //! client, and it stays there because a bus allocator is a property of a
-//! running session and not of a piece.
+//! running session and not of a multitrack.
 //!
 //! # Handles: the crate names things it cannot make
 //!
@@ -58,7 +58,7 @@ use clausters_document::multitrack::nodes::{
 
 /// What the crate calls a thing it asked a client to make.
 ///
-/// Minted from the document's own ids, so the same piece reconciled twice names
+/// Minted from the document's own ids, so the same multitrack reconciled twice names
 /// the same things — which is what lets an `Instance` be compared in a test
 /// instead of being watched through a server.
 pub type Handle = String;
@@ -135,7 +135,7 @@ pub enum Op {
     /// def send answers `/done`, so a `/done` left in flight is one the next
     /// command that waits for one takes as its own.
     Barrier,
-    /// Instantiate a graph at the tail of a group: the piece itself, inside the
+    /// Instantiate a graph at the tail of a group: the multitrack itself, inside the
     /// transport's.
     #[serde(rename_all = "camelCase")]
     Graph {
@@ -151,10 +151,10 @@ pub enum Op {
     /// **Make the transport's group** at the top and bind it — the subtree the
     /// engine freezes on a stop and thaws on a play.
     ///
-    /// Every endpoint makes the same one. A client used to bind the piece's own
+    /// Every endpoint makes the same one. A client used to bind the multitrack's own
     /// graph and the GUI host a group of its own that its take monitor shared,
-    /// so one piece was governed two ways; what an endpoint needs beside the
-    /// piece now goes inside this group.
+    /// so one multitrack was governed two ways; what an endpoint needs beside the
+    /// multitrack now goes inside this group.
     Transport {
         /// What to call it.
         handle: Handle,
@@ -263,16 +263,16 @@ pub enum Op {
     },
 }
 
-/// The piece's own instance.
-pub const PIECE: &str = "piece";
+/// The multitrack's own instance.
+pub const MULTITRACK: &str = "multitrack";
 
-/// The group the curve nodes live in, **before** the piece so a value is
+/// The group the curve nodes live in, **before** the multitrack so a value is
 /// written in the block it is read.
 pub const CURVES: &str = "curves";
 
 /// **The transport's group**: made at the top by every endpoint alike, bound as
-/// the transport's, and the piece's graph is made inside it -- so what a stop
-/// freezes is the piece and whatever an endpoint puts beside it in there.
+/// the transport's, and the multitrack's graph is made inside it -- so what a stop
+/// freezes is the multitrack and whatever an endpoint puts beside it in there.
 pub const TRANSPORT: &str = "transport";
 
 fn track_handle(id: u64) -> Handle {
@@ -347,19 +347,19 @@ struct CurveState {
     generation: u32,
 }
 
-/// **What a server already holds of one piece**, and the diff that keeps it
+/// **What a server already holds of one multitrack**, and the diff that keeps it
 /// right.
 ///
-/// Held by whoever is playing the piece, across edits. It is state and says so:
+/// Held by whoever is playing the multitrack, across edits. It is state and says so:
 /// the other two projections are functions of a structure and this one is a
 /// function of a structure *and* of what was made from the last one.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Instance {
-    /// The def names already sent. A piece asks for the widths it uses, and a
+    /// The def names already sent. A multitrack asks for the widths it uses, and a
     /// take of another width arriving later asks for more.
     sent: BTreeSet<String>,
-    /// Whether the piece's own instance is up.
-    piece: bool,
+    /// Whether the multitrack's own instance is up.
+    multitrack: bool,
     /// Whether the curve group is up.
     curve_group: bool,
     tracks: BTreeMap<u64, TrackState>,
@@ -385,7 +385,7 @@ pub struct Instance {
 /// A mapped control is taken back by a plain `set` — that is the protocol's own
 /// rule, and the right one, since it is what gives the fader back when a curve
 /// is deleted. It also means that anything sending a value for a port a curve
-/// drives **silences that curve**, and a piece reconciles on every edit, so
+/// drives **silences that curve**, and a multitrack reconciles on every edit, so
 /// adding a box to a track was enough to stop its automation from being heard.
 ///
 /// So the two stop competing. A curve owns the port it names and the hand's
@@ -417,13 +417,13 @@ impl Instance {
         Self::default()
     }
 
-    /// Whether anything of a piece is believed to be sounding.
+    /// Whether anything of a multitrack is believed to be sounding.
     ///
     /// The defs are not part of it: a def sent is on the server whatever this
     /// holds, and a torn-down instance that sent it again would be sending what
     /// is already there.
     pub fn is_sounding(&self) -> bool {
-        self.piece
+        self.multitrack
             || self.curve_group
             || !self.tracks.is_empty()
             || !self.clips.is_empty()
@@ -464,13 +464,13 @@ impl Instance {
     /// **The difference between what is sounding and what `plan` says.**
     ///
     /// Everything already right is left alone, which is what lets a hand drag a
-    /// box without hearing the rest of the piece restart. `gain` is the
-    /// master's own level, which is the caller's and not the piece's.
+    /// box without hearing the rest of the multitrack restart. `gain` is the
+    /// master's own level, which is the caller's and not the multitrack's.
     pub fn reconcile(&mut self, plan: &Plan, gain: f32) -> Vec<Op> {
         let mut ops = Vec::new();
         self.defs(plan, &mut ops);
-        if !self.piece {
-            // **The transport's group first, and the piece inside it**: from
+        if !self.multitrack {
+            // **The transport's group first, and the multitrack inside it**: from
             // here the engine freezes that subtree on a stop and thaws it on a
             // play, and every reader's position is the engine's own rather than
             // a number kept in step by a client.
@@ -478,19 +478,19 @@ impl Instance {
                 handle: TRANSPORT.into(),
             });
             ops.push(Op::Graph {
-                handle: PIECE.into(),
+                handle: MULTITRACK.into(),
                 parent: TRANSPORT.into(),
                 graph: plan.graph.clone(),
                 ports: [("gain".to_string(), Port::from(gain))]
                     .into_iter()
                     .collect(),
             });
-            self.piece = true;
+            self.multitrack = true;
         }
         if !self.curve_group {
             ops.push(Op::Group {
                 handle: CURVES.into(),
-                before: PIECE.into(),
+                before: MULTITRACK.into(),
             });
             self.curve_group = true;
         }
@@ -499,7 +499,7 @@ impl Instance {
         ops
     }
 
-    /// **Everything, freed.** The piece itself is untouched: what an instance
+    /// **Everything, freed.** The multitrack itself is untouched: what an instance
     /// holds is nodes, and nodes are not the composition.
     pub fn teardown(&mut self) -> Vec<Op> {
         let mut ops = Vec::new();
@@ -543,11 +543,11 @@ impl Instance {
         self.readers.clear();
         self.clips.clear();
         self.makings.clear();
-        if std::mem::take(&mut self.piece) {
-            // One free: everything the piece holds is inside the transport's
-            // group, the piece's graph included.
+        if std::mem::take(&mut self.multitrack) {
+            // One free: everything the multitrack holds is inside the transport's
+            // group, the multitrack's graph included.
             let mut under = under;
-            under.push(PIECE.into());
+            under.push(MULTITRACK.into());
             ops.push(Op::Free {
                 handle: TRANSPORT.into(),
                 forget: under,
@@ -556,7 +556,7 @@ impl Instance {
         ops
     }
 
-    /// The defs this piece's widths need, and only the ones not sent.
+    /// The defs this multitrack's widths need, and only the ones not sent.
     fn defs(&mut self, plan: &Plan, ops: &mut Vec<Op>) {
         let Ok(defs) = mixer::defs_for(&plan.widths, plan.channels) else {
             return;
@@ -595,7 +595,7 @@ impl Instance {
                 None => {
                     ops.push(Op::Slot {
                         handle: track_handle(id),
-                        target: PIECE.into(),
+                        target: MULTITRACK.into(),
                         slot: "tracks".into(),
                         ports: ports.clone(),
                     });
@@ -644,7 +644,7 @@ impl Instance {
     ///
     /// **Two of them**, which is one def twice: with no hold it is the level,
     /// with the core's hold it is the mark that stays up long enough to be
-    /// read. Both are slot instances, so a piece nobody meters holds none.
+    /// read. Both are slot instances, so a multitrack nobody meters holds none.
     fn meter(&mut self, id: u64, channels: usize, ops: &mut Vec<Op>) {
         ops.push(Op::Bus {
             handle: meter_bus_handle(id),
@@ -819,7 +819,7 @@ impl Instance {
 
     /// Put each curve's table on the server and map the port to it.
     ///
-    /// A curve is **not** a member of the piece's graph, and that is the point:
+    /// A curve is **not** a member of the multitrack's graph, and that is the point:
     /// it writes a control bus, the port is mapped to that bus, and the port's
     /// own member ids stay private. The table is read at the transport's own
     /// position, so a locate costs no message at all — which is the whole
@@ -955,7 +955,7 @@ impl Instance {
         }
     }
 
-    /// Free the curves the piece no longer has, and give their ports back.
+    /// Free the curves the multitrack no longer has, and give their ports back.
     fn reap_curves(&mut self, plan: &Plan, ops: &mut Vec<Op>) {
         let mut alive = BTreeSet::new();
         for track in &plan.tracks {
@@ -1085,30 +1085,31 @@ pub fn sources_table(
         .collect()
 }
 
-/// [`Instance::reconcile`] against a piece and a source table given as JSON,
+/// [`Instance::reconcile`] against a multitrack and a source table given as JSON,
 /// which is how the two client doors carry them.
 ///
-/// The piece rather than the plan: the plan is a pure function of the piece and
+/// The multitrack rather than the plan: the plan is a pure function of the multitrack and
 /// crossing it out and back in would carry every curve's table twice for
 /// nothing. [`clausters_document::multitrack::nodes::plan`] stays a door of its
 /// own because it is worth reading on its own — this is the pair of calls a
 /// client actually makes, as one.
 ///
-/// An unreadable piece answers an empty list: there is no piece to say what
+/// An unreadable multitrack answers an empty list: there is no multitrack to say what
 /// should be sounding, and tearing down what is would be an edit nobody made.
 pub fn reconcile_json(
     instance: &mut Instance,
-    piece: &str,
+    multitrack: &str,
     sample_rate: f64,
     sources: &str,
     gain: f32,
 ) -> String {
-    let Ok(piece) = serde_json::from_str::<clausters_document::multitrack::Multitrack>(piece)
+    let Ok(multitrack) =
+        serde_json::from_str::<clausters_document::multitrack::Multitrack>(multitrack)
     else {
         return "[]".into();
     };
     let table = sources_table(sources);
-    let plan = clausters_document::multitrack::nodes::plan(&piece, sample_rate, &table);
+    let plan = clausters_document::multitrack::nodes::plan(&multitrack, sample_rate, &table);
     let ops = instance.reconcile(&plan, gain);
     serde_json::to_string(&ops).unwrap_or_else(|_| "[]".into())
 }
@@ -1129,11 +1130,11 @@ mod tests {
     const RATE: f64 = 48_000.0;
 
     /// Two tracks; the first holds one box over a mono source.
-    fn piece() -> Multitrack {
-        let mut piece = Multitrack::default();
-        piece.tracks.push(track(1, 2, vec![region(3, 77)]));
-        piece.tracks.push(track(10, 11, Vec::new()));
-        piece
+    fn multitrack() -> Multitrack {
+        let mut multitrack = Multitrack::default();
+        multitrack.tracks.push(track(1, 2, vec![region(3, 77)]));
+        multitrack.tracks.push(track(10, 11, Vec::new()));
+        multitrack
     }
 
     fn track(id: u64, lane: u64, regions: Vec<Region>) -> Track {
@@ -1205,8 +1206,8 @@ mod tests {
         .collect()
     }
 
-    fn planned(piece: &Multitrack) -> Plan {
-        plan(piece, RATE, &sources())
+    fn planned(multitrack: &Multitrack) -> Plan {
+        plan(multitrack, RATE, &sources())
     }
 
     /// The ops of one kind, in order.
@@ -1221,15 +1222,15 @@ mod tests {
             .collect()
     }
 
-    /// The whole point, and the one thing every other test rests on: a piece
+    /// The whole point, and the one thing every other test rests on: a multitrack
     /// that did not move needs nothing done to it.
     #[test]
-    fn a_piece_that_did_not_move_is_left_alone() {
-        let piece = piece();
+    fn a_multitrack_that_did_not_move_is_left_alone() {
+        let multitrack = multitrack();
         let mut instance = Instance::new();
-        let first = instance.reconcile(&planned(&piece), 0.5);
+        let first = instance.reconcile(&planned(&multitrack), 0.5);
         assert!(!first.is_empty());
-        let again = instance.reconcile(&planned(&piece), 0.5);
+        let again = instance.reconcile(&planned(&multitrack), 0.5);
         assert_eq!(again, Vec::new(), "a resend is heard by nobody");
     }
 
@@ -1237,9 +1238,9 @@ mod tests {
     /// neither.
     #[test]
     fn the_defs_go_once_and_the_barrier_goes_with_them() {
-        let piece = piece();
+        let multitrack = multitrack();
         let mut instance = Instance::new();
-        let ops = instance.reconcile(&planned(&piece), 0.5);
+        let ops = instance.reconcile(&planned(&multitrack), 0.5);
         assert!(!of(&ops, "def").is_empty());
         assert_eq!(of(&ops, "barrier").len(), 1);
         let last = ops
@@ -1250,19 +1251,19 @@ mod tests {
             ops[..last].iter().all(|op| matches!(op, Op::Def { .. })),
             "the batch is closed before anything else is sent"
         );
-        assert!(of(&instance.reconcile(&planned(&piece), 0.5), "def").is_empty());
+        assert!(of(&instance.reconcile(&planned(&multitrack), 0.5), "def").is_empty());
     }
 
     /// **The hand does not write a port a curve drives** *(2026-09-11)*. A
-    /// mapped control is taken back by a plain set, so a piece reconciling on
+    /// mapped control is taken back by a plain set, so a multitrack reconciling on
     /// every edit was enough to silence an automation: adding a box to a track
     /// sent that track's gain and the curve went on writing a bus nobody read.
     #[test]
     fn the_hand_does_not_write_a_port_a_curve_drives() {
-        let mut piece = piece();
-        piece.tracks[0].automation.push(gain_curve(4, 1.0));
+        let mut multitrack = multitrack();
+        multitrack.tracks[0].automation.push(gain_curve(4, 1.0));
         let mut instance = Instance::new();
-        let ops = instance.reconcile(&planned(&piece), 0.5);
+        let ops = instance.reconcile(&planned(&multitrack), 0.5);
 
         let track = of(&ops, "slot")
             .into_iter()
@@ -1275,7 +1276,7 @@ mod tests {
         assert!(ports.contains_key("mute"), "and only it");
 
         // And no later pass reaches for it either.
-        let mut moved = piece.clone();
+        let mut moved = multitrack.clone();
         moved.tracks[0].level = 0.25;
         for op in instance.reconcile(&planned(&moved), 0.5) {
             if let Op::Set { handle, ports } = op {
@@ -1289,13 +1290,13 @@ mod tests {
 
     /// The same box, re-pointed at a source of another width: another clip
     /// def, so the one change a move cannot carry.
-    fn rewidened(piece: &Multitrack) -> Multitrack {
-        let mut piece = piece.clone();
-        let held = &mut piece.tracks[0].lanes[0].regions[0];
+    fn rewidened(multitrack: &Multitrack) -> Multitrack {
+        let mut multitrack = multitrack.clone();
+        let held = &mut multitrack.tracks[0].lanes[0].regions[0];
         let automation = std::mem::take(&mut held.automation);
         *held = region(3, 78);
         held.automation = automation;
-        piece
+        multitrack
     }
 
     /// **A clip that changed track is moved there, not set and not made
@@ -1306,11 +1307,11 @@ mod tests {
     /// node; the server moves a slot now.
     #[test]
     fn a_clip_that_changed_track_is_moved_there() {
-        let piece = piece();
+        let multitrack = multitrack();
         let mut instance = Instance::new();
-        instance.reconcile(&planned(&piece), 0.5);
+        instance.reconcile(&planned(&multitrack), 0.5);
 
-        let mut moved = piece.clone();
+        let mut moved = multitrack.clone();
         let region = moved.tracks[0].lanes[0].regions.remove(0);
         moved.tracks[1].lanes[0].regions.push(region);
         let ops = instance.reconcile(&planned(&moved), 0.5);
@@ -1339,13 +1340,13 @@ mod tests {
     /// neither of which may read as the box being gone.
     #[test]
     fn a_clip_moved_to_an_earlier_track_is_moved_too() {
-        let mut piece = piece();
-        let region = piece.tracks[0].lanes[0].regions.remove(0);
-        piece.tracks[1].lanes[0].regions.push(region);
+        let mut multitrack = multitrack();
+        let region = multitrack.tracks[0].lanes[0].regions.remove(0);
+        multitrack.tracks[1].lanes[0].regions.push(region);
         let mut instance = Instance::new();
-        instance.reconcile(&planned(&piece), 0.5);
+        instance.reconcile(&planned(&multitrack), 0.5);
 
-        let mut moved = piece.clone();
+        let mut moved = multitrack.clone();
         let region = moved.tracks[1].lanes[0].regions.remove(0);
         moved.tracks[0].lanes[0].regions.push(region);
         let ops = instance.reconcile(&planned(&moved), 0.5);
@@ -1367,14 +1368,14 @@ mod tests {
     /// is the whole reason for a move rather than a rebuild.
     #[test]
     fn a_moved_clip_keeps_its_readers_and_its_curve() {
-        let mut piece = piece();
-        piece.tracks[0].lanes[0].regions[0]
+        let mut multitrack = multitrack();
+        multitrack.tracks[0].lanes[0].regions[0]
             .automation
             .push(gain_curve(5, 1.0));
         let mut instance = Instance::new();
-        instance.reconcile(&planned(&piece), 0.5);
+        instance.reconcile(&planned(&multitrack), 0.5);
 
-        let mut moved = piece.clone();
+        let mut moved = multitrack.clone();
         let region = moved.tracks[0].lanes[0].regions.remove(0);
         moved.tracks[1].lanes[0].regions.push(region);
         let ops = instance.reconcile(&planned(&moved), 0.5);
@@ -1397,11 +1398,11 @@ mod tests {
     /// def — the one change neither a set nor a move expresses.
     #[test]
     fn a_clip_of_another_width_is_made_again() {
-        let piece = piece();
+        let multitrack = multitrack();
         let mut instance = Instance::new();
-        instance.reconcile(&planned(&piece), 0.5);
+        instance.reconcile(&planned(&multitrack), 0.5);
 
-        let ops = instance.reconcile(&planned(&rewidened(&piece)), 0.5);
+        let ops = instance.reconcile(&planned(&rewidened(&multitrack)), 0.5);
 
         let freed = ops
             .iter()
@@ -1423,11 +1424,11 @@ mod tests {
     /// table that still held them would `set` a node that is gone.
     #[test]
     fn a_rebuilt_clip_s_readers_go_with_it() {
-        let piece = piece();
+        let multitrack = multitrack();
         let mut instance = Instance::new();
-        instance.reconcile(&planned(&piece), 0.5);
+        instance.reconcile(&planned(&multitrack), 0.5);
 
-        let ops = instance.reconcile(&planned(&rewidened(&piece)), 0.5);
+        let ops = instance.reconcile(&planned(&rewidened(&multitrack)), 0.5);
 
         assert!(
             ops.iter()
@@ -1449,14 +1450,14 @@ mod tests {
     /// back at the def's own default and played flat out.
     #[test]
     fn a_curve_whose_owner_was_rebuilt_is_mapped_again() {
-        let mut piece = piece();
-        piece.tracks[0].lanes[0].regions[0]
+        let mut multitrack = multitrack();
+        multitrack.tracks[0].lanes[0].regions[0]
             .automation
             .push(gain_curve(5, 1.0));
         let mut instance = Instance::new();
-        instance.reconcile(&planned(&piece), 0.5);
+        instance.reconcile(&planned(&multitrack), 0.5);
 
-        let ops = instance.reconcile(&planned(&rewidened(&piece)), 0.5);
+        let ops = instance.reconcile(&planned(&rewidened(&multitrack)), 0.5);
 
         assert!(
             ops.iter()
@@ -1478,12 +1479,12 @@ mod tests {
     /// back **after** the reader has been pointed at the new one.
     #[test]
     fn a_moved_curve_gets_a_new_table_and_the_old_one_back() {
-        let mut piece = piece();
-        piece.tracks[0].automation.push(gain_curve(4, 1.0));
+        let mut multitrack = multitrack();
+        multitrack.tracks[0].automation.push(gain_curve(4, 1.0));
         let mut instance = Instance::new();
-        instance.reconcile(&planned(&piece), 0.5);
+        instance.reconcile(&planned(&multitrack), 0.5);
 
-        let mut drawn = piece.clone();
+        let mut drawn = multitrack.clone();
         drawn.tracks[0].automation[0] = gain_curve(4, 0.25);
         let ops = instance.reconcile(&planned(&drawn), 0.5);
 
@@ -1505,18 +1506,18 @@ mod tests {
         assert!(made < set && set < freed, "{ops:?}");
     }
 
-    /// A curve the piece no longer has gives its port back. **Unmapping is not
+    /// A curve the multitrack no longer has gives its port back. **Unmapping is not
     /// optional**: a port left mapped to a bus nobody writes holds whatever was
     /// in it, so a deleted curve would go on driving the control it drove, at
     /// the last value it happened to say.
     #[test]
     fn a_deleted_curve_gives_its_port_back() {
-        let mut piece = piece();
-        piece.tracks[0].automation.push(gain_curve(4, 1.0));
+        let mut multitrack = multitrack();
+        multitrack.tracks[0].automation.push(gain_curve(4, 1.0));
         let mut instance = Instance::new();
-        instance.reconcile(&planned(&piece), 0.5);
+        instance.reconcile(&planned(&multitrack), 0.5);
 
-        let mut gone = piece.clone();
+        let mut gone = multitrack.clone();
         gone.tracks[0].automation.clear();
         let ops = instance.reconcile(&planned(&gone), 0.5);
         assert!(ops.iter().any(|op| matches!(op, Op::Unmap { handle, port }
@@ -1533,11 +1534,11 @@ mod tests {
     /// buses are not the group's.
     #[test]
     fn a_track_that_went_away_takes_its_clips_and_gives_its_buses_back() {
-        let piece = piece();
+        let multitrack = multitrack();
         let mut instance = Instance::new();
-        instance.reconcile(&planned(&piece), 0.5);
+        instance.reconcile(&planned(&multitrack), 0.5);
 
-        let mut gone = piece.clone();
+        let mut gone = multitrack.clone();
         gone.tracks.remove(0);
         let ops = instance.reconcile(&planned(&gone), 0.5);
         assert!(
@@ -1566,7 +1567,7 @@ mod tests {
         assert!(forget.contains(&"reader:3:0".to_string()));
         assert!(forget.contains(&"meter:1:0".to_string()));
 
-        // And the piece is whole afterwards: nothing of the vanished track is
+        // And the multitrack is whole afterwards: nothing of the vanished track is
         // still believed to be sounding.
         assert_eq!(instance.reconcile(&planned(&gone), 0.5), Vec::new());
     }
@@ -1575,9 +1576,9 @@ mod tests {
     /// what a host reads.
     #[test]
     fn a_track_is_metered_twice_over_one_run() {
-        let piece = piece();
+        let multitrack = multitrack();
         let mut instance = Instance::new();
-        let ops = instance.reconcile(&planned(&piece), 0.5);
+        let ops = instance.reconcile(&planned(&multitrack), 0.5);
         assert!(
             ops.iter()
                 .any(|op| matches!(op, Op::Bus { handle, channels }
@@ -1601,10 +1602,10 @@ mod tests {
     /// nothing is sounding.
     #[test]
     fn a_teardown_gives_back_what_it_made() {
-        let mut piece = piece();
-        piece.tracks[0].automation.push(gain_curve(4, 1.0));
+        let mut multitrack = multitrack();
+        multitrack.tracks[0].automation.push(gain_curve(4, 1.0));
         let mut instance = Instance::new();
-        instance.reconcile(&planned(&piece), 0.5);
+        instance.reconcile(&planned(&multitrack), 0.5);
 
         let ops = instance.teardown();
         assert!(
@@ -1621,7 +1622,7 @@ mod tests {
         // sending them again would be sending what is already there.
         assert!(
             instance
-                .reconcile(&planned(&piece), 0.5)
+                .reconcile(&planned(&multitrack), 0.5)
                 .iter()
                 .all(|op| !matches!(op, Op::Def { .. }))
         );
@@ -1674,14 +1675,14 @@ mod tests {
     /// just been freed, which is a handle whose table entry went with it.
     #[test]
     fn a_curve_whose_owner_is_gone_is_not_unmapped() {
-        let mut piece = piece();
-        piece.tracks[0].lanes[0].regions[0]
+        let mut multitrack = multitrack();
+        multitrack.tracks[0].lanes[0].regions[0]
             .automation
             .push(gain_curve(5, 1.0));
         let mut instance = Instance::new();
-        instance.reconcile(&planned(&piece), 0.5);
+        instance.reconcile(&planned(&multitrack), 0.5);
 
-        let mut gone = piece.clone();
+        let mut gone = multitrack.clone();
         gone.tracks[0].lanes[0].regions.clear();
         let ops = instance.reconcile(&planned(&gone), 0.5);
         assert!(
@@ -1704,11 +1705,11 @@ mod tests {
         );
 
         // And a track that goes is the same case.
-        let mut piece = super::tests::piece();
-        piece.tracks[0].automation.push(gain_curve(4, 1.0));
+        let mut multitrack = super::tests::multitrack();
+        multitrack.tracks[0].automation.push(gain_curve(4, 1.0));
         let mut instance = Instance::new();
-        instance.reconcile(&planned(&piece), 0.5);
-        let mut gone = piece.clone();
+        instance.reconcile(&planned(&multitrack), 0.5);
+        let mut gone = multitrack.clone();
         gone.tracks.remove(0);
         let ops = instance.reconcile(&planned(&gone), 0.5);
         assert!(

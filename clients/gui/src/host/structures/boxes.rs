@@ -98,7 +98,7 @@ impl Contents {
 /// the axis addresses.
 ///
 /// A box that can be dragged to nothing is gone for good — zero duration draws
-/// no rectangle, so there is nothing left to press, and the piece keeps a clip
+/// no rectangle, so there is nothing left to press, and the multitrack keeps a clip
 /// or a note nobody can see or reach. One sample is the whole of the floor: it
 /// is a **length in the axis' own units, never a count of pixels** — the same
 /// rule the time selection follows — so the same drag stops at the same place at
@@ -321,9 +321,9 @@ pub fn adjacent(a: Placement, b: Placement, tol: f64) -> bool {
 /// [`merge`] states one window over the whole span, reading the source from
 /// where the earlier box read: that is exactly right for two halves of a cut,
 /// and wrong for anything else. Two boxes that read *different* runs of a
-/// source — reordered fragments, a piece whose edge was pulled to show more —
+/// source — reordered fragments, a multitrack whose edge was pulled to show more —
 /// cannot be said in one window at all: joined anyway, the box plays straight
-/// through material the pieces skipped, and runs into silence past the end of
+/// through material the multitracks skipped, and runs into silence past the end of
 /// what it reads. One box over several runs is a **cut**, which is a buffer
 /// the server stitches and not a placement (see `clients/gui/PLAN.md`, "Join
 /// over fragments").

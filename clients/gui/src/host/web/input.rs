@@ -324,9 +324,9 @@ impl WebApp {
             self.apply_gesture_effects(effects);
             return;
         }
-        // **A piece is the window's, not the pointer's**, as on the desktop: its
+        // **A multitrack is the window's, not the pointer's**, as on the desktop: its
         // readers follow the transport, so the window is told and whoever edits
-        // the piece answers.
+        // the multitrack answers.
         self.window_verb(def, clausters_apps::multitrack::editor::PLAY_KEY);
     }
 

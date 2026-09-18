@@ -58,7 +58,7 @@ pub mod picture;
 /// The struct-level twin of [`crate::Body::Unknown`], and the same rule: what
 /// cannot be interpreted is carried, not dropped. Serde's default is to discard
 /// unknown fields silently, which for a format with two writers in two
-/// languages is a way to lose a piece.
+/// languages is a way to lose a multitrack.
 pub type Extra = Map<String, Value>;
 
 /// The shape of a fade, carried and never interpreted.
@@ -129,7 +129,7 @@ pub enum Content {
         /// not loop. It is what a box longer than what it reads *means* — the
         /// alternative being that the box simply stops, which is what a box
         /// that does not loop does — so it is here rather than in a view: it
-        /// changes what sounds, and what sounds is the piece's.
+        /// changes what sounds, and what sounds is the multitrack's.
         #[serde(rename = "loop", default, skip_serializing_if = "std::ops::Not::not")]
         looping: bool,
     },
@@ -384,7 +384,7 @@ pub struct Automation {
     pub points: Vec<crate::Point>,
     /// Whether the lane is shown. **The view's**, and here rather than in the
     /// host because which curves a person had open is part of reopening the
-    /// piece as they left it.
+    /// multitrack as they left it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub visible: bool,
     /// Whether the curve is being applied. A curve can be kept and switched off
@@ -460,7 +460,7 @@ pub struct Track {
     /// which is where a track that never said otherwise sits.
     ///
     /// A field of its own for the reason [`Track::channels`] is one: it decides
-    /// what the piece sounds like, so reopening has to give back the mix it was
+    /// what the multitrack sounds like, so reopening has to give back the mix it was
     /// left with, and a key in [`Track::config`] is a thing one client
     /// interprets and another carries. The mixer's rules on top of it -- what a
     /// mute does, what somebody else's solo does -- are still nobody's business
@@ -471,7 +471,7 @@ pub struct Track {
     ///
     /// A field of its own rather than a line in [`Track::config`], because the
     /// two clients have to write it the same way: it decides the mix, so
-    /// reopening a piece has to give back the mix it was left with, and an
+    /// reopening a multitrack has to give back the mix it was left with, and an
     /// opaque one client interprets and the other does not would not. Two by
     /// default, which is what a track is unless it says otherwise.
     #[serde(default = "stereo", skip_serializing_if = "is_stereo")]
@@ -527,7 +527,7 @@ impl Track {
 
     /// Where the track's last region ends, across **every** lane — what it
     /// spans, not what it plays, since an alternate take is still part of the
-    /// piece.
+    /// multitrack.
     pub fn end(&self) -> Second {
         self.lanes
             .iter()
@@ -643,10 +643,10 @@ impl Marker {
     }
 }
 
-/// A span of the timeline: the loop, the punch, a named region of the piece.
+/// A span of the timeline: the loop, the punch, a named region of the multitrack.
 ///
 /// Half-open, like [`crate::Range`] and for the same reason: two ranges that
-/// meet do not overlap, so a piece cut into sections has no ambiguous frame.
+/// meet do not overlap, so a multitrack cut into sections has no ambiguous frame.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Span {
     /// Where it starts, in seconds.
@@ -674,37 +674,37 @@ impl Span {
 
 /// The multitrack: the tracks, and the timeline they are placed on.
 ///
-/// What is here rather than on a track is what the **piece** has one of: the
+/// What is here rather than on a track is what the **multitrack** has one of: the
 /// tempo map, the meter map, the markers, the loop. A track has none of them
 /// and never disagrees with another track about them, which is the whole
 /// argument for where they live.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Multitrack {
-    /// What this piece is *at*, and the whole of what a stale edit is stale
+    /// What this multitrack is *at*, and the whole of what a stale edit is stale
     /// against.
     ///
     /// The twin of [`crate::Document::version`] and deliberately a second
-    /// counter rather than a shared one: the tree and the piece are two
+    /// counter rather than a shared one: the tree and the multitrack are two
     /// descriptions today, and an editor of one is not editing the other, so
     /// one number would make every edit to either look like a change to both.
     /// When the tree comes off, this is the counter that stays.
     ///
     /// It stays out of the file while it is the first version, so an unedited
-    /// piece still writes an empty object — the counter defaults back to the
+    /// multitrack still writes an empty object — the counter defaults back to the
     /// same number on the way in, so nothing is lost by leaving it out.
     #[serde(default = "first_version", skip_serializing_if = "is_first_version")]
     pub version: u64,
     /// The tracks, in the order they are shown.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tracks: Vec<Track>,
-    /// **How wide the piece is**, in channels — the master's own width, and
+    /// **How wide the multitrack is**, in channels — the master's own width, and
     /// what a track's output is mixed into. Here for the reason
     /// [`Track::channels`] is: it decides the mix, so it has to survive a save
     /// and it has to mean the same thing to both clients.
     #[serde(default = "stereo", skip_serializing_if = "is_stereo")]
     pub channels: usize,
     /// The tempo map, in position order. Empty means the reader's own default,
-    /// which the document does not name: a piece that never said a tempo did
+    /// which the document does not name: a multitrack that never said a tempo did
     /// not say one, and inventing 120 here would be this crate deciding a
     /// musical question.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -716,7 +716,7 @@ pub struct Multitrack {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub markers: Vec<Marker>,
     /// The loop span, when one is set. Whether looping is *on* is the
-    /// transport's, not the document's; what the piece holds is where.
+    /// transport's, not the document's; what the multitrack holds is where.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub loop_span: Option<Span>,
     /// The punch span, when one is set.
@@ -782,7 +782,7 @@ impl Multitrack {
             .find_map(|t| t.lanes.iter().find_map(|l| l.region(id).map(|r| (t, l, r))))
     }
 
-    /// Every automation curve in the piece — a track's, and the ones a region
+    /// Every automation curve in the multitrack — a track's, and the ones a region
     /// carries for itself.
     ///
     /// One walk, because a curve is a curve: what tells the two apart is how
@@ -828,7 +828,7 @@ impl Multitrack {
     }
 
     /// Where the last region ends, across every track and every lane — how long
-    /// the piece is.
+    /// the multitrack is.
     pub fn end(&self) -> Second {
         self.tracks
             .iter()
@@ -975,7 +975,7 @@ mod tests {
         track.lanes[1].place(region(200, 0.0, 16.0));
         assert_eq!(track.active_lane().unwrap().id, NodeId(10));
         assert_eq!(track.active_lane().unwrap().end(), Second(4.0));
-        // An alternate take is still part of the piece.
+        // An alternate take is still part of the multitrack.
         assert_eq!(track.end(), Second(16.0));
     }
 
@@ -1026,7 +1026,7 @@ mod tests {
         // The acceptance this milestone owes: a session written by a build that
         // knows more than this one must come back out with what it came in
         // with. Serde drops unknown fields by default, which for a format with
-        // two writers in two languages is how a piece gets lost.
+        // two writers in two languages is how a multitrack gets lost.
         let json = r#"{"id":1,"position":0.0,"length":4.0,
                        "content":{"fill":"window",
                                   "window":{"source":{"node":7},"start":0.0,"duration":2.0}},
@@ -1064,7 +1064,7 @@ mod tests {
     }
 
     #[test]
-    fn a_piece_that_never_said_a_tempo_says_nothing() {
+    fn a_multitrack_that_never_said_a_tempo_says_nothing() {
         // No 120 invented here: naming a default would be this crate deciding
         // a musical question it has no business in.
         assert!(Multitrack::new().tempo_at(Beat(0.0)).is_none());
@@ -1123,7 +1123,7 @@ mod tests {
 
     #[test]
     fn an_empty_arrangement_writes_an_empty_object() {
-        // Nothing derived, nothing defaulted, nothing invented: a piece with
+        // Nothing derived, nothing defaulted, nothing invented: a multitrack with
         // nothing in it says nothing rather than saying zero of everything.
         assert_eq!(serde_json::to_string(&Multitrack::new()).unwrap(), "{}");
     }

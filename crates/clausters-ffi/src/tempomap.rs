@@ -1,4 +1,4 @@
-//! The piece's beat↔second time map, as an opaque handle.
+//! The multitrack's beat↔second time map, as an opaque handle.
 //!
 //! Like `clausters_sched_*`, the structure stays in Rust and only flat data
 //! crosses: beats, seconds and tempos as `f64`, a curve as a small integer.
@@ -78,8 +78,8 @@ pub unsafe extern "C" fn clausters_tempomap_load(json: *const u8, len: usize) ->
     }
 }
 
-/// **A map from a piece's authored tempo entries** — the JSON array a
-/// document's `tempo` list is, plus the tempo a piece that never said one
+/// **A map from a multitrack's authored tempo entries** — the JSON array a
+/// document's `tempo` list is, plus the tempo a multitrack that never said one
 /// leaves to its reader. Null when the bytes are not such a list.
 ///
 /// The bridge a reader of a document would otherwise take three decisions to
@@ -158,7 +158,7 @@ pub unsafe extern "C" fn clausters_tempomap_free(h: *mut TempoMap) {
     }
 }
 
-/// An independent copy of `h` — what handing a piece's map to a clock takes,
+/// An independent copy of `h` — what handing a multitrack's map to a clock takes,
 /// so neither one's edits reach the other. Null when `h` is null.
 ///
 /// # Safety

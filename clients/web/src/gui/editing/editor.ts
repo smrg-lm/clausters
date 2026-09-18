@@ -23,7 +23,7 @@
  * A multitrack application is this class plus what only a tree has: a held document,
  * several views of one composition, the lanes and clips, and a transport.
  * **Transport and render are not here** — a bare structure at most sounds; it
- * has no piece to move over.
+ * has no multitrack to move over.
  *
  * @module
  */
@@ -146,7 +146,7 @@ export class Editor<S = unknown> implements Adopting {
     /**
      * The editor this one was **composed inside**, when it was one.
      *
-     * A structure is not a piece: it has no transport, so a click on a ruler
+     * A structure is not a multitrack: it has no transport, so a click on a ruler
      * here is a seek of whatever this is part of. An editor composed by nobody
      * answers a transport gesture with nothing, which is the honest answer for
      * a curve opened on its own.
@@ -319,7 +319,7 @@ export class Editor<S = unknown> implements Adopting {
     }
 
     /**
-     * Beats → timeline samples, through the piece's time map (and the core's
+     * Beats → timeline samples, through the multitrack's time map (and the core's
      * seconds→samples rounding every client shares).
      */
     beatsToUnits(beats: number): number {
@@ -778,7 +778,7 @@ export class Editor<S = unknown> implements Adopting {
             // is never placed.
             this.cursor = this.position(Number(values[0]));
             // **Whoever has the transport is told**, and that is this editor
-            // when it has one and the piece it is composed inside when it does
+            // when it has one and the multitrack it is composed inside when it does
             // not: a structure has no transport of its own, and a window inside
             // a composition is not a second place to keep a position.
             this.locate(this.cursor);
@@ -808,7 +808,7 @@ export class Editor<S = unknown> implements Adopting {
      *
      * Nothing on its own — a structure's selection is that structure's. A view
      * **composed** inside a bigger editor hands it up instead, because the range
-     * an operation is given must be the same value whichever of the piece's
+     * an operation is given must be the same value whichever of the multitrack's
      * windows it was swept in.
      */
     protected selected(): void {
@@ -956,7 +956,7 @@ export class Editor<S = unknown> implements Adopting {
      * window's, or a step of the history.
      *
      * Separate from {@link Editor.adopt}, which is about *drawing*: a page that
-     * sounds a piece or writes a file wants to be told whoever made the edit,
+     * sounds a multitrack or writes a file wants to be told whoever made the edit,
      * and the window that made it is not exempt from having changed.
      */
     dataChanged(): void {

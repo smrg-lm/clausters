@@ -1,6 +1,6 @@
-//! **The verbs**: what the piece can be asked to do, and what it reports back.
+//! **The verbs**: what the multitrack can be asked to do, and what it reports back.
 //!
-//! A verb acts on what the hand is holding and answers with the piece as it now
+//! A verb acts on what the hand is holding and answers with the multitrack as it now
 //! stands -- or with a refusal, in the words the reader needs ("these boxes are
 //! already on the grid"). The box arithmetic under them is
 //! `structures::boxes`, which a roll's verbs call too; what is here is what a
@@ -12,7 +12,7 @@ use super::*;
 impl Multitrack {
     /// **The edit-back: the clips as they now are.** One payload for every
     /// gesture there is — a move, a trim, a lane crossed, a block — because
-    /// what is reported is the piece and not what the hand did to it.
+    /// what is reported is the multitrack and not what the hand did to it.
     pub(super) fn clips_event(&self) -> Events {
         let mut args = vec![OscType::String("clips".into())];
         if let Value::Array(flat) = model::clips_json(&self.clips) {
@@ -44,7 +44,7 @@ impl Multitrack {
         let mut made = Lane::new(self.fresh_lane_name(), height);
         // **A track a hand makes asks for no automation** *(found 2026-09-12 by
         // the user: "todas las pistas agregadas aparecen con automatizacion de
-        // gain visible")*. A lane is shown-by-default because a row a *piece*
+        // gain visible")*. A lane is shown-by-default because a row a *multitrack*
         // drew is a row it meant to be seen -- and a row nobody has drawn yet
         // has nothing to show, so the default said "show me this track's
         // automation" and the owner, reading that as the verb it is, made one.
@@ -65,7 +65,7 @@ impl Multitrack {
     /// **Removes the selected track**, and everything on it, reported as the
     /// rows now stand.
     ///
-    /// The boxes go with it and nothing says so: the rows report is the piece's
+    /// The boxes go with it and nothing says so: the rows report is the multitrack's
     /// tracks, and a track that is not in it is gone with its contents. So this
     /// sends one payload where a removal per box would send two and undo in
     /// two steps.

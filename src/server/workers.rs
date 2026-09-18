@@ -59,7 +59,7 @@ struct Job {
     offset: usize,
     frames: usize,
     /// Carried so a worker's `ProcessCtx` is the conductor's: a stage runs in
-    /// the same slice, so it is at the same place in the piece.
+    /// the same slice, so it is at the same place on the transport's axis.
     transport: TransportCtx,
 }
 

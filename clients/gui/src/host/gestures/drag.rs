@@ -227,7 +227,7 @@ impl Gestures {
                 set_selection(host, &mut out, def_id, id, anchor, cur, range.or(band));
                 // The span follows the hand; the head does not. A loop set
                 // while the take repeats inside it changes where it wraps and
-                // leaves the piece where it is, which is why this is live and
+                // leaves the multitrack where it is, which is why this is live and
                 // the locate at the press is not repeated here.
                 let (a, b) = timeline::snap_selection(anchor, cur);
                 transport_follows_selection(host, def_id, id, a, b, false);

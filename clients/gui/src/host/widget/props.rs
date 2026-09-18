@@ -320,7 +320,7 @@ fn normalized_window(start: f64, len: f64, headroom: f64) -> (f64, f64) {
 /// **A labelled point on the time axis** — a cue, a section, a rehearsal
 /// letter: three fields and nothing else, because that is what a marker is.
 ///
-/// It is the ruler's, not a view's: a marker names a moment in the *piece*, so
+/// It is the ruler's, not a view's: a marker names a moment in the *multitrack*, so
 /// every view of that axis shows the same ones and none of them owns them. It
 /// draws no line down the picture (that is what a playhead and a selection band
 /// are for) — an arrow into the ruler's ticks, and a click on it puts the
@@ -408,17 +408,17 @@ pub struct EditorProps {
     pub sample_rate: f64,
     pub bit_depth: u32,
     pub tempo: f64,
-    /// **The piece's beat-to-second map**, when the axis has one.
+    /// **The multitrack's beat-to-second map**, when the axis has one.
     ///
     /// `tempo` is the same statement with one segment in it, and the pair is
     /// not a duplication: a beat is a logical coordinate, and what turns one
-    /// into a second is a function that a piece may change along its length.
+    /// into a second is a function that a multitrack may change along its length.
     /// Held behind an `Arc` because the chrome is cloned per frame and a map
     /// is a list, not a number; shared rather than copied, so the ruler reads
     /// the same one the clip placements were computed from.
     ///
     /// Where it is present it **wins over `tempo` and `beat_at`**: it answers
-    /// the same question with more of the piece in it, and it carries its own
+    /// the same question with more of the multitrack in it, and it carries its own
     /// anchoring ([`TempoMap::anchored`]).
     pub tempo_map: Option<Arc<TempoMap>>,
     pub beat_at: f64,
@@ -442,7 +442,7 @@ pub struct EditorProps {
     /// moves it, and it stays where it was put.
     ///
     /// Group-wide like the rest of the axis' state, because a paste anchor
-    /// that differed between two lanes of one piece would not be an anchor.
+    /// that differed between two lanes of one multitrack would not be an anchor.
     pub cursor: f64,
     /// The sweep's **loop region**, in the same sample units as `playhead`:
     /// with `playhead_loop_len > 0` the swept line wraps inside
@@ -607,7 +607,7 @@ impl EditorProps {
                 .is_some(),
             "tempo" => set_f64(&mut self.tempo, v),
             // A map arriving live replaces the axis' own; `null` (or any
-            // malformed value) takes it away, which is how a piece goes back
+            // malformed value) takes it away, which is how a multitrack goes back
             // to one tempo without the view being rebuilt.
             "tempo_map" => {
                 self.tempo_map = parse_tempo_map(v);

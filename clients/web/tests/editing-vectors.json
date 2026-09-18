@@ -200,9 +200,9 @@
     }
   },
   {
-    "name": "a piece with no tempo",
+    "name": "a multitrack with no tempo",
     "kind": "multitrack_props",
-    "piece": {
+    "multitrack": {
       "version": 1,
       "tracks": [
         {
@@ -356,9 +356,9 @@
     }
   },
   {
-    "name": "the same piece over a source nobody read",
+    "name": "the same multitrack over a source nobody read",
     "kind": "multitrack_props",
-    "piece": {
+    "multitrack": {
       "version": 1,
       "tracks": [
         {
@@ -509,7 +509,7 @@
   {
     "name": "and with a tempo that moves, which moves no box",
     "kind": "multitrack_props",
-    "piece": {
+    "multitrack": {
       "version": 1,
       "tracks": [
         {
@@ -1563,12 +1563,12 @@
       }
     },
     "intake": {
-      "label": "edit the piece",
+      "label": "edit the multitrack",
       "payloads": []
     }
   },
   {
-    "name": "a piece reported back unchanged is no edit",
+    "name": "a multitrack reported back unchanged is no edit",
     "kind": "intake",
     "domain": "multitrack",
     "tag": "clips",
@@ -1676,7 +1676,7 @@
       }
     },
     "intake": {
-      "label": "edit the piece",
+      "label": "edit the multitrack",
       "payloads": []
     }
   },
@@ -1731,7 +1731,7 @@
     }
   },
   {
-    "name": "a script edited the piece: the version moved and no event moved it",
+    "name": "a script edited the multitrack: the version moved and no event moved it",
     "kind": "conversation",
     "message": {
       "addr": "/gui_event",
@@ -2026,9 +2026,9 @@
     }
   },
   {
-    "name": "the names of a piece with no tempo",
+    "name": "the names of a multitrack with no tempo",
     "kind": "names",
-    "piece": {
+    "multitrack": {
       "version": 1,
       "tracks": [
         {
@@ -2127,9 +2127,9 @@
     }
   },
   {
-    "name": "the names of the same piece over a source nobody read",
+    "name": "the names of the same multitrack over a source nobody read",
     "kind": "names",
-    "piece": {
+    "multitrack": {
       "version": 1,
       "tracks": [
         {
@@ -2230,7 +2230,7 @@
   {
     "name": "the names of and with a tempo that moves, which moves no box",
     "kind": "names",
-    "piece": {
+    "multitrack": {
       "version": 1,
       "tracks": [
         {
@@ -2342,7 +2342,7 @@
   {
     "name": "the multitrack editor answers a recorded exchange",
     "kind": "editor_exchange",
-    "piece": {
+    "multitrack": {
       "version": 1,
       "tracks": [
         {
@@ -2430,7 +2430,7 @@
     "turns": [
       {
         "name": "a box moved on its lane",
-        "target": "piece",
+        "target": "multitrack",
         "seq": 1,
         "against": "now",
         "tag": "clips",
@@ -2495,7 +2495,7 @@
       },
       {
         "name": "a box split under a name the host minted",
-        "target": "piece",
+        "target": "multitrack",
         "seq": 2,
         "against": "now",
         "tag": "clips",
@@ -2545,7 +2545,7 @@
             null,
             [
               [
-                "piece",
+                "multitrack",
                 {
                   "autofit": false,
                   "clips": [
@@ -2811,7 +2811,7 @@
             null,
             [
               [
-                "piece",
+                "multitrack",
                 {
                   "cursor": 0.0
                 }
@@ -2917,7 +2917,7 @@
             null,
             [
               [
-                "piece",
+                "multitrack",
                 {
                   "autofit": false,
                   "clips": [
@@ -3019,7 +3019,7 @@
       },
       {
         "name": "an edit made against a picture that is gone",
-        "target": "piece",
+        "target": "multitrack",
         "seq": 9,
         "against": 1,
         "tag": "clips",
@@ -3055,7 +3055,7 @@
             "the composition changed since this edit",
             [
               [
-                "piece",
+                "multitrack",
                 {
                   "autofit": false,
                   "clips": [

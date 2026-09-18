@@ -729,11 +729,11 @@ impl Default for JsScheduler {
     }
 }
 
-/// The piece's beat↔second time map, the JS face of
+/// The multitrack's beat↔second time map, the JS face of
 /// [`clausters_core::tempomap::TempoMap`].
 ///
 /// A beat is a logical coordinate, not a unit of time; this is the function
-/// that turns one into the other under a tempo that changes along the piece.
+/// that turns one into the other under a tempo that changes along the multitrack.
 /// It is pure — it knows nothing of *now* — so an editor, an offline render
 /// and a live clock share one, and there is a single implementation of the
 /// integral behind all of them.
@@ -760,8 +760,8 @@ impl JsTempoMap {
             .map(JsTempoMap)
     }
 
-    /// **A map from a piece's authored tempo entries** — the JSON array a
-    /// document's `tempo` list is, plus the tempo a piece that never said one
+    /// **A map from a multitrack's authored tempo entries** — the JSON array a
+    /// document's `tempo` list is, plus the tempo a multitrack that never said one
     /// leaves to its reader. `undefined` when the text is not such a list.
     ///
     /// The bridge a reader of a document would otherwise take three decisions
@@ -795,7 +795,7 @@ impl JsTempoMap {
 
     /// An independent copy — a fork, for when two tempi should stop being one.
     /// Handing a map to a clock does **not** copy: a clock adopts what it is
-    /// given, which is what lets two clocks read one piece.
+    /// given, which is what lets two clocks read one multitrack.
     #[wasm_bindgen(js_name = copy)]
     pub fn copy(&self) -> JsTempoMap {
         JsTempoMap(self.0.clone())
@@ -1383,18 +1383,18 @@ pub fn points_props(
     clausters_editing::points::props_json(points, kept, held.unwrap_or(0.0))
 }
 
-/// JS face: **a piece as the props the multitrack widget is drawn with**, as a
+/// JS face: **a multitrack as the props the multitrack widget is drawn with**, as a
 /// JSON string.
 ///
 /// The rows, the boxes, the automations over both, their break-points, which
-/// are hidden and which boxes loop — everything a piece has from the document
+/// are hidden and which boxes loop — everything a multitrack has from the document
 /// alone. `sources` is the same table `multitrack_plan` takes, source id to
 /// `{"buffer", "channels"}`, because what a box is drawn from and what it is
 /// played from are the same samples.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = multitrackProps)]
-pub fn multitrack_props(piece: &str, sample_rate: f64, sources: &str) -> String {
-    clausters_editing::multitrack::props_json(piece, sample_rate, sources)
+pub fn multitrack_props(multitrack: &str, sample_rate: f64, sources: &str) -> String {
+    clausters_editing::multitrack::props_json(multitrack, sample_rate, sources)
 }
 
 /// **An editing context**: one undo order over every editor opened in it. Its
@@ -1476,11 +1476,11 @@ pub fn editing_load(request: &str) -> String {
     clausters_editing::load::plan_json(request)
 }
 
-/// JS face: **what is sounding of a piece**, held across edits.
+/// JS face: **what is sounding of a multitrack**, held across edits.
 ///
 /// The instance projection's state. The other two projections are functions of
 /// a structure alone and this one is a function of a structure *and* of what a
-/// server already holds: a piece plays itself from the transport, so the nodes
+/// server already holds: a multitrack plays itself from the transport, so the nodes
 /// have to stay, and what this answers is the **difference**.
 /// The tempo a multitrack that states none is drawn at, in beats per second:
 /// what its ruler reads, and nothing it places.
@@ -1518,7 +1518,7 @@ impl JsStepRunner {
     }
 }
 
-/// **One piece, as it is playing**: its instance, its applier and its
+/// **One multitrack, as it is playing**: its instance, its applier and its
 /// transport, answering every verb as steps (JSON).
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = MultitrackPlayback)]
@@ -1528,7 +1528,7 @@ pub struct JsMultitrackPlayback(clausters_editing::playback::MultitrackPlayback)
 #[wasm_bindgen(js_class = MultitrackPlayback)]
 impl JsMultitrackPlayback {
     /// A playback; `chunk` is how many samples one fill carries. Where the
-    /// piece is made and how the transport is bound are the crate's.
+    /// multitrack is made and how the transport is bound are the crate's.
     #[wasm_bindgen(constructor)]
     pub fn new(chunk: usize) -> JsMultitrackPlayback {
         JsMultitrackPlayback(clausters_editing::playback::MultitrackPlayback::new(
@@ -1538,10 +1538,10 @@ impl JsMultitrackPlayback {
         ))
     }
 
-    /// The steps that make what sounds be what the piece says.
+    /// The steps that make what sounds be what the multitrack says.
     pub fn sync(
         &mut self,
-        piece: &str,
+        multitrack: &str,
         sample_rate: f64,
         sources: &str,
         gain: f32,
@@ -1549,7 +1549,7 @@ impl JsMultitrackPlayback {
     ) -> String {
         clausters_editing::playback::sync_json(
             &mut self.0,
-            piece,
+            multitrack,
             sample_rate,
             sources,
             gain,
@@ -1562,7 +1562,7 @@ impl JsMultitrackPlayback {
         clausters_editing::playback::answer_json(Ok(self.0.play()))
     }
 
-    /// The steps that freeze the piece and zero its meters.
+    /// The steps that freeze the multitrack and zero its meters.
     pub fn pause(&mut self) -> String {
         clausters_editing::playback::answer_json(Ok(self.0.pause()))
     }
@@ -1582,12 +1582,12 @@ impl JsMultitrackPlayback {
         clausters_editing::playback::answer_json(Ok(self.0.cue(secs)))
     }
 
-    /// The steps that free everything the piece made.
+    /// The steps that free everything the multitrack made.
     pub fn close(&mut self, ids: &mut JsIdSpaces) -> String {
         clausters_editing::playback::answer_json(self.0.close(&mut ids.0))
     }
 
-    /// The meters the piece writes, as JSON.
+    /// The meters the multitrack writes, as JSON.
     pub fn meters(&self) -> String {
         clausters_editing::playback::meters_json(&self.0)
     }
@@ -1630,28 +1630,40 @@ impl Default for JsInstance {
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_class = Instance)]
 impl JsInstance {
-    /// A new instance: nothing of the piece is sounding yet.
+    /// A new instance: nothing of the multitrack is sounding yet.
     #[wasm_bindgen(constructor)]
     pub fn new() -> JsInstance {
         JsInstance(clausters_editing::instance::Instance::new())
     }
 
-    /// **The difference between what is sounding and what the piece says**, as
+    /// **The difference between what is sounding and what the multitrack says**, as
     /// the JSON list of operations a client applies.
     ///
-    /// The same three arguments `multitrackPlan` takes — the piece, the rate
+    /// The same three arguments `multitrackPlan` takes — the multitrack, the rate
     /// and the source table —
-    /// plus the master's own level, which is the caller's and not the piece's.
+    /// plus the master's own level, which is the caller's and not the multitrack's.
     ///
     /// An operation names what it acts on by a **handle**, never by a node id,
     /// a bus index or a buffer number: this allocates none of those, and the
     /// client keeps the one table from handle to whatever it made.
-    pub fn reconcile(&mut self, piece: &str, sample_rate: f64, sources: &str, gain: f32) -> String {
-        clausters_editing::instance::reconcile_json(&mut self.0, piece, sample_rate, sources, gain)
+    pub fn reconcile(
+        &mut self,
+        multitrack: &str,
+        sample_rate: f64,
+        sources: &str,
+        gain: f32,
+    ) -> String {
+        clausters_editing::instance::reconcile_json(
+            &mut self.0,
+            multitrack,
+            sample_rate,
+            sources,
+            gain,
+        )
     }
 
     /// **Everything this made, given back** — the operations that stop the
-    /// piece. The piece itself is untouched: what an instance holds is nodes,
+    /// multitrack. The multitrack itself is untouched: what an instance holds is nodes,
     /// and nodes are not the composition.
     pub fn teardown(&mut self) -> String {
         self.0.teardown_json()
@@ -1694,17 +1706,17 @@ pub fn conversation_answer(request: &str) -> String {
     clausters_editing::conversation::answer_json(request)
 }
 
-/// JS face: **what a piece calls its rows and its boxes** — `{"rows": [...],
+/// JS face: **what a multitrack calls its rows and its boxes** — `{"rows": [...],
 /// "boxes": [...]}`, by the names the wire carries them under.
 ///
-/// The minting correction's half that is a fact about the piece: a host that
+/// The minting correction's half that is a fact about the multitrack: a host that
 /// made a track or split a box minted the *word* while the document minted the
 /// *id*, so a view keeps what it was last told and answers with the picture
 /// when the two stop agreeing.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = multitrackNames)]
-pub fn multitrack_names(piece: &str) -> String {
-    clausters_editing::multitrack::names_json(piece)
+pub fn multitrack_names(multitrack: &str) -> String {
+    clausters_editing::multitrack::names_json(multitrack)
 }
 
 /// JS face: the stereo **correlation** (Pearson's r) of two equal-length
@@ -2836,14 +2848,14 @@ pub fn domain_edit(domain: &str, state: &str, payload: &str) -> String {
     serde_json::to_string(&edited).unwrap_or_default()
 }
 
-/// **The defs a piece of these widths is played by** — `{"synth": [...],
+/// **The defs a multitrack of these widths is played by** — `{"synth": [...],
 /// "graph": [...]}`, each list in the order it must be sent, or an empty string
 /// for a width nothing is written for.
 ///
 /// `widths` is a JSON array of `[source channels, track channels]` pairs and
-/// `master` the piece's own width. What a track and a clip *are* on the server
+/// `master` the multitrack's own width. What a track and a clip *are* on the server
 /// is `clausters_core::mixer`'s and there is one of it: two clients writing
-/// their own channel strips is two mixers, which is how the same piece comes to
+/// their own channel strips is two mixers, which is how the same multitrack comes to
 /// sound different in two places.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = mixerDefs)]
@@ -2858,7 +2870,7 @@ pub fn mixer_defs(widths: &str, master: usize) -> String {
         "synth": defs.synth,
         "graph": defs.graph,
         // The one def a caller instantiates by name rather than by the plan:
-        // a curve is a node of the caller's own, beside the piece.
+        // a curve is a node of the caller's own, beside the multitrack.
         "curve": clausters_core::mixer::curve_name(),
         // **How long a meter's mark waits**, in seconds: a meter is added by
         // the caller (it is the caller who allocated the buses it writes), and
@@ -2869,12 +2881,12 @@ pub fn mixer_defs(widths: &str, master: usize) -> String {
     .unwrap_or_default()
 }
 
-/// **What to instantiate to play a piece** — the instance plan, or an empty
-/// string for a piece that will not parse.
+/// **What to instantiate to play a multitrack** — the instance plan, or an empty
+/// string for a multitrack that will not parse.
 ///
 /// `sources` is a JSON object from source id to `{"buffer": n, "channels": n}`:
 /// where a source's samples actually are on a running server, which is the one
-/// fact about a piece that is not in the piece. No tempo is asked for: a
+/// fact about a multitrack that is not in the multitrack. No tempo is asked for: a
 /// multitrack is placed in seconds.
 ///
 /// Three rules live in it and each was written twice before it did: seconds
@@ -2882,8 +2894,9 @@ pub fn mixer_defs(widths: &str, master: usize) -> String {
 /// clip's wiring, and what a solo anywhere does to everything else.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = multitrackPlan)]
-pub fn multitrack_plan(piece: &str, sample_rate: f64, sources: &str) -> String {
-    let Ok(piece) = serde_json::from_str::<clausters_document::multitrack::Multitrack>(piece)
+pub fn multitrack_plan(multitrack: &str, sample_rate: f64, sources: &str) -> String {
+    let Ok(multitrack) =
+        serde_json::from_str::<clausters_document::multitrack::Multitrack>(multitrack)
     else {
         return String::new();
     };
@@ -2900,7 +2913,7 @@ pub fn multitrack_plan(piece: &str, sample_rate: f64, sources: &str) -> String {
                 .map(|id| (clausters_document::SourceId(id), info))
         })
         .collect();
-    let plan = clausters_document::multitrack::nodes::plan(&piece, sample_rate, &table);
+    let plan = clausters_document::multitrack::nodes::plan(&multitrack, sample_rate, &table);
     serde_json::to_string(&plan).unwrap_or_default()
 }
 
@@ -3058,7 +3071,7 @@ pub fn interpretation() -> Result<String, JsError> {
 /// was not written from one.
 ///
 /// The page names elements the way the emitter wrote them: `n7` is the item,
-/// `n7-2` a piece of it split across a barline, `n7-p1` one pitch of a chord.
+/// `n7-2` a part of it split across a barline, `n7-p1` one pitch of a chord.
 /// All three are the same item, which is what lets a gesture anywhere on a note
 /// reach the note — and it is the step a client takes between a page's
 /// selection and a model verb.

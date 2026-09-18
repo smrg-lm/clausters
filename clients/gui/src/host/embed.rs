@@ -66,7 +66,7 @@ impl EmbedServer {
     /// The data plane is the same one an out-of-process peer reads, so the host
     /// gets the clocks, the control buses, the per-bus levels and the audio
     /// taps with no messages at all. `head` picks which counter a playhead
-    /// draws from: an editor reads the piece's position, a host watching a live
+    /// draws from: an editor reads the multitrack's position, a host watching a live
     /// server reads the device clock.
     ///
     /// `None` when the segment does not validate, which would mean this build's
@@ -96,8 +96,8 @@ mod tests {
     use clausters_core::osc::{OscMessage, OscPacket, OscType, encode};
 
     /// The wire-up nothing else covers: an embedded server's own segment, read
-    /// as a `BusSource`, reports **the piece's position** — so a window drawing
-    /// a head from it draws where the piece is rather than how long the
+    /// as a `BusSource`, reports **the multitrack's position** — so a window drawing
+    /// a head from it draws where the multitrack is rather than how long the
     /// machine has been running.
     ///
     /// Skipped where no audio device can be opened, which is what a headless
@@ -137,7 +137,7 @@ mod tests {
         // nothing about the code and it trains a reader to re-run.
         assert!(
             settles(|| bus.transport_position() == 12_345.0),
-            "located, and stopped: the piece stands exactly where it was put \
+            "located, and stopped: the multitrack stands exactly where it was put \
              (read {})",
             bus.transport_position()
         );

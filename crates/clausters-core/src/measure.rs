@@ -502,7 +502,7 @@ mod ballistics_tests {
 /// mark is actually reporting is a waveform that was **flattened**, and the
 /// signature of that is a *run*. Three is the field's usual number (a hardware
 /// console's over lamp, and a DAW's default); one is the pessimistic reading a
-/// small meter takes, and it is why a mastered piece that legitimately touches
+/// small meter takes, and it is why a mastered take that legitimately touches
 /// full scale lights every meter it is played on.
 ///
 /// Inter-sample peaks are a different measurement and not a different

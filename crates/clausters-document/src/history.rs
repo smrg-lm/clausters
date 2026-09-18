@@ -492,7 +492,7 @@ impl Direction {
 ///
 /// [`Undone`] and [`Redone`] are what the two directions hand back; this is the
 /// two of them said once, with the legs already gathered per structure. That
-/// grouping is the whole of it, and it is here because it was the piece every
+/// grouping is the whole of it, and it is here because it was the multitrack every
 /// caller wrote for itself: pick the side the direction reads, then keep the
 /// legs whose structure is mine. Four callers wrote those two lines — two
 /// editing clients and both document logs — and neither line is a caller's

@@ -1,8 +1,8 @@
-//! **What a script says the piece is**: the props in, and the reports out.
+//! **What a script says the multitrack is**: the props in, and the reports out.
 //!
 //! One direction is the wire's lists becoming this widget's own -- the lanes,
 //! the boxes, the curves, the layers, the break-points and the names that tell
-//! a minted word from the piece's own id -- and the other is every payload a
+//! a minted word from the multitrack's own id -- and the other is every payload a
 //! gesture leaves. They are one module because they are one contract read from
 //! either end: a report is written in exactly the shape the prop it answers
 //! would take, so applying what came back is the identity.
@@ -425,7 +425,7 @@ impl Multitrack {
                 // from a lookup by name, and `j` found one box where the hand
                 // held two -- and a join that joins nothing says nothing, so
                 // the key looked dead. It is the same box in the same place on
-                // the same lane, because the piece placed it exactly where this
+                // the same lane, because the multitrack placed it exactly where this
                 // said, and that is what the second pass matches on.
                 let held: Vec<(String, String, f64)> = self
                     .selected

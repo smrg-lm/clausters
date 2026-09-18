@@ -73,7 +73,7 @@ pub mod layers;
 // clip on a lane are the same object with respect to editing and positioning,
 // and the arithmetic is written here once.
 pub mod play;
-// What the piece is playing through: the instance, the handle tables and the
+// What the multitrack is playing through: the instance, the handle tables and the
 // allocators. Beside `play` and not under `document`, because what it holds is
 // the server's -- nodes, buses, buffers -- and nodes are not the composition.
 pub mod instance;
@@ -498,7 +498,7 @@ pub trait BusSource: Send + Sync {
         0.0
     }
 
-    /// The transport's **position in the piece**, in samples, when this source
+    /// The transport's **position in the multitrack**, in samples, when this source
     /// carries it (`0.0` otherwise).
     ///
     /// The other counter a playhead can be drawn from, and the one an editor
@@ -708,13 +708,13 @@ pub struct Host {
     /// allocates by ([`ids`]).
     ids: clausters_core::ids::IdSpaces,
     /// The group the take monitor makes its readers in, once made: inside the
-    /// piece's transport group when a piece plays, or one this host bound when
+    /// multitrack's transport group when a multitrack plays, or one this host bound when
     /// none does ([`Host::monitor_group`]).
     governed: Option<i32>,
     /// The take the **monitor** is loaded with (see [`play`]). One take at a
     /// time, so this is one entry and not a list.
     playing: Option<play::Monitor>,
-    /// **What the piece is playing through** — the instance, the handle tables
+    /// **What the multitrack is playing through** — the instance, the handle tables
     /// and the allocators a standalone host keeps as any other endpoint does
     /// ([`instance`]).
     instance: instance::Playing,
@@ -747,7 +747,7 @@ pub struct Host {
     /// editor, which has no script to wait for and must apply its own intents
     /// (`document::Owner`).
     pub owner: Option<document::Owner>,
-    /// What the clock of a piece this host edits alone last read, so an
+    /// What the clock of a multitrack this host edits alone last read, so an
     /// unchanged reading is not set again every frame.
     pub(crate) clock_shown: Option<String>,
     /// What this host told itself and asked of the playback, for the tests
@@ -1058,7 +1058,7 @@ impl Host {
     /// asks again; the windows that had one come back, for a front to redraw.
     ///
     /// The `/done` above is one way to learn the samples are there, and it only
-    /// reaches whoever *asked* for the stitch. When a **client** owns the piece
+    /// reaches whoever *asked* for the stitch. When a **client** owns the multitrack
     /// it is the client that sends it, and the host hears about that buffer
     /// only as the write the server announces to everyone else
     /// (`/buffer_touched`) — which is the same news under another name, and is
@@ -1677,7 +1677,7 @@ impl Host {
     fn on_clock(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
         let which = match args.first() {
             Some(OscType::String(s)) => s.as_str(),
-            _ => return diag::warn!("{from}: {GUI_CLOCK} needs \"device\" or \"piece\""),
+            _ => return diag::warn!("{from}: {GUI_CLOCK} needs \"device\" or \"multitrack\""),
         };
         let head = match which {
             "device" => HeadClock::Device,
@@ -2104,7 +2104,7 @@ impl Host {
     /// would have received ([`Host::event_message`]); answers whether it was
     /// taken, which is what tells a front not to send it on.
     ///
-    /// A gesture on the piece's own window is the **editor's turn** — the same
+    /// A gesture on the multitrack's own window is the **editor's turn** — the same
     /// one a script and a page run, read out of the same message: stamped,
     /// versioned, applied with its inverse and answered. What is left is the
     /// tree's, for a document written before the turn, and the window's own
@@ -2128,8 +2128,8 @@ impl Host {
         if self
             .owner
             .as_ref()
-            .is_some_and(|o| o.draws_piece() && o.editor().is_some())
-            && self.answer_piece(def_id, message)
+            .is_some_and(|o| o.draws_multitrack() && o.editor().is_some())
+            && self.answer_multitrack(def_id, message)
         {
             return true;
         }
@@ -2137,7 +2137,7 @@ impl Host {
     }
 
     /// **The tree's answer**, and the window's own verbs: history, save, and
-    /// the payloads a document written before the piece describes itself in.
+    /// the payloads a document written before the multitrack describes itself in.
     fn answer_tree(&mut self, def_id: i32, widget_id: i32, seq: i32, args: &[OscType]) -> bool {
         let Some(owner) = self.owner.as_mut() else {
             return false;
@@ -2183,7 +2183,7 @@ impl Host {
                 return true;
             }
             // The **tree's** description of the same two payloads, for a
-            // document written before the piece existed: one vocabulary or the
+            // document written before the multitrack existed: one vocabulary or the
             // other, and either way the run is one entry in one history.
             Some(OscType::String(tag)) if tag == "clips" || tag == "lanes" => {
                 let against = clausters_document::Against::default();
@@ -2254,22 +2254,22 @@ impl Host {
         true
     }
 
-    /// **A gesture on the piece's window, answered by the multitrack editor.**
+    /// **A gesture on the multitrack's window, answered by the multitrack editor.**
     ///
     /// The turn is the applications crate's; what is carried out here is what a
-    /// host holds: the entry recorded in the owner's history, the piece written
+    /// host holds: the entry recorded in the owner's history, the multitrack written
     /// back, a minted source made before the picture is redrawn (a box naming a
     /// source with no buffer draws empty and sounds through nothing), the picture
     /// and the readers brought in step, a placed cursor cued, and the stamp
     /// settled with the reason the turn gave — so a refusal is said in the
     /// window that asked.
-    fn answer_piece(&mut self, def_id: i32, message: &OscMessage) -> bool {
+    fn answer_multitrack(&mut self, def_id: i32, message: &OscMessage) -> bool {
         use clausters_apps::multitrack::editor::{Event, Kind, TransportVerb};
 
         let Some(owner) = self.owner.as_mut() else {
             return false;
         };
-        let piece = owner.piece.clone();
+        let multitrack = owner.multitrack.clone();
         let (table, lengths) = (owner.buffer_table(), owner.buffer_lengths());
         let Some(member) = owner.editor_member() else {
             return false;
@@ -2277,7 +2277,7 @@ impl Host {
         let Some(editor) = owner.editor_mut() else {
             return false;
         };
-        editor.set_piece(piece);
+        editor.set_multitrack(multitrack);
         editor.set_sources(table);
         editor.set_lengths(lengths);
         // **The message a client would have received**, whole: its stamp, and
@@ -2289,7 +2289,11 @@ impl Host {
             member,
             &Event {
                 addr: message.addr.clone(),
-                args: message.args.iter().map(document::piece::atom).collect(),
+                args: message
+                    .args
+                    .iter()
+                    .map(document::multitrack::atom)
+                    .collect(),
             },
         ) else {
             return false;
@@ -2304,12 +2308,12 @@ impl Host {
             return false;
         }
         if outcome.turn == Kind::Step {
-            return self.step_piece(def_id, stepped, outcome.answer);
+            return self.step_multitrack(def_id, stepped, outcome.answer);
         }
         if outcome.changed
-            && let Some(edited) = owner.editor().map(|editor| editor.piece().clone())
+            && let Some(edited) = owner.editor().map(|editor| editor.multitrack().clone())
         {
-            owner.piece = edited;
+            owner.multitrack = edited;
         }
         let minted: Vec<_> = outcome
             .minted
@@ -2319,12 +2323,12 @@ impl Host {
         self.mint_sources(&minted);
         let applied = document::Applied {
             effective: None,
-            version: self.owner.as_ref().map_or(0, |o| o.piece.version),
+            version: self.owner.as_ref().map_or(0, |o| o.multitrack.version),
             applied: outcome.changed,
         };
         self.adopt(def_id, &[applied]);
         if let Some(secs) = outcome.locate {
-            self.cue_piece(secs);
+            self.cue_multitrack(secs);
         }
         // **A box entered here opens nothing yet.** What it opens is an editor
         // for what the box holds -- the audio editor, another application --
@@ -2339,24 +2343,24 @@ impl Host {
                 #[cfg(test)]
                 self.exchange
                     .asked
-                    .push(serde_json::json!([if self.piece_rolling() {
+                    .push(serde_json::json!([if self.multitrack_rolling() {
                         "pause"
                     } else {
                         "play"
                     }]));
-                self.roll_piece();
+                self.roll_multitrack();
             }
-            Some(TransportVerb::Stop { mark }) => self.stop_piece(mark),
-            Some(TransportVerb::Cue { secs }) => self.cue_piece(secs),
+            Some(TransportVerb::Stop { mark }) => self.stop_multitrack(mark),
+            Some(TransportVerb::Cue { secs }) => self.cue_multitrack(secs),
             None => {}
         }
         if let Some(answer) = outcome.answer {
             self.tell(answer);
         }
-        // **A name the host minted is answered with the one the piece kept**:
+        // **A name the host minted is answered with the one the multitrack kept**:
         // once a changed turn is carried out and a minted source has its
         // buffer, the editor compares what the window was told with what the
-        // piece holds -- its `settle`, which a client's asks after every change.
+        // multitrack holds -- its `settle`, which a client's asks after every change.
         if outcome.changed
             && let Some(owner) = self.owner.as_mut()
         {
@@ -2367,14 +2371,14 @@ impl Host {
             // clip's props: `source=-1` until the box was moved to another
             // track, whose turn starts by handing the table over again). A
             // client's editor is handed it before every call (`_sync_core`).
-            let (version, piece, table, lengths) = (
+            let (version, multitrack, table, lengths) = (
                 owner.editing.version(),
-                owner.piece.clone(),
+                owner.multitrack.clone(),
                 owner.buffer_table(),
                 owner.buffer_lengths(),
             );
             let settled = owner.editor_mut().map(|editor| {
-                editor.set_piece(piece);
+                editor.set_multitrack(multitrack);
                 editor.set_sources(table);
                 editor.set_lengths(lengths);
                 editor.settle(version)
@@ -2386,12 +2390,12 @@ impl Host {
         true
     }
 
-    /// **A step of the history, asked of the piece's window**: taken by the
+    /// **A step of the history, asked of the multitrack's window**: taken by the
     /// editing context inside the turn, carried out here on what the owner
     /// holds, then every window the crate corrected told and the stamp answered
     /// -- with the crate's reason when nothing could apply the step. The order a
     /// client's editor answers one in.
-    fn step_piece(
+    fn step_multitrack(
         &mut self,
         def_id: i32,
         stepped: Option<clausters_apps::editing::Stepped>,
@@ -2668,10 +2672,10 @@ impl Host {
         if !applied.iter().any(|a| a.applied) {
             return;
         }
-        // **The piece is redrawn from the owner, never patched.** The
+        // **The multitrack is redrawn from the owner, never patched.** The
         // multitrack is one widget holding two lists, so what an applied edit
         // leaves is simply what the owner now says -- derived by the walk that
-        // drew it, so the picture and the piece cannot disagree. It is also the
+        // drew it, so the picture and the multitrack cannot disagree. It is also the
         // only thing that can adopt a *structural* edit: an undo of a lane
         // change puts a clip somewhere else entirely, and no per-widget patch
         // says that.
@@ -2679,11 +2683,11 @@ impl Host {
         // There used to be a branch per intent here -- a `Place` writing an
         // offset into a `Clip` widget, a `Configure` writing a `Track`'s header
         // -- and it went with the widgets it addressed. One widget draws the
-        // piece; one call redraws it.
+        // multitrack; one call redraws it.
         let Some(owner) = self.owner.as_ref() else {
             return;
         };
-        let Some(widget) = owner.multitrack() else {
+        let Some(widget) = owner.multitrack_widget() else {
             return;
         };
         let shown = owner.shown();
@@ -2691,7 +2695,7 @@ impl Host {
         // projection produces every key the widget draws from -- the rows, the
         // boxes, the curves, the layers, the break-points, which curves are
         // hidden and which boxes loop -- and this named `lanes` and `clips`.
-        // So a piece that minted a curve (the header's `A`, whose entire job is
+        // So a multitrack that minted a curve (the header's `A`, whose entire job is
         // to make one) applied the edit, kept it in the document, and pushed
         // back nothing that draws it: the row never appeared, and the toggle
         // read as a dead key in a host with no client to answer for it.
@@ -2705,12 +2709,12 @@ impl Host {
         let mut fx = Vec::new();
         self.set_props(widget, shown.props.into_iter().collect(), &mut fx);
         // **And what sounds follows what is drawn**, by the same call and for
-        // the same reason: the piece is a statement, so putting the readers
+        // the same reason: the multitrack is a statement, so putting the readers
         // where it says is one verb whether it is the first time or the
         // hundredth. It reaches nodes that are already running, so a region
-        // moved while the piece plays is heard where it was dropped with
+        // moved while the multitrack plays is heard where it was dropped with
         // nothing that is sounding cut.
-        self.sound_piece();
+        self.sound_multitrack();
     }
 
     /// trailing string is a reason, informational and read by nothing in the
@@ -3594,7 +3598,7 @@ mod tests {
         assert_eq!(ask(&mut host), vec![3], "made, it is asked for again");
 
         // **And the `/done` is not the only way to hear it.** When a *client*
-        // owns the piece it is the client that sends the stitch, so the `/done`
+        // owns the multitrack it is the client that sends the stitch, so the `/done`
         // goes to the client and never reaches here; what does reach here is
         // the write the server announces to every other peer, which is the same
         // news under another name.
@@ -3609,7 +3613,7 @@ mod tests {
 
     /// **A window's playhead reads the counter the host was told to read.** The
     /// segment publishes both -- the device clock, which never stops, and the
-    /// transport's position in the piece, which holds while stopped, jumps on a
+    /// transport's position in the multitrack, which holds while stopped, jumps on a
     /// locate and wraps in a loop -- and an editor wants the second. Until this
     /// existed the choice was made where the segment was opened, so a host
     /// launched by a client could only ever draw the device clock and a script
@@ -4917,12 +4921,12 @@ mod write_tests {
         assert_eq!(host.governed_group(), Some(group));
         assert!(host.owns_transport(), "binding it is what owning it means");
         // The transport is placed before a reader exists, so the readers are
-        // created standing where the piece is rather than racing from wherever
+        // created standing where the multitrack is rather than racing from wherever
         // the last take left it.
         let msg = received(&server).expect("the loop was cleared");
         assert_eq!(msg.addr, "/transport_loop");
         assert!(msg.args.is_empty(), "no arguments turns looping off");
-        let msg = received(&server).expect("the piece was located");
+        let msg = received(&server).expect("the multitrack was located");
         assert_eq!(msg.addr, "/transport_locateSample");
         assert_eq!(msg.args[0], OscType::Long(0));
         let msg = received(&server).expect("a synth was started");
@@ -4957,7 +4961,7 @@ mod write_tests {
     }
 
     /// **The seek and the loop are the transport's, and they go out before a
-    /// reader exists** — so the readers are created standing where the piece
+    /// reader exists** — so the readers are created standing where the multitrack
     /// is rather than sliding into place from wherever the last take left it.
     #[test]
     fn playing_a_span_locates_and_loops_before_the_readers_are_made() {
@@ -4988,7 +4992,7 @@ mod write_tests {
     /// **Pausing is not stopping**: the readers stay, so resuming continues the
     /// sound rather than starting a second copy of it. The freeze is the
     /// server's — this host sends one command and remembers nothing about where
-    /// the piece was.
+    /// the multitrack was.
     #[test]
     fn pausing_keeps_the_readers_and_resuming_continues() {
         let (mut host, server) = take_host(1, 16);

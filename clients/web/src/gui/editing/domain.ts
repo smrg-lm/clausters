@@ -5,7 +5,7 @@
  * gesture it says what that gesture needs read with it, and given an applied
  * payload it writes it onto the client object. Two answers, one per structure
  * kind — a break-point curve, a buffer's samples, a timeline of events, a
- * piece — and they are the two halves a language genuinely owns.
+ * multitrack — and they are the two halves a language genuinely owns.
  *
  * Three things it deliberately does not do, and all of them are boundaries
  * rather than omissions:
@@ -15,7 +15,7 @@
  *   the inverse is: sixteen small readers written twice, once per language, are
  *   sixteen chances for two clients to disagree about what a septuple says. What
  *   a domain adds is the **request** — what that vocabulary needs beside the
- *   report, which is the piece, the timeline, an axis or nothing at all.
+ *   report, which is the multitrack, the timeline, an axis or nothing at all.
  * - **It does not know how an edit inverts.** That is `history::Editable` in the
  *   shared crate (`apply`, `current`, `coalesceKey`), because an inverse written
  *   once per language is an inverse that disagrees with itself. What a domain
@@ -73,7 +73,7 @@ export abstract class Domain<S = unknown> {
      *
      * The default is the report alone, which is what the two stateless
      * vocabularies take. A domain over a structure the reading depends on — the
-     * piece, the timeline — states it here, and so does one whose axis is the
+     * multitrack, the timeline — states it here, and so does one whose axis is the
      * view's.
      */
     request(_structure: S, _tag: string, values: readonly unknown[]): Record<string, unknown> {

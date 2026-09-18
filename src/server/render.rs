@@ -180,7 +180,7 @@ pub struct RenderConfig {
     /// default.
     ///
     /// A random process is unpredictable first: an unconfigured render is a
-    /// *new take*, the way playing a piece with noise in it again gives you
+    /// *new take*, the way playing a take with noise in it again gives you
     /// another performance. Set this to replay one exactly; the seed a render
     /// actually used comes back in [`RenderStats::seed`], so a take you liked
     /// is never lost.

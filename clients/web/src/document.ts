@@ -10,7 +10,7 @@
  *
  * That is not how this started. The first binding passed the whole document in
  * and took the whole new one back, which cost a serialization of the entire
- * composition per edit — 205 ms for one placement on a 10240-event piece,
+ * composition per edit — 205 ms for one placement on a 10240-event multitrack,
  * whatever the edit touched. It is not an accessor handle either: the same
  * three verbs, plus `snapshot`.
  *
@@ -110,7 +110,7 @@ export interface Applied {
     outcome: Outcome;
 }
 
-/** One piece of samples a selection landed on. */
+/** One multitrack of samples a selection landed on. */
 export interface Resolved {
     /** The element the span belongs to. */
     node: NodeId;
@@ -120,7 +120,7 @@ export interface Resolved {
     generation: number;
     /** The span within the source, in frames: trim and placement both applied. */
     range: { start: number; end: number };
-    /** Where this piece starts inside the selection, in frames. */
+    /** Where this multitrack starts inside the selection, in frames. */
     at: number;
 }
 
@@ -425,10 +425,10 @@ export interface RecordedLeg {
  */
 export const TREE = "tree";
 /**
- * The **piece's** vocabulary — what a multitrack editor does, in
+ * The **multitrack's** vocabulary — what a multitrack editor does, in
  * `MultitrackIntent`'s words. See {@link TREE}.
  *
- * A domain of its own rather than more of the tree's: the piece and the tree
+ * A domain of its own rather than more of the tree's: the multitrack and the tree
  * are two descriptions, and one history holds both without either knowing the
  * other's words.
  */
@@ -441,7 +441,7 @@ export const SAMPLES = "samples";
 export const EVENTS = "events";
 
 /**
- * The version an unedited document and an unedited piece are at.
+ * The version an unedited document and an unedited multitrack are at.
  *
  * The counter moves when the description changes, so an edit made against a
  * version the document has left behind is refused as stale rather than applied
@@ -520,7 +520,7 @@ export interface Intake {
  * has nowhere to grow.
  *
  * `request` carries what that domain reads: `values` always, `state` for the two
- * that need the structure (the piece, the timeline), `unitsPerBeat` and
+ * that need the structure (the multitrack, the timeline), `unitsPerBeat` and
  * `editable` for a roll, and `rate` and `sources` for a multitrack.
  *
  * No payloads and no refusal is "nothing to say" — a tag this domain does not

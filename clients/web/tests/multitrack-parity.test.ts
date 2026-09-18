@@ -1,6 +1,6 @@
 // The multitrack model against the Python client's, on the shared vector.
 //
-// `gen-multitrack-vectors.py` writes out the piece the Rust suite already
+// `gen-multitrack-vectors.py` writes out the multitrack the Rust suite already
 // parses -- one definition, three readers: the Python client that built it, the
 // crate that defines the format, and this client. Here it is read, asked the
 // same questions the Rust test asks, and written back; what comes out must be
@@ -35,21 +35,21 @@ test("the client's arrangement parses and survives a round trip", async () => {
     assert.deepEqual(Multitrack.read(written).write(), written);
 });
 
-test("the two sides agree about what the piece is", async () => {
-    const piece = Multitrack.read(await vector());
-    assert.equal(piece.tracks.length, 3);
-    assert.equal(piece.end, 48);
-    assert.equal(piece.tempoAt(40)?.tempo, 2);
-    assert.equal(piece.tempoAt(40)?.ramp, true);
-    assert.equal(piece.meterAt(40)?.beats, 7);
-    assert.equal(piece.markers.length, 2);
-    assert.equal(piece.loopSpan?.length, 32);
-    assert.equal(piece.punch?.start, 8);
+test("the two sides agree about what the multitrack is", async () => {
+    const multitrack = Multitrack.read(await vector());
+    assert.equal(multitrack.tracks.length, 3);
+    assert.equal(multitrack.end, 48);
+    assert.equal(multitrack.tempoAt(40)?.tempo, 2);
+    assert.equal(multitrack.tempoAt(40)?.ramp, true);
+    assert.equal(multitrack.meterAt(40)?.beats, 7);
+    assert.equal(multitrack.markers.length, 2);
+    assert.equal(multitrack.loopSpan?.length, 32);
+    assert.equal(multitrack.punch?.start, 8);
 });
 
 test("a comped track keeps every take and plays the one it names", async () => {
-    const piece = Multitrack.read(await vector());
-    const vocals = piece.track(10);
+    const multitrack = Multitrack.read(await vector());
+    const vocals = multitrack.track(10);
     assert.equal(vocals?.lanes.length, 3, "the takes nobody chose are kept");
     assert.equal(vocals?.active, 1);
     assert.equal(vocals?.activeLane?.name, "take 2");
@@ -59,8 +59,8 @@ test("a comped track keeps every take and plays the one it names", async () => {
 });
 
 test("an overlap keeps its crossfade, its layer and its playrate", async () => {
-    const piece = Multitrack.read(await vector());
-    const lane = piece.track(30)!.lanes[0];
+    const multitrack = Multitrack.read(await vector());
+    const lane = multitrack.track(30)!.lanes[0];
     assert.ok(lane.regions[0].overlaps(lane.regions[1]));
     assert.equal(lane.regions[0].fadeOut?.length, 4);
     const second = lane.regions[1];
@@ -72,16 +72,16 @@ test("an overlap keeps its crossfade, its layer and its playrate", async () => {
 });
 
 test("a composite region arrives as the general tree", async () => {
-    const piece = Multitrack.read(await vector());
-    const region = piece.track(40)!.lanes[0].regions[0];
+    const multitrack = Multitrack.read(await vector());
+    const region = multitrack.track(40)!.lanes[0].regions[0];
     assert.equal(region.content.fill, "composite");
     assert.equal(region.content.node?.id, 43);
     assert.equal(region.content.node?.kind, "aggregate");
 });
 
 test("an automation curve keeps the shapes neither side reads", async () => {
-    const piece = Multitrack.read(await vector());
-    const curve = piece.track(30)!.automation[0];
+    const multitrack = Multitrack.read(await vector());
+    const curve = multitrack.track(30)!.automation[0];
     assert.ok(curve.visible && curve.enabled);
     assert.deepEqual(curve.target, { ctl: "level" });
     assert.deepEqual(curve.points[1].data, { shape: "exp" });
@@ -91,19 +91,19 @@ test("a region carries curves of its own and they are not its track's", async ()
     // The two places a curve belongs: a track's runs the length of the track and
     // is drawn in a lane beside it, a region's runs the length of the region and
     // is drawn inside it. One type, so one reader.
-    const piece = Multitrack.read(await vector());
-    const region = piece.track(30)!.lanes[0].regions[0];
+    const multitrack = Multitrack.read(await vector());
+    const region = multitrack.track(30)!.lanes[0].regions[0];
     assert.equal(region.automation[0].id, 35);
     assert.deepEqual(region.automation[0].target, { ctl: "gain" });
     assert.equal(region.automation[0].points.length, 2);
-    assert.ok(piece.track(30)!.automation[0].id !== region.automation[0].id);
+    assert.ok(multitrack.track(30)!.automation[0].id !== region.automation[0].id);
 });
 
 test("a field the other client added and this build has no name for survives",
      async () => {
-    const piece = Multitrack.read(await vector());
-    assert.deepEqual(piece.extra.groove, { name: "mpc60" });
-    const region = piece.track(40)!.lanes[0].regions[0];
+    const multitrack = Multitrack.read(await vector());
+    assert.deepEqual(multitrack.extra.groove, { name: "mpc60" });
+    const region = multitrack.track(40)!.lanes[0].regions[0];
     assert.deepEqual(region.extra.warp, { mode: "beats" });
 });
 
@@ -138,7 +138,7 @@ test("a track spans every lane and plays one", () => {
     track.activeLane!.place(region(100, 4));
     track.lanes[1].place(region(200, 16));
     assert.equal(track.activeLane?.id, 10);
-    // An alternate take is still part of the piece.
+    // An alternate take is still part of the multitrack.
     assert.equal(track.end, 16);
     track.active = 7;
     assert.equal(track.activeLane, undefined);
@@ -148,20 +148,20 @@ test("the tempo map is where the beats fall over the seconds", async () => {
     // The multitrack is in seconds; the map it holds says where its beats and
     // bars fall, so a script can put a region on a bar -- and it moves nothing.
     await loadCore();
-    const piece = new Multitrack();
-    assert.ok(Math.abs(piece.tempoMap().secsAt(3) - 3) < 1e-9, "one beat a second where it states no tempo");
-    piece.setTempo(new Tempo({ at: 0, tempo: 2 }));
-    piece.setTempo(new Tempo({ at: 4, tempo: 1 }));
-    assert.ok(Math.abs(piece.tempoMap().secsAt(6) - 4) < 1e-9);
+    const multitrack = new Multitrack();
+    assert.ok(Math.abs(multitrack.tempoMap().secsAt(3) - 3) < 1e-9, "one beat a second where it states no tempo");
+    multitrack.setTempo(new Tempo({ at: 0, tempo: 2 }));
+    multitrack.setTempo(new Tempo({ at: 4, tempo: 1 }));
+    assert.ok(Math.abs(multitrack.tempoMap().secsAt(6) - 4) < 1e-9);
 });
 
 test("two tempos at one beat is a state the map cannot hold", () => {
-    const piece = new Multitrack();
-    piece.setTempo(new Tempo({ at: 4, tempo: 2 }));
-    piece.setTempo(new Tempo({ at: 4, tempo: 1.5 }));
-    assert.equal(piece.tempo.length, 1);
-    assert.equal(piece.tempoAt(4)?.tempo, 1.5);
-    // ...and a piece that never said a tempo says nothing: no 120 invented.
+    const multitrack = new Multitrack();
+    multitrack.setTempo(new Tempo({ at: 4, tempo: 2 }));
+    multitrack.setTempo(new Tempo({ at: 4, tempo: 1.5 }));
+    assert.equal(multitrack.tempo.length, 1);
+    assert.equal(multitrack.tempoAt(4)?.tempo, 1.5);
+    // ...and a multitrack that never said a tempo says nothing: no 120 invented.
     assert.equal(new Multitrack().tempoAt(0), undefined);
 });
 
@@ -175,10 +175,10 @@ test("nothing said is nothing written", () => {
     assert.equal((written.content as Record<string, unknown>).playrate, undefined);
 });
 
-test("the piece carries its own version and keeps it out of an empty file", () => {
-    // The counter a stale edit is stale against, and it is the piece's rather
+test("the multitrack carries its own version and keeps it out of an empty file", () => {
+    // The counter a stale edit is stale against, and it is the multitrack's rather
     // than the document's: an editor of one is not editing the other. It stays
-    // out of the file while it is the first version, so an unedited piece still
+    // out of the file while it is the first version, so an unedited multitrack still
     // writes an empty object and a file that never named one reads back at it.
     assert.equal(new Multitrack().version, 1);
     assert.equal(new Multitrack().write().version, undefined);
@@ -201,7 +201,7 @@ test("a half-open span meets the next one without covering an instant twice", ()
     assert.equal(new Fade(4).write().length, 4);
 });
 
-// ---- the session: the piece, and where its samples are ----
+// ---- the session: the multitrack, and where its samples are ----
 
 const SESSION = new URL("./multitrack-session-vectors.json", import.meta.url);
 
@@ -243,7 +243,7 @@ test("a save that cannot promise everything says which part", async () => {
     assert.deepEqual(session.openEdits(), []);
 });
 
-test("the piece inside the session is the same piece", async () => {
+test("the multitrack inside the session is the same multitrack", async () => {
     const session = Session.read(await saved());
     assert.deepEqual(session.multitrack.write(), await vector());
     assert.deepEqual(session.dangling(), []);
@@ -289,19 +289,19 @@ test("a format 2 session opens in seconds", async () => {
     assert.equal(session.multitrack.markers[0]!.at, 4.0);
 });
 
-// ---- the presentation: what a window shows of a piece ----
+// ---- the presentation: what a window shows of a multitrack ----
 
 function aPiece(): Multitrack {
-    const piece = new Multitrack();
+    const multitrack = new Multitrack();
     const vocals = new Track({ id: 10, lanes: [new Lane({ id: 11 }), new Lane({ id: 12 })] });
     vocals.lanes[0].place(new Region({
         id: 20, position: 0, length: 4, content: Content.onto({ source: { node: 1 } }),
     }));
-    piece.tracks.push(vocals, new Track({ id: 30, lanes: [new Lane({ id: 31 })] }));
-    return piece;
+    multitrack.tracks.push(vocals, new Track({ id: 30, lanes: [new Lane({ id: 31 })] }));
+    return multitrack;
 }
 
-test("the session carries two views of one piece and they disagree on purpose", async () => {
+test("the session carries two views of one multitrack and they disagree on purpose", async () => {
     // The crossing: screen state written by the Python client, parsed by the
     // crate, read back here. A reader that dropped the field would open the
     // same music and lose the window.
@@ -323,7 +323,7 @@ test("the session carries two views of one piece and they disagree on purpose", 
 
     const editor = session.views[1];
     assert.equal(editor.visible?.start, 8);
-    assert.equal(editor.quant, 0.25, "the same piece, a finer grid");
+    assert.equal(editor.quant, 0.25, "the same multitrack, a finer grid");
     assert.equal(editor.autofit, false, "an editor's window is the reader's");
     assert.equal(editor.scroll, 140);
     assert.equal(editor.selection?.length, 4);
@@ -336,14 +336,14 @@ test("a view that says nothing writes an empty object", () => {
 
 test("a view says nothing about what plays", () => {
     // The whole argument for parallel rather than a field on the model.
-    const piece = aPiece();
-    const written = piece.write();
+    const multitrack = aPiece();
+    const written = multitrack.write();
     const view = new View();
     view.name = "arranger";
     view.visible = new Span(0, 32);
     view.trackView(10).height = 96;
     const session = new Session();
-    session.multitrack = piece;
+    session.multitrack = multitrack;
     session.views = [view];
     const back = Session.read(session.write());
     assert.deepEqual(back.multitrack.write(), written);

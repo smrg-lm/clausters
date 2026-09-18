@@ -110,7 +110,7 @@ impl Block {
 /// measures it: 1024 buses are 256 KB and a quarter of one percent of a
 /// block). It is 1024 because half of the space is private to GraphDef
 /// instances and a multitrack spends four of those per track, so this is the
-/// count at which a piece stops running out of buses before it runs out of
+/// count at which a multitrack stops running out of buses before it runs out of
 /// anything else.
 pub const NUM_AUDIO_BUSES: usize = 1024;
 /// Control buses (scsynth `-c`).
@@ -522,19 +522,19 @@ pub struct ProcessCtx<'a> {
     pub transport: TransportCtx,
 }
 
-/// The transport, as a slice sees it: where the piece is, and whether it is
+/// The transport, as a slice sees it: where it stands, and whether it is
 /// moving.
 ///
 /// One struct rather than two fields of [`ProcessCtx`] because they are only
 /// ever read together — a position means something different depending on
 /// whether it is advancing — and because it keeps the cost of the next
 /// transport fact one line at each construction site instead of one per fact.
-/// `Default` is a stopped transport at the start of the piece, which is what
+/// `Default` is a stopped transport at its start, which is what
 /// every non-engine caller (an offline render of a graph, a UGen test) wants.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct TransportCtx {
-    /// Where the transport is **in the piece** at this slice's first frame, in
-    /// samples of the piece (`server::clock_axis::TransportPosition`).
+    /// Where the transport stands at this slice's first frame, in samples of
+    /// its own axis (`server::clock_axis::TransportPosition`).
     ///
     /// It advances by one per sample across the whole slice — the engine cuts
     /// its block at a loop's wrap, so no slice ever straddles one. A UGen
@@ -543,7 +543,7 @@ pub struct TransportCtx {
     ///
     /// Not a clock: it jumps where a locate puts it, so nothing schedules on
     /// it. While the transport is stopped it is still *correct* — it is where
-    /// the piece is standing — it simply does not advance, which is what
+    /// the transport is standing — it simply does not advance, which is what
     /// [`rolling`](Self::rolling) says.
     pub position: u64,
     /// Whether the transport is rolling.
@@ -551,7 +551,7 @@ pub struct TransportCtx {
     /// A **governed** node is frozen and does not run at all while it is not,
     /// so a node that sees this false is one outside the governed group, or
     /// one on a server with no group bound. It still has to hold its position
-    /// rather than ramp: the piece is not moving, whoever is asking.
+    /// rather than ramp: the transport is not moving, whoever is asking.
     pub rolling: bool,
 }
 
@@ -792,13 +792,13 @@ pub trait UGen: Send {
     ///
     /// A transport stop is not a node pause. A paused node is a node holding
     /// still, and resuming it should find it exactly as it was; a stopped
-    /// transport is a piece that is **not there**, while everything that
+    /// transport is a multitrack that is **not there**, while everything that
     /// drives it -- the position, the curves writing the buses its ports are
     /// mapped to -- goes on moving without it. So the state that spans a stop
     /// is a picture of a moment that has passed, and a smoother that glides
     /// out of it puts out a value nothing asked for: the click at a box whose
     /// envelope begins in silence, and the level a meter shows before the
-    /// piece has played a sample.
+    /// transport has played a sample.
     ///
     /// Only *smoothing* resets -- a state whose whole job is to remember where
     /// the input was. A filter's memory, a delay line and an oscillator's phase

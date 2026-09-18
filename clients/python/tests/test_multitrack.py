@@ -61,7 +61,7 @@ def test_a_track_spans_every_lane_and_plays_one():
     track.lanes[1].place(region(200, 0.0, 16.0))
     assert track.active_lane.id == 10
     assert track.active_lane.end == 4.0
-    # An alternate take is still part of the piece.
+    # An alternate take is still part of the multitrack.
     assert track.end == 16.0
 
 
@@ -70,25 +70,25 @@ def test_an_active_lane_that_is_not_there_answers_nothing():
 
 
 def test_the_map_answers_the_entry_in_force_and_nothing_before_the_first():
-    piece = Multitrack()
-    piece.set_tempo(Tempo(at=8.0, tempo=1.5))
-    piece.set_tempo(Tempo(at=0.0, tempo=2.0))
-    piece.set_tempo(Tempo(at=16.0, tempo=1.0, ramp=True))
-    assert [t.at for t in piece.tempo] == [0.0, 8.0, 16.0]
-    assert piece.tempo_at(7.9).tempo == 2.0
-    assert piece.tempo_at(8.0).tempo == 1.5
-    assert piece.tempo_at(20.0).ramp
+    multitrack = Multitrack()
+    multitrack.set_tempo(Tempo(at=8.0, tempo=1.5))
+    multitrack.set_tempo(Tempo(at=0.0, tempo=2.0))
+    multitrack.set_tempo(Tempo(at=16.0, tempo=1.0, ramp=True))
+    assert [t.at for t in multitrack.tempo] == [0.0, 8.0, 16.0]
+    assert multitrack.tempo_at(7.9).tempo == 2.0
+    assert multitrack.tempo_at(8.0).tempo == 1.5
+    assert multitrack.tempo_at(20.0).ramp
 
 
 def test_the_tempo_map_is_where_the_beats_fall_over_the_seconds():
     """The multitrack is in seconds; the map it holds says where its beats and
     bars fall, so a script can put a region on a bar -- and it moves nothing."""
-    piece = Multitrack()
-    assert piece.tempo_map().secs_at(3.0) == pytest.approx(3.0), \
+    multitrack = Multitrack()
+    assert multitrack.tempo_map().secs_at(3.0) == pytest.approx(3.0), \
         "one beat a second where it states no tempo"
-    piece.set_tempo(Tempo(at=0.0, tempo=2.0))
-    piece.set_tempo(Tempo(at=4.0, tempo=1.0))
-    assert piece.tempo_map().secs_at(6.0) == pytest.approx(4.0)
+    multitrack.set_tempo(Tempo(at=0.0, tempo=2.0))
+    multitrack.set_tempo(Tempo(at=4.0, tempo=1.0))
+    assert multitrack.tempo_map().secs_at(6.0) == pytest.approx(4.0)
 
 
 def test_a_piece_that_never_said_a_tempo_says_nothing():
@@ -99,18 +99,18 @@ def test_a_piece_that_never_said_a_tempo_says_nothing():
 
 
 def test_two_tempos_at_one_beat_is_a_state_the_map_cannot_hold():
-    piece = Multitrack()
-    piece.set_tempo(Tempo(at=4.0, tempo=2.0))
-    piece.set_tempo(Tempo(at=4.0, tempo=1.5))
-    assert len(piece.tempo) == 1 and piece.tempo_at(4.0).tempo == 1.5
+    multitrack = Multitrack()
+    multitrack.set_tempo(Tempo(at=4.0, tempo=2.0))
+    multitrack.set_tempo(Tempo(at=4.0, tempo=1.5))
+    assert len(multitrack.tempo) == 1 and multitrack.tempo_at(4.0).tempo == 1.5
 
 
 def test_two_markers_may_share_an_instant_because_people_do_that():
-    piece = Multitrack()
-    piece.add_marker(Marker(id=1, at=16.0, name="B"))
-    piece.add_marker(Marker(id=2, at=16.0, name="chorus"))
-    piece.add_marker(Marker(id=3, at=0.0, name="A"))
-    assert [m.name for m in piece.markers] == ["A", "B", "chorus"]
+    multitrack = Multitrack()
+    multitrack.add_marker(Marker(id=1, at=16.0, name="B"))
+    multitrack.add_marker(Marker(id=2, at=16.0, name="chorus"))
+    multitrack.add_marker(Marker(id=3, at=0.0, name="A"))
+    assert [m.name for m in multitrack.markers] == ["A", "B", "chorus"]
 
 
 def test_a_span_that_meets_the_next_one_covers_no_instant_twice():
@@ -119,7 +119,7 @@ def test_a_span_that_meets_the_next_one_covers_no_instant_twice():
 
 
 def test_nothing_said_is_nothing_written():
-    # An empty piece writes an empty object rather than zero of everything, and
+    # An empty multitrack writes an empty object rather than zero of everything, and
     # a plain region writes no layer, no fades, no mute and no playrate.
     assert Multitrack().write() == {}
     written = region(1, 0.0, 4.0).write()
@@ -128,9 +128,9 @@ def test_nothing_said_is_nothing_written():
 
 
 def test_the_piece_carries_its_own_version_and_keeps_it_out_of_an_empty_file():
-    # The counter a stale edit is stale against, and it is the piece's rather
+    # The counter a stale edit is stale against, and it is the multitrack's rather
     # than the document's: an editor of one is not editing the other. It stays
-    # out of the file while it is the first version, so an unedited piece still
+    # out of the file while it is the first version, so an unedited multitrack still
     # writes an empty object and a file that never named one reads back at it.
     assert Multitrack().version == 1
     assert "version" not in Multitrack().write()
@@ -141,10 +141,10 @@ def test_the_piece_carries_its_own_version_and_keeps_it_out_of_an_empty_file():
 
 
 def test_a_whole_piece_round_trips():
-    piece = Multitrack()
-    piece.set_tempo(Tempo(at=0.0, tempo=1.6))
-    piece.set_meter(Meter(at=0.0, beats=7, unit=8))
-    piece.loop_span = Span(0.0, 12.0)
+    multitrack = Multitrack()
+    multitrack.set_tempo(Tempo(at=0.0, tempo=1.6))
+    multitrack.set_meter(Meter(at=0.0, beats=7, unit=8))
+    multitrack.loop_span = Span(0.0, 12.0)
     track = Track(id=1, name="guitars", soloed=True, lanes=[Lane(id=2)])
     first = track.lanes[0].place(region(3, 0.0, 20.0))
     first.fade_out = Fade(length=4.0)
@@ -155,10 +155,10 @@ def test_a_whole_piece_round_trips():
     track.automation.append(Automation(
         id=5, target={"ctl": "level"}, visible=True,
         points=[{"at": 0.0, "value": 0.0, "data": {}}]))
-    piece.tracks.append(track)
+    multitrack.tracks.append(track)
 
-    back = Multitrack.read(piece.write())
-    assert back == piece
+    back = Multitrack.read(multitrack.write())
+    assert back == multitrack
     assert back.end == 32.0
     assert back.tracks[0].lanes[0].regions[1].content.playrate == 1.5
     assert second.overlaps(first)
@@ -188,7 +188,7 @@ def test_a_composite_region_carries_the_general_tree_unchanged():
 
 def test_a_field_a_newer_writer_added_survives_a_load_and_a_save():
     # Everything here carries what it has no name for. Dropping it would lose a
-    # piece the next version of this client wrote.
+    # multitrack the next version of this client wrote.
     written = {
         "tracks": [{"id": 1, "lanes": [{"id": 2, "regions": [{
             "id": 3, "position": 0.0, "length": 4.0,
@@ -197,8 +197,8 @@ def test_a_field_a_newer_writer_added_survives_a_load_and_a_save():
         "tempo": [{"at": 0.0, "tempo": 2.0, "swing": 0.62}],
         "groove": {"name": "mpc60"},
     }
-    piece = Multitrack.read(written)
-    assert piece.write() == written
+    multitrack = Multitrack.read(written)
+    assert multitrack.write() == written
 
 
 def test_a_fill_this_build_does_not_know_is_carried_whole():
@@ -207,25 +207,25 @@ def test_a_fill_this_build_does_not_know_is_carried_whole():
 
 
 def test_every_lane_names_its_source_and_not_only_the_one_that_plays():
-    piece = Multitrack()
+    multitrack = Multitrack()
     track = Track(id=1, lanes=[Lane(id=2), Lane(id=3)], active=0)
     track.lanes[0].place(region(4, 0.0, 4.0, source=700))
     track.lanes[1].place(region(5, 0.0, 4.0, source=701))
-    piece.tracks.append(track)
-    named = [r.content.window["source"]["source"] for r in piece.regions()]
+    multitrack.tracks.append(track)
+    named = [r.content.window["source"]["source"] for r in multitrack.regions()]
     assert named == [700, 701]
 
 
-# ---- the session: the piece, and where its samples are ----
+# ---- the session: the multitrack, and where its samples are ----
 
 from clausters.multitrack import FrozenSource, Session, Source  # noqa: E402
 
 
 def test_a_session_round_trips_with_its_table():
-    piece = Multitrack()
-    piece.tracks.append(Track(id=1, lanes=[Lane(id=2)]))
-    piece.tracks[0].lanes[0].place(region(3, 0.0, 4.0, source=700))
-    session = Session(multitrack=piece,
+    multitrack = Multitrack()
+    multitrack.tracks.append(Track(id=1, lanes=[Lane(id=2)]))
+    multitrack.tracks[0].lanes[0].place(region(3, 0.0, 4.0, source=700))
+    session = Session(multitrack=multitrack,
                       sources={700: Source.file("take.wav").shaped(2, 480, 48_000.0)},
                       provenance={"script": "make.py"})
     written = session.write()
@@ -234,7 +234,7 @@ def test_a_session_round_trips_with_its_table():
 
 
 def test_an_absent_arrangement_reads_as_an_empty_one_rather_than_as_nothing():
-    # The crate's own rule, mirrored: a session always has a piece, possibly
+    # The crate's own rule, mirrored: a session always has a multitrack, possibly
     # empty, so nothing downstream has to ask whether there is one.
     session = Session.read({"format": 3})
     assert session.multitrack.tracks == []
@@ -260,18 +260,18 @@ def test_a_save_knows_what_it_cannot_promise():
 
 
 def test_a_source_only_a_region_names_is_reported_missing():
-    piece = Multitrack()
+    multitrack = Multitrack()
     track = Track(id=1, lanes=[Lane(id=2), Lane(id=3)])
     track.lanes[0].place(region(4, 0.0, 4.0, source=700))
     track.lanes[1].place(region(5, 0.0, 4.0, source=701))
-    piece.tracks.append(track)
-    session = Session(multitrack=piece, sources={700: Source.file("one.wav")})
+    multitrack.tracks.append(track)
+    session = Session(multitrack=multitrack, sources={700: Source.file("one.wav")})
     # Every lane, not only the one that plays.
     assert session.dangling() == [701]
 
 
 def test_a_frozen_source_keeps_what_the_table_said():
-    # A piece opened with no way to read its files must still write back every
+    # A multitrack opened with no way to read its files must still write back every
     # location it was given -- without this it would save with every source
     # marked volatile, which is a format that loses its contents on the second
     # save.
@@ -306,33 +306,33 @@ def test_a_format_2_session_opens_in_seconds():
     assert session.multitrack.markers[0].at == 4.0
 
 
-# ---- the presentation: what a window shows of a piece ----
+# ---- the presentation: what a window shows of a multitrack ----
 
 from clausters.multitrack import LaneView, TrackView, View  # noqa: E402
 
 
 def a_piece() -> Multitrack:
-    piece = Multitrack()
+    multitrack = Multitrack()
     vocals = Track(id=10, lanes=[Lane(id=11), Lane(id=12)])
     vocals.lanes[0].place(region(20, 0.0, 4.0, source=700))
-    piece.tracks.extend([vocals, Track(id=30, lanes=[Lane(id=31)])])
-    return piece
+    multitrack.tracks.extend([vocals, Track(id=30, lanes=[Lane(id=31)])])
+    return multitrack
 
 
 def test_a_view_that_says_nothing_writes_an_empty_object():
-    # The arrangement's rule, mirrored: a view of a piece nobody has touched
+    # The arrangement's rule, mirrored: a view of a multitrack nobody has touched
     # costs a file two braces.
     assert View().write() == {}
 
 
 def test_a_view_says_nothing_about_what_plays():
     # The whole argument for parallel rather than a field on the model: drop
-    # every view and the piece is the same piece.
-    piece = a_piece()
-    written = piece.write()
+    # every view and the multitrack is the same multitrack.
+    multitrack = a_piece()
+    written = multitrack.write()
     view = View(name="arranger", visible=Span(0.0, 32.0))
     view.track_view(10).height = 96.0
-    session = Session(multitrack=piece, views=[view])
+    session = Session(multitrack=multitrack, views=[view])
     back = Session.read(session.write())
     assert back.multitrack.write() == written
     assert back.views[0].track(10).height == 96.0

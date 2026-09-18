@@ -162,7 +162,7 @@ axis! {
     /// samples it plays.
     ///
     /// Never a timeline position, however much it looks like one. Two regions
-    /// over one source at different points in the piece hold the same
+    /// over one source at different points in the multitrack hold the same
     /// [`ContentFrame`] and different [`TimelineFrame`]s, which is the whole of
     /// what non-destructive editing is, and the reason these are two types.
     ContentFrame(i64)
@@ -170,7 +170,7 @@ axis! {
 
 axis! {
     /// A position or a length **inside a source made of events** — the beats of
-    /// a node this document holds, rather than of the piece.
+    /// a node this document holds, rather than of the multitrack.
     ///
     /// The [`ContentFrame`] of material that has no frames. A window onto a
     /// timeline of notes opens at one of these, and it moves with that
