@@ -980,6 +980,15 @@ export class TransportPlayer implements TreeDriver {
 
     private queue(work: () => Promise<void>): void {
         this.chain = this.chain.then(work);
+        // A step nobody is waiting for must not become an **unhandled
+        // rejection**: most of these are queued by a verb whose caller will
+        // `refresh`, but a re-cue is queued by a *broadcast* — a responder
+        // callback with no caller at all — and the one that lands while the
+        // server is closing fails with every request it had in flight. The
+        // chain keeps the failure for the next `refresh`, which is where a
+        // refusal is meant to reach the caller; this handler only says it was
+        // observed, so a page's console and a test run stay quiet.
+        this.chain.catch(() => {});
     }
 
     private async rateOf(): Promise<number> {

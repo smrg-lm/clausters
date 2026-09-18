@@ -3073,8 +3073,9 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 
 ## Found by use: the running list of fixes
 
-- ⬜ **One WebSocket test fails only when the whole suite runs** *(found
-  2026-09-18, running `./test.sh` after adding the manual ordering verbs)*.
+- ✅ **One WebSocket test fails only when the whole suite runs** *(found
+  2026-09-18, running `./test.sh` after adding the manual ordering verbs; fixed
+  the same day, and it was not the test)*.
   `tests/seq-ws.test.ts`, "a timeline on the server's transport follows the
   conductor over the wire", failed two of four full-suite runs today with
   `ReplyTimeout: the server was closed` (from `withServer`'s `close`, so a
@@ -3085,10 +3086,30 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
   touches timelines or the transport; a run of the same suite without it failed
   nothing, and a later run with it failed nothing either.
 
-  It is written down rather than fixed because the fix is a decision: raise that
-  test's timeout, cut what it waits for, or stop running the server-backed files
-  concurrently with the rest. What must not happen is the third time it is seen
-  being read as new.
+  It was written down rather than fixed because the fix looked like a decision:
+  raise that test's timeout, cut what it waits for, or stop running the
+  server-backed files concurrently with the rest.
+
+  **None of the three was it.** `TransportPlayer.queue` put each step on one
+  chain (`this.chain = this.chain.then(work)`) and left the chain unobserved
+  until the next `refresh` awaited it. That is right for a **verb**, whose
+  caller refreshes -- it is how a refusal reaches the caller rather than the
+  console. It is wrong for a **re-cue**, which is queued by `broadcast`, a
+  responder callback with no caller at all: when the one that lands while the
+  server is closing fails with every request in flight, the rejection had
+  nobody, and node reported it as an unhandled rejection against whatever test
+  was running. A page would have printed it to the console for the same reason.
+  So `queue` now marks the chain observed (`this.chain.catch(() => {})`) while
+  leaving the failure on the chain, which is still where `refresh` finds it;
+  `tests/timeline-transport.test.ts` pins both halves at once -- no unhandled
+  rejection, and the next `refresh` still rejects.
+
+  **What it is worth keeping** is not the bug: it is that an intermittent
+  failure in a suite is worth one run of the file alone (877 ms, passing) and
+  one of the suite without the change (nothing failing) before it is filed as
+  flaky. Both readings were right and neither was the cause, and the entry that
+  said "the test is near its own timeout" was wrong about a test that has never
+  been slow.
 
 - ✅ **The GuiDef sweep vectors are stale, and regenerated they show `waveform`
   disagreeing on two loudness options** *(found 2026-09-17, regenerating every
