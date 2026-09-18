@@ -144,7 +144,7 @@ def load_pluck(server: Server, path: str, freq: float = 330.0, dur: float = 0.7)
     if addr == "/fail":
         server.buffers.free(bufnum)
         raise CommandError(f"/buffer_allocRead failed: {args}")
-    return Buffer(bufnum, n, 1)
+    return Buffer(bufnum, n, 1, server=server)
 
 
 # --------------------------------------------------------------------------

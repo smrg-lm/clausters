@@ -132,7 +132,7 @@ def alloc_read(server: Server, path: str, frames: int):
     if addr == "/fail":
         server.buffers.free(bufnum)
         raise CommandError(f"/buffer_allocRead failed: {args}")
-    return Buffer(bufnum, frames, 1)
+    return Buffer(bufnum, frames, 1, server=server)
 
 
 # --------------------------------------------------------------------------
