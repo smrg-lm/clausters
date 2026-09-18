@@ -537,7 +537,10 @@ export class TempoClock {
      * position.
      */
     freeze(): this {
-        if (this.frozenAt === null) this.frozenAt = this.timebase.now();
+        if (this.frozenAt === null) {
+            this.frozenAt = this.timebase.now();
+            if (!(this.timebase instanceof LogicalTimebase)) this.ticker.cancel();
+        }
         return this;
     }
 
@@ -560,14 +563,17 @@ export class TempoClock {
      *
      * The pacing origin shifts by the time spent frozen, so those seconds are
      * not part of the music: the beat picks up where it stopped rather than
-     * jumping forward by the length of the pause.
+     * jumping forward by the length of the pause. The wall-clock origin shifts
+     * with it, so the timetags stamped after the resume are not early by the
+     * pause either.
      */
     thaw(): this {
         if (this.frozenAt !== null) {
-            if (this.monoStart !== null) {
-                this.monoStart += this.timebase.now() - this.frozenAt;
-            }
+            const held = this.timebase.now() - this.frozenAt;
+            if (this.monoStart !== null) this.monoStart += held;
+            if (this.unixStart !== null) this.unixStart += held;
             this.frozenAt = null;
+            this.pump();
         }
         return this;
     }
@@ -1094,6 +1100,9 @@ export class TempoClock {
      */
     private pump(): void {
         if (!this.running || this.pumping || this.timebase instanceof LogicalTimebase) return;
+        // A frozen clock wakes nothing: its beat is held, so nothing queued
+        // falls due until `thaw` moves the origin and pumps again.
+        if (this.frozenAt !== null) return;
         this.pumping = true;
         try {
             for (;;) {

@@ -394,8 +394,9 @@ class TempoClock:
 
         Idempotent: freezing an already frozen clock keeps the first freeze's
         position."""
-        if self._frozen_at is None:
-            self._frozen_at = self._now()
+        with self._cond:
+            if self._frozen_at is None:
+                self._frozen_at = self._now()
         return self
 
     def thaw(self):
@@ -403,11 +404,18 @@ class TempoClock:
 
         The pacing origin shifts by the time spent frozen, so those seconds are
         not part of the music: the beat picks up where it stopped rather than
-        jumping forward by the length of the pause."""
-        if self._frozen_at is not None:
-            if self._mono_start is not None:
-                self._mono_start += self._now() - self._frozen_at
-            self._frozen_at = None
+        jumping forward by the length of the pause. The wall-clock origin shifts
+        with it, so the timetags stamped after the resume are not early by the
+        pause either."""
+        with self._cond:
+            if self._frozen_at is not None:
+                held = self._now() - self._frozen_at
+                if self._mono_start is not None:
+                    self._mono_start += held
+                if self._unix_start is not None:
+                    self._unix_start += held
+                self._frozen_at = None
+            self._cond.notify_all()
         return self
 
     @property
@@ -862,7 +870,9 @@ class TempoClock:
                 if not self._running:
                     break
                 beat = self._queue.peek_time()
-                if beat is None:
+                # A frozen clock wakes nothing: its beat is held, so nothing
+                # queued falls due until `thaw` moves the origin and notifies.
+                if beat is None or self._frozen_at is not None:
                     self._cond.wait(timeout=0.05)
                     continue
                 wait = self.beats2secs(beat) - (self._now() - self._mono_start)

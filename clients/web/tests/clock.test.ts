@@ -351,6 +351,38 @@ test("freeze holds the beat, and thaw does not charge the music for the pause", 
     assert.ok(Math.abs(clock.beats() - 0.75) < 1e-9);
 });
 
+test("a frozen clock wakes nothing, and thaw does not burst what was due", async () => {
+    // What a frozen clock must not do: keep waking its routines while the beat
+    // is held. They would stamp their events into the server's frozen queue,
+    // which releases them all at once on the resume, and the thaw's shifted
+    // origin would then leave a gap as long as the pause.
+    const { clock, timebase, run } = harness();
+    const woken: number[] = [];
+    clock.start();
+    clock.play(
+        new Routine(function* () {
+            for (;;) {
+                woken.push(timebase.now());
+                yield 1;
+            }
+        }),
+    );
+    await run(2.5);
+    assert.equal(woken.length, 3);
+    const wall = clock.startTime!;
+
+    clock.freeze();
+    await run(4);
+    assert.equal(woken.length, 3, "nothing is woken while the beat is held");
+
+    clock.thaw();
+    assert.equal(clock.startTime! - wall, 4, "timetags shift with the pause");
+    await run(2);
+    const after = woken.slice(3);
+    assert.equal(after.length, 2);
+    assert.deepEqual(after.map((t) => t - after[0]!), [0, 1], "a beat apart, no burst");
+});
+
 // ---- the shared transport grid ----
 
 /**

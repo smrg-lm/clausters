@@ -4397,6 +4397,24 @@ work, where a pending item reads as done.)*
   the FFI and the wasm doors carry the reason as `{"error": reason}` (core ABI
   v68), and `_native.view_props` and the page's `View.catalogue` raise it.
 
+- ✅ **A frozen clock keeps waking its routines, so the resume bursts and then
+  falls silent** *(found 2026-09-18 by the user, on `transport/freeze`: "al
+  retomar ejecuta varios eventos juntos, luego un silencio y sigue con el
+  resto")*. `TempoClock.freeze` held the beat that `beats` reports, but the
+  real-time driver never read it: `_run_rt` (the page's `pump`) kept measuring
+  each queued beat against the unshifted origin and woke it on time. The three
+  seconds of events went out stamped into the server's frozen queue, which
+  released them together on `transport_play`; `thaw` then moved the origin
+  forward by the pause, so the next wake waited as long again. `thaw` also left
+  the wall-clock origin behind, so a clock stamping NTP timetags came out of a
+  pause early by its length.
+
+  **Fixed 2026-09-18, the same day, in both clients.** The driver wakes nothing
+  while the clock is frozen (the page's `freeze` also cancels the armed wake),
+  `thaw` shifts both origins by the pause and wakes the driver, and a test in
+  each client holds a routine through a freeze and checks it resumes a beat
+  apart.
+
 ## Future directions (a design that is not a fix)
 
 - ⬜ **A clone: a new sequence made from a clip, or from a segment of one**
