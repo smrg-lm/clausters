@@ -57,3 +57,14 @@ def test_a_bad_port_is_a_usage_error(capsys):
 def test_a_stray_argument_is_a_usage_error(capsys):
     assert _cli.client_main(["stop", "--port", "57110", "extra"]) == 2
     assert "unexpected argument" in capsys.readouterr().err
+
+
+def test_the_gui_script_forwards_to_the_host_binary(monkeypatch):
+    # `clausters-gui` has no verbs of its own: every argument is the host's.
+    forwarded = {}
+    monkeypatch.setattr(_cli, "gui_path", lambda: "/nonexistent")
+    monkeypatch.setattr(_cli, "_ensure_executable", lambda path: None)
+    monkeypatch.setattr(_cli.os, "execv",
+                        lambda path, argv: forwarded.setdefault("argv", argv))
+    _cli.gui_main(["--standalone"])
+    assert forwarded["argv"] == ["/nonexistent", "--standalone"]

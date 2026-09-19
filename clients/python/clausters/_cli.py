@@ -1,19 +1,21 @@
-"""The ``clausters`` console-script: run the bundled standalone server.
+"""The two console-scripts: run the bundled binaries.
 
-``pip install clausters`` puts a ``clausters`` command on the environment's
-``PATH``; it locates the native server binary shipped inside the wheel
-(``clausters/_bin/``) and execs it, forwarding every argument. So ``clausters
---tcp`` / ``clausters --shm /dev/shm/seg`` / ``clausters --nrt score out.wav``
-behave exactly like the cargo-built binary.
+``pip install clausters`` puts a ``clausters`` and a ``clausters-gui`` command
+on the environment's ``PATH``; each locates its native binary shipped inside
+the wheel (``clausters/_bin/``) and execs it, forwarding every argument. So
+``clausters --tcp`` / ``clausters --shm /dev/shm/seg`` / ``clausters --nrt
+score out.wav`` and ``clausters-gui --standalone`` behave exactly like the
+cargo-built binaries — the wheel bundles both, so neither is installed apart.
 
 This is the **separate** server — a real process you can point UDP/TCP clients,
 ``ShmClient`` or several machines at. The **in-process embedded** server needs
 no command at all: `Session.embedded` opens one (`clausters.ipc.Clausters`
 is the handle it owns).
 
-Lookup precedence mirrors `clausters._libpath`: an explicit ``CLAUSTERS_BIN``
-override, the binary bundled in the wheel, then a source checkout's workspace
-``target/{release,debug}/``.
+Lookup precedence mirrors `clausters._libpath`: an explicit override
+(``CLAUSTERS_BIN``, ``CLAUSTERS_GUI_BIN``), the binary bundled in the wheel,
+then a source checkout's ``target/{release,debug}/`` — the workspace's for the
+server, ``clients/gui``'s for the host, which is its own workspace.
 """
 
 import os
@@ -150,6 +152,29 @@ def client_main(argv: "list[str]") -> int:
     return 0
 
 
+def _exec(path: str, argv: "list[str]") -> int:
+    """Replace this process with ``path`` (POSIX) or spawn it and return its
+    exit code (Windows), forwarding ``argv`` untouched."""
+    _ensure_executable(path)
+    if os.name == "nt":
+        import subprocess
+
+        return subprocess.call([path, *argv])
+    os.execv(path, [path, *argv])  # never returns on success
+    return 0  # pragma: no cover
+
+
+def gui_main(argv=None) -> int:
+    """The ``clausters-gui`` console-script: run the bundled visual server,
+    forwarding ``argv`` (`gui_path` locates it).
+
+    The same binary `Session.gui` launches, reachable by name: an installed
+    package can start the visual server on its own -- pointed at a server
+    already running -- without going through a Python session."""
+    argv = sys.argv[1:] if argv is None else list(argv)
+    return _exec(gui_path(), argv)
+
+
 def main(argv=None) -> int:
     """Run the bundled server, forwarding ``argv``. On POSIX this *replaces* the
     Python process (``os.execv``); on Windows it spawns and returns the exit
@@ -160,11 +185,4 @@ def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else list(argv)
     if argv and argv[0] in CLIENT_COMMANDS:
         return client_main(argv)
-    path = server_path()
-    _ensure_executable(path)
-    if os.name == "nt":
-        import subprocess
-
-        return subprocess.call([path, *argv])
-    os.execv(path, [path, *argv])  # never returns on success
-    return 0  # pragma: no cover
+    return _exec(server_path(), argv)

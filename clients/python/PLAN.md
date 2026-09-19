@@ -1518,6 +1518,17 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ✅ **`clausters-gui` was documented as a command and declared as none**
+  *(found 2026-09-19, reported from another project following the README's
+  install check; fixed the same day)*. `pyproject.toml` declared one console
+  script, `clausters`, while the README's verification step, the server book's
+  `docs/cli.md` and the client book's `getting-started.md` all said the wheel
+  puts *both* binaries on `PATH`. `_cli.py` already had `gui_path()` -- same
+  precedence as `server_path()`, and its error worded as a command -- so only
+  the entry point was missing: `gui_main()` execs it and
+  `clausters-gui = "clausters._cli:gui_main"` declares it. An installed package
+  can now start the visual server by name, not only through `Session.gui()`.
+
 - ✅ **Two group verbs exist on the wire and in neither client: `/group_parallel`
   and `/group_sortMode`** *(found 2026-09-15 while writing the `/server_load`
   example, which wanted a parallel group so the `dsp` rows would move and had

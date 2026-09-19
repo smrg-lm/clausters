@@ -132,10 +132,10 @@ this interpreter. See the [Getting started](docs/src/getting-started.md) chapter
   coexist (an offline NRT one for plots next to a live RT one) in one script.
 - `clausters.config` — reads the shared TOML configuration (user file +
   project `clausters.toml`), the same schema the server reads.
-- The **`clausters` console script** — the wheel bundles the standalone server
-  binary, so `pip install` also puts a `clausters` command on `PATH` that
-  behaves exactly like the cargo-built binary (`clausters --tcp`,
-  `clausters --nrt score.osc out.wav`, …).
+- The **`clausters` and `clausters-gui` console scripts** — the wheel bundles
+  both binaries, so `pip install` puts both commands on `PATH`, each behaving
+  exactly like its cargo-built binary (`clausters --tcp`, `clausters --nrt
+  score.osc out.wav`, `clausters-gui --standalone`, …).
 - `clausters.launch` — launching and owning the server and GUI as child
   processes. `Session.live()` connects to a running server or starts one if none
   is up (choosing a shared-memory segment); `Session.gui()` starts the visual
