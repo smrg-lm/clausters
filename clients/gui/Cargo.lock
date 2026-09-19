@@ -306,7 +306,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "clausters"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "clausters-core",
  "cpal",
@@ -325,7 +325,7 @@ dependencies = [
 
 [[package]]
 name = "clausters-apps"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "clausters-core",
  "clausters-document",
@@ -336,7 +336,7 @@ dependencies = [
 
 [[package]]
 name = "clausters-core"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "microfft",
  "rosc",
@@ -347,7 +347,7 @@ dependencies = [
 
 [[package]]
 name = "clausters-document"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "clausters-core",
  "serde",
@@ -356,7 +356,7 @@ dependencies = [
 
 [[package]]
 name = "clausters-editing"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "clausters-core",
  "clausters-document",
@@ -366,7 +366,7 @@ dependencies = [
 
 [[package]]
 name = "clausters-gui"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "bytemuck",
  "clausters",
@@ -396,7 +396,7 @@ dependencies = [
 
 [[package]]
 name = "clausters-midi"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "midi2",
  "midir",

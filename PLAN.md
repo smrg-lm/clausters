@@ -2820,9 +2820,9 @@ finished work, where a pending item reads as done.
 
   **No version number moved**, and that was checked rather than assumed. The
   two ABI counters read discriminants and not names, so neither boundary
-  changed; and the SemVer tier has already moved twice since `v0.8.1` (the tree
-  says `0.10.0`), so under the release rule a further breaking change rides the
-  bump that is already there. `docs/decisions.md` carries the amendment, since
+  changed; and the SemVer tier had already moved twice since `v0.8.1` (the tree
+  said `0.10.0` then), so under the release rule a further breaking change rode
+  the bump that was already there. `docs/decisions.md` carries the amendment, since
   the paragraph that said renaming these "would be a format change for a
   cosmetic gain" is the sentence the three underscores had been hiding behind.
 

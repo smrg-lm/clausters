@@ -23,7 +23,7 @@ resolver = "3"
 # by `tests/versions.rs`. Bumping a release is editing this line and running
 # that script; the rules for *which* number are the `release-versioning` skill's.
 [workspace.package]
-version = "0.10.0"
+version = "0.11.0"
 
 [package]
 name = "clausters"
