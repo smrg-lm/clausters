@@ -1,6 +1,6 @@
 //! `EnvGen`: segment-based envelopes with SC shape curves, gate-driven sustain
-//! at the release node, and `doneAction` freeing, plus U4's `Line`/`XLine` —
-//! which are that same segment engine with the header filled in — and the
+//! at the release node, and `doneAction` freeing, plus U4's `Line`/`XLine` --
+//! which are that same segment engine with the header filled in -- and the
 //! node-control set. The engine renders offline; the envelope's output goes to
 //! bus 0 so `render` can read it back.
 //!
@@ -196,7 +196,7 @@ fn gate_sustains_at_the_release_node_then_releases() {
 fn gate_already_closed_at_the_first_block_releases_and_frees() {
     // The stuck-voice race: a note-on (/synth_new, gate 1) and its note-off
     // (/node_set gate 0) applied in the same command drain, before the node's
-    // first block. The envelope never sees a gate edge — it must count the
+    // first block. The envelope never sees a gate edge -- it must count the
     // gate found closed at birth as a release, play the release segment out
     // silently and let the done action free the node, instead of playing the
     // full envelope and sustaining forever on a closed gate.
@@ -324,7 +324,7 @@ fn loop_node_cycles_while_gate_is_held_then_release_exits() {
 
 #[test]
 fn done_action_pause_self_stops_processing_but_keeps_the_node() {
-    // doneAction = 1 (pauseSelf): when the segment ends the synth is paused —
+    // doneAction = 1 (pauseSelf): when the segment ends the synth is paused --
     // skipped from then on (so its Out stops writing, bus 0 goes silent) but
     // never freed.
     let (mut engine, mut handle) = spawn(envgen_spec(
@@ -341,7 +341,7 @@ fn done_action_pause_self_stops_processing_but_keeps_the_node() {
     for s in &out[BLOCK_SIZE..2 * BLOCK_SIZE] {
         assert!((*s - 1.0).abs() < 1e-6, "last active output: {s} != 1.0");
     }
-    // Block 3: paused, skipped — bus 0 is cleared and stays silent.
+    // Block 3: paused, skipped -- bus 0 is cleared and stays silent.
     for s in &out[2 * BLOCK_SIZE..] {
         assert!(s.abs() < 1e-6, "paused output must be silent: {s}");
     }
@@ -416,7 +416,7 @@ fn done_action_free_group_frees_the_enclosing_group() {
 // ---- S4: /node_run resume + the relative done actions through the real chain ----
 
 /// A plain synth that sums a constant `dc` into bus 0 every block (no envelope,
-/// no done action) — a marker to hear whether a node ran.
+/// no done action) -- a marker to hear whether a node ran.
 fn dc_spec(dc: f64) -> Value {
     json!({
         "name": "dc",
@@ -427,7 +427,7 @@ fn dc_spec(dc: f64) -> Value {
 #[test]
 fn n_run_resumes_a_paused_synth() {
     // pauseSelf (doneAction 1) parks the synth; /node_run 1 (RunNode run=true)
-    // clears the pause so it runs again — PauseSelf is no longer terminal.
+    // clears the pause so it runs again -- PauseSelf is no longer terminal.
     let (mut engine, mut handle) = spawn(envgen_spec(
         0.0,
         1.0,
@@ -580,7 +580,7 @@ fn xline_moves_by_a_constant_ratio() {
 #[test]
 fn a_control_rate_line_takes_the_same_wall_clock_time() {
     // The ramp lasts four blocks. At kr it advances one step per block, and
-    // "one step" has to mean a whole block of time — the test that fails by a
+    // "one step" has to mean a whole block of time -- the test that fails by a
     // factor of BLOCK_SIZE if a UGen reads the engine's rate instead of its
     // own (see the calculation-rate note in docs/decisions.md).
     let dur = secs(4 * BLOCK_SIZE);
@@ -603,9 +603,9 @@ fn a_control_rate_line_takes_the_same_wall_clock_time() {
 
 #[test]
 fn a_ten_second_ramp_does_not_drift_from_its_closed_form() {
-    // Rule 4 for the ramps. They accumulate — one addition (or one
+    // Rule 4 for the ramps. They accumulate -- one addition (or one
     // multiplication) per sample, which is what makes them cheap enough for
-    // audio rate — so the question a long ramp asks is whether the running sum
+    // audio rate -- so the question a long ramp asks is whether the running sum
     // stays on the closed form `start + t·(end − start)`. It does, because the
     // accumulator is `f64`: over 480 000 samples the drift is around 1e-13,
     // while the same loop in `f32` would be visibly short of its target by now.
@@ -634,7 +634,7 @@ fn a_ten_second_ramp_does_not_drift_from_its_closed_form() {
     }
 
     // XLine the same way, against its own closed form `start * (end/start)^t`
-    // — the absolute claim, where the short test asserts only that consecutive
+    // -- the absolute claim, where the short test asserts only that consecutive
     // samples keep a constant ratio. Both are needed: a ramp with the right
     // ratio everywhere can still have started from the wrong place.
     let (start, end) = (0.01f64, 1.0f64);
@@ -660,7 +660,7 @@ fn a_ten_second_ramp_does_not_drift_from_its_closed_form() {
 fn a_ramp_reads_its_geometry_once_and_ignores_it_afterwards() {
     // scsynth's semantics, and the price of the cheap inner loop: the step is
     // derived on the first sample, so `end` and `dur` are init-rate. A control
-    // that moves them mid-flight moves nothing — the ramp still lands where it
+    // that moves them mid-flight moves nothing -- the ramp still lands where it
     // was aimed when it was born. (`done_action` is the one input still read
     // every block; it addresses the node, not the ramp.)
     let spec = json!({
@@ -685,7 +685,7 @@ fn a_ramp_reads_its_geometry_once_and_ignores_it_afterwards() {
         .ok()
         .unwrap();
     let out = render(&mut engine, 5);
-    // Blocks 1..4 of the ramp, then the hold — all on the original geometry.
+    // Blocks 1..4 of the ramp, then the hold -- all on the original geometry.
     for b in 0..3 {
         let want = (b + 1) as f32 / 4.0;
         let got = out[b * BLOCK_SIZE];
@@ -698,7 +698,7 @@ fn a_ramp_reads_its_geometry_once_and_ignores_it_afterwards() {
 
 #[test]
 fn line_carries_the_whole_done_action_set() {
-    // doneAction 2 (freeSelf) through the same path EnvGen uses — the reason
+    // doneAction 2 (freeSelf) through the same path EnvGen uses -- the reason
     // Line is built on the segment engine rather than beside it.
     let (mut engine, handle) = spawn(line_spec("Line", "ar", 0.0, 1.0, secs(64), 2.0));
     render(&mut engine, 1);
@@ -800,7 +800,7 @@ fn pause_self_does_not_latch_so_n_run_really_resumes() {
         "still alive, still running"
     );
 
-    // Raise it again and it pauses again — a gate, not a one-shot.
+    // Raise it again and it pauses again -- a gate, not a one-shot.
     set(&mut handle, 1.0);
     let out = render(&mut engine, 3);
     assert!(
@@ -826,7 +826,7 @@ fn watcher_spec(kind: &str, dur: f64) -> Value {
 #[test]
 fn done_reports_the_flag_of_the_ugen_it_watches() {
     // The flag is not the watched signal: this ramp ends at 1.0 and Done also
-    // reads 1.0, so the test uses the *timing* to tell them apart — the ramp
+    // reads 1.0, so the test uses the *timing* to tell them apart -- the ramp
     // holds 1.0 only from the sample after it lands, while Done is 0 for the
     // whole first block and 1 from the second.
     let (mut engine, _handle) = spawn(watcher_spec("Done", secs(64)));

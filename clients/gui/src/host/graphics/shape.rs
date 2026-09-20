@@ -1,8 +1,8 @@
 //! **Round hit shapes**: what "the pointer is on it" means for a thing that is
 //! neither a rectangle nor a line.
 //!
-//! A hit-test reconstructs the geometry the renderer drew through — the rule
-//! the whole half is held to — and most of what the host draws is a rectangle,
+//! A hit-test reconstructs the geometry the renderer drew through -- the rule
+//! the whole half is held to -- and most of what the host draws is a rectangle,
 //! so [`Rect::contains`](crate::host::layout::Rect::contains) answered nearly
 //! everything. The exceptions are the round ones, and they were reading as
 //! their bounding box: a knob's disc grabbed from the corner of its cell where
@@ -12,14 +12,14 @@
 //! near.
 //!
 //! **Squared, never rooted.** A distance is compared here and never reported,
-//! and `d <= r` is `d² <= r²` for non-negative numbers — so the square root
+//! and `d <= r` is `d² <= r²` for non-negative numbers -- so the square root
 //! that would make the number a length is work with no reader. The same holds
 //! for the ellipse, whose test is the normalized sum of two squares against 1.
 //! What a caller may still want is *which* of several round targets is nearest,
 //! and squared distance orders identically, so [`dist2`] serves that too.
 //!
 //! The shapes live here rather than in each model because the round things are
-//! spread across the catalog — a control's disc, a break-point, a notehead —
+//! spread across the catalog -- a control's disc, a break-point, a notehead --
 //! and each one had reinvented the arithmetic or skipped it.
 
 use crate::host::layout::Rect;
@@ -35,12 +35,12 @@ pub fn dist2(px: f64, py: f64, cx: f64, cy: f64) -> f64 {
 }
 
 /// Whether `(px, py)` falls inside the disc of centre `(cx, cy)` and radius
-/// `r` — Pythagoras with both sides squared.
+/// `r` -- Pythagoras with both sides squared.
 pub fn in_disc(px: f64, py: f64, cx: f64, cy: f64, r: f64) -> bool {
     dist2(px, py, cx, cy) <= r * r
 }
 
-/// Whether `(px, py)` falls inside the ellipse inscribed in `rect` — the shape
+/// Whether `(px, py)` falls inside the ellipse inscribed in `rect` -- the shape
 /// a round glyph fills of the box measured around it.
 ///
 /// The normalized form of the disc: each axis is divided by its own radius
@@ -57,7 +57,7 @@ pub fn in_ellipse(px: f64, py: f64, rect: Rect) -> bool {
     dx * dx + dy * dy <= 1.0
 }
 
-/// The disc `rect` inscribes, centred in it and as wide as its shorter side —
+/// The disc `rect` inscribes, centred in it and as wide as its shorter side --
 /// the geometry a control's dial is drawn at, so its hit-test and its drawing
 /// read one function.
 pub fn disc_of(rect: Rect) -> (f32, f32, f32) {
@@ -84,7 +84,7 @@ mod tests {
         assert!(dist2(55.0, 50.0, cx, cy) < dist2(60.0, 50.0, cx, cy));
     }
 
-    /// An ellipse is the disc with one radius per axis — a notehead is wider
+    /// An ellipse is the disc with one radius per axis -- a notehead is wider
     /// than it is tall, and its box's corners are paper.
     #[test]
     fn an_ellipse_is_the_disc_of_a_box_that_is_not_square() {

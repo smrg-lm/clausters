@@ -8,22 +8,22 @@ Runs from the *installed* package, offline, like ``chain.py``::
     python clients/python/examples/spectral/cross.py out.wav
 
 Where ``chain.py`` filters one chain, this def runs **two** FFT chains and
-combines them — the two-chain PV family:
+combines them -- the two-chain PV family:
 
 - `pv_mag_mul(chain_a, chain_b)` is the classic **cross-synthesis**: chain A's
   bins (a white-noise carrier) are scaled by chain B's magnitudes (a small
   harmonic stack playing a melody). The noise comes out *wearing the
-  modulator's spectral envelope* — a vocoder in two UGens. Both chains must
+  modulator's spectral envelope* -- a vocoder in two UGens. Both chains must
   share the same ``fft_size``; the result travels on in chain A, so the rest
   of the chain (`pv_mag_freeze`, `ifft`) just follows the combiner's wire.
 - `pv_mag_freeze(chain, freeze)` holds the last spectral envelope while
   ``freeze > 0``: the melody stops driving the noise, but the phases keep
-  running — a frozen, breathing chord. The routine flips the ``freeze``
+  running -- a frozen, breathing chord. The routine flips the ``freeze``
   control for the final beats, so the ending is the last note held as a
   texture.
 
 Left channel: the dry modulator (quiet, for reference). Right channel: the
-cross-synthesized noise. The combined chain is one def — no buffers, no buses
+cross-synthesized noise. The combined chain is one def -- no buffers, no buses
 between the stages; the spectral frames are synth-private scratch.
 
 This file is organized as ``# %%`` cells (the VS Code / Jupyter convention).
@@ -54,7 +54,7 @@ from clausters.defs import (
 )
 
 #: Where a run leaves its file when no path is given: ``examples/out/``, the
-#: git-ignored directory every generator in this tree writes to — beside the
+#: git-ignored directory every generator in this tree writes to -- beside the
 #: examples rather than in whatever directory you ran from. Made here so that
 #: rendering is one call and not two.
 OUT = pathlib.Path(__file__).resolve().parents[1] / "out"
@@ -72,7 +72,7 @@ def cross(name: str = "cross") -> SynthDef:
     """White noise wearing the spectral envelope of a harmonic stack."""
     freq = control("freq", 220.0)
     freeze = control("freeze", 0.0)
-    # The modulator: a 3-partial stack — enough spectral shape to hear the
+    # The modulator: a 3-partial stack -- enough spectral shape to hear the
     # melody inside the noise.
     mod = sine(freq) + sine(freq * 2.0) * 0.5 + sine(freq * 3.0) * 0.25
     # Two chains, same window size (mandatory for a combiner).
@@ -85,7 +85,7 @@ def cross(name: str = "cross") -> SynthDef:
     sig = ifft(frozen)
     # Bin magnitudes are raw transform sums (a unit sine peaks at roughly
     # fft_size/4 in its bin), so scaling A by B's magnitudes multiplies the
-    # level by that factor — the cross-synthesis needs a small make-up gain.
+    # level by that factor -- the cross-synthesis needs a small make-up gain.
     # A short attack and release, opened at birth and closed by the gate:
     # noise switched on at full amplitude starts the take on a step, and a
     # `/node_free` mid-sample ends it on one. Both are clicks, and this file is

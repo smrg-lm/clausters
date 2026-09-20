@@ -4,7 +4,7 @@
 //! The OSC transport runs on a **background thread** and forwards every datagram
 //! to the winit **main thread** through an [`EventLoopProxy`] (winit owns the
 //! main thread; window creation must happen there). The main thread holds the
-//! [`Host`] — the single source of truth for the typed widget trees — opens an OS
+//! [`Host`] -- the single source of truth for the typed widget trees -- opens an OS
 //! window per window-rooted GuiDef, lays each tree into rectangles
 //! ([`super::layout`]) and renders it: the heavy `waveform` view into its
 //! viewport (the existing [`WaveformView`](crate::waveform::WaveformView)), and
@@ -21,7 +21,7 @@
 //! [`app`] owns the state and the winit handler, [`windows`] the window
 //! lifecycle, [`serverleg`] the audio-server client leg, [`input`] the thin
 //! adapters onto the shared gesture machine ([`crate::host::gestures`], which
-//! owns all interaction logic), and `midi` the live MIDI note painting — in
+//! owns all interaction logic), and `midi` the live MIDI note painting -- in
 //! backticks because that one is behind a feature, and a link into a module a
 //! configuration compiles out resolves in one build and not the next.
 
@@ -42,7 +42,7 @@ use winit::event_loop::{ControlFlow, EventLoop, EventLoopProxy};
 use super::{BusSource, ClientId, Host};
 use app::App;
 
-/// Repaint period for windows with live (shared-memory-backed) widgets — ~30 fps,
+/// Repaint period for windows with live (shared-memory-backed) widgets -- ~30 fps,
 /// enough for smooth meters/scopes without spinning the CPU.
 const FRAME: Duration = Duration::from_millis(33);
 /// How often a window with a `nodetree` re-queries the server's tree. Node
@@ -65,7 +65,7 @@ pub enum UserEvent {
     Osc { from: SocketAddr, bytes: Vec<u8> },
     /// A new TCP connection on the script front: its id and the write
     /// half its replies go out through. The reader threads feed the event loop
-    /// directly (no wake datagram needed — the proxy *is* the wake).
+    /// directly (no wake datagram needed -- the proxy *is* the wake).
     TcpConnected { id: u64, stream: TcpStream },
     /// One framed OSC packet from TCP connection `id`.
     TcpOsc { id: u64, bytes: Vec<u8> },
@@ -73,7 +73,7 @@ pub enum UserEvent {
     TcpDisconnected { id: u64 },
     /// A new WebSocket connection on the script front (`--ws`): its id, the
     /// channel its replies are queued through (the connection thread writes
-    /// them — a tungstenite socket owns both halves) and the raw handle an
+    /// them -- a tungstenite socket owns both halves) and the raw handle an
     /// overflowing reply force-drops it with.
     WsConnected {
         id: u64,
@@ -97,11 +97,11 @@ pub enum UserEvent {
 /// `bus` is the shared-memory data plane read each frame for meters, scopes and
 /// the playhead; `None` leaves those views reading zero. It arrives **already
 /// built** rather than as a path because there is more than one way to get one
-/// — [`open_shm`] maps a separate server's `--shm` file, and an embedded server
-/// hands over its own in-memory segment — and because *which counter a playhead
+/// -- [`open_shm`] maps a separate server's `--shm` file, and an embedded server
+/// hands over its own in-memory segment -- and because *which counter a playhead
 /// reads* is settled where the source is made, not here.
 ///
-/// `tcp` is the script front's TCP carrier — `(bind, max_frame)` — bound here
+/// `tcp` is the script front's TCP carrier -- `(bind, max_frame)` -- bound here
 /// because its reader threads feed the event loop through its proxy (no wake
 /// datagram: the proxy is the wake); `None` leaves the front UDP-only. Where
 /// each leg listens is the caller's, loopback unless a flag named otherwise.
@@ -141,7 +141,7 @@ pub fn run(
         .map_err(|e| format!("failed to bind TCP {bind}: {e}"))?;
         tracing::info!("clausters-gui host listening on tcp://{bound} (script -> host)");
     }
-    // The WebSocket leg (`--ws`), the browser's carrier — same shape as TCP:
+    // The WebSocket leg (`--ws`), the browser's carrier -- same shape as TCP:
     // the connection threads feed the event loop through its proxy.
     if let Some((bind, max_frame)) = ws {
         let ws_proxy = proxy.clone();
@@ -269,8 +269,8 @@ pub fn open_shm(path: Option<String>) -> Option<Arc<dyn BusSource>> {
 /// Maps a segment **and its samples**: the buses a meter reads, and the takes
 /// a peer draws and edits without asking for them.
 ///
-/// The two travel together because they come from one path — the server's own
-/// `--shm` — and separating them at the call site would mean opening the file
+/// The two travel together because they come from one path -- the server's own
+/// `--shm` -- and separating them at the call site would mean opening the file
 /// twice to answer two halves of the same question.
 #[cfg(unix)]
 pub fn open_shm_buffers(

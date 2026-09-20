@@ -2,7 +2,7 @@
 //! and a clip on a lane.
 //!
 //! A note's rectangle and a clip's rectangle are the same object with respect
-//! to editing and positioning — both are a span `[offset, offset + dur)` on a
+//! to editing and positioning -- both are a span `[offset, offset + dur)` on a
 //! **row**, grabbed by one of three parts, snapped to a grid, floored at a
 //! shortest length, and bounded by whatever domain they sit in. They differ in
 //! what they *contain* and in what they *send*, and in nothing else. So the
@@ -15,20 +15,20 @@
 //! Making either the other's shape was measured and rejected: a `Widget` is
 //! 13.5x a `Note` and the layout pass that places it runs per frame *and* per
 //! pointer event. Hence [`Placements`], an accessor over **indexed** storage
-//! rather than a common item type — monomorphised over a slice of notes it
+//! rather than a common item type -- monomorphised over a slice of notes it
 //! compiles to the contiguous access that is there today, and over a lane's
 //! clip children it reads the tree.
 //!
-//! The pixel mappings stay with their renderers — `graphics::pianoroll` maps a
-//! pitch to a row and `interact::coords` maps a cursor to a sample — and both
+//! The pixel mappings stay with their renderers -- `graphics::pianoroll` maps a
+//! pitch to a row and `interact::coords` maps a cursor to a sample -- and both
 //! hand the *numbers* to this module.
 //!
 //! # And the verbs over a selection, which are the layer above
 //!
 //! A drag moves one box and a **verb** acts on the several a hand is holding:
 //! cut them at the cursor, drop them, put a block down somewhere else. Those
-//! were written once per holder — a clip's `e` and a note's `e` doing the same
-//! thing in two files — and they had already drifted, one of them refusing out
+//! were written once per holder -- a clip's `e` and a note's `e` doing the same
+//! thing in two files -- and they had already drifted, one of them refusing out
 //! loud and the other returning silence. So they are here too, over [`Holder`],
 //! which is [`Placements`] plus the two questions a verb asks and a drag never
 //! does: make another one, and take these away. What is *not* general stays
@@ -40,9 +40,9 @@
 /// (resize).
 ///
 /// The same three for a note and a clip. What differs is how the strips are
-/// read off the picture — a clip's are the grips the renderer draws
+/// read off the picture -- a clip's are the grips the renderer draws
 /// ([`track::clip_grips`]), a note's are a margin at each end of the bar
-/// ([`part_at`]) — and that is a drawing question, answered where the drawing
+/// ([`part_at`]) -- and that is a drawing question, answered where the drawing
 /// is.
 ///
 /// [`track::clip_grips`]: crate::host::graphics::track::clip_grips
@@ -58,7 +58,7 @@ pub enum Part {
 ///
 /// The three move together and that is the whole of what an edge drag means: a
 /// box is a window onto a segment of data, so pulling its **start** edge to the
-/// right hides the contents's head rather than compressing it — the offset, the
+/// right hides the contents's head rather than compressing it -- the offset, the
 /// duration and the window's `start` all advance by the same amount. Its **end**
 /// edge changes only the duration, since the head of the window has not moved.
 ///
@@ -76,8 +76,8 @@ pub struct Placement {
 /// What the contents behind a box allows a drag to do: how many frames there
 /// are, and whether the window may run off them.
 ///
-/// `total` is `None` for a box with no contents to run off — a roll, a bare
-/// automation, **a note** — and then an edge drag is bounded by nothing but the
+/// `total` is `None` for a box with no contents to run off -- a roll, a bare
+/// automation, **a note** -- and then an edge drag is bounded by nothing but the
 /// box's own floor and the domain it sits in.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Contents {
@@ -86,7 +86,7 @@ pub struct Contents {
 }
 
 impl Contents {
-    /// Whether an edge may be pulled past the contents — a **looping** box's
+    /// Whether an edge may be pulled past the contents -- a **looping** box's
     /// may, because past the end is the beginning again and before the start is
     /// the tail of the iteration before.
     fn unbounded(&self) -> bool {
@@ -97,11 +97,11 @@ impl Contents {
 /// The shortest a **drag** may leave a box: **one sample**, the smallest length
 /// the axis addresses.
 ///
-/// A box that can be dragged to nothing is gone for good — zero duration draws
+/// A box that can be dragged to nothing is gone for good -- zero duration draws
 /// no rectangle, so there is nothing left to press, and the multitrack keeps a clip
 /// or a note nobody can see or reach. One sample is the whole of the floor: it
-/// is a **length in the axis' own units, never a count of pixels** — the same
-/// rule the time selection follows — so the same drag stops at the same place at
+/// is a **length in the axis' own units, never a count of pixels** -- the same
+/// rule the time selection follows -- so the same drag stops at the same place at
 /// every zoom, and a reader zoomed in to the sample can keep trimming right down
 /// to the grain.
 ///
@@ -120,13 +120,13 @@ pub const EDGE_PX: f32 = 4.0;
 /// The far edge of the **domain** a box lives in, or `None` for a domain with
 /// no far edge.
 ///
-/// A roll standing on its own has none — its content is what it spans, so a
+/// A roll standing on its own has none -- its content is what it spans, so a
 /// note dragged rightwards simply lengthens it, the axis has somewhere further
 /// to go and nothing is lost. A roll drawn as a **clip's body** has one: the
 /// clip's own `dur`, past which a note would still exist and be drawn by no
 /// pixel, since the body is clipped to the rectangle. What is edited has to
 /// stay visible, so the note stops at the edge and the clip's length stays what
-/// its own edge says it is — content does not silently lengthen the thing
+/// its own edge says it is -- content does not silently lengthen the thing
 /// containing it. A clip on a lane has none, for the same reason the roll does
 /// not: the lane is as long as its clips.
 pub type Limit = Option<f64>;
@@ -159,7 +159,7 @@ impl Default for Bounds {
 /// Snaps a timeline sample value to a drag grid: to the nearest multiple of
 /// `grid` when it is positive, else to a whole sample.
 ///
-/// The axis' unit is the sample, so "no grid" is still a grid — the finest one
+/// The axis' unit is the sample, so "no grid" is still a grid -- the finest one
 /// there is. Two spellings of this used to exist, and the roll's returned the
 /// raw value while its own doc said whole units.
 pub fn snap(v: f64, grid: f64) -> f64 {
@@ -170,7 +170,7 @@ pub fn snap(v: f64, grid: f64) -> f64 {
     }
 }
 
-/// The part of a box spanning pixels `[x0, x1]` that `x` fell on — edges before
+/// The part of a box spanning pixels `[x0, x1]` that `x` fell on -- edges before
 /// the body, and only when the bar is wide enough to carry two edge zones and
 /// still have a body between them.
 pub fn part_at(x0: f32, x1: f32, x: f32) -> Part {
@@ -191,7 +191,7 @@ pub fn part_at(x0: f32, x1: f32, x: f32) -> Part {
 ///
 /// `target` is where the grabbed part is being pulled to, on the box's own
 /// axis: the new **offset** for a body or a start drag, the new **end** for an
-/// end drag. A body drag moves the offset, an edge drag trims — never below the
+/// end drag. A body drag moves the offset, an edge drag trims -- never below the
 /// floor, never past the contents unless the box loops, never past the domain's
 /// far edge, and the start stays within `[0, end]`.
 pub fn drag(
@@ -202,7 +202,7 @@ pub fn drag(
     bounds: Bounds,
 ) -> Placement {
     let end = orig.offset + orig.dur;
-    // A box already shorter than the floor is not *grown* to it — a drag moves
+    // A box already shorter than the floor is not *grown* to it -- a drag moves
     // the edge it was given hold of, and snapping the far end out to a minimum
     // nobody asked for is an edit of its own. It simply cannot shrink further.
     let floor = bounds.min_dur.min(orig.dur.max(0.0));
@@ -256,7 +256,7 @@ pub fn drag(
 ///
 /// A box is clamped whole rather than by its onset, which is the difference
 /// between one that stops at the edge and one whose head stops there while the
-/// rest of it goes over — the part that would vanish being exactly the part
+/// rest of it goes over -- the part that would vanish being exactly the part
 /// being dragged. A box longer than the whole domain pins to zero: its tail
 /// cannot fit, so the near edge is the one that can be honoured.
 fn place_body(offset: f64, dur: f64, limit: Limit) -> f64 {
@@ -294,7 +294,7 @@ pub fn split_at(p: Placement, at: f64) -> Option<(Placement, Placement)> {
 /// the later end, reading its source from where the earlier one read.
 ///
 /// The inverse of [`split_at`] on two halves it produced, and a merge of an
-/// overlap otherwise — a join is stated over what is there, not over what the
+/// overlap otherwise -- a join is stated over what is there, not over what the
 /// halves were.
 pub fn merge(a: Placement, b: Placement) -> Placement {
     let (first, second) = if a.offset <= b.offset { (a, b) } else { (b, a) };
@@ -306,7 +306,7 @@ pub fn merge(a: Placement, b: Placement) -> Placement {
     }
 }
 
-/// Whether `b` begins where `a` ends, within `tol` — what "two juxtaposed
+/// Whether `b` begins where `a` ends, within `tol` -- what "two juxtaposed
 /// boxes" means on an axis whose positions are snapped and whose lengths are
 /// floats. An overlap counts: boxes that share pixels are not two boxes to a
 /// reader.
@@ -315,13 +315,13 @@ pub fn adjacent(a: Placement, b: Placement, tol: f64) -> bool {
     second.offset <= first.offset + first.dur.max(0.0) + tol
 }
 
-/// Whether `b` **reads on from where `a` stops** — the second condition a join
+/// Whether `b` **reads on from where `a` stops** -- the second condition a join
 /// has, and the one that was missing.
 ///
 /// [`merge`] states one window over the whole span, reading the source from
 /// where the earlier box read: that is exactly right for two halves of a cut,
 /// and wrong for anything else. Two boxes that read *different* runs of a
-/// source — reordered fragments, a multitrack whose edge was pulled to show more —
+/// source -- reordered fragments, a multitrack whose edge was pulled to show more --
 /// cannot be said in one window at all: joined anyway, the box plays straight
 /// through material the multitracks skipped, and runs into silence past the end of
 /// what it reads. One box over several runs is a **cut**, which is a buffer
@@ -343,8 +343,8 @@ pub fn continues(a: Placement, b: Placement, tol: f64) -> bool {
 /// and monomorphised, so a note block edit is the same generated code it was
 /// before the trait existed.
 ///
-/// These calls happen **per gesture** — one press, one drag step, over the
-/// selection — never per item per frame, so the indirection is off every hot
+/// These calls happen **per gesture** -- one press, one drag step, over the
+/// selection -- never per item per frame, so the indirection is off every hot
 /// path there is.
 pub trait Placements {
     fn len(&self) -> usize;
@@ -366,7 +366,7 @@ pub trait Placements {
 
 /// The indices of the boxes intersecting the time span `[t0, t1)` whose row
 /// touches the band `[r_lo, r_hi]` (a box's row spans half a unit either side
-/// of its own). Either range may come reversed — a marquee drags both ways.
+/// of its own). Either range may come reversed -- a marquee drags both ways.
 pub fn in_rect<P: Placements + ?Sized>(
     p: &P,
     t0: f64,
@@ -392,8 +392,8 @@ pub fn in_rect<P: Placements + ?Sized>(
 /// Move a block of boxes rigidly from a press-time snapshot: `orig` is
 /// `(index, offset, row)` per selected box, `dt`/`dr` the drag deltas.
 ///
-/// The deltas are clamped **as one** — no offset below zero, no tail past
-/// `limit`, no row outside `rows` — so the block stops at an edge instead of
+/// The deltas are clamped **as one** -- no offset below zero, no tail past
+/// `limit`, no row outside `rows` -- so the block stops at an edge instead of
 /// folding against it. Durations are kept: a block move never resizes anything.
 pub fn move_block<P: Placements + ?Sized>(
     p: &mut P,
@@ -420,7 +420,7 @@ pub fn move_block<P: Placements + ?Sized>(
         .map(|(i, s, _)| s + p.placement(*i).dur.max(0.0))
         .fold(f64::NEG_INFINITY, f64::max);
     // The near edge is applied last, so a block longer than the whole domain
-    // pins to zero rather than to a negative offset — the same choice a single
+    // pins to zero rather than to a negative offset -- the same choice a single
     // over-long box makes.
     let dt = match limit {
         Some(l) if max_end.is_finite() => dt.min(l - max_end).max(-min_start),
@@ -492,7 +492,7 @@ pub fn quantize<P: Placements + ?Sized>(p: &mut P, indices: &[usize], grid: f64)
 ///
 /// [`Placements`] answers *where a box is* and is enough for everything that
 /// moves one: a drag, a marquee, a rigid block, a quantize. A **verb over a
-/// selection** — cut these, drop those — needs the two questions that one does
+/// selection** -- cut these, drop those -- needs the two questions that one does
 /// not ask, because they are about the list rather than about a box: make
 /// another one, and take these away.
 ///
@@ -504,7 +504,7 @@ pub fn quantize<P: Placements + ?Sized>(p: &mut P, indices: &[usize], grid: f64)
 /// verb knows.
 pub trait Holder: Placements {
     /// **Another box like `i`**, appended, with whatever identity a new box
-    /// gets here — and `None` where there is nothing at `i` to copy.
+    /// gets here -- and `None` where there is nothing at `i` to copy.
     ///
     /// Appended rather than inserted so that every index a caller is holding
     /// still means the same box: a verb over a selection is walking one.
@@ -530,13 +530,13 @@ fn targets<P: Holder + ?Sized>(p: &P, indices: &[usize]) -> Vec<usize> {
 ///
 /// The window over the contents moves with the cut ([`split_at`] is the
 /// arithmetic), so the second half reads on from where the first stopped rather
-/// than from its source's start — which is what makes a split and a join
+/// than from its source's start -- which is what makes a split and a join
 /// inverses over material and not only over rectangles.
 ///
 /// Returns the selection that is left: every head and every tail, and **empty
 /// when nothing was cut**, which is the answer a caller refuses out loud with.
 /// A box the cut falls outside of is not an error and not a refusal on its own
-/// — a selection may hold boxes the cursor is nowhere near, and the ones it is
+/// -- a selection may hold boxes the cursor is nowhere near, and the ones it is
 /// inside are still cut.
 pub fn split<P: Holder + ?Sized>(p: &mut P, held: &[usize], at: f64) -> Vec<usize> {
     let mut out = Vec::new();
@@ -573,7 +573,7 @@ pub fn discard<P: Holder + ?Sized>(p: &mut P, held: &[usize]) -> bool {
 /// takes so that the earliest of them lands there and the rest keep their
 /// distances from it.
 ///
-/// A pasted block is the same block, which is the whole rule — in time here,
+/// A pasted block is the same block, which is the whole rule -- in time here,
 /// and in rows wherever rows mean something to the holder. `None` for an empty
 /// block, which is not a paste.
 pub fn rebased(offsets: &[f64], at: f64) -> Option<Vec<f64>> {
@@ -615,7 +615,7 @@ mod tests {
     use super::*;
 
     /// A holder that is neither a roll nor a multitrack: the verbs are written
-    /// against [`Holder`] and nothing else, and this is what says so — if one of
+    /// against [`Holder`] and nothing else, and this is what says so -- if one of
     /// them ever reaches for something a clip or a note happens to have, it
     /// stops compiling here first.
     #[derive(Default)]
@@ -683,7 +683,7 @@ mod tests {
     }
 
     /// A cut moves the window over the contents with it, so the tail reads on
-    /// from where the head stopped — which is what makes a split and a join
+    /// from where the head stopped -- which is what makes a split and a join
     /// inverses over material rather than over rectangles only.
     #[test]
     fn a_split_leaves_both_halves_in_hand_and_the_tail_reads_on() {

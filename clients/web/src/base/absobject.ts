@@ -5,7 +5,7 @@
 // overloading, so where the Python client writes `sine(freq) * amp` this one
 // writes `sine(freq).mul(amp)`, and every other operator or math method
 // (`mod`, `min`/`max`, comparisons, `.sin()`, `.midicps()`, `.distort()` …) is
-// a method carrying the same operator **name** the wire uses — so the two
+// a method carrying the same operator **name** the wire uses -- so the two
 // clients emit identical specs.
 //
 // Every method routes through two hooks a subclass implements, `binop` and

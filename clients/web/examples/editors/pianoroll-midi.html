@@ -33,8 +33,8 @@ the roll from what you play). A <code>MidiFunc</code> pair listens on a MIDI
 on (counted from the first key down), and the matching note-off writes its real
 duration.
 
-The host has the same feature natively — open the roll with
-<code>midiIn</code> and route a device into the host's own port — and both legs
+The host has the same feature natively -- open the roll with
+<code>midiIn</code> and route a device into the host's own port -- and both legs
 exist on purpose: the native one records with no client in the loop, this one
 puts the notes under the script's control (they are a plain array here, so the
 take can be quantized, transposed or played before it goes back to the roll). To
@@ -43,8 +43,8 @@ take can be quantized, transposed or played before it goes back to the roll). To
 
 <b>The one difference from the script</b>, and it is the platform's: the Python
 client opens a virtual input port named <code>clausters-in</code> that you wire
-a keyboard into. Web MIDI creates no ports — it hands a page the ones that
-already exist, after asking your permission — so this picks one from that list.
+a keyboard into. Web MIDI creates no ports -- it hands a page the ones that
+already exist, after asking your permission -- so this picks one from that list.
 Plug the keyboard in, press <b>open</b>, allow MIDI, and play.</div>
 
       <div class="row">
@@ -130,14 +130,14 @@ Plug the keyboard in, press <b>open</b>, allow MIDI, and play.</div>
         // looks on the grid.
         win = await gui.view(
           { title: "MIDI -> piano-roll", w: 800, h: 520, layout: "col" },
-          gui.label("play into the chosen port — the keys land in the roll",
+          gui.label("play into the chosen port -- the keys land in the roll",
             { name: "hint", textSize: 1.4, h: 20 }),
           gui.pianoroll({
             name: "roll", notes: [], min: 48, max: 84, snap: beats(0.25),
             ruler: "beats", tempo: BPM / 60.0, sampleRate: SR, label: "take",
           }),
         ).open($("stage"));
-        log(`opened window ${win.id} — choose a port and play`);
+        log(`opened window ${win.id} -- choose a port and play`);
         session.start();
 
         const ports = await requestMidiPorts();

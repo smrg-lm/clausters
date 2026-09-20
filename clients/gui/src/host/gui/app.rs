@@ -1,6 +1,6 @@
 //! The windowed host's state and winit handler: the [`App`] (one per process)
 //! and the per-window [`WindowState`], plus the plumbing every other `gui`
-//! submodule drives — sending replies/events over the right transport, the
+//! submodule drives -- sending replies/events over the right transport, the
 //! bound-vs-event delivery door, the animation tick and the shared-frame render.
 
 use std::collections::HashMap;
@@ -46,7 +46,7 @@ pub(super) struct WindowState {
     pub(super) spectrograms: HashMap<SlotAt, SpectrogramSlot>,
     /// Per-`canvas` GPU resources (the compiled user shader + uniforms).
     pub(super) canvases: HashMap<i32, CanvasView>,
-    /// The heavy views' shared pipelines — one set per window, drawing every
+    /// The heavy views' shared pipelines -- one set per window, drawing every
     /// waveform and spectrogram slot above.
     pub(super) renderers: Renderers,
     pub(super) painter: Painter,
@@ -55,7 +55,7 @@ pub(super) struct WindowState {
     pub(super) overlay: Painter,
     pub(super) origin: ClientId,
     /// **Where the pointer is in this window, or `None` when it is not over
-    /// it** — and an `Option` rather than a pair for exactly that reason.
+    /// it** -- and an `Option` rather than a pair for exactly that reason.
     ///
     /// It used to be a pair with `(-1.0, -1.0)` standing in for *not here*,
     /// which is a sentinel in the field that means *a position*. Everything
@@ -76,7 +76,7 @@ pub(super) struct WindowState {
     /// This window's gesture state (the shared machine's in-progress drag).
     pub(super) gestures: Gestures,
     /// The retained history of every bus this window's tree declares a
-    /// `retention` span on — the addressable past a forward-only source has
+    /// `retention` span on -- the addressable past a forward-only source has
     /// none of. Keyed by **bus**: one history, however many views read it.
     pub(super) histories: HashMap<i32, crate::host::live::BusHistory>,
 }
@@ -102,7 +102,7 @@ pub(super) struct App {
     /// line is one a second rather than one a frame.
     pub(super) head_said: u64,
     /// Next scheduled repaint for animated (meter/scope) windows.
-    /// When this front started — what a wall clock in milliseconds is measured
+    /// When this front started -- what a wall clock in milliseconds is measured
     /// from, since the gesture machine wants elapsed time and not a date.
     pub(super) started: Instant,
     pub(super) next_frame: Instant,
@@ -122,7 +122,7 @@ pub(super) struct App {
     pub(super) frontiers: HashMap<(i32, i32), u64>,
     /// Next scheduled re-query of the server's node tree (the `/node_set` poll).
     pub(super) next_query: Instant,
-    /// Next check of the write frontiers — the recording tick, on the frame
+    /// Next check of the write frontiers -- the recording tick, on the frame
     /// cadence and separate from the animated one because it redraws only
     /// when the samples actually grew.
     pub(super) next_follow: Instant,
@@ -139,8 +139,8 @@ pub(super) struct App {
     /// warning every frame is not).
     #[cfg(feature = "midi")]
     pub(super) midi_warned: bool,
-    /// The host-wide clipboard (Ctrl+C/X/V) — the native front's internal one,
-    /// no OS-clipboard dependency — so what is cut in one window pastes into
+    /// The host-wide clipboard (Ctrl+C/X/V) -- the native front's internal one,
+    /// no OS-clipboard dependency -- so what is cut in one window pastes into
     /// another. A block of notes rides it in the same JSON a `/gui_set notes`
     /// takes, which is the carrier every non-scalar already uses.
     pub(super) text_clipboard: crate::host::clipboard::Clip,
@@ -185,8 +185,8 @@ impl App {
     ///
     /// Two steps, in this order and for one reason: a **history is the bus's**
     /// and is filled first, then every widget of the tree advances whatever it
-    /// keeps of its own — a rolling trace, a triggered window, an analysis, a
-    /// waterfall's transform — reading a history where it needs one. Without a
+    /// keeps of its own -- a rolling trace, a triggered window, an analysis, a
+    /// waterfall's transform -- reading a history where it needs one. Without a
     /// segment there is nothing to read and the live views stay empty, drawing
     /// their framed field.
     fn advance_live(&mut self) {
@@ -220,9 +220,9 @@ impl App {
         self.refresh_slots();
     }
 
-    /// Uploads whatever the trees have for their GPU slots this tick — the
+    /// Uploads whatever the trees have for their GPU slots this tick -- the
     /// columns a waterfall just analyzed, the picture an element that got its
-    /// data rebuilt — and only what moved, so a still window costs no upload.
+    /// data rebuilt -- and only what moved, so a still window costs no upload.
     ///
     /// One walk over each window, asking the widgets rather than looking for
     /// them: the front knows nothing here about what a rolling transform is or
@@ -372,8 +372,8 @@ impl App {
         self.send(ws.origin, message);
     }
 
-    /// Delivers what an element reported outside the gesture machine — the
-    /// live-MIDI painting path — by the one rule the machine also follows: a
+    /// Delivers what an element reported outside the gesture machine -- the
+    /// live-MIDI painting path -- by the one rule the machine also follows: a
     /// **bound** widget forwards the payload without its tag straight to the
     /// audio server, an unbound one emits the whole tagged list to the script.
     #[cfg(feature = "midi")]
@@ -419,7 +419,7 @@ impl App {
     }
 
     /// Renders window `def_id` through the shared frame path ([`frame::render`]),
-    /// the same code the browser front drives — here fed the live inputs (the
+    /// the same code the browser front drives -- here fed the live inputs (the
     /// shared-memory bus, the scope histories, the node trees, the held button).
     fn render(&mut self, def_id: i32) {
         tracing::trace!("rendering window {def_id}");
@@ -501,7 +501,7 @@ impl ApplicationHandler<UserEvent> for App {
         // Standalone: a GuiDef pre-loaded into the host before the loop started
         // (no `/gui_def` over the wire) is opened now. Its events have no script
         // to return to, so they go to a placeholder origin. Pre-loaded windows
-        // mean this is a standalone app — closing the last one quits it.
+        // mean this is a standalone app -- closing the last one quits it.
         let standalone_origin = PLACEHOLDER_ORIGIN;
         let preloaded = self.host.window_def_ids();
         self.standalone = !preloaded.is_empty();
@@ -568,7 +568,7 @@ impl ApplicationHandler<UserEvent> for App {
     ///
     /// **Every source of a wake-up asks for its own time and the soonest wins.**
     /// Two of them used to assign instead of taking the minimum, so whichever
-    /// ran last decided and the other's deadline was dropped — a window
+    /// ran last decided and the other's deadline was dropped -- a window
     /// following a recording *and* animating would keep only one of the two,
     /// depending on the order this function happens to be written in.
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
@@ -581,7 +581,7 @@ impl ApplicationHandler<UserEvent> for App {
 
         // A clip drag held against a lane's edge scrolls the view under a
         // standing cursor, so it needs the frame tick exactly as an animated
-        // window does — and it must run before the repaint below.
+        // window does -- and it must run before the repaint below.
         self.advance_edge_scroll(FRAME.as_secs_f64());
 
         // **A multitrack's clock reads where the transport is**, for a host that
@@ -617,7 +617,7 @@ impl ApplicationHandler<UserEvent> for App {
             }
             // **The block is the tick, and it is one tick for every view.**
             // Letting each view wait for its own block would be the same
-            // amount of summarizing and a repaint per view per block — with
+            // amount of summarizing and a repaint per view per block -- with
             // thirty-two takes recording at once, thirty-two window repaints a
             // second instead of one, which is a cost that grows with the
             // square of the track count and was measured doing exactly that.
@@ -727,7 +727,7 @@ impl ApplicationHandler<UserEvent> for App {
             // The window moved to a display of another density (or the desktop's
             // scaling changed under it): re-resolve this window's size table at
             // the new factor, and *answer* the writer with the same **logical**
-            // extent the window had — a 800x600 shell stays a 800x600 shell, in
+            // extent the window had -- a 800x600 shell stays a 800x600 shell, in
             // the pixels the new display measures it by. The surface resize
             // arrives as the `Resized` that follows.
             WindowEvent::ScaleFactorChanged {
@@ -786,7 +786,7 @@ impl ApplicationHandler<UserEvent> for App {
                     .is_some_and(Widget::has_hover_readout)
                 {
                     // The hover readout follows the pointer, so it needs a
-                    // frame per move — a static window (a plot's) has no
+                    // frame per move -- a static window (a plot's) has no
                     // other frame source.
                     self.redraw(def_id);
                 }
@@ -810,7 +810,7 @@ impl ApplicationHandler<UserEvent> for App {
                 self.on_wheel(def_id, steps);
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
-                // The letter under a chord, the typed character otherwise —
+                // The letter under a chord, the typed character otherwise --
                 // see `key_pressed`.
                 let pressed = key_pressed(&event, self.ctrl(def_id) || self.alt(def_id));
                 tracing::debug!(
@@ -819,7 +819,7 @@ impl ApplicationHandler<UserEvent> for App {
                     self.ctrl(def_id),
                     self.shift(def_id)
                 );
-                // The focus consumes the key first — Tab walks the ring, and a
+                // The focus consumes the key first -- Tab walks the ring, and a
                 // focused element edits (typing, caret motion, cut/copy/paste).
                 // Only what nothing there answered reaches the global shortcuts
                 // below, which are addressed to what is under the cursor.
@@ -865,13 +865,13 @@ impl ApplicationHandler<UserEvent> for App {
                     }
                     // The transport: the space bar rolls the multitrack, or plays
                     // what the cursor is over and stops what is playing. Last
-                    // among the window's own keys for the usual reason — a
+                    // among the window's own keys for the usual reason -- a
                     // focused field types a space, and a widget that wanted it
                     // answered already.
                     //
                     // **Both spellings, because a space is a typed character.**
                     // `key_pressed` hands back what the key *produced* when no
-                    // chord is held, and a space produces `" "` — so an arm
+                    // chord is held, and a space produces `" "` -- so an arm
                     // matching only `NamedKey::Space` never fired at all, on
                     // any keyboard, and the take monitor had no key.
                     ref key if is_space(key) => {
@@ -901,7 +901,7 @@ impl ApplicationHandler<UserEvent> for App {
 #[cfg(feature = "midi")]
 impl App {
     /// Every element that **declared** it reads live MIDI, as `(window,
-    /// widget)` — what the front opens its input port for.
+    /// widget)` -- what the front opens its input port for.
     pub(super) fn midi_readers(&self) -> Vec<(i32, i32)> {
         let mut out = Vec::new();
         for &def_id in self.windows.keys() {
@@ -918,7 +918,7 @@ impl App {
 
     /// The shared playhead's current sample for a widget while it is running
     /// (`playhead_at` anchored to the engine clock), else `None`. It is the
-    /// widget's navigation group that is running or not — the recording keeps
+    /// widget's navigation group that is running or not -- the recording keeps
     /// time with what the lanes draw, which is the group's sweep.
     pub(super) fn playhead_sample(&self, def_id: i32, id: i32) -> Option<f64> {
         let tree = self.host.window_def(def_id)?;
@@ -940,7 +940,7 @@ impl App {
 /// winit's `logical_key` is the key *with modifiers applied*, which is right
 /// for typing and wrong for a shortcut: `Ctrl`+`Z` arrives as the control
 /// character `\u{1a}` and never equals `"z"`, so every chord in this host
-/// matched nothing and vanished — undo, redo and the clipboard verbs alike,
+/// matched nothing and vanished -- undo, redo and the clipboard verbs alike,
 /// none of which had ever run outside a test. `key_without_modifiers` is
 /// winit's own answer to exactly this, and it ignores `Shift` too, so a
 /// `Ctrl`+`Shift`+`Z` is read as `z` with the shift taken from the tracked
@@ -967,7 +967,7 @@ impl App {
 ///
 /// It arrives as `Named(Space)` under a chord and as the character it typed
 /// otherwise ([`key_pressed`]), and a match on one of the two is a key that
-/// works only with a modifier held — which is to say not at all.
+/// works only with a modifier held -- which is to say not at all.
 fn is_space(key: &Key) -> bool {
     match key {
         Key::Named(NamedKey::Space) => true,
@@ -1028,7 +1028,7 @@ mod tests {
     use super::*;
 
     /// **The space bar arrives as the character it typed**, not as
-    /// `NamedKey::Space`, whenever no chord is held — which is every time
+    /// `NamedKey::Space`, whenever no chord is held -- which is every time
     /// anybody presses it to play something.
     ///
     /// The window's arm matched only the named spelling, so the key did

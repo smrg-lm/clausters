@@ -1,9 +1,9 @@
 //! 2D colored geometry: the host's one drawing primitive for chrome, controls
 //! and text.
 //!
-//! Everything the GUI host paints that is not the heavy `waveform` view — panel
+//! Everything the GUI host paints that is not the heavy `waveform` view -- panel
 //! backgrounds, sliders, knobs, buttons, toggles and the bitmap glyphs of labels
-//! and values — is a batch of flat-colored triangles. [`Mesh`] accumulates them
+//! and values -- is a batch of flat-colored triangles. [`Mesh`] accumulates them
 //! in **device pixels** (top-left origin) with convenience builders (rect, quad,
 //! line, disc), and [`Painter`] uploads the batch once and draws it in a single
 //! call, converting pixel space to clip space in the shader feed. It is the same
@@ -32,7 +32,7 @@ use super::theme::Theme;
 /// context is built per frame by the renderer and handed down.
 ///
 /// A draw function takes `&mut Draw` and either passes it on to the sub-draws
-/// it delegates to, or — a leaf that paints itself — opens with
+/// it delegates to, or -- a leaf that paints itself -- opens with
 /// [`parts`](Self::parts) and works with the three directly.
 pub struct Draw<'a> {
     /// The batch this site emits its triangles into.
@@ -57,7 +57,7 @@ impl<'a> Draw<'a> {
 /// `[x, y, r, g, b, a]` per vertex, position in device pixels.
 const FLOATS_PER_VERTEX: usize = 6;
 
-/// `[x, y, u, v, r, g, b, a]` per glyph vertex — the same, plus where in the
+/// `[x, y, u, v, r, g, b, a]` per glyph vertex -- the same, plus where in the
 /// atlas texture it samples.
 #[cfg(feature = "font-atlas")]
 const FLOATS_PER_GLYPH_VERTEX: usize = 8;
@@ -65,7 +65,7 @@ const FLOATS_PER_GLYPH_VERTEX: usize = 8;
 /// An RGBA color.
 pub type Color = [f32; 4];
 
-/// **How a widget's own triangles are emitted** — the two paint capabilities
+/// **How a widget's own triangles are emitted** -- the two paint capabilities
 /// that are a property of the *widget* rather than of a drawing site: its
 /// resolved opacity and the corner radius of the boxes it lays down.
 ///
@@ -77,7 +77,7 @@ pub type Color = [f32; 4];
 ///
 /// The bound is deliberate and is the milestone's own: this is **per-primitive
 /// alpha**, not layer compositing. Two overlapping shapes inside a faded widget
-/// show through each other, because there is no second target to compose — and
+/// show through each other, because there is no second target to compose -- and
 /// a second target is exactly the batch the crate does not split.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Ink {
@@ -104,7 +104,7 @@ impl Default for Ink {
 /// The rectangle four corners describe when **every edge is axis-parallel**,
 /// or `None` for anything rotated. Winding- and origin-agnostic: it checks the
 /// edges rather than a corner order, so it recognizes the quad whichever corner
-/// it starts from and whichever way it goes round — [`Mesh::rect`] builds one
+/// it starts from and whichever way it goes round -- [`Mesh::rect`] builds one
 /// order, an axis-parallel [`Mesh::line`] another.
 ///
 /// The rect is the corners' bounding box, which for such a quad *is* the quad.
@@ -128,7 +128,7 @@ fn axis_aligned(p: &[[f32; 2]; 4]) -> Option<Rect> {
 }
 
 /// The four corner arcs of a rounded `r`, as `(centre x, centre y, the angle
-/// the quarter starts at)` — top-left, top-right, bottom-right, bottom-left,
+/// the quarter starts at)` -- top-left, top-right, bottom-right, bottom-left,
 /// in a y-downwards space. One table, so a filled box and the frame around it
 /// turn about the same centres.
 fn corners(r: Rect, radius: f32) -> [(f32, f32, f32); 4] {
@@ -150,14 +150,14 @@ pub struct Mesh {
     /// loaded: `[x, y, u, v, r, g, b, a]` each, sampling the window's atlas
     /// texture. A second list rather than a second `Mesh` because the two are
     /// one picture: they share this batch's clip rectangle, they are uploaded
-    /// together, and they are drawn back to back — the glyphs over the flat
+    /// together, and they are drawn back to back -- the glyphs over the flat
     /// geometry of *their own* batch, which is where text always sat (the
     /// overlay batch still paints over both).
     #[cfg(feature = "font-atlas")]
     glyphs: Vec<f32>,
     /// The active clip rectangle, if any: every triangle emitted while it is
     /// set is clipped to it geometrically (so a scrolled widget's chrome never
-    /// bleeds outside its `scroll` container). Geometry, not a GPU scissor —
+    /// bleeds outside its `scroll` container). Geometry, not a GPU scissor --
     /// the batch stays **one** upload and one draw on every front.
     clip: Option<Rect>,
     /// The active [`Ink`]: the opacity every emitted vertex is multiplied by
@@ -188,8 +188,8 @@ impl Mesh {
     /// A glyph quad: `r` in device pixels, textured with `uv` (`[u0, v0, u1,
     /// v1]` of the atlas) and tinted `color`.
     ///
-    /// Clipping is the same clamp an axis-aligned [`quad`](Self::quad) takes —
-    /// a glyph is always axis-aligned — with the texture coordinates cut in the
+    /// Clipping is the same clamp an axis-aligned [`quad`](Self::quad) takes --
+    /// a glyph is always axis-aligned -- with the texture coordinates cut in the
     /// same proportion, so half a letter at a `scroll`'s edge shows exactly its
     /// left half rather than a squeezed whole one.
     #[cfg(feature = "font-atlas")]
@@ -250,7 +250,7 @@ impl Mesh {
         &self.glyphs
     }
 
-    /// The alpha of every accumulated flat vertex — what a test asks to see
+    /// The alpha of every accumulated flat vertex -- what a test asks to see
     /// the [`Ink`]'s opacity in the batch itself.
     #[cfg(test)]
     pub(crate) fn alphas(&self) -> impl Iterator<Item = f32> + '_ {
@@ -261,7 +261,7 @@ impl Mesh {
             .map(|v| v[5])
     }
 
-    /// The `(x, y)` of every accumulated vertex, for bounds/layout tests —
+    /// The `(x, y)` of every accumulated vertex, for bounds/layout tests --
     /// the flat geometry's and, where a face is drawing them, the glyphs'.
     #[cfg(test)]
     pub(crate) fn positions(&self) -> impl Iterator<Item = (f32, f32)> + '_ {
@@ -298,7 +298,7 @@ impl Mesh {
         self.clip
     }
 
-    /// Sets the [`Ink`] — the opacity and the corner radius — everything
+    /// Sets the [`Ink`] -- the opacity and the corner radius -- everything
     /// emitted next carries. The frame sets one per placed widget, beside its
     /// clip; [`Ink::default`] restores opaque square drawing.
     pub fn set_ink(&mut self, ink: Ink) {
@@ -313,7 +313,7 @@ impl Mesh {
         self.ink
     }
 
-    /// A triangle, emitted verbatim — the caller has already established that
+    /// A triangle, emitted verbatim -- the caller has already established that
     /// it needs no clipping (there is none, or it survived the clamp).
     fn tri_raw(&mut self, a: [f32; 2], b: [f32; 2], c: [f32; 2], color: Color) {
         self.vertex(a, color);
@@ -394,7 +394,7 @@ impl Mesh {
     /// body, a waveform column, a horizontal or vertical hairline. Since a
     /// rectangle intersected with a rectangle *is* a rectangle, the general
     /// [`tri`] clipper would spend a four-half-plane Sutherland-Hodgman pass
-    /// per triangle to rediscover geometry two `min`/`max` pairs give exactly —
+    /// per triangle to rediscover geometry two `min`/`max` pairs give exactly --
     /// measured at 2.6-6.9x the cost of the unclipped path, against 1.10-1.17x
     /// for the clamp. Only rotated geometry (a disc's fan, a diagonal line, a
     /// glyph outline) still needs the general pass, and still gets it.
@@ -419,7 +419,7 @@ impl Mesh {
         self.tri(p[0], p[2], p[3], color);
     }
 
-    /// An axis-aligned rectangle — **the box primitive**, and so the one that
+    /// An axis-aligned rectangle -- **the box primitive**, and so the one that
     /// honors the active [`Ink`]'s corner radius: a widget that asked for
     /// rounded corners gets them on every box it lays down, and on nothing
     /// else. A line, a disc, a glyph and a raw quad keep their own shape,
@@ -436,7 +436,7 @@ impl Mesh {
         self.square_rect(r, color);
     }
 
-    /// A rectangle with square corners, whatever the active [`Ink`] says — the
+    /// A rectangle with square corners, whatever the active [`Ink`] says -- the
     /// primitive [`rect`](Self::rect) is when nothing asked for a radius, and
     /// what [`round_rect`](Self::round_rect) builds its straight parts from.
     fn square_rect(&mut self, r: Rect, color: Color) {
@@ -453,14 +453,14 @@ impl Mesh {
 
     /// An axis-aligned rectangle with `radius`-rounded corners, tessellated
     /// into **this same batch**: three straight bands plus a quarter fan per
-    /// corner, no second pipeline and no texture — the way the score's outlines
+    /// corner, no second pipeline and no texture -- the way the score's outlines
     /// already reach the mesh.
     ///
     /// `radius` is clamped to half the shorter side (so it degenerates to a
     /// stadium, never to a self-crossing shape) and a radius under one pixel is
     /// a square corner: the arc would land inside a single pixel, which is a
     /// dozen triangles nobody can see. That clamp is also what lets the radius
-    /// ride the [`Ink`] for a whole widget — a divider, a track edge and a tick
+    /// ride the [`Ink`] for a whole widget -- a divider, a track edge and a tick
     /// are one or two pixels thick, so they come out unchanged while the
     /// widget's own box rounds.
     pub fn round_rect(&mut self, r: Rect, radius: f32, color: Color) {
@@ -491,7 +491,7 @@ impl Mesh {
     }
 
     /// One corner's arc as a strip between an outer and an inner radius (a fan
-    /// when `inner` is zero) — the multitrack both the filled box and the frame are
+    /// when `inner` is zero) -- the multitrack both the filled box and the frame are
     /// built from, so a rounded border follows exactly the edge its fill drew.
     fn corner_ring(&mut self, cx: f32, cy: f32, from: f32, outer: f32, inner: f32, color: Color) {
         // The segment count follows the radius (a corner is never more than a
@@ -524,7 +524,7 @@ impl Mesh {
         );
     }
 
-    /// A `w`-pixel-thick outline of `rect` — four edge rectangles, or a
+    /// A `w`-pixel-thick outline of `rect` -- four edge rectangles, or a
     /// rounded frame when the active [`Ink`] carries a radius, so a widget's
     /// edge (and the focus ring the frame draws over it) follows the box its
     /// fill drew rather than cutting its corners off.
@@ -595,7 +595,7 @@ impl Mesh {
         (self.verts.len() / FLOATS_PER_VERTEX) as u32
     }
 
-    /// The bounding box of everything accumulated, `None` for an empty mesh —
+    /// The bounding box of everything accumulated, `None` for an empty mesh --
     /// how much of the area a drawing actually inked, which is the one thing a
     /// test can ask about a picture without a window.
     #[cfg(test)]
@@ -924,7 +924,7 @@ impl Painter {
     }
 
     /// The glyph half of the same batch: the vertices into this painter's
-    /// buffer, and — only when the shared cache has rasterized something new —
+    /// buffer, and -- only when the shared cache has rasterized something new --
     /// the coverage sheet into this window's texture.
     #[cfg(feature = "font-atlas")]
     fn upload_glyphs(
@@ -1039,8 +1039,8 @@ mod tests {
         // A *degenerate* triangle covers nothing, and that has to be said
         // explicitly: the half-plane test alone reports every point as inside
         // one, since all three edge signs are zero. The general clipper does
-        // emit them — a quad flush against a clip edge collapses to a sliver of
-        // three equal vertices — and the rasterizer paints no pixel for it, so
+        // emit them -- a quad flush against a clip edge collapses to a sliver of
+        // three equal vertices -- and the rasterizer paints no pixel for it, so
         // neither does this.
         let (u, v) = (
             [t[1][0] - t[0][0], t[1][1] - t[0][1]],
@@ -1061,13 +1061,13 @@ mod tests {
 
     /// The milestone's own check: the axis-aligned clamp must paint **exactly**
     /// what the general Sutherland-Hodgman pass paints. Vertex lists cannot be
-    /// compared directly — the general path emits a fan of up to seven vertices
-    /// where the clamp emits six — so the comparison is the only thing that
+    /// compared directly -- the general path emits a fan of up to seven vertices
+    /// where the clamp emits six -- so the comparison is the only thing that
     /// actually matters, the covered area.
     ///
     /// The grid offsets are deliberately non-dyadic. The general path splits
     /// the quad into two triangles along a **diagonal**, and a sample landing
-    /// exactly on it is inside both, neither or one depending on rounding — the
+    /// exactly on it is inside both, neither or one depending on rounding -- the
     /// one place the two paths may legitimately disagree, since a boundary
     /// point has no answer. (The rasterizer never sees it: the two triangles
     /// share exact vertices and the fill rule settles the seam. The clamp has
@@ -1147,7 +1147,7 @@ mod tests {
         assert!(!diagonal.is_empty());
     }
 
-    /// A hairline is a quad too — `line` funnels through `quad`, so a
+    /// A hairline is a quad too -- `line` funnels through `quad`, so a
     /// horizontal or vertical one (a divider, a tick, a playhead, a baseline:
     /// most of the chrome) takes the clamp, and only a slanted one does not.
     #[test]
@@ -1181,7 +1181,7 @@ mod tests {
         });
         m.rect(Rect::new(0.0, 0.0, 10.0, 10.0), [1.0, 1.0, 1.0, 1.0]);
         // A color that is already translucent composes with it rather than
-        // being replaced — a selection band at 0.18 inside a widget at 0.5 is
+        // being replaced -- a selection band at 0.18 inside a widget at 0.5 is
         // fainter, not reset.
         m.rect(Rect::new(0.0, 0.0, 10.0, 10.0), [1.0, 1.0, 1.0, 0.4]);
         let alphas: Vec<f32> = m.alphas().collect();

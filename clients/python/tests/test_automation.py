@@ -1,7 +1,7 @@
 """Automation (the control-vector lane): the break-point curve is discretized
 into a control buffer on the server (``/buffer_gen "env"``) and played onto a control
 bus by the lane synth (``OutCtl``). A ``readbus`` synth exposes that control bus
-as audio, so the rendered signal *is* the curve — proving the whole path
+as audio, so the rendered signal *is* the curve -- proving the whole path
 (``/buffer_gen "env"`` + ``OutCtl`` + the lane) end to end through the offline render.
 """
 

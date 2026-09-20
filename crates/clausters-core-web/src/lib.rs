@@ -6,13 +6,13 @@
 //! same `clausters_core::osc` the server and every other client use, so the
 //! bytes are identical by construction (the parity vectors in
 //! `clients/web/tests/` hold this against the Python client). W1 adds the
-//! **registry** — the id-allocation model behind node ids, buses and buffers,
+//! **registry** -- the id-allocation model behind node ids, buses and buffers,
 //! the same door `clausters-ffi` opens for Python. W3 adds the sequencing
 //! layer's core: the beat-ordered **queue**, the beat/second/sample
 //! arithmetic, **bundle assembly** with a timetag, the seeded value stream,
 //! the builtins and the pitch space, and the sample-clock model. W10 adds the
-//! **data paths' analysis** — the stereo-field measurements and the peak
-//! pyramid — so a page that reads buses, taps and buffers measures them with
+//! **data paths' analysis** -- the stereo-field measurements and the peak
+//! pyramid -- so a page that reads buses, taps and buffers measures them with
 //! the same functions the GUI host measures with. Only measurements: what a
 //! *drawing* needs of them (a pixel row, a display window, a decibel curve)
 //! stays in the host, which is the one thing that draws (W26).
@@ -176,7 +176,7 @@ pub fn osc_decode_packet(bytes: &[u8]) -> Result<js_sys::Array, JsError> {
     Ok(out)
 }
 
-/// JS face: `osc_decode_packet_timed(bytes) -> [{addr, args, time}, ...]` —
+/// JS face: `osc_decode_packet_timed(bytes) -> [{addr, args, time}, ...]` --
 /// [`osc_decode_packet`] plus the containing bundle's time, in Unix seconds
 /// (`null` for an immediate bundle or a bare message). What the responder
 /// layer reads, so a handler is given the same `time` the Python client hands
@@ -193,7 +193,7 @@ pub fn osc_decode_packet_timed(bytes: &[u8]) -> Result<js_sys::Array, JsError> {
 }
 
 /// One decoded message as `{addr, args}`, plus `time` when the caller asks for
-/// the timed shape (`Some(None)` writes a `null` — the field is there either
+/// the timed shape (`Some(None)` writes a `null` -- the field is there either
 /// way, so a reader never has to test for its presence).
 #[cfg(target_arch = "wasm32")]
 fn js_decoded_message(
@@ -245,7 +245,7 @@ fn js_value(arg: OscType) -> JsValue {
 // The client-side allocators are all one model (`clausters_core::registry`),
 // so they cross to JS as one class rather than three. The JS names are
 // camelCase because wasm-bindgen renames methods for the language it lands
-// in; the semantics are the Rust ones verbatim — exhaustion is `undefined`
+// in; the semantics are the Rust ones verbatim -- exhaustion is `undefined`
 // (never a wrap), and a refused release reports instead of corrupting the map.
 
 /// A registry of one finite id space, the JS face of
@@ -276,12 +276,12 @@ impl JsRegistry {
 
     /// Returns `width` ids starting at `first` to the pool. `true` when the
     /// release was accepted; `false` leaves the map untouched (out of range,
-    /// or not currently allocated — a double release).
+    /// or not currently allocated -- a double release).
     pub fn release(&mut self, first: f64, width: u32) -> bool {
         self.0.release(first as i64, width as usize).is_ok()
     }
 
-    /// Whether `id` falls inside this registry's space (allocated or not) —
+    /// Whether `id` falls inside this registry's space (allocated or not) --
     /// the filter for foreign `/node_end` ids.
     pub fn contains(&self, id: f64) -> bool {
         self.0.contains(id as i64)
@@ -560,7 +560,7 @@ impl JsWidgetIds {
 }
 
 /// JS face: the boot-derived node-id partition for a node table of
-/// `max_nodes` slots — `{clientBase, clientCapacity, autoBase, autoCapacity,
+/// `max_nodes` slots -- `{clientBase, clientCapacity, autoBase, autoCapacity,
 /// midiBase, midiCapacity}`, the same formula the server applies.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
@@ -734,7 +734,7 @@ impl Default for JsScheduler {
 ///
 /// A beat is a logical coordinate, not a unit of time; this is the function
 /// that turns one into the other under a tempo that changes along the multitrack.
-/// It is pure — it knows nothing of *now* — so an editor, an offline render
+/// It is pure -- it knows nothing of *now* -- so an editor, an offline render
 /// and a live clock share one, and there is a single implementation of the
 /// integral behind all of them.
 #[cfg(target_arch = "wasm32")]
@@ -752,7 +752,7 @@ impl JsTempoMap {
     }
 
     /// A map of one constant-tempo segment with `baseBeats` falling on
-    /// `baseSeconds` — the affine triple a running clock already holds, so
+    /// `baseSeconds` -- the affine triple a running clock already holds, so
     /// adopting a map changes no result. `undefined` on invalid arguments.
     pub fn anchored(tempo: f64, base_beats: f64, base_seconds: f64) -> Option<JsTempoMap> {
         TempoMap::anchored(tempo, base_beats, base_seconds)
@@ -760,7 +760,7 @@ impl JsTempoMap {
             .map(JsTempoMap)
     }
 
-    /// **A map from a multitrack's authored tempo entries** — the JSON array a
+    /// **A map from a multitrack's authored tempo entries** -- the JSON array a
     /// document's `tempo` list is, plus the tempo a multitrack that never said one
     /// leaves to its reader. `undefined` when the text is not such a list.
     ///
@@ -768,7 +768,7 @@ impl JsTempoMap {
     /// to write: a ramp reaches the *next* entry, the default is prepended when
     /// the first entry is past beat 0, and no entries at all is the default
     /// alone. Each entry is `{beats, tempo, ramp}` with the tempo in beats
-    /// **per second**, as every tempo here is — a document writing beats per
+    /// **per second**, as every tempo here is -- a document writing beats per
     /// minute divides once, where it reads its own field.
     #[wasm_bindgen(js_name = fromChanges)]
     pub fn from_changes(changes: &str, default_tempo: f64) -> Option<JsTempoMap> {
@@ -793,7 +793,7 @@ impl JsTempoMap {
             .map(JsTempoMap)
     }
 
-    /// An independent copy — a fork, for when two tempi should stop being one.
+    /// An independent copy -- a fork, for when two tempi should stop being one.
     /// Handing a map to a clock does **not** copy: a clock adopts what it is
     /// given, which is what lets two clocks read one multitrack.
     #[wasm_bindgen(js_name = copy)]
@@ -814,7 +814,7 @@ impl JsTempoMap {
         self.0.version() as f64
     }
 
-    /// The map written out as JSON — its breakpoints, without the derived
+    /// The map written out as JSON -- its breakpoints, without the derived
     /// seconds.
     #[wasm_bindgen(js_name = dump)]
     pub fn dump(&self) -> String {
@@ -822,7 +822,7 @@ impl JsTempoMap {
     }
 
     /// A map read back from the JSON [`Self::dump`] writes. `undefined` when
-    /// the text is not a map this client could have written — the breakpoints
+    /// the text is not a map this client could have written -- the breakpoints
     /// are replayed through the ordinary writers, so every rule a live gesture
     /// obeys is checked here.
     #[wasm_bindgen(js_name = load)]
@@ -848,7 +848,7 @@ impl JsTempoMap {
         self.0.tempo_at(b)
     }
 
-    /// How long the stretch from `b0` to `b1` lasts, in seconds — the only
+    /// How long the stretch from `b0` to `b1` lasts, in seconds -- the only
     /// correct way to turn a length in beats into a length in time, since the
     /// same span lasts differently depending on where it sits.
     #[wasm_bindgen(js_name = spanSecs)]
@@ -942,14 +942,14 @@ impl JsTempoMap {
         self.0.len()
     }
 
-    /// Always false — a map holds at least one segment by construction.
+    /// Always false -- a map holds at least one segment by construction.
     #[wasm_bindgen(getter, js_name = isEmpty)]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
     /// Segment `i` as `[beats, secs, tempo, shape, endBeats, endTempo,
-    /// curvature]` — `shape` is 0 for a constant tempo and otherwise the
+    /// curvature]` -- `shape` is 0 for a constant tempo and otherwise the
     /// envelope shape number, and the three trailing fields are 0 when there is
     /// no curve. `undefined` past the end.
     pub fn segment(&self, i: usize) -> Option<Vec<f64>> {
@@ -973,7 +973,7 @@ impl JsTempoMap {
         })
     }
 
-    /// The last segment's affine triple, `[baseBeats, baseSeconds, tempo]` —
+    /// The last segment's affine triple, `[baseBeats, baseSeconds, tempo]` --
     /// what a clock caches so reading *now* stays three float operations with
     /// no search.
     pub fn last(&self) -> Vec<f64> {
@@ -985,7 +985,7 @@ impl JsTempoMap {
 // ---- bundle assembly ----
 //
 // A message alone has no time; logical time rides on a bundle's timetag. Both
-// doors take the same shape — an array of `[addr, [[tag, value], ...]]` — so
+// doors take the same shape -- an array of `[addr, [[tag, value], ...]]` -- so
 // the caller assembles a whole timed emission in one crossing.
 
 /// One `[addr, args]` JS pair → a core message.
@@ -1021,7 +1021,7 @@ pub fn osc_encode_bundle(unix_secs: f64, messages: js_sys::Array) -> Result<Vec<
 /// bundle an NRT score is made of. The same packing as [`osc_encode_bundle`]
 /// on a different epoch: a score's time is not a wall clock, so nothing is
 /// added to it (`clausters_core::osc::pack_timetag`, the rule every client
-/// shares — the Python client reaches it through `clausters_core_ntp_timetag`
+/// shares -- the Python client reaches it through `clausters_core_ntp_timetag`
 /// and assembles the bundle itself).
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
@@ -1053,7 +1053,7 @@ pub struct JsRng(Rng);
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_class = Rng)]
 impl JsRng {
-    /// The stream for `seed` (splitmix64-mixed, never zero) — the same seeding
+    /// The stream for `seed` (splitmix64-mixed, never zero) -- the same seeding
     /// as the server's `WhiteNoise`.
     #[wasm_bindgen(constructor)]
     pub fn new(seed: f64) -> JsRng {
@@ -1226,15 +1226,15 @@ impl JsSampleClockModel {
 //
 // W4's mount, opened to the page: a persisted bundle is a template, and the
 // page turns it into N non-colliding instances. The pass itself is
-// `clausters_core::bundle` — pure, natively tested, and the same one the native
-// `--standalone` leg runs — so these three are only the JSON boundary. The
+// `clausters_core::bundle` -- pure, natively tested, and the same one the native
+// `--standalone` leg runs -- so these three are only the JSON boundary. The
 // page allocates between `bundle_requirements` and `bundle_resolve`, from its
 // own `Server`/`GuiHost` allocators; nothing here allocates or keeps state.
 
 /// JS face: what one instance of a bundle needs allocated.
 /// `bundle_requirements(requestJson) -> requirementsJson`, the request holding
-/// the manifest and — for a bundle written before the contract, whose widget
-/// ids are whatever its author picked — the template its id block is measured
+/// the manifest and -- for a bundle written before the contract, whose widget
+/// ids are whatever its author picked -- the template its id block is measured
 /// from.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
@@ -1258,7 +1258,7 @@ pub fn bundle_resolve(request: &str) -> Result<String, JsError> {
     serde_json::to_string(&resolved).map_err(|e| JsError::new(&e.to_string()))
 }
 
-/// JS face: the writers' pre-flight — the mount dry-run over the declared
+/// JS face: the writers' pre-flight -- the mount dry-run over the declared
 /// defaults, plus the no-holes check on every def payload.
 /// `bundle_validate(requestJson)`, throwing on the first problem.
 #[cfg(target_arch = "wasm32")]
@@ -1271,7 +1271,7 @@ pub fn bundle_validate(request: &str) -> Result<(), JsError> {
 
 // ---- the data paths' analysis ----
 //
-// W10's doors: what a page measures from the data it reads off the server —
+// W10's doors: what a page measures from the data it reads off the server --
 // control buses, tap windows, buffer samples. Every one of them is a
 // measurement of the *signal*, and it is the same function the GUI host
 // measures with, so a figure a script reports and a figure a widget draws are
@@ -1281,7 +1281,7 @@ pub fn bundle_validate(request: &str) -> Result<(), JsError> {
 // here keeps state except the peak pyramid, which is a cache by definition.
 
 /// JS face: the **peak and RMS** of one channel of an interleaved buffer, as
-/// `[peak, rms]` — what a render reports back about what it produced. The
+/// `[peak, rms]` -- what a render reports back about what it produced. The
 /// stride walk measures a render without deinterleaving it first, so a page
 /// reads the same two numbers the server and the Python client report.
 ///
@@ -1297,7 +1297,7 @@ pub fn channel_stats(samples: &[f32], channels: usize, channel: usize) -> Vec<f3
 }
 
 /// JS face: the **true peak** of one channel of an interleaved buffer, in
-/// linear amplitude — the reconstructed peak rather than the largest sample.
+/// linear amplitude -- the reconstructed peak rather than the largest sample.
 ///
 /// The ITU-R BS.1770-4 Annex 2 filter at 4×, which is what makes the reading
 /// dBTP: a signal whose samples all read below full scale can still reconstruct
@@ -1314,7 +1314,7 @@ pub fn true_peak(samples: &[f32], channels: usize, channel: usize) -> f32 {
 }
 
 /// JS face: **the loudness** of an interleaved buffer at `rate` Hz, as
-/// `[integrated, range, momentaryMax, shortTermMax]` — LUFS, LU, LUFS, LUFS,
+/// `[integrated, range, momentaryMax, shortTermMax]` -- LUFS, LU, LUFS, LUFS,
 /// as ITU-R BS.1770 and EBU R 128 measure them.
 ///
 /// `weights` is one per channel (`0` leaves one out, `1.41` is a surround), or
@@ -1339,7 +1339,7 @@ pub fn loudness(
     })
 }
 
-/// JS face: the axis a break-point curve is **drawn** against, as `[lo, hi]` —
+/// JS face: the axis a break-point curve is **drawn** against, as `[lo, hi]` --
 /// its values' range with a tenth of headroom, and a flat curve still gets a
 /// band to be dragged in.
 ///
@@ -1359,7 +1359,7 @@ pub fn curve_axis(values: &[f64], kept_lo: Option<f64>, kept_hi: Option<f64>) ->
     vec![lo, hi]
 }
 
-/// JS face: **the props a break-point curve is drawn with**, as a JSON string —
+/// JS face: **the props a break-point curve is drawn with**, as a JSON string --
 /// `{"points": [...], "min": .., "max": .., "duration": ..}`.
 ///
 /// The projection, not the rule: `curveAxis` above answers what a curve is
@@ -1387,7 +1387,7 @@ pub fn points_props(
 /// JSON string.
 ///
 /// The rows, the boxes, the automations over both, their break-points, which
-/// are hidden and which boxes loop — everything a multitrack has from the document
+/// are hidden and which boxes loop -- everything a multitrack has from the document
 /// alone. `sources` is the same table `multitrack_plan` takes, source id to
 /// `{"buffer", "channels"}`, because what a box is drawn from and what it is
 /// played from are the same samples.
@@ -1425,7 +1425,7 @@ impl Default for JsEditing {
     }
 }
 
-/// JS face: **a measure stack, checked** — `{"stack": [...]}` answers
+/// JS face: **a measure stack, checked** -- `{"stack": [...]}` answers
 /// `{"layers": [...]}` or `{"error"}` naming what is refused.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = samplesMeasures)]
@@ -1433,7 +1433,7 @@ pub fn samples_measures(request: &str) -> String {
     clausters_apps::samples::measures_json(request)
 }
 
-/// JS face: **what a gesture means, in a structure's own vocabulary** — the
+/// JS face: **what a gesture means, in a structure's own vocabulary** -- the
 /// edit ingestion, as a JSON string.
 ///
 /// A host reports a gesture as a tag and a flat list of values, and this is what
@@ -1452,7 +1452,7 @@ pub fn editing_intake(domain: &str, tag: &str, request: &str) -> String {
     clausters_editing::intake_json(domain, tag, request)
 }
 
-/// JS face: **what a source made of spans comes to** — the buffer a join is,
+/// JS face: **what a source made of spans comes to** -- the buffer a join is,
 /// resolved against the caller's table.
 ///
 /// `source` is a source-table entry as JSON and `held` the table, source id to
@@ -1464,7 +1464,7 @@ pub fn editing_stitch(source: &str, held: &str) -> String {
     clausters_editing::sources::stitch_json(source, held)
 }
 
-/// JS face: **a session's sources, loaded** — the steps that read every take
+/// JS face: **a session's sources, loaded** -- the steps that read every take
 /// and stitch every join into the buffers the caller set aside.
 ///
 /// `request` is `{"session", "beside", "buffers"}` as JSON; the answer is what
@@ -1639,8 +1639,8 @@ impl JsInstance {
     /// **The difference between what is sounding and what the multitrack says**, as
     /// the JSON list of operations a client applies.
     ///
-    /// The same three arguments `multitrackPlan` takes — the multitrack, the rate
-    /// and the source table —
+    /// The same three arguments `multitrackPlan` takes -- the multitrack, the rate
+    /// and the source table --
     /// plus the master's own level, which is the caller's and not the multitrack's.
     ///
     /// An operation names what it acts on by a **handle**, never by a node id,
@@ -1662,7 +1662,7 @@ impl JsInstance {
         )
     }
 
-    /// **Everything this made, given back** — the operations that stop the
+    /// **Everything this made, given back** -- the operations that stop the
     /// multitrack. The multitrack itself is untouched: what an instance holds is nodes,
     /// and nodes are not the document.
     pub fn teardown(&mut self) -> String {
@@ -1671,17 +1671,17 @@ impl JsInstance {
 
     /// **Which control bus run each track's meters write**, by track:
     /// `[{"track": id, "bus": handle, "channels": n}]`, a run of
-    /// `2 * channels` — the level first and the mark that waits after it.
+    /// `2 * channels` -- the level first and the mark that waits after it.
     pub fn meters(&self) -> String {
         self.0.meters_json()
     }
 }
 
-/// JS face: **what one message from the host is** — the conversation's first
+/// JS face: **what one message from the host is** -- the conversation's first
 /// decision.
 ///
 /// `state` is the conversation's two integers (`{"floor", "applied"}`) and
-/// `message` the event's *envelope* — the address, the stamp, the version it
+/// `message` the event's *envelope* -- the address, the stamp, the version it
 /// was made against, the tag, and whether this editor owns the widget and the
 /// window. The payload is deliberately not here: what a report means is
 /// `editingIntake`'s and already crosses once.
@@ -1693,7 +1693,7 @@ pub fn conversation_read(state: &str, message: &str) -> String {
     clausters_editing::conversation::read_json(state, message)
 }
 
-/// JS face: **what to answer the host with** — the conversation's second
+/// JS face: **what to answer the host with** -- the conversation's second
 /// decision.
 ///
 /// `request` is `{"seq", "docVersion", "reason", "corrections"}` and the answer
@@ -1706,7 +1706,7 @@ pub fn conversation_answer(request: &str) -> String {
     clausters_editing::conversation::answer_json(request)
 }
 
-/// JS face: **what a multitrack calls its rows and its boxes** — `{"rows": [...],
+/// JS face: **what a multitrack calls its rows and its boxes** -- `{"rows": [...],
 /// "boxes": [...]}`, by the names the wire carries them under.
 ///
 /// The minting correction's half that is a fact about the multitrack: a host that
@@ -1720,7 +1720,7 @@ pub fn multitrack_names(multitrack: &str) -> String {
 }
 
 /// JS face: the stereo **correlation** (Pearson's r) of two equal-length
-/// channels, in `[-1, 1]`. `undefined` when it is undefined — a length
+/// channels, in `[-1, 1]`. `undefined` when it is undefined -- a length
 /// mismatch, an empty pair, or a constant channel.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
@@ -1729,7 +1729,7 @@ pub fn correlation(left: &[f32], right: &[f32]) -> Option<f32> {
 }
 
 /// JS face: the **Lissajous / goniometer** projection of a stereo pair, as
-/// interleaved `[x, y]` pairs (`x` = side, `y` = mid) — one pair per input
+/// interleaved `[x, y]` pairs (`x` = side, `y` = mid) -- one pair per input
 /// frame. An empty array when the two channels differ in length.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
@@ -1774,11 +1774,11 @@ pub fn bark_to_hz(bark: f64) -> f64 {
 }
 
 /// A built min/max peak pyramid, the JS face of
-/// [`clausters_core::peaks::MultiPyramid`] — the summary a waveform view is
+/// [`clausters_core::peaks::MultiPyramid`] -- the summary a waveform view is
 /// drawn from, so the drawing costs the width of the window rather than the
 /// length of the buffer. Built (or filled from `/buffer_stream` reports) here
 /// and handed to the GUI host, which draws it; the readers below answer **what
-/// the cache is** — length, channels, bucket, levels — and never what it says,
+/// the cache is** -- length, channels, bucket, levels -- and never what it says,
 /// which is a drawing's question.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = Pyramid)]
@@ -1798,7 +1798,7 @@ impl JsPyramid {
         ))
     }
 
-    /// **An empty pyramid of a given length** — the picture of a take that has
+    /// **An empty pyramid of a given length** -- the picture of a take that has
     /// been allocated and not yet recorded into, ready to be filled by
     /// [`Self::write_buckets`] as the reports arrive.
     ///
@@ -1820,11 +1820,11 @@ impl JsPyramid {
     }
 
     /// Rewrites the part of the cache a **frame span** touches, from the
-    /// interleaved buffer as it now stands — what keeps an editor's overview
+    /// interleaved buffer as it now stands -- what keeps an editor's overview
     /// true after an edit without re-summarizing the take.
     ///
     /// `samples` is the whole buffer, not the span: a bucket at either edge of
-    /// it holds untouched samples too. Returns whether it applied — `false`,
+    /// it holds untouched samples too. Returns whether it applied -- `false`,
     /// changing nothing, when the buffer is not the one this cache describes,
     /// which is an edit that changed the *length* and therefore a rebuild.
     #[wasm_bindgen(js_name = updateRange)]
@@ -1832,7 +1832,7 @@ impl JsPyramid {
         self.0.update_range(samples, start, frames)
     }
 
-    /// Folds a run of **already-summarized buckets** into this pyramid — the
+    /// Folds a run of **already-summarized buckets** into this pyramid -- the
     /// receiving half of `/buffer_stream`, which is how a page follows a
     /// recording it cannot map: the server sends the overview of what was
     /// written (2 kB/s where the audio is 190) and this puts it in the
@@ -1841,7 +1841,7 @@ impl JsPyramid {
     /// `stats` is the reply's blob read as `f32`s, **bucket-major and
     /// channel-minor**: for each bucket of `bucket` frames in order, for each
     /// channel, `min`, `max` and mean square. `startFrame` is where the report
-    /// begins on the buffer's own sample axis. Returns whether it applied —
+    /// begins on the buffer's own sample axis. Returns whether it applied --
     /// `false`, changing nothing, when the report is on another grid than this
     /// cache (another bucket size, a start off a bucket boundary, or a run
     /// that does not fit).
@@ -1851,7 +1851,7 @@ impl JsPyramid {
     }
 
     /// The cache's bytes, in the format every client reads: the mono layout
-    /// for a single channel and the multichannel one above it — the choice
+    /// for a single channel and the multichannel one above it -- the choice
     /// the Python client's door makes, so the same samples serialize to the
     /// same bytes whichever client reduced them. Both are read back by
     /// `fromBytes` and by the GUI host.
@@ -1863,7 +1863,7 @@ impl JsPyramid {
         }
     }
 
-    /// Samples per channel — the length a view of this cache spans.
+    /// Samples per channel -- the length a view of this cache spans.
     #[wasm_bindgen(getter)]
     pub fn frames(&self) -> usize {
         self.0.frames()
@@ -1994,7 +1994,7 @@ mod tests {
 // field of the tree -- it is the same three verbs the by-value binding had,
 // with `snapshot` for whoever wants the JSON.
 
-/// One document, held in Rust — the JS face of
+/// One document, held in Rust -- the JS face of
 /// [`clausters_document::Document`].
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = Document)]
@@ -2022,7 +2022,7 @@ impl JsDocument {
         Ok(JsDocument(document))
     }
 
-    /// The whole tree as JSON — for saving it, or for a caller that wants it.
+    /// The whole tree as JSON -- for saving it, or for a caller that wants it.
     /// The one call that still costs the size of the document, and it is
     /// asked for rather than paid on every edit.
     pub fn snapshot(&self) -> Result<String, JsError> {
@@ -2036,7 +2036,7 @@ impl JsDocument {
     }
 
     /// What makes two edits over the arrangement *the same thing done the same
-    /// way* — the key a {@link History} coalesces on, or an empty string when
+    /// way* -- the key a {@link History} coalesces on, or an empty string when
     /// the intent will not parse.
     ///
     /// It is here rather than on the history because it is a sentence in **this**
@@ -2050,13 +2050,13 @@ impl JsDocument {
             .unwrap_or_default()
     }
 
-    /// The edit that would put this node back the way it is — the inverse of
+    /// The edit that would put this node back the way it is -- the inverse of
     /// `intent`, read out of the document **before** anything is applied, or
     /// `undefined` when the document cannot describe it (the node is gone, or
     /// its body holds nothing of that shape).
     ///
     /// {@link History.apply} does this for you and is what an ordinary edit
-    /// wants. This is for the caller that records its **own** entry — a leg of
+    /// wants. This is for the caller that records its **own** entry -- a leg of
     /// a transaction spanning several structures, which nothing but the caller
     /// can apply. For a `writesamples` it is the empty write rather than the
     /// span, which is why a destructive caller reads the samples it is about to
@@ -2073,7 +2073,7 @@ impl JsDocument {
     }
 
     /// Apply an edit. `apply(requestJson) -> outcomeJson`, the request carrying
-    /// `{ intent, against?, quant? }` and the result the outcome alone —
+    /// `{ intent, against?, quant? }` and the result the outcome alone --
     /// the document stays here and `snapshot` is how it leaves.
     ///
     /// One object rather than three arguments because the boundary is JSON
@@ -2111,7 +2111,7 @@ impl JsDocument {
 
     /// Resolve a selection to the spans of samples underneath it.
     /// `resolve(requestJson) -> resolvedJson`, the request carrying
-    /// `{ selection, framesPerBeat, framesPerSecond, inBeats? }` — two ratios
+    /// `{ selection, framesPerBeat, framesPerSecond, inBeats? }` -- two ratios
     /// because a placement is in beats and a take's length is in seconds.
     pub fn resolve(&self, request: &str) -> Result<String, JsError> {
         #[derive(serde::Deserialize)]
@@ -2153,7 +2153,7 @@ impl JsDocument {
 // ---- the edit history ----
 //
 // A `Drop`-backed object, like `Document` beside it and for a related reason:
-// a history is state, and the state is the point. The spill store is why — a
+// a history is state, and the state is the point. The spill store is why -- a
 // bulk payload leaves the pile deliberately, so passing one by value would
 // carry every spilled span on every call, which is the cost spilling exists to
 // avoid.
@@ -2192,8 +2192,8 @@ impl JsHistory {
 
     /// Takes a structure into this history and returns its identity.
     ///
-    /// `domain` names the vocabulary its payloads are written in — `"tree"` for
-    /// the arrangement — and the history carries it so a caller routing what
+    /// `domain` names the vocabulary its payloads are written in -- `"tree"` for
+    /// the arrangement -- and the history carries it so a caller routing what
     /// comes back knows which reader a leg belongs to. The identity is minted
     /// here rather than carried by the data, and it is also the read-back path.
     pub fn register(&mut self, domain: &str) -> u64 {
@@ -2253,7 +2253,7 @@ impl JsHistory {
         .map_err(|e| JsError::new(&e.to_string()))
     }
 
-    /// Record one entry — the door for everything {@link History.apply} cannot
+    /// Record one entry -- the door for everything {@link History.apply} cannot
     /// do: a destructive write, whose overwritten samples are not in the tree,
     /// and every domain that is not the arrangement, whose state this surface
     /// cannot reach. Applies nothing.
@@ -2262,7 +2262,7 @@ impl JsHistory {
     /// `{ label?, coalesce?, legs: [{ structure, forward, backward, key? }] }`.
     ///
     /// **Several legs are one transaction**: applied in the order given,
-    /// inverted in reverse, and undone in one step — what a gesture touching
+    /// inverted in reverse, and undone in one step -- what a gesture touching
     /// more than one structure needs, and why the whole entry crosses in one
     /// call. It is not coalescing, which merges *successive* entries over one
     /// structure. A leg's `key` is what makes two edits *the same thing done
@@ -2279,7 +2279,7 @@ impl JsHistory {
         struct Leg {
             structure: u64,
             forward: clausters_document::history::Step,
-            /// How to put this leg back, or absent when nothing can — an act
+            /// How to put this leg back, or absent when nothing can -- an act
             /// whose inverse the owner cannot write. The entry is still
             /// recorded, marked, and walked past in both directions.
             #[serde(default)]
@@ -2330,13 +2330,13 @@ impl JsHistory {
         Ok(self.0.record(entry))
     }
 
-    /// **One step of the pile, routed** — the legs each structure has to
+    /// **One step of the pile, routed** -- the legs each structure has to
     /// apply, in order, and what only its owner can re-run. `direction` is
     /// `"undo"` or `"redo"`; `undefined` when there was nothing to walk, and a
     /// throw for a word that is neither.
     ///
     /// Returns `{ label, legs, remaining, skipped }`, where `legs` is
-    /// `[{ structure, payloads }, …]` — one entry per structure rather than
+    /// `[{ structure, payloads }, …]` -- one entry per structure rather than
     /// one per leg. It is one call and not two because picking the side a
     /// direction reads, and keeping the legs one structure owns, are rules and
     /// not plumbing, and every caller was writing both for itself.
@@ -2346,7 +2346,7 @@ impl JsHistory {
     /// than skipping it, so a later edit is never applied over a state the
     /// operation before it was meant to produce. Going back it is always empty:
     /// an inverse is always an edit. `skipped` names the entries the walk had
-    /// to pass over because nothing can invert them — a hole in the history
+    /// to pass over because nothing can invert them -- a hole in the history
     /// that announces itself, which is what lets a person understand why an
     /// undo did not go where they expected.
     ///
@@ -2390,20 +2390,20 @@ impl JsHistory {
     /// whether its memory may go now.
     ///
     /// `true` when nothing in the pile names it any more, `false` when the
-    /// caller must wait for {@link History.released} — because undoing a
+    /// caller must wait for {@link History.released} -- because undoing a
     /// deletion has to be able to give the data back, so a structure that is
     /// out of the tree stays alive while an entry can still restore what
     /// referred to it.
     ///
     /// It also **invalidates the entries that name it**: they cannot be applied
-    /// to data that is gone, so they become non-invertible — kept, marked, and
+    /// to data that is gone, so they become non-invertible -- kept, marked, and
     /// walked past with the walk saying so. Undoing a deletion returns the
     /// data, not its history.
     pub fn forget(&mut self, structure: u64) -> bool {
         self.0.forget(clausters_document::StructureId(structure))
     }
 
-    /// The forgotten structures no entry names any more — the caller may free
+    /// The forgotten structures no entry names any more -- the caller may free
     /// their data now. Drains: each is reported once.
     pub fn released(&mut self) -> Vec<u64> {
         self.0
@@ -2425,7 +2425,7 @@ impl JsHistory {
 
     /// Whether the work differs from what was last saved.
     ///
-    /// Crossing the mark backwards is allowed, and this is the announcement —
+    /// Crossing the mark backwards is allowed, and this is the announcement --
     /// which has to be accurate: nothing on disk changed, and the file still
     /// holds those edits until the next save. Crossing forward again returns to
     /// clean.
@@ -2437,7 +2437,7 @@ impl JsHistory {
     /// Whether the saved state can still be reached by walking this history.
     ///
     /// `false` after the case the warning earns its place for: undo past the
-    /// mark and then edit, and the redo is truncated — so the saved state stops
+    /// mark and then edit, and the redo is truncated -- so the saved state stops
     /// being reachable, and {@link History.dirty} will never go quiet again on
     /// its own.
     #[wasm_bindgen(getter, js_name = savedReachable)]
@@ -2457,7 +2457,7 @@ impl JsHistory {
         self.0.can_redo()
     }
 
-    /// What an undo would be called, for a menu item — and what a person needs
+    /// What an undo would be called, for a menu item -- and what a person needs
     /// when one pile holds several structures, since the label is the only
     /// thing saying which one a keystroke is about to move.
     #[wasm_bindgen(getter, js_name = undoLabel)]
@@ -2477,7 +2477,7 @@ impl JsHistory {
         self.0.len()
     }
 
-    /// Whether the history holds nothing — `len == 0`, spelled the way a JS
+    /// Whether the history holds nothing -- `len == 0`, spelled the way a JS
     /// collection is read, as `JsScheduler` and `JsRegistry` already spell it.
     #[wasm_bindgen(getter, js_name = isEmpty)]
     pub fn is_empty(&self) -> bool {
@@ -2495,8 +2495,8 @@ impl JsHistory {
 /// The patcher's **cord→bus pass**: a directed patch (`{boxes, cords}`) in, the
 /// buses and wired members it compiles to out, both as JSON.
 ///
-/// One bus per connected net, its writers summing, and a bad cord — reversed,
-/// rate-mismatched, out of range — comes back as `{"error": …}` naming it. The
+/// One bus per connected net, its writers summing, and a bad cord -- reversed,
+/// rate-mismatched, out of range -- comes back as `{"error": …}` naming it. The
 /// same door the C ABI opens as `clausters_core_patch_compile`: a patcher is a
 /// model with one compilation, and a second implementation of it in TypeScript
 /// would be a second answer to "what does this cord mean".
@@ -2530,8 +2530,8 @@ pub fn patch_compile(patch: &str) -> Result<String, JsError> {
 
 /// The engraver as a page has it: a JS object with the six toolkit calls.
 ///
-/// Every crossing is `Reflect::get` plus a call, and every failure — a missing
-/// method, a thrown exception, a value of the wrong shape — reads as the same
+/// Every crossing is `Reflect::get` plus a call, and every failure -- a missing
+/// method, a thrown exception, a value of the wrong shape -- reads as the same
 /// thing a refusal reads as. That is the port's rule (failure is a value), and
 /// it is what keeps a broken engraver from taking a page's edit half-applied:
 /// the score rolls back either way.
@@ -2601,7 +2601,7 @@ impl clausters_core::notation::Engraver for JsEngraver {
     }
 }
 
-/// A loaded score, held open in Rust so it can be edited and re-engraved — the
+/// A loaded score, held open in Rust so it can be edited and re-engraved -- the
 /// JS face of [`clausters_core::notation::Score`].
 ///
 /// The same object the Python client holds over the C ABI, running the same
@@ -2617,7 +2617,7 @@ impl JsScore {
     /// Load `data` (any format the engraver auto-detects) on `engraver`, or
     /// throw when it could not be read.
     ///
-    /// Configuring the engraver — its resource path, its options — happens on
+    /// Configuring the engraver -- its resource path, its options -- happens on
     /// the JS side before this, exactly as the native binding configures its
     /// toolkit before handing it over.
     #[wasm_bindgen(constructor)]
@@ -2634,7 +2634,7 @@ impl JsScore {
         serde_json::to_string(&self.0.display_list(page)).map_err(|e| JsError::new(&e.to_string()))
     }
 
-    /// The score as MEI, ids and all — what to persist, and what an undo step
+    /// The score as MEI, ids and all -- what to persist, and what an undo step
     /// is made of.
     pub fn mei(&self) -> String {
         self.0.mei()
@@ -2654,7 +2654,7 @@ impl JsScore {
 
     /// The open score as the **model**.
     ///
-    /// Throws when the document could not be read into one — a state and not a
+    /// Throws when the document could not be read into one -- a state and not a
     /// failure, since the page still draws and still plays and only the model's
     /// verbs are unavailable on it.
     pub fn sheet(&self) -> Result<String, JsError> {
@@ -2668,7 +2668,7 @@ impl JsScore {
         serde_json::to_string(sheet).map_err(|e| JsError::new(&e.to_string()))
     }
 
-    /// Replace the document with `mei` — **a state, not a step**.
+    /// Replace the document with `mei` -- **a state, not a step**.
     ///
     /// The door for a page whose editing context holds one history over several
     /// structures: a score's edit is recorded there as the MEI it produced, and
@@ -2706,7 +2706,7 @@ impl JsScore {
         self.0.transpose(element_id, steps)
     }
 
-    /// Move a note **to** a diatonic staff position, as one undo step — the
+    /// Move a note **to** a diatonic staff position, as one undo step -- the
     /// shape an edit travels in, so a resend cannot move the note twice.
     #[wasm_bindgen(js_name = transposeTo)]
     pub fn transpose_to(&mut self, element_id: &str, position: i32, page: i32) -> bool {
@@ -2746,8 +2746,8 @@ pub fn svg_to_display_list(svg: &str) -> Result<String, JsError> {
         .map_err(|e| JsError::new(&e.to_string()))
 }
 
-/// Lay a **voice** — a JSON array of slots, `{"midis": [60], "ticks": 8}` per
-/// note or chord and `{"ticks": 8}` per rest — out into barred, tied MEI.
+/// Lay a **voice** -- a JSON array of slots, `{"midis": [60], "ticks": 8}` per
+/// note or chord and `{"ticks": 8}` per rest -- out into barred, tied MEI.
 ///
 /// `meter` is `"num/den"`, `clef` a shape+line like `"G2"`, and `key` selects
 /// the key signature and the sharp-vs-flat spelling. Reducing a client's own
@@ -2764,7 +2764,7 @@ pub fn voice_to_mei(voice: &str, meter: &str, clef: &str, key: &str) -> Result<S
     ))
 }
 
-/// Lift a **voice** — the v1 wire form, a JSON array of slots — into the score
+/// Lift a **voice** -- the v1 wire form, a JSON array of slots -- into the score
 /// model.
 ///
 /// The bridge a client crosses once: it reduces its own sequencing types to
@@ -2786,7 +2786,7 @@ pub fn voice_to_sheet(voice: &str, meter: &str, clef: &str, key: &str) -> Result
 /// parameters are inside `op` (`{"op": "transpose", "semitones": 2}`), so a new
 /// operation costs nothing here. What the C ABI answers in an envelope
 /// (`{"ok": …}` / `{"error": …}`) this **throws** instead, which is the same
-/// behaviour in the shape a page expects — and the reason the refusal reaches
+/// behaviour in the shape a page expects -- and the reason the refusal reaches
 /// the caller either way, since a refused operation has to say why.
 ///
 /// A refused operation changes nothing: the model crossed by value, so the
@@ -2805,8 +2805,8 @@ pub fn sheet_apply(sheet: &str, op: &str) -> Result<String, JsError> {
 /// Write a score model out as MEI.
 ///
 /// Throws with the emitter's own reason when the model holds something MEI
-/// cannot be written for yet — a duration that is not an exact note value, an
-/// accidental past a double, or polyphony — each saying which it is, so a
+/// cannot be written for yet -- a duration that is not an exact note value, an
+/// accidental past a double, or polyphony -- each saying which it is, so a
 /// caller knows whether it is wrong or early.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = sheetToMei)]
@@ -2848,7 +2848,7 @@ pub fn domain_edit(domain: &str, state: &str, payload: &str) -> String {
     serde_json::to_string(&edited).unwrap_or_default()
 }
 
-/// **The defs a multitrack of these widths is played by** — `{"synth": [...],
+/// **The defs a multitrack of these widths is played by** -- `{"synth": [...],
 /// "graph": [...]}`, each list in the order it must be sent, or an empty string
 /// for a width nothing is written for.
 ///
@@ -2881,7 +2881,7 @@ pub fn mixer_defs(widths: &str, master: usize) -> String {
     .unwrap_or_default()
 }
 
-/// **What to instantiate to play a multitrack** — the instance plan, or an empty
+/// **What to instantiate to play a multitrack** -- the instance plan, or an empty
 /// string for a multitrack that will not parse.
 ///
 /// `sources` is a JSON object from source id to `{"buffer": n, "channels": n}`:
@@ -2917,11 +2917,11 @@ pub fn multitrack_plan(multitrack: &str, sample_rate: f64, sources: &str) -> Str
     serde_json::to_string(&plan).unwrap_or_default()
 }
 
-/// **The session format this build writes** — the crate's `session::FORMAT`.
+/// **The session format this build writes** -- the crate's `session::FORMAT`.
 ///
 /// Both clients keep the number as a **literal**, because a `Session` is plain
 /// data and writing one must not need an `await loadCore()`. What keeps the two
-/// literals the crate's is a test in each client that asks this and compares —
+/// literals the crate's is a test in each client that asks this and compares --
 /// the check that did not exist when the format moved to 2 and both clients
 /// went on stamping 1 onto files that could carry a source whose samples are
 /// spans of other sources.
@@ -2931,7 +2931,7 @@ pub fn session_format() -> u32 {
     clausters_document::session::FORMAT
 }
 
-/// **A session written in an older format, as this build writes it** — the
+/// **A session written in an older format, as this build writes it** -- the
 /// crate's `session::migrate` over the session's JSON text, or an empty string
 /// for text that is not JSON. A session already current comes back unchanged.
 #[cfg(target_arch = "wasm32")]
@@ -2942,7 +2942,7 @@ pub fn session_migrate(session: &str) -> String {
         .unwrap_or_default()
 }
 
-/// **One catalogue view's props**, as JSON — the widget a waveform, a curve or
+/// **One catalogue view's props**, as JSON -- the widget a waveform, a curve or
 /// a roll *is*, and what is on it; `{"error": reason}` for a kind this crate
 /// does not draw or facts that will not read as that kind's.
 ///
@@ -2972,7 +2972,7 @@ pub fn view_props(kind: &str, facts: &str) -> String {
 /// A page routes an incoming `/gui_event` by its tag: screen state is answered
 /// generically and never reaches a domain, and everything else is the domain's
 /// to read. Which tags those are is one list, and it was written once per
-/// client until this call existed — a table small enough that two copies look
+/// client until this call existed -- a table small enough that two copies look
 /// harmless and drift silently, since a tag missing from one makes that client
 /// *edit* with a gesture the other one merely looks at.
 ///
@@ -2983,7 +2983,7 @@ pub fn view_not_an_edit() -> String {
     serde_json::to_string(&clausters_document::view::NOT_AN_EDIT).unwrap_or_default()
 }
 
-/// What makes two of a **domain's** edits *the same thing done the same way* —
+/// What makes two of a **domain's** edits *the same thing done the same way* --
 /// the key a caller recording its own entry passes to {@link History.record},
 /// or an empty string when the payload is not written in that vocabulary (or
 /// the domain is one the crate does not speak).
@@ -2991,8 +2991,8 @@ pub fn view_not_an_edit() -> String {
 /// It is a free function rather than a method because a caller here holds no
 /// structure to ask: a curve, a span of samples and a timeline live in this
 /// page's own memory, and only their *vocabulary* is the crate's.
-/// {@link JsDocument.coalesceKey} stays as it is — the arrangement's own door,
-/// on the surface its sentence belongs to — and this is the same rule for the
+/// {@link JsDocument.coalesceKey} stays as it is -- the arrangement's own door,
+/// on the surface its sentence belongs to -- and this is the same rule for the
 /// domains that have no handle here.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = domainCoalesceKey)]
@@ -3004,7 +3004,7 @@ pub fn domain_coalesce_key(domain: &str, payload: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Every operation this core knows, as JSON — the verb and the parameters each
+/// Every operation this core knows, as JSON -- the verb and the parameters each
 /// takes.
 ///
 /// The parity surface the binding table cannot provide: operations cross as
@@ -3033,8 +3033,8 @@ pub fn mei_to_sheet(mei: &str) -> Result<String, JsError> {
 
 /// Read a score model into the notes it **sounds**, under `interp`.
 ///
-/// Each note carries two lengths — `dur`, what is written, and `sustain`, what
-/// is heard — because an honoured articulation makes them different numbers and
+/// Each note carries two lengths -- `dur`, what is written, and `sustain`, what
+/// is heard -- because an honoured articulation makes them different numbers and
 /// collapsing them would move every attack after a staccato. It also names the
 /// `staff` and `voice` it was written on, which is what a caller binds an
 /// instrument to: the notation does not say what plays it.
@@ -3056,7 +3056,7 @@ pub fn sheet_perform(sheet: &str, interp: &str) -> Result<String, JsError> {
     serde_json::to_string(&notes).map_err(|e| JsError::new(&e.to_string()))
 }
 
-/// The default interpretation, as JSON — every number the reading depends on,
+/// The default interpretation, as JSON -- every number the reading depends on,
 /// and the value an override starts from.
 ///
 /// The parity surface for the reading, as `sheetOps` is for the verbs: the
@@ -3075,7 +3075,7 @@ pub fn interpretation() -> Result<String, JsError> {
 /// The page names elements the way the emitter wrote them: `n7` is the item,
 /// `n7-2` a part of it split across a barline, `n7-p1` one pitch of a chord.
 /// All three are the same item, which is what lets a gesture anywhere on a note
-/// reach the note — and it is the step a client takes between a page's
+/// reach the note -- and it is the step a client takes between a page's
 /// selection and a model verb.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = itemId)]

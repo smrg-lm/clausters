@@ -1,7 +1,7 @@
 """C5 leftover: the instance-based UGen graph / SynthDef port.
 
 Two halves: pure-structure asserts on the JSON spec a graph serializes to (no
-server needed), and a render-parity golden — a client-built SynthDef equivalent
+server needed), and a render-parity golden -- a client-built SynthDef equivalent
 to the server's built-in ``default`` def renders **byte-identically**, proving
 the graph builder emits exactly the spec the server compiles."""
 
@@ -50,7 +50,7 @@ def _py_default(name="py_default") -> SynthDef:
 def _py_default_env(name="py_default_env") -> SynthDef:
     """A faithful client-side replica of the server's built-in ``default``:
     ``Sine(freq) * EnvGen(gate) * amp`` with a gated ASR (equal-power sine
-    ramps, 0.01 s attack, 0.3 s release, ``FREE_SELF``) — the same graph the
+    ramps, 0.01 s attack, 0.3 s release, ``FREE_SELF``) -- the same graph the
     server registers, so it must render sample-identically."""
     freq = control("freq", 440.0)
     amp = control("amp", 0.2)
@@ -349,8 +349,8 @@ def test_pv_kernel_serializes_bin_expressions():
 
 
 def test_table_oscillators_and_shaper_serialize():
-    # S5: the table readers take (bufnum, freq, phase) — bufnum a constant for
-    # Osc/OscN, a signal for VOsc — and Shaper maps a signal through a table.
+    # S5: the table readers take (bufnum, freq, phase) -- bufnum a constant for
+    # Osc/OscN, a signal for VOsc -- and Shaper maps a signal through a table.
     from clausters.defs import osc, oscn, shaper, vosc
 
     pos = sine(0.5) * 2.0 + 3.0
@@ -589,7 +589,7 @@ def test_custom_synthdef_renders_like_builtin_default():
     c0.render()
 
     # The client-defined equivalent (same graph, incl. the gated envelope): add
-    # it to the score, then the same Pbind — released by gate too (has_gate).
+    # it to the score, then the same Pbind -- released by gate too (has_gate).
     s1 = Server(interface=OscNrtInterface())
     _py_default_env().send(s1)              # /def_send synth at time 0 in the score
     c1 = TempoClock(tempo=1.0, timebase=LogicalTimebase())
@@ -631,7 +631,7 @@ if __name__ == "__main__":
 
 def test_pan_builders_emit_one_row_per_channel():
     """A UGen has one output, so a stereo panner is two rows sharing their
-    inputs and differing only in the trailing channel index — which the builder
+    inputs and differing only in the trailing channel index -- which the builder
     fills and the caller never sees."""
     from clausters.defs.ugens import pan2
 
@@ -664,7 +664,7 @@ def test_pan_az_sizes_the_ring_and_numbers_its_channels():
 
 
 def test_mid_side_round_trip_serializes_as_two_pairs():
-    """The composable form: encode, do something to one axis, decode — four
+    """The composable form: encode, do something to one axis, decode -- four
     rows of the same kind, not a special decoder."""
     from clausters.defs.ugens import mid_side
 
@@ -728,7 +728,7 @@ def test_a_demand_source_needs_a_value():
 
 
 def test_the_duty_drivers_carry_their_own_clock():
-    """`duty` needs no trigger — the arity is what says so — and `tduty` adds
+    """`duty` needs no trigger -- the arity is what says so -- and `tduty` adds
     the opening gap."""
     from clausters.defs.ugens import dseq, duty, tduty
 

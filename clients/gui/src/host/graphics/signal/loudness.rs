@@ -2,7 +2,7 @@
 //! take, on a scale of its own.
 //!
 //! Every other measure of a signal is an amplitude and shares the picture's
-//! vertical — a level body sits inside the envelope it is a reading of, the
+//! vertical -- a level body sits inside the envelope it is a reading of, the
 //! reconstruction passes through the samples it is drawn over. A loudness
 //! reading is in LUFS, so this layer measures **a different quantity on the
 //! same time axis**, and the three things that follow are the whole of this
@@ -17,7 +17,7 @@
 //! **The curve is not measured here.** It is read off the
 //! [`Profile`] the element measured at its
 //! mutation points, through the one renderer every signal against time is drawn
-//! by ([`trace::draw_channel`]) — with a vertical map in LU instead of the
+//! by ([`trace::draw_channel`]) -- with a vertical map in LU instead of the
 //! picture's own, which is the only difference between drawing this and drawing
 //! a waveform.
 
@@ -35,13 +35,13 @@ use crate::viewport::View;
 ///
 /// The stored layer reads its curve out of a profile, which can answer for any
 /// point of a take; a live one has no past but the readings it kept, so what it
-/// draws is the run of them — the same drawing over a different memory, which
+/// draws is the run of them -- the same drawing over a different memory, which
 /// is the whole difference between a view of a file and a view of a bus.
 pub(crate) struct LiveCurve {
     /// One run per loudness layer, oldest reading first, with the weight its
     /// layer is drawn at.
     pub readings: Vec<(trace::Measure, f32, Vec<f32>)>,
-    /// The view's vertical window, as a normalized `(start, len)` — see
+    /// The view's vertical window, as a normalized `(start, len)` -- see
     /// [`LoudnessParams::y`].
     pub y: (f64, f64),
     /// The scale's bounds in LUFS, bottom first.
@@ -103,13 +103,13 @@ pub(crate) fn draw_live(d: &mut Draw, body: Rect, curve: &LiveCurve) {
 pub(crate) struct LoudnessParams<'a> {
     /// The curve and the scale, as the element stated them.
     pub layer: &'a LoudnessFrame,
-    /// **The view's whole stack** — the loudness layers in it are what this
+    /// **The view's whole stack** -- the loudness layers in it are what this
     /// draws, one curve each, at the weight each of them states.
     pub layers: &'a super::layers::Stack,
     /// Whether the read-out's span is a selection, which is the one thing the
     /// numbers have to say about themselves.
     pub selection: bool,
-    /// **The view's vertical window**, as a normalized `(start, len)` — the
+    /// **The view's vertical window**, as a normalized `(start, len)` -- the
     /// same one the picture under this layer is drawn through.
     ///
     /// The layer measures its own quantity, but it is drawn in the *box* the
@@ -223,7 +223,7 @@ fn visible(domain: (f32, f32), y: (f64, f64)) -> (f32, f32) {
 /// *right* because the left strip is the picture's own axis, and two axes on
 /// one strip are two numbers where a reader expects one. It is **inside** the
 /// body because a strip beside it would have to be reserved by the container,
-/// for a layer that is optional and live — turning the measure on would then
+/// for a layer that is optional and live -- turning the measure on would then
 /// relayout the view, and a picture that jumps when a reading is asked for is
 /// worse than one whose numbers sit over it. Text over a picture is what the
 /// text plate is for, and this uses it.
@@ -265,7 +265,7 @@ fn lu_ruler(d: &mut Draw, body: Rect, domain: (f32, f32), target: f64, y: (f64, 
 ///
 /// The four a delivery specification asks for, in the order it asks for them:
 /// the programme loudness, its range, the true peak, and the distance between
-/// the last two — the peak-to-loudness ratio, which is the number a reader
+/// the last two -- the peak-to-loudness ratio, which is the number a reader
 /// means by "how compressed is this".
 fn numbers(d: &mut Draw, body: Rect, p: &LoudnessParams, _profile: &Profile) {
     let Some(summary) = p.layer.summary else {
@@ -319,7 +319,7 @@ mod tests {
     use crate::host::widget::Widget;
     use crate::host::widget::element::Element;
 
-    /// A **stereo** take of `seconds` at `db` dBFS per channel, interleaved —
+    /// A **stereo** take of `seconds` at `db` dBFS per channel, interleaved --
     /// the EBU test tone, whose peak level in dBFS is its loudness in LUFS
     /// (a mono one reads 3 dB under, which is the calibration and not an
     /// error).
@@ -438,7 +438,7 @@ mod tests {
         );
     }
 
-    /// A layer with nothing measured draws its guides and no curve — the
+    /// A layer with nothing measured draws its guides and no curve -- the
     /// picture says "this is the scale", not "the loudness is zero".
     #[test]
     fn a_layer_with_no_profile_draws_no_curve() {

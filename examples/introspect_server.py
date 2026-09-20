@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Asking a running server what it actually holds: defs, buffers, UGens.
 
-`introspect_tree.py` reads the *node tree* — what is playing right now. This
+`introspect_tree.py` reads the *node tree* -- what is playing right now. This
 reads the other half: the **catalog**, the samples a client can build with.
 Three queries, all of them retrieval only (nothing here changes the server):
 
@@ -14,7 +14,7 @@ Three queries, all of them retrieval only (nothing here changes the server):
 
 Why ask instead of assume? Because the answers are genuinely not knowable from
 the client's own state. The **def store persists across restarts**, so a server
-may hold defs that no client in this process ever sent — and the buffer pool
+may hold defs that no client in this process ever sent -- and the buffer pool
 outlives any one client too. The UGen catalog depends on how the server was
 built. This is what a patcher's palette is fed from.
 
@@ -70,24 +70,24 @@ def main():
         ).send(server)
         buf = Buffer.alloc(1024, channels=1, server=server)
 
-        print("query_defs() — what the server holds, with each control surface:")
+        print("query_defs() -- what the server holds, with each control surface:")
         for d in server.query_defs():
             surface = ", ".join(f"{c.name}={c.default:g} ({c.rate})"
                                 for c in d.controls) or "no controls"
             print(f"  [{d.family:>5}] {d.name}: {surface}")
 
-        # A name the server does not have is reported, not raised — one bad
+        # A name the server does not have is reported, not raised -- one bad
         # name never fails the batch.
         missing = server.query_defs("beep", "never_sent")[1]
         print(f"\nquery_defs('never_sent') -> exists={missing.exists!r}")
 
-        print("\nquery_buffers() — the allocated pool:")
+        print("\nquery_buffers() -- the allocated pool:")
         for b in server.query_buffers():
             print(f"  buffer {b.bufnum}: {b.frames} frames x {b.channels} ch "
                   f"@ {b.sample_rate:g} Hz")
 
         catalog = server.query_ugens()
-        print(f"\nquery_ugens() — {len(catalog)} kinds in this build. A few "
+        print(f"\nquery_ugens() -- {len(catalog)} kinds in this build. A few "
               "signatures:")
         for u in catalog:
             if u.name not in ("Sine", "PlayBuf", "EnvGen", "Out", "FFT"):
@@ -97,7 +97,7 @@ def main():
             extra = f", {u.bus} bus" if u.bus else ""
             print(f"  {u.name}({args})  [{arity}, rates {'/'.join(u.rates)}"
                   f", default {u.default_rate}{extra}]")
-        print("\n  (a variadic kind names only its fixed head — EnvGen's five "
+        print("\n  (a variadic kind names only its fixed head -- EnvGen's five "
               "come before the envelope array)")
 
         buf.free()

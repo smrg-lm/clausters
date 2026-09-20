@@ -20,7 +20,7 @@ export class WebServer {
      * allocated, no samples are copied.
      *
      * [`buffer_load`](Self::buffer_load) copies the whole take in one call,
-     * on this thread — which is the AudioWorklet's, the one that owes the next
+     * on this thread -- which is the AudioWorklet's, the one that owes the next
      * quantum. Measured natively, a five-minute stereo take is some fourteen
      * times the quantum's budget (`examples/measure_turn.rs`), so a long take
      * is loaded in runs instead: `begin`, `chunk` as often as the caller
@@ -48,7 +48,7 @@ export class WebServer {
     buffer_load(index: number, channels: number, sample_rate: number, data: Float32Array): void;
     /**
      * The engine's sample counter (block-accurate; exact in an f64 for the
-     * first 2^53 samples — thousands of years of audio).
+     * first 2^53 samples -- thousands of years of audio).
      */
     clock(): number;
     /**
@@ -60,7 +60,7 @@ export class WebServer {
      */
     ctl_set(index: number, value: number): void;
     /**
-     * Hands the jobs the host does better over to it — reading a soundfile,
+     * Hands the jobs the host does better over to it -- reading a soundfile,
      * whose filesystem is the page's (OPFS, reachable only from a Worker) and
      * not the engine's. Call it once, at boot, if the page has a Worker to do
      * them; without it every job runs here, as before.
@@ -93,7 +93,7 @@ export class WebServer {
      * Natively the UGen opens the file and knows on the spot; here reading is
      * asynchronous and belongs to another thread, so a stream is born
      * shapeless, reports `channels: 0` in [`disk_poll`](Self::disk_poll), and
-     * plays silence until this arrives. Nothing is declared up front — a
+     * plays silence until this arrives. Nothing is declared up front -- a
      * declaration would be a call the other client has no counterpart for.
      */
     diskShape(id: number, channels: number): void;
@@ -120,7 +120,7 @@ export class WebServer {
     finishFaust(ticket: number, compute: number, init: number, json?: string | null, error?: string | null): void;
     /**
      * How many frames one [`buffer_load_chunk`](Self::buffer_load_chunk)
-     * should carry — the serving budget's number, read from the engine rather
+     * should carry -- the serving budget's number, read from the engine rather
      * than repeated in JavaScript.
      */
     installFrames(): number;
@@ -156,15 +156,15 @@ export class WebServer {
      * Pushes one complete OSC packet into the command ring, authored by
      * `peer`. `false` = momentarily full (backpressure): retry next quantum.
      *
-     * A page holds **several** independent clients over this one engine — the
-     * script and the GUI host, at least — and the server has to tell them
+     * A page holds **several** independent clients over this one engine -- the
+     * script and the GUI host, at least -- and the server has to tell them
      * apart or their `/bus_stream` subscriptions overwrite each other. The tag
      * is the page's to assign; there is no handshake.
      */
     send(peer: number, packet: Uint8Array): boolean;
     /**
      * Sets the ceiling on the bus indices one `/bus_stream` subscription may
-     * list — the page's half of the native `--max-stream-buses`, so an
+     * list -- the page's half of the native `--max-stream-buses`, so an
      * in-page engine is configured on the same axis as a server process
      * (default 4096). A page whose document holds hundreds of live canvases
      * subscribes a bus per meter, and the number it may ask for should be its
@@ -189,7 +189,7 @@ export class WebServer {
     /**
      * The Faust compilations waiting for this page's compiler, as a JSON
      * array (empty when there are none): `[{ticket, name, kind, def}]`, where
-     * `kind` is `"source"`, `"boxes"` or `"signals"` — which of the three def
+     * `kind` is `"source"`, `"boxes"` or `"signals"` -- which of the three def
      * formats `def` is in.
      *
      * A page's Faust compiler is not a thread but the host: it compiles with
@@ -209,7 +209,7 @@ export class WebServer {
      * the host has walked past its end.
      *
      * The payload leaves in runs because the thread handing it over owes the
-     * next block — the same reason a long *load* arrives in runs. Size the run
+     * next block -- the same reason a long *load* arrives in runs. Size the run
      * from [`install_frames`](Self::install_frames).
      */
     writeChunk(at: number, frames: number): Float32Array;
@@ -222,7 +222,7 @@ export function abi_version(): number;
 
 /**
  * The Faust defs a score sends, as a JSON array of
- * `{"name", "kind", "def"}` — the same three fields a live compile job
+ * `{"name", "kind", "def"}` -- the same three fields a live compile job
  * carries, so the host compiles them with the code it already has.
  *
  * The offline renderer cannot wait: it loads a def where it stands and time
@@ -237,7 +237,7 @@ export function abi_version(): number;
 export function faustJobs(score: Uint8Array): string;
 
 /**
- * The seed the last [`render`] on this thread used — how a caller gets back
+ * The seed the last [`render`] on this thread used -- how a caller gets back
  * to a take it liked. Separate from `render`'s return because the JS face
  * returns a bare `Float32Array`; a stats object is the shape to grow into if
  * the web client ever needs the frame, event and level counts too.

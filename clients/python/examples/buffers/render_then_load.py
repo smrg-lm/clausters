@@ -9,20 +9,20 @@ be running first::
     python clients/python/examples/buffers/render_then_load.py
 
 This is the **change of state** the `render` verb is named for: a generator
-thing (a pattern — an algorithm that describes sound) becomes a generated one
-(a file — random-access audio you can slice, loop and read backwards). The
+thing (a pattern -- an algorithm that describes sound) becomes a generated one
+(a file -- random-access audio you can slice, loop and read backwards). The
 point of the example is that the file needs no conversion in between, because
 the same process wrote it and reads it:
 
 1. An NRT session plays the phrase and renders it with ``path=``. **The
    server writes the WAV**: the score goes to the ``clausters --nrt``
    renderer, which streams straight to disk, so the samples never cross into
-   Python. What comes back is the stats — frames, events, per-channel peak
-   and RMS — measured while it streamed.
+   Python. What comes back is the stats -- frames, events, per-channel peak
+   and RMS -- measured while it streamed.
 2. A live session boots, and ``read_buffer`` (``/buffer_allocRead``) loads that
    same file into a server buffer. Float32 WAV, read by the decoder the
    server already ships; nothing is converted to int16 on the way.
-3. A `play_buf` synth plays the buffer — the take, sounding as a sample.
+3. A `play_buf` synth plays the buffer -- the take, sounding as a sample.
 4. For comparison, `read_soundfile` brings the samples into the client
    through *that same decoder*, and the numbers match the render's own stats.
 

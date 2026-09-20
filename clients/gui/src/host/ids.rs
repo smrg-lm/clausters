@@ -8,9 +8,9 @@
 //! keeps share 0 of 2 and hands the host share 1 (`--id-share 1/2`); a host on
 //! its own takes the whole space.
 //!
-//! What this replaced was three fixed windows — the voices at `0x1000_0000`,
+//! What this replaced was three fixed windows -- the voices at `0x1000_0000`,
 //! the monitor's readers and its group just past them, the multitrack's nodes past
-//! those — and a buffer base carried by hand from the session's load. None of
+//! those -- and a buffer base carried by hand from the session's load. None of
 //! them recycled, and none of them knew the server's size.
 //!
 //! Ids come back the way a script's do: a node on its `/node_end` (the host
@@ -37,7 +37,7 @@ impl Host {
     }
 
     /// The spaces this host allocates from, for a caller that allocates on
-    /// its behalf — a session's load, which reads its takes into buffers
+    /// its behalf -- a session's load, which reads its takes into buffers
     /// before anything plays.
     pub fn ids_mut(&mut self) -> &mut IdSpaces {
         &mut self.ids
@@ -77,7 +77,7 @@ impl Host {
     /// for every endpoint, and the monitor's group then goes inside that one
     /// instead ([`Host::monitor_group`]).
     ///
-    /// Only a host that owns its server's transport does this — an editor with
+    /// Only a host that owns its server's transport does this -- an editor with
     /// its own player. A host that is a guest on a script's server leaves the
     /// transport to the script and makes its nodes in the root group.
     pub fn govern_transport(&mut self) -> Option<i32> {

@@ -1,11 +1,11 @@
 """FaustDef: a named Faust definition ready for ``/def_send faust``.
 
 Wraps a graph built with `clausters.defs.signals` (the **signal tree**
-form), one built with `clausters.defs.boxes` (the **box tree** form — a `Box`,
+form), one built with `clausters.defs.boxes` (the **box tree** form -- a `Box`,
 or a raw dict for machine-generated trees), or a Faust **source** string: the
 three payloads the server's ``/def_send faust`` accepts, on equal footing (it sniffs
 which by the first byte; see the server's ``faust`` module). They are three ways
-of writing Faust, not a main road and two detours — pick the one that says what
+of writing Faust, not a main road and two detours -- pick the one that says what
 you mean. Sending and instantiating is the
 `Server`'s job; this only builds the payload and
 exposes the declared control names (UI labels), plus the reserved ``in``/``out``
@@ -29,24 +29,24 @@ class FaustDef:
     differs is who compiles it. A `SynthDef` is a graph of the server's own
     UGens, wired at run time; a `FaustDef` is a Faust program the server hands
     to libfaust, which compiles it to machine code before the first block. So
-    the whole Faust language is available — its libraries, its sample-level
-    feedback, its block-diagram algebra — at the cost of a compile when the
+    the whole Faust language is available -- its libraries, its sample-level
+    feedback, its block-diagram algebra -- at the cost of a compile when the
     def lands.
 
     **Three ways to write one, all equal on the wire.** The server sniffs which
     it got; pick the one that says what you mean:
 
-    - `from_signals` — `clausters.defs.signals` as Python callables and
+    - `from_signals` -- `clausters.defs.signals` as Python callables and
       operators. The most Python-looking, and the one that composes with
       ordinary Python code.
-    - `from_box` — `clausters.defs.boxes`, Faust's block-diagram algebra,
+    - `from_box` -- `clausters.defs.boxes`, Faust's block-diagram algebra,
       point-free. Terse, and ``boxes.faust`` opens the whole Faust standard
       library (`os.osc`, `fi.lowpass`, `pm.*`) as composable pieces.
-    - `from_source` — Faust source as a string, for DSP you already have or
+    - `from_source` -- Faust source as a string, for DSP you already have or
       that reads best in its own language.
 
-    Controls are the UI elements the program declares — an ``hslider``,
-    ``nentry``, ``button`` — and their labels are the names `Node.set` uses.
+    Controls are the UI elements the program declares -- an ``hslider``,
+    ``nentry``, ``button`` -- and their labels are the names `Node.set` uses.
     `control_names` lists them. The server adds two more of its own,
     ``in``/``out`` (see `reserved`), so a Faust def can be aimed at a `Bus`
     without declaring anything for it.
@@ -82,7 +82,7 @@ class FaustDef:
     ```
 
     Attributes:
-        name: the def's name on the server — what `Synth` looks up, and what
+        name: the def's name on the server -- what `Synth` looks up, and what
             ``/def_send faust`` replies with on success.
         kind: which of the three payloads this def carries, ``"signals"``,
             ``"box"`` or ``"source"``.
@@ -90,7 +90,7 @@ class FaustDef:
 
     def __init__(self, name: str, payload, kind: str):
         """Wraps an already-built payload. You normally do not call this: the
-        three named constructors — `from_signals`, `from_box`, `from_source` —
+        three named constructors -- `from_signals`, `from_box`, `from_source` --
         each build the payload for their form and pass it here.
 
         Args:
@@ -170,7 +170,7 @@ class FaustDef:
     @property
     def controls(self) -> list:
         """This def's control surface as `clausters.defs.info.ControlInfo`
-        entries, in tree order — the shape all three def families answer with.
+        entries, in tree order -- the shape all three def families answer with.
 
         A Faust control is the one that **brings its own range**: an
         ``hslider``/``vslider``/``nentry`` declares ``init``, ``min``, ``max``
@@ -183,7 +183,7 @@ class FaustDef:
         return params
 
     def __getitem__(self, name: str):
-        """One control by name, as a `clausters.defs.info.ControlInfo` —
+        """One control by name, as a `clausters.defs.info.ControlInfo` --
         ``fd["cutoff"]``, carrying the range Faust declared."""
         for info in self.controls:
             if info.name == name:
@@ -198,7 +198,7 @@ class FaustDef:
     def plot_def(self, *, label: str | None = None, w: int = 1000, h: int = 700,
                  title: str | None = None, host=None):
         """Open this FaustDef's **structure** as a directed `patch` view in its
-        own window on the ambient GUI host — the level-2 patcher drawn from the
+        own window on the ambient GUI host -- the level-2 patcher drawn from the
         def's signal graph (every signal op a box, every operand a cord, the host
         laying them out as an inverted tree). One window per call, the
         `clausters.plot` posture; this shows the def's *structure*, where
@@ -207,7 +207,7 @@ class FaustDef:
         A **signal-tree** def (`from_signals`) decodes node for node; a
         **box-tree** or **source** def is opaque and draws as a single box (its
         internals are the Faust compiler's, not reconstructable client-side).
-        ``label`` captions the patch panel (defaults to ``"faustdef"`` — the
+        ``label`` captions the patch panel (defaults to ``"faustdef"`` -- the
         panel names *what* is drawn, not the def's name); ``host`` is an explicit
         `clausters.gui.GuiHost`, ``None`` resolves the ambient one. Returns a
         `clausters.plot.PatchWindow` (``.close()``)."""

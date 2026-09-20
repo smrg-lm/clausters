@@ -152,7 +152,7 @@
         }
 
         // **Zoom past the summary.** A window of 2000 frames over 200 px is
-        // ten samples a pixel — far finer than the 256-frame bucket — so the
+        // ten samples a pixel -- far finer than the 256-frame bucket -- so the
         // picture can only be drawn from samples this view does not hold, and
         // the host has to read them back. A different span from the one read
         // while it recorded: that run is held, and a view that can answer for
@@ -203,8 +203,8 @@
 
         verdict(`PASS: the take drew from the stream without being downloaded, `
           + `a zoom read the samples back behind the frontier while it recorded, `
-          + `a zoom past the summary read ${frames} frames back — the span on `
-          + "screen, not the take — and a zoom between the bucket and the "
+          + `a zoom past the summary read ${frames} frames back -- the span on `
+          + "screen, not the take -- and a zoom between the bucket and the "
           + "sample was answered by a finer grid instead");
       }
 

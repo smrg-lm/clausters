@@ -2,9 +2,9 @@
 //! questions asked of them.
 //!
 //! An engraved page is a flat list of primitives, and everything interactive
-//! needs it as something else: the **hit index** ([`ScoreData::index`]) — one
+//! needs it as something else: the **hit index** ([`ScoreData::index`]) -- one
 //! page-unit box per identified primitive, so a click can name the element
-//! under it — and the **staff index** (`index_staves`), which is what a ledger
+//! under it -- and the **staff index** (`index_staves`), which is what a ledger
 //! line and a diatonic step are measured against. Both are built once, when
 //! the display list arrives, because the geometry never moves afterwards and
 //! re-deriving it per click would mean re-parsing every glyph outline on every
@@ -31,7 +31,7 @@ fn smallest<'a>(boxes: impl Iterator<Item = &'a HitBox>) -> Option<&'a HitBox> {
 impl ScoreData {
     /// Rebuild the hit-testing index from the placed primitives: one page-unit
     /// box per identified primitive, so a click can name the element under it.
-    /// Done once when the display list arrives — the geometry never moves
+    /// Done once when the display list arrives -- the geometry never moves
     /// afterwards, and re-deriving it per click would mean re-parsing every
     /// glyph outline on every press.
     pub fn index(&mut self) {
@@ -102,8 +102,8 @@ impl ScoreData {
     }
 
     /// Cluster the staff lines into staves. A staff line is the one primitive
-    /// every system draws the same way — one of the page's **longest**
-    /// horizontal strokes — and within a staff they sit exactly one space (two
+    /// every system draws the same way -- one of the page's **longest**
+    /// horizontal strokes -- and within a staff they sit exactly one space (two
     /// diatonic steps) apart, so a wider gap starts the next system.
     ///
     /// Long relative to the other horizontal strokes rather than to the page:
@@ -176,8 +176,8 @@ impl ScoreData {
     /// The two differ the moment a score wraps: the third system's upper staff
     /// is the fifth drawn on a two-staff page, and naming it staff 4 names a
     /// staff no model has. Systems come from the client (`systems`), because
-    /// telling a grand staff from two systems is a notation fact — a barline
-    /// through the brace — and not something a measurement settles. With none
+    /// telling a grand staff from two systems is a notation fact -- a barline
+    /// through the brace -- and not something a measurement settles. With none
     /// sent, a one-system page is the only case that can be right, and the rank
     /// down the page is that.
     fn staff_of_system(&self, staff: Staff) -> Option<usize> {
@@ -211,7 +211,7 @@ impl ScoreData {
     }
 
     /// Where an engraved element sits on its staff, in **whole diatonic steps
-    /// from the staff's top line**, positive upward — the absolute coordinate a
+    /// from the staff's top line**, positive upward -- the absolute coordinate a
     /// pitch edit names instead of a displacement.
     ///
     /// It is the reading `ledger_ys` already performs, given a name: both
@@ -226,7 +226,7 @@ impl ScoreData {
     /// rather than the middle of its bounds: a SMuFL notehead is drawn about
     /// its origin, so the origin *is* the pitch, while the bounds' middle is
     /// only the same number for a vertically symmetric outline. Ledger lines
-    /// can use the bounds — they are centred on the ink — but a pitch cannot,
+    /// can use the bounds -- they are centred on the ink -- but a pitch cannot,
     /// and `clausters_core::notation::DisplayList::staff_position` reads the
     /// origin, which this must agree with byte for byte.
     pub fn staff_position(&self, id: &str) -> Option<i32> {
@@ -260,7 +260,7 @@ impl ScoreData {
     /// does the smallest box decide. The order matters because area is a bad
     /// proxy for "innermost" on an engraved page: a staff line is a hairline
     /// the width of the system, so its box is *thinner* than a notehead's and area
-    /// alone hands it every note written on a line rather than in a space —
+    /// alone hands it every note written on a line rather than in a space --
     /// half the page, and the half a hand reaches for first. The page already
     /// says which ids are notes and rests ([`ScoreData::elements`]), so the
     /// question is answered by what a thing *is* and not by how big it is; the
@@ -285,7 +285,7 @@ impl ScoreData {
     /// This is the gesture's whole contribution, and the division is the same
     /// one every other score gesture keeps: the host measures the *page*, which
     /// is the only thing it has, and names what it found by the ids the client
-    /// engraved. It decides no duration, no pitch and no spelling — a staff
+    /// engraved. It decides no duration, no pitch and no spelling -- a staff
     /// position is not a pitch until something knows the clef and the key, and
     /// the host knows neither.
     ///
@@ -365,7 +365,7 @@ impl ScoreData {
 
     /// How many **diatonic steps** a vertical drag of `dy` screen pixels
     /// amounts to, with the page fitted into `rect`: dragging up (a negative
-    /// `dy`) is positive, and the result is whole steps — a pitch has no
+    /// `dy`) is positive, and the result is whole steps -- a pitch has no
     /// in-between position, so the gesture quantizes rather than the client.
     pub fn steps_for(&self, rect: Rect, dy: f32) -> i32 {
         let px = self.step * self.fit(rect).sy;

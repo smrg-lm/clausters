@@ -1,12 +1,12 @@
-// Symbolic per-bin expressions for `pvKernel` — the general per-frame
+// Symbolic per-bin expressions for `pvKernel` -- the general per-frame
 // spectral mechanism (mirrors `clausters/defs/pv_expr.py`).
 //
 // The terms `mag`, `phase`, `binIndex`, `nbins`, `binfreq` and `param(i)` are
 // symbolic per-bin values; composing them with the math methods (the same
-// vocabulary UGen graphs use, by method rather than by operator — the
+// vocabulary UGen graphs use, by method rather than by operator -- the
 // package's composition rule) builds an expression tree that `pvKernel`
 // serializes to the postfix token list the server's `PV_Kernel` validates and
-// interprets — once per bin, on each fresh spectral frame.
+// interprets -- once per bin, on each fresh spectral frame.
 //
 // ```ts
 // import { fft, ifft, pvKernel, control, out } from "clausters";
@@ -18,16 +18,16 @@
 // const sig = ifft(chain);
 // ```
 //
-// **What an expression can be**: a pure map from one bin's values — `(mag,
-// phase, binIndex, nbins, binfreq, param(i)…)` — to the bin's new magnitude
+// **What an expression can be**: a pure map from one bin's values -- `(mag,
+// phase, binIndex, nbins, binfreq, param(i)…)` -- to the bin's new magnitude
 // or phase. No state between bins or frames, no reading *other* bins:
 // cross-frame ops (freeze, smear) and bin remaps (shift) stay with the
-// dedicated `pv*` filters. Anything that *is* a per-bin map — gates, tilts,
-// masks, magnitude algebra — is an expression here, never a new server UGen.
+// dedicated `pv*` filters. Anything that *is* a per-bin map -- gates, tilts,
+// masks, magnitude algebra -- is an expression here, never a new server UGen.
 //
 // The operator set is the shared table (`base/builtins.ts` /
 // `clausters_core::builtins`): everything the value side and the UGen graphs
-// compute is available per bin, with the same formulas — a rendered kernel is
+// compute is available per bin, with the same formulas -- a rendered kernel is
 // bit-identical between real-time and offline.
 
 import { AbstractObject } from "../base/absobject.ts";
@@ -44,7 +44,7 @@ export type PvOperand = PvExpr | number;
 /**
  * What a math method answers here: always another term. Nothing in a per-bin
  * expression fans a result out the way a channel list does in a UGen graph, so
- * the base's fan-out pair is `never` — this alias is only what a deferred
+ * the base's fan-out pair is `never` -- this alias is only what a deferred
  * conditional type has to be spelled as.
  */
 type PvResult<T> = Composed<PvExpr, T, Fan<never, never>>;
@@ -73,7 +73,7 @@ export abstract class PvExpr extends AbstractObject<PvExpr, PvOperand> {
         return new PvUnNode(selector, this);
     }
 
-    /** @internal — this term on the **right** of a binary op. */
+    /** @internal -- this term on the **right** of a binary op. */
     rbinop(selector: string, other: PvOperand): PvExpr {
         return new PvBinNode(binopName(selector), operand(other), this);
     }
@@ -143,7 +143,7 @@ export const nbins: PvExpr = new PvTerm("nbins");
 export const binfreq: PvExpr = new PvTerm("binfreq");
 
 /**
- * Parameter `i` — `pvKernel`'s `params[i]` signal input, sampled at the hop.
+ * Parameter `i` -- `pvKernel`'s `params[i]` signal input, sampled at the hop.
  * Parameters are how an expression stays *controllable*: a threshold, a tilt
  * amount, an LFO.
  */
@@ -156,7 +156,7 @@ export function param(i: number): PvExpr {
 }
 
 /**
- * The free form of a binary op with the **constant on the left** —
+ * The free form of a binary op with the **constant on the left** --
  * `pvOp("sub", 1.0, mag)`, which a method cannot express. Mirrors the free
  * `add`/`sub`/`mul`/`div` the UGen graph exports for the same reason.
  */

@@ -1,4 +1,4 @@
-//! the shared-memory IPC segment — transport and data plane.
+//! the shared-memory IPC segment -- transport and data plane.
 //!
 //! OSC stays the only **encoding**; this module adds two **transports**
 //! beside UDP, both built on one memory segment:
@@ -8,12 +8,12 @@
 //!   no packet loss (the ring gives backpressure instead), and the data
 //!   plane costs a memory read instead of an OSC round trip.
 //! - **In-process / embedded** (`src/embed.rs`, feature `embed`): the same
-//!   layout over plain heap memory — the "client" is the host application
+//!   layout over plain heap memory -- the "client" is the host application
 //!   calling into the cdylib.
 //!
 //! **The layout itself is not here.** It is
 //! [`clausters_core::shm`], because four processes read
-//! it and a layout mirrored by hand in each of them is a layout that drifts —
+//! it and a layout mirrored by hand in each of them is a layout that drifts --
 //! which it did, twice, in ways a version number cannot catch. What this module
 //! owns is what is genuinely the *server's*: getting the memory (a mapped file
 //! or a heap allocation), the pool buffers behind the directory's rows, and the
@@ -26,7 +26,7 @@
 //! the audio taps, the per-bus levels, the buffer directory, and two SPSC byte
 //! rings of ordinary OSC packets. Ring bytes are as untrusted as UDP bytes
 //! (`osc::decode_packet` validates), and the server polls the ring on a short
-//! socket timeout instead of a semaphore — a documented trade-off in
+//! socket timeout instead of a semaphore -- a documented trade-off in
 //! `docs/ipc.md`.
 
 #[cfg(unix)]
@@ -53,12 +53,12 @@ pub use clausters_core::shm::{
 };
 
 /// The shared layout is sized for constants the engine also declares, so the
-/// two must agree — and here they are checked rather than trusted.
+/// two must agree -- and here they are checked rather than trusted.
 const _: () = assert!(NUM_AUDIO_BUSES == shm::DEFAULT_AUDIO_BUS_SLOTS);
 const _: () = assert!(BLOCK_SIZE == shm::BLOCK);
 const _: () = assert!(crate::dsp::buffer::NUM_BUFFERS == shm::DEFAULT_BUFFER_ROWS);
 
-/// Default buffer-directory rows — scsynth's own default buffer count, so a
+/// Default buffer-directory rows -- scsynth's own default buffer count, so a
 /// segment created with no `--max-buffers` describes every buffer the server
 /// can allocate.
 pub const DEFAULT_BUFFERS: usize = crate::dsp::buffer::NUM_BUFFERS;
@@ -73,7 +73,7 @@ pub const SEGMENT_SIZE: usize = shm::segment_size(
     DEFAULT_BUFFERS,
 );
 
-/// Whether `pid` is a process that still exists — what tells a stale
+/// Whether `pid` is a process that still exists -- what tells a stale
 /// control-plane claim from a live one. Signal 0 checks for the process
 /// without touching it; `EPERM` means it is there and not ours, which is still
 /// "alive". Off Unix nothing can be asked, so a claim is believed.
@@ -95,7 +95,7 @@ fn process_alive(pid: u32) -> bool {
 /// Removes a segment's name and the name of every region beside it.
 ///
 /// Unlinking leaves each mapping somebody still holds valid until it is
-/// dropped — the same property freeing one buffer relies on — so this ends the
+/// dropped -- the same property freeing one buffer relies on -- so this ends the
 /// samples rather than pulling it out from under a reader.
 #[cfg(unix)]
 pub fn remove_segment(path: &Path) {
@@ -129,8 +129,8 @@ pub fn remove_segment(path: &Path) {
 /// Collects the segments in `dir` that **no process is serving any more**,
 /// regions and all, and answers with the paths it removed.
 ///
-/// A segment is left behind whenever its owner dies without running `Drop` — a
-/// `kill`, a crash, a `timeout` in a script — and one region is a whole take,
+/// A segment is left behind whenever its owner dies without running `Drop` -- a
+/// `kill`, a crash, a `timeout` in a script -- and one region is a whole take,
 /// so a few crashes fill a memory filesystem with files nothing can tell live
 /// from dead. The claim is what tells them apart: a header that is ours
 /// (`MAGIC`/`ABI_VERSION`), naming a pid that no longer exists, is a segment
@@ -138,9 +138,9 @@ pub fn remove_segment(path: &Path) {
 ///
 /// **Two rules make this safe to do to a file this process never created.**
 /// A claim of *nobody* (a segment created a moment ago, or one released on a
-/// clean exit so it can be adopted) is never swept — only a pid that answered
-/// once and does not now. And `except` — the path the caller is about to open
-/// — is never swept, which is what keeps a killed owner's samples
+/// clean exit so it can be adopted) is never swept -- only a pid that answered
+/// once and does not now. And `except` -- the path the caller is about to open
+/// -- is never swept, which is what keeps a killed owner's samples
 /// recoverable: starting a server against **the same path** adopts what is
 /// there, exactly as it did before this existed.
 #[cfg(unix)]
@@ -155,8 +155,8 @@ pub fn sweep_dead_segments(dir: &Path, except: Option<&Path>) -> Vec<PathBuf> {
         {
             continue;
         }
-        // Anything that is not one of ours — another program's file, or one of
-        // our own region files — fails the header check and is left alone.
+        // Anything that is not one of ours -- another program's file, or one of
+        // our own region files -- fails the header check and is left alone.
         let Ok(segment) = Segment::open(&path) else {
             continue;
         };
@@ -182,7 +182,7 @@ fn check_tap_params(taps: usize, tap_frames: usize) {
 
 /// Who owns the memory a segment is laid over.
 enum Backing {
-    // `u128` words keep the heap allocation 16-aligned — the layout holds
+    // `u128` words keep the heap allocation 16-aligned -- the layout holds
     // 8-aligned atomics and a `&[u8]` box would only guarantee 1.
     Heap(#[allow(dead_code)] Box<[u128]>),
     #[cfg(unix)]
@@ -269,8 +269,8 @@ impl Segment {
     }
 
     /// Creates (or truncates) the segment file and maps it shared, with the
-    /// default control-bus and tap counts. Put it on a memory filesystem —
-    /// `/dev/shm/...` on Linux — to avoid disk writes.
+    /// default control-bus and tap counts. Put it on a memory filesystem --
+    /// `/dev/shm/...` on Linux -- to avoid disk writes.
     #[cfg(unix)]
     pub fn create(path: &Path) -> io::Result<Arc<Self>> {
         Self::create_with(path, NUM_CONTROL_BUSES)
@@ -328,8 +328,8 @@ impl Segment {
     ///
     /// [`create_full`](Self::create_full) truncates, which was right while a
     /// segment was one server's own transport and is wrong now that it indexes
-    /// the **samples**: the process most likely to be restarted — the one
-    /// holding the audio device — would wipe what everybody else is editing.
+    /// the **samples**: the process most likely to be restarted -- the one
+    /// holding the audio device -- would wipe what everybody else is editing.
     /// So a server opens what is there and creates only what is not, and the
     /// sizes it was asked for apply **to a segment it creates**: an existing
     /// one is described by its own header, and disagreeing with it is not a
@@ -343,7 +343,7 @@ impl Segment {
     /// something to overwrite. Racing creators are not arbitrated here: two
     /// servers started at the same instant against a path with nothing on it
     /// may both create, and the loser's samples would be the one that
-    /// vanishes — the arrangement this exists for starts the owner first (see
+    /// vanishes -- the arrangement this exists for starts the owner first (see
     /// `docs/ipc.md`).
     #[cfg(unix)]
     pub fn open_or_create_full(
@@ -365,7 +365,7 @@ impl Segment {
                 if let Some(dir) = path.parent() {
                     for swept in sweep_dead_segments(dir, Some(path)) {
                         tracing::info!(
-                            "swept the shared segment at {} — its owner is gone",
+                            "swept the shared segment at {} -- its owner is gone",
                             swept.display()
                         );
                     }
@@ -433,7 +433,7 @@ impl Segment {
     /// get the claim must not attach an [`IpcPeer`] as [`Role::Server`]: it
     /// reads and writes the data plane and serves its clients over sockets.
     /// An owner that died without releasing does not hold the segment hostage
-    /// — a pid nothing answers to is stale and is taken over, which is what
+    /// -- a pid nothing answers to is stale and is taken over, which is what
     /// makes killing the RT server a recoverable event rather than a reboot.
     pub fn claim_control(&self) -> bool {
         self.view.claim_control(std::process::id(), process_alive)
@@ -464,7 +464,7 @@ impl Segment {
     }
 
     /// The transport clock: samples elapsed under the transport, held while it
-    /// is stopped. Monotonic — see [`Self::transport_position`] for the one
+    /// is stopped. Monotonic -- see [`Self::transport_position`] for the one
     /// that moves with a locate.
     pub fn transport_clock(&self) -> &AtomicU64 {
         self.view.transport_clock()
@@ -476,7 +476,7 @@ impl Segment {
         self.view.transport_position()
     }
 
-    /// The segment's base address and its **logical** size in bytes — what an
+    /// The segment's base address and its **logical** size in bytes -- what an
     /// in-process reader needs to map the same layout an out-of-process one
     /// gets from the file.
     ///
@@ -508,7 +508,7 @@ impl Segment {
             .publish_buffer(bufnum, frames, channels, sample_rate)
     }
 
-    /// **Raises a buffer's write frontier** — how far its writers have
+    /// **Raises a buffer's write frontier** -- how far its writers have
     /// filled it, in frames, highest wins. Called from the audio thread.
     pub fn raise_buffer_frontier(&self, bufnum: usize, frame: u64) {
         self.view.raise_buffer_frontier(bufnum, frame);
@@ -527,16 +527,16 @@ impl Segment {
     }
 
     /// What a peer needs to map buffer `bufnum`: its generation (which names
-    /// the region) and its shape — or `None` when the slot is empty.
+    /// the region) and its shape -- or `None` when the slot is empty.
     pub fn buffer_info(&self, bufnum: usize) -> Option<BufferShape> {
         self.view.buffer_info(bufnum)
     }
 
-    /// **Maps buffer `bufnum`'s samples** — the peer's door to the samples.
+    /// **Maps buffer `bufnum`'s samples** -- the peer's door to the samples.
     ///
     /// `at` is the segment's own path, which is what the region is named from.
     /// `None` when the slot is empty, when the row is out of range, or when the
-    /// region cannot be opened — which is the ordinary answer for a buffer that
+    /// region cannot be opened -- which is the ordinary answer for a buffer that
     /// was freed between reading the directory and opening the file, and is why
     /// this returns the generation it mapped: a caller that keeps the mapping
     /// compares it against the row to learn its samples are history.
@@ -578,7 +578,7 @@ impl Segment {
     /// writing UGen says how far it has filled the samples.
     ///
     /// It holds the segment rather than a pointer into it, so the mapping
-    /// cannot go out from under a buffer the engine is still writing — and the
+    /// cannot go out from under a buffer the engine is still writing -- and the
     /// write itself is one relaxed read-modify-write, which is what makes it
     /// callable from the audio thread.
     pub fn frontier_sink(self: &Arc<Self>, bufnum: usize) -> Arc<dyn Frontier> {
@@ -588,7 +588,7 @@ impl Segment {
         })
     }
 
-    /// How many control buses this segment carries — the header's own count,
+    /// How many control buses this segment carries -- the header's own count,
     /// which is what a server attaching to somebody else's segment must run
     /// with whatever its own command line asked for. The shape of a segment
     /// belongs to the process that created it.
@@ -621,7 +621,7 @@ impl Segment {
     }
 
     /// Audio bus `bus`'s level: the peak magnitude of the last block the
-    /// engine processed. What a meter reads — one number per block instead of
+    /// engine processed. What a meter reads -- one number per block instead of
     /// a ring, so metering every bus costs no tap.
     pub fn level(&self, bus: usize) -> f32 {
         self.view.level(bus)
@@ -671,9 +671,9 @@ impl IpcPeer {
         &self.segment
     }
 
-    /// Appends one packet to the outbound ring, tagged for `peer` — who wrote
+    /// Appends one packet to the outbound ring, tagged for `peer` -- who wrote
     /// it (client → server) or who it is for (server → client). `false` when
-    /// the ring lacks space — backpressure, the caller may retry (nothing is
+    /// the ring lacks space -- backpressure, the caller may retry (nothing is
     /// dropped).
     pub fn push(&self, peer: u32, packet: &[u8]) -> bool {
         self.segment.view.push(self.role, peer, packet)

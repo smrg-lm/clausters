@@ -3,13 +3,13 @@
 // The server's node tree: the root group is id 0; clients allocate positive
 // ids. Add actions match the server: head/tail of a group, before/after a
 // node, or replace. `Synth` and `Group` hold an id and the server it lives on,
-// and own the commands addressed to it: **the constructor creates the node** —
-// `new Synth(…)`, `new Group(…)`, `Group.graph(…)` — and `set`, `map`, `run`
+// and own the commands addressed to it: **the constructor creates the node** --
+// `new Synth(…)`, `new Group(…)`, `Group.graph(…)` -- and `set`, `map`, `run`
 // and `free` drive it. The id pool itself belongs to the `Server`.
 //
 // `fromId` is the other door: a handle on a node that **already** exists,
 // named by an id something else reported (a responder, a tree query, the GUI).
-// It sends nothing, and the handle may carry no server — it then falls back to
+// It sends nothing, and the handle may carry no server -- it then falls back to
 // the ambient one, the rule the free `play` follows.
 //
 // The server is the last thing named here, in the options bag, because a
@@ -102,7 +102,7 @@ export class Node {
     }
 
     /**
-     * This node's server, or the ambient one — a handle built from a reported
+     * This node's server, or the ambient one -- a handle built from a reported
      * id (a responder, the GUI, a tree query) carries none.
      */
     protected srv(): Server {
@@ -133,8 +133,8 @@ export class Node {
      * `/node_map` bindings and the buses it reads and writes.
      *
      * A photograph, not a state: a running envelope or a mapped control moves
-     * under the record's feet, so nothing caches it. A node that is gone —
-     * freed, or ended by a `doneAction` — comes back with `exists` false
+     * under the record's feet, so nothing caches it. A node that is gone --
+     * freed, or ended by a `doneAction` -- comes back with `exists` false
      * rather than throwing.
      */
     async info(timeout?: number): Promise<NodeInfo> {
@@ -164,11 +164,11 @@ export class Node {
     }
 
     /**
-     * Frees this node now (`/node_free`) — the way to cut something whose life
+     * Frees this node now (`/node_free`) -- the way to cut something whose life
      * is long; a GraphDef instance too, private buses included.
      *
      * The id is **not** returned to the registry here: it stays tracked until
-     * the server confirms the death with `/node_end` — releasing at send time
+     * the server confirms the death with `/node_end` -- releasing at send time
      * could re-hand an id whose node is still alive on the server.
      */
     free(): void {
@@ -176,7 +176,7 @@ export class Node {
     }
 
     /**
-     * Pauses (`flag: false`) or resumes this node — a synth or a whole group —
+     * Pauses (`flag: false`) or resumes this node -- a synth or a whole group --
      * with `/node_run`. A paused node stays in the tree and keeps its state but
      * is skipped; this is what resumes a synth parked by `PAUSE_SELF`.
      */
@@ -201,7 +201,7 @@ export class Node {
      * This is `AddAction.BEFORE` applied to a node that already exists: the
      * constructor places a node when it is made, and this is how one is moved
      * afterwards. Running earlier in the pass, it is now read by `target`
-     * rather than reading it — the same trade the placement always was.
+     * rather than reading it -- the same trade the placement always was.
      *
      * The move is refused inside an auto-sorted group (see
      * {@link Group.autoOrder}), which computes the order itself and replies
@@ -240,7 +240,7 @@ export class Node {
      * mixer.order([drums, bass], { action: AddAction.HEAD });
      * ```
      *
-     * `action` takes the four placements a move admits — `AddAction.HEAD` and
+     * `action` takes the four placements a move admits -- `AddAction.HEAD` and
      * `AddAction.TAIL` put them inside this node, which must then be a group,
      * `AddAction.BEFORE` and `AddAction.AFTER` beside it. `AddAction.REPLACE`
      * is not one of them: it frees what it replaces, and this command moves.
@@ -288,7 +288,7 @@ export class Synth extends Node {
      *
      * An unknown def name throws nothing here: the command is
      * fire-and-forget, the server answers `/fail` on its own channel, and the
-     * handle carries an id no node was created for — `info()` reports it as
+     * handle carries an id no node was created for -- `info()` reports it as
      * not existing.
      *
      * @param defname a def already installed on the server, of either family.
@@ -313,7 +313,7 @@ export class Synth extends Node {
 }
 
 /**
- * Allocates an id, sends the creation command and returns the id — the one
+ * Allocates an id, sends the creation command and returns the id -- the one
  * shape `/synth_new` and `/graph_new` share.
  */
 function createNode(
@@ -337,7 +337,7 @@ function createNode(
 
 export class Group extends Node {
     /**
-     * An empty group in the node tree (`/group_new`), optionally labelled —
+     * An empty group in the node tree (`/group_new`), optionally labelled --
      * see {@link Group.rename} for what a name is. Building one creates it,
      * as with `Synth`.
      *
@@ -360,7 +360,7 @@ export class Group extends Node {
      * The server infers the dependency from the buses each def touches: a node
      * that reads a bus runs after the node that writes it. That is the
      * bookkeeping `AddAction.BEFORE`/`AddAction.AFTER` are for, done by the
-     * side that already knows the graph — add the members in any order and the
+     * side that already knows the graph -- add the members in any order and the
      * chain comes out right, including after one is freed or retargeted
      * ({@link Node.map}).
      *
@@ -389,11 +389,11 @@ export class Group extends Node {
      * a different purpose: members that touch no bus in common cannot affect
      * each other, so they are grouped into stages and a stage's members run on
      * whatever workers are free. The result is **bit-identical** to running
-     * them one after another — this asks for the same samples sooner, never for
-     * different ones — and an offline render takes it too.
+     * them one after another -- this asks for the same samples sooner, never for
+     * different ones -- and an offline render takes it too.
      *
      * Two things decide whether it does anything. The server needs worker
-     * threads, which the engine in a page has none of — it is one thread, so
+     * threads, which the engine in a page has none of -- it is one thread, so
      * the flag is remembered there and everything stays sequential, exactly as
      * on a native server started without `--workers`. And the graph needs the
      * width: a stage with fewer members than workers caps the gain at the
@@ -409,7 +409,7 @@ export class Group extends Node {
     }
 
     /**
-     * Moves each node to the **head** of this group (`/group_head`) — first in
+     * Moves each node to the **head** of this group (`/group_head`) -- first in
      * the order, before everything already there. Answers this group.
      *
      * `AddAction.HEAD` for nodes that already exist, and the way a node is
@@ -423,7 +423,7 @@ export class Group extends Node {
     }
 
     /**
-     * Moves each node to the **tail** of this group (`/group_tail`) — last in
+     * Moves each node to the **tail** of this group (`/group_tail`) -- last in
      * the order, after everything already there. Answers this group.
      *
      * `AddAction.TAIL` for nodes that already exist. Refused when this group is
@@ -461,7 +461,7 @@ export class Group extends Node {
      *
      * A name does not replace the id: every command still addresses the group
      * by id, and this one is no exception. What it adds is a way to *say* which
-     * group you mean — the label comes back in every node report
+     * group you mean -- the label comes back in every node report
      * ({@link Node.info}, `Server.queryTree`) and names one segment of the group's
      * path, which `Server.groupAt` resolves. That is what makes a mixer's
      * channels, its busses and its master addressable by what they are instead
@@ -495,8 +495,8 @@ export class Group extends Node {
      * Builds one more of a named **slot** (`/graph_addSlot`) inside this running
      * GraphDef instance, wired to its shared private buses.
      *
-     * A slot is a member there is a changing number of — a clip on a track, an
-     * effect in a chain, a voice of an instrument — so this is how many of them
+     * A slot is a member there is a changing number of -- a clip on a track, an
+     * effect in a chain, a voice of an instrument -- so this is how many of them
      * there are right now. `ports` overrides that slot's port defaults. The
      * returned group is the one that was built: drive it through its surface
      * with `set` and free it with `free`.
@@ -516,7 +516,7 @@ export class Group extends Node {
 
     /**
      * Moves this slot (a group from `addSlot`) into another running instance
-     * (`/graph_moveSlot`) — a clip dragged to another track.
+     * (`/graph_moveSlot`) -- a clip dragged to another track.
      *
      * The slot is not built again: the server re-wires it to the new
      * instance's private buses, so its ports, whatever is mapped onto them and
@@ -531,7 +531,7 @@ export class Group extends Node {
 
     /**
      * Spawns a per-voice sub-graph (`/graph_newVoice`) inside this running
-     * GraphDef instance, wired to its shared private buses — the slot named
+     * GraphDef instance, wired to its shared private buses -- the slot named
      * `"voice"`, spelled the way it was before slots had names, and what a MIDI
      * note spawns.
      */
@@ -566,7 +566,7 @@ function createGroup(
  * Node ids name slots of a finite boot-time resource (the server's node
  * table), so the allocator is an occupancy map, not a counter: every id
  * handed out stays tracked until the server reports the node's death
- * (`/node_end`, fed in through `free`), which makes it allocatable again — the
+ * (`/node_end`, fed in through `free`), which makes it allocatable again -- the
  * space never exhausts while nodes keep dying.
  *
  * It carries no range of its own: the client range is a property of the
@@ -588,7 +588,7 @@ export class NodeIdAllocator {
     }
 
     /**
-     * A free node id. Throws when the whole range is in flight — allocation
+     * A free node id. Throws when the whole range is in flight -- allocation
      * never wraps into ids that may still be alive.
      */
     alloc(): number {
@@ -603,7 +603,7 @@ export class NodeIdAllocator {
     }
 
     /**
-     * Returns `id` to the pool — called when its `/node_end` arrives. Ids
+     * Returns `id` to the pool -- called when its `/node_end` arrives. Ids
      * outside the client range (another owner's) and ids not currently
      * allocated are ignored: every node death on the server is reported, not
      * only those of nodes this client created.

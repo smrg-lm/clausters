@@ -4,7 +4,7 @@ The user-facing way to build a FaustDef. Each function here is a small
 **lowercase** callable (a design choice that keeps graph-building fluent in
 Python) that returns a `Signal`; composing signals with Python operators
 or these functions builds the JSON **signal tree** the server's `/def_send faust`
-consumes (``{"signals": [ <node>, … ]}``, one node per output — see the
+consumes (``{"signals": [ <node>, … ]}``, one node per output -- see the
 server's ``faust::signals``). The same lowercase pattern will return UGen-graph
 nodes for SynthDefs later.
 
@@ -167,7 +167,7 @@ exp10 = _unary("exp10")
 log = _unary("log")
 log10 = _unary("log10")
 sqrt = _unary("sqrt")
-abs = _unary("abs")  # noqa: A001 — Signal API name, by design
+abs = _unary("abs")  # noqa: A001 -- Signal API name, by design
 floor = _unary("floor")
 ceil = _unary("ceil")
 rint = _unary("rint")

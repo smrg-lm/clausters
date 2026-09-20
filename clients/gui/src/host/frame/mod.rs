@@ -1,4 +1,4 @@
-//! Rendering one window's widget tree into its wgpu surface — the shared frame
+//! Rendering one window's widget tree into its wgpu surface -- the shared frame
 //! path, agnostic of platform and of how the host is driven.
 //!
 //! This is the code the milestone calls "isolate the surface/GPU/loop port":
@@ -10,12 +10,12 @@
 //! calls it with the streamed equivalents. It builds the flat-geometry [`Mesh`]
 //! from the placed widgets ([`super::layout`] + [`super::paint`]/
 //! [`super::font`]), uploads the heavy `waveform`/`spectrogram`/`canvas` views,
-//! and draws the whole frame in one pass — the editor chrome (rulers,
+//! and draws the whole frame in one pass -- the editor chrome (rulers,
 //! selection, playhead, cursor readout) as a second, *overlay* mesh drawn
 //! after the heavy views so it reads on top of them.
 //!
 //! **Module layout.** This file is the frame's spine: the GPU slots a heavy
-//! view hangs on, the [`FrameInputs`] a front fills, and [`render`] itself —
+//! view hangs on, the [`FrameInputs`] a front fills, and [`render`] itself --
 //! lay out, collect, draw, upload, one pass. The two long halves it calls are
 //! its children, one per direction of the frame. [`items`] is the *read* half:
 //! the per-widget snapshots and the single tree walk that fills them, kept
@@ -70,18 +70,18 @@ pub(crate) fn clear_color(theme: &Theme) -> wgpu::Color {
 
 /// A waveform widget's data and vertical navigation state. Its horizontal
 /// window lives in the widget's timeline group ([`super::timeline`]), not here
-/// — a slot is per window, a group may span windows. The picture is drawn into
+/// -- a slot is per window, a group may span windows. The picture is drawn into
 /// the window's mesh like every other widget's, so nothing here is GPU state.
 pub(crate) struct WaveformSlot {
     pub(crate) view: WaveformView,
-    /// **What this view was drawn over and could not answer** — a zoom finer
+    /// **What this view was drawn over and could not answer** -- a zoom finer
     /// than its summary's bucket, over a span it holds neither samples nor a
     /// finer grid for. [`Owed`] says which of the two would settle it.
     ///
     /// It is set by the draw pass, which is the only place that knows the zoom
     /// *and* the span, and read (and cleared) by the leg after the frame,
     /// which is the only place that can ask the server for it. A `Cell`
-    /// because the draw pass borrows the slots immutably — the front is single
+    /// because the draw pass borrows the slots immutably -- the front is single
     /// threaded, and this is a note left on the way past rather than state.
     pub(crate) owed: std::cell::Cell<Option<Owed>>,
 }
@@ -94,13 +94,13 @@ pub(crate) struct WaveformSlot {
 /// cannot has two ways to get the same row, and which is cheaper depends only
 /// on the zoom:
 ///
-/// - [`Owed::Summary`] — a **finer grid** over the span, at about a bucket a
+/// - [`Owed::Summary`] -- a **finer grid** over the span, at about a bucket a
 ///   column (`/buffer_peaks`, folded by [`WaveformData::set_detail`]). A few
 ///   kilobytes, one reply, and it is what a zoom above the polyline regime
 ///   actually wants: asking for the samples there moves a few hundred kilobytes
 ///   through a 64 KiB carrier to compute a row the server can measure in one
 ///   pass.
-/// - [`Owed::Samples`] — the **samples themselves** (`/buffer_getRange`, folded
+/// - [`Owed::Samples`] -- the **samples themselves** (`/buffer_getRange`, folded
 ///   by [`WaveformData::set_window`]), for the zoom below which no summary is
 ///   worth asking for: past `trace::LINE_THRESHOLD` a column is the line
 ///   between samples and, from where the dots appear, the trace is the samples
@@ -110,7 +110,7 @@ pub(crate) enum Owed {
     /// The run of samples to read back, `[a, b)` in frames.
     Samples { a: usize, b: usize },
     /// The span to summarize, `[a, b)` in frames, and the bucket to measure it
-    /// at — finer than the view's own, and coarse enough that one reply holds
+    /// at -- finer than the view's own, and coarse enough that one reply holds
     /// the whole span.
     Summary { a: usize, b: usize, bucket: usize },
 }
@@ -123,7 +123,7 @@ pub(crate) fn waveform_slot(data: impl Into<Arc<WaveformData>>) -> WaveformSlot 
     }
 }
 
-/// A spectrogram widget's GPU views — one [`SpectrogramView`] (own STFT and
+/// A spectrogram widget's GPU views -- one [`SpectrogramView`] (own STFT and
 /// texture) per channel. Navigation lives in the timeline group.
 pub(crate) struct SpectrogramSlot {
     pub(crate) views: Vec<SpectrogramView>,
@@ -157,8 +157,8 @@ pub(crate) fn spectrogram_slot(
 /// A pyramid is not only a picture: it is the samples the element named, and
 /// [`Samples::sample_block`](crate::host::widget::element::Samples::sample_block)
 /// reads a copy back out of it. Routing it to the slot alone left the element
-/// holding nothing, so a copy over a mapped take — the very source the clipboard
-/// was written for — refused as if the host could not read it. The two share one
+/// holding nothing, so a copy over a mapped take -- the very source the clipboard
+/// was written for -- refused as if the host could not read it. The two share one
 /// `Arc`, so keeping it costs a pointer and never a second pyramid.
 ///
 /// Every other form is the picture alone and the element keeps nothing: an
@@ -177,8 +177,8 @@ pub(crate) fn keep_data(widget: &mut Widget, data: &Loaded) {
 /// Returns the loaded extent in samples, for the navigation group that has to
 /// know how long its longest member is.
 ///
-/// The routing is the *form* the loader brought back and nothing else — a
-/// pyramid fills a geometry slot, analyses fill a texture slot — which is what
+/// The routing is the *form* the loader brought back and nothing else -- a
+/// pyramid fills a geometry slot, analyses fill a texture slot -- which is what
 /// lets one function serve a mapped file, a page's `fetch` and a server
 /// buffer's reply alike. The forms an element takes home never reach here: the
 /// loader forked on `Needs::slot` before calling.
@@ -192,7 +192,7 @@ pub(crate) fn place_in_slot(
 ) -> Option<usize> {
     match data {
         // A pyramid fills the geometry slot whether it summarizes a copy or a
-        // mapping — the slot draws a picture and does not care which.
+        // mapping -- the slot draws a picture and does not care which.
         Loaded::Peaks(data) | Loaded::Shared(data) => {
             let slot = waveform_slot(data);
             let total = slot.view.total_samples();
@@ -219,7 +219,7 @@ pub(crate) fn place_in_slot(
 ///
 /// The upload is **the new columns only**. The texture is allocated once for
 /// the whole span and a landing column costs one texel write, so the cost
-/// follows the *hop* — where rebuilding the transform each tick made it follow
+/// follows the *hop* -- where rebuilding the transform each tick made it follow
 /// the *span*, and a minute of retention cost eight times an eight-second one
 /// to show the same two new columns.
 ///
@@ -291,7 +291,7 @@ pub(crate) fn stft_channels(
 }
 
 /// De-interleaves `channels` channels out of a flat buffer (a trailing partial
-/// frame is ignored) — the front half of [`stft_channels`] for inline sources.
+/// frame is ignored) -- the front half of [`stft_channels`] for inline sources.
 pub(crate) fn deinterleave(samples: &[f32], channels: usize) -> Vec<Vec<f32>> {
     let channels = channels.max(1);
     let frames = samples.len() / channels;
@@ -300,12 +300,12 @@ pub(crate) fn deinterleave(samples: &[f32], channels: usize) -> Vec<Vec<f32>> {
         .collect()
 }
 
-/// How long a filled slot's picture turned out to be, in samples — what the
+/// How long a filled slot's picture turned out to be, in samples -- what the
 /// widget's navigation axis has to know, or the visible window falls back to a
 /// span the size of the body and the whole picture draws stretched.
 ///
 /// The two are set through different doors: a stored extent is fixed and joins
-/// the navigation group as it is, while a **rolling** one slides — the axis
+/// the navigation group as it is, while a **rolling** one slides -- the axis
 /// follows the newest column until someone navigates it and then holds where
 /// they left it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -314,8 +314,8 @@ pub(crate) enum Extent {
     Rolling(usize),
 }
 
-/// **The window's GPU slots are gone** — a fresh device, a re-attached canvas
-/// — so every widget that had filled one hands its content over again on the
+/// **The window's GPU slots are gone** -- a fresh device, a re-attached canvas
+/// -- so every widget that had filled one hands its content over again on the
 /// next [`fill_slots`]. The device is the front's, and this is how the tree is
 /// told that what it gave away did not survive it.
 pub(crate) fn slots_dropped(widget: &mut Widget) {
@@ -333,14 +333,14 @@ pub(crate) fn slots_dropped(widget: &mut Widget) {
 pub(crate) type SlotAt = (i32, super::widget::element::SlotKey);
 
 /// **Uploads whatever the tree has for its GPU slots**, keyed by the id that
-/// addresses each widget: its own, or — for a clip's body, which carries none —
+/// addresses each widget: its own, or -- for a clip's body, which carries none --
 /// its container's. Returns the extents the fills produced, for the caller to
 /// register with the navigation groups once the tree borrow is over.
 ///
 /// This is the filling half of the slot seam, and the whole of it: an element
 /// hands over a pyramid, a set of analyses or the columns its rolling transform
 /// just produced ([`WidgetKind::fills`]), and this walk uploads them. It asks
-/// every widget the same question and learns nothing about any of them — where
+/// every widget the same question and learns nothing about any of them -- where
 /// the two fronts each used to walk the tree twice, once matching on the
 /// presentation to build a slot out of an element's inline samples and once
 /// reaching into a waterfall's transform for the columns of the tick.
@@ -368,7 +368,7 @@ pub(crate) fn fill_slots(
         let extent = match fill {
             // A fill over a slot that is already there **keeps the view**: the
             // picture is the element's and the navigation is the eye's, so a
-            // refill — which is what a destructive edit produces — must not
+            // refill -- which is what a destructive edit produces -- must not
             // snap the amplitude window back to full scale mid-stroke.
             SlotFill::Geometry(data) => {
                 let total;
@@ -415,7 +415,7 @@ pub(crate) fn fill_slots(
 }
 
 /// The body a timeline view draws into: its rect minus the time-ruler strip
-/// under it (when the x ruler is on) and the gutter band to its left — each
+/// under it (when the x ruler is on) and the gutter band to its left -- each
 /// ruler gets its own space instead of overlaying the view.
 /// `indent` is the **group's** gutter, not this view's own `ruler_w`: a
 /// waveform sharing an axis with a lane or a roll starts its trace where they
@@ -456,7 +456,7 @@ pub(crate) fn timeline_body(
     Rect::new(x, y, w, h)
 }
 
-/// What a drag is holding while this frame is drawn — the frame's answer to
+/// What a drag is holding while this frame is drawn -- the frame's answer to
 /// *whose* affordances may light up.
 ///
 /// A grip is a promise about the next press, so during a drag it belongs to the
@@ -474,7 +474,7 @@ pub(crate) enum Grab {
     /// A **marquee** is being swept over the element `id`, and this is the
     /// rectangle: the frame draws it, through the routine every swept selection
     /// in the window is drawn with. It is here rather than in the element
-    /// because the drag is the machine's — one marquee, wherever a hand sweeps
+    /// because the drag is the machine's -- one marquee, wherever a hand sweeps
     /// one.
     Marquee(i32, Rect),
 }
@@ -484,7 +484,7 @@ pub(crate) enum Grab {
 /// streamed equivalents.
 ///
 /// Two kinds of thing, deliberately separated. [`world`](Self::world) is what
-/// nobody owns — the outside, identical for every element of the frame. The
+/// nobody owns -- the outside, identical for every element of the frame. The
 /// fields beside it are **one widget's own interaction state**, fed back down
 /// so that widget can draw itself mid-gesture; each of them is a widget that
 /// cannot yet hold its own state, and each disappears as its leaf moves behind
@@ -504,7 +504,7 @@ pub(crate) struct FrameInputs<'a> {
     pub(crate) grab: Grab,
     /// **This window's status bar**: what it has said and whether it is open
     /// (see [`super::status`]). `None` for a window that has said nothing yet
-    /// — the band is still carved, because a window that carries a bar carries
+    /// -- the band is still carved, because a window that carries a bar carries
     /// it before it has anything to put in it.
     pub(crate) status: Option<&'a status::Status>,
 }
@@ -524,7 +524,7 @@ impl Default for FrameInputs<'_> {
     }
 }
 
-/// The shared state a placed timeline widget draws with — the window, the
+/// The shared state a placed timeline widget draws with -- the window, the
 /// selection and the playhead of its navigation group, which is where all
 /// three live. A widget in no group yet (nothing registered its data) falls
 /// back to its own def-time props over `fallback`, the window it would have
@@ -555,7 +555,7 @@ fn placed_nav(nav: &View, offset: f64) -> View {
 }
 
 /// **The span a view was asked to draw and could not answer**, or `None` when
-/// it could — the fetch this frame is owed.
+/// it could -- the fetch this frame is owed.
 ///
 /// A column finer than the summary's base bucket can only come from samples;
 /// a view holding none for that span draws the bucket, which is the honest
@@ -568,7 +568,7 @@ fn placed_nav(nav: &View, offset: f64) -> View {
 /// fetched because somebody is looking at it, and guessing where they will
 /// look next is a cache policy this deliberately does not have.
 ///
-/// **What the view could not draw, and in what shape** — or `None` when it
+/// **What the view could not draw, and in what shape** -- or `None` when it
 /// answered for everything it showed.
 ///
 /// A column finer than the summary's base bucket can only come from something
@@ -582,7 +582,7 @@ fn placed_nav(nav: &View, offset: f64) -> View {
 /// **Which shape is owed is a question about the zoom alone**, and it is
 /// [`Owed`]'s whole subject: zoomed out the picture is min/max columns, which a
 /// finer *summary* answers in one reply of a few kilobytes; zoomed in far
-/// enough the summary stops being cheaper than the samples it describes — and
+/// enough the summary stops being cheaper than the samples it describes -- and
 /// past that the trace is the polyline through the samples, where only the
 /// samples will do. [`detail_bucket`] draws the line and picks the grid: a
 /// column holds two buckets or more, so the position error of the fold stays
@@ -598,9 +598,9 @@ fn placed_nav(nav: &View, offset: f64) -> View {
 /// never for what is past it** (`written`, the `fills` prop's frontier). Past
 /// it there is nothing to read: the buffer holds the zeros it was allocated
 /// with, and a run or a bucket over them would claim measured silence over
-/// audio that has not arrived. Behind it the samples are **final** — a recorder
+/// audio that has not arrived. Behind it the samples are **final** -- a recorder
 /// writes forward and does not come back, and the frontier is what the writer
-/// says it has already written — so a span that ends there is as readable as
+/// says it has already written -- so a span that ends there is as readable as
 /// any other, and a page zoomed past its summary sees the samples rather than
 /// the bucket the stream reports.
 ///
@@ -626,7 +626,7 @@ fn owed(view: &WaveformView, nav: &View, width: f64, written: Option<u64>) -> Op
     // The frontier is the ceiling, and it is the only thing `fills` does here.
     // No margin under it: the frames the report counts were written before it
     // was measured, so the last of them is as settled as the first. The margin
-    // that would be needed is *above* — which is not a margin but the clamp
+    // that would be needed is *above* -- which is not a margin but the clamp
     // itself, since what the report has not counted yet may not be there.
     let b = written.map_or(b, |w| b.min(w as usize));
     if b <= a || data.covers(a, b) {
@@ -648,7 +648,7 @@ const DETAIL_REPLY_BUCKETS: usize = 4096;
 /// answer.
 ///
 /// Two rules meet here. The picture wants **two buckets a column or more**, so
-/// the fold's position error stays under half a pixel — one bucket a column
+/// the fold's position error stays under half a pixel -- one bucket a column
 /// would put it at a whole one, which is the resolution the coarse summary
 /// already has and the reason this is being asked for at all. And the span has
 /// to fit **one reply**: a detail grid is replaced rather than extended (one
@@ -683,7 +683,7 @@ fn detail_bucket(per_px: f64, span: usize, base: usize) -> Option<usize> {
 /// three samples: at four it carries three quarters of what it describes, which
 /// is no saving at all for a second grid to keep, and at sixteen it carries a
 /// fifth. Below that the samples are both nearly as cheap and **exact**, and
-/// they answer every deeper zoom as well — a grid answers only down to its own
+/// they answer every deeper zoom as well -- a grid answers only down to its own
 /// bucket.
 ///
 /// With a column holding two buckets or more, this puts the crossing at about
@@ -698,7 +698,7 @@ fn sample_to_x(s: f64, nav: &View, body: Rect) -> f32 {
 
 /// **The ink a placed widget draws with**: the opacity its subtree resolved to
 /// ([`Widget::alpha`]) and its declared corner radius in the pixels of the
-/// space it was placed in — the wire's number through the placement's own
+/// space it was placed in -- the wire's number through the placement's own
 /// table, exactly like every other declared length, so a widget inside a zoomed
 /// workspace rounds by as much as it grew.
 ///
@@ -715,11 +715,11 @@ pub(crate) fn ink_of(p: &layout::Placed) -> Ink {
 }
 
 /// The row channel `ch` of `channels` occupies inside `body` (stacked top to
-/// bottom, no gap — the divider line is overlay chrome).
+/// bottom, no gap -- the divider line is overlay chrome).
 ///
 /// The **third** row a view stacks, beside a roll's semitone and a
 /// multitrack's lane, and the same structure: a band of the vertical axis. So
-/// it is a [`Bands`] like the other two, on its uniform arm — a channel stack
+/// it is a [`Bands`] like the other two, on its uniform arm -- a channel stack
 /// divides its body evenly because every channel is worth the same picture.
 ///
 /// Same structure, **different word**: `lane` is the arrangement's, a track's
@@ -849,7 +849,7 @@ pub(crate) fn render(
         }
     }
     // The spectral clip bodies: the same texture, uploaded against the clip's
-    // own axis instead of the group's window — which is the whole difference
+    // own axis instead of the group's window -- which is the whole difference
     // between a spectral *view* of a file and a spectral *clip* of it.
     for item in &collected.spectral_bodies {
         if let Some(slot) = spectrograms.get_mut(&(item.id, item.key)) {
@@ -891,7 +891,7 @@ pub(crate) fn render(
     let frame = match gpu.surface.get_current_texture() {
         wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
         _ => {
-            // No drawable this turn (outdated/timed-out surface — e.g. the
+            // No drawable this turn (outdated/timed-out surface -- e.g. the
             // compositor stopped consuming a covered window's frames):
             // reconfigure and ask for another redraw, so the frame that was
             // requested is not silently dropped and the window never shows
@@ -1003,19 +1003,19 @@ pub(crate) fn render(
     gpu.queue.submit(std::iter::once(encoder.finish()));
     // The winit present contract: lets winit attach the compositor frame
     // callback to this commit, so later `request_redraw`s are delivered (and
-    // throttled) correctly — without it, Wayland redraw delivery can stall on
+    // throttled) correctly -- without it, Wayland redraw delivery can stall on
     // an unfocused or covered window until the compositor repaints it anyway.
     gpu.window.pre_present_notify();
     frame.present();
 }
 
 /// Applies a placed widget's clip as the pass scissor (the full framebuffer
-/// when it has none), returning `false` when the clip is empty — the caller
+/// when it has none), returning `false` when the clip is empty -- the caller
 /// skips the draw entirely. The heavy views draw through `set_viewport`, which
 /// *positions and scales* but does not cut; a scrolled view poking out of its
 /// `scroll` container is cut by this scissor, the GPU sibling of the mesh's
 /// geometric clip. What the scissor cannot reach is the **window** edge, since
-/// a viewport may not leave the attachment at all — that is [`Framing`]'s
+/// a viewport may not leave the attachment at all -- that is [`Framing`]'s
 /// half of the same job.
 fn apply_scissor(
     pass: &mut wgpu::RenderPass<'_>,
@@ -1043,8 +1043,8 @@ fn apply_scissor(
 ///
 /// It is the **intersection**, not a clamp of the origin: a rect starting above
 /// the window keeps its far edge where it is instead of sliding down with its
-/// origin. What the viewport still cannot do is cut — it scales whatever the
-/// view draws into whatever rectangle it is given — so a view that is only
+/// origin. What the viewport still cannot do is cut -- it scales whatever the
+/// view draws into whatever rectangle it is given -- so a view that is only
 /// partly visible also gets a [`Framing`] built from this pair, and places its
 /// geometry for the full rect inside it.
 pub(crate) fn clamp_viewport(r: Rect, fb_w: u32, fb_h: u32) -> (f32, f32, f32, f32) {
@@ -1165,7 +1165,7 @@ mod tests {
     /// The two paint props reach the frame through one door, and each in its
     /// own units: the opacity is already resolved (it composed down the tree at
     /// the mutation point), while the radius is a **logical** length that the
-    /// placement's own table turns into pixels — so a widget seen at a HiDPI
+    /// placement's own table turns into pixels -- so a widget seen at a HiDPI
     /// scale rounds by as much as it grew, and one that asked for neither draws
     /// exactly what it always drew.
     #[test]
@@ -1245,7 +1245,7 @@ mod tests {
         );
 
         // Sharing an axis with a lane, the same view starts its trace where the
-        // lane starts its clips — the indent is the axis', not the widget's.
+        // lane starts its clips -- the indent is the axis', not the widget's.
         let shared = timeline_body(
             rect,
             &editor(Ruler::Off, RulerY::Norm),
@@ -1262,7 +1262,7 @@ mod tests {
     fn only_a_zoom_past_the_summary_over_uncovered_samples_asks_for_a_span() {
         use crate::waveform::WaveformData;
         // Long enough that the whole of it, over 800 px, is coarser than a
-        // bucket — which is what "zoomed out" means for this question.
+        // bucket -- which is what "zoomed out" means for this question.
         let (bucket, frames) = (256usize, 256 * 4_000);
         let told = WaveformView::new(WaveformData::with_multi_pyramid(
             clausters_core::peaks::MultiPyramid::empty(frames, 1, bucket),

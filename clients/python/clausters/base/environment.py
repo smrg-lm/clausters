@@ -1,11 +1,11 @@
 """The environment: an isolated place to make sound.
 
-An `Environment` is the unit of isolation — a `server`, its clock(s), and its
+An `Environment` is the unit of isolation -- a `server`, its clock(s), and its
 own random context. **Both the default session (`clausters.base.main.Main`) and
 an explicit `clausters.Session` are Environments**: the default session is
 simply the one used when none is named, and a named session is the same kind of
-thing with its own state. That is what lets several coexist — a live take next
-to an offline render, each reproducible on its own seed — without touching each
+thing with its own state. That is what lets several coexist -- a live take next
+to an offline render, each reproducible on its own seed -- without touching each
 other.
 
 This base carries only what every environment shares: the seedable random
@@ -46,7 +46,7 @@ class RandomContext:
     @property
     def rng(self):
         """The context value stream (`clausters._native.Rng`, the shared
-        core generator — reproducible across client languages). Created lazily,
+        core generator -- reproducible across client languages). Created lazily,
         seeded from entropy unless `seed` was called."""
         if self._rng is None:
             self.seed(self._seed)
@@ -58,7 +58,7 @@ class Environment(RandomContext):
     `clausters.Session`, clock(s) and a driving surface).
 
     The shared base of the default session and an explicit session, so the two
-    are the *same kind of thing* — an isolated environment. Resolution
+    are the *same kind of thing* -- an isolated environment. Resolution
     (`clausters.base.main.Main.resolve_server`) duck-types on this: it reads the
     ambient environment's ``server`` whether that is the default session or a
     named one.

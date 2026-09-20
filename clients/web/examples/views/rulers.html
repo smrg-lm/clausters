@@ -25,19 +25,19 @@ the same GUI.
 
 Every axis of the two heavy views is a ruler with selectable units, each drawn
 in its <b>own strip</b> beside the view, each optional per axis, and each
-retunable at runtime through <code>set</code> — which is what the menus in this
+retunable at runtime through <code>set</code> -- which is what the menus in this
 window do. The <b>time axis</b> reads <code>time</code>, <code>samples</code> or
 <code>beats</code> (musical time on the client's grid: <code>tempo</code>,
 <code>beatAt</code>, <code>quant</code>); the waveform's <b>amplitude axis</b>
 reads <code>norm</code>, <code>db</code>, <code>bits</code> or
 <code>percent</code>; the spectrogram's <b>frequency axis</b> follows
-<code>freqScale</code> — <code>log</code>, <code>linear</code>,
+<code>freqScale</code> -- <code>log</code>, <code>linear</code>,
 <code>mel</code> or <code>bark</code>.
 
 Every axis also <b>navigates vertically</b>: the wheel over a y-ruler strip
 zooms that axis around the cursor, dragging pans it, <b>R</b> resets. The
 visible window is the <code>yStart</code>/<code>yLen</code> pair, reported back
-as <code>view_y</code>, and the tick layout is adaptive — it measures its own
+as <code>view_y</code>, and the tick layout is adaptive -- it measures its own
 labels, so zooming keeps revealing finer, non-colliding rungs.</div>
 
       <button id="run">open the views</button>
@@ -123,7 +123,7 @@ labels, so zooming keeps revealing finer, non-colliding rungs.</div>
         const session = await Session.embed();
         await session.gui();
         const win = await scene(phrase).open($("stage"));
-        log(`opened window ${win.id} — click the menus to cycle each axis' unit`);
+        log(`opened window ${win.id} -- click the menus to cycle each axis' unit`);
 
         win.widget("time").onEvent((index) => {
           const unit = TIME_UNITS[Number(index)];

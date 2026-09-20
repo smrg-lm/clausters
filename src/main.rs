@@ -43,7 +43,7 @@ usage:
       --max-ugen-inputs <n>    accepted inputs per UGen (default 32, the max)
       --udp [addr:]port    move the UDP front alone, off the base port. UDP is
                            always on: it is the door a client boots against
-      --tcp [[addr:]port]  length-prefixed OSC over TCP — on by default at the
+      --tcp [[addr:]port]  length-prefixed OSC over TCP -- on by default at the
                            base port; the flag only moves it (RT only)
       --no-tcp             disable the TCP transport (UDP-only server)
       --max-frame <bytes>  largest OSC frame on the stream transports (TCP and
@@ -82,7 +82,7 @@ usage:
                            of the human summary (for a client driving --nrt)
       --workers <n>        DSP threads for /group_parallel groups (default 0)
       --shm <path>         shared-memory segment for local clients (RT only;
-                           put it on /dev/shm — see docs/ipc.md). One that
+                           put it on /dev/shm -- see docs/ipc.md). One that
                            already exists is attached to, never truncated: the
                            first server on a segment owns its command plane and
                            its buffers, a later one plays what the owner
@@ -170,7 +170,7 @@ fn power_of_two(flag: &str, value: &str) -> Result<usize, String> {
 }
 
 /// Reads a carrier flag's optional `[addr:]port` argument: the next token,
-/// unless the line has run out or the next token is another flag — a bare
+/// unless the line has run out or the next token is another flag -- a bare
 /// `--tcp` follows the base port on the default interface. A token that is
 /// there and is not a bind is an error rather than a bare flag followed by a
 /// stray argument, which is how a typo used to read.
@@ -309,13 +309,13 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut no_persist = cfg.persist == Some(false);
     let mut prune_defs = false;
     // The base OSC port, which UDP binds and the other transports follow. Every
-    // transport's port is settled in two steps — the config and the flags record
+    // transport's port is settled in two steps -- the config and the flags record
     // *what was asked for* (follow the base, sit at a number, stay off) and the
     // base is only known once the whole line is read, since `--tcp` may come
     // before `--port` on it.
     let mut base_port: u16 = cfg.port.unwrap_or(DEFAULT_PORT);
     // `--udp [addr:]port`: the UDP front alone, off the base. There is no way
-    // to turn it off — it is the door `/server_status` answers on, so a client
+    // to turn it off -- it is the door `/server_status` answers on, so a client
     // can find this server at all.
     let mut cli_udp: Option<PortChoice> = None;
     // What the command line asks of each stream front, if it asks anything;
@@ -360,7 +360,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         client_name: cfg.client_name.clone(),
     };
     let mut list_devices = false;
-    // `--pin`: CPU affinity list — first CPU for the audio callback thread,
+    // `--pin`: CPU affinity list -- first CPU for the audio callback thread,
     // the rest round-robin over the DSP workers. Experimental, Linux only,
     // and only in `rtprio` builds (see `server::rt`).
     #[cfg(feature = "rtprio")]
@@ -572,13 +572,13 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 
     // Every flag is in: settle the binds against the base the line ended with.
     // Each carrier answers where it listens, interface included, and an unnamed
-    // interface is loopback in all three — asking for a transport is not asking
+    // interface is loopback in all three -- asking for a transport is not asking
     // for the network.
     let udp_bind = PortChoice::pick(cli_udp, None, PortChoice::Follow(None))?
         .resolve(base_port)
         .expect("--udp never turns the front off");
     // TCP is on by default (the command plane for large payloads); the config's
-    // `tcp = false` — or `--no-tcp` — turns it off. WebSocket is opt-in.
+    // `tcp = false` -- or `--no-tcp` -- turns it off. WebSocket is opt-in.
     let tcp_bind = PortChoice::pick(cli_tcp, cfg.tcp, PortChoice::Follow(None))
         .map_err(|e| format!("[server].tcp: {e}"))?
         .resolve(base_port);
@@ -648,7 +648,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // guard *before* the stream exists so a sustained overload degrades the
     // audio (demotion to SCHED_OTHER) instead of killing the server, and
     // hand the callback thread its --pin CPU (it pins itself on its first
-    // callback — the thread is spawned deep inside cpal).
+    // callback -- the thread is spawned deep inside cpal).
     #[cfg(feature = "rtprio")]
     {
         clausters::server::rt::install_sigxcpu_guard();
@@ -716,7 +716,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         // **Two roles, and the claim decides which one this server has.** The
         // rings are SPSC and there is one pair, so the first server on a
         // segment serves the command plane and owns the buffers; a second one
-        // — the RT server in the editor's arrangement — attaches to the data
+        // -- the RT server in the editor's arrangement -- attaches to the data
         // plane, maps what the owner published, and serves its own clients
         // over its sockets.
         if segment.claim_control() {
@@ -733,7 +733,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             let found = osc.attach_samples_at(std::path::PathBuf::from(path));
             tracing::info!(
                 "attached to the shared segment at {path} (ABI v{abi}); pid {} owns it, {found} \
-                 buffer(s) mapped — commands over the sockets, /buffer_attach for later ones",
+                 buffer(s) mapped -- commands over the sockets, /buffer_attach for later ones",
                 segment.control_owner().unwrap_or(0),
             );
         }
@@ -763,7 +763,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
     println!(
-        "clausters — silent until /synth_new | {} Hz, {} out / {} in ch | {} DSP worker(s) | OSC on {} | /server_quit or Ctrl-C to stop",
+        "clausters -- silent until /synth_new | {} Hz, {} out / {} in ch | {} DSP worker(s) | OSC on {} | /server_quit or Ctrl-C to stop",
         backend.sample_rate,
         backend.channels,
         backend.input_channels,
@@ -776,7 +776,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("received /server_quit, shutting down");
     // Give the command plane back, so the next server on this segment adopts
     // it rather than taking it over from a pid that is gone. An unclean exit
-    // is covered too — a claim nothing answers to is stale — but a clean one
+    // is covered too -- a claim nothing answers to is stale -- but a clean one
     // should not need that path.
     if let Some(segment) = &shared {
         segment.release_control();

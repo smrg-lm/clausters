@@ -1,26 +1,26 @@
-"""Rendering — the *change of state* from the arrangement to sound.
+"""Rendering -- the *change of state* from the arrangement to sound.
 
 A concrete `Aggregate` is rendered by **flattening** it: a tree-walk that
 accumulates the nested placement offsets into absolute beats, producing a flat
 `clausters.seq.Timeline` of items that each know how to `play(destination)`. That
-timeline then plays itself — RT (timetagged bundles) or NRT (a score for
+timeline then plays itself -- RT (timetagged bundles) or NRT (a score for
 `Session.render`) purely by which destination it holds and how its clock is
 driven, sample-identical, with no scheduling path of its own: the arrangement
 reuses the sequencing layer rather than duplicating it.
 
 **The two units meet here.** An onset is in beats and a length is in the unit
-of its own data — a take's is seconds, a phrase of events' is beats — and a
+of its own data -- a take's is seconds, a phrase of events' is beats -- and a
 timeline is a list ordered by *one* number, so it cannot hold both. `flatten`
 takes the clock's ``tempo`` and converts as it lays each item down; the tree
 itself keeps every leaf in the unit that leaf is in.
 
 Scope of this phase (the concrete path):
 
-- `Aggregate{concrete}` — flattened recursively; each member's ``offset`` (and
+- `Aggregate{concrete}` -- flattened recursively; each member's ``offset`` (and
   any nested aggregate's) accumulates into the child's absolute beat.
-- `Track` — its `Timeline`'s items are shifted by the placement beat.
-- `Clang` — placed as a single item at its beat.
-- `Sequence`/`Generator` wrapping an **event pattern** (a `Pbind`) — *bounced*
+- `Track` -- its `Timeline`'s items are shifted by the placement beat.
+- `Clang` -- placed as a single item at its beat.
+- `Sequence`/`Generator` wrapping an **event pattern** (a `Pbind`) -- *bounced*
   in the same pass (its change of state); a `Sequence` of elements is laid out
   successively by their durations.
 - An **abstract** element (no onset/duration, no content) contributes context,
@@ -31,13 +31,13 @@ carries `clausters.form.element.Element.mute`, `solo` and `level`, all three
 inherited down the tree: a muted branch contributes nothing, one soloed element
 anywhere silences every branch that is not on a soloed path, and a level
 multiplies into the ``amp`` of the events below it. They travel in the
-document, so an aggregate reopens mixed the way it was left — unlike a lane's
+document, so an aggregate reopens mixed the way it was left -- unlike a lane's
 *height*, which says nothing about what the aggregate is and is carried by no
 document.
 
 A `Vector` is *data*: it sounds through the **instrument** that plays it (a def
 whose ``buf`` control takes the buffer number), so a `Vector` with an
-``instrument`` emits one event playing it — the audio clip — and one without
+``instrument`` emits one event playing it -- the audio clip -- and one without
 contributes structure only. A `Segments` is the same rule over several windows:
 one event per segment, at its own offset inside the element, so what sounds
 assembled from aggregates of different buffers sounds continuous on one instrument. An `Aggregate{logical}` takes the other path entirely (it
@@ -60,7 +60,7 @@ def flatten(element, base: float = 0.0, *, tempo: float = 1.0, tempo_map=None,
     The aggregate's tempo is where the tree's two units meet. An onset is in beats
     and a length is in the unit of its own data
     (`clausters.form.element.Element.duration_unit`: a take's is seconds), and a
-    timeline is ordered by **one** number — so the conversion belongs to the
+    timeline is ordered by **one** number -- so the conversion belongs to the
     flattening and never to the structure. At the default tempo of one beat a
     second the two coincide, which is what a script that never set a tempo has
     always been running under.
@@ -70,7 +70,7 @@ def flatten(element, base: float = 0.0, *, tempo: float = 1.0, tempo_map=None,
     lands where it actually ends rather than where a single tempo would put it;
     ``tempo`` alone is that tempo as one segment.
 
-    ``mixed`` is whether the tree's mixing is in force — mute, solo and
+    ``mixed`` is whether the tree's mixing is in force -- mute, solo and
     level, all inherited down the tree. It is on for what sounds and off for
     what is **drawn**: a muted lane keeps its clips, its notes and its length,
     and a picture that emptied when the toggle was pressed would be reporting
@@ -85,7 +85,7 @@ def flatten(element, base: float = 0.0, *, tempo: float = 1.0, tempo_map=None,
 def to_timeline(element, base: float = 0.0, *, tempo: float = 1.0, tempo_map=None,
                 mixed: bool = True):
     """Flatten ``element`` into a flat `clausters.seq.Timeline` in absolute
-    beats — the structure that plays itself and a transport seeks. ``tempo``
+    beats -- the structure that plays itself and a transport seeks. ``tempo``
     is the clock's, in beats per second, and ``tempo_map`` its map when the
     tempo changes along the aggregate (see `flatten`)."""
     from ..seq.timeline import Timeline
@@ -102,7 +102,7 @@ def render(element, destination, clock=None, *, at: float = 0.0, quant=None,
     """Render ``element`` onto ``destination``.
 
     A **concrete** element (an `Aggregate`, `Track`, `Clang`, …) is flattened to
-    a `clausters.seq.Timeline` and played — RT (a live destination) or NRT (a
+    a `clausters.seq.Timeline` and played -- RT (a live destination) or NRT (a
     score, drained by `Session.render`), sample-identical; returns the
     timeline, which is what the transport verbs are on.
 
@@ -134,7 +134,7 @@ def render(element, destination, clock=None, *, at: float = 0.0, quant=None,
 
 def render_logical(aggregate, server, *, ports=None):
     """Send a logical aggregate's `GraphDef` (`Aggregate.to_graphdef`) and
-    instance it on ``server``. Returns the instance group — a node-tree group,
+    instance it on ``server``. Returns the instance group -- a node-tree group,
     the handle from `clausters.defs.Group.graph`."""
     gdef = aggregate.to_graphdef()
     gdef.send(server)
@@ -193,7 +193,7 @@ class _Mix:
     def applied(self, item):
         """``item`` as it sounds under this mix, or ``None`` when it does not.
 
-        The gain is written onto the event's ``amp`` — a **copy**, since the
+        The gain is written onto the event's ``amp`` -- a **copy**, since the
         element's own event is shared and a mix must not rewrite it (the same
         rule `_sized` follows). Anything that is not an event carries no gain
         and passes through: an automation curve is a control signal, and
@@ -237,12 +237,12 @@ def _heard(out: list, beat: float, item, mix: _Mix):
 def _emit(element, base: float, out: list, dur=None, *, tempo_map, mix: _Mix):
     """Flatten ``element`` at ``base``, honouring the **placement length** its
     aggregate gave it: a placement ``dur`` *trims* what the element plays (the DAW
-    rule — a clip's length is what you hear of it), so events past the placement's
+    rule -- a clip's length is what you hear of it), so events past the placement's
     end are dropped and a single-event element sounds for exactly that long. A
     placement with no length lets the element be its own.
 
-    The placement's length is in the placed element's own unit — a clip of audio
-    is trimmed in seconds — so it crosses to beats here, once, against the
+    The placement's length is in the placed element's own unit -- a clip of audio
+    is trimmed in seconds -- so it crosses to beats here, once, against the
     element it was written for."""
     if mix.silences(element):
         # A muted branch contributes nothing -- not its own events and not its
@@ -264,7 +264,7 @@ def _emit(element, base: float, out: list, dur=None, *, tempo_map, mix: _Mix):
 
 
 def _sized(item, dur: float):
-    """An event resized to the placement's remaining length — a *copy*, since the
+    """An event resized to the placement's remaining length -- a *copy*, since the
     element's own event is shared and must not be rewritten by a placement.
     Anything that is not an event (an automation, a raw OSC item) is untouched."""
     from ..seq.event import Event as SeqEvent
@@ -307,7 +307,7 @@ def _emit_element(element, base: float, out: list, tempo_map, mix: _Mix):
                 _heard(out, base + offset, event, mix)
     elif isinstance(element, Vector):
         # A buffer is data; the instrument is what makes it sound (a def whose
-        # `buf` control plays it). Without one it is structure only — it draws in
+        # `buf` control plays it). Without one it is structure only -- it draws in
         # the editor and contributes its extent, but emits no event.
         if element.instrument is not None:
             _heard(out, base, element.to_event(tempo_map, base), mix)
@@ -355,7 +355,7 @@ def _reaches(element, tempo_map) -> float:
 
 def _emit_sequence(wrapped, base: float, out: list, tempo_map, mix: _Mix):
     """A List/Function backed by an event pattern is bounced; a list of elements
-    is laid out successively — each by its own duration, or by what it lays
+    is laid out successively -- each by its own duration, or by what it lays
     down when it states none."""
     from ..seq.pattern import Pattern
     from ..seq.timeline import Timeline
@@ -363,8 +363,8 @@ def _emit_sequence(wrapped, base: float, out: list, tempo_map, mix: _Mix):
     if wrapped is None or isinstance(wrapped, str):
         # A **frozen** generator: the document named an algorithm and nothing in
         # this process supplied one, so what came back is the reference itself
-        # (or nothing at all). It is structure — it draws, it contributes its
-        # extent — and it emits no event, exactly as a buffer with no instrument
+        # (or nothing at all). It is structure -- it draws, it contributes its
+        # extent -- and it emits no event, exactly as a buffer with no instrument
         # does. Raising here instead would make a reopened session unplayable
         # because one lane in it was written by a script that is not running.
         return

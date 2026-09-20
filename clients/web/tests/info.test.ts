@@ -1,4 +1,4 @@
-// The resource records, parsed from wire arguments — no server, no carrier.
+// The resource records, parsed from wire arguments -- no server, no carrier.
 //
 // The same reply bytes the Python client's `test_parse_query_tree` walks, so
 // the two clients are asserted to read one wire the same way, down to the
@@ -48,7 +48,7 @@ test("a queried tree carries a full node record per entry", () => {
     assert.deepEqual([...tree.walk()].map((i) => i.id), [0, 1000, 1001]);
     assert.equal(tree.find(1001)!.info, synth);
 
-    // The object is the data; its string draws it — the split the Python
+    // The object is the data; its string draws it -- the split the Python
     // client spells `repr` vs `str`.
     assert.ok(tree instanceof Tree);
     assert.equal(group.info.name, "voices");

@@ -22,7 +22,7 @@
   <body>
     <main>
       <div id="note">The web port of the Python client's
-<code>views/layers.py</code>: <b>the layer stack — every picture a signal view
+<code>views/layers.py</code>: <b>the layer stack -- every picture a signal view
 can draw, on one body</b>.
 
 A view of a signal draws several things on one body, and <code>layers</code> is
@@ -36,16 +36,16 @@ The panel on the right is the stack itself, a row per layer: a <b>checkbox</b>
 (is it drawn), a <b>fader</b> (its own weight over what is under it) and
 <b>top</b> (move it to the front).
 
-<b>The order is yours, and it is live</b> — <code>top</code> re-states the list
+<b>The order is yours, and it is live</b> -- <code>top</code> re-states the list
 with that layer last, and the picture re-composites between two frames.
 <b>The vertical belongs to one layer, and here it is the top one</b>: a
 spectrogram measures hertz and a wave measures amplitude, so whichever layer is
-on top takes <code>y: "axis"</code> and the rest take <code>y: "box"</code> —
+on top takes <code>y: "axis"</code> and the rest take <code>y: "box"</code> --
 raise the wave over the texture and the left ruler goes from hertz to
 amplitude. That the <i>top</i> layer rules is this example's policy, not the
 host's: the host asks only that exactly one layer claim the axis, and refuses a
 stack where two claim it for different quantities. <b>Alpha is per layer</b>,
-and <b>a hidden layer keeps its place</b> — uncheck one and check it again.
+and <b>a hidden layer keeps its place</b> -- uncheck one and check it again.
 
 The two loudness curves never take the ruler: a loudness is read in LU against
 its own target, so that layer draws its own scale on the right of the body

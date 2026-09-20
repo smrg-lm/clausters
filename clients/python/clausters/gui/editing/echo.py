@@ -1,7 +1,7 @@
 """The acknowledgement protocol: what a view is told about the edit it made.
 
 A host draws what the hand did and then waits to be told what actually
-happened — the edit as applied, snapped, or refused — and every editor owes it
+happened -- the edit as applied, snapped, or refused -- and every editor owes it
 the same three things: the **version** the data is at, the
 **corrections** its own gesture did not survive intact, and the **reason** when
 one is owed. That triple is the whole of this module, and it knows nothing
@@ -10,7 +10,7 @@ about what was edited: a stamp, a floor and a list of props.
 **The rules are the shared crate's** (`clausters._native.conversation_read`,
 `clausters._native.conversation_answer`): what makes an edit stale, what moves
 the floor, and whether an answer is an ack, a push or nothing at all. What is
-here is the half a language owns — holding the two integers between messages
+here is the half a language owns -- holding the two integers between messages
 and putting the answer on this client's socket.
 
 It is separate because it is the one part of an editor with no data behind it.
@@ -28,7 +28,7 @@ class Echo:
 
     Args:
         host: the `clausters.gui.host.GuiHost` to answer, or ``None`` for an
-            editor with no window — which answers by doing nothing, since there
+            editor with no window -- which answers by doing nothing, since there
             is nobody to tell.
         version: a zero-argument callable answering the data's current
             version. A callable rather than a number because the version
@@ -57,7 +57,7 @@ class Echo:
 
     @property
     def version(self) -> int:
-        """The version an acknowledgement carries — the context's, read now."""
+        """The version an acknowledgement carries -- the context's, read now."""
         return int(self._version())
 
     def announce(self):

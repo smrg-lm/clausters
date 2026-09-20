@@ -25,8 +25,8 @@
 server audio buses.
 
 A <code>phasescope</code> reads a <b>stereo pair</b> and draws the 45°-rotated
-Lissajous figure — mono reads as a vertical line, anti-phase as horizontal, a
-wide field fills the lozenge — with a running correlation read-out beneath. A
+Lissajous figure -- mono reads as a vertical line, anti-phase as horizontal, a
+wide field fills the lozenge -- with a running correlation read-out beneath. A
 <code>spectrum</code> reads one bus and draws one forward FFT per frame on a log
 frequency axis; it is <b>navigable</b>, which over a spectrum means its
 <i>frequency</i> axis. And a <b>waterfall</b> is the spectrogram presentation
@@ -121,11 +121,11 @@ the left inverted (anti-phase, r&nbsp;=&nbsp;−1).</div>
           }),
         ).open($("stage"));
         // The sweep below runs on a timer of the page's own, so it is the
-        // window's closing that ends it — the same thing the script's
+        // window's closing that ends it -- the same thing the script's
         // `on_closed` says.
         win.onClosed(() => clearInterval(sweeping));
 
-        // The frequency window, reported as it is navigated — named in hertz,
+        // The frequency window, reported as it is navigated -- named in hertz,
         // since the normalized pair is a display coordinate and the reader is
         // looking at a frequency axis.
         win.widget("spectrum").onEvent(async (tag, ...vals) => {
@@ -172,14 +172,14 @@ the left inverted (anti-phase, r&nbsp;=&nbsp;−1).</div>
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
 
       // Points the spectrum's frequency window at a slice of its axis, in
-      // normalized display units (0, 1 = all of it) — the same window the
+      // normalized display units (0, 1 = all of it) -- the same window the
       // pointer moves, set the way any other prop is set.
       $("focus").onclick = () => {
         win.widget("spectrum").set({ viewStart: 0.0, viewLen: 0.35 });
         log("  spectrum window -> 0.00 +0.35");
       };
 
-      // Resizes the retained span live — the axis's own policy. Narrowing it
+      // Resizes the retained span live -- the axis's own policy. Narrowing it
       // drops the oldest history at once, so the waterfall's time axis visibly
       // shortens under the picture.
       $("retain").onclick = () => {

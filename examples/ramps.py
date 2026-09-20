@@ -2,7 +2,7 @@
 """Ramps, and the three ways a synth ends.
 
 A voice has to stop. `env_gen` can free the node itself, but that is not always
-where the decision belongs — sometimes the thing that ends the note is a ramp
+where the decision belongs -- sometimes the thing that ends the note is a ramp
 that is *not* the amplitude envelope, and sometimes it is an ordinary signal.
 This example plays the three answers one after the other.
 
@@ -37,7 +37,7 @@ SR = 48000.0
 # a linear ramp would spend most of its time near the bottom.
 #
 # The interesting part is who ends the note. The amplitude envelope here has
-# `DoneAction.NONE` — it is not in charge. `free_self_when_done` watches the
+# `DoneAction.NONE` -- it is not in charge. `free_self_when_done` watches the
 # *pitch* ramp and frees the synth when that finishes. What it reads is the
 # ramp's **done flag**, not its value: the ramp ends at 110 Hz, and no test on
 # the number 110 would tell you it had arrived rather than passed through.
@@ -51,13 +51,13 @@ def zap() -> SynthDef:
 
 # ---- 2. a ramp at control rate ------------------------------------------------
 #
-# `line` at `rate="kr"` produces one value per block instead of one per sample —
+# `line` at `rate="kr"` produces one value per block instead of one per sample --
 # a sixty-fourth of the work. It still takes exactly as long in seconds and
 # still says its duration in seconds; choosing `kr` changes a ugen's cost, not
 # its meaning. A filter cutoff sliding over a second is precisely the case for
 # it: nothing audible happens between two blocks.
 #
-# This one *does* free itself, the ordinary way — the ramp carries a
+# This one *does* free itself, the ordinary way -- the ramp carries a
 # `done_action` because `line` is an `env_gen` with its header filled in, so it
 # takes the whole set.
 
@@ -70,7 +70,7 @@ def sweep() -> SynthDef:
 
 # ---- 3. an ordinary signal ends it --------------------------------------------
 #
-# `free_self` takes no envelope and no flag — just a signal, and it frees the
+# `free_self` takes no envelope and no flag -- just a signal, and it frees the
 # node while that signal is above zero, passing it through meanwhile. Here a
 # slow ramp crosses a threshold, which is a stand-in for anything a graph can
 # compute: a level detector, a counter, a comparison against a control.
@@ -109,11 +109,11 @@ def render(path=None):
     rms = max(stats.rms, default=0.0)
     print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f} rms {rms:.4f}")
     if peak == 0.0:
-        sys.exit("the render is silent — something is wrong")
+        sys.exit("the render is silent -- something is wrong")
     if peak > 1.5:
         sys.exit(f"the render clips hard (peak {peak:.2f})")
 
-        print(f"wrote {path} — listen with: pw-play {path}")
+        print(f"wrote {path} -- listen with: pw-play {path}")
 
 
 if __name__ == "__main__":

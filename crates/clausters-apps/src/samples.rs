@@ -1,8 +1,8 @@
 //! **The samples editor**: the window a take opens in.
 //!
 //! One widget, the take's picture: a `waveform` over the server buffer on its
-//! own time axis, measured as a stack — what the signal reached (`peak`) with
-//! what it held inside that (`rms`) — and edited with the catalogue's
+//! own time axis, measured as a stack -- what the signal reached (`peak`) with
+//! what it held inside that (`rms`) -- and edited with the catalogue's
 //! three-gesture plan (a drag selects, Alt draws, Ctrl grabs one sample). The
 //! picture is the catalogue's (`clausters_document::view::catalogue`); what is
 //! the application's is the window it stands in, the measures it stacks, the
@@ -12,7 +12,7 @@
 //!
 //! Every view of a signal paints its own field before it draws, so two of them
 //! on one rectangle are not layers: the second hides the first. Measuring twice
-//! into one body is also what keeps the rest of it one thing — one axis, one
+//! into one body is also what keeps the rest of it one thing -- one axis, one
 //! ruler, one selection, one playhead, one upload of the samples.
 //!
 //! # The ids are the caller's
@@ -109,8 +109,8 @@ pub fn window(w: &Window<'_>) -> Value {
 
 /// **What a widget of this window is corrected with**: read the take again.
 ///
-/// The picture is the server's buffer. A stroke needs nothing from here — the
-/// host wrote those cells itself and its picture moved with them — but a write
+/// The picture is the server's buffer. A stroke needs nothing from here -- the
+/// host wrote those cells itself and its picture moved with them -- but a write
 /// made from the other side (an undo, a script) is one the host never saw, so
 /// the window would keep drawing the stroke until some other reason made it
 /// resolve the source again. `reload` makes the element forget what it resolved

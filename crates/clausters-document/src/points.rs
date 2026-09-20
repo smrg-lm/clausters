@@ -3,7 +3,7 @@
 //! This is the crate's **second** editable domain, and it is here for the
 //! reason a trait with one implementor is designed wrong: it is what proves
 //! that [`history`](crate::history) carries no arrangement in it. Its whole
-//! vocabulary is one verb — *the points are now these* — and it names no node,
+//! vocabulary is one verb -- *the points are now these* -- and it names no node,
 //! because it has none.
 //!
 //! It is also the smallest instance of the shape the history exists to serve
@@ -16,7 +16,7 @@
 //!
 //! A point is a position, a value, and whatever the client says about it. There
 //! is no interpolation shape *the crate reads*, no unit, no envelope semantics
-//! — those belong to whoever renders the curve, and putting a guess at them
+//! -- those belong to whoever renders the curve, and putting a guess at them
 //! here would be deciding, on a seam's behalf, a question the client has not
 //! asked yet. The one thing a domain must supply is how an edit inverts, and
 //! *the points were these* inverts without knowing any of it.
@@ -37,14 +37,14 @@ pub const POINTS: &str = "points";
 /// One break point: where it sits, what it says there, and whatever the client
 /// says about it.
 ///
-/// `at` is in whatever the curve is drawn against — beats for an automation
-/// lane, seconds for an envelope — and the crate does not ask which, for the
+/// `at` is in whatever the curve is drawn against -- beats for an automation
+/// lane, seconds for an envelope -- and the crate does not ask which, for the
 /// same reason it does not interpret a leaf's configuration.
 ///
 /// `data` is the same door [`Event`](crate::Event) has, and it is here for a
 /// reason found by using this domain: a client's curve is not only positions
-/// and values. The **segment between** two points has a shape — a curvature, an
-/// exponential, a step — and it belongs to the point that starts it. Deciding
+/// and values. The **segment between** two points has a shape -- a curvature, an
+/// exponential, a step -- and it belongs to the point that starts it. Deciding
 /// what those shapes are is exactly what this module refuses to do; carrying
 /// them is not the same act, and without it a curve edited through this
 /// vocabulary came back straight, which is losing the client's data rather than
@@ -55,7 +55,7 @@ pub struct Point {
     pub at: f64,
     /// What the curve says there.
     pub value: f64,
-    /// What the client says about it — the shape of the segment it starts, and
+    /// What the client says about it -- the shape of the segment it starts, and
     /// anything else. Carried and never read.
     #[serde(default, skip_serializing_if = "Opaque::is_empty")]
     pub data: Opaque,
@@ -66,7 +66,7 @@ pub struct Point {
 #[serde(transparent)]
 pub struct Points(pub Vec<Point>);
 
-/// An edit to a curve. One verb, stating the result — the same absolute rule
+/// An edit to a curve. One verb, stating the result -- the same absolute rule
 /// the tree's vocabulary follows, and for the same reason: an edit that
 /// states a value is idempotent, and its inverse is the edit stating the
 /// previous one.
@@ -86,7 +86,7 @@ impl Points {
         Self(points)
     }
 
-    /// The edit stating what this curve holds now — its own inverse, read
+    /// The edit stating what this curve holds now -- its own inverse, read
     /// before another one lands.
     pub fn state(&self) -> PointsIntent {
         PointsIntent::SetPoints {

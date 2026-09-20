@@ -5,17 +5,17 @@ The UGen-graph counterpart of `examples/json_client.py`'s Faust defs: instead
 of formatting the `SynthDefSpec` JSON by hand, compose it with the lowercase
 callables in `clausters.defs.ugens` and let `SynthDef` serialize the graph.
 
-The build is **instance-based** — the graph is just the tree of composed
-objects, with no thread-global "current SynthDef" the way sclang has — so
+The build is **instance-based** -- the graph is just the tree of composed
+objects, with no thread-global "current SynthDef" the way sclang has -- so
 several defs can be built side by side. The four arithmetic operators map to
 the server's dedicated `Add`/`Sub`/`Mul`/`Div` UGens; everything beyond them
 (`%`, `min`/`max`, the comparisons, `.midicps()`, `.distort()` …) composes its
-generic `BinaryOpUGen`/`UnaryOpUGen` — see
+generic `BinaryOpUGen`/`UnaryOpUGen` -- see
 `clients/python/examples/basics/graph_maths.py`.
 
 To prove the graph emits exactly what the server expects, this renders a
-`Pbind` twice — once on the server's built-in `default` def, once on a
-client-defined graph equivalent to it — and checks the two renders are
+`Pbind` twice -- once on the server's built-in `default` def, once on a
+client-defined graph equivalent to it -- and checks the two renders are
 **byte-identical**. Build the embed library once:
 
     cargo build --release --features embed,realtime
@@ -51,7 +51,7 @@ SR = 48000.0
 
 
 def py_default(name="py_default") -> SynthDef:
-    """`Sine(freq) * EnvGen(gate) * amp` to buses 0 and 1 — the client-side twin
+    """`Sine(freq) * EnvGen(gate) * amp` to buses 0 and 1 -- the client-side twin
     of the server's built-in `default`. `freq`/`amp`/`gate` are named controls
     (the `/synth_new`/`/node_set` parameters a `Pbind` drives).
 
@@ -79,7 +79,7 @@ def render_pbind(instrument: str, sdef: SynthDef | None):
         sdef.send(server)      # scored at t=0 in NRT
     clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
     # `has_gate` releases each note with `gate 0` instead of freeing the node
-    # outright, which is what the player does for `default` on its own — the
+    # outright, which is what the player does for `default` on its own -- the
     # twin needs it stated so both renders end their notes the same way.
     Pbind(instrument=instrument, has_gate=True,
           freq=Pseq(FREQS), dur=0.5, amp=0.2).play(clock, server)
@@ -114,7 +114,7 @@ def main():
             w.writeframes(b"".join(
                 struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767)) for s in custom
             ))
-        print(f"wrote {path} — listen with: pw-play {path}")
+        print(f"wrote {path} -- listen with: pw-play {path}")
 
 
 if __name__ == "__main__":

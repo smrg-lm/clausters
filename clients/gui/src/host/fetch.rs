@@ -7,9 +7,9 @@
 //! The finished download keeps **every channel** (interleaved, with the
 //! channel count and sample rate from `/buffer_query.reply`): the waiting front looks up
 //! each widget and builds a multichannel waveform or a per-channel STFT from
-//! it. The protocol conversation is transport- and platform-independent —
+//! it. The protocol conversation is transport- and platform-independent --
 //! only *sending* the returned messages and *placing* the finished samples
-//! differ per front — so the whole machine lives here, pure and unit-testable
+//! differ per front -- so the whole machine lives here, pure and unit-testable
 //! without a GPU or a socket. One chunk is in flight at a time; reassembly is
 //! by the reply's explicit `start` offset.
 
@@ -25,7 +25,7 @@ use clausters_core::osc::{OscMessage, OscType};
 /// **lossy under pressure by design**: a server whose reply ring is full drops
 /// the reply rather than blocking (`osc::server`, "reply ring full"). So the
 /// chunk is not a throughput knob, it is what decides how many replies can be
-/// in the air at once without any of them being thrown away — four of these
+/// in the air at once without any of them being thrown away -- four of these
 /// fit, where the old 32 kB chunk let two lanes fill the ring between them and
 /// every other lane's answer went missing.
 ///
@@ -47,7 +47,7 @@ pub(crate) const BUFFER_CHUNK: usize = 4096;
 const MAX_IN_FLIGHT: usize = 3;
 
 /// The most samples a view will pull **whole** rather than draw from a summary
-/// — about five seconds of stereo at 48 kHz, two megabytes on the wire. See
+/// -- about five seconds of stereo at 48 kHz, two megabytes on the wire. See
 /// [`BufferFetches::whole`] for why the line is drawn by size at all.
 ///
 /// The number is a count of **round trips** as much as of bytes: a whole
@@ -58,14 +58,14 @@ const WHOLE_DOWNLOAD_SAMPLES: usize = 1 << 19;
 
 /// How many frames a conversation may go **without landing anything** before
 /// it is treated as lost and asked for again. [`BufferFetches::tick`] runs once
-/// per draw, so this is about half a second at sixty frames — long enough that
+/// per draw, so this is about half a second at sixty frames -- long enough that
 /// a working conversation is never restarted between two of its replies, short
 /// enough that a dropped one is a hesitation rather than the seconds it used
 /// to be.
 const STALLED_ASKS: usize = 30;
 
 /// **How many times a buffer the server says does not exist is asked for
-/// again** before the want is let go of — about twenty seconds at thirty
+/// again** before the want is let go of -- about twenty seconds at thirty
 /// frames, with [`STALLED_ASKS`] between two asks.
 ///
 /// Absence is usually *not yet*: a client names a buffer in the same turn it
@@ -83,7 +83,7 @@ pub(crate) struct WaveWant {
     pub def_id: i32,
     pub widget_id: i32,
     /// Whether this widget asked for the buffer's **shape** rather than its
-    /// samples — a take being recorded into, whose picture is filled by the
+    /// samples -- a take being recorded into, whose picture is filled by the
     /// overview the server streams and whose samples are silence until then.
     pub shape_only: bool,
 }
@@ -93,14 +93,14 @@ pub(crate) struct WaveWant {
 struct BufferFetch {
     channels: usize,
     sample_rate: f64,
-    /// Where in the buffer this download starts, as a **flat** index — `0` for
+    /// Where in the buffer this download starts, as a **flat** index -- `0` for
     /// a whole buffer, and the span's own origin for a window.
     origin: usize,
     /// How many samples are being downloaded from `origin` (flat).
     total: usize,
     samples: Vec<f32>,
     received: usize,
-    /// How many frames this download has gone with **no progress** — the clock
+    /// How many frames this download has gone with **no progress** -- the clock
     /// is [`BufferFetches::tick`], and every reply that lands anything resets
     /// it.
     stalled: usize,
@@ -154,7 +154,7 @@ pub(crate) enum FetchStep {
         samples: Vec<f32>,
     },
     /// **A span another peer wrote** arrived: put it into every view of that
-    /// buffer — samples and the summary over them — and redraw.
+    /// buffer -- samples and the summary over them -- and redraw.
     ///
     /// Unlike [`FetchStep::Window`] this carries no want: the samples are the
     /// buffer's, so whoever draws it takes them.
@@ -168,7 +168,7 @@ pub(crate) enum FetchStep {
     /// length and place it, with no samples fetched.
     ///
     /// `ask_summary` says where the summary that fills it comes from. A take
-    /// being *written* is `false` — nothing can be asked for what is not there
+    /// being *written* is `false` -- nothing can be asked for what is not there
     /// yet, and the server pushes it (`/buffer_stream`) as it appears. A take
     /// that stands still is `true`: the front asks for it (`/buffer_peaks`),
     /// which is the same blob folded the same way.
@@ -208,7 +208,7 @@ pub(crate) struct BufferFetches {
     absent: HashMap<i32, (usize, usize)>,
     /// The summary walks under way, by buffer number.
     peaks: HashMap<i32, PeaksWalk>,
-    /// **The finer grids asked for**, one per view — `(def_id, widget_id)`,
+    /// **The finer grids asked for**, one per view -- `(def_id, widget_id)`,
     /// because two views of one take are at two zooms over two spans and each
     /// gets its own answer.
     details: HashMap<(i32, i32), DetailAsk>,
@@ -216,7 +216,7 @@ pub(crate) struct BufferFetches {
 
 /// **A whole download that has not started yet**: the shape `/buffer_query.reply`
 /// already answered, kept so the download needs no second query when a slot
-/// frees. What it is *not* is a refusal — every widget waiting on this buffer
+/// frees. What it is *not* is a refusal -- every widget waiting on this buffer
 /// is still registered and is served the moment it arrives.
 struct Waiting {
     channels: usize,
@@ -229,8 +229,8 @@ struct Waiting {
 ///
 /// It is a single request rather than a walk: the bucket is chosen so the whole
 /// span fits one reply, because a detail grid is replaced rather than extended.
-/// What it shares with a walk is the reason it is here — a carrier that is
-/// allowed to lose a reply — so it is re-asked when nothing comes back.
+/// What it shares with a walk is the reason it is here -- a carrier that is
+/// allowed to lose a reply -- so it is re-asked when nothing comes back.
 struct DetailAsk {
     bufnum: i32,
     start: usize,
@@ -244,7 +244,7 @@ struct DetailAsk {
 /// has been since anything came back.
 ///
 /// It lives here rather than in a front because it needs what the downloads
-/// need — a reply that never arrives must not stop it. A summary is asked for
+/// need -- a reply that never arrives must not stop it. A summary is asked for
 /// once and answered in multitracks; a multitrack lost on a carrier that is allowed to
 /// lose one would otherwise leave a hole in the picture for the rest of the
 /// session, with nothing to notice it.
@@ -261,12 +261,12 @@ struct PeaksWalk {
 impl BufferFetches {
     /// Registers a widget waiting on `bufnum`. Returns the `/buffer_query` to send
     /// the first time a buffer is wanted (`None` when a query or download for
-    /// it is already under way — the widget just joins the wait).
+    /// it is already under way -- the widget just joins the wait).
     pub(crate) fn want(&mut self, def_id: i32, widget_id: i32, bufnum: i32) -> Option<OscMessage> {
         self.register(def_id, widget_id, bufnum, false)
     }
 
-    /// Registers a widget waiting on `bufnum`'s **shape** — a take being
+    /// Registers a widget waiting on `bufnum`'s **shape** -- a take being
     /// recorded into. The conversation is the same `/buffer_query`; what
     /// changes is that the reply finishes it, with no samples pulled.
     ///
@@ -309,7 +309,7 @@ impl BufferFetches {
     ///
     /// Both fronts ask, for the same reason under two names: the native loop
     /// schedules a wake-up, and the browser canvas asks for another animation
-    /// frame — either way, a conversation under way is what keeps the front
+    /// frame -- either way, a conversation under way is what keeps the front
     /// looking.
     pub(crate) fn pending(&self) -> bool {
         !self.wants.is_empty()
@@ -337,7 +337,7 @@ impl BufferFetches {
             return self.finish(bufnum, Vec::new(), channels, sample_rate);
         }
         // **Which of the two routes this take arrives by**, decided here
-        // because this is where the shape is first known — see [`Self::whole`].
+        // because this is where the shape is first known -- see [`Self::whole`].
         let being_written = self
             .wants
             .get(&bufnum)
@@ -356,7 +356,7 @@ impl BufferFetches {
         // screen.** Our own traffic is what fills the reply ring, and a reply
         // that does not fit is dropped rather than delayed, so a multitrack with six
         // clips used to start six conversations and keep whichever three the
-        // ring happened to hold — the rest drawing an empty box for the rest of
+        // ring happened to hold -- the rest drawing an empty box for the rest of
         // the session. The shape is kept and the download starts when a slot
         // frees ([`Self::tick`]), which is the same bound a span already keeps.
         if self.fetches.len() >= MAX_IN_FLIGHT {
@@ -381,8 +381,8 @@ impl BufferFetches {
     /// one at the door: an unallocated answer became a buffer of no frames, the
     /// waiting view was handed an empty take in place of whatever it drew, and
     /// the take was never asked for again. A join a client mints is exactly
-    /// that — its box names the buffer in the turn the stitch is sent, and the
-    /// stitch lands on the NRT thread after the query is answered — so the
+    /// that -- its box names the buffer in the turn the stitch is sent, and the
+    /// stitch lands on the NRT thread after the query is answered -- so the
     /// joined box drew nothing, for good.
     pub(crate) fn on_absent(&mut self, bufnum: i32) {
         if !self.wants.contains_key(&bufnum) || self.fetches.contains_key(&bufnum) {
@@ -428,13 +428,13 @@ impl BufferFetches {
     /// the run under the eye read back as the eye moves.
     ///
     /// What was wrong was not the fork but the **criterion**: it used to be
-    /// `fills` — *is this being recorded?* — so two views of one finished take,
+    /// `fills` -- *is this being recorded?* -- so two views of one finished take,
     /// one opened while it recorded and one after, took different routes and
     /// behaved differently under the same hand. The question is a cost, so the
     /// answer is the size, and `fills` is back to meaning the one thing it
     /// says: these samples are being written, so they are not there to fetch.
     ///
-    /// The threshold is about five seconds of stereo at 48 kHz — a buffer a
+    /// The threshold is about five seconds of stereo at 48 kHz -- a buffer a
     /// player, a wavetable or a short take fits in, against the samples of a
     /// session, which do not.
     fn whole(total: usize) -> bool {
@@ -445,7 +445,7 @@ impl BufferFetches {
     /// request the next chunk or finish when the whole buffer has arrived.
     ///
     /// **The samples come back as a little-endian `f32` blob**, not as float
-    /// arguments — the reply's own length is what actually came back, so no
+    /// arguments -- the reply's own length is what actually came back, so no
     /// declared count can disagree with it. A range that carries nothing (an
     /// unallocated buffer, or a read past a buffer shorter than
     /// `/buffer_query.reply` said) ends the download with what has arrived
@@ -469,8 +469,8 @@ impl BufferFetches {
                 let start = (*start).max(0) as usize;
                 // The reply's `start` is the buffer's own flat index; a window
                 // stores it where the window begins. A range that falls outside
-                // this fetch's span belongs to **another conversation** — an
-                // abandoned one whose reply arrived late — and is not this
+                // this fetch's span belongs to **another conversation** -- an
+                // abandoned one whose reply arrived late -- and is not this
                 // fetch's to read or to be ended by.
                 let Some(at) = start.checked_sub(fetch.origin) else {
                     continue;
@@ -488,8 +488,8 @@ impl BufferFetches {
                 next = next.max(start + n);
             }
             // **A reply that was not ours changes nothing.** It used to end the
-            // download — "a range that carries nothing ends it with what has
-            // arrived" — which is right for a server that declined a read and
+            // download -- "a range that carries nothing ends it with what has
+            // arrived" -- which is right for a server that declined a read and
             // wrong for a straggler from a fetch that was restarted: the new
             // one would finish on the spot, and what it had not received yet is
             // zeros nobody measured.
@@ -506,7 +506,7 @@ impl BufferFetches {
             let mut fetch = self.fetches.remove(&bufnum).unwrap();
             // **A span is handed over as far as it actually arrived.** The
             // buffer was sized for the whole request and filled from its
-            // origin, so what is past `received` is zeros nothing measured —
+            // origin, so what is past `received` is zeros nothing measured --
             // and a view told it holds them draws silence over a stretch it
             // simply has not read. Truncated, the run answers where it
             // reaches and the summary answers everywhere else, which is what
@@ -741,8 +741,8 @@ impl BufferFetches {
     /// came back is asked for again, and what was owed a slot takes one.
     /// Called once a frame, beside the spans the drawing could not resolve.
     ///
-    /// The carrier is allowed to lose a reply — a full ring drops one rather
-    /// than blocking the server — so *nothing* here may assume that a request
+    /// The carrier is allowed to lose a reply -- a full ring drops one rather
+    /// than blocking the server -- so *nothing* here may assume that a request
     /// sent is a reply owed. Three conversations answer to this one clock:
     ///
     /// - a **download** that has landed nothing for [`STALLED_ASKS`] frames
@@ -758,8 +758,8 @@ impl BufferFetches {
     pub(crate) fn tick(&mut self) -> Vec<OscMessage> {
         let mut again = Vec::new();
         // **A conversation that has stopped answering.** A reply can be lost
-        // with nothing said — the shared ring drops what does not fit in it,
-        // and a page's is 64 KiB — and the fetch it belonged to would otherwise
+        // with nothing said -- the shared ring drops what does not fit in it,
+        // and a page's is 64 KiB -- and the fetch it belonged to would otherwise
         // hold this buffer for the rest of the session: the view frozen at its
         // summary, or empty, and no error anywhere. A download that is
         // *working* lands something on every reply, so no progress across this
@@ -905,7 +905,7 @@ impl BufferFetches {
 
 /// **Widens a span to whole summary buckets.** A run that ends inside a bucket
 /// can only patch that bucket from part of it, which would report a peak the
-/// samples do not have — so the request is widened rather than the answer
+/// samples do not have -- so the request is widened rather than the answer
 /// guessed at, and the widening is at most two buckets.
 pub(crate) fn align_span(start: usize, frames: usize, bucket: usize) -> (usize, usize) {
     if bucket <= 1 || frames == 0 {
@@ -917,7 +917,7 @@ pub(crate) fn align_span(start: usize, frames: usize, bucket: usize) -> (usize, 
 }
 
 /// **The `/buffer_peaks` that asks for a take's overview** from `first_frame`
-/// on, at the bucket the asking summary is built at — so what comes back folds
+/// on, at the bucket the asking summary is built at -- so what comes back folds
 /// into it with nothing converted.
 ///
 /// `frames` is left at "to the end": the server answers as much as one reply
@@ -934,7 +934,7 @@ pub(crate) fn peaks_request(bufnum: i32, bucket: usize, first_frame: usize) -> O
     }
 }
 
-/// **The `/buffer_peaks` that asks for a finer grid over one span** — the same
+/// **The `/buffer_peaks` that asks for a finer grid over one span** -- the same
 /// command the walk uses, with the span named rather than run to the end,
 /// because what is wanted is exactly what is on screen.
 fn detail_request(bufnum: i32, bucket: usize, start: usize, frames: usize) -> OscMessage {
@@ -1035,7 +1035,7 @@ mod tests {
 
     /// A range that comes back empty ends the download. The server clamps a
     /// read to what the buffer holds, so a buffer that shrank between the
-    /// query and the read answers with nothing — and re-asking for the same
+    /// query and the read answers with nothing -- and re-asking for the same
     /// chunk would spin forever against a server that is already right.
     /// **A span is read like a buffer and lands as a window**: the chunks walk
     /// the run and nothing outside it, and what comes back is addressed to the
@@ -1057,7 +1057,7 @@ mod tests {
             ]
         );
 
-        // A second view's span is not asked for while this one is in flight —
+        // A second view's span is not asked for while this one is in flight --
         // one download per buffer is the bound.
         assert!(f.want_span(3, 0, 100, channels, window(1, 8)).is_none());
 
@@ -1318,8 +1318,8 @@ mod tests {
     }
 
     /// **A conversation that stopped answering does not hold its buffer for
-    /// the session.** A reply can be lost with nothing said — the shared ring
-    /// drops what does not fit — and the picture would sit at its summary, or
+    /// the session.** A reply can be lost with nothing said -- the shared ring
+    /// drops what does not fit -- and the picture would sit at its summary, or
     /// empty, forever. The two halves answer to one clock and part ways on what
     /// they do with the silence: a whole take asks again, because nobody else
     /// will; a span is let go of, because the view asks again every time it
@@ -1484,7 +1484,7 @@ mod tests {
     }
 
     /// **A summary arrives in multitracks and the walk survives losing one.** The
-    /// carrier may drop a reply — a full ring drops rather than blocks — so a
+    /// carrier may drop a reply -- a full ring drops rather than blocks -- so a
     /// walk that hears nothing asks again instead of leaving a hole in the
     /// picture that nothing would ever notice.
     #[test]

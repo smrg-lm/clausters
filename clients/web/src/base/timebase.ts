@@ -3,21 +3,21 @@
 //
 // Two halves, both about *time*:
 //
-// - the **conversions** — beats to seconds, seconds to samples, the bar grid,
+// - the **conversions** -- beats to seconds, seconds to samples, the bar grid,
 //   the NTP timetag. Every one of them is `clausters-core`'s own function
 //   reached through the wasm door, so a beat resolves to the same second here,
 //   in the Python client and in the server. Nothing in this package computes a
 //   time by hand.
-// - the **timebases** — what a running `TempoClock` reads to decide how long
+// - the **timebases** -- what a running `TempoClock` reads to decide how long
 //   to sleep, and what a `Server` reads to decide how to stamp what it emits.
 //
 // A `TempoClock`'s logical beat advances only by the routines' yields; the
 // timebase never moves it. It only paces, and anchors the emission:
 //
-// - `MonotonicTimebase` (the default) — `performance.now()`. Events go out as
+// - `MonotonicTimebase` (the default) -- `performance.now()`. Events go out as
 //   NTP-timetagged bundles; the drift between the page's clock and the
 //   server's is small but real.
-// - `SampleClockTimebase` — seconds derived from the server's **sample counter**
+// - `SampleClockTimebase` -- seconds derived from the server's **sample counter**
 //   (`sample() / sampleRate`). The client paces against the server's own
 //   clock and the `Server` emits `/sched_at <absolute sample>` instead of a
 //   wall-clock timetag, so there is no inter-clock drift and the timing is
@@ -41,7 +41,7 @@ import {
 
 // The core's **affine** pair (`beats_to_secs`/`secs_to_beats`) is deliberately
 // not wrapped here. It takes the anchor triple `(tempo, baseBeats, baseSecs)`,
-// which is a clock's own internal state and not something a caller holds — and
+// which is a clock's own internal state and not something a caller holds -- and
 // under a changing tempo the affine form is the wrong answer, since the same
 // stretch of seconds reaches a different beat depending on where it starts.
 // A clock's owner wants `TempoClock.beats2secs`/`secs2beats` and a document's
@@ -114,7 +114,7 @@ export class MonotonicTimebase implements Timebase {
 /**
  * Seconds from a server's sample counter: `sample() / sampleRate`.
  *
- * `sample` is any callable returning the current counter — the page engine's
+ * `sample` is any callable returning the current counter -- the page engine's
  * audio clock, or a `/clock_query`-anchored model against a remote server. It must
  * be **synchronous**: the clock reads it on every scheduling turn.
  */
@@ -150,8 +150,8 @@ export class SampleClockTimebase implements Timebase {
  * The system clock of a non-real-time run: seconds that advance only when
  * whatever is due next is woken.
  *
- * Offline there is no physical time to wait on, so this stands in for it — a
- * clock at tempo 1 — and **every** `TempoClock` of the run shares it: each has
+ * Offline there is no physical time to wait on, so this stands in for it -- a
+ * clock at tempo 1 -- and **every** `TempoClock` of the run shares it: each has
  * its origin on these seconds, exactly as a live clock has its origin on the
  * monotonic clock, so a script runs the same live and offline. What a script
  * sets up before rendering happens at second 0; what a routine starts at

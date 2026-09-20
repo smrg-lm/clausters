@@ -8,12 +8,12 @@ small control synth reads that buffer onto a control bus which the targets
 follow via ``/node_map``. The stored curve is an `Env` (the same object the ``bpf``
 editor round-trips through `env_to_points`/`points_to_env`).
 
-Two phases keep the clock thread unblocked — a routine must **never** block:
+Two phases keep the clock thread unblocked -- a routine must **never** block:
 
 - `Automation.prepare` allocates and fills the buffer and allocates the bus.
   Blocking is fine here (it runs at setup, off the clock thread); in NRT it
   scores the ``/buffer_alloc``/``/buffer_gen`` at time 0.
-- `Automation.play` — the Timeline-item hook — only *schedules* the lane synth,
+- `Automation.play` -- the Timeline-item hook -- only *schedules* the lane synth,
   the ``/node_map``\\ s and the ``/node_free`` (all non-blocking). In NRT, where every
   command is scored in order, `play` self-prepares.
 """
@@ -72,7 +72,7 @@ def _norm_targets(target):
 
 def _env_gen_args(env):
     """The flat ``/buffer_gen "env"`` argument list: ``level0`` then a
-    ``(level, time, shape, curve)`` quad per segment (times relative — only
+    ``(level, time, shape, curve)`` quad per segment (times relative -- only
     their proportions matter, playback maps them onto real time)."""
     args = [float(env.levels[0])]
     for k in range(len(env.times)):
@@ -96,7 +96,7 @@ class Automation:
         timeline.add(0, auto)         # and the timeline plays it like any item
     """
 
-    #: The unit this object's length is in — **seconds**, because the curve is
+    #: The unit this object's length is in -- **seconds**, because the curve is
     #: an `clausters.defs.ugens.Env` and an envelope's segment times are real
     #: time. Read by `clausters.form.element.Element.duration_unit`, so an
     #: element wrapping a curve is measured the way the curve is.
@@ -123,9 +123,9 @@ class Automation:
         """Build from a ``bpf`` breakpoint list ``[(time, value, shape, curve), …]``
         (or the flat ``[t, v, shape, curve, …]`` a ``"points"`` event carries).
 
-        Times are in **seconds** — they are an `clausters.defs.ugens.Env`'s
+        Times are in **seconds** -- they are an `clausters.defs.ugens.Env`'s
         segment times, which is what the curve is stored as and what the
-        envelope math on the server reads — and values are in the target
+        envelope math on the server reads -- and values are in the target
         control's real units. The conversion to the clock's beats happens where
         the lane is scheduled (`play`), not in the curve."""
         flat = points if points and not isinstance(points[0], (list, tuple)) else [
@@ -161,12 +161,12 @@ class Automation:
         `prepare` fills it once, at setup; an edit to `env` afterwards changes
         what the next render *schedules* and not what the lane synth *reads*, so
         without this the curve you draw is not the curve you hear. Anything that
-        rewrites the envelope of a prepared automation calls it — the multitrack
+        rewrites the envelope of a prepared automation calls it -- the multitrack
         editor does, on every break-point edit.
 
         Not blocking by default: it is called from a UI loop, and the fill is
         one command the server applies in the order it arrived, ahead of the
-        synth that reads it. Does nothing before `prepare` — there is no buffer
+        synth that reads it. Does nothing before `prepare` -- there is no buffer
         to fill, and the first `prepare` will fill it from the same envelope."""
         if self.buf is None or self._server is None:
             return self
@@ -229,8 +229,8 @@ class Automation:
     def free(self, server=None):
         """Return the buffer and bus to their allocators.
 
-        ``server`` defaults to the one `prepare` allocated them on — what this
-        object allocated, it can give back unaided — so this reads like every
+        ``server`` defaults to the one `prepare` allocated them on -- what this
+        object allocated, it can give back unaided -- so this reads like every
         other `free` in the client and a handle from `clausters.play` frees the
         same way whatever it turned out to be."""
         server = server if server is not None else self._server

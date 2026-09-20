@@ -1,10 +1,10 @@
 // `GuiHost` against a **native** GUI host: a real `clausters-gui --ws`
-// (headless), one node process, the whole client surface over `WsConnection` —
+// (headless), one node process, the whole client surface over `WsConnection` --
 // the browser's path into a desktop host, the same seam the audio-server test
 // drives (`server.test.ts`). The in-page half of the acceptance, where the
 // gestures and the bound path live, is `tests/gui.html`.
 //
-// Needs the host binary built (`cargo build` in clients/gui — its own
+// Needs the host binary built (`cargo build` in clients/gui -- its own
 // workspace); skips (does not fail) when it is missing, so `npm test` stays
 // runnable from a source tree without that build.
 
@@ -90,7 +90,7 @@ test("GuiHost: a built panel defines, queries and frees on a native host", {
         assert.ok(freq.id >= BASE_ID, `widget id ${freq.id} is below the base`);
         assert.equal(tree.children?.[1]?.children?.[0]?.id, undefined);
 
-        // The host holds what was sent — a `/gui_query` round trip.
+        // The host holds what was sent -- a `/gui_query` round trip.
         const info = await freq.query();
         assert.equal(info.type, "knob");
         assert.equal(info.props.label, "freq");
@@ -106,7 +106,7 @@ test("GuiHost: a built panel defines, queries and frees on a native host", {
         assert.equal(moved.props.label, "pitch");
 
         // Binding and unbinding a widget leaves it addressable (the value
-        // path itself needs a gesture — that is `tests/gui.html`).
+        // path itself needs a gesture -- that is `tests/gui.html`).
         freq.bind("/node_set", 1000, "freq");
         freq.unbind();
         assert.equal((await freq.query()).type, "knob");

@@ -37,7 +37,7 @@ from clausters.defs import SynthDef, control, out, sine
 from clausters.defs import Synth
 
 #: Where a run leaves its file when no path is given: ``examples/out/``, the
-#: git-ignored directory every generator in this tree writes to — beside the
+#: git-ignored directory every generator in this tree writes to -- beside the
 #: examples rather than in whatever directory you ran from. Made here so that
 #: rendering is one call and not two.
 OUT = pathlib.Path(__file__).resolve().parents[1] / "out"

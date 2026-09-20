@@ -22,7 +22,7 @@
       <div id="note">The web port of the Python client's
 <code>sync.py</code>, call for call: <b>two independent clients phase-aligned on
 one server's shared transport, and a timeline that obeys the conductor</b>. What
-the page adds is the <i>hand</i> — the script runs the same sequence start to
+the page adds is the <i>hand</i> -- the script runs the same sequence start to
 finish, and here each step is a button, so a late join can be pressed late.
 
 The server keeps one <b>transport</b>: a beat grid <code>(originSample,
@@ -32,9 +32,9 @@ a rolling state. Any client can <i>join</i> that grid with
 <code>session.joinTransport()</code>), and from then on a <code>quant</code>-ed
 start snaps to the <b>shared</b> bar line rather than to "four beats after I
 happened to start". That is the whole trick: the two clients below are as
-independent as two browser tabs — their own <code>Server</code> handle, their
+independent as two browser tabs -- their own <code>Server</code> handle, their
 own <code>TempoClock</code>, their own slice of the id space, started seconds
-apart — and they agree on nothing except three numbers each read once. The
+apart -- and they agree on nothing except three numbers each read once. The
 conductor <code>boot</code>s the server they share; they only
 <code>attach</code> to it.
 
@@ -46,7 +46,7 @@ it: the conductor rolls, freezes and seeks every follower at once. The server
 owns the time and plays no notes of its own.
 
 <b>What to listen for:</b> press "join late" while the first client is already
-waiting — the two notes still land as one attack on the next bar, and however
+waiting -- the two notes still land as one attack on the next bar, and however
 late you press it the offset never accumulates.
 
 Needs <code>./build.sh</code> in <code>clients/web</code> first

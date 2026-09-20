@@ -1,4 +1,4 @@
-//! M18: GraphDef — a persistent node-graph "program" instantiated as a wired
+//! M18: GraphDef -- a persistent node-graph "program" instantiated as a wired
 //! group with private buses and a named parameter surface. Translator-level:
 //! a GraphDef expands into existing primitives (group + member synths +
 //! `/node_map`), so we assert on the mirrored node tree and the resolved surface.
@@ -562,8 +562,8 @@ fn midi_bind_to_a_graphdef_plays_voices() {
     assert!(t.graph_instances.is_empty());
 }
 
-/// M30: `/def_query` reports a GraphDef's **ports** — the named surface, which
-/// is what a level-1 patch wires — each with its default and the inner targets
+/// M30: `/def_query` reports a GraphDef's **ports** -- the named surface, which
+/// is what a level-1 patch wires -- each with its default and the inner targets
 /// it drives, scaling included. Built at the translator, where the def tables
 /// live; the server handler is a thin dispatch over this.
 #[test]

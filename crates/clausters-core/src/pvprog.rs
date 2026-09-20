@@ -1,18 +1,18 @@
 //! Bin-expression programs: the general per-frame spectral mechanism.
 //!
 //! A [`PvProgram`] is a small postfix program evaluated once per bin on each
-//! fresh spectral frame — the `PV_Kernel` UGen's payload. Its opcodes are the
+//! fresh spectral frame -- the `PV_Kernel` UGen's payload. Its opcodes are the
 //! shared [`builtins`](crate::builtins) operator tables plus a handful of
 //! per-bin loads (`mag`, `phase`, `bin`, `nbins`, `binfreq`, `p0`…), so a
 //! client authors bin expressions with the *same* operator vocabulary it
 //! already uses for value math and UGen graphs, and the server evaluates them
-//! with the same scalar `apply_*` functions — pure `f32`, bit-identical
+//! with the same scalar `apply_*` functions -- pure `f32`, bit-identical
 //! between RT and NRT.
 //!
 //! The lifecycle mirrors the RT rules: [`compile`] validates a program on the
 //! network thread (opcode validity, stack discipline, parameter arity, length
 //! cap) and precomputes the exact stack depth, so [`PvProgram::eval`] runs on
-//! the audio thread as a fixed loop over a caller-provided stack — no
+//! the audio thread as a fixed loop over a caller-provided stack -- no
 //! allocation, no recursion, no invalid program ever reaching it.
 //!
 //! Programs are a **per-bin map**: one `(mag, phase, bin, params…)` in, one
@@ -43,7 +43,7 @@ pub enum PvOp {
     Nbins,
     /// Push the bin's center frequency in Hz (`bin * samplerate / winsize`).
     Binfreq,
-    /// Push parameter `i` — the UGen's signal input `i + 1`, sampled at the
+    /// Push parameter `i` -- the UGen's signal input `i + 1`, sampled at the
     /// hop.
     Param(u8),
     /// Apply a unary operator from the shared table to the top of stack.
@@ -86,7 +86,7 @@ pub struct PvProgram {
     ops: Vec<PvOp>,
     /// Maximum stack depth the program reaches (the caller's stack size).
     stack_depth: usize,
-    /// Whether the program reads [`PvOp::Phase`] — lets the evaluator's caller
+    /// Whether the program reads [`PvOp::Phase`] -- lets the evaluator's caller
     /// skip the `atan2` when no program needs the polar phase.
     uses_phase: bool,
 }
@@ -105,7 +105,7 @@ pub struct BinCtx<'a> {
 }
 
 impl PvProgram {
-    /// The single-opcode identity program (`[Mag]` / `[Phase]`) — what an
+    /// The single-opcode identity program (`[Mag]` / `[Phase]`) -- what an
     /// omitted expression means.
     pub fn identity(op: PvOp) -> Self {
         Self {
@@ -311,7 +311,7 @@ mod tests {
     #[test]
     fn stack_depth_is_the_high_water_mark() {
         // (mag + p0) * (phase + p1) as postfix `mag p0 add phase p1 add mul`
-        // runs depths 1,2,1,2,3,2,1 — the high-water mark is 3.
+        // runs depths 1,2,1,2,3,2,1 -- the high-water mark is 3.
         let prog = compile(
             vec![
                 PvOp::Mag,

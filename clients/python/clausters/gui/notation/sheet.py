@@ -1,13 +1,13 @@
 """The score model: notation as data, and operations as data over it.
 
-A **sheet** is a plain ``dict`` — two durational structures that do not contain
+A **sheet** is a plain ``dict`` -- two durational structures that do not contain
 each other, the metric layout (``grid``) and the content (``staves`` of voices
 of items), with every duration an exact rational written ``[numerator,
 denominator]``. It is data all the way: this module holds no handle, nothing has
 to be freed, and composing operations creates no intermediate anybody owns.
 
-**The logic is not here.** Every operation — its arithmetic, its validation and
-its refusals — is `clausters_core::notation`, reached through the C ABI, and
+**The logic is not here.** Every operation -- its arithmetic, its validation and
+its refusals -- is `clausters_core::notation`, reached through the C ABI, and
 this module is a shell of names that assembles the operation and hands it over.
 That is not only the non-divergence rule: a **standalone host has no client
 language in the process at all**, and a score it opens has to be editable there,
@@ -26,7 +26,7 @@ a client's own reduction of its `Event`s and `Timeline`s produces) into a sheet,
 `from_mei` reads a document the other way, `to_mei` writes a sheet out as MEI
 for the engraver, `to_notes` reads it back
 into what it *sounds* (under an `interpretation`, which is data and replaceable),
-and `ops` lists the verbs this core knows — the list each client is contrasted against, since operations
+and `ops` lists the verbs this core knows -- the list each client is contrasted against, since operations
 ride inside a payload and the binding table cannot see them.
 """
 
@@ -43,7 +43,7 @@ def _unwrap(payload: str):
 
     The C ABI answers ``{"ok": …}`` or ``{"error": "…"}`` because a refusal has
     to keep its reason; Python raises instead, which is the same behaviour in
-    the shape a caller expects. A refused operation changed nothing — the sheet
+    the shape a caller expects. A refused operation changed nothing -- the sheet
     crossed by value, so the caller still holds what it sent.
     """
     envelope = json.loads(payload)
@@ -60,13 +60,13 @@ def _core():
 
 def from_voice(voice: list, *, meter: str = "4/4", clef: str = "G2",
                key: str = "C") -> dict:
-    """Lift a **voice** — the flat slot stream, ``{"midis": [60], "ticks": 8}``
-    per note or chord and ``{"ticks": 8}`` per rest — into a sheet.
+    """Lift a **voice** -- the flat slot stream, ``{"midis": [60], "ticks": 8}``
+    per note or chord and ``{"ticks": 8}`` per rest -- into a sheet.
 
     The bridge a client crosses once. Reducing `clausters.seq` data to slots
     reads Python-native types and stays in this client; everything above the
     slot is the shared model. Ticks become exact durations and MIDI numbers
-    become **spelled** pitches in the accidental world ``key`` implies — the
+    become **spelled** pitches in the accidental world ``key`` implies -- the
     only choice a bare number leaves, and the reason the key is asked for here
     rather than at the end.
 
@@ -101,7 +101,7 @@ def apply(sheet: dict, op: dict) -> dict:
     an operation this shell has no helper for yet.
 
     Raises ``ValueError`` with the core's own sentence when the operation is
-    refused — a measure range that runs backwards, a parameter that is not
+    refused -- a measure range that runs backwards, a parameter that is not
     readable. Nothing changes on a refusal.
     """
     a, b = json.dumps(sheet), json.dumps(op)
@@ -111,7 +111,7 @@ def apply(sheet: dict, op: dict) -> dict:
 
 
 def to_mei(sheet: dict) -> str:
-    """Write ``sheet`` out as MEI — what `engrave` and `Score` read.
+    """Write ``sheet`` out as MEI -- what `engrave` and `Score` read.
 
     Raises ``ValueError`` with the emitter's reason when the model holds
     something MEI cannot be written for yet: a duration that is not an exact
@@ -128,7 +128,7 @@ def from_mei(mei: str) -> dict:
 
     The other return path, and not the one `to_notes` is: that one turns a score
     into sound, this turns a *document* into a score. A page opened from typed
-    text — ABC, MusicXML, a hand-written MEI — is a document and nothing else
+    text -- ABC, MusicXML, a hand-written MEI -- is a document and nothing else
     until this reads one, which is why none of the verbs above can touch it
     before that.
 
@@ -137,8 +137,8 @@ def from_mei(mei: str) -> dict:
     is covered.
 
     What the model does not hold is **what the engraver recomputes when nobody
-    chose it** — automatic beaming, the line breaks that merely fit, the staff
-    geometry — so it is not read and is not loss. What a writer chose is held:
+    chose it** -- automatic beaming, the line breaks that merely fit, the staff
+    geometry -- so it is not read and is not loss. What a writer chose is held:
     the header, the barlines, the breaks, the beams. Ids written by this layer
     come back, so an item edited before a save is the same item after it; a
     document from anywhere else gets fresh ones, because an id means something
@@ -155,7 +155,7 @@ def interpretation() -> dict:
 
     What a staccato does to a length, what ``mf`` is in amplitude, how far a
     crescendo travels, which positions in the bar are stressed. Read it, change
-    what you disagree with, and pass it back to `to_notes` — that is the whole
+    what you disagree with, and pass it back to `to_notes` -- that is the whole
     of overriding an interpretation, and nothing in the core is edited to play a
     score in another style.
 
@@ -177,8 +177,8 @@ def to_notes(sheet: dict, interp: dict | None = None) -> list:
     over a stretch of notes rather than a mark on any of them, and a tie is one
     sound of the summed length.
 
-    Each note is a dict with **two lengths** — ``dur``, what is written, and
-    ``sustain``, what is heard — in beats (a quarter is one beat by default,
+    Each note is a dict with **two lengths** -- ``dur``, what is written, and
+    ``sustain``, what is heard -- in beats (a quarter is one beat by default,
     ``interp["beat_unit"]``); plus ``t``, ``pitch``, ``amp``, the ``staff`` and
     ``voice`` it was written on, and the model ``id`` it came from. The pair of
     lengths maps straight onto an `clausters.seq.event.Event`'s ``dur`` and
@@ -187,8 +187,8 @@ def to_notes(sheet: dict, interp: dict | None = None) -> list:
     ``interp`` is the reading (`interpretation`); left out, the default. Any
     field left out of it keeps its default, so overriding one is a one-key dict.
 
-    **The instrument is not in the notation** — a staff does not say what plays
-    it — so the notes name their staff and the binding is made where the score
+    **The instrument is not in the notation** -- a staff does not say what plays
+    it -- so the notes name their staff and the binding is made where the score
     is rendered.
     """
     a = json.dumps(sheet)
@@ -204,7 +204,7 @@ def ops() -> list:
 
     **The parity surface the binding table cannot provide.** Operations ride
     inside a payload through one symbol, so nothing fails when one client grows
-    a verb the other lacks — the same structural blindness that let five builder
+    a verb the other lacks -- the same structural blindness that let five builder
     divergences stand. Both clients are read against this list instead.
     """
     return json.loads(_text(_core().clausters_core_sheet_ops))
@@ -215,9 +215,9 @@ def item_id(element_id: str) -> int | None:
     ``None`` where it was not written from one.
 
     The step between a selection on the page and a verb on the model. The page
-    names elements the way the emitter wrote them — ``n7`` is the item,
+    names elements the way the emitter wrote them -- ``n7`` is the item,
     ``n7-2`` a part of it split across a barline, ``n7-p1`` one pitch of a
-    chord — and all three are item 7, which is what lets a gesture anywhere on
+    chord -- and all three are item 7, which is what lets a gesture anywhere on
     a note reach the note.
 
     It comes from the core rather than being spelled out here, because the
@@ -233,7 +233,7 @@ def item_id(element_id: str) -> int | None:
 
 
 def measures(first: int, last: int) -> dict:
-    """The span of measures ``first`` to ``last``, **1-based and inclusive** —
+    """The span of measures ``first`` to ``last``, **1-based and inclusive** --
     the numbers a reader says out loud.
 
     This only *names* the span. What stretch of time it covers is resolved by
@@ -250,7 +250,7 @@ def transpose(sheet: dict, semitones: int, *, steps: int | None = None,
     implies: a major third up from C is E, not F-flat.
 
     ``semitones`` is the chromatic size, positive upward. ``steps`` is the
-    diatonic size — how many places the notehead moves on the staff — and left
+    diatonic size -- how many places the notehead moves on the staff -- and left
     out it is the ordinary reading of that many semitones (4 semitones is a
     major third, so 2 steps). Pass it to ask for the interval nobody's shorthand
     means, a diminished third over a major second.
@@ -269,8 +269,8 @@ def pitch(step: str, octave: int, alter: int = 0) -> dict:
     """A written pitch: the letter its notehead sits on, its scientific octave
     (``4`` is the octave of middle C) and how many semitones it is altered by.
 
-    Naming a pitch, not deriving one. Spelling a MIDI number is a *rule* — `F#`
-    and `Gb` are one number and two notes — so it happens in the core, on the
+    Naming a pitch, not deriving one. Spelling a MIDI number is a *rule* -- `F#`
+    and `Gb` are one number and two notes -- so it happens in the core, on the
     way in through `from_voice`; a caller writing a note into a score names the
     note it means.
     """
@@ -296,8 +296,8 @@ def concat(sheet: dict, other: dict) -> dict:
 def stack(sheet: dict, other: dict, *, as_staff: bool = False) -> dict:
     """``other`` at the same time as ``sheet``.
 
-    ``as_staff=False`` writes its voices on the same staves — counterpoint on one
-    staff; ``as_staff=True`` appends staves below — a second hand or instrument.
+    ``as_staff=False`` writes its voices on the same staves -- counterpoint on one
+    staff; ``as_staff=True`` appends staves below -- a second hand or instrument.
     Both are superposition; the difference is where the notes are written.
 
     Refused when the two grids differ: two scores cannot share a moment while
@@ -307,7 +307,7 @@ def stack(sheet: dict, other: dict, *, as_staff: bool = False) -> dict:
 
 
 def repeat(sheet: dict, count: int, *, span: dict | None = None) -> dict:
-    """A stretch played ``count`` times in a row — ``2`` is one repeat, ``1``
+    """A stretch played ``count`` times in a row -- ``2`` is one repeat, ``1``
     changes nothing.
 
     The copies go where the original is, pushing what follows later, and the grid
@@ -332,7 +332,7 @@ def invert(sheet: dict, *, axis: dict | None = None,
 
     Exact in both dimensions the model keeps apart: the notehead reflects across
     the axis on the staff and the sound reflects across it in semitones, with the
-    accidental taking up what is left — which is what an inversion written by
+    accidental taking up what is left -- which is what an inversion written by
     hand looks like. Without an axis, the line turns about its own first note.
     """
     return apply(sheet, _span_op({"op": "invert", **({"axis": axis} if axis else {})}, span))
@@ -390,8 +390,8 @@ def insert(sheet: dict, dur, *, after: int | None = None, pitches: list | None =
     no ``position`` is a rest. Everything after it moves later by ``dur``:
     writing a note into finished music adds time.
 
-    ``position`` is a place on the staff — whole diatonic steps from its **top
-    line**, positive upward — which is what the page's own ``"insert"`` gesture
+    ``position`` is a place on the staff -- whole diatonic steps from its **top
+    line**, positive upward -- which is what the page's own ``"insert"`` gesture
     reports, since a renderer can measure a place and not a pitch. Given, the
     pitch is worked out from that staff's clef and the key, so clicking the
     middle line in E flat writes a B flat and no client has to know how to read
@@ -410,7 +410,7 @@ def insert(sheet: dict, dur, *, after: int | None = None, pitches: list | None =
 def delete(sheet: dict, id: int) -> dict:
     """Take an item out; everything after it moves earlier by its value.
 
-    Not `silence` — that leaves a rest and nothing moves. Confusing the two is
+    Not `silence` -- that leaves a rest and nothing moves. Confusing the two is
     how a score comes out shorter than it was with no obvious sign of where.
     """
     return apply(sheet, {"op": "delete", "id": id})
@@ -431,7 +431,7 @@ def set_dur(sheet: dict, id: int, dur) -> dict:
 
 
 def set_pitches(sheet: dict, id: int, pitches: list) -> dict:
-    """Give an item different pitches — one for a note, several for a chord, none
+    """Give an item different pitches -- one for a note, several for a chord, none
     to make it a rest. The value and the id are kept, so this is the same item
     newly spelled rather than a replacement."""
     return apply(sheet, {"op": "set_pitches", "id": id, "pitches": pitches})
@@ -440,7 +440,7 @@ def set_pitches(sheet: dict, id: int, pitches: list) -> dict:
 def tie(sheet: dict, id: int, tied: bool = True) -> dict:
     """Tie an item into the one after it, or untie it.
 
-    This is the tie you *write* — the note goes on sounding through the next
+    This is the tie you *write* -- the note goes on sounding through the next
     item. The ties added where a value crosses a barline are made when the page
     is written and are never stored, so the two compose.
     """
@@ -474,7 +474,7 @@ def marks(*, articulations: list | None = None, dynamic: str | None = None,
     or ``"fermata"``; ``grace`` makes it a grace note (``"acc"`` for an
     acciaccatura, ``"unacc"`` for an appoggiatura); ``stem`` forces ``"up"`` or
     ``"down"``; ``sounding`` is how long it **sounds** when that is not how long
-    it is written — a staccato quarter that sounds an eighth carries both, and
+    it is written -- a staccato quarter that sounds an eighth carries both, and
     the two are kept apart because a page that shortened the written value would
     be a different rhythm.
 
@@ -543,7 +543,7 @@ def header(*, title: str = "", subtitle: str = "", composer: str = "",
 
 def move_steps(sheet: dict, id: int, steps: int) -> dict:
     """Move an item along the staff by ``steps`` **diatonic** places, up when
-    positive — what dragging a note on the page is.
+    positive -- what dragging a note on the page is.
 
     The arrival takes the **key signature's** alteration for the letter it lands
     on, which is what reading in a key means: dragging a note onto a B in E flat
@@ -568,7 +568,7 @@ def set_header(sheet: dict, header: dict) -> dict:
 
 def set_barline(sheet: dict, measure: int, kind: str) -> dict:
     """Give ``measure`` (1-based) a right barline: ``"end"``, ``"rptstart"``,
-    ``"rptend"``, ``"rptboth"``, ``"dbl"``, ``"invis"`` — or ``"single"``, which
+    ``"rptend"``, ``"rptboth"``, ``"dbl"``, ``"invis"`` -- or ``"single"``, which
     takes the override back rather than storing one saying "ordinary".
 
     A repeat barline is **notation**: it is drawn, and it is not what makes a

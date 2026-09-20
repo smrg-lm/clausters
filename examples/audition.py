@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The UGen bench: hear the row that is under test.
 
-Every UGen on the bench has asserts — a measured alias SNR, an analytic
+Every UGen on the bench has asserts -- a measured alias SNR, an analytic
 transfer function, a decay envelope that matches its formula. What none of that
 tells you is whether the thing *sounds* like what it claims to be. This plays
 it.
@@ -28,7 +28,7 @@ first thing to check when something sounds wrong.
 **One honest difference between the ear and the asserts.** A subject with a
 `source` is driven, in the tests, by an exact array of samples the test writes
 onto a bus. A live graph has no way to be handed an array, so here the source is
-its **UGen equivalent** — `noise` becomes a `WhiteNoise`, `sine` a `Sine` at the
+its **UGen equivalent** -- `noise` becomes a `WhiteNoise`, `sine` a `Sine` at the
 subject's `hz`, `impulse_train` an `Impulse` at it. Same character, different
 samples: this bench is for judging a sound, not for reproducing an assert.
 
@@ -113,8 +113,8 @@ def source_ugen(kind, hz, secs):
 
 # ---- 3. the def ---------------------------------------------------------------
 #
-# The same assembly `Subject::def_json` does on the Rust side — source, prelude,
-# one row per channel with the channel index appended, an `Out` per channel —
+# The same assembly `Subject::def_json` does on the Rust side -- source, prelude,
+# one row per channel with the channel index appended, an `Out` per channel --
 # plus the two things only a listener needs: a level, and the option to sweep an
 # input so the row is heard *moving* rather than at one setting.
 
@@ -177,7 +177,7 @@ def slot_index(subject, slot, catalog):
 
 class RawDef:
     """What sending a def needs from it: a name and its wire text.
-    The subjects are already `SynthDefSpec` JSON, which is that text — there is
+    The subjects are already `SynthDefSpec` JSON, which is that text -- there is
     nothing for the client-side builders to rebuild."""
 
     def __init__(self, spec):
@@ -208,7 +208,7 @@ def report(name, samples, channels, secs):
 
 def spread(samples, ch, into):
     """One subject's interleaved frames widened to the file's channel count. A
-    mono row goes to every channel — it is meant to be heard, not placed — and
+    mono row goes to every channel -- it is meant to be heard, not placed -- and
     a narrower multi-channel one keeps its channels and leaves the rest
     silent."""
     if ch == into:

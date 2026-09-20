@@ -27,7 +27,7 @@ fn default_def() -> Arc<SynthDef> {
     Arc::new(compile(default_spec()).unwrap())
 }
 
-/// A synth that overwrites buses 0 and 1 with a constant — execution order
+/// A synth that overwrites buses 0 and 1 with a constant -- execution order
 /// becomes audible: whatever runs after it on the bus wins.
 fn silencer_def() -> Arc<SynthDef> {
     let json = r#"{
@@ -206,7 +206,7 @@ fn node_order_is_audible_and_movable() {
     let left = render_left(&mut engine, 100);
     assert!(rms(&left) > 0.1, "silencer at the head must lose the bus");
 
-    // /node_after: move the silencer after the sine — silence
+    // /node_after: move the silencer after the sine -- silence
     handle
         .send(Cmd::MoveNode {
             id: 1001,
@@ -218,7 +218,7 @@ fn node_order_is_audible_and_movable() {
     let left = render_left(&mut engine, 100);
     assert!(rms(&left) < 1e-9, "moved after the sine, must win the bus");
 
-    // /node_before: move it back — sine again
+    // /node_before: move it back -- sine again
     handle
         .send(Cmd::MoveNode {
             id: 1001,
@@ -439,7 +439,7 @@ fn cpu_meter_publishes_load_and_peak_resets_per_read() {
 
     let counters = handle.counters();
     // Offline the fraction is just render speed, but it must be a positive,
-    // finite load — the meter ran and published.
+    // finite load -- the meter ran and published.
     let avg = counters.avg_cpu();
     assert!(avg > 0.0 && avg.is_finite(), "avg_cpu = {avg}");
     let peak = counters.take_peak_cpu();

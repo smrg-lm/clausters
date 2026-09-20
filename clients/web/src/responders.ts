@@ -1,9 +1,9 @@
 // Responders: `OscFunc` over the reply stream and `MidiFunc` over an incoming
-// MIDI port — the port of the reference client's `responders.py`.
+// MIDI port -- the port of the reference client's `responders.py`.
 //
 // The **input** side of the client. Everything else here builds OSC and sends
 // it; a responder registers a self-filtering callback that fires when a
-// matching message *arrives*, and that callback may send onward — so the
+// matching message *arrives*, and that callback may send onward -- so the
 // client is a hub, not only a mouth. Same object as sclang's `OSCFunc`, same
 // surface as the reference client's: enabled the moment it is created, matched
 // by address and optionally by sender and by argument template, freed with
@@ -22,16 +22,16 @@
 // ```
 //
 // **What is the same, and what a page changes.** The callback signature is the
-// reference's — `func(msg, time, src)` with `msg` the message as
+// reference's -- `func(msg, time, src)` with `msg` the message as
 // `[addr, ...args]`, `time` the containing bundle's Unix seconds (`null` for
-// an immediate or bare message) and `src` the sender — and so are `path`,
+// an immediate or bare message) and `src` the sender -- and so are `path`,
 // `src`, `argTemplate`, `oneShot` and the `oscfunc` builder. What differs is
 // underneath, in the receiver (see `base/receiver.ts`): a page has no socket
 // of its own to bind, so the door is the connection the client already has,
 // and `src` names a carrier rather than a `(host, port)`.
 //
 // The default receiver follows from that. There, it is a lazily-bound
-// ephemeral UDP port; here it is the **ambient session's server** — the same
+// ephemeral UDP port; here it is the **ambient session's server** -- the same
 // thing the ambient verbs resolve, created on first use, so `new OscFunc(fn,
 // "/done")` in a page that has played something needs no arguments. Name a
 // receiver explicitly (`{ recv }`) for anything else, exactly as there.
@@ -39,7 +39,7 @@
 // The golden rule survives the change of language: a callback runs on the
 // page's one thread as the packet arrives. Keep it quick; to *sequence* in
 // response, schedule a routine on a clock rather than looping inside the
-// callback — or give the receiver a clock, which dispatches its handlers
+// callback -- or give the receiver a clock, which dispatches its handlers
 // through it.
 
 import { OscReceiver } from "./base/receiver.ts";
@@ -54,7 +54,7 @@ export type OscValue = OscMessage["args"][number];
 
 /**
  * A message as a responder's callback receives it: the address first, then the
- * arguments — the reference client's list, which is what makes
+ * arguments -- the reference client's list, which is what makes
  * `msg[1]` the first argument in both clients.
  */
 export type ResponderMessage = [string, ...OscValue[]];
@@ -86,13 +86,13 @@ let defaultReceiver: OscReceiver | null = null;
  * a page's messages arrive.
  *
  * It resolves the ambient server the way the ambient verbs do, and fails the
- * same way when there is none — so importing this module opens nothing, as
+ * same way when there is none -- so importing this module opens nothing, as
  * there. Two deliberate differences from the reference client's module
  * default, both following from a page having no socket of its own: it is the
  * *server's* receiver rather than a second listener on the same carrier, and
  * it is resolved per call rather than cached, so a page holding two sessions
  * (each with its own server) gets each one's messages from each one's
- * responders. `setDefaultOscReceiver` pins one anyway — to listen on a
+ * responders. `setDefaultOscReceiver` pins one anyway -- to listen on a
  * particular server whatever is ambient, or to attach a clock.
  */
 export function defaultOscReceiver(): OscReceiver {
@@ -114,16 +114,16 @@ export function setDefaultOscReceiver(receiver: OscReceiver): OscReceiver {
  * Responder for incoming OSC messages.
  *
  * Registers `func` to fire when a message matching `path` arrives. The
- * callback is called `func(msg, time, src)` — `msg` the message as
+ * callback is called `func(msg, time, src)` -- `msg` the message as
  * `[addr, arg1, …]`, `time` the containing bundle's Unix time (`null` for an
  * immediate or bare message), `src` the carrier it arrived on.
  *
- * - `src` — respond only to that sender (a socket's URL, or `"page"` for the
+ * - `src` -- respond only to that sender (a socket's URL, or `"page"` for the
  *   in-page engine).
- * - `argTemplate` — matched against the arguments by position; an entry is a
+ * - `argTemplate` -- matched against the arguments by position; an entry is a
  *   literal (compared equal), a predicate, or `null` (matches anything).
  *   Shorter than the message is fine: only the listed positions are checked.
- * - `recv` — the `OscReceiver` to register with; the module default otherwise.
+ * - `recv` -- the `OscReceiver` to register with; the module default otherwise.
  *
  * Enabled on creation. Call `free` (or `disable`) when done.
  */
@@ -198,7 +198,7 @@ export class OscFunc {
         this.disable();
     }
 
-    /** Frees the responder after its first match — a one-time action. */
+    /** Frees the responder after its first match -- a one-time action. */
     oneShot(): this {
         const inner = this.func;
         this.func = (msg, time, src) => {
@@ -216,7 +216,7 @@ export class OscFunc {
 }
 
 /**
- * Builds an `OscFunc` over a callback — the reference client's decorator form,
+ * Builds an `OscFunc` over a callback -- the reference client's decorator form,
  * which in TypeScript is the same curried shape:
  *
  * ```js
@@ -259,7 +259,7 @@ let defaultMidiRecv: MidiReceiver | null = null;
  * **This is the one default a page cannot create for you**, and the reason is
  * the platform rather than the design: the reference client's default opens a
  * virtual input port on the spot, while Web MIDI hands out only the ports that
- * already exist and asks the user's permission to do it — a grant, and an
+ * already exist and asks the user's permission to do it -- a grant, and an
  * `await`. So a page starts one receiver explicitly and pins it:
  *
  * ```js
@@ -291,13 +291,13 @@ export function setDefaultMidiReceiver(receiver: MidiReceiver): MidiReceiver {
  * Responder for incoming MIDI messages.
  *
  * Registers `func` to fire on channel-voice messages of a given type. The
- * callback is called `func(message, src)` — `message` an object
+ * callback is called `func(message, src)` -- `message` an object
  * (`{type, channel, …}`, see `parseMidi`) and `src` the port's name.
  *
- * - `chan` — respond only on that channel (0..15).
- * - `argTemplate` — a `{field: matcher}` object matched against the message's
+ * - `chan` -- respond only on that channel (0..15).
+ * - `argTemplate` -- a `{field: matcher}` object matched against the message's
  *   fields; a matcher is a literal, a predicate, or `null` (matches anything).
- * - `recv` — the `MidiReceiver` to register with; the module default
+ * - `recv` -- the `MidiReceiver` to register with; the module default
  *   otherwise.
  *
  * Enabled on creation. Call `free` (or `disable`) when done.
@@ -372,7 +372,7 @@ export class MidiFunc {
         this.disable();
     }
 
-    /** Frees the responder after its first match — a one-time action. */
+    /** Frees the responder after its first match -- a one-time action. */
     oneShot(): this {
         const inner = this.func;
         this.func = (message, src) => {
@@ -388,7 +388,7 @@ export class MidiFunc {
 }
 
 /**
- * Builds a `MidiFunc` over a callback — the decorator-shaped door, spelled as
+ * Builds a `MidiFunc` over a callback -- the decorator-shaped door, spelled as
  * a call in a language without decorators.
  *
  * ```js

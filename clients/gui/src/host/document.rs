@@ -1,4 +1,4 @@
-//! The host as the **owner** of what it draws — the third writer.
+//! The host as the **owner** of what it draws -- the third writer.
 //!
 //! Every gesture in this host emits an *intent* and waits for somebody to apply
 //! it: a script drives the window, edits the document it holds, and pushes back
@@ -16,7 +16,7 @@
 //! # Why this is not a second implementation
 //!
 //! The alternative would be a host that edits its own render tree and calls
-//! that the document — which is what the D track's premise forbids, and for a
+//! that the document -- which is what the D track's premise forbids, and for a
 //! reason this milestone makes concrete: a session written here has to open in
 //! the Python client and come back unchanged. Two implementations of one format
 //! is a format that drifts, and the whole point of the crate is that there is
@@ -27,7 +27,7 @@
 //!
 //! An intent applied here is acknowledged here: the outbox's stamp is retired
 //! and the pending drawing dropped by the same rule a script's acknowledgement
-//! would follow ([`super::ack`]). There is no branch for a refusal — a refused
+//! would follow ([`super::ack`]). There is no branch for a refusal -- a refused
 //! edit is the previous value handed back, which is the crate's decision and
 //! the reason the caller can adopt the outcome unconditionally.
 
@@ -60,7 +60,7 @@ fn float_at(args: &[OscType], n: usize) -> Option<f32> {
 }
 
 /// A sample position: a long, or an int from a client that had no long to hand.
-/// **Which channel a destructive payload addressed** — argument 1 of both
+/// **Which channel a destructive payload addressed** -- argument 1 of both
 /// `"sample"` and `"draw"`, 0 for a payload that names none.
 ///
 /// A missing or negative channel is the first one rather than a refusal: a mono
@@ -98,7 +98,7 @@ pub struct Owner {
     ///
     /// **The leg being walked off**, and the crate says so: a session written
     /// today carries [`Owner::multitrack`] and leaves this empty. It stays because
-    /// what it holds — the general tree, its samples, its destructive edits —
+    /// what it holds -- the general tree, its samples, its destructive edits --
     /// has nowhere else to be yet.
     pub document: Document,
     /// **The multitrack**: the tracks and the timeline they sit on, which is what a
@@ -110,7 +110,7 @@ pub struct Owner {
     /// made rather than in two orders.
     pub multitrack: Multitrack,
     /// **The editing context**: the one undo order the tree, the multitrack and the
-    /// multitrack editor share — the applications crate's, as a client's is, so
+    /// multitrack editor share -- the applications crate's, as a client's is, so
     /// an inverse is read out of what was edited rather than remembered by the
     /// gesture that made it, and a multitrack's edit and a tree's undo in the order
     /// they were made.
@@ -141,7 +141,7 @@ pub struct Owner {
     /// The session's samples, when somebody resolved them: what a take's own
     /// length is, for the one case a placement does not state it.
     ///
-    /// Held for the same reason [`Self::units_per_beat`] is — adopting an
+    /// Held for the same reason [`Self::units_per_beat`] is -- adopting an
     /// applied edit back onto the picture has to reach the rule the drawing
     /// used, and that rule ends at the samples.
     pub takes: sources::Takes,
@@ -149,7 +149,7 @@ pub struct Owner {
     ///
     /// The one thing this module adds to the crate, and the one thing only a
     /// host can know: a widget is a picture *of* a node, and an intent names
-    /// the node. Nothing infers it — the tree that built the widgets records
+    /// the node. Nothing infers it -- the tree that built the widgets records
     /// it, so a picture and the samples under it cannot drift apart.
     nodes: HashMap<i32, NodeId>,
     /// And which node each **lane header** configures. See
@@ -158,7 +158,7 @@ pub struct Owner {
     /// The tree, as a member of [`Owner::editing`]: the crate does not apply the
     /// document's edits, so a step hands its payloads back to be applied here.
     tree: MemberId,
-    /// The multitrack, as a member of [`Owner::editing`] — joined whether or not a
+    /// The multitrack, as a member of [`Owner::editing`] -- joined whether or not a
     /// window is ever opened over it, so its identity does not depend on what
     /// was edited first. A step hands its payloads back to be applied to
     /// [`Owner::multitrack`].
@@ -168,7 +168,7 @@ pub struct Owner {
     /// Not a map, because there is nothing to map: the multitrack names its
     /// lanes and its clips by the nodes' own numbers, so a payload is read
     /// without asking anything which widget it came from. What the id is for is
-    /// the other direction — writing an applied edit back onto the picture.
+    /// the other direction -- writing an applied edit back onto the picture.
     multitrack_widget: Option<i32>,
     /// **The multitrack editor** over the multitrack, once a window has been opened
     /// for it ([`Owner::open_editor`]): a member of [`Owner::editing`] under the
@@ -179,7 +179,7 @@ pub struct Owner {
 /// What applying an edit left behind, for the caller to draw and answer with.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Applied {
-    /// The edit describing the **tree** as it now stands — the intent as given
+    /// The edit describing the **tree** as it now stands -- the intent as given
     /// when it applied verbatim, the transformed one when it was snapped, and
     /// the **previous** value when it was refused.
     ///
@@ -192,8 +192,8 @@ pub struct Applied {
     /// The document's version afterwards, which is what an acknowledgement
     /// carries so a later edit can say what it was made against.
     pub version: u64,
-    /// Whether anything actually moved. A refusal is not an error — it is the
-    /// previous value — but nothing needs redrawing for one.
+    /// Whether anything actually moved. A refusal is not an error -- it is the
+    /// previous value -- but nothing needs redrawing for one.
     pub applied: bool,
 }
 
@@ -271,7 +271,7 @@ impl Owner {
         self
     }
 
-    /// The scales the drawing used, as the tree's own `Look` — the one place
+    /// The scales the drawing used, as the tree's own `Look` -- the one place
     /// that turns a length in its own data's unit into units on the axis.
     pub(crate) fn look(&self) -> tree::Look<'_> {
         tree::Look {
@@ -288,7 +288,7 @@ impl Owner {
         self
     }
 
-    /// The **placement** of a node — the member that holds it, which is where a
+    /// The **placement** of a node -- the member that holds it, which is where a
     /// length lives.
     ///
     /// A node knows what it is; only its member knows how long it is placed
@@ -310,7 +310,7 @@ impl Owner {
         walk(&self.document.root, node)
     }
 
-    /// Which widget draws `node`, if one does — the binding read the other way,
+    /// Which widget draws `node`, if one does -- the binding read the other way,
     /// which is what adopting an applied edit needs.
     pub fn widget_of(&self, node: NodeId) -> Option<i32> {
         self.nodes
@@ -340,7 +340,7 @@ impl Owner {
         self
     }
 
-    /// Opens a session file — the format the Python client writes, read by the
+    /// Opens a session file -- the format the Python client writes, read by the
     /// crate and not by a parser of this host's own, which is the whole reason
     /// the format has one implementation.
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, String> {
@@ -380,14 +380,14 @@ impl Owner {
     /// A second map rather than a second entry in the first, because one node
     /// can be drawn twice: a lane holding a single element binds that element
     /// for its header *and* for the clip inside it. Both directions have to
-    /// stay answerable — a gesture asks which node a widget is (either map
+    /// stay answerable -- a gesture asks which node a widget is (either map
     /// does), and an applied edit asks which widget a node is, where "the clip"
     /// and "the header" are different questions with different answers.
     pub fn bind_header(&mut self, widget_id: i32, node: NodeId) {
         self.headers.insert(widget_id, node);
     }
 
-    /// Forgets a widget — a window closing, or a tree rebuilt.
+    /// Forgets a widget -- a window closing, or a tree rebuilt.
     pub fn unbind(&mut self, widget_id: i32) {
         self.nodes.remove(&widget_id);
         self.headers.remove(&widget_id);
@@ -410,8 +410,8 @@ impl Owner {
 
     /// Says which widget draws **the whole multitrack**.
     ///
-    /// The multitrack needs no per-clip binding — a clip's name on the wire is
-    /// its node's number — so what is recorded is only the widget id, and only
+    /// The multitrack needs no per-clip binding -- a clip's name on the wire is
+    /// its node's number -- so what is recorded is only the widget id, and only
     /// because an applied edit has to be written back onto *some* widget.
     pub fn bind_multitrack(&mut self, widget_id: i32) {
         self.multitrack_widget = Some(widget_id);
@@ -422,7 +422,7 @@ impl Owner {
         self.multitrack_widget
     }
 
-    /// **What is on screen**, in the widget's own vocabulary — the lanes and
+    /// **What is on screen**, in the widget's own vocabulary -- the lanes and
     /// clips a `/gui_set` would carry, and the ids behind them.
     ///
     /// Re-derived rather than remembered: the owner is the state, and a second
@@ -431,7 +431,7 @@ impl Owner {
     /// resolved against cannot disagree with what a hand moved.
     ///
     /// It comes from the **multitrack** when there is one and from the tree
-    /// otherwise ([`Self::draws_multitrack`]) — one widget, two descriptions, and
+    /// otherwise ([`Self::draws_multitrack`]) -- one widget, two descriptions, and
     /// the file says which.
     pub fn shown(&self) -> tree::Picture {
         if self.draws_multitrack() {
@@ -453,13 +453,13 @@ impl Owner {
     /// Reads a widget's `/gui_event` payload as **the edits it stands for**.
     ///
     /// The plural door, and the one the multitrack comes through. A payload
-    /// that states the multitrack — `"clips"`, `"lanes"` — is one message describing
+    /// that states the multitrack -- `"clips"`, `"lanes"` -- is one message describing
     /// every box or every strip, so what it means is however many intents it
     /// takes to make the document say that; a payload that states one thing is
     /// one intent, and goes through [`Self::read_event`] unchanged.
     ///
     /// **They are one transaction.** A block move is one thing a hand did, so
-    /// `Ctrl`+`Z` walks back over all of it at once — which is why this returns
+    /// `Ctrl`+`Z` walks back over all of it at once -- which is why this returns
     /// the run rather than the caller applying them one at a time.
     pub fn read_events(&self, widget_id: i32, args: &[OscType]) -> Vec<(Intent, &'static str)> {
         match args.first() {
@@ -473,8 +473,8 @@ impl Owner {
         }
     }
 
-    /// **Opens the multitrack editor over the multitrack** — the one a script and a
-    /// page open — and answers its window, as the GuiDef to define as `window`.
+    /// **Opens the multitrack editor over the multitrack** -- the one a script and a
+    /// page open -- and answers its window, as the GuiDef to define as `window`.
     ///
     /// The multitrack is drawn at `window + 1` and ruled at `window + 2`, and the
     /// transport row is numbered after them: a host composing a window for
@@ -620,18 +620,18 @@ impl Owner {
         learned.len()
     }
 
-    /// **The multitrack's clips, as they now stand** — the one payload every
+    /// **The multitrack's clips, as they now stand** -- the one payload every
     /// placement gesture leaves.
     ///
     /// A move, a trim, a block drag and a lane change all arrive here, and
     /// nothing in the payload says which of them it was: what is compared is
     /// the list against the document, and what comes out is the difference.
-    /// That is the whole reason the widget reports the multitrack — the reader has
+    /// That is the whole reason the widget reports the multitrack -- the reader has
     /// no case to get wrong.
     ///
     /// Two shapes come out of it. A clip that stayed on its lane is a
     /// [`Intent::Place`], which is what a placement is. A clip that **crossed**
-    /// is not a placement at all — it left one aggregate and joined another —
+    /// is not a placement at all -- it left one aggregate and joined another --
     /// so it is a pair of [`Intent::SetMembers`], one per aggregate, stating
     /// what each now holds. Both are absolute, so applying the run twice leaves
     /// the same multitrack.
@@ -721,11 +721,11 @@ impl Owner {
         out
     }
 
-    /// **The multitrack's lanes, as they now stand** — the mixer's payload.
+    /// **The multitrack's lanes, as they now stand** -- the mixer's payload.
     ///
     /// Separate from the clips for the reason they are two structures: a fader
     /// moved must not resend every clip. What is written is the *element's*
-    /// configuration, so a mute survives a save and undoes like a move — the
+    /// configuration, so a mute survives a save and undoes like a move -- the
     /// same [`Intent::Configure`] a script emits, which is why the undo comes
     /// out of the document identically whoever made the edit.
     ///
@@ -800,7 +800,7 @@ impl Owner {
     /// undoes the way it was made.
     ///
     /// The inverse of each is read out of the document *before* that one lands,
-    /// which is the same rule [`apply_logged_in`] follows — it is spelled out here
+    /// which is the same rule [`apply_logged_in`] follows -- it is spelled out here
     /// only because there is no one-call form for a transaction.
     pub fn apply_all(
         &mut self,
@@ -836,8 +836,8 @@ impl Owner {
     /// the label an undo stack would show for it.
     ///
     /// **This is the translation and nothing more.** The payload's vocabulary
-    /// is the gesture's — flat OSC primitives, in the owner's terms rather than
-    /// the screen's — and the document's is the crate's; what a host adds is
+    /// is the gesture's -- flat OSC primitives, in the owner's terms rather than
+    /// the screen's -- and the document's is the crate's; what a host adds is
     /// knowing which node the widget was drawing. A payload it does not
     /// recognize, or one on a widget bound to no node, is `None`: an owner that
     /// invented an intent for an event it did not understand would be editing
@@ -855,7 +855,7 @@ impl Owner {
             // beats**, so this is where the two meet. A clip reports where the
             // hand put it on the shared axis, which measures samples; a
             // placement is musical time. Forgetting the conversion does not
-            // fail — it writes the sample number into the beat field, so a clip
+            // fail -- it writes the sample number into the beat field, so a clip
             // dropped two beats along is saved at beat ninety-six thousand.
             "clip" => {
                 let units = self.units_per_beat.max(f64::MIN_POSITIVE);
@@ -880,7 +880,7 @@ impl Owner {
             // of the document identically whoever made the edit.
             //
             // A configuration is replaced **whole**, so this starts from what
-            // the node already carries and writes one key over it — the rule
+            // the node already carries and writes one key over it -- the rule
             // the intent states, and the reason a fader cannot quietly erase a
             // mute.
             "mute" | "solo" | "level" => {
@@ -960,7 +960,7 @@ impl Owner {
         )
     }
 
-    /// The reading as the intent it is, forward or inverted — `None` where the
+    /// The reading as the intent it is, forward or inverted -- `None` where the
     /// run asked for is not there (an inverse the payload did not carry).
     fn written_intent(
         &self,
@@ -987,7 +987,7 @@ impl Owner {
     /// the host was drawing them: `"sample"` carries the value it replaced and
     /// `"draw"` carries the run, as the second of its two blobs. A payload
     /// without that half gives `None`, and the caller logs what the document
-    /// can — which is an edit that redoes but does not undo, and is why the
+    /// can -- which is an edit that redoes but does not undo, and is why the
     /// gesture sends both.
     pub fn read_inverse(&self, widget_id: i32, args: &[OscType]) -> Option<Intent> {
         let node = self.node_of(widget_id)?;
@@ -997,7 +997,7 @@ impl Owner {
 
     /// Applies one intent through the log, so it can be undone.
     ///
-    /// `label` is what the undo stack shows for it — the vocabulary a user
+    /// `label` is what the undo stack shows for it -- the vocabulary a user
     /// reads ("draw", "move a clip"), not the wire's.
     pub fn apply(&mut self, intent: &Intent, against: &Against, label: &str) -> Applied {
         let (document, rules) = (&mut self.document, &self.rules);
@@ -1023,8 +1023,8 @@ impl Owner {
     /// write's previous samples are not in the document (the document describes
     /// where samples are, never what they hold), so `apply_logged` records an
     /// empty write as the inverse and an undo would restore nothing. What was
-    /// there is known to whoever was **drawing** it — the gesture carried the
-    /// span it painted over, which is why the payload has a `previous` half —
+    /// there is known to whoever was **drawing** it -- the gesture carried the
+    /// span it painted over, which is why the payload has a `previous` half --
     /// and this is where that returns to the log.
     ///
     /// Everything else about it is the ordinary path: the same `apply`, the
@@ -1092,7 +1092,7 @@ impl Owner {
 
     /// **Carries out a step the context took**, on the descriptions this owner
     /// holds: the payloads the step hands back for the multitrack and for the tree,
-    /// applied with the checks off — what the history holds is by definition
+    /// applied with the checks off -- what the history holds is by definition
     /// against the state as it was left, and snapping something twice would
     /// move it. The multitrack editor's own copy of the multitrack was stepped by
     /// the context already.
@@ -1252,7 +1252,7 @@ mod tests {
 
     /// A lane header's toggle is the document's, so it travels the road a
     /// clip's move does: one `Configure`, through the log, undoable out of the
-    /// document — the same intent a client emits, which is what makes the two
+    /// document -- the same intent a client emits, which is what makes the two
     /// undo alike.
     #[test]
     fn a_lane_header_configures_the_element_and_undoes() {
@@ -1330,7 +1330,7 @@ mod tests {
     }
 
     /// A dragged sample and a whole stroke are the same intent at two lengths,
-    /// which is what makes one owner answer both — **including what the undo
+    /// which is what makes one owner answer both -- **including what the undo
     /// stack calls it**, which is the one place they were still two. The
     /// reading is the projection's now
     /// (`clausters_editing::samples::write`), and it names the verb once: a
@@ -1424,7 +1424,7 @@ mod tests {
 
     /// The milestone's own acceptance, in the half a Rust test can run: a
     /// session is opened, edited by an intent the host translated, undone,
-    /// redone and saved — and what comes back is the document as edited, in the
+    /// redone and saved -- and what comes back is the document as edited, in the
     /// format the crate defines and nothing here re-implements.
     #[test]
     fn a_session_opens_is_edited_undone_redone_and_saved() {
@@ -1661,7 +1661,7 @@ mod window_verb_tests {
     /// A session host over `doc`, drawn the way `--session` draws it: the
     /// window opened on the real tree, the owner bound to the multitrack. The
     /// widget id comes back, because everything a hand does arrives on it.
-    /// A host drawing a **multitrack** — the standalone shape: the session carries
+    /// A host drawing a **multitrack** -- the standalone shape: the session carries
     /// tracks, the document is empty, and the window is the same one the
     /// `--session` host opens.
     fn with_multitrack(multitrack: clausters_document::multitrack::Multitrack) -> (Host, i32, i32) {
@@ -1982,7 +1982,7 @@ mod window_verb_tests {
     }
 
     /// **A session host opens the editor a script opens**: the ruler above the
-    /// multitrack and the transport row under it, every widget of it registered —
+    /// multitrack and the transport row under it, every widget of it registered --
     /// an editor of the host's own had neither.
     #[test]
     fn a_multitrack_opens_in_its_editors_own_window() {
@@ -2112,7 +2112,7 @@ mod window_verb_tests {
         (host, def_id, drawn.widget)
     }
 
-    /// What the **widget** holds, as groups — the picture, not the document.
+    /// What the **widget** holds, as groups -- the picture, not the document.
     fn drawn_prop(host: &Host, def_id: i32, widget: i32, key: &str, n: usize) -> Vec<Vec<Value>> {
         let info = host
             .widget_kind(def_id, widget)
@@ -2164,7 +2164,7 @@ mod window_verb_tests {
     ///
     /// The defect this pins (found 2026-09-12, auditing the owner): the
     /// dispatch read `tag == "clips" || tag == "lanes"` while the crate that
-    /// *reads* a report answers for four — `points` and `join` as well. So a
+    /// *reads* a report answers for four -- `points` and `join` as well. So a
     /// standalone host drew curves it could not edit and had a `j` that reached
     /// nobody: the payload fell through to the tree's reader, which has no arm
     /// for either, and left on the wire to a client that is not there.
@@ -2321,14 +2321,14 @@ mod window_verb_tests {
     /// sounds and has a length its edges stop at.
     ///
     /// The defect this pins (found 2026-09-13 by the user, on a standalone
-    /// host): a join mints a source — spans of the takes the table already
-    /// holds — and the document says plainly that it does not build one:
+    /// host): a join mints a source -- spans of the takes the table already
+    /// holds -- and the document says plainly that it does not build one:
     /// *"whoever has the samples fills it in when it realizes the join"*. The
     /// Python client realizes it at edit time; this host realized it only when
     /// a session was **opened**, so a join made while one was open was built by
     /// nobody. The box then named a source with no buffer, which is a box that
-    /// draws empty, plays nothing and — since an edge stops at the source's
-    /// length — pulls forever in both directions.
+    /// draws empty, plays nothing and -- since an edge stops at the source's
+    /// length -- pulls forever in both directions.
     #[test]
     fn a_join_made_by_a_hand_installs_the_source_it_minted() {
         use clausters_document::multitrack::{Multitrack, Track};
@@ -2443,12 +2443,12 @@ mod window_verb_tests {
     /// opened on a session: "no crea los lanes para las curvas al presionar A").
     /// The header's `A` exists to **make** a track's gain curve, and the multitrack
     /// made it: the edit applied, the document kept it, and what went back onto
-    /// the widget was `lanes` and `clips` — so nothing that draws a curve ever
+    /// the widget was `lanes` and `clips` -- so nothing that draws a curve ever
     /// arrived and the toggle read as a dead key. The projection had said
     /// `curves`, `layers`, `points`, `hidden` and `loops` all along.
     ///
     /// A client answers with all of them, which is why this was only ever
-    /// visible with nobody attached — and why the fix is to push what the
+    /// visible with nobody attached -- and why the fix is to push what the
     /// projection produced rather than a list written at the call site.
     #[test]
     fn the_toggle_that_makes_a_curve_puts_the_row_on_the_widget() {
@@ -2488,7 +2488,7 @@ mod window_verb_tests {
     }
 
     /// **And a verb the multitrack refuses says why, in the window of the host that
-    /// refused it** — the same sentence a client would have put there.
+    /// refused it** -- the same sentence a client would have put there.
     ///
     /// A join is the one tag whose refusal is about the *material* rather than
     /// about the picture, so it is the one that had a reason to lose: the host
@@ -2533,7 +2533,7 @@ mod window_verb_tests {
     }
 
     /// **An undo has to move the picture, not only the document.** A drag needs
-    /// no help — the gesture already moved the box on screen — so the failure
+    /// no help -- the gesture already moved the box on screen -- so the failure
     /// this pins is the one that looks like the key doing nothing: the document
     /// goes back, the widget stays where the hand left it, and nothing on
     /// screen changes.
@@ -2613,7 +2613,7 @@ mod window_verb_tests {
 
     /// **A lane a hand did not touch is not an edit.** The mixer reports every
     /// strip after any of them moves, so a reader that took the payload at face
-    /// value would log a `Configure` per lane on every fader drag — and the
+    /// value would log a `Configure` per lane on every fader drag -- and the
     /// undo of one fader would be one step per lane.
     #[test]
     fn only_the_strip_that_moved_becomes_an_edit() {
@@ -2646,7 +2646,7 @@ mod window_verb_tests {
 
     /// The length half of the same rule, and the case that was broken: a clip
     /// whose placement states **no** length is drawn at the element's own, so
-    /// the inverse of the first resize of one carries no `dur` at all — and an
+    /// the inverse of the first resize of one carries no `dur` at all -- and an
     /// adopter reading that as "leave the width alone" left the box at the size
     /// the hand had given it while the document went back.
     #[test]
@@ -2679,8 +2679,8 @@ mod window_verb_tests {
     /// gesture switched to, so a selection dragged in `--session` moved on
     /// screen and nowhere else.
     ///
-    /// They arrive as one payload with no gesture in it — the clips, as they
-    /// now stand — and they undo as **one step**, because a block move is one
+    /// They arrive as one payload with no gesture in it -- the clips, as they
+    /// now stand -- and they undo as **one step**, because a block move is one
     /// thing a hand did.
     #[test]
     fn a_block_move_and_a_lane_change_reach_the_document() {
@@ -2712,7 +2712,7 @@ mod window_verb_tests {
         };
         assert_eq!(where_is(&host, 3), Some(NodeId(2)));
 
-        // **Both boxes of the first lane, dragged two beats along** — the
+        // **Both boxes of the first lane, dragged two beats along** -- the
         // payload a marquee's block drag leaves, addressed to the one widget
         // and naming every clip there is.
         let seq = host.outbox.borrow_mut().stamp(def_id, view);
@@ -2740,8 +2740,8 @@ mod window_verb_tests {
         );
 
         // **And a lane crossed**: clip 4 leaves the first track and joins the
-        // second. That is not a placement at all — it changes which aggregate
-        // holds it — which is why a reader of `"clip"` could never have done it.
+        // second. That is not a placement at all -- it changes which aggregate
+        // holds it -- which is why a reader of `"clip"` could never have done it.
         let seq = host.outbox.borrow_mut().stamp(def_id, view);
         assert!(host.answer_own(
             def_id,

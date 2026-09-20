@@ -2,7 +2,7 @@
 //!
 //! `/gui_bind <id> "server" <addr> <prefix…>` makes a widget's value flow
 //! **straight to the audio server** as the OSC message `addr prefix… value`,
-//! with no round-trip through the script — the same idea as a MIDI binding in
+//! with no round-trip through the script -- the same idea as a MIDI binding in
 //! the server, where a control source is wired to a server-side destination
 //! instead of being polled. A bound knob sends an `/node_set` (or any "friend":
 //! `/bus_set`, `/node_setRange`, …) to the audio server on every change; an unbound one
@@ -20,7 +20,7 @@
 //! binding performs is the mutation `/gui_set` performs and nothing else: it
 //! does not re-enter the delivery path, so a widget bound to a widget bound
 //! back to it settles instead of cascading. The rule is stated here (and in
-//! `docs/gui-protocol.md`) rather than detected — there is no cycle check,
+//! `docs/gui-protocol.md`) rather than detected -- there is no cycle check,
 //! because there is no cycle to check: the chain is one hop by construction.
 //!
 //! The destination is named with a leading keyword so the message shape can
@@ -94,7 +94,7 @@ impl Binding {
         }
     }
 
-    /// Builds a binding from a GuiDef inline `bind` array — the declarative
+    /// Builds a binding from a GuiDef inline `bind` array -- the declarative
     /// equivalent of a `/gui_bind`, so a **saved GuiDef carries its own
     /// bindings** (the standalone path) and a live script can bind without a
     /// separate `/gui_bind`.
@@ -145,7 +145,7 @@ impl Binding {
 
     /// [`message`](Self::message) for a **flat list** of values (an editor's
     /// edit-back payload, e.g. a breakpoint list or a `/buffer_getRange.reply`
-    /// region): `addr prefix… values…` — the widget-value forward generalized
+    /// region): `addr prefix… values…` -- the widget-value forward generalized
     /// to more than one argument.
     pub fn message_args(&self, mut values: Vec<OscType>) -> Option<OscMessage> {
         let Binding::Server { addr, prefix } = self else {
@@ -160,7 +160,7 @@ impl Binding {
     }
 
     /// The `(target id, key, value)` a **widget** binding applies for `values`
-    /// — what a `/gui_set` would carry. A single value rides as the scalar it
+    /// -- what a `/gui_set` would carry. A single value rides as the scalar it
     /// is (an int stays an int, so a toggle drives an `index`); a longer
     /// payload rides as its **JSON string**, the same scalar carrier the wire
     /// already uses for an array-valued prop (`points`, `notes`). `None` for a
@@ -413,7 +413,7 @@ mod tests {
         );
     }
 
-    /// A `toggle` bound to `/node_run` is a play/stop switch — the shape a bundle
+    /// A `toggle` bound to `/node_run` is a play/stop switch -- the shape a bundle
     /// with several instruments on one page needs. It only works because the
     /// forwarded value keeps its **type**: `/node_run` takes `(nodeID, flag)` as
     /// ints and refuses a float, and a toggle's value is an int

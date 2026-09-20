@@ -3,17 +3,17 @@
 //
 // Two ways to feed a `SampleClockTimebase`, one per carrier:
 //
-// - `WsSampleClock` — over a socket, where the client cannot read the sample
+// - `WsSampleClock` -- over a socket, where the client cannot read the sample
 //   counter directly, it queries the server's `/clock_query` and models the
 //   counter (below). The Python client's `UdpSampleClock`, over the carrier a
 //   browser has.
-// - `EmbedSampleClock` — for an in-page engine, whose connection exposes the
-//   counter itself: no round trips, no model — every read *is* the counter. It
+// - `EmbedSampleClock` -- for an in-page engine, whose connection exposes the
+//   counter itself: no round trips, no model -- every read *is* the counter. It
 //   mirrors the tracker's surface so `Server.sampleTimebase` treats both alike.
 //   The Python client's class of the same name, and named for the same
 //   property: what makes the counter readable is that the server is **embedded
 //   in this process** (the wasm engine is the `synth,embed` build, reached
-//   through the embed door), not that there is one of it per page — a page
+//   through the embed door), not that there is one of it per page -- a page
 //   opens as many engines as it wants to.
 //
 // The socket tracker models
@@ -26,7 +26,7 @@
 // the wasm door the way the Python client reaches it through ctypes, so every
 // client predicts the same sample from the same anchors. The `TempoClock` then
 // paces against this and the `Server` schedules every event by absolute sample
-// with `/sched_at` — drift-free.
+// with `/sched_at` -- drift-free.
 //
 // Query latency does not accumulate: an anchor is paired with the *midpoint*
 // of its round trip, whose half-width is a bounded uncertainty that only
@@ -38,7 +38,7 @@
 // contend with the Server's command socket. A browser client has one
 // WebSocket to a given server and cannot open a second cheaply, so this tracker rides the
 // `Server`'s connection through its ordinary request path. Nothing about the
-// model changes — the anchor is still the midpoint of a measured round trip —
+// model changes -- the anchor is still the midpoint of a measured round trip --
 // only that the round trip shares a queue with everything else the client
 // sends.
 
@@ -106,7 +106,7 @@ export class WsSampleClock implements ServerSampleClock {
 
     /**
      * One `/clock_query` round trip, timestamped at the midpoint of the
-     * exchange — the best estimate of when the server read its own counter.
+     * exchange -- the best estimate of when the server read its own counter.
      * Static because the first one has to happen before there is a model to
      * put it in.
      */
@@ -133,7 +133,7 @@ export class WsSampleClock implements ServerSampleClock {
 
     /**
      * Firms the model up before anything schedules against it: one anchor
-     * gives an offset, several give a rate — but only if they are spread over
+     * gives an offset, several give a rate -- but only if they are spread over
      * enough time. Back-to-back round trips all land inside a couple of
      * milliseconds, and a regression over that span is noise.
      */
@@ -185,10 +185,10 @@ export class WsSampleClock implements ServerSampleClock {
 /**
  * The in-process counterpart of `WsSampleClock`: reads the engine's sample
  * counter straight off the connection, which shares an `AudioContext` with
- * it. One per engine, not one per page — a connection carries a client over
+ * it. One per engine, not one per page -- a connection carries a client over
  * one engine, and a page may hold several.
  *
- * There is nothing to track — the counter is read synchronously and exactly —
+ * There is nothing to track -- the counter is read synchronously and exactly --
  * so `anchor`/`warmup`/`track` are trivial no-ops kept only for surface parity
  * with the socket tracker, and they never wait or time out. `close` releases
  * nothing: the clock belongs to the connection that opened it.
@@ -239,7 +239,7 @@ export class EmbedSampleClock implements ServerSampleClock {
 
 /**
  * The sample clock of whichever carrier `server` is on, seeded and tracking,
- * or `null` when the server does not answer `/clock_query` — which leaves the
+ * or `null` when the server does not answer `/clock_query` -- which leaves the
  * caller on wall-clock time rather than failing.
  *
  * An embedded engine needs no warmup and no tracking, so both arguments are
@@ -250,7 +250,7 @@ export async function sampleClockFor(
     { timeout, warmup = true, anchors = 5, gap = 0.05, trackEvery = 0.5 }: {
         timeout?: number;
         /**
-         * Firm the model up with extra anchors before anything is scheduled —
+         * Firm the model up with extra anchors before anything is scheduled --
          * the reference client's `lock_to(warmup=True)`. Turned off, the clock
          * locks on the single anchor the first query returned, which is enough
          * to be *anchored* and not enough to be steady.

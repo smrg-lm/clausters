@@ -57,12 +57,12 @@ fn main() {
     println!("cargo:rustc-link-arg=-Wl,-rpath,{prefix}/lib");
 }
 
-/// Whether libverovio is installed under `<prefix>/lib` — telling cargo, on the
+/// Whether libverovio is installed under `<prefix>/lib` -- telling cargo, on the
 /// way, to re-run this script when that directory changes.
 ///
 /// The `rerun-if-changed` is what keeps the answer from going stale. Emitting
 /// any `rerun-if-*` turns off cargo's default "re-run when a file in the package
-/// changes", so `VEROVIO_PREFIX` would otherwise be the *only* trigger — and a
+/// changes", so `VEROVIO_PREFIX` would otherwise be the *only* trigger -- and a
 /// cached "not found" then survives the very install that fixes it: you build
 /// libverovio into the prefix, cargo replays a resolution made before it
 /// existed, and the link fails against a prefix that has none. The library

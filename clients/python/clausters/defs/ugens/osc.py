@@ -25,7 +25,7 @@ def white_noise() -> Ugen:
 def pink_noise() -> Ugen:
     """Equal energy per octave, −3 dB/octave (Voss–McCartney).
 
-    A **quiet** signal by construction — around 0.13 RMS against white noise's
+    A **quiet** signal by construction -- around 0.13 RMS against white noise's
     0.58, which is the level a def ported from sclang expects. Scale it up
     rather than assuming something is wrong."""
     return Ugen("PinkNoise", [])
@@ -47,13 +47,13 @@ def gray_noise() -> Ugen:
 
 
 def clip_noise() -> Ugen:
-    """−1 or 1, nothing between — a coin flip per sample. The loudest noise
+    """−1 or 1, nothing between -- a coin flip per sample. The loudest noise
     available at a given peak, since every sample is at full scale."""
     return Ugen("ClipNoise", [])
 
 
 def lf_noise0(freq=500.0) -> Ugen:
-    """A new random value in ±1 every ``1/freq`` seconds, **held** — steps.
+    """A new random value in ±1 every ``1/freq`` seconds, **held** -- steps.
     Not band limited: like the `lf_saw` family it is a modulation shape."""
     return Ugen("LFNoise0", [freq])
 
@@ -75,7 +75,7 @@ def lf_noise2(freq=500.0) -> Ugen:
 
 
 def lf_clip_noise(freq=500.0) -> Ugen:
-    """`lf_noise0` restricted to ±1 — a random square."""
+    """`lf_noise0` restricted to ±1 -- a random square."""
     return Ugen("LFClipNoise", [freq])
 
 
@@ -84,7 +84,7 @@ def dust(density=1.0) -> Ugen:
 
     Every sample is an independent trial, so the gaps are exponential: this is
     not a clock. Ten per second means ten on average, with clusters and silences
-    — use `impulse` when you want them evenly spaced. The amplitudes are random
+    -- use `impulse` when you want them evenly spaced. The amplitudes are random
     too, which matters if you feed it to something that cares."""
     return Ugen("Dust", [density])
 
@@ -100,7 +100,7 @@ def crackle(chaos=1.5) -> Ugen:
     It has no RNG: the same ``chaos`` always gives the same signal, so it is
     reproducible without a seed. The parameter changes the sound drastically and
     **not** monotonically, so reach for it by ear. The output is one-sided and
-    carries DC — put a `leak_dc` after it before summing it into a bus."""
+    carries DC -- put a `leak_dc` after it before summing it into a bus."""
     return Ugen("Crackle", [chaos])
 
 
@@ -124,7 +124,7 @@ def pulse(freq=440.0, width=0.5) -> Ugen:
 
 
 def lf_saw(freq=440.0, iphase=0.0) -> Ugen:
-    """Rising sawtooth in ±1, **not** band-limited — a modulation shape.
+    """Rising sawtooth in ±1, **not** band-limited -- a modulation shape.
 
     ``iphase`` is the initial phase in **cycles**, ``[0, 1)``, read once at the
     first sample. (sclang measures the same argument in ``[0, 2)``; every phase
@@ -134,7 +134,7 @@ def lf_saw(freq=440.0, iphase=0.0) -> Ugen:
 
 
 def lf_pulse(freq=440.0, iphase=0.0, width=0.5) -> Ugen:
-    """Square in ``[0, 1]`` — a gate, not a bipolar waveform like `pulse` — with
+    """Square in ``[0, 1]`` -- a gate, not a bipolar waveform like `pulse` -- with
     ``width`` as its duty cycle. Not band-limited. ``iphase`` as in `lf_saw`."""
     return Ugen("LFPulse", [freq, iphase, width])
 
@@ -169,15 +169,15 @@ def transport_pos(offset=0.0) -> Ugen:
     carrying a position of its own, so seeking
     (`Server.transport_locate_sample`), looping (`Server.transport_loop`) and
     pausing (`Server.transport_stop` over a governed group) belong to the
-    transport and not to the def. That is the shape a multitrack needs — many
-    readers, one time — and it is why a locate never has to reach into a node.
+    transport and not to the def. That is the shape a multitrack needs -- many
+    readers, one time -- and it is why a locate never has to reach into a node.
 
     It ramps one frame per sample while the transport rolls and holds while it
     is stopped. ``offset`` is where this signal starts on that axis, so a clip
     reads its own frame 0 when the transport reaches it; the subtraction happens
     in double precision inside the UGen, which is what keeps the value exact
     deep into a long take (a signal is 32-bit, and past about six minutes at
-    48 kHz it can no longer count single frames — subtracting afterwards with
+    48 kHz it can no longer count single frames -- subtracting afterwards with
     `sub` has already lost that).
 
     ```python

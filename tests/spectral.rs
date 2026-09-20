@@ -1,5 +1,5 @@
-//! S8 tests: the frequency-domain (`fr`) chain — an `FFT`→`IFFT` round trip
-//! reconstructs a tone, and a `PV_*` filter attenuates a band — driven through
+//! S8 tests: the frequency-domain (`fr`) chain -- an `FFT`→`IFFT` round trip
+//! reconstructs a tone, and a `PV_*` filter attenuates a band -- driven through
 //! the real engine (`process_block`), plus a `/node_ugenCmd` window swap.
 
 #![cfg(feature = "synth")]
@@ -83,13 +83,13 @@ fn fft_ifft_round_trip_reconstructs_a_tone() {
 }
 
 /// A high tone through `FFT` -> `PV_BrickWall` (low pass) -> `IFFT` is removed,
-/// while the same chain without the filter passes it — the PV filter attenuates
+/// while the same chain without the filter passes it -- the PV filter attenuates
 /// its band.
 #[test]
 fn pv_brickwall_attenuates_a_high_tone() {
     let tone = 9000.0f32;
 
-    // Reference: round trip, no filter — the tone survives.
+    // Reference: round trip, no filter -- the tone survives.
     let (mut e_ref, mut h_ref) = engine_pair(SR, CHANNELS);
     h_ref
         .send(add_synth(
@@ -243,7 +243,7 @@ fn u_cmd_swaps_the_fft_window() {
 /// fires (a deterministic sub-hop, block-quantized offset), without touching
 /// the reconstruction itself. Two identical passthrough chains under different
 /// node ids start `stagger` samples apart but agree sample-for-sample in the
-/// steady state — the analysis grid shifts, the content timing does not.
+/// steady state -- the analysis grid shifts, the content timing does not.
 #[test]
 fn hop_stagger_shifts_only_the_first_frame() {
     // FFT(512, 50% hop) at BLOCK_SIZE 64: 4 blocks per hop. Node id 4 ≡ 0
@@ -268,7 +268,7 @@ fn hop_stagger_shifts_only_the_first_frame() {
     let staggered = render(6);
 
     // Onset: before its first frame an `IFFT` emits exact zeros (the FIFO is
-    // empty), so the first nonzero sample marks the first fire — it moves by
+    // empty), so the first nonzero sample marks the first fire -- it moves by
     // exactly the 128-sample stagger.
     let onset = |s: &[f32]| s.iter().position(|&x| x != 0.0).unwrap();
     let shift = onset(&staggered) as i64 - onset(&aligned) as i64;
@@ -340,7 +340,7 @@ fn pv_magclip_limits_loud_bins() {
 }
 
 /// `PV_Add` (the two-chain combiner): summing the spectra of two tones carries
-/// both — the combined power matches the two individual renders' power sum.
+/// both -- the combined power matches the two individual renders' power sum.
 #[test]
 fn pv_add_combines_two_chains() {
     let one = |freq: f32| {
@@ -427,7 +427,7 @@ fn compiler_validates_the_combiner() {
 }
 
 /// `PV_MagFreeze`: un-frozen it is transparent; frozen from the first frame it
-/// holds the initial (zero) magnitudes — silence.
+/// holds the initial (zero) magnitudes -- silence.
 #[test]
 fn pv_magfreeze_holds_magnitudes() {
     let build = |freeze: f32| {
@@ -558,7 +558,7 @@ fn pv_binshift_moves_the_tone() {
 }
 
 /// M29 `PV_Kernel`: a bin-expression program reproducing a curated op renders
-/// **sample-identically** to the built-in row — the mechanism's acceptance
+/// **sample-identically** to the built-in row -- the mechanism's acceptance
 /// test. Here `mag * (mag >= p0)` (a spectral gate) against `PV_MagAbove`.
 #[test]
 fn pv_kernel_reproduces_mag_above() {
@@ -662,7 +662,7 @@ fn pv_kernel_identity_is_transparent() {
 }
 
 /// The phase path: `phase + pi` flips every bin, so the reconstruction is the
-/// negated round trip (within the polar round-trip tolerance — this path goes
+/// negated round trip (within the polar round-trip tolerance -- this path goes
 /// through `atan2`/`cos`/`sin`, unlike the exact magnitude-scaling path).
 #[test]
 fn pv_kernel_phase_program_inverts_with_pi() {

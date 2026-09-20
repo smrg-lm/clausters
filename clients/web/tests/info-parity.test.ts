@@ -1,8 +1,8 @@
 // The readable line every server record prints, against the Python client's.
 //
 // `tests/info.test.ts` asserts the two clients read one *wire* alike; this one
-// asserts they print it alike. There is no shared core under a record's line —
-// it is presentation, written twice from one description — so the only thing
+// asserts they print it alike. There is no shared core under a record's line --
+// it is presentation, written twice from one description -- so the only thing
 // that holds the wording together is the reference output frozen in
 // `info-vectors.json` (written by `gen-info-vectors.py` from the Python
 // records' own `__str__`).
@@ -43,7 +43,7 @@ const vectors: Vector[] = JSON.parse(
 ) as Vector[];
 
 // The generator writes the fields in *this* client's spelling, so a case is
-// the record itself — nothing is transliterated here, which is the only way a
+// the record itself -- nothing is transliterated here, which is the only way a
 // renamed field shows up as a failure rather than as a silent cast.
 const formatters: Record<string, (record: never) => string> = {
     control: (r: ControlInfo) => formatControlInfo(r),

@@ -20,16 +20,16 @@
     <main>
       <div id="note">The web port of the Python client's
 <code>tempo_map.py</code>: <b>a document's whole tempo history, as a function you
-can ask</b> — the same map, question for question.
+can ask</b> -- the same map, question for question.
 
 A beat is not a unit of time. It is a <b>logical coordinate</b>, and what turns
-one into a second is the tempo — which changes as it goes. So "when does
+one into a second is the tempo -- which changes as it goes. So "when does
 beat 8 happen?" has no answer from the tempo in force <i>now</i>: it depends on
 every tempo change before it. That function is the document's
 <code>TempoMap</code>, and this page is about using it as a <b>thing you
 interrogate</b> rather than as a number a clock happens to hold.
 
-Its sibling <code>tempo-canon.html</code> is about one gesture — ten ramps in
+Its sibling <code>tempo-canon.html</code> is about one gesture -- ten ramps in
 wall clock, landing together. This one is about the map underneath that gesture.
 
 <b>Three things it shows, and the third is the one that catches people.</b> A
@@ -37,7 +37,7 @@ tempo change is <b>recorded</b>, never a replacement, so the beats <i>before</i>
 one still convert correctly afterwards. <b>A length in beats is not a
 duration</b>: the same eight beats last eight seconds early on and
 rather less once the tempo has doubled, so seconds always come from <b>two
-positions</b>. And <b>an accelerando is a logarithm</b> — averaging the two
+positions</b>. And <b>an accelerando is a logarithm</b> -- averaging the two
 tempos is out by a tenth of a second over four bars.
 
 Then the map is handed to the timeline that holds the notes and the timeline
@@ -53,7 +53,7 @@ code is already in the process), the engine is the tab's own
 map's rows is <code>tempoSegments(map)</code> rather than
 <code>map.segments()</code> because the map is a generated wasm class that
 cannot grow a method, and the watching loop is a timer rather than a sleeping
-main thread — a page has no thread to block. Every other line is the call the script makes, in the order it
+main thread -- a page has no thread to block. Every other line is the call the script makes, in the order it
 makes it.
 
 Build first (<code>./build.sh</code> from <code>clients/web</code>), then serve
@@ -69,7 +69,7 @@ this directory and open the page.</div>
       } from "../../dist/index.js";
 
       // **The one line the script has no counterpart for.** The numeric core is
-      // wasm here, and it has to be fetched before anything calls into it —
+      // wasm here, and it has to be fetched before anything calls into it --
       // `TempoMap` below is a core class, so this comes first or it throws.
       await loadCore();
 
@@ -104,7 +104,7 @@ this directory and open the page.</div>
       // ---- a length in beats is not a duration ----
       // The same eight beats are eight seconds at the start and
       // rather less after the tempo has doubled. So seconds come from **two
-      // positions**, never from a beat count and a tempo — which is what
+      // positions**, never from a beat count and a tempo -- which is what
       // `spanSecs` is, and why every conversion in the client takes a position.
       log(`beats 0-8 last   ${tempo.spanSecs(0.0, 8.0)} s`);
       log(`beats 8-16 last  ${tempo.spanSecs(8.0, 16.0)} s`);
@@ -120,7 +120,7 @@ this directory and open the page.</div>
       log(`closed form       ${Math.log(4.0 / 2.0) / ((4.0 - 2.0) / (16.0 - 8.0))}`);
 
       // ---- the timeline ----
-      // Sixteen beats of one note each, on a `Timeline` — the static,
+      // Sixteen beats of one note each, on a `Timeline` -- the static,
       // random-access sequencing structure, so the notes are placed at beats and
       // the map decides when each of those beats arrives.
       const PITCHES = [220.0, 277.2, 330.0, 440.0];
@@ -150,8 +150,8 @@ this directory and open the page.</div>
         log(`the timeline's map: ${JSON.stringify(tempoSegments(line.map))}`);
 
         // The other spelling: writing on a clock's map. A timeline's tempo is
-        // written on its map, as above. A **bare clock** — live coding, with
-        // routines and no timeline — writes on its own map with `setTempo`,
+        // written on its map, as above. A **bare clock** -- live coding, with
+        // routines and no timeline -- writes on its own map with `setTempo`,
         // from the beat it is on.
         //
         //   clock.setTempo(4.0)                                  a step
@@ -178,7 +178,7 @@ this directory and open the page.</div>
           if (elapsed >= SECONDS_TO_PLAY) {
             clearInterval(watching);
             line.stop();
-            log("stopped — reload to run it again");
+            log("stopped -- reload to run it again");
           }
         }, 2000);
       };

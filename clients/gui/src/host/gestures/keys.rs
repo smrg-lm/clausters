@@ -4,7 +4,7 @@
 //! to its full extent).
 //!
 //! Split from the pointer machine because it shares nothing with it but the
-//! `Gestures` state: no hit-test, no drag, no cursor — a key arrives already
+//! `Gestures` state: no hit-test, no drag, no cursor -- a key arrives already
 //! addressed to whatever the window has focused or selected.
 //!
 //! **Two addressees, in this order.** Tab is the window's, always
@@ -28,7 +28,7 @@ use super::{GestureCtx, GestureEffect, Gestures, element, focus};
 impl Gestures {
     /// A key arriving at this window: Tab walks the focus ring, anything else
     /// goes to the focused element's
-    /// [`Element::key`](crate::host::widget::Element::key) — which delivers
+    /// [`Element::key`](crate::host::widget::Element::key) -- which delivers
     /// whatever it reports exactly as a drag would, bound → straight to the
     /// audio server, else a `/gui_event`.
     ///
@@ -36,8 +36,8 @@ impl Gestures {
     /// (the native front's internal one; the browser front swaps the page's
     /// string in and out around this call).
     ///
-    /// Returns `Some(effects)` when the key was consumed — the front then skips
-    /// its own shortcuts — and `None` when nothing here answered it.
+    /// Returns `Some(effects)` when the key was consumed -- the front then skips
+    /// its own shortcuts -- and `None` when nothing here answered it.
     pub fn key(
         &self,
         host: &mut Host,
@@ -79,7 +79,7 @@ impl Gestures {
     }
 
     /// A key the focus did not answer, offered to the **element under the
-    /// cursor** — the other addressee, and the reason a field can swallow `q`
+    /// cursor** -- the other addressee, and the reason a field can swallow `q`
     /// while a roll behind it keeps quantizing on the same key.
     ///
     /// It is the same call [`key`](Self::key) makes, at a different address:
@@ -140,7 +140,7 @@ impl Gestures {
 
     /// Undo or redo over a window: report it to whoever owns the document.
     ///
-    /// **The host holds no history** — the log lives with the document, in
+    /// **The host holds no history** -- the log lives with the document, in
     /// `clausters-document`, because a log a view keeps sees only the gestures
     /// *it* made. So this is a route and not an action: it emits
     /// `/gui_event <window_id> <seq> <version> "undo"|"redo"` and the owner
@@ -148,7 +148,7 @@ impl Gestures {
     ///
     /// It is addressed to the **window** rather than to a widget because that
     /// is what it is scoped to: undo is not addressed to a place under the
-    /// cursor, which is why it is not a step in the gesture plan — a
+    /// cursor, which is why it is not a step in the gesture plan -- a
     /// `GesturePlan`'s steps each consume a press *somewhere*. `/gui_closed`
     /// already names a window the same way.
     pub fn history(&self, host: &mut Host, ctx: &GestureCtx, redo: bool) -> Vec<GestureEffect> {
@@ -164,12 +164,12 @@ impl Gestures {
         out
     }
 
-    /// **Plays the contents under the cursor, or stops what is playing** — the
+    /// **Plays the contents under the cursor, or stops what is playing** -- the
     /// editor's monitor, on the space bar.
     ///
     /// Addressed by the pointer for the same reason a copy is: a window may
     /// hold several takes, and what the hand is over is the one it means. It is
-    /// the host's own action and not an intent — sounding a take changes
+    /// the host's own action and not an intent -- sounding a take changes
     /// nothing, so there is nobody to report it to (a host driven by a script
     /// plays through that script's own transport).
     ///
@@ -179,7 +179,7 @@ impl Gestures {
     /// **Where it starts and whether it repeats are read off the view**, not
     /// asked for: a selection plays as a loop over exactly the span it covers,
     /// and with no selection the take plays from its start. The transport is
-    /// what carries both — a locate and a loop span — so nothing here computes
+    /// what carries both -- a locate and a loop span -- so nothing here computes
     /// a time or keeps one in step.
     pub fn play_key(
         &self,
@@ -212,7 +212,7 @@ impl Gestures {
             .and_then(|key| host.timelines().state(key))
             .copied();
         // **The cursor is where it starts, span or no span.** A click leaves a
-        // selection of zero length, and its start is the cursor — reading only
+        // selection of zero length, and its start is the cursor -- reading only
         // the *spans*, as this did, sent every play back to frame 0 and made
         // the click that placed the head look like it had done nothing.
         let start = state.map_or(0.0, |s| s.sel_start).max(0.0) as u64;
@@ -223,15 +223,15 @@ impl Gestures {
     }
 
     /// **Copy, cut and paste over the selection**, addressed to the view under
-    /// the cursor — the window's own shortcuts, reached only by a key nothing
+    /// the cursor -- the window's own shortcuts, reached only by a key nothing
     /// focused and nothing under the cursor answered first (a field's Ctrl+C is
     /// still the field's).
     ///
     /// The three verbs split exactly where the host's authority does. A **copy**
     /// is a read, and the host may honestly do it: it takes the selected span
     /// out of the contents it has *mapped* and puts it on the clipboard. A
-    /// source it cannot read — a mapped pyramid is an overview, a live view has
-    /// no addressable past — **declines, visibly**, because putting silence on
+    /// source it cannot read -- a mapped pyramid is an overview, a live view has
+    /// no addressable past -- **declines, visibly**, because putting silence on
     /// the clipboard is the one answer worse than saying no. A **cut** and a
     /// **paste** change data, which the host does not own, so they leave as
     /// intents and the owner answers with what the document now is.
@@ -250,8 +250,8 @@ impl Gestures {
         clip: &mut Clip,
     ) -> Option<Vec<GestureEffect>> {
         // The pointer names the addressee whenever it is over a view; when it
-        // is over the window's margin — or off the window, which is where a
-        // sweep to the first or last sample leaves it — the window's most
+        // is over the window's margin -- or off the window, which is where a
+        // sweep to the first or last sample leaves it -- the window's most
         // recent selection does (`Host::selection_addressee`).
         let id = match hit(host, ctx, cx, cy).filter(|h| host.timeline_key(h.id).is_some()) {
             Some(Hit { id, .. }) => id,
@@ -336,7 +336,7 @@ impl Gestures {
         Some(out)
     }
 
-    /// `R` over a window: reset every navigable view's axes — a timeline's
+    /// `R` over a window: reset every navigable view's axes -- a timeline's
     /// navigation (the whole group, linked members in other windows too) and
     /// its vertical window, and a navigable spectrum's frequency window. The
     /// views are found by walking the window's tree, so no front slot list is
@@ -357,7 +357,7 @@ impl Gestures {
             set_y_view(host, &mut out, def_id, id, 0.0, 1.0);
         }
         // A spectrum is in no group, so its frequency window resets on its own
-        // — the same key, since to a reader it is the same "show me all of it".
+        // -- the same key, since to a reader it is the same "show me all of it".
         let spectra = host
             .window_def(def_id)
             .map(freq_nav_ids)
@@ -379,7 +379,7 @@ pub enum ClipVerb {
 }
 
 /// The contents behind widget `id` over `frames` of its own frames from
-/// `start` — the element's own answer ([`crate::host::widget::element::Samples::sample_block`]), since only
+/// `start` -- the element's own answer ([`crate::host::widget::element::Samples::sample_block`]), since only
 /// it knows what it holds and whether it may be read.
 fn element_block(
     host: &mut Host,

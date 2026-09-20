@@ -150,7 +150,7 @@ impl OscServer {
     /// `(osc_time, sample)` pair is the master-clock **anchor**: a client maps
     /// its logical OSC time `T` to this server's sample axis with
     /// `S0 + (T − T0)·rate` and schedules with `/sched_at` ([`Self::handle_sched_at`])
-    /// directly in samples — see `docs/sample-clock.md`. Clients that only want
+    /// directly in samples -- see `docs/sample-clock.md`. Clients that only want
     /// the older two-field form ignore the trailing timetag. The counter counts
     /// *processed* samples: it runs a device buffer ahead of the speakers and
     /// pauses on xruns.
@@ -179,7 +179,7 @@ impl OscServer {
 
     /// `/server_errorMode mode`: sets the error-posting mode. `1` posts command errors to
     /// the server console (the default), `0` silences them. The `/fail` OSC
-    /// reply is always sent regardless — clients rely on it; only the
+    /// reply is always sent regardless -- clients rely on it; only the
     /// server-side console logging is gated. scsynth's bundle-local `-1`/`-2`
     /// are not separately supported (deliberate deviation): the persistent
     /// `0`/`1` toggle is the model that fits our logging.
@@ -188,7 +188,7 @@ impl OscServer {
         Ok(())
     }
 
-    /// `/server_cmd name args...`: a server-wide, typed command — the discoverable
+    /// `/server_cmd name args...`: a server-wide, typed command -- the discoverable
     /// replacement for scsynth's untyped `/server_cmd`. `name` selects a handler from
     /// the built-in registry; unknown names `/fail` with the offending name.
     /// The mechanism exists for future server commands; the built-in `ping`
@@ -221,7 +221,7 @@ impl OscServer {
     /// own and already lives in the client builders.
     ///
     /// Built without the `synth` feature there is no UGen catalog at all, and
-    /// the honest reply is an **empty** listing rather than a `/fail` — the
+    /// the honest reply is an **empty** listing rather than a `/fail` -- the
     /// same way `/def_query` on such a build simply lists no synth defs.
     pub(in crate::osc::server) fn handle_ugen_query(
         &mut self,

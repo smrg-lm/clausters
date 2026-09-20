@@ -41,7 +41,7 @@ const GARBAGE_FIFO_CAPACITY: usize = 1024;
 const PENDING_GARBAGE_CAPACITY: usize = 64;
 /// Floor for the node-event FIFO; scaled to `2 * max_nodes` at boot. Events
 /// stay best-effort, but the id registries recycle off `/node_end`, so the
-/// capacity must cover at least one full-tree turnover per drain — a dropped
+/// capacity must cover at least one full-tree turnover per drain -- a dropped
 /// end event is a client-side id that never comes back.
 const EVENT_FIFO_CAPACITY: usize = 2048;
 /// Side-effect reply messages (`SendReply`/`SendTrig`/`Poll`) buffered from
@@ -82,7 +82,7 @@ pub enum Cmd {
     DeepFreeGroup {
         id: i32,
     },
-    /// `/node_run`: pause (`run = false`) or resume (`true`) a node — a synth or a
+    /// `/node_run`: pause (`run = false`) or resume (`true`) a node -- a synth or a
     /// whole group. Makes `DoneAction::PauseSelf` non-terminal.
     RunNode {
         id: i32,
@@ -100,7 +100,7 @@ pub enum Cmd {
         id: i32,
     },
     /// `/transport_locate`: moves the transport's position, leaving both clocks
-    /// alone. One store of the anchor — see `server::clock_axis`.
+    /// alone. One store of the anchor -- see `server::clock_axis`.
     TransportLocate {
         position: u64,
     },
@@ -198,7 +198,7 @@ pub enum Cmd {
 ///
 /// A node whose **target is gone** is not a fault: the client aimed at a group
 /// that was alive when the bundle was emitted and freed before it landed, which
-/// is what re-cueing a pass does — the emission headroom is a quarter second,
+/// is what re-cueing a pass does -- the emission headroom is a quarter second,
 /// and everything queued inside it is aimed at the arrangement being replaced.
 /// Dropping it is the right answer, so this says so at `debug` rather than
 /// warning about an ordinary transport gesture. Everything else is somebody's
@@ -221,7 +221,7 @@ pub enum Garbage {
         id: i32,
         group: Group,
     },
-    /// Command the engine could not apply, and **why** — a vanished target is
+    /// Command the engine could not apply, and **why** -- a vanished target is
     /// a race the protocol allows, the rest are faults (see `Reject`).
     RejectedSynth {
         id: i32,
@@ -241,7 +241,7 @@ pub enum Garbage {
     /// [`Cmd::ClearSched`] dropped: either way its heap must be freed on the
     /// network side, and either way it is what the client asked for.
     SpentBundle(Vec<Cmd>),
-    /// A bundle the engine **rejected** because the schedule queue was full —
+    /// A bundle the engine **rejected** because the schedule queue was full --
     /// the one case worth a warning, and the reason a cleared bundle is not
     /// one: a clear drops what a client asked to drop, and reporting it as a
     /// rejection made a re-cue look like an overflow.
@@ -263,7 +263,7 @@ struct ScheduledBundleT {
 }
 
 /// The node a command acts on, if it acts on one. For a node being created it
-/// is the **target** it is added relative to — the node itself does not exist
+/// is the **target** it is added relative to -- the node itself does not exist
 /// yet, so it cannot be walked.
 ///
 /// Every variant is listed: no catch-all arm, so a `Cmd` added later fails to
@@ -339,7 +339,7 @@ pub struct Counters {
     /// `fetch_max` on the bits is a float max).
     pub peak_cpu: AtomicU32,
     /// Blocks whose processing exceeded their real-time budget (cumulative
-    /// since boot) — the engine-side xrun proxy: the callback cannot have met
+    /// since boot) -- the engine-side xrun proxy: the callback cannot have met
     /// its deadline for that block unless the host buffered extra latency.
     pub late_blocks: AtomicU32,
 }
@@ -413,8 +413,8 @@ impl GarbageSink<'_> {
 }
 
 /// Per-block release factor of the published audio-bus levels: how much a
-/// held peak decays each block, so a meter reading at any rate — a display
-/// frame is a dozen blocks — sees a transient instead of missing it between
+/// held peak decays each block, so a meter reading at any rate -- a display
+/// frame is a dozen blocks -- sees a transient instead of missing it between
 /// looks. [`LEVEL_RELEASE_DB_PER_SEC`] dB per second, the usual peak-meter
 /// ballistic; a decay (rather than a max the reader clears) is what keeps it
 /// correct for **several** readers of the same bus at once.
@@ -498,7 +498,7 @@ pub struct Engine {
     /// the taps and the per-bus levels.
     ///
     /// They belong to the process running an audio device, because they say
-    /// where playback *is* — and an on-demand session has no device and no
+    /// where playback *is* -- and an on-demand session has no device and no
     /// clock, only frames it was asked to run. Two engines on one segment is
     /// the arrangement this exists for (an editor's session owns the samples,
     /// the RT server owns the devices): a session that published here would
@@ -551,7 +551,7 @@ pub struct EngineHandle {
     position_clock: Arc<AtomicU64>,
     counters: Arc<Counters>,
     meters: Arc<Meters>,
-    /// The IPC segment when one exists — the network thread reads the audio
+    /// The IPC segment when one exists -- the network thread reads the audio
     /// taps from here (`/bus_tapStream`) without an engine round-trip.
     segment: Option<Arc<Segment>>,
     /// Where the device's sample axis sits on the wall clock, published by a
@@ -572,7 +572,7 @@ pub const DEFAULT_CONTROL_BUSES: usize = NUM_CONTROL_BUSES;
 
 /// Like [`engine_pair`], plus a worker pool of `workers` DSP threads
 /// for parallel groups (`/group_parallel`). `workers == 0` is fully sequential
-/// — identical behavior and output either way (stages are bit-identical to
+/// -- identical behavior and output either way (stages are bit-identical to
 /// sequential execution by construction).
 pub fn engine_pair_with_workers(
     sample_rate: f32,
@@ -716,7 +716,7 @@ impl Engine {
         DeviceSample::new(self.now).to_transport(self.frozen_total)
     }
 
-    /// The transport clock **at the cursor** — where inside the current block
+    /// The transport clock **at the cursor** -- where inside the current block
     /// the engine is standing, rather than at its first sample.
     ///
     /// A locate arrives inside a timed bundle and lands on an exact sample, so
@@ -735,7 +735,7 @@ impl Engine {
     }
 
     /// The device sample at which the position reaches the loop's end, when a
-    /// loop is on, the transport rolls and the end is still ahead — what the
+    /// loop is on, the transport rolls and the end is still ahead -- what the
     /// block is cut at so a wrap lands on its exact sample.
     fn loop_wrap_due(&self) -> Option<u64> {
         if !self.transport_rolling {
@@ -768,7 +768,7 @@ impl Engine {
     ///
     /// **The group is resolved once, not once per message.** Behind an id is a
     /// linear scan of the tree's slots, and asking `is_descendant_of` per
-    /// target scanned for the *ancestor* every time as well — a second scan for
+    /// target scanned for the *ancestor* every time as well -- a second scan for
     /// a node that had not moved since the first. The anchor is that lookup,
     /// hoisted ([`NodeTree::anchor`]), which halves the scans a bundle costs.
     /// It is safe to hold across the scan for the reason it is unsafe to hold
@@ -800,7 +800,7 @@ impl Engine {
     }
 
     /// Creates the input ring, attaches its consumer to this engine, and hands
-    /// back the producer to push interleaved frames — the test-side counterpart
+    /// back the producer to push interleaved frames -- the test-side counterpart
     /// of the cpal input stream. `capacity` is in samples (channels × frames).
     pub fn input_ring(&mut self, channels: usize, capacity: usize) -> Producer<f32> {
         let (tx, rx) = RingBuffer::new(capacity.max(1));
@@ -810,7 +810,7 @@ impl Engine {
 
     /// Drains one block's worth of interleaved input frames into the hardware
     /// input buses. An underrun (producer behind) reads as silence for the
-    /// missing samples — never a stall. RT-safe: ring pops and bus writes only.
+    /// missing samples -- never a stall. RT-safe: ring pops and bus writes only.
     fn fill_input_buses(&mut self) {
         let Some(rx) = &mut self.input_rx else { return };
         let ich = self.input_channels;
@@ -834,7 +834,7 @@ impl Engine {
     /// [`Self::process_block`] begins with, and none of the rest.
     ///
     /// A pulled driver needs this because a command can only take effect
-    /// through the FIFO — installing a buffer is `Cmd::SetBuffer`, so a
+    /// through the FIFO -- installing a buffer is `Cmd::SetBuffer`, so a
     /// `/buffer_alloc` that has completed on the NRT side is still not in the
     /// pool until the engine drains. In real time the next block does that a
     /// millisecond later and nobody notices; a driver whose clock only moves
@@ -844,7 +844,7 @@ impl Engine {
     ///
     /// Same RT discipline as `process_block`: no allocation, no locking. It
     /// is safe to call from the audio thread, and nothing there needs to.
-    /// Stops this engine publishing **time** into the segment — the clocks,
+    /// Stops this engine publishing **time** into the segment -- the clocks,
     /// the taps and the per-bus levels (see `publishes_time`).
     ///
     /// What it keeps publishing is the samples and the control buses, which
@@ -868,7 +868,7 @@ impl Engine {
     pub fn process_block(&mut self, out: &mut [f32]) {
         debug_assert_eq!(out.len(), BLOCK_SIZE * self.channels);
         // CPU meter start. The stamp is RT-safe on the platforms we target:
-        // `clock_gettime(CLOCK_MONOTONIC)` through the vDSO — no allocation,
+        // `clock_gettime(CLOCK_MONOTONIC)` through the vDSO -- no allocation,
         // no lock, no kernel trap. On wasm32 there is no monotonic clock, so
         // the stamp is inert and both this meter and `/server_load` read 0
         // there (`server::meters`).
@@ -905,7 +905,7 @@ impl Engine {
             // A transport entry's device time only exists while rolling: a
             // stopped transport can never reach it. Both this and
             // `frozen_total` are read afresh on every iteration, because a
-            // bundle applied below may have carried a `TransportRun` — a
+            // bundle applied below may have carried a `TransportRun` -- a
             // stop scheduled mid-block freezes the transport queue from
             // that sample on, which is the wanted behaviour.
             let transport_due = if self.transport_rolling {
@@ -1025,7 +1025,7 @@ impl Engine {
         if let Some(segment) = self.ipc.as_ref().filter(|_| self.publishes_time) {
             // Audio taps first, then the clock: a reader that sees clock N
             // sees every tap sample of block N. One memcpy + one Release
-            // store per active tap — no allocation, no lock (RT-safe).
+            // store per active tap -- no allocation, no lock (RT-safe).
             for (i, &bus) in self.tap_buses.iter().enumerate() {
                 if bus >= 0 && (bus as usize) < self.buses.audio_count() {
                     segment.tap_write(i, self.buses.audio(bus as usize));
@@ -1033,8 +1033,8 @@ impl Engine {
             }
             // Then the per-bus level a meter reads: this block's peak, held
             // against the decaying previous one. The hold is what makes the
-            // number correct for a reader running slower than the engine — a
-            // display frame is a dozen blocks — and the decay (rather than a
+            // number correct for a reader running slower than the engine -- a
+            // display frame is a dozen blocks -- and the decay (rather than a
             // max the reader clears) keeps it correct for several readers of
             // the same bus at once. One pass over the block per bus, one load
             // and one relaxed store: no allocation, no lock.
@@ -1140,7 +1140,7 @@ impl Engine {
             // Where the transport stands at this slice's **first** frame. The block is
             // cut at every loop wrap, so the position advances by exactly one
             // per sample for the whole slice and a UGen reading it only has to
-            // ramp — no wrap arithmetic, and nothing needs to know the loop
+            // ramp -- no wrap arithmetic, and nothing needs to know the loop
             // points but the engine.
             transport: TransportCtx {
                 position: self
@@ -1308,7 +1308,7 @@ impl Engine {
                 }
                 // Named rather than left to a `_`, so the compiler still
                 // refuses a `Cmd` variant that neither this match nor
-                // `apply_to_tree` handles — a wildcard here would turn that
+                // `apply_to_tree` handles -- a wildcard here would turn that
                 // omission into a panic on the audio thread.
                 Cmd::AddSynth { .. }
                 | Cmd::AddGroup { .. }
@@ -1338,7 +1338,7 @@ impl Engine {
     }
 }
 
-/// The node-tree half of [`Engine::apply`] — every command whose only engine
+/// The node-tree half of [`Engine::apply`] -- every command whose only engine
 /// state is the tree itself, which is twelve of the nineteen.
 ///
 /// A free function taking the two things it touches, rather than a method:
@@ -1357,7 +1357,7 @@ fn apply_to_tree(tree: &mut NodeTree, sink: &mut GarbageSink, cmd: Cmd) -> Optio
             usage,
         } => {
             // Every add path funnels here, so this is the one place a
-            // synth learns its id (arithmetic only — RT-safe). See
+            // synth learns its id (arithmetic only -- RT-safe). See
             // `SynthNode::set_node_id`.
             synth.set_node_id(id);
             match tree.insert(

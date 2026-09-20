@@ -298,11 +298,11 @@ fn faust_def_renders_in_nrt() {
 
 /// A Faust `soundfile("<bufnum>", n)` reads a *server buffer* installed by the
 /// score. Regression: the NRT renderer must land the buffer in the translator's
-/// pool — the one `make_synth` fills the soundfile zone from — not only in the
+/// pool -- the one `make_synth` fills the soundfile zone from -- not only in the
 /// engine's. Before that wiring, an offline soundfile got the empty placeholder
 /// (length 1024) and was silent. The def here outputs the soundfile *length*,
 /// which is the buffer's frame count (300) when wired and 1024 when not, so a
-/// zeroed `/buffer_alloc` buffer is enough — no sample data needed.
+/// zeroed `/buffer_alloc` buffer is enough -- no sample data needed.
 #[cfg(feature = "faust")]
 #[test]
 fn soundfile_reads_a_score_buffer_in_nrt() {
@@ -425,7 +425,7 @@ fn zero_length_score_is_an_error() {
 
 /// M31(a): a score writes its own samples. The `/buffer_*` family is legal in
 /// a score and completes synchronously before time advances, so the write half
-/// composes with the rest without a barrier — `PlayBuf` reads back exactly what
+/// composes with the rest without a barrier -- `PlayBuf` reads back exactly what
 /// `/buffer_setRange` laid down.
 #[cfg(feature = "synth")]
 #[test]

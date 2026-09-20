@@ -47,7 +47,7 @@ server.onReply = (bytes) => {
     }
 };
 server.onError = (m) => log(`!! worklet error: ${m}`);
-server.onQuit = () => log("!! /server_quit — engine stopped");
+server.onQuit = () => log("!! /server_quit -- engine stopped");
 log(`engine loaded (context ${server.context.sampleRate} Hz, state ${server.context.state})`);
 
 let powered = false;

@@ -1,18 +1,18 @@
 //! **The id spaces a client allocates from**, sized from the server and sliced
-//! for the clients sharing it — the policy every endpoint used to restate.
+//! for the clients sharing it -- the policy every endpoint used to restate.
 //!
 //! [`crate::registry::Registry`] is the occupancy map; this is what
-//! stands on it. A client needs four spaces — node ids, audio buses, control
-//! buses, buffers — and each has a shape the *server* decides: the node table's
+//! stands on it. A client needs four spaces -- node ids, audio buses, control
+//! buses, buffers -- and each has a shape the *server* decides: the node table's
 //! client range, the output buses at the bottom of the audio space, the private
 //! GraphDef windows at the top of both bus spaces. Two clients on one server
 //! each take a share of what is left.
 //!
 //! It was written three times: the Python client's four allocator classes, the
 //! web client's four and a second scheme of fixed bases for the page, and the
-//! GUI host's own windows with no registry at all. They had drifted on a fact —
+//! GUI host's own windows with no registry at all. They had drifted on a fact --
 //! one client reserved two output buses by default where the other reserved the
-//! server's output count — and the host's copy was the one that went silent.
+//! server's output count -- and the host's copy was the one that went silent.
 //! One policy, here, bound by every endpoint.
 
 use crate::registry::{
@@ -60,7 +60,7 @@ impl Default for IdShare {
 /// The **last share takes the remainder**, so the slices tile the range exactly
 /// rather than leaving a few ids nobody may allocate. A share of a range too
 /// small to split yields an empty span, and an empty space reports exhaustion
-/// from its first allocation — a client that cannot allocate says so.
+/// from its first allocation -- a client that cannot allocate says so.
 pub fn share_of(base: i64, span: usize, share: IdShare) -> (i64, usize) {
     let of = share.of.max(1) as usize;
     let index = (share.index as usize).min(of - 1);
@@ -157,7 +157,7 @@ pub struct ServerShape {
 }
 
 impl ServerShape {
-    /// **The shape a server boots with when nothing says otherwise** — what a
+    /// **The shape a server boots with when nothing says otherwise** -- what a
     /// client allocates by before its `/server_query` is answered, and all it
     /// ever needs against a server started with no sizing options.
     pub const DEFAULT: ServerShape = ServerShape {
@@ -255,7 +255,7 @@ impl IdSpaces {
     }
 
     /// Returns a run of `space` to the pool, or [`IdError::NotAllocated`] for
-    /// ids it never handed out — losing track of an id is a client bug and is
+    /// ids it never handed out -- losing track of an id is a client bug and is
     /// reported, never absorbed.
     pub fn release(&mut self, space: Space, first: i64, width: usize) -> Result<(), IdError> {
         match self.registry(space) {
@@ -272,8 +272,8 @@ impl IdSpaces {
     /// `/synth_new` it refused), taken back if it was this client's.
     ///
     /// Every node death on a server is reported to every client that asked, not
-    /// only those of nodes this client made, so an id outside this space — the
-    /// server's own, another client's — or one already taken back is not an
+    /// only those of nodes this client made, so an id outside this space -- the
+    /// server's own, another client's -- or one already taken back is not an
     /// error here: it is ignored, and the answer says whether it was ours.
     pub fn node_ended(&mut self, node: i64) -> bool {
         self.nodes.is_allocated(node) && self.nodes.release(node, 1).is_ok()
@@ -282,7 +282,7 @@ impl IdSpaces {
     /// **Takes a narrower share of every space, keeping what is allocated.**
     ///
     /// What a client does when a second client arrives on its server after it
-    /// has already allocated — a script that opens a GUI host once its takes
+    /// has already allocated -- a script that opens a GUI host once its takes
     /// are loaded. Every id it holds keeps its number, because the server
     /// already knows it by that number; what changes is where the next one may
     /// come from.
@@ -296,7 +296,7 @@ impl IdSpaces {
     }
 
     /// **Takes the spaces of another server shape and share, keeping what is
-    /// allocated** — what a client does when the server's `/server_query`
+    /// allocated** -- what a client does when the server's `/server_query`
     /// answers after it has already allocated by [`ServerShape::DEFAULT`].
     ///
     /// Refused whole, as [`IdSpaces::narrow`] is, when something held falls
@@ -355,14 +355,14 @@ impl IdSpaces {
         self.registry_ref(space).is_some_and(|r| r.contains(id))
     }
 
-    /// How many ids of `space` are allocated now — what makes a leak visible.
+    /// How many ids of `space` are allocated now -- what makes a leak visible.
     pub fn in_use(&self, space: Space) -> usize {
         self.registry_ref(space).map_or(0, Registry::in_use)
     }
 }
 
 /// A bus space: the reserved buses at the bottom, the GraphDef window at the
-/// top, and this client's share of what is left — `None` when the
+/// top, and this client's share of what is left -- `None` when the
 /// reservations swallow it whole, which reports exhaustion from the first call.
 fn bus_space(size: usize, reserved: usize, graph: usize, share: IdShare) -> Option<Registry> {
     let top = size - graph.min(size);

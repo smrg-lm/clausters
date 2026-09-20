@@ -1,6 +1,6 @@
 //! The `score` widget's renderer: a verovio display list -> triangle mesh.
 //!
-//! Music notation is vector art — SMuFL glyph outlines (noteheads, clefs,
+//! Music notation is vector art -- SMuFL glyph outlines (noteheads, clefs,
 //! rests, accidentals, flags) plus engraving strokes and fills (staff lines,
 //! stems, ledger lines, beams, slurs, ties). None of it is data-viz, so it does
 //! not get its own GPU pipeline: every primitive is tessellated into the same
@@ -12,7 +12,7 @@
 //! sends a **semantic display list**: a table of glyph outlines keyed by SMuFL
 //! codepoint, plus placed primitives in verovio page units. The host fits that
 //! page into the widget rect and tessellates. The web client reuses this same
-//! renderer by sending the same display list — no engraving logic is
+//! renderer by sending the same display list -- no engraving logic is
 //! duplicated per language.
 //!
 //! Curves (glyph outlines, slurs, ties) are filled with lyon's
@@ -20,9 +20,9 @@
 //! thick-line quads. Everything is baked into screen coordinates *before*
 //! tessellation so the curve-flattening tolerance is expressed in pixels.
 
-//! **Module layout.** The element's growth is *semantic* rather than graphic —
+//! **Module layout.** The element's growth is *semantic* rather than graphic --
 //! the timemap, the identity of the element under the cursor, transposition in
-//! diatonic steps, the edit-back payloads — so it is a submodule split by what
+//! diatonic steps, the edit-back payloads -- so it is a submodule split by what
 //! each part knows: [`list`] decodes the client's page off the wire, [`glyphs`]
 //! turns an outline string into a path, [`tess`] paints, and [`cursor`] holds
 //! the two indexes and the mappings a gesture measures against. This file is
@@ -41,7 +41,7 @@ use std::collections::HashMap;
 
 use crate::host::paint::Color;
 
-/// An affine map restricted to translate + non-uniform scale — the only
+/// An affine map restricted to translate + non-uniform scale -- the only
 /// transforms verovio emits (`translate(...)` and `scale(...)`, the glyph's
 /// inner `scale(1,-1)` folded into a negative `sy`). Composing two of these
 /// stays in the family, so a full matrix is unnecessary.
@@ -101,7 +101,7 @@ pub struct Bounds {
 }
 
 impl Bounds {
-    /// The box `xf` maps this one onto — still axis-aligned, since `xf` only
+    /// The box `xf` maps this one onto -- still axis-aligned, since `xf` only
     /// translates and scales; a negative scale flips it, so the corners are
     /// re-ordered.
     fn transformed(self, xf: Affine) -> Bounds {
@@ -119,7 +119,7 @@ impl Bounds {
         x >= self.x0 && x <= self.x1 && y >= self.y0 && y <= self.y1
     }
 
-    /// Whether `(x, y)` is on the primitive this box was measured around —
+    /// Whether `(x, y)` is on the primitive this box was measured around --
     /// which is the box itself for everything engraved straight, and the
     /// **ellipse inscribed in it** for a notehead.
     fn holds(&self, shape: HitShape, x: f32, y: f32) -> bool {
@@ -162,7 +162,7 @@ impl Bounds {
 /// knows what it measured.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HitShape {
-    /// The box itself — a line, a stem, a beam, a text run, any glyph whose
+    /// The box itself -- a line, a stem, a beam, a text run, any glyph whose
     /// outline fills what was measured around it.
     Rect,
     /// The ellipse inscribed in the box: a notehead.
@@ -205,7 +205,7 @@ pub enum Prim {
     },
     /// A filled region: beams (polygons), slurs and ties (filled cubic
     /// outlines), augmentation dots (ellipses). `d` is the outline in the
-    /// element's **local** coordinates; `xf` maps it to page units — mapped in
+    /// element's **local** coordinates; `xf` maps it to page units -- mapped in
     /// the host (not baked into `d` on the client) so comma/space coordinate
     /// separators never confuse a numeric rewrite.
     Fill {
@@ -271,7 +271,7 @@ impl Prim {
 /// One position of the playback cursor: at musical time `t` (ms) the sounding
 /// event sits at page-x `x`, spanning its system's staff from `y0` to `y1`. The
 /// track is the bridge from the timemap (onset ms per MEI id, from the client)
-/// to geometry (the id's placed x) — precomputed on the client, sorted by `t`.
+/// to geometry (the id's placed x) -- precomputed on the client, sorted by `t`.
 #[derive(Clone, Copy, Debug)]
 pub struct Cursor {
     pub t: f32,
@@ -312,7 +312,7 @@ pub struct Staff {
 ///
 /// It carries no pitch and no duration on purpose. A staff position becomes a
 /// pitch only once something knows the clef and the key, and a duration is a
-/// choice nobody made by clicking — both are the client's, which is the same
+/// choice nobody made by clicking -- both are the client's, which is the same
 /// line every other score gesture draws.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Entry {
@@ -322,7 +322,7 @@ pub struct Entry {
 }
 
 /// The default page units per diatonic step: verovio's default `unit` (9) times
-/// its definition factor (10). Used when a display list names no `step` — every
+/// its definition factor (10). Used when a display list names no `step` -- every
 /// display list `clausters.gui.notation` builds does.
 pub const STEP: f32 = 90.0;
 
@@ -341,15 +341,15 @@ pub struct ScoreData {
     /// timemap.
     pub cursors: Vec<Cursor>,
     /// A **static** playback time in ms, set with `/gui_set playhead`; negative
-    /// means none. It stands still — a stopped transport located on a note keeps
+    /// means none. It stands still -- a stopped transport located on a note keeps
     /// its cursor there, and it must not drift with the engine clock.
     pub playhead: f32,
     /// The playhead origin: the engine sample-clock value at score time 0
     /// (negative = not playing, fall back to the static `playhead`). Set once at
-    /// the start of a pass and the cursor then *sweeps* on its own — the host
+    /// the start of a pass and the cursor then *sweeps* on its own -- the host
     /// reads the clock every frame, so playback needs zero messages.
     pub playhead_at: f64,
-    /// The sweep's **loop region** in musical ms — the score's own unit, as
+    /// The sweep's **loop region** in musical ms -- the score's own unit, as
     /// `playhead` is: with `playhead_loop_len > 0` the swept cursor wraps
     /// inside `[playhead_loop_start, + len)` instead of running off the page,
     /// so a repeated passage is followed on the same one anchor and still
@@ -367,7 +367,7 @@ pub struct ScoreData {
     /// same pass that clusters them into staves ([`ScoreData::staves`]).
     ///
     /// The engraver labels a staff line with the staff's own `xml:id`, and a
-    /// line is a hairline the width of the system — the tightest box on the
+    /// line is a hairline the width of the system -- the tightest box on the
     /// page. So on a page taking note entry a press aimed at a line rather than
     /// a space was answered with the staff and spent on a selection. This is
     /// what tells the *staff's own drawing* from everything else a press can
@@ -376,17 +376,17 @@ pub struct ScoreData {
     /// selected by pointing at them, whether or not they sound.
     ///
     /// Derived here rather than declared, because it is the same geometric rule
-    /// the staves themselves come from — a line long relative to the page's
-    /// other horizontal strokes — and a second source for one fact is a second
+    /// the staves themselves come from -- a line long relative to the page's
+    /// other horizontal strokes -- and a second source for one fact is a second
     /// answer to it.
     pub staff_ids: std::collections::HashSet<String>,
-    /// The engraved staves, top to bottom — derived with the hit index, and
+    /// The engraved staves, top to bottom -- derived with the hit index, and
     /// what tells a dragged pitch when it has left the staff.
     pub staves: Vec<Staff>,
     /// The selected element's MEI `xml:id`, drawn highlighted; `None` = nothing
     /// selected. Set by a click on the page and by `/gui_set selected`.
     pub selected: Option<String>,
-    /// Page units per **diatonic step** — half the staff-line spacing, the
+    /// Page units per **diatonic step** -- half the staff-line spacing, the
     /// quantum a pitch drag counts in. It comes from the client with the page
     /// (it depends on verovio's `unit` option, not on the staff scale), so the
     /// host quantizes exactly what the engraver drew.
@@ -398,7 +398,7 @@ pub struct ScoreData {
     pub drag: Option<ScoreDrag>,
     /// Whether a drag on an element **edits** it (a pitch drag → `"transpose"`).
     /// Off by default: a score is a view, and the host holds no score, so an
-    /// edit the client will not apply is a gesture that cannot be fulfilled — an
+    /// edit the client will not apply is a gesture that cannot be fulfilled -- an
     /// editor opts in (`editable: true`). Selection and the `"element"` click are
     /// not gated by this: inspecting a read-only page is not editing it.
     pub editable: bool,
@@ -411,7 +411,7 @@ pub struct ScoreData {
     /// asked for note entry would start reporting an insertion every time a
     /// user dismissed one.
     pub entry: bool,
-    /// The ids that name a **sounding element** — a note, a rest — as against
+    /// The ids that name a **sounding element** -- a note, a rest -- as against
     /// the staff and layer furniture that also carries one. Sent by the client,
     /// because the walk that engraved the page is what knows, and to a renderer
     /// an id is an id.
@@ -420,8 +420,8 @@ pub struct ScoreData {
     ///
     /// The client reads them and the host does not re-derive them, for the
     /// reason the client's own walk gives: a **gap cannot tell a grand staff
-    /// from two systems**, and what settles it — a barline drawn through the
-    /// brace — is a notation fact rather than a measurement. Without it a press
+    /// from two systems**, and what settles it -- a barline drawn through the
+    /// brace -- is a notation fact rather than a measurement. Without it a press
     /// on the third system's upper staff named staff 4 of a two-staff score,
     /// which no model has.
     pub systems: Vec<[f32; 2]>,
@@ -455,7 +455,7 @@ impl Default for ScoreData {
 }
 
 /// The three roles a score paints in: the engraving ink, the playback cursor
-/// and the selection highlight — bundled so the theme travels as one argument.
+/// and the selection highlight -- bundled so the theme travels as one argument.
 #[derive(Clone, Copy, Debug)]
 pub struct ScoreColors {
     pub ink: Color,

@@ -1,7 +1,7 @@
 //! **Reading a signal between its samples**: the band-limited reconstruction
 //! the true-peak measurement and the zoomed-in waveform both need.
 //!
-//! A sequence of samples is not a picture of a signal — it is the signal's
+//! A sequence of samples is not a picture of a signal -- it is the signal's
 //! value at a grid of instants, and the signal itself is what the
 //! reconstruction filter puts back between them. Two things here ask for that
 //! signal rather than for the samples:
@@ -9,7 +9,7 @@
 //! - **True peak.** A signal whose samples all read below full scale can still
 //!   reconstruct above it: the peak fell between two samples. Every converter
 //!   sees that peak, so a meter reporting the largest *sample* under-reads
-//!   exactly the thing it exists to catch — by about 3 dB in the classic case
+//!   exactly the thing it exists to catch -- by about 3 dB in the classic case
 //!   and, ITU-R BS.1770-4 says, "commonly several dBs" on real transients.
 //!   [`true_peak`] and [`TruePeakMeter`] answer with the reconstructed peak.
 //! - **The drawing.** Past the point where a waveform view has more pixels than
@@ -23,7 +23,7 @@
 //! Oversampling by an integer factor `L` is: put `L-1` zeros between every pair
 //! of input samples and low-pass the result at the original Nyquist. A
 //! **polyphase** decomposition is the same filter with the arithmetic nobody
-//! wastes — one branch per output sub-sample, each a short FIR over the *input*
+//! wastes -- one branch per output sub-sample, each a short FIR over the *input*
 //! samples, so no multiplication by a zero is ever performed. `L` phases of
 //! [`TAPS`] taps each are one linear-phase FIR of `L * TAPS` taps, split up.
 //!
@@ -45,7 +45,7 @@
 //! The filter is not where a true-peak reading loses its last fraction of a
 //! decibel; the **grid** is. A peak can fall midway between two *oversampled*
 //! instants, and the deepest it can hide there is a property of arithmetic, not
-//! of anybody's filter — `20·log10(cos(π · fnorm / L))`, which BS.1770-4's
+//! of anybody's filter -- `20·log10(cos(π · fnorm / L))`, which BS.1770-4's
 //! Appendix 1 tabulates:
 //!
 //! | Oversampling | worst under-read at 0.45 of Nyquist | at Nyquist |
@@ -55,7 +55,7 @@
 //!
 //! So [`BS1770`] is what the standard asks for and [`FINE`] is what to reach
 //! for when the reading has to be tight, and neither is a better *filter* than
-//! the other — they are two grids.
+//! the other -- they are two grids.
 //!
 //! **What this deliberately does not do.** BS.1770 attenuates by 12.04 dB
 //! before oversampling and restores the gain after. The recommendation says why
@@ -68,12 +68,12 @@
 //! An FIR reading `TAPS` input samples produces its first legitimate output
 //! only once it has that many to read. A reconstruction over a *span* of a
 //! longer signal therefore needs [`GUARD`] input samples of context on each
-//! side; without them the filter reads zeros past the edge and **rings** — an
+//! side; without them the filter reads zeros past the edge and **rings** -- an
 //! overshoot at the ends that is the tool's and not the signal's.
 //!
 //! So every function here takes the guard explicitly. A caller that cannot
-//! supply context — the first samples of a file, where there is nothing before
-//! them — gets the documented edge policy ([`Interpolator::oversample_edge`]:
+//! supply context -- the first samples of a file, where there is nothing before
+//! them -- gets the documented edge policy ([`Interpolator::oversample_edge`]:
 //! silence before the beginning, which is what silence before a file is) rather
 //! than a silent lie about where the context came from.
 
@@ -167,13 +167,13 @@ pub const PHASES_4X: [[f32; TAPS]; 4] = [
     ],
 ];
 
-/// **The 8× table**, designed rather than transcribed — the recommendation
+/// **The 8× table**, designed rather than transcribed -- the recommendation
 /// gives none past 4× while saying plainly that higher ratios are preferred.
 ///
 /// It is the classic **fractional-delay** form, which is chosen for a property
 /// the standard's table does not have: the reconstruction at offset `d` from
 /// sample `i` is `sum_k x[i+k] · sinc(k − d) · kaiser(k − d)`, so at `d = 0`
-/// every term but `x[i]` is a sinc at an integer — zero — and **phase 0 is the
+/// every term but `x[i]` is a sinc at an integer -- zero -- and **phase 0 is the
 /// sample itself, exactly**. A curve drawn from this table passes *through* its
 /// dots; one drawn from [`PHASES_4X`] misses them by up to 0.09, because that
 /// filter's centre falls between two samples and none of its phases is a
@@ -340,7 +340,7 @@ impl Interpolator {
     /// the sample rate.
     ///
     /// `input` is the span **plus [`GUARD`] samples of context at each end**,
-    /// and the output is every span sample's sub-samples — so `out.len()` must
+    /// and the output is every span sample's sub-samples -- so `out.len()` must
     /// be `(input.len() - 2 * GUARD) * factor`. Returns `false`, leaving `out`
     /// untouched, when the lengths do not agree or no span is left after the
     /// guard. Allocation-free: the caller owns `out`, so a per-frame or
@@ -348,8 +348,8 @@ impl Interpolator {
     ///
     /// **The reconstruction is centred on the span sample**, not delayed behind
     /// it: sub-sample `0` of span sample `i` *is* `x[i]`, and the ones after it
-    /// are the signal on the way to `x[i + 1]`. That is what a drawing needs —
-    /// a curve through the dots rather than beside them — and it is the whole
+    /// are the signal on the way to `x[i + 1]`. That is what a drawing needs --
+    /// a curve through the dots rather than beside them -- and it is the whole
     /// reason the guard is symmetric, six samples of the past and six of the
     /// future for a twelve-tap filter whose centre is between them.
     pub fn oversample_into(self, input: &[f32], out: &mut [f32]) -> bool {
@@ -379,7 +379,7 @@ impl Interpolator {
     /// which is what silence before a file is, so the filter's own settling
     /// over the first and last [`GUARD`] samples is part of the answer. Use
     /// [`oversample_into`](Self::oversample_into) with real context wherever
-    /// there is any — the two agree exactly in the interior, and the test
+    /// there is any -- the two agree exactly in the interior, and the test
     /// beside them says by how much they differ at the edge.
     pub fn oversample_edge(self, input: &[f32], out: &mut [f32]) -> bool {
         let factor = self.factor();
@@ -406,7 +406,7 @@ impl Interpolator {
     }
 }
 
-/// **A true-peak meter fed block by block** — the streaming face of the
+/// **A true-peak meter fed block by block** -- the streaming face of the
 /// measurement, and the implementation the one-shot [`true_peak`] is a loop
 /// over.
 ///
@@ -428,7 +428,7 @@ impl Default for TruePeakMeter {
 }
 
 impl TruePeakMeter {
-    /// A meter that has seen nothing, measuring the way the standard says —
+    /// A meter that has seen nothing, measuring the way the standard says --
     /// [`BS1770`], 4×.
     pub fn new() -> Self {
         Self::with(BS1770)
@@ -450,7 +450,7 @@ impl TruePeakMeter {
         self.peak
     }
 
-    /// The same in **dBTP** — decibels relative to full scale, measured over
+    /// The same in **dBTP** -- decibels relative to full scale, measured over
     /// the reconstructed signal. `f32::NEG_INFINITY` for silence.
     pub fn peak_db(self) -> f32 {
         amplitude_db(self.peak)
@@ -481,7 +481,7 @@ impl TruePeakMeter {
     }
 
     /// Feeds a whole block, returning the largest reconstructed magnitude in
-    /// it — what a meter draws for *this* block, beside the running peak.
+    /// it -- what a meter draws for *this* block, beside the running peak.
     pub fn feed_block(&mut self, block: &[f32]) -> f32 {
         let mut local = 0.0f32;
         for &s in block {
@@ -516,7 +516,7 @@ impl TruePeakMeter {
 }
 
 /// **The true peak of one channel of an interleaved buffer**, in linear
-/// amplitude — the one-shot face, a loop over [`TruePeakMeter`].
+/// amplitude -- the one-shot face, a loop over [`TruePeakMeter`].
 ///
 /// It is the reconstructed peak and not the sample peak, so it reads **above**
 /// [`crate::measure::channel_stats`]'s peak wherever the signal's own maximum
@@ -525,7 +525,7 @@ pub fn true_peak(samples: &[f32], channels: usize, channel: usize) -> f32 {
     true_peak_with(BS1770, samples, channels, channel)
 }
 
-/// The same over a chosen filter — [`FINE`] where the reading has to be tight.
+/// The same over a chosen filter -- [`FINE`] where the reading has to be tight.
 pub fn true_peak_with(
     filter: Interpolator,
     samples: &[f32],

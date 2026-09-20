@@ -3,14 +3,14 @@
 // `gen-form-vectors.py` builds a handful of trees with the Python
 // surface and freezes the two things that leave the layer: the **document**
 // each is written as (a shared format three languages read) and the
-// **flattened timeline** it renders to — the absolute beats, the events at
+// **flattened timeline** it renders to -- the absolute beats, the events at
 // them, and what a placement's length trims. Each case here rebuilds the same
 // tree through the TypeScript surface and asserts the same two results.
 //
 // What has to match is what leaves the layer, never the source: the two clients
-// are one client in two languages, so a rule that drifts into one of them —
+// are one client in two languages, so a rule that drifts into one of them --
 // a trim rounding differently, a config key spelled the language's way rather
-// than the file's — fails here rather than in an aggregate that reopens wrong.
+// than the file's -- fails here rather than in an aggregate that reopens wrong.
 //
 // Run with `npm test`; this suite needs nothing staged.
 
@@ -36,7 +36,7 @@ import {
 import type { SourceLike } from "../src/form/index.ts";
 
 // The flattening crosses beats to seconds through the shared core's time map
-// (`TempoMap`), so the wasm has to be up before any of it runs — the same
+// (`TempoMap`), so the wasm has to be up before any of it runs -- the same
 // requirement the clock has always had, now that the arrangement measures time
 // with the same one function rather than a ratio of its own.
 await loadCore();
@@ -58,7 +58,7 @@ const buffer = (bufnum: number): SourceLike => ({ bufnum });
 
 /**
  * The two event keys this language spells differently, on their way to the
- * comparison — the document and the Python client both say `add_action` and
+ * comparison -- the document and the Python client both say `add_action` and
  * `has_gate`, which is what a saved aggregate carries.
  */
 const asFile = (props: Record<string, unknown>): Record<string, unknown> => {
@@ -209,7 +209,7 @@ const cases: Record<string, () => Aggregate> = {
 
 for (const [name, build] of Object.entries(cases)) {
     const vector = vectors.cases[name];
-    assert.ok(vector, `no reference vector for '${name}' — regenerate them`);
+    assert.ok(vector, `no reference vector for '${name}' -- regenerate them`);
 
     test(`'${name}' flattens to the same timeline`, () => {
         assert.deepEqual(flat(build()), vector.flat);

@@ -4,7 +4,7 @@ The coroutine layer. A `Routine` wraps a Python **generator function**;
 driving it resumes the generator, and the value it ``yield``s is a *time to
 wait* (in beats) before the next resumption. The thing that resumes routines on
 a schedule is the clock (`clausters.base.clock`); here we only define the
-protocol. This is the part that stays in the host language — ``yield`` is
+protocol. This is the part that stays in the host language -- ``yield`` is
 Python control flow and never moves to Rust.
 """
 
@@ -88,7 +88,7 @@ class Routine(Stream):
     ``inval``). Each `next` resumes it; a ``yield``ed number is the delay
     before the routine should be resumed again.
 
-    **The generator must never block the thread — that is the user's
+    **The generator must never block the thread -- that is the user's
     responsibility.** A routine runs *on the clock thread* (RT) or inside the
     render loop (NRT); blocking it (``time.sleep``, a blocking
     ``Server.sync``/``wait=True`` def send, any synchronous wait-for-reply)
@@ -181,7 +181,7 @@ class Routine(Stream):
             clock: the `TempoClock` to run on. ``None`` resolves against the
                 ambient context like every other play: the clock of the routine
                 running on this thread, else the active session's, else the
-                default session's — created and started on first use. So
+                default session's -- created and started on first use. So
                 ``Routine(f).play()`` runs with no `clausters.Session` and no
                 booted server; a routine needs a clock, not an engine.
             quant: start quantization, forwarded to the clock (see

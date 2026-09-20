@@ -56,7 +56,7 @@ fn installed(action: Result<NrtAction, String>) -> Arc<Buffer> {
 }
 
 /// A write that lands **in the buffer the engine is reading**: it installs
-/// nothing, because there is nothing to install — the samples went into the
+/// nothing, because there is nothing to install -- the samples went into the
 /// cells the pool already holds. What it does report is the **span** it
 /// covered, which is what the summary kept beside a shared buffer follows.
 /// Hands back the mirror's buffer, which is that very allocation, so a test
@@ -321,7 +321,7 @@ fn a_rising_trigger_recues_playbuf_to_its_start_pos() {
 }
 
 /// A non-looping player that reaches the end fires its done action, so a
-/// one-shot leaves the tree by itself — and a **looping** one never does.
+/// one-shot leaves the tree by itself -- and a **looping** one never does.
 #[test]
 fn a_one_shot_player_frees_itself_and_a_looping_one_does_not() {
     let frames = 32; // half a block: the pass ends inside the first block
@@ -428,7 +428,7 @@ fn kr_buf_rate_scale_still_reports_the_hardware_ratio() {
     // The twin of `rates.rs::kr_samplerate_still_reports_the_engine_rate`, for
     // the other quantity that is a hardware fact rather than a time base: a
     // control-rate BufRateScale must report file_sr / engine_sr, not
-    // file_sr / (engine_sr / BLOCK_SIZE). Getting this wrong is silent — the
+    // file_sr / (engine_sr / BLOCK_SIZE). Getting this wrong is silent -- the
     // ratio comes back as the block size and a PlayBuf driven by it races
     // through its buffer in a few milliseconds.
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
@@ -756,7 +756,7 @@ fn set_channel_writes_single_frames_of_one_channel() {
     assert_eq!(written.to_vec(), expected);
 }
 
-/// A channel the buffer does not have is a mistake worth hearing about — the
+/// A channel the buffer does not have is a mistake worth hearing about -- the
 /// same posture as a channel a *file* does not have on the reading side.
 #[test]
 fn a_channel_write_names_a_channel_the_buffer_has() {
@@ -1254,7 +1254,7 @@ mod osc {
         );
 
         // M30: with no argument, /buffer_query lists the allocated buffers in the
-        // same four-arg shape — how a patcher discovers buffers it never
+        // same four-arg shape -- how a patcher discovers buffers it never
         // allocated itself (the pool outlives any one client).
         send("/buffer_query", vec![]);
         let listed = recv_until("/buffer_query.reply");
@@ -1368,7 +1368,7 @@ mod osc {
 
     /// A batch of writes to one buffer, submitted before any of them completes.
     /// Each job's parse snapshots the buffer from the network-side mirror, and
-    /// the mirror is behind until results are drained — so without the queue
+    /// the mirror is behind until results are drained -- so without the queue
     /// chaining them every chunk would rebuild the *pre-batch* contents and the
     /// last one installed would erase the rest. This is the shape a client's
     /// chunked `set_samples` sends, so it is the regression that matters most.
@@ -1611,8 +1611,8 @@ mod osc {
 
     /// A job that finishes in a millisecond is reported in a millisecond: the
     /// NRT thread wakes the command loop instead of letting the reply wait for
-    /// the loop's next idle tick. Before the wake every async command — an
-    /// alloc, a read, a def compile, any `wait=True` — cost the whole 100 ms
+    /// the loop's next idle tick. Before the wake every async command -- an
+    /// alloc, a read, a def compile, any `wait=True` -- cost the whole 100 ms
     /// interval whenever no other traffic happened to drain the pipes.
     #[test]
     fn a_finished_job_is_reported_without_waiting_for_the_idle_tick() {
@@ -1671,7 +1671,7 @@ mod osc {
 }
 
 /// **The milestone's own acceptance**: one synth records into a buffer while
-/// another plays it, and what comes out is what went in — one buffer, two
+/// another plays it, and what comes out is what went in -- one buffer, two
 /// nodes, no copy between them.
 #[test]
 fn a_synth_records_into_a_buffer_while_another_plays_it() {
@@ -1743,7 +1743,7 @@ fn a_synth_records_into_a_buffer_while_another_plays_it() {
 
 /// **A recording says how far it has got.** The writers publish a frontier
 /// once per block, and that number is the whole of what lets another process
-/// draw a take as it fills — the samples are already in memory it can map, and
+/// draw a take as it fills -- the samples are already in memory it can map, and
 /// what it cannot know is where the samples now ends.
 #[test]
 fn a_recorder_publishes_how_far_it_has_written() {
@@ -1989,7 +1989,7 @@ fn a_buffer_delay_places_an_impulse_on_an_exact_frame() {
     );
 }
 
-/// A `Buf*` delay with nowhere to write plays silence rather than guessing —
+/// A `Buf*` delay with nowhere to write plays silence rather than guessing --
 /// the same answer every other buffer UGen gives a missing buffer.
 #[test]
 fn a_buffer_delay_without_a_buffer_is_silent() {

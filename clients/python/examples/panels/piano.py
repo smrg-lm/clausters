@@ -5,12 +5,12 @@ The ``piano`` widget draws a playable keyboard with **real piano proportions**
 (equal white keys; narrower, shorter black keys distributed as on the physical
 instrument), so it resizes freely with the window. The strip above the keys is
 its "ruler": a miniature of the full 0-127 MIDI range with the visible window
-marked — drag it to pan, wheel over it to zoom (wheel over the keys pans by
+marked -- drag it to pan, wheel over it to zoom (wheel over the keys pans by
 white keys); ``pan=False`` freezes the range. Keys outside
 ``active_min``/``active_max`` draw grayed and are inert, showing the range the
 instrument actually answers to.
 
-Playing emits **MIDI-shaped** events — ``/gui_event <id> "note" <pitch>
+Playing emits **MIDI-shaped** events -- ``/gui_event <id> "note" <pitch>
 <velocity> <state> <channel>`` (ints; state 1 on press, 0 on release), ready to
 be translated 1:1 to MIDI note-on/note-off by a later consumer. Dragging across
 keys glissandos; the press height sets the velocity (nearer the front edge =
@@ -19,13 +19,13 @@ louder) unless a fixed ``velocity`` prop overrides it.
 The mapping to server instruments is **programmable, like every GuiDef**, and
 this example shows both paths:
 
-- **Script voices (the event path, shown live)** — the widget stays unbound;
+- **Script voices (the event path, shown live)** -- the widget stays unbound;
   this script turns each ``"note"`` event into a server voice: ``state 1``
   spawns the gated SynthDef below with ``freq``/``amp`` from pitch/velocity,
   ``state 0`` closes its gate (the envelope releases and the node frees
-  itself). Swap the instrument, layer several, or route by ``channel`` — it is
+  itself). Swap the instrument, layer several, or route by ``channel`` -- it is
   ordinary client code.
-- **Host voices (the standalone path, one line)** — pass
+- **Host voices (the standalone path, one line)** -- pass
   ``voice="piano_voice"`` to the builder and the *host* manages the same
   ``/synth_new`` / ``gate 0`` pair per held key with no script in the loop; a saved
   GuiDef bundle then plays with no language client at all (that is what the
@@ -41,7 +41,7 @@ Install once, from the repo root::
     .venv/bin/pip install -e ./clients/python      # bundles the server + GUI binaries
 
 Run it cell by cell (Shift+Enter) and keep playing from the live handles, or as
-a plain script — ``python clients/python/examples/panels/piano.py`` — which stays
+a plain script -- ``python clients/python/examples/panels/piano.py`` -- which stays
 open for a while, printing the notes as you play, then tears everything down.
 Needs a display and a GPU adapter, plus an audio device.
 """
@@ -65,7 +65,7 @@ gui = session.gui()
 # %% [markdown]
 # ## The voice a key plays
 # A gated ADSR sine: the note-on opens the gate, the note-off closes it and the
-# release tail frees the synth (`FREE_SELF`) — the conventional
+# release tail frees the synth (`FREE_SELF`) -- the conventional
 # ``freq``/``amp``/``gate`` control surface both mapping paths drive.
 
 
@@ -88,7 +88,7 @@ voice().send(server)
 # %% [markdown]
 # ## Open the keyboard
 # Five octaves visible, panning enabled (the overview strip above the keys is
-# the navigation surface), and a grayed region outside the 88-key piano range —
+# the navigation surface), and a grayed region outside the 88-key piano range --
 # the active range is settable live (``win["keys"].set(active_min=..., ...)``).
 #
 # For the **host-voice** path instead, build it as
@@ -111,7 +111,7 @@ print(f"opened window {win} -- play the keys")
 # %% [markdown]
 # ## Map the note events to server voices
 # One held synth per sounding pitch: ``state 1`` spawns it, ``state 0`` gates it
-# off. The dict is the whole voice allocator — this is the "programmable like a
+# off. The dict is the whole voice allocator -- this is the "programmable like a
 # GuiDef" path, plain client code between the event and the server.
 
 # %%
@@ -154,7 +154,7 @@ win["keys"].on_event(on_keys)
 
 # %% [markdown]
 # ## Plain-script run
-# Cell-run: play it, and the notes are mapped between cells and during them —
+# Cell-run: play it, and the notes are mapped between cells and during them --
 # the host's event loop delivers each key press on a thread of its own.
 # Script-run: hold the window open until you close it, then everything is torn
 # down (any voice still sounding is gated off).

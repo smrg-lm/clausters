@@ -1,7 +1,7 @@
 // Authoring a **component bundle**: the directory a page mounts.
 //
 // The counterpart of `bundle.ts`, which mounts one. A bundle is the persisted
-// form of an instrument — its defs, its GuiDef, its presets, its samples —
+// form of an instrument -- its defs, its GuiDef, its presets, its samples --
 // plus the manifest that says what mounting it needs; the same directory runs
 // on three legs (a browser tab as a custom element, `clausters-gui
 // --standalone`, and a loopback host against a running server). Nothing here
@@ -15,7 +15,7 @@
 // Where it runs
 // -------------
 //
-// `write` is a **node** verb — it takes a directory — and it is the milestone's
+// `write` is a **node** verb -- it takes a directory -- and it is the milestone's
 // centre: a bundle is an *input*, produced ahead of time and saved, so that a
 // static page can boot it with no interpreter at all. A page can still author
 // one; what it gets is `files`, the same bundle as text, which `openBundle`
@@ -32,22 +32,22 @@
 // things instead of numbering them.
 //
 // Holes live **only** in the GuiDef record. The def payloads carry none, which
-// is what lets two mounted instances share the one def that was sent — and it
+// is what lets two mounted instances share the one def that was sent -- and it
 // forces one authoring rule, which is the right rule anyway: *a bus, a node or
 // a buffer reaches a def as a control, never as a baked constant.* `validate`
-// checks that through the core and refuses to emit a bundle that breaks it —
+// checks that through the core and refuses to emit a bundle that breaks it --
 // an unmountable bundle is unwritable.
 //
 // The bytes are canonical
 // -----------------------
 //
-// There are two writers of this format — this one and the Python client's —
+// There are two writers of this format -- this one and the Python client's --
 // and the same bundle authored in either language must be the *same
 // directory*, not merely an equivalent one. That is only checkable if the
 // bytes are, so both emit canonical JSON: keys sorted, no space between tokens
 // (two spaces of indent for the two files a person reads, `bundle.json` and a
 // preset), and numbers written the shortest way that reads back. Here that
-// costs nothing — it is what `JSON.stringify` already does — and the sorting
+// costs nothing -- it is what `JSON.stringify` already does -- and the sorting
 // is what keeps the two builders' key order out of the comparison.
 //
 // The format itself is documented in docs/clients.md.
@@ -57,19 +57,19 @@ import type { BundleManifest, ParamSpec } from "./bundle.ts";
 import type { GuiNode } from "./gui/guidef.ts";
 
 // The writer validates through the core, so whoever authors a bundle has to
-// load it — and a node script cannot reach the package facade, which registers
+// load it -- and a node script cannot reach the package facade, which registers
 // custom elements a document has to exist for. Re-exported here so this
 // subpath is self-sufficient: `clausters/bundle-writer` plus `clausters/defs`
 // and `clausters/gui` is the whole authoring surface.
 export { loadCore } from "./base/core.ts";
 
-/** Where a page serves the component run time from — the page's business. */
+/** Where a page serves the component run time from -- the page's business. */
 export const DEFAULT_RUNTIME = "/dist/runtime.js";
 
 /**
  * A hole in the template: the `"@symbol"` or `"$param"` string a mount fills.
  *
- * It **is** that string at run time — `` `${lfo}` `` prints `@lfo` — and its
+ * It **is** that string at run time -- `` `${lfo}` `` prints `@lfo` -- and its
  * type is the intersection of the two things a hole stands for. A hole goes
  * where a *value* goes: a bus index, a knob's value, an argument of a boot
  * message. Typing it as `string` alone would make every one of those a type
@@ -77,7 +77,7 @@ export const DEFAULT_RUNTIME = "/dist/runtime.js";
  * builders would put the template's vocabulary into a surface that has
  * nothing to do with bundles. The intersection is assignable to both, which
  * is exactly the latitude an author needs and no more; what the hole actually
- * carries is checked where the check is real — `validate`, against the
+ * carries is checked where the check is real -- `validate`, against the
  * declared type and range, before anything is written.
  */
 export type Hole = string & number;
@@ -94,7 +94,7 @@ export interface ParamOptions {
 
 /**
  * A def this writer can carry: anything with a name and a `/def_send` payload
- * — a `SynthDef`, a `FaustDef`, a `GraphDef`. Structural on purpose, so the
+ * -- a `SynthDef`, a `FaustDef`, a `GraphDef`. Structural on purpose, so the
  * writer does not import the def families to name them.
  */
 export interface WritableDef {
@@ -116,7 +116,7 @@ export interface WriteOptions {
  *
  * `name` names the bundle and **prefixes its def names** (a def name is a
  * global namespace on the server, so two bundles defining `voice` differently
- * must not collide). It is also the custom element's tag by default — HTML
+ * must not collide). It is also the custom element's tag by default -- HTML
  * wants a hyphen in one, so a one-word name needs an explicit
  * `write(dir, { tag })`.
  *
@@ -181,7 +181,7 @@ export class Bundle {
     }
 
     /**
-     * Declares a node symbol and returns its placeholder (`"@name"`) — the id
+     * Declares a node symbol and returns its placeholder (`"@name"`) -- the id
      * the page allocates for a synth or graph this bundle boots.
      */
     node(name: string): Hole {
@@ -213,7 +213,7 @@ export class Bundle {
      * Declares a sample and returns its placeholder (`"@name"`).
      *
      * `path` is relative to the bundle directory (the file is the author's to
-     * place there — it is data, not something a writer emits). The mount
+     * place there -- it is data, not something a writer emits). The mount
      * allocates the buffer index and loads the file into it.
      */
     buffer(name: string, path: string): Hole {
@@ -223,7 +223,7 @@ export class Bundle {
         return `@${name}` as Hole;
     }
 
-    /** Refuses one name in two namespaces — `@name` would not say which. */
+    /** Refuses one name in two namespaces -- `@name` would not say which. */
     #declare(name: string): void {
         const taken = new Set([...this.#nodes, ...this.#buses.map((b) => b.name), ...this.#buffers]);
         if (taken.has(String(name))) {
@@ -235,7 +235,7 @@ export class Bundle {
 
     /**
      * Adds a SynthDef (or a FaustDef), prefixing its name with the bundle's,
-     * and returns the prefixed name — what a `/synth_new` in the boot list
+     * and returns the prefixed name -- what a `/synth_new` in the boot list
      * spawns. The def itself is renamed, so sending it directly sends the
      * bundle's name too.
      */
@@ -264,7 +264,7 @@ export class Bundle {
     }
 
     /**
-     * Sets the GuiDef tree — the template. Its widgets should be numbered
+     * Sets the GuiDef tree -- the template. Its widgets should be numbered
      * `1..N`; the mount offsets them by an allocated base, so the numbers are
      * local to the bundle and never collide between instances.
      */
@@ -273,7 +273,7 @@ export class Bundle {
     }
 
     /**
-     * Adds boot messages — `[addr, ...args]` each, with placeholders where ids
+     * Adds boot messages -- `[addr, ...args]` each, with placeholders where ids
      * and values go:
      *
      * ```ts
@@ -290,7 +290,7 @@ export class Bundle {
     }
 
     /**
-     * Declares a named preset — a bundle of parameter values a tag selects
+     * Declares a named preset -- a bundle of parameter values a tag selects
      * with `preset="<name>"`. An attribute overrides it; it overrides the
      * declared defaults.
      */
@@ -340,7 +340,7 @@ export class Bundle {
     /**
      * Runs the core's pre-flight: the mount dry-run over the declared
      * defaults, plus the no-holes check on every def payload. Throws with the
-     * reason — an unknown symbol, a parameter whose default does not
+     * reason -- an unknown symbol, a parameter whose default does not
      * type-check, a hole baked into a def.
      *
      * `files` calls this first, so a bundle that would fail to mount fails to
@@ -359,7 +359,7 @@ export class Bundle {
      * Validates first, then builds every file `write` would write: the def
      * payloads (each its own `/def_send` spec), the GuiDef record, the
      * presets, the manifest, and the five-line ES module that registers the
-     * tag. Samples are not here — the audio files are the author's to place in
+     * tag. Samples are not here -- the audio files are the author's to place in
      * the directory, and the manifest only names them.
      *
      * This is the writer without the disk, which is what a caller mounting a
@@ -375,7 +375,7 @@ export class Bundle {
         if (!name.includes("-") || name !== name.toLowerCase() || /^[0-9]/.test(name)) {
             throw new Error(
                 `"${name}" is not a valid custom element name (lowercase, with a hyphen, ` +
-                    "not starting with a digit) — pass write(dir, { tag })",
+                    "not starting with a digit) -- pass write(dir, { tag })",
             );
         }
         const out: Record<string, string> = {
@@ -396,7 +396,7 @@ export class Bundle {
     }
 
     /**
-     * Writes the bundle to `directory` and returns the path. **Node only** —
+     * Writes the bundle to `directory` and returns the path. **Node only** --
      * a page authors with `files` and mounts what it holds.
      *
      * `files` is what it writes, and carries what each file is; this adds the
@@ -442,7 +442,7 @@ function widgetSpan(tree: GuiNode): number {
 }
 
 /**
- * `value` as canonical JSON — what both writers of this format emit (see the
+ * `value` as canonical JSON -- what both writers of this format emit (see the
  * module header). The round trip through `JSON.parse` is what makes the input
  * comparable: a `View` is an object with private fields and a `toJSON` may
  * stand between the two, and what has to be sorted is the document that comes

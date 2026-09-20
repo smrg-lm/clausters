@@ -1,13 +1,13 @@
-// The free-standing `render` — one verb for the change of state to sound
+// The free-standing `render` -- one verb for the change of state to sound
 // (mirrors `clausters/render.py`).
 //
 // `render` is the third ambient verb, next to `play` and `plot`: it turns a
 // **generator** thing (an algorithm that describes sound) into a **generated**
-// one (samples — random-access audio). It dispatches by kind:
+// one (samples -- random-access audio). It dispatches by kind:
 //
 // - a binary **score** (`Uint8Array`) → the offline renderer, as is;
 // - a **def** (`SynthDef` / `FaustDef` / `GraphDef`) or a bare **expression**
-//   (a UGen graph, a `ChannelList`, a Faust `Signal` — coerced through
+//   (a UGen graph, a `ChannelList`, a Faust `Signal` -- coerced through
 //   `defs/asdef.ts`) → instanced offline for `dur` seconds, the audible
 //   sibling of `plot(def)`;
 // - a `Timeline`, an `EventPattern`, a `Routine`/`Stream` or a bare
@@ -30,13 +30,13 @@
 // **Where this client stops, and why.** The reference client's verb also
 // writes a file, through the server's own `--nrt` renderer: it hands a score to
 // a process that streams straight to disk, so a long bounce never builds
-// millions of floats just to be written out. A page has no such process — its
+// millions of floats just to be written out. A page has no such process -- its
 // renderer is the same wasm engine that makes its sound, and what it produces
 // is a `Float32Array` in this tab.
 //
 // It is not that a page cannot write a file: it has OPFS, and `Buffer.write`
-// goes out to it. What it cannot do is write to a *path the caller names* —
-// OPFS is the page's own store, not the machine's — nor stream while
+// goes out to it. What it cannot do is write to a *path the caller names* --
+// OPFS is the page's own store, not the machine's -- nor stream while
 // rendering, since the samples exist in full before anything can be written.
 // So `path` and the `sampleFormat` that only means anything beside it stay
 // out, and `wavBytes(stats)` is the browser's version of the same intent: a
@@ -72,18 +72,18 @@ import { channelStats } from "./data/analysis.ts";
 import { renderScoreBytes } from "./engine/render.ts";
 
 /**
- * How many events — or values — a render takes before it decides its source
+ * How many events -- or values -- a render takes before it decides its source
  * is endless, when no `until` (or `count`) bounds it.
  *
  * A render holds what it generated in memory, so a million is already past any
- * real run and nowhere near a legitimate one — which is what makes the cap
+ * real run and nowhere near a legitimate one -- which is what makes the cap
  * honest *here* and wrong inside `TempoClock.render`, where a long offline
  * render of a real score is exactly the thing that runs for a very long time on
  * purpose.
  */
 export const MAX_BOUNCED_EVENTS = 1_000_000;
 
-/** The render's own settings — what the offline server is configured with. */
+/** The render's own settings -- what the offline server is configured with. */
 export interface RenderOptions {
     /** Render sample rate, in Hz. */
     sampleRate?: number;
@@ -91,14 +91,14 @@ export interface RenderOptions {
     channels?: number;
     /**
      * Starting seed for the render's stochastic UGens. Absent, the render
-     * draws a fresh one — so anything with noise in it is a new take every
-     * call — and reports it in `stats.seed`; passing that back replays the
+     * draws a fresh one -- so anything with noise in it is a new take every
+     * call -- and reports it in `stats.seed`; passing that back replays the
      * take exactly.
      */
     seed?: number | bigint;
 }
 
-/** What a render did — the one thing every render resolves with. */
+/** What a render did -- the one thing every render resolves with. */
 export interface RenderStats {
     /** Frames produced (per channel). */
     frames: number;
@@ -130,7 +130,7 @@ export function channel(stats: RenderStats, index: number): Float32Array {
 }
 
 /**
- * Renders a binary score — the bytes a `ScoreConnection` accumulated — and
+ * Renders a binary score -- the bytes a `ScoreConnection` accumulated -- and
  * measures what came out.
  *
  * This is the one place samples are produced: every other path in this module
@@ -168,7 +168,7 @@ export interface RenderVerbOptions extends RenderOptions {
     /** Controls (ports, for a `GraphDef`) the instance is started with. */
     controls?: Controls;
     /**
-     * Extra defs the render needs first — a `GraphDef`'s member defs, or the
+     * Extra defs the render needs first -- a `GraphDef`'s member defs, or the
      * instrument a bounced pattern, timeline or routine names. Every offline
      * path starts from an **empty** ephemeral session, so whatever the
      * samples names has to ride along.
@@ -181,13 +181,13 @@ export interface RenderVerbOptions extends RenderOptions {
      */
     clock?: TempoClock;
     /**
-     * Stop the offline bounce at this beat of `clock` — required for an
+     * Stop the offline bounce at this beat of `clock` -- required for an
      * endless source, which never drains on its own (an event pattern with no
      * bound throws after `MAX_BOUNCED_EVENTS` events).
      */
     until?: number;
     /**
-     * How many values a value pattern generates — required for an endless
+     * How many values a value pattern generates -- required for an endless
      * one, which otherwise throws after `MAX_BOUNCED_EVENTS`.
      */
     count?: number;
@@ -207,7 +207,7 @@ export type Renderable =
     | (() => Generator<number | undefined, unknown, unknown>);
 
 /**
- * Renders `obj` offline and resolves with a `RenderStats` — or, for a value
+ * Renders `obj` offline and resolves with a `RenderStats` -- or, for a value
  * pattern, with the values it generates.
  *
  * Everything here is offline by nature: a pattern or a routine is
@@ -266,7 +266,7 @@ export async function render(
 
 /**
  * The values a value pattern generates: `count` of them, or all of them for a
- * finite one — refused past `MAX_BOUNCED_EVENTS` with no `count`.
+ * finite one -- refused past `MAX_BOUNCED_EVENTS` with no `count`.
  */
 function values<T>(pattern: Pattern<T>, count: number | undefined): T[] {
     const out: T[] = [];
@@ -276,7 +276,7 @@ function values<T>(pattern: Pattern<T>, count: number | undefined): T[] {
             if (count === undefined) {
                 throw new Error(
                     `render: the ${pattern.constructor.name} did not end after `
-                    + `${MAX_BOUNCED_EVENTS} values — pass count to take a number of them`,
+                    + `${MAX_BOUNCED_EVENTS} values -- pass count to take a number of them`,
                 );
             }
             break;
@@ -291,8 +291,8 @@ function values<T>(pattern: Pattern<T>, count: number | undefined): T[] {
  * the def itself at score time 0, one instance with `controls`, freed at `dur`
  * seconds.
  *
- * The shared change of state — `render` returns the stats, `plot` draws their
- * samples — so what you see and what you hear come from one render.
+ * The shared change of state -- `render` returns the stats, `plot` draws their
+ * samples -- so what you see and what you hear come from one render.
  */
 export async function bounceDef(
     def: SynthDef | FaustDef | GraphDef,
@@ -325,8 +325,8 @@ export async function bounceDef(
  * score is rendered.
  *
  * The session is `clock`'s, which has to be an offline one; with no `clock` it
- * is a new one, which starts **empty** — it is not the one the caller has been
- * working in — so a pattern naming an instrument of its own has to bring it
+ * is a new one, which starts **empty** -- it is not the one the caller has been
+ * working in -- so a pattern naming an instrument of its own has to bring it
  * along, exactly as a def bounce does.
  *
  * `guard` names what an unbounded render is refused for after
@@ -368,7 +368,7 @@ async function bounce(
         } catch (error) {
             if (maxSteps === undefined) throw error;
             throw new Error(
-                `render: the ${guard} did not end after ${MAX_BOUNCED_EVENTS} events — `
+                `render: the ${guard} did not end after ${MAX_BOUNCED_EVENTS} events -- `
                 + `pass until to bound it`,
             );
         }
@@ -379,12 +379,12 @@ async function bounce(
 /**
  * Refuses a bare expression laid past the render's outputs.
  *
- * `channels` is the offline server's output count — how many channels the
+ * `channels` is the offline server's output count -- how many channels the
  * render *has*, a fact about the server being configured and not about the
- * graph — so nothing is derived from one here; this only **checks**. An
+ * graph -- so nothing is derived from one here; this only **checks**. An
  * expression the coercion lays on more buses than that writes the surplus onto
  * internal buses, which reach no output: silently half a take. (`plot` reads
- * the same width the other way round, and configures itself from it — the
+ * the same width the other way round, and configures itself from it -- the
  * split the two verbs keep on purpose.)
  */
 function checkExprWidth(obj: unknown, channels: number): void {

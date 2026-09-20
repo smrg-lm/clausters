@@ -1,6 +1,6 @@
 //! Where the server's time goes: a load meter per **role**.
 //!
-//! `/server_status` reports one number for the whole engine — the audio
+//! `/server_status` reports one number for the whole engine -- the audio
 //! thread's per-block load. That answers *is the server keeping up* and not
 //! *what is it spending the time on*, which is the question a slow session
 //! actually asks: a def compiling, a file loading, a burst of commands and the
@@ -11,7 +11,7 @@
 //! its slot, so the measurement is the same on every platform and needs no
 //! per-OS thread-inspection API. [`std::time::Instant`] is
 //! `clock_gettime(CLOCK_MONOTONIC)` through the vDSO on Linux,
-//! `mach_absolute_time` on macOS and `QueryPerformanceCounter` on Windows —
+//! `mach_absolute_time` on macOS and `QueryPerformanceCounter` on Windows --
 //! no allocation, no lock, no kernel trap, so a bracket is legal on the audio
 //! thread (the same reasoning the engine's own CPU meter is built on). On
 //! `wasm32` `Instant::now` panics, so there the stamp is inert and every slot
@@ -20,8 +20,8 @@
 //! **A role, not a thread.** What is measured is the work, not the thread that
 //! happened to run it: the callback's block, one stage of a parallel group, a
 //! serving turn, an NRT job, a Faust compilation. That is what makes the
-//! reading portable — a build where one of those runs somewhere else reports
-//! the same roles — and it is why the wire says `dsp 2` rather than a thread
+//! reading portable -- a build where one of those runs somewhere else reports
+//! the same roles -- and it is why the wire says `dsp 2` rather than a thread
 //! name or a thread id.
 //!
 //! **Busy over wall time, not per cent of a core.** A slot accumulates the
@@ -32,7 +32,7 @@
 //!
 //! **Cumulative, and the window belongs to the reader.** Slots only ever grow,
 //! so any number of clients can each measure their own interval by
-//! differencing two reports — unlike `Counters::take_peak_cpu`, whose reset
+//! differencing two reports -- unlike `Counters::take_peak_cpu`, whose reset
 //! makes two pollers steal each other's window.
 
 use std::sync::Arc;
@@ -48,7 +48,7 @@ pub enum Role {
     Audio,
     /// One DSP worker thread, by index: the stages it took off the conductor.
     Dsp,
-    /// The serving turn — decoding a packet, translating it, pumping the
+    /// The serving turn -- decoding a packet, translating it, pumping the
     /// subscriptions, collecting what finished. Never the blocking wait for
     /// the next packet.
     Net,
@@ -86,7 +86,7 @@ struct Slot {
     /// Nanoseconds of work, since boot. Relaxed: a reader wants a recent
     /// value, not a synchronized one.
     busy_nanos: AtomicU64,
-    /// Times the work ran — blocks, stages, turns, jobs, compilations.
+    /// Times the work ran -- blocks, stages, turns, jobs, compilations.
     calls: AtomicU64,
 }
 
@@ -136,7 +136,7 @@ impl Meters {
         })
     }
 
-    /// A table nobody reads — for the engines and worker threads that tests
+    /// A table nobody reads -- for the engines and worker threads that tests
     /// and offline renders build, where there is no `/server_load` to answer.
     pub fn detached() -> Arc<Self> {
         Self::new(0)
@@ -168,7 +168,7 @@ impl Meters {
         }
     }
 
-    /// Seconds since the table was built — the wall time the busy figures are
+    /// Seconds since the table was built -- the wall time the busy figures are
     /// a fraction of. `0.0` on wasm32, which has no monotonic clock.
     pub fn uptime(&self) -> f64 {
         #[cfg(not(target_arch = "wasm32"))]

@@ -1,7 +1,7 @@
 //! Every binding symbol is declared in `docs/bindings.md`.
 //!
 //! `clausters-core` reaches the world through three bindings and cargo checks
-//! only that each one agrees with *core* — never that they agree with each
+//! only that each one agrees with *core* -- never that they agree with each
 //! other. So a function can be added to the C ABI and never reach the browser,
 //! or grown on the wasm side alone, and every build stays green.
 //!
@@ -15,7 +15,7 @@
 //! unavoidable: a symbol missing from the table fails here.
 //!
 //! It reads source text rather than linking anything, so it holds under every
-//! feature configuration — including the ones where the symbols it names are
+//! feature configuration -- including the ones where the symbols it names are
 //! not compiled at all.
 
 use std::collections::BTreeSet;
@@ -80,7 +80,7 @@ fn wasm_symbols() -> BTreeSet<String> {
 }
 
 /// The attribute lines directly above item `i`, stopping at the first blank
-/// line — so an item's own attributes are read and the previous item's are not.
+/// line -- so an item's own attributes are read and the previous item's are not.
 fn attributes_above<'a>(lines: &'a [&'a str], i: usize) -> impl Iterator<Item = &'a str> {
     lines[..i]
         .iter()

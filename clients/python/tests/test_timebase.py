@@ -1,4 +1,4 @@
-"""Follow-up to C5: the pacing timebase is selectable — the OS monotonic clock
+"""Follow-up to C5: the pacing timebase is selectable -- the OS monotonic clock
 (default, NTP-timetagged bundles) or the server's sample clock (events emitted
 by absolute sample via ``/sched_at``). Robust tests for **both** options.
 """
@@ -121,7 +121,7 @@ def test_sample_clock_emits_sched_with_exact_sample():
 
 
 def test_a_resumed_clock_keeps_its_beat_axis():
-    """`stop`/`start` holds the beat, and both origins move with it — so an
+    """`stop`/`start` holds the beat, and both origins move with it -- so an
     event emitted after a restart is stamped for *now*, not for where the
     clock would have been had it never stopped. Driven by a hand-moved sample
     counter, so there is no wall clock in the assertion."""
@@ -192,7 +192,7 @@ def test_only_a_clock_on_logical_time_renders():
 def test_nrt_immediate_sends_land_at_the_start_of_the_score():
     """A message has no time: in a bundle it would carry the immediate timetag,
     and alone it means the same. One interface serves real time and the score,
-    so this is not an offline behaviour — it is only *visible* offline, where an
+    so this is not an offline behaviour -- it is only *visible* offline, where an
     immediate send is stamped 0.0 however far into a routine it was called.
     Creating a node this way from a routine is an error; the timed path is
     below."""

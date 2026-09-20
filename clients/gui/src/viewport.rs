@@ -1,8 +1,8 @@
 //! Coordinate systems: a bounded domain seen through a window.
 //!
 //! Two types, one of which is the other's raw input. A [`View`] is the
-//! **window** — a `start` and a `len` in `f64`, so deep zoom stays precise over
-//! multi-million-sample buffers — and zoom and pan are pure transforms on it
+//! **window** -- a `start` and a `len` in `f64`, so deep zoom stays precise over
+//! multi-million-sample buffers -- and zoom and pan are pure transforms on it
 //! that never touch the data, which is what makes navigation independent of
 //! buffer length.
 //!
@@ -11,7 +11,7 @@
 //! exists at all ([`Reach`]). The difference is not cosmetic: `View`'s
 //! transforms each take the domain's `total` as an argument, so the bound is
 //! something every call site carries, and this crate ended up with two parallel
-//! spellings of one navigation — `View` over a sample count, and free
+//! spellings of one navigation -- `View` over a sample count, and free
 //! `clamp_span`/`zoom_span` functions over a normalized `[0, 1]`, the same
 //! arithmetic with a different bound and a different floor. An axis owns its
 //! bound, so there is one implementation, and a container can hand one to
@@ -79,12 +79,12 @@ impl View {
     }
 }
 
-/// The narrowest a normalized display-axis window may get — the vertical-zoom
+/// The narrowest a normalized display-axis window may get -- the vertical-zoom
 /// floor of the editor views' y axes (amplitude, frequency), which navigate in
 /// display units `[0, 1]` rather than samples.
 pub const MIN_SPAN: f64 = 1e-3;
 
-/// **How far past its own domain an amplitude axis may be opened** — the
+/// **How far past its own domain an amplitude axis may be opened** -- the
 /// headroom a signal that leaves full scale is read in.
 ///
 /// Every other axis here is bounded by what it addresses: there are no samples
@@ -97,7 +97,7 @@ pub const MIN_SPAN: f64 = 1e-3;
 /// still a waveform.
 pub const AMP_HEADROOM: f64 = 4.0;
 
-/// The width under which a window is treated as degenerate — a range whose
+/// The width under which a window is treated as degenerate -- a range whose
 /// ends coincide, which maps every value to the bottom rather than dividing.
 /// `f32`'s epsilon because the values that reach these axes are `f32` widget
 /// props, and this is the guard each of them already carried.
@@ -107,7 +107,7 @@ const DEGENERATE: f64 = f32::EPSILON as f64;
 /// measuring amplitude share [`Unit::Norm`] whatever they are.
 ///
 /// This is the ruler vocabulary (`host::widget::Ruler`/`RulerY`) promoted to
-/// where it belongs — a unit is a property of the axis, and the ruler strip is
+/// where it belongs -- a unit is a property of the axis, and the ruler strip is
 /// one thing that reads it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Unit {
@@ -129,7 +129,7 @@ pub enum Unit {
     Hz,
     /// MIDI pitch.
     Pitch,
-    /// Logical pixels — a layout or workspace plane.
+    /// Logical pixels -- a layout or workspace plane.
     Pixels,
 }
 
@@ -166,7 +166,7 @@ pub enum Reach {
 /// [`View`] is the window; an axis is the window *plus what bounds it*. That
 /// difference is the whole point: `View`'s `zoom`/`pan`/`set_start` each take
 /// the domain's `total` as an argument, so every call site has to remember it
-/// and they disagree in interesting ways — this crate carried two parallel
+/// and they disagree in interesting ways -- this crate carried two parallel
 /// spellings of the same navigation, `View` over a sample count and the free
 /// `clamp_span`/`zoom_span` over a normalized `[0, 1]`, which are the same
 /// arithmetic with different bounds and different floors. An axis owns its
@@ -185,7 +185,7 @@ pub struct Axis {
     /// The domain's full length in its own units; the window lives in
     /// `[origin, origin + extent]`.
     extent: f64,
-    /// The narrowest the window may get — one sample on a counted domain, the
+    /// The narrowest the window may get -- one sample on a counted domain, the
     /// zoom floor on a normalized one.
     min_len: f64,
     /// How many times its own extent the window may be opened to. `1.0` is
@@ -198,7 +198,7 @@ pub struct Axis {
 }
 
 impl Axis {
-    /// An axis over a **normalized** `[0, 1]` domain, fully open — the display
+    /// An axis over a **normalized** `[0, 1]` domain, fully open -- the display
     /// axes (a waveform's amplitude, a spectrogram's frequency), whose geometry
     /// is a fraction of the screen rather than a count.
     pub fn normalized(unit: Unit) -> Self {
@@ -217,7 +217,7 @@ impl Axis {
         }
     }
 
-    /// An axis over a **counted** domain of `total` units, fully open — a
+    /// An axis over a **counted** domain of `total` units, fully open -- a
     /// buffer's samples, a timeline's span. The floor is one unit.
     pub fn counted(total: usize, unit: Unit) -> Self {
         Self {
@@ -232,7 +232,7 @@ impl Axis {
         }
     }
 
-    /// An axis over an arbitrary value range `[min, max]`, fully open — a
+    /// An axis over an arbitrary value range `[min, max]`, fully open -- a
     /// break-point function's values, a scope's signal range, a roll's pitch
     /// window. The window is in the range's own units.
     pub fn ranged(min: f64, max: f64, unit: Unit) -> Self {
@@ -254,7 +254,7 @@ impl Axis {
     }
 
     /// The same axis, openable past its own domain by `factor` times its
-    /// extent — see [`AMP_HEADROOM`]. A factor at or under one is no air.
+    /// extent -- see [`AMP_HEADROOM`]. A factor at or under one is no air.
     pub fn with_headroom(mut self, factor: f64) -> Self {
         self.headroom = factor.max(1.0);
         self
@@ -318,7 +318,7 @@ impl Axis {
     }
 
     /// Sets the window, clamped into the domain. A non-positive length opens
-    /// the axis fully — the wire's way of asking for a default it has no number
+    /// the axis fully -- the wire's way of asking for a default it has no number
     /// for, the same shape a `scroll`'s zoom uses.
     pub fn set_span(&mut self, start: f64, len: f64) {
         if len <= 0.0 {
@@ -334,7 +334,7 @@ impl Axis {
 
     /// Replaces the smallest window this axis may be zoomed to, in domain
     /// units. The default is a fraction of the extent, which is right for an
-    /// axis whose domain is dense — but an axis over a *measured* domain has a
+    /// axis whose domain is dense -- but an axis over a *measured* domain has a
     /// resolution of its own, and zooming past it magnifies interpolation
     /// rather than revealing anything. The caller that knows the resolution
     /// says so here.
@@ -359,7 +359,7 @@ impl Axis {
         self.clamp();
     }
 
-    /// Set the window start (clamped) — absolute drag panning from a snapshot,
+    /// Set the window start (clamped) -- absolute drag panning from a snapshot,
     /// so a clamped edge never accumulates drift.
     pub fn set_start(&mut self, start: f64) {
         self.window.start = start;
@@ -367,7 +367,7 @@ impl Axis {
     }
 
     /// Where a domain value falls across the visible window, `0` at its start
-    /// and `1` at its end — the mapping an axis *is*.
+    /// and `1` at its end -- the mapping an axis *is*.
     pub fn fraction_of(&self, value: f64) -> f64 {
         (value - self.window.start) / self.window.len.max(f64::MIN_POSITIVE)
     }
@@ -380,8 +380,8 @@ impl Axis {
     /// [`fraction_of`](Self::fraction_of) clamped into `0..1`, with a degenerate
     /// window (a range whose ends coincide) reading `0` rather than dividing.
     ///
-    /// This is the mapping every value-bearing widget wrote for itself — a
-    /// meter's column height, a slider's handle position, a break-point's y —
+    /// This is the mapping every value-bearing widget wrote for itself -- a
+    /// meter's column height, a slider's handle position, a break-point's y --
     /// each with its own copy of the same guard.
     pub fn fraction_clamped(&self, value: f64) -> f64 {
         if self.window.len <= DEGENERATE {
@@ -398,7 +398,7 @@ impl Axis {
     /// Sets the window to a **normalized slice** of the domain: `start` and
     /// `len` in `0..1` of the whole extent, in the domain's own units.
     ///
-    /// The composition a value axis and a display window make together — a
+    /// The composition a value axis and a display window make together -- a
     /// piano-roll's visible pitches are its `[min, max]` sliced by the vertical
     /// view, and so are a curve's visible values.
     pub fn slice_normalized(&mut self, start: f64, len: f64) {
@@ -412,7 +412,7 @@ impl Axis {
         // starts wherever its range does. **Opened past the domain** (only an
         // axis with headroom can be) the rule turns around: the domain no
         // longer bounds the window, the window contains the domain, so what is
-        // clamped is that the air stays air — the whole domain inside it,
+        // clamped is that the air stays air -- the whole domain inside it,
         // pannable between its two edges.
         let over = (self.window.len - self.extent).max(0.0);
         let (first, last) = if over > 0.0 {
@@ -431,7 +431,7 @@ pub fn clamp_span(start: f64, len: f64) -> (f64, f64) {
     (start.clamp(0.0, 1.0 - len), len)
 }
 
-/// Anchor-preserving zoom of a normalized `[0, 1]` display window — the same
+/// Anchor-preserving zoom of a normalized `[0, 1]` display window -- the same
 /// math as [`View::zoom`], in display units: scale `len` by `factor` (<1
 /// zooms in) keeping the point under `anchor` (0 = bottom, 1 = top) fixed,
 /// then clamp to the axis.
@@ -532,7 +532,7 @@ mod tests {
 
     /// The milestone's contract: an axis over a counted domain does exactly
     /// what `View` plus a `total` argument did. Same zooms, same pans, same
-    /// clamps — so replacing the call sites cannot move anything.
+    /// clamps -- so replacing the call sites cannot move anything.
     #[test]
     fn a_counted_axis_navigates_exactly_like_a_view() {
         let total = 1000usize;

@@ -3,8 +3,8 @@
 //! The browser reaches a `--ws` server with its native `WebSocket`; a
 //! non-browser binding (Python `ctypes`, JS N-API, ...) reaches it through these
 //! five calls instead of re-implementing the WebSocket handshake and framing.
-//! The protocol lives once, in `tungstenite` — the same crate the server's
-//! `osc::ws` listener uses — so there is no second implementation to maintain.
+//! The protocol lives once, in `tungstenite` -- the same crate the server's
+//! `osc::ws` listener uses -- so there is no second implementation to maintain.
 //! Always compiled into the ffi cdylib (not feature-gated). `ws://` only; TLS
 //! (`wss://`) is out of scope, terminate it at a reverse proxy.
 //!

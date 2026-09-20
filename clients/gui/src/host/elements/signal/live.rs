@@ -2,7 +2,7 @@
 //!
 //! A signal element over a **bus** is fed forward-only: the source has a
 //! present and no past, so whatever a view shows over time is something *it*
-//! accumulated — a rolling trace's history, an oscilloscope's triggered window,
+//! accumulated -- a rolling trace's history, an oscilloscope's triggered window,
 //! a spectrum's smoothed curves, a waterfall's rolling transform. All four used
 //! to live in the front, in four maps keyed by widget id, filled by four walks
 //! of the tree that each matched on the kind. They are one struct here, and one
@@ -10,7 +10,7 @@
 //!
 //! **The rate is the reason this is not the draw.** A tick runs at the front's
 //! steady animation rate, so a scope scrolls at a speed the reader can read
-//! whatever the window's repaint rate happens to be — a window that repaints
+//! whatever the window's repaint rate happens to be -- a window that repaints
 //! twice must not scroll twice, and one that repaints never must not lose its
 //! history. The draw that follows only ever draws what the tick left.
 //!
@@ -33,7 +33,7 @@ use crate::host::widget::element::Live;
 /// Most recent control-bus samples a rolling trace keeps and plots.
 pub(crate) const SCOPE_HISTORY: usize = 512;
 
-/// How many loudness readings a live curve keeps — the same depth a rolling
+/// How many loudness readings a live curve keeps -- the same depth a rolling
 /// trace keeps of its bus, for the same reason: a curve is read as a shape, and
 /// the shape is the last few hundred readings.
 pub(crate) const LOUDNESS_HISTORY: usize = 512;
@@ -42,7 +42,7 @@ pub(crate) const LOUDNESS_HISTORY: usize = 512;
 /// has taken off it.
 ///
 /// This is the live half of the same measurement a stored view reads off a
-/// [`Profile`](clausters_core::loudness::Profile) — the *streaming* face of the
+/// [`Profile`](clausters_core::loudness::Profile) -- the *streaming* face of the
 /// core's one algorithm, fed from the bus's retained history so no sample is
 /// counted twice and none is skipped. A meter fed from the triggered display
 /// window instead would be fed overlapping windows and would read the same
@@ -73,7 +73,7 @@ impl LiveLoudness {
     }
 
     /// Whether this state is still the one a bus of `channels` at `rate` wants
-    /// — a `/gui_set` of either is a different measurement, not a continuation
+    /// -- a `/gui_set` of either is a different measurement, not a continuation
     /// of this one.
     fn matches(&self, channels: usize, rate: f64) -> bool {
         self.channels == channels && self.rate == rate
@@ -176,7 +176,7 @@ impl fmt::Debug for LiveState {
 
 impl SignalElement {
     /// One tick of whatever this element accumulates. A view over stored
-    /// samples does nothing here — its past is the data it was given.
+    /// samples does nothing here -- its past is the data it was given.
     pub fn tick(&mut self, live: &Live) {
         let Some(bus) = self.source.bus().cloned() else {
             return;
@@ -214,7 +214,7 @@ impl SignalElement {
     }
 
     /// The window one tick reads out of each of this element's taps, in frames
-    /// — the sizing half of what [`tick`](Self::tick) then reads, stated where
+    /// -- the sizing half of what [`tick`](Self::tick) then reads, stated where
     /// the read itself is written so the two cannot drift apart.
     ///
     /// A retained view answers `0`: it reads its bus's *history*, which the
@@ -231,7 +231,7 @@ impl SignalElement {
             _ => {}
         }
         // A control-rate trace is read as a bus value, one number per tick, and
-        // a texture layer reads its bus's history rather than a window — so the
+        // a texture layer reads its bus's history rather than a window -- so the
         // read is the traces' when there are any, and nothing otherwise.
         if !self.draws_traces() || !bus.rate.is_audio() {
             return 0;
@@ -305,7 +305,7 @@ impl SignalElement {
     }
 
     /// The goniometer's window: a bus and the one beside it, interleaved. No
-    /// trigger — the phase view shows the freshest pairs directly.
+    /// trigger -- the phase view shows the freshest pairs directly.
     fn tick_phase(&mut self, live: &Live, bus: &super::Bus) {
         if bus.hold {
             return;
@@ -351,7 +351,7 @@ impl SignalElement {
 
     /// The retained waterfall: the columns the bus's history has grown since
     /// the last tick. The **history is the bus's and the transform is the
-    /// view's** — two views of one bus may analyze it at different sizes — and
+    /// view's** -- two views of one bus may analyze it at different sizes -- and
     /// this is where the two meet.
     fn tick_roll(&mut self, live: &Live, bus: &super::Bus) {
         if bus.retention <= 0.0 {
@@ -398,7 +398,7 @@ fn push_sample(history: &mut VecDeque<f32>, value: f32) {
 #[cfg(test)]
 mod tests {
     //! Driven the way the front drives it: build a tree, hand it a source, and
-    //! tick — because the tick *is* what these accumulate through. The source
+    //! tick -- because the tick *is* what these accumulate through. The source
     //! is a `BusSource` rather than a closure, so a test reads its data through
     //! the same door the segment and the stream do.
 
@@ -451,7 +451,7 @@ mod tests {
     }
 
     /// A control-rate trace takes **one sample per tick** and keeps the newest
-    /// window of them — which is what makes the scroll time-based rather than
+    /// window of them -- which is what makes the scroll time-based rather than
     /// repaint-based.
     #[test]
     fn a_control_trace_advances_one_sample_a_tick_and_caps() {
@@ -547,7 +547,7 @@ mod tests {
     }
 
     /// **Each tick brings the newest window of both buses**, and the pairs are
-    /// interleaved in read order — the property a jittering goniometer would
+    /// interleaved in read order -- the property a jittering goniometer would
     /// break, since a figure drawn from a left window of one tick and a right
     /// window of another is not a phase relationship at all.
     #[test]
@@ -619,8 +619,8 @@ mod tests {
 
     /// **A channel that has read nothing yet holds the measurement back**, and
     /// does not take another channel's run as its own. The second bus of a
-    /// stereo meter can be a tick behind the first — a stream that has not
-    /// answered for it yet — and the reading used to take the first channel's
+    /// stereo meter can be a tick behind the first -- a stream that has not
+    /// answered for it yet -- and the reading used to take the first channel's
     /// fresh run as the run *every* channel grew, then index that many samples
     /// off an empty history: a panic that took the whole host down, in the page
     /// as surely as in a window.

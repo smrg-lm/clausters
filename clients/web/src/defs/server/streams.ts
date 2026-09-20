@@ -21,7 +21,7 @@ export class ServerStreams {
      * Subscribes this client to a periodic `/bus_stream.reply` snapshot of `buses`
      * (`/bus_stream`): the server sends one immediately and then one every
      * `periodMs` (10 ms floor; at most `ServerInfo.maxStreamBuses` buses,
-     * which the server reports per carrier) with no further requests —
+     * which the server reports per carrier) with no further requests --
      * the message-based counterpart of reading the shared-memory segment, and
      * what a meter or a control-rate scope in the page feeds on.
      *
@@ -43,7 +43,7 @@ export class ServerStreams {
     /**
      * Subscribes this client to a periodic `/bus_tapStream.reply` snapshot of `buses`
      * (`/bus_tapStream`): every `periodMs` (10 ms floor) the server sends, per
-     * bus, its newest `frames` samples — the path an oscilloscope, a
+     * bus, its newest `frames` samples -- the path an oscilloscope, a
      * phasescope or a spectrum in the page reads.
      *
      * The subscription **is** the watch: it starts recording each bus it
@@ -73,14 +73,14 @@ export class ServerStreams {
      * Subscribes this client to the **overview of the audio as it is written**
      * (`/buffer_stream`): every `periodMs` (10 ms floor) the server sends, per
      * watched buffer whose write frontier moved, one
-     * `/buffer_stream.reply bufnum startFrame bucket blob` — and nothing for
+     * `/buffer_stream.reply bufnum startFrame bucket blob` -- and nothing for
      * one that did not, so a still buffer costs no traffic.
      *
      * The blob is **bucket-major, channel-minor**: for each bucket of `bucket`
      * frames in order, for each channel, `min`, `max` and mean square as raw
      * little-endian `f32`. That is the peak pyramid's own summary, so a page
      * folds it into a picture without converting anything, and it is two
-     * orders of magnitude smaller than the audio it describes — which is the
+     * orders of magnitude smaller than the audio it describes -- which is the
      * whole reason a page can watch a take record at all.
      *
      * What moves the frontier is a writing UGen (`RecordBuf`, `BufWr`). A peer

@@ -22,7 +22,7 @@ pub struct UGenSynth {
     /// One output wire per UGen, cache-line aligned.
     wires: Vec<Block>,
     /// Synth-private feedback channels (`LocalIn`/`LocalOut`): unlike `wires`,
-    /// these **persist across blocks** — that persistence is the one-block
+    /// these **persist across blocks** -- that persistence is the one-block
     /// feedback delay. Empty for defs without feedback.
     locals: Vec<Block>,
     /// Synth-private spectral frames, one per `FFT` chain, shared by that
@@ -40,7 +40,7 @@ pub struct UGenSynth {
     has_reply_ugens: bool,
 }
 
-/// One demand UGen's inputs as the pull protocol sees them — the synth
+/// One demand UGen's inputs as the pull protocol sees them -- the synth
 /// side of [`DemandInputs`].
 ///
 /// `ugens` and `wires` are the **prefix** of the graph before the UGen being
@@ -246,7 +246,7 @@ impl SynthNode for UGenSynth {
         };
         for i in 0..self.ugens.len() {
             let rate = self.def.ugens[i].rate;
-            // Demand-rate UGens produce nothing in block order — their driver
+            // Demand-rate UGens produce nothing in block order -- their driver
             // pulls them (see the Demand arm below).
             if rate == Rate::Dr {
                 continue;
@@ -262,7 +262,7 @@ impl SynthNode for UGenSynth {
             // Every UGen runs at *its own* sample rate, scsynth's
             // `unit->mRate->mSampleRate`. A `kr` UGen emits one sample per
             // slice, so one of its samples lasts `frames` engine samples and
-            // its rate is `full / frames` — which is the control rate for a
+            // its rate is `full / frames` -- which is the control rate for a
             // whole block, and stays exact when a scheduled bundle splits one
             // (the slice is shorter, the tick covers less time, and the two
             // cancel). Deriving it per slice rather than from `BLOCK_SIZE` is
@@ -292,7 +292,7 @@ impl SynthNode for UGenSynth {
                 };
             }
             // LocalIn/LocalOut feed back through the persistent `locals`
-            // buffer — synth-private state the UGen trait can't reach — so
+            // buffer -- synth-private state the UGen trait can't reach -- so
             // they are handled here instead of by `process`. Reading before
             // writing (LocalIn precedes LocalOut, enforced at compile) is the
             // one-block delay.
@@ -316,7 +316,7 @@ impl SynthNode for UGenSynth {
                     }
                 }
                 // Done query: `Done`/`FreeSelfWhenDone` read the *done
-                // flag* of the UGen input 0 names — an identity, not a value,
+                // flag* of the UGen input 0 names -- an identity, not a value,
                 // like the demand source below. Topological order puts that
                 // UGen before this one, so the flag is the one it raised this
                 // very slice.
@@ -331,7 +331,7 @@ impl SynthNode for UGenSynth {
                     u_rest[0].process(ctx, &inputs[..refs.len()], output);
                 }
                 // Demand driver : the driver decides
-                // when to pull, and `Pull` resolves each of its inputs — a
+                // when to pull, and `Pull` resolves each of its inputs -- a
                 // value if it is one, the next item of a stream if it is a `dr`
                 // wire, recursing into that stream's own demand inputs. The
                 // sources are reached only this way (they are skipped in block

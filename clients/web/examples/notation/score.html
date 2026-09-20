@@ -26,26 +26,26 @@
 <code>score.py</code>: <b>engraved music notation, clickable and
 editable</b>.
 
-This page engraves a melody with <b>verovio compiled to wasm</b> — the same
+This page engraves a melody with <b>verovio compiled to wasm</b> -- the same
 pinned sources, the same build options and the same version the native client
-links — and walks the SVG into the host's <code>score</code> display list with
+links -- and walks the SVG into the host's <code>score</code> display list with
 the same shared core. The host tessellates that into its ordinary mesh:
 <b>it never reads a note</b>, and it has no engraver in it.
 
 Every primitive carries the MEI <code>xml:id</code> it was engraved from, so a
 <b>click</b> reports the element under the cursor and this script sounds that
 note, and a <b>vertical drag</b> reports the diatonic staff position the note
-<i>reaches</i> — absolute, so a resend cannot move it twice. This side applies
+<i>reaches</i> -- absolute, so a resend cannot move it twice. This side applies
 it (<code>transposeTo</code>), re-engraves and sends the page back; the ids
 survive the edit, so the note stays selected. <b>Undo</b> and <b>redo</b> are
 the client's too: the score owns a stack of MEI snapshots, because the host
 holds no score.
 
-The engraver is <b>loaded on demand</b> — it is not part of the runtime, and a
+The engraver is <b>loaded on demand</b> -- it is not part of the runtime, and a
 page that draws no notation never downloads it.
 
 The page also <b>plays</b>, and the cursor follows the sound: the transport is
-the shared one — the same object the multitrack editor drives its lanes with —
+the shared one -- the same object the multitrack editor drives its lanes with --
 and all a score adds is its unit, since a page places its cursor in <b>score
 milliseconds</b> and a lane in samples. The line itself is the host's: one
 anchor message per pass, swept from the engine's own clock, and a static cursor

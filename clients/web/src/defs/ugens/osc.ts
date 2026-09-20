@@ -60,18 +60,18 @@ export const saw = (freq: Channel = 440.0): Ugen => new Ugen("Saw", [freq]);
 export const pulse = (freq: Channel = 440.0, width: Channel = 0.5): Ugen =>
     new Ugen("Pulse", [freq, width]);
 
-/** Naive (aliasing) sawtooth — cheap, meant for control rate. */
+/** Naive (aliasing) sawtooth -- cheap, meant for control rate. */
 export const lfSaw = (freq: Channel = 440.0, iphase: Channel = 0.0): Ugen =>
     new Ugen("LFSaw", [freq, iphase]);
 
-/** Naive (aliasing) pulse — cheap, meant for control rate. */
+/** Naive (aliasing) pulse -- cheap, meant for control rate. */
 export const lfPulse = (
     freq: Channel = 440.0,
     iphase: Channel = 0.0,
     width: Channel = 0.5,
 ): Ugen => new Ugen("LFPulse", [freq, iphase, width]);
 
-/** Naive (aliasing) triangle — cheap, meant for control rate. */
+/** Naive (aliasing) triangle -- cheap, meant for control rate. */
 export const lfTri = (freq: Channel = 440.0, iphase: Channel = 0.0): Ugen =>
     new Ugen("LFTri", [freq, iphase]);
 
@@ -87,7 +87,7 @@ export const varSaw = (
 
 /**
  * A ramp from `start` to `end` advancing by `rate` per sample, wrapping and
- * restarting at `resetPos` on each trigger — the phase source `bufRd` reads.
+ * restarting at `resetPos` on each trigger -- the phase source `bufRd` reads.
  */
 export const phasor = (
     trig: Channel = 0.0,
@@ -104,7 +104,7 @@ export const phasor = (
  * carrying a position of its own, so seeking (`Server.transportLocateSample`),
  * looping (`Server.transportLoop`) and pausing (`Server.transportStop` over a
  * governed group) belong to the transport and not to the def. That is the
- * shape a multitrack needs — many readers, one time — and it is why a locate
+ * shape a multitrack needs -- many readers, one time -- and it is why a locate
  * never has to reach into a node.
  *
  * It ramps one frame per sample while the transport rolls and holds while it
@@ -112,7 +112,7 @@ export const phasor = (
  * reads its own frame 0 when the transport reaches it; the subtraction happens
  * in double precision inside the UGen, which is what keeps the value exact
  * deep into a long take (a signal is 32-bit, and past about six minutes at
- * 48 kHz it can no longer count single frames — subtracting afterwards with
+ * 48 kHz it can no longer count single frames -- subtracting afterwards with
  * `sub` has already lost that).
  *
  * ```ts

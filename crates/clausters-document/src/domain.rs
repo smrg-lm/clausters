@@ -1,4 +1,4 @@
-//! The table of the crate's own vocabularies — **so nobody else has to keep
+//! The table of the crate's own vocabularies -- **so nobody else has to keep
 //! one**.
 //!
 //! A [`History`](crate::History) reads no vocabulary: an entry's payload is
@@ -11,7 +11,7 @@
 //! same way" is *place, node 7* for the arrangement and *this span of this
 //! channel* for samples, so the pile cannot compute it and a caller recording
 //! its own entry has to state it. Left there, every binding would spell every
-//! domain's rule again — the divergence
+//! domain's rule again -- the divergence
 //! [`log::coalesce_key`](crate::log::coalesce_key) was given a door of its own
 //! to prevent, now with four vocabularies instead of one.
 //!
@@ -43,7 +43,7 @@ pub fn known(domain: &str) -> bool {
 }
 
 /// What makes two of `domain`'s edits *the same thing done the same way*, or
-/// `None` when the payload is not written in that vocabulary — or the domain is
+/// `None` when the payload is not written in that vocabulary -- or the domain is
 /// not one the crate speaks.
 ///
 /// `None` is a real answer and not only an error: a domain whose edits are not
@@ -67,7 +67,7 @@ pub fn coalesce_key(domain: &str, payload: &Opaque) -> Option<String> {
 /// it back.
 ///
 /// Both directions in one answer, because the inverse has to be read *before*
-/// the edit lands — the trait's own argument
+/// the edit lands -- the trait's own argument
 /// ([`Editable`]'s own), and a door that let a caller apply
 /// first and read second would let it record the wrong thing. It is also what
 /// makes the seam worth crossing at all: an edit and its inverse are one
@@ -84,7 +84,7 @@ pub struct Edited {
     /// resend.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
-    /// The payload that puts the structure back — read before the edit landed.
+    /// The payload that puts the structure back -- read before the edit landed.
     /// `None` when the structure cannot describe it, which is what makes an
     /// edit unloggable rather than uninvertible.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -110,7 +110,7 @@ pub struct Edited {
 ///
 /// [`MULTITRACK`] is served, and it is the case that shows what the [`TREE`]
 /// entry above is really about. A multitrack's whole state *is* one JSON value the
-/// caller holds, version included, so the door works — it simply applies
+/// caller holds, version included, so the door works -- it simply applies
 /// against whatever that state says and snaps to nothing, which is exactly what
 /// a client that just read the multitrack wants. An editor that has a grid, or a
 /// claim about a picture drawn a moment ago, uses the typed door
@@ -118,8 +118,8 @@ pub struct Edited {
 /// tree cannot be served this way for a different reason: what it edits is a
 /// handle that lives across the seam, not a value.
 ///
-/// So this serves the domains whose state *is* the data — the multitrack, a curve's
-/// points, a timeline's events — which is also every domain a client holds as
+/// So this serves the domains whose state *is* the data -- the multitrack, a curve's
+/// points, a timeline's events -- which is also every domain a client holds as
 /// an ordinary list.
 pub fn edit(domain: &str, state: &Opaque, payload: &Opaque) -> Option<Edited> {
     match domain {

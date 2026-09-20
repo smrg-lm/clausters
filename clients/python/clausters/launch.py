@@ -2,15 +2,15 @@
 
 Live coding wants the whole system reachable from one interpreter: a *separate*
 audio server process (so it survives a client restart, is shared, and keeps the
-audio thread out of Python) and the visual server (`clausters-gui`) beside it —
+audio thread out of Python) and the visual server (`clausters-gui`) beside it --
 without opening three terminals or spelling out a shared-memory path. This module
 starts and owns those processes from Python:
 
-- `ServerProcess` — spawns ``clausters --port <n> --shm <auto> [server flags]``
+- `ServerProcess` -- spawns ``clausters --port <n> --shm <auto> [server flags]``
   and waits until it answers, choosing the shared-memory segment for you. One
   instance per process launched: several servers run side by side, each on its
   own port and its own segment.
-- `GuiProcess` — spawns ``clausters-gui --server <addr> --shm <same segment>``,
+- `GuiProcess` -- spawns ``clausters-gui --server <addr> --shm <same segment>``,
   wired to the server by construction.
 
 Both are context managers, both register cleanup so **the child dies when this
@@ -73,7 +73,7 @@ def server_is_up(host: str = "127.0.0.1", port: int = DEFAULT_PORT,
 
     A quick UDP probe used to decide *boot-or-attach*: `Session.live` (and
     `clausters.defs.Server.boot`) attach to a running server if one replies, and
-    start one only when none does — so the same call works whether or not a
+    start one only when none does -- so the same call works whether or not a
     server is already up."""
     osc = OscUdpInterface().start()
     try:
@@ -124,7 +124,7 @@ if os.name == "posix" and os.uname().sysname == "Linux":  # pragma: no branch
 
 def _die_with_parent():
     """`Popen` preexec hook (Linux): have the kernel SIGTERM the child when
-    this interpreter dies — *however* it dies. The atexit/finalizer teardown
+    this interpreter dies -- *however* it dies. The atexit/finalizer teardown
     covers clean exits, but not a SIGKILL, a closed terminal's SIGHUP or a
     crashed kernel: without this a stale ``clausters``/``clausters-gui`` could
     survive and squat the port for the next session."""
@@ -210,7 +210,7 @@ class _Process:
         """Refuse to spawn over a port something else already owns.
 
         The readiness poll (`_wait_ready`) only checks that *something*
-        answers on the port — if a stale process from an earlier session is
+        answers on the port -- if a stale process from an earlier session is
         still bound there, the fresh child cannot bind, yet the poll gets the
         stale one's reply and adopts it silently, so every later message goes
         to the old binary. A quick UDP bind probe turns that into a clear
@@ -223,7 +223,7 @@ class _Process:
                 probe.close()
         except OSError as e:
             raise ServerError(
-                f"port {self.port} is already in use — likely a stale "
+                f"port {self.port} is already in use -- likely a stale "
                 f"{self.kind} from an earlier session; close that process "
                 f"(or attach to it instead of booting)") from e
 
@@ -237,7 +237,7 @@ class _Process:
         actually exit; ``True`` when it did.
 
         A command that stops a server returns as soon as the packet is sent,
-        and the process then takes a few milliseconds to release its port — so
+        and the process then takes a few milliseconds to release its port -- so
         starting another one on that address immediately afterwards raced with
         the first one dying, and lost: `_probe_port_free` reported the port in
         use and blamed a stale server from an earlier session. Owning the
@@ -288,13 +288,13 @@ class ServerProcess(_Process):
         shm: the shared-memory segment path. ``"auto"`` (the default) picks one
             with `default_shm_path`; a string forces a path; ``None`` launches
             without a segment (the meters/scopes then use the network fallback).
-        verbose: server log verbosity — ``1``/``2``/``3`` for ``-v``/``-vv``/
+        verbose: server log verbosity -- ``1``/``2``/``3`` for ``-v``/``-vv``/
             ``-vvv``, negative for ``-q`` (quiet).
         port: the server's base OSC port (``--port``, UDP and TCP alike);
             default 57110. Several servers run side by side on one machine, each
             on its own port.
         data_dir: ``--data-dir`` for the server's def store; ``None`` uses its
-            default location. Sharing one directory between servers is fine —
+            default location. Sharing one directory between servers is fine --
             they read and write it concurrently.
         extra_args: extra CLI tokens appended verbatim (e.g. ``["--tcp"]``).
         binary: an explicit server-binary path; ``None`` locates it.

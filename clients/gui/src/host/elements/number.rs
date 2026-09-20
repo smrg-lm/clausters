@@ -1,4 +1,4 @@
-//! `number` — the same value a `knob` holds, read as a figure in a field.
+//! `number` -- the same value a `knob` holds, read as a figure in a field.
 //!
 //! Its drag is a knob's, verbatim ([`super::control::Dial`]): the two differ in
 //! the picture and in the height they ask for, which is the whole of what a

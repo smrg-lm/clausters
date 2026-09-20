@@ -3,13 +3,13 @@
 //
 // Python's `_abi` is the plumbing both of its native callers share: a
 // size-then-fill call and a UTF-8 view. A page's plumbing is different in shape
-// and identical in role — load the Emscripten module, `cwrap` the toolkit's C
+// and identical in role -- load the Emscripten module, `cwrap` the toolkit's C
 // functions, and hand back an object whose method names are the port's.
 //
 // **The functions are the same C wrapper the native library exports**
 // (`tools/c_wrapper.h`): `vrvToolkit_loadData`, `_renderToSVG`, `_getMEI`,
 // `_edit`, `_renderToTimemap`, `_getMIDIValuesForElement`. That is why one
-// `Engraver` port serves both — a process calls them through the C ABI, a page
+// `Engraver` port serves both -- a process calls them through the C ABI, a page
 // through `cwrap`, and the state machine above neither knows nor cares.
 //
 // The module is **loaded on demand**: `dist/vendor/verovio/` is staged beside
@@ -26,13 +26,13 @@ let modulePromise: Promise<VerovioModule> | null = null;
 
 /**
  * Where the engraver module lives. Resolved against this module's own URL, the
- * way the worklet is (`new URL(…, import.meta.url)`) — the form a bundler
- * copies as an asset — with an override for a page that stages it elsewhere.
+ * way the worklet is (`new URL(…, import.meta.url)`) -- the form a bundler
+ * copies as an asset -- with an override for a page that stages it elsewhere.
  */
 let engraverUrl: string | null = null;
 
 /**
- * Point the loader at a `verovio.js` of your own — a different path, a CDN, a
+ * Point the loader at a `verovio.js` of your own -- a different path, a CDN, a
  * blob. Call it before the first engraving; afterwards the module is already
  * loaded and this does nothing.
  *
@@ -65,7 +65,7 @@ async function verovioModule(): Promise<VerovioModule> {
  *
  * The names are the port's, not verovio's, because they are what
  * `clausters_core::notation::Engraver` reads off the object handed to it. What
- * each one does is one `vrvToolkit_*` call and nothing else — no ordering, no
+ * each one does is one `vrvToolkit_*` call and nothing else -- no ordering, no
  * caching, no recovery, all of which belong to the model.
  */
 export class Toolkit {
@@ -105,7 +105,7 @@ export class Toolkit {
         return toolkit;
     }
 
-    /** The engraver's version string — what the two ends must agree on. */
+    /** The engraver's version string -- what the two ends must agree on. */
     version(): string {
         return (this.fns.getVersion?.(this.ptr) as string) ?? "";
     }

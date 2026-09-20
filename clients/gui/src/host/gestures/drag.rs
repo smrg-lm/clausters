@@ -4,7 +4,7 @@
 //! moves the thing under the cursor, [`Gestures::release`] ends the gesture and
 //! emits whatever the edit owes its owner (an edit-back payload, a final value,
 //! a note-off). Keeping the two matches side by side is what keeps them in
-//! step — a variant that grows a drag behaviour and forgets its release is
+//! step -- a variant that grows a drag behaviour and forgets its release is
 //! visible here rather than three hundred lines away.
 //!
 //! [`Gestures::tick`] belongs to the same phase: it is the frame step of a drag
@@ -25,7 +25,7 @@ impl Gestures {
     /// the held direction and re-applies the drag at the standing cursor, so
     /// what is being dragged travels with the view.
     ///
-    /// This is what lets a clip — or a note — be moved further than one
+    /// This is what lets a clip -- or a note -- be moved further than one
     /// window's worth. The drag itself maps the cursor through the *current*
     /// window, so panning is the whole mechanism: nothing here touches the
     /// placement math, and an element that asked for this reads its axis from
@@ -98,7 +98,7 @@ impl Gestures {
                     // **A held drag always repaints**, whether or not it
                     // reported: an element was given the drag because it
                     // changes something, and what it changes is not always
-                    // deliverable — a text selection extending, a score's
+                    // deliverable -- a text selection extending, a score's
                     // element crossing a diatonic step. Reporting already asks
                     // for the repaint, so this is the other case; only the
                     // element that is *gone* (a widget freed under the drag)
@@ -168,7 +168,7 @@ impl Gestures {
             } => {
                 // Dragging right moves the axis right with the cursor: the
                 // frequency grabbed stays under it. Over the window on the
-                // screen, which is what the hand is on — where the floor has
+                // screen, which is what the hand is on -- where the floor has
                 // opened the axis, a pixel is worth more hertz than the
                 // request would say.
                 let x_len = freq_window(host, def_id, id, ctx.sample_rate).map_or(1.0, |w| w.1);
@@ -268,8 +268,8 @@ impl Gestures {
                     group_view(host, id).map_or((nav_start, nav_len), |(s, l, _)| (s, l));
                 // **The stroke stops at the edge of the view**, because that is
                 // the same rule the pencil is refused under: it writes what the
-                // reader can see. A hand that slides off the picture — or out
-                // of the window, where the pointer keeps reporting — would
+                // reader can see. A hand that slides off the picture -- or out
+                // of the window, where the pointer keeps reporting -- would
                 // otherwise go on rewriting samples nobody is looking at, and
                 // the damage is only discovered by scrolling there. Clamped
                 // rather than stopped, so the last visible column still follows
@@ -311,7 +311,7 @@ impl Gestures {
     /// drag ends.
     ///
     /// **And a press that never left the slop is a click, which is where the
-    /// cursor goes** — on the axis the press landed on, whatever was drawn there
+    /// cursor goes** -- on the axis the press landed on, whatever was drawn there
     /// and whatever took the press. It is answered here, after the drag's own
     /// arm, because that is what makes it one rule rather than one per view: a
     /// clip, a note, empty lane space and a ruler all place the same cursor, and
@@ -319,8 +319,8 @@ impl Gestures {
     ///
     /// **The position cursor is placed when the button comes up**, not when it
     /// goes down. A
-    /// press is not yet a gesture — the same movement is a click or a sweep
-    /// depending on what happens next — and placing the head at the press puts
+    /// press is not yet a gesture -- the same movement is a click or a sweep
+    /// depending on what happens next -- and placing the head at the press puts
     /// it where the hand *started* rather than where the selection *begins*,
     /// which are different the moment a sweep runs leftwards. A plain click
     /// still lands immediately, because a click is a press and a release with
@@ -359,7 +359,7 @@ impl Gestures {
         out
     }
 
-    /// What the drag itself delivers on release — one arm per [`Drag`] variant,
+    /// What the drag itself delivers on release -- one arm per [`Drag`] variant,
     /// and the half of the release that is about *what was held* rather than
     /// about where the hand pointed.
     fn release_drag(
@@ -491,7 +491,7 @@ impl Gestures {
     }
 }
 
-/// Little-endian `f32` bytes — the one bulk payload convention this system has,
+/// Little-endian `f32` bytes -- the one bulk payload convention this system has,
 /// shared with `/buffer_setRange`, `/buffer_getRange.reply` and the clipboard.
 fn samples_blob(values: &[f32]) -> Vec<u8> {
     let mut out = Vec::with_capacity(values.len() * 4);

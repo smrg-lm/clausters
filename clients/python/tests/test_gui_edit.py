@@ -2,7 +2,7 @@
 
 One verb, three editors, and no multitrack anywhere: a curve a script built,
 a timeline it filled, a buffer it holds. What is checked is the acceptance the
-track was opened with — two windows over one structure share one stack, an edit
+track was opened with -- two windows over one structure share one stack, an edit
 read back is the edit that was drawn, and a window composing two structures
 undoes across both in the order the edits were made.
 """
@@ -555,7 +555,7 @@ def test_a_timeline_with_a_marker_still_draws_its_notes():
 def test_a_curve_is_drawn_against_its_own_axis_and_not_the_default_one():
     """A `bpf` given no range draws against the unipolar default and fits its
     time to the last point, so a curve of any other range is pinned to the top
-    of the field and the edit-back reports the *axis*'s values — one drag
+    of the field and the edit-back reports the *axis*'s values -- one drag
     destroys the data's range. Both ends come from the curve."""
     curve = a_curve()                       # 200 Hz to 900 Hz, ending at beat 2
     editor = edit(curve, sample_rate=SR, open=False)

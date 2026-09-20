@@ -1,8 +1,8 @@
 //! The interpreter: what a score **sounds like**, as against what it says.
 //!
 //! Reading a page into events is not a conversion, and that is the whole reason
-//! this is its own layer. A quarter note marked staccato is a quarter note —
-//! the next attack comes where it always did — and it *sounds* half that. A
+//! this is its own layer. A quarter note marked staccato is a quarter note --
+//! the next attack comes where it always did -- and it *sounds* half that. A
 //! dynamic written on one note governs every note after it until another one is
 //! written. A crescendo is not on any note at all: it is a shape over a stretch
 //! of them. None of that can be read off an item in isolation, so the
@@ -15,9 +15,9 @@
 //! the pair straight onto its event's `dur` and `sustain`.
 //!
 //! **The default interpretation is data, and replaceable.** Everything the
-//! reading depends on — how much a staccato shortens, what `mf` is in
+//! reading depends on -- how much a staccato shortens, what `mf` is in
 //! amplitude, how far a crescendo travels, which metric positions are stressed
-//! — lives in [`Interpretation`], crosses as JSON, and is passed in. A caller
+//! -- lives in [`Interpretation`], crosses as JSON, and is passed in. A caller
 //! who disagrees edits the value and sends it; nobody edits this file to play a
 //! score in another style. What the *defaults* claim is deliberately as little
 //! as a player can claim and still be playing: the marks mean roughly what a
@@ -28,12 +28,12 @@
 //! **What is not here, and why it is not missing.** A *repeat* is not a symbol
 //! this model carries: repetition is written out, by [`super::Op::Repeat`], so
 //! by the time a sheet exists there is nothing left to expand. A *tuplet* needs
-//! no rule either — its division is already exact in the rational the item
+//! no rule either -- its division is already exact in the rational the item
 //! holds, so onsets land on it without the interpreter knowing tuplets exist.
 //!
 //! **The instrument is not in the notation.** A staff does not say what plays
 //! it, so every note names the `staff` and `voice` it was written on and the
-//! binding is made where the score is rendered, explicitly — the same rule
+//! binding is made where the score is rendered, explicitly -- the same rule
 //! `docs/decisions.md` states for a buffer sounding through an instrument.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -45,7 +45,7 @@ use crate::ratio::Ratio;
 
 /// One sounding note, as the interpreter heard it.
 ///
-/// Times are in **beats**, where a beat is [`Interpretation::beat_unit`] — the
+/// Times are in **beats**, where a beat is [`Interpretation::beat_unit`] -- the
 /// unit a client's own sequencing runs in, so the result drops onto a timeline
 /// without a second conversion.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -63,7 +63,7 @@ pub struct Note {
     /// Linear amplitude: the prevailing dynamic, ramped by any hairpin over it,
     /// stressed by its metric position and by its own accents.
     pub amp: f64,
-    /// The staff it is written on, 0-based from the top — what a caller binds
+    /// The staff it is written on, 0-based from the top -- what a caller binds
     /// an instrument to.
     pub staff: usize,
     /// The voice of that staff, 0-based.
@@ -71,7 +71,7 @@ pub struct Note {
     /// The model id of the item it came from, so a sounding note can be traced
     /// back to the note on the page.
     pub id: u64,
-    /// Which enharmonic spelling the writer chose — `"sharp"` or `"flat"` —
+    /// Which enharmonic spelling the writer chose -- `"sharp"` or `"flat"` --
     /// where the note is altered at all; `None` on a natural, where nothing
     /// was chosen.
     ///
@@ -82,7 +82,7 @@ pub struct Note {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spelling: Option<String>,
     /// `"written"` where the accidental is one the writer wants printed even
-    /// though the key already implies it — a courtesy sign. `None` otherwise:
+    /// though the key already implies it -- a courtesy sign. `None` otherwise:
     /// the engraver decides.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accidental: Option<String>,
@@ -111,13 +111,13 @@ pub struct Articulation {
 /// A metric stress: a position within the bar, and what being on it does.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Accent {
-    /// How far into the measure, in whole notes — `0` is the downbeat, `1/2`
+    /// How far into the measure, in whole notes -- `0` is the downbeat, `1/2`
     /// is the third beat of a 4/4.
     pub at: Ratio,
     /// What a note starting exactly there does to its amplitude.
     pub gain: f64,
     /// The meter this applies in, `"count/unit"`. Left out, it applies in every
-    /// meter — which is right for the downbeat and wrong for anything else,
+    /// meter -- which is right for the downbeat and wrong for anything else,
     /// since half a bar is a different place in a 4/4 and in a 3/4.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub meter: Option<String>,
@@ -143,7 +143,7 @@ pub struct Interpretation {
     /// The amplitude of a note under no dynamic at all.
     #[serde(default = "default_amp")]
     pub amp: f64,
-    /// The fraction of its written value a plain note is held for — a note
+    /// The fraction of its written value a plain note is held for -- a note
     /// with no articulation and under no slur. `1.0` leaves the reading
     /// neutral; a player who detaches by habit lowers it.
     #[serde(default = "one")]
@@ -152,7 +152,7 @@ pub struct Interpretation {
     #[serde(default = "one")]
     pub slur: f64,
     /// What a crescendo reaches by its far end, as a factor on the amplitude it
-    /// started from — used only when no dynamic is written at that end, since a
+    /// started from -- used only when no dynamic is written at that end, since a
     /// written one says where it was going.
     #[serde(default = "default_crescendo")]
     pub crescendo: f64,
@@ -187,7 +187,7 @@ fn default_diminuendo() -> f64 {
 }
 
 /// The dynamics, a factor of about 1.45 apart, centred so that an unmarked
-/// score and an `mf` one sound the same — an unmarked page is not silent and
+/// score and an `mf` one sound the same -- an unmarked page is not silent and
 /// not loud, and saying which of the named levels it is keeps the two readings
 /// from drifting apart.
 fn default_dynamics() -> BTreeMap<String, f64> {
@@ -207,7 +207,7 @@ fn default_dynamics() -> BTreeMap<String, f64> {
 }
 
 /// The articulations, by their MEI names. A tenuto is held whole and unstressed
-/// — which is not nothing, since it overrides the player's own detachment.
+/// -- which is not nothing, since it overrides the player's own detachment.
 fn default_articulations() -> BTreeMap<String, Articulation> {
     [
         (
@@ -278,7 +278,7 @@ impl Default for Interpretation {
     }
 }
 
-/// The reading a caller gets when it says nothing — and the value it starts
+/// The reading a caller gets when it says nothing -- and the value it starts
 /// from when it wants to say something.
 ///
 /// A client cannot write these numbers down for itself: two clients with their
@@ -301,7 +301,7 @@ struct Placed<'a> {
 /// Read `sheet` under `interp` into the notes it sounds, in time order.
 ///
 /// # Errors
-/// When a spanner names an item that is not on the sheet — the same refusal the
+/// When a spanner names an item that is not on the sheet -- the same refusal the
 /// emitter makes, and for the same reason: a crescendo that governs nothing is
 /// a fact the caller wants back, not one to swallow.
 pub fn perform(mut sheet: Sheet, interp: &Interpretation) -> Result<Vec<Note>, String> {
@@ -427,7 +427,7 @@ pub fn perform(mut sheet: Sheet, interp: &Interpretation) -> Result<Vec<Note>, S
 }
 
 /// Every dynamic written on the sheet, per staff, as `(onset, amplitude)` in
-/// time order — a dynamic governs the notes **after** it, so this is read
+/// time order -- a dynamic governs the notes **after** it, so this is read
 /// rather than applied.
 ///
 /// Per staff because that is where the mark is written: a dynamic under the
@@ -474,7 +474,7 @@ struct Hairpin {
 }
 
 impl Hairpin {
-    /// The factor at `t` — `1.0` outside the span, so a note anywhere else is
+    /// The factor at `t` -- `1.0` outside the span, so a note anywhere else is
     /// untouched by it.
     fn gain_at(&self, t: Ratio, staff: usize) -> f64 {
         let past_end = if self.shapes_end {

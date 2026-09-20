@@ -46,12 +46,12 @@ echo "persisted files:"
 ls -1 "$DATA_DIR/faustdefs"      # psine.json (source of truth) + psine.<sha>.bc (cache)
 
 echo
-echo "=== session 2: restart WITHOUT re-sending the def — it reloads itself ==="
+echo "=== session 2: restart WITHOUT re-sending the def -- it reloads itself ==="
 "$SERVER" --data-dir "$DATA_DIR" &
 PID=$!
 sleep 1.0                        # the def reloads in the background; give it a moment
 oscsend localhost $PORT /synth_new siii psine 3001 1 0   # instantiate the reloaded def
-echo "you should hear 440 Hz — the def survived the restart"
+echo "you should hear 440 Hz -- the def survived the restart"
 sleep 1.5
 oscsend localhost $PORT /node_free i 3001
 oscsend localhost $PORT /server_quit

@@ -2,7 +2,7 @@
 //
 // One verb, three editors, and no multitrack anywhere: a curve a page built, a
 // timeline it filled, a buffer it holds. What is checked is the acceptance the
-// track was opened with — two windows over one structure share one stack, an
+// track was opened with -- two windows over one structure share one stack, an
 // edit read back is the edit that was drawn, and a window composing two
 // structures undoes across both in the order the edits were made.
 //
@@ -199,7 +199,7 @@ test("a curve is drawn, edited and read back with no multitrack", async () => {
 test("an edit made against a picture an undo replaced is refused", async () => {
     // The staleness floor, on the road an editor actually travels. A host
     // stamps every event with the version it was last told, and it is told only
-    // when an acknowledgement reaches it — a round trip a hand outruns — so an
+    // when an acknowledgement reaches it -- a round trip a hand outruns -- so an
     // edit naming an older version is the ordinary case and applies. What does
     // not is an edit made against a picture the data has moved away from
     // by a route the host never saw: here an undo.
@@ -222,7 +222,7 @@ test("an edit made against a picture an undo replaced is refused", async () => {
     // The event the hand had already sent, naming the picture it was made
     // against. Refused rather than applied: an edit-back payload is absolute
     // *and* whole, so applying one made against an older picture would silently
-    // drop whatever arrived in between — here, the undo.
+    // drop whatever arrived in between -- here, the undo.
     assert.equal(
         editor.apply("/gui_event", [wid, 2, against, "points",
             0.0, 900.0, 1, 0.0, 2.0, 900.0, 1, 0.0]),
@@ -600,7 +600,7 @@ test("a timeline with a marker still draws its notes", async () => {
 test("two editors in one application keep their own floor", async () => {
     // The echo is **one view's** end of the conversation, so a window set does
     // not share one. The floor rises when the version moved and no event of
-    // *this* view moved it — with one echo per application the two windows
+    // *this* view moved it -- with one echo per application the two windows
     // would each answer for the other, and a gesture the left window made
     // against a picture the right window had already changed would find
     // `version === applied` and be accepted, which is the whole of what the
@@ -635,7 +635,7 @@ test("two editors in one application keep their own floor", async () => {
 test("the editing trace is silent until it is watched", async () => {
     // The five joints, and the fact that they cost nothing unarmed. A window in
     // front of a person fails in ways nothing else sees, so the path says what
-    // it did — but a library that printed by default would make every importer
+    // it did -- but a library that printed by default would make every importer
     // pay for the formatting.
     //
     // The Python twin is

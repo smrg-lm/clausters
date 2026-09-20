@@ -1,5 +1,5 @@
-//! Calculation-rate tests (S1): one per rate — `ar` (per sample), `kr` (once
-//! per block), `ir` (once at init, then frozen), `dr` (pulled on demand) — plus
+//! Calculation-rate tests (S1): one per rate -- `ar` (per sample), `kr` (once
+//! per block), `ir` (once at init, then frozen), `dr` (pulled on demand) -- plus
 //! the compiler's rate-coercion validation.
 
 #![cfg(feature = "synth")]
@@ -37,7 +37,7 @@ fn render(json: &str, blocks: usize) -> Vec<f32> {
     out
 }
 
-/// Renders `blocks` blocks, cut into slices of `split` frames — what a
+/// Renders `blocks` blocks, cut into slices of `split` frames -- what a
 /// scheduled bundle does to a block (M6). The audio bus is read once per whole
 /// block, so the result is directly comparable with [`render`]'s.
 fn render_split(json: &str, blocks: usize, split: usize) -> Vec<f32> {
@@ -144,7 +144,7 @@ fn kr_output_is_constant_within_each_block() {
 // ---- kr: the control rate is a time base, not just a decimation ----
 //
 // A `kr` UGen emits one sample per slice, so *its* sample rate is `full /
-// frames` — scsynth's `unit->mRate->mSampleRate`. Anything that turns seconds
+// frames` -- scsynth's `unit->mRate->mSampleRate`. Anything that turns seconds
 // into samples divides by that, which is what makes a period in Hz mean the
 // same thing at either rate.
 
@@ -154,7 +154,7 @@ const ONE_SECOND: usize = SR as usize / BLOCK_SIZE;
 fn kr_frequency_is_in_hertz_like_ar() {
     // Ten cycles per second is ten impulses per second, whichever rate runs
     // them. Reading the engine's rate here instead would make the control-rate
-    // one 64 times too slow — one impulse per second.
+    // one 64 times too slow -- one impulse per second.
     let json = |rate: &str| {
         format!(
             r#"{{
@@ -335,7 +335,7 @@ fn rejects_non_ir_input_to_ir_ugen() {
 #[test]
 fn rejects_demand_wire_into_a_normal_input() {
     // A dr wire may only feed something that pulls it: a driver, or another
-    // demand UGen nesting it. A multiply is neither — a stream has no samples.
+    // demand UGen nesting it. A multiply is neither -- a stream has no samples.
     let json = r#"{"name":"x","ugens":[
         {"kind":"Dseq","rate":"dr","inputs":[{"const":0.0},{"const":1.0}]},
         {"kind":"Mul","inputs":[{"ugen":0},{"const":2.0}]}
@@ -347,7 +347,7 @@ fn rejects_demand_wire_into_a_normal_input() {
 fn a_driver_accepts_a_plain_value_as_its_source() {
     // U8 loosened this: with `Duty` pulling two of its four inputs, "the source
     // slot must be a dr wire" stopped being a rule the family shares, and a
-    // stream that is really a constant is well defined — it holds.
+    // stream that is really a constant is well defined -- it holds.
     let json = r#"{"name":"x","ugens":[
         {"kind":"Impulse","inputs":[{"const":1.0}]},
         {"kind":"Demand","inputs":[{"ugen":0},{"const":0.0},{"const":5.0}]},

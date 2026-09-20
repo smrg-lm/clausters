@@ -1,6 +1,6 @@
 // Triggers and control flow (mirrors `clausters/defs/ugens/trig.py`).
 //
-// A **trigger** is a signal crossing from <= 0 up to > 0 — one definition
+// A **trigger** is a signal crossing from <= 0 up to > 0 -- one definition
 // shared by every function here, so the same crossing means the same thing
 // whatever produced it.
 
@@ -34,7 +34,7 @@ export const latch = (signal: Channel, trig: Channel = 0.0): Ugen =>
 
 /**
  * Passes `signal` while `trig` is above zero and **freezes** at the last
- * value when it is not — transparent for as long as the gate is open.
+ * value when it is not -- transparent for as long as the gate is open.
  */
 export const gate = (signal: Channel, trig: Channel = 0.0): Ugen =>
     new Ugen("Gate", [signal, trig]);
@@ -50,7 +50,7 @@ export const schmidt = (
 ): Ugen => new Ugen("Schmidt", [signal, lo, hi]);
 
 /**
- * Flips between 0 and 1 on each trigger — a divider by two of the
+ * Flips between 0 and 1 on each trigger -- a divider by two of the
  * *triggers*, not of the signal.
  */
 export const toggleFf = (trig: Channel = 0.0): Ugen =>
@@ -73,7 +73,7 @@ export const pulseCount = (
 
 /**
  * One trigger out for every `div` in. `start` is where the counter begins,
- * read once — set it to `div - 1` to fire on the very first trigger.
+ * read once -- set it to `div - 1` to fire on the very first trigger.
  */
 export const pulseDivider = (
     trig: Channel = 0.0,
@@ -82,7 +82,7 @@ export const pulseDivider = (
 ): Ugen => new Ugen("PulseDivider", [trig, div, start]);
 
 /**
- * A counter that walks `[min, max]` — **both ends included** — one `step`
+ * A counter that walks `[min, max]` -- **both ends included** -- one `step`
  * per trigger, wrapping. It sits at `resetval` until the first trigger,
  * which lands on `resetval + step`.
  */
@@ -120,7 +120,7 @@ export const changed = (
 
 /**
  * Turns each impulse into an exponential falling 60 dB in `decaytime`. Its
- * attack is instantaneous, which clicks — see `decay2`.
+ * attack is instantaneous, which clicks -- see `decay2`.
  */
 export const decay = (signal: Channel, decaytime: Channel = 1.0): Ugen =>
     new Ugen("Decay", [signal, decaytime]);

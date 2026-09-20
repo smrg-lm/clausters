@@ -42,7 +42,7 @@ class ServerTransport:
         **Always a dict**: the transport exists whether or not anyone has
         defined a beat grid, because rolling, stopping and saying where the
         the transport is need no beats. ``origin_sample`` and ``tempo`` are ``None``
-        while there is no grid, and ``position`` — the song-position *beat* —
+        while there is no grid, and ``position`` -- the song-position *beat* --
         is 0 there, since there is nothing to measure it against; the sample
         spelling below is live either way. Read the grid alone with
         `transport`, which still answers ``None`` when none is set.
@@ -55,8 +55,8 @@ class ServerTransport:
         nothing is bound.
 
         The last three are the transport's own axis. ``transport_sample`` is the
-        transport **clock** — samples elapsed under the transport, held while it
-        is stopped and monotonic, so a locate does not move it — while
+        transport **clock** -- samples elapsed under the transport, held while it
+        is stopped and monotonic, so a locate does not move it -- while
         ``position_sample`` is where the transport **stands**, which is
         what a playhead draws: it jumps to wherever a locate puts it and wraps
         inside ``loop``, a ``(start, end)`` pair of samples or ``None`` when
@@ -90,7 +90,7 @@ class ServerTransport:
         one bound, the **engine** enforces it: `transport_stop` freezes that
         subtree and the server's transport clock, `transport_play` thaws them.
         Every node in the subtree keeps its internal state across the freeze, so
-        a resume continues the sound rather than restarting it — which is the
+        a resume continues the sound rather than restarting it -- which is the
         only thing a pause can mean for sound the server generates itself.
 
         Freeing the group unbinds the transport, and unbinding thaws whatever it
@@ -106,7 +106,7 @@ class ServerTransport:
         """Schedule ``packet`` at an absolute sample on the **transport** axis
         (``/sched_atTransport``), the counterpart of ``/sched_at``'s device axis.
 
-        Declaring the axis is not about disambiguation — classification is
+        Declaring the axis is not about disambiguation -- classification is
         deterministic, and a client that bound the group knows which of its
         nodes are governed. It is about **verification**: the server compares
         the declaration against its own classification and fails when they
@@ -162,8 +162,8 @@ class ServerTransport:
 
         The span is **half-open**: ``(0, n)`` over an ``n``-sample take plays
         every frame exactly once and joins its own start with no repeated frame.
-        Turning a loop on does not move the transport — it keeps playing and wraps
-        when it first reaches the end — and the wrap happens in the engine, so
+        Turning a loop on does not move the transport -- it keeps playing and wraps
+        when it first reaches the end -- and the wrap happens in the engine, so
         nothing has to be sent once a pass completes. An empty or inverted span
         raises. What a loop toggle remembers is the client's to keep: clearing
         forgets the span."""
@@ -175,7 +175,7 @@ class ServerTransport:
         return self
 
     def transport_locate(self, position: float, timeout: "float | None" = None):
-        """Set the shared transport's song position (``/transport_locate``) —
+        """Set the shared transport's song position (``/transport_locate``) --
         where play starts, or where it seeks to while playing. Every following
         playhead locates to it. Broadcast to `/server_notify` clients."""
         addr, args = self.request("/transport_locate", float(position),

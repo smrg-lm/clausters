@@ -4,7 +4,7 @@
 //! The audio server, started with `--shm <path>`, maps a memory-backed file
 //! whose control-bus region is a flat array of atomics the engine reads and
 //! writes directly. A GUI `meter`/`scope` widget reads those very atomics
-//! **each frame**, so a live bus animates with no OSC traffic at all — the
+//! **each frame**, so a live bus animates with no OSC traffic at all -- the
 //! third leg of the topology made cheap: the host is a client that reads the
 //! server's memory.
 //!
@@ -12,7 +12,7 @@
 //! [`clausters_core::shm`], the one definition every process links, and this
 //! module is what is genuinely the *host's*: getting the memory (a mapped file,
 //! or a borrow of an in-process server's own segment), and choosing which
-//! counter a window's playhead draws. That split is not tidiness — a mirror of
+//! counter a window's playhead draws. That split is not tidiness -- a mirror of
 //! the layout written by hand here refused every valid v9 segment for a week,
 //! because it agreed with the server on the version number and not on the size
 //! check, which is exactly the failure a shared definition cannot have.
@@ -35,7 +35,7 @@ use clausters_core::shm::View;
 enum Backing {
     /// A mapping this made and must unmap.
     Mapped { ptr: *mut u8, len: usize },
-    /// Somebody else's memory, kept alive by the handle held here — an
+    /// Somebody else's memory, kept alive by the handle held here -- an
     /// in-process server's own segment, which is not ours to unmap and must
     /// not outlive its owner. Type-erased because the owner is the server
     /// crate's, which only a `standalone` build links.
@@ -99,7 +99,7 @@ impl SharedSegment {
         }
         let ptr = raw as *mut u8;
         // Validated from the raw mapping before the owning struct exists, so
-        // its `Drop` (munmap) runs exactly once — for the segment we return.
+        // its `Drop` (munmap) runs exactly once -- for the segment we return.
         // SAFETY: the mapping we just made, of `len` bytes.
         match unsafe { View::attach(ptr, len) } {
             Ok(view) => Ok(SharedSegment {
@@ -114,7 +114,7 @@ impl SharedSegment {
         }
     }
 
-    /// A view over a segment **somebody else owns** — an in-process server's
+    /// A view over a segment **somebody else owns** -- an in-process server's
     /// own, where the host and the engine are one process and there is no file
     /// to map.
     ///
@@ -153,7 +153,7 @@ impl SharedSegment {
     }
 
     /// Audio bus `bus`'s level: the peak magnitude of the engine's last block.
-    /// One atomic load — what a meter reads, and why a meter costs no tap ring.
+    /// One atomic load -- what a meter reads, and why a meter costs no tap ring.
     pub fn level(&self, bus: usize) -> f32 {
         self.view.level(bus)
     }
@@ -172,14 +172,14 @@ impl SharedSegment {
     /// Samples elapsed **under the transport**, held while it is stopped.
     ///
     /// [`Self::sample_clock`] never stops, so anything pacing on the device
-    /// reads that one. This one is monotonic too — it holds, it never jumps —
+    /// reads that one. This one is monotonic too -- it holds, it never jumps --
     /// which is what a scheduler needs and what a **playhead does not**: for
     /// where the multitrack *is*, read [`Self::transport_position`].
     pub fn transport_clock(&self) -> u64 {
         self.view.transport_clock().load(Ordering::Relaxed)
     }
 
-    /// Where the transport is **in the multitrack**, in samples of the samples —
+    /// Where the transport is **in the multitrack**, in samples of the samples --
     /// what a playhead draws.
     ///
     /// Not a clock: it advances with the transport clock while rolling, holds
@@ -212,7 +212,7 @@ impl SharedSegment {
     ///
     /// The generation does three jobs with one number: it is *odd while the
     /// buffer is live*, it *names the region file* beside the segment (which is
-    /// where the samples actually are — see [`crate::host::mapped`]), and it
+    /// where the samples actually are -- see [`crate::host::mapped`]), and it
     /// is a *seqlock* the shared reader retries under.
     pub fn buffer_info(&self, bufnum: usize) -> Option<clausters_core::shm::BufferShape> {
         self.view.buffer_info(bufnum)
@@ -229,7 +229,7 @@ impl SharedSegment {
         self.view.buffer_frontier(bufnum)
     }
 
-    /// How many buffers the directory can describe — the pool's size, as the
+    /// How many buffers the directory can describe -- the pool's size, as the
     /// segment's own length reports it.
     pub fn buffer_rows(&self) -> usize {
         self.view.buffer_rows()

@@ -179,7 +179,7 @@ def test_a_walk_is_one_door_and_comes_back_routed_per_structure():
 
 def test_what_the_grid_did_is_what_gets_replayed():
     """The forward half records the *effective* edit, so a redo does not snap a
-    second time — harmless with a grid, wrong the moment a rule is not
+    second time -- harmless with a grid, wrong the moment a rule is not
     idempotent."""
     from clausters._native import Document, Log
 
@@ -282,7 +282,7 @@ def test_a_closed_log_is_closed_twice_without_complaint():
 def test_the_document_handle_edits_in_place_and_hands_back_only_the_outcome():
     """The shape since the tree stopped crossing on every call: a handle holds
     the tree, an intent goes over, and what comes back is what happened.
-    `snapshot` is how the JSON leaves — asked for rather than paid per edit."""
+    `snapshot` is how the JSON leaves -- asked for rather than paid per edit."""
     from clausters import _native
 
     doc_json = a_document()
@@ -371,7 +371,7 @@ def test_the_session_format_constant_is_the_crates():
     writing one must not need a native load. The cost of that is exactly this
     check: without it the number drifts silently, which is what happened when
     the crate moved to 2 for a source whose samples are spans of other sources
-    and both clients went on stamping 1 onto files that could carry one — a file
+    and both clients went on stamping 1 onto files that could carry one -- a file
     telling an older build it was safe to read.
     """
     from clausters import _native

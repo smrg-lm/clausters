@@ -4,13 +4,13 @@
 //!
 //! A voice is the host's, not a widget's. An element only *declares* one
 //! ([`VoiceSpec`](super::widget::element::VoiceSpec), through
-//! [`Element::voice`](super::widget::element::Element::voice)) — which def to
-//! play and what to pass it — and the [`Host`](super::Host) does the rest:
+//! [`Element::voice`](super::widget::element::Element::voice)) -- which def to
+//! play and what to pass it -- and the [`Host`](super::Host) does the rest:
 //! allocate a node, send it, remember it under the widget, and gate it off on
 //! release or when the widget goes away. The keyboard is only the first element
 //! to declare one, and nothing here knows a key from any other press.
 //!
-//! These lived beside the keyboard's geometry, which put OSC inside a model —
+//! These lived beside the keyboard's geometry, which put OSC inside a model --
 //! the one thing a model may not name. They are the host's business and this is
 //! where it keeps it.
 
@@ -19,8 +19,8 @@ use clausters_core::scale;
 
 /// The `/synth_new` a host-managed voice press sends: the voice def by name, an
 /// explicit node id (so the release can gate it), head of the default group,
-/// with the conventional controls — `freq` from the equal-tempered MIDI map,
-/// `amp` from the velocity, `gate` open — followed by the widget's extra
+/// with the conventional controls -- `freq` from the equal-tempered MIDI map,
+/// `amp` from the velocity, `gate` open -- followed by the widget's extra
 /// `voice_args` pairs.
 pub fn on_msg(
     name: &str,
@@ -51,7 +51,7 @@ pub fn on_msg(
     }
 }
 
-/// The `/node_set <node> gate 0` a voice release sends — the envelope closes and
+/// The `/node_set <node> gate 0` a voice release sends -- the envelope closes and
 /// the node frees itself (`FREE_SELF` done action in the voice def).
 pub fn off_msg(node: i32) -> OscMessage {
     OscMessage {

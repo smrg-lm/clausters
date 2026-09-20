@@ -4,7 +4,7 @@
 //! `doneAction` reported when it lands. They are scsynth's `Line`/`XLine`: the
 //! per-sample step is worked out **once**, and the inner loop is one addition
 //! (or one multiplication) plus a counter. That is the whole reason they live
-//! here and not inside [`crate::dsp::envgen`] — the segment engine reads a
+//! here and not inside [`crate::dsp::envgen`] -- the segment engine reads a
 //! thirteen-input layout and re-evaluates a shape function every sample, which
 //! is the right shape for a breakpoint envelope and far too much machinery for
 //! a straight line at audio rate.
@@ -22,7 +22,7 @@ use crate::dsp::{DoneAction, ProcessCtx, UGen, at};
 pub enum LineShape {
     /// `Line`: equal steps, `start + t·(end − start)`.
     Linear,
-    /// `XLine`: equal *ratios*, `start·(end/start)^t` — the one that sounds
+    /// `XLine`: equal *ratios*, `start·(end/start)^t` -- the one that sounds
     /// like a straight line when what it drives is a frequency or a gain.
     Exponential,
 }
@@ -44,7 +44,7 @@ enum Advance {
 /// keeps the audio-rate cost at one arithmetic operation per sample. `f64` is
 /// load-bearing rather than incidental: an `f32` accumulator over a ten-second
 /// ramp drifts far enough to be seen, while this one stays within an ulp of
-/// the closed form and the landing is committed exactly anyway — when the
+/// the closed form and the landing is committed exactly anyway -- when the
 /// counter runs out the level is *assigned* `end`, never merely approached.
 ///
 /// An exponential ramp through or to zero is undefined, and what happens then
@@ -59,7 +59,7 @@ pub struct Line {
     /// that has happened.
     started: bool,
     finished: bool,
-    /// The running level, and the step that advances it — added or multiplied
+    /// The running level, and the step that advances it -- added or multiplied
     /// according to `advance`.
     level: f64,
     step: f64,
@@ -144,7 +144,7 @@ impl UGen for Line {
             if self.counter <= 0 {
                 // Landed. The flag is raised here rather than on the sample
                 // that exhausted the counter, so "done" means the output is
-                // *showing* `end` — which is what `Done` and `FreeSelfWhenDone`
+                // *showing* `end` -- which is what `Done` and `FreeSelfWhenDone`
                 // watching this ramp report, and when the done action fires.
                 self.finished = true;
                 *out = self.end as f32;

@@ -7,7 +7,7 @@ higher-level destination abstraction (RT/NRT/MIDI interfaces, `NetAddr`) sits
 on top of this in `base/_oscinterface.py`.
 
 The byte codec itself stays per-language (structured arguments cannot cross the
-flat C ABI — the documented seam exception), but **every time value** goes
+flat C ABI -- the documented seam exception), but **every time value** goes
 through the native core: timetag packing (`clausters._native.ntp_timetag` /
 ``unix_to_ntp``, fraction *rounded*) and the timetag↔sample math, so identical
 instants produce identical bits in every client.
@@ -30,7 +30,7 @@ def _string(s: str) -> bytes:
 
 
 class Int64:
-    """Marker for an OSC int64 (`h`) argument — e.g. `/sched_at` sample targets."""
+    """Marker for an OSC int64 (`h`) argument -- e.g. `/sched_at` sample targets."""
 
     def __init__(self, value: int):
         self.value = int(value)
@@ -76,7 +76,7 @@ def bundle_at(unix_seconds: float, *packets: bytes) -> bytes:
 
 
 def immediate_bundle(*packets: bytes) -> bytes:
-    """A bundle with the immediate timetag ``{0, 1}`` — used as the ``/sched_at``
+    """A bundle with the immediate timetag ``{0, 1}`` -- used as the ``/sched_at``
     payload, where the server ignores the inner timetag and fires it at the
     scheduled sample."""
     body = b"".join(struct.pack(">i", len(p)) + p for p in packets)
@@ -133,8 +133,8 @@ def decode_packet(packet: bytes, time=None) -> list:
     time)`` messages, unwrapping bundles recursively. A bundle's NTP timetag is
     decoded to Unix seconds and carried as each contained message's ``time``
     (``None`` for the immediate timetag ``{0,1}``); a bare message carries the
-    ``time`` passed in. The single entry point for received packets — the
-    counterpart of the server's ``osc::decode_packet`` — so the responder
+    ``time`` passed in. The single entry point for received packets -- the
+    counterpart of the server's ``osc::decode_packet`` -- so the responder
     layer handles bundles transparently."""
     if packet[:8] == b"#bundle\x00":
         secs, frac = struct.unpack(">II", packet[8:16])

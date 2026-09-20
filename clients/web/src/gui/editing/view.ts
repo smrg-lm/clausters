@@ -5,7 +5,7 @@
  * A view is the **only per-domain thing on the graphic side**: it builds the
  * `GuiDef` for one structure and remembers which widget draws what, so an event
  * naming a widget resolves to something an editor can act on. Everything else
- * about drawing — the window, the ids, the acknowledgement — is the editor's and
+ * about drawing -- the window, the ids, the acknowledgement -- is the editor's and
  * is the same for every structure.
  *
  * It is separate from {@link Domain} because one structure is drawn several ways
@@ -55,7 +55,7 @@ export abstract class View<S = unknown> {
      *
      * The door a `build` takes for a picture the crate already knows how to
      * describe: `viewProps` says which widget a waveform, a curve or a roll is
-     * and what is on it, and this stamps the id — the one thing the crate
+     * and what is on it, and this stamps the id -- the one thing the crate
      * cannot know, since ids are a client's.
      *
      * It is here rather than in each view because every one of them takes the
@@ -64,7 +64,7 @@ export abstract class View<S = unknown> {
      * the place a client differs is what it wraps that picture in.
      *
      * @throws Error with the crate's reason when it draws no view of `kind`, or
-     *   cannot read `facts` as one — rather than a widget with nothing on it.
+     *   cannot read `facts` as one -- rather than a widget with nothing on it.
      */
     catalogue(
         editor: Editor<S>,

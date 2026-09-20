@@ -1,5 +1,5 @@
 /**
- * The editing context of one structure — **whose history it is**.
+ * The editing context of one structure -- **whose history it is**.
  *
  * An undo stack belongs to the data, not to the view. Two windows over one
  * structure share a history, and an undo in either updates both; a stack
@@ -10,15 +10,15 @@
  * editing context instead of building one of its own.
  *
  * **The context is the shared crate's** (`EditingCore`): the history, the
- * version, and its **members** — the multitrack and samples editors opened in
+ * version, and its **members** -- the multitrack and samples editors opened in
  * it, whose turns and steps it takes, and the structures the crate does not
  * apply (a curve, a timeline, a score), which join as external members and get
  * their legs back. No application holds a history of its own: one opened alone
  * is a context of one, and two opened in the same one walk one order. What is
- * here is what a language owns — the objects each member edits, what puts a
+ * here is what a language owns -- the objects each member edits, what puts a
  * step back onto them, and the windows to tell.
  *
- * What stays a view's is what a view can see — its selection, its zoom, which
+ * What stays a view's is what a view can see -- its selection, its zoom, which
  * layer the hand is on. Those never enter a history either, which is the same
  * line drawn twice.
  *
@@ -26,7 +26,7 @@
  * `WeakMap` keyed by the structure: what is edited is loose objects, so the
  * object itself is the only thing two editors are guaranteed to have in common.
  * It lives as long as the data does and dies with it, which is what the crate's
- * own rule asks for — a history is session state, never serialized, and it goes
+ * own rule asks for -- a history is session state, never serialized, and it goes
  * when the data goes.
  *
  * @module
@@ -37,7 +37,7 @@ import { EditingCore } from "../../core/clausters_core_web.js";
 /**
  * The version an unedited context is at. One rather than zero, because zero is
  * what an edit means by *unstated* when it names the state it was made against
- * — the same reservation the GUI host's sequence numbers make.
+ * -- the same reservation the GUI host's sequence numbers make.
  *
  * It is the same number as `form/document.ts`'s `FIRST_VERSION` and deliberately
  * not the same symbol: that one is what a **file** says its version is, this one
@@ -51,8 +51,8 @@ export interface Applier {
 }
 
 /**
- * What carries a step out for a member: an {@link Applier}, and — for a member
- * whose structure the crate applied the step to itself — what writes that back
+ * What carries a step out for a member: an {@link Applier}, and -- for a member
+ * whose structure the crate applied the step to itself -- what writes that back
  * onto the object a page holds.
  */
 export interface StepHandler extends Applier {
@@ -72,7 +72,7 @@ export interface Adopting {
      */
     adopt(): void;
     /**
-     * The data changed in a turn — this view's own gesture, another's, or a
+     * The data changed in a turn -- this view's own gesture, another's, or a
      * step of the history.
      *
      * Separate from {@link Adopting.adopt}, which is about *drawing*: a page
@@ -136,7 +136,7 @@ const keys = new WeakMap<object, number>();
 let nextKey = 1;
 
 /**
- * A key naming `object` for as long as it lives — what a member declares when
+ * A key naming `object` for as long as it lives -- what a member declares when
  * the structure is a page's object rather than something the crate can name.
  */
 export function keyOf(prefix: string, object: object): string {
@@ -159,7 +159,7 @@ export class Editing {
     /** The context itself, in the shared crate. */
     #core: EditingCore | null = new EditingCore();
     /**
-     * The version — the counter a view reports to its host and the host names
+     * The version -- the counter a view reports to its host and the host names
      * back on its next gesture. The crate's: read back from every turn, step and
      * record, and never moved here.
      */
@@ -186,7 +186,7 @@ export class Editing {
     /**
      * The context of this structure, made on first ask.
      *
-     * Every editor over one element gets the same one — the whole point, and
+     * Every editor over one element gets the same one -- the whole point, and
      * the reason this is a static rather than a constructor.
      */
     static of<T extends Editing>(this: new () => T, structure: object): T {
@@ -209,8 +209,8 @@ export class Editing {
     // ---- members ----
 
     /**
-     * **Open an editor in this context** — `verb` is `"openMultitrack"` or
-     * `"openSamples"` — as the structure `key` names, and answer its member and
+     * **Open an editor in this context** -- `verb` is `"openMultitrack"` or
+     * `"openSamples"` -- as the structure `key` names, and answer its member and
      * identity. `handler` is what carries a step out for it: the editor's
      * domain. Throws with the crate's reason when it refuses the request.
      */
@@ -273,7 +273,7 @@ export class Editing {
     /**
      * **Record an entry** an external member applied itself: its legs over one
      * structure. Answers whether the history took it; the version moves when it
-     * did. Throws when the legs name more than one structure — an entry over
+     * did. Throws when the legs name more than one structure -- an entry over
      * several is a turn of an application, which records its own.
      */
     record(
@@ -302,7 +302,7 @@ export class Editing {
     }
 
     /**
-     * An edit that leaves no entry — one with no inverse to record — still moves
+     * An edit that leaves no entry -- one with no inverse to record -- still moves
      * the version. Answers it.
      */
     moved(): number {
@@ -419,7 +419,7 @@ export class Editing {
      * One gesture, from whichever view made it.
      *
      * On the way out, every **other** view of this data is told what it is
-     * drawing has moved — which nothing else would do: an acknowledgement
+     * drawing has moved -- which nothing else would do: an acknowledgement
      * goes to the window whose gesture it answered, so a second window would go
      * on drawing a multitrack that had changed under it. Nested turns collapse into
      * one, because a gesture that reaches here twice is still one gesture.

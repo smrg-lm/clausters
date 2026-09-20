@@ -1,11 +1,11 @@
-"""``scope`` — watch live audio buses in a window. A brief manual.
+"""``scope`` -- watch live audio buses in a window. A brief manual.
 
 **What it is.** The real-time sibling of `clausters.plot`: one call opens a
 window that follows ``channels`` consecutive audio buses of the running
 server, frame by frame, with no per-frame messages (the GUI host reads the
 server's shared memory). Everything is wired for you: the ambient server and
 GUI host are resolved, and the GUI host asks the server to record the buses
-it draws — you name a bus, nothing else.
+it draws -- you name a bus, nothing else.
 
 **Open one:**
 
@@ -23,23 +23,23 @@ win = scope(0, view="spectrum", channels=2, freq_scale="mel")
 
 **The three views** (``view=``):
 
-- ``"signal"`` — a triggered **oscilloscope**. Each channel is a lane (or a
+- ``"signal"`` -- a triggered **oscilloscope**. Each channel is a lane (or a
   color-coded trace with ``overlay=True``); the x ruler reads milliseconds of
   the ``window_ms`` display window, the y ruler signal value over
   ``[min, max]``. The trace is *phase-locked*: every frame is aligned on a
   rising crossing of the ``trigger`` level (marked by a faint line) found in
   the **first** channel, so a periodic signal stands still and the channels
   keep their true relative phase. The corner read-out says ``lock`` (the
-  trigger fired) or ``free`` (no crossing — silence or DC — so the window
+  trigger fired) or ``free`` (no crossing -- silence or DC -- so the window
   free-runs).
-- ``"phase"`` — a **phasescope** (goniometer) of the stereo pair ``bus`` /
+- ``"phase"`` -- a **phasescope** (goniometer) of the stereo pair ``bus`` /
   ``bus + 1``: mono draws a vertical line, anti-phase horizontal, a wide
   field fills the lozenge; the bar underneath is the correlation.
-- ``"spectrum"`` — a live **spectrum**: one FFT per channel per frame, one
+- ``"spectrum"`` -- a live **spectrum**: one FFT per channel per frame, one
   color-coded curve each; the x ruler reads hertz on ``freq_scale``
   (log/linear/mel/bark), the y ruler dB over ``[db_floor, db_ceil]``.
 
-**Adjust it live** with ``win.set(...)`` (any prop of the open view — the
+**Adjust it live** with ``win.set(...)`` (any prop of the open view -- the
 window, the trigger, the scale, the FFT size):
 
 ```python
@@ -49,7 +49,7 @@ win.set(freq_scale="linear", fft_size=4096)   # spectrum
 win.set(ruler="off", ruler_y="off")  # bare field, no axis strips
 ```
 
-**Close it** with ``win.close()`` — it closes the window, and the host stops
+**Close it** with ``win.close()`` -- it closes the window, and the host stops
 recording whatever no open view is drawing any more (closing from the window
 manager does the same).
 
@@ -86,7 +86,7 @@ class ScopeWindow:
         self._closed = False
 
     def set(self, **props):
-        """Live-set the scope widget's props via ``/gui_set`` — per view:
+        """Live-set the scope widget's props via ``/gui_set`` -- per view:
         ``window_ms``/``trigger``/``hold``/``min``/``max``/``overlay``
         (signal), ``window_ms``/``hold`` (phase), ``fft_size``/``freq_scale``/
         ``db_floor``/``db_ceil``/``averaging``/``peak_hold`` (spectrum);
@@ -104,7 +104,7 @@ class ScopeWindow:
 
     @property
     def closed(self) -> bool:
-        """Whether this window is gone — closed by a hand or by `close`."""
+        """Whether this window is gone -- closed by a hand or by `close`."""
         return self._closed or int(self.id) not in self.host._open
 
     def wait(self, timeout: "float | None" = None) -> bool:
@@ -144,21 +144,21 @@ def scope(bus=0, *, view: str = "signal", channels: int | None = None,
 
     See the module manual above for how each view reads. Signal and spectrum
     views monitor ``channels`` buses (``bus .. bus + channels - 1``); the phase
-    view is the two-channel case — it always reads the pair ``bus`` /
+    view is the two-channel case -- it always reads the pair ``bus`` /
     ``bus + 1``.
 
     Args:
-        bus: the first audio bus to watch — a `clausters.defs.Bus` or a plain
+        bus: the first audio bus to watch -- a `clausters.defs.Bus` or a plain
             index (default ``0``, the first hardware output).
         view: ``"signal"`` (oscilloscope, default), ``"phase"`` (goniometer)
             or ``"spectrum"`` (live FFT curves).
         channels: how many consecutive buses to monitor. Default: a `Bus`'s
             own channel count, else ``1``; the phase view is fixed at ``2``.
-        overlay: signal view — color-coded traces in one field instead of
+        overlay: signal view -- color-coded traces in one field instead of
             stacked lanes.
-        window_ms: the display window — signal (default 20 ms) and phase
+        window_ms: the display window -- signal (default 20 ms) and phase
             (trail persistence, default 30 ms) views.
-        trigger: signal view — the rising-crossing trigger level (default
+        trigger: signal view -- the rising-crossing trigger level (default
             ``0.0``; searched in the first channel, marked by a faint line).
         hold: freeze the trace (signal/phase; also live via ``set``).
         min: vertical range of the signal view (default ``-1``).
@@ -167,10 +167,10 @@ def scope(bus=0, *, view: str = "signal", channels: int | None = None,
             2048); live via ``set``.
         db_floor: spectrum dB window (default ``-100`` / ``0``).
         db_ceil: see ``db_floor``.
-        freq_scale: spectrum frequency axis — ``"log"`` (default),
+        freq_scale: spectrum frequency axis -- ``"log"`` (default),
             ``"linear"``, ``"mel"``, ``"bark"``; live via ``set``.
         averaging: spectrum per-bin exponential smoothing, 0..1 (default 0.5).
-        peak_hold: spectrum — overlay a slowly decaying peak trace.
+        peak_hold: spectrum -- overlay a slowly decaying peak trace.
         ruler: the x axis strip (ms / Hz per view), shown by default;
             ``False`` or ``"off"`` hides it. The phase view has no rulers.
         ruler_y: the y axis strip (value / dB), likewise.
@@ -182,12 +182,12 @@ def scope(bus=0, *, view: str = "signal", channels: int | None = None,
             ambient live one (the running/current session's, else the default
             session's).
         host: an explicit `clausters.gui.GuiHost`; ``None`` resolves the
-            ambient one — the session's `Session.gui` host if one is up, else
+            ambient one -- the session's `Session.gui` host if one is up, else
             an owned host booted (or rebooted) **wired to the server** (its
             address and ``shm`` segment, the native tap read path).
 
     Returns:
-        A `ScopeWindow` — ``.set(...)`` retunes the display live, ``.close()``
+        A `ScopeWindow` -- ``.set(...)`` retunes the display live, ``.close()``
         closes the window (and with it the recording behind it).
     """
     from .base.main import main

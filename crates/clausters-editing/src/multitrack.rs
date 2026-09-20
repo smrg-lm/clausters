@@ -3,26 +3,26 @@
 //! The projection over [`clausters_document::multitrack::picture`]: that module
 //! says what a row and a box *are*, and this says how they reach a host. Every
 //! payload here is a flat array, which is what the wire carries, and every one
-//! of them was written three times before this existed — once in each client
+//! of them was written three times before this existed -- once in each client
 //! and once in the standalone host, which needs the same picture with no client
 //! in the process at all.
 //!
 //! # What the caller brings, and why it is not in the document
 //!
 //! Two things, both [`Look`]. **The sample rate**, which puts the multitrack's
-//! seconds on the shared frame axis by the core's one rule — a position lands on
-//! a whole sample and a length is the difference of its ends — and no tempo is
+//! seconds on the shared frame axis by the core's one rule -- a position lands on
+//! a whole sample and a length is the difference of its ends -- and no tempo is
 //! involved, since a multitrack is placed in physical time. And
 //! **which server buffer a source was read into**, which is a running server's
 //! fact and never a document's.
 //!
 //! # What is here and what is the caller's
 //!
-//! Here: everything a multitrack has **from the document alone** — the rows, the
+//! Here: everything a multitrack has **from the document alone** -- the rows, the
 //! boxes, the automations over both, their break-points, which of them are
 //! hidden and which boxes loop. Not here: the position cursor (a window's), the
 //! meter buses (a playback's, so the instance projection's) and the widget's
-//! own chrome. The line is not taste — it is that a projection is a function of
+//! own chrome. The line is not taste -- it is that a projection is a function of
 //! the structure, and anything that is a function of something else would drag
 //! that something else in behind it.
 //!
@@ -62,7 +62,7 @@ const UNIT: (f64, f64) = (0.0, 1.0);
 /// second: one, so a beat of its ruler is a second.
 ///
 /// The reader's default and not the document's: a multitrack that said no
-/// tempo did not say one. It only reaches a ruler — nothing a multitrack
+/// tempo did not say one. It only reaches a ruler -- nothing a multitrack
 /// places is in beats.
 pub const DEFAULT_TEMPO: f64 = 1.0;
 
@@ -101,7 +101,7 @@ pub trait Buffers {
     /// a window onto whatever that was.
     ///
     /// Defaulted to nothing so a caller that has no table is still a
-    /// `Buffers` — it means *I hold none*, which is the honest answer for one.
+    /// `Buffers` -- it means *I hold none*, which is the honest answer for one.
     fn taken(&self) -> Vec<SourceId> {
         Vec::new()
     }
@@ -111,7 +111,7 @@ pub trait Buffers {
     ///
     /// Both are here because a box is *drawn* from a buffer and *read back*
     /// into a source, and a caller that answered only one of them would have
-    /// the other written beside it — which is the second table this trait
+    /// the other written beside it -- which is the second table this trait
     /// exists to prevent.
     fn source(&self, bufnum: i64) -> Option<SourceId>;
 
@@ -252,7 +252,7 @@ impl Look<'_> {
 /// The value range a curve is drawn over, out of what it automates.
 ///
 /// **The document says what a curve automates and never reads it**, so which
-/// range that parameter has — a gain over one, a pan over another — is a fact
+/// range that parameter has -- a gain over one, a pan over another -- is a fact
 /// about the parameter and is stated where the parameter is.
 fn domain(curve: &picture::Curve) -> (f64, f64) {
     let Value::Object(target) = &curve.target.0 else {
@@ -342,7 +342,7 @@ pub fn clips(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
 }
 
 /// The **track automations** as flat sextuples: a row of its own under the
-/// track it names — name, owner, label, low, high, height.
+/// track it names -- name, owner, label, low, high, height.
 pub fn curves(multitrack: &Multitrack) -> Vec<Value> {
     let mut out = Vec::new();
     for curve in picture::curves(multitrack) {
@@ -377,7 +377,7 @@ pub fn layers(multitrack: &Multitrack) -> Vec<Value> {
 }
 
 /// Every curve's break-points as flat quintuples, each naming the curve it is
-/// on — one list for the rows and the layers alike.
+/// on -- one list for the rows and the layers alike.
 ///
 /// **What each curve's time is measured from** is the one thing that differs
 /// between the two: a track automation runs the timeline and is measured from
@@ -409,7 +409,7 @@ pub fn points(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
     out
 }
 
-/// The automations a hand has folded away, by name — **read out of the multitrack**,
+/// The automations a hand has folded away, by name -- **read out of the multitrack**,
 /// because which curves a person had showing is part of reopening the multitrack as
 /// they left it.
 pub fn hidden(multitrack: &Multitrack) -> String {
@@ -444,14 +444,14 @@ pub fn loops(multitrack: &Multitrack) -> String {
 /// normally answered with an acknowledgement and nothing else, because the
 /// report described the result: the host drew what it sent and the multitrack
 /// agreed. The cases where it does not are the ones where the host **makes**
-/// something — a track from a double click, a box from a split or a paste.
+/// something -- a track from a double click, a box from a split or a paste.
 /// There the host mints the word (`track 1`, `white 2`) and the document mints
 /// the id, so until the picture goes back the two are naming the same thing
 /// differently.
 ///
 /// And a name the multitrack does not know is not ignored: it is read as something
 /// *new*. So the next report about that row or that box mints it again, and
-/// again after that — a split box took a fresh id on every drag, losing
+/// again after that -- a split box took a fresh id on every drag, losing
 /// whatever was hung on it, and a box dropped on a new track landed on a track
 /// nobody had.
 ///
@@ -474,7 +474,7 @@ pub fn names(multitrack: &Multitrack) -> Value {
         // fact a box the owner made is: the host cannot have drawn it, because
         // it did not make it. Left out, the toggle that asks a track for its
         // gain automation worked the whole way down and changed nothing on
-        // screen — until the next gesture that added a *row* fired the
+        // screen -- until the next gesture that added a *row* fired the
         // correction, which then carried the previous track's curve with it.
         // That is why the two lists were never enough: they are not "what the
         // multitrack is called", they are "what the host was told", and the host is
@@ -515,8 +515,8 @@ pub fn props(multitrack: &Multitrack, look: &Look<'_>) -> Map<String, Value> {
 /// [`props`] against a multitrack and a source table given as JSON, which is how the
 /// two client doors carry them.
 ///
-/// `sources` is **the same table the instance plan takes** — source id to
-/// `{"buffer", "channels"}` — rather than a second one shaped for drawing: a
+/// `sources` is **the same table the instance plan takes** -- source id to
+/// `{"buffer", "channels"}` -- rather than a second one shaped for drawing: a
 /// client that had to keep two would eventually keep two that disagree, and
 /// what a box is drawn from and what it is played from are the same samples.
 ///
@@ -541,7 +541,7 @@ pub fn tempo_map(multitrack: &Multitrack) -> TempoMap {
 }
 
 /// What the `lanes` prop takes and reports: flat `name label height mute solo
-/// gain curves` septuples — the same width the `clips` prop happens to be, and
+/// gain curves` septuples -- the same width the `clips` prop happens to be, and
 /// a different seven fields.
 pub const LANE_FIELDS: usize = 7;
 
@@ -586,7 +586,7 @@ fn placed(values: &[Value], look: &Look<'_>) -> Vec<picture::Placed> {
 /// its break-points back in seconds.
 ///
 /// The widget reports **every** curve there is, in one list, so they are
-/// gathered by name here — the reader says nothing about the ones that did not
+/// gathered by name here -- the reader says nothing about the ones that did not
 /// move.
 fn curved(values: &[Value], look: &Look<'_>) -> Vec<picture::Curved> {
     let mut order: Vec<String> = Vec::new();
@@ -640,7 +640,7 @@ fn strips(values: &[Value]) -> Vec<picture::Strip> {
 /// **What an undo menu calls each of the multitrack's verbs.**
 ///
 /// One table, because a menu entry a hand reads is part of what an edit *is* to
-/// the person who made it — and a verb named two ways in two clients is the same
+/// the person who made it -- and a verb named two ways in two clients is the same
 /// divergence as a verb applied two ways, only quieter.
 pub fn label(intent: &MultitrackIntent) -> &'static str {
     match intent {
@@ -659,8 +659,8 @@ pub fn label(intent: &MultitrackIntent) -> &'static str {
 ///
 /// A tag is a domain's vocabulary, so *which* tags are the multitrack's is a fact
 /// about the multitrack and not about whoever is routing a report to it. It was
-/// written twice — here, and in the GUI host's own dispatch, which knew about
-/// `clips` and `lanes` and had never heard of the other two — and the second
+/// written twice -- here, and in the GUI host's own dispatch, which knew about
+/// `clips` and `lanes` and had never heard of the other two -- and the second
 /// list was two tags short: a curve dragged in a host with no client attached
 /// reached nobody, and so did a `join`. A caller asks; nobody restates.
 pub fn answers(tag: &str) -> bool {
@@ -713,7 +713,7 @@ impl Reading {
 /// gesture: every box, every row, every break-point. So a move, a block drag, a
 /// trim, a split, a delete and a paste all arrive the same way and telling them
 /// apart is one rule, [`clausters_document::multitrack::picture`]'s, written
-/// once — and what comes back is the *difference*, which is why a hand that
+/// once -- and what comes back is the *difference*, which is why a hand that
 /// looked without editing produces nothing at all.
 pub fn reading(multitrack: &Multitrack, tag: &str, values: &[Value], look: &Look<'_>) -> Reading {
     match tag {
@@ -976,7 +976,7 @@ mod tests {
     /// **A layer's break-points are its box's own time, and a row's are the
     /// timeline's.** The one thing that differs between the two on the wire,
     /// and getting it wrong puts a clip envelope where its box is rather than
-    /// at its start — silently, since both are valid positions.
+    /// at its start -- silently, since both are valid positions.
     #[test]
     fn a_layer_is_measured_from_its_box_and_a_row_from_the_origin() {
         let multitrack = multitrack();
@@ -1028,7 +1028,7 @@ mod tests {
 
     /// **A gesture goes out and comes back on the same axis.** The props are
     /// read, one box is moved four seconds along in the widget's own frames, and
-    /// what comes back names the second it was moved to — the round trip that was
+    /// what comes back names the second it was moved to -- the round trip that was
     /// written once per client before this existed.
     #[test]
     fn a_box_dragged_in_frames_comes_back_in_seconds() {
@@ -1109,7 +1109,7 @@ mod tests {
     /// **The curves are in it** *(found 2026-09-12 by the user)*: an automation
     /// the owner made is one the host cannot have drawn, so a view that
     /// compared only the rows and the boxes never answered with the picture
-    /// when a curve appeared — and the toggle that asks a track for its gain
+    /// when a curve appeared -- and the toggle that asks a track for its gain
     /// automation changed nothing on screen until some later gesture added a
     /// row and carried the curve back with it.
     #[test]
@@ -1568,7 +1568,7 @@ mod tests {
     ///
     /// The same shape a double click on a header has: the verb makes the thing
     /// rather than opening a question about it. A track with no curve reports
-    /// its automation as not shown, so asking to see it is asking for one —
+    /// its automation as not shown, so asking to see it is asking for one --
     /// and the second press hides what the first made rather than making a
     /// second.
     #[test]
@@ -1652,7 +1652,7 @@ mod tests {
     /// 2026-09-12 by the user: a second join left an empty box)*.
     ///
     /// A join's id was minted off the multitrack alone, and the multitrack stops naming a
-    /// source the moment nothing windows it — an undo, a box deleted, a joined
+    /// source the moment nothing windows it -- an undo, a box deleted, a joined
     /// box cut back up. The client still holds the buffer it made, so the next
     /// join was handed an id that already had samples behind it: the client saw
     /// an id it knew, made nothing, and the box became a window onto **the

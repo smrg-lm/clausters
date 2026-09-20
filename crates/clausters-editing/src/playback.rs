@@ -3,15 +3,15 @@
 //!
 //! [`crate::instance`] answers what has to change on a server for it to hold
 //! what a multitrack says, and [`crate::apply`] what messages that is. What was left
-//! over was *playing* it — which sample a second of the multitrack is when the
+//! over was *playing* it -- which sample a second of the multitrack is when the
 //! transport is located, what play, pause, stop and cue send, and that a paused
-//! meter is zeroed — and it was written once in
+//! meter is zeroed -- and it was written once in
 //! each client's `Playback` and once more in the GUI host. A standalone host
 //! and a script's editor are the same multitrack, so they are the same program:
 //! this object, which every one of them holds.
 //!
-//! **It sends nothing.** Every verb answers [`Step`]s — a message, a `/done` the
-//! rest waits for, a barrier — and the caller sends them and waits where they
+//! **It sends nothing.** Every verb answers [`Step`]s -- a message, a `/done` the
+//! rest waits for, a barrier -- and the caller sends them and waits where they
 //! say. That half is the only one a language, or a host's reply loop, owns.
 //!
 //! **The position is the engine's.** Every reader follows the transport, so a
@@ -81,7 +81,7 @@ impl MultitrackPlayback {
         command("/transport_play", vec![])
     }
 
-    /// **Freezes the multitrack where it stands**, every node's state intact — and
+    /// **Freezes the multitrack where it stands**, every node's state intact -- and
     /// zeroes its meters, because a frozen meter gets no time to fall and would
     /// go on claiming the last level it wrote. The mark goes with the level.
     pub fn pause(&mut self) -> Vec<Step> {

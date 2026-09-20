@@ -11,14 +11,14 @@ takes over the draining, so a script that edits writes no loop at all --
 and undone through. Reading is done on the structure itself: nothing is handed
 back at the end because the object passed in *is* the edited one.
 
-One call over the fundamental structures — a buffer's samples, a break-point
-curve, a timeline of events, and a **multitrack** — each of which is a
+One call over the fundamental structures -- a buffer's samples, a break-point
+curve, a timeline of events, and a **multitrack** -- each of which is a
 `clausters.gui.editing.Editor` with its own domain and its own view and nothing
 else. It dispatches on **what the structure is** rather than on a keyword,
 because that is the question a caller has already answered by holding one.
 
 **A multitrack is one of them.** It used to be excluded on the grounds that a
-multitrack is an application rather than an editor over a structure — but what
+multitrack is an application rather than an editor over a structure -- but what
 made that true was that the picture and the reading of a gesture were written
 per client, so a multitrack opened here would have been a second implementation of
 both. They are the crate's now
@@ -28,7 +28,7 @@ opening it here is what gives it the history every other editor has.
 
 Two calls over one structure give **two windows and one stack**: the editing
 context is the data's (`clausters.gui.editing.Editing`), so an undo in either
-updates both. That is not a feature of this verb — it is what asking the data for
+updates both. That is not a feature of this verb -- it is what asking the data for
 its history means, and `edit` inherits it for free.
 """
 
@@ -43,35 +43,35 @@ def edit(structure, *, sample_rate: float = 0.0,
     """Open ``structure`` in an editor of its own kind.
 
     Args:
-        structure: what to edit — a `clausters.defs.Buffer` (its samples), a
+        structure: what to edit -- a `clausters.defs.Buffer` (its samples), a
             `clausters.seq.Automation` (its curve), a `clausters.seq.Timeline`
             (its notes) or a `clausters.multitrack.Multitrack` (the multitrack).
         sample_rate: the engine's rate, which fixes the data↔view bridge. A
             take knows its own and needs none.
-        host: the `clausters.gui.host.GuiHost` to open on; ``None`` — the
-            ordinary case — resolves the ambient one, the rule
+        host: the `clausters.gui.host.GuiHost` to open on; ``None`` -- the
+            ordinary case -- resolves the ambient one, the rule
             `clausters.plot`, `clausters.scope` and
             `clausters.gui.guidef.View.open` all follow.
         open: whether to open the window. ``False`` builds the editor without
             one, for a caller composing a window out of several editors or
-            inspecting the picture it would draw — the only case the separate
+            inspecting the picture it would draw -- the only case the separate
             `clausters.gui.editing.Editor.open` was ever for.
-        options: passed through to the editor — ``title``, ``width``,
+        options: passed through to the editor -- ``title``, ``width``,
             ``height``, ``base_id``, and ``context`` for a view that joins an
             editing context the caller already has (which is what makes a
             composed window undo across several structures in one order).
 
     Returns:
-        The editor, **open**. It is the handle the window is addressed by —
+        The editor, **open**. It is the handle the window is addressed by --
         `clausters.gui.editing.Editor.close`, `Editor.on_closed`, `undo`/`redo`
-        — and a caller who wants none of that may discard it: the host holds an
+        -- and a caller who wants none of that may discard it: the host holds an
         open editor until its window closes, so ``edit(curve)`` on its own is a
         complete program. Reading the edited data is done on the structure that
         was passed in, which *is* the edited one.
 
     Raises:
         TypeError: for something none of the three domains reads, naming what
-            they are — an unopenable structure is a question about the data,
+            they are -- an unopenable structure is a question about the data,
             and answering it with a bare failure teaches nothing.
     """
     if is_samples(structure):

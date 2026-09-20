@@ -1,7 +1,7 @@
 //! From a selection to the span of samples underneath it.
 //!
-//! A [`crate::Selection`] says what is selected on a *timeline*; an operation —
-//! normalize, fade, copy, reverse — needs the span of a **source**. Between them
+//! A [`crate::Selection`] says what is selected on a *timeline*; an operation --
+//! normalize, fade, copy, reverse -- needs the span of a **source**. Between them
 //! sit three things the view knows and an algorithm does not: where the element
 //! was placed, how much of the source it uses (its trim), and the bridge between
 //! the arrangement's beats and the buffer's frames. This module is that
@@ -21,7 +21,7 @@
 //!
 //! # What a resolution has to include, and what it must not
 //!
-//! Trim and placement, both — a selection at second three of a clip that starts
+//! Trim and placement, both -- a selection at second three of a clip that starts
 //! at second two and reads the take from second ten is at second eleven of the
 //! take, and getting either term wrong is silent. **Clamping**, too: a selection
 //! dragged past the end of a clip selects what the clip covers, not a span past
@@ -46,9 +46,9 @@ use crate::{Beats, Body, Document, Member, Node, NodeId, Range, Selection, Sourc
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Unit {
-    /// Frames on the shared timeline axis — what a view over samples reports.
+    /// Frames on the shared timeline axis -- what a view over samples reports.
     Frames,
-    /// Beats of the arrangement — what a view over placements reports.
+    /// Beats of the arrangement -- what a view over placements reports.
     Beats,
 }
 
@@ -58,7 +58,7 @@ pub struct Mapping {
     /// Frames of samples per beat of the multitrack. Supplied rather than
     /// derived: tempo and sample rate are the caller's.
     pub frames_per_beat: f64,
-    /// Frames of samples per second — the sample rate, and what a length that
+    /// Frames of samples per second -- the sample rate, and what a length that
     /// is already in seconds is measured with.
     pub frames_per_second: f64,
     /// What the selection's numbers mean.
@@ -84,7 +84,7 @@ impl Mapping {
         }
     }
 
-    /// Beats per second — the tempo the two ratios imply. Zero when the caller
+    /// Beats per second -- the tempo the two ratios imply. Zero when the caller
     /// gave a degenerate pair, which every reader here already guards for.
     fn tempo(self) -> f64 {
         if self.frames_per_beat > 0.0 {
@@ -98,7 +98,7 @@ impl Mapping {
     ///
     /// A `Mapping` states its own `frames_per_beat`, so its tempo is a
     /// **constant by construction** and the multiplication is the right one
-    /// here — which is why this does not take the multitrack's converter. A
+    /// here -- which is why this does not take the multitrack's converter. A
     /// selection resolved across a tempo change is a wider question than this
     /// mapping expresses, and it is written down in the plan rather than
     /// assumed away.
@@ -136,7 +136,7 @@ pub struct Resolved {
     pub node: NodeId,
     /// Its samples.
     pub source: SourceId,
-    /// Which generation of those samples this was resolved against — what an
+    /// Which generation of those samples this was resolved against -- what an
     /// operation names so a stale read is detectable rather than silent.
     pub generation: u64,
     /// The span **within the source**, in frames: trim and placement both
@@ -146,15 +146,15 @@ pub struct Resolved {
     /// selection's own start.
     ///
     /// What a copy of several takes needs in order to lay them back down in the
-    /// right places — without it, a multi-element selection resolves to a bag
+    /// right places -- without it, a multi-element selection resolves to a bag
     /// of spans with no way to reassemble them.
     pub at: u64,
 }
 
 /// Every multitrack of samples a selection lands on, in tree order.
 ///
-/// A selection may cross several elements — that is what a marquee over a
-/// multitrack *is* — so this returns all of them. `selection.nodes` narrows it
+/// A selection may cross several elements -- that is what a marquee over a
+/// multitrack *is* -- so this returns all of them. `selection.nodes` narrows it
 /// when the selection named what it was of; an empty list means the shared
 /// axis, and then everything under it resolves.
 ///
@@ -181,7 +181,7 @@ pub fn resolve(document: &Document, selection: &Selection, mapping: &Mapping) ->
 }
 
 /// The span of the source one placed element would give for this selection, or
-/// `None` when it gives none — the single-element form of [`resolve`], for a
+/// `None` when it gives none -- the single-element form of [`resolve`], for a
 /// caller that already knows which element it is asking about.
 pub fn resolve_node(
     document: &Document,
@@ -282,7 +282,7 @@ fn multitrack(
 /// order.
 ///
 /// The same arithmetic [`multitrack`] does, once per segment, against the stretch of
-/// the placement that segment occupies — and bounded by the placement, which is
+/// the placement that segment occupies -- and bounded by the placement, which is
 /// a window onto the element like every other placement here.
 fn parts_of_segments(
     member: &Member,

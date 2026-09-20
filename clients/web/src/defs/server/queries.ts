@@ -2,7 +2,7 @@
 //
 // The introspection round trips: the def table, the allocated buffers, the
 // UGen catalogue, the server's own configuration and the node tree. Each one
-// asks and awaits — they report the state of the server that is actually
+// asks and awaits -- they report the state of the server that is actually
 // running, which is not necessarily the one this client set up (the def store
 // persists across restarts, and other clients share the tree).
 //
@@ -37,7 +37,7 @@ export class ServerQueries {
     /**
      * The defs the server holds, each with its control surface (`/def_query`,
      * answered by one `/def_query.reply` per def). With `names`, details exactly
-     * those — an unknown one comes back with an empty `family` rather than
+     * those -- an unknown one comes back with an empty `family` rather than
      * failing; with none, every loaded def of every family.
      *
      * The def store persists across restarts, so a server may well hold defs
@@ -153,7 +153,7 @@ export class ServerQueries {
     }
 
     /**
-     * The server's rendered node graph as text (`/group_dumpGraph`) — a
+     * The server's rendered node graph as text (`/group_dumpGraph`) -- a
      * debugging aid; for machine use prefer `queryTree`.
      */
     async dumpGraph(this: Server, group: NodeLike = ROOT_NODE_ID, timeout?: number): Promise<string> {

@@ -27,12 +27,12 @@ A <code>Server</code> is a handle over a carrier, and the carrier says what
 bringing it up means. <b><code>boot</code></b> is for a server that is
 <b>not there yet</b>: it starts what the carrier points at and owns it, so
 <code>quit</code> stops it. <b><code>attach</code></b> is for one
-<b>already running</b> — it verifies that someone answers, reconciles this
+<b>already running</b> -- it verifies that someone answers, reconciles this
 handle's allocators with the real server's capacities, and takes no ownership:
 <code>close</code> lets go and leaves it standing.
 
 Two engines run here, each its own <code>AudioContext</code> and its own node,
-bus and buffer space, and you will <b>hear</b> both — a fifth, one note from
+bus and buffer space, and you will <b>hear</b> both -- a fifth, one note from
 each.</div>
 
       <div class="row">
@@ -90,7 +90,7 @@ each.</div>
 
         low = await play(sine(220.0).mul(0.12), { server: a });
         await play(sine(330.0).mul(0.12), { server: b });
-        log("both servers sounding — a fifth, one note from each");
+        log("both servers sounding -- a fifth, one note from each");
         for (const id of ["attach", "freeall", "stopboth"]) $(id).disabled = false;
       }
 

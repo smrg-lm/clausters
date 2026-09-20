@@ -29,7 +29,7 @@ pub struct DeviceSample(u64);
 /// A position on the **transport** clock: samples elapsed under the transport,
 /// frozen while it is stopped.
 ///
-/// It is monotonic, which is what the transport scheduler queue needs — "due"
+/// It is monotonic, which is what the transport scheduler queue needs -- "due"
 /// only means anything on an axis that cannot jump. It is therefore *not*
 /// where the transport stands: a locate leaves this untouched. That is
 /// [`TransportPosition`].
@@ -53,7 +53,7 @@ pub struct TransportPosition(u64);
 ///
 /// Every read is `position + (now - since)`, so **a locate is one store of
 /// this pair** and the position costs the audio thread no per-sample work at
-/// all — which is the whole reason the position is anchored rather than
+/// all -- which is the whole reason the position is anchored rather than
 /// accumulated. A loop wrap is the same store: the engine cuts its block at
 /// the wrap and re-anchors there, so within any one slice the position
 /// advances by exactly one per sample and a reader following it can simply
@@ -146,14 +146,14 @@ impl PositionAnchor {
     /// Saturating on both halves: `now` before the anchor cannot happen (the
     /// transport clock does not run backwards), and saturating there means a
     /// wrong call reads as the anchor rather than as a position near `u64::MAX`
-    /// — which is the same choice [`DeviceSample::to_transport`] makes.
+    /// -- which is the same choice [`DeviceSample::to_transport`] makes.
     pub const fn at(self, now: TransportSample) -> TransportPosition {
         self.position
             .saturating_add(now.saturating_sub_axis(self.since))
     }
 
     /// The transport sample at which it reaches `position`, or `None`
-    /// when it already has — what the engine asks in order to cut its block at
+    /// when it already has -- what the engine asks in order to cut its block at
     /// a loop's end.
     pub const fn reaching(
         self,
@@ -176,7 +176,7 @@ impl PositionAnchor {
 }
 
 /// A loop over the axis: the span the position wraps inside while looping is
-/// on. Half-open — the end sample is the first one *not* played, so a loop of
+/// on. Half-open -- the end sample is the first one *not* played, so a loop of
 /// `0..n` over an `n`-sample take plays every sample exactly once and joins
 /// its own start with no repeated frame.
 pub type Loop = Range<TransportPosition>;

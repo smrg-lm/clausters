@@ -1,4 +1,4 @@
-//! S15: the three buffer commands S6 declared shipped and did not ship —
+//! S15: the three buffer commands S6 declared shipped and did not ship --
 //! `/buffer_fill`, `/buffer_readChannel` and `/buffer_allocReadChannel`.
 //!
 //! The fill is the writing family's member and addresses samples **flat and
@@ -256,7 +256,7 @@ fn a_single_channel_of_a_stereo_file_loads_on_its_own() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// The order is honoured and repeats are allowed — which is what naming
+/// The order is honoured and repeats are allowed -- which is what naming
 /// channels explicitly is for, and costs nothing to permit.
 #[test]
 fn channels_may_be_reordered_and_repeated() {

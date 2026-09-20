@@ -45,13 +45,13 @@ pub(crate) fn draw_time_ruler(
 }
 
 /// **Where the ruler strip is**, given the widget's rect and the body it is
-/// reserved under — the one derivation, read by the drawing and by the gesture
+/// reserved under -- the one derivation, read by the drawing and by the gesture
 /// that puts a marker on it, so what is clicked is what was drawn.
 pub(crate) fn ruler_strip(rect: Rect, body: Rect) -> Rect {
     Rect::new(body.x, body.y + body.h, body.w, (rect.h - body.h).max(0.0))
 }
 
-/// **How wide a marker's arrow is** — the mark a press aims at, which
+/// **How wide a marker's arrow is** -- the mark a press aims at, which
 /// [`marker_at`] reaches with the usual slop around it.
 ///
 /// It is **the ruler's own text cell**, not a number: a marker stands among the
@@ -70,7 +70,7 @@ pub(crate) fn marker_w(m: &Metrics) -> f32 {
 /// grow ([`RulerDir`]), so it stands among them rather than opposite them.
 ///
 /// It points at the ruler and stops there. A marker draws no line down the
-/// picture — a playhead and a selection band are the two things that do, and a
+/// picture -- a playhead and a selection band are the two things that do, and a
 /// third would make three vertical lines mean three different things at a
 /// glance. What a marker is *for* is the click: the transport goes to the
 /// moment it was placed at, not to the pixel the hand landed on.
@@ -119,13 +119,13 @@ fn draw_markers(d: &mut Draw, strip: Rect, nav: &View, markers: &[Marker], dir: 
     }
 }
 
-/// **The marker a press at `x` landed on**, as an index into `markers` — the
+/// **The marker a press at `x` landed on**, as an index into `markers` -- the
 /// nearest whose arrow the point is within reach of. The gesture reads it from
 /// the geometry the drawing used, so what can be clicked is what is drawn.
 ///
 /// **The arrow is the target, and the label is not.** A marker's name is text
 /// on the tick row, as long as whatever it says, and making it clickable would
-/// give a marker called `intro` ten times the reach of one called `2` — the
+/// give a marker called `intro` ten times the reach of one called `2` -- the
 /// hand would be aiming at a word rather than at a moment. The arrow is the
 /// mark, so the arrow is what is aimed at.
 ///
@@ -134,7 +134,7 @@ fn draw_markers(d: &mut Draw, strip: Rect, nav: &View, markers: &[Marker], dir: 
 /// wide because that is how it is *read* among the numbers; a hand that lands
 /// two pixels off it has not aimed at anything else, and without the slop the
 /// press falls through to the plain locate underneath and the head lands near
-/// the marker instead of on it — a miss that only shows up once you zoom in
+/// the marker instead of on it -- a miss that only shows up once you zoom in
 /// and see the two apart.
 pub(crate) fn marker_at(
     strip: Rect,
@@ -161,7 +161,7 @@ pub(crate) fn marker_at(
 
 /// The pixel domain a free-standing `timeruler` labels: its own rect, indented
 /// on the left by its **group's** gutter so the ticks line up with the bodies
-/// of whatever it is stacked with — a lane's clips, a roll's grid, a heavy
+/// of whatever it is stacked with -- a lane's clips, a roll's grid, a heavy
 /// view's trace. Zero height, so [`draw_time_ruler`] lays the strip over the
 /// widget's whole box.
 pub(crate) fn ruler_strip_body(rect: Rect, indent: f32) -> Rect {
@@ -173,8 +173,8 @@ pub(crate) fn ruler_strip_body(rect: Rect, indent: f32) -> Rect {
 /// was built through and the visible window `(y0, y_len)`.
 ///
 /// **The amplitude axis *is* the full-scale domain.** `dbfs`, `bits` and
-/// `percent` are units of full scale — a rung at -6 dB or at 2^15 says nothing
-/// over a range of, say, `[0, 400]` — so an element that names a domain of its
+/// `percent` are units of full scale -- a rung at -6 dB or at 2^15 says nothing
+/// over a range of, say, `[0, 400]` -- so an element that names a domain of its
 /// own is ruled as a plain value axis instead, over the slice its window shows.
 /// The default domain keeps the amplitude ladders untouched, which is every
 /// view that has ever been drawn.
@@ -190,7 +190,7 @@ fn amp_or_value_ticks(
         return ruler::amp_ticks(unit, row_h, bit_depth, y0, y_len, m);
     }
     // The visible slice of the domain. `value_to_display` is affine, so a
-    // value's fraction of this slice is exactly its fraction of the window —
+    // value's fraction of this slice is exactly its fraction of the window --
     // the ticks land on the samples they name with no margin arithmetic here.
     let lo = crate::waveform::display_to_value(y0, domain.0, domain.1);
     let hi = crate::waveform::display_to_value(y0 + y_len, domain.0, domain.1);
@@ -199,7 +199,7 @@ fn amp_or_value_ticks(
 
 /// What a timeline view's **vertical** axis measures, which is what its cursor
 /// readout names. It used to be an `Option<(f64, FreqScale, f64)>` where
-/// `None` silently meant "a waveform, in amplitude" — and amplitude is the
+/// `None` silently meant "a waveform, in amplitude" -- and amplitude is the
 /// default of a value domain, not the only one, so the absence had to become a
 /// case that carries its own answer.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -212,7 +212,7 @@ pub(super) enum Vertical {
     Frequency(f64, FreqScale, f64),
 }
 
-/// Which of [`selection::Vertical`]'s answers this view gives — the one thing a
+/// Which of [`selection::Vertical`]'s answers this view gives -- the one thing a
 /// sweep asks that a view answers differently.
 ///
 /// A spectrogram gives the same answer as a lane of clips and for a different
@@ -228,8 +228,8 @@ fn sweep_axis(editor: &EditorProps, vertical: Vertical) -> selection::Vertical {
     }
 }
 
-/// Draws the selection overlay and playhead of one timeline view — both read
-/// off `chrome`, its navigation group's shared state — plus its cursor readout
+/// Draws the selection overlay and playhead of one timeline view -- both read
+/// off `chrome`, its navigation group's shared state -- plus its cursor readout
 /// when the pointer is inside the body. `channels` is the channel count of the
 /// stacked layout (1 when overlaid), so the vertical readout is computed within
 /// the channel's row under the cursor.
@@ -248,7 +248,7 @@ pub(super) fn draw_editor_overlay(
     let m = inputs.metrics;
     let nav = &chrome.nav;
     mesh.border(body, m.divider_w, theme.view_frame);
-    // Selection: a translucent band with hard edges, clipped to the body — the
+    // Selection: a translucent band with hard edges, clipped to the body -- the
     // half-sample rule and the edges are the shared routine's, not this pass'.
     //
     // **The band answers for both axes**, through the one routine every view
@@ -266,8 +266,8 @@ pub(super) fn draw_editor_overlay(
         sweep_axis(&item.editor, vertical),
     );
     // **The edit the hand is making, drawn over the picture and marked as
-    // pending.** The samples under it has not changed — the host owns no data
-    // — so this is the one thing on screen that is not what the document says.
+    // pending.** The samples under it has not changed -- the host owns no data
+    // -- so this is the one thing on screen that is not what the document says.
     // It is drawn as a ring rather than a filled disc, and tethered to the
     // sample it replaces by a line, so what is read is *this value, moved from
     // there*, and not a sample that is simply somewhere else.
@@ -319,7 +319,7 @@ pub(super) fn draw_editor_overlay(
         }
     }
     // **Two lines, and they mean two things.** The position cursor is where
-    // the reader put the mark — a click on the ruler and nothing else — and it
+    // the reader put the mark -- a click on the ruler and nothing else -- and it
     // goes down first, so where they coincide the playhead is the one that
     // reads. The playhead is the engine clock relative to the widget's origin
     // while playing, else the parked line of a located, stopped transport.
@@ -336,7 +336,7 @@ pub(super) fn draw_editor_overlay(
         }
     }
     // Cursor readout: time (per the ruler mode) plus value/frequency (per the
-    // vertical unit / frequency scale), in the body's bottom-right corner —
+    // vertical unit / frequency scale), in the body's bottom-right corner --
     // pure math over the view mapping, within the channel's row under the cursor.
     if let Some((cx, cy)) = inputs.world.cursor
         && body.contains(cx, cy)
@@ -359,7 +359,7 @@ pub(super) fn draw_editor_overlay(
         let row = channel_rect(body, channels.max(1), channel_at(body, channels.max(1), cy));
         let rel = ((cy - row.y as f64) / row.h.max(1.0) as f64).clamp(0.0, 1.0);
         // The cursor's height mapped through the visible vertical window into
-        // an absolute display coordinate (0 = axis bottom) — so the readout
+        // an absolute display coordinate (0 = axis bottom) -- so the readout
         // names exactly what is under the cursor at any vertical zoom/pan.
         let (y0, y_len) = editor.y_view();
         let display = y0 + (1.0 - rel) * y_len;
@@ -371,7 +371,7 @@ pub(super) fn draw_editor_overlay(
                 format!("{time}  {} HZ", f.round() as i64)
             }
             // A trace: the value at the cursor's height within its row, read
-            // through the same domain the geometry was built with — so the
+            // through the same domain the geometry was built with -- so the
             // readout names what is under the pointer whatever range the
             // element declared, and not an amplitude it never drew.
             Vertical::Value(domain) => {
@@ -434,7 +434,7 @@ pub(super) fn draw_timeline_meshes(
         // The body the element stated when it described its frame: one
         // rectangle, so the picture and the chrome around it agree.
         let body = item.body;
-        // **One field, painted once, for the whole stack** — which is the whole
+        // **One field, painted once, for the whole stack** -- which is the whole
         // reason the layers are inside one element: a second picture here would
         // be a lid on the first rather than a layer over it.
         mesh.rect(body, th.view_field);
@@ -446,7 +446,7 @@ pub(super) fn draw_timeline_meshes(
         let spectro = spectrograms.get(&(item.id, item.key));
         let textured = look.layers.has(Paint::Spectrogram) && spectro.is_some();
         // The axis' extent: whichever resolved picture knows it, and they agree
-        // — both are summaries of the one source this element holds.
+        // -- both are summaries of the one source this element holds.
         let Some(total) = wave
             .map(|s| s.view.total_samples())
             .or_else(|| spectro.map(|s| s.total_samples()))
@@ -489,7 +489,7 @@ pub(super) fn draw_timeline_meshes(
         // axis is ruled in hertz and one with the traces on it in the value
         // unit, whatever else is drawn over either. Where every drawn layer
         // sits in a box of its own the element's own quantity is what it
-        // reports, since the axis is still there to be zoomed — that
+        // reports, since the axis is still there to be zoomed -- that
         // resolution is the element's ([`SlotFrame::Signal::axis`]) and is not
         // made a second time here.
         let axis = look.axis;
@@ -532,7 +532,7 @@ pub(super) fn draw_timeline_meshes(
             // **The picture says when it has stopped resolving.** A column
             // finer than the summary's bucket can only be drawn from something
             // finer than the summary, and a view that holds neither draws the
-            // bucket instead — which is correct and is not what the eye asked
+            // bucket instead -- which is correct and is not what the eye asked
             // for. This is the one place that knows both numbers, so it leaves
             // the note for the leg to act on, saying which *shape* would settle
             // it: a finer grid over the span, or the samples themselves where
@@ -546,7 +546,7 @@ pub(super) fn draw_timeline_meshes(
         // the base mesh, everything after it into the overlay: the GPU pass
         // that samples the texture runs between the two, so a layer drawn over
         // a spectrogram has to be in the mesh that is drawn after it. That is
-        // the whole of the compositing order — one field, one texture, and the
+        // the whole of the compositing order -- one field, one texture, and the
         // curves before and after it.
         let measures = look.layers.measures();
         let mut above_texture = false;
@@ -643,7 +643,7 @@ pub(super) fn draw_timeline_meshes(
             );
         }
         // The active frequency scale, named over the view (the live views'
-        // corner slot) — log/mel/bark are not tellable apart from the tick
+        // corner slot) -- log/mel/bark are not tellable apart from the tick
         // spacing at a glance. Only where a texture is what the axis measures.
         if axis == Domain::Frequency {
             crate::host::graphics::corner_text(
@@ -728,7 +728,7 @@ pub(super) fn draw_static_meshes(
 /// overlay mesh after everything else in it.
 ///
 /// Last on purpose, and in a walk of its own rather than in the collect pass:
-/// an overlay covers whatever it opened over — the widgets in the base mesh,
+/// an overlay covers whatever it opened over -- the widgets in the base mesh,
 /// the heavy views the GPU pass paints between the two meshes, and the editor
 /// chrome already in this one. Which elements have one is declared
 /// ([`Element::overlay_rect`](super::super::widget::Element::overlay_rect)), so
@@ -777,14 +777,14 @@ pub(super) fn draw_element_overlays(
     }
 }
 
-/// Draws the **status bar** into `band`: the window's newest line, or — open —
+/// Draws the **status bar** into `band`: the window's newest line, or -- open --
 /// as many of its recent lines as the band holds, newest at the bottom.
 ///
 /// It is drawn into the *overlay* mesh and last, so it reads over a heavy view
 /// that runs to the window's edge. What colors a line is the only thing a line
 /// is typed by: something done reads as quiet text, something refused reads as
 /// the warning role, because the whole point of the bar is that a refusal is
-/// seen without being looked for — and a note about the host's own working
+/// seen without being looked for -- and a note about the host's own working
 /// (debug builds only) reads as the accent's quiet form, since it is the one
 /// kind of line that is not about the work.
 pub(crate) fn draw_status(over: &mut Mesh, band: Rect, inputs: &FrameInputs, theme: &Theme) {
@@ -804,7 +804,7 @@ pub(crate) fn draw_status(over: &mut Mesh, band: Rect, inputs: &FrameInputs, the
         crate::host::status::Kind::Refused => theme.warn,
         crate::host::status::Kind::Did => theme.text_dim,
         // A note reports on the machine and not on the work, so it is colored
-        // apart from both — the accent's quiet form, which is legible beside
+        // apart from both -- the accent's quiet form, which is legible beside
         // the dim text without competing with the warning a refusal is.
         crate::host::status::Kind::Note => theme.accent_dim,
     };
@@ -859,8 +859,8 @@ mod tests {
     }
 
     /// The vertical strip follows the domain the geometry was built through.
-    /// Full scale keeps the amplitude ladders — dBFS rungs walking outward from
-    /// a silence line — and a domain of the element's own is ruled as the plain
+    /// Full scale keeps the amplitude ladders -- dBFS rungs walking outward from
+    /// a silence line -- and a domain of the element's own is ruled as the plain
     /// value axis, because a rung at -6 dB says nothing over `[20, 20000]`.
     #[test]
     fn a_named_domain_is_ruled_as_a_value_axis() {

@@ -10,13 +10,13 @@ Runs from the *installed* package, offline, like ``buffers/offline_render.py``::
 The point of interest is the SynthDef and the control **types**:
 
 - ``freq`` carries a ``lag`` (0.12 s), so when the routine sets a new note the
-  pitch **glides** to it instead of jumping — a portamento lead.
+  pitch **glides** to it instead of jumping -- a portamento lead.
 - ``gate`` is a trigger (``rate="tr"``): a ``/node_set gate 1`` holds for one block
   and the server resets it, so each set **re-plucks** the percussive envelope.
   A plain ``kr`` gate would stay 1 and never re-trigger.
 - ``detune`` is a scalar (``rate="ir"``): the value given at ``/synth_new`` is
   read once and then frozen, so the ``/node_set detune`` the routine sends
-  halfway through is **ignored** — the pitch does not move. A plain ``kr``
+  halfway through is **ignored** -- the pitch does not move. A plain ``kr``
   control would have taken it.
 
 One persistent synth is driven by a `Routine` that sets ``freq``/``gate`` per
@@ -48,7 +48,7 @@ from clausters.defs import (
 )
 
 #: Where a run leaves its file when no path is given: ``examples/out/``, the
-#: git-ignored directory every generator in this tree writes to — beside the
+#: git-ignored directory every generator in this tree writes to -- beside the
 #: examples rather than in whatever directory you ran from. Made here so that
 #: rendering is one call and not two.
 OUT = pathlib.Path(__file__).resolve().parents[1] / "out"

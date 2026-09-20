@@ -1,7 +1,7 @@
 //! The transcendentals a Faust wasm module imports, exported by the engine.
 //!
 //! A module the Faust wasm backend emits imports what the instruction set
-//! lacks — `env._sinf`, `env._powf`, `env._fmodf` and their neighbours — and a
+//! lacks -- `env._sinf`, `env._powf`, `env._fmodf` and their neighbours -- and a
 //! wasm function exported by one instance is a legal import of another. So the
 //! page binds them to **these**, not to `Math.sin` closures: no JavaScript
 //! frame on the audio path, and Faust and our own UGens go through one libm,
@@ -10,7 +10,7 @@
 //!
 //! The set is Faust's own, verbatim from its `registerMathFuns` (the table its
 //! native wasm host installs): unary and binary, `f32` and `f64`, plus the one
-//! integer `_abs`. Exporting more than a given module imports costs nothing —
+//! integer `_abs`. Exporting more than a given module imports costs nothing --
 //! a missing one is what a page would hear as silence.
 //!
 //! These exist only in the wasm build: natively the engine links libfaust and

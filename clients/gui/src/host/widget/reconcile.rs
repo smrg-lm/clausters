@@ -3,7 +3,7 @@
 //! A `/gui_def` over a tree the host is already drawing used to replace it
 //! whole: every widget freed, every widget built again, and everything the host
 //! itself had put on them gone with it. That is the branch's oldest complaint at
-//! its root — *the zoom is not restored, it is never destroyed* — and it is why
+//! its root -- *the zoom is not restored, it is never destroyed* -- and it is why
 //! a clip appearing in one lane took the zoom, the scroll and the selection of
 //! every other lane in the window with it.
 //!
@@ -14,15 +14,15 @@
 //!
 //! # What decides that two widgets are the same widget
 //!
-//! **Identity by id, order by index, both** — Tracktion's rule for finding a
+//! **Identity by id, order by index, both** -- Tracktion's rule for finding a
 //! clip, and the same one here. A widget with an id is matched by it, wherever
 //! it moved to, which is what makes re-parenting a clip cheap: an id survives a
 //! move and a path does not, and re-parenting is the multitrack's most common
-//! gesture. A widget with **no** id — a clip's bodies, which the wire
-//! deliberately does not address — is matched by position among its siblings of
+//! gesture. A widget with **no** id -- a clip's bodies, which the wire
+//! deliberately does not address -- is matched by position among its siblings of
 //! the same kind.
 //!
-//! A match also requires the same **kind**, read as the wire spells it — the
+//! A match also requires the same **kind**, read as the wire spells it -- the
 //! registry already holds one type string per registered id, so the comparison
 //! is the def's own word against the def's own word and needs nothing new
 //! stored. An id reused for a different widget is a different widget, and
@@ -33,18 +33,18 @@
 //!
 //! The host's own state, and nothing else:
 //!
-//! - **The window on the axis** (`view_start`/`view_len`, `y_start`/`y_len`) —
+//! - **The window on the axis** (`view_start`/`view_len`, `y_start`/`y_len`) --
 //!   the zoom and the scroll, which a navigation gesture writes every frame and
 //!   which nothing reports, because screen state is the host's.
 //! - **The selection** (`sel_start`/`sel_len`, `sel_min`/`sel_max`, and the
-//!   per-widget mark a marquee left) — what the hand is holding.
-//! - **The active layer and what is hidden** — which of a container's layered
+//!   per-widget mark a marquee left) -- what the hand is holding.
+//! - **The active layer and what is hidden** -- which of a container's layered
 //!   contents the hand is on, and which of them are drawn.
 //!
 //! # The bulk is kept by being asked for
 //!
 //! A def has to name every widget in the subtree it redraws, and a clip's samples
-//! are the largest payload in the system — so a lane redrawn because one clip moved
+//! are the largest payload in the system -- so a lane redrawn because one clip moved
 //! would carry every other clip's audio with it, which is the same failure as
 //! freeing a zoom because a neighbour moved, one order of magnitude up. The wire's
 //! word for it is `"data": "keep"`, and the carry below is what honours it: the run
@@ -54,13 +54,13 @@
 //! It is **asked for** rather than inferred from silence, because silence already
 //! means something else here: a clip that states no source has no take body at all,
 //! and that is how a roll-only clip is spelled. A def that says keep and names a
-//! widget the host does not hold is a keep with nothing to keep — reported, rather
+//! widget the host does not hold is a keep with nothing to keep -- reported, rather
 //! than drawn as an empty waveform nobody can explain.
 //!
 //! # And the def still wins where it says something
 //!
 //! Carrying the host's value *over* a value the def stated would take away the
-//! one channel a script has for moving a view. So the rule is the wire's own —
+//! one channel a script has for moving a view. So the rule is the wire's own --
 //! **nothing said is nothing written**: a key the def states is the def's, a key
 //! it leaves out keeps what the host had. A script that wants to move the window
 //! says `view_start`; a script redrawing a lane says nothing about it and the
@@ -81,7 +81,7 @@ use super::{Widget, WidgetKind};
 
 /// The prop keys a surviving widget keeps unless the def states them.
 ///
-/// Every one is written by the host itself — a drag, a wheel, a marquee — and
+/// Every one is written by the host itself -- a drag, a wheel, a marquee -- and
 /// reported by nothing, which is what makes them the host's to keep. The list is
 /// short on purpose: keeping too much is worse than the defect it replaces.
 const HOST_OWNED: [&str; 8] = [
@@ -132,7 +132,7 @@ impl<'a> Said<'a> {
 /// `held` is what is on screen, `fresh` the tree just built from `def`, and
 /// `root_id` the def's own id (the root's, which its JSON does not carry).
 /// `was` is the type each id was registered under **before** this def replaced
-/// it — the registry's own record, read before it is overwritten, which is what
+/// it -- the registry's own record, read before it is overwritten, which is what
 /// makes "the same kind" a comparison of the wire's word with the wire's word.
 /// `fresh` is edited in place and is what the host then draws.
 pub fn reconcile(
@@ -285,7 +285,7 @@ fn unkept(id: Option<i32>) {
 ///
 /// The wire's word against the wire's word where both are known, since that is
 /// the only comparison that separates two elements the typed tree spells the
-/// same way. Where the registry has no record — an id it never held — the typed
+/// same way. Where the registry has no record -- an id it never held -- the typed
 /// variant is the honest fallback.
 fn same_kind(
     said: &Said<'_>,

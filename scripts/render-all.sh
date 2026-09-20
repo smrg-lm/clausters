@@ -3,7 +3,7 @@
 #
 # `examples/audition.py U6 --wav x.wav` writes one file with the whole
 # milestone in it, back to back. This writes `whitenoise.wav`, `pinknoise.wav`
-# and so on instead — the form you want when comparing two rows, scrubbing one,
+# and so on instead -- the form you want when comparing two rows, scrubbing one,
 # or dropping a handful into an editor. The file name is the subject's handle,
 # so `saw.wav` is what `audition.py saw` plays.
 #
@@ -20,7 +20,7 @@
 # Trailing arguments go to `audition.py` untouched, so `--amp` and `--set`
 # work here too. A few rows are not audio-ranged (`Phasor` counts to its end,
 # `PulseCount` counts triggers, `Integrator` accumulates) and the per-row report
-# flags them as clipping — lower `--amp` for those rather than reading it as a
+# flags them as clipping -- lower `--amp` for those rather than reading it as a
 # failure.
 set -eu
 

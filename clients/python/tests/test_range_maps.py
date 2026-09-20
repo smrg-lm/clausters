@@ -1,7 +1,7 @@
 """The warp family: reading a value out of one range and writing it into another.
 
 `linlin` and its seven siblings are SuperCollider's, and they are asserted
-against sclang's own values rather than described — the point of having them is
+against sclang's own values rather than described -- the point of having them is
 that a script written against SuperCollider's numbers gets SuperCollider's
 numbers. They are computed in the shared core, in f32, so a value mapped here
 and the same map on the audio thread agree by construction.
@@ -27,7 +27,7 @@ def test_the_linear_map_is_sclangs():
 
 
 def test_the_exponential_map_is_sclangs():
-    """A fader's midpoint on a 20..20000 range is 632 Hz, not 10 kHz — the whole
+    """A fader's midpoint on a 20..20000 range is 632 Hz, not 10 kHz -- the whole
     reason a frequency control is not drawn linearly."""
     assert B.linexp(0.5, 0, 1, 20, 20000) == pytest.approx(632.4555, rel=1e-5)
     assert B.explin(632.4555, 20, 20000, 0, 1) == pytest.approx(0.5, abs=1e-5)
@@ -78,7 +78,7 @@ def test_a_bipolar_value_spans_the_range_and_is_not_trimmed():
 # ---- zero has no ratio ----
 
 def test_an_exponential_end_at_zero_is_nudged_rather_than_a_nan():
-    """Where sclang gives NaN this gives a very steep rise — the same answer
+    """Where sclang gives NaN this gives a very steep rise -- the same answer
     the server's `XLine` and the envelope's exponential segment give, because
     all three read one rule."""
     y = B.linexp(0.5, 0, 1, 0.0, 1.0)
@@ -89,7 +89,7 @@ def test_an_exponential_end_at_zero_is_nudged_rather_than_a_nan():
 
 def test_a_sequence_maps_elementwise_and_a_range_is_the_idiomatic_one():
     """`range(0, 120)` is how a Python author writes 120 values, so it is what
-    the builtins take — not only the two types a first pass happened to name."""
+    the builtins take -- not only the two types a first pass happened to name."""
     assert list(B.linlin(range(0, 3), 0, 2, 60, 72)) == [60.0, 66.0, 72.0]
     assert list(B.linlin([0.0, 0.5, 1.0], 0, 1, 0, 10)) == [0.0, 5.0, 10.0]
     assert list(B.linlin((i / 2 for i in range(3)), 0, 1, 0, 100)) == [0.0, 50.0, 100.0]

@@ -1,4 +1,4 @@
-// The application: what a window set owns, as against what one structure owns —
+// The application: what a window set owns, as against what one structure owns --
 // `gui/editing/application.ts`, and the `GuiHost.redefine` a part of a window is
 // published through.
 //
@@ -60,7 +60,7 @@ function aTree(left = 0.0, right = 0.0): GuiNode {
 test("a publish sends the tree and nothing is remembered", () => {
     // The client holds no picture of the host's. It used to keep the last tree
     // per window and send the difference, which is only correct if that copy
-    // equals what the host holds — and it cannot, because the host moves widgets
+    // equals what the host holds -- and it cannot, because the host moves widgets
     // on its own and screen state is reported by nothing.
     const app = new Application();
     const { host, defs } = fakeHost();
@@ -123,7 +123,7 @@ test("a draw retires only the names it stopped drawing", () => {
     // On a host, which is where it matters: the leases there belong to every
     // window the page has open, so a draw takes back what *it* stopped drawing
     // and nothing else. (With no host the table is the drawer's own and starts
-    // over instead — nothing outside that draw holds one of its ids.)
+    // over instead -- nothing outside that draw holds one of its ids.)
     const app = new Application();
     app.host = fakeHost().host;
     const drawer = {};
@@ -138,8 +138,8 @@ test("a draw retires only the names it stopped drawing", () => {
 });
 
 test("a host-less draw starts its numbering over, so drawing twice is one tree", () => {
-    // An unopened draw's ids reach nothing — no window, no pending gesture, no
-    // second drawer in that table — so it restarts, which is the property a test
+    // An unopened draw's ids reach nothing -- no window, no pending gesture, no
+    // second drawer in that table -- so it restarts, which is the property a test
     // that inspects a tree twice rests on. Two applications keep their own for
     // the same reason.
     const app = new Application();
@@ -158,7 +158,7 @@ test("a host-less draw starts its numbering over, so drawing twice is one tree",
 test("an application answers its own host and never a second one", () => {
     // The rule the multitrack learned the hard way: an application already open
     // answers *its* host, and overwriting that sends every acknowledgement to
-    // the wrong place — silently, since in the ordinary case the two are the
+    // the wrong place -- silently, since in the ordinary case the two are the
     // same object.
     const app = new Application();
     const { host } = fakeHost();

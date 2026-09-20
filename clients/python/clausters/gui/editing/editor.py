@@ -1,7 +1,7 @@
 """The editor: what orchestrates a picture, a vocabulary and a history.
 
-`Editor` edits **one structure** — a buffer's samples, a break-point curve, a
-timeline of events — and it imports nothing from the arrangement. What makes
+`Editor` edits **one structure** -- a buffer's samples, a break-point curve, a
+timeline of events -- and it imports nothing from the arrangement. What makes
 that possible is that it performs almost nothing itself: it opens a window
 through a `clausters.gui.editing.View`, turns a gesture into a payload through a
 `clausters.gui.editing.Domain`, answers the host through the
@@ -19,7 +19,7 @@ So the boundaries are:
   its context (`Editing.of`) and never builds one, which is what makes two
   windows over one thing walk one undo order;
 - **how an edit inverts is the crate's** (`history::Editable`), reached through
-  the domain — never re-derived here, and never twice per language;
+  the domain -- never re-derived here, and never twice per language;
 - **what a number is measured in is the structure's, and the bridge is the
   editor's**: the unit bridge (beats and seconds ↔ timeline samples) is here
   because it is the same bridge for every structure, but the tempo it crosses
@@ -29,7 +29,7 @@ So the boundaries are:
 
 A multitrack application is this class plus what only a tree has: a
 held document, several views of one multitrack, the lanes and clips, and a
-transport. **Transport and render are not here** — a bare structure at most
+transport. **Transport and render are not here** -- a bare structure at most
 sounds; it has no multitrack to move over.
 """
 
@@ -47,7 +47,7 @@ def not_an_edit() -> tuple:
     the hand is.
 
     They are answered generically and never reach a domain, because the crate
-    is explicit that screen state is never part of what is edited — and the
+    is explicit that screen state is never part of what is edited -- and the
     list is **the crate's** (`clausters_document::view::NOT_AN_EDIT`) rather
     than this module's, because it was written once here and once in the web
     client's editor, and a table that small drifts unread: a tag one client
@@ -67,18 +67,18 @@ class Editor:
     """One structure on screen, editable back into it.
 
     Args:
-        structure: what is edited — whatever the ``domain`` and the ``view``
+        structure: what is edited -- whatever the ``domain`` and the ``view``
             understand.
         sample_rate: the engine's sample rate; with the structure's tempo map
             it fixes the data↔timeline-samples conversion.
         domain: the `clausters.gui.editing.Domain` this structure's payloads are
             written in.
         view: the `clausters.gui.editing.View` that draws it.
-        context: the editing context to register in. ``None`` — the ordinary
-            case — asks the structure for its own, which is what makes two
+        context: the editing context to register in. ``None`` -- the ordinary
+            case -- asks the structure for its own, which is what makes two
             windows over one thing share an undo order.
         title: the window title.
-        extra: widgets appended to the window after the picture — a transport
+        extra: widgets appended to the window after the picture -- a transport
             panel, a readout. They are the script's, so the editor never touches
             their ids; keep them clear of ``base_id``.
         base_id: the first widget id a **host-less** draw counts from (tests and
@@ -86,10 +86,10 @@ class Editor:
             recycling pool instead, so the two never collide and a redraw's ids
             return to the pool. Ignored when ``app`` is given, since the id space
             is the application's.
-        app: the `clausters.gui.editing.Application` this editor draws in — the
+        app: the `clausters.gui.editing.Application` this editor draws in -- the
             window set it shares a host, an id space, a socket drain and an undo
             walk with. Its **acknowledgement stays its own** (`echo`), since a
-            conversation's floor is one view's. ``None`` — the ordinary case —
+            conversation's floor is one view's. ``None`` -- the ordinary case --
             makes one for this editor alone, which is what every editor was
             before there was a name for it.
     """
@@ -106,11 +106,11 @@ class Editor:
         self.title = title
         self.size = (int(width), int(height))
         #: Widgets appended to the window after the picture. They are the
-        #: script's — the editor never touches their ids — so keep them clear of
+        #: script's -- the editor never touches their ids -- so keep them clear of
         #: ``base_id``.
         self.extra = list(extra)
         #: Called with no arguments after any gesture that **changed the
-        #: data** — this window's, another window's over the same structure, or
+        #: data** -- this window's, another window's over the same structure, or
         #: a step of the history. ``None`` to be told nothing.
         #:
         #: The script's door onto an edit, and the same verb
@@ -118,7 +118,7 @@ class Editor:
         #: however many edits it took, because that is what a hand did.
         self.on_change = None
         #: Called with the beat the **position cursor** was placed at, whenever
-        #: a click moves it — on the time ruler, or on the slack a click lands
+        #: a click moves it -- on the time ruler, or on the slack a click lands
         #: on when it lands on nothing. ``None`` to be told nothing.
         #:
         #: Not an edit, and it is deliberately not a seek: the cursor says where
@@ -133,7 +133,7 @@ class Editor:
         #: by nobody answers a transport gesture with nothing, which is the
         #: honest answer for a curve opened on its own.
         self.composed_in = None
-        #: What of the composing editor's model this one draws — the element a
+        #: What of the composing editor's model this one draws -- the element a
         #: dedicated roll or signal view was opened over. ``None`` when this
         #: editor stands alone.
         self.composed_over = None
@@ -162,14 +162,14 @@ class Editor:
         #: structure's own, asked for on each use.
         self._context = context
         #: The **application** this editor draws in: the host, the widget-id
-        #: space and the loop — everything true of a window set rather than of
+        #: space and the loop -- everything true of a window set rather than of
         #: this structure. Handed one, several editors share a window set and an
         #: undo order; given none, this editor is an application of one, which
         #: is what every editor was before there was a name for it.
         self.app = (app if app is not None
                     else Application(context=context, base_id=base_id,
                                      version=lambda: self._version))
-        #: **This view's** end of the acknowledgement protocol — the stamp, the
+        #: **This view's** end of the acknowledgement protocol -- the stamp, the
         #: floor, the corrections and the reason.
         #:
         #: One per editor and **not** one per application, which is where it
@@ -182,7 +182,7 @@ class Editor:
         self.echo = Echo(host=self.app.host, version=lambda: self._version)
         self.app.register(self)
         #: The identity this structure was registered in the history under,
-        #: minted on the first edit — a structure you built has no id and is not
+        #: minted on the first edit -- a structure you built has no id and is not
         #: going to be given a stable one for this.
         self._structure_id = None
         #: Whether the data changed since the last render.
@@ -211,7 +211,7 @@ class Editor:
 
     @property
     def units_per_beat(self) -> float:
-        """Timeline samples in the **first** beat — the nominal ratio of the
+        """Timeline samples in the **first** beat -- the nominal ratio of the
         data↔view bridge. One timeline unit is one audio sample, so a take
         placed at its own frame count sits 1:1 on the axis.
 
@@ -248,7 +248,7 @@ class Editor:
 
     @property
     def units_per_second(self) -> float:
-        """Timeline samples per second — the axis *is* samples, so this is the
+        """Timeline samples per second -- the axis *is* samples, so this is the
         engine's sample rate. It is the other half of the bridge: a length in
         seconds (a take's) crosses on this one, and only an onset crosses on
         `units_per_beat`."""
@@ -279,7 +279,7 @@ class Editor:
         return self.app.new_id(self)
 
     def _named_id(self, role: str, key: str = "") -> int:
-        """The id that draws ``role``/``key`` **of this structure** — the same
+        """The id that draws ``role``/``key`` **of this structure** -- the same
         number for as long as it keeps being drawn (`Application.id_for`).
 
         The name is the structure's identity in the history, so two views of one
@@ -328,7 +328,7 @@ class Editor:
         return self.echo.read(envelope)
 
     def _applied(self, version: int):
-        """The version this editor's last answered event left behind — read by
+        """The version this editor's last answered event left behind -- read by
         the crate on the next message: when it differs from the version then,
         something moved that was not an event of this view, and that is what
         raises the floor."""
@@ -344,7 +344,7 @@ class Editor:
 
     @property
     def _editing(self) -> Editing:
-        """The structure's editing context — its history, and the views over it.
+        """The structure's editing context -- its history, and the views over it.
 
         Reached through the **data**, so a second window gets the same one. That
         is the whole of what makes an undo in either view update both, and it is
@@ -357,7 +357,7 @@ class Editor:
 
     @property
     def _version(self) -> int:
-        """The version — the counter the host names back on its next gesture.
+        """The version -- the counter the host names back on its next gesture.
         The context's, moved by its turns, steps and records and never here."""
         return self._editing.version
 
@@ -381,13 +381,13 @@ class Editor:
     # ---- the forward draw ----
 
     def draw(self) -> dict:
-        """The structure as a ``window``-rooted GuiDef. Pure — it builds the
+        """The structure as a ``window``-rooted GuiDef. Pure -- it builds the
         tree and the view's registry, and sends nothing.
 
         The draw is **bracketed**: every named widget asked for inside it counts
         as still drawn, and what the view stopped drawing gives its id back on
         the way out. That bracket is what lets an id be an identity rather than
-        a lease — a widget still in the picture keeps its number, and only one
+        a lease -- a widget still in the picture keeps its number, and only one
         that is genuinely gone releases it.
         """
         if self.view is None:
@@ -400,13 +400,13 @@ class Editor:
     def open(self, host=None, id: "int | None" = None):
         """`draw` the structure and open it on ``host`` (a
         `clausters.gui.host.GuiHost`), or on the **ambient** host when none is
-        named — the same rule `clausters.gui.guidef.View.open`, `clausters.plot`
+        named -- the same rule `clausters.gui.guidef.View.open`, `clausters.plot`
         and `clausters.scope` follow.
 
         **The host's event loop is started here**, and this editor subscribes to
         it: from now on the gestures reach the structure on the loop's thread,
         with no drain written anywhere. That is what makes `clausters.gui.edit`
-        one call — and it is also why `poll` becomes unnecessary rather than
+        one call -- and it is also why `poll` becomes unnecessary rather than
         wrong (it answers ``False`` while the loop runs).
 
         Returns the **window handle** `clausters.gui.host.GuiHost.open` hands
@@ -436,7 +436,7 @@ class Editor:
         **Every other window over this structure is told**, on the way out.
         Nothing else would do it: an acknowledgement goes to the window whose
         gesture it answered, so a second view would go on drawing something that
-        moved under it — and the shared history would then step an order one of
+        moved under it -- and the shared history would then step an order one of
         its windows could not see.
         """
         with self._editing.turn(self):
@@ -452,7 +452,7 @@ class Editor:
         **What kind of turn a message is, is the crate's**
         (`clausters._native.conversation_read`): a close, a walk through the
         history, an edit made against a picture that is gone, or an edit to
-        route. What is here is what each of those *does* in this client — a
+        route. What is here is what each of those *does* in this client -- a
         window to forget, a history to step, a socket to answer.
         """
         # ``<id> <seq> <version> <tag> <payload…>``: the stamp and the version
@@ -558,7 +558,7 @@ class Editor:
 
         The tags that are not edits are answered here and never reach the
         domain; everything else is the domain's to read, and a tag it does not
-        recognize is nothing rather than an error — a view emits what it can do,
+        recognize is nothing rather than an error -- a view emits what it can do,
         and not all of it is an edit of this structure.
         """
         wid, tag, values = int(args[0]), str(args[1]), args[2:]
@@ -598,7 +598,7 @@ class Editor:
         rather than stating an edit or saying what a view is looking at.
 
         The third kind, and it is the editor's rather than the domain's because
-        what it asks for is a *window* — a multitrack's ``"enter"`` opens the
+        what it asks for is a *window* -- a multitrack's ``"enter"`` opens the
         box that was double clicked, and opening a window is not something a
         vocabulary of edits can say. Nothing here reaches a history: what the
         editor it opened does afterwards is what lands in one.
@@ -649,7 +649,7 @@ class Editor:
     def selected(self) -> None:
         """This editor's selection moved.
 
-        Nothing on its own — a structure's selection is that structure's. A view
+        Nothing on its own -- a structure's selection is that structure's. A view
         **composed** inside a bigger editor hands it up instead, because the
         range an operation is given must be the same value whichever of the
         multitrack's windows it was swept in.
@@ -677,7 +677,7 @@ class Editor:
         The inverse is read **before** the edit lands (`Domain.current`), which
         is the whole reason this is one call: a surface that let you apply first
         and record second would let you record the wrong thing. A payload the
-        structure was already at is applied by nobody and recorded by nobody —
+        structure was already at is applied by nobody and recorded by nobody --
         a resend is not an edit.
         """
         if self.domain is None:
@@ -705,7 +705,7 @@ class Editor:
 
         The same rule as `_edit` and it is spelled out only because there is no
         one-call form for a transaction: each inverse is read immediately before
-        *that* payload lands, never all of them up front — an inverse read
+        *that* payload lands, never all of them up front -- an inverse read
         against a state two edits ago puts back a state that never held.
         """
         if self.domain is None:
@@ -750,7 +750,7 @@ class Editor:
         return False
 
     def data_changed(self) -> None:
-        """The structure changed in a turn — this editor's own gesture,
+        """The structure changed in a turn -- this editor's own gesture,
         another window's, or a step of the history.
 
         Separate from `adopt`, which is about *drawing*: a script that sounds a
@@ -766,8 +766,8 @@ class Editor:
 
         It takes nothing, and it used to take the turn's intents so a view could
         adopt a placement or a length as a prop instead of redrawing. What this
-        does is already props — one `_resync` per widget and one acknowledgement,
-        never a redefine — so the intents would only have narrowed which widgets,
+        does is already props -- one `_resync` per widget and one acknowledgement,
+        never a redefine -- so the intents would only have narrowed which widgets,
         and no view ever read one.
 
         A window that is not open has nothing to bring in step, and says so by
@@ -812,8 +812,8 @@ class Editor:
         one that draws afterwards.
 
         The walk is the application's because an entry can name several
-        structures — a stroke over a take and a bend of the curve over it are one
-        order — so it is offered to every editor in the context and each projects
+        structures -- a stroke over a take and a bend of the curve over it are one
+        order -- so it is offered to every editor in the context and each projects
         the legs it owns. What is this editor's is `project_legs` and
         `reflect_step`, below.
         """
@@ -824,7 +824,7 @@ class Editor:
         host told once.
 
         Called on each view after the whole step has landed, so a window whose
-        structure the step did not touch still comes back in step — one entry
+        structure the step did not touch still comes back in step -- one entry
         can move several structures, and a picture of one of them is a picture
         of the walk.
         """
@@ -856,7 +856,7 @@ class Editor:
 
         The pair of `undo_label`, and it stops being decoration the moment a
         second window is open: with one pile over all of them, a label is how a
-        person knows which edit a keystroke is about to move — and both windows
+        person knows which edit a keystroke is about to move -- and both windows
         read the same one.
         """
         return self._editing.redo_label
@@ -871,7 +871,7 @@ class Editor:
     #: four things a visual verb hands back are read the same way.
     @property
     def id(self):
-        """The open window's id, or ``None`` — the same number as `window`."""
+        """The open window's id, or ``None`` -- the same number as `window`."""
         return self._window
 
     @property
@@ -886,7 +886,7 @@ class Editor:
         the same one `clausters.gui.host.GuiHost.wait` and
         `clausters.gui.handle.WindowHandle.wait` are: ``True`` when the window
         closed, ``False`` when ``timeout`` ran out first. A ``# %%`` notebook
-        does not call it — the loop is already delivering and the next cell
+        does not call it -- the loop is already delivering and the next cell
         reads the structure the hand has been editing.
         """
         return self.app.wait(lambda: not self.closed, timeout)
@@ -896,7 +896,7 @@ class Editor:
 
         **The history is not closed with it.** An undo order belongs to the data
         (`clausters.gui.editing.Editing.of`), so editing the same structure again
-        resumes the same order — closing a window is not an edit, and never was.
+        resumes the same order -- closing a window is not an edit, and never was.
         """
         window, self._window = self._window, None
         if self._host is not None:
@@ -913,7 +913,7 @@ class Editor:
 
         The same verb `clausters.plot.PlotWindow.on_closed` and
         `clausters.gui.handle.WindowHandle.on_closed` carry, over the same
-        registry — so a window opened by `clausters.gui.edit` and one opened by
+        registry -- so a window opened by `clausters.gui.edit` and one opened by
         `clausters.plot` are told about in one way.
         """
         if self._host is None or self._window is None:
@@ -924,14 +924,14 @@ class Editor:
     def poll(self, timeout: float = 0.0) -> bool:
         """Drain the host's pending messages into the structure (`apply` each)
         **and on to the window's own handlers**. Returns whether the data
-        changed. Call it from the script's loop — **never** from the clock
+        changed. Call it from the script's loop -- **never** from the clock
         thread, which a routine must never block.
 
         The second half is why a window may carry both: a panel beside the
         editor is the script's, addressed to widgets this editor never drew, and
         its `clausters.gui.handle.WidgetHandle.on_event` callbacks run here
         because this is the loop that took its message off the socket. A drain
-        that only fed the data swallowed them — the button was pressed, the host
+        that only fed the data swallowed them -- the button was pressed, the host
         reported it, and nothing happened.
         """
         return self.app.poll(timeout)

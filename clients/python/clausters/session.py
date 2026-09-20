@@ -3,8 +3,8 @@
 A `Session` is the unit of isolation: it bundles a `Server` and a `TempoClock`
 into one handle with ``play`` / ``render`` / ``run``, and the ``nrt`` / ``live``
 / ``embed`` factories pick sensible defaults. Because each session owns its own
-state, **several coexist** — e.g. one offline NRT session for plotting next to a
-live RT one — in the same script without touching each other.
+state, **several coexist** -- e.g. one offline NRT session for plotting next to a
+live RT one -- in the same script without touching each other.
 
 The counterpart is the **default session**, `clausters.default_session` (the
 `clausters.base.main.Main` singleton, also reachable as ``main``): the ambient
@@ -48,8 +48,8 @@ class Session(Environment):
     `play` drives either kind, and an offline and a live session can run side
     by side in one script.
 
-    It is an `clausters.base.environment.Environment` — the same base the default
-    session (`clausters.default_session`) extends — so a named session and the
+    It is an `clausters.base.environment.Environment` -- the same base the default
+    session (`clausters.default_session`) extends -- so a named session and the
     default one are the same kind of thing. That makes it its **own random
     context** (`seed` / ``rng``): ``session.seed(n)`` reproduces *this* session's
     events without touching another's, so two sessions -- even both offline --
@@ -129,7 +129,7 @@ class Session(Environment):
                 clock = TempoClock()
         self.clock = self.adopt(clock)
         #: the session's GUI host: the one handed to the constructor, or the one
-        #: `gui` boots lazily. Stopped with the session — and `GuiHost.stop`
+        #: `gui` boots lazily. Stopped with the session -- and `GuiHost.stop`
         #: stops the ``clausters-gui`` process only if that host booted it, so a
         #: host reached with `clausters.gui.GuiHost.attach` is left standing.
         #: The server works the same way (see `Server.boot` / `Server.attach`),
@@ -179,7 +179,7 @@ class Session(Environment):
         """Take ``clock`` into this session and return it.
 
         Sets the clock's `session` back-reference, which is what an ambient
-        play follows from inside a routine — a routine runs on its clock's
+        play follows from inside a routine -- a routine runs on its clock's
         thread, and `activate` is thread-local, so the thread-local answer is
         not available there. A clock already held by another session leaves that
         one first; a clock this session already holds is not taken twice.
@@ -213,8 +213,8 @@ class Session(Environment):
         """Drop ``clock`` from this session: it is no longer closed with it and
         no longer answers an ambient play. Returns the clock.
 
-        The **default clock cannot be released** — a session without one has no
-        answer for `play` — so releasing it is refused rather than leaving the
+        The **default clock cannot be released** -- a session without one has no
+        answer for `play` -- so releasing it is refused rather than leaving the
         session in a state nothing checks for.
         """
         if clock is getattr(self, "clock", None):
@@ -261,16 +261,16 @@ class Session(Environment):
              data_dir=None, server_args=(), ready_timeout: float = 10.0) -> "Session":
         """Build a real-time session, **starting a server if none is up**.
 
-        The probe (and the boot handshake) ride UDP — discovery stays
-        zero-config — and the session's command interface then connects over
+        The probe (and the boot handshake) ride UDP -- discovery stays
+        zero-config -- and the session's command interface then connects over
         **TCP by default** (``transport="udp"``/``"ws"`` opt across), so defs
         and bulk reads are not bounded by a datagram.
 
         This is the everyday live-coding entry point. By default (``boot=True``)
         it ensures a server the way `nrt` ensures a renderer: if one already
         answers at the target address it attaches to it, and if none does it
-        **launches a separate ``clausters`` process** — choosing a shared-memory
-        segment for you — and connects to that. Either way you get a session you
+        **launches a separate ``clausters`` process** -- choosing a shared-memory
+        segment for you -- and connects to that. Either way you get a session you
         drive the same. A server the session started is stopped when the session
         is closed or the interpreter exits, so a REPL or script leaves nothing
         running; a server it merely attached to is left alone.
@@ -294,7 +294,7 @@ class Session(Environment):
             timebase: the session's timebase, which every clock of it is made
                 on. Left unset (and with no ``clock``), it is **the server's
                 sample clock** (config ``[client].clock``, default
-                ``"sample"``) — sample-accurate and drift-free — and a server
+                ``"sample"``) -- sample-accurate and drift-free -- and a server
                 that does not answer it raises, since a clock's timebase is
                 fixed when it is made and there is nothing to fall back to
                 afterwards. Pass ``timebase=MonotonicTimebase()`` (or set
@@ -302,25 +302,25 @@ class Session(Environment):
                 timetags.
             boot: start a server if none is already answering (default). ``False``
                 attaches only, never launching a process.
-            options: a `clausters.defs.ServerOptions` — the enumeration of
+            options: a `clausters.defs.ServerOptions` -- the enumeration of
                 **every** option a launched server takes (sizing *and*
-                behavior — transports, MIDI, persistence, workers, ...) —
+                behavior -- transports, MIDI, persistence, workers, ...) --
                 sizing this client's allocators alike; ``None`` uses the
                 defaults.
-            shm: the shared-memory segment for a launched server — ``"auto"``
+            shm: the shared-memory segment for a launched server -- ``"auto"``
                 picks one, a path forces it, ``None`` launches without one. The
                 path is remembered so `gui` maps the same segment.
-            transport: the command carrier — ``"tcp"`` (default), ``"udp"`` or
+            transport: the command carrier -- ``"tcp"`` (default), ``"udp"`` or
                 ``"ws"``; ``None`` takes ``[client].transport`` from the config.
             verbose: launched-server log verbosity (``1``/``2``/``3`` -> ``-v``/
                 ``-vv``/``-vvv``; negative -> ``-q``).
             workers: shortcut for ``options.workers`` (a launched server's DSP
                 worker threads for parallel groups); it wins over a value set
                 there. Like every launch option, it only affects a server this
-                call boots — an attach never reconfigures a running server.
+                call boots -- an attach never reconfigures a running server.
             data_dir: a launched server's ``--data-dir``; ``None`` uses default.
             server_args: raw CLI tokens appended **last** (they win over
-                everything above) — an escape hatch for flags newer than this
+                everything above) -- an escape hatch for flags newer than this
                 client; prefer `clausters.defs.ServerOptions` fields.
             ready_timeout: seconds to wait for a launched server to answer.
 
@@ -343,7 +343,7 @@ class Session(Environment):
               workers: int = 0, timebase=None, server=None) -> "Session":
         """Build a real-time session backed by an in-process embedded server.
 
-        The whole server — audio device and engine — runs in this process
+        The whole server -- audio device and engine -- runs in this process
         through the bundled native library; there is no socket and no separate
         server process. Otherwise it is identical to `live`: the same routines,
         patterns and defs drive it, because only the `Server`'s communication
@@ -364,7 +364,7 @@ class Session(Environment):
             timebase: the session's timebase, which every clock of it is made
                 on. Left unset (and with no ``clock``), it is **the server's
                 sample clock**, exactly like `live` (config ``[client].clock``,
-                default ``"sample"``) — and in-process it is a direct read of
+                default ``"sample"``) -- and in-process it is a direct read of
                 the shared counter, with no tracker, socket or timeout at all.
                 Pass ``timebase=MonotonicTimebase()`` (or set
                 ``[client].clock = "monotonic"``) for wall-clock OSC timetags.
@@ -387,8 +387,8 @@ class Session(Environment):
         server, and return a `clausters.gui.GuiHost` connected to it.
 
         The GUI parallel of `live` booting a server: one call and the visual
-        server is up, its client leg pointed at this session's server and — when
-        that server was launched with a shared-memory segment — mapping the same
+        server is up, its client leg pointed at this session's server and -- when
+        that server was launched with a shared-memory segment -- mapping the same
         segment, so meters, scopes and playheads read the engine with no
         per-frame messages. You never spell out an address or a segment path:
         they come from the session. The host is owned by the session and stopped
@@ -410,7 +410,7 @@ class Session(Environment):
         Args:
             port: the GUI host's own port (script -> host, UDP and TCP alike);
                 ``None`` uses the host default (57210).
-            transport: the carrier this session talks to the host over —
+            transport: the carrier this session talks to the host over --
                 ``"tcp"`` (default; a ``/gui_def`` tree is not bounded by a
                 datagram) or ``"udp"``.
             verbose: host log verbosity (``1``/``2``/``3`` -> ``-v``/``-vv``/``-vvv``).
@@ -463,8 +463,8 @@ class Session(Environment):
 
         The unscoped form of ``with session:``. A block is the right shape when
         the session's life is the block's, and the wrong one for an environment
-        that outlives every statement that uses it — a REPL, a driver whose
-        cells each run on their own — where there is no block to be inside of.
+        that outlives every statement that uses it -- a REPL, a driver whose
+        cells each run on their own -- where there is no block to be inside of.
         After this, anything created with no session named (`clausters.play`, a
         bare `clausters.Synth`) resolves to *this* session's server, clock and
         random root.
@@ -481,7 +481,7 @@ class Session(Environment):
         ``self``.
 
         The counterpart of `activate`, and a no-op when some *other* session is
-        ambient — giving up a slot one does not hold would silently unseat the
+        ambient -- giving up a slot one does not hold would silently unseat the
         session that does.
         """
         if main.current_session is self:
@@ -494,7 +494,7 @@ class Session(Environment):
     def _active(self):
         """Mark this session active on the calling thread for the duration of a
         driving call, so anything created in it (a played routine, a top-level
-        draw) resolves to *this* session's server/clock/rng — not the default
+        draw) resolves to *this* session's server/clock/rng -- not the default
         session's. Save/restore, so nesting and other threads are unaffected."""
         prev = main._session_context
         main.current_session = self
@@ -533,11 +533,11 @@ class Session(Environment):
             sample_rate: render sample rate, in Hz.
             channels: number of interleaved output channels.
             until: stop draining the clock at this beat (see
-                `TempoClock.render`); ``None`` drains everything scheduled —
+                `TempoClock.render`); ``None`` drains everything scheduled --
                 required for an endless source (an infinite pattern never
                 drains on its own).
             workers: DSP worker threads for the score's parallel groups
-                (``0`` renders sequentially). Bit-identical either way — the
+                (``0`` renders sequentially). Bit-identical either way -- the
                 workers only change how long the render takes.
             path: where the audio goes. Without it the samples come back in
                 ``stats.samples``; with it the **server** writes the file and
@@ -546,7 +546,7 @@ class Session(Environment):
                 draws a fresh one, so a score with noise in it is a new take
                 every time; ``stats.seed`` reports the one used, and passing
                 it back replays that take.
-            sample_format: ``"float"``, ``"int24"`` or ``"int16"`` — only
+            sample_format: ``"float"``, ``"int24"`` or ``"int16"`` -- only
                 meaningful with ``path``, since only the file has a format.
 
         Returns:
@@ -590,7 +590,7 @@ class Session(Environment):
         each clock on.
 
         A session with one clock reads exactly as it always did. One with
-        several starts them together, which is what makes them start together —
+        several starts them together, which is what makes them start together --
         starting ten clocks in a Python loop staggers them by whatever the loop
         costs."""
         for clock in self._clocks:
@@ -611,7 +611,7 @@ class Session(Environment):
         """An external OSC application as a destination, living as long as this
         session (`close` closes it).
 
-        What it sends is standard OSC — a message, or a bundle timetagged at
+        What it sends is standard OSC -- a message, or a bundle timetagged at
         the ambient `Moment`, so a sequence sent to another application keeps
         the same logical timing as one sent to the server. What it does not
         send is anything of ours: no `Server.latency`, no sample-accurate
@@ -623,7 +623,7 @@ class Session(Environment):
     def close(self):
         """Close the underlying `Server` (which releases its sample-clock
         reader) and every clock the session owns. Also stops the GUI host and, if
-        `live` launched a server, that process too — so nothing this session
+        `live` launched a server, that process too -- so nothing this session
         started is left running. What it did **not** start it leaves standing:
         `clausters.gui.GuiHost.stop` ends a ``clausters-gui`` process only when
         that host booted it, so an attached host keeps its windows. Done automatically when the session is used as a context manager

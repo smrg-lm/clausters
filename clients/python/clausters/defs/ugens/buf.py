@@ -28,7 +28,7 @@ def buf_rd(bufnum, chan, phase, loop=0.0) -> Ugen:
 
 
 def buf_wr(bufnum, chan, phase, loop, signal) -> Ugen:
-    """**Writes** ``signal`` into a buffer at ``phase`` (frames) — `buf_rd`'s
+    """**Writes** ``signal`` into a buffer at ``phase`` (frames) -- `buf_rd`'s
     write-side twin, and stateless in the same way.
 
     No interpolation: the write lands on the frame the phase names, truncated.
@@ -44,7 +44,7 @@ def buf_wr(bufnum, chan, phase, loop, signal) -> Ugen:
 
 def record_buf(bufnum, chan, signal, offset=0.0, rec_level=1.0, pre_level=0.0,
                run=1.0, loop=0.0, trigger=0.0, done_action=0) -> Ugen:
-    """**Records** ``signal`` into a buffer, one frame per sample — the
+    """**Records** ``signal`` into a buffer, one frame per sample -- the
     self-advancing writer, as `play_buf` is the self-advancing reader.
 
     ``rec_level`` and ``pre_level`` are what make it a looper rather than a tape
@@ -58,7 +58,7 @@ def record_buf(bufnum, chan, signal, offset=0.0, rec_level=1.0, pre_level=0.0,
     ``done_action`` (`DoneAction.FREE_SELF` frees the node). Passes ``signal``
     through.
 
-    Recording into a buffer another node is playing is the ordinary case — a
+    Recording into a buffer another node is playing is the ordinary case -- a
     buffer's contents are mutable and only its shape is fixed.
     """
     return Ugen("RecordBuf", [bufnum, chan, signal, offset, rec_level, pre_level,

@@ -5,7 +5,7 @@
 //
 // Two helpers over a display list the engraver already produced: `scoreView`
 // wraps it in a `scroll` sized to the page, and `playheadSync` hands back the
-// shared `PlayheadSync` with the page's own unit filled in — a `score` widget
+// shared `PlayheadSync` with the page's own unit filled in -- a `score` widget
 // places its cursor in **score milliseconds**, not samples, and that conversion
 // is the only thing a page needs on top of the transport the timeline views
 // already use.
@@ -54,7 +54,7 @@ export interface ScoreViewOptions {
  * the view is read-only, which is what a plain plot of a score wants; a driver
  * that applies the `"transpose"` round trip passes `editable: true`. `entry`
  * opts it into **note entry**: a press on blank paper inside a staff reports
- * `"insert" <after-xml:id> <position> <staff>` — a place, not a note, since the
+ * `"insert" <after-xml:id> <position> <staff>` -- a place, not a note, since the
  * pitch needs the clef and the key and the duration is nobody's until a driver
  * chooses one.
  *
@@ -87,7 +87,7 @@ export function scoreView(
     }: ScoreViewOptions = {},
 ): GuiNode {
     // The scroll is sized from the page, so the size has to be readable here
-    // whether the page arrived as an object or as a `Source` holding one — the
+    // whether the page arrived as an object or as a `Source` holding one -- the
     // source's own expansion is what a definition carries.
     const page = displayList instanceof Source ? displayList.props() : displayList;
     const vb = (page.vb as number[] | undefined) ?? [1.0, 1.0];
@@ -119,12 +119,12 @@ export function scoreView(
 }
 
 /**
- * A {@link PlayheadSync} driving a `score` widget's playback cursor — play,
+ * A {@link PlayheadSync} driving a `score` widget's playback cursor -- play,
  * pause, stop and locate, with the cursor following the sound.
  *
  * The same one the timeline views use; what a page needs on top is only its
  * unit: a `score` widget places its static cursor in **score milliseconds**, not
- * samples, so this fills in that conversion and leaves the rest as it is —
+ * samples, so this fills in that conversion and leaves the rest as it is --
  * `source(at)` starts a pass at beat `at` and answers the `Timeline` it plays,
  * `structure` is that timeline (or a callable returning it) for when nothing is
  * playing, and `extent()` gives the score's length in beats.

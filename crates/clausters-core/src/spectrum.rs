@@ -3,15 +3,15 @@
 //!
 //! One step above [`crate::fft`] and [`crate::window`], which give the
 //! transform and the coefficients but say nothing about the *scaling* a
-//! display reads. That scaling is a choice — divide by the window's coherent
+//! display reads. That scaling is a choice -- divide by the window's coherent
 //! gain so a full-scale sine reads ~0 dB at any window size, floor at
-//! [`REF_FLOOR`] — and a choice made twice is a choice made differently. So it
+//! [`REF_FLOOR`] -- and a choice made twice is a choice made differently. So it
 //! lives here, shared by the GUI host's `spectrum` widget and by a client
 //! computing its own curve from a tap it streams itself.
 //!
 //! Allocation-free: the caller owns the window, the scratch and the output, so
 //! a per-frame caller allocates once and never again. What stays *outside* is
-//! everything with memory across frames — the exponential averaging and the
+//! everything with memory across frames -- the exponential averaging and the
 //! decaying peak hold are display smoothing, and belong to whoever draws.
 
 use crate::fft;
@@ -33,7 +33,7 @@ pub fn coherent_gain(window: &[f32]) -> f32 {
 /// `raw`, `window` and `scratch` are all one FFT window long (a supported
 /// power of two); `out_db` holds half that many bins. `gain` is the window's
 /// [`coherent_gain`], passed in so a repeated caller computes it once.
-/// Returns `false` — leaving `out_db` untouched — when the lengths do not
+/// Returns `false` -- leaving `out_db` untouched -- when the lengths do not
 /// agree or the size is unsupported.
 pub fn magnitudes_db_into(
     raw: &[f32],

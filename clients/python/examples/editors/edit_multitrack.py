@@ -2,7 +2,7 @@
 """``edit(multitrack)``: a multitrack of audio, drawn, edited and played.
 
 The fourth structure, and the one that holds the other three: a
-`clausters.multitrack.Multitrack` — the document the three applications share —
+`clausters.multitrack.Multitrack` -- the document the three applications share --
 opened with `clausters.gui.edit` like a buffer or a timeline. **One verb, and
 the editor is the application**: the picture, the gestures, the history, the
 readers on the server and the transport are all its, so this file writes a multitrack
@@ -14,19 +14,19 @@ What to do in the window:
   block and move it as one. **Click** a box to select it, **e** to split it at
   the position cursor, **j** to join a touching run, **q** to quantize. A
   **run** is two boxes or more on one lane that touch *and read on from each
-  other*, so two halves put back in the other order do not join — and the
+  other*, so two halves put back in the other order do not join -- and the
   **status bar** along the bottom says which of those it was, for every verb
   that finds nothing to do.
-- **Click the ruler** — or the slack between boxes — to place the **position
+- **Click the ruler** -- or the slack between boxes -- to place the **position
   cursor**, which is where the next play starts. The playhead is never placed:
   stopped, it stands on the mark.
 - **Reach a tall multitrack**: `Shift`+wheel **scrolls the stack**, so a track that
   fell off the bottom comes back; `Ctrl`+wheel **zooms the row under the
-  pointer** — a track or one of the automation rows, each on its own. A track
+  pointer** -- a track or one of the automation rows, each on its own. A track
   is also zoomed by dragging its header's **bottom edge**; a curve row has no
   edge to pull, which is what the wheel is for. A plain wheel is still the time
   axis'.
-- **`A` in a track's header** shows and hides that track's **automation rows** —
+- **`A` in a track's header** shows and hides that track's **automation rows** --
   and on a track that has none, the first press **makes** one: a `gain` curve,
   flat at unity across the multitrack, heard like any other. The same shape the
   double click that adds a track has, the verb making the thing rather than
@@ -37,12 +37,12 @@ What to do in the window:
   puts the **mark** back at the top, which is the cursor's verb and not the
   transport's.
 - **Double click a box** to enter it: what a box holds is a structure like any
-  other, so entering one opens the take in the sample editor — on the **multitrack's**
+  other, so entering one opens the take in the sample editor -- on the **multitrack's**
   own undo order, so `Ctrl`+`Z` walks a stroke drawn inside a box and a box
   dragged on the stack as one history.
 - **Watch the meters** while it plays: the strip in each track's header is one
   column per channel, in decibels, over what that track produces *after* its
-  clips, its curves and its fader — with the peak it reached held beside it.
+  clips, its curves and its fader -- with the peak it reached held beside it.
 
 **The takes are rendered here and the multitrack is written plainly**, which is all
 this file is: six buffers, three tracks, six boxes and two curves. Everything
@@ -54,7 +54,7 @@ sit in the green and the amber.
 
 **The curves are heard.** The row under the first track is a track automation
 and the line inside the first box is a clip envelope; each names the ``gain``
-port of the node it sits on — the same port the header's knob writes — so a
+port of the node it sits on -- the same port the header's knob writes -- so a
 point dragged while the multitrack plays is heard where it is drawn.
 
 **The last box is a join**: one buffer whose samples are spans of two takes,
@@ -124,7 +124,7 @@ BUFS = {name: Buffer.from_samples(samples, sample_rate=SR, server=server)
 # The **join**: half of the glide and the second half of the saw, read as one
 # buffer with a ten-millisecond crossfade at the seam. Two spans that do not
 # continue each other make a step, and a step is a click however well the frames
-# are read. A join owns no samples — it is spans of the buffers above — so it
+# are read. A join owns no samples -- it is spans of the buffers above -- so it
 # refuses every write, and `clausters.Buffer.parts` is how a program asks what it
 # is made of before it offers to draw one.
 
@@ -140,7 +140,7 @@ server.sync()
 # %% [markdown]
 # ## The multitrack
 # Three tracks, one lane each, five boxes. A **source id** is what the document
-# names — never a path and never a buffer number — because a multitrack must open in
+# names -- never a path and never a buffer number -- because a multitrack must open in
 # a program that has no Python in it. Which buffer each source was read into is
 # the one thing about a multitrack that is not in the multitrack, and it travels beside it
 # in `clausters.gui.editing.Sources`.
@@ -163,7 +163,7 @@ def box(id: int, at: float, source: int, name: str) -> Region:
 
 #: **A track automation**: a row of its own under the track, as long as the
 #: timeline, because a track's gain does not begin and end with a box. ``target``
-#: names the **port** it drives on whatever it is on — the one shape the document
+#: names the **port** it drives on whatever it is on -- the one shape the document
 #: crate reads there, because a curve that named nothing could only be guessed at.
 noise_gain = Automation(id=100, name="gain", visible=True,
                         target={"port": "gain"},
@@ -245,7 +245,7 @@ print(f"wrote {saved.save(os.path.join(OUT, 'edit_multitrack.json'))}")
 # ## One verb
 #
 # A `clausters.multitrack.Multitrack` opens as a
-# `clausters.gui.editing.MultitrackEditor` — one `multitrack` widget with its own
+# `clausters.gui.editing.MultitrackEditor` -- one `multitrack` widget with its own
 # ruler and its own transport row, the crate's picture and the crate's reading of
 # every gesture. Given a **server** it also sounds: one resident reader per box,
 # in a group the server's transport governs, put where the multitrack says on every
@@ -254,7 +254,7 @@ print(f"wrote {saved.save(os.path.join(OUT, 'edit_multitrack.json'))}")
 # %%
 session.gui()          # the host wired to this session's server
 editor = edit(multitrack, sample_rate=SR, server=server,
-              #: Which buffer each source was read into — and, given as the
+              #: Which buffer each source was read into -- and, given as the
               #: **objects**, what a box opens as when it is entered: the same
               #: table answers both, because a multitrack names a source and only
               #: whoever loaded it holds the take.

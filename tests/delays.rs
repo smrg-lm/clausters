@@ -4,7 +4,7 @@
 //! stored buffer: a pure delay places an impulse at an exact frame, a
 //! fractional one has the group delay it was asked for, a comb's envelope
 //! follows the decay time it was given, and an allpass is flat. That last one
-//! is the strongest assert in the track — flatness cannot be satisfied by
+//! is the strongest assert in the track -- flatness cannot be satisfied by
 //! accident, so a filter that passes it really is an allpass.
 //!
 //! Rule 5, the block split, is not here: it is the same test for every row and
@@ -262,7 +262,7 @@ fn allpass_still_shifts_phase() {
 // ---- the long run ----
 //
 // Rule 4, pointed where this family actually accumulates. There is no running
-// position here to lose precision in — the read offset is recomputed from the
+// position here to lose precision in -- the read offset is recomputed from the
 // delay time every sample, so nothing counts upward. What recirculates is the
 // **signal**: a feedback form stores its own output back into an `f32` line, so
 // a long decay is a long chain of round trips each quantized once. `delay.rs`
@@ -275,7 +275,7 @@ fn an_allpass_ringing_for_ten_seconds_is_still_flat() {
     // Flatness is the allpass's definition and it survives nothing by accident,
     // so it is also the sharpest thing to re-check after thousands of round
     // trips: a 10 ms line over 10 s recirculates a thousand times, each one
-    // rounding to `f32`. Same tolerance as the short test — 0.02 dB — because
+    // rounding to `f32`. Same tolerance as the short test -- 0.02 dB -- because
     // the claim is that the property does not degrade, not that it degrades
     // slowly.
     let n = (SR as usize) * 10;
@@ -297,7 +297,7 @@ fn an_allpass_ringing_for_ten_seconds_is_still_flat() {
 fn a_comb_with_a_long_decay_still_follows_its_envelope_at_ten_seconds() {
     // A thousand round trips in, the echo train must still be where
     // 10^(-3(t-delay)/decay) says. A per-round-trip error would compound
-    // geometrically and show here as a level that has drifted off the curve —
+    // geometrically and show here as a level that has drifted off the curve --
     // exactly what a short render cannot see.
     let delay_frames = 480usize;
     let (delay, decay) = (delay_frames as f32 / SR, 30.0f32);
@@ -321,7 +321,7 @@ fn a_comb_driven_for_ten_seconds_stays_under_its_analytic_ceiling() {
     // The other half: not an impulse dying away but a full-scale signal going
     // in for the whole run, so the loop is charged rather than draining. The
     // steady-state gain of a comb at one of its peaks is 1/(1-g), which is the
-    // ceiling — the test is that it converges to it instead of walking past it.
+    // ceiling -- the test is that it converges to it instead of walking past it.
     let delay = 480.0 / SR;
     let decay = 2.0f32;
     let g = 10f64.powf(-3.0 * delay as f64 / decay as f64);

@@ -2,24 +2,24 @@
 //!
 //! Both the GUI spectrogram (its STFT) and the server's `FFT`/`IFFT` UGens
 //! need a forward FFT over a power-of-two window. Keeping the algorithm
-//! here means **one implementation, identical results**, in the shared core —
+//! here means **one implementation, identical results**, in the shared core --
 //! the rule that an algorithm used by more than one process lives once. It
 //! wraps [`microfft`], which is `no_std` and **zero-allocation** with
 //! compile-time power-of-two sizes (exactly the STFT's window sizes), so a
-//! real-time caller never allocates inside `process` — the property the future
+//! real-time caller never allocates inside `process` -- the property the future
 //! UGens require.
 //!
 //! `microfft` provides **both** directions: `real::rfft_*` (forward, real
 //! input) and `inverse::ifft_*` (inverse complex FFT, normalized by `1/N`).
 //! This module exposes three surfaces over them:
 //!
-//! - [`rfft_magnitudes_into`] — the half-spectrum magnitudes the spectrogram
+//! - [`rfft_magnitudes_into`] -- the half-spectrum magnitudes the spectrogram
 //!   draws.
-//! - [`rfft_into`] — a **forward** transform packing the complex frame in the
+//! - [`rfft_into`] -- a **forward** transform packing the complex frame in the
 //!   canonical spectral-buffer layout `[dc, nyquist, re₁, im₁, …]` (scsynth's
 //!   `FFT` buffer format), the wire the server's `FFT`→`PV_*`→`IFFT` chain
 //!   passes between its UGens.
-//! - [`irfft_into`] — the matching **inverse**: it reconstructs the full
+//! - [`irfft_into`] -- the matching **inverse**: it reconstructs the full
 //!   Hermitian-symmetric spectrum from that packed half-frame and runs
 //!   `microfft::inverse`, producing the real time-domain frame for overlap-add
 //!   resynthesis.
@@ -44,7 +44,7 @@ pub fn supports(n: usize) -> bool {
 /// `mags.len()` must be `n / 2`. On success `mags[b]` is the magnitude of bin
 /// `b` for `b` in `0..n/2`: bin 0 is the DC magnitude `|X[0]|` (the real Nyquist
 /// term, which `microfft` packs into the DC bin's imaginary part, is not
-/// returned — matching the half-spectrum the spectrogram draws). Returns
+/// returned -- matching the half-spectrum the spectrogram draws). Returns
 /// `false`, leaving `mags` untouched, if the size is unsupported or `mags` has
 /// the wrong length. Zero-allocation: the transform runs in a stack buffer.
 pub fn rfft_magnitudes_into(input: &[f32], mags: &mut [f32]) -> bool {
@@ -80,7 +80,7 @@ pub fn rfft_magnitudes_into(input: &[f32], mags: &mut [f32]) -> bool {
 ///
 /// `input.len()` must be a [supported](SUPPORTED_SIZES) power of two `n` and
 /// `frame.len()` must be `n`. On success `frame` holds the half-spectrum in the
-/// canonical spectral-buffer layout — the same one scsynth's `FFT` buffer uses:
+/// canonical spectral-buffer layout -- the same one scsynth's `FFT` buffer uses:
 ///
 /// ```text
 /// frame = [ DC, Nyquist, re₁, im₁, re₂, im₂, …, re_{n/2-1}, im_{n/2-1} ]

@@ -5,7 +5,7 @@
 //! does not compile). It runs
 //! the **real** [`Host`] (the same protocol dispatch, tree, bindings and
 //! `forward`), renders through the shared [`super::frame::render`], and handles
-//! pointer interaction through the shared [`super::interact`] primitives — so a
+//! pointer interaction through the shared [`super::interact`] primitives -- so a
 //! browser window opens, updates and emits events exactly as the desktop does.
 //! Only the carrier and the page glue are new:
 //!
@@ -89,7 +89,7 @@ fn set_status(msg: &str) {
 ///
 /// A page holds one host by default and one is what a served page ever asks
 /// for, but the count is not a property of the page: it is one per caller of
-/// [`start`]. See [`WebHosts`] for why the instance — and not the page — is the
+/// [`start`]. See [`WebHosts`] for why the instance -- and not the page -- is the
 /// unit that owns a widget-id space and an audio-server leg.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub(crate) struct HostId(u32);
@@ -105,7 +105,7 @@ impl std::fmt::Display for HostId {
 ///
 /// The event loop owns the instances, so a new one cannot be inserted by a
 /// call: it arrives as `Add`, like everything else. That costs nothing
-/// observable — every [`GuiBridge`] method already goes through the proxy, so a
+/// observable -- every [`GuiBridge`] method already goes through the proxy, so a
 /// packet sent immediately after [`start`] queues behind the `Add` in order.
 enum HostEvent {
     /// Take a new instance into the set, with the outbox its bridge drains.
@@ -150,7 +150,7 @@ enum WebEvent {
     /// carrying it inline would size the whole event queue to it.
     GpuReady { def_id: i32, gpu: Box<Gpu> },
     /// Re-derive the server subscriptions from the current trees and send
-    /// whatever changed — queued by [`WebApp::schedule_stream_sync`] and
+    /// whatever changed -- queued by [`WebApp::schedule_stream_sync`] and
     /// coalesced, so a document that opens forty canvases in one pass asks
     /// once rather than forty times.
     SyncStreams,
@@ -180,7 +180,7 @@ enum WebEvent {
     /// The share of the audio server's ids this host allocates from (the
     /// browser form of the native `--id-share`).
     IdShare(u32, u32),
-    /// Text the hidden composition field produced — a typed letter, an
+    /// Text the hidden composition field produced -- a typed letter, an
     /// accented one a dead key finished, an IME's output, a paste (`compose`).
     Typed { def_id: i32, text: String },
     /// A key that field saw which was **not** text: an editing key, Tab,
@@ -194,7 +194,7 @@ enum WebEvent {
 struct WebApp {
     /// Which instance this is, for the events its own closures send back
     /// (`Gpu::new`'s hand-off, the tick, a bulk fetch, the WS leg's
-    /// `onmessage`) — all four are built inside this struct's methods, so the
+    /// `onmessage`) -- all four are built inside this struct's methods, so the
     /// id is always at hand where a proxy is taken.
     id: HostId,
     host: Host,
@@ -203,7 +203,7 @@ struct WebApp {
     canvases: HashMap<i32, CanvasSlot>,
     /// The reverse index winit's per-window events route through.
     by_winit: HashMap<WindowId, i32>,
-    /// Whether the event loop resumed — a window can only be created after it,
+    /// Whether the event loop resumed -- a window can only be created after it,
     /// so an `attach` that arrives first waits here.
     resumed: bool,
     pending_attach: Vec<(i32, Option<web_sys::HtmlCanvasElement>)>,
@@ -219,7 +219,7 @@ struct WebApp {
     /// The bus set currently subscribed with `/bus_stream` (sorted), so a tree
     /// change only resubscribes when the set actually changed.
     streamed: Vec<i32>,
-    /// The newest `/bus_tapStream.reply` window per tap — the browser's source for
+    /// The newest `/bus_tapStream.reply` window per tap -- the browser's source for
     /// audio-rate scopes, read on the tick exactly as the native front reads
     /// the segment's tap rings.
     taps: Arc<StreamedTaps>,
@@ -227,12 +227,12 @@ struct WebApp {
     /// so a tree change only resubscribes when they actually changed.
     tap_streamed: (Vec<i32>, usize),
     /// Whether this page has registered for the server's notifications
-    /// (`/server_notify 1`). It is what `/buffer_touched` rides on — an edit
-    /// another peer made to a buffer this page draws — and it is sent once,
+    /// (`/server_notify 1`). It is what `/buffer_touched` rides on -- an edit
+    /// another peer made to a buffer this page draws -- and it is sent once,
     /// the first time a tree names a server buffer, exactly as the native
     /// front sends it when a window draws one.
     notified: bool,
-    /// How many buses one `/bus_stream` subscription may list on this leg —
+    /// How many buses one `/bus_stream` subscription may list on this leg --
     /// the server's own ceiling as it applies to *this* client's carrier, read
     /// from `/server_query.reply` when the leg connects.
     ///
@@ -240,7 +240,7 @@ struct WebApp {
     /// canvas: a document grows the set, so a page can walk into the ceiling
     /// by opening widgets rather than by asking for anything unusual. Until
     /// the reply lands the historical floor stands
-    /// ([`live::INITIAL_STREAM_BUS_CAP`]), and a refusal lowers it — the
+    /// ([`live::INITIAL_STREAM_BUS_CAP`]), and a refusal lowers it -- the
     /// host's belief about what it subscribed is what decides whether it ever
     /// asks again.
     stream_bus_cap: usize,
@@ -253,7 +253,7 @@ struct WebApp {
     /// the one thing worth reading.
     stream_dropped: usize,
     /// The server's sample rate (from `/clock_query.reply`, requested when the leg
-    /// connects); `0.0` until known — window sizing then assumes 48 kHz.
+    /// connects); `0.0` until known -- window sizing then assumes 48 kHz.
     server_rate: f64,
     /// The animation tick: the `setInterval` id and its closure, kept alive
     /// while the current def has live widgets (meter/scope/canvas).
@@ -344,8 +344,8 @@ impl WebApp {
 
     /// The defs currently drawing: one canvas each, and in the viewport.
     ///
-    /// Everything that costs something per frame or per packet — the tick, the
-    /// `/bus_stream` and `/bus_tapStream` subscriptions — is derived from exactly
+    /// Everything that costs something per frame or per packet -- the tick, the
+    /// `/bus_stream` and `/bus_tapStream` subscriptions -- is derived from exactly
     /// this set, which is what makes a scrolled-away component free.
     fn visible_defs(&self) -> Vec<i32> {
         let mut ids: Vec<i32> = self
@@ -364,7 +364,7 @@ impl WebApp {
     /// `/clock_query` fetches the rate the oscilloscope windows are sized with;
     /// the host's own attach (`Host::on_link_attached`) registers for node
     /// ends and sends `/server_query`, whose reply also carries the ceiling on
-    /// how many buses one subscription may list — this leg's own, since the
+    /// how many buses one subscription may list -- this leg's own, since the
     /// answer depends on the carrier.
     fn on_server_attached(&mut self) {
         self.streamed.clear();
@@ -395,13 +395,13 @@ impl WebApp {
     /// Queues one subscription re-derivation for the end of this JavaScript
     /// turn, if none is queued already.
     ///
-    /// A page builds its document in **one synchronous pass** — forty canvases
-    /// opened in a loop, each a tree change — while the engine cannot answer
+    /// A page builds its document in **one synchronous pass** -- forty canvases
+    /// opened in a loop, each a tree change -- while the engine cannot answer
     /// anything until its next serving turn. Sending per change made that
     /// forty subscriptions, each replacing the one before it, none of them yet
     /// acknowledged: correct, and forty round trips to reach the set the last
     /// one already carried. A zero-delay timeout is exactly the coalescing
-    /// window that pass needs — everything synchronous lands in one request,
+    /// window that pass needs -- everything synchronous lands in one request,
     /// and a change that arrives in its own turn still goes out immediately.
     fn schedule_stream_sync(&mut self) {
         if self.stream_sync_pending {
@@ -429,7 +429,7 @@ impl WebApp {
     }
 
     /// Sends whatever the current trees ask of the server that is not already
-    /// subscribed — the queued half of [`Self::on_tree_changed`], and the one
+    /// subscribed -- the queued half of [`Self::on_tree_changed`], and the one
     /// place the subscriptions are derived from.
     fn sync_streams(&mut self) {
         self.stream_sync_pending = false;
@@ -438,7 +438,7 @@ impl WebApp {
         self.sync_tap_stream(demand.taps, demand.tap_frames);
     }
 
-    /// What the drawing canvases ask of the server and of the frame clock —
+    /// What the drawing canvases ask of the server and of the frame clock --
     /// the union over the **visible** set, so a scrolled-away component drops
     /// out of it. The derivation itself is platform-agnostic
     /// ([`live::demand`]), natively tested.
@@ -453,7 +453,7 @@ impl WebApp {
 
     /// Starts or stops the ~30 fps animation tick to match the drawing
     /// canvases: running while any has live widgets (meter/scope/canvas),
-    /// stopped otherwise. The tick advances the scope histories and repaints —
+    /// stopped otherwise. The tick advances the scope histories and repaints --
     /// the browser twin of the native `about_to_wait` frame timer, driven by
     /// `setInterval` because `std::time::Instant` does not exist on wasm.
     fn ensure_tick(&mut self, animated: bool) {
@@ -550,7 +550,7 @@ impl WebApp {
         }
         self.apply_extents(extents);
         // A visible playhead needs the engine clock: poll it once per tick (the
-        // browser's stand-in for the shm header's sample clock) — once for the
+        // browser's stand-in for the shm header's sample clock) -- once for the
         // page, however many canvases show one.
         if wants_clock && let Some(server) = self.host.server() {
             // Which counter the line is drawn from decides which one is worth
@@ -657,7 +657,7 @@ impl WebApp {
                 // `Gpu::new` reads its size (the size is captured before the async
                 // adapter/device awaits), so the surface can come up configured to
                 // a stale 1x1. Re-read the now-laid-out size and reconfigure before
-                // the first frame — otherwise the clear fills the canvas (a gray
+                // the first frame -- otherwise the clear fills the canvas (a gray
                 // backdrop) but every widget lays out into a ~0 px area and nothing
                 // visible is drawn. A `Resized` that arrived while the GPU was
                 // pending was stashed in `pending_size`; prefer the live size and
@@ -742,22 +742,22 @@ impl WebApp {
 /// The page's host instances behind winit's one [`ApplicationHandler`].
 ///
 /// **The event loop is the only thing a page can hold just one of.** winit
-/// refuses a second `EventLoop` — `RecreationAttempt`, a panic inside the wasm
-/// rather than an error a caller could catch — but it drives any number of
+/// refuses a second `EventLoop` -- `RecreationAttempt`, a panic inside the wasm
+/// rather than an error a caller could catch -- but it drives any number of
 /// windows, which is already how one instance serves a document's canvases. So
 /// the loop is built once and memoized in [`WEB_PROXY`], and [`start`] adds an
 /// instance to this set rather than starting anything.
 ///
 /// Everything a host *is* lives in [`WebApp`]: its `Host` (and therefore its
 /// widget-id space), its audio-server leg, its canvases, buses, taps, tick and
-/// fetches. Nothing here is shared, which is the point — two instances are as
+/// fetches. Nothing here is shared, which is the point -- two instances are as
 /// independent as two pages, and neither has to partition an id range against
 /// the other. The GPU was already per canvas (`Gpu::new` builds one per
 /// `CanvasSlot`), so instances add no devices.
 struct WebHosts {
     apps: HashMap<HostId, WebApp>,
     /// Whether the loop resumed. A window can only be created after it, and an
-    /// instance added later has missed the callback — so it is remembered here
+    /// instance added later has missed the callback -- so it is remembered here
     /// and handed on, or its first canvas would wait for a `resumed` that
     /// already happened.
     resumed: bool,
@@ -808,8 +808,8 @@ impl ApplicationHandler<HostEvent> for WebHosts {
     }
 
     /// winit addresses a window, not an instance, so the owner is whoever
-    /// claims the id. The set is a page's worth of hosts — units, not
-    /// thousands — and asking them is what keeps the routing correct across
+    /// claims the id. The set is a page's worth of hosts -- units, not
+    /// thousands -- and asking them is what keeps the routing correct across
     /// every attach and detach without a second index to maintain.
     fn window_event(&mut self, _event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
         let owner = self
@@ -826,7 +826,7 @@ impl ApplicationHandler<HostEvent> for WebHosts {
 thread_local! {
     /// The page's one event-loop proxy, so an instance's own closures can reach
     /// the loop for the async GPU hand-off, the tick and the bulk fetches
-    /// (winit's web loop is single-threaded). Shared by every instance —
+    /// (winit's web loop is single-threaded). Shared by every instance --
     /// each of its events carries the [`HostId`] it is for.
     ///
     /// It doubles as the record that the loop exists: `Some` means [`start`]
@@ -841,9 +841,9 @@ fn web_proxy() -> Option<EventLoopProxy<HostEvent>> {
     WEB_PROXY.with(|p| p.borrow().clone())
 }
 
-/// Uploads whatever this canvas' tree has for its GPU slots this tick — the
+/// Uploads whatever this canvas' tree has for its GPU slots this tick -- the
 /// columns a waterfall just analyzed, the picture an element that got its data
-/// rebuilt — and only what moved, so a still page costs no upload.
+/// rebuilt -- and only what moved, so a still page costs no upload.
 ///
 /// The browser twin of the desktop front's own pass, kept beside the tick that
 /// advances the elements rather than inside the render, since an upload is not

@@ -1,6 +1,6 @@
 # mdBook configuration. The book sources are the Markdown files in `docs/`
 # (reused in place; `docs/SUMMARY.md` is the table of contents). Build with
-# `mdbook build` — the generated HTML lands in `book/`, which git ignores.
+# `mdbook build` -- the generated HTML lands in `book/`, which git ignores.
 # The crate's API reference is separate: `cargo doc` (rustdoc).
 
 [book]

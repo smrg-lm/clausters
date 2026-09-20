@@ -1,8 +1,8 @@
 // Demand rate: streams that have a next value, not samples (mirrors
 // `clausters/defs/ugens/demand.py`).
 //
-// A demand UGen is pulled rather than run — `demand` (or `duty`) asks for the
-// next value on a trigger and the stream advances only then — and nesting them
+// A demand UGen is pulled rather than run -- `demand` (or `duty`) asks for the
+// next value on a trigger and the stream advances only then -- and nesting them
 // is how a sequence is built.
 
 import { ChannelList, Ugen } from "./graph.ts";
@@ -10,15 +10,15 @@ import type { Channel } from "./graph.ts";
 import { sources } from "./pan.ts";
 
 // A demand UGen is a *stream*: it has no samples, only a next value, and it
-// yields one each time a driver asks. Its inputs may be streams too — that is
-// what makes a sequence of phrases, rather than of numbers, expressible — so
+// yields one each time a driver asks. Its inputs may be streams too -- that is
+// what makes a sequence of phrases, rather than of numbers, expressible -- so
 // every builder below accepts another `d*` anywhere it accepts a number.
 //
 // `repeats` is how many the stream yields before it ends: **0 means
 // endlessly**. sclang writes `inf` there, which a def cannot carry (the wire
 // rejects a non-finite constant, and JSON has no spelling for one), so the
 // count of none is the endless one. For a list source it counts *passes over
-// the list*; for a random pick it counts *items* — scsynth's own asymmetry,
+// the list*; for a random pick it counts *items* -- scsynth's own asymmetry,
 // and the useful reading of each.
 
 function demandValues(values: ChannelList | readonly Channel[]): Channel[] {
@@ -49,7 +49,7 @@ export const drand = (
 ): Ugen => new Ugen("Drand", [repeats, ...demandValues(values)], { rate: "dr" });
 
 /**
- * `drand` that never picks the value it just used — the same list without
+ * `drand` that never picks the value it just used -- the same list without
  * immediate repetition.
  */
 export const dxrand = (
@@ -59,7 +59,7 @@ export const dxrand = (
 
 /**
  * `values` shuffled **once** and then replayed in that order, `repeats`
- * times. The shuffle is redrawn on a reset, not on each pass — that is what
+ * times. The shuffle is redrawn on a reset, not on each pass -- that is what
  * separates it from `drand`.
  */
 export const dshuf = (
@@ -99,7 +99,7 @@ export const diwhite = (
 ): Ugen => new Ugen("Diwhite", [repeats, lo, hi], { rate: "dr" });
 
 /**
- * A random walk of at most `step` per item, **folded** into `[lo, hi]` — it
+ * A random walk of at most `step` per item, **folded** into `[lo, hi]` -- it
  * turns around at a bound rather than piling up against it.
  */
 export const dbrown = (
@@ -128,7 +128,7 @@ export const dstutter = (repeats: Channel, value: Channel): Ugen =>
  * Takes **one** item from the stream `which` picks, then picks again.
  *
  * Unlike `dseq`, an unselected stream is not advanced and the selected one is
- * not drained — the `1` is the count. The index wraps into range. Accepts the
+ * not drained -- the `1` is the count. The index wraps into range. Accepts the
  * sources as arguments or as one list.
  */
 export const dswitch1 = (
@@ -137,7 +137,7 @@ export const dswitch1 = (
 ): Ugen => new Ugen("Dswitch1", [which, ...sources(items)], { rate: "dr" });
 
 /**
- * Reads the buffer frame the `phase` stream names — a `dseries` phase walks
+ * Reads the buffer frame the `phase` stream names -- a `dseries` phase walks
  * it as a step sequence. Out of range it wraps when `loop` is set and clamps
  * when it is not.
  */
@@ -163,7 +163,7 @@ export const demand = (
  * Demand driver with a clock of its own: pulls one `level` every `dur`
  * seconds and holds it.
  *
- * Both `dur` and `level` are pulled, which is what makes a sequencer of it —
+ * Both `dur` and `level` are pulled, which is what makes a sequencer of it --
  * a stream of durations against a stream of pitches, the two free to be
  * different lengths. When either ends, `doneAction` fires (see `DoneAction`).
  */
@@ -175,7 +175,7 @@ export const duty = (
 ): Ugen => new Ugen("Duty", [dur, reset, level, doneAction]);
 
 /**
- * `duty` emitting each level on its own sample and nothing in between — a
+ * `duty` emitting each level on its own sample and nothing in between -- a
  * trigger stream whose amplitudes are the levels. With `gapFirst` the first
  * duration is spent before the first level, so the stream opens with a gap
  * instead of a trigger.

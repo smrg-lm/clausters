@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Writes <data-dir>/bundle.json — the manifest a browser bundle boot needs.
+"""Writes <data-dir>/bundle.json -- the manifest a browser bundle boot needs.
 
 A native standalone bundle is a data directory the host and server read by
 listing it; HTTP cannot list directories, so serving a bundle to the browser

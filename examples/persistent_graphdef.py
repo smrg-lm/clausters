@@ -16,7 +16,7 @@ patch is one stored unit:
   * **reading from a buffer** inside the graph (the ``PlayBuf`` member);
   * **persistence**: phase 1 sends the member defs and the GraphDef (the server
     writes them under the data dir); phase 2 launches a *fresh* server on the
-    *same* data dir and instantiates the GraphDef **without sending anything** —
+    *same* data dir and instantiates the GraphDef **without sending anything** --
     it only plays because the defs were reloaded from disk at boot.
 
 The data directory is **kept on disk** (``examples/out/defs_store/``) so you can

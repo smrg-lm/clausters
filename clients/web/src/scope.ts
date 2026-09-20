@@ -1,10 +1,10 @@
-// `scope` — watch live audio buses in a window (mirrors `clausters/scope.py`).
+// `scope` -- watch live audio buses in a window (mirrors `clausters/scope.py`).
 //
 // The real-time sibling of `./plot.ts`: one call opens a window that follows
 // `channels` consecutive audio buses of the running server, frame by frame,
-// with no per-frame messages from the script. Everything is wired for you —
+// with no per-frame messages from the script. Everything is wired for you --
 // the ambient server and GUI host are resolved, and the host asks the server
-// to record the buses it draws — so you name a bus and nothing else.
+// to record the buses it draws -- so you name a bus and nothing else.
 //
 // ```ts
 // const win = await scope();                     // hardware out 0, oscilloscope
@@ -16,29 +16,29 @@
 //
 // **The three views** (`view`):
 //
-// - `"signal"` — a triggered **oscilloscope**. Each channel is a lane (or a
+// - `"signal"` -- a triggered **oscilloscope**. Each channel is a lane (or a
 //   color-coded trace with `overlay`); the x ruler reads milliseconds of the
 //   `windowMs` display window, the y ruler signal value over `[min, max]`. The
 //   trace is *phase-locked*: every frame is aligned on a rising crossing of
 //   the `trigger` level (marked by a faint line) found in the **first**
 //   channel, so a periodic signal stands still and the channels keep their
 //   true relative phase. The corner read-out says `lock` (the trigger fired)
-//   or `free` (no crossing — silence or DC — so the window free-runs).
-// - `"phase"` — a **phasescope** (goniometer) of the stereo pair `bus` /
+//   or `free` (no crossing -- silence or DC -- so the window free-runs).
+// - `"phase"` -- a **phasescope** (goniometer) of the stereo pair `bus` /
 //   `bus + 1`: mono draws a vertical line, anti-phase horizontal, a wide field
 //   fills the lozenge; the bar underneath is the correlation.
-// - `"spectrum"` — a live **spectrum**: one FFT per channel per frame, one
+// - `"spectrum"` -- a live **spectrum**: one FFT per channel per frame, one
 //   color-coded curve each; the x ruler reads hertz on `freqScale`
 //   (log/linear/mel/bark), the y ruler dB over `[dbFloor, dbCeil]`.
 //
-// Adjust it live with `win.set({...})` — any prop of the open view — and close
+// Adjust it live with `win.set({...})` -- any prop of the open view -- and close
 // it with `win.close()`, which closes the window and lets the host stop
 // recording whatever no open view is drawing any more.
 //
 // **What does not port: the shared-memory requirement.** The reference client
 // refuses a server with no `shm`, because the native host reads the taps out
 // of that segment. The browser host has no segment to map and streams the taps
-// over its own server leg instead, so there is nothing here to demand — which
+// over its own server leg instead, so there is nothing here to demand -- which
 // is why this module has no check where its sibling has one.
 //
 // **Asynchronous, where the reference verb is not**, the same standing
@@ -98,7 +98,7 @@ export class ScopeWindow {
     }
 
     /**
-     * Live-sets the scope widget's props through `/gui_set` — per view:
+     * Live-sets the scope widget's props through `/gui_set` -- per view:
      * `windowMs`/`trigger`/`hold`/`min`/`max`/`overlay` (signal),
      * `windowMs`/`hold` (phase), `fftSize`/`freqScale`/`dbFloor`/`dbCeil`/
      * `averaging`/`peakHold` (spectrum); `ruler`/`rulerY` (`"off"` hides an
@@ -118,13 +118,13 @@ export class ScopeWindow {
         return this;
     }
 
-    /** Whether this window is gone — closed by a hand or by `close`. */
+    /** Whether this window is gone -- closed by a hand or by `close`. */
     get closed(): boolean {
         return this.#closed || !this.host.isOpen(this.id);
     }
 
     /**
-     * Resolves when this window is closed, or on `timeout` seconds — `true` for
+     * Resolves when this window is closed, or on `timeout` seconds -- `true` for
      * the first, `false` for the second. The same verb `PlotWindow.wait` and
      * `WindowHandle.wait` carry.
      */
@@ -152,15 +152,15 @@ export interface ScopeOptions {
      * count, else 1; the phase view is fixed at 2.
      */
     channels?: number;
-    /** Signal view — color-coded traces in one field instead of stacked lanes. */
+    /** Signal view -- color-coded traces in one field instead of stacked lanes. */
     overlay?: boolean;
     /**
-     * The display window — signal (default 20 ms) and phase (trail
+     * The display window -- signal (default 20 ms) and phase (trail
      * persistence, default 30 ms) views.
      */
     windowMs?: number;
     /**
-     * Signal view — the rising-crossing trigger level (default 0; searched in
+     * Signal view -- the rising-crossing trigger level (default 0; searched in
      * the first channel, marked by a faint line).
      */
     trigger?: number;
@@ -178,7 +178,7 @@ export interface ScopeOptions {
     freqScale?: string;
     /** Spectrum per-bin exponential smoothing, 0..1 (default 0.5). */
     averaging?: number;
-    /** Spectrum — overlay a slowly decaying peak trace. */
+    /** Spectrum -- overlay a slowly decaying peak trace. */
     peakHold?: boolean;
     /**
      * The x axis strip (ms / Hz per view), shown by default; `false` or
@@ -201,7 +201,7 @@ export interface ScopeOptions {
     host?: GuiHost;
     /**
      * Where a page draws it: the view takes this element's box and the canvas
-     * inside it is made for you. Web-only — a script has an OS window, so the
+     * inside it is made for you. Web-only -- a script has an OS window, so the
      * Python client's counterpart of this verb takes no such argument (and a
      * host reached over a socket refuses one).
      */
@@ -210,7 +210,7 @@ export interface ScopeOptions {
 
 /**
  * Watches `channels` consecutive audio buses from `bus` in a window, and
- * resolves with the `ScopeWindow` — `set(...)` retunes the display live,
+ * resolves with the `ScopeWindow` -- `set(...)` retunes the display live,
  * `close()` closes it.
  *
  * The signal and spectrum views monitor `bus .. bus + channels - 1`; the phase
@@ -258,7 +258,7 @@ export async function scope(
     );
 
     // Widget ids live in the host's one namespace, so each scope's widget
-    // takes a fresh one — the same rule `plot` follows and for the same
+    // takes a fresh one -- the same rule `plot` follows and for the same
     // reason: a repeated id is skipped at define time and `set` would then
     // reach whichever widget claimed it first.
     const widgetId = host.allocId();

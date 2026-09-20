@@ -6,7 +6,7 @@ instantiated once at `Group.graph(...)` (the always-on part: the private bus
 and the mixer); each **voice** member is instantiated per note with
 `instance.voice(...)`, wired into the same shared bus. This is the model a
 MIDI binding uses too: `/midi_bind <ch> poly` spawns the shared instance and
-each note spawns a voice — drive it from a controller with
+each note spawns a voice -- drive it from a controller with
 `clausters --midi` and `aconnect`.
 
 Here a routine spawns an arpeggio of overlapping voices into one instance and
@@ -93,7 +93,7 @@ def main():
     print("the shared instance played four overlapping per-voice notes.")
 
     if path:
-        print(f"wrote {path} — listen with: pw-play {path}")
+        print(f"wrote {path} -- listen with: pw-play {path}")
 
 
 if __name__ == "__main__":

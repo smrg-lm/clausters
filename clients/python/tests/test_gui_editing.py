@@ -3,8 +3,8 @@
 `Editor` edits **one structure** and imports nothing from the arrangement, so
 this drives one with no multitrack anywhere: a plain object, a domain that
 says what a gesture means to it, and a view that draws it. What is checked is
-the orchestration — the gesture becomes a payload, the payload becomes an
-entry, the entry inverts — and the two collaborators that are testable with no
+the orchestration -- the gesture becomes a payload, the payload becomes an
+entry, the entry inverts -- and the two collaborators that are testable with no
 data at all.
 """
 
@@ -31,7 +31,7 @@ class Dial:
 class DialDomain(Domain):
     """`Dial`'s vocabulary: one verb, and the state it replaces.
 
-    The inverse is the value as it stands, read before the edit lands — which
+    The inverse is the value as it stands, read before the edit lands -- which
     is what `Domain.current` is for and why an editor cannot derive it
     afterwards.
     """
@@ -103,12 +103,12 @@ class FakeHost:
         self.pushes.append((seq, list(corrections), doc_version, reason))
 
     def redefine(self, wid, tree, *blobs, window=None):
-        #: The subtrees this host was handed, and the window each belonged to —
+        #: The subtrees this host was handed, and the window each belonged to --
         #: what says a change of shape cost one widget rather than the window.
         self.redefines.append((wid, window))
 
     def define(self, wid, tree, *blobs):
-        #: The whole trees this host was handed — what says a redefine happened,
+        #: The whole trees this host was handed -- what says a redefine happened,
         #: since a redefine is the only channel a widget that was not there can
         #: arrive by.
         self.defines.append((wid, tree))
@@ -312,7 +312,7 @@ def test_a_drawers_id_space_goes_when_the_drawer_does():
     first.draw()
     assert len(app._offline) == 1
     # An application holds its editors, the way a host holds an open one, so the
-    # table goes when the editor **leaves** — which is what `close` does.
+    # table goes when the editor **leaves** -- which is what `close` does.
     app.forget(first)
     del first
     gc.collect()
@@ -462,7 +462,7 @@ def test_an_edit_that_crosses_a_redraw_lands_on_the_widget_the_hand_touched():
 
 def test_the_two_views_of_one_structure_name_the_same_widget():
     # A name is the structure's identity plus the role, so two pictures of one
-    # thing agree about which widget draws which part of it — which is what
+    # thing agree about which widget draws which part of it -- which is what
     # makes a correction from either one addressable by the other.
     dial = Dial()
     host = FakeHost()
@@ -561,7 +561,7 @@ def test_a_view_owns_what_it_drew_and_nothing_else():
 
 
 def test_a_domain_takes_its_coalesce_key_from_the_crate():
-    # One vocabulary, one key, in the shared implementation both clients bind —
+    # One vocabulary, one key, in the shared implementation both clients bind --
     # never a second answer written per language.
     domain = DialDomain()
     payload = domain.payload(Dial(), "dial", [1.0])
@@ -600,7 +600,7 @@ def test_the_editing_trace_is_silent_until_it_is_watched():
     """The five joints, and the fact that they cost nothing unarmed.
 
     A window in front of a person fails in ways nothing else sees, so the path
-    says what it did — but a library that printed by default would make every
+    says what it did -- but a library that printed by default would make every
     importer pay for the formatting. The twin is
     `clients/web/tests/gui-edit.test.ts`.
     """

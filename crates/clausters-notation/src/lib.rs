@@ -1,12 +1,12 @@
-//! libverovio binding for Clausters — engrave a score into resolution-independent
+//! libverovio binding for Clausters -- engrave a score into resolution-independent
 //! geometry, the native half of the notation layer.
 //!
 //! This crate owns everything that touches **libverovio**, a C++ engraving
 //! library ([verovio](https://verovio.org)) reached through its C wrapper
 //! (`third_party/verovio/tools/c_wrapper.h`): it lays a digital score (MEI,
 //! MusicXML, ABC or Plaine & Easie) out into an SVG of SMuFL glyph outlines and
-//! engraving strokes. The format-agnostic parts — walking that SVG into the
-//! host's display list, and the MEI encoder — live in `clausters-core` instead,
+//! engraving strokes. The format-agnostic parts -- walking that SVG into the
+//! host's display list, and the MEI encoder -- live in `clausters-core` instead,
 //! so they compile to wasm; this crate is the piece that cannot.
 //!
 //! Behind the `verovio` feature, **off by default**: a plain build links no
@@ -18,7 +18,7 @@
 //! the configure-time path in, overridable through `CLAUSTERS_VEROVIO`).
 //!
 //! Two ways in: `engrave_svg` is the one-shot form (load, draw, discard), and
-//! `open` builds the stateful one — the document held open so it can be edited
+//! `open` builds the stateful one -- the document held open so it can be edited
 //! and re-engraved against the same ids. The C ABI over both lives in
 //! `clausters-ffi`.
 //!
@@ -26,7 +26,7 @@
 //! `clausters_core::notation::Score` over the `clausters_core::notation::Engraver`
 //! port, which `Toolkit` implements here. The
 //! order an edit is made in, the reload that keeps the timemap honest and the
-//! undo stack of MEI snapshots are logic, and both clients run the same one —
+//! undo stack of MEI snapshots are logic, and both clients run the same one --
 //! this crate is what that logic calls when the engraver is a C++ library
 //! rather than a wasm module in a page.
 

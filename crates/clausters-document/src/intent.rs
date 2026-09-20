@@ -2,7 +2,7 @@
 //!
 //! An [`Intent`] is an edit expressed in the owner's terms: not a pixel delta,
 //! not a gesture, not a widget. A GUI host produces one from a gesture, a client
-//! produces one from a script, and both hand it here — because the crate's
+//! produces one from a script, and both hand it here -- because the crate's
 //! central discipline is that **nothing else applies an intent**. A caller does
 //! not apply and then report; it hands over the document and the intent and
 //! receives the new document plus an [`Outcome`]. One implementation of the edit
@@ -18,7 +18,7 @@
 //!
 //! - **Nothing has to be replayed.** A view that drew an edit optimistically can
 //!   leave its picture standing over whatever authoritative state arrives, with
-//!   nothing to recompute — which is what lets the host draw immediately without
+//!   nothing to recompute -- which is what lets the host draw immediately without
 //!   holding an executable copy of the document.
 //! - **An intent is idempotent.** Applying one twice leaves the same document,
 //!   so a resend over a lossy leg is harmless.
@@ -30,26 +30,26 @@
 //!
 //! # The outcome is what the acknowledgement carries
 //!
-//! [`apply`] never returns a bare success. It returns the **effective** intent —
-//! the edit that describes the document as it now stands — so that *applied
+//! [`apply`] never returns a bare success. It returns the **effective** intent --
+//! the edit that describes the document as it now stands -- so that *applied
 //! verbatim*, *applied transformed* (a snap, a clamp) and *refused* are one
 //! shape. A refusal is the previous value handed back, not an error: the caller
 //! adopts what it is given either way, and only the log cares which happened.
 //!
 //! # Staleness is detected, never rebased
 //!
-//! An absolute intent needs no rebase — that is what makes it absolute — but it
+//! An absolute intent needs no rebase -- that is what makes it absolute -- but it
 //! still needs to know whether the document moved underneath the picture it was
 //! made against, because "absolute" and "safe" are not the same thing: a
 //! [`Intent::SetMembers`] states an aggregate's contents *whole*, so one made against a
 //! stale picture silently deletes whatever arrived in between. The document can
-//! move by routes that are not gestures at all — a script editing the
-//! multitrack, a second editor, a re-render — and none of them is visible to a
+//! move by routes that are not gestures at all -- a script editing the
+//! multitrack, a second editor, a re-render -- and none of them is visible to a
 //! log.
 //!
 //! So [`apply`] takes an [`Against`]: the state the editor believed it was
 //! editing. When that state has been superseded the edit is **refused as stale**
-//! and the current value handed back, which needs no new path on either side —
+//! and the current value handed back, which needs no new path on either side --
 //! the caller adopts the returned value exactly as it adopts a snap or a
 //! refusal, and [`Outcome::stale`] is there for the one thing that does differ,
 //! which is what to tell the person: *someone else changed this*, not *not
@@ -58,7 +58,7 @@
 //! Refusing rather than merging is deliberate and conservative. Merging two
 //! absolute edits means deciding which one wins per field, which is a document
 //! format's decision and not an edit vocabulary's, and getting it wrong loses
-//! work silently — the failure this whole mechanism exists to make impossible.
+//! work silently -- the failure this whole mechanism exists to make impossible.
 //! An [`Against::unstated`] skips the check entirely, which is what a script
 //! that just read the document wants, and what an older client looks like.
 
@@ -104,13 +104,13 @@ impl Rules {
 /// **document version** moves when the description changes (a clip is placed, an
 /// aggregate is rewritten), the **source generation** moves when a source's *content*
 /// changes while its identity stays put (a pencil stroke). A reader that holds
-/// no document at all — a waveform view over one source — can name a generation
+/// no document at all -- a waveform view over one source -- can name a generation
 /// and nothing else, which is why the generation is optional rather than a
 /// second required field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Against {
     /// The document version the editor was looking at. Zero means **unstated**,
-    /// and unstated skips the check — a script that just read the document is
+    /// and unstated skips the check -- a script that just read the document is
     /// not editing a stale picture, and an older client cannot say.
     #[serde(default)]
     pub version: u64,
@@ -153,7 +153,7 @@ pub enum Intent {
     /// Where a node sits inside the aggregate that holds it.
     ///
     /// The node names itself rather than its index, so a placement survives its
-    /// siblings moving — which is what an edit made against a picture drawn a
+    /// siblings moving -- which is what an edit made against a picture drawn a
     /// moment ago depends on.
     Place {
         /// The node being placed.
@@ -172,7 +172,7 @@ pub enum Intent {
     /// two overlapping patches applied out of order give two different results,
     /// and the absolute rule exists precisely to make order stop mattering.
     ///
-    /// A leaf's, usually — but an **aggregate** carries one too (the writer's
+    /// A leaf's, usually -- but an **aggregate** carries one too (the writer's
     /// own restrictions: a track's view rules, a patcher's declared buses), and
     /// this reaches that as well. A cord drawn between two members is three of
     /// these in one transaction, which is what makes it undoable without a
@@ -206,7 +206,7 @@ pub enum Intent {
         /// **Which channel of those samples** the span belongs to.
         ///
         /// A frame span already addresses the samples' shape, and a channel
-        /// is the same kind of coordinate — not a fact about the source, which
+        /// is the same kind of coordinate -- not a fact about the source, which
         /// stays the source's business. It is a channel rather than a run of
         /// interleaved frames because an edit is usually *one* channel of one:
         /// carrying every channel would double a stereo stroke's inverse to
@@ -243,7 +243,7 @@ impl Intent {
 /// because only the log cares whether there is something to invert.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Outcome<I = Intent> {
-    /// The edit describing the document as it now stands — the intent as given
+    /// The edit describing the document as it now stands -- the intent as given
     /// when it applied verbatim, the transformed one when the owner snapped or
     /// clamped it, and the **previous** value when it was refused.
     pub effective: I,
@@ -252,8 +252,8 @@ pub struct Outcome<I = Intent> {
     /// The type parameter is which vocabulary the effective edit is written in:
     /// [`Intent`] for the tree, and
     /// [`MultitrackIntent`](crate::multitrack::edit::MultitrackIntent) for
-    /// the multitrack. One shape, because the rules it reports — verbatim,
-    /// transformed, refused, stale — are the vocabulary's rules and not any one
+    /// the multitrack. One shape, because the rules it reports -- verbatim,
+    /// transformed, refused, stale -- are the vocabulary's rules and not any one
     /// vocabulary's.
     pub applied: bool,
     /// Why it was refused, or why it was transformed. Optional because most
@@ -262,7 +262,7 @@ pub struct Outcome<I = Intent> {
     pub reason: Option<String>,
     /// Whether the refusal was **staleness** rather than a rule.
     ///
-    /// The mechanism does not read this — a stale edit is refused like any
+    /// The mechanism does not read this -- a stale edit is refused like any
     /// other, and the caller adopts [`Outcome::effective`] either way. It exists
     /// because the two say different things to a person: a rule means *not
     /// here*, and staleness means *someone else changed this*, which is also the
@@ -319,7 +319,7 @@ impl<I> Outcome<I> {
 /// Apply an edit to a document.
 ///
 /// The only door. Bumps [`Document::version`] when the document changed, and
-/// leaves it alone when it did not — a refusal is not an edit, and a version
+/// leaves it alone when it did not -- a refusal is not an edit, and a version
 /// that moved for one would make every other reader re-sync for nothing.
 ///
 /// `against` is the state the editor believed it was editing; an edit made
@@ -351,7 +351,7 @@ pub fn apply(
 /// the document has left behind.
 ///
 /// Two claims are checked and they are independent. The **document version**
-/// catches the description moving — including by routes no log sees. The
+/// catches the description moving -- including by routes no log sees. The
 /// **source generation** catches a source being rewritten while the description
 /// stands still, which the document's version cannot express and which is the
 /// case a sample editor lives in.
@@ -377,7 +377,7 @@ fn superseded(document: &Document, intent: &Intent, against: &Against) -> Option
 }
 
 /// The intent describing what the document says *now* about what `intent`
-/// addresses — which is what a refusal of any kind hands back.
+/// addresses -- which is what a refusal of any kind hands back.
 ///
 /// `None` when the document cannot describe it: the node is gone, or the body
 /// holds nothing of that shape. Both already have their own refusals, with
@@ -466,7 +466,7 @@ fn place(
     };
     // **The grid is musical, and only a musical length is on it.** An onset is
     // in beats and always snaps; a length is in the unit of its own data, so a
-    // take's seconds are left exactly as the hand gave them — snapping them to
+    // take's seconds are left exactly as the hand gave them -- snapping them to
     // a beat would trim the recording to fit a ruler it was never on.
     let snapped_dur = match member.duration_unit() {
         crate::TimeUnit::Beats => dur.map(|d| rules.snap(d)),
@@ -625,14 +625,14 @@ fn find_member(node: &Node, id: NodeId) -> Option<&Member> {
     members.iter().find_map(|m| find_member(&m.node, id))
 }
 
-/// The configuration a body carries, for the bodies that carry one — **the
+/// The configuration a body carries, for the bodies that carry one -- **the
 /// aggregate among them**.
 ///
 /// It was a leaf's alone, and that left the one field the format has for a
 /// writer's own restrictions on an aggregate (`Body::Aggregate::config`)
 /// reachable by no verb at all: a patcher's declared buses, a track's view
 /// restrictions. So a client editing them wrote the objects directly, which is
-/// exactly the shape that cannot be logged — an edit nothing can describe is an
+/// exactly the shape that cannot be logged -- an edit nothing can describe is an
 /// edit nothing can invert. The vocabulary already said what to do about it;
 /// what was missing was the door.
 fn config(body: &Body) -> Option<&Opaque> {
@@ -642,7 +642,7 @@ fn config(body: &Body) -> Option<&Opaque> {
 /// The node an intent names, **anywhere in the document**: the tree first, then
 /// the content beside it.
 ///
-/// Content is not placement, so it is not in the tree — and it is addressed by
+/// Content is not placement, so it is not in the tree -- and it is addressed by
 /// exactly the same ids, because a note held once and read by two windows is
 /// still a note an edit has to be able to name. An intent that could only reach
 /// the tree would refuse every edit to shared material.

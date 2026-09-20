@@ -7,7 +7,7 @@ writes are the same buffer, with no copy in between. Play the take after
 drawing on it and you hear the stroke.
 
 What to do in the window: **wheel** to zoom in until each sample is a disc,
-then **Alt+drag** to draw over them. **Ctrl+Z** puts the samples back — and
+then **Alt+drag** to draw over them. **Ctrl+Z** puts the samples back -- and
 nothing is read from the server to do it: a stroke's event carries the run it
 wrote *and* the run it replaced, which is what the protocol carries `previous`
 for.
@@ -27,7 +27,7 @@ Run it as a script, or step through the cells::
 
     python clients/python/examples/editors/edit_samples.py
 
-It self-launches the audio server and the GUI host, and writes its own take —
+It self-launches the audio server and the GUI host, and writes its own take --
 nothing has to be found on disk.
 """
 
@@ -63,7 +63,7 @@ take = Buffer.from_samples(samples, 1, rate, server=server)
 # ## One verb
 #
 # A `clausters.defs.Buffer` opens as a
-# `clausters.gui.editing.SamplesEditor` — one `waveform` widget the host draws
+# `clausters.gui.editing.SamplesEditor` -- one `waveform` widget the host draws
 # straight from the server's buffer, and the crate's ``samples`` vocabulary.
 
 # %%
@@ -74,13 +74,13 @@ editor = edit(take, title="take")
 # ## Hear the stroke
 #
 # A buffer is data: something has to read it, and `clausters.play` provides the
-# stock reader — so playing after an edit is what makes the stroke audible
+# stock reader -- so playing after an edit is what makes the stroke audible
 # rather than only visible. (`clausters.Session.play` is the pattern verb; a
 # buffer goes through this one, on the session it resolves.)
 
 # %%
 def hear():
-    """Play the take as it now stands — the buffer the picture is drawing."""
+    """Play the take as it now stands -- the buffer the picture is drawing."""
     play(take, server=server)
 
 
@@ -96,4 +96,4 @@ def run():
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     run()
 else:
-    print("up — draw on the take, hear() to play it")
+    print("up -- draw on the take, hear() to play it")

@@ -3,8 +3,8 @@
 An editor orchestrates; a **domain** is what it orchestrates over. Given a
 gesture it says what that gesture needs read with it, and given an applied
 payload it writes it onto the client object. Two answers, one per structure
-kind — a break-point curve, a buffer's samples, a timeline of events, a
-multitrack — and they are the two halves a language genuinely owns.
+kind -- a break-point curve, a buffer's samples, a timeline of events, a
+multitrack -- and they are the two halves a language genuinely owns.
 
 Three things it deliberately does not do, and all of them are boundaries rather
 than omissions:
@@ -13,14 +13,14 @@ than omissions:
   *mean* is `clausters._native.editing_intake`, in the shared crate, for the
   same reason the inverse is: sixteen small readers written twice, once per
   language, are sixteen chances for two clients to disagree about what a
-  septuple says. What a domain adds is the **request** — what that vocabulary
+  septuple says. What a domain adds is the **request** -- what that vocabulary
   needs beside the report, which is the multitrack, the timeline, an axis or nothing
   at all.
 - **It does not know how an edit inverts.** That is `history::Editable` in the
   shared crate (`apply`, `current`, `coalesce_key`), because an inverse written
   once per language is an inverse that disagrees with itself. What a domain
-  asks the crate for is `current` — the state a payload is about to replace,
-  which is the inverse — and hands the pair to the history.
+  asks the crate for is `current` -- the state a payload is about to replace,
+  which is the inverse -- and hands the pair to the history.
 - **It does not draw.** A picture of a curve is a `clausters.gui.editing.View`,
   and the two are separate because one structure is drawn several ways (a curve
   is a `bpf` on its own and a body inside a clip) while its vocabulary is one.
@@ -37,7 +37,7 @@ class Domain:
     history and what routes a leg coming back out of one.
     """
 
-    #: The crate's own name for this vocabulary — ``"points"``, ``"samples"``,
+    #: The crate's own name for this vocabulary -- ``"points"``, ``"samples"``,
     #: ``"events"``, ``"multitrack"``. It is carried by the history, and it is
     #: what `clausters._native.editing_intake` answers in.
     name = ""
@@ -45,7 +45,7 @@ class Domain:
     #: Whether the crate reads this vocabulary's gestures.
     #:
     #: True for the four structures it knows, and **false for a domain written
-    #: outside it** — a script's own `Domain` over its own object, which the
+    #: outside it** -- a script's own `Domain` over its own object, which the
     #: editing surface has always accepted. Such a domain answers with `payload`
     #: and `label` as it always did, and `read` assembles the same shape out of
     #: them, so nothing downstream can tell the two apart.
@@ -54,9 +54,9 @@ class Domain:
     def __init__(self):
         #: What the last `read` came to, held for the length of one gesture.
         #:
-        #: The editor asks once and then wants three things off the answer —
+        #: The editor asks once and then wants three things off the answer --
         #: the payloads, the label, and whether the run carried its own
-        #: inverse — and asking the crate again for each would be three reads
+        #: inverse -- and asking the crate again for each would be three reads
         #: of one gesture.
         self._taken: dict = {}
 
@@ -65,14 +65,14 @@ class Domain:
         `clausters._native.editing_intake` reads it.
 
         The default is the report alone, which is what the two stateless
-        vocabularies take. A domain over a structure the reading depends on —
-        the multitrack, the timeline — states it here, and so does one whose axis is
+        vocabularies take. A domain over a structure the reading depends on --
+        the multitrack, the timeline -- states it here, and so does one whose axis is
         the view's.
         """
         return {"values": list(values)}
 
     def read(self, structure, tag: str, values) -> dict:
-        """**What a gesture means**, in this vocabulary — the one door.
+        """**What a gesture means**, in this vocabulary -- the one door.
 
         ``{"payloads": [...], "label": str}``, with ``inverse`` where the
         gesture carried one and ``refusal`` where the gesture *is* this
@@ -99,7 +99,7 @@ class Domain:
         tag is not this domain's.
 
         The singular door, and what a domain written outside the crate
-        implements. `read` is what an editor actually goes through — a report
+        implements. `read` is what an editor actually goes through -- a report
         is the whole structure for two of the four vocabularies, so one message
         is however many edits it takes.
         """
@@ -113,9 +113,9 @@ class Domain:
 
         The plural door, and the default is the singular one wrapped: most
         gestures are one edit, and a domain that never needs more never mentions
-        this. What needs it is a report that states the *whole structure* — a
+        this. What needs it is a report that states the *whole structure* -- a
         multitrack's boxes after a block drag, where one message says a move, a
-        trim and a lane's new contents at once — and those are one entry in the
+        trim and a lane's new contents at once -- and those are one entry in the
         history, because they are one thing a hand did.
         """
         if self.ingested:
@@ -124,7 +124,7 @@ class Domain:
         return [] if payload is None else [payload]
 
     def refusal(self, structure, tag: str, values) -> "str | None":
-        """Why a gesture this domain *does* understand cannot be written —
+        """Why a gesture this domain *does* understand cannot be written --
         ``None`` when there is no such case.
 
         The difference from `payload` answering ``None`` is the whole of it: a
@@ -132,14 +132,14 @@ class Domain:
         what it drew because nothing here disagrees. A tag that *is* this
         domain's and cannot be honoured is a **refusal**, and a refusal the
         host is not told about leaves the picture and the data disagreeing
-        silently — the one failure the acknowledgement exists to make
+        silently -- the one failure the acknowledgement exists to make
         impossible. What comes back is the sentence the user is shown.
         """
         return self.read(structure, tag, values).get("refusal") \
             if self.ingested else None
 
     def current(self, structure, payload: dict) -> "dict | None":
-        """The state ``payload`` is about to replace — **the inverse**.
+        """The state ``payload`` is about to replace -- **the inverse**.
 
         Read before the edit lands, which is why it is a method here rather
         than something an editor derives afterwards: after the write there is
@@ -152,7 +152,7 @@ class Domain:
         anything.
 
         The one door, so an edit, the projection of an inverse and the adoption
-        of a redone state cannot disagree about which of the three happened —
+        of a redone state cannot disagree about which of the three happened --
         the rule the arrangement's editor already follows for a curve.
         """
         raise NotImplementedError

@@ -2,14 +2,14 @@
 // `clausters/gui/notation/mei.py`).
 //
 // The third way into the engraver, beside typed score text and the SVG adapter:
-// turn the client's own `seq` data (`Event`, `Timeline`) into MEI — the format
-// `engrave` already reads — so a melody or a bounced timeline is *seen* and
+// turn the client's own `seq` data (`Event`, `Timeline`) into MEI -- the format
+// `engrave` already reads -- so a melody or a bounced timeline is *seen* and
 // edited as notation, the inverse of the score→sound flow.
 //
 // **And back again.** {@link toTimeline} is the return trip: a sheet read into
 // what it sounds (`toNotes`, which is where the symbols are honoured) and placed
 // on a `seq.Timeline` of `Event`s. It is here rather than beside the model
-// because it is the same seam in the other direction — building `Event`s reads
+// because it is the same seam in the other direction -- building `Event`s reads
 // this language's types and stays in this client, while what a staccato *means*
 // is one implementation in Rust.
 //
@@ -36,7 +36,7 @@ const TPW = 32; // ticks per whole note
 /**
  * One slot of the reduced voice: a note or chord, or a rest with no pitches.
  *
- * Everything past `midis` and `ticks` is **what is written on the note** — each
+ * Everything past `midis` and `ticks` is **what is written on the note** -- each
  * field optional, and each a musical fact rather than an instruction to the
  * engraver, which is what lets the same field be read in both directions. A
  * slot carrying none of them produces exactly the item it always did; an
@@ -95,7 +95,7 @@ export interface MeiOptions {
  * An event may also say what the note is **on a page** (`seq.NOTATION_KEYS`):
  * `articulations`, `dynamic`, `ornament`, `grace`, `stem`, `spelling`,
  * `accidental` and `tie` reach the score under their own names, and an explicit
- * `sustain` becomes how long the note is *held* — but only where no
+ * `sustain` becomes how long the note is *held* -- but only where no
  * articulation already says so, since a staccato that was also written as a
  * short length would be shortened twice on the way back.
  *
@@ -107,7 +107,7 @@ export interface MeiOptions {
  * overruns a barline is split and tied across it. Off-grid durations (finer than
  * a 32nd, e.g. a triplet) snap to the grid here, on the way in: the model itself
  * holds an exact rational, so a tuplet is representable the moment a caller can
- * express one — writing it is the emission milestone.
+ * express one -- writing it is the emission milestone.
  */
 export function fromNotes(
     notes: Iterable<SeqEvent>,
@@ -126,7 +126,7 @@ export function fromNotes(
  * (they read as silence, i.e. a gap).
  *
  * Each group is written for its **shortest** `dur` (one layer, so it is clamped
- * never to overrun the next onset — the model holds several voices already, and
+ * never to overrun the next onset -- the model holds several voices already, and
  * writing them is the emission milestone). Options and the tie/barline
  * behaviour are as {@link fromNotes}.
  */
@@ -146,8 +146,8 @@ export function fromTimeline(
  * {@link fromNotes}, stopping at the score model instead of the MEI.
  *
  * The sheet is what `toMei` writes and what `toNotes` reads back, so a caller
- * that wants to operate on the score — or hear it as the page says rather than
- * as the events said — starts here.
+ * that wants to operate on the score -- or hear it as the page says rather than
+ * as the events said -- starts here.
  */
 export function sheetFromNotes(
     notes: Iterable<SeqEvent>,
@@ -182,18 +182,18 @@ export interface PlaybackOptions {
  *
  * The return trip, and the one `toNotes` does the thinking for: each sounding
  * note becomes an `Event` at its onset, carrying the **written** value as `dur`
- * and the **heard** one as `sustain` — which is the pair the page keeps apart
+ * and the **heard** one as `sustain` -- which is the pair the page keeps apart
  * and the reason a staccato quarter is still a quarter.
  *
  * `instruments` binds a staff to what plays it, since the notation does not
  * say. Left out, events take the client's default instrument.
  *
  * **What is on the page comes with it.** Each event also carries the marks the
- * note was written with (`seq.NOTATION_KEYS`) — its articulations verbatim, not the
- * `sustain` they produced — so a timeline read from a score and written back
+ * note was written with (`seq.NOTATION_KEYS`) -- its articulations verbatim, not the
+ * `sustain` they produced -- so a timeline read from a score and written back
  * with {@link sheetFromTimeline} engraves the same page. What does not survive
  * that trip is everything that is not one note's: a slur, a hairpin, a tuplet,
- * the meter and the barlines, the title — none of them can ride an event, and
+ * the meter and the barlines, the title -- none of them can ride an event, and
  * they are the reason a score is a score rather than a list of notes.
  */
 export function toTimeline(
@@ -239,7 +239,7 @@ function instrumentFor(
 
 /**
  * A *duration* in beats → 32nd-note ticks (a whole note is `beatUnit` beats).
- * At least one tick — a sounding note never has zero length.
+ * At least one tick -- a sounding note never has zero length.
  */
 function durTicks(beats: number, beatUnit: number): number {
     return Math.max(1, Math.round((Number(beats) * TPW) / beatUnit));
@@ -280,7 +280,7 @@ function voiceFromNotes(notes: Iterable<SeqEvent>, beatUnit: number): Slot[] {
  * it.** An event that is both staccato and short is not two facts: the staccato
  * is the fact, and the short length is what an interpretation makes of it.
  * Written as both, the next reading would shorten an already shortened note. So
- * `sounding` is what the sustain says that no symbol said — and it is left out
+ * `sounding` is what the sustain says that no symbol said -- and it is left out
  * entirely when the note is held for its written value, where it says nothing.
  *
  * A chord is **one** slot and the model puts one set of marks on it, so the

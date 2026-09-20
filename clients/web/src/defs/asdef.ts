@@ -1,8 +1,8 @@
 // Ephemeral defs: turning a bare expression into a sendable def (mirrors
 // `clausters/defs/asdef.py`).
 //
-// The ambient verbs (`play`, `plot`, `render`) accept a bare expression — a
-// UGen graph, a `ChannelList`, a Faust `Signal` or a `Box` — where a def is
+// The ambient verbs (`play`, `plot`, `render`) accept a bare expression -- a
+// UGen graph, a `ChannelList`, a Faust `Signal` or a `Box` -- where a def is
 // needed;
 // `asDef` is the one coercion they share, so what is coercible is decided here
 // and nowhere else. A `Ugen` expression is wrapped in `out(0.0, expr)` unless
@@ -12,7 +12,7 @@
 // coercion is its own def.
 //
 // `exprChannels` answers the other half: how many buses the coercion would
-// lay. The verbs read it differently on purpose — see its doc comment.
+// lay. The verbs read it differently on purpose -- see its doc comment.
 
 import { Box } from "./boxes.ts";
 import { FaustDef } from "./faustdef.ts";
@@ -31,7 +31,7 @@ export type Expr = Ugen | ChannelList | Signal | Box;
  *
  * The criterion is delivery, *not* "has a side effect". `freeSelf`,
  * `pauseSelf`, `freeSelfWhenDone` and `done` manage the enclosing synth and
- * pass their input through, so wrapping them is exactly right —
+ * pass their input through, so wrapping them is exactly right --
  * `out(0, freeSelfWhenDone(env.mul(sig)))` is the idiom. `detectSilence`
  * writes 0/1 for the rest of the graph, which is inward. `diskOut` *is* a
  * sink: it delivers audio to a file. It passes its input through too, but the
@@ -44,7 +44,7 @@ const SINK_KINDS = new Set([
 ]);
 
 /**
- * Prefix marking a def as **ephemeral** — the server keeps it in memory and
+ * Prefix marking a def as **ephemeral** -- the server keeps it in memory and
  * never writes it to its persistent store. The def family is part of the name
  * so two coercions of different families can never collide.
  */
@@ -63,7 +63,7 @@ function tmpName(family: string): string {
     return `${TMP_PREFIX}${family}_${id}`;
 }
 
-/** Whether `value` already delivers its data somewhere — see `SINK_KINDS`. */
+/** Whether `value` already delivers its data somewhere -- see `SINK_KINDS`. */
 function isSink(value: unknown): value is Ugen {
     return value instanceof Ugen && SINK_KINDS.has(value.kind);
 }
@@ -82,7 +82,7 @@ export function isExpr(value: unknown): value is Expr {
  * it already is a sink. A `ChannelList` becomes a multichannel `SynthDef`: a
  * member that is a sink already knows where its data goes and passes through
  * as a root, and the members that are not are the channels, laid on
- * consecutive buses from 0 — so `play(dup(expr))` is stereo, and a reporter in
+ * consecutive buses from 0 -- so `play(dup(expr))` is stereo, and a reporter in
  * the list does not push the audio off bus 0. A `Signal` becomes a one-output
  * `FaustDef`, a `Box` a `FaustDef` with the box's own arity.
  */
@@ -126,9 +126,9 @@ export function asDef(
  * The verbs read this differently, and the difference is deliberate. `plot`
  * and `play` are conveniences, free to infer what was meant: `plot`
  * **configures** its render from this, so a stereo pair plots as two channels.
- * `render` is part of the offline interface — its `channels` is the render's
+ * `render` is part of the offline interface -- its `channels` is the render's
  * *output* count, a fact about the server being configured, not about the
- * graph — so it derives nothing and only **checks**.
+ * graph -- so it derives nothing and only **checks**.
  *
  * A sink lays no bus of `asDef`'s choosing, so an expression made only of
  * sinks answers `0`: it routes itself, and there is nothing here to infer.

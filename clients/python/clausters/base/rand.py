@@ -1,34 +1,34 @@
 """The random context: one seedable source for a whole script.
 
-Everything random in a Clausters script — the random patterns (``Pwhite``,
-``Prand``), these module functions, anything sequenced — draws from **one
+Everything random in a Clausters script -- the random patterns (``Pwhite``,
+``Prand``), these module functions, anything sequenced -- draws from **one
 context**, the sclang model, so a single root seed reproduces a take from
 beginning to end:
 
 - ``main.seed(n)`` seeds the **root** generator (`clausters.base.main.Main.seed`).
 - Every `Routine` (any `Stream`) derives its **own** generator from the context
-  that creates it, at creation time (`Rng.spawn` — the child's seed is the
+  that creates it, at creation time (`Rng.spawn` -- the child's seed is the
   parent's next word). Deterministic: same root seed + same creation order =
   same streams, and concurrent routines (several clocks, RT next to NRT) stay
   reproducible **per routine** regardless of how their wakes interleave.
 - A draw always uses the generator of the **routine running right now**
   (`current_rng`, via the thread-local ``main.current_routine``). Outside any routine
-  it falls back to the **active session's** root — the explicit
+  it falls back to the **active session's** root -- the explicit
   `clausters.Session` on this thread if any, else the default session
-  (``main``) — so ``seed(n)`` on one session reproduces *its* own sound without
+  (``main``) -- so ``seed(n)`` on one session reproduces *its* own sound without
   touching another's.
 
 The generator itself lives in the shared native core (one ``u64`` of state, the
 same splitmix64/xorshift64 as the server's ``WhiteNoise``), so the same seed
 replays the same values in every client language. There are no per-pattern
-seeds: independent seeds would break whole-script consistency — override
+seeds: independent seeds would break whole-script consistency -- override
 *locally* by playing inside its own routine instead.
 """
 
 from .. import _native
 from .main import main
 
-#: The value stream itself — one ``u64`` of state over the shared core, the
+#: The value stream itself -- one ``u64`` of state over the shared core, the
 #: same type in every client (`clausters._native.Rng`). You rarely build one:
 #: the context hands you the right stream through `current_rng`.
 Rng = _native.Rng
@@ -47,7 +47,7 @@ def seed(value: int) -> None:
 
 def current_rng():
     """The generator of the routine running on this thread; outside a routine,
-    the root generator of the active session — the explicit `clausters.Session`
+    the root generator of the active session -- the explicit `clausters.Session`
     on this thread (`clausters.base.main.Main.current_session`) if any, else the
     default session (``main.rng``). This is where every random value in the
     library comes from, and why each session reproduces independently."""

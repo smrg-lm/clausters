@@ -1,25 +1,25 @@
 //! Panning, stereo-field transforms and selection: one pan law, one
 //! two-by-two matrix, one crossfade.
 //!
-//! **One law, computed rather than looked up.** Every equal-power row here —
-//! `Pan2`, `Balance2`, `XFade2`, `SelectX`, and `PanAz`'s window — asks the same
+//! **One law, computed rather than looked up.** Every equal-power row here --
+//! `Pan2`, `Balance2`, `XFade2`, `SelectX`, and `PanAz`'s window -- asks the same
 //! question: what pair of gains holds `l^2 + r^2` at one while moving a source
 //! from one side to the other. scsynth answers it with a rounded lookup into a
 //! 2049-entry sine table, whose worst-case gain error is about `3.8e-4`. Here
 //! is a fifth-term polynomial in the position ([`quarter_sin`]), worst-case
-//! `2.6e-7` and exact at both ends — three orders of magnitude closer for
+//! `2.6e-7` and exact at both ends -- three orders of magnitude closer for
 //! about ten flops, no table, and nothing to initialize.
 //!
 //! **The pair is symmetric by construction.** A gain pair is
 //! `(quarter_sin(1 - t), quarter_sin(t))`, the *same* function read from both
-//! ends, so panning to `-pos` gives exactly the mirror of panning to `pos` —
+//! ends, so panning to `-pos` gives exactly the mirror of panning to `pos` --
 //! a property of the expression, not something the tests have to keep honest to
 //! within a tolerance.
 //!
 //! **Position is evaluated per sample when it is a signal.** This is the one
 //! place the track's block-rate stance does not apply. Interpolating the two
-//! gains linearly across a block — what a filter coefficient does here, and what
-//! scsynth's `CALCSLOPE` does for its own amplitudes — puts `0.5` where the law
+//! gains linearly across a block -- what a filter coefficient does here, and what
+//! scsynth's `CALCSLOPE` does for its own amplitudes -- puts `0.5` where the law
 //! wants `0.707` if the position sweeps a full block, a 3 dB hole in the middle
 //! of the block. So a scalar position computes its gains once per block, and an
 //! audio-rate one computes them per sample; the polynomial is what makes the
@@ -28,19 +28,19 @@
 //! **The per-sample mix stays in `f64` because the law is, and that is a
 //! consistency choice rather than a requirement.** The gains come out of an
 //! `f64` polynomial, and every row here then *combines* its `f32` inputs in
-//! `f64` too before rounding once to `f32` — `(x as f64 * cx + y as f64 * cy)
+//! `f64` too before rounding once to `f32` -- `(x as f64 * cx + y as f64 * cy)
 //! as f32` and its cousins in [`Pan`], [`Rotate`] and [`PanAz`]. Only the first
 //! half of that is load-bearing: the law's exactness properties (an exact
 //! endpoint, an exact quadrant reduction, a symmetric pair) live in the
 //! coefficients, not in how the two products are added.
 //!
 //! Combining in `f32` instead was measured rather than argued about. It is
-//! **2.30× faster on the mix loop alone** — the `f64` version vectorizes two
-//! lanes wide (`mulpd`), the `f32` one four — and it costs at most `5.96e-8`
+//! **2.30× faster on the mix loop alone** -- the `f64` version vectorizes two
+//! lanes wide (`mulpd`), the `f32` one four -- and it costs at most `5.96e-8`
 //! of absolute disagreement over a sweep of 2001 angles, which is half an ulp
 //! at full scale, or -144 dBFS. (The *relative* error over that sweep reads a
 //! frightening -66 dB, but only where the output is itself near zero through
-//! cancellation — the side channel of a near-mono pair. That figure is an
+//! cancellation -- the side channel of a near-mono pair. That figure is an
 //! artifact of dividing by nothing, not an audio number.)
 //!
 //! It stays `f64` anyway, because the engine cannot see the difference: on
@@ -48,7 +48,7 @@
 //! arithmetic is a small part of a block that spends most of its time in its
 //! sources, which is the same reason the fused rows kept their naive loops
 //! (`docs/decisions.md`). Anyone revisiting this should get an engine-level
-//! number first — the isolated 2.30× is real and has never been worth anything.
+//! number first -- the isolated 2.30× is real and has never been worth anything.
 //!
 //! **Rotation and width are different operations, and only one of them is
 //! scsynth's.** `Rotate2` rotates the plane the two signals span: it moves the
@@ -56,7 +56,7 @@
 //! *is* the change of basis between left/right and mid/side. Width scales the
 //! side axis: it changes the size of the image without moving it, and no angle
 //! produces it. Both are the same two-by-two matrix with a different
-//! parameterization, so [`Rotate`] carries all three rows —
+//! parameterization, so [`Rotate`] carries all three rows --
 //! `Rotate2`, `MidSide` and `StereoWidth`.
 
 use std::f64::consts::FRAC_PI_2;
@@ -74,7 +74,7 @@ use crate::dsp::{ProcessCtx, UGen, at};
 ///
 /// That endpoint matters more than its size suggests: it is the gain of a
 /// hard-panned source in the channel it is panned *to*. The other end,
-/// `quarter_sin(0) == 0`, is exact for free — it is the bare factor `t` — and
+/// `quarter_sin(0) == 0`, is exact for free -- it is the bare factor `t` -- and
 /// is the gain in the channel it is panned *away* from, so a hard pan is
 /// digital silence on the far side rather than -110 dB of it.
 const A1: f64 = FRAC_PI_2;
@@ -84,7 +84,7 @@ const A7: f64 =
     -FRAC_PI_2 * FRAC_PI_2 * FRAC_PI_2 * FRAC_PI_2 * FRAC_PI_2 * FRAC_PI_2 * FRAC_PI_2 / 5040.0;
 const A9: f64 = 1.0 - A1 - A3 - A5 - A7;
 
-/// `sin(t * pi/2)` for `t` in `[0, 1]` — the quarter sine the whole module is
+/// `sin(t * pi/2)` for `t` in `[0, 1]` -- the quarter sine the whole module is
 /// built on. Outside that range the polynomial is meaningless, so every caller
 /// clamps or reduces first.
 #[inline]
@@ -114,7 +114,7 @@ pub fn sin_cos_pi(p: f64) -> (f64, f64) {
     }
 }
 
-/// `sin(pi * t)` for `t` in `[0, 1]` — one lobe, used as `PanAz`'s window.
+/// `sin(pi * t)` for `t` in `[0, 1]` -- one lobe, used as `PanAz`'s window.
 #[inline]
 fn half_sin(t: f64) -> f64 {
     if t <= 0.5 {
@@ -133,8 +133,8 @@ fn equal_power(pos: f64) -> (f64, f64) {
 }
 
 /// The constant-**amplitude** gain pair: `l + r == 1`, `(0.5, 0.5)` at the
-/// centre. Two channels carrying it and summing coherently — a mono listener,
-/// or a fold-down — stay at one level, at the price of a 3 dB dip in the middle
+/// centre. Two channels carrying it and summing coherently -- a mono listener,
+/// or a fold-down -- stay at one level, at the price of a 3 dB dip in the middle
 /// for anything that sums by power instead.
 #[inline]
 fn linear(pos: f64) -> (f64, f64) {
@@ -194,7 +194,7 @@ impl PanKind {
 
 /// `Pan2`, `LinPan2`, `Balance2`, `XFade2`, `LinXFade2`.
 ///
-/// Wire order is scsynth's — the sources, then `pos`, then `level` — with the
+/// Wire order is scsynth's -- the sources, then `pos`, then `level` -- with the
 /// output channel index **last**, where the builder puts it and the reader
 /// never has to look. A summing row has none.
 ///
@@ -256,7 +256,7 @@ impl UGen for Pan {
 /// Which parameterization of the two-by-two matrix an instance is.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum RotKind {
-    /// Rotate the plane by `pi * pos` — scsynth's `Rotate2`. On a stereo pair
+    /// Rotate the plane by `pi * pos` -- scsynth's `Rotate2`. On a stereo pair
     /// it turns the image; on the mid/side pair of a B-format signal it turns
     /// the sound field.
     Rotate2,
@@ -275,7 +275,7 @@ impl RotKind {
     }
 }
 
-/// `Rotate2`, `MidSide`, `StereoWidth` — one matrix, three parameterizations.
+/// `Rotate2`, `MidSide`, `StereoWidth` -- one matrix, three parameterizations.
 ///
 /// Like [`Pan`], one instance per output channel, the index last on the wire.
 pub struct Rotate {
@@ -289,7 +289,7 @@ impl Rotate {
 
     /// The matrix row for output channel `chan`, at one parameter value.
     ///
-    /// `MidSide` is `Rotate2` at a quarter turn with the second row negated —
+    /// `MidSide` is `Rotate2` at a quarter turn with the second row negated --
     /// a reflection rather than a rotation, which is precisely what makes it an
     /// involution: `(a + b)/sqrt2` and `(a - b)/sqrt2` applied twice give back
     /// `a` and `b` exactly.
@@ -304,7 +304,7 @@ impl Rotate {
                 let k = std::f64::consts::FRAC_1_SQRT_2;
                 if chan == 0 { (k, k) } else { (k, -k) }
             }
-            // Encode, scale the side, decode — collapsed into the matrix it
+            // Encode, scale the side, decode -- collapsed into the matrix it
             // amounts to. Width 1 is the identity, 0 is mono in both channels,
             // 2 is `1.5*this - 0.5*that`.
             RotKind::Width => {
@@ -348,7 +348,7 @@ impl UGen for Rotate {
 /// `PanAz`: one source placed on a ring of `numchans` channels.
 ///
 /// Each channel is one instance carrying its own index, and computes only its
-/// own gain — a raised sine lobe `width` channels wide, centred on the source
+/// own gain -- a raised sine lobe `width` channels wide, centred on the source
 /// and wrapped around the ring. At the default width of two, neighbouring
 /// lobes are a sine and a cosine of the same angle, so any pair the source sits
 /// between holds equal power, and a source parked on a channel gives that
@@ -396,7 +396,7 @@ impl UGen for PanAz {
 /// two speakers, which is what an even ring wants).
 ///
 /// A width at or below zero would divide by zero and is clamped to a lobe
-/// narrower than any ring spacing — the audible result, silence except when the
+/// narrower than any ring spacing -- the audible result, silence except when the
 /// source lands exactly on a channel, is what asking for a zero-width lobe
 /// means.
 #[inline]
@@ -430,8 +430,8 @@ pub enum SelectKind {
 
 /// `Select`, `SelectX`: input 0 is the index, the rest are the sources.
 ///
-/// Every source runs whether or not it is selected — they are UGens in the
-/// graph, not branches — so this chooses what is heard, never what is computed.
+/// Every source runs whether or not it is selected -- they are UGens in the
+/// graph, not branches -- so this chooses what is heard, never what is computed.
 pub struct Select {
     kind: SelectKind,
 }

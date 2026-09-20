@@ -1,15 +1,15 @@
-// Clausters in the browser — the package surface.
+// Clausters in the browser -- the package surface.
 //
 // The audio server compiled to wasm inside an AudioWorklet, the GUI host on a
-// canvas, and web components that boot native-format standalone bundles — no
+// canvas, and web components that boot native-format standalone bundles -- no
 // server process anywhere. On top of that runtime sits the TypeScript client
 // (clients/web/PLAN.md): the `Connection` seam (`base/connection.ts`) carries
-// OSC over either carrier — the in-page engine or a `--ws` server over
-// WebSocket — and `defs/` builds and drives what runs on it (`Server`, the
+// OSC over either carrier -- the in-page engine or a `--ws` server over
+// WebSocket -- and `defs/` builds and drives what runs on it (`Server`, the
 // two def families, nodes, buses and buffers), naming no transport.
 //
 // The GUI host is driven the same way: `GuiHost` (the `gui` namespace holds
-// the GuiDef builders — `gui.window`, `gui.knob`, …) sits on that same
+// the GuiDef builders -- `gui.window`, `gui.knob`, …) sits on that same
 // connection seam, over the in-page host or a `--ws` one.
 //
 // The data paths (`data/`) are the reading direction of that same seam: the
@@ -22,13 +22,13 @@
 //
 // A `Session` bundles one server, one clock and one GUI host into the handle
 // a session is written against, and the **default session** (`defaultSession`)
-// is the ambient one everything falls back to — which is what lets `play(...)`
+// is the ambient one everything falls back to -- which is what lets `play(...)`
 // and a bare `new Synth(...)` name no server at all.
 //
 // What this module exports flat is what you name while playing: the
 // hosts (`Server`, `GuiHost`), the server's resources, the three def formats,
-// the timing types and the verbs. Everything enumerative — the UGen and signal
-// callables, the value patterns, the GUI builders — is named through its
+// the timing types and the verbs. Everything enumerative -- the UGen and signal
+// callables, the value patterns, the GUI builders -- is named through its
 // namespace (`defs.sine`, `seq.Pbind`, `gui.knob`), the same criterion the
 // Python client applies: there are too many of them for a flat namespace to
 // stay readable.
@@ -52,7 +52,7 @@ export { bootBundle, freeBundle, openBundle, startBundle } from "./bundle.ts";
 export type { BundleManifest, MountOptions, Mounted, ParamSpec } from "./bundle.ts";
 // Authoring one, the other direction: `write` is a node verb, `files` is the
 // same bundle in memory for a page to mount. Its own subpath as well
-// (`clausters/bundle-writer`), because node cannot import this module — the
+// (`clausters/bundle-writer`), because node cannot import this module -- the
 // custom elements it registers need a document.
 export { Bundle, DEFAULT_RUNTIME } from "./bundle-writer.ts";
 export type { Hole, ParamOptions, ParamType, WritableDef, WriteOptions } from "./bundle-writer.ts";
@@ -226,7 +226,7 @@ export * as segments from "./segments.ts";
 export * as document from "./document.ts";
 
 /**
- * The multitrack: tracks, lanes, regions, and the timeline they sit on — the
+ * The multitrack: tracks, lanes, regions, and the timeline they sit on -- the
  * model a multitrack editor edits. See `./multitrack.ts`.
  */
 export * as multitrack from "./multitrack.ts";
@@ -272,7 +272,7 @@ export type {
     Walked } from "./document.ts";
 
 /**
- * The page's own filesystem (OPFS) — where a soundfile a tab reads actually
+ * The page's own filesystem (OPFS) -- where a soundfile a tab reads actually
  * lives.
  *
  * Not a client verb and not part of the surface the two clients share: it is

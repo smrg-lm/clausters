@@ -22,15 +22,15 @@
     <main>
       <div id="note">The box API: Faust library DSP glued together from the
 page. The web port of the Python client's
-<code>examples/faust/boxes_library.py</code> — same instrument, same phrase,
+<code>examples/faust/boxes_library.py</code> -- same instrument, same phrase,
 the same calls in the same order.
 
 <code>defs.boxes</code> reuses the Faust libraries <b>without transcribing
 them</b>: <code>box.faust(…)</code> compiles any Faust expression into a
 <code>Box</code> that composes like a primitive. This example builds an
-instrument out of three library pieces — an oscillator (<code>os.osc</code>), a
+instrument out of three library pieces -- an oscillator (<code>os.osc</code>), a
 lowpass (<code>fi.lowpass</code>) and a stereo reverb
-(<code>re.stereo_freeverb</code>) — wired to sliders and arithmetic built here,
+(<code>re.stereo_freeverb</code>) -- wired to sliders and arithmetic built here,
 then renders a short phrase offline.
 
 The two application stages at work, kept apart in the syntax:
@@ -47,7 +47,7 @@ previous stage).</li>
 <b>The one difference from the script</b>, and it is the platform's: a page has
 no filesystem, so where the script writes <code>out.wav</code> this offers the
 take as a download. Everything else is the same call. And the compiler is in
-the tab — the render compiles the score's Faust defs with
+the tab -- the render compiles the score's Faust defs with
 <code>libfaust-wasm</code> in the NRT worker before it starts, so no server
 process is involved anywhere.
 
@@ -89,7 +89,7 @@ Needs <code>./build.sh</code> in <code>clients/web</code> first
         //
         // si.smoo is the library's one-pole smoother: it turns a slider's
         // steps into ramps, so `/node_set amp 0` below fades the voice out
-        // instead of cutting it off — a step to zero is a click, and this take
+        // instead of cutting it off -- a step to zero is a click, and this take
         // is meant to be listened to.
         const tone = box.faust("os.osc", { ins: 1, outs: 1 }).call(freq)
           .mul(box.faust("si.smoo", { ins: 1, outs: 1 }).call(amp));

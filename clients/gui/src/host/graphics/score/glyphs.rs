@@ -1,6 +1,6 @@
 //! **The outlines**: an SVG path `d` into a lyon path, and its extent.
 //!
-//! A SMuFL glyph reaches the host as the outline the client's font gave it —
+//! A SMuFL glyph reaches the host as the outline the client's font gave it --
 //! one path string per codepoint, sent once with the page and referenced by
 //! every note that draws it. This module is the only place that string is
 //! understood: [`build_path`] scans it into a [`LyonPath`] the tessellator can
@@ -8,7 +8,7 @@
 //! scanner both go through.
 //!
 //! Only the subset verovio emits is supported, and a malformed path yields
-//! `None` rather than a panic — the primitive is then skipped, which is the
+//! `None` rather than a panic -- the primitive is then skipped, which is the
 //! same forgiveness the display-list decode applies one level up.
 
 use lyon::math::point;
@@ -17,7 +17,7 @@ use lyon::path::Path as LyonPath;
 use super::Bounds;
 
 /// The extent of an SVG path `d` in its own coordinates, from the bezier control
-/// hull — a slight over-estimate of the true curve extent, which is what a hit
+/// hull -- a slight over-estimate of the true curve extent, which is what a hit
 /// target wants anyway (a click just off a notehead's edge still names it).
 pub(super) fn path_bounds(d: &str) -> Option<Bounds> {
     let path = build_path(d)?;
@@ -32,7 +32,7 @@ pub(super) fn path_bounds(d: &str) -> Option<Bounds> {
 
 /// Build a lyon [`LyonPath`] from an SVG path `d`. Supports the subset verovio
 /// emits: `M/m` moveto, `L/l` lineto, `H/h`/`V/v` axis lines, `C/c` cubic,
-/// `S/s` smooth cubic, and `Z/z` close — absolute and relative. Returns `None`
+/// `S/s` smooth cubic, and `Z/z` close -- absolute and relative. Returns `None`
 /// on a malformed/empty path (the primitive is then skipped, never a panic).
 pub(super) fn build_path(d: &str) -> Option<LyonPath> {
     let mut b = LyonPath::builder();

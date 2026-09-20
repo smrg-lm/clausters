@@ -5,15 +5,15 @@
 //! free for other persistent aspects (`midi.json`, `boot.json`, and whatever
 //! comes later):
 //!
-//! - `defs/synthdefs/<name>.json` — the `SynthDefSpec` JSON of a `/def_send synth`
+//! - `defs/synthdefs/<name>.json` -- the `SynthDefSpec` JSON of a `/def_send synth`
 //!   UGen graph, stored verbatim. Reloading just re-parses and recompiles it
 //!   (cheap); there is no compiled artifact to cache.
-//! - `defs/faustdefs/<name>.json` — a `crate::faust::cache::FaustRecord`
+//! - `defs/faustdefs/<name>.json` -- a `crate::faust::cache::FaustRecord`
 //!   holding the original Faust source/JSON and metadata, plus a sibling
 //!   `defs/faustdefs/<name>.<sha>.bc` bitcode cache (the "A" layer, see
 //!   `faust::cache`). The JSON record is always the source of truth; the
 //!   bitcode is a non-authoritative speed cache.
-//! - `defs/graphdefs/<name>.json` — the `/def_send graph` GraphDef spec, verbatim.
+//! - `defs/graphdefs/<name>.json` -- the `/def_send graph` GraphDef spec, verbatim.
 //!
 //! The original definition (the JSON) is the transparent source of truth in
 //! both cases: it is what gets recompiled on a libfaust upgrade or a corrupt
@@ -21,7 +21,7 @@
 //! never leaves a half-written record.
 //!
 //! **A name identifies one def, across all three kinds.** Sending a def frees
-//! the name in the other two — last one wins — so a stale record of another
+//! the name in the other two -- last one wins -- so a stale record of another
 //! kind can never shadow what a client just sent (see
 //! [`DefStore::remove_other_kinds`]).
 //!
@@ -39,7 +39,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// that sent it. See [`is_ephemeral`].
 pub const TMP_PREFIX: &str = "tmp_";
 
-/// Whether `name` marks an ephemeral def — one the server keeps in memory and
+/// Whether `name` marks an ephemeral def -- one the server keeps in memory and
 /// never writes to the persistent store.
 ///
 /// The convention is the name itself rather than a wire flag, so it needs no
@@ -52,7 +52,7 @@ pub fn is_ephemeral(name: &str) -> bool {
 
 /// Where an ephemeral def's unavoidable artifacts go: a subdirectory of the
 /// OS temp directory, never the data directory. Only the Faust pair lands
-/// here — the record and its bitcode — since a `/def_send synth` or `/def_send graph` has no
+/// here -- the record and its bitcode -- since a `/def_send synth` or `/def_send graph` has no
 /// compiled artifact to keep; a replayed expression then still skips the
 /// recompile while the persistent store stays clean, and the OS reclaims the
 /// directory on its own schedule.
@@ -67,7 +67,7 @@ const DATA_DIR_ENV: &str = "CLAUSTERS_DATA_DIR";
 /// Resolves the data directory: an explicit `--data-dir` wins, then
 /// `$CLAUSTERS_DATA_DIR`, then `$XDG_DATA_HOME/clausters`, then
 /// `$HOME/.local/share/clausters`. `None` only if no home can be found and
-/// nothing was given — persistence is then disabled.
+/// nothing was given -- persistence is then disabled.
 pub fn resolve_data_dir(cli_override: Option<&str>) -> Option<PathBuf> {
     if let Some(path) = cli_override {
         return Some(PathBuf::from(path));
@@ -88,7 +88,7 @@ pub fn resolve_data_dir(cli_override: Option<&str>) -> Option<PathBuf> {
         .map(|home| PathBuf::from(home).join(".local/share/clausters"))
 }
 
-/// Which kind of def a name currently holds — the argument to
+/// Which kind of def a name currently holds -- the argument to
 /// [`DefStore::remove_other_kinds`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DefKind {
@@ -102,9 +102,9 @@ pub struct DefStore {
     synthdefs_dir: PathBuf,
     faustdefs_dir: PathBuf,
     graphdefs_dir: PathBuf,
-    /// `<data_dir>/midi.json` — persisted MIDI bindings.
+    /// `<data_dir>/midi.json` -- persisted MIDI bindings.
     bindings_path: PathBuf,
-    /// `<data_dir>/boot.json` — the boot preset of standalone graphs.
+    /// `<data_dir>/boot.json` -- the boot preset of standalone graphs.
     boot_path: PathBuf,
 }
 
@@ -140,7 +140,7 @@ impl DefStore {
         &self.synthdefs_dir
     }
 
-    /// The `defs` directory the three kinds live under — what a warning about
+    /// The `defs` directory the three kinds live under -- what a warning about
     /// a def that will not load names, so the reader knows which library it is
     /// being told about.
     pub fn defs_dir(&self) -> &Path {
@@ -166,7 +166,7 @@ impl DefStore {
     /// Reads every persisted SynthDef spec as `(path, raw JSON bytes)`, to be
     /// fed back through the normal `/def_send synth` path on startup.
     /// Unreadable entries are skipped. The path travels with the bytes because
-    /// a spec that no longer compiles has to be nameable — both in the warning
+    /// a spec that no longer compiles has to be nameable -- both in the warning
     /// and to whoever drops it.
     pub fn load_synthdef_specs(&self) -> Vec<(PathBuf, Vec<u8>)> {
         read_json_files(&self.synthdefs_dir)
@@ -194,7 +194,7 @@ impl DefStore {
     /// A name identifies one def, so a def arriving under a name another kind
     /// holds replaces it rather than sitting beside it. Without this the two
     /// records both survive a restart and the reload order decides which one
-    /// answers — which is how a stale mono SynthDef came to shadow a stereo
+    /// answers -- which is how a stale mono SynthDef came to shadow a stereo
     /// FaustDef of the same name and report the wrong bus usage.
     pub fn remove_other_kinds(&self, name: &str, keep: DefKind) {
         if keep != DefKind::Synth {

@@ -3,8 +3,8 @@
 //! The execution order problem: a node reading an audio bus must run *after*
 //! the nodes writing it, and scsynth makes the client manage that order by
 //! hand (`addAction`, `/node_before`). This module infers the dependency DAG
-//! from the defs themselves — which audio buses each node reads (`In`,
-//! Faust `in`) and writes (`Out`/`ReplaceOut`, Faust `out`) — and keeps
+//! from the defs themselves -- which audio buses each node reads (`In`,
+//! Faust `in`) and writes (`Out`/`ReplaceOut`, Faust `out`) -- and keeps
 //! **opt-in auto-sorted groups** (`/group_sortMode`) in topological order, so
 //! groups behave like the channels of a multitrack editor.
 //!
@@ -13,7 +13,7 @@
 //! audio thread is untouched (re-sorts are ordinary `Cmd::MoveNode`s). The
 //! mirror reflects commands **as sent**: commands inside a not-yet-fired
 //! timed bundle are mirrored immediately, so the mirror can run briefly
-//! ahead of the engine — re-sorts converge once the bundle fires.
+//! ahead of the engine -- re-sorts converge once the bundle fires.
 //!
 //! Analysis rules:
 //! - A bus index that is a **constant or a control** is static and
@@ -25,7 +25,7 @@
 //! - `ReplaceOut` counts as read+write (it consumes what is on the bus), so
 //!   it orders after the summing writers it replaces and before the readers.
 //! - **Cycles** (legitimate read-before-write feedback) are not "solved":
-//!   the nodes involved keep their current relative order — one block of
+//!   the nodes involved keep their current relative order -- one block of
 //!   delay, exactly like a return send in a multitrack editor.
 
 use std::collections::HashMap;
@@ -101,7 +101,7 @@ pub fn faust_usage(def: &FaustDef, controls: &[f32]) -> (BusUsage, Vec<u32>) {
 /// `b` when `a` writes a bus `b` reads. Dynamic units are barriers (ordered
 /// against everything by current position). Kahn's algorithm picking the
 /// earliest ready unit keeps the sort stable; on a cycle, the earliest
-/// remaining unit is released — cycle members keep their current relative
+/// remaining unit is released -- cycle members keep their current relative
 /// order.
 pub fn stable_topo_sort(units: &[(i32, BusUsage)]) -> Vec<i32> {
     let n = units.len();
@@ -161,8 +161,8 @@ pub enum MirrorBody {
         /// `/group_parallel`: mirrored for `/group_dumpGraph` introspection.
         parallel: bool,
         /// `/group_name`: an optional label on top of the node ID, unique among
-        /// the group's siblings. It never replaces the ID — every command still
-        /// addresses the group by ID — but it names one segment of the group's
+        /// the group's siblings. It never replaces the ID -- every command still
+        /// addresses the group by ID -- but it names one segment of the group's
         /// path, which is what `/group_query` resolves. Lives here, on the
         /// network thread, and nowhere else: the engine's `NodeTree` has no
         /// notion of a name, so naming costs the audio thread nothing.
@@ -310,7 +310,7 @@ impl TreeMirror {
 
     /// A group's name, or `""` when it has none (and for a synth or an unknown
     /// node). The empty string is how every reply says "unnamed": a group with
-    /// no name reports no name, never its ID — the ID stands in for the name
+    /// no name reports no name, never its ID -- the ID stands in for the name
     /// only when composing a path, so that no group falls out of addressing.
     pub fn name_of(&self, id: i32) -> &str {
         match self.nodes.get(&id).map(|n| &n.body) {
@@ -385,8 +385,8 @@ impl TreeMirror {
     }
 
     /// Whether `node` answers to the path segment `seg`. Every node answers to
-    /// its decimal ID — the ID is the identity and a name never takes its
-    /// place — and a named group answers to its name as well. Which is why a
+    /// its decimal ID -- the ID is the identity and a name never takes its
+    /// place -- and a named group answers to its name as well. Which is why a
     /// name may not be all digits: it would speak for another node's ID.
     fn segment_matches(&self, node: i32, seg: &str) -> bool {
         if seg.parse::<i32>() == Ok(node) {
@@ -442,7 +442,7 @@ impl TreeMirror {
     }
 
     /// Mirrors `NodeTree::insert` (same placement rules; capacity limits are
-    /// left to the engine — a rejection rolls the mirror back later).
+    /// left to the engine -- a rejection rolls the mirror back later).
     pub fn insert(
         &mut self,
         id: i32,
@@ -708,9 +708,9 @@ impl TreeMirror {
     }
 
     /// Records (`bus >= 0`) or clears (`bus < 0`) a control→bus mapping.
-    /// Returns whether the change can affect the node's bus usage — i.e. it
+    /// Returns whether the change can affect the node's bus usage -- i.e. it
     /// touches an audio map (new or just-cleared) or a control used as a bus
-    /// index — so the caller knows to re-analyze and re-sort.
+    /// index -- so the caller knows to re-analyze and re-sort.
     pub fn set_map(&mut self, id: i32, ctl: u32, bus: i32, audio: bool) -> bool {
         if let Some(MirrorBody::Synth {
             maps, bus_controls, ..

@@ -9,7 +9,7 @@
 
 use super::*;
 
-/// One JSON scalar as the OSC primitive it is — **flat primitives at the
+/// One JSON scalar as the OSC primitive it is -- **flat primitives at the
 /// boundary**, which is what every edit-back payload here rides as.
 pub(super) fn json_arg(v: Value) -> OscType {
     match v {
@@ -28,7 +28,7 @@ pub(super) fn json_arg(v: Value) -> OscType {
 ///
 /// It is built through the ordinary constructor rather than by naming fields,
 /// so a box's picture and a standalone `signal` are the same product of the
-/// same props — which is what keeps them from drifting when either grows a
+/// same props -- which is what keeps them from drifting when either grows a
 /// prop. A body carries no chrome: the ruler, the gutter and the navigation
 /// belong to the view that placed it.
 pub(super) fn take_body(bufnum: i32, view: Presentation) -> SignalElement {
@@ -50,7 +50,7 @@ pub(crate) fn build(
     Ok(Box::new(from_props(props)))
 }
 
-/// The props a `multitrack` node carries, read once — shared by the constructor
+/// The props a `multitrack` node carries, read once -- shared by the constructor
 /// and by the tests beside it.
 pub(super) fn from_props(props: &Map<String, Value>) -> Multitrack {
     let curves = parse_curves(props);
@@ -124,8 +124,8 @@ pub(super) fn parse_lanes(props: &Map<String, Value>) -> Vec<Lane> {
 /// **What one track's meter is read out of**: two runs of control buses, one
 /// value per channel each.
 ///
-/// Two buses and not one because a meter shows two things — the level, and the
-/// mark that waits to be read — and they are the same measurement with
+/// Two buses and not one because a meter shows two things -- the level, and the
+/// mark that waits to be read -- and they are the same measurement with
 /// different ballistics, which is why the server writes both rather than
 /// letting two clients invent two falls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -196,7 +196,7 @@ pub(super) fn parse_clips(props: &Map<String, Value>) -> Vec<Clip> {
 }
 
 /// The `curves` prop: the flat `name lane label min max height` sextuple array
-/// — a **track automation**, a row of its own under the lane it names.
+/// -- a **track automation**, a row of its own under the lane it names.
 pub(super) fn parse_curves(props: &Map<String, Value>) -> Vec<model::Curve> {
     let Some(Value::Array(items)) = props.get("curves") else {
         return Vec::new();
@@ -218,7 +218,7 @@ pub(super) fn parse_curves(props: &Map<String, Value>) -> Vec<model::Curve> {
         .collect()
 }
 
-/// The `layers` prop: the flat `name box label min max` quintuple array — a
+/// The `layers` prop: the flat `name box label min max` quintuple array -- a
 /// **clip envelope**, drawn inside the box it names.
 ///
 /// It carries no height, and that is the shape saying what it is: a layer is as
@@ -248,7 +248,7 @@ pub(super) fn parse_layers(props: &Map<String, Value>) -> Vec<model::Curve> {
 /// gathered into the `time value shape amount` quads a curve reads.
 ///
 /// **One list for every curve there is**, rows and layers alike, because a
-/// break-point is a break-point wherever the curve hangs — the same carrier a
+/// break-point is a break-point wherever the curve hangs -- the same carrier a
 /// roll's `notes` rides, with the curve's name in front the way a note names
 /// its box. A point naming a curve that is not there is dropped.
 pub(super) fn parse_points(props: &Map<String, Value>) -> HashMap<String, Vec<f64>> {
@@ -273,7 +273,7 @@ pub(super) fn parse_hidden(props: &Map<String, Value>) -> Vec<String> {
 }
 
 /// A **name set** prop: the space-separated names under `key`, which is how
-/// this widget spells a flag that belongs to some of what it holds — the layers
+/// this widget spells a flag that belongs to some of what it holds -- the layers
 /// that are not drawn, the boxes that wrap.
 pub(super) fn parse_names(props: &Map<String, Value>, key: &str) -> Vec<String> {
     props
@@ -283,7 +283,7 @@ pub(super) fn parse_names(props: &Map<String, Value>, key: &str) -> Vec<String> 
         .unwrap_or_default()
 }
 
-/// The `segments` prop: the flat `box source start frames` quadruple array —
+/// The `segments` prop: the flat `box source start frames` quadruple array --
 /// the spans each join is made of, in the order they play, grouped by the box
 /// they belong to.
 ///
@@ -320,7 +320,7 @@ pub(super) fn names_of(v: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// A layer name, or `None` for the two spellings that mean the placement — the
+/// A layer name, or `None` for the two spellings that mean the placement -- the
 /// boxes themselves, which is what a multitrack owns when no curve is in hand.
 pub(super) fn named(v: &str) -> Option<String> {
     (!v.is_empty() && v != "placement").then(|| v.to_string())
@@ -352,13 +352,13 @@ pub(super) fn curve_bodies(
         .collect()
 }
 
-/// The notes each box carries, by box name — the flat
+/// The notes each box carries, by box name -- the flat
 /// `box start dur pitch velocity channel` sextuples the wire takes, gathered
 /// into the `start dur pitch velocity channel` quintuples a roll reads.
 ///
 /// One list for the widget rather than one per box, because that is the shape
 /// every payload here has: a flat list whose first fields are the identity. A
-/// note naming a box that is not there is dropped — unlike a clip, which is
+/// note naming a box that is not there is dropped -- unlike a clip, which is
 /// kept and drawn nowhere, because a clip is what a report is *about* and a
 /// note is what one holds.
 pub(super) fn parse_notes(props: &Map<String, Value>) -> HashMap<String, Vec<f64>> {
@@ -383,7 +383,7 @@ pub(super) fn parse_notes(props: &Map<String, Value>) -> HashMap<String, Vec<f64
 ///
 /// The pitch window is the crate's rule
 /// ([`pitch_window`](clausters_document::view::catalogue::pitch_window)), the
-/// same one a standalone roll's picture is fitted with — so a box and a window
+/// same one a standalone roll's picture is fitted with -- so a box and a window
 /// over the same notes agree about how tall they are.
 pub(super) fn roll_body(notes: &[f64]) -> Notes {
     let (min, max) = clausters_document::view::catalogue::pitch_window(notes);

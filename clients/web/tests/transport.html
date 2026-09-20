@@ -25,7 +25,7 @@
       The page-carrier half of the transport port (clients/web/test.sh,
       headless Chrome): ?smoke=1 auto-runs and asserts that
         - the grid is defined, read back and reported with its governed group;
-        - a governed stop is audible — the subtree goes silent — and freezes
+        - a governed stop is audible -- the subtree goes silent -- and freezes
           the transport clock, which two reads spanning real time confirm;
         - a resume brings the same sound back (it continued, it was not
           restarted: the node was never freed);
@@ -158,7 +158,7 @@
         drone.free();
         governed.free();
         clock.close();
-        verdict(`PASS: governed transport — rolling ${sounding.toFixed(3)}, `
+        verdict(`PASS: governed transport -- rolling ${sounding.toFixed(3)}, `
           + `frozen ${frozen.toFixed(3)} with the clock held at ${first} samples `
           + `and the node still in the tree, resumed ${resumed.toFixed(3)}, `
           + `unbinding thawed it (${unbound.toFixed(3)})`);

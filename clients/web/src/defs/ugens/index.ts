@@ -4,14 +4,14 @@
 // Each function here is a small **lowercase** callable returning a `Ugen` node
 // (one output); composing nodes with these functions and the nodes' math
 // methods builds the graph a `SynthDef` serializes into the JSON
-// `SynthDefSpec` the server's `/def_send synth` consumes — the same JSON the Python
+// `SynthDefSpec` the server's `/def_send synth` consumes -- the same JSON the Python
 // builders emit, which the parity vectors in `tests/` hold.
 //
 // **Composition is by method, not by operator.** TypeScript has no operator
 // overloading, so where the Python client writes `sine(freq) * amp` this one
 // writes `sine(freq).mul(amp)`, and every other operator or math method
 // (`mod`, `min`/`max`, comparisons, `.sin()`, `.midicps()`, `.distort()` …)
-// is a method carrying the same operator **name** the wire uses — so the two
+// is a method carrying the same operator **name** the wire uses -- so the two
 // clients emit identical specs. The free `add`/`sub`/`mul`/`div` functions
 // take the number-on-the-left case (`sub(1, sig)`), which a method cannot.
 //
@@ -23,18 +23,18 @@
 // it (wrapping the shorter side modulo), `out(bus, chans)` lays the channels
 // on consecutive buses, and `mix` folds a list back to one channel through
 // the fused sums. Per-argument expansion (`sine(chans(440, 443))`) is
-// deliberately **not** implemented — a channel list reaching a single-channel
+// deliberately **not** implemented -- a channel list reaching a single-channel
 // input is a type error, and a `TypeError` at serialization.
 //
 // Reserved controls `in` and `out` (the input/output buses, set with
 // `/synth_new … "in" b "out" b`) are added by the server, not declared here.
 //
 // **Where things live.** The callables are grouped by family, one module each
-// — the same split the Python package makes: `graph` (the node, control and
+// -- the same split the Python package makes: `graph` (the node, control and
 // channel-list types, plus the fused arithmetic), `osc`, `filter` (filters,
 // delays, smoothers), `pan`, `io` (buses, replies, disk, feedback), `buf`,
 // `spectral`, `trig`, `demand` and `env`. Every name is re-exported here, so
-// importing from `defs/ugens` — and the `defs` package's own re-export — is
+// importing from `defs/ugens` -- and the `defs` package's own re-export -- is
 // what it always was: the split is navigational.
 //
 // The per-bin expressions `pvKernel` takes are a module of their own,
@@ -271,7 +271,7 @@ export type { Curve } from "./env.ts";
 
 /**
  * Kinds whose builder parameters do **not** line up with the wire's input order
- * — a variadic run, a static field sitting between two inputs — so their names
+ * -- a variadic run, a static field sitting between two inputs -- so their names
  * would mislabel the inlets and the Def view falls back to positional ones.
  * The same set the Python client declares, and the same reasons: the
  * divergences `tests/ugen-catalog.test.ts` contrasts against the server.
@@ -286,7 +286,7 @@ const INPUT_NAMES_MISALIGNED = new Set([
     "PV_Kernel",
 ]);
 
-/** Lazily built `kind -> [parameter name, …]` — see {@link ugenInputNames}. */
+/** Lazily built `kind -> [parameter name, …]` -- see {@link ugenInputNames}. */
 let INPUT_NAMES: Map<string, string[]> | null = null;
 
 /**
@@ -296,7 +296,7 @@ let INPUT_NAMES: Map<string, string[]> | null = null;
  *
  * The Python client reads the same thing with `inspect`; this one reads
  * `Function.prototype.toString()`, which under node's type stripping still
- * carries the parameter list — the language's own way to the one fact, not a
+ * carries the parameter list -- the language's own way to the one fact, not a
  * different fact. A destructured options object is not positional and stops the
  * list, since everything past it is named rather than wired in order.
  */
@@ -351,7 +351,7 @@ function positionalParams(src: string): string[] {
 
 /**
  * The positional input names of the builder for UGen `kind`, or `undefined`
- * when no single builder maps to it cleanly — the generic op UGens
+ * when no single builder maps to it cleanly -- the generic op UGens
  * (`BinaryOpUGen`/`UnaryOpUGen`, built by the nodes' own methods) and the kinds
  * whose parameters do not line up with the wire order. `undefined` means the
  * caller labels the inlets positionally.

@@ -14,13 +14,13 @@
 //! all (the `path` bulk route), which is cheaper and needs nothing running. It
 //! is the wrong route here for two reasons, and neither is about drawing.
 //!
-//! A session's samples are **audio the user brought** — a WAV, a FLAC, an
-//! MP3 — and decoding those is the server's job and nobody else's here (it
+//! A session's samples are **audio the user brought** -- a WAV, a FLAC, an
+//! MP3 -- and decoding those is the server's job and nobody else's here (it
 //! decodes by content, through hound and symphonia). Mapping one as raw floats
 //! draws the header as a click.
 //!
 //! And what is drawn has to be what is **edited**: a destructive edit is
-//! `/buffer_gain`, `/buffer_setRange`, `/buffer_reverse` — commands addressed
+//! `/buffer_gain`, `/buffer_setRange`, `/buffer_reverse` -- commands addressed
 //! to a buffer, run on the server's own NRT thread. A host drawing a mapped
 //! file and editing a buffer would be showing one copy and writing another,
 //! which is the two-owner problem again with the samples in place of the tree.

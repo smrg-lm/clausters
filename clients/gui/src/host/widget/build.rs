@@ -1,4 +1,4 @@
-//! Constructing a typed [`WidgetKind`] from a generic GuiDef node — the
+//! Constructing a typed [`WidgetKind`] from a generic GuiDef node -- the
 //! wire-to-schema pass, one arm per widget type. Split out of the schema
 //! ([`super`]) so the enum and the (long) construction match read separately;
 //! the shared prop-reading helpers live in [`super::parse`], visible here as a
@@ -39,8 +39,8 @@ pub(super) fn build_kind(
             // On unless the window says otherwise: see `host::status::shown`.
             status: props.get("status").and_then(truthy).unwrap_or(true),
         },
-        // A container with no axes. `stack` — one child at a time, the one
-        // `index` names — is one of the arrangements rather than a type of its
+        // A container with no axes. `stack` -- one child at a time, the one
+        // `index` names -- is one of the arrangements rather than a type of its
         // own: a layout with a selection instead of an arrangement. Nothing
         // else about it is a container's business, so it takes only a margin.
         "layout" if flow(props) == Some("stack") => WidgetKind::Stack {
@@ -59,7 +59,7 @@ pub(super) fn build_kind(
         // Two axes locked to one scale. What a patcher adds to a plane is its
         // boxes and the cords between them, so their presence is what tells
         // the two constructions apart. Without the `patcher` feature the fork
-        // is not compiled and both readings are the workspace below — the one
+        // is not compiled and both readings are the workspace below -- the one
         // place a dropped family degrades to *something* rather than to
         // `Unknown`, because the wire name it shares is still a real widget.
         #[cfg(feature = "patcher")]
@@ -78,7 +78,7 @@ pub(super) fn build_kind(
         },
         // **One meaning left**: the free-standing ruler over a navigation
         // group. `field` used to be three things told apart by what was on it
-        // — a lane, a clip placed on its parent's axis, or this — and the
+        // -- a lane, a clip placed on its parent's axis, or this -- and the
         // first two are `multitrack` props now (`G34`): a lane cannot sit in a
         // void, so it is always inside the view that owns it.
         "field" => WidgetKind::TimeRuler {
@@ -87,7 +87,7 @@ pub(super) fn build_kind(
         // No arm above answers to this name, so it is an **element**: a
         // built-in that has moved behind the trait, else whatever a program
         // registered, else nothing at all. The order is the invariant, not a
-        // detail — a built-in resolves first, so a registration can never
+        // detail -- a built-in resolves first, so a registration can never
         // shadow one or change what a shipped def means; and a miss on both is
         // what an unrecognized type has always been.
         other => {
@@ -104,7 +104,7 @@ pub(super) fn build_kind(
 
 /// The spectral parameters a signal names, over `base` (its preset's): the
 /// analysis size under whichever name this presentation calls it (`size_prop`
-/// — `fft_size` for the spectra, `window_size` for the time-frequency
+/// -- `fft_size` for the spectra, `window_size` for the time-frequency
 /// texture), the hop, and the display. One function for the element and for a
 /// clip's take, so a spectral clip is tuned exactly like a spectral view.
 fn spectral_props(
@@ -153,7 +153,7 @@ pub(crate) fn signal_element(
     let live = props.contains_key("bus");
     // Whether a view navigates defaults **per presentation**: the views the
     // catalog grew as editors navigate unless told not to, and a spectrum is
-    // the watching spectroscope unless it is asked to navigate — its axis is
+    // the watching spectroscope unless it is asked to navigate -- its axis is
     // frequency, and a curve that pans under an idle drag is not what a
     // meter-like view has ever done.
     let navigable = props
@@ -202,7 +202,7 @@ pub(crate) fn signal_element(
     };
 
     // The value axis: a named side wins, an unnamed one keeps the preset's
-    // (which is `None` — auto-fitted — only where the name meant that).
+    // (which is `None` -- auto-fitted -- only where the name meant that).
     el.value = signal::ValueRange {
         min: opt_number(props, "min").or(p.value.min),
         max: opt_number(props, "max").or(p.value.max),
@@ -252,7 +252,7 @@ pub(crate) fn signal_element(
         label: label(props),
     };
     // The y strip's default unit is the axis' own: hertz where a texture is on
-    // it, the value unit where the traces are — so a stack that put a wave on
+    // it, the value unit where the traces are -- so a stack that put a wave on
     // a spectrogram's body is ruled in the unit the wave is read in.
     let ruler_y = match el.axis_domain() {
         signal::Domain::Frequency => RulerY::Hz,

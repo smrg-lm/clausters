@@ -1,7 +1,7 @@
 //! **The sweep**: what a selection looks like, wherever a hand draws one.
 //!
-//! Four views let a hand sweep one — a lane of clips, a piano roll, a waveform,
-//! a spectrogram — and a patcher sweeps one over its canvas. They had four
+//! Four views let a hand sweep one -- a lane of clips, a piano roll, a waveform,
+//! a spectrogram -- and a patcher sweeps one over its canvas. They had four
 //! spellings of the drawing between them, and the four disagreed: the signal
 //! views drew the band with the half-sample rule and the value restriction the
 //! sweep had set, the roll drew a full-height band from the raw sample and threw
@@ -13,8 +13,8 @@
 //! So the drawing is one function and the *difference* between the views is a
 //! value: [`Vertical`] says what the second axis measures, which is the only
 //! question a sweep asks that a view answers differently. What it decides is
-//! whether the sweep is a **stripe** — the whole body, because nothing
-//! restricts it vertically — or a **rectangle** the hand cut out of it.
+//! whether the sweep is a **stripe** -- the whole body, because nothing
+//! restricts it vertically -- or a **rectangle** the hand cut out of it.
 //!
 //! The edges follow from the same answer rather than from a flag: a band the
 //! full height of the body owns only its two vertical edges (its top and bottom
@@ -36,8 +36,8 @@ const EDGE: f32 = 0.75;
 /// swept selection is a stripe or a rectangle.
 ///
 /// Not "which widget is this": a spectrogram and a lane of clips give the same
-/// answer for different reasons — the one measures bins and the other measures
-/// nothing — and a rule that asked which widget it was would have to be told
+/// answer for different reasons -- the one measures bins and the other measures
+/// nothing -- and a rule that asked which widget it was would have to be told
 /// about the next one.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Vertical {
@@ -46,7 +46,7 @@ pub enum Vertical {
     /// is bins, not a value). The band is the whole height it is given.
     Whole,
     /// A trace over its value `domain`, seen through the vertical `window`
-    /// (`(start, len)` in display units) the picture was drawn with — the pair
+    /// (`(start, len)` in display units) the picture was drawn with -- the pair
     /// that makes the band's edges land on the values the ruler beside it
     /// labels.
     Value {
@@ -61,7 +61,7 @@ pub enum Vertical {
 /// pixels of it.
 ///
 /// **The band runs from halfway to halfway.** `(start, len)` is a count of
-/// samples — indices `start .. start + len` — and each of them owns the half
+/// samples -- indices `start .. start + len` -- and each of them owns the half
 /// sample-width on either side of it, so the edges fall midway between the last
 /// selected sample and the first one left out. Drawn edge-to-edge instead, the
 /// band would end *on* the last selected sample and read as excluding it, which
@@ -107,7 +107,7 @@ pub fn bands(
         Vertical::Pitch { lo, hi } => {
             // A pitch axis is discrete: the band covers the *rows* it holds, so
             // it runs from the top edge of the highest to the bottom edge of the
-            // lowest — half a row past each centre, which is where the row is
+            // lowest -- half a row past each centre, which is where the row is
             // drawn from.
             let y = |p: f64| crate::host::graphics::pianoroll::pitch_to_y(p as f32, lo, hi, body);
             clipped(body, y(max + 0.5), y(min - 0.5))
@@ -150,7 +150,7 @@ fn clipped(r: Rect, top: f32, bottom: f32) -> Option<(f32, f32)> {
 /// **Draws the sweep**: the wash between `x0` and `x1` over each of `bands`,
 /// with the edges the hand decided.
 ///
-/// `full` is the height a band has when nothing restricts it — the body's own —
+/// `full` is the height a band has when nothing restricts it -- the body's own --
 /// and it is what tells the two cases apart without a second argument saying so.
 pub fn draw(d: &mut Draw, x0: f32, x1: f32, bands: &[(f32, f32)], full: (f32, f32)) {
     let (mesh, m, theme) = d.parts();
@@ -196,7 +196,7 @@ pub fn draw_span(
     draw(d, x0, x1, &bands, (body.y, body.h));
 }
 
-/// The sweep over a **plane** — a patcher's canvas, where the rectangle is the
+/// The sweep over a **plane** -- a patcher's canvas, where the rectangle is the
 /// selection itself and both of its axes are the hand's.
 ///
 /// The same wash and the same edges as a timeline's: one hand sweeping one
@@ -240,7 +240,7 @@ mod tests {
         assert_eq!(span_x(BODY, &past, 10.0, 1.0), None);
     }
 
-    /// Nothing to restrict on — a lane of clips, a spectrogram — is the whole
+    /// Nothing to restrict on -- a lane of clips, a spectrogram -- is the whole
     /// body, however many channel rows there are and whatever a stale range
     /// says.
     #[test]
@@ -258,7 +258,7 @@ mod tests {
         );
     }
 
-    /// A pitch axis is discrete, so the band covers the rows it holds — from the
+    /// A pitch axis is discrete, so the band covers the rows it holds -- from the
     /// top of the highest to the bottom of the lowest, not their centres.
     #[test]
     fn a_pitch_restriction_covers_the_rows_it_holds() {

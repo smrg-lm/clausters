@@ -1,6 +1,6 @@
 """Triggers and control flow.
 
-A **trigger** is a signal crossing from <= 0 up to > 0 — one definition shared
+A **trigger** is a signal crossing from <= 0 up to > 0 -- one definition shared
 by every function here, so the same crossing means the same thing whatever
 produced it.
 """
@@ -9,7 +9,7 @@ from .graph import Ugen
 
 # ---- triggers and control ----
 #
-# A **trigger** is a signal crossing from <= 0 up to > 0 — one definition,
+# A **trigger** is a signal crossing from <= 0 up to > 0 -- one definition,
 # shared by every callable here and by `demand`, `send_trig` and friends. The
 # kinds whose only inputs are triggers default to ``rate="kr"`` on the server,
 # because a trigger is the only thing that can move them.
@@ -56,7 +56,7 @@ def schmidt(signal, lo=0.0, hi=1.0) -> Ugen:
 
 
 def toggle_ff(trig=0.0) -> Ugen:
-    """Flips between 0 and 1 on each trigger — a divider by two of the
+    """Flips between 0 and 1 on each trigger -- a divider by two of the
     *triggers*, not of the signal."""
     return Ugen("ToggleFF", [trig])
 
@@ -74,13 +74,13 @@ def pulse_count(trig=0.0, reset=0.0) -> Ugen:
 
 def pulse_divider(trig=0.0, div=2.0, start=0.0) -> Ugen:
     """One trigger out for every ``div`` in. ``start`` is where the counter
-    begins, read once — set it to ``div - 1`` to fire on the very first
+    begins, read once -- set it to ``div - 1`` to fire on the very first
     trigger, which is how two dividers are phased against each other."""
     return Ugen("PulseDivider", [trig, div, start])
 
 
 def stepper(trig=0.0, reset=0.0, min=0.0, max=7.0, step=1.0, resetval=0.0) -> Ugen:
-    """A counter that walks ``[min, max]`` — **both ends included** — one
+    """A counter that walks ``[min, max]`` -- **both ends included** -- one
     ``step`` per trigger, wrapping. It sits at ``resetval`` until the first
     trigger, which lands on ``resetval + step``: a stepper is defined by its
     transitions. A negative ``step`` walks the same ring backwards."""
@@ -112,7 +112,7 @@ def changed(signal, threshold=0.0) -> Ugen:
 
 def decay(signal, decaytime=1.0) -> Ugen:
     """Turns each impulse into an exponential falling 60 dB in ``decaytime``
-    (``y[n] = x[n] + b·y[n-1]``). Its attack is instantaneous, which clicks —
+    (``y[n] = x[n] + b·y[n-1]``). Its attack is instantaneous, which clicks --
     see `decay2`."""
     return Ugen("Decay", [signal, decaytime])
 

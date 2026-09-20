@@ -3,7 +3,7 @@
 
 Everything here is a UGen graph: a band-limited oscillator, a resonant filter
 swept by an envelope, and a delay network. That matters because it means the
-whole chain is available in a `synth`-only build — the one that runs where there
+whole chain is available in a `synth`-only build -- the one that runs where there
 is no LLVM to JIT a Faust def, including the browser engine.
 
 It renders **offline**, so it needs no audio hardware and no running server:
@@ -40,7 +40,7 @@ SR = 48000.0
 #
 # The cutoff rides an envelope, which is what makes a note *speak*: it opens on
 # the attack and closes over the tail, so the note is bright then dark. Note
-# `q=` rather than `rq=` — the wire carries the reciprocal of Q (so that
+# `q=` rather than `rq=` -- the wire carries the reciprocal of Q (so that
 # "infinite resonance" is exactly representable), and the client converts.
 
 def voice() -> SynthDef:
@@ -59,8 +59,8 @@ def voice() -> SynthDef:
 # turns one position into those three gains: 0 is a lowpass, 1 a bandpass, 2 a
 # highpass, and everything in between is a real crossfade rather than a switch.
 #
-# This costs the mix and nothing else — the three taps come out of the same pair
-# of integrator updates — which is why it exists here and has no scsynth name.
+# This costs the mix and nothing else -- the three taps come out of the same pair
+# of integrator updates -- which is why it exists here and has no scsynth name.
 
 def morphing() -> SynthDef:
     freq = control("freq", 110.0)
@@ -77,7 +77,7 @@ def morphing() -> SynthDef:
 # fall 60 dB, counted from the first echo (which is the direct path and always
 # returns at full level). `allpass_c` scatters phase without touching the
 # magnitude *at all*, which is why a chain of them reads as "space" instead of
-# as a row of distinct repeats — three at mutually prime delays is about the
+# as a row of distinct repeats -- three at mutually prime delays is about the
 # smallest thing that sounds like a room.
 #
 # `max_delay` sizes the line the server allocates, once, when the synth is
@@ -121,11 +121,11 @@ def render(path=None):
     rms = max(stats.rms, default=0.0)
     print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f} rms {rms:.4f}")
     if peak == 0.0:
-        sys.exit("the render is silent — something is wrong")
+        sys.exit("the render is silent -- something is wrong")
     if peak > 1.5:
         sys.exit(f"the render clips hard (peak {peak:.2f})")
 
-        print(f"wrote {path} — listen with: pw-play {path}")
+        print(f"wrote {path} -- listen with: pw-play {path}")
 
 
 if __name__ == "__main__":

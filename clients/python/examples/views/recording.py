@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """Takes drawn **while they record**: the picture follows the write frontier.
 
-Every other way audio reaches a picture announces itself — a client sends
+Every other way audio reaches a picture announces itself -- a client sends
 samples, a peer edits a span and says so. A **recording** does not: a
 `record_buf` fills a buffer block by block from the audio thread, which is the
 one place that must never send a message. So the engine publishes a single
-number instead — how far the recording now goes, the buffer's *write frontier* —
+number instead -- how far the recording now goes, the buffer's *write frontier* --
 into the shared segment's directory row, and a host that maps the same segment
 draws the rest for itself.
 
 What that gives, and it is the whole example: **nothing about the audio crosses
 the wire**. The samples are already the cells the engine is writing (the host
-maps the region), so the picture is not fetched, not streamed and not copied —
+maps the region), so the picture is not fetched, not streamed and not copied --
 what the host re-reads is the *summary* of the frames that appeared since last
 time, and only those.
 
@@ -40,15 +40,15 @@ Two things worth watching for:
 
 - Each trace grows into an **empty** axis rather than across a flat line: the
   part not written yet is drawn as nothing at all. The host cannot tell "not
-  written yet" from "recorded silence" — the client is what knows, since it
-  allocated the empty buffer — so that is the ``fills`` prop, set on each lane
+  written yet" from "recorded silence" -- the client is what knows, since it
+  allocated the empty buffer -- so that is the ``fills`` prop, set on each lane
   here and cleared in the last cell once the takes are finished.
 - Zoom into the part already recorded (**wheel**) and it is sample-exact
   immediately: the zoomed-in regimes read the cells themselves, so they are
   current with nothing told to them at all.
 
 Needs an audio device, a display and a GPU adapter, and a **server with a
-shared-memory segment** — which is what `Session.live` boots (``shm="auto"``)
+shared-memory segment** -- which is what `Session.live` boots (``shm="auto"``)
 and what `Session.gui` points the host at. By hand that is
 ``clausters --shm <path>`` and ``clausters-gui --server 127.0.0.1:57110 --shm
 <path>``. With the client importable (``pip install -e ./clients/python``)::
@@ -72,7 +72,7 @@ from clausters.gui import timeruler, view, waveform
 #: command-line argument so the same file is a demonstration and a stress test.
 TRACKS = int(sys.argv[1]) if len(sys.argv) > 1 else 8
 SECONDS = 10.0
-#: Seconds of audio a picture waits for before catching up — the host's
+#: Seconds of audio a picture waits for before catching up -- the host's
 #: ``--follow-block``. ``None`` leaves the host's own default (0 - the frame).
 BLOCK = float(sys.argv[2]) if len(sys.argv) > 2 else None
 
@@ -121,7 +121,7 @@ win = view(
     timeruler(ruler="time", dir="up", sample_rate=rate, link=LANES),
     title=f"{TRACKS} takes, while they record",
     # A lane gets what is left over after the ruler, so the window is sized to
-    # give every one of them the same room whatever the count — and capped, so
+    # give every one of them the same room whatever the count -- and capped, so
     # thirty-two lanes stay on a screen rather than growing off it.
     w=900, h=min(40 + 24 * TRACKS, 760), layout="col").open()
 print("the window is empty: nothing has been recorded into the takes yet, "
@@ -129,7 +129,7 @@ print("the window is empty: nothing has been recorded into the takes yet, "
 
 # %% [markdown]
 # ## Record into them
-# One def, one node per take: a glissando, heard and recorded at once —
+# One def, one node per take: a glissando, heard and recorded at once --
 # `record_buf` passes its input through, so the same signal reaches the buffer
 # and the speakers. `done_action=2` frees the node when the recorder reaches
 # the end of its buffer, which is how the pictures stop growing.
@@ -146,7 +146,7 @@ SynthDef(
 ).send(server)
 server.sync()
 
-#: They all start on one pitch and fan out to a random one, up or down —
+#: They all start on one pitch and fan out to a random one, up or down --
 #: a unison that opens rather than a stack of neighbouring sweeps, which would
 #: spend the whole take beating against each other. Random per run, so no two
 #: are the same picture.
@@ -167,11 +167,11 @@ print("recording: the traces grow with the sound, a frame of samples at a time")
 # Nothing here touches the pictures. The host is reading the frontiers on its
 # own tick and re-summarizing what appeared; all
 # `clausters.gui.handle.WindowHandle.wait` does is keep the script alive while
-# it happens — bounded here, since the takes have a length, and unbounded at the
-# end, where the window is what says when. A client that wants the same news — a
-# headless capture, or a page, which can map nothing — asks for it over the wire
+# it happens -- bounded here, since the takes have a length, and unbounded at the
+# end, where the window is what says when. A client that wants the same news -- a
+# headless capture, or a page, which can map nothing -- asks for it over the wire
 # instead: `clausters.data.RecordingStream`, which subscribes for them and keeps
-# one peak cache per take — the wire carries the summary and not the samples.
+# one peak cache per take -- the wire carries the summary and not the samples.
 
 # %%
 win.wait(SECONDS + 2.0)
@@ -180,7 +180,7 @@ print("window closed" if win.closed else "done recording")
 # %% [markdown]
 # ## And they are ordinary samples afterwards
 # The frontiers stop moving when the recorders free themselves, and what is
-# left is takes like any others — zoom them, sweep a selection, play them. So
+# left is takes like any others -- zoom them, sweep a selection, play them. So
 # `fills` is cleared: the take is finished, what was written is all there is,
 # and the lane goes back to drawing the whole of its samples. It is the same
 # prop live, which is why this is a `set` and not a second window.

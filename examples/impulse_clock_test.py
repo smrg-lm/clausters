@@ -2,19 +2,19 @@
 """Long-running sample-clock check, driven by the high-level Python client.
 
 Makes a `TempoClock` on a running server's **sample clock** (`Server.sample_timebase`, over
-UDP, modelling `/clock_query` — no shared memory) and runs a `Routine` that, once per
+UDP, modelling `/clock_query` -- no shared memory) and runs a `Routine` that, once per
 second, spawns a synth of a single one-sample-impulse **SynthDef** and fires it
 sample-accurately, then frees the synth. The def is defined and loaded **once**
-before the run — as on scsynth, a SynthDef is sent to the server one time and
+before the run -- as on scsynth, a SynthDef is sent to the server one time and
 each beat only instantiates a node with `/synth_new`. The server's audio output is
-recorded to a WAV in real time; when the run finishes — or on SIGINT / SIGTERM —
+recorded to a WAV in real time; when the run finishes -- or on SIGINT / SIGTERM --
 the recording is analyzed to confirm there is exactly one one-sample click per
 second, evenly spaced.
 
 Each impulse is `Impulse` at frequency 0: a single 1.0 on the synth's first
 sample, silence after. Scheduled by `/sched_at` at the sample the routine's logical
 beat maps to, that first sample *is* the target, so the click lands on an exact
-frame — no envelope, no onset ramp.
+frame -- no envelope, no onset ramp.
 
 Run (real audio hardware required):
 
@@ -82,7 +82,7 @@ def impulse_routine(server: Server, counter: list):
     pre-loaded impulse `SynthDef` at the routine's exact logical beat (so
     `/sched_at` lands it on the sample) and free it shortly after. The def is
     defined and loaded once before the run, so the loop only sends `/synth_new` +
-    `/node_free` — never a def — and never blocks the clock thread."""
+    `/node_free` -- never a def -- and never blocks the clock thread."""
 
     def routine():
         k = 0
@@ -270,7 +270,7 @@ def main(argv):
         timebase = server.sample_timebase()
     except RuntimeError:
         server.close()
-        sys.exit("could not read the server's sample clock — is a server "
+        sys.exit("could not read the server's sample clock -- is a server "
                  "running on UDP at that address? (start the installed `clausters`)")
     clock = TempoClock(tempo=1.0, timebase=timebase)   # 1 beat = 1 second
     rate = clock.timebase.sample_rate

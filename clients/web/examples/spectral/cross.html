@@ -24,14 +24,14 @@ magnitude freeze.
 
 Where <code>chain.html</code> filters one chain, this def runs <b>two</b> FFT
 chains and combines them. <code>pvMagMul</code> scales one chain's bins by the
-other's magnitudes — white noise wearing the spectral envelope of a harmonic
+other's magnitudes -- white noise wearing the spectral envelope of a harmonic
 stack, which is cross-synthesis. <code>pvMagFreeze</code> then holds the last
 spectral envelope while <code>freeze &gt; 0</code>: the melody stops driving the
 noise but the phases keep running, so the ending is the last note held as a
 texture.
 
 Left channel: the dry modulator, quiet, for reference. Right channel: the
-cross-synthesized noise. The combined chain is one def — no buffers, no buses
+cross-synthesized noise. The combined chain is one def -- no buffers, no buses
 between the stages; the spectral frames are synth-private scratch.</div>
 
       <div class="row">
@@ -74,7 +74,7 @@ between the stages; the spectral frames are synth-private scratch.</div>
       function cross(name = "cross") {
         const freq = control("freq", 220.0);
         const freeze = control("freeze", 0.0);
-        // The modulator: a 3-partial stack — enough spectral shape to hear the
+        // The modulator: a 3-partial stack -- enough spectral shape to hear the
         // melody inside the noise.
         const mod = sine(freq)
           .add(sine(freq.mul(2.0)).mul(0.5))
@@ -88,7 +88,7 @@ between the stages; the spectral frames are synth-private scratch.</div>
         const frozen = pvMagFreeze(combined, freeze);
         const sig = ifft(frozen);
         // Bin magnitudes are raw transform sums, so scaling A by B's magnitudes
-        // multiplies the level by that factor — the cross-synthesis needs a
+        // multiplies the level by that factor -- the cross-synthesis needs a
         // small make-up gain.
         // A short attack and release, opened at birth and closed by the gate:
         // noise switched on at full amplitude starts the take on a step, and a

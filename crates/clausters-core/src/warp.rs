@@ -4,8 +4,8 @@
 //!
 //! **Every named function is one pair, and nothing here computes a curve
 //! twice.** A map reads a position out of an input range and writes it into an
-//! output range, and each half comes in the same three flavours — linear,
-//! exponential (equal ratios) and curved (a bend of `curve`) — so the eight
+//! output range, and each half comes in the same three flavours -- linear,
+//! exponential (equal ratios) and curved (a bend of `curve`) -- so the eight
 //! public names are compositions of six primitives:
 //!
 //! | | read | write |
@@ -22,15 +22,15 @@
 //! Following the same trio as [`crate::builtins`], each op is also (a) a
 //! `#[repr(u32)]` enum so the C ABI can pass one by integer, (b) a scalar
 //! [`apply_map`] and (c) a broadcasting [`map_slice`] that writes into a
-//! caller-provided output — so a client maps a whole sequence in one crossing.
+//! caller-provided output -- so a client maps a whole sequence in one crossing.
 //!
 //! # Zero has no ratio, and that rule lives here
 //!
 //! An exponential map is a ratio, so an endpoint at zero (or a pair straddling
 //! it) has no map at all: SuperCollider's own answer is `NaN`, or an envelope
-//! the author was supposed to know not to write. This crate answers instead —
+//! the author was supposed to know not to write. This crate answers instead --
 //! an endpoint within [`EXP_EPSILON`] of zero becomes that epsilon with the
-//! sign it had, and a sign change falls back to the linear map — and
+//! sign it had, and a sign change falls back to the linear map -- and
 //! [`exp_ends`] is the **one** place that rule is written. `EnvGen`'s
 //! exponential segment ([`crate::envshape`]), the server's `XLine` and every
 //! exponential map here read it from there; before this module they were three
@@ -43,14 +43,14 @@
 //! client maps off the RT path and the same map on the audio thread agree.
 //! Against **sclang** the formulas are reproduced shape for shape, but sclang
 //! evaluates them in `f64` and with its own left-to-right association, so the
-//! agreement is a documented tolerance rather than bit equality — the same
+//! agreement is a documented tolerance rather than bit equality -- the same
 //! standard the Faust equivalence is held to.
 
 /// Below this magnitude an endpoint counts as zero for an exponential map.
 pub const EXP_EPSILON: f32 = 1e-5;
 
 /// An exponential endpoint: a level within [`EXP_EPSILON`] of zero becomes that
-/// epsilon, keeping the sign it had — `copysign` on a zero keeps *its* sign, so
+/// epsilon, keeping the sign it had -- `copysign` on a zero keeps *its* sign, so
 /// a ramp from `-0.0` still goes the way its target says.
 #[inline]
 pub fn exp_endpoint(v: f32) -> f32 {
@@ -62,7 +62,7 @@ pub fn exp_endpoint(v: f32) -> f32 {
 }
 
 /// The two endpoints an exponential map between `a` and `b` actually runs
-/// between, or `None` when there is no such map — the endpoints straddle zero,
+/// between, or `None` when there is no such map -- the endpoints straddle zero,
 /// where a ratio does not exist and the caller falls back to a linear step.
 ///
 /// The single source of this rule; see the module docs for why it is not
@@ -73,7 +73,7 @@ pub fn exp_ends(a: f32, b: f32) -> Option<(f32, f32)> {
     (a.signum() == b.signum()).then_some((a, b))
 }
 
-/// What an out-of-range input is trimmed to before it is mapped — sclang's
+/// What an out-of-range input is trimmed to before it is mapped -- sclang's
 /// `prune`, whose default is [`Clip::MinMax`].
 #[repr(u32)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -151,7 +151,7 @@ impl Clip {
 //
 // Each one is `prepare(bounds).at(x)`: the coefficients a map's bounds settle
 // live in [`Read`]/[`Write`] and the formula is written once, there. A caller
-// with fixed bounds — a UGen over a block, a client mapping an array — prepares
+// with fixed bounds -- a UGen over a block, a client mapping an array -- prepares
 // once and pays only the per-sample half; a caller with moving bounds spells
 // the same call and pays both, which is exactly what these six do.
 
@@ -265,15 +265,15 @@ pub fn lin_value(t: f32, lo: f32, hi: f32) -> f32 {
 }
 
 /// Where `x` sits in `lo..hi` on an **exponential** axis: the position whose
-/// ratio to `lo` is `x`'s, which is what makes every octave — every decade,
-/// every doubling — take the same space. A range straddling zero has no ratio,
+/// ratio to `lo` is `x`'s, which is what makes every octave -- every decade,
+/// every doubling -- take the same space. A range straddling zero has no ratio,
 /// so it reads linearly (see [`exp_ends`]).
 #[inline]
 pub fn exp_unit(x: f32, lo: f32, hi: f32) -> f32 {
     Read::exp(lo, hi).at(x)
 }
 
-/// `t` written back into `lo..hi` exponentially — `lo·(hi/lo)^t`. The inverse
+/// `t` written back into `lo..hi` exponentially -- `lo·(hi/lo)^t`. The inverse
 /// of [`exp_unit`], and the same curve an exponential envelope segment and an
 /// `XLine` run.
 #[inline]
@@ -282,8 +282,8 @@ pub fn exp_value(t: f32, lo: f32, hi: f32) -> f32 {
 }
 
 /// Where `x` sits in `lo..hi` on an axis **bent** by `curve`: 0 is linear,
-/// negative builds fast then slow — most of the range spent on the first half
-/// of the input, sclang's −4 default — and positive the reverse, which is the
+/// negative builds fast then slow -- most of the range spent on the first half
+/// of the input, sclang's −4 default -- and positive the reverse, which is the
 /// fine-at-the-bottom feel a frequency or an amplitude control wants. Unlike
 /// [`exp_unit`] this one spans zero and changes sign freely, which is what
 /// makes it the general control curve.
@@ -299,7 +299,7 @@ pub fn curve_value(t: f32, lo: f32, hi: f32, curve: f32) -> f32 {
     Write::curve(lo, hi, curve).at(t)
 }
 
-/// How flat a bend has to be to *be* the linear map — sclang's own threshold.
+/// How flat a bend has to be to *be* the linear map -- sclang's own threshold.
 ///
 /// One number, named once. It is what keeps `curve = 0` from dividing by zero,
 /// and it is the same number the tempo map's shapes are read through, which is
@@ -357,13 +357,13 @@ pub fn linlin(x: f32, in_lo: f32, in_hi: f32, out_lo: f32, out_hi: f32, clip: Cl
     Map::new(MapOp::Linlin, in_lo, in_hi, out_lo, out_hi, 0.0, clip).at(x)
 }
 
-/// Linear in, exponential out — a fader position to a frequency.
+/// Linear in, exponential out -- a fader position to a frequency.
 #[inline]
 pub fn linexp(x: f32, in_lo: f32, in_hi: f32, out_lo: f32, out_hi: f32, clip: Clip) -> f32 {
     Map::new(MapOp::Linexp, in_lo, in_hi, out_lo, out_hi, 0.0, clip).at(x)
 }
 
-/// Exponential in, linear out — a frequency to a fader position.
+/// Exponential in, linear out -- a frequency to a fader position.
 #[inline]
 pub fn explin(x: f32, in_lo: f32, in_hi: f32, out_lo: f32, out_hi: f32, clip: Clip) -> f32 {
     Map::new(MapOp::Explin, in_lo, in_hi, out_lo, out_hi, 0.0, clip).at(x)
@@ -403,7 +403,7 @@ pub fn curvelin(
     Map::new(MapOp::Curvelin, in_lo, in_hi, out_lo, out_hi, curve, clip).at(x)
 }
 
-/// A **bipolar** value (−1..1) into `lo..hi`, linearly — sclang's `range`.
+/// A **bipolar** value (−1..1) into `lo..hi`, linearly -- sclang's `range`.
 ///
 /// Nothing is pruned, because nothing declares the input bipolar: a UGen knows
 /// its own `signalRange` and a bare number does not, so a value that overshoots
@@ -414,7 +414,7 @@ pub fn range(x: f32, lo: f32, hi: f32) -> f32 {
     Map::new(MapOp::Range, 0.0, 0.0, lo, hi, 0.0, Clip::None).at(x)
 }
 
-/// A **bipolar** value (−1..1) into `lo..hi`, exponentially — sclang's
+/// A **bipolar** value (−1..1) into `lo..hi`, exponentially -- sclang's
 /// `exprange`. Unpruned for the reason [`range`] gives.
 #[inline]
 pub fn exprange(x: f32, lo: f32, hi: f32) -> f32 {
@@ -455,7 +455,7 @@ impl MapOp {
         })
     }
 
-    /// The name every client spells this map with — SuperCollider's own, all
+    /// The name every client spells this map with -- SuperCollider's own, all
     /// lowercase, as the whole operator vocabulary is.
     pub fn name(self) -> &'static str {
         match self {
@@ -477,7 +477,7 @@ impl MapOp {
             .find(|op| op.name() == name)
     }
 
-    /// Whether this map reads `curve` — only the bent pair does.
+    /// Whether this map reads `curve` -- only the bent pair does.
     pub fn takes_curve(self) -> bool {
         matches!(self, MapOp::Lincurve | MapOp::Curvelin)
     }
@@ -488,8 +488,8 @@ impl MapOp {
 ///
 /// This is where a map's formula lives; the eight named functions and
 /// [`apply_map`] are each one of these built and applied once. Build it
-/// yourself where the bounds hold still and the values do not — a UGen over a
-/// block, a client mapping an array — and the per-value cost loses the parts
+/// yourself where the bounds hold still and the values do not -- a UGen over a
+/// block, a client mapping an array -- and the per-value cost loses the parts
 /// that only the bounds decide: the zero-straddling test, `ln(hi/lo)`,
 /// `exp(curve)` and the bend's two terms. Two of those are transcendentals, so
 /// on the bent and the exponential-input maps this is the difference between
@@ -563,7 +563,7 @@ impl Map {
     }
 }
 
-/// One value through the map `op` between these ranges — [`Map::new`] applied
+/// One value through the map `op` between these ranges -- [`Map::new`] applied
 /// once, which is what every named map above is.
 #[allow(clippy::too_many_arguments)]
 #[inline]
@@ -580,7 +580,7 @@ pub fn apply_map(
     Map::new(op, in_lo, in_hi, out_lo, out_hi, curve, clip).at(x)
 }
 
-/// The same map over a whole sequence, into a caller-provided output — the
+/// The same map over a whole sequence, into a caller-provided output -- the
 /// shape a client maps an array with, and the one the C ABI and the wasm face
 /// both call. `input` broadcasts when it holds a single value, exactly as
 /// [`crate::builtins::at`] does; no allocation, so the audio thread may call it.
@@ -610,12 +610,12 @@ mod tests {
     use super::*;
 
     /// The reference values are SuperCollider's, computed in sclang and
-    /// rounded — the family exists to agree with it, so the agreement is
+    /// rounded -- the family exists to agree with it, so the agreement is
     /// asserted rather than described.
     /// **Every map is still the pair of primitives it is documented as**, bit
     /// for bit. Preparing the bounds once moved the formulas behind
     /// [`Read`]/[`Write`], so this is what says the table still wires each op
-    /// to the right two axes — and that hoisting the invariants did not shift a
+    /// to the right two axes -- and that hoisting the invariants did not shift a
     /// single result, which it may not: a def and the client control driving it
     /// read the same map, and a last-ulp difference between them is drift.
     #[test]

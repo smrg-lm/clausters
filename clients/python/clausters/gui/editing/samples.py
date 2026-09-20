@@ -9,7 +9,7 @@ shared is the payload's shape and its coalesce key; where the state lives is the
 client's, and this module is that half.
 
 **The inverse rides on the wire.** A ``"draw"`` carries the run it wrote *and*
-the run it replaced, and a ``"sample"`` carries the value and the previous one —
+the run it replaced, and a ``"sample"`` carries the value and the previous one --
 the protocol was written that way precisely so an owner can invert a stroke
 without having remembered anything. So nothing is read back from the server to
 undo: the edit and its inverse arrive together, and what the history records is
@@ -149,7 +149,7 @@ class SamplesEditor(Editor):
     """A buffer's samples on screen, editable back into the server's buffer.
 
     The picture and the sound are the **same** buffer: the host draws what the
-    server holds, and a stroke writes there — so what is heard after an edit is
+    server holds, and a stroke writes there -- so what is heard after an edit is
     what is seen, with no copy in between.
     """
 
@@ -245,7 +245,7 @@ class SamplesEditor(Editor):
 
     @property
     def layers(self) -> tuple:
-        """What the picture measures — `("peak", "rms")` for the editor's
+        """What the picture measures -- `("peak", "rms")` for the editor's
         view, `("peak",)` for the bare envelope.
 
         **Assigning it on an open view sends one message.** The measure is a

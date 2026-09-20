@@ -3,13 +3,13 @@
 //!
 //! A ruler, a navigation window, a selection, a playhead and a value range
 //! describe the **container's axes**, not each element drawn against them, so
-//! the wire declares them nested under one `axes` key — not bare `x`/`y`,
+//! the wire declares them nested under one `axes` key -- not bare `x`/`y`,
 //! which are already the free-placement props, and a container that is placed
 //! *and* owns axes would have no way to say which it meant.
 //!
 //! Inside the host they are flat (`view_start`, `ruler_y`, `y_len`, …): one
 //! prop per key, which is what [`EditorProps`](super::EditorProps) parses, what
-//! a `/gui_set` addresses and what a `/gui_info` can answer — an OSC reply is
+//! a `/gui_set` addresses and what a `/gui_info` can answer -- an OSC reply is
 //! flat arguments, so a structural prop cannot be reported at all. So a pair is
 //! **flattened at the door**, once, before anything records the node; under an
 //! axis a property drops the axis marker, so `x.start` is `view_start` and
@@ -23,7 +23,7 @@ use super::GuiNode;
 /// The key an axis pair rides under.
 pub(crate) const AXES: &str = "axes";
 
-/// Flattens every `axes` pair in a tree, in place — the pass a def makes on
+/// Flattens every `axes` pair in a tree, in place -- the pass a def makes on
 /// the way in, before the registry records the node or the renderer reads it.
 /// The node's `type` is untouched: only the chrome moves, so a `/gui_query`
 /// still answers in the vocabulary the tree was written in.
@@ -41,7 +41,7 @@ pub(crate) fn flatten_tree(node: &mut GuiNode) {
 }
 
 /// Flattens an `axes` pair into the props each axis is spelled as today,
-/// without overwriting a flat prop the node also names — a node that says both
+/// without overwriting a flat prop the node also names -- a node that says both
 /// is mid-migration, and the spelling it is being migrated *from* is the one
 /// its author most recently meant.
 pub(crate) fn flatten(axes: &Map<String, Value>, out: &mut Map<String, Value>) {

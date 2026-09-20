@@ -1,9 +1,9 @@
 // The directed patcher model: boxes with typed inlets/outlets and cords
 // (mirrors the level-1 half of `clausters/defs/patch.py`).
 //
-// This is the **programmatic** patcher — the `patch` GUI widget is only a visual
+// This is the **programmatic** patcher -- the `patch` GUI widget is only a visual
 // view of it (`toWidget` renders the model the widget draws). A box is a **whole
-// def** (a SynthDef/FaustDef the server has) — itself a graph — and the patch
+// def** (a SynthDef/FaustDef the server has) -- itself a graph -- and the patch
 // compiles to a **GraphDef**, whole nodes wired by server buses. A cord *is* a
 // bus, but you never number one: `compile` runs the shared cord→bus pass
 // (`clausters_core::patch`, through the core's wasm door) that names one bus per
@@ -18,19 +18,19 @@
 //     p.connect(tone, "out", dac, "in");      // tone -> dac -> speakers
 //     await p.toGraphdef("chain").send(server);
 //
-// Pass a `SynthDef` to `add` and its typed ports are read off the def itself — a
+// Pass a `SynthDef` to `add` and its typed ports are read off the def itself -- a
 // control feeding an `In` is an inlet, one feeding an `Out` an outlet (the same
 // structural fact the server uses to order a graph). Or pass a def **name** and
 // list the ports yourself.
 //
 // The buses are never drawn or named by you, so **the hardware output is not one
-// either**: a signal reaches the speakers through a **terminal def** — a `dac`
-// with an inlet and no outlet, its `out(0, …)` baked in — a box like any other.
+// either**: a signal reaches the speakers through a **terminal def** -- a `dac`
+// with an inlet and no outlet, its `out(0, …)` baked in -- a box like any other.
 //
 // The **rate** of a port is its cord type: an audio port is a plain name, a
 // control port the pair `[name, "control"]`.
 //
-// **Level 2 — `DefPatch`, one def's internal UGen graph — is not ported yet**
+// **Level 2 -- `DefPatch`, one def's internal UGen graph -- is not ported yet**
 // (`clients/web/PLAN.md`). What is here is what the multitrack editor needs to
 // draw a logical aggregate, and the gap is named rather than papered over.
 
@@ -56,12 +56,12 @@ const WRITERS: Record<string, PortRate> = {
     OutCtl: "control",
 };
 
-/** The rate a cord runs at — the two a **server bus** has. */
+/** The rate a cord runs at -- the two a **server bus** has. */
 export type PortRate = "audio" | "control";
 
 /**
  * The rate a cord is *drawn* at. Level 2 adds a third weight over the bus
- * rates: **init** (`ir`) — a scalar read once at init time, never a bus, so it
+ * rates: **init** (`ir`) -- a scalar read once at init time, never a bus, so it
  * exists only inside one def's graph and the widget dashes it.
  */
 export type CordRate = PortRate | "init";
@@ -127,7 +127,7 @@ export interface Compiled {
 
 /**
  * Derive a `SynthDef`'s patcher ports `[inlets, outlets]` from its graph, the way
- * the directed patcher wants them — **structural, not a guess**: a control that
+ * the directed patcher wants them -- **structural, not a guess**: a control that
  * feeds an `In`/`InCtl` is an inlet, one that feeds an `Out`/`OutCtl`/
  * `ReplaceOut` is an outlet, and the reading/writing UGen's family fixes the rate
  * (audio for `In`/`Out`, control for the `Ctl` pair). A control that feeds
@@ -178,7 +178,7 @@ function* walk(roots: readonly unknown[]): Generator<Ugen> {
 }
 
 /**
- * Normalize a port spec — a bare name (audio) or `[name, "control"]` — into the
+ * Normalize a port spec -- a bare name (audio) or `[name, "control"]` -- into the
  * flat `{name, dir, rate}` the cord→bus pass consumes.
  */
 function port(spec: PortSpec, dir: "in" | "out"): Port {
@@ -190,7 +190,7 @@ function port(spec: PortSpec, dir: "in" | "out"): Port {
 }
 
 /**
- * A directed level-1 patch — whole defs wired by buses — that compiles to a
+ * A directed level-1 patch -- whole defs wired by buses -- that compiles to a
  * `GraphDef`. Its boxes and the cords between their ports.
  */
 export class GraphPatch {
@@ -203,8 +203,8 @@ export class GraphPatch {
 
     /**
      * Add a box for a def and answer its index. `defname` is either a `SynthDef`
-     * — whose typed ports are then **derived from its graph** (see
-     * {@link synthdefPorts}) — or a def **name**, for which you list the
+     * -- whose typed ports are then **derived from its graph** (see
+     * {@link synthdefPorts}) -- or a def **name**, for which you list the
      * `inlets`/`outlets` yourself. Passing explicit ports with a `SynthDef`
      * overrides the derived ones. A **terminal** def (a sink that reaches
      * hardware itself) is simply one with inlets and no outlets.
@@ -264,7 +264,7 @@ export class GraphPatch {
     // ---- decoding a stored graph back into a patch ----
 
     /**
-     * Decode a `GraphDef` into a directed patch — the inverse of
+     * Decode a `GraphDef` into a directed patch -- the inverse of
      * {@link GraphPatch.toGraphdef}. Each member becomes a box; a member control
      * valued an internal-bus **name** (a string other than the hardware sentinel
      * `"OUT"`) becomes a cord from the writing outlet to every reading inlet on
@@ -273,7 +273,7 @@ export class GraphPatch {
      * Direction and rate are **not guessed**: a box's typed ports come from its
      * def, so `defs` maps a member's def name to the `SynthDef` it was built
      * from. A member whose def is not resolvable through `defs` draws
-     * **port-less** — its wiring cannot be typed, so it grows no cords. The box
+     * **port-less** -- its wiring cannot be typed, so it grows no cords. The box
      * order is the member order, so a caller maps a box index straight back to
      * the member it came from.
      */
@@ -321,7 +321,7 @@ export class GraphPatch {
     }
 
     /**
-     * Run the shared cord→bus pass. Answers `{buses, members}` — one private bus
+     * Run the shared cord→bus pass. Answers `{buses, members}` -- one private bus
      * per connected net (writers summing), each member its def and its wired
      * controls. Throws on a bad cord (reversed, rate-mismatched, out of range),
      * naming the offender.
@@ -358,7 +358,7 @@ export class GraphPatch {
      * inlets/outlets and cords as `[fromBox, outlet, toBox, inlet]` quadruples
      * (the indices are within each box's inlet/outlet lists). Pass `geometry`
      * (`{boxIndex: [x, y]}`) to place boxes; the rest auto-stack. The GUI edits
-     * the same model — a `"wire"` event names its ports, which
+     * the same model -- a `"wire"` event names its ports, which
      * {@link GraphPatch.connect} resolves, so the round trip needs no index
      * bookkeeping.
      */
@@ -408,7 +408,7 @@ function splitIndex(boxes: PatchBox[], box: number, flat: number, dir: "in" | "o
 }
 
 /**
- * Render the shared `{boxes, cords}` model into the `patch` widget schema — boxes
+ * Render the shared `{boxes, cords}` model into the `patch` widget schema -- boxes
  * with split inlet/outlet lists and cords as flat `[fromBox, outlet, toBox,
  * inlet]` quadruples.
  */
@@ -447,7 +447,7 @@ function patchToWidget(
 }
 
 // ===================================================================
-// Level 2: the Def-view — a SynthDef/FaustDef as its internal graph.
+// Level 2: the Def-view -- a SynthDef/FaustDef as its internal graph.
 // ===================================================================
 
 /**
@@ -455,7 +455,7 @@ function patchToWidget(
  * scalar) is the level-2 third weight (dashed); `dr` (demand) has no bus weight
  * of its own, so it reads as control. An **unset** UGen rate defaults to audio:
  * most UGens are audio-rate, and the exact per-kind default is the server's,
- * not the client's — an honest headless heuristic for a view.
+ * not the client's -- an honest headless heuristic for a view.
  */
 const UGEN_RATE: Record<string, CordRate> = {
     ar: "audio",
@@ -478,7 +478,7 @@ const CONTROL_RATE: Record<string, CordRate> = {
 const FAUST_CONTROL_OPS = new Set(["hslider", "vslider", "nentry", "button", "checkbox"]);
 
 /**
- * The cord type of `node`'s output — `"audio"`/`"control"`/`"init"` — for
+ * The cord type of `node`'s output -- `"audio"`/`"control"`/`"init"` -- for
  * drawing and typing a cord. A `Ugen` maps its calc rate (unset → audio); a
  * `Control` maps its type (unset → control); a bare number is a constant
  * (init).
@@ -509,7 +509,7 @@ function formatConst(value: unknown): string {
 }
 
 /**
- * The flat index of a box's single outlet in its `ports` — the inlets come
+ * The flat index of a box's single outlet in its `ports` -- the inlets come
  * first, so it is the inlet count.
  */
 function outletFlat(box: PatchBox): number {
@@ -518,7 +518,7 @@ function outletFlat(box: PatchBox): number {
 
 /**
  * Every `Ugen` reachable from `outputs` in the def's topological order (a UGen
- * after its inputs), each once — the same post-order `SynthDef` serialization
+ * after its inputs), each once -- the same post-order `SynthDef` serialization
  * walks, so in the decode a box's input boxes always precede it.
  */
 function topoUgens(outputs: readonly Channel[]): Ugen[] {
@@ -535,15 +535,15 @@ function topoUgens(outputs: readonly Channel[]): Ugen[] {
 }
 
 /**
- * A level-2 patch — the internal graph of a single `SynthDef`/`FaustDef`, its
+ * A level-2 patch -- the internal graph of a single `SynthDef`/`FaustDef`, its
  * UGen (or Faust op) boxes wired by internal cords. Built as a **read-only
  * view**: {@link DefPatch.fromSynthdef} / {@link DefPatch.fromFaustdef} decode a
  * def's in-memory graph so it draws as its boxes; {@link DefPatch.toWidget}
  * renders it for the `patch` widget exactly as level 1, plus the init (`ir`)
  * cord type; {@link DefPatch.toSynthdef} reconstructs the SynthDef (the decode
- * is faithful — the round trip reproduces the spec).
+ * is faithful -- the round trip reproduces the spec).
  *
- * A cord here is an **internal wire**, never an allocated server bus — that is
+ * A cord here is an **internal wire**, never an allocated server bus -- that is
  * the whole difference from {@link GraphPatch}.
  */
 export class DefPatch {
@@ -556,13 +556,13 @@ export class DefPatch {
      */
     boxes: PatchBox[] = [];
     /**
-     * Each cord — flat port indices into each box's `ports` (an outlet → an
+     * Each cord -- flat port indices into each box's `ports` (an outlet → an
      * inlet).
      */
     cords: Cord[] = [];
     /**
      * Box indices of the def's output roots (its `out`/side-effect UGens or the
-     * Faust output signals), in order — what {@link DefPatch.toSynthdef}
+     * Faust output signals), in order -- what {@link DefPatch.toSynthdef}
      * rebuilds.
      */
     roots: number[] = [];
@@ -573,13 +573,13 @@ export class DefPatch {
      * Decode a `SynthDef`'s in-memory UGen graph into a level-2 patch: every
      * UGen a box, every referenced control a **source** box, every constant a
      * **value** box, and every input a cord. Each box carries a layout role, so
-     * the host draws it as an inverted tree — controls pinned to the top row,
+     * the host draws it as an inverted tree -- controls pinned to the top row,
      * value boxes tucked above the box they feed, sinks at the bottom.
      */
     static fromSynthdef(sdef: SynthDef): DefPatch {
         const patch = new DefPatch();
         const ordered = topoUgens(sdef.roots);
-        // Controls first (one box per unique name — the pinned source row), then
+        // Controls first (one box per unique name -- the pinned source row), then
         // the UGens in the def's own order (each after the inputs that feed it).
         const controls = new Map<string, number>();
         for (const u of ordered) {
@@ -648,7 +648,7 @@ export class DefPatch {
     }
 
     /**
-     * Add a **value** box for a literal input and answer its index — a source
+     * Add a **value** box for a literal input and answer its index -- a source
      * with a single init-rate outlet, captioned with the number.
      */
     private addConst(value: unknown): number {
@@ -670,7 +670,7 @@ export class DefPatch {
 
     /**
      * Decode a `FaustDef` into a level-2 patch. A **signal-tree** def
-     * (`FaustDef.fromSignals`) decodes node for node — every signal op a box,
+     * (`FaustDef.fromSignals`) decodes node for node -- every signal op a box,
      * every control (slider/button) a source box, every operand a cord. A
      * **box-tree** or **source** def is opaque (its internals are the Faust
      * compiler's, not reconstructable client-side), so it draws as a single
@@ -740,7 +740,7 @@ export class DefPatch {
     // ---- the GUI view + the SynthDef round trip ----
 
     /**
-     * The patch as the `patch` widget draws it — boxes with split
+     * The patch as the `patch` widget draws it -- boxes with split
      * inlets/outlets and flat cord quadruples (see `patchToWidget`), the
      * same schema level 1 uses, with init cords dashed.
      */
@@ -749,7 +749,7 @@ export class DefPatch {
     }
 
     /**
-     * Reconstruct the `SynthDef` this patch represents — the inverse of
+     * Reconstruct the `SynthDef` this patch represents -- the inverse of
      * {@link DefPatch.fromSynthdef}. Each box is rebuilt from its cords
      * (following them back to the sources, so a shared box rebuilds once and
      * value boxes resolve to their numbers). Only a UGen-graph patch rebuilds;

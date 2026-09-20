@@ -8,7 +8,7 @@ the ambient verbs accept where a def is wanted, and what
 
 The distinction the base above this one cannot make: `clausters.base.absobject.
 AbstractObject` is the *operator* protocol, and the value side
-(`clausters.base.builtins`) shares it — the same written expression composes
+(`clausters.base.builtins`) shares it -- the same written expression composes
 concrete numbers or a graph depending on the subclass. `Expr` is the half that
 composes a graph.
 
@@ -23,8 +23,8 @@ buses.
 
 Not every composable thing is one: `clausters.defs.pv_expr.PvExpr` composes a
 symbolic **per-bin** expression that serializes to the token list ``PV_Kernel``
-interprets. It is never a graph node — it cannot be a def root nor a UGen input
-— so it stays outside this hierarchy and the verbs keep rejecting it.
+interprets. It is never a graph node -- it cannot be a def root nor a UGen input
+-- so it stays outside this hierarchy and the verbs keep rejecting it.
 
 These are markers: they carry no behavior, and the four composition hooks stay
 in the classes that implement them.
@@ -34,7 +34,7 @@ from ..base.absobject import AbstractObject
 
 
 class Expr(AbstractObject):
-    """Something that composes a DSP graph rather than a value — a `SynthExpr`
+    """Something that composes a DSP graph rather than a value -- a `SynthExpr`
     or a `FaustExpr`. The type the ambient verbs (`clausters.play`,
     `clausters.plot`, `clausters.render`) accept as a bare expression."""
 

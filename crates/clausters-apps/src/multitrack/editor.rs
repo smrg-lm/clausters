@@ -5,7 +5,7 @@
 //! editor reads the message ([`Conversation`]), reads the gesture in the
 //! multitrack's vocabulary (the projection's intake), applies each edit with the
 //! inverse read before it lands ([`domain::edit`]), keeps where the reader put
-//! the position cursor, and answers — an acknowledgement, the corrections a
+//! the position cursor, and answers -- an acknowledgement, the corrections a
 //! refused or overtaken gesture needs, the reason when one is owed.
 //!
 //! # What it hands back rather than does
@@ -87,7 +87,7 @@ pub struct Outcome {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 #[serde(tag = "verb", rename_all = "camelCase")]
 pub enum TransportVerb {
-    /// Play, or pause where it stands — whichever the transport is not doing.
+    /// Play, or pause where it stands -- whichever the transport is not doing.
     Toggle,
     /// Halt and go back to the mark: the position cursor, not the top.
     Stop {
@@ -190,7 +190,7 @@ impl MultitrackEditor {
         self.size = size;
     }
 
-    /// The transport row's ids, learned after the window opened — what a client
+    /// The transport row's ids, learned after the window opened -- what a client
     /// that numbers id-less widgets on the way out hands back.
     pub fn set_controls(&mut self, ids: Option<TransportIds>) {
         self.controls = ids;
@@ -206,7 +206,7 @@ impl MultitrackEditor {
         &self.multitrack
     }
 
-    /// Replaces the multitrack — a caller that edited it by a route that was not a
+    /// Replaces the multitrack -- a caller that edited it by a route that was not a
     /// turn of this editor.
     pub fn set_multitrack(&mut self, multitrack: Multitrack) {
         self.multitrack = multitrack;
@@ -261,7 +261,7 @@ impl MultitrackEditor {
         self.cursor
     }
 
-    /// Places the position cursor, in seconds — a caller's own verb, like a
+    /// Places the position cursor, in seconds -- a caller's own verb, like a
     /// rewind.
     pub fn set_cursor(&mut self, secs: Option<f64>) {
         self.cursor = secs;
@@ -298,13 +298,13 @@ impl MultitrackEditor {
     }
 
     /// Whether a message on `widget` tagged `tag` is this editor's to answer:
-    /// one of its widgets, or its window's own `play` — the space bar.
+    /// one of its widgets, or its window's own `play` -- the space bar.
     pub fn answers(&self, widget: i32, tag: &str) -> bool {
         self.owns(widget) || (self.window == Some(widget) && tag == PLAY_KEY)
     }
 
     /// **Rewind**: the position cursor back at the top, and a stopped
-    /// transport cued there. The cursor's own verb, not the transport's — it is
+    /// transport cued there. The cursor's own verb, not the transport's -- it is
     /// where the next play starts, and stop goes back to it rather than to the
     /// top.
     pub fn rewind(&mut self, version: i64) -> Outcome {
@@ -343,7 +343,7 @@ impl MultitrackEditor {
     /// region that is a window onto nothing loaded answers with no source.
     ///
     /// The multitrack places and a box is entered to edit. What opens is
-    /// another application's — an editor for what the box holds — so this
+    /// another application's -- an editor for what the box holds -- so this
     /// answers what to open and not how.
     pub fn box_contents(&self, name: &str) -> Option<BoxContents> {
         let id = name.trim().parse::<u64>().ok()?;
@@ -460,7 +460,7 @@ impl MultitrackEditor {
         out
     }
 
-    /// **One payload of a history step**, applied to the multitrack — the inverse
+    /// **One payload of a history step**, applied to the multitrack -- the inverse
     /// of an edit this editor recorded, or the edit again.
     pub fn apply(&mut self, payload: &Value) -> Applied {
         let mut out = Applied {
@@ -477,7 +477,7 @@ impl MultitrackEditor {
         out
     }
 
-    /// **Every widget of the window, corrected**, with nothing to retire — what
+    /// **Every widget of the window, corrected**, with nothing to retire -- what
     /// a history step leaves behind, and what a second window over the multitrack
     /// is told when this one edited it.
     pub fn resync_all(&mut self, version: i64) -> Answer {
@@ -496,13 +496,13 @@ impl MultitrackEditor {
     /// **A name the host minted is answered with the one the multitrack kept.**
     ///
     /// A gesture is normally answered with an acknowledgement alone, because the
-    /// report described the result. Where the host **makes** something — a
-    /// track from a double click, a box from a split — the host mints the word
+    /// report described the result. Where the host **makes** something -- a
+    /// track from a double click, a box from a split -- the host mints the word
     /// and the document mints the id, and a name the multitrack does not know is
     /// read as something new on the next report. So when what the host was last
     /// told differs from what the multitrack now holds, the multitrack goes back whole.
     ///
-    /// Called once a changed turn has been carried out — after a minted source
+    /// Called once a changed turn has been carried out -- after a minted source
     /// has a buffer, so the box that windows it draws.
     pub fn settle(&mut self, version: i64) -> Answer {
         let (Some(_), Some(widget), Some(told)) = (self.window, self.widget, self.told.as_ref())
@@ -855,27 +855,27 @@ pub fn new_json(request: &str) -> Option<MultitrackEditor> {
     Some(editor)
 }
 
-/// **One verb of an editor, over JSON** — the door both clients bind.
+/// **One verb of an editor, over JSON** -- the door both clients bind.
 ///
 /// One door rather than one per verb because the verbs are the application's
 /// surface, and a door per verb would be each binding restating it. `request`
 /// names the `verb` and carries its arguments:
 ///
-/// - `sync` — `multitrack`, `sources`, `meters`, `cursor` (beats or `null`),
+/// - `sync` -- `multitrack`, `sources`, `meters`, `cursor` (beats or `null`),
 ///   `window`, `controls` (the transport row's ids): the state a caller holds,
 ///   handed over before the verbs that read it.
-/// - `rewind`, `toggle`, `stop` — `version`: the transport row's verbs, as a
+/// - `rewind`, `toggle`, `stop` -- `version`: the transport row's verbs, as a
 ///   script calls them, each an [`Outcome`].
-/// - `clock` — `position` (beats): `{"text"}`, what the clock reads.
-/// - `box` — `name`: `{"source", "title"}`, what the box of that name opens
+/// - `clock` -- `position` (beats): `{"text"}`, what the clock reads.
+/// - `box` -- `name`: `{"source", "title"}`, what the box of that name opens
 ///   as, or `null` for a name no region has.
-/// - `window` — `widget`, `ruler`: the window, as a GuiDef.
-/// - `setWindow` — `window` (an id or `null`).
-/// - `props` — `widget`.
-/// - `event` — `addr`, `args`, `version`: an [`Outcome`].
-/// - `apply` — `payload`: an [`Applied`].
-/// - `resync`, `settle`, `announce` — `version`: an [`Answer`].
-/// - `acknowledge` — `seq`, `version`, `reason`: an [`Answer`].
+/// - `window` -- `widget`, `ruler`: the window, as a GuiDef.
+/// - `setWindow` -- `window` (an id or `null`).
+/// - `props` -- `widget`.
+/// - `event` -- `addr`, `args`, `version`: an [`Outcome`].
+/// - `apply` -- `payload`: an [`Applied`].
+/// - `resync`, `settle`, `announce` -- `version`: an [`Answer`].
+/// - `acknowledge` -- `seq`, `version`, `reason`: an [`Answer`].
 ///
 /// An unknown verb answers `{}`.
 pub fn call_json(editor: &mut MultitrackEditor, request: &str) -> String {

@@ -23,7 +23,7 @@ back, so a node only hears what was written earlier in the same pass. There are
 two ways to get it right, and this page does both to the same graph.
 
 <b>By hand.</b> <code>AddAction</code> places a node when it is made, and five
-verbs move one afterwards — <code>before</code>, <code>after</code>,
+verbs move one afterwards -- <code>before</code>, <code>after</code>,
 <code>order</code>, <code>head</code> and <code>tail</code>.
 <code>node.order()</code> is the one to reach for when a whole chain moves: it
 is one message, so the order it is written in is the order it arrives in.
@@ -32,22 +32,22 @@ is one message, so the order it is written in is the order it arrives in.
 who depends on whom. The same reading answers two different questions, and each
 is a verb on the group:
 
-<code>group.autoOrder()</code> (<code>/group_sortMode</code>) — <i>in what order
+<code>group.autoOrder()</code> (<code>/group_sortMode</code>) -- <i>in what order
 must these run?</i> A node that reads a bus runs after the node that writes it.
 Add the members in any order and the chain comes out right, now and after every
 later change.
 
-<code>group.parallel()</code> (<code>/group_parallel</code>) — <i>which of these
+<code>group.parallel()</code> (<code>/group_parallel</code>) -- <i>which of these
 can run at the same time?</i> Members that touch no bus in common cannot affect
 each other, so the server batches them into stages and the DSP worker threads
 take them. The samples are the same either way.
 
 Four voices write four private buses and one mixer sums them to the output, and
-they are added <b>backwards</b> — the mixer first, so it reads buses nobody has
+they are added <b>backwards</b> -- the mixer first, so it reads buses nobody has
 written yet. You hear four turns: silence, the chord the hand puts in order,
 silence again when the hand puts it back wrong, and the chord the moment
 <code>autoOrder</code> lands; the tree below is the server's answer printed
-back — and a group's line says which modes it is under, so
+back -- and a group's line says which modes it is under, so
 <code>group 1000 (parallel)</code> becomes <code>group 1000 (auto, parallel)</code>
 exactly when the last turn lands.
 
@@ -68,7 +68,7 @@ would be undone on the next change.</div>
 
       The one line that cannot be the same is the session: `Session.embed` is
       this client's `live`, and it takes no `workers` because the engine in a
-      page is one thread — `parallel` is accepted and remembered there and
+      page is one thread -- `parallel` is accepted and remembered there and
       changes nothing, exactly as on a native server started without
       `--workers`. That is a platform difference, not a divergence: the flag,
       the analysis and the samples are identical, and what a page lacks is

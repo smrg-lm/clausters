@@ -3,8 +3,8 @@
 //! Natively, `/def_send faust` hands the payload to a dedicated thread that
 //! calls libfaust and posts a [`CompileResult`] back; the command loop drains
 //! the results on its own schedule and answers `/done` or `/fail`. A page has
-//! no libfaust and no thread here — the compiler is `libfaust-wasm` in the
-//! engine's Worker — so this backend keeps the *same shape* and moves the
+//! no libfaust and no thread here -- the compiler is `libfaust-wasm` in the
+//! engine's Worker -- so this backend keeps the *same shape* and moves the
 //! middle step outside: [`CompilerThread::submit`] parks the request, the host
 //! drains [`CompilerThread::take_jobs`], compiles and instantiates the module
 //! against the engine's memory, and answers with
@@ -13,7 +13,7 @@
 //!
 //! This is the same delegation the browser engine already uses for soundfile
 //! decoding (`server::nrt`), for the same reason: the audio thread owes a block
-//! every 2.67 ms and cannot wait on anything. Nothing on the wire changes —
+//! every 2.67 ms and cannot wait on anything. Nothing on the wire changes --
 //! `/def_send faust` was always asynchronous, and the only observable
 //! difference from a window is that the reply stops being `/fail`.
 //!
@@ -57,7 +57,7 @@ pub struct CompileResult {
 pub struct CompileJob {
     pub ticket: u64,
     pub name: String,
-    /// `"source"`, `"boxes"` or `"signals"` — which of the three def formats
+    /// `"source"`, `"boxes"` or `"signals"` -- which of the three def formats
     /// the payload is in, so the host calls the right libfaust entry point.
     pub kind: &'static str,
     pub def: String,
@@ -81,7 +81,7 @@ pub struct CompilerThread {
 impl CompilerThread {
     /// `waker` is the socket poke a worker thread uses to end the command
     /// loop's blocking recv. There is no worker thread and no blocking recv in
-    /// a page — the host pulls a serving turn before every block — so it is
+    /// a page -- the host pulls a serving turn before every block -- so it is
     /// accepted and dropped, keeping one call site in `osc::server`. So is
     /// `meters`: the compilation runs in the host, not here, so no role slot
     /// could measure it (`server::meters`).
@@ -119,7 +119,7 @@ impl CompilerThread {
         }
     }
 
-    /// Blocking with deadline — meaningless here, since nothing can arrive
+    /// Blocking with deadline -- meaningless here, since nothing can arrive
     /// while this build is inside a call. Answers whatever is already there.
     pub fn recv_result_timeout(&self, _timeout: std::time::Duration) -> Option<CompileResult> {
         self.try_result()
@@ -143,7 +143,7 @@ impl CompilerThread {
     }
 
     /// Answers one outstanding job: the linked def, or the compiler's own
-    /// error text. An unknown ticket is ignored — a host that answers twice is
+    /// error text. An unknown ticket is ignored -- a host that answers twice is
     /// confused, not dangerous.
     pub fn finish(&self, ticket: u64, outcome: Result<FaustDef, String>) {
         let mut inner = self.lock();
@@ -178,9 +178,9 @@ impl CompilerThread {
 /// compiles a def where it stands and time does not advance until it has, so
 /// there is no turn in which a result could arrive.
 ///
-/// So the page does the same work in the other order — read the score's Faust
+/// So the page does the same work in the other order -- read the score's Faust
 /// defs *before* the render starts ([`crate::server::render::Score::faust_jobs`]),
-/// compile and link them in the Worker, deposit them here, and then render —
+/// compile and link them in the Worker, deposit them here, and then render --
 /// and the renderer's `/def_send faust` becomes a lookup. The store is global
 /// because the render entry point is a free function with no host object to
 /// carry it, and a page has one engine instance per scope.
@@ -219,7 +219,7 @@ pub fn prelinked(name: &str) -> Option<Arc<FaustDef>> {
 ///
 /// # Safety
 /// The caller must have instantiated the module described here against the
-/// engine's own memory and table — see [`FaustDef::link`].
+/// engine's own memory and table -- see [`FaustDef::link`].
 pub unsafe fn link(compute: u32, init: u32, json: &str) -> Result<FaustDef, String> {
     let parsed = crate::faust::json_ui::FaustJson::parse(json)?;
     unsafe { FaustDef::link(compute, init, parsed.layout()) }
@@ -227,7 +227,7 @@ pub unsafe fn link(compute: u32, init: u32, json: &str) -> Result<FaustDef, Stri
 
 /// Builds a Faust **box** from a JSON box tree, inside the compiler's arena.
 ///
-/// The interpreter is [`crate::faust::boxes`] — the same one a native server
+/// The interpreter is [`crate::faust::boxes`] -- the same one a native server
 /// runs, and the reason this milestone exists at all: a def built with the box
 /// API must mean the same thing in a tab and in a window, which only holds if
 /// one program reads it. Here its `Cbox*` calls are imports the page binds to

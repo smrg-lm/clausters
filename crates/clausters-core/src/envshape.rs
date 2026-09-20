@@ -6,7 +6,7 @@
 //! position. It is the single source of truth for the segment math: the
 //! server's `EnvGen` UGen plays envelopes through it and a client drawing or
 //! editing an envelope (the GUI's breakpoint editor) evaluates the very same
-//! function — what the editor draws is what the server plays, by construction.
+//! function -- what the editor draws is what the server plays, by construction.
 //!
 //! Allocation-free, so the audio thread calls it directly.
 
@@ -40,7 +40,7 @@ pub fn shape_value(shape: i32, c: f32, a: f32, b: f32, t: f32) -> f32 {
         // the segment completes.
         SHAPE_HOLD => a,
         // Exponential: equal ratios, which is exactly the map `warp` writes
-        // between two levels — including the rule for the levels that have no
+        // between two levels -- including the rule for the levels that have no
         // ratio (a zero endpoint, a sign change). That rule is the server's
         // `XLine`'s too, so it is read from one place rather than restated.
         SHAPE_EXPONENTIAL => crate::warp::exp_value(t, a, b),
@@ -81,7 +81,7 @@ pub fn shape_value(shape: i32, c: f32, a: f32, b: f32, t: f32) -> f32 {
 /// own range with a tenth of headroom, and a flat curve still gets a band to be
 /// dragged in.
 ///
-/// It is the fresh answer, and on its own it is right exactly once — see
+/// It is the fresh answer, and on its own it is right exactly once -- see
 /// [`curve_axis`], which is what a view actually asks.
 pub fn curve_range(values: &[f64]) -> (f64, f64) {
     let mut lo = f64::INFINITY;
@@ -109,7 +109,7 @@ pub fn curve_range(values: &[f64]) -> (f64, f64) {
 /// data stopped fitting inside it.
 ///
 /// Recomputing the range on every redraw is what makes an edit rescale the
-/// picture — drag one point and every other one visibly moves — so the axis is
+/// picture -- drag one point and every other one visibly moves -- so the axis is
 /// remembered per curve and only ever **grows**: never narrowed, so a point
 /// dragged down and back up leaves the drawing where it was.
 ///

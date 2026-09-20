@@ -16,7 +16,7 @@
     <main>
       <div>the def model and the <code>Server</code> over the in-page carrier:
         a SynthDef built here, sent, played and freed against the engine in
-        this page's AudioWorklet — no server process, and nothing below
+        this page's AudioWorklet -- no server process, and nothing below
         <code>Server</code> naming a transport.</div>
       <button id="boot">boot + play</button>
       <pre id="log"></pre>
@@ -26,8 +26,8 @@
       The in-page half of W1's acceptance (clients/web/test.sh, headless
       Chrome): ?smoke=1 auto-runs, defines a def, plays it, reads it back out
       of the node tree, hears it on an analyser and frees it. Verdict beaconed
-      as a fetch, read from the HTTP access log. The WS half — both def
-      families against a native server — is tests/server.test.ts.
+      as a fetch, read from the HTTP access log. The WS half -- both def
+      families against a native server -- is tests/server.test.ts.
     -->
     <script type="module">
       import {
@@ -92,7 +92,7 @@
         const synth = new Synth("page_beep", { freq: 330.0, amp: 0.2 }, { server });
         await server.sync();
 
-        // Read it back out of the tree — the queryable half of the acceptance.
+        // Read it back out of the tree -- the queryable half of the acceptance.
         const info = await synth.info();
         if (info.defname !== "page_beep" || info.controls.freq !== 330) {
           throw new Error(`unexpected node: ${JSON.stringify(info)}`);

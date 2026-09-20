@@ -1,6 +1,6 @@
 //! Shared timeline navigation groups: the linked-views state model.
 //!
-//! Different views of the same sound must navigate as one — the classic editor
+//! Different views of the same sound must navigate as one -- the classic editor
 //! layout is a waveform lane and a spectrogram lane under one time axis with
 //! one selection. This module extracts the per-widget navigation/selection/
 //! playhead state (formerly a per-slot [`View`] in each front) into one
@@ -22,14 +22,14 @@
 //! member's buffer: the group's length is the maximum of its members'
 //! registered data extents (a shorter member simply ends earlier), and a group
 //! may span windows. That shape is what the multitrack (DAW-style) view is
-//! built on: a clip there is a member with a *placement* — a start offset on
-//! the same shared timeline, set through [`Host::set_timeline_offset`] — so a
+//! built on: a clip there is a member with a *placement* -- a start offset on
+//! the same shared timeline, set through [`Host::set_timeline_offset`] -- so a
 //! lane of clips and a pair of linked lanes are one model, not two.
 //!
 //! A **selection is a count of samples**, always: `sel_len` is how many of them
 //! it holds, and `sel_start` is the first ([`snap_selection`] is the one door).
 //! A sweep is a pixel gesture and a pixel is worth a fraction of a sample once
-//! the view is zoomed in far enough — so an unsnapped selection covers the
+//! the view is zoomed in far enough -- so an unsnapped selection covers the
 //! space *between* two samples, a region containing no data at all: it cannot
 //! be played, it cannot be cut, and the band drawn for it answers for nothing.
 //! The snap takes the samples the sweep **passed over** (`ceil`/`floor`), not
@@ -39,18 +39,18 @@
 //! two are views of one timeline, laid over each other by an editor, reading
 //! one selection.
 //!
-//! A selection may also be **restricted on a second axis** — the value range a
+//! A selection may also be **restricted on a second axis** -- the value range a
 //! marquee swept over a view that measures one ([`value_span`]). That half is
 //! *not* here, and the split is the point: the time span is the group's because
 //! every linked view shows the same time, while the views sharing it measure
-//! different things vertically — amplitude, hertz, pitch — so a range held in
+//! different things vertically -- amplitude, hertz, pitch -- so a range held in
 //! the group would restrict a spectrogram in hertz by a waveform's amplitudes.
 //! It lives on the widget that swept it (`EditorProps::sel_min`/`sel_max`),
 //! beside the y window, which is the same line already drawn there: only the y
 //! axis stays per-widget.
 //!
 //! Selection and playhead live in the group and **only** there: every reader
-//! — the frame renderer, the animation demand, the readouts — resolves the
+//! -- the frame renderer, the animation demand, the readouts -- resolves the
 //! member's key and reads the shared state, so there is nothing to keep in
 //! step. A member's own `sel_*`/`playhead*` props are the *seed* a fresh
 //! group takes its def-time values from, and are inert from then on.
@@ -84,7 +84,7 @@ pub fn group_key(widget_id: i32, link: Option<i32>) -> GroupKey {
     }
 }
 
-/// The samples a sweep from `a` to `b` (any order) covers, as `(start, len)` —
+/// The samples a sweep from `a` to `b` (any order) covers, as `(start, len)` --
 /// the one rounding every write goes through.
 ///
 /// **The samples the sweep has passed over, not the ones it is nearest.** The
@@ -93,16 +93,16 @@ pub fn group_key(widget_id: i32, link: Option<i32>) -> GroupKey {
 /// take in a sample half a sample-width before the cursor gets there and drop
 /// one it has already passed, which reads as the selection disagreeing with the
 /// hand. `len` is a **count**: `start .. start + len` are the selected indices,
-/// and a sweep that has not reached a sample yet selects nothing at all — it is
+/// and a sweep that has not reached a sample yet selects nothing at all -- it is
 /// still the click it started as.
 /// The value range a sweep from `a` to `b` (any order) covers on an axis whose
-/// domain is `(min, max)` — the second axis' door, beside [`snap_selection`].
+/// domain is `(min, max)` -- the second axis' door, beside [`snap_selection`].
 ///
 /// **The same treatment on its own domain, which on a continuous axis means
 /// ordering and clamping and nothing else.** The time axis snaps because its
 /// data is discrete: a sweep takes the samples it *passed over*, and one it has
-/// not reached yet is not in. An amplitude has nothing to pass over — every
-/// value between two samples' worth of height is a value the signal can take —
+/// not reached yet is not in. An amplitude has nothing to pass over -- every
+/// value between two samples' worth of height is a value the signal can take --
 /// so the range is the two values under the sweep's edges, and the only thing
 /// that can be wrong about it is naming a value the axis does not have. Where a
 /// value axis *is* discrete (a roll's pitch), the passed-over rule holds in its
@@ -123,7 +123,7 @@ pub fn snap_selection(a: f64, b: f64) -> (f64, f64) {
 /// The shared state of one navigation group: the visible window, the
 /// selection and the playhead anchor, all in timeline sample units.
 ///
-/// Every member reads this one value — it is what a linked view *is* — so it
+/// Every member reads this one value -- it is what a linked view *is* -- so it
 /// is `Copy`: a reader takes the state it draws with by value and the group
 /// stays the only place it is written.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -135,12 +135,12 @@ pub struct GroupState {
     /// Selection length (samples; `<= 0` = no selection).
     pub sel_len: f64,
     /// The engine sample-clock value mapping to timeline sample 0 (negative =
-    /// no playhead) — the same convention as `EditorProps::playhead_at`.
+    /// no playhead) -- the same convention as `EditorProps::playhead_at`.
     pub playhead_at: f64,
     /// The static cursor of a located, stopped transport (`< 0` = none).
     pub playhead: f64,
     /// **The position cursor** (`< 0` = none): where a playback starts and
-    /// where a paste lands — the same convention as `EditorProps::cursor`.
+    /// where a paste lands -- the same convention as `EditorProps::cursor`.
     ///
     /// The second line, and the only one a hand places. The playhead pair
     /// above says where the *music* is, swept from the clock or parked where
@@ -148,14 +148,14 @@ pub struct GroupState {
     /// a click on the ruler moves it. Group-wide because a paste anchor that
     /// differed between two lanes of one multitrack would not be an anchor.
     pub cursor: f64,
-    /// The sweep's loop region (samples; `len <= 0` = the straight pass) — the
+    /// The sweep's loop region (samples; `len <= 0` = the straight pass) -- the
     /// same convention as `EditorProps::playhead_loop_start`/`_len`. Group-wide
     /// like the anchor: linked views must wrap the line at the same place, or
     /// one file's waveform and spectrogram would disagree about where it is.
     pub playhead_loop_start: f64,
     pub playhead_loop_len: f64,
     /// **The extent this window was last clamped against.** Not a fact about
-    /// the content — that is `timeline_total`, read from the members — but
+    /// the content -- that is `timeline_total`, read from the members -- but
     /// about *this window*: it is what says whether the view was showing
     /// everything or was zoomed into part of it, which is a question only
     /// answerable against the total that was in force when the hand left it.
@@ -167,8 +167,8 @@ pub struct GroupState {
 }
 
 impl GroupState {
-    /// A fresh group seeded from a member's editor props — the def-time
-    /// selection and playhead — over the window `nav`.
+    /// A fresh group seeded from a member's editor props -- the def-time
+    /// selection and playhead -- over the window `nav`.
     pub(crate) fn seed(editor: &EditorProps, nav: View) -> GroupState {
         GroupState {
             nav,
@@ -195,27 +195,27 @@ impl GroupState {
     }
 
     /// Where the playhead stands, in timeline sample units, for an engine
-    /// `sample_clock` — the one place the sweep is defined, so every member of
+    /// `sample_clock` -- the one place the sweep is defined, so every member of
     /// the group agrees.
     ///
     /// A transport that is *playing* anchors `playhead_at` and the line is
     /// swept from Rust every frame with no message per frame; a *located,
     /// stopped* one parks on the static `playhead`. `playhead_loop_len > 0`
-    /// wraps the sweep inside `[playhead_loop_start, +len)` — what a looping
-    /// region (an editor's "play selection", a looping clip) actually does —
+    /// wraps the sweep inside `[playhead_loop_start, +len)` -- what a looping
+    /// region (an editor's "play selection", a looping clip) actually does --
     /// and leaves the straight pass untouched otherwise.
     pub fn head_at(&self, sample_clock: f64) -> Option<f64> {
         self.swept_at(sample_clock)
             .or_else(|| (self.playhead >= 0.0).then_some(self.playhead))
     }
 
-    /// **The position cursor**, or `None` where none has been placed — the
+    /// **The position cursor**, or `None` where none has been placed -- the
     /// line a click on the ruler puts down, which nothing else moves.
     pub fn cursor(&self) -> Option<f64> {
         (self.cursor >= 0.0).then_some(self.cursor)
     }
 
-    /// Where the *swept* playhead stands — `Some` only while a transport is
+    /// Where the *swept* playhead stands -- `Some` only while a transport is
     /// running (`playhead_at` anchored, the clock started), so a caller that
     /// must tell playing from stopped keeps that distinction; [`head_at`] adds
     /// the parked cursor on top.
@@ -250,7 +250,7 @@ impl GroupState {
 }
 
 /// The x offset, inside a member's own rect, where the shared time axis begins
-/// — and therefore where every member of the group draws its body.
+/// -- and therefore where every member of the group draws its body.
 ///
 /// It is the **widest** gutter any member of the group asks for, because the
 /// alternative is what the catalog did until now: each widget indented by its
@@ -265,8 +265,8 @@ impl GroupState {
 /// The shared indent of every navigation group in one window's tree.
 ///
 /// It is read from the **tree** rather than from the placements because it is a
-/// fact about the *kinds* on an axis — which of them wants a header, a keyboard
-/// or a value ruler — so it is known before a single rectangle is, which is
+/// fact about the *kinds* on an axis -- which of them wants a header, a keyboard
+/// or a value ruler -- so it is known before a single rectangle is, which is
 /// what lets the layout pass place a lane's clips with it. The layout stamps
 /// the answer on every placement ([`super::layout::Placed::indent`]), and the
 /// renderer and the hit-test read it from there, so a clip is dragged on the
@@ -286,11 +286,11 @@ pub(crate) fn group_indents(tree: &Widget, metrics: &Metrics) -> HashMap<GroupKe
 /// or `None` when the role-sized `floor` already covers every one of them.
 ///
 /// [`super::widget::WidgetKind::gutter`] answers from the kind alone, which is what lets the layout
-/// place a lane's clips — but a value ruler's width is a property of the
+/// place a lane's clips -- but a value ruler's width is a property of the
 /// *data*, not of the kind: an amplitude axis zoomed onto a narrow range
 /// formats `-0.0625` where the same axis unzoomed formats `-1.0`, and the step
 /// it labels at depends on how tall the member ended up. That is one pass too
-/// late, hence the second one in [`super::layout::layout_on`] — taken only when
+/// late, hence the second one in [`super::layout::layout_on`] -- taken only when
 /// the answer would change, so a window of ordinary axes lays out once.
 ///
 /// Two things it deliberately does not measure. A **hertz** axis is left on the
@@ -298,7 +298,7 @@ pub(crate) fn group_indents(tree: &Widget, metrics: &Metrics) -> HashMap<GroupKe
 /// frequency they run to is the analysis', not the tree's. And a member is
 /// measured as **one lane**: a stacked view's lanes are shorter than its body
 /// and so step more coarsely, so this asks for at most what a multichannel
-/// member needs and never for less — a gutter is a reservation, and reserving a
+/// member needs and never for less -- a gutter is a reservation, and reserving a
 /// character wide costs pixels where reserving short clamps a label.
 pub(crate) fn measured_indents(
     placed: &[super::layout::Placed<'_>],
@@ -325,7 +325,7 @@ pub(crate) fn measured_indents(
 
 /// The chrome band of a member: everything left of the shared body, full
 /// height. A lane draws its header here, a roll its keys, a heavy view its
-/// value ruler — each into the whole band, so the band's right edge (which is
+/// value ruler -- each into the whole band, so the band's right edge (which is
 /// the axis' left edge) is the one they agree on.
 pub(crate) fn gutter_band(rect: Rect, indent: f32) -> Rect {
     Rect::new(rect.x, rect.y, indent.min(rect.w), rect.h)
@@ -339,7 +339,7 @@ pub struct TimelineGroups {
     /// Per-widget data extent in samples, registered by the fronts when a
     /// view's data loads; a group's timeline length is the max over members.
     totals: HashMap<i32, usize>,
-    /// **The view whose selection was written last**, whatever wrote it — the
+    /// **The view whose selection was written last**, whatever wrote it -- the
     /// addressee a block operation falls back to when the pointer is over
     /// nothing (see [`Host::selection_addressee`]). Last selection wins,
     /// because it is the only ordering a window has over its views.
@@ -369,8 +369,8 @@ impl TimelineGroups {
 
     /// **The axis widget `id` was placed on**, as the coordinate system an
     /// element is handed ([`TimeSpace`]): the group's window, this member's own
-    /// registered extent on it, the shared selection, and — for a caller that
-    /// has the engine `clock` — where the playhead stands.
+    /// registered extent on it, the shared selection, and -- for a caller that
+    /// has the engine `clock` -- where the playhead stands.
     ///
     /// One function, called by the frame when it draws an element and by the
     /// machine when it drags one, so a note is grabbed by the pixels it was
@@ -389,7 +389,7 @@ impl TimelineGroups {
             head: clock.and_then(|c| state.head_at(c)),
             cursor: (state.cursor >= 0.0).then_some(state.cursor),
             // A member of a navigation group stands on its own rectangle: it is
-            // its own layer, over its own contents — nothing above it is
+            // its own layer, over its own contents -- nothing above it is
             // deciding between claimants or showing a window of it.
             active: true,
             window: crate::host::widget::SourceWindow::default(),
@@ -440,7 +440,7 @@ impl Host {
     }
 
     /// The timeline length of group `key`: the max of its members' **placed**
-    /// data extents — each member's data occupies `[offset, offset + extent]`
+    /// data extents -- each member's data occupies `[offset, offset + extent]`
     /// on the shared timeline, so a clip placed late lengthens the group. A
     /// group with nothing in it yet falls back to the axis it navigates empty
     /// (see [`timeline_empty_span`]), so it is never zero.
@@ -465,18 +465,18 @@ impl Host {
 
     /// How far past its content an **authoring** group may be navigated: a lane
     /// or a roll must be zoomable *out* into empty time, or there is nowhere to
-    /// drag a clip to and nowhere to record into — the multitrack would only
+    /// drag a clip to and nowhere to record into -- the multitrack would only
     /// ever grow by dropping something beyond the visible edge. The heavy views
     /// keep their content-bound axis (there is no signal out there to look at),
     /// so the headroom applies only to a group that holds an authoring surface.
     const NAV_HEADROOM: usize = 4;
 
-    /// The empty time a `pianoroll` group navigates over, in beats — the axis a
+    /// The empty time a `pianoroll` group navigates over, in beats -- the axis a
     /// roll has *before* its content does. A roll is written into (drawn, or
     /// recorded from MIDI), so its timeline is not its notes: it is a grid that
     /// exists first and scrolls, like a DAW's lane while it records. Without it
     /// an empty roll navigates the single sample [`View::full`] floors to, and
-    /// every note painted into it lands outside the window — the roll stays
+    /// every note painted into it lands outside the window -- the roll stays
     /// blank however much is written. Four bars of 4/4, read off its own grid.
     ///
     /// It is a **floor on the axis, not on the content**: `timeline_total` stays
@@ -489,7 +489,7 @@ impl Host {
     /// before there is anything drawn against it.
     const ASSUMED_RATE: f64 = 48_000.0;
 
-    /// The length the navigation window is clamped against — the group's content
+    /// The length the navigation window is clamped against -- the group's content
     /// plus the authoring headroom, and never less than a roll's empty grid (so
     /// the window a roll opened on survives its first note arriving).
     fn timeline_span(&self, key: GroupKey) -> usize {
@@ -536,7 +536,7 @@ impl Host {
     }
 
     /// The `(sample_rate, tempo)` grid of the first **authored** surface in
-    /// group `key` — one whose content it holds itself rather than loading,
+    /// group `key` -- one whose content it holds itself rather than loading,
     /// which is the surface whose axis exists before anything is on it.
     fn roll_grid(&self, key: GroupKey) -> Option<(f64, f64)> {
         self.window_defs.values().find_map(|tree| {
@@ -550,7 +550,7 @@ impl Host {
 
     /// Whether group `key` holds a view whose axis is **not bounded by what it
     /// holds** (`OnAxis::unbounded_axis`)
-    /// — a multitrack, which is composed into the space after its last clip.
+    /// -- a multitrack, which is composed into the space after its last clip.
     fn group_has_lane(&self, key: GroupKey) -> bool {
         self.window_defs.values().any(|tree| {
             tree.descendants().any(|w| {
@@ -569,8 +569,8 @@ impl Host {
         Some((nav, self.timeline_total(key)))
     }
 
-    /// Registers the length of a **live** axis — one whose content slides,
-    /// like a retained waterfall's — and re-fits the view **only while nobody
+    /// Registers the length of a **live** axis -- one whose content slides,
+    /// like a retained waterfall's -- and re-fits the view **only while nobody
     /// has navigated it**.
     ///
     /// A retained axis is a sliding window of a bus: its sample 0 is a moving
@@ -594,7 +594,7 @@ impl Host {
         }
     }
 
-    /// The distinct window roots showing any member of group `key` — the
+    /// The distinct window roots showing any member of group `key` -- the
     /// windows a group mutation must repaint.
     fn timeline_roots(&self, key: GroupKey) -> Vec<i32> {
         let mut roots = Vec::new();
@@ -614,11 +614,11 @@ impl Host {
     }
 
     /// Registers an extent **without refitting** a window that happens to be
-    /// showing the whole timeline — the variant a *gesture* uses.
+    /// showing the whole timeline -- the variant a *gesture* uses.
     ///
     /// The refit below ("it was showing it all, keep showing it all") is right
     /// when the content changes under a still view: a def arriving, a `/gui_set`
-    /// moving a clip. Under a drag it is wrong, and visibly so — every step
+    /// moving a clip. Under a drag it is wrong, and visibly so -- every step
     /// grows the content, the window grows with it, and dragging a clip rightward
     /// *zooms the axis out* from under the cursor instead of scrolling. A DAW
     /// scrolls at constant zoom, so a dragged extent keeps the window's length.
@@ -626,11 +626,11 @@ impl Host {
         self.set_timeline_total_inner(id, total, false);
     }
 
-    /// **Was this window showing exactly the whole timeline?** — the one test
+    /// **Was this window showing exactly the whole timeline?** -- the one test
     /// that decides whether a content change refits it, asked in the same words
     /// wherever it is asked: here for an extent registered, and in
-    /// [`sync_timeline_groups`] for a def rebuilt. Anything else — zoomed in, or
-    /// zoomed out into the empty headroom a lane has on purpose — is a window
+    /// [`sync_timeline_groups`] for a def rebuilt. Anything else -- zoomed in, or
+    /// zoomed out into the empty headroom a lane has on purpose -- is a window
     /// somebody chose, and choosing it is what stops the content from moving it.
     ///
     /// [`sync_timeline_groups`]: Host::sync_timeline_groups
@@ -638,14 +638,14 @@ impl Host {
         len > 0.0 && (len - total as f64).abs() < 1.0
     }
 
-    /// **What a change in the content does to the window** — the one place that
+    /// **What a change in the content does to the window** -- the one place that
     /// decides it, for every door the content comes in by: an extent
     /// registered, a clip's offset set, a lane rebuilt under a redefine.
     ///
     /// `refit` is what the *caller* would like ("it was showing it all, keep
     /// showing it all"); `autofit` is what the **view** allows, and it comes
     /// first. Off, the window is the reader's and nothing about the content
-    /// touches it — not a refit, and not the re-clamp either, since a multitrack
+    /// touches it -- not a refit, and not the re-clamp either, since a multitrack
     /// that got shorter would otherwise pull a window back off the empty bars
     /// the reader had deliberately scrolled onto. The extent is still
     /// registered, so navigating still knows how far it can go: the clamp
@@ -689,7 +689,7 @@ impl Host {
         self.content_moved(key, old_total, refit);
     }
 
-    /// Registers every `track` lane's extent — the end of its last clip — with
+    /// Registers every `track` lane's extent -- the end of its last clip -- with
     /// its navigation group, so the shared axis spans every lane. A lane's
     /// "data" is its clips, so this is the lane's answer to the data extent the
     /// fronts register for a loaded waveform, and it must be re-run whenever a
@@ -698,7 +698,7 @@ impl Host {
         self.sync_track_totals_inner(true);
     }
 
-    /// The same registration, keeping the window's length — what a **drag**
+    /// The same registration, keeping the window's length -- what a **drag**
     /// calls, so extending the content scrolls the axis instead of zooming it
     /// out from under the cursor (see [`set_timeline_total_keeping_view`]).
     ///
@@ -790,7 +790,7 @@ impl Host {
 
     /// Writes the selection spanning timeline samples `a..b` (any order,
     /// clamped) into widget `id`'s group and mirrors it into every member.
-    /// Returns `(start, len, roots to repaint)` — the gesture path.
+    /// Returns `(start, len, roots to repaint)` -- the gesture path.
     pub fn select_timeline(&mut self, id: i32, a: f64, b: f64) -> Option<(f64, f64, Vec<i32>)> {
         let key = self.timeline_key(id)?;
         let total = self.timeline_total(key) as f64;
@@ -817,7 +817,7 @@ impl Host {
         Some((start, len, roots))
     }
 
-    /// Whether widget `id`'s axis is **not bounded by anything it holds** —
+    /// Whether widget `id`'s axis is **not bounded by anything it holds** --
     /// the multitrack, which is composed into the space after its last clip.
     fn is_lane(&self, id: i32) -> bool {
         self.window_defs
@@ -827,7 +827,7 @@ impl Host {
 
     /// Sets widget `id`'s group selection from the `/gui_set` `sel_start`/
     /// `sel_len` keys (either alone keeps the other). Returns the roots to
-    /// repaint — every member draws the group's selection, so they all do.
+    /// repaint -- every member draws the group's selection, so they all do.
     ///
     /// The wire's numbers are snapped to whole samples like a sweep's: a
     /// selection is a count of samples whoever wrote it, and a script setting a
@@ -850,8 +850,8 @@ impl Host {
         if let Some(len) = len {
             state.sel_len = len.round();
         }
-        // The one door every selection goes through — a sweep, a `/gui_set`,
-        // an edit-back — so it is where "the last one made" is recorded. A
+        // The one door every selection goes through -- a sweep, a `/gui_set`,
+        // an edit-back -- so it is where "the last one made" is recorded. A
         // cleared selection gives the title up rather than keeping it.
         //
         let selected = state.sel_len > 0.0;
@@ -864,13 +864,13 @@ impl Host {
     }
 
     /// **Who a block operation is addressed to when the pointer is over
-    /// nothing** — the view in window `def_id` that carries the window's most
+    /// nothing** -- the view in window `def_id` that carries the window's most
     /// recent selection.
     ///
     /// The pointer is the addressee whenever it is over a view, and that is
     /// unchanged: a selection is where the pointer has been. But a sweep that
     /// ends at the very start or end of the contents leaves the pointer in the
-    /// window's margin — or off the window, where there is no pointer at all —
+    /// window's margin -- or off the window, where there is no pointer at all --
     /// and there a copy answered nothing at all, silently, over a selection
     /// plainly drawn on screen. So the selection itself names the addressee,
     /// and **the last selection made wins**, which is the only ordering a
@@ -896,7 +896,7 @@ impl Host {
         self.timeline_roots(key)
     }
 
-    /// Sets the group's **parked playhead** — where a located, stopped
+    /// Sets the group's **parked playhead** -- where a located, stopped
     /// transport sits. Group-wide, so all the lanes show one line.
     pub fn park_timeline_head(&mut self, id: i32, pos: f64) -> Vec<i32> {
         let Some(key) = self.timeline_key(id) else {
@@ -909,12 +909,12 @@ impl Host {
         self.timeline_roots(key)
     }
 
-    /// **Places the position cursor** at `pos`, on a whole sample — the group's,
+    /// **Places the position cursor** at `pos`, on a whole sample -- the group's,
     /// so every lane of the multitrack shows the one mark.
     ///
     /// It moves nothing else, and that is the whole rule. The playhead is not
     /// placed: it *starts* from here, and while the transport runs it is the
-    /// engine's own position — so a click that lands mid-playback leaves the
+    /// engine's own position -- so a click that lands mid-playback leaves the
     /// music exactly where it is and moves only the mark. What the click means
     /// beyond the mark is the owner's (`"locate"`), which is where a seek
     /// happens if one is wanted.
@@ -932,7 +932,7 @@ impl Host {
         self.timeline_roots(key)
     }
 
-    /// Sets the group's **playhead loop region** — where the swept line wraps
+    /// Sets the group's **playhead loop region** -- where the swept line wraps
     /// (samples; a non-positive length restores the straight pass). Group-wide,
     /// so linked views wrap at one place.
     pub fn set_timeline_playhead_loop(
@@ -983,8 +983,8 @@ impl Host {
 
     /// Moves widget `id` to the group of `link` (`None` unlinks it into its
     /// private group). The widget *carries its current group state along* when
-    /// the target group does not exist yet — unlinking keeps the view it had,
-    /// diverging from there — and *adopts* the target group's state when it
+    /// the target group does not exist yet -- unlinking keeps the view it had,
+    /// diverging from there -- and *adopts* the target group's state when it
     /// does. Returns the roots to repaint (the old and the new group's).
     pub fn set_timeline_link(&mut self, id: i32, link: Option<i32>) -> Vec<i32> {
         let Some(old_key) = self.timeline_key(id) else {
@@ -1030,7 +1030,7 @@ impl Host {
 
     /// Ensures every timeline widget's group exists. Called after a `/gui_def`
     /// builds (or rebuilds) a window tree:
-    /// `redefined` names that def, whose widgets get rebuild semantics — any
+    /// `redefined` names that def, whose widgets get rebuild semantics -- any
     /// group confined to that def is reseeded fresh; a group spanning other
     /// windows survives and the redefined members adopt it. Data extents are
     /// kept (the fronts re-register them as the new data loads, and the prune
@@ -1048,7 +1048,7 @@ impl Host {
         // **Read before the totals are re-registered**, which is what makes the
         // rule true rather than only written down: `sync_track_totals` below
         // *refits* every window to the new extent, so a state taken after it
-        // has already lost what was on screen — and the comparison against the
+        // has already lost what was on screen -- and the comparison against the
         // new total then always says "this view was showing everything". The
         // window survived a redefine only while the content's length did
         // not change, which is exactly the case where nothing needed surviving.
@@ -1151,7 +1151,7 @@ impl Host {
     }
 
     /// Drops group states and data extents whose widgets no longer exist (after
-    /// a `/gui_free` or a redefining `/gui_def`) — the timeline sibling of
+    /// a `/gui_free` or a redefining `/gui_def`) -- the timeline sibling of
     /// `prune_bindings`.
     pub(super) fn prune_timeline_groups(&mut self) {
         let members = self.timeline_members();
@@ -1164,7 +1164,7 @@ impl Host {
     }
 
     /// Routes the shared timeline keys of one `/gui_set` on timeline widget
-    /// `id` through the group model — `view_start`/`view_len`, `sel_start`/
+    /// `id` through the group model -- `view_start`/`view_len`, `sel_start`/
     /// `sel_len`, `playhead_at`, `cursor`, the `playhead_loop_*` pair and `link` (a
     /// negative link unlinks) apply group-wide; every other key is applied to
     /// the widget itself by the caller. Pushes a redraw effect per affected window.
@@ -1237,18 +1237,18 @@ impl Host {
     }
 
     /// Page widget `id`'s group forward until the end of its content is inside
-    /// the window again — the other half of writing into a still axis. Keeping
+    /// the window again -- the other half of writing into a still axis. Keeping
     /// the window (`set_timeline_total_keeping_view`) is what stops a growing
     /// take from zooming the axis out from under the notes; this is what stops
     /// it from being written off the right edge. Whole windows at a time, at
     /// constant zoom, so what is on screen holds still while it fills and the
-    /// take continues at the left — a DAW's page scroll while recording, not a
+    /// take continues at the left -- a DAW's page scroll while recording, not a
     /// re-fit. A window still showing everything never moves.
     ///
     /// The same principle as the edge auto-scroll a held clip drag runs
     /// (`Gestures::tick`): *at constant zoom, the window goes where the writing
-    /// is*. They differ only in the trigger — content arriving here, a standing
-    /// cursor there — and are two copies of one rule for now; unifying them is
+    /// is*. They differ only in the trigger -- content arriving here, a standing
+    /// cursor there -- and are two copies of one rule for now; unifying them is
     /// recorded as open in `clients/gui/PLAN.md` (G32d).
     pub(super) fn follow_timeline_end(&mut self, id: i32, effects: &mut Vec<HostEffect>) {
         let Some(key) = self.timeline_key(id) else {
@@ -1305,7 +1305,7 @@ mod tests {
     /// **The two axes round their sweeps by what their data is.** Time is
     /// discrete, so a sweep takes the samples it passed over and one that has
     /// reached none selects nothing. A value axis is continuous, so there is
-    /// nothing to pass over and the range is what the hand drew — ordered, and
+    /// nothing to pass over and the range is what the hand drew -- ordered, and
     /// clamped to the domain, which is the only way it could be wrong.
     #[test]
     fn a_sweep_is_rounded_by_what_its_axis_measures() {
@@ -1375,7 +1375,7 @@ mod tests {
             .unwrap()
     }
 
-    /// What widget `id` draws with: the state of the group it resolves to —
+    /// What widget `id` draws with: the state of the group it resolves to --
     /// the same lookup the frame path and the animation demand do, and the
     /// only place the selection and the playhead exist.
     fn chrome_of(host: &Host, id: i32) -> GroupState {
@@ -1440,8 +1440,8 @@ mod tests {
         assert_eq!(e.head_at(1530.0), Some(430.0));
         assert_eq!(e.head_at(1700.0), Some(400.0));
         assert_eq!(e.head_at(1725.0), Some(425.0));
-        // Before the region — the anchor precedes the loop start, so the first
-        // pass runs up to it — the line still lands inside, never left of it.
+        // Before the region -- the anchor precedes the loop start, so the first
+        // pass runs up to it -- the line still lands inside, never left of it.
         for clock in [1001.0, 1100.0, 1399.0] {
             let pos = e.head_at(clock).unwrap();
             assert!(
@@ -1472,7 +1472,7 @@ mod tests {
     }
 
     /// Every reader resolves the group, so a playhead set on one member is the
-    /// one that decides the *window* animates — including for a member whose
+    /// one that decides the *window* animates -- including for a member whose
     /// own props never carried an anchor. Nothing is copied into the tree, so
     /// this is the check that the resolution actually happens.
     #[test]
@@ -1599,7 +1599,7 @@ mod tests {
     }
 
     /// **A selection counts the samples the sweep passed over.** Swept over a
-    /// window a couple of samples wide, a pixel is worth a fraction of one — so
+    /// window a couple of samples wide, a pixel is worth a fraction of one -- so
     /// an unsnapped sweep selects the space *between* two samples, a region
     /// with no data in it that can be neither played nor cut. And the snap is
     /// `ceil`/`floor` rather than a rounding: a sample joins when the cursor
@@ -1610,7 +1610,7 @@ mod tests {
         // 1.2 -> 2.9: sample 2 is inside, samples 1 and 3 are not.
         let (start, len, _) = host.select_timeline(10, 1.2, 2.9).unwrap();
         assert_eq!((start, len), (2.0, 1.0), "one sample, the one swept over");
-        // Dragged a hair further, sample 3 joins — where rounding to the
+        // Dragged a hair further, sample 3 joins -- where rounding to the
         // nearest would have taken it in back at 2.5, before the cursor got
         // there.
         let (start, len, _) = host.select_timeline(10, 1.2, 3.0).unwrap();
@@ -1707,7 +1707,7 @@ mod tests {
     }
 
     /// A redefine rebuilds a group whose members are confined to the def, and
-    /// leaves one that spans another window alone — **and neither loses the
+    /// leaves one that spans another window alone -- **and neither loses the
     /// window a person navigated to**. What is rebuilt is the group's semantics;
     /// the axis's position is screen state and belongs to nobody's tree.
     #[test]
@@ -1743,7 +1743,7 @@ mod tests {
 
     /// A roll's axis exists *before* its content: it is a surface to write into
     /// (drawn, or recorded from MIDI), so it opens on an empty grid instead of
-    /// the one sample an empty extent would give it — and the notes painted in
+    /// the one sample an empty extent would give it -- and the notes painted in
     /// afterwards scroll under that window rather than collapsing it onto the
     /// first of them. Without this a roll opened empty never shows anything
     /// written into it, which is what the client-side MIDI painting does.

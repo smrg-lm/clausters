@@ -1,7 +1,7 @@
 //! The audio-rate oscilloscope's signal logic: window sizing and trigger
-//! alignment. Pure — no GPU, no shared memory — so it is unit-testable and
+//! alignment. Pure -- no GPU, no shared memory -- so it is unit-testable and
 //! shared by every drawer of a triggered trace: the GUI host's two fronts (the
-//! only difference between them being where the raw tap samples come from — the
+//! only difference between them being where the raw tap samples come from -- the
 //! shm segment vs `/bus_tapStream.reply` snapshots), and a client script drawing its own
 //! oscilloscope from a tap it streams itself.
 //!
@@ -38,8 +38,8 @@ pub fn raw_frames(display: usize) -> usize {
 /// full `display` window after it. The trigger re-arms only after the signal
 /// dips below `level` minus a hysteresis of 2% of the window's peak-to-peak,
 /// so noise riding on the level does not fire mid-cycle. Falls back to the
-/// newest window (free-run, `false`) when no crossing exists — silence, DC,
-/// or a window without a rising edge — so the scope always draws something.
+/// newest window (free-run, `false`) when no crossing exists -- silence, DC,
+/// or a window without a rising edge -- so the scope always draws something.
 pub fn align(raw: &[f32], display: usize, level: f32) -> (usize, bool) {
     if raw.len() <= display {
         return (0, false);

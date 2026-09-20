@@ -3,9 +3,9 @@
 //!
 //! Three carriers behind the one [`ClientId`] seam, mirroring the audio
 //! server's own: **UDP** (a datagram per packet), **TCP** (length-prefixed
-//! frames, [`super::tcp`], on by default — the command plane for payloads a
+//! frames, [`super::tcp`], on by default -- the command plane for payloads a
 //! datagram cannot carry, a whole `/gui_def` tree first among them) and
-//! **WebSocket** ([`super::ws`], opt-in with `--ws` — one OSC packet per
+//! **WebSocket** ([`super::ws`], opt-in with `--ws` -- one OSC packet per
 //! binary message, the browser's carrier into a native host). Every inbound
 //! byte string decodes through the single shared
 //! [`clausters_core::osc::decode_packet`] door, is handed to [`Host`], and the
@@ -36,7 +36,7 @@ pub fn bind_tcp(socket: &UdpSocket, bind: SocketAddr, max_frame: usize) -> io::R
     TcpHub::bind(bind, wake_target(socket)?, max_frame)
 }
 
-/// Binds the script front's WebSocket leg at `bind` for the headless loop —
+/// Binds the script front's WebSocket leg at `bind` for the headless loop --
 /// same wake pattern as TCP. Where it listens is the caller's: like the audio
 /// server's `--ws`, the flag defaults to loopback and an interface is named to
 /// widen it (a browser on another machine is a decision, not a side effect of
@@ -60,7 +60,7 @@ fn wake_target(socket: &UdpSocket) -> io::Result<SocketAddr> {
 /// receive a packet (a UDP datagram, or a framed TCP request drained after the
 /// wake datagram), decode it, let `host` interpret it, send each reply back
 /// to the sender over its own transport. Single-threaded, like the audio
-/// server's command loop. Window effects are logged rather than acted on —
+/// server's command loop. Window effects are logged rather than acted on --
 /// this front has no display (the windowed front lives in [`super::gui`]); it
 /// is for tests, automation and no-display environments.
 pub fn serve(
@@ -95,7 +95,7 @@ pub fn serve(
     }
 }
 
-/// Decodes one packet, runs it through the host, and dispatches the effects —
+/// Decodes one packet, runs it through the host, and dispatches the effects --
 /// replies routed by the requester's `ClientId`.
 fn handle(
     host: &mut Host,

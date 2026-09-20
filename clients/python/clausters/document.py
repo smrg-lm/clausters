@@ -2,12 +2,12 @@
 edit is applied.
 
 The model lives in a Rust crate (`crates/clausters-document`) and every client
-binds that one — this client, the web client, and a ``standalone`` GUI host with
+binds that one -- this client, the web client, and a ``standalone`` GUI host with
 no language attached. **The tree stays there**: a client opens a `Document`,
 applies intents to it, and asks for the JSON when it actually wants the JSON.
 
 The discipline is the point: the crate is the **only** thing that applies an
-intent, so no client can apply an edit and then report what it did — which is
+intent, so no client can apply an edit and then report what it did -- which is
 what would let three clients mean three different things by the same gesture.
 
 Why this module exists
@@ -18,27 +18,27 @@ only by importing a module whose leading underscore says not to. The web client
 has had ``document.ts`` as a public module of its own since it was written, so
 one client had a door and the other had a back way in. That is the kind of
 asymmetry the non-divergence rule exists to catch, and it went unnoticed because
-the only thing that used the door was `clausters.form`'s converter — a frozen,
+the only thing that used the door was `clausters.form`'s converter -- a frozen,
 secondary module the arrangement no longer goes through.
 
 What is here
 ------------
 
-- `Document` — the tree, held by the crate. `Document.apply` hands over
+- `Document` -- the tree, held by the crate. `Document.apply` hands over
   an intent and takes back what happened; `Document.snapshot` is how the JSON
   leaves, asked for rather than paid per edit.
-- `History` and `Log` — the edit pile. A `Log` is a history over one document,
+- `History` and `Log` -- the edit pile. A `Log` is a history over one document,
   which is what an ordinary editing client wants; a `History` spans several
   structures, which is what an application showing a roll and a curve together
   needs so an undo crosses both in one order.
-- `apply_intent` and `resolve_selection` — the one-shot forms, for a caller
+- `apply_intent` and `resolve_selection` -- the one-shot forms, for a caller
   that holds no document.
-- `domain_edit` and `domain_coalesce_key` — the same two questions for a
+- `domain_edit` and `domain_coalesce_key` -- the same two questions for a
   structure that is **not** a document: a curve, a span of samples, a timeline
   of events.
-- `TREE`, `MULTITRACK`, `POINTS`, `SAMPLES`, `EVENTS` — the domain names those
+- `TREE`, `MULTITRACK`, `POINTS`, `SAMPLES`, `EVENTS` -- the domain names those
   two answer for.
-- `FIRST_VERSION` and `SESSION_FORMAT` — the two version numbers the format
+- `FIRST_VERSION` and `SESSION_FORMAT` -- the two version numbers the format
   itself carries.
 
 Usage::
@@ -59,11 +59,11 @@ from ._native import (MULTITRACK, EVENTS, POINTS, SAMPLES, TREE, Document,
 #: The version an unedited document carries.
 #:
 #: One rather than zero, because zero is what an edit means by *unstated* when
-#: it names the state it was made against — the same reservation the GUI host's
+#: it names the state it was made against -- the same reservation the GUI host's
 #: acknowledgement uses.
 FIRST_VERSION = 1
 
-#: The session format this build writes — the crate's ``session::FORMAT``.
+#: The session format this build writes -- the crate's ``session::FORMAT``.
 #:
 #: It moves when a reader that does not know the new shape would read a file
 #: **wrongly**, never for an added field, which an older reader ignores and a
@@ -77,7 +77,7 @@ FIRST_VERSION = 1
 #: `clausters.multitrack.Session` is plain data and nothing else in that module
 #: opens the library, so reading the number from it would make writing a session
 #: need a native load it has never needed. What keeps the two in step instead is
-#: a **test** that asks the crate and compares — which is the check that did not
+#: a **test** that asks the crate and compares -- which is the check that did not
 #: exist when this said 1 and the crate had moved to 2.
 SESSION_FORMAT = 3
 from ._native import document_apply as apply_intent

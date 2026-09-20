@@ -5,7 +5,7 @@ stands** after any gesture; this is the object that holds that on the client's
 side, so a script says what the multitrack *is* and never what a hand did to it.
 
 **It wires nothing that a script would otherwise have to.** `attach` subscribes
-once, to one widget, and turns both edit-backs into this object's own lists —
+once, to one widget, and turns both edit-backs into this object's own lists --
 so there is no handler per clip, no widget id anywhere, and nothing to keep in
 step by hand. Identity is your own name: a clip is placed, drawn and reported
 by the same word you called it.
@@ -33,11 +33,11 @@ class Lane:
     label: str = ""
     #: Its thickness in logical pixels.
     height: float = 96.0
-    #: Silenced. Carried by the host, never interpreted — what a solo does to
+    #: Silenced. Carried by the host, never interpreted -- what a solo does to
     #: *other* lanes is the mixer's rule, and the mixer is yours.
     mute: bool = False
     solo: bool = False
-    #: The level, over ``[0, 1]`` — drawn as the header's knob.
+    #: The level, over ``[0, 1]`` -- drawn as the header's knob.
     gain: float = 1.0
 
 
@@ -46,7 +46,7 @@ class Clip:
     """One box: which lane it is on, and where it sits there.
 
     ``at``, ``dur`` and ``start`` are in the axis' own unit (timeline samples),
-    and ``start`` is the source frame the box's own time zero reads — so
+    and ``start`` is the source frame the box's own time zero reads -- so
     trimming the left edge moves ``at``, ``dur`` and ``start`` together, which is
     what makes a trim hide frames instead of compressing them.
     """
@@ -61,7 +61,7 @@ class Clip:
     #: default) draws an empty box. A number and not samples: they are the
     #: server's, and the host maps or fetches them, so two clips over one take
     #: cost one download. **Negative and not zero**, because buffer 0 is a
-    #: buffer — the first one an allocator hands out.
+    #: buffer -- the first one an allocator hands out.
     source: int = -1
 
     @property
@@ -75,16 +75,16 @@ class Multitrack:
     """The multitrack: its lanes, its clips, and the one widget that draws them.
 
     Args:
-        lanes: the rows, top to bottom — `Lane`s, or the tuples one takes.
-        clips: the boxes — `Clip`s, or the tuples one takes.
+        lanes: the rows, top to bottom -- `Lane`s, or the tuples one takes.
+        clips: the boxes -- `Clip`s, or the tuples one takes.
         snap: the drag grid in axis units; ``0`` is no grid.
         on_change: ``on_change(what)`` after a hand edited the multitrack, with
             ``what`` being ``"clips"`` or ``"lanes"``. It is called *after* this
             object's lists are already the new ones, so a handler reads them
             rather than parsing anything.
         on_locate: ``on_locate(at)`` when a click placed the window's cursor on
-            this widget's axis, in axis units. It is **not** an edit — the multitrack
-            did not change — but it arrives here because the widget owns the
+            this widget's axis, in axis units. It is **not** an edit -- the multitrack
+            did not change -- but it arrives here because the widget owns the
             axis, so this hands it on rather than swallowing it.
     """
 
@@ -118,7 +118,7 @@ class Multitrack:
     def extent(self) -> float:
         """Where the multitrack ends: the furthest clip end, ``0.0`` for none.
 
-        The **end**, not the last onset — a clip dragged past everything else
+        The **end**, not the last onset -- a clip dragged past everything else
         lengthens the multitrack by its whole length.
         """
         return max((c.end for c in self.clips), default=0.0)
@@ -135,7 +135,7 @@ class Multitrack:
         return self._pushed("lanes")
 
     def remove_lane(self, name: str) -> "Multitrack":
-        """Take a lane away. **The clips on it are kept** — they name a lane
+        """Take a lane away. **The clips on it are kept** -- they name a lane
         that is not there, are drawn nowhere, and come back to be re-homed;
         losing them silently is the one thing a removal must not do."""
         self.lanes = [l for l in self.lanes if l.name != name]
@@ -143,7 +143,7 @@ class Multitrack:
 
     def place(self, name: str, lane: str, at: float, dur: float,
               start: float = 0.0, label: str = "", source: int = -1) -> "Multitrack":
-        """Put a clip where you say — adding it, or moving the one of that
+        """Put a clip where you say -- adding it, or moving the one of that
         name. The verb is one because *the multitrack is a statement*: what you hand
         over is where the clip is, not how it got there."""
         found = self.clip(name)
@@ -192,8 +192,8 @@ class Multitrack:
         `view.open` gave back, or the widget handle itself.
 
         It is a second step because a `view` is a *definition* and an id names a
-        *live* widget — one view opens as many times as you like, each window
-        with ids of its own — so which opened window this multitrack is watching has
+        *live* widget -- one view opens as many times as you like, each window
+        with ids of its own -- so which opened window this multitrack is watching has
         to be said. What does not have to be said again is the name: `view`
         remembered it.
 
@@ -214,7 +214,7 @@ class Multitrack:
         return self
 
     def _edited(self, tag, *vals):
-        """Both edit-backs, each the whole list — the multitrack as it now stands."""
+        """Both edit-backs, each the whole list -- the multitrack as it now stands."""
         if tag == "clips":
             self.clips = [Clip(str(n), str(lane), float(at), float(dur),
                                float(start), str(label), int(source))

@@ -3,13 +3,13 @@
 //! Controls need legible labels and values; the host stays dependency-free, so
 //! rather than a font-rasterizer crate it embeds one tiny fixed-cell font and
 //! emits each lit font-pixel as a small filled rectangle into the same [`Mesh`]
-//! the rest of the chrome uses — no texture, no second pipeline.
+//! the rest of the chrome uses -- no texture, no second pipeline.
 //!
 //! **The cell is declared and the face is drawn to fit it, never the other way
 //! round.** [`GLYPH_H`] is the **body box**: the seven rows a capital fills, and
 //! the height every layout reserves ([`height`]). A glyph may put ink *outside*
-//! that box — [`ASCENT`] rows above it for a diacritic, [`DESCENT`] below for a
-//! descender — the way a real typeface overshoots its cap height. That split is
+//! that box -- [`ASCENT`] rows above it for a diacritic, [`DESCENT`] below for a
+//! descender -- the way a real typeface overshoots its cap height. That split is
 //! what let lowercase and Latin-1 land without moving a single rectangle: the
 //! box is the same seven rows it always was, drawn at the same origin, so every
 //! shipped GuiDef lays out exactly as before.
@@ -27,7 +27,7 @@
 //! **A build may draw with a real typeface instead** (`atlas`, the `font-atlas`
 //! feature): the same entry points then measure and emit through a rasterized
 //! glyph atlas. Every one of them asks `atlas::has_face` first, so the bitmap is
-//! the floor and a face is the option — a host built with the feature and pointed at no face
+//! the floor and a face is the option -- a host built with the feature and pointed at no face
 //! draws exactly what a host built without it draws. The two differ in one
 //! visible way, and deliberately: a bitmap glyph's own pixels must stay equal,
 //! so a script's `text_size` is quantized to half-steps of the cell
@@ -44,11 +44,11 @@ pub const GLYPH_W: usize = 5;
 /// The **body box**: the rows a capital fills, and the line height every layout
 /// reserves. Ink outside it ([`ASCENT`], [`DESCENT`]) is overshoot, not size.
 pub const GLYPH_H: usize = 7;
-/// Rows a glyph may reach **above** the body box — where a diacritic goes.
+/// Rows a glyph may reach **above** the body box -- where a diacritic goes.
 /// Only an accented *capital* uses them: a lowercase letter's mark sits over
 /// its x-height, inside the box.
 pub const ASCENT: usize = 2;
-/// Rows a glyph may reach **below** the body box — a descender's tail, and the
+/// Rows a glyph may reach **below** the body box -- a descender's tail, and the
 /// cedilla.
 pub const DESCENT: usize = 1;
 /// The rows one glyph bitmap carries: the ascent, the body, the descent.
@@ -63,7 +63,7 @@ pub const DEFAULT_SIZE: f32 = 2.0;
 /// `ASCENT + GLYPH_H` the descent. Bit 4 (`0x10`) is the leftmost of 5 columns.
 type Bitmap = [u8; ROWS];
 
-/// A glyph whose ink stays inside the body box — every capital, every digit,
+/// A glyph whose ink stays inside the body box -- every capital, every digit,
 /// and the lowercase letters without a tail.
 const fn body(rows: [u8; GLYPH_H]) -> Bitmap {
     [
@@ -79,7 +79,7 @@ const fn descending(rows: [u8; GLYPH_H], tail: u8) -> Bitmap {
 }
 
 /// A **mark** a Latin-1 letter is composed with: two rows drawn above the
-/// base's own topmost ink, or — the cedilla — one row hung under it.
+/// base's own topmost ink, or -- the cedilla -- one row hung under it.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mark {
     Acute,
@@ -116,7 +116,7 @@ impl Mark {
 /// `None` for a character that is a bitmap of its own.
 ///
 /// `i` and `j` decompose to their **dotless** forms, so an accent replaces the
-/// dot instead of stacking on it — which is what the letters mean, and what
+/// dot instead of stacking on it -- which is what the letters mean, and what
 /// keeps `í` inside the body box like every other lowercase.
 fn decompose(c: char) -> Option<(char, Mark)> {
     Some(match c {
@@ -284,7 +284,7 @@ fn base(c: char) -> Bitmap {
         '^' => body([0x04, 0x0A, 0x11, 0, 0, 0, 0]),
         '$' => body([0x04, 0x0F, 0x14, 0x0E, 0x05, 0x1E, 0x04]),
         // The Latin-1 marks and signs that are not a letter with something over
-        // it — the ones a Spanish, French or German label actually reaches for.
+        // it -- the ones a Spanish, French or German label actually reaches for.
         '¡' => body([0x04, 0, 0x04, 0x04, 0x04, 0x04, 0x04]),
         '¿' => body([0x04, 0, 0x04, 0x08, 0x10, 0x11, 0x0E]),
         '«' => body([0, 0x05, 0x0A, 0x14, 0x0A, 0x05, 0]),
@@ -312,7 +312,7 @@ fn base(c: char) -> Bitmap {
         'Þ' => body([0x10, 0x1C, 0x12, 0x12, 0x1C, 0x10, 0x10]),
         'þ' => descending([0x10, 0x10, 0x1C, 0x12, 0x12, 0x1C, 0x10], 0x10),
         // **The accents on their own**, drawn as the marks a composed letter
-        // wears ([`Mark::rows`]) with nothing under them — what a dead key
+        // wears ([`Mark::rows`]) with nothing under them -- what a dead key
         // leaves when the letter after it takes no accent, or when the next
         // press is the space that says "the mark itself". A keyboard produces
         // every one of these, so a field that boxed them looked broken at the
@@ -344,7 +344,7 @@ fn glyph(c: char) -> Bitmap {
                 rows[ASCENT + 2 + i] |= bits;
             }
         }
-        // Over it, two rows above the base's **own** topmost ink — which puts a
+        // Over it, two rows above the base's **own** topmost ink -- which puts a
         // lowercase mark over its x-height, inside the body box, and only lifts
         // a capital's into the ascent.
         over => {
@@ -359,7 +359,7 @@ fn glyph(c: char) -> Bitmap {
     rows
 }
 
-/// **One character's nominal advance** at `scale` — the cell the fixed-pitch
+/// **One character's nominal advance** at `scale` -- the cell the fixed-pitch
 /// face steps by, and the unit of the size roles that are sized to hold text.
 ///
 /// It is a property of the *face*, so a table that reserves room for N
@@ -378,7 +378,7 @@ pub fn advance(scale: f32) -> f32 {
 /// for the fixed-pitch bitmap, the face's own advance for a loaded typeface.
 ///
 /// This is the proportional seam, and it is what [`width`] is a sum of. Nothing
-/// in a layout pass calls it — a measurement happens where a string changes.
+/// in a layout pass calls it -- a measurement happens where a string changes.
 pub fn advance_of(c: char, scale: f32) -> f32 {
     #[cfg(feature = "font-atlas")]
     if atlas::has_face() {
@@ -397,7 +397,7 @@ pub fn width(s: &str, scale: f32) -> f32 {
     s.chars().count() as f32 * advance(scale)
 }
 
-/// The width of the first `cols` characters of `s` — where a caret sits, and
+/// The width of the first `cols` characters of `s` -- where a caret sits, and
 /// where a selection band starts and ends.
 pub fn prefix_width(s: &str, cols: usize, scale: f32) -> f32 {
     let taken: String = s.chars().take(cols).collect();
@@ -405,7 +405,7 @@ pub fn prefix_width(s: &str, cols: usize, scale: f32) -> f32 {
 }
 
 /// The inverse: the character boundary of `s` nearest `dx` pixels from its
-/// start — where a click lands. Past the end of `s` it keeps counting in
+/// start -- where a click lands. Past the end of `s` it keeps counting in
 /// nominal cells, so a click in the empty space right of a line still answers
 /// a column (which the caller clamps to the line).
 pub fn column_at(s: &str, dx: f32, scale: f32) -> usize {
@@ -421,14 +421,14 @@ pub fn column_at(s: &str, dx: f32, scale: f32) -> usize {
     s.chars().count() + ((dx - x) / cell).round().max(0.0) as usize
 }
 
-/// The size a script's `text_size` actually draws at — **the one place two
+/// The size a script's `text_size` actually draws at -- **the one place two
 /// builds of this host legitimately differ**.
 ///
 /// A bitmap glyph is scaled by repeating its own pixels, so a scale that does
 /// not divide the cell evenly makes those pixels unequal: ragged rather than
 /// soft. Half-steps are the rung the metrics table already quantizes its text
 /// roles to, and this puts the prop on the same one. An outline face has no
-/// such constraint — it is rasterized at whatever pixel size is asked for — so
+/// such constraint -- it is rasterized at whatever pixel size is asked for -- so
 /// with a face loaded the prop is the number the script sent.
 pub fn quantize_size(scale: f32) -> f32 {
     #[cfg(feature = "font-atlas")]
@@ -438,19 +438,19 @@ pub fn quantize_size(scale: f32) -> f32 {
     (scale * 2.0).round().max(2.0) / 2.0
 }
 
-/// The pixel height of one line at `scale` — the **body box**, which is what a
+/// The pixel height of one line at `scale` -- the **body box**, which is what a
 /// layout reserves. A diacritic or a descender may draw outside it.
 pub fn height(scale: f32) -> f32 {
     GLYPH_H as f32 * scale
 }
 
-/// How far a glyph's ink may hang **below** the body box at `scale` — a
+/// How far a glyph's ink may hang **below** the body box at `scale` -- a
 /// descender's tail, a cedilla ([`DESCENT`]).
 ///
 /// [`height`] deliberately does not include it: the body box is the line, and
 /// overshoot is overshoot, which is what keeps two lines of text on the same
 /// rhythm whatever letters they happen to contain. But a caption that has to
-/// **clear something under it** — a picture, a field, a control's body — is
+/// **clear something under it** -- a picture, a field, a control's body -- is
 /// measuring against ink and not against a line, so it adds this. Without it a
 /// gap looks right over `Time` and wrong over `tap`, which is a gap that
 /// depends on the text and therefore is not a gap.
@@ -609,7 +609,7 @@ pub fn wrap(s: &str, max_w: f32, scale: f32) -> Vec<String> {
 }
 
 /// The vertical advance from one wrapped line's top to the next: the whole
-/// glyph — the body box plus the room a diacritic and a descender may take —
+/// glyph -- the body box plus the room a diacritic and a descender may take --
 /// so a line with tails never touches the accents of the line under it.
 pub fn line_advance(scale: f32) -> f32 {
     let bitmap = ROWS as f32 * scale;
@@ -683,7 +683,7 @@ mod tests {
     }
 
     /// Lowercase is a real lowercase now, and the letters that need a tail have
-    /// one — below the box, which is what the descent rows are for.
+    /// one -- below the box, which is what the descent rows are for.
     #[test]
     fn lowercase_is_its_own_shape_with_real_descenders() {
         assert_ne!(glyph('a'), glyph('A'), "no longer folded to uppercase");
@@ -706,7 +706,7 @@ mod tests {
         assert_ne!(glyph('ó'), glyph('o'));
         assert_ne!(glyph('ó'), glyph('ò'), "acute and grave differ");
         assert_ne!(glyph('ñ'), glyph('n'));
-        // A lowercase mark sits over the x-height, **inside** the body box —
+        // A lowercase mark sits over the x-height, **inside** the body box --
         // nothing overshoots, so an accented label needs no extra room.
         assert_eq!(&glyph('ó')[..ASCENT], &[0; ASCENT]);
         assert_eq!(&glyph('ñ')[..ASCENT], &[0; ASCENT]);
@@ -721,7 +721,7 @@ mod tests {
     }
 
     /// Every printable Latin-1 character draws something of its own rather than
-    /// the fallback box — the instrument that catches a gap in the table.
+    /// the fallback box -- the instrument that catches a gap in the table.
     #[test]
     fn every_latin1_letter_has_a_glyph() {
         let fallback = base('\u{fffd}');
@@ -776,7 +776,7 @@ mod tests {
     }
 
     /// The wrap's width is measured, so a column count is one multiplication
-    /// away under the fixed-pitch face — which is how these cases read.
+    /// away under the fixed-pitch face -- which is how these cases read.
     fn cols(n: usize) -> f32 {
         (n * ADVANCE) as f32
     }

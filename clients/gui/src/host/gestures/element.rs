@@ -16,18 +16,18 @@ use super::super::widget::element::{Claim, Element, Events, Input, Mods, TimeSpa
 use super::effects::{deliver, deliver_args, emit};
 use super::{GestureCtx, GestureEffect};
 
-/// **Where an element is**, for the machine: which widget — or which *body* of
-/// which container — plus the placement the press was measured against and the
+/// **Where an element is**, for the machine: which widget -- or which *body* of
+/// which container -- plus the placement the press was measured against and the
 /// coordinate system it was placed on.
 ///
 /// The body half is what a container's routing costs. A clip's bodies carry no
 /// id (a script addresses the clip), so a body's address is its container's id
-/// plus the **layer** it is ([`Layer::Content`]) — the same address the
+/// plus the **layer** it is ([`Layer::Content`]) -- the same address the
 /// selection, the drawing gate and the wire name all use, rather than a second
 /// way to name the same child.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct At {
-    /// The widget the press was addressed to — a clip, for a body.
+    /// The widget the press was addressed to -- a clip, for a body.
     pub id: i32,
     /// Which **layer** of that widget, or `None` for the widget itself.
     pub layer: Option<Layer>,
@@ -35,26 +35,26 @@ pub(super) struct At {
     /// Where the shared axis begins inside `rect` (see [`Input::indent`]).
     pub indent: f32,
     pub scale: f32,
-    /// **Which press in a run this is** (see [`Input::clicks`]) — `1` for a
+    /// **Which press in a run this is** (see [`Input::clicks`]) -- `1` for a
     /// press on its own, `2` for the second of a double click.
     ///
     /// It rides on the address because the address is what the machine hands
     /// every phase, and only the press has a number worth carrying: a drag and
     /// a key are not clicks, so both leave it at one.
     pub clicks: u32,
-    /// The **container's** axis, for a body — a clip's own span, resolved by
+    /// The **container's** axis, for a body -- a clip's own span, resolved by
     /// the container that offered the press.
     ///
     /// A widget addressed directly carries none: its axis is its *navigation
     /// group's*, which is looked up per call ([`with`]) rather than
-    /// snapshotted, because the group's window moves under a drag — a note
+    /// snapshotted, because the group's window moves under a drag -- a note
     /// held past the edge of a lane is dragged against an axis that is
     /// scrolling.
     pub time: Option<TimeSpace>,
 }
 
 impl At {
-    /// A widget addressed directly, on no *container's* axis — every element
+    /// A widget addressed directly, on no *container's* axis -- every element
     /// outside a clip. `indent` is where its navigation group starts its body
     /// inside `rect`, `0.0` for an element on no shared axis.
     pub(super) fn widget(id: i32, rect: Rect, scale: f32, indent: f32) -> Self {
@@ -101,7 +101,7 @@ pub(super) fn input<'a>(
 /// (the press resolved it), else the widget's own **navigation group** looked
 /// up now.
 ///
-/// The playhead is deliberately absent — the engine clock is the front's, and
+/// The playhead is deliberately absent -- the engine clock is the front's, and
 /// no gesture is decided by where the line is (see [`TimeSpace::head`]).
 fn time_of(host: &Host, ctx: &GestureCtx, at: At) -> Option<TimeSpace> {
     if at.layer.is_some() {
@@ -113,7 +113,7 @@ fn time_of(host: &Host, ctx: &GestureCtx, at: At) -> Option<TimeSpace> {
 
 /// Runs `f` on the element `at` addresses, with the [`Input`] its placement
 /// implies. `None` when the widget is gone, was never an element, or no longer
-/// holds the body — a drag whose widget was freed under it, which is an
+/// holds the body -- a drag whose widget was freed under it, which is an
 /// ordinary thing to survive.
 pub(super) fn with<R>(
     host: &mut Host,
@@ -135,12 +135,12 @@ pub(super) fn with<R>(
     }
 }
 
-/// **Asks the element at `at` what a rectangle caught** — the one marquee's one
+/// **Asks the element at `at` what a rectangle caught** -- the one marquee's one
 /// question ([`Element::select_in`]).
 ///
 /// Answers `Swept::default()` where there is no element (a lane addresses its
 /// clips, which are widgets the machine places) so a caller can ask without
-/// knowing which kind of view it is sweeping over — which is the point.
+/// knowing which kind of view it is sweeping over -- which is the point.
 pub(super) fn swept(
     host: &mut Host,
     ctx: &GestureCtx,
@@ -156,8 +156,8 @@ pub(super) fn swept(
 /// The one place an element's declared shape ([`Element::hit_area`]) is
 /// applied, with the metrics' hit slop around it. A placement is a rectangle
 /// and the layout hands out whole cells, but plenty of elements are drawn
-/// smaller or rounder than the cell they were given — a knob's dial, a
-/// slider's groove, a checkbox with a word beside it in a stretched row — and
+/// smaller or rounder than the cell they were given -- a knob's dial, a
+/// slider's groove, a checkbox with a word beside it in a stretched row -- and
 /// the air around them belongs to the window, not to the control. Filtering
 /// here rather than in each `press` is what makes that general: an element
 /// states its shape once and never writes the guard, and one that states
@@ -245,7 +245,7 @@ pub(super) fn report(
     out.push(GestureEffect::Redraw(ctx.def_id));
 }
 
-/// The element holding an **overlay** in this window — an open list, a popup —
+/// The element holding an **overlay** in this window -- an open list, a popup --
 /// with the placement it was drawn at.
 ///
 /// Found by asking the tree rather than by remembering: an overlay is declared

@@ -1,6 +1,6 @@
-//! M28 tests: the partitioned convolver — a golden comparison against direct
+//! M28 tests: the partitioned convolver -- a golden comparison against direct
 //! time-domain convolution, the reported intrinsic latency, and a kernel swap
-//! crossfade — driven through the real engine, plus the `prepare_partconv`
+//! crossfade -- driven through the real engine, plus the `prepare_partconv`
 //! buffer layout.
 
 #![cfg(feature = "synth")]
@@ -228,7 +228,7 @@ fn kernel_swap_crossfades() {
 }
 
 /// `prepare_partconv` writes the documented layout: `[L, P]`, then packed
-/// spectra — a delta IR's first partition transforms to an all-ones spectrum.
+/// spectra -- a delta IR's first partition transforms to an all-ones spectrum.
 #[test]
 fn prepare_partconv_layout() {
     let prepared = prepare(&[1.0, 0.0, 0.0], 256);

@@ -1,7 +1,7 @@
 """Clausters GUI client: build GuiDefs and drive the ``clausters-gui`` host.
 
-The GUI host is a second peer in the Clausters system — a *GUI server* for the
-language clients and itself a *client of the audio server* — driven over the
+The GUI host is a second peer in the Clausters system -- a *GUI server* for the
+language clients and itself a *client of the audio server* -- driven over the
 same OSC encoding the audio server uses, with the ``/gui_*`` vocabulary. This
 submodule is the Python side of that protocol: `clausters.gui.guidef` composes a
 widget tree as JSON (the GUI analogue of a ``SynthDef``), and
@@ -17,10 +17,10 @@ playable ``piano`` virtual keyboard (real key proportions, MIDI-shaped note
 events, optionally host-managed server voices), a
 live ``nodetree`` of the server's node graph, a static ``plot`` of a signal and
 a drawable ``bpf`` envelope editor (the server's own ``EnvGen`` segment shapes;
-edits flow back as flat ``"points"`` events — see `env_to_points` /
+edits flow back as flat ``"points"`` events -- see `env_to_points` /
 `points_to_env` for the `clausters.defs.Env` round trip), a multitrack
 ``track``/``clip`` timeline (clips placed by ``offset``/``dur`` on one shared
-time axis — the DAW-style track editor, whose clip bodies are a take, a
+time axis -- the DAW-style track editor, whose clip bodies are a take, a
 piano-roll or an editable automation curve) and a ``patch`` **patcher** of a
 directed, typed signal graph (drag an outlet onto an inlet to wire it);
 live updates flow through ``/gui_set`` and interactions come back as
@@ -29,7 +29,7 @@ structure -- a buffer, a curve, a timeline, a `Multitrack` -- and the edit-backs
 land on that structure, never on the widget tree.
 `clausters.gui.playhead_sync.PlayheadSync` is the play/pause/stop/locate machinery
 every time view shares: it keeps the views' playhead line in step with what
-plays (a `clausters.seq.Timeline`, or the server's transport), whatever the view is — a lane, a piano-roll, an engraved
+plays (a `clausters.seq.Timeline`, or the server's transport), whatever the view is -- a lane, a piano-roll, an engraved
 page. A ``waveform`` can also name a server buffer, a
 ``meter``/``scope`` reads a control bus from the audio server's shared-memory
 segment, and the audio-rate views read its audio taps (route a bus into a tap
@@ -37,7 +37,7 @@ with ``Bus.watch``). A widget can also be *bound*
 (`clausters.gui.host.GuiHost.bind`) so its value flows straight to the audio
 server, bypassing this script. A ``canvas`` runs a script-supplied WGSL shader
 driven by OSC params and control buses. The stereo-field measurements the
-phasescope draws — `correlation` and `lissajous` — are also exposed as plain
+phasescope draws -- `correlation` and `lissajous` -- are also exposed as plain
 functions (shared with the native host through ``clausters-core``) for headless
 analysis. See the ``examples/gui_*.py`` family (``gui_skeleton`` for the
 headless protocol, ``gui_window``/``gui_panel`` for windows and controls,
@@ -113,7 +113,7 @@ from .playhead_sync import PlayheadSync
 
 #: **The builder, not the submodule.** Importing `clausters.gui.multitrack`
 #: binds the module as an attribute of this package, which overwrites the
-#: `multitrack` the `guidef` import above put here — so a script asking for
+#: `multitrack` the `guidef` import above put here -- so a script asking for
 #: `clausters.gui.multitrack` got a module it could not call. Re-bound here,
 #: after every submodule is in, because the widget is what the name means on
 #: this surface: the module is reached as `clausters.gui.multitrack` only by
@@ -131,7 +131,7 @@ def set_ambient_host(host):
     `clausters.plot` and `clausters.scope` resolve a host without being told
     one: the current session's, else a ``clausters-gui`` process they boot and
     own. That fallback assumes the host is a local process, which is the one
-    assumption an out-of-process front cannot meet — a host living somewhere
+    assumption an out-of-process front cannot meet -- a host living somewhere
     this module knows nothing about (a canvas reached over a carrier of the
     caller's own, a test double collecting packets) has no process to boot.
     Registering one here puts it ahead of the fallback, so the verbs keep
@@ -154,8 +154,8 @@ def app_clock(host=None):
     """The `clausters.base.appclock.AppClock` of ``host``, or of the ambient one.
 
     The application's clock: **seconds**, on the thread the windows are drained
-    on. It is where anything that touches a window belongs — an animation, a
-    periodic read-out, a follow-up to a gesture — and it is what a routine on
+    on. It is where anything that touches a window belongs -- an animation, a
+    periodic read-out, a follow-up to a gesture -- and it is what a routine on
     the musical `clausters.base.clock.TempoClock` reaches through
     ``app_clock().defer(...)``, since that thread must never block::
 

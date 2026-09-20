@@ -10,14 +10,14 @@
 //! # Two passes, because a member may be another graph
 //!
 //! A member is one node or a whole nested graph, and a graph's members may be
-//! graphs in turn — which is what lets a track hold clips and a clip hold an
+//! graphs in turn -- which is what lets a track hold clips and a clip hold an
 //! effect chain without either of those being a second mechanism. That makes
 //! instantiation a **tree**, and a tree cannot be built the way one level was:
 //! a child that fails halfway would leave its siblings standing.
 //!
 //! So it is planned and then realized. [`Planned`] is the whole tree with every
-//! fallible thing already done — every def resolved, every synth built, every
-//! bus and node id taken — and holds enough to hand all of it back if any part
+//! fallible thing already done -- every def resolved, every synth built, every
+//! bus and node id taken -- and holds enough to hand all of it back if any part
 //! of the walk fails ([`Planned::release`]). Realizing it emits commands and
 //! cannot fail. The all-or-nothing rule the one-level version had is therefore
 //! the same rule, over a tree: **a rejected instantiation leaves the pools
@@ -121,7 +121,7 @@ impl CmdTranslator {
     /// pre-built synths and pre-allocated node ids (both parallel to
     /// `indices`): sets each control (bus references resolved against
     /// `bus_index`, `"OUT"` → bus 0) and applies the `/node_map` wiring. Returns
-    /// member index → node id. Infallible — the fallible `make_synth` and id
+    /// member index → node id. Infallible -- the fallible `make_synth` and id
     /// allocation happened in the caller, so an instance is never left
     /// half-built.
     #[allow(clippy::too_many_arguments)]
@@ -211,12 +211,12 @@ impl CmdTranslator {
     /// Resolves the surface ports whose targets are *all* present in `node_of`
     /// or `child_of` → `(node id, control index, mul, add)`. So passing the
     /// shared maps yields the shared ports and passing a slot's maps yields
-    /// that slot's ports (a port never mixes the two — see `validate`).
+    /// that slot's ports (a port never mixes the two -- see `validate`).
     ///
     /// A target on a **nested graph** resolves through that child's own
     /// resolved surface, and the two scalings compose: the outer runs first, so
     /// the pair that lands is `(mul_in·mul_out, mul_in·add_out + add_in)`. What
-    /// comes out is flat — the port of a track that drives a control of a node
+    /// comes out is flat -- the port of a track that drives a control of a node
     /// three levels down is one `/node_set` like every other.
     fn resolve_ports(
         &self,
@@ -318,8 +318,8 @@ impl CmdTranslator {
     }
 
     /// Walks a GraphDef and everything nested in it, taking what building it
-    /// will need. `members` picks which members belong to this instantiation —
-    /// the shared ones for `/graph_new`, one slot's for `/graph_addSlot` —
+    /// will need. `members` picks which members belong to this instantiation --
+    /// the shared ones for `/graph_new`, one slot's for `/graph_addSlot` --
     /// and `external` names the buses the caller provides.
     fn plan_instance(
         &mut self,
@@ -424,8 +424,8 @@ impl CmdTranslator {
     }
 
     /// Builds a planned instantiation: the group, its members, its nested
-    /// graphs, and the resolved surface. Infallible by construction — every
-    /// fallible step happened in [`CmdTranslator::plan_instance`] — so an
+    /// graphs, and the resolved surface. Infallible by construction -- every
+    /// fallible step happened in [`CmdTranslator::plan_instance`] -- so an
     /// instance is never left half-built.
     ///
     /// Registers the instance (or, with `slot`, the slot sub-graph) and answers
@@ -582,7 +582,7 @@ impl CmdTranslator {
 
     /// `/graph_addSlot instanceID slot id [port value ...]`: build one more of
     /// a named slot inside a running GraphDef instance, wired to its shared
-    /// private buses — a voice of a synth, a clip on a track, an effect in a
+    /// private buses -- a voice of a synth, a clip on a track, an effect in a
     /// chain.
     ///
     /// The slot is a sub-group at the head of the instance group (the auto-sort
@@ -645,8 +645,8 @@ impl CmdTranslator {
 
     /// The instance an id means when a slot is added to it.
     ///
-    /// A slot group that *is* one nested graph — a track inside a multitrack, a clip
-    /// inside a track — stands for that graph, because that is what the caller
+    /// A slot group that *is* one nested graph -- a track inside a multitrack, a clip
+    /// inside a track -- stands for that graph, because that is what the caller
     /// was handed and what everything else about it already answers to. Any
     /// other id is itself.
     fn slot_instance(&self, id: i32) -> Result<i32, String> {
@@ -667,14 +667,14 @@ impl CmdTranslator {
     }
 
     /// `/graph_moveSlot slotID instanceID`: **a slot changes instance without
-    /// being made again** — a clip dragged to another track.
+    /// being made again** -- a clip dragged to another track.
     ///
     /// A slot's wiring is baked into its members' bus controls when it is built,
     /// so moving the group alone would leave it writing the instance it came
     /// from. The move is therefore one operation: the group goes to the head of
     /// the new instance (where `/graph_addSlot` would have built it), and every
-    /// bus reference in it — its own members, and the buses handed down to the
-    /// graphs nested in it and to *their* slots — is resolved again against the
+    /// bus reference in it -- its own members, and the buses handed down to the
+    /// graphs nested in it and to *their* slots -- is resolved again against the
     /// new instance's buses. Nothing is freed, so whatever hangs off the nodes
     /// stays: a `/graph_map` onto one of its ports, the readers inside it, a
     /// value the hand set.
@@ -774,7 +774,7 @@ impl CmdTranslator {
 
     /// Resolves every bus reference of these members again against
     /// `bus_index`: the bus controls of the one-node members, their maps, and
-    /// the buses handed to the nested graphs — which re-wires those graphs'
+    /// the buses handed to the nested graphs -- which re-wires those graphs'
     /// own members and slots in turn. What a build bakes, re-baked.
     fn rewire(
         &mut self,
@@ -894,8 +894,8 @@ impl CmdTranslator {
     ///
     /// The other half of `/node_set` against a surface, and the one an
     /// automation needs: a curve is a node writing a control bus, and what it
-    /// drives is a port — of a track, of a clip, of an effect three levels down
-    /// — whose member ids are private and are meant to stay that way. Without
+    /// drives is a port -- of a track, of a clip, of an effect three levels down
+    /// -- whose member ids are private and are meant to stay that way. Without
     /// this a client would have to be told the node behind a port, which is the
     /// encapsulation the surface exists to keep.
     ///
@@ -976,7 +976,7 @@ impl CmdTranslator {
 
     /// If `id` is a GraphDef instance or a voice sub-group, apply each
     /// `(port, value)` pair against its named surface and return true. Names
-    /// absent from the surface are ignored — the surface is the whole public
+    /// absent from the surface are ignored -- the surface is the whole public
     /// interface; the member node ids stay private. Anything else returns
     /// false so `/node_set` falls back to the synth/group path.
     pub(in crate::osc::translate) fn graph_set(
@@ -1005,7 +1005,7 @@ impl CmdTranslator {
     ///
     /// **Recursive, because instancing is.** A nested graph is a registered
     /// instance of its own with buses of its own, and freeing the group it sits
-    /// in frees the nodes but not the bookkeeping — so the children are walked
+    /// in frees the nodes but not the bookkeeping -- so the children are walked
     /// here. External buses are never released: they were the parent's, and the
     /// child only ever borrowed the index.
     pub(in crate::osc::translate) fn free_graph_node(&mut self, id: i32) {
@@ -1026,7 +1026,7 @@ impl CmdTranslator {
                 self.free_graph_node(child);
             }
             // A refused release here would mean the instance lost track of a
-            // bus — surface it, never absorb it.
+            // bus -- surface it, never absorb it.
             for (first, width) in inst.audio_buses {
                 if self.graph_audio_buses.release(first as i64, width).is_err() {
                     tracing::warn!("graph instance {id} released untracked audio bus {first}");

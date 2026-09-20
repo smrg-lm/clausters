@@ -174,7 +174,7 @@ win["field"].focus()
 
 # %% [markdown]
 # ## Drive it
-# Cell-run: type in the field and watch the console — the events arrive on the
+# Cell-run: type in the field and watch the console -- the events arrive on the
 # host's own event loop, between cells and during them. Script-run: hold the
 # window open until it is closed, then tear everything down.
 

@@ -1,17 +1,17 @@
-//! `notes` — the editor-grade piano roll: a keyboard gutter, a note grid, a
+//! `notes` -- the editor-grade piano roll: a keyboard gutter, a note grid, a
 //! velocity lane and an OSC lane, placed on a navigation group's shared time
 //! axis.
 //!
 //! **The leaf that is placed on somebody else's axis and edits what is drawn on
 //! it**, which is why it is the last but one of the port. Everything it draws
-//! is mapped through [`Ctx::time`] — the group's window, its shared selection
-//! and where its playhead stands — so a roll linked to a lane zooms, pans and
+//! is mapped through [`Ctx::time`] -- the group's window, its shared selection
+//! and where its playhead stands -- so a roll linked to a lane zooms, pans and
 //! plays with it, and the same element fills a clip's [`Notes`](BodyRole::Notes)
 //! body by being handed the clip's axis instead.
 //!
 //! Its drags are all **snapshotted**: the press records the note it grabbed and
 //! that note's position, and every step is measured against the *current* axis
-//! rather than a press-time copy of it. That is not a stylistic choice — a drag
+//! rather than a press-time copy of it. That is not a stylistic choice -- a drag
 //! held past the edge of a lane asks the machine to keep scrolling
 //! ([`Take::edge_scroll`](crate::host::widget::element::Take::edge_scroll)), so
 //! the window moves under the drag and a snapshot
@@ -19,7 +19,7 @@
 //!
 //! **Two things it cannot do for itself**, and it asks for both the way `keys`
 //! asks for a voice. The **time selection** a marquee sweeps is the navigation
-//! group's — every linked view follows it — so the element names the span and
+//! group's -- every linked view follows it -- so the element names the span and
 //! the machine writes it ([`Events::and_select`]). And **live MIDI** arrives
 //! from a device only a front can open: the element declares [`Needs::midi`]
 //! and paints what comes back ([`Element::midi`]), keeping the held keys and
@@ -51,7 +51,7 @@ const PITCH_MAX: f32 = 108.0;
 /// The shortest note a resize may leave, in axis units.
 const MIN_DUR: f64 = 1.0;
 
-/// A piano roll. `selected`, `drag`, `held` and `step` are native view state —
+/// A piano roll. `selected`, `drag`, `held` and `step` are native view state --
 /// the gestures and the MIDI leg build them and no `/gui_set` writes them.
 #[derive(Debug, Clone)]
 pub struct Notes {
@@ -77,7 +77,7 @@ pub struct Notes {
     /// Whether a hand may edit what is drawn here.
     ///
     /// **The picture must not follow a hand that cannot edit.** A body over
-    /// samples that is a *rendering* — the notes of a pattern — is read-only,
+    /// samples that is a *rendering* -- the notes of a pattern -- is read-only,
     /// and an owner refusing the edit afterwards is too late: the roll has
     /// already offered the drag, drawn it for its whole duration and unwound
     /// it, which reads as a broken editor rather than as samples that cannot
@@ -132,7 +132,7 @@ pub(super) fn build(
     Ok(Box::new(from_props(props)))
 }
 
-/// The props a `notes` node carries, read once — shared by the constructor, by
+/// The props a `notes` node carries, read once -- shared by the constructor, by
 /// the tests beside it, and by a container that draws a roll as a **body** and
 /// builds one through the same door rather than by naming fields.
 pub(crate) fn from_props(props: &Map<String, Value>) -> Notes {
@@ -163,7 +163,7 @@ pub(crate) fn from_props(props: &Map<String, Value>) -> Notes {
 }
 
 impl Notes {
-    /// The regions this placement is split into — the same call the drawing and
+    /// The regions this placement is split into -- the same call the drawing and
     /// the hit-test both make, so a note is grabbed by the pixels it is
     /// painted on.
     fn regions(&self, rect: Rect, indent: f32, m: &Metrics) -> pianoroll::Regions {
@@ -188,7 +188,7 @@ impl Notes {
     }
 
     /// The axis this roll is drawn against: the container's when it was placed
-    /// on one, else its own content spanned over the body — the fallback a view
+    /// on one, else its own content spanned over the body -- the fallback a view
     /// that has not joined a group yet still draws through.
     fn view(&self, time: Option<TimeSpace>) -> View {
         match time {
@@ -206,7 +206,7 @@ impl Notes {
     }
 
     /// The `"notes"` edit-back payload: the tag plus the flat `start dur pitch
-    /// velocity channel` quintuple list — the wire form the roll and the clip
+    /// velocity channel` quintuple list -- the wire form the roll and the clip
     /// share, in the owner's own units.
     fn notes_event(&self) -> Events {
         let mut args = vec![OscType::String("notes".into())];
@@ -305,7 +305,7 @@ impl Notes {
 /// Where a press landed and what it landed on.
 struct Hit {
     region: Region,
-    /// The region's own rectangle — what a velocity drag maps the cursor's
+    /// The region's own rectangle -- what a velocity drag maps the cursor's
     /// height through.
     rect: Rect,
     grid: Rect,
@@ -316,7 +316,7 @@ struct Hit {
 }
 
 /// The index of the element whose time is nearest the cursor x, within a small
-/// pixel tolerance — the picker both strips under the grid use.
+/// pixel tolerance -- the picker both strips under the grid use.
 fn nearest(lane: Rect, nav: &View, times: impl Iterator<Item = f64>, x: f32) -> Option<usize> {
     let to_x = |s: f64| lane.x + ((s - nav.start) / nav.len.max(1.0) * lane.w as f64) as f32;
     times
@@ -330,7 +330,7 @@ fn nearest(lane: Rect, nav: &View, times: impl Iterator<Item = f64>, x: f32) -> 
 impl Element for Notes {
     fn set(&mut self, key: &str, v: &Value) -> bool {
         match key {
-            // Arrays ride a `/gui_set` as their JSON — the scalar carrier a set
+            // Arrays ride a `/gui_set` as their JSON -- the scalar carrier a set
             // of a non-scalar always uses.
             "editable" => {
                 let Some(on) = truthy(v) else { return false };
@@ -360,7 +360,7 @@ impl Element for Notes {
     }
 
     /// The whole picture, into the window's one mesh: the grid and its notes,
-    /// the keyboard, the strips, and — for a roll standing on its own axis —
+    /// the keyboard, the strips, and -- for a roll standing on its own axis --
     /// the chrome of that axis over them.
     ///
     /// The chrome is drawn here rather than by the frame because a roll's is
@@ -405,7 +405,7 @@ impl Element for Notes {
         }
         let rate = self.rate(ctx.world.sample_rate);
         if self.editor.ruler != Ruler::Off {
-            // The strip sits under the grid, aligned to the grid's x range —
+            // The strip sits under the grid, aligned to the grid's x range --
             // the "body" the tick math derives it from.
             let body = Rect::new(r.grid.x, ctx.rect.y, r.grid.w, r.ruler.y - ctx.rect.y);
             crate::host::frame::draw_time_ruler(d, ctx.rect, body, &nav, rate, &self.editor);
@@ -431,7 +431,7 @@ impl Element for Notes {
     fn needs(&self) -> Needs {
         Needs {
             // A roll follows the transport, so the window has to keep repainting
-            // **while one is running** — which is what the anchor says, and what
+            // **while one is running** -- which is what the anchor says, and what
             // this asked for unconditionally until 2026-08-22. A roll that is
             // merely on screen has nothing moving in it, and a window that
             // repaints anyway repaints for as long as the page is open. The
@@ -461,7 +461,7 @@ impl Element for Notes {
     }
 
     /// The roll takes every press on its own axis (its notes, its strips, its
-    /// marquee) and leaves the modifier that is the *container's* — Shift pans
+    /// marquee) and leaves the modifier that is the *container's* -- Shift pans
     /// the window, which is the axis' gesture and not the picture's.
     /// A note first, then the **container's marquee** over the empty grid --
     /// the same plan a lane carries, because it is the same gesture. Shift is
@@ -531,7 +531,7 @@ impl Element for Notes {
         }
     }
 
-    /// **The roll's own contents are its notes** — a note's rectangle, and the
+    /// **The roll's own contents are its notes** -- a note's rectangle, and the
     /// velocity bar that belongs to one. The grid between them is the
     /// container's, which is what leaves a clip's empty roll to the clip's own
     /// move.
@@ -552,7 +552,7 @@ impl Element for Notes {
         let h = self.hit(at, input);
         // **Read-only is answered before the drag, not after it.** The press is
         // consumed so nothing behind it turns a refused edit into a selection,
-        // and it says why — a refusal with nothing attached teaches *sometimes
+        // and it says why -- a refusal with nothing attached teaches *sometimes
         // it does not work* rather than *not here*.
         if !self.editable && matches!(h.region, Region::Grid | Region::Velocity) {
             return Claim::Take(Take {
@@ -582,7 +582,7 @@ impl Element for Notes {
 
     /// The notes follow the hand; **the edit leaves on release**.
     ///
-    /// One gesture is one edit — the rule `Drag::Draw` and `Drag::Sample`
+    /// One gesture is one edit -- the rule `Drag::Draw` and `Drag::Sample`
     /// already state at their own release. A value per frame is a document edit
     /// per frame: an undo history of a hundred steps for one dragged note, and
     /// a hundred round trips whose acknowledgements the next frame outruns.
@@ -624,7 +624,7 @@ impl Element for Notes {
                 orig,
             }) => {
                 // The grabbed note (the leading snapshot entry) snaps to the
-                // grid and the whole selection moves rigidly by that delta —
+                // grid and the whole selection moves rigidly by that delta --
                 // the core clamps it as one.
                 let dt = match orig.first() {
                     Some((_, s0, _)) => snap_to(s0 + (time - press_time), self.snap) - s0,
@@ -655,7 +655,7 @@ impl Element for Notes {
     }
 
     fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
-        // What the drag amounts to, once — see `drag`. A marquee edited
+        // What the drag amounts to, once -- see `drag`. A marquee edited
         // nothing: it swept a selection, which is screen state and was reported
         // as it went.
         match self.drag.take() {
@@ -674,7 +674,7 @@ impl Element for Notes {
     fn key(&mut self, key: &Key, input: &mut KeyInput) -> Option<Events> {
         match key {
             // Quantize the selected onsets (all of them when nothing is
-            // selected) to the note grid — the same grid a drag snaps to.
+            // selected) to the note grid -- the same grid a drag snaps to.
             Key::Char('q') | Key::Char('Q') if !input.mods.ctrl => Some(
                 if notes::quantize_notes(&mut self.notes, &self.selected, self.snap) {
                     self.notes_event()
@@ -682,7 +682,7 @@ impl Element for Notes {
                     Events::refused("quantize", "these notes are already on the grid")
                 },
             ),
-            // **Split and join**, the clip's own two verbs over notes — same
+            // **Split and join**, the clip's own two verbs over notes -- same
             // keys, same reading. A clip asks its owner to cut, because the
             // owner holds the element; a roll holds its notes and cuts them
             // itself, which is the whole of the difference.
@@ -730,7 +730,7 @@ impl Element for Notes {
                 boxes::discard(&mut self.notes, &held).then(|| self.notes_event())
             }
             // The clipboard is the host's one string, so a block travels
-            // between rolls and windows — and rides it in the same JSON form a
+            // between rolls and windows -- and rides it in the same JSON form a
             // `/gui_set notes` accepts, which is the carrier every non-scalar
             // already uses.
             Key::Char('c') | Key::Char('C') | Key::Char('x') | Key::Char('X')
@@ -745,7 +745,7 @@ impl Element for Notes {
                     .set_text(&notes::notes_json(&block).to_string());
                 let cut = matches!(key, Key::Char('x') | Key::Char('X'));
                 if !cut {
-                    // A copy changed nothing, so it reports nothing — but it
+                    // A copy changed nothing, so it reports nothing -- but it
                     // consumed the key.
                     return Some(Events::none());
                 }
@@ -767,7 +767,7 @@ impl Element for Notes {
     }
 
     /// A live note: painted at the running playhead (recording), or on the step
-    /// cursor when the transport is stopped (step entry — a chord shares one
+    /// cursor when the transport is stopped (step entry -- a chord shares one
     /// step, and the last key up advances it).
     fn midi(&mut self, note: MidiNote, playhead: Option<f64>) -> Option<Events> {
         let key = (note.channel, note.pitch);
@@ -836,13 +836,13 @@ impl OnAxis for Notes {
     }
 
     /// The keyboard gutter, which is the roll's own structural geometry. What
-    /// it actually gets is its group's shared indent — this when it is alone on
+    /// it actually gets is its group's shared indent -- this when it is alone on
     /// its axis, wider when it shares one with a lane.
     fn gutter(&self, _m: &Metrics) -> f32 {
         pianoroll::KEYBOARD_W
     }
 
-    /// The grid is the body a sample maps into — not the rect minus its chrome,
+    /// The grid is the body a sample maps into -- not the rect minus its chrome,
     /// because the velocity and event strips are stacked *under* the grid and
     /// read the same axis. The keyboard gutter is always a vertical surface, so
     /// a wheel over it navigates the pitch window whatever `ruler_y` says.
@@ -857,14 +857,14 @@ impl OnAxis for Notes {
 
 impl Notes {
     #[cfg(test)]
-    /// The pitch window this roll is drawn in — its own `min`/`max`, for a
+    /// The pitch window this roll is drawn in -- its own `min`/`max`, for a
     /// container that fitted them and wants to check it did.
     pub(crate) fn range(&self) -> (f32, f32) {
         (self.min, self.max)
     }
 
     #[cfg(test)]
-    /// The multi-note selection, for the crate's own gesture suite — which
+    /// The multi-note selection, for the crate's own gesture suite -- which
     /// drives a real host and has no other way to see it (it is view state, so
     /// no `/gui_query` reports it).
     pub(crate) fn selected(&self) -> &[usize] {
@@ -895,11 +895,11 @@ impl Notes {
     /// difference is what the two placements can do about a note past the end.
     /// The roll spans its own content: drag a note rightwards and the span
     /// grows, the axis has somewhere further to go, and the note is one scroll
-    /// away — nothing is lost, so nothing is stopped. A body is drawn *inside
+    /// away -- nothing is lost, so nothing is stopped. A body is drawn *inside
     /// the clip's rectangle* and clipped to it: the same drag would leave the
     /// note out of every pixel the clip owns, still in the list, visible only by
     /// resizing the clip by hand. So the body stops at the clip's `dur`, and the
-    /// clip's length stays what its own edge says it is — content does not
+    /// clip's length stays what its own edge says it is -- content does not
     /// silently lengthen the thing containing it.
     fn edit_limit(&self, input: &Input) -> notes::Limit {
         match input.time {
@@ -939,7 +939,7 @@ impl Notes {
             |s: f64| (grid.x as f64 + (s - nav.start) / nav.len.max(1.0) * grid.w as f64) as f32;
         // The sweep, through the one routine every view that lets a hand draw
         // one draws it with: the same half-sample edges as a waveform's, and
-        // **the pitch band this roll's own marquee swept** — which it used to
+        // **the pitch band this roll's own marquee swept** -- which it used to
         // throw away, drawing a full-height stripe over a selection that held a
         // few semitones of it.
         let (lo, hi) = self.pitch_window();
@@ -988,7 +988,7 @@ impl Notes {
         // Right-aligned **inside the grid**: a roll drawn as a clip's body is
         // as wide as the clip, so a read-out placed at its own width alone
         // starts left of the box and is read over whatever is drawn there. It
-        // drops its tail first — the time — and keeps the note name, which is
+        // drops its tail first -- the time -- and keeps the note name, which is
         // the half a pointer on a pitch is asking for; a grid with no room for
         // the ellipsis draws nothing.
         let room = grid.w - 2.0 * m.pad;
@@ -1117,8 +1117,8 @@ impl Notes {
     /// A press on the **markers lane**, which shows and does not write.
     ///
     /// A roll is the editor of things that have a **pitch**: that is what its
-    /// grid is a grid of. The other items a timeline holds have none — an OSC
-    /// message, raw MIDI bytes — so they are drawn below it as markers, which
+    /// grid is a grid of. The other items a timeline holds have none -- an OSC
+    /// message, raw MIDI bytes -- so they are drawn below it as markers, which
     /// is the decision this widget was built with (`G24a`: *"OSC events (which
     /// have no pitch) draw as flags in a separate lane below it"*) and the one
     /// the dedicated view recorded again (`G24c`: *"display-only for now: the
@@ -1127,14 +1127,14 @@ impl Notes {
     ///
     /// The lane grew an add/remove/move gesture against that, and it could not
     /// have worked: **a marker is the message it sends**, the lane draws only
-    /// its address, and there is no way to type one here — so an added marker
+    /// its address, and there is no way to type one here -- so an added marker
     /// was a message with no destination, and a moved one was matched back to
     /// its item *by its label*, which two messages to one address share. Both
     /// clients saw the same press and answered differently, one refusing it
     /// with a sentence and the other keeping a marker that will never send
     /// anything.
     ///
-    /// So a Ctrl press — the one that meant to edit — is refused out loud and
+    /// So a Ctrl press -- the one that meant to edit -- is refused out loud and
     /// consumed, and every other press declines to the container, the way the
     /// axis strip beside it does. **What is not decided here** is what a real
     /// editor of messages would be: it is multidimensional (an address, typed
@@ -1158,7 +1158,7 @@ impl Notes {
     }
 }
 
-/// Snaps `t` to the `grid`, the one rounding every note edit shares — and it
+/// Snaps `t` to the `grid`, the one rounding every note edit shares -- and it
 /// is [`boxes::snap`], the same one a clip's edge lands on. This used to be
 /// a second spelling of it whose no-grid arm returned the raw value while its
 /// own doc said whole units; the axis' unit is the sample, so "no grid" is the
@@ -1167,7 +1167,7 @@ fn snap_to(t: f64, grid: f64) -> f64 {
     boxes::snap(t, grid)
 }
 
-/// The notes on the host-wide clipboard, when what is on it is a note block —
+/// The notes on the host-wide clipboard, when what is on it is a note block --
 /// the same flat quintuple JSON a `/gui_set notes` takes, so a block copied out
 /// of one roll pastes into another and a field's text pastes into neither.
 fn clipboard_notes(text: &str) -> Option<Vec<notes::Note>> {
@@ -1207,7 +1207,7 @@ fn parse_notes(props: &serde_json::Map<String, Value>) -> Vec<Note> {
         .collect()
 }
 
-/// Parse a `pianoroll`'s `osc` prop — a flat `[time, label, time, label, …]`
+/// Parse a `pianoroll`'s `osc` prop -- a flat `[time, label, time, label, …]`
 /// list of OSC markers (the label a short address/tag, an empty string
 /// meaning none). A trailing partial pair is dropped.
 fn parse_osc(props: &serde_json::Map<String, Value>) -> Vec<OscMark> {
@@ -1243,7 +1243,7 @@ mod tests {
     /// **A roll asks the window to follow the clock only while something is
     /// sweeping.** It asked for it unconditionally once, and a page holding a
     /// roll then repainted thirty times a second for as long as it was open,
-    /// with nothing moving in it — 59% of a browser's main thread on the
+    /// with nothing moving in it -- 59% of a browser's main thread on the
     /// composer example, against 3% once the anchor decides. The rule is the
     /// `score`'s: the element carrying the anchor is the one that can answer.
     #[test]
@@ -1283,7 +1283,7 @@ mod tests {
         Rect::new(0.0, 0.0, 500.0, 400.0)
     }
 
-    /// The x pixel a time falls on in the grid — what the drawing maps and what
+    /// The x pixel a time falls on in the grid -- what the drawing maps and what
     /// a press has to invert.
     fn x_of(r: &Notes, m: &Metrics, t: f64, len: f64) -> f64 {
         let grid = r.regions(rect(), pianoroll::KEYBOARD_W, m).grid;
@@ -1382,7 +1382,7 @@ mod tests {
     }
 
     /// **A note drag is measured against the axis it is handed each step**, not
-    /// against a press-time copy of it — which is what lets the machine scroll
+    /// against a press-time copy of it -- which is what lets the machine scroll
     /// the axis under a drag held past a lane's edge.
     #[test]
     fn a_drag_follows_an_axis_that_moves_under_it() {
@@ -1586,7 +1586,7 @@ mod tests {
     }
 
     /// Live MIDI: a note-on paints a held note, the matching note-off closes it
-    /// — at the running playhead when recording, on the step cursor when the
+    /// -- at the running playhead when recording, on the step cursor when the
     /// transport is stopped (and the last key up advances it).
     #[test]
     fn live_midi_records_at_the_playhead_and_steps_when_stopped() {
@@ -1701,7 +1701,7 @@ mod tests {
         assert!(r.drag.is_none(), "and no marker is being slid");
     }
 
-    /// The reason a verb gave for refusing, or `None` when it did the thing —
+    /// The reason a verb gave for refusing, or `None` when it did the thing --
     /// the same reader the multitrack's own verb test uses, because a refusal
     /// is an ordinary event in both.
     fn refusal(events: Option<Events>) -> Option<String> {
@@ -1716,7 +1716,7 @@ mod tests {
     ///
     /// The drift this holds: the two implement one table of letters over one
     /// reading, and a multitrack that could not quantize said so while a roll
-    /// that could not returned silence — which is the thing two reports in one
+    /// that could not returned silence -- which is the thing two reports in one
     /// day settled as a defect rather than as a quiet success.
     #[test]
     fn a_verb_that_acts_on_nothing_says_why_rather_than_nothing() {

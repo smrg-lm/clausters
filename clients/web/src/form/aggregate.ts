@@ -1,4 +1,4 @@
-// The arrangement — grouping, and the derived temporal relation (mirrors
+// The arrangement -- grouping, and the derived temporal relation (mirrors
 // `clausters/form/aggregate.py`).
 //
 // An `Aggregate` is the one genuinely new structure of the arrangement: the
@@ -8,9 +8,9 @@
 //
 // Two kinds of grouping:
 //
-// - **concrete** — the members relate in time (a section holding clips, a melody
+// - **concrete** -- the members relate in time (a section holding clips, a melody
 //   holding note-events), with no processing relation.
-// - **logical** — the members relate by processing or generation logic (a
+// - **logical** -- the members relate by processing or generation logic (a
 //   bus-wired signal chain on the server, or a generative dependency on the
 //   client).
 //
@@ -31,9 +31,9 @@ export type AggregateKind = typeof CONCRETE | typeof LOGICAL;
 
 /**
  * The temporal relation between an aggregate's members, derived from their
- * placements. `successive` — duration-only, tiling contiguously; `simultaneous`
- * — all starting and ending together (a container that can be reinterpreted,
- * enabling recursion); `mixed` — any other combination.
+ * placements. `successive` -- duration-only, tiling contiguously; `simultaneous`
+ * -- all starting and ending together (a container that can be reinterpreted,
+ * enabling recursion); `mixed` -- any other combination.
  */
 export const SUCCESSIVE = "successive";
 export const SIMULTANEOUS = "simultaneous";
@@ -46,7 +46,7 @@ export type TemporalRelation =
     | typeof MIXED;
 
 /**
- * How close two beats have to be to count as the same one — Python's
+ * How close two beats have to be to count as the same one -- Python's
  * `math.isclose` with its default tolerances, since the Python client derives
  * the same relation from the same placements and the two must agree.
  */
@@ -85,7 +85,7 @@ export class Member {
         return this.dur !== null ? this.dur : this.element.duration;
     }
 
-    /** The unit {@link Member.length} is in — the placed element's. */
+    /** The unit {@link Member.length} is in -- the placed element's. */
     get durationUnit(): TimeUnit {
         return this.element.durationUnit;
     }
@@ -117,14 +117,14 @@ export type BusSpec =
     | string
     | readonly [name: string, rate: BusRate]
     | readonly [name: string, rate: BusRate, channels: number]
-    /** Already normalized — the form a document's config carries. */
+    /** Already normalized -- the form a document's config carries. */
     | Bus;
 
 /** The rate an internal bus runs at. */
 export type BusRate = "audio" | "control";
 
 /**
- * The normalized form of a bus declaration — what {@link Aggregate.busSpecList}
+ * The normalized form of a bus declaration -- what {@link Aggregate.busSpecList}
  * hands back and what a document's config carries.
  */
 export interface Bus {
@@ -135,7 +135,7 @@ export interface Bus {
 
 /** {@link Aggregate}'s options. */
 export interface AggregateOptions {
-    /** The aggregate's name — the GraphDef name for a logical aggregate. */
+    /** The aggregate's name -- the GraphDef name for a logical aggregate. */
     name?: string | null;
     /** Internal buses for a logical aggregate. */
     buses?: Iterable<BusSpec> | null;
@@ -149,7 +149,7 @@ export interface AggregateOptions {
  * A composite element: a set of placed members with a grouping `kind`.
  *
  * Members are placed by an `offset` (beats relative to the aggregate's context)
- * and an optional placement `dur`. Edit freely — {@link Aggregate.add},
+ * and an optional placement `dur`. Edit freely -- {@link Aggregate.add},
  * {@link Aggregate.remove}, {@link Aggregate.move}; a handle returned by `add`
  * stays valid across other edits (like `seq.Timeline`).
  *
@@ -252,7 +252,7 @@ export class Aggregate extends Element {
     }
 
     /**
-     * The member **handles** (the objects `add` returns), insertion order — the
+     * The member **handles** (the objects `add` returns), insertion order -- the
      * stable identities `remove` and `move` take. Reading a placement is
      * {@link Aggregate.members}; holding on to one across edits (as an editor
      * keying its widgets by member does) needs these.
@@ -278,7 +278,7 @@ export class Aggregate extends Element {
      *
      * - `SIMULTANEOUS`: every member starts and ends together (a single member
      *   trivially qualifies).
-     * - `SUCCESSIVE`: members tile contiguously in time — sorted by start, each
+     * - `SUCCESSIVE`: members tile contiguously in time -- sorted by start, each
      *   member begins exactly where the previous ends (requires known lengths).
      * - `MIXED`: anything else.
      *
@@ -325,7 +325,7 @@ export class Aggregate extends Element {
     }
 
     /**
-     * The bus declarations themselves — `name`, `rate`, `channels`.
+     * The bus declarations themselves -- `name`, `rate`, `channels`.
      *
      * What a document carries in the body's opaque config, and what a cord
      * drawn in the patcher edits: the wiring is the aggregate's, so it is the
@@ -349,7 +349,7 @@ export class Aggregate extends Element {
     }
 
     /**
-     * Declares an internal bus — a logical aggregate's private wire between
+     * Declares an internal bus -- a logical aggregate's private wire between
      * members. Idempotent by name: re-declaring an existing bus updates its
      * `rate`/`channels`. This is what a patcher edit (a cord drawn between two
      * members) calls to name the bus the connection implies.
@@ -365,12 +365,12 @@ export class Aggregate extends Element {
     // ---- the logical rendering: a GraphDef ----
 
     /**
-     * Translates this **logical** aggregate into a `GraphDef` — the 1:1 mapping
+     * Translates this **logical** aggregate into a `GraphDef` -- the 1:1 mapping
      * of the arrangement's logical grouping (nodes wired by sender/receiver
      * buses) onto the configuration the server already expresses.
      *
      * Each member must be a {@link Generator} (its `defName` is the member def;
-     * its `controls` — numbers, an internal bus name, or `"OUT"` — and `maps`
+     * its `controls` -- numbers, an internal bus name, or `"OUT"` -- and `maps`
      * wire it). The aggregate's buses become the private internal buses.
      * Placement offsets are ignored (a logical aggregate is a signal graph, not
      * a timeline). Returns the `GraphDef`; sending and instancing it is
@@ -414,7 +414,7 @@ export class Aggregate extends Element {
  */
 function busSpec(bus: BusSpec): Bus {
     if (typeof bus === "string") return { name: bus, rate: "audio", channels: 1 };
-    // A spec that is already one — which is what comes back out of a document,
+    // A spec that is already one -- which is what comes back out of a document,
     // since that is the form the body's config carries.
     if (bus !== null && typeof bus === "object" && !Array.isArray(bus)) {
         const held = bus as Partial<Bus>;

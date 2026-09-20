@@ -2,7 +2,7 @@
 
 `engrave` needs the engraver, which normally ships inside the package; a source
 checkout that has not built it yet skips those tests, while the `guidef.score`
-builder is pure and always runs. The editing tests skip one step further — on a
+builder is pure and always runs. The editing tests skip one step further -- on a
 verovio whose editor is dead, which the released wheel's is.
 
 Both guards ask `notation` itself rather than the engraver directly: it is
@@ -82,7 +82,7 @@ def test_score_sends_the_pitch_quantum_the_page_was_engraved_with():
     # half the staff-line spacing: a line-to-space move is one diatonic step
     assert dl["step"] == 90.0
     assert score(id=11, display_list=dl)["step"] == 90.0
-    # it follows verovio's `unit`, not the staff scale — which is why the host
+    # it follows verovio's `unit`, not the staff scale -- which is why the host
     # is told rather than left to assume it
     assert notation.engrave(PHRASE, scale=100)["step"] == 90.0
     assert notation.engrave(PHRASE, options={"unit": 6})["step"] == 60.0
@@ -141,7 +141,7 @@ def test_score_view_places_the_rate_on_the_inner_score():
 
 def test_score_view_sizes_itself_from_a_page_held_as_a_source():
     """The scroll reads the page's own size, so it has to reach it through a
-    source too — and the page then follows an edit into every window."""
+    source too -- and the page then follows an edit into every window."""
     from clausters.gui import source
 
     page = source(display_list={"vb": [1000, 500], "glyphs": {}, "prims": []})
@@ -158,7 +158,7 @@ def test_score_view_sizes_itself_from_a_page_held_as_a_source():
 def _editor_alive() -> bool:
     """Whether this verovio can edit at all.
 
-    In 6.2.1 — the released wheel — a guard typo leaves the editor unreachable
+    In 6.2.1 -- the released wheel -- a guard typo leaves the editor unreachable
     and every action returns False (see ``third_party/BUILD-VEROVIO.md``), so
     the editing tests below would fail for a reason that is not ours.
     """
@@ -241,7 +241,7 @@ def test_a_page_and_a_roll_walk_one_order():
 
     s, nid = _edited_score()
     timeline = Timeline([(0.0, Event(midinote=72, dur=1.0))], tempo=2.0)
-    # One context for both — what a window drawing the two would build.
+    # One context for both -- what a window drawing the two would build.
     editor = edit(timeline, sample_rate=48_000.0,
                   context=Editing.of(s), open=False)
 
@@ -378,7 +378,7 @@ def test_the_catalog_and_this_shell_name_the_same_verbs():
 
     This is the test the binding table cannot be: operations ride inside a
     payload through one symbol, so a verb that reached only one client would
-    drift silently — the same structural blindness the props manifest has.
+    drift silently -- the same structural blindness the props manifest has.
     """
     catalogued = [spec["op"] for spec in notation.ops()]
     # The shell's helpers are named after their verb, one function each. This

@@ -2,7 +2,7 @@
 //! cross**.
 //!
 //! `clausters-document` is the only thing that applies an intent, so a client
-//! does not apply and then report — it hands an intent over and receives what
+//! does not apply and then report -- it hands an intent over and receives what
 //! happened. One implementation of the edit semantics, in one language, however
 //! many clients there are.
 //!
@@ -14,11 +14,11 @@
 //! dozens of accessors to design, bind and keep in step. What it did not do was
 //! put a number on "a serialization per edit". The number is **205 ms** for one
 //! placement on a 10240-event multitrack (3.3 MB of JSON), against 6 ms on the
-//! 320-event one an example builds — linear in the whole document and
+//! 320-event one an example builds -- linear in the whole document and
 //! independent of the edit, so a destructive stroke touching fifty samples paid
 //! the same as a drag.
 //!
-//! The objection was to *accessor* handles — a call per field — and not to
+//! The objection was to *accessor* handles -- a call per field -- and not to
 //! pointers. This handle answers it by having the same surface the by-value
 //! binding had: `apply`, `resolve`, and a `snapshot` for whoever wants the tree.
 //! Nothing about "the crate is the only applier" changes; what changes is that
@@ -37,12 +37,12 @@
 //! - **A mutating call commits only when the bytes are written** (O11's rule,
 //!   unchanged), so a sizing pass is free of consequence and a run of them is
 //!   idempotent. This is now cheap as well as safe, because what a mutating
-//!   call returns is the *outcome* — a few hundred bytes — and no longer the
+//!   call returns is the *outcome* -- a few hundred bytes -- and no longer the
 //!   document.
 //! - **A pure read caches between the pair.** `snapshot` is the one call whose
 //!   payload is still the size of the document, and it changes nothing, so
 //!   the sizing pass keeps the bytes it produced and the fill copies them out.
-//!   Caching a *mutating* call this way would be wrong — the mutation would
+//!   Caching a *mutating* call this way would be wrong -- the mutation would
 //!   land on the sizing pass, and a caller that sized and then gave up would
 //!   have edited the document without knowing it.
 
@@ -112,7 +112,7 @@ pub(crate) unsafe fn fill(
 ///
 /// `history` reaches the document through this: an edit that is also *recorded*
 /// still has to land on the one held tree. The lock order is always
-/// **document, then history** — a commit closure may take the history's lock
+/// **document, then history** -- a commit closure may take the history's lock
 /// while this one is held, and nothing takes them the other way round.
 pub(crate) fn with_document<T>(
     h: *mut FfiDocument,
@@ -169,14 +169,14 @@ pub unsafe extern "C" fn clausters_document_free(h: *mut FfiDocument) {
     }
 }
 
-/// The edit that would put this node back the way it is — the inverse of
+/// The edit that would put this node back the way it is -- the inverse of
 /// `intent`, read out of the document **before** anything is applied. Written
 /// to `out`; the byte count it needs, or `0` when the handle is null, the
 /// intent will not parse, or the document cannot describe the inverse (the node
 /// is gone, or its body holds nothing of that shape).
 ///
 /// [`crate::clausters_history_apply`] does this for you and is what an ordinary
-/// edit wants. This is for the caller that records its **own** entry — a leg of
+/// edit wants. This is for the caller that records its **own** entry -- a leg of
 /// a transaction spanning several structures, which nothing but the caller can
 /// apply, since the crate reaches one document and no curve.
 ///
@@ -214,7 +214,7 @@ pub unsafe extern "C" fn clausters_document_inverse(
 }
 
 /// What makes two edits over the arrangement *the same thing done the same way*
-/// — the key a history coalesces on, written to `out`; the byte count it needs,
+/// -- the key a history coalesces on, written to `out`; the byte count it needs,
 /// or `0` when the intent will not parse.
 ///
 /// It is here rather than on the history's surface because it is a sentence in
@@ -248,7 +248,7 @@ pub unsafe extern "C" fn clausters_document_coalesce_key(
     bytes.len()
 }
 
-/// The document's current version — monotonic, bumped by every applied edit,
+/// The document's current version -- monotonic, bumped by every applied edit,
 /// never zero. `0` when the handle is null, which is also what *unstated*
 /// means, so a caller that lost its handle names the state it cannot vouch for.
 ///
@@ -259,7 +259,7 @@ pub unsafe extern "C" fn clausters_document_version(h: *mut FfiDocument) -> u64 
     with_document(h, 0, |held| held.document.version)
 }
 
-/// The whole document as JSON — for saving it, for handing it to another
+/// The whole document as JSON -- for saving it, for handing it to another
 /// process, for a client that wants the tree.
 ///
 /// A **pure read**, so the sizing pass keeps what it serialized and the fill
@@ -298,7 +298,7 @@ pub unsafe extern "C" fn clausters_document_snapshot(
 ///
 /// Writes `{"effective": …, "applied": bool, "reason": …, "stale": bool}` to
 /// `out` and returns the byte count it needs. The **document is not in the
-/// reply** — that is the whole point of the handle, and a caller that wants it
+/// reply** -- that is the whole point of the handle, and a caller that wants it
 /// asks [`clausters_document_snapshot`]. Returns `0` when the handle is null or
 /// the intent will not parse; the document is then untouched, which is the same
 /// thing a refusal means and needs no separate error channel.
@@ -345,8 +345,8 @@ pub unsafe extern "C" fn clausters_document_apply(
 /// which is the difference between costing the edit and costing the
 /// document: cloning the tree to protect a sizing pass is O(document), and
 /// on a 10240-event multitrack that is 14 ms per gesture whatever the gesture
-/// touched. The rollback is the intent's own inverse — the same one the log
-/// records — plus restoring the version by hand, since applying an inverse
+/// touched. The rollback is the intent's own inverse -- the same one the log
+/// records -- plus restoring the version by hand, since applying an inverse
 /// bumps the counter rather than rewinding it.
 ///
 /// A `WriteSamples` is the one edit with no inverse in the document (its
@@ -425,8 +425,8 @@ fn outcome_bytes(outcome: &clausters_document::Outcome) -> Vec<u8> {
 /// Resolve a selection to the spans of samples underneath it.
 ///
 /// `selection` is JSON; `frames_per_beat` and `frames_per_second` are the two
-/// bridges between the document's units and the buffer's frames — a placement
-/// is in beats and a take's length in seconds — supplied rather than derived
+/// bridges between the document's units and the buffer's frames -- a placement
+/// is in beats and a take's length in seconds -- supplied rather than derived
 /// because tempo is the caller's; `in_beats` says whether the selection's
 /// numbers are beats (non-zero) or frames on the shared axis (zero).
 ///
@@ -491,13 +491,13 @@ pub unsafe extern "C" fn clausters_document_resolve(
     })
 }
 
-/// **The tags a view reports that are not edits**, as a JSON array of strings —
+/// **The tags a view reports that are not edits**, as a JSON array of strings --
 /// `clausters_document::view::NOT_AN_EDIT`.
 ///
 /// A client routes an incoming `/gui_event` by its tag: screen state is
 /// answered generically and never reaches a domain, and everything else is the
 /// domain's to read. Which tags those are is one list, and it was written once
-/// per client until this row existed — a table small enough that two copies
+/// per client until this row existed -- a table small enough that two copies
 /// look harmless and drift silently, since a tag missing from one makes that
 /// client *edit* with a gesture the other one merely looks at.
 ///
@@ -518,7 +518,7 @@ pub unsafe extern "C" fn clausters_view_not_an_edit(out: *mut u8, out_cap: usize
     unsafe { fill(answer.as_bytes(), out, out_cap, || {}) }
 }
 
-/// **One catalogue view's props**, as JSON — the widget a waveform, a curve or
+/// **One catalogue view's props**, as JSON -- the widget a waveform, a curve or
 /// a roll *is*, and what is on it.
 ///
 /// `kind` is the view's name (`"waveform"`, `"bpf"`, `"pianoroll"`) and `facts`
@@ -582,7 +582,7 @@ pub unsafe extern "C" fn clausters_view_props(
 /// their own channel strips is two mixers, which is how the same multitrack comes to
 /// sound different in two places.
 ///
-/// `0` for a width nothing is written for — past stereo is a downmix table and
+/// `0` for a width nothing is written for -- past stereo is a downmix table and
 /// which table is a decision, so it is refused rather than guessed.
 ///
 /// Sizes with a null `out` and fills with a second call, like the rest of the
@@ -628,7 +628,7 @@ pub unsafe extern "C" fn clausters_mixer_defs(
     unsafe { fill(answer.as_bytes(), out, out_cap, || {}) }
 }
 
-/// **What to instantiate to play a multitrack**, as JSON — the instance plan.
+/// **What to instantiate to play a multitrack**, as JSON -- the instance plan.
 ///
 /// `multitrack` is a multitrack and `sources` a JSON object from source id to
 /// `{"buffer": n, "channels": n}`: where a source's samples actually are on a
@@ -639,7 +639,7 @@ pub unsafe extern "C" fn clausters_mixer_defs(
 /// shown, and for each clip which slot it goes in and which frames its readers
 /// play. Three rules live in it and each was written twice before it did:
 /// seconds crossed to frames at the rate, the source's width picking the
-/// clip's wiring, and what a solo anywhere does to everything else — which the
+/// clip's wiring, and what a solo anywhere does to everything else -- which the
 /// document deliberately does not hold, since it records that a track was
 /// *marked* and what a mark does to the others is a mixer's question.
 ///
@@ -874,7 +874,7 @@ mod tests {
     }
 
     /// The other path through `apply`: an edit the document holds no inverse
-    /// for cannot be rolled back, so it runs on a copy — and the rule it is
+    /// for cannot be rolled back, so it runs on a copy -- and the rule it is
     /// protecting has to hold there too.
     #[test]
     fn a_sizing_pass_over_a_destructive_write_edits_nothing_either() {

@@ -1,6 +1,6 @@
 //! The meter: what a level looks like when a person has to read it.
 //!
-//! A picture of the raw block peak is unreadable — it flickers, and a transient
+//! A picture of the raw block peak is unreadable -- it flickers, and a transient
 //! shows for one frame of the screen or for none at all. Every meter anybody has
 //! ever read answers three rules instead: the attack is instantaneous, the fall
 //! is a fixed number of decibels per second, and a peak is held long enough to
@@ -10,8 +10,8 @@
 //! to a question that has one.
 //!
 //! It emits the value rather than writing it anywhere, so what a caller does
-//! with it — a control bus per channel in a mixer, a `SendReply`, a signal that
-//! drives something — stays the caller's.
+//! with it -- a control bus per channel in a mixer, a `SendReply`, a signal that
+//! drives something -- stays the caller's.
 
 use clausters_core::measure::Ballistics;
 
@@ -21,8 +21,8 @@ use crate::dsp::{ProcessCtx, UGen, at};
 /// second, 2 the seconds a peak is held before it begins to fall.
 ///
 /// One block is one measurement: the block's own peak goes in, and the whole
-/// block comes out at what the meter now reads. That is what a meter *is* — a
-/// number per block, which is also exactly what a control bus carries — and it
+/// block comes out at what the meter now reads. That is what a meter *is* -- a
+/// number per block, which is also exactly what a control bus carries -- and it
 /// is why a finer answer would be samples nothing can read.
 pub struct Meter {
     state: Ballistics,
@@ -55,7 +55,7 @@ impl UGen for Meter {
         // **Every sample the input carries**, not every sample this UGen
         // emits. A `kr` meter emits one number a block and its audio-rate
         // input is still the whole block, so walking the *output* would read
-        // one sample in sixty-four and call it the peak — which is exactly the
+        // one sample in sixty-four and call it the peak -- which is exactly the
         // reading a meter exists to not give.
         let mut peak = 0.0f32;
         for &sample in signal {
@@ -78,8 +78,8 @@ impl UGen for Meter {
 /// consecutive samples at or over it count as one over.
 ///
 /// The count and not the flag, for the reason a level is a level and not a
-/// colour: the flag is a *reader's* state — it stays lit until a hand puts it
-/// out, and two windows watching one bus each have their own — while the count
+/// colour: the flag is a *reader's* state -- it stays lit until a hand puts it
+/// out, and two windows watching one bus each have their own -- while the count
 /// is the signal's, and it is what a reader differences to notice an over it
 /// has not seen yet. [`clausters_core::measure::ClipLatch`] is the other half,
 /// and it lives wherever the mark is drawn.
@@ -118,7 +118,7 @@ impl UGen for ClipCount {
         let run = at(inputs[2], 0).max(1.0) as u32;
         // The input's samples, not this UGen's: see [`Meter::process`]. A run
         // is the whole of what this counts, so reading one sample a block
-        // would not merely be coarse — it would be counting a different thing.
+        // would not merely be coarse -- it would be counting a different thing.
         self.state.feed_block(signal, ceiling, run);
         output.fill(self.state.overs() as f32);
     }

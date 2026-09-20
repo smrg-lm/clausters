@@ -1,15 +1,15 @@
 """Widget handles: operate a live widget as an object, never by its integer id.
 
-`clausters.gui.host.GuiHost.open`/`define` hand back a `WindowHandle` — the
+`clausters.gui.host.GuiHost.open`/`define` hand back a `WindowHandle` -- the
 window's own id (it *is* an ``int``, so it drops into every place a window id
 went before) that additionally indexes the tree's **named** widgets. A lookup
 returns a `WidgetHandle`, a thin façade whose ``set``/``bind``/``free``/
-``query``/``on_event`` delegate to the host with the resolved id — the same way
+``query``/``on_event`` delegate to the host with the resolved id -- the same way
 `clausters.defs.node.Node.free` delegates to its `Server`. So a script holds the
 widget and acts on it (``win["cutoff"].set(value=800.0)``) instead of tracking
 integers and matching them in an event loop.
 
-A name is stable; the assigned id is not (it recycles across redraws — see
+A name is stable; the assigned id is not (it recycles across redraws -- see
 `clausters.gui.ids`), which is exactly why the handle addresses by name and the
 host resolves the current id underneath it.
 """
@@ -141,8 +141,8 @@ class WindowHandle(int):
 
     It subclasses ``int`` and equals the window id, so it works everywhere a
     window id did (``host.free(win)``, a set of open windows, an
-    ``int(args[0]) == win`` check). Indexing it by a widget's ``name`` — the
-    unambiguous ``win["cutoff"]`` or the shorthand ``win.cutoff`` — returns a
+    ``int(args[0]) == win`` check). Indexing it by a widget's ``name`` -- the
+    unambiguous ``win["cutoff"]`` or the shorthand ``win.cutoff`` -- returns a
     `WidgetHandle`. It carries the window's own widget ops too (`set`, `close`,
     `free`, `on_closed`).
     """
@@ -186,7 +186,7 @@ class WindowHandle(int):
         return sorted(self._names)
 
     def widget(self, name: str) -> WidgetHandle:
-        """The `WidgetHandle` for ``name`` — the method form of ``self[name]``."""
+        """The `WidgetHandle` for ``name`` -- the method form of ``self[name]``."""
         return self[name]
 
     def handle(self) -> WidgetHandle:
@@ -204,7 +204,7 @@ class WindowHandle(int):
             w.bind(synth)
 
         Each becomes a ``/gui_bind`` forwarding ``address <node> <control>
-        <value>`` — the host talks to the audio server itself, with no
+        <value>`` -- the host talks to the audio server itself, with no
         round-trip through this script (see `clausters.gui.host.GuiHost.bind`,
         which is still there for anything that is not a def control: a bus, an
         arbitrary address, another widget).
@@ -223,7 +223,7 @@ class WindowHandle(int):
         if not self._controls:
             raise ValueError(
                 "no widget in this window was built from a def control, so "
-                "there is nothing to bind — build them from controls "
+                "there is nothing to bind -- build them from controls "
                 "(knob(freq), slider(sd['amp'])), or bind one at a time with "
                 "win['freq'].bind('/node_set', node, 'freq')")
         target = int(getattr(node, "id", node))
@@ -241,7 +241,7 @@ class WindowHandle(int):
     @property
     def controls(self) -> dict:
         """``widget name -> def control name`` for every widget in this window
-        built from a control — what `bind` wires."""
+        built from a control -- what `bind` wires."""
         by_id = {wid: name for name, wid in self._names.items()}
         return {by_id.get(wid, control): control
                 for wid, control in self._controls.items()}
@@ -261,7 +261,7 @@ class WindowHandle(int):
 
     @property
     def closed(self) -> bool:
-        """Whether this window is gone — closed by a hand or by `close`.
+        """Whether this window is gone -- closed by a hand or by `close`.
 
         It reads the host's set of open windows, which a ``/gui_closed``
         updates, so it answers as soon as the loop has delivered the close."""
@@ -271,7 +271,7 @@ class WindowHandle(int):
         """Hold the calling thread until this window is closed.
 
         `clausters.gui.host.GuiHost.wait` for one window rather than all of
-        them — what a script that opened exactly one ends with. ``True`` when it
+        them -- what a script that opened exactly one ends with. ``True`` when it
         closed, ``False`` when ``timeout`` ran out first."""
         return self._host._wait_while(lambda: not self.closed, timeout)
 

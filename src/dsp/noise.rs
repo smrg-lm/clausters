@@ -3,27 +3,27 @@
 //!
 //! **Every generator here takes its randomness from `clausters_core::rng`**,
 //! the xorshift the sequencing layer and the client's `Pwhite` already use, and
-//! every one of them is built from an explicit seed — there is no seedless
+//! every one of them is built from an explicit seed -- there is no seedless
 //! constructor, and no process-global counter behind one. The seed comes from
 //! the instance's [`crate::dsp::registry::BuildCtx`], which reserves a
 //! contiguous run per synth, so a render is reproducible: the same score and
 //! the same starting seed replay the same samples, which is what lets a noisy
 //! patch have a golden file at all. What is *not* in the core is the
-//! shaping — the dice table, the random walk, the interpolation — so a client
+//! shaping -- the dice table, the random walk, the interpolation -- so a client
 //! that wanted to draw a pink stream itself would need that moved over first.
 //! Only `WhiteNoise`'s generator is mirrored there today.
 //!
 //! The families:
 //!
-//! - **Spectral shapes** — `WhiteNoise` (flat), `PinkNoise` (−3 dB/octave),
+//! - **Spectral shapes** -- `WhiteNoise` (flat), `PinkNoise` (−3 dB/octave),
 //!   `BrownNoise` (−6). Each is measured, not asserted by construction.
-//! - **Bit and sign sources** — `GrayNoise` (one random bit flipped per
+//! - **Bit and sign sources** -- `GrayNoise` (one random bit flipped per
 //!   sample), `ClipNoise` (±1 only).
-//! - **Held and interpolated** — `LFNoise0`/`LFNoise1`/`LFNoise2` and
+//! - **Held and interpolated** -- `LFNoise0`/`LFNoise1`/`LFNoise2` and
 //!   `LFClipNoise`: a new random value every `1/freq` seconds, held, ramped or
 //!   curved between. These are modulation sources, deliberately not band
 //!   limited, like the `LF*` oscillators.
-//! - **Impulsive and chaotic** — `Dust`/`Dust2` (random impulses at a mean
+//! - **Impulsive and chaotic** -- `Dust`/`Dust2` (random impulses at a mean
 //!   density) and `Crackle` (a chaotic map, not a random process at all).
 
 use clausters_core::rng;
@@ -52,7 +52,7 @@ impl UGen for WhiteNoise {
 }
 
 /// Number of generators in the Voss–McCartney sum. Sixteen covers about five
-/// decades — from a period of 2 samples to one of 2^16 — which is the whole
+/// decades -- from a period of 2 samples to one of 2^16 -- which is the whole
 /// audible band and then some at any sample rate we run at.
 const PINK_ROWS: usize = 16;
 
@@ -61,7 +61,7 @@ const PINK_ROWS: usize = 16;
 /// **Voss–McCartney**, and deliberately not Trammell's stochastic variant. Both
 /// sum a set of white generators updated at halving rates; the difference is
 /// the schedule. Voss–McCartney re-rolls the generator picked by the number of
-/// trailing zeros in a counter, so **exactly one** of them changes per sample —
+/// trailing zeros in a counter, so **exactly one** of them changes per sample --
 /// a fixed cost, every sample, forever. Trammell's version decides at random
 /// which rows to update, which is cheaper on average and unbounded in the worst
 /// case. An audio callback is not paid on average: it has one block's budget
@@ -70,7 +70,7 @@ const PINK_ROWS: usize = 16;
 ///
 /// The output is the sum of the rows plus one fresh white sample, mapped
 /// linearly onto [-1, 1). Its *peak* therefore reaches ±1 only when all
-/// seventeen agree, so like scsynth's it is a quiet signal — around 0.13 RMS
+/// seventeen agree, so like scsynth's it is a quiet signal -- around 0.13 RMS
 /// against white noise's 0.58. That is the level a ported def expects.
 pub struct PinkNoise {
     rng: rng::Rng,
@@ -123,7 +123,7 @@ const BROWN_STEP: f64 = 0.125;
 /// `BrownNoise`: a random walk, −6 dB/octave. No inputs.
 ///
 /// The walk **reflects** at ±1 rather than clamping. Clamping would let the
-/// signal rest against a rail — a constant, which is a click on the way in and
+/// signal rest against a rail -- a constant, which is a click on the way in and
 /// silence while it lasts; reflecting keeps it moving and keeps the
 /// distribution flat instead of piling probability up at the ends.
 pub struct BrownNoise {
@@ -158,14 +158,14 @@ impl UGen for BrownNoise {
 /// the word read as the output. No inputs.
 ///
 /// Two things about it are easy to get wrong. Its **spectrum is not flat**: the
-/// high bits flip rarely — one sample in 32 for the top one — and the low bits
+/// high bits flip rarely -- one sample in 32 for the top one -- and the low bits
 /// carry almost no weight, so the energy leans low, measured at −2.9 dB/octave,
 /// near enough pink. And its **distribution** is what the kind is really for:
 /// consecutive samples differ by exactly one power of two, so the steps span
 /// every order of magnitude (the mean step is some four thousand times the
 /// median, against 1.14 for white noise) and it sounds grainy rather than
-/// smooth. That bit-level property is exact in the **integer** — bit 31 is the
-/// sign bit, which is what makes the output bipolar — but it is not recoverable
+/// smooth. That bit-level property is exact in the **integer** -- bit 31 is the
+/// sign bit, which is what makes the output bipolar -- but it is not recoverable
 /// from the output, because `word / 2^31` in `f32` has a 24-bit significand
 /// against the word's 31 and rounds by an amount that depends on the magnitude
 /// the flip just changed.
@@ -196,7 +196,7 @@ impl UGen for GrayNoise {
 ///
 /// A coin flip per sample. Its spectrum is flat like white noise's, but every
 /// sample is at full scale, so it is the loudest noise available at a given
-/// peak — which is the reason to reach for it and the reason to be careful.
+/// peak -- which is the reason to reach for it and the reason to be careful.
 pub struct ClipNoise {
     rng: rng::Rng,
 }
@@ -238,7 +238,7 @@ pub enum LfNoiseShape {
 /// `LFNoise0`, `LFClipNoise`, `LFNoise1` and `LFNoise2`: a new random value
 /// every `1/freq` seconds. Input 0 `freq`.
 ///
-/// Not band limited, and deliberately so — like the `LF*` oscillators these are
+/// Not band limited, and deliberately so -- like the `LF*` oscillators these are
 /// modulation shapes. A step is a step, and asking for one at audio rate is
 /// asking for its harmonics.
 ///
@@ -289,7 +289,7 @@ impl LfNoise {
         }
     }
 
-    /// Segment length in samples, never shorter than two — a one-sample
+    /// Segment length in samples, never shorter than two -- a one-sample
     /// segment has no interior for the interpolating shapes to interpolate
     /// over, and the curve's denominator would collapse.
     #[inline]
@@ -359,7 +359,7 @@ pub enum DustMode {
 /// clusters and gaps. That is the difference from `Impulse`, and the reason to
 /// use one rather than the other.
 ///
-/// The amplitudes are random too — the trial's own value, rescaled — which is
+/// The amplitudes are random too -- the trial's own value, rescaled -- which is
 /// scsynth's behaviour and worth knowing before using `Dust` as a clock.
 pub struct Dust {
     rng: rng::Rng,
@@ -402,8 +402,8 @@ impl UGen for Dust {
 ///
 /// **Not a random process.** It has no RNG at all: it is deterministic, and the
 /// same `chaos` always gives the same signal from the same start. What makes it
-/// noise-like is that the orbit does not close — measured here, no period up to
-/// 512 samples — and that `chaos` changes the signal drastically and **not
+/// noise-like is that the orbit does not close -- measured here, no period up to
+/// 512 samples -- and that `chaos` changes the signal drastically and **not
 /// monotonically**: the spread runs 0.56, 0.20, 0.08, 0.05, 0.19, 0.05, 0.06
 /// across chaos 0.3 to 1.9. It is a map, not a level control, and the way to
 /// use it is by ear. Its output is

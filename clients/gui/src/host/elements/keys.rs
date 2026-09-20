@@ -1,9 +1,9 @@
-//! `keys` — a MIDI keyboard: a range of keys, the ones held down, and an
+//! `keys` -- a MIDI keyboard: a range of keys, the ones held down, and an
 //! overview strip that navigates the range.
 //!
 //! **The leaf that navigates an axis of its own and does not join a group.** A
 //! piano measures pitch along x, so there is nothing to share with the window's
-//! time — its range is its own two numbers, moved by the wheel and by a drag on
+//! time -- its range is its own two numbers, moved by the wheel and by a drag on
 //! the overview strip, and reported as a `"range"` event the way a timeline
 //! view reports a `"view"`.
 //!
@@ -11,7 +11,7 @@
 //! strip and the range at that moment, or the key layout and the pitch under
 //! the cursor) and every motion is measured against that snapshot rather than
 //! accumulated, so a drag pinned at an end never drifts. They live in the
-//! element because the state is the element's — which is the whole reason the
+//! element because the state is the element's -- which is the whole reason the
 //! machine keeps no taxonomy of drags.
 //!
 //! **Voice mode is the one thing it cannot do for itself.** With `voice` set,
@@ -29,7 +29,7 @@ use crate::host::paint::Draw;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, Input, Voice, VoiceSpec};
 use crate::host::widget::parse;
 
-/// A keyboard. `pressed` and `drag` are native view state — the gestures build
+/// A keyboard. `pressed` and `drag` are native view state -- the gestures build
 /// them, the drawing reads them, and no `/gui_set` writes them.
 #[derive(Debug, Clone)]
 pub struct Keys {
@@ -78,7 +78,7 @@ pub(super) fn build(
     Ok(Box::new(from_props(props)))
 }
 
-/// The props a `keys` node carries, read once — shared by the constructor and
+/// The props a `keys` node carries, read once -- shared by the constructor and
 /// by the tests beside it.
 fn from_props(props: &Map<String, Value>) -> Keys {
     let min = parse::number(props, "min", 36.0) as i32;
@@ -113,7 +113,7 @@ fn from_props(props: &Map<String, Value>) -> Keys {
 }
 
 impl Keys {
-    /// The key geometry for a placement — the same one the renderer drew with,
+    /// The key geometry for a placement -- the same one the renderer drew with,
     /// so a press lands on the key that was painted.
     fn layout(&self, rect: Rect, m: &crate::host::metrics::Metrics) -> piano::Layout {
         piano::layout(
@@ -137,7 +137,7 @@ impl Keys {
             .and_voice(Voice::on(pitch, velocity))
     }
 
-    /// Releases `pitch`, whether or not it was held — a range change can drop a
+    /// Releases `pitch`, whether or not it was held -- a range change can drop a
     /// key mid-hold, and the release must still reach the script and the voice.
     fn note_off(&mut self, pitch: i32) -> Events {
         self.pressed.retain(|&p| p != pitch);
@@ -146,7 +146,7 @@ impl Keys {
 
     /// Moves the visible range: the low end snaps to a white key, held keys
     /// that left the window drop (their rects are gone), and the `"range"`
-    /// event is reported **only when it moved** — a wheel at the end of the
+    /// event is reported **only when it moved** -- a wheel at the end of the
     /// axis is not an edit.
     fn set_range(&mut self, min: i32, max: i32) -> Events {
         let lo = piano::snap_white_down(min.clamp(0, 127).min(max));
@@ -167,7 +167,7 @@ impl Keys {
 }
 
 /// The MIDI-shaped `"note" pitch velocity state channel` payload (state 1 = on,
-/// 0 = off) — what a `/gui_event` carries and what a bound keyboard forwards.
+/// 0 = off) -- what a `/gui_event` carries and what a bound keyboard forwards.
 fn note_args(pitch: i32, velocity: i32, state: i32, channel: i32) -> Vec<OscType> {
     vec![
         OscType::String("note".into()),
@@ -366,7 +366,7 @@ mod tests {
     }
 
     /// A press is measured on the rect the element was drawn in, at the size
-    /// table it was drawn with — the same `Input` every element gets.
+    /// table it was drawn with -- the same `Input` every element gets.
     fn input(rect: Rect, m: &Metrics) -> Input<'_> {
         Input {
             metrics: m,
@@ -459,7 +459,7 @@ mod tests {
         assert_eq!(events.voices(), [Voice::off(62)]);
     }
 
-    /// The glissando: crossing into another key hands the note over — one off,
+    /// The glissando: crossing into another key hands the note over -- one off,
     /// one on, in that order, so nothing is left sounding.
     #[test]
     fn a_drag_across_keys_hands_the_note_over() {
@@ -503,7 +503,7 @@ mod tests {
         assert!(k.pressed.is_empty());
     }
 
-    /// The wheel navigates the range and reports it — and a wheel at the end
+    /// The wheel navigates the range and reports it -- and a wheel at the end
     /// of the axis reports **nothing**, because a gesture that moves nothing
     /// says nothing.
     #[test]

@@ -27,7 +27,7 @@ import { resolveServer } from "./wire.ts";
 export const NUM_BUFFERS = 4096;
 
 /**
- * One source's contribution to a join — what {@link Buffer.stitch} takes and
+ * One source's contribution to a join -- what {@link Buffer.stitch} takes and
  * {@link Buffer.parts} gives back.
  *
  * `source` is a {@link Buffer} or a bare slot number, `start` the first frame
@@ -37,7 +37,7 @@ export const NUM_BUFFERS = 4096;
  * click however well the frames are read.
  *
  * `channels` maps the join's channels onto the source's, one entry per channel
- * of the join — the source channel that channel reads, or a negative number for
+ * of the join -- the source channel that channel reads, or a negative number for
  * silence. It is routing and not level. Left out, channel *c* reads source
  * channel *c*, which is what a join of takes of the same width means.
  */
@@ -60,7 +60,7 @@ export interface BufferOptions {
 
 export class Buffer {
     /**
-     * What the server holds under this slot, as last read from it — a
+     * What the server holds under this slot, as last read from it -- a
      * buffer's shape only changes by a command of yours, so unlike a node's
      * record this one can be kept. `info` refreshes it; `frames`, `channels`
      * and `sampleRate` read it.
@@ -72,7 +72,7 @@ export class Buffer {
      */
     readonly server?: Server;
     /**
-     * The **file these samples came from**, when they came from one — `read` and
+     * The **file these samples came from**, when they came from one -- `read` and
      * `readChannels` set it, `alloc` leaves it `null`. It is carried and never
      * acted on: nothing re-reads it behind your back. What it is for is saying
      * where the samples are when a session is written down, which is exactly what
@@ -117,8 +117,8 @@ export class Buffer {
      * Installs a **join** over other buffers (`/buffer_stitch`): a buffer whose
      * samples are spans of theirs, read as one.
      *
-     * That is how a cut assembled from several takes — or from one take in
-     * another order — plays as **one** reader. Without it the reader would have
+     * That is how a cut assembled from several takes -- or from one take in
+     * another order -- plays as **one** reader. Without it the reader would have
      * to change which buffer it reads with sample accuracy, and the buffer a
      * reader reads is an initial-rate control: every seam would be a new node
      * and a control message in the middle of playback.
@@ -127,14 +127,14 @@ export class Buffer {
      * (`setSamples`, `fill`, `gain`, `reverse`, `read`), and so do the
      * recording UGens: writing would mean writing through to whichever take a
      * frame lands on, which is one edit becoming an edit of several. It takes
-     * nothing away — a join is *replaced* rather than edited, which costs the
+     * nothing away -- a join is *replaced* rather than edited, which costs the
      * list of parts and not the samples. The sources are held for as long as
      * the join exists, so freeing a take something is stitched over does not
      * silence it.
      *
      * `channels` is how wide the join is, defaulting to the first part's
      * source's width; `sampleRate` 0 means the server's, and every source must
-     * already be at the join's rate — a join is not a resampler.
+     * already be at the join's rate -- a join is not a resampler.
      */
     static async stitch(
         parts: Part[],
@@ -198,7 +198,7 @@ export class Buffer {
      *
      * **The path is whichever filesystem the server has.** Over the WebSocket
      * carrier that is a native server's disk. In a tab it is the page's own
-     * storage (`opfs`), `/`-separated under the origin's root — the read leaves
+     * storage (`opfs`), `/`-separated under the origin's root -- the read leaves
      * the AudioWorklet for the NRT worker, which decodes it with the server's
      * own decoder, so the samples are the ones a native read of the same file
      * gives. `load` is the other door and a different thing: a file over the
@@ -235,7 +235,7 @@ export class Buffer {
 
     /**
      * Loads **selected channels** of a sound file into a freshly allocated
-     * buffer (`/buffer_allocReadChannel`) — how one channel of a stereo file
+     * buffer (`/buffer_allocReadChannel`) -- how one channel of a stereo file
      * lands in a mono buffer, which {@link read} cannot do (it takes the file
      * whole).
      *
@@ -279,20 +279,20 @@ export class Buffer {
     }
 
     /**
-     * Loads an audio file at `url` into a freshly allocated buffer — a file
+     * Loads an audio file at `url` into a freshly allocated buffer -- a file
      * reached over the **network**, which is the half `read` cannot do.
      *
      * It used to be described as the browser's `/buffer_allocRead`, "since a
      * page has no filesystem". A page does: `read` works in a tab now, out of
      * the page's own storage (`opfs`), decoded by the NRT worker with the
-     * server's own decoder. So the two are no longer a browser/native pair —
+     * server's own decoder. So the two are no longer a browser/native pair --
      * they are a URL and a path, and the difference that matters is which
      * decoder ran. This one is the page's (`decodeAudioData`), so its samples
      * are the browser's answer rather than the server's; `read` is exact
      * against a native read of the same file.
      *
      * `fetch` + the page's own `decodeAudioData` produce the samples, which
-     * the carrier installs directly — it shares memory with the engine. The
+     * the carrier installs directly -- it shares memory with the engine. The
      * returned handle carries the decoded shape, so a view can lay out its
      * axis before reading a sample.
      *
@@ -331,11 +331,11 @@ export class Buffer {
     }
 
     /**
-     * Installs interleaved `samples` into a freshly allocated buffer — a take
+     * Installs interleaved `samples` into a freshly allocated buffer -- a take
      * that exists **in this program** rather than in a file.
      *
      * `read` is the other direction and is the one to use when there is a file
-     * the server can open itself; this is for samples the client holds — a
+     * the server can open itself; this is for samples the client holds -- a
      * render read back, an edit computed here, a table built in the page. It
      * is what closes the loop the `render` verb opens, and in a tab it is the
      * *only* way back from a render to something that sounds: a page has
@@ -348,8 +348,8 @@ export class Buffer {
      *
      * **The array you pass is yours afterwards**, on either carrier. The
      * in-page path posts the samples to the worklet with their buffer in the
-     * transfer list, which would leave your `Float32Array` detached — reading
-     * it again throws, and a view taken of it earlier silently goes empty —
+     * transfer list, which would leave your `Float32Array` detached -- reading
+     * it again throws, and a view taken of it earlier silently goes empty --
      * so what travels is a copy this call makes. That is one copy of the take
      * on this thread, and the alternative was a call that empties its argument
      * on one carrier and not the other.
@@ -381,7 +381,7 @@ export class Buffer {
         } else {
             // The carrier shares no memory with the server, so the samples go
             // the way every other bulk write goes: blob runs, chunked and
-            // closed by one barrier. Slower, never unavailable — the reference
+            // closed by one barrier. Slower, never unavailable -- the reference
             // client has only this path and the call means the same there.
             await buffer.setSamples(samples, { timeout });
         }
@@ -394,7 +394,7 @@ export class Buffer {
      * Fills this buffer through `/buffer_gen` (the wavetable/generator commands:
      * `"env"`, `"sine1"`/`"sine2"`/`"sine3"`, `"cheby"`, `"copy"`).
      *
-     * `args` follow each command's own shape — the wavetable generators take
+     * `args` follow each command's own shape -- the wavetable generators take
      * an integer flag word first, then their values. They are tagged by the
      * same rule as `sendMsg` (an integral number is an int32), so a flag
      * word arrives as the int the server requires.
@@ -413,11 +413,11 @@ export class Buffer {
     }
 
     /**
-     * Reads a sound file into this buffer (`/buffer_read`), keeping its shape —
+     * Reads a sound file into this buffer (`/buffer_read`), keeping its shape --
      * the in-place counterpart of `Buffer.read`, which allocates one to fit the
      * file.
      *
-     * The path is the server's, as in `read` — a native server's disk over the
+     * The path is the server's, as in `read` -- a native server's disk over the
      * WebSocket carrier, the page's own storage (`opfs`) in a tab.
      *
      * **Not yet delegated in a tab**, unlike `read`: this one overlays the
@@ -460,7 +460,7 @@ export class Buffer {
      * (`/buffer_write`); `sampleFormat` is `"int16"`, `"int24"` or `"float"`.
      *
      * Server-side, so it reaches a native server over the WebSocket carrier.
-     * A page saving what it has read itself downloads a blob instead — the
+     * A page saving what it has read itself downloads a blob instead -- the
      * samples are already there (`getSamples`).
      */
     async write(
@@ -511,7 +511,7 @@ export class Buffer {
      * Maps this buffer out of the shared segment (`/buffer_attach`).
      *
      * Only meaningful against a server that **attached** to a segment somebody
-     * else owns — the RT server of an editor's arrangement, which holds the
+     * else owns -- the RT server of an editor's arrangement, which holds the
      * devices and plays samples the on-demand session owns. It maps every
      * buffer the owner had published when it started, so this is for one
      * published since.
@@ -540,7 +540,7 @@ export class Buffer {
      * samples: the server broadcasts `/buffer_touched bufnum channel start
      * frames` to every `/server_notify` client but the one that wrote.
      *
-     * A page never writes that way — a browser cannot map a file — so this is
+     * A page never writes that way -- a browser cannot map a file -- so this is
      * here as the **listening** end's counterpart: a page holding a picture of
      * a take that a native editor is editing hears `/buffer_touched` and
      * re-reads that span with {@link getSamples}.
@@ -560,7 +560,7 @@ export class Buffer {
     /**
      * The shared body of the destructive edits: fire, or await `/done`.
      *
-     * They are async like every other write, and they **compose in flight** —
+     * They are async like every other write, and they **compose in flight** --
      * the server chains a batch of edits on one buffer, so several
      * `wait: false` edits in a row each build on the last rather than each on
      * the contents you started with.
@@ -585,7 +585,7 @@ export class Buffer {
      *
      * Indices are **flat and interleaved**, like {@link setSamples} and unlike
      * the editing verbs ({@link gain}, {@link reverse}) whose spans are frames
-     * — this is the writing family's member, not an editor's verb. Several runs
+     * -- this is the writing family's member, not an editor's verb. Several runs
      * ride in one message, and a run past the end throws rather than being
      * clamped.
      */
@@ -602,7 +602,7 @@ export class Buffer {
 
     /**
      * Reads selected channels of a sound file into **this** buffer
-     * (`/buffer_readChannel`), keeping its shape — so the selection must have
+     * (`/buffer_readChannel`), keeping its shape -- so the selection must have
      * as many channels as the buffer does. {@link readChannels} is the form
      * that allocates for you.
      */
@@ -638,7 +638,7 @@ export class Buffer {
     }
 
     /**
-     * Scales a span of this buffer (`/buffer_gain`) — the destructive edit an
+     * Scales a span of this buffer (`/buffer_gain`) -- the destructive edit an
      * editor applies to a selection.
      *
      * `start` and `frames` are **frames**, not flat sample indices: a selection
@@ -647,7 +647,7 @@ export class Buffer {
      * runs to the end.
      *
      * One value is a constant gain; give `to` for a fade, which sweeps
-     * `factor` to `to` along `shape` — the same envelope shape numbers `Env`
+     * `factor` to `to` along `shape` -- the same envelope shape numbers `Env`
      * and the breakpoint editor speak, `curve` read only by the
      * custom-curvature shape (5). So a fade in is `gain(0, { to: 1 })`, a fade
      * out `gain(1, { to: 0 })`, and silence is {@link silence}, which lands on
@@ -689,7 +689,7 @@ export class Buffer {
     }
 
     /**
-     * A fade in over a span, or out with `out: true` — {@link gain}'s two
+     * A fade in over a span, or out with `out: true` -- {@link gain}'s two
      * common cases, spelled the way they are asked for.
      */
     async fade({
@@ -787,7 +787,7 @@ export class Buffer {
 
     /**
      * What this buffer is a join **of** (`/buffer_parts`), as parts in the
-     * order they play — and an empty list when it owns its samples.
+     * order they play -- and an empty list when it owns its samples.
      *
      * That empty list is the answer to "is this a join", and it is worth asking
      * before drawing: a join refuses every write, so a view that would offer an
@@ -828,7 +828,7 @@ export class Buffer {
      * (`frame * channels + channel`), so a stereo buffer reads `L R L R …`.
      *
      * `chunk` (samples per round trip) defaults to the carrier's own bound
-     * (`Server.bulkChunk`) — megabytes per reply on a stream carrier, the
+     * (`Server.bulkChunk`) -- megabytes per reply on a stream carrier, the
      * classic 1024 where one delivery bounds the reply (a datagram, the page's
      * ring). This is the bulk path behind a waveform view: feed the
      * result to `Peaks.build` for the summary the picture is drawn from (a
@@ -874,9 +874,9 @@ export class Buffer {
      * `/buffer_peaks.reply`), as `{ start, bucket, stats }`.
      *
      * The summary of a buffer that is standing still, and the sibling of the
-     * stream a recording pushes: the same blob either way — bucket-major and
+     * stream a recording pushes: the same blob either way -- bucket-major and
      * channel-minor, `min`, `max` and mean square per bucket, one flat
-     * `Float32Array` — so it folds into a pyramid through the same door
+     * `Float32Array` -- so it folds into a pyramid through the same door
      * (`Peaks.writeBuckets`) with nothing converted.
      *
      * It is what lets a picture of a long take exist without the take: about a
@@ -888,7 +888,7 @@ export class Buffer {
      * (256 unless it says otherwise), so the two grids agree by construction;
      * `start` is rounded **down** to a whole bucket for the same reason, and
      * the rounded frame comes back with the answer. `frames: -1` runs to the
-     * end. Long spans take several requests — the reply's own length says how
+     * end. Long spans take several requests -- the reply's own length says how
      * much arrived, and this walks from where it ended.
      */
     async peaks({
@@ -900,7 +900,7 @@ export class Buffer {
         Promise<{ start: number; bucket: number; stats: Float32Array }> {
         const server = this.srv();
         // The channel count turns a blob's length back into buckets, so it is
-        // asked for when the handle does not carry it — as `getSamples` asks
+        // asked for when the handle does not carry it -- as `getSamples` asks
         // for the shape it needs.
         if (frames < 0 || !this.channels) {
             const shape = await this.info(timeout);
@@ -934,20 +934,20 @@ export class Buffer {
 
     /**
      * Writes interleaved samples into this buffer (`/buffer_setRange`), in
-     * chunks — the write half of `getSamples`, and the step that closes an
+     * chunks -- the write half of `getSamples`, and the step that closes an
      * editor's read → edit → write cycle.
      *
      * `samples` is laid down from flat index `start`, so a stereo buffer is
      * written interleaved `L R L R …`, exactly as it reads back. The samples
      * cross as one little-endian `f32` blob per chunk rather than as float
-     * arguments — the protocol's rule for bulk data, and what makes writing a
+     * arguments -- the protocol's rule for bulk data, and what makes writing a
      * multi-megabyte edit a byte copy instead of a per-sample encode. The buffer
      * must already exist and keeps its shape: writing past its end rejects
      * rather than being clamped, since a short write would lose samples the
      * caller believes it stored.
      *
      * The shape comes from the server's mirror, so a write immediately after
-     * `alloc` needs that alloc to have completed — which awaiting it already
+     * `alloc` needs that alloc to have completed -- which awaiting it already
      * guarantees. `chunk` sizes each round trip and defaults to the
      * transport's bound, exactly as in `getSamples`.
      */
@@ -971,7 +971,7 @@ export class Buffer {
      * flat start and length name one. Here `start` and the run are frames *of
      * that channel*, so drawing over the left channel of a stereo take is one
      * message and leaves the right one untouched. A run past the end rejects,
-     * reported in frames — the unit it was written in — and a channel the
+     * reported in frames -- the unit it was written in -- and a channel the
      * buffer does not have rejects too.
      */
     async setChannelSamples(
@@ -998,8 +998,8 @@ export class Buffer {
     /**
      * The chunked blob write both write-a-run methods send, differing only in
      * the address and in what stands before the run (nothing, or the channel).
-     * The positions are in the address' own unit — flat samples, or frames of
-     * one channel — and the chunking is the same arithmetic either way.
+     * The positions are in the address' own unit -- flat samples, or frames of
+     * one channel -- and the chunking is the same arithmetic either way.
      */
     private async setRuns(
         addr: string,
@@ -1035,7 +1035,7 @@ export class Buffer {
     }
 
     /**
-     * Writes one sample by flat index (`/buffer_set`) — the single-sample
+     * Writes one sample by flat index (`/buffer_set`) -- the single-sample
      * counterpart of `setSamples`, for a touch-up that does not deserve a run.
      */
     async setSample(
@@ -1052,7 +1052,7 @@ export class Buffer {
     }
 
     /**
-     * Writes one frame of one channel (`/buffer_setChannel`) — the
+     * Writes one frame of one channel (`/buffer_setChannel`) -- the
      * single-sample counterpart of {@link setChannelSamples}, addressed by
      * frame rather than by flat index.
      */
@@ -1095,7 +1095,7 @@ export class Buffer {
 }
 
 /**
- * The spans of a join, checked and encoded — everything {@link Buffer.stitch}
+ * The spans of a join, checked and encoded -- everything {@link Buffer.stitch}
  * does before it has a buffer number to put them under.
  *
  * It is a function of the parts and nothing else, which is what lets the two
@@ -1145,7 +1145,7 @@ function stitchParts(
  * A join owns no samples, so there is nothing to copy and nothing to load: the
  * buffer number is known the moment the pool hands it out, and the `/done` says
  * only that the round trip happened. The public verb stays a promise like every
- * other call on this class — this is the shape a **turn** needs, where the table
+ * other call on this class -- this is the shape a **turn** needs, where the table
  * a join is written into is read again before any microtask could run, and it is
  * the shape the Python client's `Buffer.stitch(wait=False)` has.
  *
@@ -1199,7 +1199,7 @@ export class BufferAllocator {
 
     /**
      * Returns `bufnum` to the pool. A double free (or an index this
-     * allocator never handed out) throws — a lost buffer slot is a client
+     * allocator never handed out) throws -- a lost buffer slot is a client
      * bug, never absorbed silently.
      */
     free(bufnum: number): void {

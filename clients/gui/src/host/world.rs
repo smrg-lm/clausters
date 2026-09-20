@@ -2,8 +2,8 @@
 //!
 //! A frame assembles two very different things and used to carry them in one
 //! struct. Some of it is *one widget's own interaction state* fed back down so
-//! that widget can draw itself mid-gesture — a button's held id, a menu's open
-//! list — and that is not the world: it goes home to the element that owns it.
+//! that widget can draw itself mid-gesture -- a button's held id, a menu's open
+//! list -- and that is not the world: it goes home to the element that owns it.
 //! What is left is genuinely nobody's, identical for every element of the
 //! frame: the bus source, the queried node trees, whether a server is attached,
 //! the sample rate and the sample clock, the pointer, and the timeline
@@ -12,7 +12,7 @@
 //! That is this struct, and it is what an [`Element`](super::widget::Element)
 //! is handed beside its [`Draw`](super::paint::Draw). It is deliberately not a
 //! god-context: it grows when the *host* learns a new fact about the outside,
-//! never when a widget is added — a widget's own state lives in the widget.
+//! never when a widget is added -- a widget's own state lives in the widget.
 //!
 //! [`World::default`] is an empty one (no bus source, no trees, no server),
 //! which is both the no-transport case the fronts fall back to and what an
@@ -32,7 +32,7 @@ pub struct World<'a> {
     pub bus: Option<&'a dyn BusSource>,
     /// The server node trees the last query returned, by group.
     pub node_trees: &'a HashMap<i32, NodeTree>,
-    /// Whether an audio server is attached at all — the difference between "no
+    /// Whether an audio server is attached at all -- the difference between "no
     /// nodes" and "nobody to ask".
     pub server_attached: bool,
     /// The server's sample rate, placing a frequency axis or a time ruler whose
@@ -51,7 +51,7 @@ pub struct World<'a> {
 
 impl World<'_> {
     /// The current value of control bus `bus` (`0.0` without a source, or for a
-    /// negative or out-of-range bus) — the one rule, so no reader repeats it.
+    /// negative or out-of-range bus) -- the one rule, so no reader repeats it.
     pub fn control(&self, bus: i32) -> f32 {
         if bus < 0 {
             return 0.0;
@@ -61,7 +61,7 @@ impl World<'_> {
 
     /// What a level reader draws for `bus` at `rate`: the published block level
     /// of an audio bus, or the current value of a control bus. Both are one
-    /// atomic load out of the same source — neither costs a message, and the
+    /// atomic load out of the same source -- neither costs a message, and the
     /// audio one costs no tap either.
     pub fn level(&self, bus: i32, rate: Rate) -> f32 {
         if bus < 0 {

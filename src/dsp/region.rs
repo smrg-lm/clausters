@@ -1,7 +1,7 @@
 //! Sample memory a second process can map: one **region per buffer**.
 //!
 //! The IPC segment carries the control plane and the small, fixed data plane
-//! (the clocks, the buses, the taps), and it is sized once at boot — while a
+//! (the clocks, the buses, the taps), and it is sized once at boot -- while a
 //! buffer is sized at run time and can be enormous, a ten-minute stereo take
 //! being 230 MB. So a shared buffer is not *in* the segment: it is its own
 //! mapped file, and the segment carries only the **directory** that says where
@@ -15,10 +15,10 @@
 //! whole answer to "what happens to a peer holding a buffer that was freed":
 //! its memory stays valid, it learns the buffer is gone by reading the
 //! directory, and the next allocation takes a new generation and therefore a
-//! new name — so a stale mapping can never be aliased onto new samples.
+//! new name -- so a stale mapping can never be aliased onto new samples.
 //!
 //! The cells are [`AtomicU32`] exactly as an owned buffer's are, and for the
-//! same reason (`dsp::buffer`): two threads — now two *processes* — touching
+//! same reason (`dsp::buffer`): two threads -- now two *processes* -- touching
 //! one location with a writer among them is a data race in any other shape.
 
 use std::io;
@@ -43,7 +43,7 @@ unsafe impl Sync for Region {}
 
 impl Region {
     /// The name a buffer's region has: the segment's own path, the buffer
-    /// number and the **generation** — so a freed buffer's file and its
+    /// number and the **generation** -- so a freed buffer's file and its
     /// replacement never share a name.
     pub fn path_for(segment: &Path, bufnum: usize, generation: u64) -> PathBuf {
         let mut name = segment.as_os_str().to_os_string();
@@ -65,7 +65,7 @@ impl Region {
         Self::map(&file, path, cells)
     }
 
-    /// Maps an existing region — the peer's door, by the name the directory
+    /// Maps an existing region -- the peer's door, by the name the directory
     /// gave. `cells` is what the directory says the shape is; a file shorter
     /// than that is refused rather than read short.
     #[cfg(unix)]
@@ -107,7 +107,7 @@ impl Region {
     }
 
     /// Removes the name, leaving every existing mapping valid until it is
-    /// dropped — which is what makes freeing a buffer safe while a peer is
+    /// dropped -- which is what makes freeing a buffer safe while a peer is
     /// still drawing it.
     pub fn unlink(path: &Path) {
         let _ = std::fs::remove_file(path);

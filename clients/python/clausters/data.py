@@ -1,20 +1,20 @@
 """Reading the server: the three subscriptions a script watches.
 
 Most of what a script reads off the server it *asks* for and gets back at
-once — a buffer's samples (`clausters.defs.Buffer.get_samples`), a query's
+once -- a buffer's samples (`clausters.defs.Buffer.get_samples`), a query's
 reply, a summary built from either (`clausters._native.peaks_cache`). What is
 here is the other kind: what the server keeps sending, because the thing being
 watched changes faster than anything could ask.
 
-- `BusStream` — control buses (``/bus_stream``): the newest value of each bus,
+- `BusStream` -- control buses (``/bus_stream``): the newest value of each bus,
   as often as asked for.
-- `TapStream` — audio buses (``/bus_tapStream``): the newest window of samples
+- `TapStream` -- audio buses (``/bus_tapStream``): the newest window of samples
   of each bus, on that bus's own sample axis.
-- `RecordingStream` — takes as they record (``/buffer_stream``): the overview
+- `RecordingStream` -- takes as they record (``/buffer_stream``): the overview
   of what was written, since the audio thread that fills a buffer is the one
   place that cannot send a message.
 
-The GUI host reads all three paths itself — that is why a GuiDef naming a bus,
+The GUI host reads all three paths itself -- that is why a GuiDef naming a bus,
 a tap or a take draws without a line of script. This module is the same paths
 opened to the **script**, for what a program does with the data besides look at
 it: a read-out, a decision, a summary it hands on, a test.
@@ -22,15 +22,15 @@ it: a read-out, a decision, a summary it hands on, a test.
 **Nothing here draws, and nothing here computes a drawing.** An oscilloscope's
 display window and trigger, a decibel curve, a row of pixel columns: those
 belong to whoever draws, and what draws is the GUI host. A script that wants to
-see any of this names a view — `clausters.plot`, `clausters.scope`, or a
-widget in a GuiDef — and the host reads the very same paths.
+see any of this names a view -- `clausters.plot`, `clausters.scope`, or a
+widget in a GuiDef -- and the host reads the very same paths.
 
 **Where the reports arrive.** This client's reply path is pulled, not pushed:
 `clausters.defs.Server.request` reads the carrier and drops what it did not ask
 for, so a subscription sent over the command carrier would have nobody
 listening. Each stream here sends its subscription out of **its own**
-`clausters.base.OscReceiver` socket — the shape the ``/node_end`` recycler
-already uses — and the reports land on the responder thread, like every
+`clausters.base.OscReceiver` socket -- the shape the ``/node_end`` recycler
+already uses -- and the reports land on the responder thread, like every
 `clausters.responders.OscFunc` callback. Keep a handler to storing and reading,
 never a round trip. It also settles the server's *one subscription per client*
 rule in this client's favour: each stream is its own client, so two of them, or
@@ -101,8 +101,8 @@ class _Subscription:
     """What the three streams share: the socket a subscription is sent from,
     the ack it waits for, the listener list, and the two verbs that end it.
 
-    Each stream is its **own** OSC client — it sends its subscription out of its
-    own receiver and the server answers there — so the machinery is identical
+    Each stream is its **own** OSC client -- it sends its subscription out of its
+    own receiver and the server answers there -- so the machinery is identical
     and only the command, its arguments and what a reply means differ.
     """
 
@@ -145,7 +145,7 @@ class _Subscription:
 
     def _fire(self, *args):
         """Calls every listener outside the lock, on the snapshot taken under
-        it — a handler that unsubscribes must not deadlock, and one that runs
+        it -- a handler that unsubscribes must not deadlock, and one that runs
         long must not hold the next report up."""
         with self._lock:
             listeners = list(self._listeners)
@@ -164,7 +164,7 @@ class _Subscription:
     def _await_ack(self, args, timeout):
         """Sends this stream's command out of its own socket and waits for the
         server's ``/done``, which arrives there rather than on the command
-        carrier — so the subscription and its replies belong to one client."""
+        carrier -- so the subscription and its replies belong to one client."""
         timeout = self.server.timeout if timeout is None else timeout
         done = threading.Event()
         failure = []
@@ -227,7 +227,7 @@ class BusStream(_Subscription):
 
     The whole object is a **latest value** store, not a history: a snapshot
     replaces the previous one. A read-out that wants a rolling trace keeps its
-    own history from `on_snapshot` — how long a trace is, is its decision.
+    own history from `on_snapshot` -- how long a trace is, is its decision.
 
     At most `clausters.defs.ServerInfo.max_stream_buses` per subscription (the
     server's ``--max-stream-buses``, clamped to what this stream's carrier
@@ -244,7 +244,7 @@ class BusStream(_Subscription):
         self.buses = tuple(buses)
         #: the newest snapshot, one entry per bus, in `buses` order.
         self.values = array.array("f", bytes(4 * len(self.buses)))
-        #: snapshots seen so far — a read-out can tell a repaint from a stall.
+        #: snapshots seen so far -- a read-out can tell a repaint from a stall.
         self.snapshots = 0
         self._slot = {bus: i for i, bus in enumerate(self.buses)}
 
@@ -309,7 +309,7 @@ class TapWindow:
     ``samples`` oldest first, and ``end_position`` the total samples ever
     recorded at the window's end.
 
-    The position is what places consecutive windows on the bus's timeline —
+    The position is what places consecutive windows on the bus's timeline --
     they overlap or gap by exactly its delta, never by a guess about the
     period."""
 
@@ -337,7 +337,7 @@ class TapStream(_Subscription):
     A control bus carries one value per block; an analysis needs the samples
     themselves, so the server **records** the buses it is asked for and sends
     the newest window of each. Opening the stream is what starts that recording
-    and stopping it is what ends it — there is no separate routing step and no
+    and stopping it is what ends it -- there is no separate routing step and no
     ring index anywhere.
 
     At most 8 buses per subscription. ``frames`` is clamped by the server to
@@ -347,7 +347,7 @@ class TapStream(_Subscription):
 
     **What is not here is the trace.** Framing a display window and aligning it
     on a trigger so a periodic signal stands still is what an oscilloscope
-    *draws*, and the drawing is the GUI host's — `clausters.scope`, or a
+    *draws*, and the drawing is the GUI host's -- `clausters.scope`, or a
     ``scope`` widget in a GuiDef, which asks the server for the same tap. What
     a script does with a window here is measure it.
     """
@@ -393,7 +393,7 @@ class TapStream(_Subscription):
 
     def interleaved(self, first, count: int) -> "array.array":
         """The newest windows of ``count`` adjacent buses from ``first``,
-        interleaved frame-major (``L R L R ...``) over the frames they share —
+        interleaved frame-major (``L R L R ...``) over the frames they share --
         the layout `clausters._native.correlation` and
         `clausters._native.lissajous` take, and what
         `clausters.render.channels` splits again.
@@ -452,7 +452,7 @@ class RecordingStream(_Subscription):
     Each take gets a cache **allocated at its full length** and empty: a take's
     picture is the whole of the box it will fill, so the axis does not move
     while it fills. Reports write the buckets that were measured and nothing
-    else, so what has not been recorded reads as the silence the buffer is —
+    else, so what has not been recorded reads as the silence the buffer is --
     read only up to `written` to tell the two apart, which is what the GUI
     host's ``fills`` prop does for the picture.
 
@@ -474,7 +474,7 @@ class RecordingStream(_Subscription):
         super().__init__(server, recv)
         #: the buckets each report is measured over, and the caches' own.
         self.bucket = int(bucket)
-        #: reports applied so far — a view can tell a repaint from a stall.
+        #: reports applied so far -- a view can tell a repaint from a stall.
         self.reports = 0
         self._takes = {}
 
@@ -488,7 +488,7 @@ class RecordingStream(_Subscription):
 
         Args:
             server: the `clausters.defs.Server` the takes live on.
-            takes: the takes to follow — `clausters.defs.Buffer` handles,
+            takes: the takes to follow -- `clausters.defs.Buffer` handles,
                 `TakeShape`\\ s, or ``(bufnum, frames, channels)`` tuples.
             period_ms: the report cadence (10 ms floor at the server).
             base_bucket: the frames one bucket summarizes; the caches are built
@@ -520,14 +520,14 @@ class RecordingStream(_Subscription):
     def peaks(self, take) -> "bytes | None":
         """The peak cache of one take, or ``None`` when it is not in this
         stream. The same bytes `clausters._native.peaks_cache` builds from
-        samples, so it goes wherever one of those goes — written to a file a
+        samples, so it goes wherever one of those goes -- written to a file a
         ``waveform(cache=...)`` maps, or compared against one."""
         with self._lock:
             entry = self._takes.get(_bufnum_of(take))
             return None if entry is None else entry["cache"]
 
     def written(self, take) -> int:
-        """How far one take has been reported, in frames — the end of the last
+        """How far one take has been reported, in frames -- the end of the last
         whole bucket the writer had filled. Past it the cache is the silence the
         buffer was allocated as, so this is where a trace should stop."""
         with self._lock:

@@ -1,8 +1,8 @@
-"""The free-standing ``render`` — one verb for the change of state to sound.
+"""The free-standing ``render`` -- one verb for the change of state to sound.
 
 `render` is the third ambient verb, next to `clausters.play` and
 `clausters.plot`: it turns a **generator** thing (an algorithm that describes
-sound) into a **generated** one (samples — random-access audio). It dispatches
+sound) into a **generated** one (samples -- random-access audio). It dispatches
 by kind:
 
 - a binary **score** (``bytes``) -> the embedded offline renderer, exactly the
@@ -11,10 +11,10 @@ by kind:
   `clausters.defs.GraphDef`) or a bare **expression** (a `clausters.defs.Ugen`
   graph, a Faust `clausters.defs.Signal` or `clausters.defs.Box`, coerced
   through `clausters.defs.asdef.as_def`) -> instanced offline for ``dur``
-  seconds — the audible sibling of ``plot(def)``;
+  seconds -- the audible sibling of ``plot(def)``;
 - an arrangement **`Element`** -> with a ``destination``, delegates to
   `clausters.form.render` (the arrangement's own seam: RT or NRT by the
-  destination); without one, an **offline bounce** — an ephemeral NRT session
+  destination); without one, an **offline bounce** -- an ephemeral NRT session
   plays it and renders the score;
 - a `clausters.seq.timeline.Timeline` -> the same dual: played on
   ``destination`` on its own clock, or the offline bounce, whose seconds are
@@ -40,8 +40,8 @@ pattern's list, since there is no audio in it.
 Every offline path returns a `RenderStats`: the frame, channel and event
 counts, per-channel peak and RMS, and the samples themselves (interleaved
 float32 in a stdlib ``array('f')``) when the render kept them. Passing
-``path`` sends the audio to a file instead — written by the server's own
-``--nrt`` renderer, so it never crosses into this process — and leaves
+``path`` sends the audio to a file instead -- written by the server's own
+``--nrt`` renderer, so it never crosses into this process -- and leaves
 ``samples`` ``None``. That holds for every kind of render, a bare expression
 included: there is no second writer on this side. Read one back with
 `read_soundfile`.
@@ -75,7 +75,7 @@ __all__ = ["render", "bounce_def", "RenderStats", "read_soundfile",
 #: source is endless, when no ``until`` (or ``count``) bounds it.
 #:
 #: A render holds what it generated in memory, so a million is already past any
-#: real run and nowhere near a legitimate one — which is what makes the cap
+#: real run and nowhere near a legitimate one -- which is what makes the cap
 #: honest *here* and wrong inside `clausters.base.TempoClock.render`, where a
 #: long offline render of a real score is exactly the thing that runs for a very
 #: long time on purpose.
@@ -84,7 +84,7 @@ MAX_BOUNCED_EVENTS = 1_000_000
 
 @dataclass(frozen=True)
 class RenderStats:
-    """What a render did — the one thing every render returns.
+    """What a render did -- the one thing every render returns.
 
     ``samples`` holds the audio when the render kept it in memory, and is
     ``None`` when a ``path`` sent it to a file instead: **the path chooses
@@ -92,7 +92,7 @@ class RenderStats:
     either way. Read a written file with `read_soundfile`.
 
     ``peak`` and ``rms`` are **per channel**, in channel order, measured by
-    the renderer as it streamed — not by a second pass here, which for a
+    the renderer as it streamed -- not by a second pass here, which for a
     file-bound render would mean reading the file back.
 
     ``seed`` is the one this render's stochastic UGens started from. Unless
@@ -128,7 +128,7 @@ class RenderStats:
 def channels(samples, count: int) -> tuple[array, ...]:
     """Split interleaved `samples` into `count` per-channel arrays.
 
-    Interleaved is the currency everywhere in Clausters — it is the server's
+    Interleaved is the currency everywhere in Clausters -- it is the server's
     own buffer layout (`/buffer_getRange` indexes ``frame * channels + channel``, and
     `/buffer_export` writes the same order), so audio *going to* the server needs
     no conversion. Deinterleaving is for analysis on this side, and it is
@@ -139,7 +139,7 @@ def channels(samples, count: int) -> tuple[array, ...]:
 
 
 def interleave(*chans) -> array:
-    """Weave per-channel arrays back into one interleaved `array('f')` — the
+    """Weave per-channel arrays back into one interleaved `array('f')` -- the
     inverse of `channels`, and the layout the server wants."""
     if not chans:
         return array("f")
@@ -155,7 +155,7 @@ def interleave(*chans) -> array:
 def read_soundfile(path, start: int = 0, frames: int = -1) -> RenderStats:
     """Read an audio file through **the server's own decoder**.
 
-    WAV, FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and the rest — whatever
+    WAV, FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and the rest -- whatever
     the file holds, the samples come back interleaved `float32`, scaled to
     ``[-1, 1]``, at the file's own sample rate (nothing here resamples). This
     is the same decoder ``/buffer_allocRead`` uses, which is why the client needs
@@ -186,15 +186,15 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
            until: float | None = None, count: int | None = None,
            sample_rate: float = 48_000.0, channels: int = 2,
            workers: int = 0, path=None, seed: int | None = None):
-    """Render ``obj`` — offline to a `RenderStats`, or onto a live
+    """Render ``obj`` -- offline to a `RenderStats`, or onto a live
     ``destination`` when it has one to sound on.
 
     Args:
-        obj: what to render — a binary score (``bytes``), a def or bare
+        obj: what to render -- a binary score (``bytes``), a def or bare
             expression, an arrangement `Element`, a `Timeline`, an
             `EventPattern`, a `Routine`/`Stream`, a generator, or a value
             pattern.
-        destination: a `Server` to sound on — only an `Element` or a
+        destination: a `Server` to sound on -- only an `Element` or a
             `Timeline` accepts one (the delegating paths); the rest are
             offline by nature.
         clock: the clock it plays on, as for `clausters.play`. Offline it is a
@@ -205,23 +205,23 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
         quant: start quantization on a live ``destination``.
         ports: ``{name: value}`` overrides for a logical `Group`'s surface
             (see `clausters.form.render`).
-        dur: seconds a def or expression is held before it is freed — the
+        dur: seconds a def or expression is held before it is freed -- the
             rendered length. Ignored by the other kinds (their content sets
             the length).
         controls: ``{name: value}`` controls a def or expression is instanced
             with.
-        defs: extra defs the render needs first — a `GraphDef`'s member defs,
+        defs: extra defs the render needs first -- a `GraphDef`'s member defs,
             or the instrument a bounced pattern, timeline or routine names.
             Every offline path starts from an **empty** ephemeral session, so
             whatever it names has to ride along.
-        until: stop the offline bounce at this beat of ``clock`` — required
+        until: stop the offline bounce at this beat of ``clock`` -- required
             for an endless source (an infinite pattern never drains on its
             own; an event pattern with no bound raises after
             `MAX_BOUNCED_EVENTS` events).
-        count: how many values a value pattern generates — required for an
+        count: how many values a value pattern generates -- required for an
             endless one, which otherwise raises after `MAX_BOUNCED_EVENTS`.
         sample_rate: offline render rate, in Hz.
-        channels: interleaved output channel count of the offline render —
+        channels: interleaved output channel count of the offline render --
             the outputs the offline server has, not a property of what is
             being rendered. A bare expression wider than that is writing onto
             internal buses that reach no file, and raises.
@@ -320,7 +320,7 @@ def _values(pattern, count):
             if count is None:
                 raise RuntimeError(
                     f"render: the {type(pattern).__name__} did not end after "
-                    f"{MAX_BOUNCED_EVENTS} values — pass count= to take a number "
+                    f"{MAX_BOUNCED_EVENTS} values -- pass count= to take a number "
                     f"of them"
                 )
             break
@@ -331,12 +331,12 @@ def _values(pattern, count):
 def _check_expr_width(obj, channels):
     """Refuses a bare expression laid past the render's outputs.
 
-    ``channels`` is the offline server's output count — how many channels the
-    render *has* — not a property of the graph, so it is not derived from one
+    ``channels`` is the offline server's output count -- how many channels the
+    render *has* -- not a property of the graph, so it is not derived from one
     (`clausters.defs.expr_channels` explains the split between the verbs).
     An expression `clausters.defs.as_def` lays on more buses than that writes
     the surplus onto internal buses, which reach no file: silently half a take.
-    Only the buses the coercion itself assigned are checked — an explicit
+    Only the buses the coercion itself assigned are checked -- an explicit
     ``out(8, sig)`` is the caller's own routing.
     """
     from .defs.asdef import expr_channels
@@ -355,8 +355,8 @@ def bounce_def(obj, dur, controls, defs, sample_rate, channels, seed=None,
                path=None):
     """Renders a def offline: an ephemeral NRT session, the ``defs`` it needs
     plus the def itself sent at score time 0, one instance with ``controls``,
-    freed at ``dur`` seconds. Returns the whole `RenderStats` — `plot` draws
-    its samples, `render` returns it as is — because the take's ``seed`` is
+    freed at ``dur`` seconds. Returns the whole `RenderStats` -- `plot` draws
+    its samples, `render` returns it as is -- because the take's ``seed`` is
     part of what happened, and a def with a noise UGen in it has a different
     one every call unless ``seed`` says otherwise.
 
@@ -390,8 +390,8 @@ def _bounce(start, clock, until, sample_rate, channels, path, seed, defs=(),
     renders to samples.
 
     The session is ``clock``'s, which has to be an offline one; with no
-    ``clock`` it is a new one, which starts **empty** — it is not the one the
-    caller has been working in — so a pattern naming an instrument of its own
+    ``clock`` it is a new one, which starts **empty** -- it is not the one the
+    caller has been working in -- so a pattern naming an instrument of its own
     has to bring it along in ``defs``, exactly as a def bounce does.
 
     ``guard`` names what an unbounded render is refused for after
@@ -425,7 +425,7 @@ def _bounce(start, clock, until, sample_rate, channels, path, seed, defs=(),
                 raise
             raise RuntimeError(
                 f"render: the {guard} did not end after {MAX_BOUNCED_EVENTS} "
-                f"events — pass until= to bound it"
+                f"events -- pass until= to bound it"
             ) from exc
     return session.server.render(sample_rate=sample_rate, channels=channels,
                                  path=path, seed=seed)
@@ -463,7 +463,7 @@ def render_score(score: bytes, sample_rate: float = 48_000.0, channels: int = 2,
 def render_to_file(score: bytes, path, sample_rate: float, channels: int,
                     workers: int, seed: int | None, sample_format: str):
     """Hand a binary score to the ``clausters --nrt`` renderer, which writes
-    the file itself — the one place in the client that turns a score into a
+    the file itself -- the one place in the client that turns a score into a
     soundfile.
 
     The score goes out through a temporary ``.osc``, because ``--nrt`` takes
@@ -471,7 +471,7 @@ def render_to_file(score: bytes, path, sample_rate: float, channels: int,
     so the caller learns the frames, events, peak, RMS and seed without
     opening the file the server just wrote.
 
-    ``seed`` ``None`` leaves ``--seed`` off, so the renderer draws one — a
+    ``seed`` ``None`` leaves ``--seed`` off, so the renderer draws one -- a
     bounce is a performance like any other. It comes back in ``stats.seed``.
     """
     import json

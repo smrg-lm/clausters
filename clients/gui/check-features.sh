@@ -6,14 +6,14 @@
 # same job for the server's def families, and it exists for the same reason: CI
 # lints this crate exactly once, with its **default** features, so a break that
 # only appears with a feature off passes CI and every local habit alike. That is
-# not hypothetical — `--no-default-features` did not compile at all until the
+# not hypothetical -- `--no-default-features` did not compile at all until the
 # commit before this script landed, and nothing had noticed.
 #
 # What the configurations are chosen to catch:
 #
-#   * **the floor** (no features) — the build every optional family is optional
+#   * **the floor** (no features) -- the build every optional family is optional
 #     against, and the one nothing ever runs by habit;
-#   * **one family at a time** — a module that quietly reaches into another
+#   * **one family at a time** -- a module that quietly reaches into another
 #     family compiles fine when both are on and only fails alone;
 #   * **the wasm gate** under the same, since the browser bundle is where
 #     dropping a family is worth real kilobytes;
@@ -25,7 +25,7 @@
 #     the *code* while its tests stay in is a test that compiles and fails.
 #
 # It only ever reads: nothing here writes to your working tree, for the reason
-# the server's matrix states — a gate that edits the thing it is judging cannot
+# the server's matrix states -- a gate that edits the thing it is judging cannot
 # be trusted to report on it.
 #
 # Every configuration runs even if an earlier one fails: a matrix that stops at
@@ -140,8 +140,8 @@ run "rustdoc: the floor" \
 # --- The suite ---------------------------------------------------------------
 #
 # The row clippy cannot stand in for: a test that exercises a family gated out
-# of the code compiles and then fails. Two runs answer it — everything on, and
-# everything off — since a test is gated by the family it exercises and there is
+# of the code compiles and then fails. Two runs answer it -- everything on, and
+# everything off -- since a test is gated by the family it exercises and there is
 # no third answer in between.
 
 run "test: default features" cargo test --quiet

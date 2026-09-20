@@ -4,16 +4,16 @@
 Every axis of the two heavy views is a ruler with selectable units, each drawn
 in its **own strip** beside the view (no overlap with the traces or the cursor
 readout), each optional per axis, and each retunable at runtime through
-``GuiHost.set`` — which is what the menus in this window do:
+``GuiHost.set`` -- which is what the menus in this window do:
 
 - the **time axis** (both views) reads ``"time"`` (``h:mm:ss.mmm``),
-  ``"samples"``, or ``"beats"`` — musical time labeled ``bar:beat`` on the
+  ``"samples"``, or ``"beats"`` -- musical time labeled ``bar:beat`` on the
   client's grid: ``tempo`` (beats/second, the `Clock` convention), ``beat_at``
   (the beat at sample 0) and ``quant`` (beats per bar);
 - the waveform's **amplitude axis** reads ``"norm"`` ([-1, 1]), ``"db"``
   (dBFS), ``"bits"`` (integer sample values at ``bit_depth``), ``"percent"``,
   or ``"off"``;
-- the spectrogram's **frequency axis** follows ``freq_scale`` — ``"log"``,
+- the spectrogram's **frequency axis** follows ``freq_scale`` -- ``"log"``,
   ``"linear"``, ``"mel"`` or ``"bark"`` (the perceptual scales; the shader's
   display mapping and the ruler share the closed forms in the native core).
 
@@ -21,15 +21,15 @@ Every axis also **navigates vertically**: the mouse wheel over a y-ruler strip
 zooms that axis around the cursor (amplitude on the waveform, frequency on the
 spectrogram), dragging the strip pans it, and ``R`` resets. The visible window
 is the ``y_start``/``y_len`` prop pair (normalized display units, ``0, 1`` =
-the full axis) — settable from the script, reported back as
-``/gui_event id "view_y" y_start y_len`` — and the tick layout is adaptive:
+the full axis) -- settable from the script, reported back as
+``/gui_event id "view_y" y_start y_len`` -- and the tick layout is adaptive:
 it measures its actual labels, so zooming any axis keeps revealing finer,
 non-colliding rungs in whatever unit is active.
 
 A stereo phrase is rendered offline at a known tempo, mapped as one raw file,
 and shown in both views; three menus and a toggle drive the units. The script
 drains ``/gui_event`` and translates each menu pick into the matching
-``gui.set`` — the "wire a button to the display" path, no recompute anywhere
+``gui.set`` -- the "wire a button to the display" path, no recompute anywhere
 (rulers are painter chrome; the frequency scale is a shader uniform).
 
 Run it like the other GUI examples (see ``editor.py`` for the install):
@@ -72,8 +72,8 @@ samples_to_file(list(inter), raw_path)
 
 # %% [markdown]
 # ## The window: both views plus the unit controls
-# The views start with the defaults — time ruler in clock time, amplitude in
-# normalized units, frequency in log Hz — and carry the beat grid so switching
+# The views start with the defaults -- time ruler in clock time, amplitude in
+# normalized units, frequency in log Hz -- and carry the beat grid so switching
 # to ``"beats"`` is just a unit change. Each menu's options are ordered so its
 # reported index maps straight to the prop value.
 
@@ -106,7 +106,7 @@ def scene(path: str) -> dict:
 session = Session.live()
 gui = session.gui()
 win = scene(raw_path).open()
-print(f"opened window {win} — click the menus to cycle each axis' unit")
+print(f"opened window {win} -- click the menus to cycle each axis' unit")
 
 # %% [markdown]
 # ## Wire the widgets to the rulers, by name
@@ -164,7 +164,7 @@ win["spect"].on_event(on_view_y)
 # The grid the beats ruler draws (`bar`/`beat_in_bar`) and the perceptual
 # scales the frequency ruler uses (`cpsmel`/`cpsbark`, named the way
 # SuperCollider names a conversion) are the same native-core functions the
-# client exposes — a headless script reads the identical numbers the GUI
+# client exposes -- a headless script reads the identical numbers the GUI
 # shows.
 
 # %%
@@ -180,7 +180,7 @@ print(f"1 kHz is {builtins.cpsmel(1000.0):.0f} mel, "
 # ## Everything is also settable directly
 # The menus are a convenience; any client can retune an axis at any time.
 # (As a plain script this cell runs right after the window opens, so it
-# announces itself and restores the defaults — the menus still read index 0.)
+# announces itself and restores the defaults -- the menus still read index 0.)
 
 # %%
 print("demo: spectrogram -> mel, waveform -> beats + dBFS (3 s) ...")

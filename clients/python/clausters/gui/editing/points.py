@@ -10,13 +10,13 @@ nothing else.
 **How an edit inverts is the crate's**, reached through
 `clausters._native.domain_edit`: the payload goes in with the curve as it
 stands, and what comes back is the curve as it now is *and* the payload that
-puts it back — one call, because the inverse has to be read before the edit
+puts it back -- one call, because the inverse has to be read before the edit
 lands. Nothing here computes an inverse, which is the whole reason the domain
 seam exists.
 
 **What a shape is stays the client's.** The crate carries a point's ``data``
 and never reads it, so the segment shapes an `clausters.defs.ugens.Env` needs
-travel in it — without that an undo put the curve back straight, which is
+travel in it -- without that an undo put the curve back straight, which is
 losing the data rather than declining to interpret it.
 """
 
@@ -43,7 +43,7 @@ def quads(flat) -> list:
 
 def flat(points) -> list:
     """The crate's points back as the flat quads the view and the `Env` both
-    speak — the other half of the `Env` seam `PointsDomain.state` opens.
+    speak -- the other half of the `Env` seam `PointsDomain.state` opens.
 
     A point that says nothing about its segment is linear, which is what a curve
     drawn somewhere that has no shapes means.
@@ -64,7 +64,7 @@ class PointsDomain(Domain):
     ingested = True
 
     def state(self, structure) -> list:
-        """The curve as the crate holds it — the state `current` is read
+        """The curve as the crate holds it -- the state `current` is read
         against and `project` writes back.
 
         **The `Env` seam, not a gesture.** It is here rather than in the crate
@@ -96,8 +96,8 @@ class PointsView(View):
     **The axis is declared, and it is the view's to keep.** A `bpf` given
     neither range draws against the unipolar default and fits its time to the
     last point, so a curve of any other range is pinned to the top of the field
-    and the edit-back reports positions in the *axis*'s values — one drag
-    destroys the data's range — while the time rescales under the hand on every
+    and the edit-back reports positions in the *axis*'s values -- one drag
+    destroys the data's range -- while the time rescales under the hand on every
     edit. So both ends come from the curve, through
     `clausters.gui.editing.points.PointsView.axis`, and are held: what a window
     is looking at is a view's, and moving it under a gesture is the one thing an
@@ -108,7 +108,7 @@ class PointsView(View):
         super().__init__()
         #: The value axis this view is drawing against, and the time it spans,
         #: kept per structure so a redraw does not re-fit them. Both only ever
-        #: **grow** — see `axis`.
+        #: **grow** -- see `axis`.
         #:
         #: Keyed by the **curve itself**, weakly. Screen state is about a thing,
         #: and a thing is not its address: `id()` is reused the moment an object
@@ -125,8 +125,8 @@ class PointsView(View):
         **The projection is the crate's** (`clausters._native.points_props`):
         the points, the value axis they stand on and the time they span, all in
         one answer, so a script and a page set the same widget with the same
-        props. What is kept here is only what a *view* keeps — the axis and the
-        span in hand — because both of them only ever grow, and a curve that
+        props. What is kept here is only what a *view* keeps -- the axis and the
+        span in hand -- because both of them only ever grow, and a curve that
         refits while a point is being dragged moves every other point on
         screen.
         """

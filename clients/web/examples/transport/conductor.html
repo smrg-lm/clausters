@@ -29,7 +29,7 @@ a position a locate moves. A <i>conductor</i> (any client) calls
 <code>transportLocateSample</code>; every client whose timeline is <b>on that
 transport</b> (<code>timeline.transport = server</code>) rolls, freezes and
 re-cues to match. The server broadcasts transport <i>control</i> and owns the
-time — it plays no notes of its own: each client plans its own items onto the
+time -- it plays no notes of its own: each client plans its own items onto the
 transport's clock, which is what makes a freeze hold them and a locate move
 them.
 
@@ -141,11 +141,11 @@ of the client id space so two of them never hand out the same node id.</div>
       };
       $("locate").onclick = async () => {
         await conductor.transportLocateSample(0);
-        log("conductor: locate to the top — every follower re-cues its plan");
+        log("conductor: locate to the top -- every follower re-cues its plan");
       };
       $("stop").onclick = async () => {
         await conductor.transportStop();
-        log("conductor: stop — the transport freezes, and the plans with it");
+        log("conductor: stop -- the transport freezes, and the plans with it");
       };
     </script>
   </body>

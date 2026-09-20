@@ -1,30 +1,30 @@
 //! The score model: two durational structures that do not contain each other.
 //!
-//! - The **metric layout** ([`Grid`]) — measures and meter changes. It does not
+//! - The **metric layout** ([`Grid`]) -- measures and meter changes. It does not
 //!   sound. It is a structure of its own, addressable and editable, and that is
 //!   what lets a caller say *"the notes of measures 3 to 10"* or *"change the
 //!   meter here"* at all: a measure is an **addressing system**, a role it
 //!   cannot have while it is a by-product of emission. It is also what makes
 //!   **metric position** computable ([`Grid::position`]), which is meaning
-//!   rather than layout — whether a note falls on a downbeat is a fact about
+//!   rather than layout -- whether a note falls on a downbeat is a fact about
 //!   the music, and only a grid that can be queried can answer it.
-//! - The **content** ([`Staff`], [`Voice`], [`Item`]) — what sounds. It is
+//! - The **content** ([`Staff`], [`Voice`], [`Item`]) -- what sounds. It is
 //!   **flat**: notes are not nested inside measures. Containment would break
 //!   under every operation that changes a length (augment a phrase and the
 //!   notes no longer fit the bars they were nested in), and barring is
 //!   recomputed at emission anyway.
 //!
 //! MEI nests (`<measure><staff><layer>`), so writing the document **projects**
-//! flat content onto the grid — the split-and-tie [`super::voice_to_mei`]
+//! flat content onto the grid -- the split-and-tie [`super::voice_to_mei`]
 //! already does. A flat model and a nested document are not in conflict.
 //!
 //! **Durations and positions are exact [`Ratio`]s**, in whole notes: a quarter
-//! is `1/4` and a triplet eighth is `1/12`. Ticks are a *boundary* — MEI's
-//! `@dur` and dots, MIDI's ticks, OSC's seconds — converted at each protocol's
+//! is `1/4` and a triplet eighth is `1/12`. Ticks are a *boundary* -- MEI's
+//! `@dur` and dots, MIDI's ticks, OSC's seconds -- converted at each protocol's
 //! edge, never the foundation the model rests on.
 //!
 //! **The type is `Sheet`, not `Score`**, because [`super::Score`] is already the
-//! engraver-driven document — a handle to a layout engine, with state that
+//! engraver-driven document -- a handle to a layout engine, with state that
 //! lives in C++ or in a wasm module. This is the other thing: plain data, with
 //! no engraver anywhere near it, which is exactly why it can cross to a client
 //! by value and be edited by a standalone host with no client attached.
@@ -33,7 +33,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::ratio::Ratio;
 
-/// A diatonic step name — the letter a notehead sits on, independent of any
+/// A diatonic step name -- the letter a notehead sits on, independent of any
 /// accidental. `C` is 0.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -79,8 +79,8 @@ impl Step {
 /// by, and its octave in scientific pitch (`c4` is middle C, MIDI 60).
 ///
 /// **Spelling is part of the pitch, not derived from it.** `F#` and `Gb` are one
-/// MIDI number and two different notes on the page — different noteheads,
-/// different accidentals, different ledger lines above a certain range — so the
+/// MIDI number and two different notes on the page -- different noteheads,
+/// different accidentals, different ledger lines above a certain range -- so the
 /// model stores what is written and computes the MIDI number from it
 /// ([`Pitch::midi`]) rather than the other way round. Going the other way
 /// ([`Pitch::from_midi`]) is a *choice* of spelling and says so by taking one.
@@ -92,10 +92,10 @@ pub struct Pitch {
     /// doubles.
     #[serde(default)]
     pub alter: i32,
-    /// Scientific octave — `4` is the octave of middle C.
+    /// Scientific octave -- `4` is the octave of middle C.
     pub octave: i32,
     /// Whether the accidental must be **printed** even where the key signature
-    /// or the measure already implies it — a courtesy or editorial accidental.
+    /// or the measure already implies it -- a courtesy or editorial accidental.
     ///
     /// Left false, the alteration is stated as the *sounding* one and the
     /// engraver decides whether to draw a sign, which is what keeps a scale in
@@ -113,8 +113,8 @@ impl Pitch {
     }
 
     /// Spell a MIDI number, choosing flats or sharps for the black keys. The
-    /// only sensible thing to do when the source has no spelling of its own —
-    /// a MIDI file, a client's `midinote` — and the reason a caller has to say
+    /// only sensible thing to do when the source has no spelling of its own --
+    /// a MIDI file, a client's `midinote` -- and the reason a caller has to say
     /// which world it wants.
     pub fn from_midi(midi: i32, flats: bool) -> Pitch {
         // (step index, alter) per pitch class, one table per accidental world.
@@ -164,8 +164,8 @@ impl Pitch {
 
 /// The marks a note carries beyond its pitch and value.
 ///
-/// Every field is **a musical fact, not an instruction to the encoder** — an
-/// articulation is a thing the note has, not a request to draw a dot — because
+/// Every field is **a musical fact, not an instruction to the encoder** -- an
+/// articulation is a thing the note has, not a request to draw a dot -- because
 /// a fact can be read back by the interpreter that plays the page, and an
 /// instruction can only ever be written. They are declared here and left empty;
 /// emitting and reading them is the emission milestone's.
@@ -186,7 +186,7 @@ pub struct Marks {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grace: Option<String>,
     /// A forced stem direction (`up`, `down`). Left out, the engraver decides,
-    /// which is what it is for — a stem is a layout answer and only a writer
+    /// which is what it is for -- a stem is a layout answer and only a writer
     /// overruling it is a musical statement.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stem: Option<String>,
@@ -202,7 +202,7 @@ pub struct Marks {
 }
 
 impl Marks {
-    /// Whether the note carries nothing beyond its pitch and value — the case a
+    /// Whether the note carries nothing beyond its pitch and value -- the case a
     /// v1 payload produces, and the one that has to stay byte-identical.
     pub fn is_empty(&self) -> bool {
         self.articulations.is_empty()
@@ -222,7 +222,7 @@ impl Marks {
 /// own. The id is minted once, travels with the item through every operation,
 /// and is what a client keeps when it wants to come back to *this* note.
 ///
-/// A note with no pitches is not representable — that is what a rest is — so the
+/// A note with no pitches is not representable -- that is what a rest is -- so the
 /// two are separate variants rather than one with an empty list. (The v1 wire
 /// [`super::Slot`] does spell a rest as an empty pitch list, because a wire form
 /// with no discriminator has to be total; the model is not a wire and can be
@@ -240,7 +240,7 @@ pub enum Item {
         pitches: Vec<Pitch>,
         /// The written value, in whole notes.
         dur: Ratio,
-        /// Whether this note is tied **to the next item** — a musical tie the
+        /// Whether this note is tied **to the next item** -- a musical tie the
         /// caller asked for. The ties an emitter adds when a note crosses a
         /// barline are not this: they are made at emission, from the split.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -274,7 +274,7 @@ impl Item {
         }
     }
 
-    /// The same item with a different written value — how a duration edit and
+    /// The same item with a different written value -- how a duration edit and
     /// the time-scaling operations rebuild one without restating its pitches.
     pub fn with_dur(&self, dur: Ratio) -> Item {
         let mut out = self.clone();
@@ -284,7 +284,7 @@ impl Item {
         out
     }
 
-    /// The same item under a different id — what a copy needs, since two items
+    /// The same item under a different id -- what a copy needs, since two items
     /// sharing an id would both answer to one edit.
     pub fn with_id(&self, id: u64) -> Item {
         let mut out = self.clone();
@@ -294,7 +294,7 @@ impl Item {
         out
     }
 
-    /// The pitches this item sounds — empty for a rest.
+    /// The pitches this item sounds -- empty for a rest.
     pub fn pitches(&self) -> &[Pitch] {
         match self {
             Item::Note { pitches, .. } => pitches,
@@ -310,12 +310,12 @@ impl Item {
         }
     }
 
-    /// Whether this item sounds — a note with pitches, as against a rest.
+    /// Whether this item sounds -- a note with pitches, as against a rest.
     pub fn sounds(&self) -> bool {
         !self.pitches().is_empty()
     }
 
-    /// A rest of the same length, keeping the id — what silencing a note is,
+    /// A rest of the same length, keeping the id -- what silencing a note is,
     /// as against deleting it, which would shorten the voice.
     pub fn silenced(&self) -> Item {
         Item::Rest {
@@ -326,7 +326,7 @@ impl Item {
 }
 
 /// One monophonic line: items back to back, no gaps (a gap is a rest). This is
-/// exactly one MEI `<layer>`, and it stays the **composable primitive** —
+/// exactly one MEI `<layer>`, and it stays the **composable primitive** --
 /// polyphony stacks several voices rather than widening one.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Voice {
@@ -349,7 +349,7 @@ impl Voice {
     }
 }
 
-/// One staff — a clef of its own and the voices written on it.
+/// One staff -- a clef of its own and the voices written on it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Staff {
     /// The clef, as a shape and a line: `"G2"`, `"F4"`, `"C3"`.
@@ -395,9 +395,9 @@ pub struct Meter {
     /// The measure this meter starts at. The grid's first meter is at `0`.
     #[serde(default)]
     pub measure: usize,
-    /// The numerator — beats in the bar.
+    /// The numerator -- beats in the bar.
     pub count: i64,
-    /// The denominator — what one beat is worth.
+    /// The denominator -- what one beat is worth.
     pub unit: i64,
 }
 
@@ -412,23 +412,23 @@ impl Meter {
 ///
 /// It does not sound and it holds no notes. What it holds is enough to answer
 /// where every barline falls: the meters in force, and any bar whose length is
-/// **not** its meter's — an anacrusis (which is simply the override at measure
+/// **not** its meter's -- an anacrusis (which is simply the override at measure
 /// 0), or an irregular bar in the middle of a score.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Grid {
     /// The meters, ordered by the measure they start at; the first is at `0`.
     pub meters: Vec<Meter>,
     /// Bars whose length differs from their meter's, as `(measure, length)`.
-    /// An **anacrusis is the override at measure 0** — one concept, not two.
+    /// An **anacrusis is the override at measure 0** -- one concept, not two.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub irregular: Vec<(usize, Ratio)>,
     /// Measures whose **right barline** is not the ordinary single one, as
-    /// `(measure, kind)` — `end`, `rptstart`, `rptend`, `rptboth`, `dbl`,
+    /// `(measure, kind)` -- `end`, `rptstart`, `rptend`, `rptboth`, `dbl`,
     /// `invis`. It is on the grid because a barline is where a measure ends,
     /// which is the grid's whole subject.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub barlines: Vec<(usize, String)>,
-    /// Measures a **break** was written before, as `(measure, kind)` —
+    /// Measures a **break** was written before, as `(measure, kind)` --
     /// `system` or `page`.
     ///
     /// This is layout, and it is in the model for the same reason a forced stem
@@ -455,7 +455,7 @@ impl Default for Grid {
 }
 
 impl Grid {
-    /// A grid of one meter throughout — the v1 case, and what a caller who has
+    /// A grid of one meter throughout -- the v1 case, and what a caller who has
     /// only a `"4/4"` string means.
     pub fn uniform(count: i64, unit: i64) -> Grid {
         Grid {
@@ -470,7 +470,7 @@ impl Grid {
         }
     }
 
-    /// The meter in force at `measure` — the last one that starts at or before
+    /// The meter in force at `measure` -- the last one that starts at or before
     /// it. A grid with no meters at all reads as 4/4 rather than dividing by
     /// zero: an empty list is a caller's omission, not a musical statement.
     pub fn meter_at(&self, measure: usize) -> Meter {
@@ -503,7 +503,7 @@ impl Grid {
     }
 
     /// The span `[start, end)` covered by measures `first..=last`, in whole
-    /// notes — **the addressing a client must never compute for itself**. Two
+    /// notes -- **the addressing a client must never compute for itself**. Two
     /// clients doing this arithmetic separately round differently the moment a
     /// meter changes or a bar is irregular, and the disagreement shows up as an
     /// edit that lands on the wrong notes in one of them.
@@ -513,7 +513,7 @@ impl Grid {
         (start, end)
     }
 
-    /// Which measure the position `t` falls in, and how far into it — the
+    /// Which measure the position `t` falls in, and how far into it -- the
     /// **metric position**, which is what tells a reader (and an interpreter)
     /// that a note is on a downbeat.
     ///
@@ -544,12 +544,12 @@ impl Grid {
 ///
 /// A **beam** belongs here, which looks like a category error and is not. It
 /// has two ends and joins items exactly as a slur does, and a beam somebody
-/// *chose* — one that crosses a beat to group the rhythm a particular way — is
+/// *chose* -- one that crosses a beat to group the rhythm a particular way -- is
 /// a statement about the music. What the engraver beams when nobody said
 /// anything stays the engraver's, and is not in the model at all: the same line
 /// [`Marks::stem`] draws.
 ///
-/// It cannot live on an item, because it has two ends — which is the whole
+/// It cannot live on an item, because it has two ends -- which is the whole
 /// reason the sheet carries a list of them beside the staves rather than the
 /// content carrying them. `from` and `to` are item ids, so a spanner survives
 /// every operation that keeps those items and is refused by the emitter when
@@ -567,7 +567,7 @@ pub struct Spanner {
 /// What is written above the music, and what a score editor offers a field for:
 /// the title and who wrote it.
 ///
-/// Every field is optional, because most of them are most of the time — a score
+/// Every field is optional, because most of them are most of the time -- a score
 /// built by operating on a motif is untitled until somebody names it, and that
 /// is a normal state rather than a missing one. They are **named fields and not
 /// a map** so that each has one home in MEI and one spelling in every client;
@@ -590,7 +590,7 @@ pub struct Header {
 }
 
 impl Header {
-    /// Whether nothing is written above the music — the case a generated score
+    /// Whether nothing is written above the music -- the case a generated score
     /// arrives in, and the one that must stay byte-identical to a v1 document.
     pub fn is_empty(&self) -> bool {
         self.title.is_empty()
@@ -603,7 +603,7 @@ impl Header {
 /// A score as data: the metric layout, the staves written over it, and the key
 /// they are read in.
 ///
-/// This is the whole model — what crosses to a client **by value**, what an
+/// This is the whole model -- what crosses to a client **by value**, what an
 /// operation takes and returns, and what a standalone host holds when there is
 /// no client language in the process at all.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -667,7 +667,7 @@ impl Sheet {
     }
 
     /// Every voice on the sheet, in reading order, with the staff it belongs
-    /// to — how an operation walks the content without caring how it is split.
+    /// to -- how an operation walks the content without caring how it is split.
     pub fn voices_mut(&mut self) -> impl Iterator<Item = &mut Voice> {
         self.staves.iter_mut().flat_map(|s| s.voices.iter_mut())
     }
@@ -691,7 +691,7 @@ impl Sheet {
     ///
     /// Called before any operation, so a sheet written by hand, parsed from an
     /// older payload, or built by a caller who never thought about identity
-    /// behaves exactly like one this layer minted — an edit can name any note
+    /// behaves exactly like one this layer minted -- an edit can name any note
     /// in it, and nothing collides.
     pub fn assign_ids(&mut self) {
         let used = self
@@ -713,7 +713,7 @@ impl Sheet {
         self.next_id = next;
     }
 
-    /// The item with this id, and where it is — `(staff, voice, index)`.
+    /// The item with this id, and where it is -- `(staff, voice, index)`.
     pub fn locate(&self, id: u64) -> Option<(usize, usize, usize)> {
         for (si, staff) in self.staves.iter().enumerate() {
             for (vi, voice) in staff.voices.iter().enumerate() {

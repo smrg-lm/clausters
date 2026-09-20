@@ -23,7 +23,7 @@
   <body>
     <main>
       <div id="note">The web port of the Python client's
-<code>score_editor.py</code>: <b>editing a score by hand</b> — the page, the
+<code>score_editor.py</code>: <b>editing a score by hand</b> -- the page, the
 model, and every verb between them.
 
 <code>score.html</code> plays an engraved phrase and drags a note;
@@ -36,33 +36,33 @@ and not one verb applies to it.
 
 <b>What was typed once can be operated on.</b> The typed phrase is a single
 treble line; the bass staff under it is <i>made here</i>, by transposing a copy
-down two octaves, re-clefing it and stacking the two — so a grand staff, a slur
+down two octaves, re-clefing it and stacking the two -- so a grand staff, a slur
 and a crescendo all exist on a document nobody wrote them into.
 
 <b>A page is a document, and a document was decided.</b> The title, the double
 bar dividing the two halves, the system break and the two spans are written into
 the model, because each is a statement somebody made. What the engraver decides
-when nobody decided is not stored and is not loss — it is worked out again
+when nobody decided is not stored and is not loss -- it is worked out again
 identically every time.
 
 <b>Marks accumulate.</b> A note is staccato <i>and</i> accented <i>and</i> under
 a dynamic. <code>setMarks</code> replaces the whole set rather than merging,
-which is the honest shape for something a caller holds whole — so every button
+which is the honest shape for something a caller holds whole -- so every button
 here reads the marks, changes one, and writes them back.
 
 <b>A gesture names a place; the model names the note.</b> A click reports the
 <i>element</i> under the cursor and <code>notation.itemId</code> turns it into
-the model item it was written from — <code>n7</code>, <code>n7-2</code> (a part
+the model item it was written from -- <code>n7</code>, <code>n7-2</code> (a part
 split across a barline) and <code>n7-p1</code> (one pitch of a chord) are all
 item 7. From there every verb applies.
 
 <b>Writing a note.</b> With <code>entry</code> a press on blank paper reports
-where the press landed — a place, not a note — and <code>insert</code> puts one
+where the press landed -- a place, not a note -- and <code>insert</code> puts one
 there, the pitch worked out from that staff's clef and the key.
 
 <b>Two lines on one staff.</b> <code>2nd voice</code> moves the selected note
 into a second voice of its own staff, leaving a rest where it was, so nothing
-around it moves — which is how two lines written as one come apart. A note
+around it moves -- which is how two lines written as one come apart. A note
 written <i>after</i> one of those joins the line it follows, since
 <code>insert</code> puts a new item in the voice of the item it comes after.
 
@@ -71,7 +71,7 @@ model: a staccato you just added shortens the sound and moves no attack.
 
 <b>Click</b> a note to select and hear it; the status line says what is
 selected. <b>Drag</b> one up or down the staff to move it. <b>Press empty
-staff</b> — between two notes, or past the last one, on either staff — to write
+staff</b> -- between two notes, or past the last one, on either staff -- to write
 a quarter there. The buttons act on the selection. Everything runs on the <b>in-page engine</b>: no
 server process, no socket.</div>
 
@@ -107,7 +107,7 @@ server process, no socket.</div>
       const el = (id) => document.getElementById(id);
       const log = (line) => { el("log").textContent += line + "\n"; };
 
-      // Eight bars in ABC — a score as it usually arrives: typed by somebody
+      // Eight bars in ABC -- a score as it usually arrives: typed by somebody
       // else, in a format that is not ours. `M:` is the meter, `L:` the length
       // a bare letter means, `K:` the key (E flat, so every B, E and A is flat
       // and none of them carries a sign).
@@ -122,7 +122,7 @@ B c d e | f2 e d | c B A B | G4 |
 
       // Two beats per second: the quarter = 120 the engraver times the page at.
       // A quarter is then one beat in the model and 500 ms on the page, which is
-      // what ties the cursor to the sound — the sync places its cursor in
+      // what ties the cursor to the sound -- the sync places its cursor in
       // *score* milliseconds and reads the model in beats through the timeline's
       // map, so the two have to agree.
       const TEMPO = 2.0;
@@ -141,7 +141,7 @@ B c d e | f2 e d | c B A B | G4 |
       // A page that can be written on, under two rows of verbs. `editable` opts
       // it into pitch dragging and `entry` into note entry. They are separate
       // opt-ins because a press on blank paper already means something
-      // everywhere else — it clears the selection — and a page that never asked
+      // everywhere else -- it clears the selection -- and a page that never asked
       // to be written on must go on meaning that.
       const scene = (engravedPage, sampleRate) => gui.view(
         { title: "score editor", layout: "col", margin: 8.0, gap: 8.0 },
@@ -196,7 +196,7 @@ B c d e | f2 e d | c B A B | G4 |
        * the box it is given, so a page that gained a system would otherwise
        * shrink to stay inside, re-scaling everything a hand was working on.
        * Setting the height from the new engraving's aspect keeps the drawn size
-       * fixed and lets the scroll do what a scroll is for — and the reader's own
+       * fixed and lets the scroll do what a scroll is for -- and the reader's own
        * zoom, which is the scroll's, is untouched either way.
        */
       const refresh = () => {
@@ -213,8 +213,8 @@ B c d e | f2 e d | c B A B | G4 |
       };
 
       // Where the item sits and what it is written as: `[staff, voice, item]`,
-      // or three nulls. An edit that depends on the current value — a length, a
-      // mark it toggles, the voice it is in — reads it rather than guessing.
+      // or three nulls. An edit that depends on the current value -- a length, a
+      // mark it toggles, the voice it is in -- reads it rather than guessing.
       const locate = (id) => {
         const staves = score.sheet().staves;
         for (let si = 0; si < staves.length; si++) {
@@ -249,7 +249,7 @@ B c d e | f2 e d | c B A B | G4 |
       };
 
       // ---- the marks, which accumulate ----
-      // `setMarks` **replaces** the whole set rather than merging — the honest
+      // `setMarks` **replaces** the whole set rather than merging -- the honest
       // shape for something a caller holds whole, since a merge would leave no
       // way to take a mark away. So a button that changes one mark reads them,
       // changes that one, and writes them back; which is also why a note can be
@@ -273,8 +273,8 @@ B c d e | f2 e d | c B A B | G4 |
       };
 
       /**
-       * Add or take away one articulation, leaving the others — and the
-       * dynamic, and the ornament — where they are.
+       * Add or take away one articulation, leaving the others -- and the
+       * dynamic, and the ornament -- where they are.
        */
       const toggleArticulation = (name) => () => {
         const [id, marks] = withMarks();
@@ -363,7 +363,7 @@ B c d e | f2 e d | c B A B | G4 |
       };
       const pass = (at) => timeline().play({ at, destination: server });
 
-      // Where the score ends, in beats — the last note's onset plus its written
+      // Where the score ends, in beats -- the last note's onset plus its written
       // value. The transport parks the cursor there when a pass runs out.
       const extent = () => {
         let end = 0.0;
@@ -376,7 +376,7 @@ B c d e | f2 e d | c B A B | G4 |
       // ---- the page's three edit-backs ----
       //
       // `"element"` is a click: the page names the element under the cursor, and
-      // `notation.itemId` turns it into the model item it was written from —
+      // `notation.itemId` turns it into the model item it was written from --
       // `n7`, `n7-2` (a part split across a barline) and `n7-p1` (one pitch of
       // a chord) are all item 7, which is what lets a gesture anywhere on a note
       // reach the note.
@@ -385,11 +385,11 @@ B c d e | f2 e d | c B A B | G4 |
       // absolute rather than a displacement, so an edit that arrives twice moves
       // nothing the second time. Moving along the staff takes the key
       // signature's alteration for the letter it lands on, so a note dragged
-      // onto a B in E flat is a B flat — which is why it is not `transpose`.
+      // onto a B in E flat is a B flat -- which is why it is not `transpose`.
       //
       // `"insert"` is a press on empty staff: the element the new note would
       // follow, how far up the staff the press landed, and which staff. A place,
-      // not a note — a staff position is a pitch only once something knows the
+      // not a note -- a staff position is a pitch only once something knows the
       // clef and the key, and `insert` is what knows.
       const onScore = (tag, ...payload) => {
         if (tag === "element" && payload.length) {
@@ -439,7 +439,7 @@ B c d e | f2 e d | c B A B | G4 |
       };
 
       // The stack is the *model's*: every edit above is one operation, so one
-      // step back is one operation undone — including the ones from a gesture.
+      // step back is one operation undone -- including the ones from a gesture.
       const step = (name, act) => () => {
         if (act()) { refresh(); say(name); }
         else say(`nothing to ${name}`);
@@ -464,7 +464,7 @@ B c d e | f2 e d | c B A B | G4 |
         // A second staff, made rather than typed. verovio's ABC importer writes
         // one staff whatever the source says, so the grand staff is not in the
         // document: it is the model's. A copy of the line goes down two octaves,
-        // takes the bass clef, and `stack` puts the two on one system — a brace
+        // takes the bass clef, and `stack` puts the two on one system -- a brace
         // and one barline through both.
         const lower = notation.transpose(sheet, -24);
         lower.staves[0].clef = "F4";

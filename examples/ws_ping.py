@@ -2,12 +2,12 @@
 """Drive the server over OSC/WebSocket.
 
 The same `Server` facade as the UDP/TCP examples, but talking **OSC over a
-WebSocket** — the transport a browser can reach (it cannot open raw UDP or map
+WebSocket** -- the transport a browser can reach (it cannot open raw UDP or map
 shared memory). The only change is the destination interface:
 `Server(interface=OscWsInterface().start())`. The client's WebSocket lives in the
-native core (`clausters-ffi`, reached by ctypes — same as the shm/embed
+native core (`clausters-ffi`, reached by ctypes -- same as the shm/embed
 transports), so build that once, then start the server (WebSocket is always on,
-like TCP/shm — no build feature):
+like TCP/shm -- no build feature):
 
     cargo build -p clausters-ffi               # the client's WebSocket lib (once)
     cargo run -- --ws                          # terminal 1 (OSC on WebSocket 57120)
@@ -15,7 +15,7 @@ like TCP/shm — no build feature):
 
 Framing (in the native core, noted here only for reference): every OSC packet
 goes out as one WebSocket *binary* message and replies arrive the same way over
-the one connection — the WebSocket frame *is* the packet boundary, so there is no
+the one connection -- the WebSocket frame *is* the packet boundary, so there is no
 length prefix (unlike TCP). The same server, the same OSC: only the carrier
 changed, which is what lets a browser-hosted client speak to it. A browser doing
 the same `/server_status` round trip is in `ws_ping.html` (it uses the browser's native

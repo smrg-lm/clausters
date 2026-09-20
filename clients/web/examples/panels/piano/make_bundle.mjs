@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Author, with the TypeScript client, a bundle whose GuiDef is a playable
-// piano — then mount it as a web component, twice on one page if you like.
+// piano -- then mount it as a web component, twice on one page if you like.
 //
 // The point of this example is the `piano` widget's **host-voice mode with no
 // script at run time**: the client only *authors* the files (it talks to
@@ -11,7 +11,7 @@
 //     key release -> /node_set <id> gate 0        (the envelope releases and
 //                                                  the def frees the node itself)
 //
-// so the keyboard plays the wasm engine in the tab with zero page JS — the
+// so the keyboard plays the wasm engine in the tab with zero page JS -- the
 // same posture as `examples/panels/graph-controls`, whose knobs bind
 // `/node_set`s. The other mapping path (the widget unbound, the script
 // programming voices from the `"note"` events) is the Python example
@@ -26,7 +26,7 @@
 //
 // The def payload holds no bus number, so mounting the bundle twice gives each
 // instance its own bus and each meter reads its own keyboard. Written the old
-// way — `outCtl(0.0, env)`, the number compiled in — both instances would
+// way -- `outCtl(0.0, env)`, the number compiled in -- both instances would
 // write bus 0 and the page would show one signal twice. That is the authoring
 // rule the whole format rests on: *a bus, a node or a buffer reaches a def as
 // a control, never as a baked constant.*
@@ -50,17 +50,17 @@
 //
 //     node make_bundle.mjs
 //
-// It writes into `examples/out/piano/` — the ignored directory every generator
+// It writes into `examples/out/piano/` -- the ignored directory every generator
 // in this tree writes to, so a run leaves nothing to clean up by hand. Then
 // the **same** bundle runs on every leg, no script attached to any of them:
 //
 // - **Browser, as a web component** (the wasm engine in an AudioWorklet):
-//   serve **from `clients/web` — the package root, never this folder** (the
+//   serve **from `clients/web` -- the package root, never this folder** (the
 //   page imports `../../../dist/...`, which must stay inside the served root):
 //
 //       cd clients/web && python3 -m http.server
 //
-//   and open `http://localhost:8000/examples/panels/piano/` — `index.html`
+//   and open `http://localhost:8000/examples/panels/piano/` -- `index.html`
 //   here imports the generated module, which registers the `<piano-keys>` tag;
 //   its power button boots the whole instrument in the tab.
 // - **Desktop, self-contained** (the embedded server; from `clients/gui`):
@@ -75,7 +75,7 @@
 // both the browser and the desktop read):
 //
 //     defs/synthdefs/piano.voice.json    the voice (the /def_send synth payload)
-//     defs/guidefs/piano.json            the GuiDef record — a template
+//     defs/guidefs/piano.json            the GuiDef record -- a template
 //     bundle.json                        the manifest
 //     index.js                           the generated ES module
 
@@ -88,21 +88,21 @@ import {
 import { label, meter, piano, view } from "../../../dist/gui/index.js";
 
 /**
- * The bundle's name — the tag `index.js` registers, and the prefix its def
+ * The bundle's name -- the tag `index.js` registers, and the prefix its def
  * names carry (`piano.voice`), since a def name is a global namespace on the
  * server.
  */
 const BUNDLE = "piano";
 /**
  * The custom element the generated module registers. HTML wants a hyphen in a
- * custom element name, and "piano" — a perfectly good GuiDef name on the
- * desktop — has none.
+ * custom element name, and "piano" -- a perfectly good GuiDef name on the
+ * desktop -- has none.
  */
 const TAG = "piano-keys";
 
 /**
  * The gated voice a key plays: the conventional `freq`/`amp`/`gate` surface
- * the piano's host-voice mode drives — the note-on opens the gate, the
+ * the piano's host-voice mode drives -- the note-on opens the gate, the
  * note-off closes it, and the release tail frees the synth (`FREE_SELF`).
  *
  * The envelope goes out on `env_bus`, **a control**: the mount passes each
@@ -126,7 +126,7 @@ function voice() {
  * The bundle: the declared bus and title, the voice, and the GuiDef that plays
  * it.
  *
- * Widget ids are **local** — the root is 1, so the children start at 2 — and
+ * Widget ids are **local** -- the root is 1, so the children start at 2 -- and
  * the mount offsets the whole block per instance.
  */
 function build() {
@@ -153,7 +153,7 @@ await loadCore();
 const dataDir = fileURLToPath(new URL("../../out/piano", import.meta.url));
 await build().write(dataDir, { tag: TAG });
 console.log(`bundle written to ${dataDir}`);
-console.log("\nserve the PACKAGE ROOT (clients/web) — not this folder — and " +
+console.log("\nserve the PACKAGE ROOT (clients/web) -- not this folder -- and " +
             "open the component page:\n");
 console.log("    cd ../../..   # clients/web");
 console.log("    ./build.sh && python3 -m http.server");

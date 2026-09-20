@@ -1,7 +1,7 @@
 // Widget handles: operate a live widget as an object, never by its integer id
 // (mirrors `clausters/gui/handle.py`).
 //
-// `GuiHost.open`/`define` hand back a `WindowHandle` — the window's own widget
+// `GuiHost.open`/`define` hand back a `WindowHandle` -- the window's own widget
 // handle, which additionally resolves the tree's **named** widgets. A lookup
 // returns a `WidgetHandle`, a thin façade whose `set`/`bind`/`free`/`query`/
 // `onEvent` delegate to the host with the resolved id, the same way a `Node`
@@ -9,7 +9,7 @@
 // (`win.widget("cutoff").set({ value: 800.0 })`) instead of tracking integers
 // and matching them in an event stream.
 //
-// A name is stable; the assigned id is not (it recycles across redraws — see
+// A name is stable; the assigned id is not (it recycles across redraws -- see
 // `./ids.ts`), which is why the handle addresses by name and the host resolves
 // the current id underneath it.
 
@@ -86,13 +86,13 @@ export class WidgetHandle {
     }
 
     /**
-     * Call `handler(...payload)` whenever this widget emits a `/gui_event` —
+     * Call `handler(...payload)` whenever this widget emits a `/gui_event` --
      * the host pushes them, so there is nothing to pump. The payload is the
      * event's arguments after the id (a control's value, or a view's tag
      * followed by its flat values). `null` clears the handler.
      *
      * This is the **raw** stream and sees everything, the interface events of
-     * {@link onPress}/{@link onRelease}/{@link onClick} included — those arrive
+     * {@link onPress}/{@link onRelease}/{@link onClick} included -- those arrive
      * here as the one-string payload they are. Registering both is legal and
      * useful: a button's value is what it drives, its click is what it
      * commands.
@@ -115,7 +115,7 @@ export class WidgetHandle {
 
     /**
      * Call `handler()` when the pointer comes **up** after a press on this
-     * widget — wherever it came up, on the widget or off it.
+     * widget -- wherever it came up, on the widget or off it.
      *
      * The other primitive. It fires for an abandoned press too, which is what
      * makes it the release rather than the click. `null` clears the handler.
@@ -129,7 +129,7 @@ export class WidgetHandle {
      * Call `handler()` when a press on this widget is **completed**: the
      * pointer came up while still on it.
      *
-     * The composed gesture, and what a command button wants — press, slide off,
+     * The composed gesture, and what a command button wants -- press, slide off,
      * release, and nothing happens, which is the cancellation every desktop
      * convention gives an "Accept" and a piano key must not have. `null` clears
      * the handler.
@@ -153,11 +153,11 @@ export class WindowHandle extends WidgetHandle {
     private readonly bound: Map<string, number>;
     /**
      * widget id → the def control it was built from, collected by the id walk
-     * — what {@link WindowHandle.bind} wires in one verb.
+     * -- what {@link WindowHandle.bind} wires in one verb.
      */
     private readonly controlMap: Map<number, string>;
     /**
-     * The canvas this window draws on in a page — the one `open` made for it,
+     * The canvas this window draws on in a page -- the one `open` made for it,
      * from the element it was given or of its own. `null` for a window on a
      * host that has windows of its own (a native `--ws` host), which has no
      * document to be in.
@@ -242,7 +242,7 @@ export class WindowHandle extends WidgetHandle {
      * ```
      *
      * Each becomes a `/gui_bind` forwarding `address <node> <control> <value>`
-     * — the host talks to the audio server itself, with no round trip through
+     * -- the host talks to the audio server itself, with no round trip through
      * this script (see `GuiHost.bind`, which is still there for anything that
      * is not a def control: a bus, an arbitrary address, another widget).
      *
@@ -261,7 +261,7 @@ export class WindowHandle extends WidgetHandle {
     ): this {
         if (typeof node === "string") {
             throw new TypeError(
-                "a window binds a node, not an address — the one-at-a-time form " +
+                "a window binds a node, not an address -- the one-at-a-time form " +
                     'is on the widget: win.widget("freq").bind("/node_set", node, "freq")',
             );
         }
@@ -270,7 +270,7 @@ export class WindowHandle extends WidgetHandle {
         if (this.controlMap.size === 0) {
             throw new Error(
                 "no widget in this window was built from a def control, so " +
-                    "there is nothing to bind — build them from controls " +
+                    "there is nothing to bind -- build them from controls " +
                     "(knob(freq), slider(sd.control(\"amp\"))), or bind one at a time " +
                     "with win.widget(\"freq\").bind(\"/node_set\", node, \"freq\")",
             );
@@ -293,7 +293,7 @@ export class WindowHandle extends WidgetHandle {
 
     /**
      * `widget name -> def control name` for every widget in this window built
-     * from a control — what {@link WindowHandle.bind} wires.
+     * from a control -- what {@link WindowHandle.bind} wires.
      *
      * The reference client's `WindowHandle.controls`, in the same shape: a
      * property, and a plain object where that one is a dict.
@@ -318,7 +318,7 @@ export class WindowHandle extends WidgetHandle {
 
     /**
      * A `WidgetHandle` for the window root itself, so its own props can be
-     * `set` and its own events listened to — the reference client's
+     * `set` and its own events listened to -- the reference client's
      * `WindowHandle.handle()`.
      */
     handle(): WidgetHandle {
@@ -328,7 +328,7 @@ export class WindowHandle extends WidgetHandle {
     /**
      * `/gui_set` the window root's own properties; returns `this`.
      *
-     * The window is a widget like any other — a title, a size, a layout — and
+     * The window is a widget like any other -- a title, a size, a layout -- and
      * this is how those change after it is open, where `widget(name).set(...)`
      * reaches the ones inside it.
      */
@@ -350,8 +350,8 @@ export class WindowHandle extends WidgetHandle {
      * and the ids return to the pool.
      *
      * The difference from {@link WindowHandle.close} is the host's own
-     * bookkeeping — `close` also drops the window from the set `closeAll`
-     * walks — which is the same pair the reference client keeps.
+     * bookkeeping -- `close` also drops the window from the set `closeAll`
+     * walks -- which is the same pair the reference client keeps.
      */
     free(): void {
         this.host.free(this.id);
@@ -366,18 +366,18 @@ export class WindowHandle extends WidgetHandle {
         return this;
     }
 
-    /** Whether this window is gone — closed by a hand or by `close`. */
+    /** Whether this window is gone -- closed by a hand or by `close`. */
     get closed(): boolean {
         return !this.host.isOpen(this.id);
     }
 
     /**
-     * Resolves when this window is closed, or on `timeout` seconds — `true` for
+     * Resolves when this window is closed, or on `timeout` seconds -- `true` for
      * the first, `false` for the second.
      *
      * `GuiHost.wait` for one window rather than all of them. A page never has
      * to be held open the way a script does, so this is not how a program stays
-     * alive; it is how one sequences on the close — read the structure back,
+     * alive; it is how one sequences on the close -- read the structure back,
      * tear something down, open the next thing.
      */
     wait(timeout?: number): Promise<boolean> {

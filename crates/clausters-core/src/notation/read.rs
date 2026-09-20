@@ -1,7 +1,7 @@
 //! The reader: a document back into the model.
 //!
 //! The other return path, and not the one the interpreter is. [`super::perform`]
-//! turns a model into sound; this turns a *document* into a model — which is
+//! turns a model into sound; this turns a *document* into a model -- which is
 //! what a score opened from typed text needs before any of the model's verbs can
 //! touch it. A score typed as ABC, imported from MusicXML or written by hand is
 //! a document and nothing else until something reads one.
@@ -13,8 +13,8 @@
 //! per format.
 //!
 //! **What it must not do is lose what it cannot hold.** The model grew where a
-//! document is musical — the header, the barlines, the breaks and the beams a
-//! writer chose — so what is left outside it is what the engraver recomputes
+//! document is musical -- the header, the barlines, the breaks and the beams a
+//! writer chose -- so what is left outside it is what the engraver recomputes
 //! when nobody chose: automatic beaming, the line breaks that merely fit, the
 //! staff geometry. Those are not read and are not loss. Anything else a
 //! document carries and this cannot represent is a **gap to write down**, and
@@ -22,7 +22,7 @@
 //!
 //! **Ids are how a page names a note**, so they survive: an element written by
 //! this layer carries the model's own id (`n7`, and `n7-2` for a part of one
-//! split across a barline), and reading it back recovers the item — the split
+//! split across a barline), and reading it back recovers the item -- the split
 //! parts rejoin into the one item they came from, which is what makes a sheet
 //! written out and read back the sheet that was written. A document from
 //! anywhere else has ids of its own shape; those are dropped and fresh ones
@@ -39,7 +39,7 @@ use crate::ratio::Ratio;
 /// Read a normalized MEI document into the score model.
 ///
 /// # Errors
-/// When the document is not readable XML, or carries no `<score>` — the two
+/// When the document is not readable XML, or carries no `<score>` -- the two
 /// cases where there is nothing to read rather than something to skip.
 pub fn mei_to_sheet(mei: &str) -> Result<Sheet, String> {
     let doc = Document::parse(mei).map_err(|e| format!("the document is not readable XML: {e}"))?;
@@ -168,9 +168,9 @@ fn text_of(node: Node, name: &str) -> String {
 
 /// What is written above the music.
 ///
-/// Verovio's importers put the title in two different places — `<titleStmt>`,
+/// Verovio's importers put the title in two different places -- `<titleStmt>`,
 /// which is where this layer writes it, and `<workList>`, which is where the
-/// ABC importer puts it — so both are read and the first non-empty one wins.
+/// ABC importer puts it -- so both are read and the first non-empty one wins.
 /// A document that says it in neither is untitled, which is a state and not a
 /// failure.
 fn read_header(root: Node) -> Header {
@@ -232,7 +232,7 @@ fn read_clefs(score_def: Node) -> Vec<String> {
 /// The key, as the tonic name the model holds.
 ///
 /// Written `key.sig` by this layer and normalized to `keysig` by verovio, so
-/// both spellings are read — which is the sort of difference that is invisible
+/// both spellings are read -- which is the sort of difference that is invisible
 /// until a document makes a round trip through the engraver.
 fn read_key(score_def: Node) -> String {
     let sig = score_def
@@ -295,7 +295,7 @@ fn read_measure(
 ) {
     for staff in measure.children().filter(|n| n.has_tag_name("staff")) {
         // An accidental holds for the rest of its measure, at its own step and
-        // octave, on this staff. A new measure starts again from the armature —
+        // octave, on this staff. A new measure starts again from the armature --
         // the ordinary convention, and the one the emitter writes with, so the
         // two have to agree or a score means something different after a save.
         let mut in_force: HashMap<(i32, i32), i32> = HashMap::new();
@@ -451,13 +451,13 @@ fn duration(node: Node, scale: Ratio) -> Option<Ratio> {
 ///
 /// A **printed** accidental (`<accid>`) and a **sounding** one (`@accid.ges`)
 /// are both alterations and only the first is a statement that it must be seen,
-/// which is exactly what `forced` holds — so the distinction the emitter makes
+/// which is exactly what `forced` holds -- so the distinction the emitter makes
 /// survives the trip back.
 ///
 /// **A note with no accidental of its own is not a natural.** It takes what is
 /// in force: an accidental printed earlier in this measure at its step and
 /// octave, or failing that the key signature's. The emitter writes nothing
-/// where the armature already says it — which is correct engraving — so a
+/// where the armature already says it -- which is correct engraving -- so a
 /// reader that did not apply the armature would turn every B flat in E flat
 /// into a B natural, silently, on the first save. This is the same mistake the
 /// encoder was once making in the other direction, and it is caught by the same
@@ -522,8 +522,8 @@ fn alteration(accid: &str) -> i32 {
     }
 }
 
-/// What one note carries on itself. What hangs off the measure instead — a
-/// dynamic, an ornament — is added later, by `apply_attachments`.
+/// What one note carries on itself. What hangs off the measure instead -- a
+/// dynamic, an ornament -- is added later, by `apply_attachments`.
 fn marks_of(node: Node) -> Marks {
     Marks {
         articulations: node
@@ -539,7 +539,7 @@ fn marks_of(node: Node) -> Marks {
 }
 
 /// The model id this element was written from, or `0` when it was written
-/// somewhere else — `Sheet::assign_ids` mints those.
+/// somewhere else -- `Sheet::assign_ids` mints those.
 fn id_of(node: Node) -> u64 {
     let Some(id) = node.attribute(("http://www.w3.org/XML/1998/namespace", "id")) else {
         return 0;
@@ -585,13 +585,13 @@ fn apply_beams(sheet: &mut Sheet, beams: &[(usize, usize, usize, usize)]) {
 /// A voice is written into whole measures, so a voice that ends mid-bar has its
 /// bar completed and a voice shorter than another is padded until the staves
 /// are in step. Neither of those rests is in the model, and reading them back
-/// would grow the score by a rest on every trip through a document — the score
+/// would grow the score by a rest on every trip through a document -- the score
 /// would gain a bar of silence for having been saved.
 ///
 /// They are known by having **no id**: every element this layer writes from an
 /// item carries the item's own, and only what the emitter made up has none. So
 /// the rule holds only for a document this layer wrote, which is what `ours`
-/// tests — a document from anywhere else has ids of its own shape, none of them
+/// tests -- a document from anywhere else has ids of its own shape, none of them
 /// ours, and every rest in it was written by somebody and stays.
 fn drop_padding(sheet: &mut Sheet) {
     let ours = sheet
@@ -615,7 +615,7 @@ fn drop_padding(sheet: &mut Sheet) {
 ///
 /// The emitter splits an item that overruns a barline and ties the halves, so a
 /// document holds two elements where the model held one. Both carry the same
-/// model id, which is what lets this put them back — and putting them back is
+/// model id, which is what lets this put them back -- and putting them back is
 /// what makes a sheet written out and read in again the sheet that was written.
 fn rejoin(sheet: &mut Sheet) {
     let grid = sheet.grid.clone();

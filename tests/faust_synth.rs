@@ -366,7 +366,7 @@ fn freed_faust_synth_drops_on_this_thread_and_factory_survives() {
     render_channel(&mut engine, 10, 0);
 
     // `/def_free` semantics: the table's Arc goes away while the instance is
-    // still playing — its own clone keeps the factory alive.
+    // still playing -- its own clone keeps the factory alive.
     drop(def);
     let left = render_channel(&mut engine, 100, 0);
     assert!(rms(&left) > 0.1, "synth must survive its def being freed");

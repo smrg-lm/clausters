@@ -1,4 +1,4 @@
-//! `slider` — a value in a groove, dragged where you point.
+//! `slider` -- a value in a groove, dragged where you point.
 //!
 //! The **absolute** drag, and the leaf the family was designed against: the
 //! press jumps the value to where it landed and holds the groove, and every
@@ -20,7 +20,7 @@ use crate::host::widget::{Range, parse};
 
 use super::control::{self, Track};
 
-/// A continuous value over `min`..`max`, dragged along its groove — across the
+/// A continuous value over `min`..`max`, dragged along its groove -- across the
 /// cell, or up it when `vertical`.
 #[derive(Debug, Clone)]
 pub struct Slider {
@@ -87,7 +87,7 @@ impl Element for Slider {
     }
 
     /// A horizontal slider gives up its **label strip** across the track and
-    /// keeps the groove, the grip and the read-out under them — the three that
+    /// keeps the groove, the grip and the read-out under them -- the three that
     /// are the control. A vertical one is sized by its *grip* across the track
     /// and its label rides above the axis rather than across it, so there is
     /// nothing on that axis to give.
@@ -115,7 +115,7 @@ impl Element for Slider {
 
     /// **The groove is the control, not the cell.** A slider's track area is
     /// the whole cell minus its label and read-out, and the slider drawn in it
-    /// is a thin groove with a short grip — so a press anywhere in that area,
+    /// is a thin groove with a short grip -- so a press anywhere in that area,
     /// several times thicker than the drawing, was jumping the value from
     /// blank space beside it.
     fn hit_area(&self, input: &Input) -> HitArea {
@@ -179,8 +179,8 @@ mod tests {
         assert!(!s.vertical);
     }
 
-    /// The press *is* the first step of the drag — a slider jumps to where you
-    /// pointed — and every motion after it asks the same question of the same
+    /// The press *is* the first step of the drag -- a slider jumps to where you
+    /// pointed -- and every motion after it asks the same question of the same
     /// groove, which the element holds because it is the element's.
     #[test]
     fn the_press_lands_the_value_and_the_drag_follows_it() {
@@ -199,8 +199,8 @@ mod tests {
     }
 
     /// **The shape it answers on is the groove, not the cell it was given.** A
-    /// slider's track area is the whole cell minus its label and read-out —
-    /// here 60 pixels tall for a groove a handle's grip thick — so a press near
+    /// slider's track area is the whole cell minus its label and read-out --
+    /// here 60 pixels tall for a groove a handle's grip thick -- so a press near
     /// the top of it used to jump the value from blank space several times the
     /// drawing's thickness away. The element states the band and the gesture
     /// machine filters against it, which is why this asks `hit_area` rather

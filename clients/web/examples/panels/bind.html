@@ -29,15 +29,15 @@ trip through this page's script. An unbound control would instead emit a
 <code>/node_set</code> to the server.
 
 The controls are built from the def's own <code>control</code> objects, so each
-widget already knows which control it drives and the window binds in one verb —
-<code>win.bind(synth)</code> — instead of one hand-typed name per widget.
+widget already knows which control it drives and the window binds in one verb --
+<code>win.bind(synth)</code> -- instead of one hand-typed name per widget.
 
 <b>The two shapes a control signal comes in</b> are the two buttons. A button's
 press <i>is</i> the event, and its <code>mode</code> says which of the two
 pointer primitives reaches the server: the default <code>"gate"</code> sends its
 <code>on</code> at the press and its <code>off</code> at the release, so the
 value lasts exactly as long as the button is held; <code>"press"</code> sends
-one message and nothing after it — the bang. A widget cannot make a value
+one message and nothing after it -- the bang. A widget cannot make a value
 instantaneous, so the bang is only a bang against a control that returns to zero
 on its own: a trigger (<code>rate: "tr"</code>), which the server resets after
 one block.</div>
@@ -146,7 +146,7 @@ one block.</div>
 
         const win = await v.open($("stage"));
         win.bind(synth);
-        log(`bound to synth ${synth.id}: ${JSON.stringify(win.controls)} — `
+        log(`bound to synth ${synth.id}: ${JSON.stringify(win.controls)} -- `
           + "turn them, the sound follows directly and nothing appears here "
           + "(no script round trip). Hold `hold` and the note sustains for as "
           + "long as you hold it; hit `fire` and a blip sounds once per press.");

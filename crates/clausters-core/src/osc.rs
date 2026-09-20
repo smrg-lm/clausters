@@ -10,9 +10,9 @@
 pub use rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType};
 
 /// Default ceiling for one OSC frame on the stream transports (TCP and
-/// WebSocket), in bytes — shared by the audio server and the GUI host so both
+/// WebSocket), in bytes -- shared by the audio server and the GUI host so both
 /// ends of the wire agree. With length-prefixed framing the ceiling is a DoS
-/// guard — an untrusted prefix must not drive an allocation — not a protocol
+/// guard -- an untrusted prefix must not drive an allocation -- not a protocol
 /// limit, so it is boot-time configuration (`--max-frame`), sized generously
 /// for the target deployments (loopback and controlled networks): whole
 /// SynthDef/GuiDef payloads and megabyte buffer chunks fit in one frame. UDP
@@ -20,7 +20,7 @@ pub use rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType};
 pub const DEFAULT_MAX_FRAME: usize = 16 * 1024 * 1024;
 
 /// Default ceiling on the bus indices one `/bus_stream` subscription may list
-/// — shared by the audio server and the GUI host so both ends of the wire
+/// -- shared by the audio server and the GUI host so both ends of the wire
 /// agree, the same reason [`DEFAULT_MAX_FRAME`] lives here.
 ///
 /// It is boot-time configuration (`--max-stream-buses`, `[server]
@@ -29,8 +29,8 @@ pub const DEFAULT_MAX_FRAME: usize = 16 * 1024 * 1024;
 /// subscription is one client's whole live picture, and a page of many
 /// canvases asks for a bus per meter, so the ceiling scales with a document
 /// and not with a widget. The **effective** limit is this clamped by what the
-/// asking client's carrier can deliver in one packet — a snapshot is not split
-/// across replies — and a client reads that number back from
+/// asking client's carrier can deliver in one packet -- a snapshot is not split
+/// across replies -- and a client reads that number back from
 /// `/server_query.reply` instead of assuming either.
 pub const DEFAULT_MAX_STREAM_BUSES: usize = 4096;
 
@@ -44,9 +44,9 @@ pub const IMMEDIATE: OscTime = OscTime {
     fractional: 1,
 };
 
-/// Packs a raw NTP-scale seconds value (whatever its epoch — Unix + offset for
+/// Packs a raw NTP-scale seconds value (whatever its epoch -- Unix + offset for
 /// a wire timetag, seconds-from-start for an NRT score) into an [`OscTime`].
-/// The fractional part **rounds** to the nearest 1/2^32 — the one packing rule
+/// The fractional part **rounds** to the nearest 1/2^32 -- the one packing rule
 /// every client shares, so identical instants produce identical timetag bits.
 pub fn pack_timetag(ntp_secs: f64) -> OscTime {
     let seconds = ntp_secs.floor();
@@ -58,7 +58,7 @@ pub fn pack_timetag(ntp_secs: f64) -> OscTime {
 }
 
 /// The 64 raw big-endian timetag bits of an [`OscTime`] (`seconds << 32 |
-/// fractional`) — the flat form that crosses the C ABI.
+/// fractional`) -- the flat form that crosses the C ABI.
 pub fn timetag_bits(t: OscTime) -> u64 {
     ((t.seconds as u64) << 32) | t.fractional as u64
 }
@@ -100,7 +100,7 @@ pub fn encode(packet: &OscPacket) -> Result<Vec<u8>, rosc::OscError> {
     rosc::encoder::encode(packet)
 }
 
-/// Decodes one OSC packet through rosc — the single **decode** entry point every
+/// Decodes one OSC packet through rosc -- the single **decode** entry point every
 /// transport funnels through, on the server and on every client alike (UDP
 /// datagrams, the IPC ring, WebSocket frames, the GUI host's fronts), so
 /// decoding and any future hardening live in one place. A thin wrapper over

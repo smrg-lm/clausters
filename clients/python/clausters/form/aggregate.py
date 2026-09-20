@@ -1,4 +1,4 @@
-"""The arrangement — grouping, and the derived temporal relation.
+"""The arrangement -- grouping, and the derived temporal relation.
 
 A `Aggregate` is the one genuinely new structure of the arrangement: the recursive
 placement of elements with an offset, and the temporal *relation* derived from
@@ -7,9 +7,9 @@ exists and is merely adorned by `clausters.form.element.Element`.
 
 Two kinds of grouping:
 
-- **concrete** — the members relate in time (a section holding clips, a melody
+- **concrete** -- the members relate in time (a section holding clips, a melody
   holding note-events), with no processing relation.
-- **logical** — the members relate by processing or generation logic (a
+- **logical** -- the members relate by processing or generation logic (a
   bus-wired signal chain on the server, or a generative dependency on the
   client).
 
@@ -24,9 +24,9 @@ CONCRETE = "concrete"
 LOGICAL = "logical"
 
 #: The temporal relation between an aggregate's members, derived from their placements
-#: ``successive`` — duration-only, tiling contiguously; ``simultaneous``
-#: — all starting and ending together (a container that can be reinterpreted,
-#: enabling recursion); ``mixed`` — any other combination.
+#: ``successive`` -- duration-only, tiling contiguously; ``simultaneous``
+#: -- all starting and ending together (a container that can be reinterpreted,
+#: enabling recursion); ``mixed`` -- any other combination.
 SUCCESSIVE = "successive"
 SIMULTANEOUS = "simultaneous"
 MIXED = "mixed"
@@ -42,7 +42,7 @@ class _Member:
     ``dur`` is an explicit placement length that overrides the element's own
     ``duration`` when set, **in the element's own unit**
     (`clausters.form.element.Element.duration_unit`: seconds for a take, beats
-    for a phrase of events) — trimming a recording states seconds, and placing
+    for a phrase of events) -- trimming a recording states seconds, and placing
     it states beats.
 
     **A handle is what carries the node id**, which is what makes one element
@@ -68,7 +68,7 @@ class _Member:
 
     @property
     def duration_unit(self) -> str:
-        """The unit `length` is in — the placed element's."""
+        """The unit `length` is in -- the placed element's."""
         return getattr(self.element, "duration_unit", BEATS)
 
     def end(self, tempo: float = 1.0):
@@ -85,7 +85,7 @@ class Aggregate(Element):
     """A composite element: a set of placed members with a grouping ``kind``.
 
     Members are placed by an ``offset`` (beats relative to the aggregate's context)
-    and an optional placement ``dur``. Edit freely — `add`, `remove`, `move`; a
+    and an optional placement ``dur``. Edit freely -- `add`, `remove`, `move`; a
     handle returned by `add` stays valid across other edits (like
     `clausters.seq.Timeline`).
 
@@ -98,8 +98,8 @@ class Aggregate(Element):
             ``(offset, element)`` pair, a ``(offset, dur, element)`` triple, or
             a bare `Element` (placed at offset 0).
         kind: `CONCRETE` (default) or `LOGICAL`.
-        name: the aggregate's name — the GraphDef name for a logical aggregate.
-        buses: internal buses for a logical aggregate — each a ``name`` (audio,
+        name: the aggregate's name -- the GraphDef name for a logical aggregate.
+        buses: internal buses for a logical aggregate -- each a ``name`` (audio,
             1 channel) or a ``(name, rate)`` / ``(name, rate, channels)`` tuple.
         onset: the aggregate's own onset in its parent context, or ``None``.
         duration: the aggregate's own duration, or ``None``.
@@ -143,7 +143,7 @@ class Aggregate(Element):
 
     def add(self, element, offset=0.0, dur=None):
         """Place ``element`` at ``offset`` (beats), optionally overriding its
-        length with ``dur`` (in the element's own unit — see `_Member`).
+        length with ``dur`` (in the element's own unit -- see `_Member`).
         Returns a member handle for `remove`/`move`."""
         member = _Member(offset, dur, element)
         self._members.append(member)
@@ -175,7 +175,7 @@ class Aggregate(Element):
 
     @property
     def handles(self) -> list:
-        """The member **handles** (the objects `add` returns), insertion order —
+        """The member **handles** (the objects `add` returns), insertion order --
         the stable identities `remove` and `move` take. Reading a placement is
         `members`; holding on to one across edits (as an editor keying its
         widgets by member does) needs these."""
@@ -195,7 +195,7 @@ class Aggregate(Element):
 
         - `SIMULTANEOUS`: every member starts and ends together (a single member
           trivially qualifies).
-        - `SUCCESSIVE`: members tile contiguously in time — sorted by start, each
+        - `SUCCESSIVE`: members tile contiguously in time -- sorted by start, each
           member begins exactly where the previous ends (requires known lengths).
         - `MIXED`: anything else.
 
@@ -241,7 +241,7 @@ class Aggregate(Element):
 
     @property
     def bus_specs(self) -> list:
-        """The bus declarations themselves — ``name``, ``rate``, ``channels``.
+        """The bus declarations themselves -- ``name``, ``rate``, ``channels``.
 
         What a document carries in the body's opaque config, and what a cord
         drawn in the patcher edits: the wiring is the aggregate's, so it is the
@@ -261,7 +261,7 @@ class Aggregate(Element):
         return self
 
     def declare_bus(self, name, rate: str = "audio", channels: int = 1):
-        """Declare an internal bus — a logical aggregate's private wire between
+        """Declare an internal bus -- a logical aggregate's private wire between
         members. Idempotent by name: re-declaring an existing bus updates its
         ``rate``/``channels``. This is what a patcher edit (a cord drawn between
         two members) calls to name the bus the connection implies."""
@@ -276,13 +276,13 @@ class Aggregate(Element):
     # ---- the logical rendering: a GraphDef ----
 
     def to_graphdef(self, name=None):
-        """Translate this **logical** aggregate into a `clausters.defs.GraphDef` — the
+        """Translate this **logical** aggregate into a `clausters.defs.GraphDef` -- the
         1:1 mapping of the arrangement's logical grouping (nodes wired by sender/
         receiver buses) onto the configuration the server already expresses.
 
         Each member must be a `clausters.form.element.Generator` (its
-        ``def_name`` is the member def; its ``controls`` — numbers, an internal
-        bus name, or ``"OUT"`` — and ``maps`` wire it). The aggregate's `buses` become
+        ``def_name`` is the member def; its ``controls`` -- numbers, an internal
+        bus name, or ``"OUT"`` -- and ``maps`` wire it). The aggregate's `buses` become
         the private internal buses. Placement offsets are ignored (a logical aggregate
         is a signal graph, not a timeline). Returns the `GraphDef`; sending and
         instancing it is `clausters.form.render`.
@@ -319,7 +319,7 @@ def _bus_spec(bus) -> dict:
     consumes.
 
     Takes a bare name, a ``(name, rate[, channels])`` tuple, or **a spec that is
-    already one** — which is what comes back out of a document, since that is
+    already one** -- which is what comes back out of a document, since that is
     the form the body's config carries.
     """
     if isinstance(bus, dict):

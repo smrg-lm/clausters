@@ -3,7 +3,7 @@
 //
 // Where `SynthDef` and `FaustDef` each describe a *single* synthesis node, a
 // `GraphDef` describes a whole **configuration of member nodes wired by
-// buses** — an effect chain, a mixer, a layered instrument — that the server
+// buses** -- an effect chain, a mixer, a layered instrument -- that the server
 // stores and instantiates as one unit. It exposes a **named parameter
 // surface**: ports that map to inner member controls, so the running instance
 // is driven through the port names, never the private member node ids.
@@ -73,7 +73,7 @@ export class PortTarget {
         return new PortTarget(this.member, this.control, Number(mul), Number(add), this.port);
     }
 
-    /** @internal — the serialized form inside a surface entry. */
+    /** @internal -- the serialized form inside a surface entry. */
     asSpec(): Record<string, unknown> {
         const d: Record<string, unknown> = { member: this.member };
         if (this.port !== undefined) d.port = this.port;
@@ -90,7 +90,7 @@ export class PortTarget {
  *
  * **What that name is follows from what the member is**, which is the point: on
  * an ordinary member it is one of its def's controls, and on a nested graph
- * (`kind: "graph"`) it is one of *its* surface ports — re-exporting a child's
+ * (`kind: "graph"`) it is one of *its* surface ports -- re-exporting a child's
  * interface, written the same way whichever it turns out to be.
  */
 export class MemberRef {
@@ -102,7 +102,7 @@ export class MemberRef {
         this.kind = kind;
     }
 
-    /** The member's `name` control — or, for a graph member, its `name` port. */
+    /** The member's `name` control -- or, for a graph member, its `name` port. */
     control(name: string): PortTarget {
         return this.kind === "graph"
             ? new PortTarget(this.index, "", 1.0, 0.0, String(name))
@@ -171,7 +171,7 @@ export class GraphDef {
      * two instances never collide.
      *
      * `external: true` declares a bus **whoever instantiates the graph
-     * provides** — how a nested graph says it does not decide where it goes.
+     * provides** -- how a nested graph says it does not decide where it goes.
      * The parent names which of its own buses that is when it adds the member
      * (`add`, `kind: "graph"`). A graph instantiated on its own is handed
      * nothing and allocates everything, so one def works standalone and nested.
@@ -207,12 +207,12 @@ export class GraphDef {
      * node: it is instantiated as a subgroup with private buses of its own and
      * freed with its parent, and its `controls` name which of *this* graph's
      * buses each of its external buses is. That is what lets a track hold clips
-     * and a clip hold an effect chain without either being a second mechanism —
+     * and a clip hold an effect chain without either being a second mechanism --
      * and an effect can itself be a GraphDef.
      *
      * `slot: "name"` makes it a member there is a **changing number of**:
      * instantiated on demand by `Group.addSlot`, once per thing there is one of
-     * — a clip on a track, an effect in a chain, a voice of an instrument.
+     * -- a clip on a track, an effect in a chain, a voice of an instrument.
      * `voice: true` is the slot named `"voice"`, spelled the way it was before
      * slots had names, and it is what a MIDI note spawns.
      */
@@ -281,7 +281,7 @@ export class GraphDef {
     }
 
     /**
-     * This def's surface ports as `ControlInfo` entries, in declaration order —
+     * This def's surface ports as `ControlInfo` entries, in declaration order --
      * the shape all three def families answer with, so a GUI reads one of them
      * the same way. `targets` names what each port drives inside. A port
      * declares **no range**: like a control it is a name the server takes any
@@ -306,7 +306,7 @@ export class GraphDef {
         return out;
     }
 
-    /** One surface port by name, as a `ControlInfo` — `gd.control("mix")`. */
+    /** One surface port by name, as a `ControlInfo` -- `gd.control("mix")`. */
     control(name: string): ControlInfo {
         for (const info of this.controls()) {
             if (info.name === name) return info;
@@ -330,7 +330,7 @@ export class GraphDef {
     /**
      * Sends this def to the server via `/def_send graph` and returns its name.
      *
-     * Loading a GraphDef is cheap on the server (no JIT — it only validates and
+     * Loading a GraphDef is cheap on the server (no JIT -- it only validates and
      * references the member defs), but it is still asynchronous, so the same
      * barrier discipline applies.
      *
@@ -354,7 +354,7 @@ export class GraphDef {
 
     /**
      * Open this def's **structure** as a directed `patch` view in its own
-     * window on the ambient GUI host — the level-1 patcher drawn from the def
+     * window on the ambient GUI host -- the level-1 patcher drawn from the def
      * itself (the inverse of building it), the host laying the boxes out as an
      * inverted tree. One window per call, the `plot` posture; this shows the
      * def's *structure*, where `plot(this)` renders its *sound*.
@@ -362,7 +362,7 @@ export class GraphDef {
      * `defs` maps a member's def name to the `SynthDef` it was built from, so a
      * box's ports are typed (a control feeding an `In` is an inlet, one feeding
      * an `Out` an outlet); a member whose def is not resolvable draws port-less
-     * (no cords). `label` captions the patch panel (defaults to `"graphdef"` —
+     * (no cords). `label` captions the patch panel (defaults to `"graphdef"` --
      * the panel names *what* is drawn, not the def's name); `host` is an
      * explicit `GuiHost`, absent resolves the ambient one. Resolves with a
      * `PatchWindow` (`close()`).
@@ -381,7 +381,7 @@ export class GraphDef {
     }
 
     /**
-     * The def serialized to text — the `/def_send graph` wire payload. Useful to
+     * The def serialized to text -- the `/def_send graph` wire payload. Useful to
      * inspect the composition before sending it.
      */
     dumpDef(): string {

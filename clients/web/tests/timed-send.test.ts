@@ -80,7 +80,7 @@ function harness(timebase: Timebase & { advance(secs: number): void }, tempo = 1
 }
 
 /**
- * A sample timebase whose counter is moved by hand — the in-page engine's
+ * A sample timebase whose counter is moved by hand -- the in-page engine's
  * clock, stripped to what the tests need.
  */
 function manualSampleTimebase(sampleRate = 48000) {
@@ -294,7 +294,7 @@ test("a clock resumed after a stop stamps for now, not for the old axis", async 
     clock.start();
     assert.equal(clock.beats(), 2, "and resumes there");
 
-    // An event at the resumed beat is scheduled for *now* — the origins moved
+    // An event at the resumed beat is scheduled for *now* -- the origins moved
     // with the beat, so the emission is not eight seconds stale.
     clock.play(
         new Routine(function* () {

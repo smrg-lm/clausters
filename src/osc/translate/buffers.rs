@@ -12,7 +12,7 @@ use crate::server::nrt::{EditOp, SampleWrite};
 /// buffer index and the NRT job that performs it. `mirror` is the
 /// network-side pool: commands that keep or reuse the current contents
 /// (`/buffer_read`, `/buffer_write`, `/buffer_zero`, `/buffer_set` and
-/// `/buffer_setRange`) read shape and data from it — which is state as of the
+/// `/buffer_setRange`) read shape and data from it -- which is state as of the
 /// last *completed* command, so one of those right after a `/buffer_alloc`
 /// needs a `/server_sync` between them, exactly as `/buffer_gen` does.
 pub fn parse_buffer_msg(
@@ -146,7 +146,7 @@ pub fn parse_buffer_msg(
         }
         // `/buffer_fill bufnum [start count value]...`: runs of one repeated
         // value, addressed **flat and interleaved** like `/buffer_set` beside
-        // it — not in frames like the edits below, because this is the writing
+        // it -- not in frames like the edits below, because this is the writing
         // family's member and not an editor's verb. scsynth's `/b_fill`.
         "/buffer_fill" => {
             let Some(OscType::Int(index)) = args.first() else {
@@ -194,7 +194,7 @@ pub fn parse_buffer_msg(
             )
         }
         // The destructive edits: a span of the current contents changed in
-        // place — well, in a copy of it, like every other write here. The span
+        // place -- well, in a copy of it, like every other write here. The span
         // is in **frames**, not flat samples: a selection is a stretch of time
         // across every channel, and the arithmetic is `clausters_core::edit`,
         // shared rather than reimplemented per caller.
@@ -248,7 +248,7 @@ pub fn parse_buffer_msg(
             (*index, NrtJob::Edit { base: current, op })
         }
         // The write half of the read pair: `/buffer_set` takes (index, value)
-        // pairs, `/buffer_setRange` takes (start, blob) runs — bulk samples ride
+        // pairs, `/buffer_setRange` takes (start, blob) runs -- bulk samples ride
         // as one little-endian f32 blob, the convention `/bus_tapStream.reply`
         // and `/buffer_export` already follow. Both address samples flat and
         // interleaved, exactly as `/buffer_get` and `/buffer_getRange` read them
@@ -263,7 +263,7 @@ pub fn parse_buffer_msg(
             // The `*Channel` forms name **one** channel, before the runs,
             // because the runs are the variadic tail: with a tail there is no
             // telling a channel index from a start. Their positions are then
-            // frames of that channel, which is the whole point — a channel of
+            // frames of that channel, which is the whole point -- a channel of
             // interleaved storage is a strided span and no flat start names it.
             let channel = if addr.ends_with("Channel") {
                 let channels = current.channels().max(1);
@@ -288,8 +288,8 @@ pub fn parse_buffer_msg(
             };
             // One conversion, here: a frame of channel `ch` is the flat index
             // `frame * channels + ch`, and consecutive frames are `channels`
-            // apart. Everything downstream — the bounds check, the job, the
-            // copy-and-swap — is the flat one it always was.
+            // apart. Everything downstream -- the bounds check, the job, the
+            // copy-and-swap -- is the flat one it always was.
             if let Some((ch, channels)) = channel {
                 for write in &mut writes {
                     write.at = write
@@ -400,7 +400,7 @@ pub fn parse_buffer_msg(
 /// job that fills it. The named `cmd` selects a generator (`sine1`/`sine2`/
 /// `sine3`/`cheby`) or `copy`; the flag int and the trailing floats are pulled
 /// per command. Needs an allocated buffer (its shape drives generation), read
-/// from `mirror` — so a `/buffer_gen` right after a `/buffer_alloc` needs a `/server_sync`
+/// from `mirror` -- so a `/buffer_gen` right after a `/buffer_alloc` needs a `/server_sync`
 /// between them, exactly like `/buffer_read`.
 pub fn parse_buffer_gen(args: &[OscType], mirror: &BufferPool) -> Result<(i32, NrtJob), String> {
     use crate::dsp::wavetable::{EnvSegment, GenCommand, GenFlags};
@@ -555,7 +555,7 @@ fn parse_set_pairs(args: &[OscType]) -> Result<Vec<SampleWrite>, String> {
 /// The trailing channel indices of the `*Channel` reads, starting at `from`.
 ///
 /// Empty means every channel, which is also what the plain `/buffer_read` and
-/// `/buffer_allocRead` mean — so the pair is one arm with one extra argument
+/// `/buffer_allocRead` mean -- so the pair is one arm with one extra argument
 /// rather than two implementations of reading a file.
 /// The parts of a `/buffer_stitch`, one fixed-width group per source: `srcBufnum
 /// srcStart frames fadeIn fadeOut` and then one channel-map entry per channel of
@@ -642,7 +642,7 @@ fn channel_list(args: &[OscType], from: usize, usage: &str) -> Result<Vec<usize>
     Ok(out)
 }
 
-/// An arg that may be sent as a float or as an int — a client writing `1` for
+/// An arg that may be sent as a float or as an int -- a client writing `1` for
 /// unity gain means 1.0, and refusing that would be pedantry on the wire.
 fn float_arg(args: &[OscType], n: usize) -> Option<f32> {
     match args.get(n) {
@@ -654,7 +654,7 @@ fn float_arg(args: &[OscType], n: usize) -> Option<f32> {
 
 /// `/buffer_setRange`'s `(start, blob)...` tail: each run's samples ride as one
 /// little-endian `f32` blob, so several runs pack into one message and the run
-/// length is the blob's — there is no declared count that could disagree with
+/// length is the blob's -- there is no declared count that could disagree with
 /// what arrived.
 ///
 /// The blob is why this is the *bulk* form. A run of N samples as N float args

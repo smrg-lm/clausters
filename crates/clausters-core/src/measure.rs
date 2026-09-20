@@ -1,18 +1,18 @@
 //! Signal measurements and stereo-field geometry shared by the server and the
 //! GUI clients.
 //!
-//! These are general audio tools — not display code — so, by the rule that an
+//! These are general audio tools -- not display code -- so, by the rule that an
 //! algorithm useful to more than one Clausters process lives once in the shared
 //! core, they belong here rather than in any single client. Two land here, both
 //! read by the GUI's phasescope and both useful well beyond it (a headless
 //! Python capture, a future server analysis UGen, an electroacoustic-composition
 //! sketch that plots or drives from a stereo field):
 //!
-//! - [`correlation`] — the stereo **correlation** (Pearson's r of the two
+//! - [`correlation`] -- the stereo **correlation** (Pearson's r of the two
 //!   channels), the phase-coherence number a goniometer annotates.
-//! - [`channel_stats`] — the **peak and RMS** of one channel of an interleaved
+//! - [`channel_stats`] -- the **peak and RMS** of one channel of an interleaved
 //!   buffer, the pair a render reports back so no client writes the loop.
-//! - [`lissajous_point`] / [`lissajous_into`] — the **Lissajous / goniometer**
+//! - [`lissajous_point`] / [`lissajous_into`] -- the **Lissajous / goniometer**
 //!   transform: a stereo `(L, R)` pair mapped to the 45°-rotated mid/side plane
 //!   the classic goniometer draws. It is the shape an audio engineer or
 //!   electroacoustic composer reads a stereo image from, so the geometry lives
@@ -25,7 +25,7 @@
 //! computes them host-side (native and wasm both link this crate directly), and
 //! no non-Rust client consumes them yet. The export follows the concrete
 //! consumer, the way `peaks` grew one only when the Python client needed to
-//! build the identical cache — and the way `channel_stats`, which the Python
+//! build the identical cache -- and the way `channel_stats`, which the Python
 //! client reads off every render, has one.
 
 /// Pearson's correlation coefficient of two equal-length signals, in `[-1, 1]`.
@@ -33,12 +33,12 @@
 /// This is the audio-engineering **stereo correlation** metric: `+1` when the
 /// two channels are identical (a mono/in-phase signal), `0` when they are
 /// decorrelated (a wide stereo field), `-1` when one is the negation of the
-/// other (anti-phase — the mix cancels in mono). It is computed about each
+/// other (anti-phase -- the mix cancels in mono). It is computed about each
 /// channel's own mean, so a DC offset does not bias it.
 ///
 /// Returns `None` when the inputs differ in length, are empty, or either
 /// channel is constant over the window (a zero variance makes the coefficient
-/// undefined — silence or pure DC, which the caller shows as "no reading"). The
+/// undefined -- silence or pure DC, which the caller shows as "no reading"). The
 /// result is clamped to `[-1, 1]` against rounding error.
 pub fn correlation(x: &[f32], y: &[f32]) -> Option<f32> {
     if x.is_empty() || x.len() != y.len() {
@@ -70,9 +70,9 @@ pub fn correlation(x: &[f32], y: &[f32]) -> Option<f32> {
 /// figure rotated 45° into the **mid/side** plane, so a mono signal reads as a
 /// vertical line and an anti-phase one as horizontal:
 ///
-/// - `x` (horizontal) is the **side** component `(L − R) / √2` — the stereo
+/// - `x` (horizontal) is the **side** component `(L − R) / √2` -- the stereo
 ///   width;
-/// - `y` (vertical) is the **mid** component `(L + R) / √2` — the mono sum.
+/// - `y` (vertical) is the **mid** component `(L + R) / √2` -- the mono sum.
 ///
 /// The `1/√2` keeps the transform an isometry (a hard-panned channel reaches
 /// the same distance from the origin as a centered one of equal level), so the
@@ -86,8 +86,8 @@ pub fn lissajous_point(left: f32, right: f32) -> [f32; 2] {
 ///
 /// `left`, `right` and `out` must have the same length; `out[i]` receives
 /// [`lissajous_point`]`(left[i], right[i])` (`[x, y]` = side, mid). Returns
-/// `false`, leaving `out` untouched, on a length mismatch. Allocation-free — the
-/// caller owns `out` — so a real-time or per-frame caller reuses one buffer.
+/// `false`, leaving `out` untouched, on a length mismatch. Allocation-free -- the
+/// caller owns `out` -- so a real-time or per-frame caller reuses one buffer.
 pub fn lissajous_into(left: &[f32], right: &[f32], out: &mut [[f32; 2]]) -> bool {
     if left.len() != right.len() || out.len() != left.len() {
         return false;
@@ -257,7 +257,7 @@ mod stats_tests {
 /// - **The attack is instantaneous.** A meter that smoothed its way up would
 ///   under-read exactly the thing it exists to catch.
 /// - **The fall is a fixed number of decibels per second**, so the slope on
-///   screen is the same whatever the level — which is what makes the picture
+///   screen is the same whatever the level -- which is what makes the picture
 ///   readable as a rate rather than as a shape.
 /// - **A peak is held** for a declared time and then falls at the same rate, so
 ///   the mark is still there when an eye gets to it.
@@ -463,7 +463,7 @@ mod ballistics_tests {
     }
 
     /// **A peak stays put long enough to be read**, and then falls like
-    /// everything else — which is the difference between a mark and a flicker.
+    /// everything else -- which is the difference between a mark and a flicker.
     #[test]
     fn a_held_peak_waits_before_it_falls() {
         let mut meter = Ballistics::new();
@@ -478,7 +478,7 @@ mod ballistics_tests {
         assert!(meter.level() < 1.0, "past the hold it falls");
     }
 
-    /// **A louder block wins immediately, however far the meter had fallen** —
+    /// **A louder block wins immediately, however far the meter had fallen** --
     /// the attack is the one rule with no exception.
     #[test]
     fn a_new_peak_takes_it_back_at_once() {

@@ -1,7 +1,7 @@
 //! **What a gesture means**, in one structure's own vocabulary.
 //!
 //! The second of the four projections. A host reports a gesture as a *tag* and
-//! a flat list of values — `points`, `clips`, `lanes`, `draw` — and what an
+//! a flat list of values -- `points`, `clips`, `lanes`, `draw` -- and what an
 //! editor needs from that is payloads in the structure's vocabulary, which is
 //! the only thing [`clausters_document::intent`] will apply. Between those two
 //! sits a mapping that was written once per client, in two languages, per
@@ -14,8 +14,8 @@
 //! them is what makes the middle one possible:
 //!
 //! - The **payloads**, however many the gesture took. A report states the whole
-//!   structure — a multitrack's boxes after a block drag says a move, a trim
-//!   and a lane's new contents at once — and those are one entry in the
+//!   structure -- a multitrack's boxes after a block drag says a move, a trim
+//!   and a lane's new contents at once -- and those are one entry in the
 //!   history, because they are one thing a hand did.
 //! - A **refusal**: why a gesture this domain *does* understand cannot be
 //!   written. It is not the same as no payloads. A tag that is not this

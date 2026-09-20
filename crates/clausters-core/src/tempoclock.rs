@@ -8,7 +8,7 @@
 //!   ([`secs_to_samples`]/[`samples_to_secs`], and for a length
 //!   [`secs_to_samples_over`]/[`samples_to_secs_over`]) and the grid it reads a
 //!   position off ([`quant_delay`], [`bar`], [`beat_in_bar`]);
-//! - [`Scheduler`] — a min-heap keyed by beat time with stable insertion
+//! - [`Scheduler`] -- a min-heap keyed by beat time with stable insertion
 //!   order, the structure a clock pops due events from.
 //!
 //! **Beats↔seconds is not here.** It is [`crate::tempomap::TempoMap`], and
@@ -54,7 +54,7 @@ pub fn samples_to_secs_over(at: i64, frames: i64, sample_rate: f64) -> f64 {
 
 /// Beats to wait so a routine starts on the next `quant` boundary of a grid
 /// currently at `pos` beats (`quant <= 0` → now). A position already on the
-/// boundary waits 0 — the shared quantization rule every client applies.
+/// boundary waits 0 -- the shared quantization rule every client applies.
 #[inline]
 pub fn quant_delay(pos: f64, quant: f64) -> f64 {
     if quant <= 0.0 {
@@ -64,7 +64,7 @@ pub fn quant_delay(pos: f64, quant: f64) -> f64 {
 }
 
 /// The bar index a beat position falls in, on a grid of `quant` beats per bar
-/// (0-based: beats `[0, quant)` are bar 0). `quant <= 0` means no bar grid —
+/// (0-based: beats `[0, quant)` are bar 0). `quant <= 0` means no bar grid --
 /// everything is bar 0. The complement of [`quant_delay`] for *reading* a
 /// position off the grid (a display, a transport readout) rather than
 /// scheduling onto it.
@@ -77,7 +77,7 @@ pub fn bar(beats: f64, quant: f64) -> f64 {
 }
 
 /// The beat within its bar for a beat position on a grid of `quant` beats per
-/// bar (0-based: `[0, quant)`). `quant <= 0` means no bar grid — the position
+/// bar (0-based: `[0, quant)`). `quant <= 0` means no bar grid -- the position
 /// itself is returned.
 #[inline]
 pub fn beat_in_bar(beats: f64, quant: f64) -> f64 {
@@ -88,7 +88,7 @@ pub fn beat_in_bar(beats: f64, quant: f64) -> f64 {
 }
 
 /// One queued event: a beat time and a flat `u64` payload id (the client maps
-/// the id back to its routine — only flat data crosses the boundary).
+/// the id back to its routine -- only flat data crosses the boundary).
 #[derive(Clone, Copy, Debug)]
 struct Entry {
     time: f64,

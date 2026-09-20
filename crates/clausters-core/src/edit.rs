@@ -1,10 +1,10 @@
-//! Destructive edits over a span of interleaved samples — the verbs an audio
+//! Destructive edits over a span of interleaved samples -- the verbs an audio
 //! editor applies to samples.
 //!
 //! Three of them, and the set is small on purpose: `gain` with a shape covers
 //! constant gain, fades in and out, silence and each half of a crossfade;
 //! [`replace`] is what a pencil stroke and a paste produce; [`reverse`] is
-//! itself. What is *not* here is anything with a timeline — a fade is
+//! itself. What is *not* here is anything with a timeline -- a fade is
 //! arithmetic over a span and an effect is a graph, and the second belongs to
 //! the engine (`server::nrtsession`), not to this module. That line, and not
 //! "does it need a UGen", is what decides where an edit operation lives.
@@ -24,7 +24,7 @@
 //! index the `/buffer_set*` commands speak is a different unit for a different
 //! job (writing samples you already have, at a position you already computed).
 //!
-//! The shape vocabulary is [`crate::envshape`]'s — the SuperCollider shape
+//! The shape vocabulary is [`crate::envshape`]'s -- the SuperCollider shape
 //! numbers the whole system already speaks: `EnvGen` plays them, the
 //! breakpoint editor draws them, and a fade uses them rather than inventing a
 //! third spelling of "curve".
@@ -83,7 +83,7 @@ fn range(
 /// along an envelope shape.
 ///
 /// It is a value rather than four arguments because the four only ever travel
-/// together, and because that is what makes a constant gain say itself —
+/// together, and because that is what makes a constant gain say itself --
 /// [`Fade::constant`] against [`Fade::from_to`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Fade {
@@ -125,7 +125,7 @@ impl Fade {
 /// is scaled by the same factor, so a fade cannot tilt a stereo image.
 ///
 /// The factor is evaluated per frame at `t = i / frames`, and the last frame
-/// therefore does not quite reach `to` — the envelope convention, where the
+/// therefore does not quite reach `to` -- the envelope convention, where the
 /// target is committed when the segment ends. A fade to silence that must land
 /// on exact zeros is [`silence`].
 pub fn gain(
@@ -163,7 +163,7 @@ pub fn gain(
     Ok(())
 }
 
-/// Silences `frames` frames from `start` — [`gain`] with both ends at zero,
+/// Silences `frames` frames from `start` -- [`gain`] with both ends at zero,
 /// named because it is what a caller means and because it needs no shape.
 pub fn silence(
     data: &mut [f32],
@@ -179,7 +179,7 @@ pub fn silence(
 /// Writes `samples` over `frames` frames from `start`.
 ///
 /// The replacement must be exactly the span's length in samples
-/// (`frames * channels`) — a short one would leave the tail of the span stale
+/// (`frames * channels`) -- a short one would leave the tail of the span stale
 /// and a long one would run past it, and both are the caller having computed
 /// something other than what they asked to replace.
 pub fn replace(
@@ -245,7 +245,7 @@ mod tests {
         for frame in d.as_chunks::<2>().0 {
             assert_eq!(frame[0], frame[1], "a fade must not tilt the image");
         }
-        // t = i/4, so 0, 0.25, 0.5, 0.75 — the target is committed at the end.
+        // t = i/4, so 0, 0.25, 0.5, 0.75 -- the target is committed at the end.
         assert_eq!(d, vec![0.0, 0.0, 0.25, 0.25, 0.5, 0.5, 0.75, 0.75]);
     }
 

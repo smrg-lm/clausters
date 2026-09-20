@@ -22,14 +22,14 @@ use crate::viewport::View;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Target {
     pub format: wgpu::TextureFormat,
-    /// The MSAA sample count of the pass: `1` (no multisampling — the default,
+    /// The MSAA sample count of the pass: `1` (no multisampling -- the default,
     /// and what an oscilloscope wants) or a count the adapter reports for this
     /// format, typically 4.
     pub samples: u32,
 }
 
 impl Target {
-    /// A single-sampled target of `format` — what a front that does not ask for
+    /// A single-sampled target of `format` -- what a front that does not ask for
     /// antialiasing draws into, and what the demo harnesses use.
     pub fn new(format: wgpu::TextureFormat) -> Self {
         Self { format, samples: 1 }
@@ -50,9 +50,9 @@ impl Target {
 ///
 /// A render pipeline is a pure function of the device and the target format, so
 /// it is the same object for every waveform and every spectrogram on a surface.
-/// Keeping one per *element* — which is what a view used to do, compiling its
+/// Keeping one per *element* -- which is what a view used to do, compiling its
 /// own shader module and pipelines on construction, and the spectrogram one set
-/// per channel — makes a slot expensive exactly where the element library wants
+/// per channel -- makes a slot expensive exactly where the element library wants
 /// it cheap: a multitrack should be able to give a slot to every clip body it
 /// shows. The per-element state that remains is real (a vertex buffer and its
 /// ranges, a magnitude texture, uniforms), and lives in the views.
@@ -70,20 +70,20 @@ impl Renderers {
     }
 }
 
-/// **Where a heavy view's picture sits inside the viewport it is drawn with** —
+/// **Where a heavy view's picture sits inside the viewport it is drawn with** --
 /// an affine `scale * ndc + offset` a view applies to its own geometry.
 ///
 /// It exists because a viewport does not *cut*. Every heavy view builds its
 /// geometry in normalized device coordinates filling `[-1, 1]` and lets
 /// `set_viewport` place it, and wgpu refuses a viewport that leaves the
-/// attachment — so an element hanging off the bottom of a window, given the
+/// attachment -- so an element hanging off the bottom of a window, given the
 /// rectangle that is left, drew its whole picture squashed into it, and one
 /// hanging off the top slid up instead of being cut. The viewport is a *scale*,
 /// which is exactly what framing is not allowed to be.
 ///
 /// So the viewport stays legal (the visible part of the rectangle) and the view
 /// places its geometry for the **full** rectangle inside it. What falls outside
-/// clip space is then rasterized away — cut, at a fixed size, which is what a
+/// clip space is then rasterized away -- cut, at a fixed size, which is what a
 /// window edge is supposed to do. A fully visible element gets [`IDENTITY`] and
 /// draws exactly as it always did.
 ///
@@ -145,7 +145,7 @@ pub trait TimelineView {
     fn total_samples(&self) -> usize;
 
     /// Prepare GPU resources for `view` at `render_width_px` device pixels.
-    /// `renderers` is the window's shared machinery — taken by `&mut` because
+    /// `renderers` is the window's shared machinery -- taken by `&mut` because
     /// building the frame's geometry borrows its scratch space.
     fn upload(
         &mut self,
@@ -164,7 +164,7 @@ pub trait TimelineView {
         let _ = (pass, renderers);
     }
 
-    /// Draw `view` into `rect` of the window's triangle `mesh` — the path a
+    /// Draw `view` into `rect` of the window's triangle `mesh` -- the path a
     /// view takes when its picture is geometry rather than a texture.
     fn mesh(
         &self,
@@ -211,7 +211,7 @@ pub trait TimelineView {
 mod tests {
     use super::Framing;
 
-    /// A view the window shows whole is framed by nothing at all — the property
+    /// A view the window shows whole is framed by nothing at all -- the property
     /// that keeps every existing picture byte-identical.
     #[test]
     fn a_visible_element_is_the_identity() {

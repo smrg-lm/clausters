@@ -1,8 +1,8 @@
 // The display-scale watch: the browser's answer to `ScaleFactorChanged`.
 //
-// A `ResizeObserver` cannot see this change — browser zoom, or a drag onto a
+// A `ResizeObserver` cannot see this change -- browser zoom, or a drag onto a
 // monitor of another density, moves `devicePixelRatio` while the CSS box stays
-// exactly as it was — so `onScaleChange` watches a media query on the *current*
+// exactly as it was -- so `onScaleChange` watches a media query on the *current*
 // ratio and has to **re-arm on the new one** each time it fires. That re-arming
 // is the part worth a test: get it wrong and the scale is reported once and
 // never again.

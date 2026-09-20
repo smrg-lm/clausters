@@ -6,13 +6,13 @@
 //! buffers are read or written one channel per UGen via the `chan` input (two
 //! UGens with the same inputs stay sample-locked, so a stereo file is two
 //! readers and two writers). This diverges from scsynth's multi-output
-//! PlayBuf/BufRd — documented in `docs/schemas.md`. The two readers interpolate
+//! PlayBuf/BufRd -- documented in `docs/schemas.md`. The two readers interpolate
 //! linearly.
 //!
 //! **A cue point belongs to a reader that carries a position.** `PlayBuf` and
 //! `RecordBuf` advance themselves, so each takes a `trigger`, a frame to cue to
 //! and a `done_action`; `BufRd` and `BufWr` are driven by a phase signal and
-//! have no position of their own to cue — re-cueing one means changing the
+//! have no position of their own to cue -- re-cueing one means changing the
 //! signal that drives it.
 //!
 //! **A buffer's contents are mutable** (`dsp::buffer`), so recording into one
@@ -20,7 +20,7 @@
 //! a reader crossing the write head sees is some old samples and some new,
 //! never half of one, which is what a looper has always sounded like. The
 //! writers here take `&self` on the buffer for the same reason everything else
-//! does — the pool reaches the audio thread through an `Arc`, and the cells
+//! does -- the pool reaches the audio thread through an `Arc`, and the cells
 //! carry the mutability.
 
 use crate::dsp::buffer::{Buffer, Run};
@@ -33,7 +33,7 @@ use crate::dsp::{DoneAction, ProcessCtx, UGen, at};
 /// [`Buffer::sample`] with a bounds check in front. Over a
 /// [join](crate::dsp::stitch) it is what makes a join cost what a buffer costs:
 /// the join otherwise resolves which part a frame belongs to **on every
-/// sample** — twice per interpolated read — and a reader advancing
+/// sample** -- twice per interpolated read -- and a reader advancing
 /// monotonically crosses a seam once a block at the very most. So the part is
 /// resolved when the block enters it and held while the frames stay inside,
 /// and the per-sample path is the fallback for the block that does cross one,
@@ -60,7 +60,7 @@ impl<'a> Reader<'a> {
     /// interpolation; the upper frame wraps when looping, clamps otherwise.
     ///
     /// The two frames are read through the run when it holds them, and through
-    /// the buffer when they are not — which is exactly the seam: the last frame
+    /// the buffer when they are not -- which is exactly the seam: the last frame
     /// of a part interpolates towards the first of the next, and reading a zero
     /// there would click at every cut.
     #[inline]
@@ -91,14 +91,14 @@ impl<'a> Reader<'a> {
 ///
 /// A rising `trigger` re-cues to `start_pos` mid-play, which is what makes one
 /// player a re-usable voice instead of a one-use node. Without `loop`, reaching
-/// the end stops it and fires the done action — `2` frees the synth, so a
+/// the end stops it and fires the done action -- `2` frees the synth, so a
 /// one-shot leaves the tree by itself; with `loop`, the reader never finishes
 /// and the action never fires.
 ///
 /// The three arrive **after** the original four rather than in scsynth's order
 /// (`rate, trigger, startPos, loop`): inputs are positional, so putting
 /// `start_pos` before `loop` would have re-read every existing `loop` argument
-/// as a cue frame — a change no arity check can catch, since the count is right
+/// as a cue frame -- a change no arity check can catch, since the count is right
 /// either way.
 pub struct PlayBuf {
     phase: f64,
@@ -211,7 +211,7 @@ impl UGen for BufRd {
     }
 }
 
-/// Writes a signal into a buffer at a **phase** in frames — the write-side twin
+/// Writes a signal into a buffer at a **phase** in frames -- the write-side twin
 /// of [`BufRd`], and stateless in the same way. Inputs: 0 buffer index, 1
 /// channel, 2 phase, 3 loop flag (wrap vs clamp out-of-range phases), 4 the
 /// signal.
@@ -222,8 +222,8 @@ impl UGen for BufRd {
 /// what it just recorded without a second wire.
 ///
 /// No interpolation: a write lands on the frame the phase names, truncated.
-/// Spreading one sample over two frames — what interpolating on write would
-/// mean — writes a value that was never in the signal, and the two neighbours
+/// Spreading one sample over two frames -- what interpolating on write would
+/// mean -- writes a value that was never in the signal, and the two neighbours
 /// of consecutive writes would fight over the same cells.
 pub struct BufWr;
 
@@ -267,7 +267,7 @@ impl UGen for BufWr {
     }
 }
 
-/// Records a signal into a buffer, advancing one frame per sample — the
+/// Records a signal into a buffer, advancing one frame per sample -- the
 /// self-advancing writer, as [`PlayBuf`] is the self-advancing reader.
 ///
 /// Inputs: 0 buffer index, 1 channel, 2 the signal, 3 `offset` (the frame a
@@ -277,7 +277,7 @@ impl UGen for BufWr {
 /// **`rec_level` and `pre_level` are what make it a looper rather than a tape
 /// head**: each frame becomes `in·rec_level + old·pre_level`, so `(1, 0)`
 /// overwrites, `(1, 1)` overdubs onto what is there, and `(1, 0.5)` overdubs
-/// with the older layers fading — scsynth's own convention, and the reason
+/// with the older layers fading -- scsynth's own convention, and the reason
 /// they are inputs rather than a mode.
 ///
 /// `run` at zero holds the position and writes nothing, so a recording can be
@@ -394,7 +394,7 @@ pub enum BufInfoKind {
     SampleRate,
     /// `file_sr / server_sr`: multiply `PlayBuf`'s rate by this so a file at a
     /// different sample rate plays back at its true pitch (the server never
-    /// resamples on its own — see the module docs and `docs/schemas.md`).
+    /// resamples on its own -- see the module docs and `docs/schemas.md`).
     RateScale,
     /// Frame count.
     Frames,
@@ -454,7 +454,7 @@ mod tests {
     use std::sync::Arc;
 
     /// **The run is an optimization, so it must answer exactly what the
-    /// per-sample path answers** — at the seam, inside a fade, and after a
+    /// per-sample path answers** -- at the seam, inside a fade, and after a
     /// phase that jumped backwards, which are the three places a held run could
     /// be the wrong one.
     #[test]
@@ -516,7 +516,7 @@ mod tests {
 
         let mut reader = Reader::new(&join);
         // Forward over the whole join, on half frames so every read
-        // interpolates — including across both seams.
+        // interpolates -- including across both seams.
         let mut pos = 0.0;
         while pos < 23.0 {
             let read = reader.read(pos, 0, false);

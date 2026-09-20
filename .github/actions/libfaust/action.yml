@@ -6,7 +6,7 @@
 # lands in `<prefix>/lib` is one library and nothing beside it. build.rs writes
 # a DT_RPATH of `<prefix>/lib` (and `--disable-new-dtags` keeps it an RPATH,
 # inherited by transitive deps), so a job that only restores this cache resolves
-# libfaust through that rpath — no LLVM runtime has to be installed on the
+# libfaust through that rpath -- no LLVM runtime has to be installed on the
 # consuming machine. This is the same self-contained arrangement the Python
 # wheel ships.
 #

@@ -1,11 +1,11 @@
-//! **What a signal element hands its claimed GPU slot** — the filling half of
+//! **What a signal element hands its claimed GPU slot** -- the filling half of
 //! the slot seam, whose declaring half is [`SignalElement::slot_kind`].
 //!
 //! A slot is claimed by the element and owned by the frame: the element cannot
 //! touch a device, and the frame cannot know what a picture is built from. So
 //! the element says *which* slot it wants ([`Bulk`](crate::host::widget::element::Bulk)'s
 //! neighbour, `Needs::slot`) and then, whenever its picture moves, hands over
-//! the content — a pyramid at its own bucket, an analysis at its own window and
+//! the content -- a pyramid at its own bucket, an analysis at its own window and
 //! hop, or the columns its rolling transform just produced.
 //!
 //! Both fronts used to *derive* this from outside, twice each. The inline-data
@@ -18,7 +18,7 @@
 //!
 //! **A load is not a fill.** What a loader resolved (a mapped file, a fetch, a
 //! server buffer) is routed into the slot by the loader itself, on the declared
-//! `SlotKind` — that is the bulk seam, and it is why an element whose data is
+//! `SlotKind` -- that is the bulk seam, and it is why an element whose data is
 //! still out there hands back `None` here rather than an empty picture.
 
 use super::SignalElement;
@@ -29,8 +29,8 @@ impl SignalElement {
     /// nothing new for them: it claimed none, its picture has not moved since
     /// the last fill, or the data it draws from has not arrived yet.
     ///
-    /// A stack may need **two** of them — a peak pyramid for its traces and an
-    /// analysis for its texture — and they are two fills rather than one
+    /// A stack may need **two** of them -- a peak pyramid for its traces and an
+    /// analysis for its texture -- and they are two fills rather than one
     /// because they are two pictures with two shapes; they share a key, since
     /// the frame holds each kind in a map of its own.
     ///
@@ -82,7 +82,7 @@ impl SignalElement {
                 )));
             }
         }
-        // **The texture is analyzed from whatever samples are here** — the
+        // **The texture is analyzed from whatever samples are here** -- the
         // inline run, or the ones a mapped pyramid is a summary *of*. A source
         // that arrived as peaks alone (a cache, a streamed overview) has none,
         // and then the texture layer draws nothing rather than a picture of
@@ -181,7 +181,7 @@ mod tests {
         assert!(!trace.fill().is_empty());
     }
 
-    /// An element with no slot never fills one, however much data it holds —
+    /// An element with no slot never fills one, however much data it holds --
     /// a clip's take draws into the window's mesh.
     #[test]
     fn an_element_without_a_slot_fills_nothing() {
@@ -194,7 +194,7 @@ mod tests {
 
     /// The rolling case, driven the way a front drives it: retain, tick, then
     /// ask the tree what to upload. The columns come out through the same door
-    /// a stored picture does — which is the point, since the front used to
+    /// a stored picture does -- which is the point, since the front used to
     /// reach into the transform to find them.
     #[test]
     fn a_retained_waterfall_hands_over_the_columns_of_the_tick() {

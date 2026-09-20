@@ -22,22 +22,22 @@
       <div id="note">Tabs with no script in the loop: a <code>stack</code> and a
 control bound to its index.
 
-Two things meet here. A <code>stack</code> shows <b>one child at a time</b> —
-the one its <code>index</code> names — and everything else it holds is neither
+Two things meet here. A <code>stack</code> shows <b>one child at a time</b> --
+the one its <code>index</code> names -- and everything else it holds is neither
 laid out nor drawn while it is away. And a widget can be <b>bound to another
 widget</b>, which applies its value to that widget's property with no round trip
 through this script. Put together, a menu bound to a stack's <code>index</code>
 <i>is</i> a tab bar: the pages flip inside the host, and nothing appears in the
 log while you click.
 
-The two pages are the same take seen twice — its waveform and its spectrogram,
+The two pages are the same take seen twice -- its waveform and its spectrogram,
 the pair the <code>stack</code> exists for. Both are <b>heavy</b> views, which
 is what makes the switch worth watching: a hidden one keeps its GPU slot, so
 coming back to it is instant rather than a re-upload.
 
 The bottom half is the same binding aimed at an ordinary prop: a slider bound to
 <code>view_start</code> scrolls the time window. It moves <b>both</b> pages,
-because the two name the same <code>link</code> — a navigation group, where the
+because the two name the same <code>link</code> -- a navigation group, where the
 window, the selection and the playhead are the <i>axis'</i> and not any one
 view's.</div>
 
@@ -136,7 +136,7 @@ view's.</div>
         win.widget("picker").bindWidget(win.widget("pages"), "index");
         win.widget("scroll").bindWidget(win.widget("wave"), "view_start");
         log("bound: picker -> pages.index, scroll -> wave.view_start; "
-          + "flip the pages and drag the slider — nothing appears here "
+          + "flip the pages and drag the slider -- nothing appears here "
           + "(no script round trip)");
 
         // Panning or zooming a page with the pointer does report, though: an

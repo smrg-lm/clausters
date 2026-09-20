@@ -3,14 +3,14 @@
 //! Where [`crate::faust::boxes`] maps a box-composition algebra, this maps the
 //! **Signal API** (`libfaust-signal-c.h`): every node is one signal (one
 //! output), inputs are **explicit** (`{"op":"input","index":n}`), delays are
-//! explicit (`delay`/`delay1`), and feedback is **explicit** —
+//! explicit (`delay`/`delay1`), and feedback is **explicit** --
 //! `{"op":"recursion","in":[body]}` with `{"op":"self"}` inside the body, the
 //! `CsigSelf()`/`CsigRecursion()` pair (one implicit sample of delay). This is
 //! the sample-accurate feedback fused into one node.
 //!
 //! # Schema
 //!
-//! The root is `{"signals": [ <node>, … ]}` — one node per DSP **output**
+//! The root is `{"signals": [ <node>, … ]}` -- one node per DSP **output**
 //! (this is also how a signal def declares >1 output). A bare JSON **number**
 //! is a constant (`int` if integral within `i32`, `real` otherwise).
 //!
@@ -21,7 +21,7 @@
 //! | `delay` | `in`: signal, delay | `CsigDelay` |
 //! | `delay1` | `in`: 1 signal | `CsigDelay1` |
 //! | `recursion` | `in`: 1 body (uses `self`) | `CsigRecursion` |
-//! | `self` | — | `CsigSelf` (only valid inside a `recursion` body) |
+//! | `self` | -- | `CsigSelf` (only valid inside a `recursion` body) |
 //! | `fconst`, `fvar` | `ctype`: `"int"`/`"real"`, `name`, `file` (optional) | `CsigFConst`/`CsigFVar` (runtime scalar, e.g. `fSamplingFreq` behind `ma.SR`) |
 //! | `add` `sub` `mul` `div` `rem` `fmod` `remainder` `pow` `min` `max` `atan2` `gt` `lt` `ge` `le` `eq` `ne` `and` `or` `xor` `lsh` `rsh` | `in`: 2 signals | binary ops |
 //! | `sin` `cos` `tan` `asin` `acos` `atan` `exp` `exp10` `log` `log10` `sqrt` `abs` `floor` `ceil` `rint` `intcast` `floatcast` | `in`: 1 signal | unary functions |
@@ -34,7 +34,7 @@
 //! | `rdtable` | `in`: size, init, ridx | `CsigReadOnlyTable` |
 //! | `rwtable` | `in`: size, init, widx, wsig, ridx | `CsigWriteReadTable` |
 //!
-//! Differences from the box schema: no implicit wire/cut (`"_"`, `"!"`) — the
+//! Differences from the box schema: no implicit wire/cut (`"_"`, `"!"`) -- the
 //! Signal API has no point-free composition; no `seq`/`par`/`split`/`merge`,
 //! `hgroup`/`vgroup` or the `faust` source escape hatch (those are box/UI-tree
 //! concepts); `round` is absent upstream (`rint` rounds). N-ary mutual

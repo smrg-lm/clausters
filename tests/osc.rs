@@ -101,13 +101,13 @@ impl TestServer {
     }
 
     /// Waits briefly for a message with this address, returning `None` when
-    /// none arrives — for asserting that something is **not** sent, which a
+    /// none arrives -- for asserting that something is **not** sent, which a
     /// blocking receive cannot do.
     fn try_recv_matching(&self, addr: &str) -> Option<OscMessage> {
         self.try_recv_within(addr, Duration::from_millis(120))
     }
 
-    /// `try_recv_matching` with the wait spelled out — for a caller that has
+    /// `try_recv_matching` with the wait spelled out -- for a caller that has
     /// to keep the engine running while it waits, and so cannot afford to
     /// block for the default.
     fn try_recv_within(&self, addr: &str, wait: Duration) -> Option<OscMessage> {
@@ -164,7 +164,7 @@ impl TestServer {
     /// Ticks the engine and polls /server_status until the given reply argument
     /// matches or the deadline passes. Covers the network→FIFO→audio round
     /// trip. The reply opens on its first real field, so argument 1 is the
-    /// synth count and 2 the group count — reached through the two named
+    /// synth count and 2 the group count -- reached through the two named
     /// wrappers below rather than by index.
     fn wait_for_status(&mut self, arg_index: usize, expected: i32) {
         let mut out = vec![0.0f32; BLOCK_SIZE * 2];
@@ -416,7 +416,7 @@ fn n_run_pauses_a_node_and_rejects_unknown() {
 
     // Pause then resume the node over the immediate (UDP) path: each is
     // accepted with no reply (a following /server_status.reply arrives before any
-    // /fail — this guards the dispatch wiring, since a command that fell
+    // /fail -- this guards the dispatch wiring, since a command that fell
     // through to the default arm would answer /fail first), and the node stays
     // in the tree (a paused node is not freed, so the count is unchanged).
     server.send("/node_run", vec![OscType::Int(1000), OscType::Int(0)]);
@@ -672,7 +672,7 @@ fn c_stream_carries_far_more_than_a_frame_of_meters() {
 /// What the test pins is the pair of things a client depends on: the blob is
 /// the *same* layout the stream reports (bucket-major, channel-minor, min, max
 /// and mean square), so the folding half does not fork; and the conversation is
-/// `/buffer_getRange`'s — one reply per request, its own length saying how much
+/// `/buffer_getRange`'s -- one reply per request, its own length saying how much
 /// came, the start rounded down to a whole bucket so the grids agree.
 #[test]
 fn buffer_peaks_answers_the_overview_of_a_buffer_at_rest() {
@@ -790,7 +790,7 @@ fn buffer_peaks_answers_the_overview_of_a_buffer_at_rest() {
 
 /// **A server with no segment reports a recording too**, which is the case the
 /// command exists for: whoever cannot map the samples is who asks for its
-/// overview, and most of them talk to a server that shares nothing — an engine
+/// overview, and most of them talk to a server that shares nothing -- an engine
 /// inside a page, a `clausters` booted without `--shm`.
 ///
 /// It read the write frontier out of the segment's directory row, so exactly
@@ -1074,8 +1074,8 @@ fn tap_and_tap_stream_snapshot_audio() {
 }
 
 /// The per-bus levels: published for every audio bus with no tap involved,
-/// and **held with a decay** so a reader slower than the engine — a display
-/// frame is a dozen blocks — sees a transient instead of missing it between
+/// and **held with a decay** so a reader slower than the engine -- a display
+/// frame is a dozen blocks -- sees a transient instead of missing it between
 /// looks. The hold is a decay rather than a max the reader clears, so several
 /// readers of one bus all see it.
 #[test]
@@ -1481,7 +1481,7 @@ fn notify_clients_receive_n_go_and_n_end() {
 /// **A node notification does not wait for the idle tick.**
 ///
 /// `/node_start` and `/node_end` are posted by the audio thread and drained
-/// where every other queue is, on the way out of the command loop's `recv` —
+/// where every other queue is, on the way out of the command loop's `recv` --
 /// so with nothing else talking to the server they used to wait for the 100 ms
 /// `GC_INTERVAL`, measured at 103-112 ms over a quiet connection. The audio
 /// thread cannot poke the loop's waker (it may not send, lock or allocate), so
@@ -1491,7 +1491,7 @@ fn notify_clients_receive_n_go_and_n_end() {
 /// The other notify tests hide this: `tick_until` nudges the server with
 /// `/server_status` between engine blocks, and every nudge is a packet that
 /// wakes the loop. This one sends the command, runs the engine, and then does
-/// nothing but wait — which is what a client watching the node tree does.
+/// nothing but wait -- which is what a client watching the node tree does.
 #[test]
 fn a_node_notification_is_reported_without_waiting_for_the_idle_tick() {
     let mut server = TestServer::spawn();
@@ -1511,7 +1511,7 @@ fn a_node_notification_is_reported_without_waiting_for_the_idle_tick() {
     );
     // The engine applies the command and posts the event; the test thread is
     // the audio thread here, so this is where that happens. Ticking is not
-    // traffic — **nothing below sends the server anything** while a
+    // traffic -- **nothing below sends the server anything** while a
     // notification is outstanding, which is the whole point: it has to find
     // its own way out.
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];
@@ -1521,7 +1521,7 @@ fn a_node_notification_is_reported_without_waiting_for_the_idle_tick() {
             server.engine.process_block(&mut out);
             // A short wait, so the engine keeps being ticked while the command
             // loop decides to look. How long the *command* takes to reach the
-            // engine is not what is measured — the warm-up below is there so
+            // engine is not what is measured -- the warm-up below is there so
             // that trip is not on the clock.
             if server
                 .try_recv_within(addr, Duration::from_millis(2))
@@ -1786,7 +1786,7 @@ fn bundle_contents_execute() {
 }
 
 /// M8/M21: `/clock_query` exposes the engine's sample counter, the actual sample
-/// rate and the server's OSC/NTP time captured with the counter — the anchor a
+/// rate and the server's OSC/NTP time captured with the counter -- the anchor a
 /// client needs to place its clock on the server's sample axis.
 #[test]
 fn clock_reports_the_engine_sample_counter() {
@@ -1823,7 +1823,7 @@ fn clock_reports_the_engine_sample_counter() {
     server.quit();
 }
 
-/// M22: `/transport_set` is the shared beat grid for phase alignment — a query
+/// M22: `/transport_set` is the shared beat grid for phase alignment -- a query
 /// reports "undefined" until a client sets it, then echoes it back; bad args
 /// fail and leave the previous grid intact.
 #[test]
@@ -2269,7 +2269,7 @@ fn sched_rejects_bad_arguments() {
     server.quit();
 }
 
-/// M8: an `Int` target is tolerated and the blob may be a bundle — all its
+/// M8: an `Int` target is tolerated and the blob may be a bundle -- all its
 /// leaf messages fire as one atomic instant (inner timetags are ignored).
 #[test]
 fn sched_accepts_int_targets_and_bundle_blobs() {
@@ -2424,7 +2424,7 @@ fn tcp_replies_route_to_the_originating_connection() {
     );
 }
 
-/// M25: the stream transports carry frames well past the UDP datagram cap —
+/// M25: the stream transports carry frames well past the UDP datagram cap --
 /// a ~200 KB `/buffer_gen env` request (10k breakpoints) goes in as one frame, and
 /// the whole 40k-sample buffer comes back in one equally large `/buffer_getRange.reply`
 /// reply to a single `/buffer_getRange`, no chunking either way.
@@ -3028,7 +3028,7 @@ fn u_cmd_validates_target_and_index() {
     server.wait_for_synth_count(1);
 
     // A valid /node_ugenCmd to an in-range UGen (default synth has 3 UGens) is
-    // accepted silently — the default handler ignores it.
+    // accepted silently -- the default handler ignores it.
     server.send(
         "/node_ugenCmd",
         vec![
@@ -3069,8 +3069,8 @@ fn u_cmd_validates_target_and_index() {
 
 /// `/server_load.reply` lists one row per role and the figures only grow: the
 /// audio row with the blocks the engine runs, the net row with the turns the
-/// server serves. Cumulative is the contract — a client differences two
-/// replies to get a window of its own — so a second poll may never report less
+/// server serves. Cumulative is the contract -- a client differences two
+/// replies to get a window of its own -- so a second poll may never report less
 /// than the first.
 #[test]
 fn server_load_reports_every_role_cumulatively() {
@@ -3195,7 +3195,7 @@ fn d_recv_rejects_over_max_ugen_inputs() {
         ..Limits::default()
     };
     let server = TestServer::spawn_with_limits(limits);
-    // Sum3 takes 3 inputs — over the limit of 2.
+    // Sum3 takes 3 inputs -- over the limit of 2.
     let def = serde_json::json!({
         "name": "too_wide",
         "ugens": [
@@ -3350,7 +3350,7 @@ fn u_query_reports_variadic_arity_and_bus_roles() {
     server.quit();
 }
 
-/// No argument returns the whole catalog — the palette's source. Every entry
+/// No argument returns the whole catalog -- the palette's source. Every entry
 /// must be well-formed (the arity/name agreement the registry unit test
 /// guards, checked here across the wire).
 #[test]
@@ -3381,7 +3381,7 @@ fn u_query_lists_the_whole_catalog() {
 fn a_group_is_born_named_and_its_death_says_which_one_died() {
     // The name travels with `/group_new`, and both node notifications carry
     // it: a client watching the tree learns which channel came up or went
-    // away without a follow-up query — and for a death there is none to make.
+    // away without a follow-up query -- and for a death there is none to make.
     let mut server = TestServer::spawn();
     server.send("/server_notify", vec![OscType::Int(1)]);
     server.recv_until("/done");
@@ -3480,7 +3480,7 @@ fn a_group_with_a_refused_name_is_not_created() {
         OscType::String("/group_new".into())
     );
 
-    // Neither node is there — `isGroup = -1` is how the record says so — and
+    // Neither node is there -- `isGroup = -1` is how the record says so -- and
     // the name still belongs to the group that took it first.
     for id in [101, 102] {
         server.send("/node_query", vec![OscType::Int(id)]);

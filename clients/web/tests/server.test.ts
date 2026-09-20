@@ -1,7 +1,7 @@
 // The `Server` end to end against a real `clausters --ws` server.
 //
 // The WS half of W1's acceptance: define a def and play it, with `/server_sync`
-// ordering and a queryable result — both families, since a native server is
+// ordering and a queryable result -- both families, since a native server is
 // the only one that has the Faust JIT (the in-page engine is the
 // `synth,embed` build). Nothing here names the carrier: the same `Server`
 // runs over `pageConnection()` in `tests/client.html`, which covers the
@@ -16,7 +16,7 @@
 // contend for a machine-wide 57110. `npm test` still passes
 // `--test-concurrency=1`: what remains shared is the audio device, which the
 // servers open one stream each into, and the wall-clock cost of spawning
-// several at once — not a port. Lifting it is a measurement, not a fix.
+// several at once -- not a port. Lifting it is a measurement, not a fix.
 
 import assert from "node:assert/strict";
 import { access, mkdtemp, rm } from "node:fs/promises";
@@ -55,7 +55,7 @@ await loadCore();
 
 /**
  * Boots a server, runs `body` against a `Server` over its WS front, and
- * tears both down — one process per test, which also satisfies the sandbox's
+ * tears both down -- one process per test, which also satisfies the sandbox's
  * per-invocation network isolation.
  */
 async function withServer(body: (server: Server) => Promise<void>): Promise<void> {
@@ -98,7 +98,7 @@ test("attach sizes its allocators from the running server", {
         assert.equal(audio.channels, 2);
         assert.equal(Bus.control(1, { server }).index, 0);
 
-        // A freed run is reusable — the registry invariant. Reuse is not
+        // A freed run is reusable -- the registry invariant. Reuse is not
         // *immediate* (the scan hint rotates on, so a freshly released run is
         // not handed straight back), so what it guarantees is that the space
         // does not leak: cycling far past its width keeps succeeding.
@@ -152,7 +152,7 @@ test("a SynthDef is defined, played, set and freed", { skip: !hasServer }, async
         assert.equal(info.parent, 0);
         assert.equal(info.controls?.freq, 220.0);
 
-        // The tree agrees, and so does the def count in /server_status — the live
+        // The tree agrees, and so does the def count in /server_status -- the live
         // node/UGen counters are the audio thread's own, published a poll
         // window behind, so the tree is what a just-sent command is read
         // back from.
@@ -317,7 +317,7 @@ test("a GraphDef instantiates as a wired group driven through its surface", {
         const tree = await server.queryTree(instance);
         assert.equal(tree.children?.length, 2);
 
-        // The surface is what drives it — the private member ids never appear.
+        // The surface is what drives it -- the private member ids never appear.
         instance.set({ gain: 0.1 });
         await server.sync();
 
@@ -382,7 +382,7 @@ test("buffers allocate, generate and free through the pool", {
         assert.equal(mine.channels, 1);
 
         // `sine1` takes its flag word first (1 = normalize, 2 = wavetable),
-        // as an int — the tagging rule sends an integral number as one.
+        // as an int -- the tagging rule sends an integral number as one.
         await buf.gen("sine1", [3, 1.0, 0.5, 0.25]);
         buf.free();
         assert.equal(server.buffers.inUse, 0);
@@ -459,7 +459,7 @@ test("a governed group freezes the transport clock", { skip: !hasServer }, async
         await sleep(120);
         assert.ok((await server.transportState())!.transportSample > first);
 
-        // `null` unbinds — and thaws whatever it governed.
+        // `null` unbinds -- and thaws whatever it governed.
         await server.transportGroup(null);
         assert.equal((await server.transportState())!.group, null);
         governed.free();

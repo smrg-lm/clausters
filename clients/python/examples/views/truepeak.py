@@ -2,18 +2,18 @@
 """True peak: what happened between the samples, drawn and measured.
 
 The largest **sample** is not the largest value of the signal. A peak can fall
-between two samples, and every converter sees it — so a signal whose samples all
+between two samples, and every converter sees it -- so a signal whose samples all
 read at full scale can be three decibels over it, and nothing that looks at
 samples has anything to report. That is the **true peak**, in dBTP, and this
 example shows both halves of it:
 
 - **drawn**: zoomed in far enough that the samples are separate points, the
   ``waveform`` draws the band-limited **curve** between them rather than the
-  straight segments a renderer would otherwise invent — and marks every peak
+  straight segments a renderer would otherwise invent -- and marks every peak
   that leaves full scale, with how far past it the loudest one went. The dots
   are still the data: the curve passes exactly through them;
 - **measured**: ``ipc.true_peak`` reports the same fact as a number, through the
-  shared core, with the filter ITU-R BS.1770-4 Annex 2 specifies — so the figure
+  shared core, with the filter ITU-R BS.1770-4 Annex 2 specifies -- so the figure
   printed here is the one a delivery specification means when it asks for dBTP,
   and ``-1 dBTP`` is the ceiling those specifications name.
 

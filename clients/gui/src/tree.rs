@@ -2,13 +2,13 @@
 //! yourself and parsing it back.
 //!
 //! The host's one door is [`Host::handle_packet`](crate::host::Host::handle_packet)
-//! — OSC framing around JSON — which is right for a language client on the far
+//! -- OSC framing around JSON -- which is right for a language client on the far
 //! end of a socket and absurd for a program that *links* this crate: it would
 //! serialize a document only so the parser beside it could take the string
 //! apart again. This module is the other end. A [`Node`] is assembled with Rust
 //! values and handed to [`Host::define`](crate::host::Host::define), which does
 //! everything `/gui_def` does from the point where the JSON has already been
-//! parsed — so the two paths meet at [`GuiNode`], the generic wire node, and
+//! parsed -- so the two paths meet at [`GuiNode`], the generic wire node, and
 //! there is exactly one construction path below it.
 //!
 //! ```
@@ -32,13 +32,13 @@
 //! (`docs/gui-props.md` against the host, the Python builder and the web
 //! builder); a fourth would have to be declared there and would drift the day
 //! nobody did. A registered element ([`crate::Element`]) has props no catalog
-//! in this crate can know, and it is a first-class caller of this builder — so
+//! in this crate can know, and it is a first-class caller of this builder -- so
 //! the open door has to exist regardless, and once it exists a typed twin of it
 //! checks spelling, not safety. And the client whose surface *is* the catalog is
 //! the Python one, by the project's own reference-client rule.
 //!
 //! What is typed here is what a JSON string loses: a prop is a Rust value, an
-//! `i32` id stays an integer and a `f64` stays continuous — the int/float
+//! `i32` id stays an integer and a `f64` stays continuous -- the int/float
 //! distinction the wire depends on, kept by construction rather than by
 //! remembering to write `2.0` instead of `2`.
 
@@ -50,7 +50,7 @@ use crate::host::guidef::GuiNode;
 /// wire, built by chaining.
 ///
 /// Every method takes and returns `self`, so a tree is one expression. It
-/// converts into the [`GuiNode`] the JSON parser produces — the *same* type,
+/// converts into the [`GuiNode`] the JSON parser produces -- the *same* type,
 /// not a parallel one, which is what makes the two paths impossible to drift
 /// apart.
 #[derive(Debug, Clone)]
@@ -58,7 +58,7 @@ pub struct Node {
     inner: GuiNode,
 }
 
-/// Starts a node of the given wire type — the one door for every widget the
+/// Starts a node of the given wire type -- the one door for every widget the
 /// catalog has and every element a program registered.
 pub fn node(kind: &str) -> Node {
     Node {
@@ -82,13 +82,13 @@ pub fn layout() -> Node {
     node("layout")
 }
 
-/// A `plane` container: the 2D workspace — a virtual content area seen through
+/// A `plane` container: the 2D workspace -- a virtual content area seen through
 /// a scrolling, zooming window.
 pub fn plane() -> Node {
     node("plane")
 }
 
-/// A `field` container: the time strip — a lane, a clip or a bare ruler,
+/// A `field` container: the time strip -- a lane, a clip or a bare ruler,
 /// according to the props it carries.
 pub fn field() -> Node {
     node("field")
@@ -103,8 +103,8 @@ impl Node {
         self
     }
 
-    /// Sets one prop. The value is any Rust type `serde_json` converts —
-    /// `&str`, `f64`, `i32`, `bool`, a `Vec` of them — and it keeps the type it
+    /// Sets one prop. The value is any Rust type `serde_json` converts --
+    /// `&str`, `f64`, `i32`, `bool`, a `Vec` of them -- and it keeps the type it
     /// was written with, which is the distinction the host reads props by.
     pub fn prop(mut self, key: &str, value: impl Into<Value>) -> Self {
         self.inner.props.insert(key.to_string(), value.into());
@@ -117,7 +117,7 @@ impl Node {
         self
     }
 
-    /// Appends every child of an iterator — the door for a tree built in a
+    /// Appends every child of an iterator -- the door for a tree built in a
     /// loop, which is most of what a program building one does.
     pub fn children(mut self, children: impl IntoIterator<Item = Node>) -> Self {
         self.inner
@@ -136,8 +136,8 @@ impl From<Node> for GuiNode {
 #[cfg(test)]
 mod tests {
     //! **Parity is the suite**: for each tree, the builder's node and the
-    //! parser's node are compared as documents. That is the whole promise —
-    //! the two doors into the host produce the same thing — and it is cheap
+    //! parser's node are compared as documents. That is the whole promise --
+    //! the two doors into the host produce the same thing -- and it is cheap
     //! precisely because both produce a [`GuiNode`], so the comparison is over
     //! one type rather than across a translation.
 

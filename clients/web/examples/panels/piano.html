@@ -24,15 +24,15 @@
 <code>panels/piano.py</code>: <b>a piano keyboard, and the voices it plays</b>.
 
 The <code>piano</code> widget shows five octaves with the 88-key range marked;
-the strip above the keys is its navigation surface — drag it to pan, wheel over
+the strip above the keys is its navigation surface -- drag it to pan, wheel over
 it to zoom. Playing emits <b>MIDI-shaped</b> events (<code>note</code> with
 pitch, velocity, state and channel), and this page maps each one to a server
 voice: <code>state 1</code> spawns a held synth, <code>state 0</code> closes its
 gate and the release tail frees it.
 
-That mapping is the point. The other path — the widget bound to a
+That mapping is the point. The other path -- the widget bound to a
 <code>voice</code> the host instances, with no script between the key and the
-sound — is what <code>examples/panels/piano/index.html</code> boots as a
+sound -- is what <code>examples/panels/piano/index.html</code> boots as a
 standalone bundle.</div>
 
       <button id="run">open the keyboard</button>
@@ -143,7 +143,7 @@ standalone bundle.</div>
         await voice().send(server);
 
         const win = await scene().open($("stage"));
-        log(`opened window ${win.id} — play the keys`);
+        log(`opened window ${win.id} -- play the keys`);
 
         win.widget("keys").onEvent(onKeys);
       }

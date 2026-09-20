@@ -7,8 +7,8 @@ use clausters_core::registry::{self, NodeIdPartition, Registry, ReleaseError};
 //
 // The shared id allocator model (`clausters_core::registry`): node ids, buses
 // and buffers are finite boot-time resources, the registry is the occupancy
-// map. Handles are internally locked — a client's clock thread allocates
-// while its reply thread releases on `/node_end` — and the registry is passive:
+// map. Handles are internally locked -- a client's clock thread allocates
+// while its reply thread releases on `/node_end` -- and the registry is passive:
 // events flow in, nothing calls back out.
 
 /// A registry handle safe to share across the binding's threads.
@@ -94,7 +94,7 @@ pub unsafe extern "C" fn clausters_registry_capacity(h: *mut FfiRegistry) -> u64
     with_registry(h, 0, |r| r.capacity().unwrap_or(0) as u64)
 }
 
-/// Whether `id` falls inside the registry's space (allocated or not) — the
+/// Whether `id` falls inside the registry's space (allocated or not) -- the
 /// foreign-id filter for `/node_end` handling. 1 yes, 0 no.
 ///
 /// # Safety
@@ -139,7 +139,7 @@ pub unsafe extern "C" fn clausters_registry_node_partition(max_nodes: u64, out: 
 }
 
 /// How much of an audio bus space of `audio_buses` is private to GraphDef
-/// instances — what a client subtracts before handing out buses of its own.
+/// instances -- what a client subtracts before handing out buses of its own.
 ///
 /// A function of the count and not a constant: the reservation is a *share* of
 /// what the server was configured with, so a client asks with the count that

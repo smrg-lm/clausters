@@ -26,12 +26,12 @@ operations.
 <code>score-from-data.html</code> engraves a timeline. This is the third thing,
 and the one the model exists for: a score built by <i>operating on a score</i>. A
 four-note motif is stated, and everything after it is that motif under an
-operation — repeated, inverted, turned backwards, augmented, transposed, and
+operation -- repeated, inverted, turned backwards, augmented, transposed, and
 finally stacked against itself as a coda on two staves.
 
 The whole thing is written in six lines of operators, and none of the arithmetic is
 in TypeScript. A <b>sheet</b> is a plain object a caller holds, an operation is a
-payload it sends, and both cross to <code>clausters_core::notation</code> — the
+payload it sends, and both cross to <code>clausters_core::notation</code> -- the
 same core the Python client binds and the same one a standalone host with no
 client language uses to edit a score it opened.
 
@@ -40,7 +40,7 @@ motif about its own first note gives A-flat, not G-sharp), and <b>the grid does
 not move when the content does</b> (stretching doubles the written values against
 the barlines that were already there, so the phrase re-bars across them). The
 coda's first note carries a staccato, which shortens it in performance and
-changes nothing about the page — honouring it is the <i>interpreter's</i>, not
+changes nothing about the page -- honouring it is the <i>interpreter's</i>, not
 the engraving's, and it is what <code>notation.toTimeline</code> does at the end
 of this page. And a tuplet cannot be split, so one that would cross a barline is
 refused by name.</div>
@@ -207,7 +207,7 @@ refused by name.</div>
             { expect: ["/clock_query.reply"] });
           const now = Number(reply.args[0]) + server.latency * sr;
           win.widget("score").set({ playheadAt: now });
-          log("playing — the cursor follows the sound");
+          log("playing -- the cursor follows the sound");
         });
         win.widget("stop").onClick(() => {
           timeline.stop();
@@ -215,7 +215,7 @@ refused by name.</div>
           log("stopped");
         });
         win.onClosed(() => log("window closed"));
-        log("press play — the cursor follows the sound");
+        log("press play -- the cursor follows the sound");
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));

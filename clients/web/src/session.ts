@@ -3,8 +3,8 @@
 // A `Session` is the unit of isolation: it bundles a `Server` and a
 // `TempoClock` into one handle with `play` / `run`, and the two factories pick
 // sensible defaults for the two carriers a page has. Because each session owns
-// its own state, **several coexist** — one against this page's engine beside
-// one against a `--ws` server — without touching each other.
+// its own state, **several coexist** -- one against this page's engine beside
+// one against a `--ws` server -- without touching each other.
 //
 // That is why this arrived late and matters now. A page used to hold one
 // engine and one GUI host, so wiring them by hand was three lines and the
@@ -14,7 +14,7 @@
 // clock, this server, this GUI host, this random root.
 //
 // The counterpart is the **default session**, `defaultSession` (`base/main.ts`
-// — `main` is its short name): the ambient environment used whenever no
+// -- `main` is its short name): the ambient environment used whenever no
 // session was named. An explicit `Session` is simply a *named* environment
 // that never touches the default one.
 //
@@ -26,8 +26,8 @@
 //
 // **What the Python client has here and this one does not, yet.** Its `nrt`
 // factory and `render` need an offline drive, which is its own milestone. The
-// factories are named for the carriers this package already names them by —
-// `page`/`connect`, as on `Server` and `GuiHost` — rather than for Python's
+// factories are named for the carriers this package already names them by --
+// `page`/`connect`, as on `Server` and `GuiHost` -- rather than for Python's
 // `embed`/`live`, whose parameters (a host, a port, a process to boot) a page
 // has none of.
 
@@ -64,8 +64,8 @@ export interface SessionOptions {
     /**
      * The time every clock of the session is made on, fixed for the session's
      * life. Left unset (and with no `clock`) it is **its server's sample
-     * clock**, which is sample-accurate and drift-free — and in the page it is
-     * exact, the engine and the `AudioContext` being one clock — and a server
+     * clock**, which is sample-accurate and drift-free -- and in the page it is
+     * exact, the engine and the `AudioContext` being one clock -- and a server
      * that does not answer it throws, since a clock's timebase is fixed when
      * it is made and there is nothing to fall back to afterwards. Pass
      * `new MonotonicTimebase()` for wall-clock timetags.
@@ -77,7 +77,7 @@ export interface SessionOptions {
     timeout?: number;
     /**
      * The slice of the server's client id space this session allocates from,
-     * when the engine underneath has **more than one client** — one client
+     * when the engine underneath has **more than one client** -- one client
      * authoring over a carrier of its own while the page holds a session on
      * that same engine. Both legs take it, the audio server's node, bus and
      * buffer ids and the GUI host's widget ids alike, so a session is one
@@ -92,12 +92,12 @@ export interface SessionOptions {
  *
  * This is the client's ergonomic entry point. Rather than wiring a connection,
  * a server, a clock and a timebase together yourself, you take a `Session`
- * that owns them and drives them as a unit — `play` a pattern on it, `run` it
+ * that owns them and drives them as a unit -- `play` a pattern on it, `run` it
  * for some seconds, `gui()` a host wired to its own engine.
  *
  * Prefer the factories to the constructor: `embed` opens a session on the
  * server inside this tab and `live` one on a `--ws` server, each with sensible
- * defaults — the reference client's two names, for the same two situations. The constructor is for the uncommon case of supplying your own
+ * defaults -- the reference client's two names, for the same two situations. The constructor is for the uncommon case of supplying your own
  * `Server` and clock.
  *
  * Which factory you call is the *only* thing that differs between the two
@@ -105,7 +105,7 @@ export interface SessionOptions {
  * pattern or the clock. So the same `play` drives either, and both can run
  * side by side in one page.
  *
- * It is an `Environment` — the same base the default session extends — so a
+ * It is an `Environment` -- the same base the default session extends -- so a
  * named session and the default one are the same kind of thing. That makes it
  * its **own random context** (`seed` / `rng`): `session.seed(n)` reproduces
  * *this* session's events without touching another's. Anything created
@@ -118,7 +118,7 @@ export class Session extends Environment {
 
     private gui_: GuiHost | null = null;
     /**
-     * The page host `gui()` booted, if it booted one — the wasm instance
+     * The page host `gui()` booted, if it booted one -- the wasm instance
      * behind the client, which nothing else on the page holds and which
      * therefore has to be released with the session.
      */
@@ -127,23 +127,23 @@ export class Session extends Environment {
     private readonly destinations: OscDestination[] = [];
 
     /**
-     * Drives `server` on `clock` — a fresh one at tempo 1.0, on the session's
+     * Drives `server` on `clock` -- a fresh one at tempo 1.0, on the session's
      * timebase, when omitted. A clock that already belongs to another session,
      * or is on another timebase than `timebase`, throws.
      *
      * The clock gets a back-reference to this session, so a play running on it
-     * resolves *this* session's server and random root — which is what keeps
+     * resolves *this* session's server and random root -- which is what keeps
      * several sessions isolated from each other and from the default one.
      *
-     * `gui` is a host this session drives instead of opening one — the visual
+     * `gui` is a host this session drives instead of opening one -- the visual
      * half of taking a `Server` the session did not open, and the way a session
      * adopts a host reached with `GuiHost.connect`. `gui()` then returns it
      * rather than opening anything.
      *
      * `timebase` is the physical time every clock of this session paces
      * against, fixed for the session's life. Omitted it is `clock`'s when one
-     * is given, else a `LogicalTimebase` for an offline server — the only one
-     * an offline session can have — and the page's monotonic clock otherwise
+     * is given, else a `LogicalTimebase` for an offline server -- the only one
+     * an offline session can have -- and the page's monotonic clock otherwise
      * (`embed` and `live` default to the server's sample clock).
      */
     constructor(server: Server, clock?: TempoClock, gui?: GuiHost, timebase?: Timebase) {
@@ -257,8 +257,8 @@ export class Session extends Environment {
      * Drops `clock` from this session: it is no longer closed with it and no
      * longer answers an ambient play. Returns the clock.
      *
-     * The **default clock cannot be released** — a session without one has no
-     * answer for `play` — so releasing it throws rather than leaving the
+     * The **default clock cannot be released** -- a session without one has no
+     * answer for `play` -- so releasing it throws rather than leaving the
      * session in a state nothing checks for.
      */
     release(clock: TempoClock): TempoClock {
@@ -280,7 +280,7 @@ export class Session extends Environment {
      * of sending anything, and `render` turns that score into samples through
      * the engine's own renderer running as fast as it can.
      *
-     * No `AudioContext`, no gesture, no socket and no server process — which
+     * No `AudioContext`, no gesture, no socket and no server process -- which
      * is why this is the one factory that is not asynchronous past loading the
      * codec. What is *not* different is everything above the carrier: the same
      * patterns, defs and routines play into it, because only the connection
@@ -305,20 +305,20 @@ export class Session extends Environment {
     }
 
     /**
-     * A session on an **embedded** server — the audio server compiled to wasm
+     * A session on an **embedded** server -- the audio server compiled to wasm
      * and running in this tab's AudioWorklet, with no process and no socket
      * anywhere.
      *
      * The reference client's `Session.embed`, and the same thing it names: the
      * server inside this program rather than one it talks to. There it is the
      * bundled native library in this process; here it is wasm in this tab, and
-     * either way the client shares memory with it — which is what lets a whole
+     * either way the client shares memory with it -- which is what lets a whole
      * take go into a buffer in one copy.
      *
      * `boot`s an engine of this session's own, which is the reference
      * client's default and the reason there is no flag here: ownership is the
      * verb's to say. So its nodes, buses and buffers share nothing with the
-     * rest of the document — the case several sessions in one page exist for.
+     * rest of the document -- the case several sessions in one page exist for.
      * Pass `engine` to drive one that is already open instead; an engine this
      * session opened is closed with it, one handed in is not.
      *
@@ -335,7 +335,7 @@ export class Session extends Environment {
         share,
     }: SessionOptions & {
         /**
-         * An engine to drive rather than open — the reference client's
+         * An engine to drive rather than open -- the reference client's
          * `server=`, and the same rule: one handed in is not this session's to
          * close.
          */
@@ -349,7 +349,7 @@ export class Session extends Environment {
         channels?: number;
     } = {}): Promise<Session> {
         await loadCore();
-        // Handed an engine, this session drives that one and does not own it —
+        // Handed an engine, this session drives that one and does not own it --
         // the reference client's `server=`. Otherwise `boot` brings up one of
         // its own, which is the reference's default and the reason there is no
         // flag here: ownership is the verb's to say.
@@ -372,7 +372,7 @@ export class Session extends Environment {
     }
 
     /**
-     * A session on a **live server** — one running as its own process,
+     * A session on a **live server** -- one running as its own process,
      * reached over a WebSocket (`clausters --ws`).
      *
      * The reference client's `Session.live`, minus the half a tab cannot do:
@@ -391,7 +391,7 @@ export class Session extends Environment {
     ): Promise<Session> {
         await loadCore();
         // `attach`: nothing here started that server, and a WebSocket that
-        // connects proves a listener rather than a server — so the session
+        // connects proves a listener rather than a server -- so the session
         // refuses to be built against silence instead of dropping every later
         // message into it.
         return Session.over(
@@ -433,17 +433,17 @@ export class Session extends Environment {
      * Idempotent: repeated calls return the same `GuiHost`. It is owned by
      * the session and released on `close`. A session **given** a host (the
      * constructor's `gui`) is already settled: this returns that host and
-     * opens nothing — the same way a `Server` is taken rather than opened when
+     * opens nothing -- the same way a `Server` is taken rather than opened when
      * the constructor is used. That is how a session drives a native
      * `clausters-gui --ws` host: `new Session(server, clock, await
      * new GuiHost(await WsConnection.open(url)).attach())`.
      *
      * A session on the page's shared engine gets the page's host (canvas in
      * `<body>` included); one holding its own engine gets a host of its own,
-     * which appends no canvas — pass yours to the def, as a component does.
+     * which appends no canvas -- pass yours to the def, as a component does.
      */
     /**
-     * The GUI host this session already has, or `null` when none was opened —
+     * The GUI host this session already has, or `null` when none was opened --
      * what the ambient visual verbs read, so they draw on a session's host
      * rather than opening a second one, without opening one themselves.
      */
@@ -458,7 +458,7 @@ export class Session extends Environment {
         // of two on its host as well.
         const share = this.server.share;
         if (this.ownedEngine) {
-            // A host of this session's own, wired to this session's engine —
+            // A host of this session's own, wired to this session's engine --
             // and this session's to close, unlike the page's shared one. **It
             // allocates on that engine too** (its voices, its take monitor, the
             // multitrack it plays), so the session's ids are split with it: the
@@ -483,7 +483,7 @@ export class Session extends Environment {
      * default session's.
      *
      * The counterpart of the Python client's `with session:` block. It
-     * restores the previous session afterwards, so nesting is safe — but it is
+     * restores the previous session afterwards, so nesting is safe -- but it is
      * **synchronous by design**: an `await` inside would let another task run
      * while this session is ambient, and the page's one thread has no way to
      * scope that. Do the awaiting outside and the creating inside.
@@ -528,7 +528,7 @@ export class Session extends Environment {
      *
      * Advances the clock logically, with no real-time waiting, so everything
      * scheduled lands in the score, and then renders that score. Schedule a
-     * closing event — freeing the root group, or whatever ends the take — so
+     * closing event -- freeing the root group, or whatever ends the take -- so
      * the render has a defined length: the renderer stops when the score does,
      * and commands do not sound.
      *
@@ -546,7 +546,7 @@ export class Session extends Environment {
     /**
      * Runs the clock for `seconds` and then stops it; resolves with `this`.
      *
-     * Where the Python client blocks a thread, this one awaits — the page has
+     * Where the Python client blocks a thread, this one awaits -- the page has
      * one thread and has to keep running, which is the same rule the rest of
      * this client follows.
      */
@@ -562,7 +562,7 @@ export class Session extends Environment {
      * clock on.
      *
      * A session with one clock reads exactly as it always did. One with
-     * several starts them together, which is what makes them start together —
+     * several starts them together, which is what makes them start together --
      * starting ten clocks in a loop staggers them by whatever the loop costs.
      */
     start(): this {
@@ -586,7 +586,7 @@ export class Session extends Environment {
      *
      * The unscoped form of {@link Session.use}. A block is the right shape when
      * the session's life is the block's, and the wrong one for an environment
-     * that outlives every statement that uses it — which in a page is the
+     * that outlives every statement that uses it -- which in a page is the
      * ordinary case, not the exception: event handlers, a console, a timer, an
      * `await` in the middle of a setup routine. After this, anything created
      * with no session named (`play(...)`, a bare `new Synth`) resolves to *this*
@@ -604,7 +604,7 @@ export class Session extends Environment {
      * Gives up being the ambient session; returns `this`.
      *
      * The counterpart of {@link Session.activate}, and a no-op when some
-     * *other* session is ambient — giving up a slot one does not hold would
+     * *other* session is ambient -- giving up a slot one does not hold would
      * silently unseat the session that does.
      */
     deactivate(): this {
@@ -617,12 +617,12 @@ export class Session extends Environment {
      * An external OSC application as a destination, living as long as this
      * session (`close` closes it).
      *
-     * What it sends is standard OSC — a message, or a bundle timetagged at the
+     * What it sends is standard OSC -- a message, or a bundle timetagged at the
      * ambient `Moment`, so a sequence sent to another application keeps the
      * same logical timing as one sent to the server. What it does not send is
      * anything of ours: no `Server.latency`, no sample-accurate `/sched_at`.
      *
-     * The carrier is a WebSocket, the page having no UDP socket to open —
+     * The carrier is a WebSocket, the page having no UDP socket to open --
      * that is the only difference from the Python client's, whose `host`/
      * `port` open one directly. The connection is this session's and is
      * closed with it.
@@ -634,8 +634,8 @@ export class Session extends Environment {
     }
 
     /**
-     * Releases everything this session owns: its GUI host — the client, and
-     * the wasm host under it when `gui()` booted one — its destinations, its
+     * Releases everything this session owns: its GUI host -- the client, and
+     * the wasm host under it when `gui()` booted one -- its destinations, its
      * clock, its server client, and an engine it opened for itself (the page's
      * shared host and engine are not this session's to stop). If it had
      * adopted the default slots, it gives them up.

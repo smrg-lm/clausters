@@ -9,7 +9,7 @@
 //! (see [`layout`]). The audio thread never transforms a kernel: per hop of
 //! `L` input samples it forward-transforms its own input window, multiplies-
 //! accumulates against the ready-made spectra, inverse-transforms, and emits
-//! the alias-free half — `O(P)` complex MACs plus one FFT/IFFT pair.
+//! the alias-free half -- `O(P)` complex MACs plus one FFT/IFFT pair.
 //!
 //! **Load spreading.** The `p ≥ 1` MAC terms of hop `n+1` only involve input
 //! spectra that already exist after hop `n`, so they are accumulated across
@@ -17,7 +17,7 @@
 //! [`UGen::process`](crate::dsp::UGen::process) call), and the hop block itself
 //! does only the input FFT, the single fresh-spectrum MAC (`p = 0`) and the
 //! IFFT. The steady-state cost per block is flat
-//! instead of a per-hop sawtooth — the design constraint the whole module is
+//! instead of a per-hop sawtooth -- the design constraint the whole module is
 //! shaped by (with the stagger, the other half of keeping spectral load
 //! spikes out of the RT budget).
 //!
@@ -25,20 +25,20 @@
 //! rectangular segments whose hop is fixed by the partition size; the `fr`
 //! chain is windowed COLA analysis-resynthesis. The two contracts are
 //! incompatible (a naive spectral multiply in the chain computes *circular*
-//! convolution), so `Conv` is a self-contained audio UGen — the same split
+//! convolution), so `Conv` is a self-contained audio UGen -- the same split
 //! scsynth makes, minus its five name variants.
 //!
 //! **Latency.** The first output sample leaves after one full partition of
 //! input has been collected: an intrinsic latency of `L` samples, reported
-//! through [`UGen::latency`](crate::dsp::UGen::latency)/`SynthNode::latency` —
+//! through [`UGen::latency`](crate::dsp::UGen::latency)/`SynthNode::latency` --
 //! the first consumer of the hook the auto-ordering work anticipated
 //! (compensation itself is deferred; see `docs/model-vs-daw.md`).
 //!
 //! **Kernel swap.** The FDL holds *input* history, which is kernel-agnostic,
 //! so swapping kernels never rebuilds state. When the `kernel` input moves to
 //! a different (valid) buffer, the swap hop computes the tail of the old
-//! kernel's output and a full fresh sum with the new one — a one-hop cost
-//! spike — and crossfades the two over that hop's `L` samples (the
+//! kernel's output and a full fresh sum with the new one -- a one-hop cost
+//! spike -- and crossfades the two over that hop's `L` samples (the
 //! `Convolution2L` behavior, one frame). Replacing the *contents* of the same
 //! buffer index instead is a hard switch with no crossfade: allocate the new
 //! IR in a fresh buffer and move the input when the transition matters.
@@ -47,13 +47,13 @@
 /// default `fft_size` (1024, so `L = 512`), 16 partitions cover ~170 ms of IR
 /// at 48 kHz. Reverb-length IRs need an explicit, larger `partitions`.
 pub const DEFAULT_PARTITIONS: usize = 16;
-/// Hard cap on `partitions` — bounds the pre-allocated FDL like every other
+/// Hard cap on `partitions` -- bounds the pre-allocated FDL like every other
 /// boot/build-time pool (256 × 4096 floats ≈ 4 MiB at the largest window).
 pub const MAX_PARTITIONS: usize = 256;
 
 /// The prepared-kernel buffer layout written by `/buffer_gen prepare_partconv` and
 /// read by `Conv`: `data[0] = L` (partition length), `data[1] = P`
-/// (partition count), then `P` frames of `N = 2L` floats — each partition
+/// (partition count), then `P` frames of `N = 2L` floats -- each partition
 /// zero-padded to `N` and packed by
 /// [`fft::rfft_into`](clausters_core::fft::rfft_into)
 /// (`[dc, nyquist, re₁, im₁, …]`).
@@ -79,10 +79,10 @@ mod ugen {
     use crate::dsp::{ProcessCtx, UGen, at};
     use clausters_core::fft;
 
-    /// Uniformly partitioned overlap-save convolver. Inputs: `[in, kernel]` — the
+    /// Uniformly partitioned overlap-save convolver. Inputs: `[in, kernel]` -- the
     /// audio signal and the buffer index of a **prepared** kernel (`/buffer_gen
     /// prepare_partconv`). Static config: `fft_size` (the transform size `N`; the
-    /// partition is `L = N/2`) and `partitions` (the FDL capacity — the longest
+    /// partition is `L = N/2`) and `partitions` (the FDL capacity -- the longest
     /// kernel this instance accepts). A kernel whose own `L` differs from the
     /// instance's, or an unprepared/missing buffer, plays silence (the input
     /// history keeps running, so a valid kernel resumes cleanly).
@@ -177,7 +177,7 @@ mod ugen {
         }
 
         /// `acc += spectrum · kernel` over one packed frame (DC and Nyquist are
-        /// real-only slots) — the FDL inner loop.
+        /// real-only slots) -- the FDL inner loop.
         #[inline]
         /// The kernel comes straight out of the buffer's cells: measured, the
         /// relaxed loads cost this shape nothing (a complex MAC over a strided
@@ -258,7 +258,7 @@ mod ugen {
             // Spread work: catch the pending `p >= 1` MACs of the upcoming hop up
             // to this slice's fair share of the hop period, so the hop itself has
             // none left. The accumulation always uses the kernel `acc` was
-            // started with (the one at `self.kernel_buf`) — after a swap request
+            // started with (the one at `self.kernel_buf`) -- after a swap request
             // that is `old_kernel` until the swap hop lands.
             let spread = if old_kernel.is_some() {
                 old_kernel
@@ -361,7 +361,7 @@ mod ugen {
             match kernel {
                 Some((data, parts)) => {
                     if swap {
-                        // Swap hop: a full fresh sum with the incoming kernel —
+                        // Swap hop: a full fresh sum with the incoming kernel --
                         // the one deliberate cost spike.
                         self.full_sum(data, parts);
                         std::mem::swap(&mut self.acc, &mut self.tmp);

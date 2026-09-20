@@ -64,7 +64,7 @@ pub unsafe extern "C" fn clausters_core_binary(
 }
 
 /// Applies range map `op` to `input` (broadcast if `in_len == 1`) into `out`,
-/// writing `n` samples — the `linlin`/`linexp`/... family, over a whole
+/// writing `n` samples -- the `linlin`/`linexp`/... family, over a whole
 /// sequence in one crossing.
 ///
 /// The map's own numbers are scalars: a range is a statement about the surface
@@ -119,7 +119,7 @@ pub unsafe extern "C" fn clausters_core_whitenoise(seed: u64, out: *mut f32, n: 
     WhiteNoise::from_seed(seed).fill(o);
 }
 
-/// Fills `out` (`n` samples) with the smoothing window of type `wintype` — the
+/// Fills `out` (`n` samples) with the smoothing window of type `wintype` -- the
 /// **same** `clausters_core::window::Window` the server's `FFT`/`IFFT` UGens
 /// apply, so a client that pre-windows audio matches the server bit for bit.
 /// `wintype`: -1 rectangular, 0 Hann, 1 sine, 2 Welch, 3 Hamming, 4 Blackman
@@ -138,7 +138,7 @@ pub unsafe extern "C" fn clausters_core_window(wintype: i32, out: *mut f32, n: u
 }
 
 /// The exact byte length of the peak-pyramid cache for `n` samples at
-/// `base_bucket` — call it to size the buffer for [`clausters_core_peaks_build`]
+/// `base_bucket` -- call it to size the buffer for [`clausters_core_peaks_build`]
 /// without building the pyramid. Returns 0 if `base_bucket == 0`.
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_core_peaks_cache_size(n: usize, base_bucket: usize) -> usize {
@@ -149,8 +149,8 @@ pub extern "C" fn clausters_core_peaks_cache_size(n: usize, base_bucket: usize) 
 }
 
 /// Builds a min/max peak pyramid from `samples` (mono, `n` `f32`s) at
-/// `base_bucket` and writes its cache bytes — the memory-mappable format the GUI
-/// host maps to render a waveform without re-sending the samples — into `out`
+/// `base_bucket` and writes its cache bytes -- the memory-mappable format the GUI
+/// host maps to render a waveform without re-sending the samples -- into `out`
 /// (capacity `out_cap`). Returns the number of bytes written, or 0 on a null
 /// pointer, `base_bucket == 0`, or `out_cap` below
 /// [`clausters_core_peaks_cache_size`]`(n, base_bucket)`.
@@ -181,7 +181,7 @@ pub unsafe extern "C" fn clausters_core_peaks_build(
 }
 
 /// The exact byte length of the **multichannel** peak-pyramid cache for
-/// `frames` samples per channel across `channels` channels at `base_bucket` —
+/// `frames` samples per channel across `channels` channels at `base_bucket` --
 /// sizes the buffer for [`clausters_core_peaks_multi_build`] without building.
 /// Returns 0 if `base_bucket == 0`.
 #[unsafe(no_mangle)]
@@ -198,8 +198,8 @@ pub extern "C" fn clausters_core_peaks_multi_cache_size(
 
 /// Builds the multichannel peak-pyramid cache from `samples` (`n` `f32`s
 /// holding `channels` interleaved channels; a trailing partial frame is
-/// ignored) at `base_bucket`, writing the version-2 cache bytes — the single
-/// mappable resource an editor-grade waveform names as its `cache` — into
+/// ignored) at `base_bucket`, writing the version-2 cache bytes -- the single
+/// mappable resource an editor-grade waveform names as its `cache` -- into
 /// `out` (capacity `out_cap`). Returns the bytes written, or 0 on a null
 /// pointer, `base_bucket == 0` / `channels == 0`, or a too-small `out_cap`.
 ///
@@ -240,7 +240,7 @@ pub unsafe extern "C" fn clausters_core_peaks_multi_build(
 /// identical to rebuilding the cache from the edited samples, which is
 /// asserted core-side rather than assumed.
 ///
-/// `samples` is the **whole** buffer as it now stands, interleaved — a bucket
+/// `samples` is the **whole** buffer as it now stands, interleaved -- a bucket
 /// at either edge of the span holds untouched samples too. Returns the bytes
 /// written, or 0 on a null pointer, an unparseable cache, a buffer that is not
 /// the one the cache describes, or a cache whose re-serialization does not fit
@@ -288,7 +288,7 @@ pub unsafe extern "C" fn clausters_core_peaks_multi_update(
 }
 
 /// Writes the cache bytes of an **empty** multichannel pyramid over `frames`
-/// frames of `channels` channels at `base_bucket` — the summary of a take that
+/// frames of `channels` channels at `base_bucket` -- the summary of a take that
 /// has been allocated and not yet recorded into.
 ///
 /// Its sibling [`clausters_core_peaks_multi_build`] needs the samples to
@@ -325,7 +325,7 @@ pub unsafe extern "C" fn clausters_core_peaks_multi_empty(
 }
 
 /// Folds a run of **already-summarized buckets** into an existing multichannel
-/// cache, in place — the receiving half of `/buffer_stream`, which sends the
+/// cache, in place -- the receiving half of `/buffer_stream`, which sends the
 /// overview of the audio as it is written instead of the audio.
 ///
 /// `stats` is the reply's blob read as `n` `f32`s, **bucket-major and
@@ -340,7 +340,7 @@ pub unsafe extern "C" fn clausters_core_peaks_multi_empty(
 /// report on another grid (a `bucket` that is not the cache's own, a
 /// `start_frame` off a bucket boundary, a run past the end, or a length that
 /// is not whole buckets across every channel), or a re-serialization that does
-/// not fit — which cannot happen for an unchanged shape and is checked rather
+/// not fit -- which cannot happen for an unchanged shape and is checked rather
 /// than trusted. A refused report changes nothing.
 ///
 /// # Safety
@@ -380,10 +380,10 @@ pub unsafe extern "C" fn clausters_core_peaks_multi_write_buckets(
 }
 
 /// The stereo **correlation** (Pearson's r) of channels `left` and `right`
-/// (each `n` `f32`s): `+1` mono/in-phase, `0` decorrelated, `-1` anti-phase —
+/// (each `n` `f32`s): `+1` mono/in-phase, `0` decorrelated, `-1` anti-phase --
 /// the same measurement the GUI phasescope shows. Writes the coefficient into
 /// `*out` and returns 0; returns -1 (leaving `*out` untouched) when it is
-/// undefined (`n == 0` or a constant channel — silence/DC) or on a null pointer.
+/// undefined (`n == 0` or a constant channel -- silence/DC) or on a null pointer.
 ///
 /// # Safety
 /// `left`/`right` must be readable for `n` `f32`s and `out` writable for one.
@@ -413,7 +413,7 @@ pub unsafe extern "C" fn clausters_core_correlation(
 /// Maps `n` stereo pairs (`left`, `right`) to their **Lissajous / goniometer**
 /// coordinates, writing `2 * n` interleaved `f32`s `[x0, y0, x1, y1, …]` into
 /// `out`, where `x` is the side component `(L − R)/√2` and `y` the mid
-/// `(L + R)/√2` — the 45°-rotated stereo plane a goniometer draws. Returns 0, or
+/// `(L + R)/√2` -- the 45°-rotated stereo plane a goniometer draws. Returns 0, or
 /// -1 (leaving `out` untouched) on a null pointer.
 ///
 /// # Safety

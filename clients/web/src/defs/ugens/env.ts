@@ -2,14 +2,14 @@
 // (mirrors `clausters/defs/ugens/env.py`).
 //
 // `Env` is the shape, `envGen` plays it, and a `DoneAction` says what becomes
-// of the node when it ends — the one place in the package where a UGen's
+// of the node when it ends -- the one place in the package where a UGen's
 // completion reaches the node tree.
 
 import { Ugen } from "./graph.ts";
 import type { Channel } from "./graph.ts";
 
 /**
- * The action `envGen` takes when its envelope finishes — scsynth's full
+ * The action `envGen` takes when its envelope finishes -- scsynth's full
  * done-action set (0–15). The relative actions act on the synth's neighbours
  * in its group; a paused node is resumed with `Server.run` (`/node_run`).
  */
@@ -18,7 +18,7 @@ export const DoneAction = {
     NONE: 0,
     /** Pause the synth (stops processing; it stays in the tree). */
     PAUSE_SELF: 1,
-    /** Free the synth — the usual choice for a one-shot or a released note. */
+    /** Free the synth -- the usual choice for a one-shot or a released note. */
     FREE_SELF: 2,
     FREE_SELF_AND_PREV: 3,
     FREE_SELF_AND_NEXT: 4,
@@ -68,7 +68,7 @@ export type Curve = string | number;
 /**
  * A shape name (`"lin"`, `"exp"`, `"sin"`, …) or a numeric curvature as the
  * wire's `[shape, curve]` pair. A number selects the custom-curvature shape,
- * so a drawn segment and a played one agree by construction — which is why
+ * so a drawn segment and a played one agree by construction -- which is why
  * the GuiDef `bpf`/`clip` builders resolve their break-points through here.
  */
 export function resolveCurve(spec: Curve): [number, number] {
@@ -167,7 +167,7 @@ export class Env {
     }
 
     /**
-     * A step sequence: **each value held for its duration** — `levels` and
+     * A step sequence: **each value held for its duration** -- `levels` and
      * `times` have the *same* length, unlike the constructor.
      */
     static step(
@@ -222,8 +222,8 @@ export function envToPoints(env: Env, { timeAt = 0.0 }: { timeAt?: number } = {}
 }
 
 /**
- * A `bpf` breakpoint list — the flat `t v shape curve …` quads a `"points"`
- * event carries — as an `Env`: absolute times become segment durations and
+ * A `bpf` breakpoint list -- the flat `t v shape curve …` quads a `"points"`
+ * event carries -- as an `Env`: absolute times become segment durations and
  * each segment keeps its shape (the numeric curvature for the custom shape,
  * the shape name otherwise).
  *
@@ -313,7 +313,7 @@ export const detectSilence = (
 ): Ugen => new Ugen("DetectSilence", [signal, amp, time, Number(doneAction)]);
 
 /**
- * A single ramp from `start` to `end` over `dur` seconds, then held — an
+ * A single ramp from `start` to `end` over `dur` seconds, then held -- an
  * `envGen` with one linear segment, taking the same `DoneAction` set.
  */
 export const line = (
@@ -324,7 +324,7 @@ export const line = (
 ): Ugen => new Ugen("Line", [start, end, dur, Number(doneAction)]);
 
 /**
- * `line` in equal *ratios* rather than equal steps — the shape that reads as
+ * `line` in equal *ratios* rather than equal steps -- the shape that reads as
  * straight when it drives a frequency or a gain. `start` and `end` must be
  * non-zero and share a sign.
  */
@@ -337,7 +337,7 @@ export const xLine = (
 
 /**
  * Frees the enclosing synth while `signal` is greater than zero, passing it
- * through unchanged — the trigger-driven counterpart of a `DoneAction`.
+ * through unchanged -- the trigger-driven counterpart of a `DoneAction`.
  */
 export const freeSelf = (signal: Channel): Ugen => new Ugen("FreeSelf", [signal]);
 
@@ -348,14 +348,14 @@ export const freeSelf = (signal: Channel): Ugen => new Ugen("FreeSelf", [signal]
 export const pauseSelf = (signal: Channel): Ugen => new Ugen("PauseSelf", [signal]);
 
 /**
- * 1 once `source` has finished, 0 before — a trigger the rest of the graph
+ * 1 once `source` has finished, 0 before -- a trigger the rest of the graph
  * can read. `source` must be a UGen that *can* finish (`envGen`, `line`,
  * `xLine`); the server rejects the def by name otherwise.
  */
 export const done = (source: Channel): Ugen => new Ugen("Done", [source]);
 
 /**
- * Passes `source` through and frees the synth once it has finished — the
+ * Passes `source` through and frees the synth once it has finished -- the
  * idiom for an envelope whose own `doneAction` is `NONE` because something
  * else in the graph still needs it.
  */

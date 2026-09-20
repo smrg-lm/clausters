@@ -3,7 +3,7 @@
 //!
 //! A leaf of the widget catalog is two files, and the split is by *who asks*.
 //! The [`elements`](crate::host::elements) half is the surface the passes see: an
-//! `impl Element` answering `set`, `needs`, `natural`, `slot`, `body_role` —
+//! `impl Element` answering `set`, `needs`, `natural`, `slot`, `body_role` --
 //! one method per question the frame, the gesture machine or a `/gui_query`
 //! puts to it at a given moment. This half is what that element **knows**: the
 //! data shape, the geometry, the drawing over a [`Draw`],
@@ -15,8 +15,8 @@
 //! GPU device. Every module in it is unit-testable without a window, which is
 //! the property the whole crate leans on for its coverage.
 //!
-//! The dependency runs **one way** — an element reads its model, never the
-//! reverse — and the cardinality is why this is a parallel tree rather than a
+//! The dependency runs **one way** -- an element reads its model, never the
+//! reverse -- and the cardinality is why this is a parallel tree rather than a
 //! file beside each element: a model may serve several elements (the standard
 //! controls are one drawing for eight of them), may serve an element *and* a
 //! container's body (a piano roll draws the `notes` leaf and a clip's inside),
@@ -44,7 +44,7 @@ use crate::host::font;
 use crate::host::layout::Rect;
 use crate::host::paint::Draw;
 
-/// A read-out in a body's **top-right corner** — the slot a scope's
+/// A read-out in a body's **top-right corner** -- the slot a scope's
 /// `lock`/`free` state, a spectral view's scale tag and the frame's own overlay
 /// all put a short string in.
 ///
@@ -54,7 +54,7 @@ use crate::host::paint::Draw;
 ///
 /// **On a plate** ([`plate_text`]), and for the reason that helper exists: the
 /// corner is *inside the body*, so the ground under this line is whatever the
-/// view drew there — a trace, a spectrogram — and a tag written straight onto
+/// view drew there -- a trace, a spectrogram -- and a tag written straight onto
 /// it disappears wherever the two happen to share a color. The body's own
 /// corner is where a signal is least often quiet, not most.
 pub(crate) fn corner_text(d: &mut Draw, s: &str, body: Rect) {
@@ -82,7 +82,7 @@ pub(crate) fn corner_text(d: &mut Draw, s: &str, body: Rect) {
 ///
 /// The plate is the answer to a defect an eye pass found twice: a caption over
 /// a signal is written in one color and the signal draws in another, so
-/// wherever the two meet the text disappears into the trace — and the denser
+/// wherever the two meet the text disappears into the trace -- and the denser
 /// the drawing the less of the name survives. A ground of its own is what a
 /// label over a picture needs, and it is one multitrack rather than one per widget
 /// because the pixels a clip's name sits on and the ones a read-out sits on are

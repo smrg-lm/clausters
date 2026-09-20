@@ -22,7 +22,7 @@
   <body>
     <main>
       <div id="note">The web port of the Python client's
-<code>wavetables.py</code>: <b>the table family</b> — buffers filled by the
+<code>wavetables.py</code>: <b>the table family</b> -- buffers filled by the
 server itself, read as oscillators.
 
 Two <b>wavetable-format</b> buffers are filled with <code>/buffer_gen sine1</code>
@@ -31,11 +31,11 @@ bright harmonic stack. The wavetable flag stores the offset/slope pairs the
 interpolating readers expect. <code>vosc(pos, freq)</code> reads the table at
 <code>pos</code> and crossfades toward the next one by its fractional part, so
 a lagged <code>pos</code> gliding 0 → 1 <b>morphs</b> sine into saw while the
-note holds — which is why the two tables must be adjacent and equally sized.
+note holds -- which is why the two tables must be adjacent and equally sized.
 
 Buffer 2 holds a <code>cheby</code> transfer curve, and
 <code>shaper(2, sine(freq).mul(drive))</code> waveshapes a pure sine through
-it: raising <code>drive</code> fades harmonics in — distortion with an exact,
+it: raising <code>drive</code> fades harmonics in -- distortion with an exact,
 band-limited recipe instead of a clipped edge.</div>
 
       <div class="row">

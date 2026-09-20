@@ -2,7 +2,7 @@
 // produce them at.
 //
 // The destination here is a recorder rather than a server, so what is asserted
-// is the sequence itself — which event, at which logical beat. What goes on
+// is the sequence itself -- which event, at which logical beat. What goes on
 // the wire is `timed-send.test.ts`'s job.
 
 import assert from "node:assert/strict";

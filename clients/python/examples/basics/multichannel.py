@@ -10,21 +10,21 @@ Runs from the *installed* package, offline, like ``buffers/offline_render.py``::
 The point of interest is the two `dup` semantics and the fold:
 
 - ``dup(lambda: sine(rand(...)), 12)`` **evaluates** the callable 12 times:
-  twelve *distinct* sines, each with its own frozen `rand` detune — a thick
+  twelve *distinct* sines, each with its own frozen `rand` detune -- a thick
   unison bank. (``dup(node, n)`` would repeat one sine **by reference**:
   cheap, but twelve identical channels.)
 - Operators **broadcast** over the list (``bank * env`` scales every channel
-  by the same envelope, shared by reference) — no loop written.
+  by the same envelope, shared by reference) -- no loop written.
 - ``mix(bank)`` folds the twelve channels through the fused sums
   (`Sum4`/`Sum3`, not an `Add` chain), back to one signal.
 - ``out(0, dup(sig))`` is the reference dup at its best: the mixed signal
-  fanned to buses 0 and 1 — stereo out, one graph.
+  fanned to buses 0 and 1 -- stereo out, one graph.
 
 And the container is an **expression** like any other, so it needs no def of
 its own to be heard or rendered: ``render(chans(a, b), channels=2)`` bounces it
 and ``play(sine(440).dup())`` sounds it in stereo on a live server. The channels
 land on buses 0, 1, … in order, which is why the render must have at least as
-many outputs as the expression writes — asking for fewer raises rather than
+many outputs as the expression writes -- asking for fewer raises rather than
 dropping half the take.
 
 This file is organized as ``# %%`` cells (the VS Code / Jupyter convention).
@@ -53,7 +53,7 @@ from clausters.defs import (
 )
 
 #: Where a run leaves its file when no path is given: ``examples/out/``, the
-#: git-ignored directory every generator in this tree writes to — beside the
+#: git-ignored directory every generator in this tree writes to -- beside the
 #: examples rather than in whatever directory you ran from. Made here so that
 #: rendering is one call and not two.
 OUT = pathlib.Path(__file__).resolve().parents[1] / "out"
@@ -103,7 +103,7 @@ def sequence():
         yield dur
     # The score's closing event, a release after the last gate: a render ends
     # at its last event, so without this one the file would stop where that
-    # gate closed and the 1.2 s release would be cut — a click at the end.
+    # gate closed and the 1.2 s release would be cut -- a click at the end.
     yield 3.0
     session.server.send_bundle(("/node_free", 0))
 

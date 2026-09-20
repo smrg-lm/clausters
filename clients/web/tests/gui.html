@@ -17,7 +17,7 @@
     <main>
       <div>the GuiDef builders and <code>GuiHost</code> over the in-page
         carrier: a panel built here, opened on the wasm host in this page, then
-        <em>played with</em> — an unbound control's move comes back as a
+        <em>played with</em> -- an unbound control's move comes back as a
         <code>/gui_event</code>, a bound one drives the engine in this tab's
         AudioWorklet with no round trip through this script.</div>
       <button id="boot">boot + drive</button>
@@ -27,10 +27,10 @@
     <!--
       The in-page half of W2's acceptance (clients/web/test.sh, headless
       Chrome): ?smoke=1 auto-runs. The gestures are synthesized as pointer
-      events on the host's canvas — the same path a user's hand takes, so what
+      events on the host's canvas -- the same path a user's hand takes, so what
       is asserted is the host's own interaction, not a simulated one. Verdict
-      beaconed as a fetch, read from the HTTP access log. The WS half — the
-      same client against a native `clausters-gui --ws` — is
+      beaconed as a fetch, read from the HTTP access log. The WS half -- the
+      same client against a native `clausters-gui --ws` -- is
       tests/gui-host.test.ts.
     -->
     <script type="module">
@@ -57,7 +57,7 @@
       //
       // `kind` is the pointer type. It is not cosmetic: the host receives a
       // "mouse" pointer as the cursor/button events a desktop sends, and a
-      // "touch" one as winit's separate touch events — two code paths, so a
+      // "touch" one as winit's separate touch events -- two code paths, so a
       // phone is only covered if a gesture is also played through the second.
       function pointer(canvas, type, x, y, buttons, kind = "mouse") {
         const rect = canvas.getBoundingClientRect();
@@ -87,12 +87,12 @@
         log(`playing node ${synth.id}`);
 
         // The GUI side: the same panel a script would write, over the in-page
-        // host — nothing here names a carrier.
+        // host -- nothing here names a carrier.
         const host = await new GuiHost({ engine: server.engine }).boot();
         const tree = gui.view(
           { title: "driven from TypeScript", w: 480, h: 300, layout: "col",
             margin: 8.0, gap: 8.0 },
-          gui.label("knob: bound to the engine — slider: back to this script",
+          gui.label("knob: bound to the engine -- slider: back to this script",
                     { h: 28 }),
           gui.knob({ name: "freq", min: 50.0, max: 2000.0, value: 220.0, h: 110 }),
           gui.slider({ name: "cutoff", min: 0.0, max: 1.0, value: 0.2, h: 110 }),
@@ -237,7 +237,7 @@
         }
 
         synth.free();
-        verdict(`PASS: page GUI carrier — event ${JSON.stringify(events[0])}, `
+        verdict(`PASS: page GUI carrier -- event ${JSON.stringify(events[0])}, `
           + `bound freq ${before} -> ${after}, touch ${touched}, subtree freed`);
       }
 

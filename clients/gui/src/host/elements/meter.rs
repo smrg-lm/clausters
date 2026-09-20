@@ -1,8 +1,8 @@
-//! `meter` — a bus level as a column, with everything a meter is read by.
+//! `meter` -- a bus level as a column, with everything a meter is read by.
 //!
 //! The smallest thing that reads the **world**: one bus per channel, one read
-//! per tick, nothing else. Which table that read lands in is the `rate` prop —
-//! an audio bus publishes one block level, a control bus carries a value — and
+//! per tick, nothing else. Which table that read lands in is the `rate` prop --
+//! an audio bus publishes one block level, a control bus carries a value -- and
 //! both are one atomic load out of the same source, so a meter costs neither a
 //! message nor a recording. That is also the whole of what it declares: a
 //! control-rate meter contributes its buses to the frame's stream
@@ -15,15 +15,15 @@
 //!
 //! - **The peak is the block's, not a sample of it.** The server walks every
 //!   sample of every block and publishes the peak, held with a decay
-//!   (`LEVEL_RELEASE_DB_PER_SEC`), so a reader running at a screen's rate — a
-//!   frame is a dozen blocks — sees the transient instead of whatever sample it
+//!   (`LEVEL_RELEASE_DB_PER_SEC`), so a reader running at a screen's rate -- a
+//!   frame is a dozen blocks -- sees the transient instead of whatever sample it
 //!   happened to look at. At control rate the `Meter` UGen does the same and
 //!   the bus carries the answer.
 //! - **A peak is held.** [`Ballistics`] keeps the loudest reading `hold`
 //!   seconds and then lets it fall at `decay` decibels per second, which is the
 //!   hairline across the column: the mark is still there when an eye gets to
 //!   it.
-//! - **The scale is decibels**, from a floor the reader states — the 60 dB
+//! - **The scale is decibels**, from a floor the reader states -- the 60 dB
 //!   strip a mix is read on, or the dynamic range of the resolution the multitrack
 //!   is rendered at (`bits`).
 //! - **An over is latched.** Clipping is a handful of samples and a person is
@@ -85,7 +85,7 @@ pub struct Meter {
     /// and no figures, because there is no room for either and the picture is
     /// the whole of what it has to say.
     pub readout: bool,
-    /// **What the level on the bus is** — the largest sample, or the true peak
+    /// **What the level on the bus is** -- the largest sample, or the true peak
     /// of the reconstructed signal a `TruePeak` UGen writes.
     pub peak: Peak,
     pub label: Option<String>,
@@ -110,7 +110,7 @@ pub enum Peak {
     #[default]
     Sample,
     /// The peak of the reconstructed signal between the samples, in dBTP, as a
-    /// `TruePeak` UGen writes it — read against -1 dBTP rather than full scale.
+    /// `TruePeak` UGen writes it -- read against -1 dBTP rather than full scale.
     True,
 }
 
@@ -166,7 +166,7 @@ fn floor_of(props: &Map<String, Value>) -> f32 {
     }
 }
 
-/// The props a `meter` node carries, read once — shared by the constructor and
+/// The props a `meter` node carries, read once -- shared by the constructor and
 /// by the tests beside it.
 fn from_props(props: &Map<String, Value>) -> Meter {
     let rate = Rate::parse(props.get("rate").and_then(Value::as_str));
@@ -195,7 +195,7 @@ fn from_props(props: &Map<String, Value>) -> Meter {
 }
 
 /// Which side the numbers fall on. A meter drawn in decibels carries them
-/// unless told not to — a scale nobody can read is a bar — and one drawn over a
+/// unless told not to -- a scale nobody can read is a bar -- and one drawn over a
 /// plain range carries none, there being no ladder to draw.
 fn ruler_of(props: &Map<String, Value>, axis: MeterAxis) -> Option<Side> {
     let default = matches!(axis, MeterAxis::Decibels { .. }).then_some(Side::Left);
@@ -255,7 +255,7 @@ impl Meter {
         self.peak == Peak::True && self.rate == Rate::Control
     }
 
-    /// Puts every lamp out — the hand's verb, and the only one the widget has.
+    /// Puts every lamp out -- the hand's verb, and the only one the widget has.
     fn clear(&mut self) {
         for ch in &mut self.state {
             ch.latch.clear();
@@ -350,7 +350,7 @@ impl Element for Meter {
 
     /// One tick advances what a meter *keeps*: the level it shows, the mark
     /// that waits and the lamp that stays. All three are time-based, so they
-    /// belong to the tick and not to the repaint — a window that redraws twice
+    /// belong to the tick and not to the repaint -- a window that redraws twice
     /// must not let a peak fall twice.
     fn tick(&mut self, live: &Live) {
         let ceiling = self.ceiling();
@@ -402,8 +402,8 @@ impl Element for Meter {
 
     /// **A click puts the lamps out.** The one thing a hand does to a meter,
     /// and the reason the mark is latched at all: a reader clears it when they
-    /// have seen it, and what happens after that is news. It reports nothing —
-    /// the latch is the reader's state, not the multitrack's — so a window full of
+    /// have seen it, and what happens after that is news. It reports nothing --
+    /// the latch is the reader's state, not the multitrack's -- so a window full of
     /// meters is silent on the wire however much it is clicked.
     fn press(&mut self, _at: (f64, f64), _input: &Input) -> Claim {
         self.clear();
@@ -413,7 +413,7 @@ impl Element for Meter {
     fn needs(&self) -> Needs {
         // The rate picks the table, so it picks the declaration: samples are
         // never recorded for a meter, at either rate. The clip counts are
-        // control buses whatever the level's rate is — they are a count, and a
+        // control buses whatever the level's rate is -- they are a count, and a
         // count is a value.
         let level: Vec<i32> = (0..self.channels as i32).map(|i| self.bus + i).collect();
         let counts: Vec<i32> = self
@@ -577,7 +577,7 @@ mod tests {
     /// The declaration *is* the rate: a control-rate meter asks for its buses
     /// to be streamed, an audio-rate one asks for published levels, and neither
     /// ever asks the server to record samples. A clip count is a control bus at
-    /// either rate — it is a count, and a count is a value.
+    /// either rate -- it is a count, and a count is a value.
     #[test]
     fn the_rate_picks_what_is_declared() {
         let control = from_props(&props(r#"{"bus":3,"rate":"control","channels":2}"#)).needs();
@@ -603,7 +603,7 @@ mod tests {
         assert_eq!(read(r#"{"bus":5}"#), 0.05);
     }
 
-    /// The mark holds where the level was, then falls at the declared rate —
+    /// The mark holds where the level was, then falls at the declared rate --
     /// the half of a meter that waits to be read.
     #[test]
     fn the_mark_holds_and_then_falls() {

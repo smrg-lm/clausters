@@ -1,11 +1,11 @@
 """Editing a **multitrack**: the picture, the report and the history.
 
 `clausters.gui.editing.MultitrackEditor` is the multitrack as one of the
-fundamental structures — which is what gives it the undo every other editor has.
+fundamental structures -- which is what gives it the undo every other editor has.
 What is checked here is the seam rather than the mapping: the mapping is the
 crate's (`clausters._native.multitrack_props`/`editing_intake`, the same one
 the standalone host draws and reads with), so what could still be wrong is this
-client's half — the axis a box crosses to, which buffer a source was read into,
+client's half -- the axis a box crosses to, which buffer a source was read into,
 and whether a report that means several edits lands as **one** entry.
 """
 
@@ -87,7 +87,7 @@ def test_a_row_per_track_and_a_box_per_region():
 
 def test_the_widget_is_told_the_flat_rows_and_not_one_row_per_number():
     """The props are already the wire's, so the node is made from them rather
-    than through the `multitrack` builder — whose `lanes`/`clips` are the
+    than through the `multitrack` builder -- whose `lanes`/`clips` are the
     *tuples* a script types, and which flattened an already-flat list a second
     time: seven rows named `10`, `one`, `96.0`, `False`, `False`, `1.0`,
     `False`.
@@ -105,7 +105,7 @@ def test_the_widget_is_told_the_flat_rows_and_not_one_row_per_number():
 
 
 def test_the_multitrack_is_ruled_from_above_by_a_strip_of_its_own():
-    """An editor is where a position is read, and the widget draws no ruler —
+    """An editor is where a position is read, and the widget draws no ruler --
     so the view places one above it, on the multitrack's own axis.
 
     The two have to be in **one navigation group**: an unlinked widget is a
@@ -132,7 +132,7 @@ def test_the_position_cursor_is_kept_and_told_and_is_not_an_edit():
     ed = editor(multitrack())
     ed.draw()
     # **It arrives on the ruler**, which is where it is placed and nowhere else
-    # — so the strip is a named widget of this picture like any other, or the
+    # -- so the strip is a named widget of this picture like any other, or the
     # one gesture that places the cursor would land outside the only object
     # that could hear it.
     rid = ed.view.ruler
@@ -154,7 +154,7 @@ def test_the_position_cursor_is_kept_and_told_and_is_not_an_edit():
 
 def test_buffer_zero_is_a_buffer():
     """The first buffer an allocator hands out is a buffer, and a box over it
-    draws — `x or -1` said it did not, so the first take a script loaded was
+    draws -- `x or -1` said it did not, so the first take a script loaded was
     the one take its boxes could not draw.
 
     Found by use 2026-09-10, on the box the example loads first.
@@ -202,7 +202,7 @@ def test_a_move_reaches_the_multitrack_and_undoes():
 
 
 def test_a_block_move_is_one_entry():
-    """A report is the multitrack, so one message can mean several edits — and they
+    """A report is the multitrack, so one message can mean several edits -- and they
     are one thing a hand did, so `Ctrl`+`Z` walks back over all of it."""
     held = multitrack()
     ed = editor(held)
@@ -230,7 +230,7 @@ def test_a_clip_that_crossed_changes_track_and_undoes():
 
 def test_a_box_the_multitrack_does_not_know_becomes_a_region():
     """A split names its halves after the box they came from, which is no
-    region id — and that is how a new box is told from a moved one."""
+    region id -- and that is how a new box is told from a moved one."""
     held = multitrack()
     ed = editor(held)
     assert report(ed, [("12", "10", 0.0, 1.0 * SR),
@@ -331,7 +331,7 @@ def test_every_curve_s_points_travel_in_one_list_on_this_window_s_axis():
 
 
 def test_a_point_dragged_is_one_edit_and_the_curve_that_did_not_move_is_not():
-    """The report is every curve there is, so what it means is the difference —
+    """The report is every curve there is, so what it means is the difference --
     and an undo puts the shape back, since the crate carries a point's data
     without reading it."""
     written = curved()
@@ -383,7 +383,7 @@ class FakeTake:
 
 def test_entering_a_box_opens_its_contents_on_the_multitrack_s_history():
     """The multitrack places; a box is entered to edit. What a box holds is a
-    structure like any other, so entering one is `edit` over that structure —
+    structure like any other, so entering one is `edit` over that structure --
     and it is opened on the **multitrack's** editing context, so one undo order
     walks both."""
     take = FakeTake(7)
@@ -427,7 +427,7 @@ class TakeServer:
 
 
 class Take(FakeTake):
-    """A take the samples editor can write a stroke into — `FakeTake` plus the
+    """A take the samples editor can write a stroke into -- `FakeTake` plus the
     server its writes go to."""
 
     def __init__(self, bufnum: int = 7, n: int = 16):
@@ -453,7 +453,7 @@ def test_a_reopened_box_undoes_its_own_edit_and_not_the_multitracks():
     window steps. The identity is the **context's**, minted per structure, so
     the new editor projects the legs the old one recorded.
 
-    Written 2026-09-09 while diagnosing `G35.6` — an undo in a reopened box's
+    Written 2026-09-09 while diagnosing `G35.6` -- an undo in a reopened box's
     window stepping the multitrack's last edit. It does not reproduce here, on
     either the samples path or a nested multitrack, which is what rules the client's
     registration and the samples domain's inverse out of it.
@@ -493,11 +493,11 @@ def test_a_box_closed_does_not_block_the_multitrack_s_undo():
     """**The pile's scope is the context's, not a window's.**
 
     An entry names a structure, and what puts an edit back onto one is its
-    *vocabulary* — neither of which is on screen. When the applier was a **view**
+    *vocabulary* -- neither of which is on screen. When the applier was a **view**
     instead, a box entered from a multitrack and then closed left an entry nobody
     could apply: the step was refused, and since a refused step puts the cursor
     back, the very next undo hit the same entry. The pile was not missing one
-    step, it was **blocked** — every edit the multitrack had made behind that entry
+    step, it was **blocked** -- every edit the multitrack had made behind that entry
     was unreachable until the box was opened again.
 
     Found by use 2026-09-12, by hand, in `examples/editors/edit_multitrack.py`.
@@ -572,7 +572,7 @@ def test_the_windows_entered_from_a_multitrack_close_with_it():
 
 def test_a_gesture_that_changed_the_data_says_so_once():
     """The script's door onto an edit: one call per gesture however many edits
-    it took, because that is what a hand did — and a window is not exempt from
+    it took, because that is what a hand did -- and a window is not exempt from
     being told about its own gesture."""
     ed = editor(multitrack())
     told = []
@@ -651,7 +651,7 @@ def _plan(ed) -> dict:
     """The instance plan for an editor's multitrack, the way `Playback` asks for it.
 
     The plan itself is the crate's and is tested there; what these check is the
-    **crossing** — that this client hands it the multitrack, the axis and the source
+    **crossing** -- that this client hands it the multitrack, the axis and the source
     table it actually holds, which is the half a client can get wrong on its
     own.
     """
@@ -677,7 +677,7 @@ def test_a_box_is_planned_in_frames_from_where_its_window_opens():
 
 def test_a_muted_box_and_an_unloaded_source_are_not_read():
     """Two different answers: a muted box is planned at nothing, and a box whose
-    source nobody loaded is not planned at all — the second is a multitrack that
+    source nobody loaded is not planned at all -- the second is a multitrack that
     arrived without its takes, which is not the same as a silent one."""
     ed = editor(multitrack())
     region = ed.structure.tracks[0].lanes[0].regions[0]
@@ -692,7 +692,7 @@ def test_a_muted_box_and_an_unloaded_source_are_not_read():
 
 def test_the_source_table_carries_the_width_that_picks_the_wiring():
     """A mono take is panned into its track and a stereo one is balanced, so
-    which clip def a box goes in follows from the source's width — and the width
+    which clip def a box goes in follows from the source's width -- and the width
     is the client's to report, since only it loaded the samples."""
     ed = editor(multitrack())
     table = ed.bridge.sources.table()
@@ -704,7 +704,7 @@ def test_the_source_table_carries_the_width_that_picks_the_wiring():
 
 def test_the_mixer_rules_reach_the_plan_and_a_solo_silences_the_rest():
     """The document holds the flags and never reads them: what a track
-    contributes is the mixer's rule, and the mixer is in the crate — so both
+    contributes is the mixer's rule, and the mixer is in the crate -- so both
     clients get the same answer instead of each writing one."""
     ed = editor(multitrack())
     p = ed.structure

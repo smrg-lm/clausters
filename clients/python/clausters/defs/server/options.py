@@ -1,6 +1,6 @@
 """The client-owned server configuration, and what a running server reports.
 
-`ServerOptions` is the enumeration of every option a launched server takes —
+`ServerOptions` is the enumeration of every option a launched server takes --
 it sizes the handle's allocators and builds the process's command line.
 `ServerInfo` is the answer to `Server.query_info`: what the server it is
 talking to was actually built and booted with, which is not always the same
@@ -43,13 +43,13 @@ DEFAULT_TAP_FRAMES = 16384
 @dataclass
 class ServerOptions:
     """Client-owned server configuration, the way SuperCollider's
-    ``ServerOptions`` works — the one enumeration of every option a launched
+    ``ServerOptions`` works -- the one enumeration of every option a launched
     server takes (`Server.boot` / `Session.live` accept it as ``options``).
     Two families of fields, with different defaulting:
 
     - **Sizing** (buses, pools, taps, hardware I/O): these also size the
       client's allocators, so their defaults read the same config file the
-      server reads and `args` always emits them — the launched server and
+      server reads and `args` always emits them -- the launched server and
       this object agree by construction. Verify a running server with
       `Server.query_info`.
     - **Behavior** (``workers``, ``tcp``, ``ws``, ``midi``, ``persist``,
@@ -116,14 +116,14 @@ class ServerOptions:
     #: OSC over WebSocket: ``True`` opens it at the default port (57120), a
     #: number picks the port, a string binds it (``--ws [addr:]port``, e.g.
     #: ``"0.0.0.0:57120"`` for a browser on another machine). There is no off
-    #: flag — leave ``None`` and keep it out of the server's config to run
+    #: flag -- leave ``None`` and keep it out of the server's config to run
     #: without it.
     ws: "bool | int | str | None" = None
     #: Virtual MIDI input: ``True`` opens it with the default name, a string
     #: names the port (``--midi [name]``).
     midi: "bool | str | None" = None
     #: Def persistence: ``False`` disables it for this run (``--no-persist``).
-    #: There is no force-on flag — ``True`` is expressible only by keeping
+    #: There is no force-on flag -- ``True`` is expressible only by keeping
     #: ``persist = false`` out of the server's config.
     persist: "bool | None" = None
     #: Largest OSC frame on the stream transports, bytes (``--max-frame``).
@@ -135,7 +135,7 @@ class ServerOptions:
     #: Concurrent stream clients, TCP + WebSocket (``--max-clients``).
     max_clients: "int | None" = None
     #: The audio host/backend by name (``--host``): ``"jack"``, ``"alsa"``,
-    #: ``"pipewire"``, ``"coreaudio"``, ``"wasapi"`` — whatever the build
+    #: ``"pipewire"``, ``"coreaudio"``, ``"wasapi"`` -- whatever the build
     #: has. ``None`` takes the platform's default.
     host: "str | None" = None
     #: The output device by name (``--device``), exact or a substring of one.
@@ -174,7 +174,7 @@ class ServerOptions:
         if self.outputs is not None:
             flags += ["--outputs", str(self.outputs)]
         # Behavior flags: emitted only when set (`None` defers to the
-        # server's own config). `is True`/`is False` first — a bool is an
+        # server's own config). `is True`/`is False` first -- a bool is an
         # int, so the port/number branch must come after.
         if self.workers is not None:
             flags += ["--workers", str(self.workers)]

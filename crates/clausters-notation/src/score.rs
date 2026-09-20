@@ -1,8 +1,8 @@
 //! The libverovio binding of the editable score: what an [`Engraver`] call is,
 //! natively.
 //!
-//! The score model itself — the order an edit is made in, when the layout is
-//! re-run and reloaded, the undo stack of MEI snapshots — is
+//! The score model itself -- the order an edit is made in, when the layout is
+//! re-run and reloaded, the undo stack of MEI snapshots -- is
 //! [`clausters_core::notation::Score`], because all of it is logic and both
 //! clients run it. What is here is the crossing: [`Toolkit`] implements the
 //! [`Engraver`] port over libverovio's C wrapper, and [`open`] builds one with
@@ -20,7 +20,7 @@ use crate::verovio::{
 
 pub use clausters_core::notation::{NoteEvent, Page};
 
-/// An editable score over the native engraver — the type the C ABI hands out.
+/// An editable score over the native engraver -- the type the C ABI hands out.
 pub type Score = CoreScore<Toolkit>;
 
 impl Engraver for Toolkit {
@@ -60,7 +60,7 @@ impl Engraver for Toolkit {
 }
 
 /// Open `data` (a score in any format verovio auto-detects) on a fresh toolkit
-/// and keep the document open. `opts.page` is ignored — the page to draw is
+/// and keep the document open. `opts.page` is ignored -- the page to draw is
 /// chosen per call in [`Score::display_list`].
 ///
 /// The constructor is here rather than on [`Score`] because building the
@@ -84,7 +84,7 @@ mod tests {
     use super::*;
 
     /// verovio's `keyDown` code for the up arrow (`vrvdef.h`), as the core's
-    /// `transpose` sends it — spelled out here because the raw-hatch test is
+    /// `transpose` sends it -- spelled out here because the raw-hatch test is
     /// what proves the two reach the same editor action.
     const KEY_UP: i32 = 38;
     use clausters_core::notation::{Slot, voice_to_mei};
@@ -150,7 +150,7 @@ mod tests {
     }
 
     /// The absolute form lands on the position it names, whatever the note's
-    /// own is — the property that lets an edit cross a wire.
+    /// own is -- the property that lets an edit cross a wire.
     #[test]
     fn transposing_to_a_position_lands_on_it() {
         let mut sc = score();

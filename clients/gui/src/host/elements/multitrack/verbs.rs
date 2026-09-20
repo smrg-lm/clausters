@@ -11,7 +11,7 @@ use super::*;
 
 impl Multitrack {
     /// **The edit-back: the clips as they now are.** One payload for every
-    /// gesture there is — a move, a trim, a lane crossed, a block — because
+    /// gesture there is -- a move, a trim, a lane crossed, a block -- because
     /// what is reported is the multitrack and not what the hand did to it.
     pub(super) fn clips_event(&self) -> Events {
         let mut args = vec![OscType::String("clips".into())];
@@ -23,7 +23,7 @@ impl Multitrack {
 
     /// **The edit-back for the mixer: the lanes as they now are.** The second
     /// of the two payloads, and separate from the clips for the reason they are
-    /// two structures — a fader moved must not resend every clip.
+    /// two structures -- a fader moved must not resend every clip.
     pub(super) fn lanes_event(&self) -> Events {
         let mut args = vec![OscType::String("lanes".into())];
         if let Value::Array(flat) = model::lanes_json(&self.lanes) {
@@ -90,7 +90,7 @@ impl Multitrack {
     /// beginning again); one that does not **stops at the last frame**, because
     /// past it there is nothing to show and nothing to play; and a box over
     /// samples nobody loaded stops at nothing, since there is no length to stop
-    /// at — which is the silence the edge used to leave in every case.
+    /// at -- which is the silence the edge used to leave in every case.
     pub(super) fn contents_of(&self, n: usize) -> Contents {
         let Some(clip) = self.clips.get(n) else {
             return Contents::default();
@@ -105,12 +105,12 @@ impl Multitrack {
         }
     }
 
-    /// **Whether box `name`'s window wraps** — what the `loops` prop names.
+    /// **Whether box `name`'s window wraps** -- what the `loops` prop names.
     pub(super) fn wraps(&self, name: &str) -> bool {
         self.loops.iter().any(|n| n == name)
     }
 
-    /// A name no lane here has yet — a word, since the client's own names are
+    /// A name no lane here has yet -- a word, since the client's own names are
     /// ids and a word can never be mistaken for one.
     pub(super) fn fresh_lane_name(&self) -> String {
         let mut n = 1;
@@ -123,7 +123,7 @@ impl Multitrack {
         }
     }
 
-    /// A name no clip here has yet, derived from `base` — what a **split** needs
+    /// A name no clip here has yet, derived from `base` -- what a **split** needs
     /// and what a **paste** needs.
     ///
     /// The identity is the client's word, and a split makes one the client never
@@ -148,8 +148,8 @@ impl Multitrack {
 
     /// **Cut every held clip at `at`**, keeping the halves in the hand.
     ///
-    /// The window over the contents moves with the cut — `boxes::split_at`
-    /// is the arithmetic, the same one a note's split uses — so the second half
+    /// The window over the contents moves with the cut -- `boxes::split_at`
+    /// is the arithmetic, the same one a note's split uses -- so the second half
     /// reads on from where the first stopped rather than from the source's
     /// start.
     pub(super) fn split_held(&mut self, at: f64) -> bool {
@@ -168,7 +168,7 @@ impl Multitrack {
     ///
     /// A join is the one verb here that is *asked for* rather than performed.
     /// Every other one edits the picture and reports it, and what it meant is
-    /// read back out of the difference — but a join and a "delete one, lengthen
+    /// read back out of the difference -- but a join and a "delete one, lengthen
     /// the other" leave a lane holding exactly the same thing, and a box in a
     /// `clips` report names **one** source and one start, so fragments joined
     /// into one box have no report that describes them.
@@ -178,7 +178,7 @@ impl Multitrack {
     /// (`clausters_document::multitrack::picture::read_join`): it knows what
     /// each box reads, this only knows what each box is called. So the widget
     /// says which boxes, and the answer comes back as the picture that now
-    /// holds — including the refusals, which are about the material rather than
+    /// holds -- including the refusals, which are about the material rather than
     /// about the picture and which this could not have made.
     pub(super) fn join_event(&self) -> Events {
         let mut args = vec![OscType::String("join".into())];
@@ -249,7 +249,7 @@ impl Multitrack {
         ]
     }
 
-    /// The break-points of a curve as one comparable value — what says on
+    /// The break-points of a curve as one comparable value -- what says on
     /// release whether the gesture changed anything, since a drag that came
     /// back to where it began is not an edit.
     pub(super) fn points_of(&self, name: &str) -> Value {

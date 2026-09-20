@@ -7,13 +7,13 @@
 use super::*;
 
 impl Multitrack {
-    /// **Which of clip `n`'s grips is lit**, and where — the affordance for the
+    /// **Which of clip `n`'s grips is lit**, and where -- the affordance for the
     /// resize gesture, or `None` for a box nobody is reaching for.
     ///
     /// Two answers in one, and the order is the whole of the fix. **A held edge
     /// draws its grip wherever the pointer has got to**: pulling an edge takes
-    /// the pointer off the box within a pixel or two — that is what pulling an
-    /// edge *is* — so asking where the pointer is made the mark blink out under
+    /// the pointer off the box within a pixel or two -- that is what pulling an
+    /// edge *is* -- so asking where the pointer is made the mark blink out under
     /// the hand that was using it. What the hand is holding is known here, so it
     /// is asked first. With nothing held it is the pointer's own side, which is
     /// where an affordance belongs: lit always, every box carries two marks
@@ -42,7 +42,7 @@ impl Multitrack {
         })
     }
 
-    /// **Where each box is on screen, and the slice of its own span it shows** —
+    /// **Where each box is on screen, and the slice of its own span it shows** --
     /// the geometry the drawing and the texture pass both read, so a picture
     /// drawn on the mesh and one uploaded to the GPU land on the same pixels.
     ///
@@ -121,7 +121,7 @@ impl Multitrack {
         out
     }
 
-    /// **Where every drawn curve is, and the space it is drawn against** — the
+    /// **Where every drawn curve is, and the space it is drawn against** -- the
     /// rows under their lanes and the layers inside their boxes, in the order
     /// they are drawn.
     ///
@@ -130,8 +130,8 @@ impl Multitrack {
     /// absent: what is not drawn is not edited either.
     ///
     /// The two placements differ in exactly two facts, and this is where they
-    /// are decided. A **row** spans the whole timeline — a track's gain does not
-    /// begin and end with a box — so it is handed the shared window over the
+    /// are decided. A **row** spans the whole timeline -- a track's gain does not
+    /// begin and end with a box -- so it is handed the shared window over the
     /// multitrack's own extent. A **layer** spans its box, so it is handed the box's
     /// local window over the box's own duration, the same [`TimeSpace`] the base
     /// view under it draws through.
@@ -247,12 +247,12 @@ impl Multitrack {
             let clip = &self.clips[n];
             track::draw_clip(d, cr, self.selected.contains(&n));
             // **The take, drawn from the source per visible pixel**, mapped
-            // back through the clip's own window onto it — which is what makes
+            // back through the clip's own window onto it -- which is what makes
             // the picture scroll and trim *with* the box instead of squashing
             // into whatever rectangle it currently has. One pyramid however
             // many clips read it.
             // **The base view is what its contents are.** Samples draw as the
-            // signal element's body, notes as the roll's — the very elements
+            // signal element's body, notes as the roll's -- the very elements
             // that stand on their own elsewhere, handed the box's own axis and
             // drawing no chrome of their own. A box with neither draws its
             // frame and nothing in it, which is the honest picture of a window
@@ -275,7 +275,7 @@ impl Multitrack {
             track::draw_clip_label(d, cr, clip.shown());
             // **The grips are drawn where they are grabbed.** An end that is
             // off screen has no grip, because a handle for an edge nobody can
-            // see is a handle for nothing — the same rule a lane's clip keeps.
+            // see is a handle for nothing -- the same rule a lane's clip keeps.
             // **A grip is an affordance, so it is shown where the hand is.**
             // Drawn always, every clip carries two marks nobody is reaching
             // for; drawn on the side the pointer is over, it says *this edge

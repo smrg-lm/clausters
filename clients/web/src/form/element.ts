@@ -1,34 +1,34 @@
-// The arrangement — elements and their temporal character (mirrors
+// The arrangement -- elements and their temporal character (mirrors
 // `clausters/form/element.py`).
 //
 // The client-side layer under a multitrack editor of recursive granularity: it
 // places elements in time, groups them recursively and renders them. An
 // `Element` is an arbitrarily delimited entity that produces a unit of meaning
-// and can be decomposed or combined — *generated* (the rendered thing, editable
+// and can be decomposed or combined -- *generated* (the rendered thing, editable
 // and random-access) or a *generator* (the algorithm that renders it,
 // forward-only), with the change of state between them. It is a **thin
 // adornment** over the objects the client already has (`seq.Event`,
 // `seq.Timeline`, a `Buffer`, a `Pattern`, a def): it carries the temporal
 // metadata (`onset`, `duration`, and the derived temporal *character*) and
 // belongs to an `Aggregate`, while it **delegates playing** to the wrapped
-// item's `play(destination)` — the double-dispatch seam every leaf item in the
+// item's `play(destination)` -- the double-dispatch seam every leaf item in the
 // client already shares. The arrangement does not reimplement or subclass those
 // objects.
 //
 // The five primitives map one-to-one onto what the client already has:
 //
-// - `Clang`     — *event/clip*: parameters grouped into one action (internally
+// - `Clang`     -- *event/clip*: parameters grouped into one action (internally
 //   simultaneous), with its own onset/duration. Wraps `seq.Event`.
-// - `Sequence`  — *List*: strict order with no concrete time, only sequence.
+// - `Sequence`  -- *List*: strict order with no concrete time, only sequence.
 //   Wraps an array or a `Pattern`.
-// - `Vector`    — *Vector*: a list at constant time (audio or control samples).
+// - `Vector`    -- *Vector*: a list at constant time (audio or control samples).
 //   Wraps a `Buffer`. `Segments` is the same primitive assembled from
-//   **several** windows — which buffer, from which frame, for how long — read as
+//   **several** windows -- which buffer, from which frame, for how long -- read as
 //   one thing; it is not a sixth primitive, it is what a list at constant time
 //   looks like when the constant time comes from more than one place.
-// - `Track`     — *Set*: mixed placement of elements, a DAW track. Wraps
+// - `Track`     -- *Set*: mixed placement of elements, a DAW track. Wraps
 //   `seq.Timeline`.
-// - `Generator` — *Function*: a generator element — server DSP (a def) or a
+// - `Generator` -- *Function*: a generator element -- server DSP (a def) or a
 //   sequence generator (`Pbind`/`Routine`).
 //
 // Grouping and rendering live in `./aggregate.ts` and `./render.ts`. This module
@@ -44,7 +44,7 @@ import type { RenderOptions, RenderResult } from "./render.ts";
  * How an element reaches the rendering dispatch, which names every element kind
  * and therefore imports this module: `render.ts` registers itself here as it
  * loads, and these two methods read it back. The indirection is what keeps the
- * dependency one-way — a plain import both ways is a cycle, and a cycle whose
+ * dependency one-way -- a plain import both ways is a cycle, and a cycle whose
  * far end declares `class Aggregate extends Element` fails at load, not at use.
  *
  * Python has the same shape and spells it as a function-level import.
@@ -99,8 +99,8 @@ export type TemporalCharacter =
 export type Beats = number | null | undefined;
 
 /**
- * The unit a length is in. An **onset** is always in beats — a placement is a
- * musical decision and takes the unit of what contains it — and a **duration**
+ * The unit a length is in. An **onset** is always in beats -- a placement is a
+ * musical decision and takes the unit of what contains it -- and a **duration**
  * is in the unit of its own data: `SECONDS` for audio (a take's length is
  * `frames / sampleRate`, a wall-clock fact no tempo change moves), `BEATS` for
  * a succession of events (a note is musical, and a tempo change is supposed to
@@ -122,7 +122,7 @@ export function toBeats(length: number, unit: TimeUnit, tempo: number): number {
 
 /**
  * The map to measure with: the one given, or `tempo` as a single constant
- * segment — which is the affine ratio every one of these conversions used to
+ * segment -- which is the affine ratio every one of these conversions used to
  * be, so a caller that names no map gets exactly what it always got.
  */
 export function tempoMapOf(tempoMap?: TempoMap | null, tempo = 1.0): TempoMap {
@@ -177,14 +177,14 @@ export function temporalCharacter(onset: Beats, duration: Beats): TemporalCharac
  * Base of the arrangement: temporal metadata over a wrapped item.
  *
  * An element carries an optional `onset` (in beats, relative to its context)
- * and `duration` (in the unit of what it wraps — see
+ * and `duration` (in the unit of what it wraps -- see
  * {@link Element.durationUnit}) and wraps an underlying client object it
  * delegates to. The
  * concrete onset of an element typically comes from its *placement* inside an
  * {@link Aggregate}, not from the element itself, so a standalone leaf commonly
  * has a duration but no onset (a `relative` character).
  *
- * `name` is a label — what a lane is called in the editor, and, for an element
+ * `name` is a label -- what a lane is called in the editor, and, for an element
  * wrapping something the document cannot own (a pattern, a routine), the **key
  * a reopened session finds it by**. It is a label and not an identity: nothing
  * addresses an element by name, and two elements may share one, which is what
@@ -210,7 +210,7 @@ export class Element {
      * silenced (`mute`), whether it is one of the elements soloed (`solo`), and
      * the gain its events sound at (`level`, a factor over an event's own
      * `amp`). They are set by the editor's lane header and by hand, they are
-     * honoured by {@link flatten}, and they travel in the node's configuration —
+     * honoured by {@link flatten}, and they travel in the node's configuration --
      * so an aggregate reopens muted the way it was left. A lane's *height* is the
      * other kind of thing and is deliberately absent: it says nothing about what
      * the aggregate is, so no document carries it.
@@ -238,15 +238,15 @@ export class Element {
      *
      * A **generated** element has an index: the arrangement flattens it to
      * messages at absolute beats, so a transport can put itself anywhere on it.
-     * A **resident generator** — a def producing its own audio on the server, a
-     * stochastic process, a demand-rate sequence — has none. Its position *is*
+     * A **resident generator** -- a def producing its own audio on the server, a
+     * stochastic process, a demand-rate sequence -- has none. Its position *is*
      * its internal state, and no number moves it: the only thing a transport can
      * do to it is stop it and let it carry on.
      *
      * This is the same asymmetry the arrangement is built around, reaching the
      * transport. Pause is symmetric and works for both; locate is not. A
-     * generator becomes locatable by being **rendered** — the change of state
-     * from generator to generated — after which it is a buffer like any other.
+     * generator becomes locatable by being **rendered** -- the change of state
+     * from generator to generated -- after which it is a buffer like any other.
      */
     get locatable(): boolean {
         return !this.resident;
@@ -278,8 +278,8 @@ export class Element {
     // -- windows: what a trim, a split and a join ask an element -------------
     //
     // **The question is the contents', never the class's.** Cutting is defined
-    // wherever there is an addressable time axis — samples, notes, events,
-    // segments — so the verb asks the element whether it has one instead of
+    // wherever there is an addressable time axis -- samples, notes, events,
+    // segments -- so the verb asks the element whether it has one instead of
     // testing what it is. What genuinely answers no is a **generator**: not
     // "cannot be cut" but *not until it is rendered*, which is the change of
     // state the model already has a verb for.
@@ -288,8 +288,8 @@ export class Element {
      * Where this element **reads from** inside what it holds, or `null` when it
      * holds no window at all.
      *
-     * In the unit the contents are *addressed* in — frames for samples, beats
-     * for events — which is the same coordinate {@link Segment.start} is in and
+     * In the unit the contents are *addressed* in -- frames for samples, beats
+     * for events -- which is the same coordinate {@link Segment.start} is in and
      * for the same reason.
      */
     windowStart(): number | null {
@@ -302,13 +302,13 @@ export class Element {
      *
      * `at` and `length` are in this element's own unit ({@link durationUnit}),
      * and `rate` is the sample rate to bridge with when the contents are
-     * addressed in frames and the source does not know its own — the one number
+     * addressed in frames and the source does not know its own -- the one number
      * an element may need from the caller.
      *
      * The **first** half is never built: it is the element it always was, with
      * its placement shortened, which is the arrangement's rule (a placement is a
      * window onto an element, never a rewrite of it) and what makes an undo of a
-     * split one step. Nothing is copied and nothing is lost either way —
+     * split one step. Nothing is copied and nothing is lost either way --
      * lengthening a half brings back exactly what the cut hid.
      */
     windowed(at: number, length: number, rate = 0.0): Element | null {
@@ -319,13 +319,13 @@ export class Element {
     }
 
     /**
-     * Delegates playing to the wrapped item's `play(destination)` — the
+     * Delegates playing to the wrapped item's `play(destination)` -- the
      * double-dispatch seam shared by `seq.Event`, `seq.OscItem` and
      * `seq.Automation`.
      *
      * Container and pattern-backed elements ({@link Aggregate}, {@link Track}, a
      * {@link Sequence} wrapping a `Pattern`) are **not** directly playable this
-     * way — they are rendered by `render()`. Delegating here requires the
+     * way -- they are rendered by `render()`. Delegating here requires the
      * wrapped object to follow the `play(destination)` protocol.
      */
     play(destination: PlayDestination): unknown {
@@ -348,7 +348,7 @@ export class Element {
     }
 
     /**
-     * Renders this element onto `destination` — the change of state to sound. A
+     * Renders this element onto `destination` -- the change of state to sound. A
      * concrete element flattens and plays through a `seq.Playhead` over `clock`
      * (returns the playhead); a logical {@link Aggregate} sends and instances a
      * `GraphDef` on the server (returns a promise of the instance group). See
@@ -367,7 +367,7 @@ export class Element {
  * *event/clip*: parameters grouped into one action, internally simultaneous.
  *
  * Wraps a `seq.Event` (or a plain object of parameters), and equally an
- * `OscItem` or a `MidiItem` — an action that happens at one moment is a clang
+ * `OscItem` or a `MidiItem` -- an action that happens at one moment is a clang
  * whether it is a note or a message, which is what `Element.play`'s double
  * dispatch has always assumed and what a timeline written into a document is
  * read back as. Anything that plays itself is taken as it is; anything else is
@@ -397,7 +397,7 @@ export class Clang extends Element {
 }
 
 /**
- * *List*: strict order with no concrete time — only sequence.
+ * *List*: strict order with no concrete time -- only sequence.
  *
  * Wraps an array or a `seq.Pattern`. The items can be numbers, events, notes or
  * whole elements; the structure fixes only their successive order. Rendering
@@ -426,7 +426,7 @@ export interface VectorOptions extends ElementOptions {
 }
 
 /**
- * *Vector*: a list at constant time — audio or control samples.
+ * *Vector*: a list at constant time -- audio or control samples.
  *
  * Wraps a `Buffer`. An automation sampled at a constant interval is a control
  * buffer (the List/Vector duality of the arrangement).
@@ -434,7 +434,7 @@ export interface VectorOptions extends ElementOptions {
  * A buffer is *data*, so rendering it as an **audio clip** needs an instrument:
  * the def that plays it, named by `instrument` (a synth whose `buf` control
  * takes the buffer number, as a sampler's does). Rendering then emits one event
- * playing that def — {@link Vector.toEvent}. Without an instrument the element
+ * playing that def -- {@link Vector.toEvent}. Without an instrument the element
  * is still perfectly good structure (and the editor draws its take), it simply
  * has no sound of its own.
  *
@@ -442,7 +442,7 @@ export interface VectorOptions extends ElementOptions {
  * **window onto a segment** of its buffer, not the whole of it: a trimmed take
  * reads from further in and the frames before it are still there, which is what
  * lets a trim be undone and a split give two windows over one buffer. `loop`
- * says whether that window wraps around the buffer — past the last frame it
+ * says whether that window wraps around the buffer -- past the last frame it
  * begins again.
  *
  * A window that is not the whole buffer travels to the instrument as the
@@ -455,7 +455,7 @@ export class Vector extends Element {
     instrument: string | null;
     controls: EventControls;
     /**
-     * The **first frame of the buffer this element reads** — the head of its
+     * The **first frame of the buffer this element reads** -- the head of its
      * window onto the buffer. Trimming a clip moves it; splitting one in two
      * gives each half a window of its own over the same buffer.
      */
@@ -488,14 +488,14 @@ export class Vector extends Element {
 
     /**
      * `SECONDS`: this element's data is samples, and their seconds were
-     * fixed when they were recorded — a tempo change does not shorten a take.
+     * fixed when they were recorded -- a tempo change does not shorten a take.
      */
     override get durationUnit(): TimeUnit {
         return SECONDS;
     }
 
     /**
-     * The frame this element reads from — it has had a window since trimming
+     * The frame this element reads from -- it has had a window since trimming
      * existed.
      */
     override windowStart(): number | null {
@@ -530,7 +530,7 @@ export class Vector extends Element {
      * where the tempo has got to.
      *
      * `legato` is 1 so the take sounds its whole length (the note default of 0.8
-     * would cut it short — a sampled take is not a note with a gap), and `amp`
+     * would cut it short -- a sampled take is not a note with a gap), and `amp`
      * is 1 for the same reason at the other end: the note default mixes an event
      * **20 dB down**, which is a headroom convention for stacking notes and
      * simply attenuates recorded audio. A take arrives at the level it was
@@ -551,7 +551,7 @@ export class Vector extends Element {
             legato: 1.0,
             amp: 1.0,
         };
-        // The window, so what is heard is the segment that is drawn — and only
+        // The window, so what is heard is the segment that is drawn -- and only
         // when there is one to state, so a def that never heard of windows is
         // sent exactly what it was always sent.
         if (this.start) params.start = Number(this.start);
@@ -579,8 +579,8 @@ export interface SegmentsOptions extends ElementOptions {
  *
  * A {@link Vector} is one window onto one buffer. This is what a **join** makes
  * when the fragments do not come from one place: a list of
- * `[buffer, start, duration]` — the buffer to read, the frame to read it from,
- * and how long that segment lasts in seconds — read back to back. It is the same
+ * `[buffer, start, duration]` -- the buffer to read, the frame to read it from,
+ * and how long that segment lasts in seconds -- read back to back. It is the same
  * memory-view idea one level up: nothing is copied, and cutting one of these
  * apart again gives back windows over the same buffers.
  *
@@ -598,18 +598,18 @@ export interface SegmentsOptions extends ElementOptions {
  * whose length is the samples' own.
  *
  * This is where recording lands. A `RecordingStream` follows takes as they are
- * written and a `Buffer` holds them, but neither puts one in an aggregate — and the
+ * written and a `Buffer` holds them, but neither puts one in an aggregate -- and the
  * arithmetic that does (frames over the rate they were recorded at) was left to
  * every caller, which is one conversion written once per script and wrong in the
  * one that forgot the channel count is not in it.
  *
  * `duration` is in **seconds**, for a caller who knows better than the buffer
- * does — a take still recording, whose buffer is as long as it will be rather
+ * does -- a take still recording, whose buffer is as long as it will be rather
  * than as long as it is. Without an `instrument` the take is structure (it draws
  * and it extends the aggregate, and it emits no event), which is the `Vector` rule
  * and not a special case here. `sampleRate` is the rate to measure the length
  * at, for a source that does not know its own; when nothing knows it the
- * duration is `null`, which is the honest answer — the length is then the
+ * duration is `null`, which is the honest answer -- the length is then the
  * placement's.
  */
 export function take(
@@ -657,7 +657,7 @@ export class Segments extends Element {
     }
 
     /**
-     * The run's own — `SECONDS`, because these windows are onto samples. Asked
+     * The run's own -- `SECONDS`, because these windows are onto samples. Asked
      * of the data rather than stated here, which is what lets the same element
      * place a run of any contents.
      */
@@ -665,13 +665,13 @@ export class Segments extends Element {
         return this.run.unit;
     }
 
-    /** The segments, in reading order — the element's own data. */
+    /** The segments, in reading order -- the element's own data. */
     get segments(): Segment<SourceLike>[] {
         return this.run.segments;
     }
 
     /**
-     * Zero: a run's window is in its segments, each of which carries its own —
+     * Zero: a run's window is in its segments, each of which carries its own --
      * so there is no single frame this element reads from, and a trim moves the
      * windows rather than a head.
      */
@@ -680,7 +680,7 @@ export class Segments extends Element {
     }
 
     /**
-     * The windows past the cut, with the one the cut falls inside cut in two —
+     * The windows past the cut, with the one the cut falls inside cut in two --
      * which is `SegmentRun.cut` (`../segments.ts`), the arithmetic this element
      * places rather than reimplements.
      *
@@ -715,7 +715,7 @@ export class Segments extends Element {
     /**
      * One `[offset, event]` per segment: the instrument playing that buffer,
      * from that frame, for that long. The offsets are relative to the element,
-     * exactly as an aggregate's members' are — and in **beats**, converted here
+     * exactly as an aggregate's members' are -- and in **beats**, converted here
      * from the seconds the windows are measured in, because what comes out of
      * this is played by a clock.
      *
@@ -728,7 +728,7 @@ export class Segments extends Element {
             // **Windows onto timelines are already events**: what each one shows
             // is the items inside it, placed from the run's own zero and in
             // beats, so there is nothing to build and nothing to convert. An
-            // instrument is the samples case's — a note carries its own.
+            // instrument is the samples case's -- a note carries its own.
             return (this.run as unknown as NoteSegments).items() as [number, SeqEvent][];
         }
         if (this.instrument === null) {
@@ -766,7 +766,7 @@ export class Segments extends Element {
  * {@link Track} over a timeline.
  *
  * A join that ends up with one window is the window it was cut from, and says so
- * rather than staying a list of one — which is what makes a cut and a join
+ * rather than staying a list of one -- which is what makes a cut and a join
  * inverses. One place, so the two kinds cannot drift into answering it
  * differently.
  */
@@ -798,14 +798,14 @@ export interface TrackOptions extends ElementOptions {
      * onto its timeline exactly as a {@link Vector} is a window onto its buffer,
      * and for the same reason: a trim reads from further in, a split gives two
      * windows over one timeline, and the notes neither window shows are still on
-     * it — so lengthening either half brings them back. A cut is not a rewrite
+     * it -- so lengthening either half brings them back. A cut is not a rewrite
      * of the notes.
      */
     start?: number;
 }
 
 /**
- * *Set*: mixed placement of elements — a DAW track.
+ * *Set*: mixed placement of elements -- a DAW track.
  *
  * Wraps a `seq.Timeline` (free placement of items by beat). A fresh empty
  * `Timeline` is created when none is given. With `start`, it is a **window**
@@ -813,7 +813,7 @@ export interface TrackOptions extends ElementOptions {
  */
 export class Track extends Element {
     /**
-     * The **beat of the timeline this element reads from** — the head of its
+     * The **beat of the timeline this element reads from** -- the head of its
      * window, the beats counterpart of {@link Vector.start}.
      */
     start: number;
@@ -840,7 +840,7 @@ export class Track extends Element {
 
     /**
      * The same timeline, read from `at` beats further in. Both units are beats
-     * here, so there is nothing to bridge — the notes outside either window are
+     * here, so there is nothing to bridge -- the notes outside either window are
      * on the timeline, not gone.
      */
     override windowed(at: number, length: number, rate = 0.0): Track {
@@ -882,18 +882,18 @@ export interface GeneratorOptions extends ElementOptions {
  * *Function*: a generator element.
  *
  * Wraps either server DSP (a `SynthDef`/`FaustDef`/`GraphDef`, or a def name) or
- * a sequence generator (a `Pbind`/`Routine`). Its *change of state* — evaluating
- * the generator into a generated element — happens at rendering: a contained
+ * a sequence generator (a `Pbind`/`Routine`). Its *change of state* -- evaluating
+ * the generator into a generated element -- happens at rendering: a contained
  * event pattern is bounced to a timeline; a def member of a logical
  * {@link Aggregate} becomes a wired GraphDef member.
  *
- * `controls` are control values for a logical-graph member — numbers, an
+ * `controls` are control values for a logical-graph member -- numbers, an
  * internal-bus name (a string matching an {@link Aggregate} bus), or `"OUT"`
  * (hardware); `maps` binds controls to control buses (`/node_map`). Both are
  * read by `Aggregate.toGraphdef`.
  *
  * `rendered` is what this generator **last produced**, as an ordinary
- * {@link Element} — the change of state above, kept rather than recomputed. It
+ * {@link Element} -- the change of state above, kept rather than recomputed. It
  * is what a host with no language attached shows, since a generator is code and
  * such a host has nothing to run it with; and it is what a saved session carries
  * for the same reason a cache cannot, which is that a missing cache leaves
@@ -923,7 +923,7 @@ export class Generator extends Element {
     }
 
     /**
-     * The member def name — the wrapped string itself, or the def object's
+     * The member def name -- the wrapped string itself, or the def object's
      * `name`.
      */
     get defName(): string {

@@ -24,7 +24,7 @@ the server play it.
 
 The first widget that <b>writes data back</b>: a drawable break-point function
 whose segments use the server's own envelope shape numbers, evaluated in the
-host through the same shared math the server's <code>envGen</code> plays — what
+host through the same shared math the server's <code>envGen</code> plays -- what
 the editor draws is exactly what you hear.
 
 Editing gestures, all live: <b>drag a point</b> to move it (times stay monotonic
@@ -33,7 +33,7 @@ between its neighbours); <b>drag a segment</b> vertically to bend its curvature;
 the <b>curve menu</b> applies a standard transition shape to every segment
 through the <code>Env</code> round trip.
 
-Every edit flows back as <code>"points" &lt;t v shape curve …&gt;</code> — the
+Every edit flows back as <code>"points" &lt;t v shape curve …&gt;</code> -- the
 break-point list as flat OSC primitives. This page maps that list to an
 <code>Env</code> and, on <b>play</b>, sends a fresh def built from it and spawns
 a note: the drawn envelope shapes the tone you hear.</div>
@@ -116,7 +116,7 @@ a note: the drawn envelope shapes the tone you hear.</div>
           gui.menu(CURVES.map(String), { name: "curve", label: "curve (all segments)" }),
           gui.button({ name: "play", label: "play" }),
         ).open($("stage"));
-        log(`opened window ${win.id} — draw the envelope, then press play`);
+        log(`opened window ${win.id} -- draw the envelope, then press play`);
         points = gui.envToPoints(START_ENV);
 
         // The edit-back payload (`"points"` then t v shape curve quads): keep

@@ -7,7 +7,7 @@
 //
 // **It wires nothing that a script would otherwise have to.** `attach`
 // subscribes once, to one widget, and turns both edit-backs into this object's
-// own lists — so there is no handler per clip, no widget id anywhere, and
+// own lists -- so there is no handler per clip, no widget id anywhere, and
 // nothing to keep in step by hand. Identity is your own name: a clip is placed,
 // drawn and reported by the same word you called it.
 //
@@ -30,7 +30,7 @@ export class Lane {
     /** Its thickness in logical pixels. */
     height: number;
     /**
-     * Silenced. Carried by the host, never interpreted — what a solo does to
+     * Silenced. Carried by the host, never interpreted -- what a solo does to
      * *other* lanes is the mixer's rule, and the mixer is yours.
      */
     mute: boolean;
@@ -59,7 +59,7 @@ export class Lane {
  * One box: which lane it is on, and where it sits there.
  *
  * `at`, `dur` and `start` are in the axis' own unit (timeline samples), and
- * `start` is the source frame the box's own time zero reads — so trimming the
+ * `start` is the source frame the box's own time zero reads -- so trimming the
  * left edge moves `at`, `dur` and `start` together, which is what makes a trim
  * hide frames instead of compressing them.
  */
@@ -75,7 +75,7 @@ export class Clip {
      * default) draws an empty box. A number and not samples: they are the
      * server's, and the host maps or fetches them, so two clips over one take
      * cost one download. **Negative and not zero**, because buffer 0 is a
-     * buffer — the first one an allocator hands out.
+     * buffer -- the first one an allocator hands out.
      */
     source: number;
 
@@ -138,7 +138,7 @@ export interface MultitrackOptions {
     onChange?: (what: string) => void;
     /**
      * `onLocate(at)` when a click placed the window's cursor on this widget's
-     * axis, in axis units. It is **not** an edit — the multitrack did not change —
+     * axis, in axis units. It is **not** an edit -- the multitrack did not change --
      * but it arrives here because the widget owns the axis, so this hands it on
      * rather than swallowing it.
      */
@@ -193,7 +193,7 @@ export class Multitrack {
     /**
      * Where the multitrack ends: the furthest clip end, `0` for none.
      *
-     * The **end**, not the last onset — a clip dragged past everything else
+     * The **end**, not the last onset -- a clip dragged past everything else
      * lengthens the multitrack by its whole length.
      */
     get extent(): number {
@@ -214,7 +214,7 @@ export class Multitrack {
     }
 
     /**
-     * Take a lane away. **The clips on it are kept** — they name a lane that is
+     * Take a lane away. **The clips on it are kept** -- they name a lane that is
      * not there, are drawn nowhere, and come back to be re-homed; losing them
      * silently is the one thing a removal must not do.
      */
@@ -224,7 +224,7 @@ export class Multitrack {
     }
 
     /**
-     * Put a clip where you say — adding it, or moving the one of that name. The
+     * Put a clip where you say -- adding it, or moving the one of that name. The
      * verb is one because *the multitrack is a statement*: what you hand over is
      * where the clip is, not how it got there.
      */
@@ -297,8 +297,8 @@ export class Multitrack {
      * `view().open()` gave back, or the widget handle itself.
      *
      * It is a second step because a view is a *definition* and an id names a
-     * *live* widget — one view opens as many times as you like, each window
-     * with ids of its own — so which opened window this multitrack is watching has
+     * *live* widget -- one view opens as many times as you like, each window
+     * with ids of its own -- so which opened window this multitrack is watching has
      * to be said. What does not have to be said again is the name: `view`
      * remembered it.
      *
@@ -325,7 +325,7 @@ export class Multitrack {
         return this;
     }
 
-    /** Both edit-backs, each the whole list — the multitrack as it now stands. */
+    /** Both edit-backs, each the whole list -- the multitrack as it now stands. */
     private edited(tag: string, vals: unknown[]): void {
         if (tag === "clips") {
             this.clips = groups(vals, 7).map(

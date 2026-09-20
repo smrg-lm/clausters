@@ -1,10 +1,10 @@
-//! Live MIDI input reaching the elements that asked for it (native-only — the
+//! Live MIDI input reaching the elements that asked for it (native-only -- the
 //! virtual input port is a platform device).
 //!
 //! The front's whole job is the **device**: open the port, translate what comes
 //! out of it into the platform-neutral [`MidiNote`], and hand it to every
 //! element that declared [`Needs::midi`], with the one fact the element cannot
-//! read for itself — where the transport stands. What a note *does* to a
+//! read for itself -- where the transport stands. What a note *does* to a
 //! picture is the element's, exactly as what a key does to a field is.
 //!
 //! [`Needs::midi`]: crate::host::widget::element::Needs::midi
@@ -31,7 +31,7 @@ impl App {
         }
         for &(def_id, id) in readers {
             // The running playhead in the element's own units, or `None` for a
-            // stopped transport — the difference between recording a note and
+            // stopped transport -- the difference between recording a note and
             // entering one on a step cursor.
             let playhead = self.playhead_sample(def_id, id);
             let mut reported = false;
@@ -53,7 +53,7 @@ impl App {
     }
 }
 
-/// The shared crate's channel-voice note event as the host's own — the same
+/// The shared crate's channel-voice note event as the host's own -- the same
 /// translation the keyboard front does for a key, so an element answers
 /// identically wherever it is compiled.
 fn note_of(ev: clausters_midi::NoteEvent) -> MidiNote {

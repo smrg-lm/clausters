@@ -1,13 +1,13 @@
 //! **The layer stack of a signal picture**: what is drawn on one body, in what
 //! order, at what weight, and which of them the vertical belongs to.
 //!
-//! A signal view draws several things on one rectangle — the envelope, the
+//! A signal view draws several things on one rectangle -- the envelope, the
 //! level inside it, the reconstruction over both, a loudness curve on a scale
 //! of its own, a time-frequency texture under all of them. Which ones, and how
 //! they sit over each other, used to be a *set* ([`Measures`]) whose order was
 //! the type's own: the envelope under the level because an envelope is the
 //! outer shape, and nothing to choose. That is right as a default and wrong as
-//! a rule — a spectrogram with the wave drawn over it is the same picture with
+//! a rule -- a spectrogram with the wave drawn over it is the same picture with
 //! a different bottom, and there is no type order that decides between a
 //! texture and a curve.
 //!
@@ -16,13 +16,13 @@
 //! and which vertical it is read on. The three questions this answers are the
 //! whole of it, and they are the three a layered picture has:
 //!
-//! - **Order** — the order the layers are written in, back to front, so what
+//! - **Order** -- the order the layers are written in, back to front, so what
 //!   is under what is the author's statement rather than an inference from
 //!   what each layer happens to be. [`Stack::drawn`] is that order, and
 //!   [`Layer::visible`] / [`Layer::solo`] are how a stack is read while it is
 //!   being built: hide one, or sound out one by itself, without rewriting the
 //!   list.
-//! - **The vertical** — a layer either maps through the body's own axis
+//! - **The vertical** -- a layer either maps through the body's own axis
 //!   ([`Vertical::Axis`]) or normalizes into the box it is given
 //!   ([`Vertical::Box`], bringing a scale of its own, as the loudness curve
 //!   does). The layers on the axis are what the y ruler and the cursor
@@ -30,7 +30,7 @@
 //!   [`Stack::axis_domain`] refuses a stack where two layers claim the axis
 //!   for two different domains, which is the one way this question can be got
 //!   wrong.
-//! - **The alpha** — [`Layer::alpha`] is a layer's own weight, multiplying the
+//! - **The alpha** -- [`Layer::alpha`] is a layer's own weight, multiplying the
 //!   ink it is drawn in. It is a property of the layer rather than of the
 //!   widget (whose `opacity` prop fades the whole subtree, chrome included),
 //!   because what a translucent stack is for is reading one picture *through*
@@ -38,7 +38,7 @@
 //!
 //! **What is still not here is a second field.** The stack is inside the one
 //! element for the reason A2 recorded: every view of a signal paints its field
-//! before it draws, so two elements on one rectangle are not layers — the
+//! before it draws, so two elements on one rectangle are not layers -- the
 //! second is a lid. One body, one axis, one ruler, one selection, one playhead,
 //! one upload, and this list.
 
@@ -52,20 +52,20 @@ use super::trace::{Measure, Measures};
 /// measurement of the signal against time (the envelope, the level, the
 /// reconstruction, a loudness curve) and the time-frequency texture. They are
 /// arms of one enum rather than two lists because a stack's order runs across
-/// both — a wave over a spectrogram and a spectrogram over a wave are both
+/// both -- a wave over a spectrogram and a spectrogram over a wave are both
 /// pictures somebody asks for, and neither is a special case of the other.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Paint {
     /// One measure of the signal against time.
     Measure(Measure),
-    /// The short-time Fourier transform, sampled as a texture — the layer that
+    /// The short-time Fourier transform, sampled as a texture -- the layer that
     /// is a *picture* rather than a curve, and the only one whose pixels come
     /// off the GPU rather than out of the window's mesh.
     Spectrogram,
 }
 
 impl Paint {
-    /// The wire name, or `None` for one this build does not know — which reads
+    /// The wire name, or `None` for one this build does not know -- which reads
     /// as "the prop was not set" rather than as an error, the protocol's own
     /// posture for an unknown value.
     pub fn parse(name: &str) -> Option<Paint> {
@@ -83,7 +83,7 @@ impl Paint {
         }
     }
 
-    /// **What this layer measures along the vertical** — the question behind
+    /// **What this layer measures along the vertical** -- the question behind
     /// the axis claim, since two layers may share the body's vertical only
     /// when they mean the same quantity by it.
     pub fn domain(self) -> Domain {
@@ -95,7 +95,7 @@ impl Paint {
     }
 
     /// Where this layer is read by default: on the body's own axis, unless it
-    /// has a domain the axis cannot be in — a loudness reading is in LU, so it
+    /// has a domain the axis cannot be in -- a loudness reading is in LU, so it
     /// normalizes into its box and brings the scale with it.
     pub fn vertical(self) -> Vertical {
         match self.domain() {
@@ -110,7 +110,7 @@ impl Paint {
 /// to be drawn against it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Domain {
-    /// The signal's own value — an envelope, a level, a reconstruction.
+    /// The signal's own value -- an envelope, a level, a reconstruction.
     Amplitude,
     /// Hertz: the time-frequency texture.
     Frequency,
@@ -132,8 +132,8 @@ impl Domain {
 /// **Which vertical a layer is drawn on**: the body's own axis, or the box it
 /// is given.
 ///
-/// `Axis` maps through the container's vertical — the amplitude window a zoom
-/// opens, the frequency window a spectrogram is at — and reports it, so the y
+/// `Axis` maps through the container's vertical -- the amplitude window a zoom
+/// opens, the frequency window a spectrogram is at -- and reports it, so the y
 /// ruler and the cursor read-out are that layer's. `Box` normalizes into the
 /// rectangle with a scale of its own and reports nothing: it is what a layer
 /// with a second domain does, and what a layer wanting to stay in view whatever
@@ -170,7 +170,7 @@ pub struct Layer {
     /// Whether it is drawn at all. A hidden layer keeps its place in the order,
     /// so showing it again puts it back where it was rather than on top.
     pub visible: bool,
-    /// **Only the soloed layers are drawn**, when any layer solos — the mixer's
+    /// **Only the soloed layers are drawn**, when any layer solos -- the mixer's
     /// own verb, and the way a stack is read while it is built: one word turns
     /// everything else off without disturbing the list it is off in.
     pub solo: bool,
@@ -272,7 +272,7 @@ pub struct Stack {
 }
 
 impl Default for Stack {
-    /// **The envelope, and the reconstruction over it** — the picture A3 left
+    /// **The envelope, and the reconstruction over it** -- the picture A3 left
     /// as the default: at the zooms where the samples are separate points the
     /// reconstruction draws through them, and everywhere else it draws nothing
     /// and the envelope is what every editor shows. A view that wants the bare
@@ -285,7 +285,7 @@ impl Default for Stack {
 impl Stack {
     /// **The stack a presentation draws when nothing said otherwise**: the
     /// texture for the time-frequency view, and the editor's own picture for
-    /// every other — which is what the `measure` prop's default has always
+    /// every other -- which is what the `measure` prop's default has always
     /// been.
     pub fn of_presentation(p: crate::host::elements::signal::Presentation) -> Stack {
         match p {
@@ -311,7 +311,7 @@ impl Stack {
         Stack { layers }
     }
 
-    /// Every layer, drawn or not, back to front — the list as it was declared,
+    /// Every layer, drawn or not, back to front -- the list as it was declared,
     /// which is what a query answers and what a hidden layer keeps its place
     /// in.
     pub fn layers(&self) -> &[Layer] {
@@ -332,7 +332,7 @@ impl Stack {
             .filter(move |l| l.visible && (!solo || l.solo))
     }
 
-    /// The measures drawn, back to front — what a renderer placed once per
+    /// The measures drawn, back to front -- what a renderer placed once per
     /// measure walks.
     pub fn drawn_measures(&self) -> impl DoubleEndedIterator<Item = (Measure, f32)> + '_ {
         self.drawn()
@@ -354,7 +354,7 @@ impl Stack {
         self.drawn().any(|l| l.paint == paint)
     }
 
-    /// Whether any drawn layer measures loudness — the one measure that needs
+    /// Whether any drawn layer measures loudness -- the one measure that needs
     /// something computed before it can be drawn.
     pub fn has_loudness(&self) -> bool {
         self.drawn()
@@ -374,16 +374,16 @@ impl Stack {
     /// **What the body's vertical measures**, or an error naming the two layers
     /// that disagree about it.
     ///
-    /// The layers on [`Vertical::Axis`] share the container's y — its window,
-    /// its ruler and its read-out — so they must all mean the same quantity by
+    /// The layers on [`Vertical::Axis`] share the container's y -- its window,
+    /// its ruler and its read-out -- so they must all mean the same quantity by
     /// it. Several amplitude measures on one axis is the ordinary picture and
     /// no claim at all; a spectrogram and a waveform both asking for it is the
     /// error, and it is an error rather than a silent winner because whichever
     /// one lost would be drawn on a scale that is not its own, which is a
     /// picture that lies.
     ///
-    /// `None` is a stack where nothing is on the axis — every layer in its own
-    /// box — and the axis is then the element's own to state.
+    /// `None` is a stack where nothing is on the axis -- every layer in its own
+    /// box -- and the axis is then the element's own to state.
     pub fn axis_domain(&self) -> Result<Option<Domain>, String> {
         let mut claimed: Option<(Domain, Paint)> = None;
         for layer in self.drawn().filter(|l| l.vertical() == Vertical::Axis) {
@@ -392,7 +392,7 @@ impl Stack {
                 Some((was, by)) if was != domain => {
                     return Err(format!(
                         "two layers claim the vertical axis for different domains: \
-                         `{}` measures {} and `{}` measures {} — one of them takes `y: \"box\"`",
+                         `{}` measures {} and `{}` measures {} -- one of them takes `y: \"box\"`",
                         by.name(),
                         was.name(),
                         layer.paint.name(),
@@ -427,7 +427,7 @@ impl Stack {
     /// names (`"peak rms"`, back to front) or the array, whose entries are
     /// names or objects.
     ///
-    /// `None` where nothing legible came back — an empty list, or a list of
+    /// `None` where nothing legible came back -- an empty list, or a list of
     /// names this build does not know. That reads as "the prop was not set"
     /// rather than as an error, which is the protocol's posture everywhere
     /// else; a layer this build does not have is dropped and the rest are
@@ -452,7 +452,7 @@ impl Stack {
     }
 }
 
-/// A truthy wire value: a bool, or a number that is not zero — the same
+/// A truthy wire value: a bool, or a number that is not zero -- the same
 /// leniency every other flag on this wire has.
 fn truthy(v: &Value) -> Option<bool> {
     match v {
@@ -481,7 +481,7 @@ mod tests {
         Stack::parse(&Value::String(s.into())).expect("a legible stack")
     }
 
-    /// The word list is the order, back to front — not the type's own. That is
+    /// The word list is the order, back to front -- not the type's own. That is
     /// the whole of the first question: what is under what is written down.
     #[test]
     fn the_wire_order_is_the_drawing_order() {

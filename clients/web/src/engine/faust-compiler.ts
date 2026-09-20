@@ -4,14 +4,14 @@
 // faust` parks a request, the worklet hands it to the NRT worker and the answer
 // comes back as a `/done` whenever it comes back. An offline render cannot be
 // answered whenever: it loads a def where it stands and time does not advance
-// until it has. So the render does the same work in the other order — read the
-// score's Faust defs, compile them, link them, *then* render — and this module
+// until it has. So the render does the same work in the other order -- read the
+// score's Faust defs, compile them, link them, *then* render -- and this module
 // is the compile step of that.
 //
 // It starts a Worker of its own rather than sharing the engine's. Two reasons,
 // and the second is the one that decides it: a page can render with no engine
 // booted at all (no `AudioContext`, no worklet, nothing to share), and a def
-// linked into the worklet's engine could not be used by the renderer anyway —
+// linked into the worklet's engine could not be used by the renderer anyway --
 // they are two instances with two memories, and a module is linked into one of
 // them. What the sharing would save is a second compiler in a page that both
 // plays and renders Faust, which is 26 MiB and only in that page; what it would
@@ -68,7 +68,7 @@ function compiler(workerUrl?: URL | string): Worker {
 }
 
 /**
- * Compiles every def in `jobs`, in parallel — unlike a soundfile read there is
+ * Compiles every def in `jobs`, in parallel -- unlike a soundfile read there is
  * no ordering between them, and each answers on its own.
  *
  * Rejects with the compiler's own message, prefixed by the def's name, on the

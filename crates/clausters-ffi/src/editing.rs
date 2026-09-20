@@ -1,7 +1,7 @@
 //! The projections an editable structure owes its endpoints.
 //!
 //! The C half of [`clausters_editing`]. Sizes with a null `out` and fills with
-//! a second call, like the rest of the JSON surface here — a projection is a
+//! a second call, like the rest of the JSON surface here -- a projection is a
 //! pure read, so a sizing pass changes nothing and can be repeated.
 
 /// The props a break-point curve is drawn with: `{"points": [...], "min": ..,
@@ -49,7 +49,7 @@ pub unsafe extern "C" fn clausters_editing_points_props(
 /// **A multitrack as the props the multitrack widget is drawn with**, as JSON.
 ///
 /// The rows, the boxes, the automations over both, their break-points, which
-/// are hidden and which boxes loop — everything a multitrack has from the document
+/// are hidden and which boxes loop -- everything a multitrack has from the document
 /// alone. What a caller adds is what is a function of something else: the
 /// position cursor, the meter buses, the widget's own chrome.
 ///
@@ -83,7 +83,7 @@ pub unsafe extern "C" fn clausters_editing_multitrack_props(
     unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
 }
 
-/// **What a gesture means, in a structure's own vocabulary** — the edit
+/// **What a gesture means, in a structure's own vocabulary** -- the edit
 /// ingestion, for every domain there is.
 ///
 /// A host reports a gesture as a tag and a flat list of values, and what an
@@ -227,8 +227,8 @@ pub unsafe extern "C" fn clausters_editing_instance_free(i: *mut FfiInstance) {
 /// **The difference between what is sounding and what the multitrack says**, as the
 /// JSON list of operations a client applies.
 ///
-/// The same four arguments the instance plan takes — the multitrack, the rate, the
-/// tempo a multitrack that states none is read at, and the source table — plus the
+/// The same four arguments the instance plan takes -- the multitrack, the rate, the
+/// tempo a multitrack that states none is read at, and the source table -- plus the
 /// master's own level, which is the caller's and not the multitrack's. Everything
 /// already right is left alone, which is what lets a hand drag a box without
 /// hearing the rest of the multitrack restart.
@@ -292,7 +292,7 @@ pub unsafe extern "C" fn clausters_editing_instance_reconcile(
     }
 }
 
-/// **Everything this made, given back** — the operations that stop the multitrack.
+/// **Everything this made, given back** -- the operations that stop the multitrack.
 ///
 /// The multitrack itself is untouched: what an instance holds is nodes, and nodes
 /// are not the document. Afterwards it believes nothing is sounding, and the
@@ -327,7 +327,7 @@ pub unsafe extern "C" fn clausters_editing_instance_teardown(
     }
 }
 
-/// **Which control bus run each track's meters write**, by track — what a host
+/// **Which control bus run each track's meters write**, by track -- what a host
 /// reads every frame, and the reason a level that moves every block costs no
 /// message.
 ///
@@ -357,7 +357,7 @@ pub unsafe extern "C" fn clausters_editing_instance_meters(
 }
 
 /// **The tempo a multitrack that states none is drawn at**, in beats per
-/// second — the one default every endpoint's ruler takes. Nothing a multitrack
+/// second -- the one default every endpoint's ruler takes. Nothing a multitrack
 /// places reads it.
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_editing_default_tempo() -> f64 {
@@ -630,7 +630,7 @@ pub unsafe extern "C" fn clausters_editing_playback_locate(
     unsafe { playback_verb(p, out, out_cap, |pb| answer_json(Ok(pb.locate(secs)))) }
 }
 
-/// The steps that cue a stopped transport at `secs` — none for a rolling one.
+/// The steps that cue a stopped transport at `secs` -- none for a rolling one.
 ///
 /// # Safety
 /// As [`clausters_editing_playback_sync`].
@@ -749,10 +749,10 @@ pub unsafe extern "C" fn clausters_editing_playback_samples_to_secs(
         .unwrap_or(0.0)
 }
 
-/// **What one message from the host is** — the conversation's first decision.
+/// **What one message from the host is** -- the conversation's first decision.
 ///
 /// `state` is the conversation's two integers (`{"floor", "applied"}`) and
-/// `message` the event's *envelope* — the address, the stamp, the version it
+/// `message` the event's *envelope* -- the address, the stamp, the version it
 /// was made against, the tag, and whether this editor owns the widget and the
 /// window. The payload is deliberately not here: what a report means is
 /// [`clausters_editing_intake`]'s and already crosses once, so a drag reporting
@@ -790,7 +790,7 @@ pub unsafe extern "C" fn clausters_editing_conversation_read(
     unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
 }
 
-/// **What to answer the host with** — the conversation's second decision.
+/// **What to answer the host with** -- the conversation's second decision.
 ///
 /// `request` is `{"seq", "docVersion", "reason", "corrections"}`, and the
 /// answer is one of `silent`, `ack` or `push`. It runs after the routing
@@ -819,7 +819,7 @@ pub unsafe extern "C" fn clausters_editing_conversation_answer(
     unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
 }
 
-/// **What a multitrack calls its rows and its boxes** — `{"rows": [...], "boxes":
+/// **What a multitrack calls its rows and its boxes** -- `{"rows": [...], "boxes":
 /// [...]}`, by the names the wire carries them under.
 ///
 /// The minting correction's half that is a fact about the multitrack: a host that

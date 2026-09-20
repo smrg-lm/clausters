@@ -2,17 +2,17 @@
 //!
 //! The twin of [`super::theme`], one step behind it: no layout or paint site
 //! names a number, it names a role of this struct, exactly as no paint site
-//! names an RGBA. The roles are named by **function** — the spacing family
+//! names an RGBA. The roles are named by **function** -- the spacing family
 //! ([`Metrics::pad`], `gap`, `margin`, `indent`), the control family
 //! (`control_h`, `row_h`, `track_thick`, `handle_thick`, `handle_grip`,
 //! `box_side`, `knob_d`), the chrome family (`ruler_h`, `status_h`, `ruler_w`, `header_w`,
 //! `divider_w`, `focus_ring`, `trace_w`, `point_radius`, `hit_slop`, `label_gap`,
 //! `tick_gap`) and the text family (`text_scale`, `label_scale`,
-//! `caption_scale`, `micro_scale`) — never by the widget that happens to read
+//! `caption_scale`, `micro_scale`) -- never by the widget that happens to read
 //! them, so one number serves every widget that means the same thing by it.
 //!
 //! **The defaults are generated, not invented.** [`Metrics::generated`] is one
-//! quantized modular scale over the font cell ([`CELL`], 14 logical px — not
+//! quantized modular scale over the font cell ([`CELL`], 14 logical px -- not
 //! a round decimal, because every readable
 //! widget is text plus padding and the cell is what makes a button, a number
 //! field and a menu line up unaided). Spacings and extents land on a 2-px
@@ -20,8 +20,8 @@
 //! cell. It is a **generator for the table, not arithmetic on a frame**: the
 //! resolved table is constant data every draw call reads.
 //!
-//! One `scale` multiplier — the reserved key of the `[gui.metrics]` config
-//! table — regenerates the whole table at another density, which is
+//! One `scale` multiplier -- the reserved key of the `[gui.metrics]` config
+//! table -- regenerates the whole table at another density, which is
 //! deliberately the *whole* density surface: a host has one density the way it
 //! has one look, so there are no size tokens on the wire and no per-widget
 //! density. It covers this table (the chrome and the control sizing); a
@@ -30,13 +30,13 @@
 //! **The table is logical; a window resolves it.** The roles the config
 //! declares are **logical** pixels, the same units the wire's own `w`/`h`/`x`/
 //! `y`/`margin`/`gap` carry. [`Metrics::resolved`] turns one into the physical
-//! table a window paints with, at that window's `ui_scale` — written by the
+//! table a window paints with, at that window's `ui_scale` -- written by the
 //! shell (winit's `scale_factor` natively, the page's `devicePixelRatio` in the
 //! browser), never read by this core. It runs **once per scale change**, not
 //! per frame: layout and painting stay the code they were, and the per-frame
 //! cost of HiDPI is zero.
 //!
-//! **What the table does not hold** is a widget's own structural geometry —
+//! **What the table does not hold** is a widget's own structural geometry --
 //! the patcher's box/port series, the piano roll's key gutter and velocity
 //! lane, the score's staff step, a knob's internal insets. Those interlock
 //! inside one widget rather than forming shared vocabulary, so they stay in
@@ -48,14 +48,14 @@ use super::font;
 /// The base unit of every size role: the height of a line of text at the
 /// default scale, in logical pixels.
 ///
-/// **Declared, not derived** — and that is the whole of its documentation.
+/// **Declared, not derived** -- and that is the whole of its documentation.
 /// It used to be `font::GLYPH_H * font::DEFAULT_SIZE`, which made the layout of
 /// every window a consequence of how the *face* was drawn: a glyph box that
 /// grew two rows to hold a descender would have taken this from 14 to 18 and
 /// moved every padding, control height and ruler in the host with it, for a
 /// reason that has nothing to do with how big anything should be. The
-/// dependency runs the other way now — the cell is declared and the face is
-/// drawn to fit it — so a typeface may change without relaying out a window,
+/// dependency runs the other way now -- the cell is declared and the face is
+/// drawn to fit it -- so a typeface may change without relaying out a window,
 /// which is also the property [`super::font`]'s successor will need.
 pub const CELL: f32 = 14.0;
 
@@ -70,7 +70,7 @@ fn grid(v: f32) -> f32 {
     ((v / GRID).round() * GRID).max(GRID)
 }
 
-/// Quantizes a hairline weight to whole pixels, at least one — a divider, a
+/// Quantizes a hairline weight to whole pixels, at least one -- a divider, a
 /// track edge and a glyph pixel are all one unit, and a fractional position
 /// turns a crisp line into a two-pixel grey smear.
 fn hairline(v: f32) -> f32 {
@@ -78,7 +78,7 @@ fn hairline(v: f32) -> f32 {
 }
 
 /// Quantizes a glyph scale. The embedded font is a bitmap, so a scale that
-/// does not divide its cell evenly makes a glyph's own pixels unequal — ragged
+/// does not divide its cell evenly makes a glyph's own pixels unequal -- ragged
 /// rather than soft. Whole numbers are the rule; the half-step is the one
 /// concession, because the ruler and clip captions ship at 1.5 and the reduced
 /// caption has no other rung between 1 and 2.
@@ -97,7 +97,7 @@ pub(crate) fn glyph_scale(v: f32) -> f32 {
 macro_rules! metrics_roles {
     ($( $(#[$doc:meta])* $name:ident ),+ $(,)?) => {
         /// The host's size roles, in pixels (the text family in glyph scales)
-        /// — logical as the config declares them, physical once a window has
+        /// -- logical as the config declares them, physical once a window has
         /// [`resolved`](Metrics::resolved) them. One logical instance per host
         /// plus one resolved per window; every layout and paint site reads one
         /// role of the resolved table.
@@ -107,7 +107,7 @@ macro_rules! metrics_roles {
             /// The logical -> physical multiplier this table was resolved at:
             /// `1.0` for the logical table the config declares, the window's
             /// scale factor for the table a window paints with (see
-            /// [`Metrics::resolved`]). It is **not** a role — the config cannot
+            /// [`Metrics::resolved`]). It is **not** a role -- the config cannot
             /// set it, only a shell can, and one host has as many resolved
             /// tables as it has windows.
             pub ui_scale: f32,
@@ -148,7 +148,7 @@ metrics_roles! {
     indent,
 
     // -- Controls --
-    /// The height of one line of control: a cell of text and its padding —
+    /// The height of one line of control: a cell of text and its padding --
     /// what makes a button, a number field and a menu line up in a row.
     control_h,
     /// The pitch of one row in a list of controls (a control plus a gap).
@@ -163,7 +163,7 @@ metrics_roles! {
     box_side,
     /// The diameter of a round control (a knob): **two lines of control**, not
     /// a box-sized marker. A dial is read by its angle, so it needs the sweep
-    /// to be legible — and a disc reads smaller than a box of the same
+    /// to be legible -- and a disc reads smaller than a box of the same
     /// bounding rect, which is why it is its own role rather than `control_h`
     /// twice over.
     knob_d,
@@ -192,7 +192,7 @@ metrics_roles! {
     trace_w,
     /// The radius of a placed point (a break-point, an automation node).
     point_radius,
-    /// The corner radius of a **text plate** — the ground a caption drawn over
+    /// The corner radius of a **text plate** -- the ground a caption drawn over
     /// a picture sits on, so the glyphs read against whatever is under them.
     plate_radius,
     /// The slack around a small target's geometry, so it stays clickable.
@@ -217,7 +217,7 @@ metrics_roles! {
 }
 
 impl Default for Metrics {
-    /// The table at the host's own density — the sizes the widgets always had.
+    /// The table at the host's own density -- the sizes the widgets always had.
     fn default() -> Self {
         Self::generated(1.0)
     }
@@ -283,7 +283,7 @@ impl Metrics {
     }
 
     /// This logical table resolved to the **physical** pixels of a window at
-    /// `ui_scale` — the one resolution HiDPI costs, run on a scale change and
+    /// `ui_scale` -- the one resolution HiDPI costs, run on a scale change and
     /// never per frame.
     ///
     /// Every role is scaled and re-quantized by its own family (extents onto
@@ -292,7 +292,7 @@ impl Metrics {
     /// and a glyph pixel are one unit each, and a fractional position turns a
     /// crisp line into a two-pixel grey smear.
     ///
-    /// At `ui_scale == 1.0` this is the **identity** — the table the config
+    /// At `ui_scale == 1.0` this is the **identity** -- the table the config
     /// declared, number for number, quantizers included: a host on an ordinary
     /// display paints exactly what it always did, and a role set to an odd 5 px
     /// by hand stays 5.
@@ -345,14 +345,14 @@ impl Metrics {
         }
     }
 
-    /// This table's own logical base, resolved at `scale` — the table a widget
+    /// This table's own logical base, resolved at `scale` -- the table a widget
     /// seen through a zoom is sized and drawn with.
     ///
     /// A `scroll` workspace multiplies everything inside it by its zoom, and a
     /// zoom is an *enlargement*: the text, the padding, a disc's diameter and the
     /// gaps between rows all have to move together, or a zoomed box comes out as
     /// a box with oversized text jammed into it. So a placement's scale picks the
-    /// table, exactly as a window's does — this is that same resolution, taken
+    /// table, exactly as a window's does -- this is that same resolution, taken
     /// relative to whatever scale this table is already at (so it is the identity
     /// at the window's own scale).
     pub fn at(&self, scale: f32) -> Self {
@@ -365,7 +365,7 @@ impl Metrics {
         snap_px(logical, self.ui_scale)
     }
 
-    /// Overlays `(role, value)` pairs — the `[gui.metrics]` config table.
+    /// Overlays `(role, value)` pairs -- the `[gui.metrics]` config table.
     /// Unknown roles and unusable values are skipped and reported back as
     /// warnings, so a stale style file degrades to the default sizes, never to
     /// an error.

@@ -1,4 +1,4 @@
-//! The host reads a staff position the way the core does — asserted against the
+//! The host reads a staff position the way the core does -- asserted against the
 //! one file both sides share.
 //!
 //! The host measures the position a dragged note reaches and sends it; a client
@@ -6,7 +6,7 @@
 //! `clausters_core::notation::DisplayList::staff_position`. The two crates are
 //! in separate workspaces and neither can call the other, so the guard against
 //! them drifting is that both assert against
-//! `crates/clausters-core/tests/staff_position_vector.json` — this test and
+//! `crates/clausters-core/tests/staff_position_vector.json` -- this test and
 //! `the_vector_positions_are_what_the_core_reads` over there. A change to
 //! either reading that is not a change to both fails here.
 

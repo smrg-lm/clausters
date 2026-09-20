@@ -10,8 +10,8 @@
 //! construction rather than by care.
 //!
 //! **What makes it cheap is that the bounds usually hold still.** A map's
-//! ranges decide a good deal of the arithmetic before any value arrives — the
-//! zero-straddling test, `ln(hi/lo)`, `exp(curve)`, the bend's two terms — and
+//! ranges decide a good deal of the arithmetic before any value arrives -- the
+//! zero-straddling test, `ln(hi/lo)`, `exp(curve)`, the bend's two terms -- and
 //! two of those are transcendentals. So when every bound input is a constant,
 //! which is the ordinary def, the block builds one [`Map`] and every sample
 //! pays only [`Map::at`]. A bound that is a *signal* is legal and costs the
@@ -31,8 +31,8 @@ pub struct RangeMap {
 
 impl RangeMap {
     /// The map named by the compiler-resolved opcode index, with the clip the
-    /// def asked for. An index outside the table cannot reach here — the
-    /// compiler resolves the name — so an unknown one falls back to the first
+    /// def asked for. An index outside the table cannot reach here -- the
+    /// compiler resolves the name -- so an unknown one falls back to the first
     /// map rather than growing a failure path the wire cannot produce.
     pub fn from_index(op: u32, clip: u32) -> Self {
         Self {

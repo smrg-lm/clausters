@@ -5,7 +5,7 @@ use crate::dsp::{ProcessCtx, UGen};
 /// Unary operator on one signal (input 0): the generic `UnaryOpUGen`, selected
 /// by a special-index `op` (a `clausters_core::builtins::UnaryOp` discriminant).
 /// The scalar math is the shared core, so the audio thread and every client
-/// compute each op with the same code — bit-identical off the RT path.
+/// compute each op with the same code -- bit-identical off the RT path.
 pub struct UnaryOp {
     op: CoreUnaryOp,
 }

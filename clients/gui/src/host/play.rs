@@ -4,14 +4,14 @@
 //! A buffer is data, and data does not sound: what sounds is an instrument
 //! reading it (`docs/decisions.md`). A host that draws a take therefore needs a
 //! def of its own to hear one, and it is deliberately the smallest one that
-//! could be — read one channel of the buffer at the transport's position, scale
+//! could be -- read one channel of the buffer at the transport's position, scale
 //! it, out to one bus. Nothing here is a synthesis surface: a multitrack's
 //! instruments are the client's, and this is the editor's monitor.
 //!
 //! **The reader follows the transport; it does not carry a position.** Its
 //! phase is `TransportPos`, so playing from the cursor is `/transport_locate`,
 //! looping a selection is `/transport_loop`, and pausing is `/transport_stop`
-//! over the group bound with `/transport_group` — which freezes the readers
+//! over the group bound with `/transport_group` -- which freezes the readers
 //! with their state intact, so playing again *continues*. None of those are
 //! things this def has to know, and none of them cost a message per pass. It is
 //! also what a multitrack needs, where the same time drives many readers, and
@@ -22,7 +22,7 @@
 //! shape chosen here: the buffer readers are mono (`BufRd`'s `chan` input picks
 //! the channel, and two readers on one phase stay sample-locked), so a stereo
 //! take is two nodes exactly as a stereo file is two readers. A fixed
-//! two-channel def would be wrong in both directions — silent on the right for a
+//! two-channel def would be wrong in both directions -- silent on the right for a
 //! mono take, and deaf to the third channel of anything wider.
 //!
 //! **The monitor has a group of its own**, and it is that group the transport
@@ -44,7 +44,7 @@ use super::Host;
 /// and whether the transport is rolling it.
 ///
 /// The channel count is here because stopping has to free every reader it
-/// started; `rolling` is here because **pausing is not stopping** — a paused
+/// started; `rolling` is here because **pausing is not stopping** -- a paused
 /// monitor keeps its readers, frozen with the governed group, so resuming
 /// continues the sound instead of starting a second copy of it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -65,7 +65,7 @@ pub const TAKE_DEF: &str = "clausters-gui-take";
 /// so the gate is one comparison whoever is playing.
 const NO_END: f64 = 1.0e12;
 
-/// How long each edge of a region's gate takes, in frames — about five
+/// How long each edge of a region's gate takes, in frames -- about five
 /// milliseconds at 48 kHz.
 ///
 /// Short enough that nobody hears it as a fade and long enough that nobody
@@ -74,7 +74,7 @@ const NO_END: f64 = 1.0e12;
 /// and this is the one every edge needs whether or not anybody asked.
 const RAMP: f64 = 240.0;
 
-/// The most channels the monitor will play at once — a bound rather than a
+/// The most channels the monitor will play at once -- a bound rather than a
 /// judgement about contents: it is what keeps a malformed channel count from
 /// filling the node tree, and it is well past any take a person mixes by hand.
 const MAX_CHANNELS: usize = 32;
@@ -86,7 +86,7 @@ const MAX_CHANNELS: usize = 32;
 pub fn take_def_message() -> OscMessage {
     // `TransportPos` is the whole of the seek: the reader plays wherever the
     // multitrack is, so this def has no start frame, no trigger and no loop of its
-    // own. `offset` is where this take sits in the multitrack — 0 while a take *is*
+    // own. `offset` is where this take sits in the multitrack -- 0 while a take *is*
     // the multitrack, and the door a multitrack clip goes through later.
     let spec = json!({
         "name": TAKE_DEF,
@@ -180,7 +180,7 @@ impl Host {
     /// be written.
     ///
     /// `looping` names the span to repeat, in frames; `None` plays on past the
-    /// end, where the reader clamps and goes quiet — there is no "one shot" to
+    /// end, where the reader clamps and goes quiet -- there is no "one shot" to
     /// arrange, because the transport simply keeps rolling and the head keeps
     /// moving, which is what a DAW does.
     pub fn play_buffer(
@@ -277,7 +277,7 @@ impl Host {
     /// nothing is loaded to pause.
     ///
     /// The freeze is the server's: the governed group stops processing with its
-    /// state intact, so a resume continues the sound instead of restarting it —
+    /// state intact, so a resume continues the sound instead of restarting it --
     /// and the position, and therefore the drawn head, holds with it. Nothing
     /// here has to remember where the multitrack was, which is the whole reason a
     /// pause is a transport command and not a re-`/synth_new`.
@@ -296,7 +296,7 @@ impl Host {
         Some(monitor.rolling)
     }
 
-    /// Moves the multitrack to `frame` — the seek, which is the transport's and not
+    /// Moves the multitrack to `frame` -- the seek, which is the transport's and not
     /// the reader's. Safe to call while stopped, which is what a click on the
     /// ruler does.
     pub fn locate(&mut self, frame: u64) {
@@ -319,7 +319,7 @@ impl Host {
         });
     }
 
-    /// The widget whose contents the monitor is loaded with, if any — whether
+    /// The widget whose contents the monitor is loaded with, if any -- whether
     /// or not the transport is rolling it.
     pub fn playing_widget(&self) -> Option<i32> {
         self.playing.map(|m| m.widget)
@@ -331,7 +331,7 @@ impl Host {
         self.playing
     }
 
-    /// Declares that this host drives the server's transport — that it is the
+    /// Declares that this host drives the server's transport -- that it is the
     /// one that bound the governed group. See [`Host::owns_transport`].
     pub fn set_owns_transport(&mut self, owns: bool) {
         self.owns_transport = owns;
@@ -417,7 +417,7 @@ mod tests {
         );
     }
 
-    /// The monitor is governed, and it is governed through a group of its own —
+    /// The monitor is governed, and it is governed through a group of its own --
     /// binding the root would freeze every sound in the session.
     #[test]
     fn the_monitor_binds_its_own_group_to_the_transport() {

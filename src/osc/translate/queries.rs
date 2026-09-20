@@ -1,14 +1,14 @@
 //! What the translator reports: the def tables, the buffer pool and the tree
 //! mirror, as the arguments of a reply.
 //!
-//! Nothing here mutates or reaches the engine — these read the network-side
+//! Nothing here mutates or reaches the engine -- these read the network-side
 //! state the rest of the module maintains, which is why a query answers
 //! immediately instead of round-tripping through the audio thread.
 
 use super::*;
 
 impl CmdTranslator {
-    /// `/def_query.reply` arguments for `/def_query`, one vector per def — the
+    /// `/def_query.reply` arguments for `/def_query`, one vector per def -- the
     /// loaded defs and their control surface, which is what a patcher wires.
     ///
     /// With `names`, details exactly those (an unknown one comes back with an
@@ -17,12 +17,12 @@ impl CmdTranslator {
     /// loaded def, ordered by family then name so the reply is deterministic.
     ///
     /// Layout per def: `name, family, numControls`, then per control
-    /// `name, default, rate` — `rate` naming the same `kr`/`tr`/`ir` control
+    /// `name, default, rate` -- `rate` naming the same `kr`/`tr`/`ir` control
     /// types a `/def_send synth` spec declares. A **faust** def appends `min, max,
     /// step` (its params carry a range; the reserved `out`/`in` bus controls
     /// are engine plumbing and stay out of the reported surface). A **graph**
     /// def reports its surface **ports** instead, each followed by
-    /// `numTargets` and per target `member, control, mul, add` — the scaling
+    /// `numTargets` and per target `member, control, mul, add` -- the scaling
     /// the port applies inside, so a level-1 patch can draw the port's real
     /// connections.
     pub fn def_info(&self, names: Option<&[String]>) -> Vec<Vec<OscType>> {
@@ -120,7 +120,7 @@ impl CmdTranslator {
 
     /// `/buffer_query.reply` arguments for an argument-less `/buffer_query`: every
     /// **allocated** buffer, four args each (`bufnum, frames, channels,
-    /// sampleRate`) — the same shape the per-index form replies with, so one
+    /// sampleRate`) -- the same shape the per-index form replies with, so one
     /// parser reads both.
     pub fn buffer_list(&self) -> Vec<OscType> {
         let mut args = Vec::new();
@@ -137,13 +137,13 @@ impl CmdTranslator {
 
     /// `/group_queryTree.reply` arguments: `detail`, the queried group, its
     /// child count and its name, then depth-first per node: ID and child count
-    /// (`-1` for synths) followed by a name — the group's own (empty when it
-    /// has none) or the synth's def name — and per `detail` level the same
-    /// payload `/node_query.reply` carries — 1 adds the control count and (name, value)
+    /// (`-1` for synths) followed by a name -- the group's own (empty when it
+    /// has none) or the synth's def name -- and per `detail` level the same
+    /// payload `/node_query.reply` carries -- 1 adds the control count and (name, value)
     /// pairs (scsynth's `flag`), 2 adds the maps and the inferred bus lists,
     /// which is what makes every entry a full node info.
     ///
-    /// Every node reads `ID, count, name` — one shape for both kinds, rather
+    /// Every node reads `ID, count, name` -- one shape for both kinds, rather
     /// than a name only where it is new.
     pub fn query_tree(&self, group: i32, detail: i32) -> Result<Vec<OscType>, String> {
         let Some(children) = self.mirror.children(group) else {
@@ -198,7 +198,7 @@ impl CmdTranslator {
     /// buses they touch) and `/group_parallel` (1 = the independent ones run on
     /// the DSP workers). They are set by command and were readable nowhere but
     /// inside `/group_dumpGraph`'s debug string, which is the one thing a
-    /// client must not parse — so a client with both ways of ordering could not
+    /// client must not parse -- so a client with both ways of ordering could not
     /// say which one it was looking at, and found out from a `/fail`.
     ///
     /// In the tree reply they ride at `detail >= 2`, which is where that reply
@@ -251,7 +251,7 @@ impl CmdTranslator {
     /// `reads`/`writes` bus lists as two strings (same format as
     /// `/group_dumpGraph`). A group's `/group_name` follows its `tailID`,
     /// empty when it has none. Siblings are `-1` when absent, and a node the server
-    /// does not hold answers `nodeID, -1, -1, -1, -1` — `isGroup = -1` is how
+    /// does not hold answers `nodeID, -1, -1, -1, -1` -- `isGroup = -1` is how
     /// the record says the node is gone.
     pub fn node_info(&self, id: i32) -> Vec<OscType> {
         let Some(node) = self.mirror.get(id) else {
@@ -305,7 +305,7 @@ impl CmdTranslator {
         (prev, next)
     }
 
-    /// A group's `/group_name` as ` "mixer"`, or nothing when it has none —
+    /// A group's `/group_name` as ` "mixer"`, or nothing when it has none --
     /// the introspection dumps' way of showing the label next to the ID.
     fn quoted_name(&self, id: i32) -> String {
         match self.mirror.name_of(id) {
@@ -315,7 +315,7 @@ impl CmdTranslator {
     }
 
     /// `/group_dumpGraph`: a human-readable view of the inferred bus graph of
-    /// one group — what each child reads/writes and the current order.
+    /// one group -- what each child reads/writes and the current order.
     pub fn dump_graph(&self, group: i32) -> Result<String, String> {
         let Some(children) = self.mirror.children(group) else {
             return Err(match self.mirror.get(group) {

@@ -4,7 +4,7 @@ about it.
 
 Panning looks like one idea and is really three. **Where** a source sits is
 `pan2` (or `pan_az` on a ring of speakers). **How wide** the whole image is has
-nothing to do with position — it is the mid/side pair, `stereo_width` for the
+nothing to do with position -- it is the mid/side pair, `stereo_width` for the
 knob and `mid_side` when something has to happen in between. And **which of two
 sources you hear** is a crossfade, `xfade2` and `select_x`, which is the same
 law again pointed at a different question.
@@ -19,7 +19,7 @@ wrong for you depends on who is listening:
 * **constant amplitude** (`lin_pan2`) holds the *mono* sum steady instead, and
   loses 3 dB of stereo power at the centre;
 * `balance2` **costs 3 dB** when centred, because it applies the pan law to a
-  pair that is already stereo — it is the one that charges you for doing
+  pair that is already stereo -- it is the one that charges you for doing
   nothing;
 * `stereo_width` changes each channel's level and leaves the **mono sum exactly
   where it was**, because width only scales the part that cancels.
@@ -60,8 +60,8 @@ def envelope(seconds):
 
 # ---- 1. a source crossing the field --------------------------------------------
 #
-# `pan2` returns *two channels* — a ChannelList, the same container `dup` builds
-# — so it goes straight into `out(0, ...)`, which lays them on buses 0 and 1. A
+# `pan2` returns *two channels* -- a ChannelList, the same container `dup` builds
+# -- so it goes straight into `out(0, ...)`, which lays them on buses 0 and 1. A
 # UGen has one output, so under the hood this is two `Pan2` rows sharing their
 # inputs and differing in a trailing channel index; the builder fills that in
 # and you never see it.
@@ -81,7 +81,7 @@ def sweep() -> SynthDef:
 #
 # `splay` is a client-side helper, not a UGen: it panned each voice with `pan2`
 # and folded the results into a pair. The first voice lands hard left, the last
-# hard right, the rest evenly in between — so a detuned bank arrives as a wide
+# hard right, the rest evenly in between -- so a detuned bank arrives as a wide
 # chord instead of a mono lump.
 #
 # Note that the level is *not* normalized for you. Six voices at equal power
@@ -100,7 +100,7 @@ def bank() -> SynthDef:
 # the identity, 2 is wide.
 #
 # `mid_side` is the same matrix with the width left to you, and it is the one to
-# reach for when something has to happen *between* the encode and the decode —
+# reach for when something has to happen *between* the encode and the decode --
 # here the centre of the mix is filtered while its sides are not, which is a
 # thing a width knob cannot express. The call is its own inverse: the same
 # `mid_side` encodes and decodes.
@@ -125,7 +125,7 @@ def midside() -> SynthDef:
 # `xfade2` is the pan law pointed at two sources instead of two channels, and
 # `select_x` is the same thing along an array: the index's whole part picks a
 # source and its fraction crossfades to the next. Every source runs whether or
-# not it is selected — they are UGens in a graph, not branches — so this chooses
+# not it is selected -- they are UGens in a graph, not branches -- so this chooses
 # what is *heard*, never what is computed.
 
 def morph() -> SynthDef:
@@ -139,7 +139,7 @@ def morph() -> SynthDef:
 
 # ---- 5. a ring, folded down to two channels ------------------------------------
 #
-# `pan_az` places a source on a ring of any size — this one has six channels for
+# `pan_az` places a source on a ring of any size -- this one has six channels for
 # a listener with two, which is the ordinary case for anyone writing surround
 # samples on headphones. The ring's channels are then panned into the stereo
 # pair by hand, which is exactly what a fold-down is.
@@ -178,8 +178,8 @@ CLAIMS = {
     "eq_side": "equal power, hard left: full level, mono down 3 dB",
     "lin_centre": "constant amplitude, centred: 0.50 per channel",
     "lin_side": "constant amplitude, hard left: same mono as centred",
-    "balanced": "balance2, centred: 0.71 — 3 dB for doing nothing",
-    "pair": "width 1: exactly the identity — the baseline for the two below",
+    "balanced": "balance2, centred: 0.71 -- 3 dB for doing nothing",
+    "pair": "width 1: exactly the identity -- the baseline for the two below",
     "wide": "width 2: channels louder, mono exactly unchanged",
     "narrow": "width 0: both channels are the mid, mono unchanged again",
 }
@@ -218,7 +218,7 @@ def render(path=None):
     peak = max(stats.peak)
     print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f}")
     if peak == 0.0:
-        sys.exit("the render is silent — something is wrong")
+        sys.exit("the render is silent -- something is wrong")
     if peak > 1.5:
         sys.exit(f"the render clips hard (peak {peak:.2f})")
 
@@ -242,7 +242,7 @@ def render(path=None):
               f"{rms(mono) / scale:6.3f}   {CLAIMS.get(name, '')}")
 
     if path:
-        print(f"\nwrote {path} — listen with: pw-play {path}")
+        print(f"\nwrote {path} -- listen with: pw-play {path}")
 
 
 def rms(x):

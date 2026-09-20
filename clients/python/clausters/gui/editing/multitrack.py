@@ -33,7 +33,7 @@ __all__ = ["MultitrackDomain", "MultitrackEditor", "MultitrackView", "Sources",
 
 #: The names the transport row's three widgets carry. A name and not an id,
 #: because these are the widgets a **hand** addresses and a handler is hung on a
-#: name — and they are the multitrack's own, so a script's ``extra`` may carry
+#: name -- and they are the multitrack's own, so a script's ``extra`` may carry
 #: anything it likes beside them.
 REWIND = "transport_rewind"
 PLAY = "transport_play"
@@ -41,7 +41,7 @@ STOP = "transport_stop"
 CLOCK = "transport_clock"
 
 #: How often the read-out asks the engine where the multitrack is, in seconds. The
-#: *line* asks nothing — the host draws it from the segment every frame — so this
+#: *line* asks nothing -- the host draws it from the segment every frame -- so this
 #: is the price of the number beside it and nothing else.
 CLOCK_TICK = 0.05
 
@@ -51,13 +51,13 @@ class Sources:
     The one thing about a multitrack that is not in the multitrack: a document names a
     source and a picture is drawn from a buffer, and only whoever loaded the
     samples knows they are the same. It is a class rather than a dict so both
-    directions have a name — a box is *drawn* from a buffer and *read back* into
+    directions have a name -- a box is *drawn* from a buffer and *read back* into
     a source.
     """
 
     def __init__(self, buffers=None):
         #: source id -> the buffer number it was read into, or **the object
-        #: that holds it** — a `clausters.defs.Buffer`, a
+        #: that holds it** -- a `clausters.defs.Buffer`, a
         #: `clausters.seq.Timeline`. Both are accepted because they answer two
         #: different questions and a caller usually has the object: which buffer
         #: to draw from is `bufnum`, and what a box **opens as** is `structure`.
@@ -66,7 +66,7 @@ class Sources:
     def bufnum(self, source) -> int:
         """The buffer a source was read into; ``-1`` for one nobody loaded.
 
-        **Negative and not zero**, because buffer 0 is a buffer — the first one
+        **Negative and not zero**, because buffer 0 is a buffer -- the first one
         an allocator hands out. A source given as an object answers with the
         buffer it holds, and one that holds none is a box with no samples to
         draw, which is honest rather than empty.
@@ -87,7 +87,7 @@ class Sources:
         return -1 if held is None else int(held)
 
     def structure(self, source):
-        """**What a box over this source opens as** — the object a caller gave,
+        """**What a box over this source opens as** -- the object a caller gave,
         or ``None`` for a source it named by number alone.
 
         A multitrack names a source and an editor edits a structure; only whoever
@@ -152,8 +152,8 @@ class Sources:
 class Bridge:
     """What a client adds to the crate's picture: an axis and a buffer table.
 
-    Held by the domain and the view alike, because both cross the same seam —
-    one drawing a box and the other reading one back — and two copies of the
+    Held by the domain and the view alike, because both cross the same seam --
+    one drawing a box and the other reading one back -- and two copies of the
     scale is how a box comes back somewhere it was not put.
     """
 
@@ -172,8 +172,8 @@ class MultitrackDomain(Domain):
 
     It reads no gesture and decides no edit: a gesture is the editor's turn,
     and the turn is the crate's (`clausters._native.EditingCore`).
-    What is left is what the history registers a structure for — putting a step
-    back onto the multitrack — and that goes through the same editor, so an undo and
+    What is left is what the history registers a structure for -- putting a step
+    back onto the multitrack -- and that goes through the same editor, so an undo and
     an edit apply by one rule.
     """
 
@@ -273,7 +273,7 @@ class MultitrackView(View):
         self.link = link
         #: The id of the strip that rules the multitrack, once one has been built.
         self.ruler: int | None = None
-        #: The id of the multitrack's own widget, once one has been built — what a
+        #: The id of the multitrack's own widget, once one has been built -- what a
         #: playhead is drawn on, so whoever moves the line does not have to
         #: guess which of the two ids is the picture.
         self.multitrack: int | None = None
@@ -322,7 +322,7 @@ class MultitrackEditor(Editor):
     Nothing is handed back at the end: the object the script passed in *is* the
     edited one, and reading it after an edit is how a caller sees what a hand
     did. Being an `clausters.gui.editing.Editor`, it has the history every other
-    editor has — `undo` and `redo` walk it, and a second window over the same
+    editor has -- `undo` and `redo` walk it, and a second window over the same
     multitrack walks the same one.
     """
 
@@ -332,10 +332,10 @@ class MultitrackEditor(Editor):
         bridge = Bridge(multitrack, sample_rate=sample_rate, server=server,
                         sources=Sources(sources) if not isinstance(sources, Sources)
                         else sources)
-        #: The axis and the buffer table this window crosses to — the two things
+        #: The axis and the buffer table this window crosses to -- the two things
         #: about a multitrack that are not in the multitrack.
         self.bridge = bridge
-        #: The editors a hand opened by entering a box, by box name — held so a
+        #: The editors a hand opened by entering a box, by box name -- held so a
         #: second double click on the same box raises the one that is already
         #: open rather than a second window over one structure.
         self.entered: dict = {}
@@ -372,7 +372,7 @@ class MultitrackEditor(Editor):
 
     @property
     def multitrack_widget(self) -> "int | None":
-        """The id of the multitrack's own widget — what a playhead is drawn on.
+        """The id of the multitrack's own widget -- what a playhead is drawn on.
         ``None`` before the picture has been drawn once."""
         return getattr(self.view, "multitrack", None)
 
@@ -475,7 +475,7 @@ class MultitrackEditor(Editor):
         The wiring is here rather than in the constructor because that is where
         the window comes into being: `clausters.gui.edit` builds the editor and
         opens it in two steps, so a multitrack has its readers before it has a screen
-        — which is the right order anyway, since a multitrack can be played by a
+        -- which is the right order anyway, since a multitrack can be played by a
         script that never draws it.
         """
         window = super().open(host, id)
@@ -512,7 +512,7 @@ class MultitrackEditor(Editor):
         """The read-out, and the one round trip: the position is the engine's.
 
         Returns the delay until the next reading, or ``None`` once the window is
-        gone — which is how a scheduled tick stops without anybody stopping it.
+        gone -- which is how a scheduled tick stops without anybody stopping it.
         """
         if self.closed or self.playback is None:
             return None
@@ -579,7 +579,7 @@ class MultitrackEditor(Editor):
         alone.
 
         This is what a box's own ruler reaches, because a structure inside a
-        multitrack has no transport of its own — the multitrack is the one that has one.
+        multitrack has no transport of its own -- the multitrack is the one that has one.
         """
         if self.playback is not None:
             self.playback.cue(at)
@@ -616,7 +616,7 @@ class MultitrackEditor(Editor):
         own, and return it (``None`` for a box with nothing to open).
 
         **The multitrack places; a box is entered to edit.** What a box holds
-        is a structure like any other — a take's samples, a timeline of notes —
+        is a structure like any other -- a take's samples, a timeline of notes --
         so entering one is `clausters.gui.editing.edit` over that structure,
         with no second implementation of any editor.
 
@@ -625,14 +625,14 @@ class MultitrackEditor(Editor):
         dragged on the stack walk one history: an undo that needed a window
         reopened to reach it is a hole in the order that does not announce
         itself. What that costs is that the entered structure stays in the
-        context while the multitrack is open even if its window is closed — which
+        context while the multitrack is open even if its window is closed -- which
         the context already does, since it holds what it registered.
 
         **And one window set**, which is the multitrack's
         `clausters.gui.editing.Application`: a box entered out of a multitrack is
         part of looking at the multitrack, so it draws on the same host, names
         widgets in the same id space and walks the same order without resolving
-        anything of its own. Its **acknowledgement stays its own** — an
+        anything of its own. Its **acknowledgement stays its own** -- an
         `clausters.gui.editing.Echo` is one view's end of the conversation, and
         a box sharing the multitrack's floor would silence the multitrack's staleness
         check every time a hand edited inside the box.

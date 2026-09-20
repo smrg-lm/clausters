@@ -1,4 +1,4 @@
-// `GuiHost` — the client object that drives a GUI host (mirrors
+// `GuiHost` -- the client object that drives a GUI host (mirrors
 // `clausters/gui/host.py`). The page's *own* host is `./page.ts`.
 //
 // The GUI host is a *sibling OSC front* of the audio server: the same
@@ -6,10 +6,10 @@
 // `GuiHost` sits on the very same `Connection` seam the audio `Server` does
 // and never names a transport itself. Two carriers reach a host from a page:
 //
-// - `pageGuiConnection()` — the **in-page host**: the `clausters-gui` wasm
+// - `pageGuiConnection()` -- the **in-page host**: the `clausters-gui` wasm
 //   running on this page's canvas, reached through the `guiHost()` singleton's
 //   binding bridge (`feed` in, `poll` out). No process, no socket.
-// - `WsConnection.open("ws://host:57220")` — a **native** `clausters-gui --ws`
+// - `WsConnection.open("ws://host:57220")` -- a **native** `clausters-gui --ws`
 //   host, the browser's path into a desktop window.
 //
 // Keep the split the Python client keeps: building the GuiDef tree (see
@@ -44,13 +44,13 @@ import type { ClaustersServer } from "../engine/server.ts";
 import { ambientHost, setAmbientHost } from "./ambient.ts";
 import type { ClaustersGui, PageGuiConnection, Stage } from "./page.ts";
 
-// The page's own host — the singleton, its canvases and the carrier over it —
+// The page's own host -- the singleton, its canvases and the carrier over it --
 // lives in `./page.ts` so the component run time can load it without this
 // module and the GuiDef builders behind it. Re-exported here, where callers
 // have always found it.
 export { guiHost, newGuiHost, pageGuiConnection } from "./page.ts";
 /**
- * This area's logger — every command sent to the GUI host and every event from
+ * This area's logger -- every command sent to the GUI host and every event from
  * it. Silent unless `CLAUSTERS_LOG=gui` (or `watch("gui")`).
  */
 const log = area("gui");
@@ -58,7 +58,7 @@ const log = area("gui");
 export type { ClaustersGui, EventListener, PageGuiConnection, Stage } from "./page.ts";
 
 /**
- * The GUI host's default OSC port, UDP and TCP alike — clear of the audio
+ * The GUI host's default OSC port, UDP and TCP alike -- clear of the audio
  * server's family (57110/57120).
  */
 export const DEFAULT_PORT = 57210;
@@ -79,14 +79,14 @@ const DEFAULT_WS_URL = `ws://127.0.0.1:${DEFAULT_WS_PORT}`;
  */
 export type GuiTransportName = "page" | "ws";
 
-/** What {@link GuiHost} is built with — the reference's constructor, page-shaped. */
+/** What {@link GuiHost} is built with -- the reference's constructor, page-shaped. */
 export interface GuiHostOptions {
     /** Where the host is; `"page"` (the default) or `"ws"`. */
     transport?: GuiTransportName;
     /** The `clausters-gui --ws` address, when `transport` is `"ws"`. */
     url?: string;
     /**
-     * *Which* in-page host, when it is not this page's own — a host's address
+     * *Which* in-page host, when it is not this page's own -- a host's address
      * in a tab, where the reference client uses a port. Read it off a handle
      * that booted one ({@link GuiHost.instanceOf}).
      */
@@ -94,15 +94,15 @@ export interface GuiHostOptions {
     /**
      * The engine a **booted** host's audio leg is wired to, so a widget bound
      * to a node reaches the server that holds it. This is what the reference
-     * client's `session.gui()` does — it boots a host with its client leg
-     * pointed at that session's server — and here it is spelled by handing a
+     * client's `session.gui()` does -- it boots a host with its client leg
+     * pointed at that session's server -- and here it is spelled by handing a
      * `Server`'s own engine over: `new GuiHost({ engine: server.engine })`.
      * Without it a booted host brings up an engine of its own, and nothing on
      * another server is bindable from it.
      */
     engine?: ClaustersServer;
     /**
-     * A carrier built by hand, which wins over `transport` — the reference
+     * A carrier built by hand, which wins over `transport` -- the reference
      * client's `interface=`.
      */
     connection?: Connection;
@@ -112,7 +112,7 @@ export interface GuiHostOptions {
 
 /**
  * A widget's state as `/gui_info` reports it. An **empty** `type` means the
- * host has no such widget — it answers either way, the way the audio server
+ * host has no such widget -- it answers either way, the way the audio server
  * replies even on a miss.
  */
 export interface WidgetInfo {
@@ -168,11 +168,11 @@ const wireProp = (name: string): string =>
     name.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
 
 /**
- * A connection to a running GUI host — the object that sends the GuiDefs and
+ * A connection to a running GUI host -- the object that sends the GuiDefs and
  * reads the widgets back.
  */
 /**
- * The interface events a widget reports — what the **hand** did, as against
+ * The interface events a widget reports -- what the **hand** did, as against
  * what the widget is worth. They arrive as a one-string payload and are the
  * only such payload, which is what tells them from a value.
  */
@@ -195,7 +195,7 @@ export class GuiHost {
     private readonly audio: ClaustersServer | null;
 
     /**
-     * The in-page host instance this handle drives, once it has one — `null`
+     * The in-page host instance this handle drives, once it has one -- `null`
      * over a socket. A host's address in a page: hand it to a second handle
      * (`new GuiHost({ gui: first.instanceOf }).attach()`) to reach the same
      * host, the way the reference client hands a second handle the port.
@@ -216,7 +216,7 @@ export class GuiHost {
     get connection(): Connection {
         if (!this.conn) {
             throw new Error(
-                "this handle has no carrier yet — boot() a host, attach() to " +
+                "this handle has no carrier yet -- boot() a host, attach() to " +
                     "one already running, or build it with an explicit " +
                     "`connection`.",
             );
@@ -224,14 +224,14 @@ export class GuiHost {
         return this.conn;
     }
     /**
-     * The one widget-id namespace for this host client — recycling, so a
+     * The one widget-id namespace for this host client -- recycling, so a
      * freed subtree's ids return to the pool. Windows and widgets share it.
      */
     private readonly alloc: GuiIdAllocator;
     /** The window ids opened through `open` and not yet closed. */
     private readonly opened = new Set<number>();
     /**
-     * id → its child ids, for every widget this client defined — the subtree
+     * id → its child ids, for every widget this client defined -- the subtree
      * `free` walks to return the whole branch's ids to the pool.
      */
     private readonly children = new Map<number, number[]>();
@@ -241,13 +241,13 @@ export class GuiHost {
      */
     private readonly handles = new Map<number, WindowHandle>();
     /**
-     * The stamp of the last `/gui_event` seen — what `ack` answers. The host
+     * The stamp of the last `/gui_event` seen -- what `ack` answers. The host
      * numbers every edit it emits so an owner's reply can name which one it is
      * about; zero means nothing has arrived yet.
      */
     lastSeq = 0;
     /**
-     * The document version the last `/gui_event` was made against — what the
+     * The document version the last `/gui_event` was made against -- what the
      * host had been told when the hand let go. Zero means the host cannot say,
      * which is what an owner that never reports a version leaves it with, and
      * which an owner reads as *apply unchecked*.
@@ -263,7 +263,7 @@ export class GuiHost {
     private readonly onInterfaceHandlers = new Map<number, Map<string, () => void>>();
     private readonly onClosedHandlers = new Map<number, () => void>();
     /**
-     * What is waiting for a window to go away — see {@link GuiHost.waitWhile}.
+     * What is waiting for a window to go away -- see {@link GuiHost.waitWhile}.
      * A set of checks rather than one promise, because several callers may be
      * waiting on different windows of the same host.
      */
@@ -274,7 +274,7 @@ export class GuiHost {
     private readonly pending = new Set<Pending>();
     private readonly listener: (packet: Uint8Array) => void;
     /**
-     * The page surface this host draws on, when it is an in-page one — where a
+     * The page surface this host draws on, when it is an in-page one -- where a
      * def's canvas comes from. `null` for a host reached over a socket, which
      * has windows of its own and no document to mount into.
      */
@@ -296,8 +296,8 @@ export class GuiHost {
      * a transport and an address, and the handle opens the carrier itself when
      * a verb needs it:
      *
-     * - `"page"` (the default) — the `clausters-gui` wasm host in this tab.
-     * - `"ws"` — a native `clausters-gui --ws` host at `url`.
+     * - `"page"` (the default) -- the `clausters-gui` wasm host in this tab.
+     * - `"ws"` -- a native `clausters-gui --ws` host at `url`.
      *
      * Then one of the two verbs, and as with the audio `Server` **they are what
      * say who owns what**: {@link GuiHost.boot} brings up a host this handle
@@ -305,7 +305,7 @@ export class GuiHost {
      * nothing.
      *
      * `share` takes one slice of the widget-id space instead of all of it,
-     * for a host with more than one client naming widgets on it — the same
+     * for a host with more than one client naming widgets on it -- the same
      * arrangement, and the same arithmetic, as the audio `Server`'s (see
      * `IdShare`).
      */
@@ -353,7 +353,7 @@ export class GuiHost {
                 : pageGuiIfUp());
         if (!found) {
             throw new Error(
-                "no GUI host is running in this page — attach() is for a host " +
+                "no GUI host is running in this page -- attach() is for a host " +
                     "already up, and nothing has booted one here. boot() one " +
                     "instead, which brings up its own.",
             );
@@ -370,7 +370,7 @@ export class GuiHost {
      * Bring up the host this handle points at, and return `this`.
      *
      * The page's own host, in other words: this carrier goes to the wasm host
-     * in this document, so booting is having it — and what the verb *adds* is
+     * in this document, so booting is having it -- and what the verb *adds* is
      * the surface it draws on, the canvases a view opened here gets. Over a
      * socket there is nothing to bring up (a tab starts no process on another
      * machine), and this refuses with `attach` named, exactly as the audio
@@ -378,19 +378,19 @@ export class GuiHost {
      *
      * The reference client's `GuiHost.boot`, which starts a `clausters-gui`
      * process and connects to it. Pair it with {@link GuiHost.stop}, which lets
-     * this client go — and, there, stops a process it started.
+     * this client go -- and, there, stops a process it started.
      *
      * **A host alone still needs the core.** Widget ids come out of the core's
      * registry, so a page that boots a host and no server awaits
      * {@link loadCore} first; one that opened a `Server` or went through
-     * `Session` already has it. The reference client has no such line — its
+     * `Session` already has it. The reference client has no such line -- its
      * core is in the process.
      */
     async boot({ adoptAmbient = true }: { adoptAmbient?: boolean } = {}): Promise<this> {
         if (this.carrierKind === "ws" && !this.conn) {
             throw new Error(
                 `this handle points at ${this.carrierUrl} and a page can start ` +
-                    "nothing there — attach() to the host running at that " +
+                    "nothing there -- attach() to the host running at that " +
                     "address, or boot() one with the default transport, which " +
                     "brings up a host in this tab.",
             );
@@ -400,7 +400,7 @@ export class GuiHost {
         if (page === undefined) {
             throw new Error(
                 "this carrier goes to a host over a socket and a page can start " +
-                    "nothing there — attach() to the host running at that address.",
+                    "nothing there -- attach() to the host running at that address.",
             );
         }
         this.page = page;
@@ -413,7 +413,7 @@ export class GuiHost {
      *
      * The other half of `boot`, for the host nobody here started: a
      * `clausters-gui --ws` on this machine or another. Ownership is the
-     * difference and it runs through the pair — this handle did not start that
+     * difference and it runs through the pair -- this handle did not start that
      * host, so `stop` lets the client go and leaves the host standing, windows
      * and all.
      *
@@ -421,7 +421,7 @@ export class GuiHost {
      * connects proves a listener, not a host, so a carrier with nothing behind
      * it throws here rather than sending every later `/gui_def` into a void
      * that reports nothing back. The probe is a `/gui_query` for an id nobody
-     * defined — a host that is up answers it (with an empty type), and one
+     * defined -- a host that is up answers it (with an empty type), and one
      * that is not answers nothing.
      */
     async attach({
@@ -434,7 +434,7 @@ export class GuiHost {
         } catch (error) {
             if (!(error instanceof ReplyTimeout)) throw error;
             throw new Error(
-                `no GUI host answers on ${this.connection.url ?? "this carrier"} — ` +
+                `no GUI host answers on ${this.connection.url ?? "this carrier"} -- ` +
                     `nothing replied to /gui_query within ${timeout}s. Start one ` +
                     "(`clausters-gui --ws`), or point this handle where one is running.",
             );
@@ -449,7 +449,7 @@ export class GuiHost {
     }
 
     /**
-     * Register as the **ambient** host when none is, first-wins — so
+     * Register as the **ambient** host when none is, first-wins -- so
      * `view(...).open()`, `plot` and `scope` land here instead of opening a
      * second host. The mirror of the audio `Server`'s default-session
      * adoption, and `stop` gives the registration up.
@@ -474,7 +474,7 @@ export class GuiHost {
     }
 
     /**
-     * A fresh id, unique across everything this host client names — windows
+     * A fresh id, unique across everything this host client names -- windows
      * and widgets share one recycling namespace, so a widget id never repeats
      * across windows. A freed subtree's ids return to the pool.
      */
@@ -488,7 +488,7 @@ export class GuiHost {
      * A thin, id-managing wrapper over `define`: without an `id` one is
      * assigned (and remembered, so `close`/`closeAll` free it); pass one to
      * name the root yourself. Id-less **widgets** inside `tree` are assigned
-     * too, in place — see `define`. Any `blobs` ride along as they do there.
+     * too, in place -- see `define`. Any `blobs` ride along as they do there.
      */
     open(
         tree: GuiNode,
@@ -506,7 +506,7 @@ export class GuiHost {
         if (element != null && this.page === null) {
             throw new Error(
                 "this host has windows of its own, not a document to mount " +
-                    "into — an element is only meaningful for a host on this page",
+                    "into -- an element is only meaningful for a host on this page",
             );
         }
         let canvas: HTMLCanvasElement | undefined;
@@ -527,7 +527,7 @@ export class GuiHost {
         this.opened.add(wid);
         if (canvas !== undefined && element != null && this.page !== null) {
             this.fitted.get(wid)?.();
-            // The host never reads the DOM, so the page reports the box — and
+            // The host never reads the DOM, so the page reports the box -- and
             // keeps reporting it, since an element's size and the display's
             // scale move independently.
             this.fitted.set(wid, this.page.fit(wid, element, canvas));
@@ -536,13 +536,13 @@ export class GuiHost {
     }
 
     /**
-     * `/gui_def <id> <json> [blob…]` — build a whole widget tree in one
+     * `/gui_def <id> <json> [blob…]` -- build a whole widget tree in one
      * message, returning its `WindowHandle`. Trailing `blobs` (e.g. waveform
      * samples from `samplesToBlob`) ride alongside the JSON and are
      * referenced by index from a widget's `blob` property.
      *
      * Widgets built **without an id** get a fresh host-unique one here,
-     * written into the caller's object **in place** — so after
+     * written into the caller's object **in place** -- so after
      * `define`/`open` the widget you kept a reference to reads back as
      * `widget.id`, ready for `set`/`bind`. Ids you picked are kept verbatim;
      * they share one recycling namespace across every window on this host
@@ -604,8 +604,8 @@ export class GuiHost {
      * `/gui_def <id> <json>` on a widget **inside** an open window: build that
      * subtree again and leave the rest of the window exactly as it is.
      *
-     * {@link GuiHost.define} redefines a widget too — the host frees the old
-     * subtree either way — but it is written for a **window**: it replaces the
+     * {@link GuiHost.define} redefines a widget too -- the host frees the old
+     * subtree either way -- but it is written for a **window**: it replaces the
      * handle's whole name map with the names of the tree it was handed, which
      * for a subtree would leave the window resolving only that subtree's names.
      * So this is the same message with the bookkeeping a part needs: the names
@@ -613,7 +613,7 @@ export class GuiHost {
      * and the handle a page is holding stays the one it holds.
      *
      * Why it exists at all: a widget that appeared or went can only arrive by a
-     * definition, and doing that to the **window** rebuilds every widget in it —
+     * definition, and doing that to the **window** rebuilds every widget in it --
      * so a clip dropped on one lane took the zoom, the scroll and the selection
      * of every other lane with it. `/gui_def` names any widget, so the answer is
      * to name the smallest one that changed.
@@ -658,7 +658,7 @@ export class GuiHost {
     }
 
     /**
-     * Every widget id under `id`, itself included — what a redefine is about to
+     * Every widget id under `id`, itself included -- what a redefine is about to
      * replace, read before it is replaced.
      */
     private subtreeIds(id: number): Set<number> {
@@ -670,7 +670,7 @@ export class GuiHost {
     }
 
     /**
-     * Instantiates a **persisted** GuiDef by name (`/gui_load`) — the host
+     * Instantiates a **persisted** GuiDef by name (`/gui_load`) -- the host
      * replays it as its saved `/gui_def`. The tree is the host's, so this
      * client neither allocates its ids nor resolves its names.
      */
@@ -679,15 +679,15 @@ export class GuiHost {
     }
 
     /**
-     * `/gui_font <blob>` — draw text with this typeface from now on.
+     * `/gui_font <blob>` -- draw text with this typeface from now on.
      *
      * `face` is a raw TrueType/OpenType file (the host's rasterizer does not
      * decompress WOFF2, so a Google Fonts CSS URL is not one), served with CORS
-     * if it comes from another origin — a CSS `@font-face` cannot serve here,
+     * if it comes from another origin -- a CSS `@font-face` cannot serve here,
      * since the host draws into a canvas and never reads the document's fonts.
      * A face is a property of the **host**, not of a window, so the call
-     * carries no id and every window it has open — and every one it opens
-     * later — draws with it.
+     * carries no id and every window it has open -- and every one it opens
+     * later -- draws with it.
      *
      * Loading one **relayouts nothing**: the size table never followed the
      * typeface, so the same tree comes up the same size before and after and a
@@ -696,7 +696,7 @@ export class GuiHost {
      * a bitmap glyph's own pixels require.
      *
      * A host built without a rasterizer logs and keeps drawing with its
-     * embedded bitmap face — which is what it also does with bytes it cannot
+     * embedded bitmap face -- which is what it also does with bytes it cannot
      * read. Neither is an error here: the bitmap face is the floor every build
      * draws on.
      */
@@ -705,19 +705,19 @@ export class GuiHost {
     }
 
     /**
-     * `/gui_theme <json>` — draw the chrome from these colors from now on.
+     * `/gui_theme <json>` -- draw the chrome from these colors from now on.
      *
      * A partial `{"role": "#rrggbb[aa]"}` table: the same one a container's
      * `theme` prop takes, scoped to the **host** rather than to a subtree. It
-     * carries no id for that reason — a look is a property of the host, exactly
-     * as a typeface is — and it is the base every theme group is resolved over,
+     * carries no id for that reason -- a look is a property of the host, exactly
+     * as a typeface is -- and it is the base every theme group is resolved over,
      * so handing one over re-resolves the groups in every open window and
      * redraws them. A group overlays what it *inherits*, so moving the base
      * moves what a group means.
      *
      * Unknown roles and unreadable colors are logged by the host and skipped;
      * nothing here is refused. The native launch-time spelling is `--theme
-     * <file.toml>`, which a page has no counterpart for — this verb is how a
+     * <file.toml>`, which a page has no counterpart for -- this verb is how a
      * tab does it, and how a script does it after launch.
      */
     theme(table: Record<string, string>): void {
@@ -725,7 +725,7 @@ export class GuiHost {
     }
 
     /**
-     * `/gui_metrics <json>` — lay out with these sizes from now on.
+     * `/gui_metrics <json>` -- lay out with these sizes from now on.
      *
      * {@link GuiHost.theme}'s counterpart for lengths: a partial
      * `{"role": number}` table over the metrics every widget reads its
@@ -739,11 +739,11 @@ export class GuiHost {
     }
 
     /**
-     * `/gui_headClock <which>` — which counter every playhead is drawn from.
+     * `/gui_headClock <which>` -- which counter every playhead is drawn from.
      *
      * `"device"` (the default) is the engine's sample clock, which never stops:
      * what a host watching a live server wants, since its meters, scopes and
-     * taps are all on that axis. `"transport"` is the **transport's position** — it
+     * taps are all on that axis. `"transport"` is the **transport's position** -- it
      * holds while the transport is stopped, jumps wherever `/transport_locate`
      * puts it and wraps at a loop's end, all inside the engine.
      *
@@ -757,7 +757,7 @@ export class GuiHost {
      * A word the host does not know is logged and ignored, so the line keeps
      * drawing what it was drawing. The native launch-time spelling is
      * `--clock <device|transport>`. It is `headClock` and not `clock` because a
-     * host already has one — its application clock — and this names a counter,
+     * host already has one -- its application clock -- and this names a counter,
      * not a scheduler.
      */
     headClock(which: "device" | "transport"): void {
@@ -768,13 +768,13 @@ export class GuiHost {
      * Walks `node` (whose id is `nodeId`) and returns **a copy** carrying the
      * ids: every id-less descendant gets a fresh one, each id's children are
      * recorded (the subtree `free` recycles), and name → id is collected. The
-     * root carries no id in the tree — it is the `/gui_def` argument — so its
+     * root carries no id in the tree -- it is the `/gui_def` argument -- so its
      * id is passed in.
      *
      * It copies rather than writing into the caller's tree because **an id
      * names a live widget and a view is a definition**: one view opens as many
      * times as you like, each window with ids of its own. Copying is also what
-     * makes the same subtree nested twice work — node identity never enters,
+     * makes the same subtree nested twice work -- node identity never enters,
      * so the two places get two id runs and the host is not told to build one
      * widget twice.
      *
@@ -793,7 +793,7 @@ export class GuiHost {
         if (typeof node.name === "string" && node.name) {
             if (names.has(node.name)) {
                 throw new Error(
-                    `duplicate widget name "${node.name}" in one tree — a name is ` +
+                    `duplicate widget name "${node.name}" in one tree -- a name is ` +
                         "how this client addresses a widget, so two widgets cannot " +
                         "share one.",
                 );
@@ -815,7 +815,7 @@ export class GuiHost {
                 if (held === undefined) this.sources.set(nodeId, [source]);
                 else held.push(source);
                 // A blob source rides its bytes beside the JSON, and the index
-                // is where they land in *this* message — which is why nobody
+                // is where they land in *this* message -- which is why nobody
                 // has to keep `blob: 0` in step with the open call by hand.
                 const bytes = source.bytes;
                 if (bytes !== null) {
@@ -877,7 +877,7 @@ export class GuiHost {
     }
 
     /**
-     * The application's clock over the page's loop — seconds, and where
+     * The application's clock over the page's loop -- seconds, and where
      * anything that touches a window belongs: an animation, a periodic
      * read-out, a follow-up to a gesture. `appClock()` reaches the ambient
      * host's.
@@ -893,7 +893,7 @@ export class GuiHost {
 
     /**
      * Resolves when every window this host opened has been closed, or when
-     * `timeout` seconds pass — `true` for the first, `false` for the second.
+     * `timeout` seconds pass -- `true` for the first, `false` for the second.
      * With nothing open it resolves at once.
      *
      * **The page's answer to the reference client's `wait`**, and the shape is
@@ -908,7 +908,7 @@ export class GuiHost {
     }
 
     /**
-     * Resolves when `pred()` goes false, or on `timeout` seconds — the shared
+     * Resolves when `pred()` goes false, or on `timeout` seconds -- the shared
      * body of {@link GuiHost.wait} and of every `wait` on something that opens
      * a window.
      *
@@ -945,18 +945,18 @@ export class GuiHost {
     }
 
     /**
-     * `/gui_ack <seq> <docVersion> [<source> <generation>…] [<reason>]` — answer
+     * `/gui_ack <seq> <docVersion> [<source> <generation>…] [<reason>]` -- answer
      * the edits the host emitted, up to `seq`.
      *
      * The reply `/gui_event` never had. Without it the host cannot tell an edit
      * the owner **refused** from one it took, so it goes on drawing what the
-     * hand did — and cannot tell which of two gestures in flight an answer
+     * hand did -- and cannot tell which of two gestures in flight an answer
      * belongs to.
      *
      * There is no success flag, because there is nothing to branch on: the
      * values the owner decided ride as ordinary `set` calls **in the same
      * bundle** (see `push`), and *applied*, *applied transformed* and *refused*
-     * are the same message — a refusal is simply the previous value pushed
+     * are the same message -- a refusal is simply the previous value pushed
      * back. Send it **always**, including when nothing changed.
      */
     ack(
@@ -999,13 +999,13 @@ export class GuiHost {
     }
 
     /**
-     * `/gui_set <id> <k> <v> …` — update one live widget. A value that is
+     * `/gui_set <id> <k> <v> …` -- update one live widget. A value that is
      * logically an array or a table (a curve's break-points, a theme) rides
      * as its **JSON string**, since an OSC key/value is a scalar.
      *
      * Prop names are written the way the builders take them and go out the
      * way the wire wants them (`windowMs` → `window_ms`), which is the
-     * package's standing rule — the options are TypeScript's, the props are
+     * package's standing rule -- the options are TypeScript's, the props are
      * the wire's. A name already in wire form passes through untouched, so
      * `set({ ruler: "off" })` is what it always was.
      */
@@ -1014,7 +1014,7 @@ export class GuiHost {
     }
 
     /**
-     * `/gui_set <id> focus 1` — point the keyboard at this widget (`on: false`
+     * `/gui_set <id> focus 1` -- point the keyboard at this widget (`on: false`
      * gives the focus up).
      *
      * The focused widget is the only one keys reach, and there is one focus per
@@ -1029,7 +1029,7 @@ export class GuiHost {
     }
 
     /**
-     * `/gui_free <id>` — free a widget and its subtree, returning its ids to
+     * `/gui_free <id>` -- free a widget and its subtree, returning its ids to
      * the pool (the client-side mirror of the host freeing the subtree).
      */
     free(id: number): void {
@@ -1038,16 +1038,16 @@ export class GuiHost {
     }
 
     /**
-     * `/gui_bind <id> "server" <address> <prefix…>` — forward this widget's
+     * `/gui_bind <id> "server" <address> <prefix…>` -- forward this widget's
      * value **straight to the audio server**, bypassing this script.
      *
      * On every change the host sends `address` (an OSC path like `/node_set` or
      * `/bus_set`) with the fixed `prefix` arguments followed by the widget's
-     * value — `bind(id, "/node_set", node.id, "freq")` makes the widget send
+     * value -- `bind(id, "/node_set", node.id, "freq")` makes the widget send
      * `/node_set <node> freq <value>` itself, so the control responds with no
      * round trip through the page's script (the low-latency path). A bound
      * widget stops emitting `/gui_event`; `unbind` restores it. The host must
-     * have a server leg for the value to arrive — in the browser that is the
+     * have a server leg for the value to arrive -- in the browser that is the
      * in-page engine (wired by `guiHost()`) or a `--ws` server.
      */
     bind(id: number, address: string, ...prefix: (number | string)[]): void {
@@ -1055,11 +1055,11 @@ export class GuiHost {
     }
 
     /**
-     * `/gui_bind <id> "widget" <target> <prop>` — apply this widget's value to
+     * `/gui_bind <id> "widget" <target> <prop>` -- apply this widget's value to
      * **another widget's property**, with no round-trip through this script.
      *
      * On every change the host sets `prop` on widget `target` exactly as a
-     * `set` would — `bindWidget(picker, pages, "index")` makes a menu flip a
+     * `set` would -- `bindWidget(picker, pages, "index")` makes a menu flip a
      * `stack`'s page, a slider drive a plot's `max`, a curve write another
      * curve's `points` (an edit-back payload rides as the JSON string the prop
      * already takes). A bound widget stops emitting `/gui_event`; `unbind`
@@ -1074,7 +1074,7 @@ export class GuiHost {
     }
 
     /**
-     * `/gui_bind <id>` (no target) — remove a widget's binding, so its value
+     * `/gui_bind <id>` (no target) -- remove a widget's binding, so its value
      * flows back to this script as `/gui_event` again.
      */
     unbind(id: number): void {
@@ -1086,8 +1086,8 @@ export class GuiHost {
      * if the host does not answer; an **empty** `type` means no such widget.
      *
      * What the widget **is now**: the props it was defined with, with every
-     * edit the user has made since laid over them — a dragged control's value,
-     * a moved clip's `offset`/`dur`, an edited curve's `points` — so this is
+     * edit the user has made since laid over them -- a dragged control's value,
+     * a moved clip's `offset`/`dur`, an edited curve's `points` -- so this is
      * how a page reads back what a gesture did without listening for the event
      * that announced it. Scalars only (the reply is flat OSC arguments); an
      * edited structure comes back as the JSON string its own `set` accepts.
@@ -1155,7 +1155,7 @@ export class GuiHost {
     /**
      * Subscribes to every decoded inbound message (`/gui_event`,
      * `/gui_closed`, `/gui_info`); returns the unsubscribe. The seam a
-     * responder layer builds on — the per-widget callbacks are the ordinary
+     * responder layer builds on -- the per-widget callbacks are the ordinary
      * way in.
      */
     onMessage(handler: (msg: OscMessage) => void): () => void {
@@ -1224,7 +1224,7 @@ export class GuiHost {
             // `<id> <seq> <version> <payload…>`: the stamp and the version the
             // edit was made against are the second and third arguments of every
             // event, before any tag, so one rule reads them all. A handler is
-            // given the payload — those two are this client's bookkeeping, and
+            // given the payload -- those two are this client's bookkeeping, and
             // `ack` is what answers them.
             this.lastSeq = msg.args.length > 1 ? Number(msg.args[1]) : 0;
             this.lastVersion = msg.args.length > 2 ? Number(msg.args[2]) : 0;
@@ -1260,7 +1260,7 @@ export class GuiHost {
 
     /**
      * Detaches this client from its connection (the connection itself, and
-     * any shared in-page host, keep running) — `close` is the *window* verb
+     * any shared in-page host, keep running) -- `close` is the *window* verb
      * here, as it is in the protocol. Pending queries reject.
      */
     stop(): void {
@@ -1282,7 +1282,7 @@ export class GuiHost {
 }
 
 /**
- * A `/gui_set`'s arguments for one props object — the same shaping `set` does,
+ * A `/gui_set`'s arguments for one props object -- the same shaping `set` does,
  * factored out because `push` bundles several of them with an acknowledgement.
  */
 function setArgs(props: Record<string, PropValue>): MsgArg[] {
@@ -1298,7 +1298,7 @@ function setArgs(props: Record<string, PropValue>): MsgArg[] {
  *
  * A **structural** value has no OSC type at all and rides as its JSON string.
  * A **boolean** rides as `1`/`0`: OSC's own boolean tags carry no argument, so
- * a flag prop has always been an int there and the builders emit one —
+ * a flag prop has always been an int there and the builders emit one --
  * `set({ fills: false })` is what a reader of `fills: true` in a builder will
  * write, so it has to mean the same thing.
  */

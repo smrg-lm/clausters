@@ -23,14 +23,14 @@
 <code>multichannel.py</code>: <b>a channel list, and the fold back down</b>.
 
 <code>dup(() =&gt; sine(freq.add(rand(-3, 3))), 12)</code> <b>evaluates</b> its
-callable twelve times — twelve distinct sines, each with its own frozen
+callable twelve times -- twelve distinct sines, each with its own frozen
 <code>rand</code> detune, a thick unison bank. (<code>dup(node, 12)</code>
 would repeat one sine <i>by reference</i>: cheap, but twelve identical
 channels.) Operators <b>broadcast</b> over the list, so one envelope scales
 every channel with no loop written, and <code>mix(bank)</code> folds the twelve
 back to one signal through the server's fused sums. The last
 <code>dup(sig)</code> is the reference kind at its best: the mixed signal
-fanned to buses 0 and 1 — stereo out of one graph.
+fanned to buses 0 and 1 -- stereo out of one graph.
 
 Everything sounds through the <b>in-page engine</b>: no server process, no
 socket. Swapping to a <code>--ws</code> server is the one line marked below.</div>

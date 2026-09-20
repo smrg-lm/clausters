@@ -1,18 +1,18 @@
 """TempoClock (port of ``sc3/base/clock.py``, native-backed).
 
 The seam between the native core and the host language. The clock owns the
-scheduling queue and the beat/second arithmetic — the latter delegated to
+scheduling queue and the beat/second arithmetic -- the latter delegated to
 ``clausters-core`` through `clausters._native`, so timing matches the
 server's sample clock. The queue holds **routines** (and one-shot callables);
 resuming a routine (the ``yield`` driver) stays in Python.
 
 One clock, two drives:
 
-- `run` / `start` — real time: a background thread sleeps between
+- `run` / `start` -- real time: a background thread sleeps between
   events using a **monotonic** pacing clock; the logical beat still advances
   only by the routines' ``yield``s, so inter-event timing is exact and the OSC
   timetags (stamped from a separate wall clock) carry that exactness.
-- `render` — non-real time: wake whatever is due next with no sleeping,
+- `render` -- non-real time: wake whatever is due next with no sleeping,
   on a `LogicalTimebase` that stands in for physical time; used to build a
   score. Every clock sharing that timebase is driven together, so a script
   with several clocks runs offline exactly as it runs live.
@@ -23,7 +23,7 @@ events belongs to `clausters.defs.server.Server`, which owns the
 destination/communication interface and reads the time from the clock of the
 routine being resumed (the clock sets ``routine.clock`` and
 ``main.current_routine`` around each wake). Swapping that interface (RT/NRT/MIDI) is
-the seam — and it lives on the Server, not here.
+the seam -- and it lives on the Server, not here.
 """
 
 import atexit
@@ -132,7 +132,7 @@ class TempoClock:
         self._thread = None
         #: whether anything ever drove this clock (`start`, `run` or `render`).
         #: A queued routine on a clock nobody drives never runs and says
-        #: nothing, which looks exactly like silence — see `_warn_if_undriven`.
+        #: nothing, which looks exactly like silence -- see `_warn_if_undriven`.
         self._driven = False
         self._exit_hook = False
         self._transport = None        # joined shared beat grid, set by join_transport()
@@ -163,7 +163,7 @@ class TempoClock:
 
     @property
     def tempo(self) -> float:
-        """Beats per second **at the beat the clock is on** — the tempo that is
+        """Beats per second **at the beat the clock is on** -- the tempo that is
         sounding, read from the map (`map.tempo_at(beats())`). Inside a routine
         this clock is waking, that beat is the routine's logical one (`beats`).
 
@@ -188,7 +188,7 @@ class TempoClock:
 
     @property
     def map(self):
-        """The clock's `clausters._native.TempoMap` — the beat<->second
+        """The clock's `clausters._native.TempoMap` -- the beat<->second
         function, readable without a clock running and shared with whatever
         draws the structure, so a line and the sound come from one map.
 
@@ -197,7 +197,7 @@ class TempoClock:
         clock assigned the same map is reading the same map, and a gesture
         written on either is written on both. Pass ``m.copy()`` to fork instead.
 
-        Do it before `start` — replacing the map under a running clock moves
+        Do it before `start` -- replacing the map under a running clock moves
         every beat that has not fired yet, which is a seek and not a tempo
         change.
 
@@ -207,7 +207,7 @@ class TempoClock:
         an edit made through another holder while it sleeps: it wakes on the
         wait it had already computed, and only then reads the new map. Its own
         gesture (`set_tempo`) wakes it at once; for an edit written
-        from elsewhere, call `resync` on the clocks reading it — or compare
+        from elsewhere, call `resync` on the clocks reading it -- or compare
         `map.version`, which is what it is there for.
         """
         return self._map
@@ -247,7 +247,7 @@ class TempoClock:
         return clock
 
     def resync(self):
-        """Wake the driver so it re-reads the map — after an edit written
+        """Wake the driver so it re-reads the map -- after an edit written
         through another holder of a **shared** map.
 
         A clock's own gesture (`set_tempo`) does this for you. This is the call
@@ -377,7 +377,7 @@ class TempoClock:
         running (`start`, not yet `stop`ped).
 
         False before the first `start` and during an offline `render`, whose
-        beat is the queue's position and not the wall's — the distinction a
+        beat is the queue's position and not the wall's -- the distinction a
         caller needs before treating `beats` as a thing that moves while it
         waits (a transport sweeping a cursor over the last item's tail).
         Freezing does not change it: a frozen clock is rolling and held."""
@@ -396,7 +396,7 @@ class TempoClock:
         This is how a server transport's pause reaches a client. The sample
         timebase only decides how long to sleep between events and how to stamp
         one, so a client whose server froze would otherwise keep advancing beats
-        and scheduling events ahead — running away from a transport that is not
+        and scheduling events ahead -- running away from a transport that is not
         moving. Freezing stops the beat instead of stopping the playhead: what
         was already scheduled stays scheduled, and the server's frozen queue
         holds it.
@@ -434,8 +434,8 @@ class TempoClock:
 
     @property
     def start_time(self):
-        """Wall-clock origin (Unix seconds) of the current beat axis — the
-        instant beat 0 falls on — or ``None`` before the first `start`. The
+        """Wall-clock origin (Unix seconds) of the current beat axis -- the
+        instant beat 0 falls on -- or ``None`` before the first `start`. The
         Server uses it to turn a logical beat into a wall-clock OSC timetag:
         the **wall** clock, kept separate from the monotonic pacing source so
         timetags stay valid Unix time. A `stop` leaves it in place (it is the
@@ -458,35 +458,35 @@ class TempoClock:
         the current instant, so the beat the clock is on keeps mapping to the
         second it already mapped to and nothing already scheduled jumps.
 
-        With ``over`` it is a **shape written over a stretch** — an accelerando
+        With ``over`` it is a **shape written over a stretch** -- an accelerando
         or a ritardando reaching ``tempo`` and holding it. And ``tempo`` may be
         an `Env` (or any object with ``levels``, ``times`` and ``curves``), in
         which case the whole envelope is written in one call and ``over`` is
         not needed: its own times are the extents.
 
         Args:
-            tempo: the tempo to reach, in beats per second — or an envelope of
+            tempo: the tempo to reach, in beats per second -- or an envelope of
                 them, which must be of **finite duration** (no sustain and no
                 loop: those are a gate's ideas, and a tempo has no
                 gate).
             over: how far the change is spread. ``None`` is the step.
-            unit: what ``over`` (or an envelope's times) measures —
+            unit: what ``over`` (or an envelope's times) measures --
                 ``"beats"``, or ``"seconds"`` (``"secs"``). In seconds the width
                 in beats is solved exactly, so an accelerando can be asked for
                 by how long it lasts rather than by how many beats it covers.
-            curve: the shape — ``"linear"`` (``"lin"``), ``"exponential"``
+            curve: the shape -- ``"linear"`` (``"lin"``), ``"exponential"``
                 (``"exp"``) or a numeric curvature (0 is linear, positive starts
                 slow, negative starts fast). An envelope carries its own and
                 this is ignored.
-            at: the beat to write at. ``None`` is *here* — see below, which is
+            at: the beat to write at. ``None`` is *here* -- see below, which is
                 not quite the same as `beats`.
 
         A change is **recorded** rather than overwriting what came before, so
         the beats before it stay convertible afterwards.
 
         **Where "here" is.** With no ``at``, a gesture made from inside a
-        routine on this clock is written at the routine's own **logical** beat —
-        the yield-exact instant every event of that wake already shares — and
+        routine on this clock is written at the routine's own **logical** beat --
+        the yield-exact instant every event of that wake already shares -- and
         anywhere else at `beats`. The two differ by however far the driver has
         paced past the wake, which is inaudible and is not nothing: it is what
         writes a breakpoint at 3.00034 instead of 3, and a map that will be
@@ -494,13 +494,13 @@ class TempoClock:
         where explicitly, in beats, which is also how a tempo is written for a
         document before any clock has run.
 
-        **Against a map that was written ahead of the clock** — a document's tempo
+        **Against a map that was written ahead of the clock** -- a document's tempo
         track, a shared map, anything with breakpoints still in front of the
-        playhead — the gesture says *from here on*, and what was planned after
+        playhead -- the gesture says *from here on*, and what was planned after
         this beat is dropped. That is what a live change means: the past is
         untouched and stays convertible, and the future is the one being played
         now. A rehearsal that must not rewrite the document runs on
-        ``clock.map = timeline.map.copy()`` — adopting is authoring, forking is
+        ``clock.map = timeline.map.copy()`` -- adopting is authoring, forking is
         performing.
         """
         at = self.beats() if at is None else float(at)
@@ -540,7 +540,7 @@ class TempoClock:
         """The bar index the clock's current beat (or an explicit ``beats``
         position) falls in on a grid of ``quant`` beats per bar (0-based;
         ``quant <= 0`` -> 0). The read complement of the ``quant`` argument
-        `play` takes — computed in the native core, so a GUI ruler in beats
+        `play` takes -- computed in the native core, so a GUI ruler in beats
         shows the same bar:beat this returns."""
         pos = self.beats() if beats is None else beats
         return _native.bar(pos, quant)
@@ -569,7 +569,7 @@ class TempoClock:
         **sample-exactly**; a plain wall-clock clock aligns to beats through the
         server's OSC-time anchor (drift-bounded). Returns ``self``.
 
-        **Blocking — call it before `start`/`run`, never from a routine.**
+        **Blocking -- call it before `start`/`run`, never from a routine.**
         """
         info = server.transport()
         if info is None:
@@ -611,7 +611,7 @@ class TempoClock:
 
         The two are different axes on purpose. The clock's own beat starts when
         *it* starts; the shared one is the conductor's, running whether this
-        client is playing or not — which is what makes two clients started
+        client is playing or not -- which is what makes two clients started
         seconds apart agree on where the next bar falls."""
         if self._transport is None:
             return self.beats()
@@ -653,9 +653,9 @@ class TempoClock:
         """Arms the exit warning the first time something is queued on a clock
         nobody has driven yet.
 
-        Queueing before the drive starts is the **normal** shape — an offline
+        Queueing before the drive starts is the **normal** shape -- an offline
         score is built and then `render`ed, and a live one may be scheduled and
-        then `start`ed — so there is nothing to say at `sched` time. What is
+        then `start`ed -- so there is nothing to say at `sched` time. What is
         always a mistake is reaching the end of the program with a queue and no
         drive: the routines never ran, no exception was raised and nothing was
         logged, which is indistinguishable from silence.
@@ -663,7 +663,7 @@ class TempoClock:
         Only a **session's** clock is watched. That is the one a score is
         played onto (`Routine(f).play(session.clock)`), and the one whose
         lifecycle ends with the program; a bare `TempoClock` belongs to
-        whoever built it — a transport, a test, another library object — and
+        whoever built it -- a transport, a test, another library object -- and
         leaving items on its queue is that owner's business."""
         if self._driven or self._exit_hook or self.session is None:
             return
@@ -675,7 +675,7 @@ class TempoClock:
             return
         print(
             "clausters: this program ends with routines queued on a clock that was "
-            "never started — `Routine(f).play(clock)` only schedules; a session runs "
+            "never started -- `Routine(f).play(clock)` only schedules; a session runs "
             "them with session.start(), session.run(seconds) or, offline, "
             "session.render()",
             file=sys.stderr,
@@ -726,8 +726,8 @@ class TempoClock:
 
     def unsched(self, item):
         """Remove a specific scheduled ``item`` from the queue (by identity),
-        leaving the rest in order. Used to cancel one routine — e.g. a
-        `clausters.seq.Timeline` stopping or seeking — without clearing
+        leaving the rest in order. Used to cancel one routine -- e.g. a
+        `clausters.seq.Timeline` stopping or seeking -- without clearing
         everything else `clear` would drop."""
         with self._cond:
             key = id(item)
@@ -770,14 +770,14 @@ class TempoClock:
 
         Returns when nothing is due (or the next item falls after
         ``until_beat``, a beat of this clock). Whatever the routines emit
-        (through a Server) lands in that Server's interface — here we only
+        (through a Server) lands in that Server's interface -- here we only
         advance time and resume them.
 
         ``max_steps`` bounds the number of **resumes**, raising once it is
         passed. It defaults to no bound, which is the right default: a long
         offline render of a real score is meant to run for a long time. It is
-        for the caller who knows its source might never end — a render of an
-        endless event pattern (`clausters.render`) — because a
+        for the caller who knows its source might never end -- a render of an
+        endless event pattern (`clausters.render`) -- because a
         routine cannot report that itself: a routine that raises loses its own
         place and nothing else (see `_wake`), so a guard inside one is
         swallowed by design."""
@@ -802,7 +802,7 @@ class TempoClock:
         A restart **resumes** at the beat `stop` left the clock on, so what is
         still queued keeps its place in the music: `stop`/`start` is a
         transport, not a reset (`clear` is the reset). Both origins are placed
-        accordingly — a beat's position in seconds is measured from the clock's
+        accordingly -- a beat's position in seconds is measured from the clock's
         own zero, so resuming at beat *b* puts the origins ``beats2secs(b)``
         seconds in the past."""
         if isinstance(self.timebase, LogicalTimebase):
@@ -843,7 +843,7 @@ class TempoClock:
         with self._cond:
             # Freeze the beat first: from here `beats()` reports it, because
             # the clock is no longer running. The two origins are deliberately
-            # *not* cleared — `_wake` runs outside this lock, and a Server
+            # *not* cleared -- `_wake` runs outside this lock, and a Server
             # emitting there reads them; they stay the correct origins of the
             # beat axis a later `start` resumes.
             self._logical_beat = self.beats()
@@ -905,7 +905,7 @@ def _drive_offline(tb, until, max_steps):
             steps += 1
             if max_steps is not None and steps > max_steps:
                 raise RuntimeError(
-                    f"render: still going after {max_steps} resumes — "
+                    f"render: still going after {max_steps} resumes -- "
                     f"the source does not end on its own"
                 )
             at, clock, beat = best

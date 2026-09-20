@@ -25,7 +25,7 @@ fn mono(_id: i32, _kind: &WidgetKind) -> usize {
 
 /// A window (id 1) holding a panel (id 2) with a knob (id 3), beside a
 /// `scroll` workspace (id 4) whose child is a second scroll (id 5) with a
-/// knob (id 6) in it — two planes, one nested in the other.
+/// knob (id 6) in it -- two planes, one nested in the other.
 fn nested_host() -> Host {
     let json = r#"{"type":"window","flow":"row","children":[
         {"id":2,"type":"layout","children":[{"id":3,"type":"knob"}]},

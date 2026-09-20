@@ -1,6 +1,6 @@
 // The automation lane against the Python client's, on the shared vectors.
 //
-// `gen-seq-vectors.py` freezes what the reference lane emits — the internal
+// `gen-seq-vectors.py` freezes what the reference lane emits -- the internal
 // control def's spec, the flat `/buffer_gen "env"` argument list a curve
 // discretizes into, and the break-point round trip. Each case here rebuilds
 // the same curve with the TS surface and asserts the values are identical:

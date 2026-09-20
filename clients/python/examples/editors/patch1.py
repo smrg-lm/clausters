@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The patcher, **level 1**: whole defs wired by buses — built, viewed, heard.
+"""The patcher, **level 1**: whole defs wired by buses -- built, viewed, heard.
 
 This is the level-1 half of the patcher; `examples/editors/patch2.py` is level 2 (a
 single def's internal UGen graph). The two are one directed, typed grammar apart
@@ -10,7 +10,7 @@ A `clausters.defs.GraphPatch` is the **programmatic** level-1 patcher: boxes
 (whole defs) with typed **inlets** (top) and **outlets** (bottom), and a **cord**
 per ``outlet -> inlet``. A cord *is* a bus, but you never number one: `compile`
 runs the shared cord->bus pass (`clausters_core::patch`, in Rust) that names one
-bus per connected net — its writers **sum** — and `to_graphdef` hands back a
+bus per connected net -- its writers **sum** -- and `to_graphdef` hands back a
 `GraphDef` ready to send. That is the whole model, and it needs no GUI:
 
     p = GraphPatch()
@@ -23,27 +23,27 @@ bus per connected net — its writers **sum** — and `to_graphdef` hands back a
 The GUI is a **view** of that same model. The `patch` widget draws the boxes and
 cords and is a full **canvas**:
 
-- **Auto-layout** — the host lays every box out on its own: a layered graph
+- **Auto-layout** -- the host lays every box out on its own: a layered graph
   drawing (sources on top, sinks at the bottom, signal flowing downward), the
   cords ordered to cross as little as possible and the whole graph centred in the
-  window. No box is placed by hand — the same layout the Def-view (level 2) uses.
-- **Dragging** — grab a box and move it; the edit flows back as
+  window. No box is placed by hand -- the same layout the Def-view (level 2) uses.
+- **Dragging** -- grab a box and move it; the edit flows back as
   ``/gui_event <id> "move" <index> <x> <y>`` and prints here. Moving a box in the
   selection moves the whole selection.
-- **Selection** — click a box to select it; drag the empty canvas to sweep a
+- **Selection** -- click a box to select it; drag the empty canvas to sweep a
   **marquee** over several; click empty canvas to clear.
-- **Cording** — drag an outlet's pin onto an inlet (either grab order) to draw a
+- **Cording** -- drag an outlet's pin onto an inlet (either grab order) to draw a
   cord; a rate mismatch is refused at the gesture. The edit flows back as
   ``/gui_event <id> "wire" <src> <outlet> <dst> <inlet>``, which is just
-  `GraphPatch.connect` by name — so the picture and the object stay one thing.
-- **Navigation** — the patch sits in a `scroll` workspace: **Shift+drag** the
+  `GraphPatch.connect` by name -- so the picture and the object stay one thing.
+- **Navigation** -- the patch sits in a `scroll` workspace: **Shift+drag** the
   empty canvas to pan, the wheel zooms anchored at the cursor; boxes, cords and
   text scale together.
 
 Press **render** to compile the patch you drew and hear it, **stop** to free it.
 The direction reads top to bottom, and the buses are never on screen: an unwired
 outlet keeps its def's default, so these defs default their bus controls to
-``SILENT`` (a spare bus nobody reads) — a box is silent until a cord reaches it —
+``SILENT`` (a spare bus nobody reads) -- a box is silent until a cord reaches it --
 and the hardware output is reached through a **terminal def** (``dac``: an inlet,
 no outlet, its ``Out.ar(0, …)`` baked in), a box like any other, not an ``OUT``.
 
@@ -71,9 +71,9 @@ SILENT = 64  # a spare audio bus (0..127) nothing reads: the "unconnected" defau
 # %% [markdown]
 # ## The member defs (the boxes' building blocks)
 # Four SynthDefs forming an effect chain. A control that feeds an ``Out`` is an
-# **outlet**, one that feeds an ``In`` an **inlet** — that is where a box's ports
+# **outlet**, one that feeds an ``In`` an **inlet** -- that is where a box's ports
 # come from, and it is structural (not a guess). `osc` is a source; `filt` and
-# `trem` each read ``in`` and write ``out``; `dac` is the **terminal** stage — it
+# `trem` each read ``in`` and write ``out``; `dac` is the **terminal** stage -- it
 # reads ``in`` and writes hardware bus 0 itself, so it has an inlet and no outlet
 # (the speakers are reached by a cord *into* it).
 
@@ -85,7 +85,7 @@ def osc(name: str = "osc") -> SynthDef:
 
 
 def filt(name: str = "filt") -> SynthDef:
-    """A crude tone control: lags (smooths) its input — a one-pole low-pass — and
+    """A crude tone control: lags (smooths) its input -- a one-pole low-pass -- and
     scales it by ``gain``."""
     return SynthDef(name, out(control("out", SILENT),
                               lag(in_(control("in", SILENT)), 0.002) * control("gain", 1.0)))
@@ -100,7 +100,7 @@ def trem(name: str = "trem") -> SynthDef:
 
 def dac(name: str = "dac") -> SynthDef:
     """The terminal stage: reads ``in``, scales it, and writes **hardware bus 0**
-    itself (baked ``Out.ar(0, …)``). It has an inlet and no outlet — a cord into
+    itself (baked ``Out.ar(0, …)``). It has an inlet and no outlet -- a cord into
     it is the only path to the speakers."""
     return SynthDef(name, out(0, in_(control("in", SILENT)) * control("amp", 0.4)))
 
@@ -117,8 +117,8 @@ for sdef in defs.values():
 # ## The patch, built in code
 # The chain `osc -> filt -> trem -> dac` (the terminal sink that reaches the
 # speakers itself). Passing the `SynthDef` to `add` **derives its ports from the
-# def's graph** — the `out`/`in_` controls become outlets/inlets, no second list
-# to keep in sync. This is already a complete, sendable program — the GUI below
+# def's graph** -- the `out`/`in_` controls become outlets/inlets, no second list
+# to keep in sync. This is already a complete, sendable program -- the GUI below
 # only edits the same object.
 
 # %%
@@ -150,14 +150,14 @@ transport = panel(button(name="render", label="render"),
 gui = session.gui()
 win = view(
     scroll(patch(name="patch", **p.to_widget(), label="patch"), name="workspace"),
-    transport, title="Patch — level 1", w=720, h=680, layout="col").open()
+    transport, title="Patch -- level 1", w=720, h=680, layout="col").open()
 session.start()
 
 instance = None
 
 
 def render() -> None:
-    """Compile the patch you drew and (re)instance it — freeing the one in flight,
+    """Compile the patch you drew and (re)instance it -- freeing the one in flight,
     so a re-render replaces rather than stacks. A bad cord is reported, not fatal."""
     global instance
     try:
@@ -169,7 +169,7 @@ def render() -> None:
     if instance is not None:
         instance.free()
     instance = Group.graph("patch", server=server)
-    print("  rendered — the patch is sounding")
+    print("  rendered -- the patch is sounding")
 
 
 def stop() -> None:
@@ -192,7 +192,7 @@ print("press render to hear the chain, stop to free it.")
 # A ``"wire"`` event on the canvas is `GraphPatch.connect` by name; a ``"move"``
 # persists a box's canvas position (presentation only); a ``"view"`` from the
 # scroll workspace reports the pan/zoom. **render** compiles the model and
-# instances it, **stop** frees it. The GUI never owns the patch — it edits the
+# instances it, **stop** frees it. The GUI never owns the patch -- it edits the
 # object you built.
 
 # %%
@@ -201,7 +201,7 @@ def on_patch(tag, *payload):
     if tag == "wire" and len(payload) >= 4:
         src, outlet, dst, inlet = int(payload[0]), payload[1], int(payload[2]), payload[3]
         p.connect(src, outlet, dst, inlet)
-        print(f"  wired {src}.{outlet} -> {dst}.{inlet} — press render to hear it")
+        print(f"  wired {src}.{outlet} -> {dst}.{inlet} -- press render to hear it")
     elif tag == "move" and len(payload) >= 3:
         index, x, y = int(payload[0]), float(payload[1]), float(payload[2])
         placed[index] = (x, y)

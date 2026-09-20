@@ -4,7 +4,7 @@
 //! cargo run --example render_golden
 //! ```
 //!
-//! Never run automatically — a self-regenerating golden detects nothing.
+//! Never run automatically -- a self-regenerating golden detects nothing.
 //! Listen to the new files before committing them.
 
 #[path = "../tests/common/scenes.rs"]
@@ -30,7 +30,7 @@ fn main() {
         let stats =
             render_to_wav(&score, &scenes::config(), &path, "float").expect("render the scene");
         println!(
-            "wrote {} — {} frames ({:.3} s), {} events",
+            "wrote {} -- {} frames ({:.3} s), {} events",
             path.display(),
             stats.frames,
             stats.frames as f64 / scenes::SAMPLE_RATE,

@@ -84,7 +84,7 @@ fn scalar_control_freezes_under_n_set() {
     // An init-time set (before the first block, as /synth_new does) still takes.
     synth.set_control(0, 5.0);
     assert!(step(&mut synth, &mut buses).iter().all(|&x| x == 5.0));
-    // A /node_set after the synth has run is ignored — the value is frozen.
+    // A /node_set after the synth has run is ignored -- the value is frozen.
     synth.set_control(0, 9.0);
     assert!(step(&mut synth, &mut buses).iter().all(|&x| x == 5.0));
     assert!(step(&mut synth, &mut buses).iter().all(|&x| x == 5.0));
@@ -127,7 +127,7 @@ fn lag_control_smooths_a_step() {
 
     // Primed at 0.
     assert!(step(&mut synth, &mut buses).iter().all(|&x| x.abs() < 1e-6));
-    // Step the control to 1.0: the output must *glide*, not jump — the first
+    // Step the control to 1.0: the output must *glide*, not jump -- the first
     // block after the step is well below the target.
     synth.set_control(0, 1.0);
     let b1 = step(&mut synth, &mut buses);

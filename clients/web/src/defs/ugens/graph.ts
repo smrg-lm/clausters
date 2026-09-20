@@ -4,12 +4,12 @@ import type { Composed, Fan } from "../../base/absobject.ts";
 // The graph itself: a UGen node, a control, a channel list (mirrors
 // `clausters/defs/ugens/graph.py`).
 //
-// The types every other module in this package builds on — `Ugen` (one node,
+// The types every other module in this package builds on -- `Ugen` (one node,
 // one output), `Control` (a def's parameter) and `ChannelList` (multichannel
-// as an explicit container, never implicit expansion) — plus the fused
+// as an explicit container, never implicit expansion) -- plus the fused
 // arithmetic the server has dedicated kinds for.
 //
-// **Composition is by method, not by operator** — the vocabulary and the
+// **Composition is by method, not by operator** -- the vocabulary and the
 // reason are `base/absobject`, which this branch extends. The free
 // `add`/`sub`/`mul`/`div` functions at the bottom take the number-on-the-left
 // case (`sub(1, sig)`), which a method cannot.
@@ -24,11 +24,11 @@ const BINOP_UGEN: Record<string, string> = {
 };
 
 // Every other operator composes a generic `BinaryOpUGen`/`UnaryOpUGen` whose
-// `op` is the operator **name** — the same name the server's builtins table
+// `op` is the operator **name** -- the same name the server's builtins table
 // resolves, so a graph op and an off-RT value agree. The selector *is* the
 // wire name (no numeric index crosses the wire).
 /**
- * @internal — the operator names a `BinaryOpUGen` may carry. Exported for
+ * @internal -- the operator names a `BinaryOpUGen` may carry. Exported for
  * `defs/pv_expr`, which validates the same vocabulary per bin, as the Python
  * package keeps `_BINOP_OPS` importable for the same reason.
  */
@@ -40,7 +40,7 @@ export const BINOP_OPS = new Set([
     "lcm", "hypotapx",
 ]);
 /**
- * @internal — the range maps a `RangeMapUGen` may carry (`clausters_core`'s
+ * @internal -- the range maps a `RangeMapUGen` may carry (`clausters_core`'s
  * `warp` family): the **same** function the value functions in `base/builtins`
  * compute with, so a signal mapped in a def and a fader position mapped in the
  * script land in the same place. The two bipolar maps (`range`/`exprange`) are
@@ -51,7 +51,7 @@ export const BINOP_OPS = new Set([
 export const MAP_OPS = new Set([
     "linlin", "linexp", "explin", "expexp", "lincurve", "curvelin",
 ]);
-/** @internal — the operator names a `UnaryOpUGen` may carry; see `BINOP_OPS`. */
+/** @internal -- the operator names a `UnaryOpUGen` may carry; see `BINOP_OPS`. */
 export const UNOP_OPS = new Set([
     "neg", "abs", "sin", "cos", "tan", "asin", "acos", "atan", "exp", "log",
     "log10", "log2", "sqrt", "floor", "ceil", "rint", "asint", "asfloat",
@@ -63,7 +63,7 @@ export const UNOP_OPS = new Set([
 /**
  * One channel of signal: a leaf node (`Ugen`/`Control`) or a plain number (a
  * constant). What every single-channel input accepts, and what a
- * `ChannelList` holds — the server only ever sees these.
+ * `ChannelList` holds -- the server only ever sees these.
  */
 export type Channel = SynthLeaf | number;
 /** What a math method accepts: a single channel, or a list of them. */
@@ -80,7 +80,7 @@ export type ChannelFan = Fan<ChannelList | readonly Channel[], ChannelList>;
 
 const isLeaf = (x: unknown): x is SynthLeaf => x instanceof SynthLeaf;
 /**
- * @internal — whether an operand is a multichannel one. Exported for the
+ * @internal -- whether an operand is a multichannel one. Exported for the
  * family modules that branch on it (`pan`'s selectors, `io`'s writers), the
  * way the Python package shares its own underscored helpers between families.
  */
@@ -89,14 +89,14 @@ export const isList = (x: unknown): x is ChannelList | readonly Channel[] =>
 
 /**
  * An expression of the **UGen graph**: a `Ugen`, a `Control` or a
- * `ChannelList` of them — something that composes a graph rather than a
+ * `ChannelList` of them -- something that composes a graph rather than a
  * value, and what `SynthDef` serializes. The Faust families compose their own
  * graphs (`signals`, and the box algebra once it lands), so they are peers of
  * this branch, not members of it; the name avoids `Graph*` because `GraphDef`
  * already means a configuration of member nodes wired by buses.
  *
  * The operator surface it inherits is `base/absobject`'s and is about the
- * shared builtins vocabulary rather than about UGens — `defs/pv_expr` composes
+ * shared builtins vocabulary rather than about UGens -- `defs/pv_expr` composes
  * the same names into a per-bin tree from the same base. What this branch adds
  * is the half that only a UGen graph has: the **range maps**, which compose a
  * `RangeMapUGen`.
@@ -111,8 +111,8 @@ export abstract class SynthExpr<TSelf, TOperand = OpOperand>
 
     // ---- the range maps: sclang's own, the signal half of the value
     // functions in `base/builtins`. `clip` says what an out-of-range input is
-    // trimmed to before it is mapped — `"minmax"` (the default, both ends),
-    // `"min"`, `"max"` or `"none"` (extrapolate) — the same argument, spelled
+    // trimmed to before it is mapped -- `"minmax"` (the default, both ends),
+    // `"min"`, `"max"` or `"none"` (extrapolate) -- the same argument, spelled
     // the same way, as on the value side.
 
     /** This signal off a linear range onto a linear one. */
@@ -122,7 +122,7 @@ export abstract class SynthExpr<TSelf, TOperand = OpOperand>
     }
 
     /**
-     * Off a linear range onto an exponential one — an LFO onto a frequency.
+     * Off a linear range onto an exponential one -- an LFO onto a frequency.
      * The output ends must not straddle zero; one *at* zero is nudged to the
      * smallest same-signed value rather than giving a NaN.
      */
@@ -131,7 +131,7 @@ export abstract class SynthExpr<TSelf, TOperand = OpOperand>
         return this.narop("linexp", [inLo, inHi, outLo, outHi], clip);
     }
 
-    /** Off an exponential range onto a linear one — a frequency onto a fader
+    /** Off an exponential range onto a linear one -- a frequency onto a fader
      * position. */
     explin(inLo: Channel, inHi: Channel, outLo: Channel, outHi: Channel,
            clip = "minmax"): TSelf {
@@ -146,8 +146,8 @@ export abstract class SynthExpr<TSelf, TOperand = OpOperand>
 
     /**
      * Off a linear range onto one **bent** by `curve`: 0 is linear, negative
-     * builds fast then slow — most of the output spent on the first half of
-     * the input — and positive the reverse, which is the fine-at-the-bottom
+     * builds fast then slow -- most of the output spent on the first half of
+     * the input -- and positive the reverse, which is the fine-at-the-bottom
      * feel a frequency or an amplitude control wants. Unlike `linexp` the bend
      * spans zero freely.
      */
@@ -197,17 +197,17 @@ export abstract class SynthLeaf extends SynthExpr<Ugen> {
         return mapUgen(this, selector, args, clip);
     }
 
-    /** @internal — this leaf on the **left** of a binary op. */
+    /** @internal -- this leaf on the **left** of a binary op. */
     composeWith(selector: string, other: Channel): Ugen {
         return leafOp(selector, this, other);
     }
 
-    /** @internal — this leaf on the **right** of a binary op. */
+    /** @internal -- this leaf on the **right** of a binary op. */
     rcomposeWith(selector: string, other: Channel): Ugen {
         return leafOp(selector, other, this);
     }
 
-    /** @internal — the unary op, wherever it was reached from. */
+    /** @internal -- the unary op, wherever it was reached from. */
     unopWith(selector: string): Ugen {
         if (!UNOP_OPS.has(selector)) {
             throw new TypeError(`no unary UGen for operator '${selector}'`);
@@ -215,7 +215,7 @@ export abstract class SynthLeaf extends SynthExpr<Ugen> {
         return new Ugen("UnaryOpUGen", [this], { op: selector });
     }
 
-    /** This node repeated (by reference) as `n` channels — see `dup`. */
+    /** This node repeated (by reference) as `n` channels -- see `dup`. */
     dup(n = 2): ChannelList {
         return new ChannelList(Array.from({ length: n }, () => this as Channel));
     }
@@ -320,12 +320,12 @@ const CONTROL_RATES = new Set([
  * A named control (a `/synth_new`/`/node_set` parameter) with a default and an
  * optional **type** and **lag**, mirroring the server's control types:
  *
- * - `rate: "tr"` — a **trigger**: an `/node_set` holds for one block, then the
+ * - `rate: "tr"` -- a **trigger**: an `/node_set` holds for one block, then the
  *   server resets it to 0 (drives an `envGen` gate, a sample-and-hold).
- * - `rate: "ir"` — a **scalar**: read once at init and frozen; a later
+ * - `rate: "ir"` -- a **scalar**: read once at init and frozen; a later
  *   `/node_set` is ignored. As `ir` it may feed an `ir` input (`rand`, the
  *   buffer-info UGens).
- * - `lag` (seconds) — smooth a `kr` control's changes with an implicit
+ * - `lag` (seconds) -- smooth a `kr` control's changes with an implicit
  *   one-pole the server inserts; `lagDown` gives a separate downward time.
  *
  * Used as a UGen input it serializes to a `{"control": index}` reference;
@@ -375,7 +375,7 @@ export class Control extends SynthLeaf {
  * A control declares **no range**: it is a signal in a graph, and the range a
  * knob is drawn over is the knob's (`knob(freq, { min: 110.0, max: 880.0 })`).
  * The one exception is a FaustDef, whose `hslider` declares its range inside the
- * DSP and reports it back — see `ControlInfo`.
+ * DSP and reports it back -- see `ControlInfo`.
  */
 export function control(
     name: string,
@@ -401,12 +401,12 @@ function checkChannel(m: unknown): Channel {
 // The four arithmetic selectors on two plain numbers are exactly JS's `+ - *
 // /`, bit-identical to the core's builtins, so a constant pair folds here.
 // Any other selector between two constants would need the core's builtins
-// table, which the web client does not carry yet — refuse rather than
+// table, which the web client does not carry yet -- refuse rather than
 // diverge numerically from the server.
 // `min`/`max` fold beside them for a different reason: they *select* an
 // operand rather than compute one, so there is no rounding to disagree about
 // and the precision question does not arise. (`abs`, in `channelUnop` below,
-// is the unary of the same kind — it only clears a sign bit.)
+// is the unary of the same kind -- it only clears a sign bit.)
 const NUMERIC_FOLD: Record<string, (a: number, b: number) => number> = {
     add: (a, b) => a + b,
     sub: (a, b) => a - b,
@@ -417,7 +417,7 @@ const NUMERIC_FOLD: Record<string, (a: number, b: number) => number> = {
 };
 
 /**
- * @internal — a binary op between two operands either of which may be a
+ * @internal -- a binary op between two operands either of which may be a
  * constant. Exported for the family modules that compose arithmetic of their
  * own (`filter`'s `svfMorph`), the way the Python package shares its own
  * underscored helper.
@@ -436,7 +436,7 @@ export function channelBinop(a: Channel, selector: string, b: Channel): Channel 
     return fold(a, b);
 }
 
-/** @internal — the unary counterpart of `channelBinop`. */
+/** @internal -- the unary counterpart of `channelBinop`. */
 export function channelUnop(m: Channel, selector: string): Channel {
     if (isLeaf(m)) return m.unopWith(selector);
     if (selector === "neg") return -m;
@@ -448,15 +448,15 @@ export function channelUnop(m: Channel, selector: string): Channel {
 }
 
 /**
- * An ordered list of channels — the client's multichannel container.
+ * An ordered list of channels -- the client's multichannel container.
  *
- * Members are `Channel`s — a leaf (`Ugen`/`Control`) or a number. The math
+ * Members are `Channel`s -- a leaf (`Ugen`/`Control`) or a number. The math
  * methods map over the members and return a new `ChannelList`: a scalar
  * operand **broadcasts** to every channel, a list operand **zips**
  * channel-wise, and unequal lengths wrap the shorter one modulo.
  *
  * The container never crosses the wire: `out` and friends unroll it onto
- * consecutive buses, and the `SynthDef` serialization flattens it — the
+ * consecutive buses, and the `SynthDef` serialization flattens it -- the
  * server only ever sees single-channel UGens. Feeding one to a
  * single-channel input is an error: index it or `mix` it down. Build one
  * with `dup`, `chans`, or a literal array where one is accepted.
@@ -504,14 +504,14 @@ export class ChannelList extends SynthExpr<ChannelList> {
         return this.items.map((m): [Channel, Channel] => [m, other]);
     }
 
-    /** @internal — the leaf side of a mixed op reaches back through here. */
+    /** @internal -- the leaf side of a mixed op reaches back through here. */
     composeWith(selector: string, other: OpOperand): ChannelList {
         return new ChannelList(
             this.pairs(other).map(([a, b]) => channelBinop(a, selector, b)),
         );
     }
 
-    /** @internal — as `composeWith`, with the operands swapped. */
+    /** @internal -- as `composeWith`, with the operands swapped. */
     rcomposeWith(selector: string, other: OpOperand): ChannelList {
         return new ChannelList(
             this.pairs(other).map(([a, b]) => channelBinop(b, selector, a)),
@@ -545,7 +545,7 @@ export class ChannelList extends SynthExpr<ChannelList> {
         return this;
     }
 
-    /** This list folded to one channel — see `mix`. */
+    /** This list folded to one channel -- see `mix`. */
     mix(): Channel {
         return mix(this);
     }
@@ -562,10 +562,10 @@ export function chans(
 /**
  * `x` as `n` channels.
  *
- * A graph node (or a number) is repeated **by reference** — the graph
+ * A graph node (or a number) is repeated **by reference** -- the graph
  * serializes it once, fanned out to every channel, so `dup(sine(440))` is a
  * cheap mono→stereo: identical channels. A **function** is called `n` times
- * — `dup(whiteNoise, 8)` builds `n` *distinct* UGens, which is what a
+ * -- `dup(whiteNoise, 8)` builds `n` *distinct* UGens, which is what a
  * decorrelated or detuned bank needs; duplicating a `whiteNoise` by
  * reference would give `n` copies of the same noise.
  */
@@ -586,7 +586,7 @@ export function dup(
  * `x` folded to one channel by summing.
  *
  * The inverse gesture of `dup`: a `ChannelList` (or plain array) becomes one
- * signal, folded with the fused sum kinds — `sum4`/`sum3` chunks instead of
+ * signal, folded with the fused sum kinds -- `sum4`/`sum3` chunks instead of
  * an `Add` chain, so an 8-channel mix costs 2 UGens + 1, not 7. A scalar or
  * single node passes through.
  */
@@ -636,7 +636,7 @@ export const sum4 = (
 // ---- the free binary functions (the number-on-the-left case) ----
 
 /**
- * `a + b`, either side a node or a number — the free form of `.add()`, for
+ * `a + b`, either side a node or a number -- the free form of `.add()`, for
  * when the constant is on the left.
  */
 export const add = (a: OpOperand, b: OpOperand): Channel | ChannelList =>

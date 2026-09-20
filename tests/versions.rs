@@ -2,7 +2,7 @@
 //!
 //! It used to live in ten: the root manifest, seven crates, the GUI client's
 //! own workspace, the wheel's `pyproject.toml`, the npm `package.json` and two
-//! lockfiles — and exactly one pair of them was checked, so `clients/gui` had
+//! lockfiles -- and exactly one pair of them was checked, so `clients/gui` had
 //! drifted before and `package-lock.json` was found two minors behind. The
 //! eight Cargo crates inherit `[workspace.package].version` now; the rest
 //! cannot inherit anything and are written by `scripts/set-version.sh`, which
@@ -65,7 +65,7 @@ fn every_manifest_carries_the_one_version() {
         let got = version_after(&text, section, rel);
         assert_eq!(
             got, want,
-            "{rel} says {got}, the workspace says {want} — one command writes \
+            "{rel} says {got}, the workspace says {want} -- one command writes \
              both: scripts/set-version.sh {want}"
         );
     }

@@ -117,7 +117,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             "map" => {
                 // /node_map: bind a control to a *control bus*. The synth re-reads
-                // the bus every block, so writing the bus retunes it live — no
+                // the bus every block, so writing the bus retunes it live -- no
                 // /node_set per change.
                 println!("/synth_new default 1002, then /node_map freq -> control bus 5");
                 send(

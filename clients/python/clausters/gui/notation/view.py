@@ -3,7 +3,7 @@
 Two helpers over a display list the engraver already produced: `score_view`
 wraps it in a `scroll` sized to the page, and `playhead_sync` hands back the
 shared `clausters.gui.playhead_sync.PlayheadSync` with the page's own unit
-filled in — a
+filled in -- a
 ``score`` widget places its cursor in **score milliseconds**, not samples, and
 that conversion is the only thing a page needs on top of the transport the
 timeline views already use.
@@ -37,14 +37,14 @@ def score_view(display_list, *, scroll_id: int | None = None,
     view is read-only, which is what a plain plot of a score wants; a driver that
     applies the ``"transpose"`` round trip passes ``editable=True``. ``entry``
     opts it into **note entry**: a press on blank paper inside a staff reports
-    ``"insert" <after-xml:id> <position> <staff>`` — a place, not a note, since
+    ``"insert" <after-xml:id> <position> <staff>`` -- a place, not a note, since
     the pitch needs the clef and the key and the duration is nobody's until a
     driver chooses one.
 
     Returns the `scroll` node. ``scroll_id``/``score_id`` name the two widgets by
     hand; left ``None`` the host assigns them when the tree is opened. ``name``
-    tags the inner `score` so a driver can address it by name — the page the
-    transport anchors, and the one a re-engrave pushes back — instead of tracking
+    tags the inner `score` so a driver can address it by name -- the page the
+    transport anchors, and the one a re-engrave pushes back -- instead of tracking
     its id (``win[name].set(display_list=…)``). ``scroll_name`` tags the
     **scroll**, which a driver needs for one thing: **the page is drawn to fit
     the box it is given**, so an edit that adds a system would shrink the whole
@@ -61,7 +61,7 @@ def score_view(display_list, *, scroll_id: int | None = None,
 
     # The scroll is sized from the page, so the size has to be readable here
     # whether the page arrived as a dict or as a `clausters.gui.guidef.Source`
-    # holding one — the source's own expansion is what a definition carries.
+    # holding one -- the source's own expansion is what a definition carries.
     page = display_list.props() if isinstance(display_list, Source) else display_list
     vb = page.get("vb") or [1.0, 1.0]
     aspect = (vb[1] / vb[0]) if vb[0] else 1.0
@@ -78,13 +78,13 @@ def score_view(display_list, *, scroll_id: int | None = None,
 def playhead_sync(host, score_id: int, *, source, structure=None,
                   sample_rate: float, extent=None):
     """A `clausters.gui.playhead_sync.PlayheadSync` driving a ``score`` widget's
-    playback cursor — play, pause, stop and locate, with the cursor following
+    playback cursor -- play, pause, stop and locate, with the cursor following
     the sound.
 
     The same one the timeline views use; what a page needs on top is only its
     unit: a ``score`` widget places its static cursor in **score
     milliseconds**, not samples, so this fills in that conversion and leaves the
-    rest of the arguments as they are — ``source(at)`` starts a pass at beat
+    rest of the arguments as they are -- ``source(at)`` starts a pass at beat
     ``at`` and returns the `clausters.seq.Timeline` it plays, ``structure`` is
     that timeline (or a callable returning it) for when nothing is playing, and
     ``extent()`` gives the score's length in beats.

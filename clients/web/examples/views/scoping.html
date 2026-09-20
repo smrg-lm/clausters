@@ -29,7 +29,7 @@
 <code>scope</code> is the real-time sibling of <code>plot</code>: where
 <code>plot</code> draws a finished render, <code>scope</code> opens a window
 that follows <b>live audio buses</b>, frame by frame. One rule covers every
-view — the verb monitors <code>channels</code> consecutive buses from
+view -- the verb monitors <code>channels</code> consecutive buses from
 <code>bus</code>, and each view presents them its way: oscilloscope lanes, the
 stereo phase field, one spectrum curve per channel. Naming the bus is all this
 page does; the host asks the server to record it and stops when nothing draws
@@ -37,22 +37,22 @@ it any more.
 
 Watch the oscilloscope's corner read-out: <b>lock</b> means the trigger found a
 rising crossing and the trace stands still (the faint line marks the level);
-<b>free</b> means it is free-running — silence or DC.
+<b>free</b> means it is free-running -- silence or DC.
 
 Where the Python example is a timed tour that opens each window alone, this one
 puts the three side by side and leaves the knobs under your hand:
-<b>spread</b> crossfades the right channel from a copy of the left (mono — the
-goniometer draws a vertical line) to a detuned sine (decorrelated — the trace
+<b>spread</b> crossfades the right channel from a copy of the left (mono -- the
+goniometer draws a vertical line) to a detuned sine (decorrelated -- the trace
 opens into the lozenge), and the view controls go through
 <code>win.set(...)</code> live. The control is lagged, because a
 <code>/node_set</code> lands as a step and stepping a crossfade clicks; the
-scopes themselves are passive — a tap only copies a bus and can never alter the
+scopes themselves are passive -- a tap only copies a bus and can never alter the
 sound.
 
 <b>One difference from the desktop</b>, and it is the browser's: the native
 host reads the taps out of the server's shared-memory segment, and a tab has no
 segment to map, so the host streams them over its own server leg instead. The
-verb is the same either way — that is the point of it.
+verb is the same either way -- that is the point of it.
 
 Everything sounds through the <b>in-page engine</b>: no server process, no
 socket.</div>
@@ -123,7 +123,7 @@ socket.</div>
         // 3/3 -- the live spectrum (view "spectrum"): one curve per channel,
         // and the frequency scales in turn. The corner read-out names the FFT
         // size and the active scale (e.g. "2048 LOG").
-        log("3/3 spectrum: outs 0/1, the 220 Hz peak — the corner reads '2048 LOG'");
+        log("3/3 spectrum: outs 0/1, the 220 Hz peak -- the corner reads '2048 LOG'");
         node.set({ spread: 1.0 });   // detune R so the two curves differ
         win = await scope(0, { view: "spectrum", channels: 2 });
         await wait(PAUSE);
@@ -142,7 +142,7 @@ socket.</div>
         await wait(0.3);
         node.free();
         server.close();
-        log("done — three scopes appeared, retuned live and closed; taps all freed");
+        log("done -- three scopes appeared, retuned live and closed; taps all freed");
         $("run").disabled = false;
       }
 

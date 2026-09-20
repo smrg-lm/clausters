@@ -2,7 +2,7 @@
 /* eslint-disable */
 
 /**
- * One document, held in Rust — the JS face of
+ * One document, held in Rust -- the JS face of
  * [`clausters_document::Document`].
  */
 export class Document {
@@ -10,7 +10,7 @@ export class Document {
     [Symbol.dispose](): void;
     /**
      * Apply an edit. `apply(requestJson) -> outcomeJson`, the request carrying
-     * `{ intent, against?, quant? }` and the result the outcome alone —
+     * `{ intent, against?, quant? }` and the result the outcome alone --
      * the document stays here and `snapshot` is how it leaves.
      *
      * One object rather than three arguments because the boundary is JSON
@@ -19,7 +19,7 @@ export class Document {
     apply(request: string): string;
     /**
      * What makes two edits over the arrangement *the same thing done the same
-     * way* — the key a {@link History} coalesces on, or an empty string when
+     * way* -- the key a {@link History} coalesces on, or an empty string when
      * the intent will not parse.
      *
      * It is here rather than on the history because it is a sentence in **this**
@@ -29,13 +29,13 @@ export class Document {
      */
     static coalesceKey(intent: string): string;
     /**
-     * The edit that would put this node back the way it is — the inverse of
+     * The edit that would put this node back the way it is -- the inverse of
      * `intent`, read out of the document **before** anything is applied, or
      * `undefined` when the document cannot describe it (the node is gone, or
      * its body holds nothing of that shape).
      *
      * {@link History.apply} does this for you and is what an ordinary edit
-     * wants. This is for the caller that records its **own** entry — a leg of
+     * wants. This is for the caller that records its **own** entry -- a leg of
      * a transaction spanning several structures, which nothing but the caller
      * can apply. For a `writesamples` it is the empty write rather than the
      * span, which is why a destructive caller reads the samples it is about to
@@ -49,12 +49,12 @@ export class Document {
     /**
      * Resolve a selection to the spans of samples underneath it.
      * `resolve(requestJson) -> resolvedJson`, the request carrying
-     * `{ selection, framesPerBeat, framesPerSecond, inBeats? }` — two ratios
+     * `{ selection, framesPerBeat, framesPerSecond, inBeats? }` -- two ratios
      * because a placement is in beats and a take's length is in seconds.
      */
     resolve(request: string): string;
     /**
-     * The whole tree as JSON — for saving it, or for a caller that wants it.
+     * The whole tree as JSON -- for saving it, or for a caller that wants it.
      * The one call that still costs the size of the document, and it is
      * asked for rather than paid on every edit.
      */
@@ -119,13 +119,13 @@ export class History {
      * whether its memory may go now.
      *
      * `true` when nothing in the pile names it any more, `false` when the
-     * caller must wait for {@link History.released} — because undoing a
+     * caller must wait for {@link History.released} -- because undoing a
      * deletion has to be able to give the data back, so a structure that is
      * out of the tree stays alive while an entry can still restore what
      * referred to it.
      *
      * It also **invalidates the entries that name it**: they cannot be applied
-     * to data that is gone, so they become non-invertible — kept, marked, and
+     * to data that is gone, so they become non-invertible -- kept, marked, and
      * walked past with the walk saying so. Undoing a deletion returns the
      * data, not its history.
      */
@@ -146,7 +146,7 @@ export class History {
      */
     constructor(budget: number, spill_above: number);
     /**
-     * Record one entry — the door for everything {@link History.apply} cannot
+     * Record one entry -- the door for everything {@link History.apply} cannot
      * do: a destructive write, whose overwritten samples are not in the tree,
      * and every domain that is not the arrangement, whose state this surface
      * cannot reach. Applies nothing.
@@ -155,7 +155,7 @@ export class History {
      * `{ label?, coalesce?, legs: [{ structure, forward, backward, key? }] }`.
      *
      * **Several legs are one transaction**: applied in the order given,
-     * inverted in reverse, and undone in one step — what a gesture touching
+     * inverted in reverse, and undone in one step -- what a gesture touching
      * more than one structure needs, and why the whole entry crosses in one
      * call. It is not coalescing, which merges *successive* entries over one
      * structure. A leg's `key` is what makes two edits *the same thing done
@@ -172,25 +172,25 @@ export class History {
     /**
      * Takes a structure into this history and returns its identity.
      *
-     * `domain` names the vocabulary its payloads are written in — `"tree"` for
-     * the arrangement — and the history carries it so a caller routing what
+     * `domain` names the vocabulary its payloads are written in -- `"tree"` for
+     * the arrangement -- and the history carries it so a caller routing what
      * comes back knows which reader a leg belongs to. The identity is minted
      * here rather than carried by the data, and it is also the read-back path.
      */
     register(domain: string): bigint;
     /**
-     * The forgotten structures no entry names any more — the caller may free
+     * The forgotten structures no entry names any more -- the caller may free
      * their data now. Drains: each is reported once.
      */
     released(): BigUint64Array;
     /**
-     * **One step of the pile, routed** — the legs each structure has to
+     * **One step of the pile, routed** -- the legs each structure has to
      * apply, in order, and what only its owner can re-run. `direction` is
      * `"undo"` or `"redo"`; `undefined` when there was nothing to walk, and a
      * throw for a word that is neither.
      *
      * Returns `{ label, legs, remaining, skipped }`, where `legs` is
-     * `[{ structure, payloads }, …]` — one entry per structure rather than
+     * `[{ structure, payloads }, …]` -- one entry per structure rather than
      * one per leg. It is one call and not two because picking the side a
      * direction reads, and keeping the legs one structure owns, are rules and
      * not plumbing, and every caller was writing both for itself.
@@ -200,7 +200,7 @@ export class History {
      * than skipping it, so a later edit is never applied over a state the
      * operation before it was meant to produce. Going back it is always empty:
      * an inverse is always an edit. `skipped` names the entries the walk had
-     * to pass over because nothing can invert them — a hole in the history
+     * to pass over because nothing can invert them -- a hole in the history
      * that announces itself, which is what lets a person understand why an
      * undo did not go where they expected.
      *
@@ -224,14 +224,14 @@ export class History {
     /**
      * Whether the work differs from what was last saved.
      *
-     * Crossing the mark backwards is allowed, and this is the announcement —
+     * Crossing the mark backwards is allowed, and this is the announcement --
      * which has to be accurate: nothing on disk changed, and the file still
      * holds those edits until the next save. Crossing forward again returns to
      * clean.
      */
     readonly dirty: boolean;
     /**
-     * Whether the history holds nothing — `len == 0`, spelled the way a JS
+     * Whether the history holds nothing -- `len == 0`, spelled the way a JS
      * collection is read, as `JsScheduler` and `JsRegistry` already spell it.
      */
     readonly isEmpty: boolean;
@@ -247,13 +247,13 @@ export class History {
      * Whether the saved state can still be reached by walking this history.
      *
      * `false` after the case the warning earns its place for: undo past the
-     * mark and then edit, and the redo is truncated — so the saved state stops
+     * mark and then edit, and the redo is truncated -- so the saved state stops
      * being reachable, and {@link History.dirty} will never go quiet again on
      * its own.
      */
     readonly savedReachable: boolean;
     /**
-     * What an undo would be called, for a menu item — and what a person needs
+     * What an undo would be called, for a menu item -- and what a person needs
      * when one pile holds several structures, since the label is the only
      * thing saying which one a keystroke is about to move.
      */
@@ -309,7 +309,7 @@ export class Instance {
     /**
      * **Which control bus run each track's meters write**, by track:
      * `[{"track": id, "bus": handle, "channels": n}]`, a run of
-     * `2 * channels` — the level first and the mark that waits after it.
+     * `2 * channels` -- the level first and the mark that waits after it.
      */
     meters(): string;
     /**
@@ -320,8 +320,8 @@ export class Instance {
      * **The difference between what is sounding and what the multitrack says**, as
      * the JSON list of operations a client applies.
      *
-     * The same three arguments `multitrackPlan` takes — the multitrack, the rate
-     * and the source table —
+     * The same three arguments `multitrackPlan` takes -- the multitrack, the rate
+     * and the source table --
      * plus the master's own level, which is the caller's and not the multitrack's.
      *
      * An operation names what it acts on by a **handle**, never by a node id,
@@ -330,7 +330,7 @@ export class Instance {
      */
     reconcile(multitrack: string, sample_rate: number, sources: string, gain: number): string;
     /**
-     * **Everything this made, given back** — the operations that stop the
+     * **Everything this made, given back** -- the operations that stop the
      * multitrack. The multitrack itself is untouched: what an instance holds is nodes,
      * and nodes are not the document.
      */
@@ -401,11 +401,11 @@ export class MultitrackPlayback {
 
 /**
  * A built min/max peak pyramid, the JS face of
- * [`clausters_core::peaks::MultiPyramid`] — the summary a waveform view is
+ * [`clausters_core::peaks::MultiPyramid`] -- the summary a waveform view is
  * drawn from, so the drawing costs the width of the window rather than the
  * length of the buffer. Built (or filled from `/buffer_stream` reports) here
  * and handed to the GUI host, which draws it; the readers below answer **what
- * the cache is** — length, channels, bucket, levels — and never what it says,
+ * the cache is** -- length, channels, bucket, levels -- and never what it says,
  * which is a drawing's question.
  */
 export class Pyramid {
@@ -419,7 +419,7 @@ export class Pyramid {
      */
     static build(samples: Float32Array, channels: number, base_bucket: number): Pyramid;
     /**
-     * **An empty pyramid of a given length** — the picture of a take that has
+     * **An empty pyramid of a given length** -- the picture of a take that has
      * been allocated and not yet recorded into, ready to be filled by
      * [`Self::write_buckets`] as the reports arrive.
      *
@@ -434,7 +434,7 @@ export class Pyramid {
     static fromBytes(data: Uint8Array): Pyramid | undefined;
     /**
      * The cache's bytes, in the format every client reads: the mono layout
-     * for a single channel and the multichannel one above it — the choice
+     * for a single channel and the multichannel one above it -- the choice
      * the Python client's door makes, so the same samples serialize to the
      * same bytes whichever client reduced them. Both are read back by
      * `fromBytes` and by the GUI host.
@@ -442,17 +442,17 @@ export class Pyramid {
     toBytes(): Uint8Array;
     /**
      * Rewrites the part of the cache a **frame span** touches, from the
-     * interleaved buffer as it now stands — what keeps an editor's overview
+     * interleaved buffer as it now stands -- what keeps an editor's overview
      * true after an edit without re-summarizing the take.
      *
      * `samples` is the whole buffer, not the span: a bucket at either edge of
-     * it holds untouched samples too. Returns whether it applied — `false`,
+     * it holds untouched samples too. Returns whether it applied -- `false`,
      * changing nothing, when the buffer is not the one this cache describes,
      * which is an edit that changed the *length* and therefore a rebuild.
      */
     updateRange(samples: Float32Array, start: number, frames: number): boolean;
     /**
-     * Folds a run of **already-summarized buckets** into this pyramid — the
+     * Folds a run of **already-summarized buckets** into this pyramid -- the
      * receiving half of `/buffer_stream`, which is how a page follows a
      * recording it cannot map: the server sends the overview of what was
      * written (2 kB/s where the audio is 190) and this puts it in the
@@ -461,7 +461,7 @@ export class Pyramid {
      * `stats` is the reply's blob read as `f32`s, **bucket-major and
      * channel-minor**: for each bucket of `bucket` frames in order, for each
      * channel, `min`, `max` and mean square. `startFrame` is where the report
-     * begins on the buffer's own sample axis. Returns whether it applied —
+     * begins on the buffer's own sample axis. Returns whether it applied --
      * `false`, changing nothing, when the report is on another grid than this
      * cache (another bucket size, a start off a bucket boundary, or a run
      * that does not fit).
@@ -470,7 +470,7 @@ export class Pyramid {
     readonly baseBucket: number;
     readonly channels: number;
     /**
-     * Samples per channel — the length a view of this cache spans.
+     * Samples per channel -- the length a view of this cache spans.
      */
     readonly frames: number;
     readonly numLevels: number;
@@ -493,7 +493,7 @@ export class Registry {
      */
     clear(): void;
     /**
-     * Whether `id` falls inside this registry's space (allocated or not) —
+     * Whether `id` falls inside this registry's space (allocated or not) --
      * the filter for foreign `/node_end` ids.
      */
     contains(id: number): boolean;
@@ -508,7 +508,7 @@ export class Registry {
     /**
      * Returns `width` ids starting at `first` to the pool. `true` when the
      * release was accepted; `false` leaves the map untouched (out of range,
-     * or not currently allocated — a double release).
+     * or not currently allocated -- a double release).
      */
     release(first: number, width: number): boolean;
     /**
@@ -537,7 +537,7 @@ export class Rng {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * The stream for `seed` (splitmix64-mixed, never zero) — the same seeding
+     * The stream for `seed` (splitmix64-mixed, never zero) -- the same seeding
      * as the server's `WhiteNoise`.
      */
     constructor(seed: number);
@@ -638,7 +638,7 @@ export class Scheduler {
 }
 
 /**
- * A loaded score, held open in Rust so it can be edited and re-engraved — the
+ * A loaded score, held open in Rust so it can be edited and re-engraved -- the
  * JS face of [`clausters_core::notation::Score`].
  *
  * The same object the Python client holds over the C ABI, running the same
@@ -668,7 +668,7 @@ export class Score {
      */
     edit(action: string, param: string): boolean;
     /**
-     * Replace the document with `mei` — **a state, not a step**.
+     * Replace the document with `mei` -- **a state, not a step**.
      *
      * The door for a page whose editing context holds one history over several
      * structures: a score's edit is recorded there as the MEI it produced, and
@@ -677,7 +677,7 @@ export class Score {
      */
     load(mei: string): boolean;
     /**
-     * The score as MEI, ids and all — what to persist, and what an undo step
+     * The score as MEI, ids and all -- what to persist, and what an undo step
      * is made of.
      */
     mei(): string;
@@ -685,7 +685,7 @@ export class Score {
      * Load `data` (any format the engraver auto-detects) on `engraver`, or
      * throw when it could not be read.
      *
-     * Configuring the engraver — its resource path, its options — happens on
+     * Configuring the engraver -- its resource path, its options -- happens on
      * the JS side before this, exactly as the native binding configures its
      * toolkit before handing it over.
      */
@@ -697,7 +697,7 @@ export class Score {
     /**
      * The open score as the **model**.
      *
-     * Throws when the document could not be read into one — a state and not a
+     * Throws when the document could not be read into one -- a state and not a
      * failure, since the page still draws and still plays and only the model's
      * verbs are unavailable on it.
      */
@@ -708,7 +708,7 @@ export class Score {
      */
     transpose(element_id: string, steps: number): boolean;
     /**
-     * Move a note **to** a diatonic staff position, as one undo step — the
+     * Move a note **to** a diatonic staff position, as one undo step -- the
      * shape an edit travels in, so a resend cannot move the note twice.
      */
     transposeTo(element_id: string, position: number, page: number): boolean;
@@ -749,7 +749,7 @@ export class StepRunner {
  *
  * A beat is a logical coordinate, not a unit of time; this is the function
  * that turns one into the other under a tempo that changes along the multitrack.
- * It is pure — it knows nothing of *now* — so an editor, an offline render
+ * It is pure -- it knows nothing of *now* -- so an editor, an offline render
  * and a live clock share one, and there is a single implementation of the
  * integral behind all of them.
  */
@@ -758,7 +758,7 @@ export class TempoMap {
     [Symbol.dispose](): void;
     /**
      * A map of one constant-tempo segment with `baseBeats` falling on
-     * `baseSeconds` — the affine triple a running clock already holds, so
+     * `baseSeconds` -- the affine triple a running clock already holds, so
      * adopting a map changes no result. `undefined` on invalid arguments.
      */
     static anchored(tempo: number, base_beats: number, base_seconds: number): TempoMap | undefined;
@@ -767,13 +767,13 @@ export class TempoMap {
      */
     beatsAt(s: number): number;
     /**
-     * An independent copy — a fork, for when two tempi should stop being one.
+     * An independent copy -- a fork, for when two tempi should stop being one.
      * Handing a map to a clock does **not** copy: a clock adopts what it is
      * given, which is what lets two clocks read one multitrack.
      */
     copy(): TempoMap;
     /**
-     * The map written out as JSON — its breakpoints, without the derived
+     * The map written out as JSON -- its breakpoints, without the derived
      * seconds.
      */
     dump(): string;
@@ -785,7 +785,7 @@ export class TempoMap {
      */
     env(at: number, tempos: Float64Array, extents: Float64Array, shapes: Uint32Array, curvatures: Float64Array, seconds: boolean): boolean;
     /**
-     * **A map from a multitrack's authored tempo entries** — the JSON array a
+     * **A map from a multitrack's authored tempo entries** -- the JSON array a
      * document's `tempo` list is, plus the tempo a multitrack that never said one
      * leaves to its reader. `undefined` when the text is not such a list.
      *
@@ -793,19 +793,19 @@ export class TempoMap {
      * to write: a ramp reaches the *next* entry, the default is prepended when
      * the first entry is past beat 0, and no entries at all is the default
      * alone. Each entry is `{beats, tempo, ramp}` with the tempo in beats
-     * **per second**, as every tempo here is — a document writing beats per
+     * **per second**, as every tempo here is -- a document writing beats per
      * minute divides once, where it reads its own field.
      */
     static fromChanges(changes: string, default_tempo: number): TempoMap | undefined;
     /**
-     * The last segment's affine triple, `[baseBeats, baseSeconds, tempo]` —
+     * The last segment's affine triple, `[baseBeats, baseSeconds, tempo]` --
      * what a clock caches so reading *now* stays three float operations with
      * no search.
      */
     last(): Float64Array;
     /**
      * A map read back from the JSON [`Self::dump`] writes. `undefined` when
-     * the text is not a map this client could have written — the breakpoints
+     * the text is not a map this client could have written -- the breakpoints
      * are replayed through the ordinary writers, so every rule a live gesture
      * obeys is checked here.
      */
@@ -831,7 +831,7 @@ export class TempoMap {
     secsAt(b: number): number;
     /**
      * Segment `i` as `[beats, secs, tempo, shape, endBeats, endTempo,
-     * curvature]` — `shape` is 0 for a constant tempo and otherwise the
+     * curvature]` -- `shape` is 0 for a constant tempo and otherwise the
      * envelope shape number, and the three trailing fields are 0 when there is
      * no curve. `undefined` past the end.
      */
@@ -848,7 +848,7 @@ export class TempoMap {
      */
     spanBeats(b0: number, secs: number): number;
     /**
-     * How long the stretch from `b0` to `b1` lasts, in seconds — the only
+     * How long the stretch from `b0` to `b1` lasts, in seconds -- the only
      * correct way to turn a length in beats into a length in time, since the
      * same span lasts differently depending on where it sits.
      */
@@ -862,7 +862,7 @@ export class TempoMap {
      */
     truncateFrom(b: number): void;
     /**
-     * Always false — a map holds at least one segment by construction.
+     * Always false -- a map holds at least one segment by construction.
      */
     readonly isEmpty: boolean;
     /**
@@ -980,8 +980,8 @@ export function binary(op: string, a: number, b: number): number;
 /**
  * JS face: what one instance of a bundle needs allocated.
  * `bundle_requirements(requestJson) -> requirementsJson`, the request holding
- * the manifest and — for a bundle written before the contract, whose widget
- * ids are whatever its author picked — the template its id block is measured
+ * the manifest and -- for a bundle written before the contract, whose widget
+ * ids are whatever its author picked -- the template its id block is measured
  * from.
  */
 export function bundle_requirements(request: string): string;
@@ -995,7 +995,7 @@ export function bundle_requirements(request: string): string;
 export function bundle_resolve(request: string): string;
 
 /**
- * JS face: the writers' pre-flight — the mount dry-run over the declared
+ * JS face: the writers' pre-flight -- the mount dry-run over the declared
  * defaults, plus the no-holes check on every def payload.
  * `bundle_validate(requestJson)`, throwing on the first problem.
  */
@@ -1003,7 +1003,7 @@ export function bundle_validate(request: string): void;
 
 /**
  * JS face: the **peak and RMS** of one channel of an interleaved buffer, as
- * `[peak, rms]` — what a render reports back about what it produced. The
+ * `[peak, rms]` -- what a render reports back about what it produced. The
  * stride walk measures a render without deinterleaving it first, so a page
  * reads the same two numbers the server and the Python client report.
  *
@@ -1012,7 +1012,7 @@ export function bundle_validate(request: string): void;
 export function channel_stats(samples: Float32Array, channels: number, channel: number): Float32Array;
 
 /**
- * JS face: **what to answer the host with** — the conversation's second
+ * JS face: **what to answer the host with** -- the conversation's second
  * decision.
  *
  * `request` is `{"seq", "docVersion", "reason", "corrections"}` and the answer
@@ -1023,11 +1023,11 @@ export function channel_stats(samples: Float32Array, channels: number, channel: 
 export function conversationAnswer(request: string): string;
 
 /**
- * JS face: **what one message from the host is** — the conversation's first
+ * JS face: **what one message from the host is** -- the conversation's first
  * decision.
  *
  * `state` is the conversation's two integers (`{"floor", "applied"}`) and
- * `message` the event's *envelope* — the address, the stamp, the version it
+ * `message` the event's *envelope* -- the address, the stamp, the version it
  * was made against, the tag, and whether this editor owns the widget and the
  * window. The payload is deliberately not here: what a report means is
  * `editingIntake`'s and already crosses once.
@@ -1038,13 +1038,13 @@ export function conversationRead(state: string, message: string): string;
 
 /**
  * JS face: the stereo **correlation** (Pearson's r) of two equal-length
- * channels, in `[-1, 1]`. `undefined` when it is undefined — a length
+ * channels, in `[-1, 1]`. `undefined` when it is undefined -- a length
  * mismatch, an empty pair, or a constant channel.
  */
 export function correlation(left: Float32Array, right: Float32Array): number | undefined;
 
 /**
- * JS face: the axis a break-point curve is **drawn** against, as `[lo, hi]` —
+ * JS face: the axis a break-point curve is **drawn** against, as `[lo, hi]` --
  * its values' range with a tenth of headroom, and a flat curve still gets a
  * band to be dragged in.
  *
@@ -1064,7 +1064,7 @@ export function curveAxis(values: Float64Array, kept_lo?: number | null, kept_hi
 export function degree_to_midinote(degree: number, octave: number, root: number, scale: Float32Array): number;
 
 /**
- * What makes two of a **domain's** edits *the same thing done the same way* —
+ * What makes two of a **domain's** edits *the same thing done the same way* --
  * the key a caller recording its own entry passes to {@link History.record},
  * or an empty string when the payload is not written in that vocabulary (or
  * the domain is one the crate does not speak).
@@ -1072,8 +1072,8 @@ export function degree_to_midinote(degree: number, octave: number, root: number,
  * It is a free function rather than a method because a caller here holds no
  * structure to ask: a curve, a span of samples and a timeline live in this
  * page's own memory, and only their *vocabulary* is the crate's.
- * {@link JsDocument.coalesceKey} stays as it is — the arrangement's own door,
- * on the surface its sentence belongs to — and this is the same rule for the
+ * {@link JsDocument.coalesceKey} stays as it is -- the arrangement's own door,
+ * on the surface its sentence belongs to -- and this is the same rule for the
  * domains that have no handle here.
  */
 export function domainCoalesceKey(domain: string, payload: string): string;
@@ -1108,7 +1108,7 @@ export function domainEdit(domain: string, state: string, payload: string): stri
 export function editingDefaultTempo(): number;
 
 /**
- * JS face: **what a gesture means, in a structure's own vocabulary** — the
+ * JS face: **what a gesture means, in a structure's own vocabulary** -- the
  * edit ingestion, as a JSON string.
  *
  * A host reports a gesture as a tag and a flat list of values, and this is what
@@ -1125,7 +1125,7 @@ export function editingDefaultTempo(): number;
 export function editingIntake(domain: string, tag: string, request: string): string;
 
 /**
- * JS face: **a session's sources, loaded** — the steps that read every take
+ * JS face: **a session's sources, loaded** -- the steps that read every take
  * and stitch every join into the buffers the caller set aside.
  *
  * `request` is `{"session", "beside", "buffers"}` as JSON; the answer is what
@@ -1135,7 +1135,7 @@ export function editingIntake(domain: string, tag: string, request: string): str
 export function editingLoad(request: string): string;
 
 /**
- * JS face: **what a source made of spans comes to** — the buffer a join is,
+ * JS face: **what a source made of spans comes to** -- the buffer a join is,
  * resolved against the caller's table.
  *
  * `source` is a source-table entry as JSON and `held` the table, source id to
@@ -1179,7 +1179,7 @@ export function hz_to_bark(hz: number): number;
 export function hz_to_mel(hz: number): number;
 
 /**
- * The default interpretation, as JSON — every number the reading depends on,
+ * The default interpretation, as JSON -- every number the reading depends on,
  * and the value an override starts from.
  *
  * The parity surface for the reading, as `sheetOps` is for the verbs: the
@@ -1195,21 +1195,21 @@ export function interpretation(): string;
  * The page names elements the way the emitter wrote them: `n7` is the item,
  * `n7-2` a part of it split across a barline, `n7-p1` one pitch of a chord.
  * All three are the same item, which is what lets a gesture anywhere on a note
- * reach the note — and it is the step a client takes between a page's
+ * reach the note -- and it is the step a client takes between a page's
  * selection and a model verb.
  */
 export function itemId(element_id: string): number;
 
 /**
  * JS face: the **Lissajous / goniometer** projection of a stereo pair, as
- * interleaved `[x, y]` pairs (`x` = side, `y` = mid) — one pair per input
+ * interleaved `[x, y]` pairs (`x` = side, `y` = mid) -- one pair per input
  * frame. An empty array when the two channels differ in length.
  */
 export function lissajous(left: Float32Array, right: Float32Array): Float32Array;
 
 /**
  * JS face: **the loudness** of an interleaved buffer at `rate` Hz, as
- * `[integrated, range, momentaryMax, shortTermMax]` — LUFS, LU, LUFS, LUFS,
+ * `[integrated, range, momentaryMax, shortTermMax]` -- LUFS, LU, LUFS, LUFS,
  * as ITU-R BS.1770 and EBU R 128 measure them.
  *
  * `weights` is one per channel (`0` leaves one out, `1.41` is a surround), or
@@ -1260,7 +1260,7 @@ export function midiWriteClip(ticks: Uint32Array, msgs: Uint8Array, ppq: number)
 export function midiWriteSmf(ticks: Uint32Array, msgs: Uint8Array, ppq: number): Uint8Array;
 
 /**
- * **The defs a multitrack of these widths is played by** — `{"synth": [...],
+ * **The defs a multitrack of these widths is played by** -- `{"synth": [...],
  * "graph": [...]}`, each list in the order it must be sent, or an empty string
  * for a width nothing is written for.
  *
@@ -1273,7 +1273,7 @@ export function midiWriteSmf(ticks: Uint32Array, msgs: Uint8Array, ppq: number):
 export function mixerDefs(widths: string, master: number): string;
 
 /**
- * JS face: **what a multitrack calls its rows and its boxes** — `{"rows": [...],
+ * JS face: **what a multitrack calls its rows and its boxes** -- `{"rows": [...],
  * "boxes": [...]}`, by the names the wire carries them under.
  *
  * The minting correction's half that is a fact about the multitrack: a host that
@@ -1284,7 +1284,7 @@ export function mixerDefs(widths: string, master: number): string;
 export function multitrackNames(multitrack: string): string;
 
 /**
- * **What to instantiate to play a multitrack** — the instance plan, or an empty
+ * **What to instantiate to play a multitrack** -- the instance plan, or an empty
  * string for a multitrack that will not parse.
  *
  * `sources` is a JSON object from source id to `{"buffer": n, "channels": n}`:
@@ -1303,7 +1303,7 @@ export function multitrackPlan(multitrack: string, sample_rate: number, sources:
  * JSON string.
  *
  * The rows, the boxes, the automations over both, their break-points, which
- * are hidden and which boxes loop — everything a multitrack has from the document
+ * are hidden and which boxes loop -- everything a multitrack has from the document
  * alone. `sources` is the same table `multitrack_plan` takes, source id to
  * `{"buffer", "channels"}`, because what a box is drawn from and what it is
  * played from are the same samples.
@@ -1312,7 +1312,7 @@ export function multitrackProps(multitrack: string, sample_rate: number, sources
 
 /**
  * JS face: the boot-derived node-id partition for a node table of
- * `max_nodes` slots — `{clientBase, clientCapacity, autoBase, autoCapacity,
+ * `max_nodes` slots -- `{clientBase, clientCapacity, autoBase, autoCapacity,
  * midiBase, midiCapacity}`, the same formula the server applies.
  */
 export function node_id_partition(max_nodes: number): object;
@@ -1325,7 +1325,7 @@ export function node_id_partition(max_nodes: number): object;
 export function osc_decode_packet(bytes: Uint8Array): Array<any>;
 
 /**
- * JS face: `osc_decode_packet_timed(bytes) -> [{addr, args, time}, ...]` —
+ * JS face: `osc_decode_packet_timed(bytes) -> [{addr, args, time}, ...]` --
  * [`osc_decode_packet`] plus the containing bundle's time, in Unix seconds
  * (`null` for an immediate bundle or a bare message). What the responder
  * layer reads, so a handler is given the same `time` the Python client hands
@@ -1357,7 +1357,7 @@ export function osc_encode_message(addr: string, args: Array<any>): Uint8Array;
  * bundle an NRT score is made of. The same packing as [`osc_encode_bundle`]
  * on a different epoch: a score's time is not a wall clock, so nothing is
  * added to it (`clausters_core::osc::pack_timetag`, the rule every client
- * shares — the Python client reaches it through `clausters_core_ntp_timetag`
+ * shares -- the Python client reaches it through `clausters_core_ntp_timetag`
  * and assembles the bundle itself).
  */
 export function osc_encode_score_bundle(secs: number, messages: Array<any>): Uint8Array;
@@ -1366,8 +1366,8 @@ export function osc_encode_score_bundle(secs: number, messages: Array<any>): Uin
  * The patcher's **cord→bus pass**: a directed patch (`{boxes, cords}`) in, the
  * buses and wired members it compiles to out, both as JSON.
  *
- * One bus per connected net, its writers summing, and a bad cord — reversed,
- * rate-mismatched, out of range — comes back as `{"error": …}` naming it. The
+ * One bus per connected net, its writers summing, and a bad cord -- reversed,
+ * rate-mismatched, out of range -- comes back as `{"error": …}` naming it. The
  * same door the C ABI opens as `clausters_core_patch_compile`: a patcher is a
  * model with one compilation, and a second implementation of it in TypeScript
  * would be a second answer to "what does this cord mean".
@@ -1375,7 +1375,7 @@ export function osc_encode_score_bundle(secs: number, messages: Array<any>): Uin
 export function patchCompile(patch: string): string;
 
 /**
- * JS face: **the props a break-point curve is drawn with**, as a JSON string —
+ * JS face: **the props a break-point curve is drawn with**, as a JSON string --
  * `{"points": [...], "min": .., "max": .., "duration": ..}`.
  *
  * The projection, not the rule: `curveAxis` above answers what a curve is
@@ -1394,7 +1394,7 @@ export function pointsProps(points: Float64Array, kept_lo?: number | null, kept_
 export function quant_delay(pos: number, quant: number): number;
 
 /**
- * JS face: **a measure stack, checked** — `{"stack": [...]}` answers
+ * JS face: **a measure stack, checked** -- `{"stack": [...]}` answers
  * `{"layers": [...]}` or `{"error"}` naming what is refused.
  */
 export function samplesMeasures(request: string): string;
@@ -1415,11 +1415,11 @@ export function secs_to_beats(tempo: number, base_beats: number, base_seconds: n
 export function secs_to_samples(secs: number, sample_rate: number): number;
 
 /**
- * **The session format this build writes** — the crate's `session::FORMAT`.
+ * **The session format this build writes** -- the crate's `session::FORMAT`.
  *
  * Both clients keep the number as a **literal**, because a `Session` is plain
  * data and writing one must not need an `await loadCore()`. What keeps the two
- * literals the crate's is a test in each client that asks this and compares —
+ * literals the crate's is a test in each client that asks this and compares --
  * the check that did not exist when the format moved to 2 and both clients
  * went on stamping 1 onto files that could carry a source whose samples are
  * spans of other sources.
@@ -1427,7 +1427,7 @@ export function secs_to_samples(secs: number, sample_rate: number): number;
 export function sessionFormat(): number;
 
 /**
- * **A session written in an older format, as this build writes it** — the
+ * **A session written in an older format, as this build writes it** -- the
  * crate's `session::migrate` over the session's JSON text, or an empty string
  * for text that is not JSON. A session already current comes back unchanged.
  */
@@ -1445,7 +1445,7 @@ export function shareOf(base: number, span: number, index: number, of: number): 
  * parameters are inside `op` (`{"op": "transpose", "semitones": 2}`), so a new
  * operation costs nothing here. What the C ABI answers in an envelope
  * (`{"ok": …}` / `{"error": …}`) this **throws** instead, which is the same
- * behaviour in the shape a page expects — and the reason the refusal reaches
+ * behaviour in the shape a page expects -- and the reason the refusal reaches
  * the caller either way, since a refused operation has to say why.
  *
  * A refused operation changes nothing: the model crossed by value, so the
@@ -1454,7 +1454,7 @@ export function shareOf(base: number, span: number, index: number, of: number): 
 export function sheetApply(sheet: string, op: string): string;
 
 /**
- * Every operation this core knows, as JSON — the verb and the parameters each
+ * Every operation this core knows, as JSON -- the verb and the parameters each
  * takes.
  *
  * The parity surface the binding table cannot provide: operations cross as
@@ -1466,8 +1466,8 @@ export function sheetOps(): string;
 /**
  * Read a score model into the notes it **sounds**, under `interp`.
  *
- * Each note carries two lengths — `dur`, what is written, and `sustain`, what
- * is heard — because an honoured articulation makes them different numbers and
+ * Each note carries two lengths -- `dur`, what is written, and `sustain`, what
+ * is heard -- because an honoured articulation makes them different numbers and
  * collapsing them would move every attack after a staccato. It also names the
  * `staff` and `voice` it was written on, which is what a caller binds an
  * instrument to: the notation does not say what plays it.
@@ -1482,8 +1482,8 @@ export function sheetPerform(sheet: string, interp: string): string;
  * Write a score model out as MEI.
  *
  * Throws with the emitter's own reason when the model holds something MEI
- * cannot be written for yet — a duration that is not an exact note value, an
- * accidental past a double, or polyphony — each saying which it is, so a
+ * cannot be written for yet -- a duration that is not an exact note value, an
+ * accidental past a double, or polyphony -- each saying which it is, so a
  * caller knows whether it is wrong or early.
  */
 export function sheetToMei(sheet: string): string;
@@ -1499,7 +1499,7 @@ export function svgToDisplayList(svg: string): string;
 
 /**
  * JS face: the **true peak** of one channel of an interleaved buffer, in
- * linear amplitude — the reconstructed peak rather than the largest sample.
+ * linear amplitude -- the reconstructed peak rather than the largest sample.
  *
  * The ITU-R BS.1770-4 Annex 2 filter at 4×, which is what makes the reading
  * dBTP: a signal whose samples all read below full scale can still reconstruct
@@ -1533,7 +1533,7 @@ export function unix_to_sample(unix_secs: number, anchor_unix: number, anchor_sa
  * A page routes an incoming `/gui_event` by its tag: screen state is answered
  * generically and never reaches a domain, and everything else is the domain's
  * to read. Which tags those are is one list, and it was written once per
- * client until this call existed — a table small enough that two copies look
+ * client until this call existed -- a table small enough that two copies look
  * harmless and drift silently, since a tag missing from one makes that client
  * *edit* with a gesture the other one merely looks at.
  *
@@ -1542,7 +1542,7 @@ export function unix_to_sample(unix_secs: number, anchor_unix: number, anchor_sa
 export function viewNotAnEdit(): string;
 
 /**
- * **One catalogue view's props**, as JSON — the widget a waveform, a curve or
+ * **One catalogue view's props**, as JSON -- the widget a waveform, a curve or
  * a roll *is*, and what is on it; `{"error": reason}` for a kind this crate
  * does not draw or facts that will not read as that kind's.
  *
@@ -1558,8 +1558,8 @@ export function viewNotAnEdit(): string;
 export function viewProps(kind: string, facts: string): string;
 
 /**
- * Lay a **voice** — a JSON array of slots, `{"midis": [60], "ticks": 8}` per
- * note or chord and `{"ticks": 8}` per rest — out into barred, tied MEI.
+ * Lay a **voice** -- a JSON array of slots, `{"midis": [60], "ticks": 8}` per
+ * note or chord and `{"ticks": 8}` per rest -- out into barred, tied MEI.
  *
  * `meter` is `"num/den"`, `clef` a shape+line like `"G2"`, and `key` selects
  * the key signature and the sharp-vs-flat spelling. Reducing a client's own
@@ -1570,7 +1570,7 @@ export function viewProps(kind: string, facts: string): string;
 export function voiceToMei(voice: string, meter: string, clef: string, key: string): string;
 
 /**
- * Lift a **voice** — the v1 wire form, a JSON array of slots — into the score
+ * Lift a **voice** -- the v1 wire form, a JSON array of slots -- into the score
  * model.
  *
  * The bridge a client crosses once: it reduces its own sequencing types to

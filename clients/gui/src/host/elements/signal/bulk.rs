@@ -1,17 +1,17 @@
 //! **What a signal element asks the outside to load, and what it does with the
-//! answer** — the bulk half of the element's declaration.
+//! answer** -- the bulk half of the element's declaration.
 //!
 //! Bulk is the data too big for the wire: a minutes-long take, a prebuilt peaks
-//! cache, a server buffer. It moves through local shared resources — a mapped
-//! file natively, a `fetch` in a page — and never as JSON over OSC, which is
+//! cache, a server buffer. It moves through local shared resources -- a mapped
+//! file natively, a `fetch` in a page -- and never as JSON over OSC, which is
 //! the rule the whole crate is built on.
 //!
 //! Both fronts used to *derive* this from the outside, each in its own walk:
 //! the native one matched on the presentation in `windows::collect_slots` and
 //! again in `load_element_bulk`, the browser one in `bulk::collect_bulk`, and
 //! the buffer-fetch reply forked a third time in each `serverleg`. Every one of
-//! those was asking the same two questions — **which resource, in which form**
-//! — of an element that knows both. [`SignalElement::want`] answers them once.
+//! those was asking the same two questions -- **which resource, in which form**
+//! -- of an element that knows both. [`SignalElement::want`] answers them once.
 //!
 //! **Where the answer goes is not the loader's decision either.** An element
 //! that claimed a GPU slot is fed through that slot; every other one takes the
@@ -31,15 +31,15 @@ use crate::host::widget::element::{Bulk, Loaded};
 
 impl SignalElement {
     /// The bulk resource this element wants, in the form it draws from, or
-    /// `None` when it needs nothing loaded — it has its samples inline, it
+    /// `None` when it needs nothing loaded -- it has its samples inline, it
     /// reads a bus, or it named no resource at all.
     ///
-    /// The precedence is the one the source has always had — **cache, then
-    /// path, then buffer** — a prebuilt summary being cheaper than the raw
+    /// The precedence is the one the source has always had -- **cache, then
+    /// path, then buffer** -- a prebuilt summary being cheaper than the raw
     /// samples, and a server buffer being the one thing the host has to ask
     /// another process for.
     /// Forgets what this element resolved, so the next pass asks for it again
-    /// — the mapped half of "the samples are now these".
+    /// -- the mapped half of "the samples are now these".
     ///
     /// A source with nothing behind it (inline samples and no path, cache or
     /// buffer) is left alone: it has nothing to re-read, and clearing it would
@@ -68,7 +68,7 @@ impl SignalElement {
         self.slot_dirty = true;
     }
 
-    /// The bulk resource this element was told to read **again**, if it was —
+    /// The bulk resource this element was told to read **again**, if it was --
     /// and asking clears the ask, so one `reload` is one load.
     ///
     /// One-shot rather than derived from "it has no body", because a fetch in
@@ -92,7 +92,7 @@ impl SignalElement {
         //
         // **A stack that draws both asks for the samples**, not for the
         // analyses: an STFT is made from samples and a pyramid is not, so the
-        // one resource both pictures can come out of is the audio itself —
+        // one resource both pictures can come out of is the audio itself --
         // which the element then summarizes for the trace and analyzes for the
         // texture ([`SignalElement::fill`]). The other way round there is
         // nothing to derive: a bulk load of analyses has thrown the samples
@@ -135,7 +135,7 @@ impl SignalElement {
         }
         // **A take being recorded into is asked for its shape, not its
         // samples.** It holds silence until something records into it, and
-        // what fills the picture is the overview the server streams — so
+        // what fills the picture is the overview the server streams -- so
         // pulling the samples would be a download of zeros, at the take's
         // full length, to draw over them.
         //
@@ -173,7 +173,7 @@ impl SignalElement {
     /// time-frequency view (one texel per pixel, constant cost at any zoom).
     ///
     /// The parameters ride with the slot because whoever fills it has to make
-    /// the data fit it — a bucket to summarize at, an analysis to run — and the
+    /// the data fit it -- a bucket to summarize at, an analysis to run -- and the
     /// element is the only one that knows them. Everything else draws itself.
     pub fn slot_kind(&self) -> Option<crate::host::widget::element::SlotKind> {
         use crate::host::widget::element::SlotKind;
@@ -198,8 +198,8 @@ impl SignalElement {
         })
     }
 
-    /// **The shape of the samples this element holds** — `(channels, frames)`
-    /// per channel — whichever form it arrived in: a resolved pyramid (a take)
+    /// **The shape of the samples this element holds** -- `(channels, frames)`
+    /// per channel -- whichever form it arrived in: a resolved pyramid (a take)
     /// or the inline samples (a plotted sequence). `None` when it holds
     /// neither, which is a source nobody has resolved yet.
     ///
@@ -207,7 +207,7 @@ impl SignalElement {
     /// **write**, which has to know what it may address before it addresses it:
     /// handing out the data to measure it would be a copy of a take per stroke.
     /// **How much of this element's samples exists**, in frames, or `None` when
-    /// all of it does — the drawing's half of the `fills` prop, asked wherever
+    /// all of it does -- the drawing's half of the `fills` prop, asked wherever
     /// a picture of the samples is built.
     pub fn written_frames(&self) -> Option<u64> {
         self.fills.then_some(self.written)
@@ -245,8 +245,8 @@ impl SignalElement {
             return false;
         }
         // **Patched where nobody else is looking, copied where they are.** The
-        // work of a refresh is proportional to the span — `resummarize` touches
-        // the buckets over it and their parents — while a *copy* is
+        // work of a refresh is proportional to the span -- `resummarize` touches
+        // the buckets over it and their parents -- while a *copy* is
         // proportional to the whole take, so a picture that follows a recording
         // closely pays for the take once per step instead of for the step. The
         // front is single-threaded (this runs between frames and the draw runs
@@ -256,7 +256,7 @@ impl SignalElement {
         //
         // `Arc::make_mut` is that rule and nothing else: `&mut` when this is
         // the sole owner, a copy first when a slot is still holding the
-        // samples it draws. **One copy, however many channels** either way —
+        // samples it draws. **One copy, however many channels** either way --
         // taking one per channel is what made following a multichannel
         // recording scale with the square of nothing useful.
         let body = Arc::make_mut(data.body.as_mut().expect("just matched"));
@@ -280,8 +280,8 @@ impl SignalElement {
     /// The third way a picture changes, beside [`Self::write_samples`] (the
     /// host wrote the samples) and [`Self::resummarize`] (somebody else
     /// wrote them where this element can read them): here nobody can read them
-    /// at all — the samples are in the server's memory and this element holds
-    /// its own copy — so what arrives is the *overview* of what was written.
+    /// at all -- the samples are in the server's memory and this element holds
+    /// its own copy -- so what arrives is the *overview* of what was written.
     ///
     /// It applies only to an **owned** body, which is exactly the case that
     /// cannot re-read: a shared one is a mapping and follows the frontier for
@@ -297,7 +297,7 @@ impl SignalElement {
             return false;
         }
         // Sole owner where nobody is holding it, a copy where a slot still is
-        // — the same rule a refresh follows, for the same reason.
+        // -- the same rule a refresh follows, for the same reason.
         let body = Arc::make_mut(data.body.as_mut().expect("just matched"));
         if !body.write_buckets(start_frame as usize, bucket, stats) {
             return false;
@@ -311,7 +311,7 @@ impl SignalElement {
     ///
     /// The other half of a zoom that went past the overview: the picture said
     /// which span it could not answer, the leg fetched it, and this is where
-    /// it lands. Only a body that holds no samples of its own takes one — a
+    /// it lands. Only a body that holds no samples of its own takes one -- a
     /// mapped body reads the samples where it lies, and a wholly owned one
     /// already has it.
     pub fn set_window(&mut self, start: u64, channels: usize, samples: &[f32]) -> bool {
@@ -330,7 +330,7 @@ impl SignalElement {
     }
 
     /// **Puts a finer summary over the span this element is showing**, beside
-    /// the one it holds — the summary counterpart of [`Self::set_window`], and
+    /// the one it holds -- the summary counterpart of [`Self::set_window`], and
     /// what a zoom past the base bucket asks for where the samples cannot be
     /// mapped. `stats` is the wire's own overview blob, unconverted.
     pub fn set_detail(&mut self, start: u64, bucket: usize, stats: &[f32]) -> bool {
@@ -350,7 +350,7 @@ impl SignalElement {
     }
 
     /// **The summary's finest bucket**, or `None` when this element holds no
-    /// summary — what a span read back has to be aligned to before it can
+    /// summary -- what a span read back has to be aligned to before it can
     /// replace what the summary says over it.
     pub fn summary_bucket(&self) -> Option<usize> {
         Some(self.source.data()?.body.as_ref()?.base_bucket())
@@ -364,7 +364,7 @@ impl SignalElement {
     /// a view that can neither re-read the samples nor be streamed an
     /// overview: [`Self::resummarize`] is for samples this element can read
     /// where they lie, [`Self::write_buckets`] for a recording the server
-    /// reports on, and this for an **edit** — announced once, over a span,
+    /// reports on, and this for an **edit** -- announced once, over a span,
     /// into samples this element holds its own copy of.
     ///
     /// Which of the two halves lands depends on what the copy is, and they are
@@ -389,7 +389,7 @@ impl SignalElement {
             return true;
         }
         // No samples to write into: the picture is a summary. The buckets the
-        // span **wholly** covers are recomputed from it — a partial one at
+        // span **wholly** covers are recomputed from it -- a partial one at
         // either edge is left alone rather than written from the fraction of
         // it that arrived, which would report a peak that is not there.
         let Some(bucket) = self.summary_bucket().filter(|b| *b > 0) else {
@@ -424,7 +424,7 @@ impl SignalElement {
     ///
     /// It is a want and not a subscription: the host collects them, and one
     /// `/buffer_stream` covers every view of every window. What makes an
-    /// element want one is the pair of facts nothing else can supply — the
+    /// element want one is the pair of facts nothing else can supply -- the
     /// client said these samples are being written (`fills`), and the body is
     /// this element's **own copy**, so no frontier in memory can tell it what
     /// grew. A mapped body is deliberately absent: it reads the samples where
@@ -444,7 +444,7 @@ impl SignalElement {
     /// landed. `start` is a frame index in channel `ch`.
     ///
     /// The element does it rather than the host, because the host does not know
-    /// which of the two forms this source is in — and both are real: a clip's
+    /// which of the two forms this source is in -- and both are real: a clip's
     /// take draws from inline samples, while the same buffer opened as a
     /// navigable view draws from a pyramid. A host that patched only the
     /// pyramid left the clip showing the samples as it was before the stroke.
@@ -476,7 +476,7 @@ impl SignalElement {
             if ch >= channels || end * channels > data.samples.len() {
                 return false;
             }
-            // Interleaved, so a channel is a stride — the one place the picture
+            // Interleaved, so a channel is a stride -- the one place the picture
             // and the server's flat addressing spell the same span differently.
             let mut samples = data.samples.to_vec();
             for (i, v) in values.iter().enumerate() {
@@ -502,14 +502,14 @@ impl SignalElement {
     ///
     /// The **STFT lanes are not taken here**: an element that analyzes into a
     /// texture claimed a GPU slot, and a slot is fed by the frame that owns the
-    /// pipeline — the same boundary a `canvas`' shader crosses.
+    /// pipeline -- the same boundary a `canvas`' shader crosses.
     pub fn take(&mut self, data: Loaded) -> bool {
         let Some(source) = self.source.data_mut() else {
             return false;
         };
         match data {
             // Raw samples: what this element draws from decides what becomes of
-            // them — a take is summarized at its own bucket, a sequence is kept
+            // them -- a take is summarized at its own bucket, a sequence is kept
             // whole. That is why a loader can hand these over without knowing
             // anything about the drawing.
             Loaded::Raw { samples, channels } => {
@@ -613,7 +613,7 @@ mod tests {
     /// **A view that cannot read its own samples asks to be told about it.**
     /// The want is the pair of facts nothing else supplies: the client said
     /// this take is being written (`fills`), and the body is this element's
-    /// own copy — a mapped one reads the frontier and needs no wire.
+    /// own copy -- a mapped one reads the frontier and needs no wire.
     #[test]
     fn an_owned_take_being_recorded_wants_the_stream() {
         let mut take = element(
@@ -672,8 +672,8 @@ mod tests {
         );
     }
 
-    /// A picture that is a **summary with no samples under it** — a take being
-    /// recorded into — takes the same span as the buckets it covers, so the
+    /// A picture that is a **summary with no samples under it** -- a take being
+    /// recorded into -- takes the same span as the buckets it covers, so the
     /// overview shows the edit at every zoom.
     #[test]
     fn a_patch_folds_into_a_summary_with_no_samples() {
@@ -724,7 +724,7 @@ mod tests {
     }
 
     /// A prebuilt summary wins over the raw samples, and a server buffer is the
-    /// last resort — the precedence the source has always had.
+    /// last resort -- the precedence the source has always had.
     #[test]
     fn a_cache_wins_over_a_path_and_a_buffer_is_last() {
         let both = element(
@@ -736,7 +736,7 @@ mod tests {
     }
 
     /// Nothing to want: a bus is fed forward-only, and an element that already
-    /// holds its data asks for nothing on the next walk — which is what keeps a
+    /// holds its data asks for nothing on the next walk -- which is what keeps a
     /// tree change from re-fetching what is already here.
     #[test]
     fn an_element_that_has_its_data_wants_nothing() {

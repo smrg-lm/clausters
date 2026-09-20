@@ -29,13 +29,13 @@
       is asserted is the claim the whole path exists for: the reports carried
       the tone the writer measured, they stopped where the writer had got to,
       and once the take was finished the cache the page was told is **byte for
-      byte** the cache the samples build — so what a page holds and what a
+      byte** the cache the samples build -- so what a page holds and what a
       mapping host maps are one cache, not two that resemble each other.
 
       That is also the only shape the assertion has, and the same one the
       Python client uses: neither client reads a summary (the picture over it
       is the GUI host's `waveform` with `fills`), so both check the wire by the
-      bytes — `peaks_cache_empty` + `peaks_cache_write_buckets` against
+      bytes -- `peaks_cache_empty` + `peaks_cache_write_buckets` against
       `peaks_cache`, which is where data-vectors.json's `peaksStream` digest
       comes from.
     -->
@@ -157,14 +157,14 @@
         }
         await stream.stop();
 
-        // Read back the **whole** take — the carrier sizes the chunks itself —
+        // Read back the **whole** take -- the carrier sizes the chunks itself --
         // and build the summary the samples give. A bulk read is a
         // different path from this one, and what is compared is the cache
         // itself: same frames, same channels, same base bucket, so the two
         // must be the same bytes. This is the assertion the Python client
         // makes about the same wire (`peaks_cache_empty` +
         // `peaks_cache_write_buckets` against `peaks_cache`, one digest), and
-        // it is the only shape a client has for it — neither client reads a
+        // it is the only shape a client has for it -- neither client reads a
         // summary; they build one and hand it to whatever draws.
         const samples = await take.getSamples();
         if (samples.length !== FRAMES) {

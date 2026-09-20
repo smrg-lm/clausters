@@ -7,7 +7,7 @@
 use super::super::*;
 
 impl OscServer {
-    /// `/buffer_attach bufnum` — map the shared buffer `bufnum` out of the
+    /// `/buffer_attach bufnum` -- map the shared buffer `bufnum` out of the
     /// segment this server attached to, so its engine plays the owner's very
     /// cells.
     ///
@@ -15,7 +15,7 @@ impl OscServer {
     /// always does**: a peer editing a take writes into memory this server
     /// already reads, but a take that did not exist when this server started
     /// has to be pointed at. It is the RT server's half of the editor's
-    /// arrangement — the editor allocates through the session that owns the
+    /// arrangement -- the editor allocates through the session that owns the
     /// samples, then tells the player where it is.
     pub(in crate::osc::server) fn handle_buffer_attach(
         &mut self,
@@ -35,19 +35,19 @@ impl OscServer {
         Ok(())
     }
 
-    /// `/buffer_touch bufnum channel start frames` — **a peer says it wrote
+    /// `/buffer_touch bufnum channel start frames` -- **a peer says it wrote
     /// samples**, so every other client learns the span changed.
     ///
     /// A local peer edits a shared buffer by storing into the mapped cells, and
     /// nothing about that reaches the wire: that is the point of mapping it,
     /// and it is also why a second client holding a picture of the same take
-    /// would never find out. This is the announcement — the span and not the
+    /// would never find out. This is the announcement -- the span and not the
     /// samples, four integers whoever cares re-reads with `/buffer_getRange`.
     ///
     /// It is a **notification, not a command**: nothing is answered to the
     /// sender, and the broadcast goes to every `/server_notify` client but the
     /// one that wrote, which already knows. A page gets it too, which is the
-    /// point — a browser cannot map a file, so a message is the only way it can
+    /// point -- a browser cannot map a file, so a message is the only way it can
     /// hear about an edit at all.
     pub(in crate::osc::server) fn handle_buffer_touch(
         &mut self,
@@ -130,8 +130,8 @@ impl OscServer {
 
     /// `/buffer_close bufnum`: closes a soundfile a streaming buffer left open
     /// (scsynth pairs this with `DiskIn`/`DiskOut`). Clausters has no streaming
-    /// buffers yet — every `/buffer_read`/`/buffer_write` reads or writes the whole file
-    /// and closes it — so there is never an open handle: this validates the
+    /// buffers yet -- every `/buffer_read`/`/buffer_write` reads or writes the whole file
+    /// and closes it -- so there is never an open handle: this validates the
     /// buffer is live and acknowledges, forward-compatible with the future
     /// streaming UGens.
     pub(in crate::osc::server) fn handle_buffer_close(
@@ -160,7 +160,7 @@ impl OscServer {
     }
 
     /// `/buffer_render bufnum frames`: run the graph for `frames` frames and
-    /// install what came out of the output buses into `bufnum` — `/buffer_gen`'s
+    /// install what came out of the output buses into `bufnum` -- `/buffer_gen`'s
     /// sibling, generating into a buffer by *playing* rather than by formula,
     /// and the operation an editor means by "apply this def to this selection".
     ///
@@ -169,7 +169,7 @@ impl OscServer {
     /// drives it against a wall clock nobody else may advance; there the
     /// command fails rather than pretending. Offline, the driver owns the clock
     /// and performs the request between commands (`server::nrtsession`), which
-    /// is why this only queues one — see [`OfflineRender`](crate::osc::server::OfflineRender).
+    /// is why this only queues one -- see [`OfflineRender`](crate::osc::server::OfflineRender).
     ///
     /// The buffer must already exist and its shape is what it was allocated
     /// with: the caller says how long the operation is and how many channels it
@@ -358,7 +358,7 @@ impl OscServer {
     }
 
     /// `/buffer_getRange bufnum [start count]...` → `/buffer_getRange.reply bufnum [start blob]...`:
-    /// read ranges of samples (flat, interleaved) from the buffer mirror — how a
+    /// read ranges of samples (flat, interleaved) from the buffer mirror -- how a
     /// GUI client pulls a buffer to display it, and the read half of
     /// `/buffer_setRange`. The request asks in samples; the reply carries each
     /// range as one **little-endian `f32` blob**, so its length is what actually
@@ -403,8 +403,8 @@ impl OscServer {
     /// `/buffer_stream`'s sibling, and the pair is a distinction in the
     /// *material* and not in the client: a recording's overview is pushed as
     /// it is written, and a buffer nothing is writing has one that can simply
-    /// be asked for. Same blob either way — bucket-major, channel-minor, min,
-    /// max and mean square as little-endian `f32` — so the receiving half is
+    /// be asked for. Same blob either way -- bucket-major, channel-minor, min,
+    /// max and mean square as little-endian `f32` -- so the receiving half is
     /// the one both already have (`peaks::MultiPyramid::write_buckets`), and
     /// the folding code does not fork.
     ///
@@ -422,7 +422,7 @@ impl OscServer {
     /// bucket for the same reason. `frames < 0` runs to the end.
     ///
     /// **One request, one reply, and the reply's own length says how much
-    /// came** — the chunk conversation `/buffer_getRange` already has, for the
+    /// came** -- the chunk conversation `/buffer_getRange` already has, for the
     /// same reason: one reply is bounded by [`MAX_STREAM_BYTES`], so no message
     /// is bounded by how long the take is, and a client walking a long take
     /// asks again from where the blob ended. Nothing is remembered between
@@ -503,7 +503,7 @@ impl OscServer {
     /// `/buffer_export bufnum path` → `/done /buffer_export bufnum`: write the buffer's raw
     /// samples (flat, interleaved, little-endian `f32`) to `path` as a **local
     /// shared resource**, so a same-machine client (the GUI host) can map and read
-    /// a multi-megabyte buffer with no per-sample OSC traffic — the bulk-data path,
+    /// a multi-megabyte buffer with no per-sample OSC traffic -- the bulk-data path,
     /// the efficient counterpart of `/buffer_getRange`'s chunked over-the-wire reads. The
     /// reader pairs it with the buffer's channel count (from `/buffer_query`) to
     /// de-interleave. Synchronous on the network thread (not the audio thread),

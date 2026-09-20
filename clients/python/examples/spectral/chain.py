@@ -9,7 +9,7 @@ Runs from the *installed* package, offline, like ``basics/typed_controls.py``::
 
 The def analyses a bright source with `fft`, low-passes it **in the spectral
 domain** with `pv_brick_wall` (zeroing the top bins), and resynthesises audio
-with `ifft` (overlap-add). No buffer is allocated — the spectral frame is
+with `ifft` (overlap-add). No buffer is allocated -- the spectral frame is
 synth-private scratch on the server (SuperCollider's ``LocalBuf`` model), so the
 chain is just wired UGen-to-UGen. Only `fft` names the window size; the server
 propagates it to the rest of the chain.
@@ -49,7 +49,7 @@ from clausters.defs import (
 )
 
 #: Where a run leaves its file when no path is given: ``examples/out/``, the
-#: git-ignored directory every generator in this tree writes to — beside the
+#: git-ignored directory every generator in this tree writes to -- beside the
 #: examples rather than in whatever directory you ran from. Made here so that
 #: rendering is one call and not two.
 OUT = pathlib.Path(__file__).resolve().parents[1] / "out"
@@ -67,7 +67,7 @@ def fade():
     """A short attack and release, opened at birth and closed by the gate.
 
     Noise switched on at full amplitude starts the take on a step, which is a
-    click — audible on the first sample of a file meant to be listened to. Two
+    click -- audible on the first sample of a file meant to be listened to. Two
     hundredths of a second of ramp costs nothing and is not the subject here;
     the same envelope closes the take when the routine drops the gate."""
     gate = control("gate", 1.0)
@@ -115,7 +115,7 @@ def stop():
     yield 0.25
     # The score's closing event, after the release: a render ends at its last
     # event, so without this one the file would stop where the gate closed and
-    # the tail would be cut off — the click again, at the other end.
+    # the tail would be cut off -- the click again, at the other end.
     session.server.send_bundle(("/node_free", 0))
 
 Routine(stop).play()

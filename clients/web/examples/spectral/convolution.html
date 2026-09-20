@@ -26,11 +26,11 @@ The pipeline is the whole point. An impulse response goes into a buffer;
 <code>buffer.gen("prepare_partconv", …)</code> turns it into the
 <b>partitioned spectra</b> the convolver reads, sized with
 <code>partconvFrames</code>; and <code>conv(sig, kernel, …)</code> convolves
-against those ready spectra with a <b>flat</b> per-block cost — the partition
+against those ready spectra with a <b>flat</b> per-block cost -- the partition
 products are spread across the hop, so a long tail does not spike the block
 where the FFT lands.
 
-The convolver has an intrinsic latency of <code>fftSize / 2</code> samples — at
+The convolver has an intrinsic latency of <code>fftSize / 2</code> samples -- at
 1024 that is ~10.7 ms, inaudible as the reverb's predelay here. Left channel:
 the dry pluck. Right channel: the convolved tail, 100% wet, so the reverb is
 obvious.</div>

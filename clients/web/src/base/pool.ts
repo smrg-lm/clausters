@@ -1,16 +1,16 @@
-// The page's id pools — what a mounted component allocates from.
+// The page's id pools -- what a mounted component allocates from.
 //
 // Mounting a bundle means allocating its symbols: a block of widget ids, a
 // node id per declared node, a bus per declared bus, a buffer per declared
 // sample. Two instances of one bundle must get different ones, or they collide
 // in the shared namespaces of the one host and the one engine a page has. That
-// is the whole reason the resolver takes an allocation instead of making one —
+// is the whole reason the resolver takes an allocation instead of making one --
 // the caller owns the id spaces, and this is the browser's caller.
 //
 // The pools live here, in `base/`, rather than on the `Server` in `defs/`, for
 // two reasons: they are page state (one host, one engine, however many
 // components), and the component run time must not reach the def builders at
-// all — see `../runtime.ts`.
+// all -- see `../runtime.ts`.
 //
 // **Widget ids are shared with the client** (`GuiHost` allocates from this
 // same pool), because a widget id names a node of the one host's one widget
@@ -21,7 +21,7 @@
 // **On the page's engine they are one `IdSpaces`** (`pageIds`): the pools draw
 // from it, a `Server` attached to the page's engine with no share of its own
 // draws from it, and when the page's GUI host boots the page splits it once
-// (`splitPageIds`) — the page keeps the first half and the host, which
+// (`splitPageIds`) -- the page keeps the first half and the host, which
 // allocates on the same engine for its voices, its take monitor and the multitrack
 // it plays, takes the second. It is the page's form of what a script does when
 // it launches a host with `--id-share`.
@@ -46,7 +46,7 @@ export interface Pool {
     alloc(width?: number): number;
     release(first: number, width?: number): void;
     /**
-     * How many ids are allocated right now — what makes a leak visible. A
+     * How many ids are allocated right now -- what makes a leak visible. A
      * document that mounts and unmounts components over an afternoon must
      * come back to the occupancy it started at, and this is where that is
      * read (the acceptance for the unmount does exactly that).
@@ -65,7 +65,7 @@ export interface Pools {
 
 /**
  * A `Pool` over a bounded core `Registry`, throwing rather than returning a
- * silent `undefined` when the space is full — an exhausted id space is a
+ * silent `undefined` when the space is full -- an exhausted id space is a
  * programming error, not a value to carry.
  */
 export function pool(base: number, capacity: number, what: string): Pool {
@@ -97,7 +97,7 @@ let instance: Pools | null = null;
  * for components that share the page's engine and host: they are one client
  * between them, and one pool is what keeps two instances of a bundle from
  * colliding. It stopped being right for everything the day the page could hold
- * more than one client — a host and an engine of one's own (`newGuiHost`,
+ * more than one client -- a host and an engine of one's own (`newGuiHost`,
  * `engine`) want an id space of their own too, since the whole point of an
  * independent client is that its ids are its own and may repeat another's.
  */
@@ -142,7 +142,7 @@ export interface PoolShape {
 }
 
 /**
- * The in-page engine's own shape — the sizes it boots with — which is the
+ * The in-page engine's own shape -- the sizes it boots with -- which is the
  * server the page's components share.
  */
 export const ENGINE_SHAPE: PoolShape = {

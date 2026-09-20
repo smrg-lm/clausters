@@ -3,9 +3,9 @@
 //!
 //! A [`View`] is one window's picture of one [`Multitrack`]: where it is
 //! looking, how far it is zoomed, what the hand is holding, how tall each track
-//! is drawn. None of that is what the multitrack *is* — the four-layer rule, and this
+//! is drawn. None of that is what the multitrack *is* -- the four-layer rule, and this
 //! project has said three times that a selection and a zoom are each window's
-//! and never the multitrack's — and all of it is state a person loses on a
+//! and never the multitrack's -- and all of it is state a person loses on a
 //! reopen unless something writes it down.
 //!
 //! # Parallel to the model, never a field on it
@@ -28,7 +28,7 @@
 //!
 //! # There is more than one of them
 //!
-//! A multitrack drawn in two windows has two views, and they disagree on purpose —
+//! A multitrack drawn in two windows has two views, and they disagree on purpose --
 //! that is what a second window is *for*. Live holds the same track as a column
 //! of slots in one picture and a timeline of clips in another; we hold a list.
 //! A format that could carry only one would push the second back to being
@@ -39,7 +39,7 @@
 //! A view entry for an object the multitrack no longer holds is **dropped**
 //! ([`View::prune`]), and that is the same rule the client's screen-state tables
 //! were fixed to obey: state goes when the thing goes. Keeping it is worse than
-//! losing it — a zoom that survives onto a lane which is not the same lane is a
+//! losing it -- a zoom that survives onto a lane which is not the same lane is a
 //! defect that looks like a feature.
 //!
 //! # Where a file may carry one, and where nothing may
@@ -67,7 +67,7 @@ pub struct View {
     /// What the window is called, when a person named it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    /// The stretch of the timeline on screen — the zoom and the horizontal
+    /// The stretch of the timeline on screen -- the zoom and the horizontal
     /// scroll, which are one fact and not two. `None` shows the whole multitrack.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visible: Option<Span>,
@@ -83,14 +83,14 @@ pub struct View {
     /// so it is the ruler's configuration and not a unit of the placement.
     ///
     /// It is here rather than in the multitrack because two windows over one multitrack
-    /// may snap differently — the arranger to a bar, the editor below it to a
-    /// sixteenth — which is exactly the case a single grid on the multitrack could
+    /// may snap differently -- the arranger to a bar, the editor below it to a
+    /// sixteenth -- which is exactly the case a single grid on the multitrack could
     /// not express.
     #[serde(default, skip_serializing_if = "is_origin")]
     pub quant: Beat,
     /// Whether the window follows its content: `true` refits a window that was
     /// showing the whole multitrack when the multitrack grows. `false` says the window is
-    /// the reader's, and nothing moves it — which is what an editor wants,
+    /// the reader's, and nothing moves it -- which is what an editor wants,
     /// since a content change is mostly the reader's own edit and a view that
     /// re-frames itself under the hand that edited it is the window starting
     /// over.
@@ -101,7 +101,7 @@ pub struct View {
     pub selection: Option<Span>,
     /// What the hand is holding: regions, lanes or tracks, by id.
     ///
-    /// One list rather than one per kind, because the multitrack has one id space —
+    /// One list rather than one per kind, because the multitrack has one id space --
     /// a region's identity is its own and not its source's, and so is a lane's
     /// and a track's. What a selected id *is* is answered by looking it up.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -134,7 +134,7 @@ pub struct TrackView {
     /// Whether the row is collapsed to its header.
     #[serde(default, skip_serializing_if = "is_no")]
     pub collapsed: bool,
-    /// Whether the track's other lanes are shown under the one that plays —
+    /// Whether the track's other lanes are shown under the one that plays --
     /// comping open, in a word. Closed by default: a track with six takes on it
     /// is one row until somebody asks to see them.
     #[serde(default, skip_serializing_if = "is_no")]
@@ -202,7 +202,7 @@ impl View {
         self.tracks.get(&id).cloned().unwrap_or_default()
     }
 
-    /// How this track is drawn, to be edited — created on first use, which is
+    /// How this track is drawn, to be edited -- created on first use, which is
     /// what makes "nobody has touched it" cost nothing to store.
     pub fn track_mut(&mut self, id: NodeId) -> &mut TrackView {
         self.tracks.entry(id).or_default()
@@ -263,8 +263,8 @@ impl View {
 /// The `/gui_event` tags that are **not** edits of the structure: what a view
 /// is looking at, and where the hand is.
 ///
-/// This module says the rule in prose — a selection and a zoom are each
-/// window's and never the multitrack's — and the routing table is that rule as
+/// This module says the rule in prose -- a selection and a zoom are each
+/// window's and never the multitrack's -- and the routing table is that rule as
 /// a value, so a client can obey it without restating it. It is here rather
 /// than in a client because it was written twice, once per language, and two
 /// copies of a list of words drift the way every duplicated table drifts: a tag
@@ -285,7 +285,7 @@ pub const NOT_AN_EDIT: [&str; 8] = [
     "height",
 ];
 
-/// Whether `tag` names screen state rather than an edit — [`NOT_AN_EDIT`] asked
+/// Whether `tag` names screen state rather than an edit -- [`NOT_AN_EDIT`] asked
 /// of one tag.
 #[must_use]
 pub fn is_screen_state(tag: &str) -> bool {

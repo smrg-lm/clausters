@@ -24,17 +24,17 @@
   <body>
     <main>
       <div id="note">The web port of the Python client's
-<code>views/vumeter.py</code>: a <b>meter read the way a meter is read</b> —
+<code>views/vumeter.py</code>: a <b>meter read the way a meter is read</b> --
 decibels, a held peak and a clip lamp that stays lit until it is clicked.
 
 Four rules make a bar a meter, and all four are the shared crate's: the
 <b>peak is the block's</b> (the engine walks every sample and publishes the
 peak, so a reader at a screen's rate still catches a transient), <b>a peak is
 held</b> (the hairline across the column), <b>the scale is decibels</b> down to
-a floor the reader states — the first two meters here are the same two buses on
+a floor the reader states -- the first two meters here are the same two buses on
 the 60 dB strip a mix is read on and on the 144 dB range of a 24-bit render,
 while the third carries neither ladder nor numbers, which is what a strip of
-meters in a track header is — and
+meters in a track header is -- and
 <b>an over is latched</b>. What counts as an over is a <i>run</i> of samples at
 full scale, which only something walking samples can see, so the
 <code>clipCount</code> UGen counts them onto a control bus and the widget

@@ -115,7 +115,7 @@ fn sine_spec(name: &str, bus: f32) -> String {
 
 /// The same graph through the JSON→Box schema, phase-aligned with `Sine`:
 /// our oscillator emits `sin(2π·n·f/SR)` starting at 0, while the raw Faust
-/// phasor `(+(f/SR) : wrap) ~ _` starts at `f/SR` — the 1-sample `delay`
+/// phasor `(+(f/SR) : wrap) ~ _` starts at `f/SR` -- the 1-sample `delay`
 /// (init 0) realigns it.
 fn sine_box_json() -> String {
     let wrap = json!({"op": "split", "in": [
@@ -143,7 +143,7 @@ fn sine_box_json() -> String {
 }
 
 /// The same `sin(2π·phasor)·0.2`, but via the **Signal API**: the phasor is
-/// `recursion(sub(add(self, freq/SR), floor(add(self, freq/SR))))` — explicit
+/// `recursion(sub(add(self, freq/SR), floor(add(self, freq/SR))))` -- explicit
 /// `self`/`recursion` feedback instead of the box `~`.
 fn sine_signal_json() -> String {
     let freq = || {
@@ -234,7 +234,7 @@ fn sine_graphs_agree_within_float_tolerance() {
     let diff = max_abs_diff(&left, &right);
     assert!(diff < TOL, "max sample difference {diff} exceeds {TOL}");
 
-    // Sanity: the tolerance does discriminate — the same signals offset by
+    // Sanity: the tolerance does discriminate -- the same signals offset by
     // one sample must fail it.
     let shifted = max_abs_diff(&left[1..], &right[..right.len() - 1]);
     assert!(

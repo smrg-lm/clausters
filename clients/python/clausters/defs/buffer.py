@@ -26,7 +26,7 @@ NUM_BUFFERS = 4096
 
 
 class Part(NamedTuple):
-    """One source's contribution to a join — what `Buffer.stitch` takes and
+    """One source's contribution to a join -- what `Buffer.stitch` takes and
     `Buffer.parts` gives back.
 
     ``source`` is a `Buffer` or a bare slot number, ``start`` the first frame
@@ -36,7 +36,7 @@ class Part(NamedTuple):
     and a step is a click however well the frames are read.
 
     ``channels`` maps the join's channels onto the source's, one entry per
-    channel of the join — the source channel that channel reads, or a negative
+    channel of the join -- the source channel that channel reads, or a negative
     number for silence. It is routing and not level. ``None`` reads channel *c*
     from source channel *c*, which is what a join of takes of the same width
     means.
@@ -56,7 +56,7 @@ class Buffer:
     Where a `Bus` is a patch point that forgets everything each block, a
     buffer **stays**: it is memory on the server, addressed by a slot number,
     that outlives every node touching it. That makes it the one place a session
-    keeps something with random access — a sound file to play back or granulate,
+    keeps something with random access -- a sound file to play back or granulate,
     a wavetable an oscillator scans, a delay line, an impulse response, a
     recording being written while it plays.
 
@@ -64,7 +64,7 @@ class Buffer:
     UGen for straight playback, ``buf_rd`` for reading at an index you compute
     (a phasor, a granulator's random offsets), ``vosc``/``shaper`` for
     wavetables, ``disk_in``/``disk_out`` to stream past what fits in memory. So
-    a buffer usually reaches your ears the same way anything else does — through
+    a buffer usually reaches your ears the same way anything else does -- through
     a `Synth` whose def names its ``bufnum``.
 
     **Allocation is asynchronous, and that is the thing to get right.** The
@@ -73,7 +73,7 @@ class Buffer:
     they are scored at time 0 instead, so the renderer has the samples before
     time advances. Either way the buffer is ready when the call returns. Pass
     ``wait=False`` only when you are going to sequence the barrier yourself
-    with `Server.sync` — and never block inside a routine.
+    with `Server.sync` -- and never block inside a routine.
 
     The shape (`frames`, `channels`, `sample_rate`) is cached, because unlike a
     node's state a buffer only changes shape when you change it. `info`
@@ -115,7 +115,7 @@ class Buffer:
     def __init__(self, bufnum: int, frames: int = 0, channels: int = 1,
                  sample_rate: float = 0.0, server=None):
         """Names an existing slot by number, for a buffer the server already
-        holds — one another client allocated, or one `Server.query_buffers`
+        holds -- one another client allocated, or one `Server.query_buffers`
         reported. Sends nothing, and knows nothing about the shape until you
         ask (`info`). To get a **new** buffer, use `alloc` (empty) or `read`
         (from a sound file), which is what a script normally wants.
@@ -127,7 +127,7 @@ class Buffer:
             sample_rate: the samples' rate, if already known.
             server: the `Server` it lives on; `None` takes the ambient one.
         """
-        #: what the server holds under this slot, as last read from it — a
+        #: what the server holds under this slot, as last read from it -- a
         #: buffer's shape only changes by a command of yours, so unlike a
         #: node's record this one can be kept. `info` refreshes it; `frames`,
         #: `channels` and `sample_rate` read it.
@@ -191,8 +191,8 @@ class Buffer:
         """Install a **join** over other buffers (``/buffer_stitch``): a buffer
         whose samples are spans of theirs, read as one.
 
-        That is how a cut assembled from several takes — or from one take in
-        another order — plays as **one** reader. Without it the reader would
+        That is how a cut assembled from several takes -- or from one take in
+        another order -- plays as **one** reader. Without it the reader would
         have to change which buffer it reads with sample accuracy, and the
         buffer a reader reads is an initial-rate control: every seam would be a
         new node and a control message in the middle of playback.
@@ -201,7 +201,7 @@ class Buffer:
         refuses (`set_samples`, `fill`, `gain`, `reverse`, `read`), and so do
         the recording UGens: writing would mean writing through to whichever
         take a frame lands on, which is one edit becoming an edit of several.
-        It takes nothing away — a join is *replaced* rather than edited, which
+        It takes nothing away -- a join is *replaced* rather than edited, which
         costs the list of parts and not the samples. The sources are held for
         as long as the join exists, so freeing a take something is stitched
         over does not silence it.
@@ -265,7 +265,7 @@ class Buffer:
 
         The shape is the **file's**, so the client cannot know it in advance:
         waiting reads it back (one `info` round trip) and the returned buffer
-        carries it. Not waiting — and NRT, which has no reply — leaves
+        carries it. Not waiting -- and NRT, which has no reply -- leaves
         ``frames``/``channels`` at 0 until you call `info` yourself."""
         srv = _resolve(server)
         bufnum = srv.buffers.alloc()
@@ -290,7 +290,7 @@ class Buffer:
                       num_frames: int = 0, wait: bool = True,
                       timeout: "float | None" = None, server=None) -> "Buffer":
         """Load **selected channels** of a soundfile into a fresh buffer
-        (``/buffer_allocReadChannel``) — how one channel of a stereo file lands
+        (``/buffer_allocReadChannel``) -- how one channel of a stereo file lands
         in a mono buffer, which `read` cannot do (it takes the file whole).
 
         ``channels`` is the list of channel indices to keep, in the order given:
@@ -318,13 +318,13 @@ class Buffer:
     def from_samples(cls, samples, channels: int = 1, sample_rate: float = 0.0, *,
                      chunk: "int | None" = None, wait: bool = True,
                      timeout: "float | None" = None, server=None) -> "Buffer":
-        """Install interleaved ``samples`` into a freshly allocated buffer — a
+        """Install interleaved ``samples`` into a freshly allocated buffer -- a
         take that exists **in this program** rather than in a file.
 
         `read` is the other direction and is the one to use when there is a file:
         the server opens it itself, so the samples never cross the wire. This is
-        for samples the client holds — a render read back, an edit computed
-        here, a table built in Python — and it is `alloc` plus `set_samples` in
+        for samples the client holds -- a render read back, an edit computed
+        here, a table built in Python -- and it is `alloc` plus `set_samples` in
         one call, chunked and closed by a single barrier exactly as that one is.
 
         ``sample_rate`` is what the buffer will report; 0.0 (the default) leaves
@@ -352,7 +352,7 @@ class Buffer:
                            num_frames: int = -1, buf_start: int = 0,
                            wait: bool = True, timeout: "float | None" = None):
         """Read selected channels of a soundfile into **this** buffer
-        (``/buffer_readChannel``), keeping its shape — so the selection must
+        (``/buffer_readChannel``), keeping its shape -- so the selection must
         have as many channels as the buffer does. `read_channels` is the form
         that allocates for you."""
         args = (self.bufnum, str(path), int(file_start), int(num_frames),
@@ -369,7 +369,7 @@ class Buffer:
     def gen(self, cmd: str, *args, wait: bool = True, timeout: "float | None" = None):
         """Fills this buffer through ``/buffer_gen`` (the wavetable/generator commands:
         ``"env"``, ``"sine1"``/``"sine2"``/``"sine3"``, ``"cheby"``, ``"copy"``,
-        and ``"prepare_partconv" fft_size ir_bufnum`` — the partitioned-kernel
+        and ``"prepare_partconv" fft_size ir_bufnum`` -- the partitioned-kernel
         preparation the `conv` UGen reads; size the target with
         `clausters.defs.partconv_frames`).
         Like `alloc`: NRT scores at time 0; RT ``wait=True`` blocks on
@@ -430,7 +430,7 @@ class Buffer:
         """Map this buffer out of the shared segment (``/buffer_attach``).
 
         Only meaningful against a server that **attached** to a segment
-        somebody else owns — the RT server of an editor's arrangement, which
+        somebody else owns -- the RT server of an editor's arrangement, which
         holds the devices and plays what the on-demand session owns. It
         maps every buffer the owner had published when it started, so this is
         for one published since: after it, that server's engine plays the very
@@ -451,7 +451,7 @@ class Buffer:
     def touch(self, channel: int, start: int, frames: int):
         """Announce that a span of this buffer was written (``/buffer_touch``).
 
-        For a local peer that edited the samples **in place** — through the
+        For a local peer that edited the samples **in place** -- through the
         shared segment, where a write reaches no wire at all. The span, not the
         samples: the server broadcasts ``/buffer_touched bufnum channel start
         frames`` to every client registered with ``/server_notify`` except the
@@ -468,7 +468,7 @@ class Buffer:
         ``(start, count, value)`` triple.
 
         Indices are **flat and interleaved**, like `set_samples` and unlike the
-        editing verbs (`gain`, `reverse`), whose spans are frames — this is the
+        editing verbs (`gain`, `reverse`), whose spans are frames -- this is the
         writing family's member, not an editor's verb. Several runs ride in one
         message, and a run past the end raises rather than being clamped."""
         flat = []
@@ -480,7 +480,7 @@ class Buffer:
     def _edit(self, addr: str, args: tuple, wait: bool, timeout):
         """The shared body of the destructive edits: fire, or block on ``/done``.
 
-        They are async like every other write, and they **compose in flight** —
+        They are async like every other write, and they **compose in flight** --
         the server chains a batch of edits on one buffer, so several
         ``wait=False`` edits in a row each build on the last rather than each on
         the contents you started with."""
@@ -496,7 +496,7 @@ class Buffer:
     def gain(self, factor: float, start: int = 0, frames: int = -1, *,
              to: "float | None" = None, shape: int = 1, curve: float = 0.0,
              wait: bool = True, timeout: "float | None" = None):
-        """Scale a span of this buffer (``/buffer_gain``) — the destructive edit
+        """Scale a span of this buffer (``/buffer_gain``) -- the destructive edit
         an editor applies to a selection.
 
         ``start`` and ``frames`` are **frames**, not flat sample indices: a
@@ -505,7 +505,7 @@ class Buffer:
         ``frames`` of -1 runs to the end.
 
         One value is a constant gain; give ``to`` for a fade, which sweeps
-        ``factor`` to ``to`` along ``shape`` — the same envelope shape numbers
+        ``factor`` to ``to`` along ``shape`` -- the same envelope shape numbers
         `clausters.defs.Env` and the breakpoint editor speak, ``curve`` read
         only by the custom-curvature shape (5). So a fade in is
         ``gain(0.0, to=1.0)``, a fade out ``gain(1.0, to=0.0)``, and silence is
@@ -518,7 +518,7 @@ class Buffer:
     def fade(self, start: int = 0, frames: int = -1, *, out: bool = False,
              shape: int = 1, curve: float = 0.0, wait: bool = True,
              timeout: "float | None" = None):
-        """A fade in over a span, or out with ``out=True`` — `gain`'s two
+        """A fade in over a span, or out with ``out=True`` -- `gain`'s two
         common cases, spelled the way they are asked for."""
         self.gain(1.0 if out else 0.0, start, frames, to=0.0 if out else 1.0,
                   shape=shape, curve=curve, wait=wait, timeout=timeout)
@@ -561,8 +561,8 @@ class Buffer:
 
         ``chunk`` (samples per round-trip) defaults to the transport's bound:
         over a stream transport (TCP/WebSocket) it is sized from the frame
-        ceiling the server advertises in ``/server_query`` — megabytes per
-        reply — while over UDP each reply must fit a datagram, so it stays at
+        ceiling the server advertises in ``/server_query`` -- megabytes per
+        reply -- while over UDP each reply must fit a datagram, so it stays at
         1024. Pass an explicit ``chunk`` to override either."""
         srv = self._server()
         if chunk is None:
@@ -588,7 +588,7 @@ class Buffer:
 
     def parts(self, *, timeout: "float | None" = None) -> list:
         """What this buffer is a join **of** (``/buffer_parts``), as `Part`s in
-        the order they play — and an empty list when it owns its samples.
+        the order they play -- and an empty list when it owns its samples.
 
         That empty list is the answer to "is this a join", and it is worth
         asking before drawing: a join refuses every write, so a view that would
@@ -619,9 +619,9 @@ class Buffer:
         ``/buffer_peaks.reply``), as ``(start_frame, bucket, stats)``.
 
         The summary of a buffer that is standing still, and the sibling of the
-        stream a recording pushes: the same blob either way — bucket-major and
+        stream a recording pushes: the same blob either way -- bucket-major and
         channel-minor, ``min``, ``max`` and mean square per bucket, in one flat
-        ``array('f')`` — so it folds into a pyramid through the same door
+        ``array('f')`` -- so it folds into a pyramid through the same door
         (`clausters.gui.peaks_cache_stream_file`, the core's ``write_buckets``)
         with nothing converted.
 
@@ -669,21 +669,21 @@ class Buffer:
     def set_samples(self, samples, start: int = 0, *, chunk: "int | None" = None,
                     wait: bool = True, timeout: "float | None" = None):
         """Write interleaved samples into this buffer (``/buffer_setRange``), in
-        chunks — the write half of `get_samples`, and the step that closes an
+        chunks -- the write half of `get_samples`, and the step that closes an
         editor's read → edit → write cycle.
 
         ``samples`` is any sequence of numbers (a list, an ``array('f')``, what
         `get_samples` returned) laid down from flat index ``start``. Indices are
         flat across channels, so a stereo buffer is written interleaved
         ``L R L R ...``, exactly as it reads back. The samples cross as one
-        little-endian ``f32`` blob per chunk rather than as float arguments —
+        little-endian ``f32`` blob per chunk rather than as float arguments --
         the protocol's rule for bulk data, and what makes writing a
         multi-megabyte edit a byte copy instead of a per-sample encode.
 
         The buffer must already exist and keeps its shape: writing past its end
         raises rather than being clamped, since a short write would lose samples
         you believe you stored. The shape is read from the server's mirror, so a
-        write immediately after `alloc` needs the alloc to have completed —
+        write immediately after `alloc` needs the alloc to have completed --
         which ``wait=True`` (the default) on that call already guarantees.
 
         ``chunk`` sizes each message and defaults to the transport's bound,
@@ -749,7 +749,7 @@ class Buffer:
 
         Everything else is `set_samples`: the samples cross as little-endian
         ``f32`` blobs, chunked and closed with one barrier, and a run past the
-        end raises rather than being clamped — reported in frames, the unit you
+        end raises rather than being clamped -- reported in frames, the unit you
         wrote in. A channel the buffer does not have raises too.
         """
         self._set_runs("/buffer_setRangeChannel", samples, start, chunk, wait,
@@ -757,7 +757,7 @@ class Buffer:
 
     def set_channel_sample(self, channel: int, frame: int, value: float, *,
                            wait: bool = True, timeout: "float | None" = None):
-        """Write one frame of one channel (``/buffer_setChannel``) — the
+        """Write one frame of one channel (``/buffer_setChannel``) -- the
         single-sample counterpart of `set_channel_samples`, addressed by frame
         rather than by flat index."""
         srv = self._server()
@@ -772,7 +772,7 @@ class Buffer:
 
     def set_sample(self, index: int, value: float, *, wait: bool = True,
                    timeout: "float | None" = None):
-        """Write one sample by flat index (``/buffer_set``) — the single-sample
+        """Write one sample by flat index (``/buffer_set``) -- the single-sample
         counterpart of `get_samples`' range form, for a touch-up that does not
         deserve a run. NRT scores at time 0; RT ``wait=True`` blocks on
         ``/done``."""
@@ -822,7 +822,7 @@ class BufferAllocator:
 
     def free(self, bufnum: int):
         """Returns ``bufnum`` to the pool. A double free (or an index this
-        allocator never handed out) raises — a lost buffer slot is a client
+        allocator never handed out) raises -- a lost buffer slot is a client
         bug, never absorbed silently."""
         if not self._spaces.release(_native.IdSpaces.BUFFERS, bufnum):
             raise RuntimeError(

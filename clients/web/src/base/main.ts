@@ -1,6 +1,6 @@
 // Execution context: the default session (mirrors `clausters/base/main.py`).
 //
-// `main` is the page's **default session** — the environment holding the
+// `main` is the page's **default session** -- the environment holding the
 // ambient state used whenever you did not name a session explicitly. The rule
 // is one line:
 //
@@ -9,8 +9,8 @@
 //
 // `main` is an `Environment`, the same base a `Session` extends, so it *is* a
 // session: the default one. It owns what would otherwise be scattered globals
-// — the default `server` (adopted first-wins), an opt-in `defaultClock`, and
-// the random root — and it is the resolution authority: `resolveServer` /
+// -- the default `server` (adopted first-wins), an opt-in `defaultClock`, and
+// the random root -- and it is the resolution authority: `resolveServer` /
 // `resolveClock` implement the single rule the free `play` and every
 // playable's ambient `.play()` share.
 //
@@ -30,7 +30,7 @@ import type { Server } from "../defs/server/index.ts";
 import type { Stream } from "./stream.ts";
 
 /**
- * What resolution needs of a `Session` without importing it — the field it
+ * What resolution needs of a `Session` without importing it -- the field it
  * reads off the ambient environment, and the clock a session carries.
  */
 export interface SessionLike {
@@ -75,7 +75,7 @@ export class Main extends Environment {
 
     /**
      * The routine being resumed right now, set by the clock around each wake
-     * — so resolution can reach its session through `clock.session`. `null`
+     * -- so resolution can reach its session through `clock.session`. `null`
      * outside a routine.
      */
     get currentRoutine(): Stream | null {
@@ -99,7 +99,7 @@ export class Main extends Environment {
 
     /**
      * `[session, routine]`: what `currentSession` holds and the routine that
-     * was running when it was put in force — what a block saves and restores,
+     * was running when it was put in force -- what a block saves and restores,
      * so leaving it puts back both.
      *
      * @internal
@@ -132,7 +132,7 @@ export class Main extends Environment {
      * The session an ambient play belongs to: the session a context put in
      * force for what runs now (`contextSession`: a `use` block, `activate`, or
      * a session driving a call), else the running routine's (through the clock
-     * driving it), else the `currentSession`, else `null` — the default
+     * driving it), else the `currentSession`, else `null` -- the default
      * session, which is `this`.
      *
      * A block entered inside a routine wins over that routine's session: it is
@@ -165,7 +165,7 @@ export class Main extends Environment {
      * The clock a play should schedule on: the explicit one if given, else
      * the clock of the routine running right now when it belongs to the
      * session a block put in force, else the ambient session's, else the default
-     * session's `defaultClock` — which may be `null`, the caller then reaching
+     * session's `defaultClock` -- which may be `null`, the caller then reaching
      * for `getDefaultClock`.
      *
      * A routine's clock of another session than the one a `use` block put in

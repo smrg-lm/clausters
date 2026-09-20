@@ -3,9 +3,9 @@
 //! Starts the GUI host's server front (UDP + TCP, one port) and, optionally,
 //! its client leg to the audio server, then runs the `/gui_*` protocol. By default it opens windows
 //! (winit + wgpu): a `window`-rooted GuiDef instantiates an OS window hosting the
-//! renderers. With `--headless` it runs the protocol with no display — for
+//! renderers. With `--headless` it runs the protocol with no display -- for
 //! tests, automation and machines with no GPU. Drive it from a language client
-//! over OSC — see `clients/python/examples/views/window.py` (windowed) and
+//! over OSC -- see `clients/python/examples/views/window.py` (windowed) and
 //! `skeleton.py` (protocol only).
 
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
@@ -53,12 +53,12 @@ usage:
                             (script -> host, UDP and TCP); default 57210
       --udp [addr:]port     move the UDP leg alone, off the host port. UDP is
                             always on: it is the door a script finds this host on
-      --tcp [[addr:]port]   length-prefixed OSC over TCP — on by default at the
+      --tcp [[addr:]port]   length-prefixed OSC over TCP -- on by default at the
                             host port; the flag only moves it
       --no-tcp              disable the TCP leg (UDP-only front)
       --ws [[addr:]port]    also accept /gui_* over WebSocket, reachable from a
                             browser (default the host port + 10, so 57220;
-                            ws://host:port/) — the same flag the audio server
+                            ws://host:port/) -- the same flag the audio server
                             takes
                             Every leg above binds **loopback** unless its flag
                             names an interface: `--ws 0.0.0.0:57220` opens it to
@@ -74,7 +74,7 @@ usage:
                             server buffer number, and for bound widgets
                             (/gui_bind) to forward their value to the server.
       --shm <path>          the shared-memory segment: zero-message
-                            meters/scopes, and the **samples** — a take is
+                            meters/scopes, and the **samples** -- a take is
                             drawn by mapping it and edited by storing into it,
                             with nothing sent either way. Point it at the audio
                             server's own --shm path. With --session it is where
@@ -120,7 +120,7 @@ usage:
       --theme <path>        read the host's color theme from this TOML file: a
                             flat table of role = \"#rrggbb[aa]\" entries, laid
                             over [gui.theme] from the config. A partial table
-                            is fine — unlisted roles keep the default look.
+                            is fine -- unlisted roles keep the default look.
       --font <path>         draw text with this typeface (TrueType/OpenType)
                             instead of the embedded bitmap face. Only a host
                             built with `--features font-atlas` reads it; any
@@ -162,7 +162,7 @@ struct Look {
     metrics: Metrics,
     msaa: u32,
     /// Seconds of recorded audio a picture waits for before re-reading its
-    /// summary (`--follow-block`). Not a *look*, strictly — it is here because
+    /// summary (`--follow-block`). Not a *look*, strictly -- it is here because
     /// it is resolved and applied with the rest, on both launch paths.
     follow_block: f64,
 }
@@ -200,7 +200,7 @@ fn main() -> ExitCode {
 }
 
 /// Reads a carrier flag's optional `[addr:]port` argument: the next token,
-/// unless the line has run out or the next token is another flag — a bare
+/// unless the line has run out or the next token is another flag -- a bare
 /// `--tcp` follows the host port on the default interface. A token that is
 /// there and is not a bind is an error rather than a bare flag followed by a
 /// stray argument, which is how a typo used to read. The audio server's
@@ -386,7 +386,7 @@ fn run(args: &[String]) -> Result<(), String> {
     };
     let port = cli_port.or(cfg.gui.host_port).unwrap_or(DEFAULT_PORT);
     // Each leg answers where it listens, interface included, and an unnamed
-    // interface is loopback in all three — the audio server's rule, and the
+    // interface is loopback in all three -- the audio server's rule, and the
     // reason `--ws` no longer opens the host to the LAN by picking a carrier.
     let udp_bind = PortChoice::pick(cli_udp, None, PortChoice::Follow(None))?
         .resolve(port)
@@ -598,7 +598,7 @@ fn run(args: &[String]) -> Result<(), String> {
 
 /// Points the host at the typeface it draws with: the path the command line or
 /// the config named, or one of the system's faces. Only a build with a
-/// rasterizer can use one — without the feature a named path is a warning, not
+/// rasterizer can use one -- without the feature a named path is a warning, not
 /// an error, since the bitmap face draws either way.
 fn load_face(host: &mut Host, path: Option<String>, headless: bool) {
     #[cfg(feature = "font-atlas")]
@@ -657,7 +657,7 @@ fn open_store(dir: &Path) -> Option<GuiStore> {
 /// The third writer, and the shortest statement of what that means: a document
 /// is read with the crate every writer reads it with, drawn as an ordinary
 /// GuiDef, and edited by gestures this host applies to itself. Nothing here
-/// parses the format, decides what an edit means or remembers an inverse —
+/// parses the format, decides what an edit means or remembers an inverse --
 /// those are the crate's, which is the whole reason a session survives being
 /// passed between writers.
 fn run_session(
@@ -703,7 +703,7 @@ fn run_session(
     #[cfg(not(feature = "standalone"))]
     if !load.messages.is_empty() {
         tracing::warn!(
-            "session: {} take(s) will draw empty — this clausters-gui was built without \
+            "session: {} take(s) will draw empty -- this clausters-gui was built without \
              standalone support, so there is no server to read them into (rebuild with \
              `--features standalone`)",
             load.messages.len()
@@ -767,7 +767,7 @@ fn run_session(
         )
     };
 
-    // Saving is **Ctrl+S**, a user's action rather than an exit's side effect —
+    // Saving is **Ctrl+S**, a user's action rather than an exit's side effect --
     // and it writes only where `--save-to` named a file, since overwriting what
     // you opened is a decision.
     if let Some(out) = save_to {
@@ -792,12 +792,12 @@ fn run_session(
     // hand presses play because the governed group is created stopped.
     let readers = host.sound_multitrack();
     tracing::info!(
-        "session: opened {path} — {drawn_clips} clip(s) on {drawn_lanes} lane(s), \
+        "session: opened {path} -- {drawn_clips} clip(s) on {drawn_lanes} lane(s), \
          {editors} take editor(s), {readers} reader(s)",
     );
     match save_to {
         Some(out) => tracing::info!("session: Ctrl+S writes {out}"),
-        None => tracing::info!("session: read-only — pass --save-to <file> for Ctrl+S to write"),
+        None => tracing::info!("session: read-only -- pass --save-to <file> for Ctrl+S to write"),
     }
 
     let socket =
@@ -811,7 +811,7 @@ fn run_session(
 /// - The **on-demand session**, in this process: it owns the samples. Every
 ///   take is a region beside its segment, so this host draws them by mapping
 ///   and edits them by storing, with nothing sent either way. It has no audio
-///   device and needs none — it computes.
+///   device and needs none -- it computes.
 /// - The **player**, another process (`clausters --shm <path>`): it holds the
 ///   machine's input and output, and it is therefore the only one that can
 ///   record or make a sound. It attaches to the same segment, so it plays
@@ -823,7 +823,7 @@ fn run_session(
 /// **A failed boot is not a failed session.** The document, its edits, its undo
 /// and its save need no server at all; what needs one is the sound and the
 /// picture of a take. So a machine with no audio device still opens the file,
-/// with the takes drawn as what they are — a warning and an empty clip, which
+/// with the takes drawn as what they are -- a warning and an empty clip, which
 /// is the same honesty the unresolved sources get.
 #[cfg(feature = "standalone")]
 fn attach_server(
@@ -837,14 +837,14 @@ fn attach_server(
         Ok(session) => session,
         Err(e) => {
             tracing::warn!(
-                "session: no on-demand server ({e}) — the document opens and edits, but takes \
+                "session: no on-demand server ({e}) -- the document opens and edits, but takes \
                  will not draw or sound"
             );
             return Ok((None, None));
         }
     };
     tracing::info!(
-        "session: samples at {} — an on-demand server owns them, and a player attaches to them",
+        "session: samples at {} -- an on-demand server owns them, and a player attaches to them",
         path.display()
     );
 
@@ -885,7 +885,7 @@ fn attach_server(
     #[cfg(not(unix))]
     let bus: Option<Arc<dyn clausters_gui::host::BusSource>> = None;
     if bus.is_none() {
-        tracing::warn!("session: no data plane — the playhead will stand still");
+        tracing::warn!("session: no data plane -- the playhead will stand still");
     }
 
     // **The player**, given one: what sounds, records and moves the transport.
@@ -896,7 +896,7 @@ fn attach_server(
         }
         Err(e) => {
             tracing::warn!(
-                "session: no player ({e}) — the document opens, draws and edits, and nothing \
+                "session: no player ({e}) -- the document opens, draws and edits, and nothing \
                  sounds. Start one yourself with `clausters --shm {}` and pass --server",
                 path.display()
             );
@@ -909,7 +909,7 @@ fn attach_server(
 
 /// A player process this editor started, killed when the editor goes.
 ///
-/// An application starts its own engine — the Python client boots a server
+/// An application starts its own engine -- the Python client boots a server
 /// when none answers, and this is the same posture: a person who opens a
 /// session wants to hear it, not to arrange two processes by hand. A player
 /// the user started themselves (`--server`) is not owned and not killed.
@@ -990,7 +990,7 @@ fn spawn_player(segment: &Path) -> Result<(OwnedPlayer, String), String> {
 
 /// Attaches the player and hands it what it needs to sound a take: the
 /// monitor's def, its transport-bound group, and a `/buffer_attach` per take
-/// the session just read — because the player maps the directory once, at
+/// the session just read -- because the player maps the directory once, at
 /// startup, and these arrived after it.
 ///
 /// Returns whether one was attached at all.
@@ -1002,7 +1002,7 @@ fn attach_player(
     takes: &[i32],
 ) -> Result<Option<OwnedPlayer>, String> {
     // A player the user started is used as it is; with none named, the editor
-    // starts one of its own — it is an application, and an application does
+    // starts one of its own -- it is an application, and an application does
     // not ask you to arrange its processes by hand.
     let (owned, spec) = match player {
         Some(spec) => (None, spec),
@@ -1015,7 +1015,7 @@ fn attach_player(
     let leg = ServerLeg::connect(target).map_err(|e| format!("player leg: {e}"))?;
     // A spawned player takes a moment to bind its socket, and every message
     // below would land in nothing. Wait for it to answer before saying it is
-    // there — three seconds is a boot, not a hang.
+    // there -- three seconds is a boot, not a hang.
     if owned.is_some() {
         await_player(&leg)?;
     }
@@ -1029,7 +1029,7 @@ fn attach_player(
     leg.send(clausters_gui::host::play::take_def_message())
         .map_err(|e| e.to_string())?;
     // **The takes, by number and not by sample.** A player maps the buffer
-    // directory when it starts, and these were read into it afterwards — so it
+    // directory when it starts, and these were read into it afterwards -- so it
     // is pointed at them, which is the whole message: no blob, no copy, and
     // the very cells this editor is about to draw.
     for &bufnum in takes {
@@ -1156,7 +1156,7 @@ fn drive_session(session: &EmbedSession, steps: Vec<clausters_editing::apply::St
         tracing::info!("session: {sources} source(s) loaded into buffers");
     } else {
         tracing::warn!(
-            "session: the sources had not all loaded after 10s — what is missing will draw empty"
+            "session: the sources had not all loaded after 10s -- what is missing will draw empty"
         );
     }
 }
@@ -1180,13 +1180,13 @@ fn run_standalone(
     // A manifest that declares the component contract makes this bundle a
     // *template*: its symbols are allocated and its holes resolved, the same
     // pass a browser tab runs, so one directory behaves identically on both
-    // legs. Without one — or with a manifest written before the contract — the
+    // legs. Without one -- or with a manifest written before the contract -- the
     // saved tree is opened verbatim, exactly as it always was.
     let manifest = bundle::read_manifest(data_dir).filter(bundle::is_symbolic);
     let mounted = match &manifest {
         Some(manifest) => {
-            // The store hands back the record's two halves — its id and its
-            // tree — so the template is put back together here rather than
+            // The store hands back the record's two halves -- its id and its
+            // tree -- so the template is put back together here rather than
             // re-parsed off disk.
             let template = bundle::Template {
                 id,
@@ -1213,7 +1213,7 @@ fn run_standalone(
 
     // The embedded server loads the bundle's defs itself from the data directory
     // (SynthDefs, FaustDefs with the `faust` feature, GraphDefs, MIDI bindings
-    // and the boot.json preset) — the same startup the standalone server binary
+    // and the boot.json preset) -- the same startup the standalone server binary
     // performs, so the GUI no longer replays specs by hand.
     let embed = EmbedServer::open_with_data_dir(Some(data_dir))?;
     tracing::info!(

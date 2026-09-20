@@ -4,7 +4,7 @@
 //! **Why a state-variable filter and not a biquad.** scsynth realizes `LPF`,
 //! `HPF`, `BPF`, `BRF`, `RLPF`, `RHPF` and `Resonz` as direct-form two-pole
 //! sections, each with its own coefficient formula. This module implements the
-//! *same* prototype — the bilinear transform of the analog two-pole — through
+//! *same* prototype -- the bilinear transform of the analog two-pole -- through
 //! trapezoidal integrators instead, which changes nothing about the transfer
 //! function and three things about the behaviour:
 //!
@@ -14,7 +14,7 @@
 //!    the signal it has integrated, whatever the coefficients do next.
 //! 2. It is far better conditioned at low cutoff, where the poles crowd `z = 1`.
 //! 3. Lowpass, bandpass, highpass, notch and peak all fall out of the **same**
-//!    two integrator updates as a linear mix of three taps — which is what lets
+//!    two integrator updates as a linear mix of three taps -- which is what lets
 //!    one implementation carry eight scsynth names, and what makes [`SvfMode::Mix`]
 //!    (a filter whose response is a signal) cost the mix and nothing else.
 //!
@@ -25,8 +25,8 @@
 //!
 //! **Coefficient rate.** The `tan` and the reciprocal that turn a cutoff into
 //! integrator gains run **once per block** when the parameters arrive as scalar
-//! wires. When either is audio-rate, they run twice — at the block's first and
-//! last sample — and the three gains are interpolated linearly in between. That
+//! wires. When either is audio-rate, they run twice -- at the block's first and
+//! last sample -- and the three gains are interpolated linearly in between. That
 //! is scsynth's `CALCSLOPE` idea applied one level later: interpolating the
 //! *gains* rather than the cutoff avoids both a `tan` and a division per sample,
 //! leaving three multiply-adds.
@@ -37,7 +37,7 @@ use crate::dsp::{ProcessCtx, UGen, at};
 
 /// Which linear combination of the filter's three taps leaves the UGen.
 ///
-/// The taps are the same in every case — one pair of integrator updates — so a
+/// The taps are the same in every case -- one pair of integrator updates -- so a
 /// mode costs nothing beyond its own mix.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SvfMode {
@@ -81,13 +81,13 @@ struct Coeffs {
 }
 
 impl Coeffs {
-    /// `g = tan(pi*fc/sr)` is the trapezoidal integrator's gain — the bilinear
+    /// `g = tan(pi*fc/sr)` is the trapezoidal integrator's gain -- the bilinear
     /// transform's frequency pre-warping, which is what makes the digital
     /// cutoff land exactly on `fc` rather than near it.
     ///
     /// The cutoff is clamped to `[10 Hz, 0.49*sr]`: `tan` diverges at Nyquist,
     /// and below a few Hz the filter is a DC offset with a very long memory
-    /// rather than anything musical. A damping of `0` is **not** clamped away —
+    /// rather than anything musical. A damping of `0` is **not** clamped away --
     /// it is infinite Q, it is representable here without dividing by anything,
     /// and it is the reason the wire carries `rq` rather than `Q`.
     fn new(fc: f32, k: f64, sr: f32) -> Self {
@@ -113,7 +113,7 @@ impl Coeffs {
 
 /// A topology-preserving (trapezoidal-integrator) state-variable filter.
 ///
-/// Inputs: 0 the signal, 1 the cutoff in Hz, then whatever the mode reads —
+/// Inputs: 0 the signal, 1 the cutoff in Hz, then whatever the mode reads --
 /// nothing for the Butterworth pair, `rq` for the resonant ones, and
 /// `rq, low, band, high` for [`SvfMode::Mix`].
 pub struct Svf {
@@ -136,7 +136,7 @@ impl Svf {
     /// `(lowpass, bandpass, highpass)`.
     ///
     /// The bandpass tap is the raw integrator output, whose gain at the centre
-    /// is `Q` — the standard state-variable convention. The modes that want
+    /// is `Q` -- the standard state-variable convention. The modes that want
     /// unity there scale it by `k`.
     #[inline]
     fn step(&mut self, v0: f64, c: &Coeffs) -> (f64, f64, f64) {
@@ -251,22 +251,22 @@ impl UGen for Svf {
 
 /// The single-state filters: `OnePole`, `OneZero`, `LeakDC`, `Integrator`.
 ///
-/// All four take a **coefficient**, not a frequency — scsynth's contract, and
+/// All four take a **coefficient**, not a frequency -- scsynth's contract, and
 /// the honest one: their pole is the parameter, and naming it a cutoff would
 /// promise a `-3 dB` point the one-pole shape does not have in the same sense a
 /// two-pole one does. Use [`Lag`](super::lag::Lag) when what you want is a time
 /// constant.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum OneKind {
-    /// `y[n] = (1 - |c|)*x[n] + c*y[n-1]` — lowpass for `c > 0`, highpass for
+    /// `y[n] = (1 - |c|)*x[n] + c*y[n-1]` -- lowpass for `c > 0`, highpass for
     /// `c < 0`; the leading factor keeps the passband at unity.
     OnePole,
-    /// `y[n] = (1 - |c|)*x[n] + c*x[n-1]` — the zero-only sibling.
+    /// `y[n] = (1 - |c|)*x[n] + c*x[n-1]` -- the zero-only sibling.
     OneZero,
-    /// `y[n] = x[n] - x[n-1] + c*y[n-1]` — a DC blocker: a zero exactly at DC
+    /// `y[n] = x[n] - x[n-1] + c*y[n-1]` -- a DC blocker: a zero exactly at DC
     /// with a pole just inside it.
     LeakDc,
-    /// `y[n] = x[n] + c*y[n-1]` — a leaky accumulator. The coefficient is
+    /// `y[n] = x[n] + c*y[n-1]` -- a leaky accumulator. The coefficient is
     /// clamped just inside `1`, so the leakiest setting still forgets rather
     /// than growing without bound: a true integrator fed any DC at all reaches
     /// infinity, and it would do so on the audio thread.

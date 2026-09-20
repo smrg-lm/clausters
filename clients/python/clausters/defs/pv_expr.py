@@ -1,11 +1,11 @@
-"""Symbolic per-bin expressions for `pv_kernel` — the general per-frame
+"""Symbolic per-bin expressions for `pv_kernel` -- the general per-frame
 spectral mechanism.
 
 The terms `mag`, `phase`, `bin_index`, `nbins`, `binfreq` and `param(i)` are
 symbolic per-bin values; composing them with Python operators and math methods
 (the same `AbstractObject` vocabulary UGen graphs and off-RT values use) builds
 an expression tree that `pv_kernel` serializes to the postfix token list the
-server's ``PV_Kernel`` validates and interprets — once per bin, on each fresh
+server's ``PV_Kernel`` validates and interprets -- once per bin, on each fresh
 spectral frame.
 
 ```python
@@ -19,16 +19,16 @@ chain = pv_kernel(chain, mag=mag * (mag >= param(0)),
 sig = ifft(chain)
 ```
 
-**What an expression can be**: a pure map from one bin's values —
-``(mag, phase, bin_index, nbins, binfreq, param(i)…)`` — to the bin's new
+**What an expression can be**: a pure map from one bin's values --
+``(mag, phase, bin_index, nbins, binfreq, param(i)…)`` -- to the bin's new
 magnitude or phase. No state between bins or frames, no reading *other* bins:
 cross-frame ops (freeze, smear) and bin remaps (shift) stay with the dedicated
-``pv_*`` filters. Anything that *is* a per-bin map — gates, tilts, masks,
-magnitude algebra — is an expression here, never a new server UGen.
+``pv_*`` filters. Anything that *is* a per-bin map -- gates, tilts, masks,
+magnitude algebra -- is an expression here, never a new server UGen.
 
 The operator set is the shared table (`clausters.base.builtins` /
 ``clausters_core::builtins``): everything the value side and the UGen graphs
-compute is available per bin, with the same formulas — a rendered kernel is
+compute is available per bin, with the same formulas -- a rendered kernel is
 bit-identical between real-time and offline.
 """
 
@@ -121,7 +121,7 @@ binfreq = _Term("binfreq")
 
 
 def param(i) -> PvExpr:
-    """Parameter ``i`` — `pv_kernel`'s ``params[i]`` signal input, sampled at
+    """Parameter ``i`` -- `pv_kernel`'s ``params[i]`` signal input, sampled at
     the hop. Parameters are how an expression stays *controllable*: a
     threshold, a tilt amount, an LFO."""
     i = int(i)

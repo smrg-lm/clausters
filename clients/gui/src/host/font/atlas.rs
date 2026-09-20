@@ -4,8 +4,8 @@
 //! The embedded bitmap ([`super`]) is the floor and this is the option, which is
 //! the whole shape of the milestone: with the feature compiled in but no face
 //! loaded, every measurement and every quad is the bitmap's, unchanged. A face
-//! arrives through the [`FontSource`](crate::host::FontSource) seam — a file
-//! natively, a fetch in the page — and from then on [`super::text`] emits
+//! arrives through the [`FontSource`](crate::host::FontSource) seam -- a file
+//! natively, a fetch in the page -- and from then on [`super::text`] emits
 //! textured quads instead of one rectangle per lit font-pixel.
 //!
 //! **The cell is still declared and the face is still drawn to fit it.** The
@@ -20,7 +20,7 @@
 //! table cannot be global without lying about which window it belongs to. A
 //! face is the opposite: a build points at one, every window draws with it, and
 //! the alternative is threading it through every draw function in the crate to
-//! say the same thing at each of them. The texture, in turn, *is* per window —
+//! say the same thing at each of them. The texture, in turn, *is* per window --
 //! [`Atlas::version`] tells a painter when its copy is stale.
 
 use std::cell::RefCell;
@@ -54,7 +54,7 @@ pub struct Glyph {
     pub h: f32,
     /// `[u0, v0, u1, v1]` in texture coordinates.
     pub uv: [f32; 4],
-    /// How far the pen steps after this glyph — the face's own advance, which
+    /// How far the pen steps after this glyph -- the face's own advance, which
     /// is what makes the face proportional rather than a grid.
     pub advance: f32,
 }
@@ -64,7 +64,7 @@ struct Face {
     font: Font,
     /// Cap height per pixel size: what makes a capital fill the body box.
     cap: f32,
-    /// The advance of a digit per pixel size — the *nominal* cell, for the size
+    /// The advance of a digit per pixel size -- the *nominal* cell, for the size
     /// roles that reserve room for N characters.
     digit: f32,
 }
@@ -95,7 +95,7 @@ impl Atlas {
         }
     }
 
-    /// Whether a face is loaded — the one question every entry point in
+    /// Whether a face is loaded -- the one question every entry point in
     /// [`super`] asks before taking this path.
     pub fn has_face(&self) -> bool {
         self.face.is_some()
@@ -140,14 +140,14 @@ impl Atlas {
 
     /// The pixel size `scale` rasterizes at: the size whose cap height is the
     /// body box the bitmap face draws at that scale. Whole pixels, because a
-    /// rasterization is — which is a far finer grid than the half-steps a
+    /// rasterization is -- which is a far finer grid than the half-steps a
     /// bitmap glyph needs, and why `text_size` is continuous here.
     pub fn px(&self, scale: f32) -> f32 {
         let cap = self.face.as_ref().map_or(1.0, |f| f.cap).max(0.01);
         (GLYPH_H as f32 * scale / cap).round().max(1.0)
     }
 
-    /// The nominal advance at `scale` — a digit's, since the roles that ask are
+    /// The nominal advance at `scale` -- a digit's, since the roles that ask are
     /// reserving room for a number.
     pub fn nominal_advance(&self, scale: f32) -> f32 {
         self.face
@@ -162,7 +162,7 @@ impl Atlas {
             .map_or(0.0, |f| f.font.metrics(c, self.px(scale)).advance_width)
     }
 
-    /// The distance from the body box's top to the baseline at `scale` — where
+    /// The distance from the body box's top to the baseline at `scale` -- where
     /// [`super::text`] sits the face, so an accented capital overshoots upward
     /// exactly as the bitmap's does.
     pub fn baseline(&self, scale: f32) -> f32 {
@@ -271,7 +271,7 @@ impl Atlas {
         self.version
     }
 
-    /// The coverage sheet, `SIDE` x `SIDE` bytes — empty until a glyph has been
+    /// The coverage sheet, `SIDE` x `SIDE` bytes -- empty until a glyph has been
     /// rasterized.
     pub fn pixels(&self) -> &[u8] {
         &self.pixels
@@ -302,7 +302,7 @@ pub fn has_face() -> bool {
     with(|a| a.has_face())
 }
 
-/// A face to test against, taken from the system — the crate embeds none (see
+/// A face to test against, taken from the system -- the crate embeds none (see
 /// `PLAN.md`), so the tests of both this module and [`super`] state what they
 /// need and skip where it is absent, rather than shipping a megabyte of test
 /// data.
@@ -355,7 +355,7 @@ mod tests {
         }
     }
 
-    /// The face is proportional, and that is measured per character — the seam
+    /// The face is proportional, and that is measured per character -- the seam
     /// K9 left: a width is asked for where the string is, never in a layout.
     #[test]
     fn advances_differ_per_character() {
@@ -369,7 +369,7 @@ mod tests {
         assert!(g.advance > 0.0);
     }
 
-    /// Two sizes of one character are two entries, and a repeat is a hit — the
+    /// Two sizes of one character are two entries, and a repeat is a hit -- the
     /// texture only grows when something new is rasterized.
     #[test]
     fn the_cache_keys_on_size_and_the_texture_grows_only_on_a_miss() {

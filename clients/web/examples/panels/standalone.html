@@ -87,7 +87,7 @@ process anywhere. Press Power (the autoplay gesture) to boot.</div>
         // Smoke asserts: the meter's control bus streams (proof the host
         // parsed the GuiDef, subscribed /bus_stream over the in-page leg, and
         // the engine's boot /synth_new is producing values) with at least two
-        // distinct values (the LFO moves — a live meter, not a stuck one).
+        // distinct values (the LFO moves -- a live meter, not a stuck one).
         const t0 = performance.now();
         while (performance.now() - t0 < 20000) {
           if (dead) throw new Error(dead);

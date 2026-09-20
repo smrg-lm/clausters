@@ -53,7 +53,7 @@ class OscDestination:
         self._owns_interface = interface is None
 
     def send_msg(self, addr: str, *args) -> None:
-        """Send one message. **A message has no time** — it means "now"."""
+        """Send one message. **A message has no time** -- it means "now"."""
         self.interface.send_msg(self.target, addr, *args)
 
     def send_bundle(self, *messages, at: "Moment | None" = None,

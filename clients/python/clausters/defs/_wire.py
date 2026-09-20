@@ -4,7 +4,7 @@ def send has.
 A handle built by a constructor (`Synth`, `Group`, `Bus.audio`, `Buffer.alloc`)
 carries the server it was created on; one built from a reported id (a
 responder, the GUI, the arrangement) may carry none, and falls back to the
-ambient server — the same rule `clausters.play` follows. The import is lazy
+ambient server -- the same rule `clausters.play` follows. The import is lazy
 because `clausters.base.main` reaches back into these modules.
 """
 
@@ -24,11 +24,11 @@ def send_def(server, family: str, payload, name: str, wait: bool,
              timeout: float) -> str:
     """Sends one ``/def_send`` message and returns the def's ``name``.
 
-    The shape every family shares — ``family`` is the wire argument that selects
+    The shape every family shares -- ``family`` is the wire argument that selects
     it (``"synth"``, ``"faust"`` or ``"graph"``): in NRT the send is *scored* at
     time 0 (the renderer loads the def before time advances, so ``wait`` does not
-    apply); in RT ``wait=True`` blocks until ``/done``/``/fail`` — raising
-    `clausters.errors.CommandError` on the failure — and ``wait=False`` returns
+    apply); in RT ``wait=True`` blocks until ``/done``/``/fail`` -- raising
+    `clausters.errors.CommandError` on the failure -- and ``wait=False`` returns
     immediately, to be sequenced with a ``sync`` barrier.
     """
     if getattr(server.interface, "time_mode", "unix") == "score" or not wait:

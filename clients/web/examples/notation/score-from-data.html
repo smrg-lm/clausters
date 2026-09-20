@@ -23,25 +23,25 @@
 the score back.
 
 The companion to <code>score.html</code>, which types a phrase by hand. Here the
-score is not typed at all — it is generated from the client's own data. A
+score is not typed at all -- it is generated from the client's own data. A
 <code>Timeline</code> of events (a chord progression under a melody) is turned
 into a score by <code>notation.sheetFromTimeline</code>, engraved into the
 <code>score</code> display list, and shown: chords
 stacked on the beat, the melody above them, rests where the data leaves gaps.
 
-This is the inverse of the usual notation flow — the events <i>are</i> the
+This is the inverse of the usual notation flow -- the events <i>are</i> the
 source and the score is the view of them (data → score). What is then
 <b>played</b> is not the source timeline but the <b>score</b>, read back by
 <code>notation.toTimeline</code>: the round trip closes here, and it is a round
 trip rather than a copy, because the notation carries what the events had no way
 to say and the events carried what the page has no way to hold. Going out, the
 exact onsets snap to written values; coming back, a written value becomes an
-exact duration and a symbol becomes a decision — which is the interpreter's, and
+exact duration and a symbol becomes a decision -- which is the interpreter's, and
 is data a caller can replace (<code>notation.interpretation</code>).
 
 <b>The events say more than pitch and length.</b> Each one here also carries what
-its note is on a <i>page</i> — an articulation, a dynamic, an ornament, a
-spelling — and those are the keys the engraving reads and <code>toTimeline</code>
+its note is on a <i>page</i> -- an articulation, a dynamic, an ornament, a
+spelling -- and those are the keys the engraving reads and <code>toTimeline</code>
 puts back. They are musical facts and not drawing instructions, which is what
 lets the same key be read in both directions: the staccato in bar 1 is written as
 a staccato, honoured as a shorter sound, and comes back as a staccato rather than
@@ -85,7 +85,7 @@ MIDI number would have been spelled as), and the dynamics under the staff.</div>
       /**
        * A four-bar timeline built in code: a triad on each downbeat with a
        * melody running above it. The melody's rests and the chord onsets are
-       * exactly what the engraving draws — the data is the score.
+       * exactly what the engraving draws -- the data is the score.
        */
       function buildTimeline() {
         const tl = new seq.Timeline();
@@ -97,7 +97,7 @@ MIDI number would have been spelled as), and the dynamics under the staff.</div>
           }
         }
         // A melody above them: quarters and eighths, with a rest left in bar 2.
-        // The fourth field is what the note says on the *page* — an
+        // The fourth field is what the note says on the *page* -- an
         // articulation, a dynamic, a spelling. None of it changes what an Event
         // does when it is played; it changes what is written when the timeline
         // is engraved, and it comes back on the event when the page is read.
@@ -177,7 +177,7 @@ MIDI number would have been spelled as), and the dynamics under the staff.</div>
             { expect: ["/clock_query.reply"] });
           const now = Number(reply.args[0]) + server.latency * sr;
           win.widget("score").set({ playheadAt: now });
-          log("playing — the cursor follows the sound");
+          log("playing -- the cursor follows the sound");
         });
         win.widget("stop").onClick(() => {
           timeline.stop();
@@ -185,7 +185,7 @@ MIDI number would have been spelled as), and the dynamics under the staff.</div>
           log("stopped");
         });
         win.onClosed(() => log("window closed"));
-        log("press play — the cursor follows the sound; close the window to stop");
+        log("press play -- the cursor follows the sound; close the window to stop");
       }
 
       $("run").onclick = () => run().catch((e) => log(`error: ${e}`));

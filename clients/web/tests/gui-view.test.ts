@@ -1,7 +1,7 @@
 // The GUI node as an object: `gui/guidef.ts`'s `View`.
 //
-// A builder used to return a bare object; it now returns a `View` — whose own
-// properties *are* the document, so the JSON is unchanged — carrying the
+// A builder used to return a bare object; it now returns a `View` -- whose own
+// properties *are* the document, so the JSON is unchanged -- carrying the
 // client-side name index and knowing how to open itself.
 //
 // The mirror of the Python client's `tests/test_view.py`, case for case: the
@@ -265,7 +265,7 @@ test("a spilled source rewrites its blob, and pushes the bytes to what draws it"
 
     // The reference client rewrites the **file** it spilled to and tells the
     // widget to reload; a page has no file, so the bytes ride the blob
-    // `/gui_set` carries — same carrier, new samples, and the widget on screen
+    // `/gui_set` carries -- same carrier, new samples, and the widget on screen
     // was built around neither shape but around the source.
     sig.set(new Array(INLINE_MAX + 1).fill(0.5));
     const set = sent().slice(before).find((m) => m.addr === "/gui_set")!;

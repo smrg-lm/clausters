@@ -1,21 +1,21 @@
 //! The signal presentation's **one** column source and its mesh renderer.
 //!
 //! Every view that draws a signal against time answers the same two questions
-//! per pixel — *what is the min/max over the span this pixel covers* and *what
-//! is the sample at this position* — and the catalog used to answer them three
+//! per pixel -- *what is the min/max over the span this pixel covers* and *what
+//! is the sample at this position* -- and the catalog used to answer them three
 //! times over: the heavy waveform through [`WaveformData::column`], a clip's
 //! inline body with its own slice fold, and the static plot with a third one
 //! over an interleaved buffer. [`Trace`] is that one answer, with an arm per
 //! source shape: raw interleaved samples, or a [`WaveformData`]'s peak pyramid.
 //!
-//! [`draw_channel`] is **the** renderer of a signal against time — the only
+//! [`draw_channel`] is **the** renderer of a signal against time -- the only
 //! one. A navigable waveform, a clip's take, a plot's series and a meter's
 //! history all reach the screen through this function, differing in the three
 //! coordinate maps they hand it and in nothing else.
 //!
 //! It was not always one. The navigable view used to build its own vertex
 //! buffer through a dedicated `wgpu` pipeline, drawing the same two regimes a
-//! second time — and the two drifted exactly where duplicated arithmetic
+//! second time -- and the two drifted exactly where duplicated arithmetic
 //! drifts: the pipeline took a neighbouring sample on the left of the window
 //! but not on the right (so a deep zoom drew a trace arriving at a sample and
 //! stopping dead), marked samples with squares where this one marks discs, and
@@ -43,13 +43,13 @@ use crate::host::theme::Theme;
 pub const LINE_THRESHOLD: f64 = 2.0;
 
 /// **How close the level may come to the envelope before it stops being a
-/// second reading of it** — the ratio of the body's amplitude to the peak's,
+/// second reading of it** -- the ratio of the body's amplitude to the peak's,
 /// over the span on screen.
 ///
 /// The measure itself is exact at any span; what a short span stops being is
 /// *informative*. Root-mean-square and peak converge as a column's window
-/// shrinks below a cycle — over a quarter cycle of a bass note the two differ
-/// by a factor of `0.9` — so the body ends up drawing the envelope's own
+/// shrinks below a cycle -- over a quarter cycle of a bass note the two differ
+/// by a factor of `0.9` -- so the body ends up drawing the envelope's own
 /// outline back over it, and on the way there it reads the wave's **phase**,
 /// beating against the period in a lattice nobody can interpret. Watching the
 /// level climb onto the peaks is itself the artefact, which is why the rule is
@@ -62,37 +62,37 @@ pub const LINE_THRESHOLD: f64 = 2.0;
 /// in `docs/decisions.md`: an opacity ramped linearly in samples-per-pixel,
 /// which made the body's *weight* track the zoom, and a duration floor, which
 /// is what the quantity is made of but is an order of magnitude coarser than a
-/// working zoom — at six seconds across a window a column is under seven
+/// working zoom -- at six seconds across a window a column is under seven
 /// milliseconds, so any floor that reads as perceptual removes the body from
 /// the place it is looked at.
 ///
 /// `0.8` was chosen by eye, at the picture: a body still a fifth clear of the
 /// peaks reads as a level, and closer than that it reads as a second edge
 /// inside the first. A number derived from the convergence instead would have
-/// to name a waveform to be derived *for* — a sine sits at `0.707` over a long
-/// window and a square at `1.0` — which is why this is a threshold on what is
+/// to name a waveform to be derived *for* -- a sine sits at `0.707` over a long
+/// window and a square at `1.0` -- which is why this is a threshold on what is
 /// on screen and not a formula.
 pub const BODY_MERGE_RATIO: f32 = 0.8;
 
-/// **The window the level is averaged over**, in seconds — fixed, and that is
+/// **The window the level is averaged over**, in seconds -- fixed, and that is
 /// the point of it.
 ///
 /// A root-mean-square is an average *over a duration*, so the duration is part
 /// of the reading: average whatever a pixel column happens to cover and the
 /// body's own values follow the **zoom**, changing as you move the view over
 /// samples that did not change. A level is a property of the signal, so the
-/// window is the signal's — the same 50 ms whatever the magnification — and the
+/// window is the signal's -- the same 50 ms whatever the magnification -- and the
 /// body stops moving when you do.
 ///
 /// `50 ms` is the editors' number: WaveLab's default RMS window, adjustable up
-/// to 999 ms. It sits below the ear's own integration — energy integrates over
-/// something like 200 ms and a VU meter's window is 300 ms — so it is the floor
+/// to 999 ms. It sits below the ear's own integration -- energy integrates over
+/// something like 200 ms and a VU meter's window is 300 ms -- so it is the floor
 /// of what still reads as a level rather than the window a meter would pick.
 ///
 /// What ends the body is then the *other* side of the same picture: the
 /// **envelope** narrows as the zoom advances, since a column covers less of the
 /// wave, and once it has come down onto the level ([`BODY_MERGE_RATIO`]) there
-/// are no longer two readings — so the body goes, which is also what keeps it
+/// are no longer two readings -- so the body goes, which is also what keeps it
 /// from ever poking out of the envelope that contains it.
 pub const BODY_WINDOW_SECS: f64 = 0.050;
 
@@ -104,15 +104,15 @@ pub enum Trace<'a> {
     /// Raw interleaved samples: frame `f` of channel `ch` is
     /// `samples[f * channels + ch]`.
     Samples { samples: &'a [f32], channels: usize },
-    /// A pyramid-backed source — the editor-grade path, where a column costs a
+    /// A pyramid-backed source -- the editor-grade path, where a column costs a
     /// pyramid read rather than the samples it summarizes.
     Data(&'a WaveformData),
     /// **A loudness profile**, read as a signal in LU: the curve of what a
     /// meter would have shown along the take ([`loudness::Profile`]).
     ///
     /// It is an arm of this enum rather than a renderer of its own because it
-    /// answers the same two questions every other source does — what did this
-    /// column cover, and what is the value here — so the one renderer draws it
+    /// answers the same two questions every other source does -- what did this
+    /// column cover, and what is the value here -- so the one renderer draws it
     /// with nothing but a different vertical map. `floor` is where a reading of
     /// silence lands, which is the bottom of the scale the layer is drawn on:
     /// a loudness of `-inf` has no place on an axis and every axis has a
@@ -142,8 +142,8 @@ impl<'a> Trace<'a> {
         }
     }
 
-    /// Whether individual samples can be read at all. A **cache-only** source —
-    /// a pyramid mapped without its buffer, the compact bulk path — has none, so
+    /// Whether individual samples can be read at all. A **cache-only** source --
+    /// a pyramid mapped without its buffer, the compact bulk path -- has none, so
     /// every zoom stays in the column regime: asking it for a sample would read
     /// an empty buffer and collapse the signal to a flat line exactly where the
     /// viewer zoomed in to see it.
@@ -169,7 +169,7 @@ impl<'a> Trace<'a> {
         }
     }
 
-    /// Min/max of channel `ch` over the source span `[s0, s1)` — the span one
+    /// Min/max of channel `ch` over the source span `[s0, s1)` -- the span one
     /// pixel column covers, at `samples_per_px`. An empty or out-of-range span
     /// reads as silence rather than as nothing, so a column always draws.
     pub fn column(&self, ch: usize, samples_per_px: f64, s0: f64, s1: f64) -> (f32, f32) {
@@ -209,7 +209,7 @@ impl<'a> Trace<'a> {
         }
     }
 
-    /// The **mean square** of channel `ch` over the source span `[s0, s1)` —
+    /// The **mean square** of channel `ch` over the source span `[s0, s1)` --
     /// what a column measures when it measures level rather than extent.
     ///
     /// `None` is a source that cannot answer, never a zero: a pyramid cached
@@ -262,8 +262,8 @@ impl<'a> Trace<'a> {
 
 /// **What a column measures.** These are pictures of one span, not of
 /// different sources: `Peak` is the extent the signal reached (the min/max
-/// envelope every editor draws), `Rms` the level it held there — the body an
-/// editor draws *inside* that envelope — and `Signal` what the waveform did
+/// envelope every editor draws), `Rms` the level it held there -- the body an
+/// editor draws *inside* that envelope -- and `Signal` what the waveform did
 /// **between** the samples. One function draws any of them, placed once per
 /// measure, which is what lets a view show several without a second renderer.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -281,7 +281,7 @@ pub enum Measure {
     /// it, which is the whole of why it is a measure: the samples' own
     /// envelope and polyline are continuous across every zoom, and this is
     /// drawn on top of them in its own ink, so nothing about the picture
-    /// *changes* when the reconstruction becomes available — something is
+    /// *changes* when the reconstruction becomes available -- something is
     /// added. iZotope RX, the one editor that draws this at all, states the
     /// same shape: the analog waveform is plotted "in red under digital sample
     /// values (blue)". Replacing the one with the other is what makes a
@@ -303,7 +303,7 @@ pub enum Measure {
 }
 
 impl Measure {
-    /// The wire name, or `None` for one this build does not know — which reads
+    /// The wire name, or `None` for one this build does not know -- which reads
     /// as "the prop was not set" rather than as an error, the protocol's own
     /// posture for an unknown value.
     pub fn parse(name: &str) -> Option<Measure> {
@@ -328,7 +328,7 @@ impl Measure {
         }
     }
 
-    /// The loudness window this measure reads, in seconds — `None` for the
+    /// The loudness window this measure reads, in seconds -- `None` for the
     /// measures of amplitude, which is also the test for *which axis a layer is
     /// drawn on*: a measure with a window is in LU and brings its own scale.
     pub fn loudness_window(self) -> Option<f64> {
@@ -352,7 +352,7 @@ impl Measure {
 /// It is a set on the element rather than a stack of elements, and that is the
 /// correction the first attempt earned: every signal picture paints its own
 /// field before it draws (a heavy view's `view_field`, a plot's `track`), so two
-/// pictures on one rectangle are not layers — the second one's field hides the
+/// pictures on one rectangle are not layers -- the second one's field hides the
 /// first. Layering happens *inside* one body or not at all, which is also what
 /// the picture wants: one field, one axis, one ruler, one selection, one
 /// playhead, one upload.
@@ -377,7 +377,7 @@ impl Default for Measures {
 }
 
 impl Measures {
-    /// Every measure there is, in drawing order — back to front.
+    /// Every measure there is, in drawing order -- back to front.
     pub const ALL: [Measure; 5] = [
         Measure::Peak,
         Measure::Rms,
@@ -391,7 +391,7 @@ impl Measures {
         Measures(1 << m as u8)
     }
 
-    /// The empty set — what a stack with no measure in it folds from.
+    /// The empty set -- what a stack with no measure in it folds from.
     pub fn none() -> Self {
         Measures(0)
     }
@@ -403,7 +403,7 @@ impl Measures {
 
     /// The wire form: measure names separated by spaces (`"peak"`,
     /// `"peak rms"`). `None` when a name is one this build does not know or the
-    /// list is empty — which reads as "the prop was not set" rather than as an
+    /// list is empty -- which reads as "the prop was not set" rather than as an
     /// error, the protocol's own posture, and keeps a view that names nothing
     /// drawing something.
     pub fn parse(names: &str) -> Option<Self> {
@@ -424,7 +424,7 @@ impl Measures {
         Measures::ALL.into_iter().filter(move |m| self.has(*m))
     }
 
-    /// What `/gui_query` answers — the wire form this parsed from.
+    /// What `/gui_query` answers -- the wire form this parsed from.
     pub fn name(self) -> String {
         self.iter().map(Measure::name).collect::<Vec<_>>().join(" ")
     }
@@ -434,7 +434,7 @@ impl Measures {
 /// envelope, the **body** role for a level.
 ///
 /// It is one function because the choice is the same wherever a signal is
-/// drawn — a navigable view, a clip's take, a plot — and a body that took the
+/// drawn -- a navigable view, a clip's take, a plot -- and a body that took the
 /// series color would be invisible against the envelope it sits inside, which
 /// is the one thing a layer must not be.
 pub fn measure_color(theme: &Theme, measure: Measure, series: Color) -> Color {
@@ -456,7 +456,7 @@ pub fn measure_color(theme: &Theme, measure: Measure, series: Color) -> Color {
 }
 
 /// How a trace is inked: the color of its columns and polyline, and the
-/// trace's **weight** — the width the polyline is stroked with, and the least a
+/// trace's **weight** -- the width the polyline is stroked with, and the least a
 /// column is ever inked, so a signal keeps one optical weight across the regime
 /// boundary (a column is as wide as the pixel column it fills, which is what
 /// makes the columns tile).
@@ -467,14 +467,14 @@ pub struct TraceStyle {
     /// The radius a **sample dot** is drawn at once the samples are far enough
     /// apart to carry one ([`dots_fit`]); `0` draws none.
     ///
-    /// It is `point_radius` — the role a break-point is drawn at — and that is
+    /// It is `point_radius` -- the role a break-point is drawn at -- and that is
     /// the point rather than a coincidence: a dot says *this is a sample, and
     /// it is a thing you could take hold of*, which is what sample-level
     /// editing will grab. Sizing it as a curve's break-point means the two
     /// affordances read as the same kind of target the day the second one
     /// becomes draggable.
     pub dot_radius: f32,
-    /// What each column measures — the envelope, the level inside it, or the
+    /// What each column measures -- the envelope, the level inside it, or the
     /// reconstruction over both.
     pub measure: Measure,
     /// **Every measure this view draws**, not only this one. A layer needs it
@@ -484,7 +484,7 @@ pub struct TraceStyle {
     /// drops the line.
     pub layers: Measures,
     /// **The window a level is averaged over**, in samples
-    /// ([`BODY_WINDOW_SECS`] at the source's rate) — resolved by the caller,
+    /// ([`BODY_WINDOW_SECS`] at the source's rate) -- resolved by the caller,
     /// because the trace works in samples and only the caller knows the rate.
     ///
     /// `0` is an unknown rate, and then a column averages its own span: a live
@@ -492,22 +492,22 @@ pub struct TraceStyle {
     /// rate, has nothing better to offer and nothing that moves under a zoom
     /// it does not have.
     pub body_window: f64,
-    /// **The ink an inter-sample over is marked in** — the meter's clip lamp,
+    /// **The ink an inter-sample over is marked in** -- the meter's clip lamp,
     /// because it is the same statement about the same signal. Transparent
     /// (the default) marks none, which is what a view with no amplitude
     /// meaning wants.
     pub over: Color,
-    /// The glyph scale the over figure is written at — the placement's caption
+    /// The glyph scale the over figure is written at -- the placement's caption
     /// scale, handed over like every other size here, so a drawing never reads
     /// a size table of its own. `0` writes no figure.
     pub over_text: f32,
-    /// **The ground a figure is written on**, as `(colour, corner radius)` —
+    /// **The ground a figure is written on**, as `(colour, corner radius)` --
     /// set where this layer draws over a picture of its own (a spectrogram
     /// under it), where a figure written straight onto the texture is
     /// unreadable wherever the analysis is bright. `None` writes the text
     /// bare, which is what a layer over a plain field does.
     pub plate: Option<(Color, f32)>,
-    /// **How much of the samples exists**, in frames — `None` for the
+    /// **How much of the samples exists**, in frames -- `None` for the
     /// ordinary case, where all of it does.
     ///
     /// It is set for a take that is being **written into as it is drawn**: past
@@ -521,7 +521,7 @@ pub struct TraceStyle {
 
 /// Whether sample dots are drawn at `spacing` pixels apart: they need to read
 /// as separate points, so a dot is drawn only once its neighbour is three radii
-/// away — a full diameter of air between them. Below that the line is the
+/// away -- a full diameter of air between them. Below that the line is the
 /// picture and a row of touching dots would just thicken it.
 pub fn dots_fit(spacing: f32, radius: f32) -> bool {
     radius > 0.0 && spacing >= 3.0 * radius
@@ -532,7 +532,7 @@ pub fn dots_fit(spacing: f32, radius: f32) -> bool {
 ///
 /// It exists so a *gesture* can ask it. Writing one sample is only meaningful
 /// where the reader can see which sample they are writing, and the drawing
-/// already decides exactly that with [`dots_fit`] — so the pencil asks the
+/// already decides exactly that with [`dots_fit`] -- so the pencil asks the
 /// picture rather than carrying a threshold of its own. Two numbers for one
 /// rule is how a stroke came to be allowed over a picture with no dots in it,
 /// writing hundreds of samples the hand could not aim at.
@@ -546,7 +546,7 @@ pub fn samples_are_drawn(samples_per_px: f64, radius: f32) -> bool {
 }
 
 /// How many samples a pixel may cover before the samples stop being drawn one
-/// by one — the ceiling [`samples_are_drawn`] tests against, for a refusal that
+/// by one -- the ceiling [`samples_are_drawn`] tests against, for a refusal that
 /// can say what it is waiting for.
 pub fn drawable_per_px(radius: f32) -> f64 {
     if radius <= 0.0 {
@@ -572,7 +572,7 @@ impl TraceStyle {
         }
     }
 
-    /// The same trace, writing its figures on a plate — what a layer drawn
+    /// The same trace, writing its figures on a plate -- what a layer drawn
     /// over a texture does with text.
     pub fn with_plate(mut self, color: Color, radius: f32) -> Self {
         self.plate = Some((color, radius));
@@ -586,14 +586,14 @@ impl TraceStyle {
     }
 
     /// The same trace, marking the peaks **between** its samples that leave
-    /// full scale — see [`draw_channel`].
+    /// full scale -- see [`draw_channel`].
     pub fn with_overs(mut self, over: Color, text: f32) -> Self {
         self.over = over;
         self.over_text = text;
         self
     }
 
-    /// The same trace, told **every** measure the view draws — so a layer can
+    /// The same trace, told **every** measure the view draws -- so a layer can
     /// answer for what is under it (see [`TraceStyle::layers`]).
     pub fn with_layers(mut self, layers: Measures) -> Self {
         self.layers = layers;
@@ -606,14 +606,14 @@ impl TraceStyle {
         self
     }
 
-    /// The same trace over samples that only exists as far as `frames` — a
+    /// The same trace over samples that only exists as far as `frames` -- a
     /// take being recorded. `None` (the default) is all of it.
     pub fn with_written(mut self, frames: Option<u64>) -> Self {
         self.written = frames.map(|f| f as f64);
         self
     }
 
-    /// The same trace, told the source's sample rate — which is how the level's
+    /// The same trace, told the source's sample rate -- which is how the level's
     /// fixed window ([`BODY_WINDOW_SECS`]) becomes a number of samples to
     /// average. A rate of zero (unknown) leaves each column averaging its own
     /// span.
@@ -628,15 +628,15 @@ impl TraceStyle {
 }
 
 /// Draws one channel of `trace` into `rect`, resolved to the rect's own pixel
-/// width and never finer — the project's one graphics rule.
+/// width and never finer -- the project's one graphics rule.
 ///
 /// The two coordinate maps are the caller's, because they are what differs
 /// between the views that share this renderer: `src` takes an x pixel to the
 /// source frame it falls on (through a clip's placement and the navigation
 /// window, or straight down the whole buffer), `x_of` is its inverse, and
 /// `y_at` maps a sample value to a y pixel inside the lane. Above
-/// [`LINE_THRESHOLD`] samples per pixel — or whenever the source cannot answer
-/// for one sample ([`Trace::has_raw`]) — it draws one min/max column per pixel,
+/// [`LINE_THRESHOLD`] samples per pixel -- or whenever the source cannot answer
+/// for one sample ([`Trace::has_raw`]) -- it draws one min/max column per pixel,
 /// each **joined to the one before it** ([`peaks::join`], the core's rule and
 /// not this renderer's, because a page drawing its own columns from the same
 /// pyramid takes the same one) so the picture stays the one
@@ -671,15 +671,15 @@ pub fn draw_channel(
         return;
     }
     // **The trace bounds itself to its lane.** It reads a *span* per pixel and
-    // deliberately reaches past the pixels it fills — the sample before the
+    // deliberately reaches past the pixels it fills -- the sample before the
     // left edge and the one after the right, or the line would start and end
-    // inside the box — and it reaches past the top and bottom too whenever a
+    // inside the box -- and it reaches past the top and bottom too whenever a
     // value falls outside the vertical window. Those overshoots are the picture
     // where they cross an edge and litter where they land: a pair of discs on
     // the ruler beside the view, a stroke over the labels under it. A container
     // that is a coordinate system masks its contents anyway (a clip does), but
     // a free-standing view is nobody's content, so the drawing that knows it
-    // overshoots is the one that answers for it — every destination at once,
+    // overshoots is the one that answers for it -- every destination at once,
     // rather than one mask per placement. Narrowed, never widened: whatever
     // mask was already in force still holds, and it is put back on the way out.
     let outer = mesh.clip();
@@ -689,7 +689,7 @@ pub fn draw_channel(
     let per_px = (src(rect.x + cw) - src(rect.x)).max(0.0);
     // **The regime, decided once**, because the level body's own answer starts
     // here: a body is a reading *of* an envelope, so it is drawn where the
-    // envelope is and nowhere else — past the crossing the trace is the
+    // envelope is and nowhere else -- past the crossing the trace is the
     // polyline through the samples themselves and there is nothing left for a
     // level to be a reading of.
     // **One moment, and it is the dots'.** The picture of the samples changes
@@ -725,7 +725,7 @@ pub fn draw_channel(
         return;
     }
     if columns {
-        // What the column before this one reached — see [`peaks::join`].
+        // What the column before this one reached -- see [`peaks::join`].
         let mut prev: Option<(f32, f32)> = None;
         for c in 0..cols {
             let x = rect.x + c as f32 * cw;
@@ -746,7 +746,7 @@ pub fn draw_channel(
             }
             // **Joined to the column before it**, which is what keeps the
             // trace one curve: see [`peaks::join`]. The walk is the renderer's
-            // — a column that held nothing starts the run again above.
+            // -- a column that held nothing starts the run again above.
             let (vlo, vhi) = peaks::join(lo, hi, prev.take());
             prev = Some((lo, hi));
             // A column is a quad, **never inked thinner than the trace's
@@ -757,7 +757,7 @@ pub fn draw_channel(
             // both counts: capped to the column width it came out below the
             // weight the polyline uses a pixel away, and where the signal
             // barely moves inside one column it was a zero-length line, which
-            // draws *nothing* — so the flat stretch of an envelope disappeared
+            // draws *nothing* -- so the flat stretch of an envelope disappeared
             // exactly where it is most readable. Overlapping neighbours is the
             // price of the second floor, and it is what a stroke does anyway.
             let (top, bottom) = (y_at(vhi), y_at(vlo));
@@ -1002,7 +1002,7 @@ fn reconstruct(trace: &Trace, ch: usize, f: usize, frames: usize, out: &mut [f32
 }
 
 /// **The span a column's level is averaged over**: its own, or the fixed window
-/// centred on it where that is wider — the one function both the drawing and
+/// centred on it where that is wider -- the one function both the drawing and
 /// the merge test read through, so the level they compare and the level they
 /// draw are the same number.
 fn level_span(s0: f64, s1: f64, window: f64) -> (f64, f64) {
@@ -1024,12 +1024,12 @@ fn level_span(s0: f64, s1: f64, window: f64) -> (f64, f64) {
 /// blinking out column by column would read as a picture with holes in it
 /// rather than as a level that has stopped meaning something.
 ///
-/// A source with no energy answers `false` — nothing merged, there was never a
-/// body — and [`draw_body`] skips those columns one at a time, which is the
+/// A source with no energy answers `false` -- nothing merged, there was never a
+/// body -- and [`draw_body`] skips those columns one at a time, which is the
 /// distinction between *not measured* and *measured and redundant*.
 // The trace, the channel, the rect and its column geometry, and the two spans a
 // level is read over: distinct inputs to one question, clearer flat than bundled
-// — the same call `draw_channel` above it takes.
+// -- the same call `draw_channel` above it takes.
 #[allow(clippy::too_many_arguments)]
 fn body_merges(
     trace: &Trace,
@@ -1060,19 +1060,19 @@ fn body_merges(
 }
 
 /// The measured body: one column per pixel at `±sqrt(mean square)` about zero,
-/// which is what makes it a *body* rather than a second envelope — level has no
+/// which is what makes it a *body* rather than a second envelope -- level has no
 /// sign, so the picture is symmetric by construction and sits inside the
 /// envelope of the same span wherever both are drawn.
 ///
 /// **Measured over the column's own samples**, exactly as the envelope above it
-/// is — the same group of samples answering two questions, which is what makes
+/// is -- the same group of samples answering two questions, which is what makes
 /// the body a reading *of* the envelope rather than a second signal. Every
 /// editor draws it this way, and none of them slides a window of its own: a
 /// fixed averaging time would smear the level across a transient and, worse,
 /// push the body outside the envelope that is supposed to contain it.
 ///
 /// **It goes when it has met the envelope** ([`BODY_MERGE_RATIO`]), which is
-/// the other half of the same convention — and it goes at **one weight**, the
+/// the other half of the same convention -- and it goes at **one weight**, the
 /// weight it is drawn at everywhere else, so what a body's weight says is the
 /// signal and never the magnification.
 #[allow(clippy::too_many_arguments)]
@@ -1094,7 +1094,7 @@ fn draw_body(
         if style.written.is_some_and(|w| src(x) >= w) {
             break;
         }
-        // A source with no measure draws nothing at all — the column is
+        // A source with no measure draws nothing at all -- the column is
         // skipped rather than inked at zero, so an old cache shows the
         // envelope it does have and no body it never measured.
         let (a, b) = level_span(src(x), src(x + cw), style.body_window);
@@ -1140,7 +1140,7 @@ mod tests {
     }
 
     /// The pyramid arm answers the same envelope as the raw one for a source
-    /// that has both — the property that lets a take and an inline body be one
+    /// that has both -- the property that lets a take and an inline body be one
     /// renderer.
     #[test]
     fn the_pyramid_arm_agrees_with_the_raw_arm_on_the_same_signal() {
@@ -1345,7 +1345,7 @@ mod tests {
         assert!(mid > 1, "nearer, every second or fourth: {mid}");
     }
 
-    /// Zoomed out, the trace costs the rect's pixels — not the source's
+    /// Zoomed out, the trace costs the rect's pixels -- not the source's
     /// samples. This is the rule the three implementations each restated.
     #[test]
     fn a_long_source_costs_the_rect_width_not_its_samples() {
@@ -1369,7 +1369,7 @@ mod tests {
         assert!(!mesh.is_empty());
     }
 
-    /// The heights of the quads drawn, in order — one per column, six
+    /// The heights of the quads drawn, in order -- one per column, six
     /// vertices each.
     fn quad_heights(mesh: &Mesh) -> Vec<f32> {
         let ys: Vec<f32> = mesh.positions().map(|(_, y)| y).collect();
@@ -1385,7 +1385,7 @@ mod tests {
     }
 
     /// Draws `samples` across `rect` at exactly `per_px` samples per pixel,
-    /// full scale mapped to the rect — the geometry every view hands the
+    /// full scale mapped to the rect -- the geometry every view hands the
     /// renderer, with the two maps written out.
     fn draw_at(samples: &[f32], rect: Rect, per_px: f64) -> Mesh {
         let mut mesh = Mesh::new();
@@ -1403,7 +1403,7 @@ mod tests {
     }
 
     /// **A one-sample jump is drawn wherever it falls**, including exactly on
-    /// a column boundary — the square wave's vertical edge, which is the whole
+    /// a column boundary -- the square wave's vertical edge, which is the whole
     /// of the picture at that zoom.
     ///
     /// The columns partition the samples and the curve does not, so before the
@@ -1432,8 +1432,8 @@ mod tests {
     /// which one falls exactly on a column boundary, and 1239 columns holding a
     /// constant run.
     ///
-    /// Before the join, ten transitions drew as a tall column — a column that
-    /// holds both levels *is* the vertical — and the eleventh drew nothing at
+    /// Before the join, ten transitions drew as a tall column -- a column that
+    /// holds both levels *is* the vertical -- and the eleventh drew nothing at
     /// all, because each side of it was a separate quad. All eleven draw now,
     /// and the picture no longer changes with where the zoom happens to put a
     /// boundary.
@@ -1465,13 +1465,13 @@ mod tests {
         let tall = heights.iter().filter(|h| **h > rect.h * 0.5).count();
         assert_eq!(tall, 11, "every transition draws a vertical: {tall}");
         // And the rest are the constant runs, inked at the trace's weight and
-        // no more — the picture is still a measurement of its column.
+        // no more -- the picture is still a measurement of its column.
         let flat = heights.iter().filter(|h| **h <= 1.0 + 1e-3).count();
         assert_eq!(flat, columns - 11, "a constant run has no height to draw");
     }
 
     /// **A line that drifts by less than a pixel a column is connected**, not
-    /// a row of separated bars — the other thing that lane showed.
+    /// a row of separated bars -- the other thing that lane showed.
     ///
     /// A column of a constant run has no height, so it is inked at the trace's
     /// weight and sits where its value is. Two neighbours a fifth of a pixel
@@ -1537,7 +1537,7 @@ mod tests {
     /// The trace over a signal that only ever moves one way: **connected at
     /// every boundary, and never wider than the two columns it joins.**
     ///
-    /// A slow ramp is the case the join does real work in at every column —
+    /// A slow ramp is the case the join does real work in at every column --
     /// consecutive ones are disjoint by construction, so each reaches back the
     /// one segment the polyline would draw. What it may never do is
     /// accumulate: the extension is drawn and not remembered, so a run of
@@ -1562,7 +1562,7 @@ mod tests {
         let trace = Trace::samples(&samples, 1);
         let measured = |c: usize| {
             let (lo, hi) = trace.column(0, per_px, c as f64 * per_px, (c + 1) as f64 * per_px);
-            // Value space to y, top first — the map `draw_at` hands over.
+            // Value space to y, top first -- the map `draw_at` hands over.
             (rect.h * 0.5 * (1.0 - hi), rect.h * 0.5 * (1.0 - lo))
         };
         for c in 1..spans.len() {
@@ -1588,8 +1588,8 @@ mod tests {
     }
 
     /// A column the signal barely moves in is still inked, at the trace's own
-    /// weight in **both** directions. It used to be a zero-length line — which
-    /// draws nothing at all — so a slow curve faded out exactly where it
+    /// weight in **both** directions. It used to be a zero-length line -- which
+    /// draws nothing at all -- so a slow curve faded out exactly where it
     /// flattened: the sustain of an envelope, the tail of a decay. And a column
     /// narrower than the weight read thinner than the polyline the same
     /// function draws a pixel the other side of the threshold. The regime
@@ -1633,7 +1633,7 @@ mod tests {
         );
     }
 
-    /// **A column is its own envelope, never a fill to the baseline** — the
+    /// **A column is its own envelope, never a fill to the baseline** -- the
     /// divergence this closed, and it closed the other way from the first
     /// attempt. The GPU pipeline used to clamp every column to zero; clamping
     /// everywhere would have inked a band the signal was never in.
@@ -1641,7 +1641,7 @@ mod tests {
     /// The two cases are the whole argument. A signal sitting at +0.8 draws a
     /// thin band at +0.8 whatever its domain says, because that is where it
     /// was; and a signal that swings across zero draws the solid body every
-    /// editor draws, because *the data fills it* — no rule, no threshold, and
+    /// editor draws, because *the data fills it* -- no rule, no threshold, and
     /// nothing that has to know the zoom.
     #[test]
     fn a_column_is_its_own_envelope_and_the_data_is_what_fills_it() {
@@ -1688,7 +1688,7 @@ mod tests {
 
     /// A **subsonic** signal is the case that proves the zoom could not have
     /// been the criterion: a cycle a second has far more samples than the
-    /// screen has pixels — deep in the column regime — and is a curve, not a
+    /// screen has pixels -- deep in the column regime -- and is a curve, not a
     /// body. Every column is a thin band, and the bands trace the wave.
     #[test]
     fn a_subsonic_signal_draws_a_curve_not_a_body() {
@@ -1710,7 +1710,7 @@ mod tests {
             |v| rect.y + rect.h * 0.5 * (1.0 - v),
             TraceStyle::new([1.0, 1.0, 1.0, 1.0], 1.0),
         );
-        // Well past the polyline threshold — this is the column regime.
+        // Well past the polyline threshold -- this is the column regime.
         assert!(n / rect.w as f64 > LINE_THRESHOLD * 100.0);
         // The column at the peak barely moves: a thin band near the top, not a
         // slab reaching down to the zero line.
@@ -1727,7 +1727,7 @@ mod tests {
 
     /// **Sample dots**: once the samples stand far enough apart to read as
     /// separate points, each one is marked. The line between them is an
-    /// interpolation the drawing invents — the dot is what says which points of
+    /// interpolation the drawing invents -- the dot is what says which points of
     /// it are data, and what sample-level editing will take hold of, which is
     /// why it is sized as a curve's break-point.
     #[test]
@@ -1750,7 +1750,7 @@ mod tests {
             );
             mesh.vertex_count()
         };
-        // 20 samples over 200 px: 10 px apart, past three radii — marked.
+        // 20 samples over 200 px: 10 px apart, past three radii -- marked.
         let marked = draw(20, 3.0);
         let bare = draw(20, 0.0);
         assert!(
@@ -1810,7 +1810,7 @@ mod tests {
         draw_measures_at(samples, rect, window, 0.0)
     }
 
-    /// The same, at a source rate — which is what gives the level its fixed
+    /// The same, at a source rate -- which is what gives the level its fixed
     /// averaging window ([`BODY_WINDOW_SECS`]); `0.0` leaves each column
     /// averaging its own span.
     fn draw_measures_at(
@@ -1848,7 +1848,7 @@ mod tests {
     ///
     /// **Column by column is the whole of the claim, and the DC case is why it
     /// is stated that way.** A signal offset from zero has an envelope offset
-    /// with it, while the body stays centred on zero — so the body reaches
+    /// with it, while the body stays centred on zero -- so the body reaches
     /// *below* the lowest sample of an all-positive signal, and the picture is
     /// right: RMS is measured about zero and a level includes the offset. What
     /// is never true is a column whose body leaves its own column's envelope.
@@ -1895,7 +1895,7 @@ mod tests {
     ///
     /// What ends it is the **envelope**, which does narrow with the zoom: once
     /// it has come down to within [`BODY_MERGE_RATIO`] of the level there are
-    /// no longer two readings, so the body goes — before it can poke out of the
+    /// no longer two readings, so the body goes -- before it can poke out of the
     /// shape that is supposed to contain it. One weight throughout, and a cut,
     /// which is the editors' own answer: Audacity's RMS "will disappear" as you
     /// zoom in.
@@ -1944,7 +1944,7 @@ mod tests {
 
     /// **A take being written is drawn up to its frontier and no further.**
     /// Past it a recording's buffer holds its own zeros, which are not silence
-    /// in the samples but the absence of samples — and the minimum-ink rule
+    /// in the samples but the absence of samples -- and the minimum-ink rule
     /// would draw a flat line across them, which is a picture of a stretch that
     /// has not happened yet. Both regimes stop: the columns break at the
     /// frontier, and the polyline's last sample is the last one written.
@@ -2043,7 +2043,7 @@ mod tests {
     }
 
     /// Zoomed in past the threshold, every sample in range is a polyline
-    /// vertex — the regime where a pixel-stepped loop would drop samples.
+    /// vertex -- the regime where a pixel-stepped loop would drop samples.
     #[test]
     fn zoomed_in_the_polyline_visits_every_visible_sample() {
         let samples: Vec<f32> = (0..64)
@@ -2072,7 +2072,7 @@ mod tests {
         assert_eq!(mesh.vertex_count(), 63 * 6);
     }
 
-    /// **At the deepest zoom the trace still crosses the rect — and stops at
+    /// **At the deepest zoom the trace still crosses the rect -- and stops at
     /// its edges.** A window narrower than one sample sees a single data point:
     /// a renderer that draws only what is inside draws a line arriving at that
     /// point from the left and nothing leaving it (which is what the deleted
@@ -2150,7 +2150,7 @@ mod tests {
         assert_eq!(out, 0, "{out} vertices are drawn outside the lane");
     }
 
-    /// A **cache-only** source — a mapped pyramid with no samples — stays in the
+    /// A **cache-only** source -- a mapped pyramid with no samples -- stays in the
     /// column regime however deep the zoom goes. Asking it for one sample would
     /// read an empty buffer, which is the wave vanishing exactly where the
     /// viewer zoomed in to look at it.

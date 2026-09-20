@@ -1,6 +1,6 @@
 """The application: what a window set owns, as against what one structure owns.
 
-An `clausters.gui.editing.Editor` edits **one structure** — a buffer's samples,
+An `clausters.gui.editing.Editor` edits **one structure** -- a buffer's samples,
 a break-point curve, a timeline of events. Almost nothing an editor does is
 about that structure, though: resolving a host, handing out widget ids,
 answering the acknowledgement, draining the socket, walking the undo order. All
@@ -10,15 +10,15 @@ one wants to share a window set.
 
 So this is the other half of the split the subpackage already makes between an
 editor and the `clausters.gui.editing.Editing` context. The context is what the
-**data** owns — its history, its version, the views to tell. An application is
-what the **screen** owns — the host, the id space, the loop. What is left in
+**data** owns -- its history, its version, the views to tell. An application is
+what the **screen** owns -- the host, the id space, the loop. What is left in
 between is what an editor genuinely is: a structure bound to a
 `clausters.gui.editing.Domain` and a `clausters.gui.editing.View`, with its own
 end of the conversation.
 
 **The acknowledgement is not here, and that was a defect for a while.** An
 `clausters.gui.editing.Echo` held the floor and the stamp on the application,
-on the reasoning that it answers a host and there is one host — which confuses
+on the reasoning that it answers a host and there is one host -- which confuses
 *who you talk to* with *what state the conversation has*. The crate is explicit
 that a `Conversation` is **one view's** end: the floor rises when the version
 moved and no event of **this view** moved it, so two windows over one structure
@@ -57,7 +57,7 @@ BASE_ID = 10_000
 
 
 class _Anyone:
-    """The drawer of a call that named none — `new_id()` asked of the
+    """The drawer of a call that named none -- `new_id()` asked of the
     application itself rather than by an editor.
 
     A real object rather than ``None`` so that it can be a weak key like every
@@ -70,7 +70,7 @@ _ANYONE = _Anyone()
 
 
 def _resolve_host(host):
-    """The host an `open` acts on: the one named, else the ambient one — the
+    """The host an `open` acts on: the one named, else the ambient one -- the
     same resolution `clausters.gui.guidef.View.open`, `clausters.plot` and
     `clausters.scope` share, so an editor is not the one resource that has to be
     handed a host."""
@@ -86,7 +86,7 @@ class Application:
 
     Args:
         context: the `clausters.gui.editing.Editing` this application's undo
-            order runs in. ``None`` — the ordinary case — reads it off the
+            order runs in. ``None`` -- the ordinary case -- reads it off the
             editors registered here, so an application over one structure has
             that structure's context without being told.
         base_id: where the host-less id counter starts.
@@ -101,7 +101,7 @@ class Application:
         #: The context when one was named; otherwise the editors' own, asked for
         #: on each use.
         self._context = context
-        #: Where a host-less draw takes its ids from — one table per drawer,
+        #: Where a host-less draw takes its ids from -- one table per drawer,
         #: built on the first ask and never used again once there is a host.
         #: **Per drawer** and not per application, because an unopened draw's
         #: ids reach nothing: two of them cannot collide with each other, and
@@ -114,7 +114,7 @@ class Application:
         #: also let a closed editor's table go with it.
         self._base_id = int(base_id)
         self._offline: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
-        #: Each drawer's owner in each table it has drawn on — the drawer weakly,
+        #: Each drawer's owner in each table it has drawn on -- the drawer weakly,
         #: and the table under it, for the reason above.
         self._owners: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
         #: How this application answers a version, when it was given a way.
@@ -139,7 +139,7 @@ class Application:
         return self
 
     def forget(self, editor) -> "Application":
-        """Drop an editor from this application — what `close` does, and what a
+        """Drop an editor from this application -- what `close` does, and what a
         composed view does when its window goes."""
         self._editors = [held for held in self._editors if held is not editor]
         return self
@@ -155,7 +155,7 @@ class Application:
     def context(self) -> "Editing | None":
         """The editing context this application's undo order runs in.
 
-        Named at construction, or read off the first editor that has one — which
+        Named at construction, or read off the first editor that has one -- which
         is the ordinary case and is what keeps an application over one structure
         from having to be told what it is editing.
         """
@@ -202,7 +202,7 @@ class Application:
         **Only when it has none**, which is the rule the multitrack learned the
         hard way: an application already open answers *its* host, and overwriting
         that with the one a second window opened on sends every acknowledgement
-        to the wrong place — silently, since in the ordinary case the two are the
+        to the wrong place -- silently, since in the ordinary case the two are the
         same object.
         """
         if self.host is None:
@@ -214,13 +214,13 @@ class Application:
     def _ids(self, drawer=None) -> GuiIdAllocator:
         """The table ``drawer`` names widgets in.
 
-        The **host's** once there is one, so that two applications on one host —
-        two editors opened on the ambient host, say — cannot hand out the same
+        The **host's** once there is one, so that two applications on one host --
+        two editors opened on the ambient host, say -- cannot hand out the same
         number. Before that, one private table per drawer: an unopened draw's
         ids reach nothing, so they need not be unique across drawers, and the
         privacy is what lets such a draw restart its numbering.
 
-        Both doors come from whichever table it is — a leased id and a named one
+        Both doors come from whichever table it is -- a leased id and a named one
         are the same resource taken two ways, and splitting them across two
         tables is how two widgets end up with one number.
         """
@@ -253,13 +253,13 @@ class Application:
         return owner
 
     def new_id(self, drawer=None) -> int:
-        """A **leased** widget id: one for a widget nothing names — a hand-built
+        """A **leased** widget id: one for a widget nothing names -- a hand-built
         tree, a decoration. It changes across redraws, which is why a view that
         draws a structure asks `id_for` instead."""
         return self._ids(drawer).alloc()
 
     def id_for(self, structure: int, role: str, key: str = "", drawer=None) -> int:
-        """The id that draws ``(structure, role, key)`` — the **same** number for
+        """The id that draws ``(structure, role, key)`` -- the **same** number for
         as long as ``drawer`` keeps drawing that name.
 
         The door a view takes, and the whole of what makes a redraw safe: an
@@ -274,7 +274,7 @@ class Application:
         """Start ``drawer``'s draw: from here, every name it asks for counts as
         drawn, and `retire_ids` takes back the rest.
 
-        Every other drawer is untouched — the cycle names whose it is, so two
+        Every other drawer is untouched -- the cycle names whose it is, so two
         editors on one host redraw independently.
         """
         table = self._ids(drawer)
@@ -282,7 +282,7 @@ class Application:
             # **Nothing outside this draw holds one of these ids.** With no host
             # there is no window, no pending gesture and no second drawer in this
             # table, so it starts over and two draws of one picture come out
-            # identical — the property a test that inspects a tree twice rests
+            # identical -- the property a test that inspects a tree twice rests
             # on. On a host it would be wrong: the leases there belong to every
             # window the client has open, not to whoever is drawing.
             table.clear()
@@ -301,7 +301,7 @@ class Application:
     # ---- the history walk ----
 
     #: What the **last** step could not reach, when a walk was refused because
-    #: no participant held the structure the entry names — the label of the edit
+    #: no participant held the structure the entry names -- the label of the edit
     #: that is waiting, for whoever wants to say why nothing happened. ``None``
     #: after a step that landed, and after one there was nothing to take.
     refusal: "str | None" = None
@@ -311,7 +311,7 @@ class Application:
 
         The history and the members are the crate's (`clausters.gui.editing.
         Editing`): it walks the pile, hands each leg to the member that owns the
-        structure, and puts the cursor back — with the reason — when nothing
+        structure, and puts the cursor back -- with the reason -- when nothing
         could apply it. What is left is the objects: a multitrack written back, a
         take's writes, a curve's payloads.
 
@@ -325,8 +325,8 @@ class Application:
         return self.stepped(context.step(direction), walker)
 
     def stepped(self, stepped: dict, walker) -> bool:
-        """Carry out a step the context **already took** — by `step`, or inside
-        a turn whose message was an undo — and say whether anything moved.
+        """Carry out a step the context **already took** -- by `step`, or inside
+        a turn whose message was an undo -- and say whether anything moved.
 
         A step nothing could apply is not a step: the crate put the cursor back,
         and `refusal` is why, which is what an acknowledgement says instead of
@@ -347,12 +347,12 @@ class Application:
 
     def publish(self, widget_id: int, tree: dict, *blobs: bytes,
                 window: "int | None" = None) -> None:
-        """Make the host draw ``tree`` for ``widget_id`` — **the whole tree,
+        """Make the host draw ``tree`` for ``widget_id`` -- **the whole tree,
         every time**.
 
         A definition used to mean *free this and build that*, so re-sending a
         window because one number moved took the screen state of every widget in
-        it — a scroll position, a zoom, a selection in flight — and dropped
+        it -- a scroll position, a zoom, a selection in flight -- and dropped
         everything the host had pending there. It no longer does: a ``/gui_def``
         over a tree the host is already drawing says *what to look like*, and
         the host **reconciles**, matching widget to widget by the id that names
@@ -361,7 +361,7 @@ class Application:
         **So this client holds no picture of the host's**, and that is the whole
         of the change. It used to keep the last tree per window and send the
         difference, which is only correct if that copy equals what the host
-        holds — and it cannot: the host mutates on its own (a drag writes an
+        holds -- and it cannot: the host mutates on its own (a drag writes an
         offset per frame, a wheel writes a window, a marquee writes a mark) and
         screen state is reported by nothing, correctly, because screen state is
         the host's. A difference against a picture nobody is drawing is a set to
@@ -369,7 +369,7 @@ class Application:
 
         **What that leaves the caller is the granularity, and it is the caller's
         for a reason.** ``/gui_def`` names any widget, so publish the one your
-        edit touched — you know which, because an intent names a node and a
+        edit touched -- you know which, because an intent names a node and a
         widget id is derived from it. Measured over a drag, the subtree of the
         clip that moved is flat in the size of the multitrack; the window is not, and
         on a large one it is megabytes a second of JSON for a gesture that
@@ -404,7 +404,7 @@ class Application:
         the same messages. Each editor is offered every message and answers only
         for the widgets it drew, which is what `Editor.apply` is written to do.
 
-        Call it from the script's loop — **never** from the clock thread, which a
+        Call it from the script's loop -- **never** from the clock thread, which a
         routine must never block. The second half is why a window may carry both:
         a panel beside an editor is the script's, addressed to widgets no editor
         drew, and its `clausters.gui.handle.WidgetHandle.on_event` callbacks run
@@ -428,7 +428,7 @@ class Application:
         return changed
 
     def wait(self, until, timeout: "float | None" = None) -> bool:
-        """Hold the calling thread while ``until()`` is true — the drain the
+        """Hold the calling thread while ``until()`` is true -- the drain the
         host's own `wait` is, so a script ends on one call.
 
         ``True`` when the condition cleared, ``False`` when ``timeout`` ran out
@@ -442,7 +442,7 @@ class Application:
 
 
 def _widgets(tree: dict) -> int:
-    """How many widgets a published tree holds — the trace's measure of what a
+    """How many widgets a published tree holds -- the trace's measure of what a
     redraw cost, now that how much of it the host rebuilds is the host's."""
     return 1 + sum(_widgets(child) for child in tree.get("children") or ()
                    if isinstance(child, dict))

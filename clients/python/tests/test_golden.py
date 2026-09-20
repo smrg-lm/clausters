@@ -1,5 +1,5 @@
 """C5 leftover: a fuller score-parity golden. The seq layer must render exactly
-like the hand-rolled OSC a careful author would write — both go through the same
+like the hand-rolled OSC a careful author would write -- both go through the same
 server engine (the offline render), so identical output proves the
 event/pattern/timing layer emits the right score, end to end."""
 
@@ -24,7 +24,7 @@ def _embed_or_skip():
 
 
 def _handrolled_score(freqs, dur=0.5, amp=0.2, legato=0.8) -> bytes:
-    """The same notes a Pbind would play, written out as raw OSC bundles —
+    """The same notes a Pbind would play, written out as raw OSC bundles --
     `/synth_new` at the beat, then a gate release after the sustain (dur*legato):
     the built-in ``default`` carries a gated envelope, so the player closes its
     gate (`/node_set gate 0`) rather than freeing the node. Node ids from 1000 like

@@ -16,8 +16,8 @@
   <body>
     <main>
       <div>the <code>scope</code> verb over the in-page carrier: its three
-        views — the triggered oscilloscope, the goniometer and the live
-        spectrum — each opening its own window on the page's GUI host and
+        views -- the triggered oscilloscope, the goniometer and the live
+        spectrum -- each opening its own window on the page's GUI host and
         following a tone the engine is playing.</div>
       <button id="boot">boot + scope</button>
       <pre id="log"></pre>
@@ -41,7 +41,7 @@
       page the host and the script are a single client, so a script-side tap
       subscription would take the host's own away (the ring clash W10 records,
       fixed in server M31). The arithmetic those pixels come from is asserted
-      natively instead — `clausters_core::{oscil, spectrum}` is where the
+      natively instead -- `clausters_core::{oscil, spectrum}` is where the
       trigger alignment and the decibel curve live, and both clients read it
       from there.
     -->
@@ -134,7 +134,7 @@
         // The host drew. On the page host every window shares the page's
         // default canvas unless the caller supplies one per def (which is what
         // a component does), so what is asserted is that the surface took a
-        // size while the windows were up — not one canvas per view.
+        // size while the windows were up -- not one canvas per view.
         await sleep(600);
         const canvases = [...document.querySelectorAll("canvas")]
           .filter((c) => c.width > 100 && c.height > 100);
@@ -174,7 +174,7 @@
         session.close();
 
         verdict(failures.length === 0
-          ? `PASS: three scope views drew — a 2-channel oscilloscope on `
+          ? `PASS: three scope views drew -- a 2-channel oscilloscope on `
             + `"${shapes.signal.props.label}", a goniometer on `
             + `"${shapes.phase.props.label}", a mel spectrum; `
             + `${canvases.length} canvases sized, ${refused} bad arguments `

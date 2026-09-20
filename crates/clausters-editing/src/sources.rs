@@ -2,7 +2,7 @@
 //!
 //! A join owns no samples: it is spans of the takes the table already holds
 //! ([`Location::Segments`]), and `clausters-document` says in so many words
-//! that it does not build one — *"this crate holds source ids rather than
+//! that it does not build one -- *"this crate holds source ids rather than
 //! sources: whoever has the samples fills it in when it realizes the join"*.
 //! **This is the reading of that recipe**, so that whoever realizes it does not
 //! read it again.
@@ -10,7 +10,7 @@
 //! It was read three times before this module: at **open** in the GUI host
 //! (walking a session's table into `/buffer_stitch`), at **edit time** in the
 //! Python client (the same walk over the source an intent carried), and nowhere
-//! at all in the host's edit path — which is why a join made in a standalone
+//! at all in the host's edit path -- which is why a join made in a standalone
 //! host produced a box that drew empty, sounded through nothing and had no
 //! length to stop an edge at. The two that existed had already drifted on the
 //! part nobody looks at: the **channel map**.
@@ -65,7 +65,7 @@ pub struct StitchPart {
     /// it, or `-1` for silence.
     ///
     /// Always spelled in full, which is what makes the wire's group fixed
-    /// width — and what decides the case nobody writes a test for: a part
+    /// width -- and what decides the case nobody writes a test for: a part
     /// **narrower than the join repeats**, so a mono take in a stereo join is
     /// heard on both sides rather than on one.
     pub channels: Vec<i32>,
@@ -90,7 +90,7 @@ pub struct Stitch {
 /// names a source the caller has not resolved. The last is the important one
 /// and it is deliberate: a join is left **unmade rather than half made**, since
 /// a box over a source nobody answered for draws empty and plays nothing, which
-/// is what an unresolved source has always meant here — and the round after the
+/// is what an unresolved source has always meant here -- and the round after the
 /// missing take lands makes it.
 pub fn stitch(source: &Source, held: &HashMap<SourceId, Held>) -> Option<Stitch> {
     let Location::Segments { parts } = &source.location else {
@@ -143,8 +143,8 @@ pub fn stitch(source: &Source, held: &HashMap<SourceId, Held>) -> Option<Stitch>
 
 /// [`stitch`] as the JSON both client doors carry.
 ///
-/// `source` is a source-table entry as the document writes one — a minted
-/// source as an intent carries it reads the same, its `id` beside the rest —
+/// `source` is a source-table entry as the document writes one -- a minted
+/// source as an intent carries it reads the same, its `id` beside the rest --
 /// and `held` is the caller's table: source id to `{"buffer", "channels",
 /// "frames"}`. The answer is the [`Stitch`] with its parts' fades as
 /// `fadeIn`/`fadeOut`, or `null` where there is nothing to make: not a join, no

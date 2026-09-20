@@ -3,14 +3,14 @@
 // Mirrors the server's bus model: audio buses (`0..channels` are the hardware
 // outputs) and single-float control buses. Like scsynth, the client owns
 // allocation; the server just indexes. A `Bus` is a flat
-// `(index, channels, rate)` — only flat data ever leaves for the wire.
+// `(index, channels, rate)` -- only flat data ever leaves for the wire.
 //
 // Buses are a finite boot-time resource, so each allocator is a registry (the
 // core's occupancy map): a freed run is always reusable, adjacent runs
 // coalesce, a double free is refused loudly, and exhaustion throws instead of
 // wrapping. The allocatable space excludes the hardware outputs at the bottom
 // (`reserved`) and the GraphDef private-bus range at the top (the core's
-// `graphBusReserved()`, clamped to the space) — those belong to the server's
+// `graphBusReserved()`, clamped to the space) -- those belong to the server's
 // own registry.
 //
 // The allocators carry no default size of their own: how many buses exist is
@@ -20,7 +20,7 @@
 // A bus holds the server it was allocated on and owns the commands addressed
 // to it: `set`, `get`, `watch` and its own release. The subscriptions over a
 // *set* of buses (`/bus_stream`, `/bus_tapStream`) stay on the server, which is
-// whose they are — one per client.
+// whose they are -- one per client.
 
 import { AllocationError } from "../errors.ts";
 import { IdSpaces, requireCore } from "../base/core.ts";
@@ -63,7 +63,7 @@ export class Bus {
     }
 
     /**
-     * This bus's server, or the ambient one — a handle built from a reported
+     * This bus's server, or the ambient one -- a handle built from a reported
      * index carries none.
      */
     private srv(): Server {
@@ -94,7 +94,7 @@ export class Bus {
      * sample rings carries it is the server's own bookkeeping, published in
      * the segment for whoever reads the samples. Watches count, so two views
      * of one bus share a ring and the last one to stop frees it. No ack, like
-     * `/node_map` (failures reply `/fail` — an unknown bus, no tap region, or
+     * `/node_map` (failures reply `/fail` -- an unknown bus, no tap region, or
      * every ring already taken); sequence with `sync` when it matters.
      */
     watch(flag = true): void {
@@ -131,7 +131,7 @@ class Allocator {
 
     /**
      * A run of `channels` contiguous buses. Throws when no such run is free
-     * — exhaustion is an explicit failure, never an aliased index.
+     * -- exhaustion is an explicit failure, never an aliased index.
      */
     alloc(channels = 1, server?: Server): Bus {
         let index: number;
@@ -145,7 +145,7 @@ class Allocator {
 
     /**
      * Returns the bus's run to the pool. A double free (or a bus this
-     * allocator never handed out) throws — losing track of a bus is a client
+     * allocator never handed out) throws -- losing track of a bus is a client
      * bug, never absorbed silently.
      */
     free(bus: Bus): void {
@@ -167,7 +167,7 @@ class Allocator {
 
 /**
  * The audio-bus space of a client's {@link IdSpaces}: above the server's own
- * outputs and below the GraphDef private range — the core's shape.
+ * outputs and below the GraphDef private range -- the core's shape.
  */
 export class AudioBusAllocator extends Allocator {
     constructor(spaces: IdSpaces) {

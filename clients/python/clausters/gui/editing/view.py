@@ -4,7 +4,7 @@ shows.
 A view is the **only per-domain thing on the graphic side**: it builds the
 `GuiDef` for one structure and remembers which widget draws what, so an event
 naming a widget resolves to something an editor can act on. Everything else
-about drawing — the window, the ids, the acknowledgement — is the editor's and
+about drawing -- the window, the ids, the acknowledgement -- is the editor's and
 is the same for every structure.
 
 It is separate from `clausters.gui.editing.Domain` because one structure is
@@ -65,7 +65,7 @@ class View:
         so a builder can use it inline.
 
         Called by `widget`; called directly only for a widget that is genuinely
-        unnamed — a decoration a picture leases an id for.
+        unnamed -- a decoration a picture leases an id for.
         """
         self.widgets[int(widget_id)] = showing
         return int(widget_id)
@@ -89,7 +89,7 @@ class View:
 
         The door a `build` takes for a picture the crate already knows how to
         describe: `clausters._native.view_props` says which widget a waveform,
-        a curve or a roll is and what is on it, and this stamps the id — which
+        a curve or a roll is and what is on it, and this stamps the id -- which
         is the one thing the crate cannot know, since ids are a client's.
 
         It is here rather than in each view because every one of them takes the

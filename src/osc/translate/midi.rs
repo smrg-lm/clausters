@@ -1,7 +1,7 @@
 //! MIDI: the bindings a channel carries, and the nodes they actuate.
 //!
-//! A binding says what a channel plays — an instrument def, where in the tree,
-//! whether notes gate — and `/midi_map` points a controller at a control. A
+//! A binding says what a channel plays -- an instrument def, where in the tree,
+//! whether notes gate -- and `/midi_map` points a controller at a control. A
 //! channel-voice message is turned into the OSC message the same event would
 //! have arrived as and fed back through [`CmdTranslator::translate`], so the
 //! MIDI path and the OSC path build byte-identical commands.
@@ -43,7 +43,7 @@ impl CmdTranslator {
     /// If `instrument` names a GraphDef, spawn its shared instance now (so each
     /// note spawns a voice into it) and return the instance id; otherwise
     /// `None` (a plain def is `/synth_new`'d per note). A GraphDef with no
-    /// per-voice members is rejected — it has nothing to play per note. Shared
+    /// per-voice members is rejected -- it has nothing to play per note. Shared
     /// by `/midi_bind` and the binding restore.
     fn bind_graph_instance(
         &mut self,
@@ -97,7 +97,7 @@ impl CmdTranslator {
 
     /// `/midi_unbind channel`: drop the binding and free every voice still
     /// sounding on that channel (and, for a GraphDef binding, its shared
-    /// instance — which frees the voices with it).
+    /// instance -- which frees the voices with it).
     pub(in crate::osc::translate) fn midi_unbind(
         &mut self,
         msg: &rosc::OscMessage,

@@ -23,8 +23,8 @@
       <div id="note">An editable <code>text</code> field types an OSC message
 straight to the server.
 
-You click into it, type, move the caret (word-wise with Ctrl), select, delete —
-a character, or a whole word with <b>Ctrl+Backspace</b> / <b>Ctrl+Delete</b> —
+You click into it, type, move the caret (word-wise with Ctrl), select, delete --
+a character, or a whole word with <b>Ctrl+Backspace</b> / <b>Ctrl+Delete</b> --
 and cut/copy/paste. What it emits is a <b>string</b>, delivered exactly the way
 a slider delivers its float: as a <code>/gui_event</code> on <b>every</b> edit,
 never gated on Enter.
@@ -101,7 +101,7 @@ ignored by the server, so type freely.</div>
           gui.label("a multiline scratch pad (Enter = newline); not sent", { h: 28.0 }),
           gui.text({ name: "scratch", multiline: true, value: "line one\nline two" }),
         ).open($("stage"));
-        log(`synth ${synth.id} playing at 220 Hz — edit the freq in the field `
+        log(`synth ${synth.id} playing at 220 Hz -- edit the freq in the field `
           + "and the pitch follows as you type");
 
         /**

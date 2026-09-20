@@ -1,12 +1,12 @@
 // The receiving door: a connection's packets, decoded once and demuxed to
-// whoever registered — the transport under `responders.OscFunc`, and the
+// whoever registered -- the transport under `responders.OscFunc`, and the
 // browser's answer to the Python client's `OscReceiver`.
 //
 // **What a receiver is here.** There, it owns a UDP socket of its own: it
 // binds a port, runs a thread, and any application on the machine can target
 // it. A page has no listening socket and cannot be targeted by anybody; what
-// it has is the carrier it already opened — a WebSocket to a server, or the
-// in-page engine — and everything arriving arrives on that. So the receiver
+// it has is the carrier it already opened -- a WebSocket to a server, or the
+// in-page engine -- and everything arriving arrives on that. So the receiver
 // wraps a `Connection` instead of a socket, and the rest is the reference's,
 // verbatim: decode each packet through the one door (`decodePacketTimed`,
 // bundles unwrapped, the timetag carried), call every registered handler with
@@ -14,14 +14,14 @@
 //
 // That substitution has one visible consequence, and it is worth stating
 // rather than hiding: `src` is not a `(host, port)` pair, because a packet on
-// a page does not carry one. It is the carrier the packet came in on — a
-// socket's URL, or `"page"` for the in-page engine — which is the same
+// a page does not carry one. It is the carrier the packet came in on -- a
+// socket's URL, or `"page"` for the in-page engine -- which is the same
 // question ("who sent this?") answered with what a browser actually knows.
 //
 // Dispatch threading is the reference's rule with the thread taken out: with
 // no clock, handlers run inline as the packet arrives; with a clock, each is
 // scheduled through `clock.sched(0)` so it runs with the clock's logical time
-// available. The golden rule survives the change of language — a handler that
+// available. The golden rule survives the change of language -- a handler that
 // blocks blocks the page.
 
 import { decodePacketTimed, encodeMessage, oscArg } from "./osc.ts";
@@ -86,7 +86,7 @@ export class OscReceiver {
 
     /**
      * Stops listening without discarding the object, and without touching the
-     * connection — which belongs to whoever opened it, and usually to a
+     * connection -- which belongs to whoever opened it, and usually to a
      * `Server` still using it.
      */
     stop(): this {
@@ -123,7 +123,7 @@ export class OscReceiver {
     }
 
     /**
-     * Sends a message out this receiver's own carrier — what lets a responder
+     * Sends a message out this receiver's own carrier -- what lets a responder
      * answer on the connection it is listening to (the reference's
      * `OscReceiver.send`, whose point is replying from the port that heard
      * you).

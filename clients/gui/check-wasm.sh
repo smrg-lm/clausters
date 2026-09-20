@@ -5,7 +5,7 @@
 # This builds only the library (`--lib`, not the native binaries) for
 # `wasm32-unknown-unknown`, so a later milestone cannot silently re-couple the
 # agnostic core (widget tree, layout, protocol dispatch, the Platform traits) to
-# native I/O (sockets, filesystem, the winit driver) — those live behind
+# native I/O (sockets, filesystem, the winit driver) -- those live behind
 # `#[cfg(not(target_arch = "wasm32"))]` and are not compiled here.
 #
 # One-time setup: `rustup target add wasm32-unknown-unknown`.

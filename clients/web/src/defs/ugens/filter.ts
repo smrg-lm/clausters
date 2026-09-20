@@ -64,7 +64,7 @@ export const brf = (
     res: Resonance = {},
 ): Ugen => new Ugen("BRF", [signal, freq, resonance(res.rq, res.q)]);
 
-/** Resonator with unity gain at the peak — the same structure as `bpf`. */
+/** Resonator with unity gain at the peak -- the same structure as `bpf`. */
 export const resonz = (
     signal: Channel,
     freq: Channel = 440.0,
@@ -133,7 +133,7 @@ export const oneZero = (signal: Channel, coef: Channel = 0.5): Ugen =>
     new Ugen("OneZero", [signal, coef]);
 
 /**
- * Removes the DC offset with a very low corner — what a feedback loop or an
+ * Removes the DC offset with a very low corner -- what a feedback loop or an
  * asymmetric waveshaper leaves behind.
  */
 export const leakDc = (signal: Channel, coef: Channel = 0.995): Ugen =>
@@ -177,7 +177,7 @@ export const delayN = (
         static: lineSize("DelayN", delaytime, maxDelay),
     });
 
-/** Delay with linear interpolation — the one a modulated delaytime wants. */
+/** Delay with linear interpolation -- the one a modulated delaytime wants. */
 export const delayL = (
     signal: Channel,
     delaytime: Channel = 0.2,

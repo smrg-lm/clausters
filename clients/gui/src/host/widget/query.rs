@@ -3,8 +3,8 @@
 //! Every method here is a third arm-per-kind pass over the model, the shape
 //! [`size`](super::size) already has and in the same direction: the frame, the
 //! gesture machine and the server leg all need to ask a widget something the
-//! enum answers per variant — its event value, the bus it reads, the editor
-//! chrome it carries, whether it sits on the window's time axis — and none of
+//! enum answers per variant -- its event value, the bus it reads, the editor
+//! chrome it carries, whether it sits on the window's time axis -- and none of
 //! those questions belongs in the file that declares the model.
 //!
 //! The second half is the **data routing**: anything that resolves a widget by
@@ -32,7 +32,7 @@ impl Widget {
             .unwrap_or_else(|| GestureMap::of_kind(&self.kind))
     }
 
-    /// The signal element this widget is, if it is one — through the trait's
+    /// The signal element this widget is, if it is one -- through the trait's
     /// downcast door ([`Element::as_any`]).
     ///
     /// **Nothing in the passes calls this.** Every question a pass asks has a
@@ -42,7 +42,7 @@ impl Widget {
         self.kind.signal()
     }
 
-    /// Whether this is a navigable signal element **on the time axis** — the
+    /// Whether this is a navigable signal element **on the time axis** -- the
     /// view that zooms, pans, selects and shows a playhead over its own
     /// samples. A navigable *spectrum* is not one: it navigates frequency, on
     /// a window of its own ([`WidgetKind::navigates_freq`]).
@@ -57,7 +57,7 @@ impl Widget {
         self.kind.navigates_time() || matches!(self.kind, WidgetKind::TimeRuler { .. })
     }
 
-    /// Whether this tree contains a widget whose overlay follows the pointer —
+    /// Whether this tree contains a widget whose overlay follows the pointer --
     /// the cursor readout a signal element over *stored* samples draws, and the
     /// timeline containers'. The windowed front asks on cursor motion: such a
     /// window needs a frame per move (a fully static one, like a plot's, has no
@@ -77,7 +77,7 @@ impl WidgetKind {
     /// The question a gesture asks before falling *through* a widget to
     /// something behind it. In a window with one navigation group, empty pixels
     /// are that axis with nothing on them, so the wheel over them means what it
-    /// means over a lane — but an element that draws a picture of its own and
+    /// means over a lane -- but an element that draws a picture of its own and
     /// simply has no wheel of its own is not empty, and turning the wheel over
     /// a goniometer must not zoom the waterfall underneath it.
     ///
@@ -99,7 +99,7 @@ impl WidgetKind {
     }
 
     /// The **body role** this widget fills inside a container that layers its
-    /// contents — the one question a `clip` asks about a child of its own.
+    /// contents -- the one question a `clip` asks about a child of its own.
     ///
     /// A built-in answers from its variant, an element from
     /// [`Element::body_role`]; anything that fills
@@ -116,7 +116,7 @@ impl WidgetKind {
     ///
     /// Only an element can be one ([`Element::accepts_focus`]): focus is where
     /// keys go, and a key reaches a widget through
-    /// [`Element::key`]. A container is not a stop — it
+    /// [`Element::key`]. A container is not a stop -- it
     /// arranges, it does not read.
     ///
     pub fn accepts_focus(&self) -> bool {
@@ -124,15 +124,15 @@ impl WidgetKind {
     }
 
     /// Whether this widget, focused, is taking **typed text**
-    /// ([`Element::takes_text`]) — what the browser shell reads to decide
+    /// ([`Element::takes_text`]) -- what the browser shell reads to decide
     /// where the keyboard goes, since composition needs an editable element
     /// and a canvas is not one.
     pub fn takes_text(&self) -> bool {
         self.as_element().is_some_and(Element::takes_text)
     }
 
-    /// The area this widget occupies **outside its own rect** — an open list, a
-    /// popup — or `None` for one that stays inside its placement.
+    /// The area this widget occupies **outside its own rect** -- an open list, a
+    /// popup -- or `None` for one that stays inside its placement.
     ///
     /// Only an element can have one, and it *declares* it, which is what lets
     /// the frame draw it last and the press route to it first without either
@@ -141,8 +141,8 @@ impl WidgetKind {
         self.as_element().and_then(Element::overlay_rect)
     }
 
-    /// Whether this widget navigates a **measured x axis of its own** — a
-    /// frequency axis — instead of joining the window's shared time. The one
+    /// Whether this widget navigates a **measured x axis of its own** -- a
+    /// frequency axis -- instead of joining the window's shared time. The one
     /// widget that carries an x window rather than a navigation group.
     pub fn navigates_freq(&self) -> bool {
         self.as_element()
@@ -151,7 +151,7 @@ impl WidgetKind {
     }
 
     /// That axis inside the rect this widget was placed in
-    /// ([`Measured::freq_axis`]) — where it lies,
+    /// ([`Measured::freq_axis`]) -- where it lies,
     /// what it shows, and at what rate.
     pub fn freq_axis(
         &self,
@@ -182,7 +182,7 @@ impl WidgetKind {
     }
 
     /// The widget's **value axis** inside the rect it was placed in
-    /// ([`OnAxis::value_axis`]) — the second measuring axis a marquee may
+    /// ([`OnAxis::value_axis`]) -- the second measuring axis a marquee may
     /// restrict a selection on.
     pub fn value_axis(
         &self,
@@ -196,7 +196,7 @@ impl WidgetKind {
             .value_axis(rect, indent, m, lanes)
     }
 
-    /// What that axis would show for `want`, or shows now for `None` — the
+    /// What that axis would show for `want`, or shows now for `None` -- the
     /// request opened up to what the analysis behind it resolves
     /// ([`Measured::freq_window_of`]).
     pub fn freq_window_of(&self, sample_rate: f64, want: Option<(f64, f64)>) -> Option<(f64, f64)> {
@@ -221,14 +221,14 @@ impl WidgetKind {
     }
 
     /// **What a gesture has changed on this widget**, in the props' own
-    /// vocabulary — the keys a script could set, with the values it would have
+    /// vocabulary -- the keys a script could set, with the values it would have
     /// to set to reproduce what is on screen.
     ///
     /// The one door `/gui_query` overlays on the document, so a widget answers
     /// with what it *is* rather than with what it was defined as. An element
     /// answers for itself ([`Element::info`]); a built-in
     /// is an arm here, and its row disappears as the leaf moves behind the
-    /// trait — the shape [`Self::needs`] already has.
+    /// trait -- the shape [`Self::needs`] already has.
     ///
     /// **Only what a gesture can change belongs here.** A prop the script alone
     /// writes is already current in the document, since a `/gui_set` updates it;
@@ -258,7 +258,7 @@ impl WidgetKind {
         own.into_iter().chain(markers).collect()
     }
 
-    /// **What this widget reads from outside itself** — the one door every tree
+    /// **What this widget reads from outside itself** -- the one door every tree
     /// collector asks, so none of them matches on a kind.
     ///
     /// Only an element reads anything: a container arranges, and the leaves
@@ -278,7 +278,7 @@ impl WidgetKind {
         self.as_element().and_then(Element::gesture_map)
     }
 
-    /// **The look of a body whose picture is a texture** — the one body the
+    /// **The look of a body whose picture is a texture** -- the one body the
     /// frame routes to the GPU pass itself, keyed by the clip that holds it
     /// ([`Slotted::texture_body`]).
     pub fn texture_body(&self) -> Option<super::element::TextureLook> {
@@ -289,7 +289,7 @@ impl WidgetKind {
 
     /// **What this widget reserves left of its body** on a shared time axis: a
     /// lane's header, a roll's keyboard, an element's value ruler. A
-    /// `timeruler` asks for nothing — it has no chrome, it only labels whatever
+    /// `timeruler` asks for nothing -- it has no chrome, it only labels whatever
     /// axis it follows.
     ///
     /// A container answers from its variant, an element for itself
@@ -337,7 +337,7 @@ impl WidgetKind {
 
     /// [`gutter`](Self::gutter) asked again of a widget that has been
     /// **placed**, for the chrome whose width is a property of the data rather
-    /// than of the props. `None` — every container, and most elements — is a
+    /// than of the props. `None` -- every container, and most elements -- is a
     /// widget whose first answer stands.
     pub fn measured_gutter(
         &self,
@@ -348,7 +348,7 @@ impl WidgetKind {
     }
 
     /// **How many rows this widget stacks**, out of the `uploaded` channel
-    /// count the front read off its GPU slot — the divisor for a lane-relative
+    /// count the front read off its GPU slot -- the divisor for a lane-relative
     /// y gesture. A widget with no slot was given nothing and is one lane.
     ///
     /// A built-in answers from its variant, an element for itself
@@ -360,7 +360,7 @@ impl WidgetKind {
     }
 
     /// Whether a y zoom over this widget anchors at the centre of a lane
-    /// instead of under the pointer — an **amplitude** axis, whose zero sits at
+    /// instead of under the pointer -- an **amplitude** axis, whose zero sits at
     /// the centre of every lane.
     ///
     /// A built-in answers from its variant, an element for itself
@@ -372,12 +372,12 @@ impl WidgetKind {
     }
 
     /// **The window one read of this widget's taps has to bring**, in frames at
-    /// `sample_rate` — the one door the page's tap subscription is sized from.
+    /// `sample_rate` -- the one door the page's tap subscription is sized from.
     ///
     /// A built-in answers from its variant, an element for itself
     /// ([`Samples::tap_frames`]). It replaced three
-    /// collectors that each walked the tree building a per-kind read spec — a
-    /// scope's, a goniometer's, a spectrum's — only to take the largest of the
+    /// collectors that each walked the tree building a per-kind read spec -- a
+    /// scope's, a goniometer's, a spectrum's -- only to take the largest of the
     /// three and throw the specs away.
     pub fn tap_frames(&self, sample_rate: f64) -> usize {
         self.as_element()
@@ -385,7 +385,7 @@ impl WidgetKind {
             .map_or(0, |s| s.tap_frames(sample_rate))
     }
 
-    /// The editor chrome of a view that carries one — a timeline view
+    /// The editor chrome of a view that carries one -- a timeline view
     /// (waveform/spectrogram) or a `track` lane, which reuses the same props for
     /// its ruler and playhead. The shared read path for the frame renderer and
     /// the fronts. (Group membership is `is_timeline`, not this: a lane has the
@@ -408,13 +408,13 @@ impl WidgetKind {
         }
     }
 
-    /// **The element this kind is**, if it is one — and the one match every
+    /// **The element this kind is**, if it is one -- and the one match every
     /// question above is asked through.
     ///
     /// That is the shape the whole file collapsed to once the port finished: a
     /// question a *leaf* answers is not a pass over the enum at all, it is this
     /// door and then the trait, so the method beside it carries only the
-    /// **container's** answer — which for almost every question is the neutral
+    /// **container's** answer -- which for almost every question is the neutral
     /// one, because a container arranges and reads nothing.
     /// ([`Element::as_any`] does the rest for a caller
     /// that wants the concrete leaf.)
@@ -425,7 +425,7 @@ impl WidgetKind {
         }
     }
 
-    /// The same door, mutably — what a tick, a bulk load and a slot fill write
+    /// The same door, mutably -- what a tick, a bulk load and a slot fill write
     /// through.
     pub fn as_element_mut(&mut self) -> Option<&mut dyn Element> {
         match self {
@@ -434,7 +434,7 @@ impl WidgetKind {
         }
     }
 
-    /// **The samples facet of whatever element this kind holds**, or `None` —
+    /// **The samples facet of whatever element this kind holds**, or `None` --
     /// which is every kind that is not an element and every element with no
     /// samples behind it.
     ///
@@ -446,7 +446,7 @@ impl WidgetKind {
         self.as_element()?.samples()
     }
 
-    /// [`as_samples`](WidgetKind::as_samples), mutably — what a write, a
+    /// [`as_samples`](WidgetKind::as_samples), mutably -- what a write, a
     /// summary refresh and a view's own request go through.
     pub fn as_samples_mut(&mut self) -> Option<&mut dyn Samples> {
         self.as_element_mut()?.samples_mut()
@@ -457,7 +457,7 @@ impl WidgetKind {
         self.as_element()?.measured()
     }
 
-    /// The signal element this kind is, if it is one — see
+    /// The signal element this kind is, if it is one -- see
     /// [`Widget::signal`] for why this is a downcast and not a match.
     pub fn signal(&self) -> Option<&SignalElement> {
         self.as_element()?.as_any()?.downcast_ref::<SignalElement>()
@@ -466,7 +466,7 @@ impl WidgetKind {
     /// **One tick** of whatever this widget accumulates from a live source.
     ///
     /// A built-in answers from its variant, an element for itself
-    /// ([`Element::tick`]) — the single door, so the
+    /// ([`Element::tick`]) -- the single door, so the
     /// front drives one walk instead of one per kind of live view.
     pub fn tick(&mut self, live: &super::element::Live) {
         if let Some(el) = self.as_element_mut() {
@@ -477,7 +477,7 @@ impl WidgetKind {
     /// **A declared bulk resource has arrived**: the element takes it home.
     ///
     /// A built-in answers from its variant, an element for itself
-    /// ([`Samples::bulk`]) — the single door, so a loader
+    /// ([`Samples::bulk`]) -- the single door, so a loader
     /// resolves a resource and never reaches into a widget to place it.
     pub fn take_bulk(&mut self, data: super::element::Loaded) -> bool {
         self.as_element_mut()
@@ -509,7 +509,7 @@ impl WidgetKind {
     /// new for it.
     ///
     /// A built-in answers from its variant, an element for itself
-    /// ([`Slotted::fills`]) — the single door, so the front's upload walk asks
+    /// ([`Slotted::fills`]) -- the single door, so the front's upload walk asks
     /// the tree what to upload instead of deriving it from what each kind
     /// happens to be.
     pub fn fills(&mut self) -> Vec<(super::element::SlotKey, super::element::SlotFill)> {
@@ -549,7 +549,7 @@ impl Widget {
     }
 
     /// **Who a bulk load is really for**: this widget, or the body of it that
-    /// declared the want — a clip's take carries no id, so the fetch was keyed
+    /// declared the want -- a clip's take carries no id, so the fetch was keyed
     /// by the container's.
     ///
     /// It asks the declaration rather than the variant, which is what lets a
@@ -565,7 +565,7 @@ impl Widget {
         self.children.iter().find(|c| declares(c)).unwrap_or(self)
     }
 
-    /// [`Self::bulk_target`] for a write — the same routing, mutably: a run of
+    /// [`Self::bulk_target`] for a write -- the same routing, mutably: a run of
     /// samples fetched for a clip's take lands in the body that asked for it.
     pub fn bulk_target_mut(&mut self) -> &mut Widget {
         let declares = |w: &Widget| {
@@ -586,7 +586,7 @@ impl Widget {
     ///
     /// The routing is here and not at the call site because a clip's body
     /// carries no id: a fetch was addressed to the container, so the answer
-    /// has to look one level in — and both fronts were walking that level
+    /// has to look one level in -- and both fronts were walking that level
     /// themselves, which is one walk written twice.
     /// `data` is a **maker** rather than a value because a `Loaded` is the
     /// payload itself: it is built only for the widget that takes it, and never
@@ -617,7 +617,7 @@ impl Widget {
     }
 
     /// The body a **layer address** names among this container's layered
-    /// contents, mutably — the door a press on a layer and a drag holding one
+    /// contents, mutably -- the door a press on a layer and a drag holding one
     /// both write through.
     ///
     /// `None` for the placement layer (which is the container itself, not one

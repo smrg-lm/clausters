@@ -2,7 +2,7 @@
 //!
 //! Custom visuals, ShaderToy-style. The script sends a fragment shader as a
 //! property; the host runs it on a full-viewport triangle and feeds it a small
-//! set of uniforms — the viewport `resolution`, the elapsed `time`, and four
+//! set of uniforms -- the viewport `resolution`, the elapsed `time`, and four
 //! `params`. The params are driven two ways, which is the point of the widget:
 //! from the **script** (`/gui_set param0 …`, an OSC value) and from a
 //! **control bus read out of shared memory each frame** (the `buses` mapping),
@@ -183,7 +183,7 @@ impl CanvasView {
     }
 
     /// Writes the per-frame uniforms (viewport size, elapsed time, params, and
-    /// the host's own [`Framing`] — see the prelude).
+    /// the host's own [`Framing`] -- see the prelude).
     pub fn upload(
         &self,
         queue: &wgpu::Queue,

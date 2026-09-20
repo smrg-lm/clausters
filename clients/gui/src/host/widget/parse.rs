@@ -2,7 +2,7 @@
 //! wire-parsing helpers behind the schema ([`super`]) and its two long wire
 //! matches ([`super::build`] and [`super::apply`]). Split out of the schema so
 //! the enum and the construction/update matches read on their own. A helper
-//! stays `pub(super)` — the `widget` module tree and nowhere else — until a
+//! stays `pub(super)` -- the `widget` module tree and nowhere else -- until a
 //! leaf that moved behind [`Element`](super::Element) needs it, since an
 //! element in [`elements`](crate::host::elements) parses the same props from
 //! outside the module; those are `pub(crate)`.
@@ -16,7 +16,7 @@ use super::Rate;
 use crate::spectrogram::FreqScale;
 
 /// Coerce a `/gui_set` value that carries an array (either already a JSON array,
-/// or an array encoded as a JSON string — the scalar-wire carrier `points`/
+/// or an array encoded as a JSON string -- the scalar-wire carrier `points`/
 /// `notes`/`members` use) into a one-entry props map under `key`, for the
 /// `parse_*` helpers to read.
 pub(crate) fn as_array_props(key: &str, v: &Value) -> serde_json::Map<String, Value> {
@@ -29,7 +29,7 @@ pub(crate) fn as_array_props(key: &str, v: &Value) -> serde_json::Map<String, Va
 
 /// Coerce a `/gui_set` value that carries a whole **props object** (the score's
 /// `display_list`) into the map the widget's `parse` reads: an object as it
-/// stands, or a JSON string parsed into one — OSC carries no objects, so the
+/// stands, or a JSON string parsed into one -- OSC carries no objects, so the
 /// wire form of a structural value is always a string. `None` for anything
 /// else, so a malformed set is refused rather than applied as an empty page.
 #[cfg(feature = "notation")]
@@ -41,7 +41,7 @@ pub(crate) fn as_props(v: &Value) -> Option<serde_json::Map<String, Value>> {
     }
 }
 
-/// Parse an axis' `tempo_map` — the multitrack's beat-to-second function, as the
+/// Parse an axis' `tempo_map` -- the multitrack's beat-to-second function, as the
 /// breakpoint list [`TempoMap`] serializes to. Takes the array as it stands or
 /// a JSON string of one, the same two forms every structural prop arrives in,
 /// since OSC carries no arrays. `None` for anything a map cannot be built
@@ -55,7 +55,7 @@ pub(crate) fn parse_tempo_map(v: &Value) -> Option<Arc<TempoMap>> {
     parsed.map(Arc::new)
 }
 
-/// Parse a `piano`'s `voice_args` — a flat `[name, value, name, value, …]`
+/// Parse a `piano`'s `voice_args` -- a flat `[name, value, name, value, …]`
 /// list of extra `/synth_new` control pairs (the `bind`-prefix posture: names are
 /// strings, values numbers). A trailing partial pair is dropped.
 pub(crate) fn voice_args(props: &serde_json::Map<String, Value>) -> Vec<(String, f32)> {
@@ -116,7 +116,7 @@ pub(crate) fn int_prop(props: &serde_json::Map<String, Value>, key: &str, defaul
         .unwrap_or(default)
 }
 
-/// An `f64` property, defaulted when absent or non-numeric — for sample
+/// An `f64` property, defaulted when absent or non-numeric -- for sample
 /// positions and clock values, where `f32` would lose sample accuracy on
 /// buffers past a few minutes.
 pub(crate) fn number_f64(props: &serde_json::Map<String, Value>, key: &str, default: f64) -> f64 {
@@ -192,7 +192,7 @@ pub(crate) fn text_size(props: &serde_json::Map<String, Value>) -> f32 {
 }
 
 /// Clamped to a legible range, and quantized to what the face this build draws
-/// with can actually render evenly — half-steps of the cell for the bitmap,
+/// with can actually render evenly -- half-steps of the cell for the bitmap,
 /// the number itself once a typeface is loaded (see
 /// [`font::quantize_size`](crate::host::font::quantize_size)).
 pub(crate) fn clamp_text_size(s: f32) -> f32 {
@@ -231,7 +231,7 @@ pub(crate) fn options(props: &serde_json::Map<String, Value>) -> Vec<String> {
 
 /// A JSON value as a boolean: real bool, or a number where non-zero is true.
 /// A container's arrangement, as the wire names it. The model spends the word
-/// `layout` on the container type itself, so the arrangement is `flow` — on
+/// `layout` on the container type itself, so the arrangement is `flow` -- on
 /// every container that has one, a `window` and a `plane` included.
 pub(super) fn flow(props: &serde_json::Map<String, Value>) -> Option<&str> {
     props.get("flow").and_then(Value::as_str)
@@ -303,7 +303,7 @@ pub(crate) fn set_label(slot: &mut Option<String>, v: &Value) -> bool {
 /// word for a redraw that names a widget without re-sending its bulk.
 ///
 /// A `/gui_def` has to name every widget in the subtree it redraws, and a
-/// clip's samples are the largest payload in the system — so a lane redrawn
+/// clip's samples are the largest payload in the system -- so a lane redrawn
 /// because one clip moved would carry every other clip's audio with it. `keep`
 /// is what stops that: the widget is described in full, its bulk is not, and
 /// the [reconcile](super::reconcile) carries the run the host is already
@@ -327,7 +327,7 @@ pub(crate) fn keeps_bulk(props: &serde_json::Map<String, Value>) -> bool {
 ///
 /// `"data": `[`KEEP`] resolves to **nothing here**, on purpose: what it names
 /// is not in this message, and the widget is built empty for the reconcile to
-/// fill. A build that never reaches a reconcile — a widget that is new — is
+/// fill. A build that never reaches a reconcile -- a widget that is new -- is
 /// therefore empty, which is the honest answer to a keep with nothing to keep.
 pub(super) fn inline_samples(
     kind: &str,
@@ -374,7 +374,7 @@ pub(super) fn inline_samples(
 }
 
 /// The **stretch of its container's time axis** a node declares, from `at` and
-/// `dur` — `None` when it declares neither, which is a node filling whatever
+/// `dur` -- `None` when it declares neither, which is a node filling whatever
 /// the container gives it.
 ///
 /// A node that names one and not the other still gets a span: `at` alone runs

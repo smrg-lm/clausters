@@ -1,7 +1,7 @@
 // The arrangement: elements, grouping, flattening and the document bridge.
 //
-// What the parity vectors already prove — that this layer writes the same
-// document and flattens to the same timeline as the Python client — is in
+// What the parity vectors already prove -- that this layer writes the same
+// document and flattens to the same timeline as the Python client -- is in
 // `form-parity.test.ts`. This suite covers the rest of the layer's own
 // behaviour: the temporal character and relation, editing an aggregate by
 // handle, what a placement's length trims, what a leaf with no instrument
@@ -38,7 +38,7 @@ import {
 import type { SourceLike } from "../src/form/index.ts";
 
 // The flattening crosses beats to seconds through the shared core's time map
-// (`TempoMap`), so the wasm has to be up before any of it runs — the same
+// (`TempoMap`), so the wasm has to be up before any of it runs -- the same
 // requirement the clock has always had, now that the arrangement measures time
 // with the same one function rather than a ratio of its own.
 await loadCore();
@@ -175,7 +175,7 @@ test("a sequence of elements is laid out successively by their durations", () =>
 test("a sequence of sequences advances by what each one reaches", () => {
     // An item that states no length is as long as what it lays down. Read as
     // zero, every member of a `Sequence` of `Sequence`s landed on the first
-    // beat — four bars played at once, which is what "the aggregate is drawn as an
+    // beat -- four bars played at once, which is what "the aggregate is drawn as an
     // unreadable clip" was.
     const bar = (pitch: number) =>
         new Sequence([0, 1, 2, 3].map(() => new Clang(note(pitch, 1.0))));

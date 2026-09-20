@@ -1,7 +1,7 @@
 //! The component bundle: its manifest, its two kinds of hole, and the resolver.
 //!
-//! A **bundle** is the directory of persisted data that one component mounts —
-//! the def payloads, the GuiDef record, the presets, the samples — and the
+//! A **bundle** is the directory of persisted data that one component mounts --
+//! the def payloads, the GuiDef record, the presets, the samples -- and the
 //! manifest (`bundle.json`) that declares what mounting it needs. One directory
 //! runs on three legs: a browser tab, `clausters-gui --standalone`, and a
 //! loopback host against a running server. This module is the part that has to
@@ -13,8 +13,8 @@
 //! record on disk is a **template** with placeholders, told apart by sigil:
 //!
 //! ```text
-//! "@lfo", "@graph"   a symbol    — an id the caller allocates when mounting
-//! "$freq", "$title"  a parameter — a value the tag supplies, or a preset's,
+//! "@lfo", "@graph"   a symbol    -- an id the caller allocates when mounting
+//! "$freq", "$title"  a parameter -- a value the tag supplies, or a preset's,
 //!                                  or the declared default
 //! ```
 //!
@@ -26,7 +26,7 @@
 //! That is the invariant the format is built on: the def payloads under `defs/`
 //! contain no holes, so they are byte-identical between two mounted instances
 //! and are sent to the server once. It forces one authoring rule, which is the
-//! right rule anyway — *a bus, a node or a buffer reaches a def as a control,
+//! right rule anyway -- *a bus, a node or a buffer reaches a def as a control,
 //! never as a baked constant.* [`check_def_payload`] is how a writer enforces
 //! it.
 //!
@@ -83,7 +83,7 @@ pub fn requirements(manifest: &Manifest) -> Requirements {
 ///
 /// A written bundle numbers its widgets `1..N` and declares `widgets`, so the
 /// two agree. A bundle written **before** the contract declares nothing, and
-/// its saved ids are whatever the author picked — `1`, `10`, `20`. Offsetting
+/// its saved ids are whatever the author picked -- `1`, `10`, `20`. Offsetting
 /// those by a one-wide block would make two instances overlap, so the block is
 /// sized to the ids actually used ([`widget_span`]) instead.
 pub fn requirements_for(manifest: &Manifest, template: Option<&Template>) -> Requirements {
@@ -129,7 +129,7 @@ pub struct ParamInput {
 }
 
 impl ParamInput {
-    /// Just the attributes — the common mount, with no preset named.
+    /// Just the attributes -- the common mount, with no preset named.
     pub fn from_attributes(attributes: Map<String, Value>) -> ParamInput {
         ParamInput {
             attributes,
@@ -192,7 +192,7 @@ pub fn resolve(
 /// allocation and the declared defaults.
 ///
 /// So a bundle whose template names an undeclared symbol, whose parameter
-/// defaults do not type-check, or whose widget count is wrong, fails here —
+/// defaults do not type-check, or whose widget count is wrong, fails here --
 /// at the point it would be written, not at the point someone mounts it.
 pub fn validate(manifest: &Manifest, template: &Template) -> Result<(), Error> {
     check_symbol_namespaces(&manifest.symbols)?;
@@ -215,7 +215,7 @@ pub fn validate(manifest: &Manifest, template: &Template) -> Result<(), Error> {
     Ok(())
 }
 
-/// Refuses a placeholder in a def payload — the invariant that keeps def
+/// Refuses a placeholder in a def payload -- the invariant that keeps def
 /// payloads shareable between two mounted instances. A writer calls this on
 /// every `/def_send synth` and `/def_send graph` spec before emitting it.
 pub fn check_def_payload(payload: &Value) -> Result<(), Error> {
@@ -246,7 +246,7 @@ pub struct RequirementsRequest {
     pub template: Option<Template>,
 }
 
-/// One [`resolve`] call as a single JSON object — what the wasm and C doors
+/// One [`resolve`] call as a single JSON object -- what the wasm and C doors
 /// carry.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ResolveRequest {
@@ -257,7 +257,7 @@ pub struct ResolveRequest {
     pub params: ParamInput,
 }
 
-/// One [`validate`] call, plus the def payloads to check for holes — the whole
+/// One [`validate`] call, plus the def payloads to check for holes -- the whole
 /// pre-flight a writer runs before emitting a directory.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ValidateRequest {
@@ -693,7 +693,7 @@ mod tests {
         ));
     }
 
-    /// A bundle that declares nothing resolves as itself, holes or not — the
+    /// A bundle that declares nothing resolves as itself, holes or not -- the
     /// pre-contract bundles keep mounting.
     #[test]
     fn a_bundle_with_no_contract_resolves_unchanged() {

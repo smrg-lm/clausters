@@ -1,4 +1,4 @@
-//! What one **pulled serving turn** costs — the measurement the browser
+//! What one **pulled serving turn** costs -- the measurement the browser
 //! engine's serving budget is set from.
 //!
 //! The pulled server (`ClaustersHeadless`) runs one serving turn before each
@@ -15,7 +15,7 @@
 //!
 //! - **`/buffer_alloc` looks free and is not.** Linux hands out lazily-zeroed
 //!   pages, so allocating 110 MB costs microseconds here and the real price is
-//!   paid later, in page faults, on whatever thread first touches the samples —
+//!   paid later, in page faults, on whatever thread first touches the samples --
 //!   the audio thread. The number is an artifact of the platform's virtual
 //!   memory, not evidence of a cheap operation, and a browser (where the
 //!   equivalent is growing wasm linear memory) does not have it.
@@ -26,7 +26,7 @@
 //! together, with the ceiling off and on.
 //!
 //! These are *native* numbers on one machine, so they bound the browser's from
-//! below — they say which operations cannot fit, never that one does.
+//! below -- they say which operations cannot fit, never that one does.
 
 use clausters::embed::ClaustersHeadless;
 use clausters::rosc::{OscMessage, OscPacket, OscType, encoder};

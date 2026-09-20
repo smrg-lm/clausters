@@ -20,7 +20,7 @@
   </head>
   <body>
     <main>
-      <div id="note">The patcher, <b>level 1</b>: whole defs wired by buses —
+      <div id="note">The patcher, <b>level 1</b>: whole defs wired by buses --
 built, viewed, heard.
 
 <code>editors/patch2.html</code> is level 2 (a single def's internal UGen
@@ -33,17 +33,17 @@ inlets and outlets, and a cord per <code>outlet → inlet</code>. A cord is a bu
 but you never number one: <code>compile</code> runs the shared cord→bus pass and
 names one.
 
-<b>Auto-layout</b> — the host lays every box out itself, sources on top and
+<b>Auto-layout</b> -- the host lays every box out itself, sources on top and
 sinks at the bottom. <b>Dragging</b> a box flows back as <code>"move"</code>;
 <b>cording</b> (drag an outlet pin onto an inlet, either grab order) flows back
-as <code>"wire"</code>, which is just <code>connect</code> by name — so the
+as <code>"wire"</code>, which is just <code>connect</code> by name -- so the
 picture and the object stay one thing. The patch sits in a
 <code>scroll</code> workspace: Shift+drag pans, the wheel zooms.
 
 The buses are never on screen: an unwired outlet keeps its def's default, so
 these defs default their bus controls to a spare bus nobody reads, and the
 hardware output is reached through a <b>terminal def</b> (<code>dac</code>: an
-inlet, no outlet, its <code>out(0, …)</code> baked in) — a box like any other,
+inlet, no outlet, its <code>out(0, …)</code> baked in) -- a box like any other,
 not an <code>OUT</code>.</div>
 
       <button id="run">open the patcher</button>
@@ -96,7 +96,7 @@ not an <code>OUT</code>.</div>
 
       /**
        * The terminal stage: reads `in`, scales it, and writes **hardware bus 0**
-       * itself. It has an inlet and no outlet — a cord into it is the only path
+       * itself. It has an inlet and no outlet -- a cord into it is the only path
        * to the speakers.
        */
       const dac = (name = "dac") => new SynthDef(name,
@@ -106,7 +106,7 @@ not an <code>OUT</code>.</div>
       const placed = {};
 
       /**
-       * Compile the patch you drew and (re)instance it — freeing the one in
+       * Compile the patch you drew and (re)instance it -- freeing the one in
        * flight, so a re-render replaces rather than stacks. A bad cord is
        * reported, not fatal.
        */
@@ -121,7 +121,7 @@ not an <code>OUT</code>.</div>
         await gdef.send(server);
         if (instance !== null) instance.free();
         instance = Group.graph("patch", {}, { server });
-        log("  rendered — the patch is sounding");
+        log("  rendered -- the patch is sounding");
       }
 
       function stop() {
@@ -155,7 +155,7 @@ not an <code>OUT</code>.</div>
 
         await session.gui();
         win = await gui.view(
-          { title: "Patch — level 1", w: 720, h: 680, layout: "col" },
+          { title: "Patch -- level 1", w: 720, h: 680, layout: "col" },
           gui.scroll({ name: "workspace" },
             gui.patch({ name: "patch", ...p.toWidget(), label: "patch" })),
           transport,
@@ -172,7 +172,7 @@ not an <code>OUT</code>.</div>
           if (tag === "wire" && payload.length >= 4) {
             const [src, outlet, dst, inlet] = rest;
             p.connect(Number(src), outlet, Number(dst), inlet);
-            log(`  wired ${src}.${outlet} -> ${dst}.${inlet} — press render to hear it`);
+            log(`  wired ${src}.${outlet} -> ${dst}.${inlet} -- press render to hear it`);
           } else if (tag === "move" && payload.length >= 3) {
             const [index, x, y] = rest;
             placed[Number(index)] = [Number(x), Number(y)];

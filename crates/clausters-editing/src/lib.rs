@@ -2,8 +2,8 @@
 //!
 //! A structure in this system has three endpoints and an edit may start at any
 //! of them: the document owns the model, a host draws it, a server sounds it.
-//! Each pair of those needs a *projection* — the structure as props, a gesture
-//! as payloads, the structure as what is sounding — and a projection with two
+//! Each pair of those needs a *projection* -- the structure as props, a gesture
+//! as payloads, the structure as what is sounding -- and a projection with two
 //! implementations is how one curve comes to be drawn two ways and one multitrack
 //! comes to sound two. So there is one of each, here, and every client binds
 //! it while the host links it.
@@ -12,13 +12,13 @@
 //!
 //! That crate's own rule: **the wire stays out of it.** It defines intents and
 //! outcomes and does not encode them, and a projection's answer is exactly an
-//! encoding — the props of a `/gui_*` message, the arguments of an OSC one. So
+//! encoding -- the props of a `/gui_*` message, the arguments of an OSC one. So
 //! the projections sit *above* the document rather than in it, in a crate that
 //! may know both the model and the shape it is being written into.
 //!
 //! # Why this is not `clausters-core` either
 //!
-//! The numeric and drawing *rules* are there and stay there — this crate asks
+//! The numeric and drawing *rules* are there and stay there -- this crate asks
 //! [`clausters_core::envshape::curve_axis`] rather than restating it. What is
 //! here is the step after: assembling a rule's answer into the payload an
 //! endpoint reads. The core cannot hold that for the projections that come
@@ -29,7 +29,7 @@
 //!
 //! A **function**. It takes the structure and whatever the caller is holding,
 //! and hands back the payload. It keeps nothing: where a picture's own state
-//! lives — the axis a view has settled on, the zoom, the selection — is the
+//! lives -- the axis a view has settled on, the zoom, the selection -- is the
 //! endpoint's question, and the answer is that the *host* owns view state. A
 //! projection that kept it would be a fourth place for it to live.
 
@@ -57,8 +57,8 @@ use crate::intake::Intake;
 
 /// **One door for the edit ingestion**, over every domain there is.
 ///
-/// A host reports a gesture the same way whatever it is over — a tag and a flat
-/// list of values — so what reads one is one call, and which structure's
+/// A host reports a gesture the same way whatever it is over -- a tag and a flat
+/// list of values -- so what reads one is one call, and which structure's
 /// vocabulary the answer comes back in is the `domain`. A domain this does not
 /// know answers [`Intake::nothing`], which is exactly what a tag a domain does
 /// not answer for says: **a client cannot quietly grow a fifth vocabulary**,
@@ -66,13 +66,13 @@ use crate::intake::Intake;
 ///
 /// `request` is one JSON object, and each domain reads the fields it needs:
 ///
-/// - `values` — the report, always.
-/// - `state` — the structure as its vocabulary holds it. The multitrack for
+/// - `values` -- the report, always.
+/// - `state` -- the structure as its vocabulary holds it. The multitrack for
 ///   `multitrack`, the timeline for `events`; the other two read the gesture
 ///   alone.
-/// - `unitsPerBeat`, `editable` — a roll's axis, and whether what it draws can
+/// - `unitsPerBeat`, `editable` -- a roll's axis, and whether what it draws can
 ///   be written onto at all.
-/// - `rate`, `defaultBpm`, `sources` — a multitrack's axis and its buffer table, the
+/// - `rate`, `defaultBpm`, `sources` -- a multitrack's axis and its buffer table, the
 ///   same three [`multitrack::props_json`] takes.
 ///
 /// The answer is [`Intake::to_json`]: `payloads`, `label`, and `inverse` or

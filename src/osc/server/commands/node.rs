@@ -55,7 +55,7 @@ impl OscServer {
 
     /// Per-node detail: replies `/node_query.reply` for each queried node ID (scsynth's
     /// `/node_query`, extended with the def name, controls, maps and inferred
-    /// bus usage — see [`CmdTranslator::node_info`]). An id the server does
+    /// bus usage -- see [`CmdTranslator::node_info`]). An id the server does
     /// not hold answers with an absent record, not `/fail`: only a malformed
     /// request is a protocol error.
     pub(in crate::osc::server) fn handle_node_query(
@@ -72,7 +72,7 @@ impl OscServer {
     }
 
     /// `/group_query path...`: resolves each path to the node it names,
-    /// replying `/group_query.reply <path> <nodeID>` — the one place a path is
+    /// replying `/group_query.reply <path> <nodeID>` -- the one place a path is
     /// interpreted. A path nothing answers to resolves to `-1` (absence is a
     /// state, as in `/node_query`), so one dead path does not abort the rest.
     pub(in crate::osc::server) fn handle_group_query(
@@ -196,7 +196,7 @@ impl OscServer {
     }
 
     /// `/node_trace nodeID...`: debug-traces a node by logging its current control
-    /// values (from the mirror) to the server console — the introspection
+    /// values (from the mirror) to the server console -- the introspection
     /// counterpart of scsynth's per-block node trace. Network-thread only, no
     /// reply (matches scsynth).
     pub(in crate::osc::server) fn handle_node_trace(&mut self, mut args: Args) -> Answer {

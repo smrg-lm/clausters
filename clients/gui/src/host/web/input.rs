@@ -50,7 +50,7 @@ fn is_space(key: &Key) -> bool {
 impl WebApp {
     /// Snapshots the gesture context for one canvas: its framebuffer size, its
     /// modifier keys, and the heavy views' row counts (channel splits
-    /// live in this front's GPU slots, so they are copied out here) — the
+    /// live in this front's GPU slots, so they are copied out here) -- the
     /// browser twin of the native front's snapshot.
     pub(super) fn gesture_ctx(&self, def: i32) -> Option<(GestureCtx, (f64, f64))> {
         let slot = self.canvases.get(&def)?;
@@ -89,7 +89,7 @@ impl WebApp {
 
     /// Carries out a gesture's effects over this front's sinks: `/gui_event`s
     /// to the page outbox (a bound widget already forwarded inside the
-    /// machine), and a repaint of the canvas the effect names — a linked-view
+    /// machine), and a repaint of the canvas the effect names -- a linked-view
     /// mutation can name a *different* def than the one gestured on, and with a
     /// canvas each that now lands where it belongs.
     pub(super) fn apply_gesture_effects(&mut self, effects: Vec<GestureEffect>) {
@@ -104,7 +104,7 @@ impl WebApp {
                     // **One message, whoever it goes to**, built where the
                     // native front builds it: a host that owns what it draws
                     // is delivered it in memory, and every other one queues it
-                    // for the page. A page rarely owns one — but the seam is
+                    // for the page. A page rarely owns one -- but the seam is
                     // the same on both fronts, and a gesture is implemented
                     // once.
                     let message = self.host.event_message(widget_id, seq, args);
@@ -118,7 +118,7 @@ impl WebApp {
                 // The focus stepped past the ring: **blur the canvas**, so the
                 // browser's own tab order carries on to whatever the document
                 // holds after this GuiDef. Without it a mounted def is a
-                // keyboard trap — winit prevents the default on every key it
+                // keyboard trap -- winit prevents the default on every key it
                 // sees, so the page around it would become unreachable, which
                 // is a worse regression than having no keyboard at all.
                 GestureEffect::FocusOut(def_id) => self.blur(def_id),
@@ -190,8 +190,8 @@ impl WebApp {
         self.apply_gesture_effects(effects);
     }
 
-    /// Keyboard: the same two addressees the desktop front has — the window's
-    /// focus, then the element under the cursor — and the same window shortcuts
+    /// Keyboard: the same two addressees the desktop front has -- the window's
+    /// focus, then the element under the cursor -- and the same window shortcuts
     /// after them (`r` resets every axis, `e` and `j` split and join the clip
     /// under the cursor). Escape is missing on purpose: it closes an OS window
     /// there and has no window to close here.
@@ -204,8 +204,8 @@ impl WebApp {
             }
             return;
         };
-        // The focus consumes the key first — Tab walks the ring, a focused
-        // element edits — and only what nothing there answered runs the global
+        // The focus consumes the key first -- Tab walks the ring, a focused
+        // element edits -- and only what nothing there answered runs the global
         // shortcuts, which are addressed to what is under the cursor.
         if let Some(k) = to_key(key) {
             let Some(slot) = self.canvases.get_mut(&def) else {
@@ -313,8 +313,8 @@ impl WebApp {
     }
 
     /// The space bar: play the take the cursor is over and stop what is
-    /// playing, or — over nothing a take answers for, or with no pointer over
-    /// the canvas yet — the window's own `play`, which a multitrack editor reads
+    /// playing, or -- over nothing a take answers for, or with no pointer over
+    /// the canvas yet -- the window's own `play`, which a multitrack editor reads
     /// as play/pause. The browser twin of the native front's `play_key`.
     fn play_key(&mut self, def: i32) {
         if let Some((ctx, (cx, cy))) = self.gesture_ctx(def)
@@ -344,7 +344,7 @@ impl WebApp {
         }
     }
 
-    /// Whether this instance is the one holding `id`'s canvas — how
+    /// Whether this instance is the one holding `id`'s canvas -- how
     /// [`WebHosts`] finds an event's owner without a second index to keep in
     /// step with every attach and detach.
     pub(super) fn owns(&self, id: WindowId) -> bool {
@@ -371,7 +371,7 @@ impl WebApp {
                 slot.request_redraw();
             }
             // The keyboard's own path, for a modifier held with no pointer
-            // event to carry it — a Ctrl+Z over a focused canvas. The pointer
+            // event to carry it -- a Ctrl+Z over a focused canvas. The pointer
             // events are the other writer of the same three flags, and the
             // authoritative one for a gesture (see `CanvasSlot::mods`).
             WindowEvent::ModifiersChanged(mods) => {

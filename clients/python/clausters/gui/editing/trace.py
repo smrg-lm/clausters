@@ -3,7 +3,7 @@ walked, and what the host was told.
 
 An editing session fails in ways nothing else can see. A gesture reaches a
 widget, becomes a payload in some vocabulary, lands as an entry in a pile, and
-comes back to the host as a correction — and when the picture and the data
+comes back to the host as a correction -- and when the picture and the data
 disagree, the interesting question is always *which of those four steps did
 something unexpected*. A test answers it for the case somebody thought of; a
 window in front of a person does not answer it at all, and "it did the wrong
@@ -33,12 +33,12 @@ import logging
 
 from ...log import watch as _watch_area
 
-#: This area's logger — a child of the package's, so arming `clausters` catches
+#: This area's logger -- a child of the package's, so arming `clausters` catches
 #: it and arming this one leaves the rest quiet.
 log = logging.getLogger("clausters.gui.editing")
 
 
 def watch(stream=None) -> logging.Logger:
-    """Print the editing path to ``stream`` (stderr by default) — the whole of
+    """Print the editing path to ``stream`` (stderr by default) -- the whole of
     `clausters.log.watch` narrowed to this area."""
     return _watch_area("gui.editing", stream)

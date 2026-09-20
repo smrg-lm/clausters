@@ -1,7 +1,7 @@
 //! WebSocket server front for the `/gui_*` protocol.
 //!
 //! The browser's carrier into a **native** host: a page cannot open a raw UDP
-//! socket or a TCP connection, but it speaks WebSocket natively — this is the
+//! socket or a TCP connection, but it speaks WebSocket natively -- this is the
 //! leg that lets the TypeScript client drive a desktop `clausters-gui` the way
 //! it drives a `clausters --ws` audio server. It mirrors the audio server's
 //! `osc::ws` exactly, with the same generalization [`super::tcp`] has: the
@@ -11,7 +11,7 @@
 //! winit `EventLoopProxy`, which needs no wake at all).
 //!
 //! Wire framing: each WebSocket **binary** message carries exactly one OSC
-//! packet — WebSocket already frames messages, so unlike raw TCP there is no
+//! packet -- WebSocket already frames messages, so unlike raw TCP there is no
 //! length prefix; the frame boundary *is* the packet boundary, and replies go
 //! back as binary messages the same way. `tungstenite` enforces the maximum
 //! message size (the `--max-frame` ceiling the TCP leg applies to its length
@@ -72,7 +72,7 @@ pub fn bind_with_sink(
     Ok(local_addr)
 }
 
-/// Routes one queued reply to connection `id` through its channel — the shared
+/// Routes one queued reply to connection `id` through its channel -- the shared
 /// routing both fronts use (the headless hub and the windowed app each hold a
 /// `conns` map of `(reply channel, raw socket)`). A full queue means the
 /// client has stopped reading: the connection is force-dropped rather than
@@ -94,7 +94,7 @@ pub fn reply(conns: &HashMap<u64, (SyncSender<Vec<u8>>, TcpStream)>, id: u64, by
 }
 
 /// The headless front's consumer: the event stream the serve loop drains and
-/// the per-connection reply channels it answers through — the [`super::tcp::TcpHub`]
+/// the per-connection reply channels it answers through -- the [`super::tcp::TcpHub`]
 /// shape. Connection threads wake the loop with a zero-length datagram to
 /// `wake_target` (the host's own UDP address) after queuing an event.
 pub struct WsHub {
@@ -133,7 +133,7 @@ impl WsHub {
 
     /// The next complete packet `(connection id, bytes)`, or `None` when the
     /// queue is drained. Registers and forgets connections as their
-    /// `Connected`/`Disconnected` events go by — both bracket that
+    /// `Connected`/`Disconnected` events go by -- both bracket that
     /// connection's frames in the channel, so the reply channel is always
     /// present before a frame is returned for handling.
     pub fn next_frame(&mut self) -> Option<(u64, Vec<u8>)> {
@@ -152,7 +152,7 @@ impl WsHub {
     }
 
     /// Queues a reply to connection `id` (silently dropped if the connection
-    /// is gone — the `Disconnected` event prunes it).
+    /// is gone -- the `Disconnected` event prunes it).
     pub fn reply(&self, id: u64, bytes: &[u8]) {
         reply(&self.conns, id, bytes);
     }
@@ -262,7 +262,7 @@ mod tests {
     use clausters_core::osc::{OscMessage, OscPacket, OscType, encode};
 
     /// An OSC packet sent as one WebSocket binary message round-trips through
-    /// the hub — in, decoded, and a reply routed back as a binary message on
+    /// the hub -- in, decoded, and a reply routed back as a binary message on
     /// the same connection. In-process, like the tcp front's test and the
     /// audio server's ws test.
     #[test]

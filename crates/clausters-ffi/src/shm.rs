@@ -1,7 +1,7 @@
 //! The shared-memory segment, for a peer that maps it from another language.
 //!
-//! A `ctypes` or N-API client maps the file itself — that part is the
-//! language's, and there is nothing to share about it — and then needs to know
+//! A `ctypes` or N-API client maps the file itself -- that part is the
+//! language's, and there is nothing to share about it -- and then needs to know
 //! **where everything is**. That used to mean transcribing the layout into the
 //! binding, which is how one client came to declare 1024 control buses against
 //! a server that had had 16 384 for months: the number was wrong, unused, and
@@ -9,8 +9,8 @@
 //!
 //! So the numbers come from here instead. [`clausters_core_shm_shape`] answers
 //! every offset and count once, at attach; the rest of this module is the
-//! things that are **logic rather than arithmetic** — the directory's seqlock,
-//! the ring framing, the region file's name — where a second implementation is
+//! things that are **logic rather than arithmetic** -- the directory's seqlock,
+//! the ring framing, the region file's name -- where a second implementation is
 //! a second set of bugs.
 //!
 //! Every entry takes the mapping as a pointer and a length and validates it
@@ -29,7 +29,7 @@ pub const SHM_ABSENT: i32 = -2;
 /// The caller's buffer is too small for what was asked.
 pub const SHM_TOO_SMALL: i32 = -3;
 
-/// The segment layout version this build speaks — the number a peer checks
+/// The segment layout version this build speaks -- the number a peer checks
 /// against the header before anything else.
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_core_shm_abi_version() -> u32 {
@@ -40,7 +40,7 @@ pub extern "C" fn clausters_core_shm_abi_version() -> u32 {
 /// count and every byte offset a reader needs, in one call.
 ///
 /// Returns 0, or [`SHM_INVALID`] when the memory is not a segment of this
-/// version — bad magic, a different layout version, or a length that does not
+/// version -- bad magic, a different layout version, or a length that does not
 /// match the regions the header claims.
 ///
 /// # Safety
@@ -63,7 +63,7 @@ pub unsafe extern "C" fn clausters_core_shm_shape(
     0
 }
 
-/// The byte size of a segment carrying these counts — what a peer sizes a file
+/// The byte size of a segment carrying these counts -- what a peer sizes a file
 /// to before creating one.
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_core_shm_segment_size(
@@ -78,7 +78,7 @@ pub extern "C" fn clausters_core_shm_segment_size(
 
 /// Writes a fresh header over (`base`, `len`), making it a segment.
 ///
-/// For a peer that **creates** one rather than attaching — which the editor's
+/// For a peer that **creates** one rather than attaching -- which the editor's
 /// arrangement makes an ordinary thing to be (the process that owns the
 /// samples creates the segment, and every server attaches to it). `len` must
 /// be at least [`clausters_core_shm_segment_size`] for the counts given, and
@@ -107,8 +107,8 @@ pub unsafe extern "C" fn clausters_core_shm_init(
     0
 }
 
-/// What the directory says about pool buffer `bufnum` — its generation, frame
-/// count, channel count and sample rate — read under the generation twice, so
+/// What the directory says about pool buffer `bufnum` -- its generation, frame
+/// count, channel count and sample rate -- read under the generation twice, so
 /// a row caught mid-write is re-read rather than believed.
 ///
 /// Returns 0, [`SHM_ABSENT`] when the slot is empty or out of range, or
@@ -181,7 +181,7 @@ pub unsafe extern "C" fn clausters_core_shm_region_suffix(
 /// `role` is 0 for a server (writing replies) and 1 for a client (writing
 /// commands).
 ///
-/// Returns 0, or [`SHM_TOO_SMALL`] when the ring is momentarily full — which is
+/// Returns 0, or [`SHM_TOO_SMALL`] when the ring is momentarily full -- which is
 /// backpressure and not an error: nothing was dropped and the caller may retry.
 ///
 /// # Safety
@@ -250,7 +250,7 @@ pub unsafe extern "C" fn clausters_core_shm_pop(
     0
 }
 
-/// 0 is the server's end of the pair, anything else the client's — the two
+/// 0 is the server's end of the pair, anything else the client's -- the two
 /// values a caller can hold without a header of enum constants.
 fn role_of(role: u32) -> Role {
     if role == 0 {

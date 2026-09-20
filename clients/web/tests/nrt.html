@@ -16,7 +16,7 @@
     <main>
       <div><code>/buffer_allocRead</code> in a tab: the file lives in the page's
         own filesystem (OPFS), and the read leaves the AudioWorklet for the NRT
-        worker — the thread that is neither audio nor interface — which decodes
+        worker -- the thread that is neither audio nor interface -- which decodes
         it with the same decoder a native server runs and hands the samples
         back to be installed a run at a time.</div>
       <button id="boot">boot + read a take</button>
@@ -118,7 +118,7 @@
 
         // 4) The other direction: `buffer.write(path)` puts a span of the
         //    engine's buffer in the page's own filesystem. The job leaves the
-        //    audio thread like a read does — but with the payload going *out*,
+        //    audio thread like a read does -- but with the payload going *out*,
         //    a run per serving turn, since the samples live in the engine's
         //    memory and copying a long take in one go is milliseconds on the
         //    thread that owes the next block.

@@ -55,7 +55,7 @@ impl OscServer {
                                 warn!("pruned the persisted def '{}'", result.name);
                             }
                             (false, Some(store)) => warn!(
-                                "it will warn again at every boot; it is in {} — drop the dead \
+                                "it will warn again at every boot; it is in {} -- drop the dead \
                                  ones with `clausters --prune-defs`",
                                 store.defs_dir().display()
                             ),
@@ -136,7 +136,7 @@ impl OscServer {
 
     /// `/server_sync id`: the async barrier (scsynth semantics). Records the current
     /// submitted counts as targets and is answered with `/server_sync.reply id` once both
-    /// async pipelines (NRT buffers, Faust compiles) have drained up to them —
+    /// async pipelines (NRT buffers, Faust compiles) have drained up to them --
     /// i.e. every async command received before this `/server_sync` has finished.
     /// Each pipeline completes FIFO, so the counters are a sufficient barrier.
     pub(in crate::osc::server) fn handle_server_sync(&mut self, msg: &OscMessage, from: ClientId) {
@@ -262,7 +262,7 @@ impl OscServer {
     /// a segment, and publishes its row so a peer can find it.
     ///
     /// The region is named from the segment's path, the buffer number and the
-    /// generation the directory hands back — so the file of a freed buffer and
+    /// generation the directory hands back -- so the file of a freed buffer and
     /// the file of its replacement can never be the same name, and a peer that
     /// kept the old mapping is writing into memory nobody reads rather than
     /// into somebody else's take.
@@ -307,7 +307,7 @@ impl OscServer {
             }
         };
         // The one copy: what was just built, into the memory it will live in.
-        // A join is read sample by sample instead — it owns no cells to copy
+        // A join is read sample by sample instead -- it owns no cells to copy
         // from, and a peer that maps this region gets the samples the join
         // reads, which is what it is looking at.
         let cells = region.cells();
@@ -359,7 +359,7 @@ impl OscServer {
     }
 
     /// Sharing samples needs a mapped region, and a region is a file
-    /// somebody else can open — which off Unix (the wasm engine, above all)
+    /// somebody else can open -- which off Unix (the wasm engine, above all)
     /// there is no equivalent of. A buffer stays the server's own memory
     /// there, exactly as it does with no segment at all.
     #[cfg(not(unix))]

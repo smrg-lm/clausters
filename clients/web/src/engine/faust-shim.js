@@ -36,7 +36,7 @@ let host = null;
  * only when the factory exists.
  *
  * **Not an optimization.** A label handed to the C API has to outlive the
- * whole construction, not the one call that took it — the native path says so
+ * whole construction, not the one call that took it -- the native path says so
  * in as many words (`faust::compiler`'s `cstrings`, kept "until the factory is
  * created"). Freeing each one at the end of its call passes every small test
  * and then breaks a *later* def, once the heap has churned enough to hand the

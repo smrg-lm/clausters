@@ -11,12 +11,12 @@
 //!
 //! # Where things live
 //!
-//! - `graph` — instancing a GraphDef: its private buses, its member nodes and
+//! - `graph` -- instancing a GraphDef: its private buses, its member nodes and
 //!   the named surface they answer to.
-//! - `midi` — the bindings, and the voices a channel-voice message actuates.
-//! - `queries` — what the translator *reports*: the def tables, the buffer
+//! - `midi` -- the bindings, and the voices a channel-voice message actuates.
+//! - `queries` -- what the translator *reports*: the def tables, the buffer
 //!   pool and the tree mirror, as reply arguments.
-//! - `buffers` — the `/buffer_*` commands, parsed into NRT jobs.
+//! - `buffers` -- the `/buffer_*` commands, parsed into NRT jobs.
 
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
@@ -163,7 +163,7 @@ pub struct CmdTranslator {
     #[cfg_attr(not(feature = "faust"), allow(dead_code))]
     sample_rate: f32,
     /// Start of the next instance's run of stochastic-UGen seeds. It belongs
-    /// to the translator — one per server or per offline render — rather than
+    /// to the translator -- one per server or per offline render -- rather than
     /// to the process, so a score's noise depends only on the score and on
     /// the starting seed, never on how many synths were built earlier in the
     /// same process. `Cell` because `make_synth` takes `&self`.
@@ -222,7 +222,7 @@ impl CmdTranslator {
         Self::with_buses(sample_rate, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES)
     }
 
-    /// Restarts the stochastic-UGen seed sequence at `seed` — how a caller
+    /// Restarts the stochastic-UGen seed sequence at `seed` -- how a caller
     /// asks for *this* take rather than a new one. The offline renderer calls
     /// it with the seed it resolved (see
     /// [`crate::server::render::RenderConfig::seed`]); left alone, the
@@ -249,7 +249,7 @@ impl CmdTranslator {
         // a server with more buses actually buys a multitrack more tracks.
         let audio_reserved = graph_audio_reserved(audio_buses);
         let control_reserved = graph_control_reserved(control_buses);
-        // Every node-id range scales from the node table's capacity — the
+        // Every node-id range scales from the node table's capacity -- the
         // resource that actually bounds concurrent nodes (shared formula,
         // reported to clients over `/server_query`).
         let partition = NodeIdPartition::from_max_nodes(limits.max_nodes);
@@ -305,7 +305,7 @@ impl CmdTranslator {
     }
 
     /// Builds a synth instance from either def table. Faust instantiation
-    /// (`createCDSPInstance` + `init`) allocates — fine, this never runs on
+    /// (`createCDSPInstance` + `init`) allocates -- fine, this never runs on
     /// the audio thread; the boxed instance reaches it fully built.
     pub fn make_synth(&self, name: &str) -> Result<(Box<dyn SynthNode>, NodeDef), String> {
         #[cfg(feature = "synth")]
@@ -400,13 +400,13 @@ impl CmdTranslator {
     /// The synth nodes a `/node_set`/`/node_map`/`/node_mapAudio` targets. A synth targets
     /// itself; a **group** propagates the named controls to every synth/faust
     /// in its subtree, recursing through subgroups and stopping at each synth
-    /// — scsynth's group semantics, "transfer the named parameters down to the
+    /// -- scsynth's group semantics, "transfer the named parameters down to the
     /// subgroups until a synth/faust def is reached". A node whose name has no
     /// matching control is simply skipped (its `control_key` is `None`).
     /// Unknown ids yield an empty list, so the caller can `/fail`.
     ///
     /// A GraphDef instance group is intercepted *before* this (its named
-    /// surface, not raw member propagation — see [`Self::graph_set`]), so it
+    /// surface, not raw member propagation -- see [`Self::graph_set`]), so it
     /// never reaches here.
     fn control_targets(&self, id: i32) -> Vec<i32> {
         match self.mirror.get(id).map(|n| &n.body) {
@@ -438,7 +438,7 @@ impl CmdTranslator {
 
     /// True iff `id` is unknown (neither in the tree mirror nor a node whose
     /// def we still hold), so a `/node_set`/`/node_map` on it should `/fail`. An
-    /// empty group is *known* — propagation is just a no-op.
+    /// empty group is *known* -- propagation is just a no-op.
     fn node_unknown(&self, id: i32) -> bool {
         self.mirror.get(id).is_none() && !self.node_defs.contains_key(&id)
     }
@@ -775,7 +775,7 @@ impl CmdTranslator {
     }
 
     /// `/node_ugenCmd nodeID ugenIndex commandName args...`: a typed command addressed
-    /// to one UGen instance — the discoverable replacement for scsynth's
+    /// to one UGen instance -- the discoverable replacement for scsynth's
     /// untyped `/node_ugenCmd`. The command name is hashed to a stable selector and
     /// the numeric args are packed inline (no heap crosses to the audio
     /// thread). Validates the node is a UGen synth and the index is in range;
@@ -911,7 +911,7 @@ impl CmdTranslator {
         })
     }
 
-    /// Allocates `n` auto ids, all or nothing — a shortfall hands back what
+    /// Allocates `n` auto ids, all or nothing -- a shortfall hands back what
     /// it took, so no id is lost to a half-built instance.
     fn alloc_auto_ids(&mut self, n: usize) -> Result<Vec<i32>, String> {
         let mut out = Vec::with_capacity(n);
@@ -939,7 +939,7 @@ impl CmdTranslator {
     }
 
     /// Returns a dead (or rejected) node's id to whichever server-owned range
-    /// it belongs — the auto range or the MIDI voice range. Ids outside both
+    /// it belongs -- the auto range or the MIDI voice range. Ids outside both
     /// are the clients' business (their own registries recycle them from the
     /// same `/node_end` notifications). Every node death reports here, so no
     /// server-allocated id is ever lost.
@@ -1140,7 +1140,7 @@ impl CmdTranslator {
                 }
                 Ok(())
             }
-            // `/group_new (id, addAction, targetID [, name])...` — a group is
+            // `/group_new (id, addAction, targetID [, name])...` -- a group is
             // born named, in one message, because that is when a client knows
             // what it is building; `/group_name` is left for renaming. The
             // name is optional per group, so the arguments are read with a
@@ -1209,7 +1209,7 @@ impl CmdTranslator {
                 }
                 Ok(())
             }
-            // `/group_name groupID name` — labels a group so a client can
+            // `/group_name groupID name` -- labels a group so a client can
             // address it by path (`/group_query`) and read it back in every
             // node report. An empty name clears the label. Network-thread
             // only: the engine never hears about it, so no `Cmd` is queued.
@@ -1225,7 +1225,7 @@ impl CmdTranslator {
                 }
                 Ok(())
             }
-            // `/group_parallel groupID mode` — mode 1 runs the group's
+            // `/group_parallel groupID mode` -- mode 1 runs the group's
             // children in dependency stages on the engine's worker pool
             // (sequential without workers); mode 0 returns to strict order.
             "/group_parallel" => {
@@ -1244,7 +1244,7 @@ impl CmdTranslator {
                 }
                 Ok(())
             }
-            // `/group_sortMode groupID mode` — mode 1 sorts the group's
+            // `/group_sortMode groupID mode` -- mode 1 sorts the group's
             // children by their bus connections now and on every future
             // change; mode 0 returns it to manual ordering.
             "/group_sortMode" => {

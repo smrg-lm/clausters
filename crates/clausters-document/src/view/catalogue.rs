@@ -2,16 +2,16 @@
 //!
 //! A waveform, a curve and a roll are the three pictures every editor in this
 //! project draws, and each of them was assembled three times: once in the
-//! Python client's `View.build`, once in the web client's, and — for the
-//! waveform — once more in the standalone host's own tree. The three agreed
+//! Python client's `View.build`, once in the web client's, and -- for the
+//! waveform -- once more in the standalone host's own tree. The three agreed
 //! because they were written to agree, which is the agreement that stops being
 //! true quietly: the *type* a builder emits (`waveform` is a `signal` drawn as
 //! a `trace`, `bpf` is a `curve`, `pianoroll` is `notes`), the gesture plan a
 //! sample editor offers, and the pitch window a roll falls back to are all
 //! rules, and a rule written three times is three answers waiting to differ.
 //!
-//! So this module holds them once. A caller states the **facts** — the buffer,
-//! the points, the notes, the axis chrome it wants — and gets back the widget's
+//! So this module holds them once. A caller states the **facts** -- the buffer,
+//! the points, the notes, the axis chrome it wants -- and gets back the widget's
 //! props; the caller stamps the id, because ids are the caller's and nothing
 //! here knows a widget's number.
 //!
@@ -26,7 +26,7 @@
 //!
 //! What *is* here is the part a second implementation would have to guess:
 //! which widget draws which structure, which props it is fed, and the two small
-//! rules that go with them — the sample editor's three-gesture plan and the
+//! rules that go with them -- the sample editor's three-gesture plan and the
 //! roll's pitch window.
 
 use serde::{Deserialize, Serialize};
@@ -36,7 +36,7 @@ use serde_json::{Map, Value, json};
 /// `Alt` draws over the samples and `Ctrl` grabs one.
 ///
 /// Three gestures rather than a mode, and the drawing one refuses out loud
-/// below the zoom where a pixel is one sample — so a hand never silently paints
+/// below the zoom where a pixel is one sample -- so a hand never silently paints
 /// what the eye cannot check.
 pub const SAMPLE_GESTURES: [(&str, &str); 3] =
     [("drag", "select"), ("alt", "draw"), ("ctrl", "sample")];
@@ -57,7 +57,7 @@ pub struct Waveform {
     pub buffer: Option<i64>,
     /// Its interleaved channel count. Every channel is kept and drawn.
     pub channels: Option<u32>,
-    /// What the picture measures, innermost last — `"peak"`, `"rms"`, or the
+    /// What the picture measures, innermost last -- `"peak"`, `"rms"`, or the
     /// two as one space-separated string.
     pub measure: String,
     /// What the ruler counts: `"time"` for a take on its own, `"samples"` for
@@ -75,7 +75,7 @@ pub struct Waveform {
     pub playhead_at: Option<f64>,
 }
 
-/// The props a take's picture is drawn from — a `signal` shown as a `trace`.
+/// The props a take's picture is drawn from -- a `signal` shown as a `trace`.
 #[must_use]
 pub fn waveform(take: &Waveform) -> Map<String, Value> {
     let mut props = Map::new();
@@ -144,7 +144,7 @@ fn axes(props: &mut Map<String, Value>, x: Map<String, Value>, y: Map<String, Va
 pub struct Curve {
     /// The flat `time value shape curve` quads.
     pub points: Vec<f64>,
-    /// The value axis, which the caller keeps between redraws — a curve that
+    /// The value axis, which the caller keeps between redraws -- a curve that
     /// refits while a point is dragged moves every other point on screen.
     pub min: f64,
     /// The top of that axis.
@@ -226,7 +226,7 @@ fn yes() -> bool {
     true
 }
 
-/// The props a timeline's picture is drawn from — `notes`, with the pitch
+/// The props a timeline's picture is drawn from -- `notes`, with the pitch
 /// window fitted to what it holds.
 #[must_use]
 pub fn pianoroll(roll: &Roll) -> Map<String, Value> {
@@ -267,7 +267,7 @@ pub fn pianoroll(roll: &Roll) -> Map<String, Value> {
 
 /// The pitch window a roll of these notes is drawn in: the outermost pitches
 /// with [`PITCH_PAD`] of air, and never so far from middle C that the fallback
-/// window is out of sight — the bottom is at most [`PITCH_CEIL`] and the top at
+/// window is out of sight -- the bottom is at most [`PITCH_CEIL`] and the top at
 /// least [`PITCH_FLOOR`], so a multitrack written high still shows where the
 /// ordinary range was. Notes at all is what makes a window: with none, the
 /// fallback is the whole answer.
@@ -289,7 +289,7 @@ pub fn pitch_window(notes: &[f64]) -> (f64, f64) {
     )
 }
 
-/// One catalogue view by name, from the facts written in its own shape —
+/// One catalogue view by name, from the facts written in its own shape --
 /// the door a binding crosses, since a caller there holds JSON and not a
 /// struct.
 ///

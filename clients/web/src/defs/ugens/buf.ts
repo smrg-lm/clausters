@@ -3,7 +3,7 @@
 //
 // The players (`playBuf`, `bufRd`), the table oscillators and waveshaper that
 // read a `/buffer_gen` table, and the init-rate queries that report a buffer's
-// shape — or the engine's own rate — into the graph.
+// shape -- or the engine's own rate -- into the graph.
 
 import { Ugen } from "./graph.ts";
 import type { Channel } from "./graph.ts";
@@ -38,7 +38,7 @@ export const bufRd = (
 ): Ugen => new Ugen("BufRd", [bufnum, chan, phase, loop]);
 
 /**
- * **Writes** `signal` into a buffer at `phase` (frames) — `bufRd`'s write-side
+ * **Writes** `signal` into a buffer at `phase` (frames) -- `bufRd`'s write-side
  * twin, and stateless in the same way.
  *
  * No interpolation: the write lands on the frame the phase names, truncated.
@@ -58,7 +58,7 @@ export const bufWr = (
 ): Ugen => new Ugen("BufWr", [bufnum, chan, phase, loop, signal]);
 
 /**
- * **Records** `signal` into a buffer, one frame per sample — the
+ * **Records** `signal` into a buffer, one frame per sample -- the
  * self-advancing writer, as `playBuf` is the self-advancing reader.
  *
  * `recLevel` and `preLevel` are what make it a looper rather than a tape head:
@@ -71,7 +71,7 @@ export const bufWr = (
  * `loop`, reaching the end stops the recording and fires `doneAction`. Passes
  * `signal` through.
  *
- * Recording into a buffer another node is playing is the ordinary case — a
+ * Recording into a buffer another node is playing is the ordinary case -- a
  * buffer's contents are mutable and only its shape is fixed.
  */
 export const recordBuf = (

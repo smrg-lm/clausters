@@ -1,4 +1,4 @@
-"""C34: the client's transport defaults — probe over UDP, commands over TCP.
+"""C34: the client's transport defaults -- probe over UDP, commands over TCP.
 
 Pure-unit: no live server. The default `Server` interface is a lazy
 `OscTcpInterface` (it connects on first send, so a handle can exist before a

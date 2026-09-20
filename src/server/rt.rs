@@ -1,4 +1,4 @@
-//! Experimental real-time tuning, compiled only with the `rtprio` feature —
+//! Experimental real-time tuning, compiled only with the `rtprio` feature --
 //! everything platform-specific the default build must not carry. With the
 //! feature on, cpal promotes the audio callback thread to SCHED_FIFO/RR
 //! (RTKit over DBus via `audio_thread_priority`); this module adds the three
@@ -8,11 +8,11 @@
 //!   the kernel actually gave it (a promotion can fail silently) and
 //!   [`spawn_diag_report`] logs it shortly after boot;
 //! - **CPU affinity** (`--pin`): [`request_audio_pin`] for the callback
-//!   thread (it pins itself on its first callback — the thread is spawned
+//!   thread (it pins itself on its first callback -- the thread is spawned
 //!   deep inside cpal/PipeWire) and [`pin_workers`] for the DSP workers;
 //! - the **SIGXCPU guard**: RTKit imposes `RLIMIT_RTTIME` on the thread it
-//!   promotes, so sustained >100% load — where the callback no longer sleeps
-//!   between cycles — makes the kernel raise SIGXCPU, which by default kills
+//!   promotes, so sustained >100% load -- where the callback no longer sleeps
+//!   between cycles -- makes the kernel raise SIGXCPU, which by default kills
 //!   the process with a core dump. [`install_sigxcpu_guard`] replaces that
 //!   with a demotion of the audio thread back to SCHED_OTHER: the audio
 //!   degrades, the server survives.
@@ -29,7 +29,7 @@ use std::sync::atomic::{AtomicI32, Ordering};
 static PIN_AUDIO: AtomicI32 = AtomicI32::new(-1);
 
 /// Kernel tid of the audio callback thread, published on its first callback
-/// (`0` until then) — the thread the SIGXCPU guard demotes.
+/// (`0` until then) -- the thread the SIGXCPU guard demotes.
 #[cfg(target_os = "linux")]
 static AUDIO_TID: AtomicI32 = AtomicI32::new(0);
 
@@ -46,7 +46,7 @@ static PRIORITY: AtomicI32 = AtomicI32::new(0);
 
 /// RTKit promotes with this flag OR'd into the policy, and it sticks: the
 /// kernel refuses an unprivileged `sched_setscheduler` that would *clear* it
-/// (EPERM), so any later policy change on the thread — the SIGXCPU demotion —
+/// (EPERM), so any later policy change on the thread -- the SIGXCPU demotion --
 /// must keep it OR'd in, and any policy read must mask it out.
 #[cfg(target_os = "linux")]
 const SCHED_RESET_ON_FORK: i32 = 0x4000_0000;
@@ -132,7 +132,7 @@ impl Default for RtSetup {
 /// Pins the `clausters-dsp-N` worker threads round-robin onto `cpus`
 /// (`--pin`, all CPUs after the first). Runs on the main thread right after
 /// boot: it scans `/proc/self/task` for the workers by thread name. Failures
-/// are logged and ignored — pinning is a tuning aid, never a boot blocker.
+/// are logged and ignored -- pinning is a tuning aid, never a boot blocker.
 #[cfg(target_os = "linux")]
 pub fn pin_workers(cpus: &[usize]) {
     let entries = match std::fs::read_dir("/proc/self/task") {
@@ -177,7 +177,7 @@ pub fn pin_workers(_cpus: &[usize]) {
 /// `RLIMIT_RTTIME` watchdog (~200 ms of *continuous* RT CPU without
 /// blocking); a server driven past sustained 100% load trips it, and the
 /// signal's default disposition kills the process with a core dump. The
-/// handler instead demotes the audio thread back to SCHED_OTHER — the audio
+/// handler instead demotes the audio thread back to SCHED_OTHER -- the audio
 /// degrades, the server survives (a restart re-promotes it). Call once at
 /// boot, before the audio stream exists; a signal disposition is
 /// process-global, which is why the *binary* installs it, not the library.
@@ -209,7 +209,7 @@ extern "C" fn on_sigxcpu(_signal: libc::c_int) {
     // without re-passing the flag is EPERM for an unprivileged caller.
     let policy = libc::SCHED_OTHER | SCHED_RESET_ON_FORK;
     // SAFETY: scheduling syscalls on our own threads plus one write(2) to
-    // stderr — all async-signal-safe.
+    // stderr -- all async-signal-safe.
     unsafe {
         let tid = AUDIO_TID.load(Ordering::Relaxed);
         if tid > 0 {
@@ -224,7 +224,7 @@ audio thread demoted to SCHED_OTHER, expect glitches until restart\n";
 
 /// Logs, a moment after boot, the scheduling the audio callback thread
 /// **actually** got (the callback publishes it after cpal's real-time
-/// promotion attempt) — the way to verify the server's real-time permissions:
+/// promotion attempt) -- the way to verify the server's real-time permissions:
 /// SCHED_FIFO/SCHED_RR is healthy, SCHED_OTHER means the promotion failed and
 /// xruns will appear well below full CPU load.
 #[cfg(target_os = "linux")]

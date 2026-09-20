@@ -16,8 +16,8 @@ use super::*;
 /// and connect the audio-server WebSocket. It reaches the running app through the
 /// event-loop proxy and shares the outbox queue.
 ///
-/// One bridge is one host instance. A page that calls [`start`] once — every
-/// served page — never sees the distinction; one that calls it again gets a
+/// One bridge is one host instance. A page that calls [`start`] once -- every
+/// served page -- never sees the distinction; one that calls it again gets a
 /// second host that shares nothing with the first.
 #[wasm_bindgen]
 pub struct GuiBridge {
@@ -32,7 +32,7 @@ impl GuiBridge {
     /// Addresses one event to this bridge's instance and posts it.
     ///
     /// A failed send means the loop is gone (the page is going away), which is
-    /// nothing a caller can act on — the same posture the discarded results
+    /// nothing a caller can act on -- the same posture the discarded results
     /// here always had.
     pub(super) fn send(&self, event: WebEvent) {
         let _ = self.proxy.send_event(HostEvent::To(self.id, event));
@@ -52,7 +52,7 @@ impl GuiBridge {
     ///
     /// This is the browser's answer to the desktop's window manager: on the
     /// desktop `clausters-gui` opens a window per def and the system places it;
-    /// in a tab the canvas is an element and **the document places it** — CSS,
+    /// in a tab the canvas is an element and **the document places it** -- CSS,
     /// the order of the markup. Attach before feeding the def's `/gui_def`, so
     /// the first frame draws into the right surface. Attaching a def that
     /// already has a canvas replaces it.
@@ -73,14 +73,14 @@ impl GuiBridge {
     }
 
     /// Sizes a canvas in **device pixels**, with the **scale** those pixels were
-    /// measured at — a component's `ResizeObserver` box times
+    /// measured at -- a component's `ResizeObserver` box times
     /// `devicePixelRatio`, and that ratio. The host never reads the DOM: the
     /// element owns its box and reports the pixels.
     ///
     /// Both halves are needed and neither substitutes for the other. The
     /// backing store is device pixels, so the surface takes the product; the
     /// widget sizes a GuiDef declares are **logical**, so resolving them takes
-    /// the ratio — and a product cannot be un-multiplied. A page that already
+    /// the ratio -- and a product cannot be un-multiplied. A page that already
     /// scales its box by `devicePixelRatio` passes the same ratio here.
     pub fn resize(&self, def_id: i32, width: u32, height: u32, scale: f32) {
         self.send(WebEvent::Resize {
@@ -95,7 +95,7 @@ impl GuiBridge {
     /// `IntersectionObserver`).
     ///
     /// A hidden canvas is skipped on the tick and its buses leave the
-    /// `/bus_stream`/`/bus_tapStream` sets — a document can hold fifty canvases with
+    /// `/bus_stream`/`/bus_tapStream` sets -- a document can hold fifty canvases with
     /// three in view, and neither this host nor the server should be working
     /// for the other forty-seven.
     pub fn set_visible(&self, def_id: i32, visible: bool) {
@@ -103,7 +103,7 @@ impl GuiBridge {
     }
 
     /// Convenience: build and feed a `/gui_def <id> <json>` from a GuiDef JSON
-    /// string — the same JSON the Python builders emit, so a page needs no OSC
+    /// string -- the same JSON the Python builders emit, so a page needs no OSC
     /// encoder of its own.
     pub fn def(&self, id: i32, json: &str) {
         let msg = OscMessage {
@@ -137,7 +137,7 @@ impl GuiBridge {
         self.send(WebEvent::ConnectPage(send));
     }
 
-    /// Draws the host's windows with `samples`x multisampling — the browser
+    /// Draws the host's windows with `samples`x multisampling -- the browser
     /// form of the native `[gui] msaa` / `--msaa`, and the same bounded
     /// capability: `1` (the default) draws the flat picture, a higher count
     /// smooths every edge in the pass at the cost of one multisampled
@@ -152,14 +152,14 @@ impl GuiBridge {
     }
 
     /// Takes share `index` of `of` of the audio server's node ids, buses and
-    /// buffers — the browser form of the native `--id-share`, given by
+    /// buffers -- the browser form of the native `--id-share`, given by
     /// whoever starts this host on an engine a client allocates on too.
     pub fn id_share(&self, index: u32, of: u32) {
         self.send(WebEvent::IdShare(index, of));
     }
 
     /// Feeds one reply packet from the in-page engine (a streamed `/bus_stream.reply`, a
-    /// `/bus_tapStream.reply`, a `/buffer_query.reply`/`/buffer_getRange.reply`, a `/clock_query.reply`) into the host —
+    /// `/bus_tapStream.reply`, a `/buffer_query.reply`/`/buffer_getRange.reply`, a `/clock_query.reply`) into the host --
     /// the inbound half of [`connect_page`](Self::connect_page), the same
     /// dispatch the WS leg's `onmessage` uses.
     pub fn server_reply(&self, packet: &[u8]) {
@@ -169,7 +169,7 @@ impl GuiBridge {
     /// Closes this host: its canvases, GPU slots, tick and audio-server leg go,
     /// and the page's other instances carry on.
     ///
-    /// A page that holds one host for as long as it lives never needs this —
+    /// A page that holds one host for as long as it lives never needs this --
     /// which is why nothing called it while a page could hold only one. A
     /// caller that opens hosts over time does: an abandoned instance keeps its
     /// WebSocket open, its `setInterval` running and its GPU surfaces alive,
@@ -185,7 +185,7 @@ impl GuiBridge {
 /// in-page engine: `synthdefs`/`graphdefs` are arrays of `Uint8Array` (each
 /// file's bytes verbatim), `boot_json` the optional `boot.json` text,
 /// `guidef_tree` the GuiDef tree JSON (its root `boot` messages run last).
-/// Returns an array of `Uint8Array` packets ending in `/server_sync sync_id+1` — the
+/// Returns an array of `Uint8Array` packets ending in `/server_sync sync_id+1` -- the
 /// page knows the bundle is up when `/server_sync.reply sync_id+1` comes back. The
 /// ordering/encoding logic lives in the platform-agnostic `host::bundle`
 /// module, natively unit-tested.
@@ -222,12 +222,12 @@ pub fn bundle_boot_packets(
 /// The first call builds the loop and spawns the app on the browser's
 /// animation-frame loop (returning immediately, nothing blocks the main
 /// thread); every later call adds an instance to the app already running. A
-/// page that calls this once — which is every served page — behaves exactly as
+/// page that calls this once -- which is every served page -- behaves exactly as
 /// before and needs to know none of it.
 ///
 /// **Instances share nothing.** Each has its own widget-id space, its own
 /// audio-server leg, its own canvases and its own streamed data, so two hosts
-/// in one document are as independent as two documents — no id range has to be
+/// in one document are as independent as two documents -- no id range has to be
 /// partitioned between them. What they do share is the event loop, because
 /// winit allows a page exactly one (a second `EventLoop` is
 /// `RecreationAttempt`, a panic inside the wasm), and the wasm module itself,

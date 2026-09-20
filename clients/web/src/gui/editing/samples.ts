@@ -10,15 +10,15 @@
  * and this module is that half.
  *
  * **The inverse rides on the wire.** A `"draw"` carries the run it wrote *and*
- * the run it replaced, and a `"sample"` carries the value and the previous one —
+ * the run it replaced, and a `"sample"` carries the value and the previous one --
  * the protocol was written that way precisely so an owner can invert a stroke
  * without having remembered anything. So nothing is read back from the server to
  * undo: the edit and its inverse arrive together, and what the history records is
  * the second.
  *
  * **What the picture measures is the view's.** A waveform is drawn as a stack of
- * measures over one field — what the signal reached (`peak`) with what it held
- * inside that (`rms`) — and that is a prop of the one widget rather than a pile
+ * measures over one field -- what the signal reached (`peak`) with what it held
+ * inside that (`rms`) -- and that is a prop of the one widget rather than a pile
  * of widgets: every view of a signal paints its own field before it draws, so
  * two of them on one rectangle are not layers, the second hides the first.
  * Measuring twice into one body is also what makes the rest of it one thing: one
@@ -85,7 +85,7 @@ interface Write {
 
 /**
  * An event's arguments as JSON carries them: a blob is the run a stroke wrote or
- * replaced, read into its numbers — the wire's framing is this page's.
+ * replaced, read into its numbers -- the wire's framing is this page's.
  */
 function plain(value: unknown): unknown {
     if (value instanceof ArrayBuffer) return floats(new Uint8Array(value));
@@ -131,7 +131,7 @@ function floats(blob: unknown): number[] {
  * **What a gesture means is the application's** (`EditingCore`): the run
  * a stroke wrote and the run it replaced are read there in one reading, so
  * nothing waits here between two calls. What is left is the write itself, onto
- * the buffer this page holds — a stroke's, and a step of the history's.
+ * the buffer this page holds -- a stroke's, and a step of the history's.
  */
 export class SamplesDomain extends Domain<Buffer> {
     override readonly name = SAMPLES;
@@ -229,7 +229,7 @@ export class SamplesView extends View<Buffer> {
  * A buffer's samples on screen, editable back into the server's buffer.
  *
  * The picture and the sound are the **same** buffer: the host draws what the
- * server holds, and a stroke writes there — so what is heard after an edit is
+ * server holds, and a stroke writes there -- so what is heard after an edit is
  * what is seen, with no copy in between.
  */
 export class SamplesEditor extends Editor<Buffer> {
@@ -374,7 +374,7 @@ export class SamplesEditor extends Editor<Buffer> {
     }
 
     /**
-     * What the picture measures — `["peak", "rms"]` for the editor's view,
+     * What the picture measures -- `["peak", "rms"]` for the editor's view,
      * `["peak"]` for the bare envelope.
      *
      * **Assigning it on an open view sends one message.** The measure is a live

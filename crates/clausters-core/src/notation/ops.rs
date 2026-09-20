@@ -1,7 +1,7 @@
 //! Operations on the score model: the one implementation every caller binds.
 //!
 //! **An operation crosses as data.** It is a JSON object naming a verb and its
-//! parameters — `{"op": "transpose", "semitones": 2}` — applied to a [`Sheet`]
+//! parameters -- `{"op": "transpose", "semitones": 2}` -- applied to a [`Sheet`]
 //! that also crossed as data, returning a new one. Two things follow from that
 //! shape, and both are why it was chosen:
 //!
@@ -12,7 +12,7 @@
 //! - **A standalone host can edit.** A host opened on a saved session has no
 //!   client language in the process at all; it holds the sheet and applies the
 //!   same operations through the same symbol. That is only true while *every*
-//!   verb — its arithmetic, its validation and its refusals — is here, and a
+//!   verb -- its arithmetic, its validation and its refusals -- is here, and a
 //!   client contributes nothing but the name it calls it by. An edit that works
 //!   because a client computed something first is an edit a standalone cannot
 //!   perform.
@@ -24,7 +24,7 @@
 //!
 //! **A span is resolved here, never by a caller.** [`Span::Measures`] becomes a
 //! stretch of exact time through the grid, which is arithmetic that changes the
-//! moment a meter changes or a bar is irregular — two clients doing it
+//! moment a meter changes or a bar is irregular -- two clients doing it
 //! separately disagree about which notes an edit touches, and the disagreement
 //! is invisible until someone compares two screens.
 
@@ -95,7 +95,7 @@ pub enum Op {
     Transpose {
         /// The chromatic size of the interval, in semitones. Positive is up.
         semitones: i32,
-        /// The diatonic size, in steps of the staff — what makes the interval a
+        /// The diatonic size, in steps of the staff -- what makes the interval a
         /// *named* one and what keeps the spelling right. Omitted, it is the
         /// ordinary reading of that many semitones (4 semitones is a major
         /// third, so 2 steps), which is the rule at [`default_steps`].
@@ -118,7 +118,7 @@ pub enum Op {
         #[serde(default)]
         as_staff: bool,
     },
-    /// Play a stretch `count` times in a row — `2` is one repeat.
+    /// Play a stretch `count` times in a row -- `2` is one repeat.
     Repeat {
         /// How many times it is heard in total.
         count: usize,
@@ -141,7 +141,7 @@ pub enum Op {
         #[serde(default)]
         span: Span,
     },
-    /// Multiply the span's written values — augmentation is `[2, 1]`,
+    /// Multiply the span's written values -- augmentation is `[2, 1]`,
     /// diminution `[1, 2]`.
     Stretch {
         /// The factor, as an exact ratio.
@@ -182,7 +182,7 @@ pub enum Op {
         #[serde(default)]
         pitches: Vec<Pitch>,
         /// Where on the staff, in whole diatonic steps from its **top line**,
-        /// positive upward — what a gesture on the page reports, since a
+        /// positive upward -- what a gesture on the page reports, since a
         /// renderer can measure a place and not a pitch. Given, the pitch is
         /// worked out from the staff's clef and the key, so no client has to
         /// know how to read a C clef. Ignored when `pitches` is given, and
@@ -215,7 +215,7 @@ pub enum Op {
         /// Its new value.
         dur: Ratio,
     },
-    /// Give an item different pitches — none makes it a rest.
+    /// Give an item different pitches -- none makes it a rest.
     SetPitches {
         /// The item.
         id: u64,
@@ -239,7 +239,7 @@ pub enum Op {
         #[serde(default)]
         marks: Marks,
     },
-    /// Move an item along the staff by whole diatonic places — what dragging a
+    /// Move an item along the staff by whole diatonic places -- what dragging a
     /// note on the page is, as against transposing by a named interval.
     MoveSteps {
         /// The item.
@@ -302,7 +302,7 @@ pub enum Op {
 /// tritone, read here as an augmented fourth (3 steps).
 ///
 /// This is the default a caller who says only "up two semitones" gets, and it
-/// is a *default*, not a law — passing `steps` explicitly is how a caller asks
+/// is a *default*, not a law -- passing `steps` explicitly is how a caller asks
 /// for the diminished third nobody's shorthand means.
 pub fn default_steps(semitones: i32) -> i32 {
     const TABLE: [i32; 12] = [0, 1, 1, 2, 2, 3, 3, 4, 5, 5, 6, 6];
@@ -335,7 +335,7 @@ pub fn transpose_pitch(pitch: &Pitch, steps: i32, semitones: i32) -> Pitch {
 /// anybody owning an intermediate.
 ///
 /// # Errors
-/// With a sentence saying what was refused and why — never a silent no-op, and
+/// With a sentence saying what was refused and why -- never a silent no-op, and
 /// never a partial application: an operation that cannot be carried out leaves
 /// the caller's sheet untouched, because it was never handed over.
 pub fn apply(sheet: Sheet, op: &Op) -> Result<Sheet, String> {
@@ -447,7 +447,7 @@ pub struct OpSpec {
 ///
 /// **This exists because the ABI cannot see the verbs.** Operations cross as
 /// data through one symbol, so `tests/bindings.rs` proves nothing about which
-/// of them a client actually offers — the same structural blindness the props
+/// of them a client actually offers -- the same structural blindness the props
 /// manifest has, which is how five builder divergences went unnoticed. Each
 /// client is contrasted against this list instead: a verb here with no binding,
 /// or a binding with no verb here, fails a test in that client.

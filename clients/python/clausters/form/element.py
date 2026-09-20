@@ -1,37 +1,37 @@
-"""The arrangement — elements and their temporal character.
+"""The arrangement -- elements and their temporal character.
 
 The client-side layer under a multitrack editor of recursive granularity: it
 places elements in time, groups them recursively and renders them. An `Element`
 is an arbitrarily delimited entity that produces a unit of meaning and can be
-decomposed or combined — *generated* (the rendered thing, editable and
+decomposed or combined -- *generated* (the rendered thing, editable and
 random-access) or a *generator* (the algorithm that renders it, forward-only),
 with the change of state between them. It is a **thin adornment** over the objects the client
 already has (`clausters.seq.Event`, `clausters.seq.Timeline`, a `Vector`, a
 `Pattern`, a def): it carries the temporal metadata (`onset`, `duration`, and the
 derived temporal *character*) and belongs to an `Aggregate`, while it **delegates
-playing** to the wrapped item's ``play(destination)`` — the double-dispatch
+playing** to the wrapped item's ``play(destination)`` -- the double-dispatch
 seam every leaf item in the client already shares. The arrangement does not
 reimplement or subclass those objects.
 
 The five primitives map one-to-one onto what the client already has:
 
-- `Clang`     — *event/clip*: parameters grouped into one action (internally
+- `Clang`     -- *event/clip*: parameters grouped into one action (internally
   simultaneous), with its own onset/duration. Wraps `clausters.seq.Event`.
-- `Sequence`  — *List*: strict order with no concrete time, only sequence.
+- `Sequence`  -- *List*: strict order with no concrete time, only sequence.
   Wraps a Python list or a `Pattern`.
 An element's ``onset`` is in **beats** and its ``duration`` is in the unit of
-what it is made of (`Element.duration_unit`) — seconds for samples, beats for
-events — because a placement is a musical decision and a recording's length is
+what it is made of (`Element.duration_unit`) -- seconds for samples, beats for
+events -- because a placement is a musical decision and a recording's length is
 not. `clausters.form.render.flatten` is where the two meet.
 
-- `Vector`    — *Vector*: a list at constant time (audio or control samples).
+- `Vector`    -- *Vector*: a list at constant time (audio or control samples).
   Wraps `clausters.defs.Buffer`. `Segments` is the same primitive assembled from
-  **several** windows — which buffer, from which frame, for how long — read as
+  **several** windows -- which buffer, from which frame, for how long -- read as
   one thing; it is not a sixth primitive, it is what a list at constant time
   looks like when the constant time comes from more than one place.
-- `Track`     — *Set*: mixed placement of elements, a DAW track. Wraps
+- `Track`     -- *Set*: mixed placement of elements, a DAW track. Wraps
   `clausters.seq.Timeline`.
-- `Generator` — *Function*: a generator element — server DSP (a def) or a
+- `Generator` -- *Function*: a generator element -- server DSP (a def) or a
   sequence generator (`Pbind`/`Routine`).
 
 Grouping and rendering live in `clausters.form.aggregate` and
@@ -39,8 +39,8 @@ Grouping and rendering live in `clausters.form.aggregate` and
 into ``clausters-core`` in a future port).
 """
 
-#: The unit a length is in. An **onset** is always in beats — a placement is a
-#: musical decision and takes the unit of what contains it — and a **duration**
+#: The unit a length is in. An **onset** is always in beats -- a placement is a
+#: musical decision and takes the unit of what contains it -- and a **duration**
 #: is in the unit of its own data: `SECONDS` for audio (a take's length is
 #: ``frames / sample_rate``, a wall-clock fact no tempo change moves), `BEATS`
 #: for a succession of events (a note is musical, and a tempo change is supposed
@@ -71,7 +71,7 @@ def to_beats(length: float, unit: str, tempo: float) -> float:
 
 def tempo_map_of(tempo_map=None, tempo: float = 1.0):
     """The map to measure with: the one given, or ``tempo`` as a single
-    constant segment — which is the affine ratio every one of these
+    constant segment -- which is the affine ratio every one of these
     conversions used to be, so a caller that names no map gets exactly what it
     always got."""
     if tempo_map is not None:
@@ -122,7 +122,7 @@ class Element:
     """Base of the arrangement: temporal metadata over a wrapped item.
 
     An element carries an optional ``onset`` (in beats, relative to its context)
-    and ``duration`` (in the unit of what it wraps — see `duration_unit`) and
+    and ``duration`` (in the unit of what it wraps -- see `duration_unit`) and
     wraps an underlying client object it delegates to. The
     concrete onset of an element typically comes from its *placement* inside a
     `clausters.form.aggregate.Aggregate`, not from the element itself, so a standalone
@@ -134,7 +134,7 @@ class Element:
         onset: start in beats relative to the context, or ``None``.
         duration: length in this element's own unit (`duration_unit`), or
             ``None``.
-        name: a label for this element — what a lane is called in the editor,
+        name: a label for this element -- what a lane is called in the editor,
             and, for an element wrapping something the document cannot own (a
             pattern, a routine), the **key a reopened session finds it by**. It
             is a label and not an identity: nothing addresses an element by
@@ -173,15 +173,15 @@ class Element:
 
         A **generated** element has an index: the arrangement flattens it to
         messages at absolute beats, so a transport can put itself anywhere on
-        it. A **resident generator** — a def producing its own audio on the
-        server, a stochastic process, a demand-rate sequence — has none. Its
+        it. A **resident generator** -- a def producing its own audio on the
+        server, a stochastic process, a demand-rate sequence -- has none. Its
         position *is* its internal state, and no number moves it: the only thing
         a transport can do to it is stop it and let it carry on.
 
         This is the same asymmetry the arrangement is built around, reaching the
         transport. Pause is symmetric and works for both; locate is not. A
-        generator becomes locatable by being **rendered** — the change of state
-        from generator to generated — after which it is a buffer like any other.
+        generator becomes locatable by being **rendered** -- the change of state
+        from generator to generated -- after which it is a buffer like any other.
         """
         return not self.resident
 
@@ -241,13 +241,13 @@ class Element:
         return None
 
     def play(self, destination):
-        """Delegate playing to the wrapped item's ``play(destination)`` — the
+        """Delegate playing to the wrapped item's ``play(destination)`` -- the
         double-dispatch seam shared by `clausters.seq.Event`,
         `clausters.seq.timeline.OscItem`/`MidiItem` and
         `clausters.seq.Automation`.
 
         Container and pattern-backed elements (`Aggregate`, `Track`, a `Sequence`
-        wrapping a `Pattern`) are **not** directly playable this way — they are
+        wrapping a `Pattern`) are **not** directly playable this way -- they are
         rendered by ``render()``. Delegating here requires the wrapped
         object to follow the ``play(destination)`` protocol.
         """
@@ -268,7 +268,7 @@ class Element:
 
     def render(self, destination, clock=None, *, at: float = 0.0, quant=None,
                ports=None):
-        """Render this element onto ``destination`` — the change of state to
+        """Render this element onto ``destination`` -- the change of state to
         sound. A concrete element flattens and plays through a
         `clausters.seq.Timeline` (returns the timeline it flattened to); a logical
         `Aggregate` sends and instances a `GraphDef` on the server (returns the
@@ -282,7 +282,7 @@ class Clang(Element):
     """*event/clip*: parameters grouped into one action, internally simultaneous.
 
     Wraps a `clausters.seq.Event` (or a plain ``dict`` of parameters), and
-    equally a `clausters.seq.timeline.OscItem` or `MidiItem` — an action that
+    equally a `clausters.seq.timeline.OscItem` or `MidiItem` -- an action that
     happens at one moment is a clang whether it is a note or a message, which is
     what `Element.play`'s double dispatch has always assumed and what a timeline
     written into a document is read back as. Anything that plays itself is taken
@@ -306,7 +306,7 @@ class Clang(Element):
 
 
 class Sequence(Element):
-    """*List*: strict order with no concrete time — only sequence.
+    """*List*: strict order with no concrete time -- only sequence.
 
     Wraps a Python list or a `clausters.seq.pattern.Pattern`. The items can be
     numbers, events, notes or whole elements; the structure fixes only their
@@ -319,7 +319,7 @@ class Sequence(Element):
 
 
 class Vector(Element):
-    """*Vector*: a list at constant time — audio or control samples.
+    """*Vector*: a list at constant time -- audio or control samples.
 
     Wraps a `clausters.defs.Buffer`. An automation sampled at a constant interval
     is a control buffer (the List/Vector duality of the arrangement).
@@ -327,7 +327,7 @@ class Vector(Element):
     A buffer is *data*, so rendering it as an **audio clip** needs an instrument:
     the def that plays it, named by ``instrument`` (a synth whose ``buf`` control
     takes the buffer number, as a sampler's does). Rendering then emits one
-    event playing that def — `to_event`. Without an instrument the element is
+    event playing that def -- `to_event`. Without an instrument the element is
     still perfectly good structure (and the editor draws its take), it simply has
     no sound of its own.
 
@@ -337,7 +337,7 @@ class Vector(Element):
             number), or ``None`` for a buffer that is data only.
         controls: extra event parameters passed to that def (``amp``, ``rate``…).
         onset: start in beats relative to the context, or ``None``.
-        duration: length in **seconds** — how long the clip sounds. Give it for
+        duration: length in **seconds** -- how long the clip sounds. Give it for
             a take placed in time (an event's default length is used
             otherwise); it is seconds and not beats because a recording's length
             is ``frames / sample_rate``, which a tempo change does not move.
@@ -346,7 +346,7 @@ class Vector(Element):
             trimmed take reads from further in and the frames before it are
             still there, which is what lets a trim be undone and a split give
             two windows over one buffer.
-        loop: whether that window wraps around the buffer — past the last frame
+        loop: whether that window wraps around the buffer -- past the last frame
             it begins again.
 
     A window that is not the whole buffer travels to the instrument as the
@@ -362,7 +362,7 @@ class Vector(Element):
         super().__init__(wraps=buffer, onset=onset, duration=duration, name=name)
         self.instrument = instrument
         self.controls = dict(controls or {})
-        #: The **first frame of the buffer this element reads** — the head of
+        #: The **first frame of the buffer this element reads** -- the head of
         #: its window onto the buffer. Trimming a clip moves it; splitting one
         #: in two gives each half a window of its own over the same buffer.
         self.start = float(start)
@@ -374,7 +374,7 @@ class Vector(Element):
     @property
     def duration_unit(self) -> str:
         """`SECONDS`: this element's data is samples, and their seconds were
-        fixed when they were recorded — a tempo change does not shorten a take."""
+        fixed when they were recorded -- a tempo change does not shorten a take."""
         return SECONDS
 
     def window_start(self):
@@ -404,7 +404,7 @@ class Vector(Element):
         beats depending on where the tempo has got to.
 
         ``legato`` is 1 so the take sounds its whole length (the note default of
-        0.8 would cut it short — a sampled take is not a note with a gap), and
+        0.8 would cut it short -- a sampled take is not a note with a gap), and
         ``amp`` is 1 for the same reason at the other end: the note default
         mixes an event **20 dB down**, which is a headroom convention for
         stacking notes and simply attenuates recorded audio. A take arrives
@@ -420,7 +420,7 @@ class Vector(Element):
             )
         params = dict(instrument=self.instrument, buf=self.wraps.bufnum,
                       legato=1.0, amp=1.0)
-        # The window, so what is heard is the segment that is drawn — and only
+        # The window, so what is heard is the segment that is drawn -- and only
         # when there is one to state, so a def that never heard of windows is
         # sent exactly what it was always sent.
         if self.start:
@@ -444,19 +444,19 @@ def take(buffer, onset=None, duration=None, *, instrument=None, controls=None,
 
     This is where recording lands. `clausters.data.RecordingStream` follows
     takes as they are written and `clausters.defs.Buffer` holds them, but
-    neither puts one in an aggregate — and the arithmetic that does (frames over the
+    neither puts one in an aggregate -- and the arithmetic that does (frames over the
     rate they were recorded at) was left to every caller, which is one
     conversion written once per script and wrong in the one that forgot the
     channel count is not in it.
 
     Args:
-        buffer: the samples — a `clausters.defs.Buffer`, a
+        buffer: the samples -- a `clausters.defs.Buffer`, a
             `clausters.data.TakeShape`, or the
             `clausters.form.document.FrozenSource` a document hands back for a
             source this process has not resolved.
         onset: start in beats, or ``None`` (the placement usually says).
         duration: the length in **seconds**, when the caller knows better than
-            the buffer does — a take still recording, whose buffer is as long
+            the buffer does -- a take still recording, whose buffer is as long
             as it will be rather than as long as it is.
         instrument: the def that plays it; without one the take is structure
             (it draws and it extends the aggregate, and it emits no event), which
@@ -627,7 +627,7 @@ def _single_window(run, instrument=None, controls=None, name=None):
 
 
 class Track(Element):
-    """*Set*: mixed placement of elements — a DAW track.
+    """*Set*: mixed placement of elements -- a DAW track.
 
     Wraps a `clausters.seq.Timeline` (free placement of items by beat). A fresh
     empty `Timeline` is created when none is given.
@@ -635,14 +635,14 @@ class Track(Element):
     Args:
         timeline: the `clausters.seq.Timeline` the track places.
         onset: start in beats relative to the context, or ``None``.
-        duration: length in **beats** — how much of the timeline this element
+        duration: length in **beats** -- how much of the timeline this element
             is. With ``start``, it is the *window*: what a clip of this track
             draws and plays.
         start: the beat of the timeline this element **reads from**. A track is
             a window onto its timeline exactly as a `Vector` is a window onto
             its buffer, and for the same reason: a trim reads from further in, a
             split gives two windows over one timeline, and the notes neither
-            window shows are still on it — so lengthening either half brings
+            window shows are still on it -- so lengthening either half brings
             them back. A cut is not a rewrite of the notes.
     """
 
@@ -654,7 +654,7 @@ class Track(Element):
             timeline = Timeline()
         super().__init__(wraps=timeline, onset=onset, duration=duration,
                          name=name)
-        #: The **beat of the timeline this element reads from** — the head of
+        #: The **beat of the timeline this element reads from** -- the head of
         #: its window, the beats counterpart of `Vector.start`.
         self.start = float(start)
 
@@ -664,7 +664,7 @@ class Track(Element):
 
     def windowed(self, at: float, length: float, rate: float = 0.0):
         """The same timeline, read from ``at`` beats further in. Both units are
-        beats here, so there is nothing to bridge — the notes outside either
+        beats here, so there is nothing to bridge -- the notes outside either
         window are on the timeline, not gone."""
         return Track(self.wraps, duration=float(length) - float(at),
                      start=self.start + float(at), name=self.name)
@@ -691,20 +691,20 @@ class Generator(Element):
     """*Function*: a generator element.
 
     Wraps either server DSP (a `SynthDef`/`FaustDef`/`GraphDef`, or a def name)
-    or a sequence generator (a `Pbind`/`Routine`). Its *change of state* —
-    evaluating the generator into a generated element — happens at rendering: a
+    or a sequence generator (a `Pbind`/`Routine`). Its *change of state* --
+    evaluating the generator into a generated element -- happens at rendering: a
     contained event pattern is bounced to a timeline; a def member of a
     logical `Aggregate` becomes a wired GraphDef member.
 
     Args:
         generator: the wrapped def (name or object) or sequence generator.
-        controls: control values for a logical-graph member — numbers, an
+        controls: control values for a logical-graph member -- numbers, an
             internal-bus name (a ``str`` matching an `Aggregate` bus), or ``"OUT"``
             (hardware). Used by `Aggregate.to_graphdef`.
         maps: control-bus bindings for a logical-graph member
             (``/node_map``), as a ``{control: bus_name}`` dict.
         rendered: what this generator **last produced**, as an ordinary
-            `Element` — the change of state above, kept rather than recomputed.
+            `Element` -- the change of state above, kept rather than recomputed.
             It is what a host with no language attached shows, since a
             generator is code and such a host has nothing to run it with; and
             it is what a saved session carries for the same reason a cache
@@ -724,6 +724,6 @@ class Generator(Element):
 
     @property
     def def_name(self) -> str:
-        """The member def name — the wrapped string itself, or the def object's
+        """The member def name -- the wrapped string itself, or the def object's
         ``name``."""
         return self.wraps if isinstance(self.wraps, str) else self.wraps.name

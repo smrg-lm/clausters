@@ -2,8 +2,8 @@
 """GraphDef: a node-graph "program" with a named parameter surface.
 
 Where a SynthDef is one node, a `GraphDef` is a whole wired patch the server
-stores and instantiates as a unit. It exposes a **named parameter surface** —
-ports that map to inner member controls — so you drive the running instance
+stores and instantiates as a unit. It exposes a **named parameter surface** --
+ports that map to inner member controls -- so you drive the running instance
 through the port names, never the private member node ids.
 
 This builds a two-oscillator voice: two `tone` members write a detuned pair
@@ -11,7 +11,7 @@ into one private internal bus, and a `gain` member reads that bus and sends it
 to the speakers. The surface shows what a bare scsynth group `/node_set` cannot:
 
   * one port driving **several** inner targets, and
-  * **per-target scaling** — the single `freq` port plays a perfect fifth by
+  * **per-target scaling** -- the single `freq` port plays a perfect fifth by
     mapping to `tone1.freq` directly and to `tone2.freq` scaled by 1.5.
 
 Renders offline (NRT); build the embed library once:
@@ -101,7 +101,7 @@ def main():
     print("the GraphDef played; one `freq` port drove both detuned oscillators.")
 
     if path:
-        print(f"wrote {path} — listen with: pw-play {path}")
+        print(f"wrote {path} -- listen with: pw-play {path}")
 
 
 if __name__ == "__main__":

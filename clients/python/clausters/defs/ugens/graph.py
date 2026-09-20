@@ -1,8 +1,8 @@
 """The graph itself: a UGen node, a control, a channel list.
 
-The types every other module in this package builds on — `Ugen` (one node, one
+The types every other module in this package builds on -- `Ugen` (one node, one
 output), `Control` (a def's parameter) and `ChannelList` (multichannel as an
-explicit container, never implicit expansion) — plus the fused arithmetic the
+explicit container, never implicit expansion) -- plus the fused arithmetic the
 server has dedicated kinds for.
 """
 
@@ -16,7 +16,7 @@ from ..expr import SynthExpr
 _BINOP_UGEN = {"add": "Add", "sub": "Sub", "mul": "Mul", "div": "Div"}
 
 #: Every other operator/method selector composes a generic ``BinaryOpUGen``/
-#: ``UnaryOpUGen`` whose ``op`` is the operator **name** (S3) — the same name
+#: ``UnaryOpUGen`` whose ``op`` is the operator **name** (S3) -- the same name
 #: the server's `clausters_core::builtins` table resolves, and the same op the
 #: value side (`clausters.base.builtins`) computes, so a graph op and an off-RT
 #: value agree. The selector *is* the wire name (no numeric index crosses the
@@ -29,7 +29,7 @@ _BINOP_OPS = frozenset({
     "lcm", "hypotapx",
 })
 #: The range maps (`clausters_core::warp`), composed as a ``RangeMapUGen``
-#: whose ``op`` is the map's name — the **same** function
+#: whose ``op`` is the map's name -- the **same** function
 #: `clausters.base.builtins` computes a value with, so a signal mapped in a def
 #: and a fader position mapped in the script land in the same place. The two
 #: bipolar maps (``range``/``exprange``) are deliberately absent: they read the
@@ -48,7 +48,7 @@ _UNOP_OPS = frozenset({
 
 
 class _RangeMaps:
-    """The six range maps as methods on a graph node — sclang's own, and the
+    """The six range maps as methods on a graph node -- sclang's own, and the
     signal half of `clausters.base.builtins`'s value functions.
 
     ``clip`` says what an out-of-range input is trimmed to before it is mapped:
@@ -66,14 +66,14 @@ class _RangeMaps:
             "linlin", in_lo, in_hi, out_lo, out_hi, clip=clip)
 
     def linexp(self, in_lo, in_hi, out_lo, out_hi, clip="minmax"):
-        """Off a linear range onto an exponential one — an LFO onto a
+        """Off a linear range onto an exponential one -- an LFO onto a
         frequency. The output ends must not straddle zero; one *at* zero is
         nudged to the smallest same-signed value rather than giving a NaN."""
         return self._compose_narop(
             "linexp", in_lo, in_hi, out_lo, out_hi, clip=clip)
 
     def explin(self, in_lo, in_hi, out_lo, out_hi, clip="minmax"):
-        """Off an exponential range onto a linear one — a frequency onto a
+        """Off an exponential range onto a linear one -- a frequency onto a
         fader position."""
         return self._compose_narop(
             "explin", in_lo, in_hi, out_lo, out_hi, clip=clip)
@@ -86,8 +86,8 @@ class _RangeMaps:
     def lincurve(self, in_lo, in_hi, out_lo, out_hi, curve=-4.0,
                  clip="minmax"):
         """Off a linear range onto one **bent** by ``curve``: 0 is linear,
-        negative builds fast then slow — most of the output spent on the first
-        half of the input — and positive the reverse, which is the
+        negative builds fast then slow -- most of the output spent on the first
+        half of the input -- and positive the reverse, which is the
         fine-at-the-bottom feel a frequency or an amplitude control wants.
         Unlike `linexp` the bend spans zero freely."""
         return self._compose_narop(
@@ -145,7 +145,7 @@ class _Node(_RangeMaps, SynthExpr):
         return _map_ugen(self, selector, args, clip)
 
     def dup(self, n=2) -> "ChannelList":
-        """This node repeated (by reference) as ``n`` channels — see `dup`."""
+        """This node repeated (by reference) as ``n`` channels -- see `dup`."""
         return ChannelList([self] * n)
 
 
@@ -160,7 +160,7 @@ class Ugen(_Node):
     for signal UGens). Set it fluently with `at_rate`. ``op`` is the operator
     **name** carried by the generic ``BinaryOpUGen``/``UnaryOpUGen`` (S3), e.g.
     ``"mul"`` / ``"midicps"``; ``None`` for every other kind. ``label`` is the
-    string tag the side-effect UGens carry — ``send_reply``'s command name and
+    string tag the side-effect UGens carry -- ``send_reply``'s command name and
     ``poll``'s label; ``None`` for every other kind. ``static`` is a dict of any
     other non-signal fields (the spectral UGens' ``fft_size``/``hop``/
     ``wintype``); it merges verbatim into the serialized UGen spec."""
@@ -192,12 +192,12 @@ class Control(_Node):
     """A named control (a ``/synth_new``/``/node_set`` parameter) with a default and an
     optional **type** and **lag** (S2), mirroring the server's control types:
 
-    - ``rate="tr"`` — a **trigger**: a ``/node_set`` holds for one block, then the
+    - ``rate="tr"`` -- a **trigger**: a ``/node_set`` holds for one block, then the
       server resets it to 0 (drives an `env_gen` gate, a sample-and-hold).
-    - ``rate="ir"`` — a **scalar**: read once at init and frozen; a later
+    - ``rate="ir"`` -- a **scalar**: read once at init and frozen; a later
       ``/node_set`` is ignored. As ``ir`` it may feed an ``ir`` input (`rand`,
       buffer-info UGens).
-    - ``lag`` (seconds) — smooth a ``kr`` control's changes with an implicit
+    - ``lag`` (seconds) -- smooth a ``kr`` control's changes with an implicit
       one-pole (a `lag`/`var_lag` UGen the server inserts); ``lag_down`` gives a
       separate downward time.
 
@@ -235,7 +235,7 @@ def control(name, default=0.0, rate=None, lag=None, lag_down=None) -> Control:
     A control declares **no range**: it is a signal in a graph, and the range a
     knob is drawn over is the knob's (``knob(freq, min=110.0, max=880.0)``).
     The one exception is a FaustDef, whose ``hslider`` declares its range inside
-    the DSP and reports it back — see `clausters.defs.info.ControlInfo`.
+    the DSP and reports it back -- see `clausters.defs.info.ControlInfo`.
     See `Control`.
     """
     return Control(name, default, rate=rate, lag=lag, lag_down=lag_down)
@@ -268,19 +268,19 @@ def _channel_binop(a, selector, b):
 
 
 class ChannelList(_RangeMaps, SynthExpr):
-    """An ordered list of channels — the client's multichannel container.
+    """An ordered list of channels -- the client's multichannel container.
 
     Members are graph leaves (`Ugen`/`Control`) or plain numbers. Operators
     and math methods map over the members and return a new `ChannelList`: a
     scalar operand **broadcasts** to every channel, a list operand **zips**
-    channel-wise, and unequal lengths wrap the shorter one modulo — the same
+    channel-wise, and unequal lengths wrap the shorter one modulo -- the same
     rule the value side applies to plain lists (`clausters.base.builtins`).
     Plain Python lists/tuples are accepted anywhere a `ChannelList` is (they
-    coerce), but the class is the one with graph operators — ``[a, b] * 2``
+    coerce), but the class is the one with graph operators -- ``[a, b] * 2``
     is Python list repetition, ``chans(a, b) * 2`` is a graph.
 
     The container never crosses the wire: `out` and friends unroll it onto
-    consecutive buses, and the `SynthDef` serialization flattens it — the
+    consecutive buses, and the `SynthDef` serialization flattens it -- the
     server only ever sees single-channel UGens. Feeding one to a
     single-channel input (``env_gen(gate=chans(...))``) is an error: index it
     or `mix` it down. Build one with `dup`, a literal list at an accepting
@@ -342,7 +342,7 @@ class ChannelList(_RangeMaps, SynthExpr):
         return self
 
     def mix(self):
-        """This list folded to one channel — see `mix`."""
+        """This list folded to one channel -- see `mix`."""
         return mix(self)
 
 
@@ -357,10 +357,10 @@ def chans(*items) -> ChannelList:
 def dup(x, n=2) -> ChannelList:
     """``x`` as ``n`` channels.
 
-    A graph node (or a number) is repeated **by reference** — the graph
+    A graph node (or a number) is repeated **by reference** -- the graph
     serializes it once, fanned out to every channel, so ``dup(sine(440))`` is
     a cheap mono→stereo: identical channels. A **callable** is evaluated ``n``
-    times — ``dup(white_noise, 8)`` (or ``dup(lambda: sine(rand(438, 442)),
+    times -- ``dup(white_noise, 8)`` (or ``dup(lambda: sine(rand(438, 442)),
     8)``) builds ``n`` *distinct* UGens, which is what a decorrelated or
     detuned bank needs; duplicating a `white_noise` by reference would give
     ``n`` copies of the *same* noise. This mirrors sclang's ``ugen.dup`` vs
@@ -379,7 +379,7 @@ def mix(x):
     """``x`` folded to one channel by summing.
 
     The inverse gesture of `dup`: a `ChannelList` (or plain list) becomes one
-    signal, folded with the fused sum kinds — `sum4`/`sum3` chunks instead of
+    signal, folded with the fused sum kinds -- `sum4`/`sum3` chunks instead of
     an `Add` chain, so an 8-channel mix costs 2 UGens + 1, not 7. A scalar or
     single node passes through; a list of plain numbers folds to a number."""
     if not isinstance(x, (ChannelList, list, tuple)):

@@ -3,7 +3,7 @@
 //!
 //! Two kinds of reader, and they are the same question asked at two moments:
 //! the live value a drag starts from ([`plane_can_pan`]), and the **edit-back
-//! payload** a finished edit sends — a flat OSC list beginning with the tag
+//! payload** a finished edit sends -- a flat OSC list beginning with the tag
 //! that names what changed, so a script and a bound forward read the same
 //! message. The heavy views build their own; what is left here is the
 //! containers'.

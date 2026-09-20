@@ -12,7 +12,7 @@
  * makes this client, the Python client and the standalone host draw the same
  * multitrack and read the same report: what a row and a box *are*, and what a list of
  * boxes *means*, are one rule each and not one per language. What this adds is
- * the two things only a client knows — the axis its window counts in, and which
+ * the two things only a client knows -- the axis its window counts in, and which
  * server buffer a source was read into.
  *
  * **A report is the multitrack, so a gesture is however many edits it takes.** A
@@ -51,13 +51,13 @@ import { View } from "./view.ts";
  * The one thing about a multitrack that is not in the multitrack: a document names a
  * source and a picture is drawn from a buffer, and only whoever loaded the
  * samples knows they are the same. It is a class rather than a map so both
- * directions have a name — a box is *drawn* from a buffer and *read back* into a
+ * directions have a name -- a box is *drawn* from a buffer and *read back* into a
  * source.
  */
 export class Sources {
     /**
      * source id → the buffer number it was read into, or **the object that
-     * holds it** — a `Buffer`, a `Timeline`. Both are accepted because they
+     * holds it** -- a `Buffer`, a `Timeline`. Both are accepted because they
      * answer two different questions and a caller usually has the object: which
      * buffer to draw from is {@link Sources.bufnum}, and what a box **opens as**
      * is {@link Sources.structure}.
@@ -90,7 +90,7 @@ export class Sources {
     /**
      * The buffer a source was read into; `-1` for one nobody loaded.
      *
-     * **Negative and not zero**, because buffer 0 is a buffer — the first one an
+     * **Negative and not zero**, because buffer 0 is a buffer -- the first one an
      * allocator hands out. A source given as an object answers with the buffer
      * it holds, and one that holds none is a box with no samples to draw, which
      * is honest rather than empty.
@@ -103,14 +103,14 @@ export class Sources {
         // **Buffer 0 is a buffer**, and `|| -1` says it is not: the first buffer
         // an allocator hands out came back as "nobody loaded this", so the first
         // take a page loads was the one take its boxes could not draw. Asked for
-        // explicitly instead — the same sentence the doc comment above has
+        // explicitly instead -- the same sentence the doc comment above has
         // always made.
         const bufnum = (held as { bufnum?: unknown }).bufnum;
         return bufnum === undefined || bufnum === null ? -1 : Math.trunc(Number(bufnum));
     }
 
     /**
-     * **What a box over this source opens as** — the object a caller gave, or
+     * **What a box over this source opens as** -- the object a caller gave, or
      * `undefined` for a source it named by number alone.
      *
      * A multitrack names a source and an editor edits a structure; only whoever
@@ -128,7 +128,7 @@ export class Sources {
      * `{ buffer, channels }`.
      *
      * The one fact about a multitrack that is not in the multitrack, handed to the crate
-     * so it can say which slot a box goes in — a mono take is panned into its
+     * so it can say which slot a box goes in -- a mono take is panned into its
      * track and a stereo one is balanced, and that follows from the source's
      * width and nothing else. A source nobody loaded is left out, and a box
      * over it is simply not playing yet.
@@ -187,8 +187,8 @@ export class Sources {
 /**
  * What a client adds to the crate's picture: an axis and a buffer table.
  *
- * Held by the domain and the view alike, because both cross the same seam — one
- * drawing a box and the other reading one back — and two copies of the scale is
+ * Held by the domain and the view alike, because both cross the same seam -- one
+ * drawing a box and the other reading one back -- and two copies of the scale is
  * how a box comes back somewhere it was not put.
  */
 export class Bridge {
@@ -218,7 +218,7 @@ export class Bridge {
  *
  * It reads no gesture and decides no edit: a gesture is the editor's turn, and
  * the turn is the crate's (`EditingCore`). What is left is what the
- * history registers a structure for — putting a step back onto the multitrack — and
+ * history registers a structure for -- putting a step back onto the multitrack -- and
  * that goes through the same editor, so an undo and an edit apply by one rule.
  */
 export class MultitrackDomain extends Domain<Multitrack> {
@@ -260,7 +260,7 @@ export class MultitrackDomain extends Domain<Multitrack> {
      *
      * **The source first.** A join over fragments mints the source its box is a
      * window onto, and a box over a source nothing answers for is left out of the
-     * plan — so realizing it after the multitrack names it would be one pass of
+     * plan -- so realizing it after the multitrack names it would be one pass of
      * silence. It runs again on a redo, which is right: the source is gone the
      * moment nothing windows it.
      */
@@ -293,8 +293,8 @@ export class MultitrackDomain extends Domain<Multitrack> {
      * Install a source an edit made, and put it in the table.
      *
      * The one place a client answers a document's statement with a server
-     * command. A join owns no samples — it is spans of the takes the table
-     * already holds — so this costs the list of parts and not the audio, and
+     * command. A join owns no samples -- it is spans of the takes the table
+     * already holds -- so this costs the list of parts and not the audio, and
      * freeing a take something is stitched over does not silence it.
      *
      * A part whose source nobody loaded leaves the join unmade rather than half
@@ -346,7 +346,7 @@ export class MultitrackDomain extends Domain<Multitrack> {
 /**
  * One `multitrack` widget: the whole multitrack, in one of them.
  *
- * A row per track and a box per region — the crate's own mapping, crossed to
+ * A row per track and a box per region -- the crate's own mapping, crossed to
  * this window's axis. The widget draws its own headers and its own vertical
  * scroll, so there is no stack to compose and nothing per clip to register.
  *
@@ -359,7 +359,7 @@ export class MultitrackDomain extends Domain<Multitrack> {
 /**
  * The names the transport row's three widgets carry. A name and not an id,
  * because these are the widgets a **hand** addresses and a handler is hung on a
- * name — and they are the multitrack's own, so a page's `extra` may carry anything it
+ * name -- and they are the multitrack's own, so a page's `extra` may carry anything it
  * likes beside them.
  */
 export const REWIND = "transport_rewind";
@@ -369,7 +369,7 @@ export const CLOCK = "transport_clock";
 
 /**
  * How often the read-out asks the engine where the multitrack is, in seconds. The
- * *line* asks nothing — the host draws it from the segment every frame — so this
+ * *line* asks nothing -- the host draws it from the segment every frame -- so this
  * is the price of the number beside it and nothing else.
  */
 export const CLOCK_TICK = 0.05;
@@ -385,7 +385,7 @@ export class MultitrackView extends View<Multitrack> {
      */
     ruler: number | null = null;
     /**
-     * The id of the multitrack's own widget, once one has been built — what a
+     * The id of the multitrack's own widget, once one has been built -- what a
      * playhead is drawn on, so whoever moves the line does not have to guess
      * which of the two ids is the picture.
      */
@@ -423,7 +423,7 @@ export class MultitrackView extends View<Multitrack> {
         ed.syncCore();
         const tree = ed.coreCall("window", { widget: wid, ruler: rid }) as unknown as GuiNode;
         // **A page's own widgets are its objects**, and a widget built over a
-        // live source keeps a binding no JSON carries — so they are appended
+        // live source keeps a binding no JSON carries -- so they are appended
         // here rather than composed in the crate.
         tree.children = [...(tree.children ?? []), ...editor.extra];
         return tree;
@@ -495,19 +495,19 @@ export interface MultitrackEditorOptions extends GenericEditorOptions<Multitrack
  *
  * Nothing is handed back at the end: the object the page passed in *is* the
  * edited one, and reading it after an edit is how a caller sees what a hand did.
- * Being an {@link Editor}, it has the history every other editor has — `undo`
+ * Being an {@link Editor}, it has the history every other editor has -- `undo`
  * and `redo` walk it, and a second window over the same multitrack walks the same
  * one.
  */
 export class MultitrackEditor extends Editor<Multitrack> {
     /**
-     * The axis and the buffer table this window crosses to — the two things
+     * The axis and the buffer table this window crosses to -- the two things
      * about a multitrack that are not in the multitrack.
      */
     readonly bridge: Bridge;
 
     /**
-     * The editors a hand opened by entering a box, by box name — held so a
+     * The editors a hand opened by entering a box, by box name -- held so a
      * second double click on the same box raises the one that is already open
      * rather than a second window over one structure.
      */
@@ -568,7 +568,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
         null;
 
     /**
-     * The id of the multitrack's own widget — what a playhead is drawn on. `null`
+     * The id of the multitrack's own widget -- what a playhead is drawn on. `null`
      * before the picture has been drawn once.
      */
     get multitrackWidget(): number | null {
@@ -614,7 +614,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
         if (outcome.turn === "closed") return this.closedWindow();
         if (outcome.turn === "step") {
             // **The step is the context's, already taken**; what is left is
-            // carrying it out, and the acknowledgement the crate wrote — with the
+            // carrying it out, and the acknowledgement the crate wrote -- with the
             // reason when nothing could apply it.
             const stepped = this.app.stepped(this.editing, turned.stepped ?? {}, this);
             this.echo.send(outcome.answer);
@@ -693,7 +693,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
      *
      * The wiring is here rather than in the constructor because that is where
      * the window comes into being: {@link edit} builds the editor and opens it
-     * in two steps, so a multitrack has its readers before it has a screen — which is
+     * in two steps, so a multitrack has its readers before it has a screen -- which is
      * the right order anyway, since a multitrack can be played by a page that never
      * draws it.
      */
@@ -724,8 +724,8 @@ export class MultitrackEditor extends Editor<Multitrack> {
     /**
      * **Tell the window where the multitrack's meters are.**
      *
-     * The window is composed before anything sounds — a multitrack can be played by
-     * a page that never draws it — so the buses are only known once the
+     * The window is composed before anything sounds -- a multitrack can be played by
+     * a page that never draws it -- so the buses are only known once the
      * playback has made the tracks. Without this the strips read nothing until
      * some *unrelated* turn happens to push the picture, which is a gesture
      * that may never come: the multitrack plays, the levels move, and every column
@@ -825,7 +825,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
      * from here: cue a stopped transport there and leave a rolling one alone.
      *
      * This is what a box's own ruler reaches, because a structure inside a multitrack
-     * has no transport of its own — the multitrack is the one that has one.
+     * has no transport of its own -- the multitrack is the one that has one.
      */
     override locate(at: number): void {
         this.playback?.cue(at);
@@ -865,7 +865,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
      * hand it back (`null` for a box with nothing to open).
      *
      * **The multitrack places; a box is entered to edit.** What a box holds is
-     * a structure like any other — a take's samples, a timeline of notes — so
+     * a structure like any other -- a take's samples, a timeline of notes -- so
      * entering one is {@link edit} over that structure, with no second
      * implementation of any editor.
      *
@@ -874,14 +874,14 @@ export class MultitrackEditor extends Editor<Multitrack> {
      * on the stack walk one history: an undo that needed a window reopened to
      * reach it is a hole in the order that does not announce itself. What that
      * costs is that the entered structure stays in the context while the multitrack
-     * is open even if its window is closed — which the context already does,
+     * is open even if its window is closed -- which the context already does,
      * since it holds what it registered.
      *
      * **And one window set**, which is the multitrack's {@link Application}: a box
      * entered out of a multitrack is part of looking at the multitrack, so it draws on the
      * same host, names widgets in the same id space and walks the same order
      * without resolving anything of its own. Its **acknowledgement stays its
-     * own** — an {@link Echo} is one view's end of the conversation, and a box
+     * own** -- an {@link Echo} is one view's end of the conversation, and a box
      * sharing the multitrack's floor would silence the multitrack's staleness check every
      * time a hand edited inside the box.
      *

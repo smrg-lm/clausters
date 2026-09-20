@@ -1,24 +1,24 @@
 //! The static signal `plot`: framed views of a sample array, with rulers and a
-//! cursor readout — still the lightweight counterpart of the heavy navigable
+//! cursor readout -- still the lightweight counterpart of the heavy navigable
 //! `waveform`.
 //!
 //! Where the waveform owns a GPU pipeline and a peak pyramid for editor-grade
 //! zoom/pan, the plot draws a signal once through the flat-geometry painter
-//! ([`crate::host::paint`]) — the case the catalog calls "a simple static plot of an
+//! ([`crate::host::paint`]) -- the case the catalog calls "a simple static plot of an
 //! NRT-generated signal/file". It does not navigate or edit; what it adds over
 //! a bare trace is measurement: adjustable x/y rulers, multichannel rows, an
 //! auto-fitted value range for arbitrary numeric sequences, and a hover
 //! readout naming the exact sample (or spectral bin) under the cursor.
 //!
-//! The plot has **views** — [`PlotView`], an enum on purpose so future forms
+//! The plot has **views** -- [`PlotView`], an enum on purpose so future forms
 //! (a histogram, a phase plot) extend it:
 //!
-//! - **Signal** — value against time/index. It honors the project's one
+//! - **Signal** -- value against time/index. It honors the project's one
 //!   graphics rule (never resolve finer than the screen) by decimating to the
 //!   pixel width: a polyline when the data fits the width, a min/max envelope
-//!   (one vertical bar per pixel column) when it does not — the *whole*
+//!   (one vertical bar per pixel column) when it does not -- the *whole*
 //!   sequence always contributes, so there is no visual aliasing.
-//! - **Spectrum** — the averaged magnitude spectrum of the (short) signal:
+//! - **Spectrum** -- the averaged magnitude spectrum of the (short) signal:
 //!   one [`crate::spectrogram::Stft`] pass per channel (the shared-core FFT
 //!   and Hann window, so it agrees with the spectrogram bin for bin), frames
 //!   averaged in the power domain (Welch), drawn as a dB curve over the same
@@ -89,7 +89,7 @@ pub struct PlotSpectrum {
 }
 
 /// Averages the magnitude spectrum of interleaved `samples` (`channels`-way),
-/// one curve per channel: an [`Stft`] per channel (the shared-core FFT — the
+/// one curve per channel: an [`Stft`] per channel (the shared-core FFT -- the
 /// same analysis the spectrogram draws), its frames averaged in the **power**
 /// domain and expressed in dB. `sample_rate <= 0` assumes 48 kHz, like the
 /// live views.
@@ -136,7 +136,7 @@ pub fn analyze(
     }
 }
 
-/// Everything one plot draw needs, view-independent — the widget's parsed
+/// Everything one plot draw needs, view-independent -- the widget's parsed
 /// props plus its (possibly bulk-loaded) samples and cached analysis.
 pub struct PlotParams<'a> {
     /// Interleaved samples (`channels`-way frames).
@@ -160,7 +160,7 @@ pub struct PlotParams<'a> {
     pub db_ceil: f32,
     pub freq_scale: FreqScale,
     /// The visible slice of the frequency display axis, normalized (`0, 1` =
-    /// the whole axis) — a navigable stored spectrum's own x window, read the
+    /// the whole axis) -- a navigable stored spectrum's own x window, read the
     /// same way the live one reads it.
     pub x_view: (f64, f64),
     pub label: Option<&'a str>,
@@ -300,7 +300,7 @@ fn draw_signal(d: &mut Draw, g: &Geom, p: &PlotParams) {
                     &ticks,
                 );
             }
-            // A zero baseline, when 0 is within the displayed range — the same
+            // A zero baseline, when 0 is within the displayed range -- the same
             // rule the columns are filled to.
             if let Some(b) = crate::waveform::baseline_of(lo, hi) {
                 let y = row.y + row.h * (1.0 - fraction(b, lo, hi));
@@ -419,7 +419,7 @@ fn bin_at_column(
 
 /// Draws the hover readout into the overlay mesh: a hairline at the cursor, a
 /// marker dot on the trace under it, and the x/y values named in the body's
-/// bottom-right corner — the exact sample (index/time and value) on the signal
+/// bottom-right corner -- the exact sample (index/time and value) on the signal
 /// view, the bin (frequency per the scale, level in dB) on the spectrum view.
 pub fn draw_readout(d: &mut Draw, rect: Rect, p: &PlotParams, cursor: (f64, f64)) {
     let (over, m, theme) = d.parts();
@@ -548,7 +548,7 @@ mod tests {
     use crate::host::theme::Theme;
 
     /// An auto-fitted plot over a small range labels `-0.0625` where one over
-    /// `[-1, 1]` labels `-1.0`, so its y strip asks for more room — and asks
+    /// `[-1, 1]` labels `-1.0`, so its y strip asks for more room -- and asks
     /// for exactly what its own ticks need.
     #[test]
     fn an_auto_fitted_plot_widens_its_value_strip() {
@@ -628,7 +628,7 @@ mod tests {
 
     /// **A layer's alpha is its own, and the order is the one that was
     /// written.** Two layers at two weights: the vertices come out in the
-    /// stack's order, each run at the weight its layer states — which is what
+    /// stack's order, each run at the weight its layer states -- which is what
     /// makes reading one picture through another a property of the stack
     /// rather than of the widget's `opacity`.
     #[test]
@@ -684,7 +684,7 @@ mod tests {
             &p,
         );
         // One bar per column (<= width), each a quad (6 verts): far below the
-        // 100k-sample count — proof we never resolve finer than the screen.
+        // 100k-sample count -- proof we never resolve finer than the screen.
         assert!(m.vertex_count() > 0);
         assert!(
             m.vertex_count() < 100 * 6 + 64,

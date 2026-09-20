@@ -1,7 +1,7 @@
 // Client-side allocation of GUI widget ids (mirrors `clausters/gui/ids.py`).
 //
 // Widget ids name nodes of the host's one widget namespace, exactly as node
-// ids name slots of the audio server's node table — so this allocator is the
+// ids name slots of the audio server's node table -- so this allocator is the
 // GUI sibling of `NodeIdAllocator`. It is built on the core's `WidgetIds`,
 // which is that same occupancy map **plus a second door**, and the two doors
 // are the thing to understand here:
@@ -9,15 +9,15 @@
 // - **A lease** (`alloc`) is what a hand-built GuiDef takes: an id for a widget
 //   nothing names, handed out in order and returned by `free`.
 // - **A name** (`idFor`) is what a view takes: an id asked for by saying what
-//   it draws — the structure's identity in the history, the role the widget
-//   plays, and which one it is — which gives back the **same number** for as
+//   it draws -- the structure's identity in the history, the role the widget
+//   plays, and which one it is -- which gives back the **same number** for as
 //   long as that name keeps being drawn. A leased id changes on every redraw,
 //   so anything in flight across one lands on the wrong widget: an edit-back
 //   the owner has not answered yet, a correction travelling the other way, the
 //   screen state of a widget that no longer exists under that number.
 //
 // Both doors take from one occupancy map, which is what makes them impossible
-// to collide — and an anonymous `free` deliberately cannot take back a named
+// to collide -- and an anonymous `free` deliberately cannot take back a named
 // id, so a redefine freeing a subtree widget by widget does not hand a live
 // name's number to somebody else.
 //
@@ -59,7 +59,7 @@ export const CAPACITY = 1 << 20;
  * The registry of a host client's widget-id space.
  *
  * An occupancy map, not a counter: every id handed out by `alloc` stays
- * tracked until `free` returns it, which makes it allocatable again — so a
+ * tracked until `free` returns it, which makes it allocatable again -- so a
  * long session that opens and closes many windows recycles ids within a fixed
  * window instead of climbing without bound.
  */
@@ -68,7 +68,7 @@ export class GuiIdAllocator {
 
     /**
      * Over `[base, base + capacity)`, or one slice of it when a host has more
-     * than one client naming widgets on it (`IdShare`) — a driving client
+     * than one client naming widgets on it (`IdShare`) -- a driving client
      * drawing into a page that holds a client of the same host.
      */
     constructor(
@@ -94,7 +94,7 @@ export class GuiIdAllocator {
 
     /**
      * A fresh id, unique across everything this allocator names. Throws when
-     * the whole window is live at once — a client bug (that many widgets
+     * the whole window is live at once -- a client bug (that many widgets
      * never coexist; freed ones recycle).
      */
     alloc(): number {
@@ -102,7 +102,7 @@ export class GuiIdAllocator {
     }
 
     /**
-     * The id `owner` draws `(structure, role, key)` with — the **same** one for
+     * The id `owner` draws `(structure, role, key)` with -- the **same** one for
      * as long as that name keeps being drawn.
      *
      * Throws on exhaustion, as `alloc` does and for the same reason: a name
@@ -113,7 +113,7 @@ export class GuiIdAllocator {
     }
 
     /**
-     * The id that draws `(structure, role, key)` **if it already has one** — no
+     * The id that draws `(structure, role, key)` **if it already has one** -- no
      * minting, and no effect on any draw. The inverse a view asks when it needs
      * to know what is drawing something.
      */
@@ -146,7 +146,7 @@ export class GuiIdAllocator {
      * Drop every name and every id: the table as it was made.
      *
      * A client reset. Only an id space nothing outside it holds may be cleared
-     * — an editor's private one before it has a host, never a live host's.
+     * -- an editor's private one before it has a host, never a live host's.
      */
     clear(): void {
         this.registry.clear();
@@ -156,7 +156,7 @@ export class GuiIdAllocator {
         if (id === undefined) {
             throw new AllocationError(
                 "out of gui widget ids: the id window is fully in use " +
-                    "(freed widgets recycle their ids — this many live at once " +
+                    "(freed widgets recycle their ids -- this many live at once " +
                     "is a leak)",
             );
         }

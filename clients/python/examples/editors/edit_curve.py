@@ -2,7 +2,7 @@
 """``edit(curve)``: a break-point curve in a window of its own.
 
 The smallest of the three structures `clausters.gui.edit` opens, and the one
-that shows what the verb is for. There is **no multitrack here** — no
+that shows what the verb is for. There is **no multitrack here** -- no
 arrangement, no document, no track. A script builds a
 `clausters.seq.Automation`, hands it to ``edit``, and reads the edited curve
 back out of the object it already holds.
@@ -12,7 +12,7 @@ What to do in the window:
 - **drag a point** to move it (times stay monotonic between its neighbours);
 - **drag a segment** vertically to bend its curvature;
 - **Ctrl+click** on empty curve area adds a point, on a point removes it;
-- **Ctrl+Z** / **Ctrl+Shift+Z** undo and redo — the history belongs to the
+- **Ctrl+Z** / **Ctrl+Shift+Z** undo and redo -- the history belongs to the
   curve, not to the window, which is what the second cell shows.
 
 **Nothing here drives a loop.** ``edit`` opens the window and the host's event
@@ -21,7 +21,7 @@ loop delivers each gesture to the curve on its own thread, so reading the
 
 **How an edit inverts is the shared crate's.** The payload goes in with the
 curve as it stands and comes back as the curve it now is *plus* the payload that
-puts it back — one call, because the inverse has to be read before the edit
+puts it back -- one call, because the inverse has to be read before the edit
 lands. Nothing in this client computes it, and nothing in the web client does
 either.
 
@@ -63,7 +63,7 @@ curve = Automation.from_points(
 # ## One verb
 #
 # `clausters.gui.edit` dispatches on **what the structure is**: an `Automation`
-# opens as a `clausters.gui.editing.PointsEditor` — one `bpf` widget, the
+# opens as a `clausters.gui.editing.PointsEditor` -- one `bpf` widget, the
 # ``points`` vocabulary, and the curve's own editing context.
 
 # %%
@@ -115,4 +115,4 @@ def run():
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     run()
 else:
-    print("up — read_back() for the points, second_window() for a second view")
+    print("up -- read_back() for the points, second_window() for a second view")

@@ -1,8 +1,8 @@
 //! **What is sounding, and the difference that makes it match.**
 //!
 //! The third projection, and the one with memory. The other two are functions
-//! of a structure alone — the props it is drawn with, the payloads a gesture
-//! becomes — and this one is a function of the structure *and of what a server
+//! of a structure alone -- the props it is drawn with, the payloads a gesture
+//! becomes -- and this one is a function of the structure *and of what a server
 //! already holds*: a multitrack plays itself from the transport, so the nodes have
 //! to **stay**. Rebuilding the tree on every edit would restart everything that
 //! is sounding, and a hand dragging a box would hear its own gesture as a
@@ -10,9 +10,9 @@
 //!
 //! # The shape: a reconciler, and the client is the host config
 //!
-//! [`clausters_document::multitrack::nodes::plan`] says what a multitrack *needs* —
+//! [`clausters_document::multitrack::nodes::plan`] says what a multitrack *needs* --
 //! which tracks, which clips, which readers, at which frames, with which
-//! levels — and it is pure. [`Instance`] holds what was made from the last one,
+//! levels -- and it is pure. [`Instance`] holds what was made from the last one,
 //! and [`Instance::reconcile`] answers the **difference** as a list of
 //! [`Op`]: send this def, add this slot, set these ports, free that node. It
 //! opens no socket, awaits nothing and allocates no resource. That is what
@@ -22,15 +22,15 @@
 //! It is the shape React's reconciler has and for the same reason: the tree
 //! that *should* be is cheap to describe, the tree that *is* costs real
 //! resources, and everything hard is in the diff between them. What React calls
-//! a host config — who actually makes a node, who allocates — is here the
+//! a host config -- who actually makes a node, who allocates -- is here the
 //! client, and it stays there because a bus allocator is a property of a
 //! running session and not of a multitrack.
 //!
 //! # Handles: the crate names things it cannot make
 //!
 //! An op never carries a node id, a bus index or a buffer number, because this
-//! allocates none of them. It carries a **handle** — a string this mints from
-//! the document's own ids — and the client keeps one table from handle to
+//! allocates none of them. It carries a **handle** -- a string this mints from
+//! the document's own ids -- and the client keeps one table from handle to
 //! whatever it made. A port that has to name a resource names it the same way
 //! ([`Port::Bus`], [`Port::Buffer`]), resolved by the client as it applies.
 //!
@@ -39,8 +39,8 @@
 //!
 //! # What a `set` cannot express is torn down, and only that
 //!
-//! One thing: a clip whose source changed **width** is a different wiring — a
-//! mono take is panned into its track and a stereo one is balanced — so it is
+//! One thing: a clip whose source changed **width** is a different wiring -- a
+//! mono take is panned into its track and a stereo one is balanced -- so it is
 //! another clip def and is made again. A clip that changed **track** is not
 //! torn down: a clip is a slot *inside* a track's group, and the server moves a
 //! slot to another instance and re-wires it there (`/graph_moveSlot`), so its
@@ -59,7 +59,7 @@ use clausters_document::multitrack::nodes::{
 /// What the crate calls a thing it asked a client to make.
 ///
 /// Minted from the document's own ids, so the same multitrack reconciled twice names
-/// the same things — which is what lets an `Instance` be compared in a test
+/// the same things -- which is what lets an `Instance` be compared in a test
 /// instead of being watched through a server.
 pub type Handle = String;
 
@@ -148,7 +148,7 @@ pub enum Op {
         /// Its ports.
         ports: Ports,
     },
-    /// **Make the transport's group** at the top and bind it — the subtree the
+    /// **Make the transport's group** at the top and bind it -- the subtree the
     /// engine freezes on a stop and thaws on a play.
     ///
     /// Every endpoint makes the same one. A client used to bind the multitrack's own
@@ -240,7 +240,7 @@ pub enum Op {
     /// Free a node.
     ///
     /// **Freeing a group frees what is inside it**, so `forget` names the
-    /// handles that went with it — the readers of a clip, the clips and meters
+    /// handles that went with it -- the readers of a clip, the clips and meters
     /// of a track. A client drops those from its table without sending
     /// anything: a second free would name a node that is already gone, and
     /// keeping them would grow the table by every box a session ever removed.
@@ -303,8 +303,8 @@ fn curve_bus_handle(id: u64) -> Handle {
     format!("curvebus:{id}")
 }
 
-/// A curve's table is **replaced** rather than written into — its length
-/// changes with its first and last point — so each one is its own buffer and
+/// A curve's table is **replaced** rather than written into -- its length
+/// changes with its first and last point -- so each one is its own buffer and
 /// the generation is what keeps the old handle addressable until the new table
 /// is in.
 fn curve_buffer_handle(id: u64, generation: u32) -> Handle {
@@ -334,7 +334,7 @@ struct ClipState {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct CurveState {
     owner: Handle,
-    /// Whether that owner is a box rather than a track — which table to look
+    /// Whether that owner is a box rather than a track -- which table to look
     /// in to find out whether it is still there.
     owner_is_clip: bool,
     /// The owner's own id, so the lookup needs no handle to be parsed back.
@@ -369,7 +369,7 @@ pub struct Instance {
     /// **How many times each box has been made.**
     ///
     /// A handle is a name for "the node that plays region 3" and stays the same
-    /// across a rebuild, which is what a client's table wants — so a curve
+    /// across a rebuild, which is what a client's table wants -- so a curve
     /// mapped onto the node that went cannot tell by the name alone that it
     /// went. This is what it tells by.
     ///
@@ -382,7 +382,7 @@ pub struct Instance {
 
 /// The ports the **hand** writes: everything a curve is not driving.
 ///
-/// A mapped control is taken back by a plain `set` — that is the protocol's own
+/// A mapped control is taken back by a plain `set` -- that is the protocol's own
 /// rule, and the right one, since it is what gives the fader back when a curve
 /// is deleted. It also means that anything sending a value for a port a curve
 /// drives **silences that curve**, and a multitrack reconciles on every edit, so
@@ -391,7 +391,7 @@ pub struct Instance {
 /// So the two stop competing. A curve owns the port it names and the hand's
 /// value is not sent for it, which is also what a mixer means by an automation
 /// in read: touching the fader under a curve does nothing until the curve is
-/// gone. Writing *through* a curve — touch, latch — is a mode nothing has yet,
+/// gone. Writing *through* a curve -- touch, latch -- is a mode nothing has yet,
 /// and it would be this function's answer changing rather than a set slipping
 /// past.
 fn hand_ports(ports: &[(&str, f32)], curves: &[PlannedCurve]) -> Ports {
@@ -431,7 +431,7 @@ impl Instance {
             || !self.curves.is_empty()
     }
 
-    /// Which control bus run each track's meters write, by track — what a host
+    /// Which control bus run each track's meters write, by track -- what a host
     /// reads every frame, and the reason a level that moves every block costs
     /// no message.
     ///
@@ -822,7 +822,7 @@ impl Instance {
     /// A curve is **not** a member of the multitrack's graph, and that is the point:
     /// it writes a control bus, the port is mapped to that bus, and the port's
     /// own member ids stay private. The table is read at the transport's own
-    /// position, so a locate costs no message at all — which is the whole
+    /// position, so a locate costs no message at all -- which is the whole
     /// reason a curve is a table and not a stream of sets.
     fn curves(
         &mut self,
@@ -1041,7 +1041,7 @@ impl Instance {
     }
 
     /// Freeing the group frees everything inside it, so the clips and the
-    /// meters only have to leave the table — which is what the track id in them
+    /// meters only have to leave the table -- which is what the track id in them
     /// is for. The buses are not the group's, so they are given back.
     fn free_track(&mut self, id: u64, ops: &mut Vec<Op>) {
         let mine: Vec<u64> = self
@@ -1067,8 +1067,8 @@ impl Instance {
     }
 }
 
-/// **A source table as JSON** — `{"<source id>": {"buffer", "channels"}}`,
-/// the shape both clients send — read into what the plan takes. An id that is
+/// **A source table as JSON** -- `{"<source id>": {"buffer", "channels"}}`,
+/// the shape both clients send -- read into what the plan takes. An id that is
 /// not a number, or a table that is not one, reads as nothing rather than as
 /// an error: a source the plan does not know is simply not playing yet.
 pub fn sources_table(
@@ -1091,7 +1091,7 @@ pub fn sources_table(
 /// The multitrack rather than the plan: the plan is a pure function of the multitrack and
 /// crossing it out and back in would carry every curve's table twice for
 /// nothing. [`clausters_document::multitrack::nodes::plan`] stays a door of its
-/// own because it is worth reading on its own — this is the pair of calls a
+/// own because it is worth reading on its own -- this is the pair of calls a
 /// client actually makes, as one.
 ///
 /// An unreadable multitrack answers an empty list: there is no multitrack to say what
@@ -1336,7 +1336,7 @@ mod tests {
 
     /// **A move does not depend on which track is reached first.** A box going
     /// to an earlier track is met on the new track before the old one lets go
-    /// of it, and a box going to a later one is left by the old track first —
+    /// of it, and a box going to a later one is left by the old track first --
     /// neither of which may read as the box being gone.
     #[test]
     fn a_clip_moved_to_an_earlier_track_is_moved_too() {
@@ -1364,7 +1364,7 @@ mod tests {
     }
 
     /// **What hangs off a moved clip stays on it**: its readers are inside its
-    /// group, and a curve's map is on its port, so neither is made again — which
+    /// group, and a curve's map is on its port, so neither is made again -- which
     /// is the whole reason for a move rather than a rebuild.
     #[test]
     fn a_moved_clip_keeps_its_readers_and_its_curve() {
@@ -1395,7 +1395,7 @@ mod tests {
 
     /// **A clip whose source changed width is made again**: a mono take is
     /// panned into its track and a stereo one balanced, so it is another clip
-    /// def — the one change neither a set nor a move expresses.
+    /// def -- the one change neither a set nor a move expresses.
     #[test]
     fn a_clip_of_another_width_is_made_again() {
         let multitrack = multitrack();
@@ -1420,7 +1420,7 @@ mod tests {
     }
 
     /// **A rebuilt clip's readers are made again with it** *(2026-09-11)*. They
-    /// are slots inside the clip's group, so freeing it frees them — and a
+    /// are slots inside the clip's group, so freeing it frees them -- and a
     /// table that still held them would `set` a node that is gone.
     #[test]
     fn a_rebuilt_clip_s_readers_go_with_it() {
@@ -1530,7 +1530,7 @@ mod tests {
     }
 
     /// A track that went away takes its clips out of the table with it, and
-    /// gives its meter buses back — the group frees what is inside it, the
+    /// gives its meter buses back -- the group frees what is inside it, the
     /// buses are not the group's.
     #[test]
     fn a_track_that_went_away_takes_its_clips_and_gives_its_buses_back() {
@@ -1670,8 +1670,8 @@ mod tests {
 
     /// **A box that went takes its envelope's map with it** *(found 2026-09-12
     /// by the user, deleting a box in `edit_multitrack`)*. The curve's own
-    /// node, buffer and bus still go back — those are the instance's and
-    /// outlive whatever port they drove — but the unmap named a node that had
+    /// node, buffer and bus still go back -- those are the instance's and
+    /// outlive whatever port they drove -- but the unmap named a node that had
     /// just been freed, which is a handle whose table entry went with it.
     #[test]
     fn a_curve_whose_owner_is_gone_is_not_unmapped() {

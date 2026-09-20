@@ -4,9 +4,9 @@
 //! animation frame. Natively the values come from the shared-memory segment
 //! ([`super::shm`], zero messages); in the browser they arrive as periodic
 //! `/bus_stream.reply` snapshots from the server's `/bus_stream` subscription (the
-//! counterpart of the segment). Everything around that difference — which
+//! counterpart of the segment). Everything around that difference -- which
 //! buses a tree reads, how a scope's rolling history advances, how a window
-//! decides it is animated — is platform-independent and lives here, so both
+//! decides it is animated -- is platform-independent and lives here, so both
 //! fronts share one implementation and only the [`BusSource`] fill differs.
 
 use std::collections::HashMap;
@@ -24,7 +24,7 @@ pub(crate) const STREAM_PERIOD_MS: i32 = 33;
 /// One tap consumer's per-tick display window: `channels` interleaved
 /// channels of samples (frame-major, like every interleaved buffer in the
 /// system), plus whether the oscilloscope's trigger locked this tick (always
-/// `false` for a phasescope — it has no trigger). Stored per widget id by the
+/// `false` for a phasescope -- it has no trigger). Stored per widget id by the
 /// tick; the render draws it verbatim.
 #[derive(Clone, PartialEq, Debug, Default)]
 pub struct TapWindow {
@@ -40,7 +40,7 @@ impl TapWindow {
     }
 }
 
-/// The distinct, sorted tap indices a tree reads live each frame — every
+/// The distinct, sorted tap indices a tree reads live each frame -- every
 /// audio-rate scope, spectrum and phasescope (two taps each). The browser front
 /// subscribes exactly this set with `/bus_tapStream`.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
@@ -57,7 +57,7 @@ pub(crate) fn collect_live_taps(tree: &Widget, out: &mut Vec<i32>) {
 
 /// Whether a widget tree contains a live widget: a bus-backed meter/scope,
 /// any audio-tap consumer (scope/spectrum/phasescope), or a timeline view
-/// with an active playhead (its line tracks the engine clock every frame) —
+/// with an active playhead (its line tracks the engine clock every frame) --
 /// so the window animates.
 pub(crate) fn tree_has_live_widget(widget: &Widget, groups: &TimelineGroups) -> bool {
     let needs = widget.kind.needs();
@@ -71,11 +71,11 @@ pub(crate) fn tree_has_live_widget(widget: &Widget, groups: &TimelineGroups) -> 
             .any(|child| tree_has_live_widget(child, groups))
 }
 
-/// Whether `widget` shows a live playhead — so its window must animate, the
+/// Whether `widget` shows a live playhead -- so its window must animate, the
 /// line tracking the engine sample clock every frame.
 ///
 /// Two shapes, because a playhead has two owners. An element that carries its
-/// **own** anchor declares it ([`Needs::clock`](super::widget::Needs::clock)) —
+/// **own** anchor declares it ([`Needs::clock`](super::widget::Needs::clock)) --
 /// a `score`'s sweeping cursor. A timeline view has no anchor of its own: it
 /// draws its navigation *group*'s, and only the group's props (its member's are
 /// the def-time seed) say whether one is running.
@@ -106,7 +106,7 @@ pub(crate) fn tree_has_playhead(widget: &Widget, groups: &TimelineGroups) -> boo
             .any(|child| tree_has_playhead(child, groups))
 }
 
-/// **A retained history of one bus** — the addressable past a forward-only
+/// **A retained history of one bus** -- the addressable past a forward-only
 /// source does not have, and the whole of what `retention` is for.
 ///
 /// The ring is sized by the axis's declared span (seconds times the sample
@@ -119,7 +119,7 @@ pub(crate) fn tree_has_playhead(widget: &Widget, groups: &TimelineGroups) -> boo
 ///   overlap depends on the frame rate; taking the tail past the position is
 ///   what keeps a second of history a second wide at any frame rate.
 /// - **A gap is a gap.** When more samples elapsed than the source's window
-///   holds, the missing ones are gone — the engine wrote them and the ring
+///   holds, the missing ones are gone -- the engine wrote them and the ring
 ///   they passed through wrapped. They are appended as **silence** rather than
 ///   skipped, so the time axis stays honest and the drop-out is visible instead
 ///   of being compressed away.
@@ -151,7 +151,7 @@ impl BusHistory {
         self.samples.len()
     }
 
-    /// The stream position just past the newest retained sample — the anchor a
+    /// The stream position just past the newest retained sample -- the anchor a
     /// rolling analysis measures its columns against. `None` before the first
     /// read.
     pub fn end(&self) -> Option<u64> {
@@ -159,7 +159,7 @@ impl BusHistory {
     }
 
     /// Resizes the history to `capacity` samples, dropping the oldest when it
-    /// shrinks — a live `/gui_set retention` narrowing the span, which must
+    /// shrinks -- a live `/gui_set retention` narrowing the span, which must
     /// take effect on this frame rather than when the ring next fills.
     fn set_capacity(&mut self, capacity: usize) {
         self.capacity = capacity;
@@ -221,8 +221,8 @@ pub(crate) struct RetentionSpec {
 /// longest span either asked for, since the history is the bus's and not the
 /// drawing's.
 ///
-/// Both halves are the declaration's ([`Needs`]) — the span in seconds and the
-/// taps it applies to — so a widget retains exactly the buses it reads. The
+/// Both halves are the declaration's ([`Needs`]) -- the span in seconds and the
+/// taps it applies to -- so a widget retains exactly the buses it reads. The
 /// seconds become samples here and only here: the rate is the front's, and the
 /// same span is the same span at any of them.
 ///
@@ -258,7 +258,7 @@ pub(crate) fn collect_retention(tree: &Widget, sample_rate: f64) -> Vec<Retentio
 ///
 /// A quarter second is an order of magnitude more than a frame tick's worth of
 /// samples at any frame rate anyone runs, and reading more than elapsed costs
-/// nothing — the retainer takes only the tail past the position it saw, so the
+/// nothing -- the retainer takes only the tail past the position it saw, so the
 /// slack is the point. The cap is not an optimization: a source refuses a
 /// window it cannot copy safely, and a refusal is indistinguishable from a bus
 /// nobody writes, so asking for more than the ring can give retains **nothing**
@@ -277,8 +277,8 @@ pub(crate) fn retention_window(sample_rate: f64, limit: usize) -> usize {
 /// wrote since the last tick, and forgets the buses nothing retains any more
 /// (a `/gui_set retention 0`, or the view leaving the tree).
 ///
-/// `read_at` is the source's positioned read — the segment natively, the
-/// `/bus_tapStream.reply` store in the browser — filling the newest window and
+/// `read_at` is the source's positioned read -- the segment natively, the
+/// `/bus_tapStream.reply` store in the browser -- filling the newest window and
 /// saying where it ends. `window` sizes that read: it must be at least a
 /// tick's worth of samples, or every tick reports a gap it could have carried.
 pub(crate) fn update_retention(
@@ -336,8 +336,8 @@ pub(crate) fn tap_stream_frames(tree: &Widget, sample_rate: f64) -> usize {
 /// nobody notices; here every sample is a byte on a carrier, sent again every
 /// period and for every bus in the subscription. A quarter second of stereo is
 /// 96 KB a period against a 64 KB ring, so the second bus's snapshot was
-/// dropped every turn — silently, since a full ring is backpressure rather
-/// than an error — and a stereo meter read the silence that left behind.
+/// dropped every turn -- silently, since a full ring is backpressure rather
+/// than an error -- and a stereo meter read the silence that left behind.
 ///
 /// Four periods is the same slack in kind: the history is appended by stream
 /// position, so what a window has to cover is the gap between two *drains*,
@@ -361,7 +361,7 @@ pub(crate) fn tree_animates(tree: &Widget) -> bool {
 /// **The tick**: every widget of one window's tree advances whatever it keeps
 /// of the outside, once per animation frame.
 ///
-/// One walk, one question — the four maps and four walks this replaced were the
+/// One walk, one question -- the four maps and four walks this replaced were the
 /// front holding a live view's state for it, which is what the element seam
 /// exists to end. The retained bus histories are the exception and are filled
 /// *before* this ([`update_retention`]), because a history is the bus's rather
@@ -402,7 +402,7 @@ pub(crate) struct LiveDemand {
     pub buses: Vec<i32>,
     /// The `/bus_tapStream` set: distinct, sorted.
     pub taps: Vec<i32>,
-    /// The window every tap consumer needs, in frames — the largest any of them
+    /// The window every tap consumer needs, in frames -- the largest any of them
     /// asks for, since one subscription serves them all.
     pub tap_frames: usize,
     /// Whether anything on screen animates (a live widget or a `canvas`), which
@@ -413,7 +413,7 @@ pub(crate) struct LiveDemand {
     pub playhead: bool,
 }
 
-/// The union of what `trees` demand — the drawing canvases' trees, in any
+/// The union of what `trees` demand -- the drawing canvases' trees, in any
 /// order. Pure and platform-independent: the front supplies the set, this
 /// decides the subscriptions.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
@@ -437,7 +437,7 @@ pub(crate) fn demand<'a>(
     out
 }
 
-/// A [`BusSource`] filled from `/bus_stream`'s periodic snapshots — the
+/// A [`BusSource`] filled from `/bus_stream`'s periodic snapshots -- the
 /// message-based counterpart of the shared-memory segment, for the browser.
 /// Unsubscribed or never-streamed buses read `0.0`, exactly like unmapped or
 /// out-of-range buses natively. The `Mutex` only satisfies the trait's
@@ -491,7 +491,7 @@ impl BusSource for StreamedBuses {
     }
 }
 
-/// The `/bus_tapStream.reply` store — the message-based counterpart of the shared-memory
+/// The `/bus_tapStream.reply` store -- the message-based counterpart of the shared-memory
 /// tap rings, for the browser. Keeps the newest streamed raw window per tap;
 /// the tick reads it through this source exactly as the native front reads the
 /// segment. The `Mutex` is uncontended on the single-threaded
@@ -503,7 +503,7 @@ pub struct StreamedTaps {
 
 impl StreamedTaps {
     /// Stores the newest streamed window of one tap, with the stream position
-    /// its last sample sits at — what a retainer appends by (see
+    /// its last sample sits at -- what a retainer appends by (see
     /// [`super::BusSource::read_bus_at`]).
     pub fn set(&self, tap: i32, samples: Vec<f32>, at: u64) {
         self.windows.lock().unwrap().insert(tap, (samples, at));
@@ -518,7 +518,7 @@ impl StreamedTaps {
     }
 
     /// [`read_raw`](Self::read_raw), returning the stream position the window
-    /// ends at — the browser half of
+    /// ends at -- the browser half of
     /// [`super::BusSource::read_bus_at`].
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
     pub(crate) fn read_raw_at(&self, tap: i32, out: &mut [f32]) -> Option<u64> {
@@ -535,7 +535,7 @@ impl StreamedTaps {
 /// **The browser's one source**: the streamed control buses and the streamed
 /// tap windows behind a single [`BusSource`] door.
 ///
-/// The native front has one object for both — the shared segment — and the tick
+/// The native front has one object for both -- the shared segment -- and the tick
 /// asks it for a control value and for a tap window alike. The browser fills the
 /// two halves from two different subscriptions (`/bus_stream` and
 /// `/bus_tapStream`), and this is where they become one thing, so nothing above
@@ -569,12 +569,12 @@ impl BusSource for StreamedSource {
 }
 
 /// What a page's leg believes its `/bus_stream` ceiling is **before the server
-/// says** — the limit every server has allowed since the command existed.
+/// says** -- the limit every server has allowed since the command existed.
 ///
 /// Starting at the configured default instead would be optimistic in the one
 /// direction that costs something: the canvases of a document open in one
 /// synchronous pass, each re-deriving the subscription, and the engine cannot
-/// answer `/server_query` until its next serving turn — so an over-large set
+/// answer `/server_query` until its next serving turn -- so an over-large set
 /// is asked for, and refused, once per canvas before the first reply lands.
 /// Believing the floor asks for less than it may for a few frames (a meter
 /// holds its last value) and asks for nothing it will be refused.
@@ -593,7 +593,7 @@ pub(crate) const INITIAL_STREAM_BUS_CAP: usize = 128;
 /// *document* rather than with a widget, and a page can walk into the server's
 /// ceiling by opening one more view. The request is refused whole past it, so
 /// asking for everything is asking for nothing: what is kept is the head of
-/// the set, which is def-id order — the canvases that opened first hold their
+/// the set, which is def-id order -- the canvases that opened first hold their
 /// stream, and the ones that arrived after it are the ones that stop moving.
 /// Arbitrary, and stated here so it is one rule instead of an accident of
 /// where the truncation happened to be written.
@@ -610,8 +610,8 @@ pub(crate) fn clamp_stream_set(wanted: &mut Vec<i32>, cap: usize) -> usize {
 /// The ceiling a `/bus_stream` refusal names, out of the reason it carries
 /// ("at most N bus indices per subscription on this carrier").
 ///
-/// Reading a limit out of prose is not how a client should learn one —
-/// `/server_query.reply` reports it — and this is the fallback for a server
+/// Reading a limit out of prose is not how a client should learn one --
+/// `/server_query.reply` reports it -- and this is the fallback for a server
 /// that refused before the query was answered, or for a refusal the query
 /// could not have predicted. A reason it cannot parse leaves the ceiling
 /// alone; what matters either way is that the belief in the subscription is
@@ -641,7 +641,7 @@ mod tests {
 
     /// **A window with a piano roll in it is not, by itself, animated.** The
     /// roll declared `clock` for its kind rather than for its anchor, so any
-    /// tree holding one asked for the ~30 fps tick — and a page then repainted
+    /// tree holding one asked for the ~30 fps tick -- and a page then repainted
     /// for as long as it was open with nothing moving in it. The tick is what
     /// the whole window pays, so what turns it on has to be a thing that moves.
     #[test]
@@ -730,7 +730,7 @@ mod tests {
     }
 
     /// One subscription serves every tap consumer, so it is sized by the one
-    /// that asks for most — and each of them answers for itself, which is what
+    /// that asks for most -- and each of them answers for itself, which is what
     /// replaced three per-kind collectors.
     #[test]
     fn the_subscription_is_sized_by_the_widest_reader() {
@@ -775,7 +775,7 @@ mod tests {
     }
 
     /// More elapsed than the window holds: the samples in between are gone,
-    /// and they are appended as silence rather than skipped — a drop-out is
+    /// and they are appended as silence rather than skipped -- a drop-out is
     /// visible instead of being compressed out of the time axis.
     #[test]
     fn a_gap_is_retained_as_silence_so_the_axis_stays_true() {
@@ -801,7 +801,7 @@ mod tests {
         assert_eq!(h.samples(), &[5.0, 6.0]);
     }
 
-    /// The tick forgets a bus nothing retains any more — a `/gui_set
+    /// The tick forgets a bus nothing retains any more -- a `/gui_set
     /// retention 0`, or the view leaving the tree.
     #[test]
     fn the_tick_forgets_a_bus_nothing_retains() {
@@ -859,7 +859,7 @@ mod tests {
     }
 
     /// An audio-rate meter reads a **level**, which costs neither a streamed
-    /// bus nor a recording — and used to cost the window its animation too,
+    /// bus nor a recording -- and used to cost the window its animation too,
     /// because the liveness walk only knew about control buses and taps. The
     /// declaration says it reads something, so the window follows it.
     #[test]
@@ -873,7 +873,7 @@ mod tests {
         assert!(d.animated, "but the column still has to move");
     }
 
-    /// A still tree asks for nothing per frame — the tick stays off, however
+    /// A still tree asks for nothing per frame -- the tick stays off, however
     /// many canvases the document holds.
     #[test]
     fn a_still_tree_does_not_animate() {
@@ -964,7 +964,7 @@ mod tests {
     }
 }
 
-/// **How long since the last tick** — the one thing a time-based element
+/// **How long since the last tick** -- the one thing a time-based element
 /// cannot read for itself.
 ///
 /// A tick runs once per animation frame, and an animation frame is not a fixed
@@ -986,7 +986,7 @@ impl TickClock {
     /// The longest interval one tick is allowed to be worth, in seconds.
     const CAP: f64 = 0.25;
 
-    /// Seconds since the previous call — `0.0` on the first, which advances
+    /// Seconds since the previous call -- `0.0` on the first, which advances
     /// nothing.
     pub fn delta(&mut self) -> f64 {
         let now = web_time::Instant::now();

@@ -1,11 +1,11 @@
-//! M14: the IPC segment — ring transport, data plane, versioning, and the
+//! M14: the IPC segment -- ring transport, data plane, versioning, and the
 //! embedded C ABI render (with `--features embed`).
 
 #![cfg(feature = "synth")]
 
 use std::sync::Arc;
 
-/// The peer tag these tests send under. One client, so any tag does — what
+/// The peer tag these tests send under. One client, so any tag does -- what
 /// matters is that it comes back on the replies (ABI v7).
 const PEER: u32 = 3;
 use std::sync::atomic::Ordering;
@@ -210,8 +210,8 @@ fn tap_rings_write_read_and_wrap() {
 /// M31(b): two independent clients over **one** segment.
 ///
 /// The regression this exists for: every ring packet used to arrive as a single
-/// `ClientId::Ring`, so `/bus_stream` — "one subscription per client, replaced
-/// on each call" — could not tell two peers apart. A script and a GUI host
+/// `ClientId::Ring`, so `/bus_stream` -- "one subscription per client, replaced
+/// on each call" -- could not tell two peers apart. A script and a GUI host
 /// sharing one page took the stream from each other, and the loss was permanent
 /// in one direction, since the host only re-subscribes when its own widget set
 /// changes. With the frame's peer tag they are two clients, exactly as a native
@@ -380,7 +380,7 @@ fn server_speaks_osc_over_the_ring() {
 }
 
 /// The data plane: a control-bus write in the segment is read by `InCtl`
-/// on the next block — no OSC command involved.
+/// on the next block -- no OSC command involved.
 #[test]
 fn segment_control_buses_feed_the_engine_directly() {
     use clausters::node::{AddAction, ROOT_NODE_ID};
@@ -584,8 +584,8 @@ fn a_peer_maps_a_buffer_by_number_and_writes_what_the_server_reads() {
 /// the ring reaches the pool, and a peer with nothing but the segment's path
 /// maps the samples by number.
 ///
-/// This is the property S19 exists for — the editor's samples stop being
-/// messages — and it is asserted the only way that means anything: the peer
+/// This is the property S19 exists for -- the editor's samples stop being
+/// messages -- and it is asserted the only way that means anything: the peer
 /// writes a sample, and the server's own buffer reads it back.
 #[test]
 fn a_buffer_the_server_allocated_is_mapped_by_a_peer() {
@@ -794,7 +794,7 @@ fn a_shared_join_is_still_a_join() {
 }
 
 /// **The overview beside the region**: the summary a peer maps instead of
-/// building, and the rule that keeps it true — it follows the writes span by
+/// building, and the rule that keeps it true -- it follows the writes span by
 /// span rather than being rebuilt or left to rot.
 ///
 /// What this pins is the pair of claims the file makes. It **describes the
@@ -928,7 +928,7 @@ fn the_overview_beside_a_region_follows_the_writes() {
 /// with it when it goes.
 ///
 /// This is what makes "separate processes" a claim rather than a diagram. Both
-/// servers are built here in one process — what is under test is the
+/// servers are built here in one process -- what is under test is the
 /// *ownership* rules, not the process boundary, and running them apart is the
 /// example's job (`examples/editor_processes.sh`).
 #[test]
@@ -1072,8 +1072,8 @@ fn shared_server(
 /// session owns the segment and the samples, an RT-shaped server attaches to
 /// play it, and the session never touches the clocks.
 ///
-/// The three roles are the phase's whole design — the session computes, the
-/// player holds the devices, and whoever edits writes the cells directly —
+/// The three roles are the phase's whole design -- the session computes, the
+/// player holds the devices, and whoever edits writes the cells directly --
 /// so this asserts the two rules that make them safe to run at once.
 #[test]
 fn a_session_owns_the_buffers_and_a_player_attaches_to_them() {
@@ -1153,7 +1153,7 @@ fn a_session_owns_the_buffers_and_a_player_attaches_to_them() {
     );
     // And it takes its samples with it: a session that created the segment
     // owns it, and one left in /dev/shm after the editor is gone is a leak
-    // with a take in it. The player's mapping above stays valid regardless —
+    // with a take in it. The player's mapping above stays valid regardless --
     // unlinked, not deleted.
     assert!(!path.exists(), "the segment it created is gone");
     assert!(!region.exists(), "and so is the region beside it");

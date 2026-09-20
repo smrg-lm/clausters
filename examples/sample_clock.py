@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """Sample-clock client: the server's sample counter as master timebase.
 
-The OS clock and the DAC crystal drift apart (tens of ppm — milliseconds per
+The OS clock and the DAC crystal drift apart (tens of ppm -- milliseconds per
 minute), so NTP-timetagged bundles re-anchor every event against two clocks
 that disagree. This client inverts the relationship: it queries the server's
 sample counter with `/clock_query`, models
 
     sample(t_local) = a + b * t_local
 
-from (local monotonic time, counter) anchor pairs — a least-squares line
-over a sliding window, in the spirit of JACK's DLL and Ableton Link — and
+from (local monotonic time, counter) anchor pairs -- a least-squares line
+over a sliding window, in the spirit of JACK's DLL and Ableton Link -- and
 schedules everything **in samples** with `/sched_at`. Two properties fall out:
 
 - Query latency does not matter: an anchor only needs *bounded* uncertainty
   (the round trip brackets the counter read), because scheduling happens
   ahead of time. An anchor error shifts the whole grid by a constant.
 - Relative timing is sample-exact *by construction*: two targets N samples
-  apart fire exactly N samples apart — no clock conversion in between.
+  apart fire exactly N samples apart -- no clock conversion in between.
 
 Run a server first (`cargo run --release`), then:
 
@@ -60,7 +60,7 @@ class SampleClock:
             raise RuntimeError(f"expected /clock_query.reply, got {addr}")
         samples, self.rate = args[0], args[1]
         # The counter was read somewhere inside [t0, t1]: pair it with the
-        # midpoint. The half-width is the (bounded!) uncertainty — it only
+        # midpoint. The half-width is the (bounded!) uncertainty -- it only
         # shifts the grid, it does not accumulate. Note the counter also
         # advances in device-buffer jumps (the callback processes blocks in
         # bursts), which is more bounded noise of the same kind: the slope
@@ -145,11 +145,11 @@ def main():
     # Wait for the tail to play out before exiting.
     end = start + (BEATS - 1) * step + dur
     time.sleep(max(0.0, clock.local_time_of(end) + 0.2 - time.monotonic()))
-    print("done: every beat fired on its exact sample — the spacing never")
+    print("done: every beat fired on its exact sample -- the spacing never")
     print("depended on this machine's clock, only the first anchor did.")
     print("(the slope needs minutes of baseline to resolve real crystal")
     print(" drift, tens of ppm; in this short run it shows the counter's")
-    print(" device-buffer quantization instead — bounded, so it only")
+    print(" device-buffer quantization instead -- bounded, so it only")
     print(" matters for how early a /sched_at is *sent*, never when it fires.)")
 
 
@@ -157,4 +157,4 @@ if __name__ == "__main__":
     try:
         main()
     except (TimeoutError, OSError):
-        sys.exit("no reply — is the server running? (cargo run --release)")
+        sys.exit("no reply -- is the server running? (cargo run --release)")

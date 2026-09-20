@@ -2,7 +2,7 @@
 //!
 //! The host owns no notation. What arrives is a *drawing* the client engraved
 //! (verovio, in `clausters.gui.notation`) plus the two indexes that make it
-//! interactive — the `xml:id` on each primitive, and the timemap of cursors —
+//! interactive -- the `xml:id` on each primitive, and the timemap of cursors --
 //! and this module turns that JSON into the typed page the rest of the module
 //! draws, hits and sweeps.
 //!
@@ -20,7 +20,7 @@ impl ScoreData {
     /// a hex SMuFL codepoint string to its outline path `d`, and `prims` = an
     /// array of `{k: "glyph"|"line"|"fill", ...}` primitives. Malformed entries
     /// are skipped rather than rejected, so a partially understood display list
-    /// still draws what it can — the "unknown widget is laid out but not
+    /// still draws what it can -- the "unknown widget is laid out but not
     /// painted" spirit applied within the widget.
     pub fn parse(props: &Map<String, Value>) -> ScoreData {
         let mut data = ScoreData::default();

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Tabs with no script in the loop: a ``stack`` and a control bound to its index.
 
-Two things meet here. A `stack` shows **one child at a time** — the one its
-``index`` names — and everything else it holds is neither laid out nor drawn
+Two things meet here. A `stack` shows **one child at a time** -- the one its
+``index`` names -- and everything else it holds is neither laid out nor drawn
 while it is away. And a widget can be **bound to another widget**
 (`clausters.gui.host.GuiHost.bind_widget`), which applies its value to that
 widget's property with no round-trip through this process. Put together, a menu
 bound to a stack's ``index`` *is* a tab bar: the pages flip inside the host, and
 nothing prints here while you click.
 
-The two pages are the same take seen twice — its waveform and its spectrogram,
+The two pages are the same take seen twice -- its waveform and its spectrogram,
 the pair the `stack` exists for. Both are **heavy** views, which is what makes
 the switch worth watching: a hidden one keeps its GPU slot, so coming back to it
 is instant rather than a re-upload. Flip back and forth as fast as you can and
@@ -17,7 +17,7 @@ see that neither ever rebuilds.
 
 The bottom half is the same binding aimed at an ordinary prop: a slider bound to
 ``view_start`` scrolls the time window. It moves **both** pages, not the one
-that happens to be showing, because the two name the same ``link`` — a
+that happens to be showing, because the two name the same ``link`` -- a
 navigation group, where the window, the selection and the playhead are the
 *axis'* and not any one view's. So the slider works on whatever page you are
 looking at, and switching pages keeps the position.
@@ -91,7 +91,7 @@ gui = GuiHost().boot()
 # Both views name `link=1`: one navigation group, so the time window belongs to
 # the axis rather than to either page.
 #
-# The stack has no arrangement to make — a page fills it — so it takes only a
+# The stack has no arrangement to make -- a page fills it -- so it takes only a
 # `margin`. Its `weight` gives it the leftover, the way any work surface takes
 # the room the chrome does not.
 

@@ -4,14 +4,14 @@
 //! Most of these are state machines, so the asserts are about *when* something
 //! happened rather than about a spectrum: the sample a pulse starts on, the
 //! number of triggers it takes to come round, the exact interval a timer
-//! reports. The three that are numeric — `Decay`, `Decay2`, `Timer`'s
-//! sub-sample crossing — are checked against the closed form, per the rules in
+//! reports. The three that are numeric -- `Decay`, `Decay2`, `Timer`'s
+//! sub-sample crossing -- are checked against the closed form, per the rules in
 //! the `audio-testing` skill.
 //!
 //! Rule 5 comes from two places. The shared table splits every one of the
 //! seventeen rows in two (`tests/subjects.rs`); `a_counter_is_unmoved_by_a_
-//! block_split` below stays because it does something the table does not —
-//! nine slices per block rather than one cut — which is the shape a burst of
+//! block_split` below stays because it does something the table does not --
+//! nine slices per block rather than one cut -- which is the shape a burst of
 //! scheduled events actually produces.
 
 #![cfg(feature = "synth")]
@@ -59,7 +59,7 @@ fn render(ugens: &str, n: usize) -> Vec<f32> {
     out
 }
 
-/// A single impulse at sample 0, scaled — `Impulse` at 0 Hz fires once and
+/// A single impulse at sample 0, scaled -- `Impulse` at 0 Hz fires once and
 /// never re-arms, which is the cleanest trigger a test can ask for.
 fn one_shot(level: f32) -> String {
     format!(
@@ -71,7 +71,7 @@ fn one_shot(level: f32) -> String {
 /// The sample indices where a trigger source actually fires.
 ///
 /// `Impulse` accumulates its phase in `f64`, so a 100 Hz train at 48 kHz lands
-/// on 0, 481, 961 … rather than on exact multiples of 480 — a tenth of a
+/// on 0, 481, 961 … rather than on exact multiples of 480 -- a tenth of a
 /// sample of drift per period, which is the oscillator being honest and not
 /// something the counters under test should be asserted against. Every test
 /// below that needs "the fourth trigger" asks the train where it is.
@@ -87,7 +87,7 @@ fn secs(n: usize) -> f32 {
     n as f32 / SR
 }
 
-/// Indices where the signal rises through 0.5 — a trigger, counted the way the
+/// Indices where the signal rises through 0.5 -- a trigger, counted the way the
 /// server counts one.
 fn edges(sig: &[f32]) -> Vec<usize> {
     let mut prev = 0.0;
@@ -113,7 +113,7 @@ fn trig_holds_the_triggering_level_for_exactly_its_duration() {
         ),
         64,
     );
-    // It is the *level at the trigger* that is held, not 1 — that is the whole
+    // It is the *level at the trigger* that is held, not 1 -- that is the whole
     // difference from Trig1, and it is what makes Trig usable as a sampler.
     for (i, s) in sig.iter().enumerate().take(10) {
         assert!((*s - 0.7).abs() < 1e-6, "sample {i}: {s} != 0.7");
@@ -169,7 +169,7 @@ fn tdelay_puts_one_sample_exactly_n_samples_later() {
 fn tdelay_swallows_a_trigger_while_one_is_pending() {
     // 100 Hz of triggers (every 480 samples) through a 20 ms delay (960
     // samples): every other trigger arrives while one is already in flight and
-    // must be dropped, not queued — otherwise a burst turns into a pile-up.
+    // must be dropped, not queued -- otherwise a burst turns into a pile-up.
     let sig = render(
         &format!(
             r#"{{"kind": "Impulse", "inputs": [{{"const": 100.0}}]}},
@@ -246,7 +246,7 @@ fn schmidt_needs_the_whole_band_to_change_its_mind() {
     // One cycle of a triangle: 0 -> 1 -> -1 -> 0 over 4800 samples, against a
     // band of [-0.5, 0.5]. It goes high crossing +0.5 on the way up (sample
     // 600) and only comes back down crossing -0.5 (sample 3000). A plain
-    // `> 0.5` comparator would have dropped at 1800 — that gap *is* the
+    // `> 0.5` comparator would have dropped at 1800 -- that gap *is* the
     // hysteresis, and it is why a noisy input does not chatter here.
     let sig = render(
         r#"{"kind": "LFTri", "inputs": [{"const": 10.0}, {"const": 0.0}]},
@@ -371,7 +371,7 @@ fn pulse_divider_fires_every_n_triggers_and_start_phases_it() {
     assert_eq!(edges(&sig), want, "the 4th trigger, and every 4th after it");
 
     // start = div - 1 puts the counter one short, so the *first* trigger fires
-    // — which is how two dividers are phased against each other.
+    // -- which is how two dividers are phased against each other.
     let phased = render(
         r#"{"kind": "Impulse", "inputs": [{"const": 100.0}]},
            {"kind": "PulseDivider", "rate": "ar",
@@ -433,7 +433,7 @@ fn timer_reports_the_interval_between_triggers() {
 
 #[test]
 fn timer_measures_a_crossing_that_falls_between_two_samples() {
-    // 997 Hz at 48 kHz is 48.144... samples per period — deliberately not a
+    // 997 Hz at 48 kHz is 48.144... samples per period -- deliberately not a
     // whole number. Rounding the crossing to the nearest sample would report
     // 48/48000 or 49/48000, i.e. an error of up to 1.04e-5 s. Interpolating
     // where the input actually crossed zero gets it far closer, and that is
@@ -450,7 +450,7 @@ fn timer_measures_a_crossing_that_falls_between_two_samples() {
     let rounding_floor = 0.5 / SR as f64;
     assert!(
         (err as f64) < rounding_floor / 10.0,
-        "measured {measured} against {truth} — error {err:e}, which must beat \
+        "measured {measured} against {truth} -- error {err:e}, which must beat \
          sample rounding ({rounding_floor:e}) by an order of magnitude"
     );
 }
@@ -526,7 +526,7 @@ fn decay_is_the_analytic_one_pole_and_falls_60_db_on_time() {
 #[test]
 fn decay2_peaks_where_its_two_exponentials_cross() {
     // Decay2 is the decay minus a faster attack, so its peak sits where the two
-    // slopes match — a closed form, not a shape to eyeball:
+    // slopes match -- a closed form, not a shape to eyeball:
     //   n* = ln(ln b_a / ln b_d) / ln(b_d / b_a)
     let (attack, decay) = (0.01_f64, 0.2_f64);
     let sig = render(
@@ -567,7 +567,7 @@ fn detect_silence_fires_after_exactly_its_time_and_raises_the_done_flag() {
     );
     let sig = render(&ugens, 4800);
     // The burst covers samples 0..=959, so silence starts at 960 and its 480th
-    // sample — the one that completes the window — is 1439.
+    // sample -- the one that completes the window -- is 1439.
     assert_eq!(
         edges(&sig),
         vec![960 + 480 - 1],
@@ -577,7 +577,7 @@ fn detect_silence_fires_after_exactly_its_time_and_raises_the_done_flag() {
     // The flag, read the way a graph reads it. It agrees to the **block**, not
     // to the sample, and that is inherent rather than sloppy: a done flag is
     // one bool per UGen, read once when the watcher runs, so a watcher sees it
-    // for the whole of the block in which it was raised — here from 1408, the
+    // for the whole of the block in which it was raised -- here from 1408, the
     // start of the block containing 1439. At `Done`'s own default rate (`kr`)
     // that is exactly its resolution anyway.
     let watched =

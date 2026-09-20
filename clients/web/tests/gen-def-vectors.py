@@ -4,7 +4,7 @@
 The Python client is the reference def model; this script freezes the spec
 JSON its builders emit for a set of graphs, so the TS builders can assert
 they emit the same in `tests/def-parity.test.ts`. Each case names the TS
-expression that must reproduce it — the two sides are written independently
+expression that must reproduce it -- the two sides are written independently
 and only the emitted spec is compared, which is exactly the contract: the
 wire is shared, the language surface is not.
 
@@ -12,7 +12,7 @@ The JSON is committed; regenerate with:
 
     python3 gen-def-vectors.py
 
-(from clients/web/tests/, with the Python client importable — the repo's
+(from clients/web/tests/, with the Python client importable -- the repo's
 .venv has it installed editable).
 """
 
@@ -223,7 +223,7 @@ def synth_cases():
     ))
 
     # The state-variable filter, once with the tap gains given directly and
-    # once swept by `svf_morph` — with a signal position, whose clamps are
+    # once swept by `svf_morph` -- with a signal position, whose clamps are
     # graph nodes, and with a constant one, whose clamps fold to numbers.
     pos = control("morph", 0.0)
     cases.append((
@@ -338,7 +338,7 @@ def graph_case():
 
 def scalar_cases():
     """The catalogue's one plain-number helper, which sizes a buffer rather
-    than building a graph — so it is frozen as values, not as a spec."""
+    than building a graph -- so it is frozen as values, not as a spec."""
     return [
         {"name": "partconv_frames", "args": list(args),
          "value": partconv_frames(*args)}

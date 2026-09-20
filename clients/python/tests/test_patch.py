@@ -201,7 +201,7 @@ class _FakeHost:
 
 def _find(node, kind):
     """The first node of `kind`, where a patcher and a plain workspace are the
-    same container told apart by whether it carries boxes — which is all the
+    same container told apart by whether it carries boxes -- which is all the
     patcher ever added to a plane."""
     if kind == "patch":
         match = node.get("type") == "plane" and "boxes" in node
@@ -220,7 +220,7 @@ def _find(node, kind):
 
 def test_graphdef_plot_def_opens_the_structure_as_a_patch_view():
     # plot_def decodes the GraphDef and opens a `patch` view (its structure), one
-    # window per call — distinct from clausters.plot(def), which renders its sound.
+    # window per call -- distinct from clausters.plot(def), which renders its sound.
     _pass_or_skip()
     tone = SynthDef("tone", out(control("out"), sine(control("freq", 220.0))))
     dac = SynthDef("dac", out(0, in_(control("in"))))
@@ -237,7 +237,7 @@ def test_graphdef_plot_def_opens_the_structure_as_a_patch_view():
     assert view is not None and view["label"] == "graphdef"
     assert [b["def"] for b in view["boxes"]] == ["tone", "dac"]
     assert view["cords"] == [0, 0, 1, 0]   # tone.out -> dac.in, typed from the defs
-    # It rode no audio server and no bulk file — pure structure.
+    # It rode no audio server and no bulk file -- pure structure.
     assert _find(tree, "scroll") is not None   # the patch sits in a pan/zoom workspace
 
 
@@ -293,7 +293,7 @@ def test_defpatch_decodes_a_synthdef_into_ugen_boxes_and_cords():
     assert by_role["const"] == ["0", "1"]   # the two Out bus literals (0.0, 1.0)
     # The shared `sine*amp` subgraph feeds both Outs (a fan-out): two roots.
     assert len(p.roots) == 2
-    # Every UGen inlet is corded now — a value box feeds each former constant.
+    # Every UGen inlet is corded now -- a value box feeds each former constant.
     corded = {(c["to_box"], c["to_port"]) for c in p.cords}
     for bi, box in enumerate(p.boxes):
         if box["kind"] == "ugen":
@@ -355,7 +355,7 @@ def test_defpatch_faust_box_or_source_is_a_single_opaque_box():
 
 def test_synthdef_plot_def_opens_the_ugen_structure():
     # plot_def opens the level-2 patcher (the internal UGen graph), one window per
-    # call — distinct from clausters.plot(def), which renders its sound.
+    # call -- distinct from clausters.plot(def), which renders its sound.
     host = _FakeHost()
     win = _beep().plot_def(host=host)
     assert win.id == 42

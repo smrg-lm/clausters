@@ -23,21 +23,21 @@
       <div id="note">Style: theme groups, per-widget accents, and the two paint
 props.
 
-The host draws every chrome color from one <b>theme</b> — a table of named roles
+The host draws every chrome color from one <b>theme</b> -- a table of named roles
 (<code>background</code>, <code>panel</code>, <code>text</code>,
-<code>accent</code>, …) — and the customization is the same partial table at
+<code>accent</code>, …) -- and the customization is the same partial table at
 every level, each overlaying the previous:
 
 <b>1. The host's own table</b> (<code>host.theme({…})</code>, the
 <code>/gui_theme</code> verb): one look for the whole host. This page warms the
 accent with it. <b>2. A theme group</b> (the <code>theme</code> prop on a
-container): a partial table scoped to that subtree, recursive by construction —
+container): a partial table scoped to that subtree, recursive by construction --
 a nested group overlays the <i>inherited</i> table, not the default. <b>3. The
 <code>color</code> prop</b> (any widget): the single-color shorthand, re-seeding
 just the roles that carry the widget's function.
 
-Overlays resolve when a def arrives or a <code>set</code> changes them — never
-per frame — so a styled window costs exactly what a plain one costs.
+Overlays resolve when a def arrives or a <code>set</code> changes them -- never
+per frame -- so a styled window costs exactly what a plain one costs.
 
 <b>Two more props shape the drawing rather than its color</b>:
 <code>opacity</code> (0–1) fades a widget and, like a theme group, multiplies
@@ -102,14 +102,14 @@ widget draws, clamped to half the shorter side of each.</div>
           "and its corners square off (a negative clears)"],
       ];
 
-      // Level 1: the host's own table — the whole host warms up.
+      // Level 1: the host's own table -- the whole host warms up.
       const HOST_THEME = { accent: "#e08840", accent_dim: "#8a5428", hilite: "#f0a060" };
-      // Level 2: a theme group — a cool pane inside the warm host.
+      // Level 2: a theme group -- a cool pane inside the warm host.
       const COOL = {
         accent: "#4090e0", accent_dim: "#285a8a", hilite: "#60b0f0",
         panel: "#10141cbf",
       };
-      // Level 3: nested — the inherited cool table, darkened further.
+      // Level 3: nested -- the inherited cool table, darkened further.
       const NESTED = { panel: "#0a0d12", text: "#8098b0" };
 
       /** One row of ordinary controls; the theme in force colors all of them. */
@@ -128,7 +128,7 @@ widget draws, clamped to half the shorter side of each.</div>
         const host = await new GuiHost().boot();
 
         // The host's own look, over the wire. A page has no launch flags at
-        // all, so this verb is the only way it reaches level 1 — and it is the
+        // all, so this verb is the only way it reaches level 1 -- and it is the
         // way a script reaches it after launch.
         host.theme(HOST_THEME);
 
@@ -148,7 +148,7 @@ widget draws, clamped to half the shorter side of each.</div>
             gui.slider({ label: "c", value: 0.7, color: "#c0b040" }),
           ),
           // The paint props: a rounded panel whose controls stay square (the
-          // radius is the widget's own), and one that starts half faded — the
+          // radius is the widget's own), and one that starts half faded -- the
           // fade reaches every control in it, since opacity is a group's
           // property.
           gui.panel(

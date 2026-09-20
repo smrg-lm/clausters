@@ -69,7 +69,7 @@ fn hardware_input_reaches_in_ugen() {
     }
 }
 
-/// With no input stream attached, the input buses read as silence — `In` on an
+/// With no input stream attached, the input buses read as silence -- `In` on an
 /// input bus produces nothing rather than stale or garbage samples.
 #[test]
 fn no_input_reads_silence() {

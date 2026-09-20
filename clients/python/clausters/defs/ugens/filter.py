@@ -67,7 +67,7 @@ def brf(signal, freq=440.0, rq=None, *, q=None) -> Ugen:
 def resonz(signal, freq=440.0, rq=None, *, q=None) -> Ugen:
     """Resonator with unity gain at the peak.
 
-    The same structure and parameterization as `bpf` — sclang ships two
+    The same structure and parameterization as `bpf` -- sclang ships two
     historically distinct two-pole resonators that promise the same thing, and
     here one implementation carries both names.
     """
@@ -121,7 +121,7 @@ def svf_morph(pos):
 
 
 def one_pole(signal, coef=0.5) -> Ugen:
-    """``y[n] = (1-|coef|)·x[n] + coef·y[n-1]`` — lowpass for a positive
+    """``y[n] = (1-|coef|)·x[n] + coef·y[n-1]`` -- lowpass for a positive
     coefficient, highpass for a negative one, unity in the passband.
 
     The parameter is the **pole**, not a cutoff, as in sclang. Use `lag` when
@@ -131,7 +131,7 @@ def one_pole(signal, coef=0.5) -> Ugen:
 
 
 def one_zero(signal, coef=0.5) -> Ugen:
-    """``y[n] = (1-|coef|)·x[n] + coef·x[n-1]`` — the zero-only sibling of
+    """``y[n] = (1-|coef|)·x[n] + coef·x[n-1]`` -- the zero-only sibling of
     `one_pole`."""
     return Ugen("OneZero", [signal, coef])
 
@@ -179,7 +179,7 @@ def delay_n(signal, delaytime=0.2, *, max_delay=None) -> Ugen:
 
 
 def delay_l(signal, delaytime=0.2, *, max_delay=None) -> Ugen:
-    """Pure delay with linear interpolation — a fractional delay, at the cost of
+    """Pure delay with linear interpolation -- a fractional delay, at the cost of
     a gentle lowpass that deepens toward Nyquist (about -1.6 dB at 9 kHz on a
     half-sample delay)."""
     return Ugen("DelayL", [signal, delaytime],
@@ -187,7 +187,7 @@ def delay_l(signal, delaytime=0.2, *, max_delay=None) -> Ugen:
 
 
 def delay_c(signal, delaytime=0.2, *, max_delay=None) -> Ugen:
-    """Pure delay with four-point cubic interpolation — about -0.36 dB at 9 kHz
+    """Pure delay with four-point cubic interpolation -- about -0.36 dB at 9 kHz
     where `delay_l` loses 1.6 dB. The one to modulate."""
     return Ugen("DelayC", [signal, delaytime],
                 static=_line("DelayC", delaytime, max_delay))
@@ -229,7 +229,7 @@ def allpass_l(signal, delaytime=0.2, decaytime=1.0, *, max_delay=None) -> Ugen:
 
 
 def allpass_c(signal, delaytime=0.2, decaytime=1.0, *, max_delay=None) -> Ugen:
-    """Schroeder allpass with cubic interpolation — the one to modulate."""
+    """Schroeder allpass with cubic interpolation -- the one to modulate."""
     return Ugen("AllpassC", [signal, delaytime, decaytime],
                 static=_line("AllpassC", delaytime, max_delay))
 

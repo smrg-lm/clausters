@@ -2,25 +2,25 @@
 //! ways a pointer moves one.
 //!
 //! `slider`, `knob` and `number` are one value over one range, differing in the
-//! picture and in **how a drag reaches the value** — which is exactly the split
+//! picture and in **how a drag reaches the value** -- which is exactly the split
 //! the gesture seam makes an element's own business. Two of the three families
 //! the trait was designed against are here, side by side, so the difference
 //! between them is a few lines rather than two enum variants and two arms in
 //! each phase:
 //!
-//! - **absolute** ([`Track`]) — a position inside a rectangle *is* the value.
+//! - **absolute** ([`Track`]) -- a position inside a rectangle *is* the value.
 //!   The rectangle is snapshotted at the press, because the groove a drag is
 //!   measured against may not move under it.
-//! - **offset from the press** ([`Dial`]) — how far the cursor has travelled
+//! - **offset from the press** ([`Dial`]) -- how far the cursor has travelled
 //!   *since the press*, against the value the press found. There is no groove
 //!   on screen to point at, so the gesture is a distance rather than a
-//!   position — but it is measured from one fixed anchor, which is what a
+//!   position -- but it is measured from one fixed anchor, which is what a
 //!   curve's bend already does, and for the same two reasons: a per-step delta
 //!   drifts out of phase once the pointer leaves the element, and the clamp at
 //!   an end eats the motion spent past it.
 //!
-//! The third family — snapshotted, a press-time origin plus a container's axis
-//! and a snap — belongs to the leaves placed on a time axis and lands with
+//! The third family -- snapshotted, a press-time origin plus a container's axis
+//! and a snap -- belongs to the leaves placed on a time axis and lands with
 //! them.
 
 use clausters_core::osc::OscType;
@@ -31,7 +31,7 @@ use crate::host::layout::Rect;
 use crate::host::widget::element::{Claim, Events, Input};
 use crate::host::widget::{Range, parse};
 
-/// Applies one `/gui_set` key to a control's range — the props all three share.
+/// Applies one `/gui_set` key to a control's range -- the props all three share.
 pub(super) fn set(r: &mut Range, key: &str, v: &Value) -> bool {
     match key {
         "value" => parse::set_f(&mut r.value, v),
@@ -50,7 +50,7 @@ pub(super) fn value(r: &Range) -> Option<OscType> {
     Some(OscType::Float(r.value))
 }
 
-/// What a drag left behind, under the key that sets it — the whole of what a
+/// What a drag left behind, under the key that sets it -- the whole of what a
 /// ranged control's `/gui_query` has to correct, since `min`, `max` and the
 /// label are the script's and are already current in the document.
 pub(super) fn info(r: &Range) -> Vec<(String, Value)> {
@@ -120,7 +120,7 @@ pub(super) struct Anchor {
 }
 
 impl Dial {
-    /// Takes the press and anchors on it. Nothing is reported — the press alone
+    /// Takes the press and anchors on it. Nothing is reported -- the press alone
     /// changes no value, and a knob that emitted on every click would send a
     /// value nobody turned.
     pub(super) fn press(&mut self, r: &Range, body_h: f32, at: (f64, f64)) -> Claim {
@@ -135,7 +135,7 @@ impl Dial {
     /// One step: the value the press found, moved by how far the cursor has
     /// travelled since. A given cursor position has **one** answer, so leaving
     /// the element and coming back leaves the value where the pointer says it
-    /// is — the same rule a curve's bend follows, and the reason neither needs
+    /// is -- the same rule a curve's bend follows, and the reason neither needs
     /// the pointer captured to stay in phase with the hand.
     pub(super) fn drag(&mut self, r: &mut Range, at: (f64, f64)) -> Events {
         let Some(a) = self.0 else {
@@ -152,7 +152,7 @@ impl Dial {
 }
 
 /// The control body of a placement, at the size table and text size the
-/// renderer drew it with — the geometry every one of these presses measures
+/// renderer drew it with -- the geometry every one of these presses measures
 /// against.
 pub(super) fn body(r: &Range, input: &Input) -> Rect {
     controls::body_rect_at(

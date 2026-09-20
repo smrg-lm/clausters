@@ -3,7 +3,7 @@
 //! These are the cheap counterparts of the heavy GPU views: their *data* is a
 //! single control bus read straight from the shared-memory segment each frame
 //! (see [`crate::host::shm`]), so they need no buffer, no analysis and no dedicated
-//! pipeline — just the flat-geometry painter ([`crate::host::paint`]) plus bitmap text,
+//! pipeline -- just the flat-geometry painter ([`crate::host::paint`]) plus bitmap text,
 //! exactly like the standard controls. The drawing lives here as pure functions
 //! over a [`Draw`]; the windowed front supplies the live value(s) read from
 //! shared memory and keeps the scope's rolling history. Keeping it GPU- and
@@ -39,7 +39,7 @@ pub fn fraction(value: f32, min: f32, max: f32) -> f32 {
 /// of the column, where it stops being green and where it is red.
 ///
 /// The levels themselves are the shared core's
-/// ([`measure::METER_WARN_DB`], [`measure::METER_HOT_DB`]) — this is only where
+/// ([`measure::METER_WARN_DB`], [`measure::METER_HOT_DB`]) -- this is only where
 /// they land on *this* column, which depends on what its height measures. A
 /// strip drawn in decibels and a widget drawn over a plain amplitude range put
 /// the same two levels at different heights, and both are then read the same
@@ -56,13 +56,13 @@ pub struct Scale {
 }
 
 impl Scale {
-    /// The decibel strip, from [`measure::METER_FLOOR_DB`] up to full scale —
+    /// The decibel strip, from [`measure::METER_FLOOR_DB`] up to full scale --
     /// what a channel's meter stands on.
     pub fn decibels() -> Self {
         Self::decibels_from(measure::METER_FLOOR_DB)
     }
 
-    /// The same three levels on a decibel strip bottoming out at `floor_db` —
+    /// The same three levels on a decibel strip bottoming out at `floor_db` --
     /// the widget's own floor, which may be the dynamic range of a resolution
     /// rather than the mixing strip's sixty.
     pub fn decibels_from(floor_db: f32) -> Self {
@@ -74,7 +74,7 @@ impl Scale {
     }
 
     /// The same two levels on a column whose height is an **amplitude** placed
-    /// in `min..max` — the `meter` widget's own axis, whatever range it was
+    /// in `min..max` -- the `meter` widget's own axis, whatever range it was
     /// given.
     pub fn amplitude(min: f32, max: f32) -> Self {
         let at = |db| fraction(measure::amplitude_of_db(db), min, max);
@@ -132,8 +132,8 @@ pub fn column_color(theme: &crate::host::theme::Theme, scale: Scale, height: f32
 /// read at another moment). Both are fractions of the cell's height; a `mark`
 /// at or below zero draws none.
 ///
-/// Written once because a meter is about to exist in three places — a track's
-/// header, the `meter` widget, and the mixer that has not been built — and
+/// Written once because a meter is about to exist in three places -- a track's
+/// header, the `meter` widget, and the mixer that has not been built -- and
 /// three columns drawn by three call sites is three answers to how loud a
 /// signal is.
 pub fn draw_column(
@@ -223,7 +223,7 @@ pub fn draw_scope(
     mesh.border(body, m.divider_w, theme.accent);
     // A control bus's history is one channel of a live source: the same
     // renderer, so a history longer than the body's pixels summarizes instead
-    // of aliasing — which a polyline of its own never did. One pass per
+    // of aliasing -- which a polyline of its own never did. One pass per
     // measure, the envelope under the level body.
     let measures = layers.measures();
     for (measure, alpha) in layers.drawn_measures() {
@@ -245,10 +245,10 @@ pub(crate) struct WaveParams<'a> {
     pub ruler: bool,
     pub ruler_y: bool,
     pub label: Option<&'a str>,
-    /// **The layer stack**, back to front — a live view reads it like a stored
+    /// **The layer stack**, back to front -- a live view reads it like a stored
     /// one: the same pictures, over a window that happens to be arriving.
     pub layers: &'a layers::Stack,
-    /// The live loudness curve, when a measure asks for one — drawn over the
+    /// The live loudness curve, when a measure asks for one -- drawn over the
     /// whole body, since a loudness is the channels summed and has no lane of
     /// its own.
     pub loudness: Option<super::signal::loudness::LiveCurve>,
@@ -256,7 +256,7 @@ pub(crate) struct WaveParams<'a> {
 
 /// Draws an audio-rate oscilloscope: the [`TapWindow`]'s channels as stacked
 /// rows, one per channel (or color-coded `overlay` traces in one field), each an
-/// already-aligned display window (see `clausters_core::oscil`) over `[min, max]` —
+/// already-aligned display window (see `clausters_core::oscil`) over `[min, max]` --
 /// a polyline while the data fits the width, a per-column min/max envelope
 /// when it does not (never resolving finer than the screen). The chrome names
 /// what the trigger did: a faint line marks the `trigger` level in the first
@@ -367,7 +367,7 @@ pub(crate) fn draw_wave(d: &mut Draw, rect: Rect, p: &WaveParams) {
 /// ([`trace::draw_channel`]): a per-column min/max envelope while the frames
 /// outnumber the pixels, a polyline once they do not.
 ///
-/// It used to be this module's own loop — the copy the signal element's
+/// It used to be this module's own loop -- the copy the signal element's
 /// collapse left outside, with a regime rule of its own (`frames > columns *
 /// 2`), a column inked one hairline wide however wide the pixel column was,
 /// and no baseline. A live view is the same drawing of the same signal as a
@@ -412,7 +412,7 @@ fn trace_row(
 ///
 /// Every view that reserves a strip with [`super::controls::body_rect`] draws it
 /// with this: the height and the drawing are the same fact, and they were once
-/// two — three signal views carried a copy of these four lines, agreeing because
+/// two -- three signal views carried a copy of these four lines, agreeing because
 /// they had been copied rather than because anything held them together.
 pub(crate) fn label_strip(d: &mut Draw, label: Option<&str>, rect: Rect) {
     let (mesh, m, theme) = d.parts();
@@ -653,7 +653,7 @@ mod tests {
     /// than the body's pixels summarizes into min/max columns instead of
     /// drawing a segment per sample. This module used to have a polyline of its
     /// own that stepped `row.w / (frames - 1)` however many frames there were,
-    /// which aliases and costs the data rather than the screen — the rule every
+    /// which aliases and costs the data rather than the screen -- the rule every
     /// other view of a signal has always followed.
     #[test]
     fn a_long_history_costs_the_body_not_its_samples() {
@@ -813,12 +813,12 @@ mod tests {
 /// given, and the two are different axes rather than two settings of one.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MeterAxis {
-    /// Decibels, from `floor_db` up to full scale — what a meter of a signal
+    /// Decibels, from `floor_db` up to full scale -- what a meter of a signal
     /// stands on. The floor is the reader's question: the 60 dB strip a mix is
     /// read on, or the dynamic range of the resolution the multitrack is rendered
     /// at (`clausters_core::measure::floor_db_for_bits`).
     Decibels { floor_db: f32 },
-    /// A plain value over `min..max` — a control bus carrying something that is
+    /// A plain value over `min..max` -- a control bus carrying something that is
     /// not an amplitude, where a decibel would be a reading of nothing.
     Linear { min: f32, max: f32 },
 }
@@ -873,7 +873,7 @@ pub fn db_of(amplitude: f32) -> f32 {
 pub struct ChannelRead {
     /// The level now, in the axis' own units.
     pub level: f32,
-    /// The held peak — the mark that waits to be read.
+    /// The held peak -- the mark that waits to be read.
     pub mark: f32,
     /// The latched over, if the lamp is lit: the loudest level seen since it
     /// lit, which is what the number in the lamp says.
@@ -922,7 +922,7 @@ fn lamp_h(body_h: f32, m: &crate::host::metrics::Metrics) -> f32 {
 /// lit, because a lamp that pushed the column down as it lit would move the
 /// picture at exactly the moment a reader is looking at it. The **ladder comes
 /// off its side next**, and only if what is left is still wider than the strip
-/// it took — an element owns its space, and a meter squeezed to a few pixels
+/// it took -- an element owns its space, and a meter squeezed to a few pixels
 /// drops its numbers and stays a meter rather than becoming a ruler with no
 /// column. What remains is shared by the channels, one column each.
 pub(crate) fn draw_meter_view(d: &mut Draw, rect: Rect, view: &MeterView) {
@@ -1023,7 +1023,7 @@ pub(crate) fn draw_meter_view(d: &mut Draw, rect: Rect, view: &MeterView) {
     }
     // **The lamps are per channel; the number is one, and it is written over
     // the columns.** Which channel was flattened is worth a lamp of its own,
-    // but *how far past full scale* is a question about the signal — and a
+    // but *how far past full scale* is a question about the signal -- and a
     // column is a few pixels wide, so a number per column would be a number
     // nobody can read and a column wide enough for one would be width spent on
     // nothing.
@@ -1074,12 +1074,12 @@ fn draw_lamp(d: &mut Draw, cell: Rect, lit: bool) {
     );
 }
 
-/// **How far past full scale it went**, written over the columns — and nothing
+/// **How far past full scale it went**, written over the columns -- and nothing
 /// at all while nothing is lit.
 ///
 /// In decibels *over* full scale rather than the level itself, because that is
 /// the question a lit lamp raises: the server works in floating point, so a
-/// signal that passed unity is not lost — it is a signal that has to come down
+/// signal that passed unity is not lost -- it is a signal that has to come down
 /// by this much before anything converts it.
 fn draw_lamp_number(d: &mut Draw, body: Rect, peak: f32) {
     let over = db_of(peak);

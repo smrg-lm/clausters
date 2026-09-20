@@ -3,12 +3,12 @@
 A guided, step-by-step tour of driving a live Clausters server from the Python
 client. The file is split into `# %%` **cells**: run them one at a time in an
 interactive kernel (VS Code, Spyder, `jupytext`, or paste each block into
-`ipython`) and the session state — the server subprocess and the `Server`
-object — persists between cells, just like a notebook. It also runs top to
+`ipython`) and the session state -- the server subprocess and the `Server`
+object -- persists between cells, just like a notebook. It also runs top to
 bottom as a plain script.
 
-Each step logs the server's state — the node tree, a node's detail, the
-inferred bus graph — read back as **structured data** (never scraped from
+Each step logs the server's state -- the node tree, a node's detail, the
+inferred bus graph -- read back as **structured data** (never scraped from
 logs). Needs a built server binary; no Faust required:
 
     cargo build --release
@@ -91,7 +91,7 @@ print(f"booted: {info.audio_buses} audio / {info.control_buses} control buses "
 # %% [markdown]
 # ## 3. A helper to log the server state
 #
-# `server.query_tree()` returns the tree as data — a `NodeInfo` per entry —
+# `server.query_tree()` returns the tree as data -- a `NodeInfo` per entry --
 # and printing it draws it indented. We call `show_tree()` after each change
 # to watch the tree grow.
 

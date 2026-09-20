@@ -3,13 +3,13 @@
 //! The smallest projection there is, and the shape all of them have: the
 //! structure comes in as the flat quads the `bpf` widget speaks, whatever the
 //! view is already holding comes in beside it, and what goes back is the props
-//! — the points, the value axis, and the time the curve spans.
+//! -- the points, the value axis, and the time the curve spans.
 //!
 //! # Both axes only grow, and that is the whole of the rule
 //!
 //! A range recomputed on every redraw makes an edit rescale the picture, so
 //! dragging one point visibly moves every other one. The value axis is
-//! [`clausters_core::envshape::curve_axis`]'s — the data's range with headroom
+//! [`clausters_core::envshape::curve_axis`]'s -- the data's range with headroom
 //! the first time, widened afterwards only where the data stopped fitting. The
 //! time axis is the same rule with nothing to pad: the last point's time, and
 //! never shorter than it has been.
@@ -17,7 +17,7 @@
 //! # What the caller still holds
 //!
 //! The axis and the span it settled on, which come back in the props and go in
-//! again next time. They are **view state** — what a window is looking at —
+//! again next time. They are **view state** -- what a window is looking at --
 //! and view state belongs to whoever is looking, not to a projection.
 
 use serde_json::{Map, Value, json};
@@ -56,7 +56,7 @@ pub fn axis(points: &[f64], kept: Option<(f64, f64)>, held: f64) -> Axis {
 /// The props a `bpf` is drawn with: the points, the axis they stand on, and
 /// the time they span.
 ///
-/// `duration` is written only when there is one — a curve with a single point
+/// `duration` is written only when there is one -- a curve with a single point
 /// at time zero spans nothing, and stating a zero duration would pin the widget
 /// to an axis of no width rather than letting it keep the one it has.
 pub fn props(points: &[f64], kept: Option<(f64, f64)>, held: f64) -> Map<String, Value> {
@@ -83,7 +83,7 @@ pub fn props_json(points: &[f64], kept: Option<(f64, f64)>, held: f64) -> String
 /// and never reads it, which is what keeps an undo from putting a bent curve
 /// back straight; this only says where on the point it rides.
 ///
-/// The other direction — the vocabulary's points back as quads — is a client's,
+/// The other direction -- the vocabulary's points back as quads -- is a client's,
 /// because what it crosses into is that client's own envelope object.
 pub fn state(points: &[f64]) -> Vec<Value> {
     points
@@ -103,7 +103,7 @@ pub fn state(points: &[f64]) -> Vec<Value> {
 /// **What a gesture over a curve means.**
 ///
 /// One tag and one verb: a `bpf` reports the whole curve, so the edit is the
-/// curve it now is. An empty report is not an edit — a widget that has drawn
+/// curve it now is. An empty report is not an edit -- a widget that has drawn
 /// nothing yet says nothing about the structure behind it, and writing an empty
 /// curve over a full one is not what a hand that has not moved did.
 pub fn intake(tag: &str, values: &[f64]) -> Intake {
@@ -120,7 +120,7 @@ pub fn intake(tag: &str, values: &[f64]) -> Intake {
 mod tests {
     use super::*;
 
-    /// A trailing partial quad is dropped rather than guessed at — the rule
+    /// A trailing partial quad is dropped rather than guessed at -- the rule
     /// every flat payload in this system follows.
     #[test]
     fn a_partial_quad_is_not_a_point() {

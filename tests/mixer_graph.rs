@@ -2,7 +2,7 @@
 //!
 //! `clausters_core::mixer` says what a multitrack *is* as nodes and groups, and a
 //! def that is only read back as JSON proves nothing: what has to be true is
-//! that the whole nest — multitrack, track, clip, reader — compiles, instantiates and
+//! that the whole nest -- multitrack, track, clip, reader -- compiles, instantiates and
 //! makes the sound the multitrack describes. So these render it offline and measure
 //! what came out.
 //!
@@ -197,7 +197,7 @@ fn meter(s: &mut NrtSession, instance: i32, id: i32, bus: i32, hold: f32) {
 }
 
 /// **A multitrack is one `/graph_new`, and everything else is added to what is
-/// already sounding.** Four levels of nesting — multitrack, track, clip, reader —
+/// already sounding.** Four levels of nesting -- multitrack, track, clip, reader --
 /// and the sound comes out of the hardware bus at the end of them.
 #[test]
 fn a_whole_multitrack_is_one_graph_and_it_sounds() {
@@ -410,7 +410,7 @@ fn a_moved_box_sounds_through_its_new_track_and_keeps_its_map() {
 /// **A curve drives a port, and the port is a control of a node three levels
 /// down.** The whole of what a multitrack's automation is: a table read at the
 /// transport's own position, written to a control bus, mapped onto whatever the
-/// curve names — so a locate costs no message and the member ids stay private.
+/// curve names -- so a locate costs no message and the member ids stay private.
 #[test]
 fn a_curve_on_a_bus_drives_a_port() {
     let mut s = session();

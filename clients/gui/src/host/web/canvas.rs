@@ -15,7 +15,7 @@ use crate::host::world::World;
 /// The per-canvas GPU resources.
 pub(super) struct WindowRender {
     pub(super) gpu: Gpu,
-    /// The heavy views' shared pipelines, one set per canvas — the browser twin
+    /// The heavy views' shared pipelines, one set per canvas -- the browser twin
     /// of the native front's per-window set.
     pub(super) renderers: Renderers,
     pub(super) painter: Painter,
@@ -23,7 +23,7 @@ pub(super) struct WindowRender {
     pub(super) overlay: Painter,
     pub(super) waveforms: HashMap<SlotAt, WaveformSlot>,
     pub(super) spectrograms: HashMap<SlotAt, SpectrogramSlot>,
-    /// One compiled view per `canvas` widget — the script's own shader, and
+    /// One compiled view per `canvas` widget -- the script's own shader, and
     /// the pipeline it became. Kept here for the reason the two above are: it
     /// is a GPU resource of this surface, and rebuilding it per frame would
     /// recompile a shader thirty times a second.
@@ -31,7 +31,7 @@ pub(super) struct WindowRender {
 }
 
 /// One canvas: a `window`-rooted GuiDef's drawing surface and everything that
-/// follows it. The browser twin of the native front's `WindowState` — the
+/// follows it. The browser twin of the native front's `WindowState` -- the
 /// desktop already keeps one of these per window-rooted def, and a document
 /// holds N canvases for the same reason a desktop holds N windows.
 ///
@@ -51,18 +51,18 @@ pub(super) struct CanvasSlot {
     /// not stop *us* from computing a frame or the server from streaming for it.
     pub(super) visible: bool,
     /// **Where the pointer is on this canvas, or `None` when it is not over
-    /// it** — the page's half of the same invariant the desktop keeps
+    /// it** -- the page's half of the same invariant the desktop keeps
     /// (`gui::app::WindowState::cursor`), and an `Option` for the same reason:
     /// *absent* is not a coordinate. A canvas nobody has pointed at yet used to
     /// report a cursor at its own top-left corner, which the readout drew as a
     /// hand that was never there.
     pub(super) cursor: Option<(f64, f64)>,
     /// **Which mouse buttons the browser says are down**, as of the last
-    /// pointer event on this canvas — the bitmask of `PointerEvent.buttons`.
+    /// pointer event on this canvas -- the bitmask of `PointerEvent.buttons`.
     ///
     /// A desktop window cannot lose a release: the OS delivers the button-up to
-    /// whoever captured the pointer. A page can — the button comes up outside
-    /// the browser window, over another application, after an alt-tab — and
+    /// whoever captured the pointer. A page can -- the button comes up outside
+    /// the browser window, over another application, after an alt-tab -- and
     /// winit synthesizes a button event only from a move that *reports* a
     /// change (`PointerEvent.button != -1`), which such a move does not. So the
     /// gesture machine would still be holding whatever was in hand, and the
@@ -80,12 +80,12 @@ pub(super) struct CanvasSlot {
     pub(super) pointer_listener: Option<PointerListener>,
     /// The finger currently driving this canvas, if any.
     ///
-    /// The gesture machine is single-pointer — one press, one drag, one release
-    /// — so the **first** touch owns the gesture and the rest are ignored until
+    /// The gesture machine is single-pointer -- one press, one drag, one release
+    /// -- so the **first** touch owns the gesture and the rest are ignored until
     /// it lifts. A second finger landing mid-drag would otherwise teleport the
     /// value being dragged.
     pub(super) touch: Option<u64>,
-    /// This canvas' gesture state — the shared machine both fronts drive.
+    /// This canvas' gesture state -- the shared machine both fronts drive.
     pub(super) gestures: Gestures,
     /// **Which modifier keys are down**, as the browser reported them on the
     /// last pointer or wheel event over this canvas: shift, ctrl, alt, in that
@@ -98,10 +98,10 @@ pub(super) struct CanvasSlot {
     /// clicked the canvas yet holds Shift and pans nothing; one who releases it
     /// after clicking away leaves the front believing it is still down, and a
     /// plain drag pans. Every pointer event carries `shiftKey`/`ctrlKey`/
-    /// `altKey` whatever has focus, which is the same fact without the gap —
+    /// `altKey` whatever has focus, which is the same fact without the gap --
     /// the reason [`CanvasSlot::buttons`] is read the same way.
     pub(super) mods: Rc<Cell<u8>>,
-    /// The retained history per watched **bus** — the browser half of
+    /// The retained history per watched **bus** -- the browser half of
     /// `retention`, filled from the `/bus_tapStream.reply` store exactly as the
     /// native tick fills it from the segment. What each *view* makes of a
     /// history is the view's own, and lives in the element.
@@ -123,7 +123,7 @@ pub(super) struct PointerListener {
     closure: Closure<dyn FnMut(web_sys::MouseEvent)>,
 }
 
-/// The events a gesture is made of, watched together — the three pointer ones
+/// The events a gesture is made of, watched together -- the three pointer ones
 /// and the wheel, which carries the modifiers a zoom is qualified by.
 const POINTER_EVENTS: [&str; 4] = ["pointerdown", "pointermove", "pointerup", "wheel"];
 
@@ -227,7 +227,7 @@ impl CanvasSlot {
     }
 
     /// Forgets everything derived from a def's tree, keeping the canvas itself
-    /// — the rebuild semantics of a re-`/gui_def` and of a `/gui_free`.
+    /// -- the rebuild semantics of a re-`/gui_def` and of a `/gui_free`.
     pub(super) fn clear_def_state(&mut self) {
         self.pending_bulk.clear();
         if let Some(render) = self.render.as_mut() {
@@ -251,7 +251,7 @@ impl CanvasSlot {
 impl WebApp {
     /// Gives `def_id` a canvas and starts its GPU bring-up.
     ///
-    /// `canvas` is the element the component created — the correct ownership,
+    /// `canvas` is the element the component created -- the correct ownership,
     /// and the only way N of them can exist. `None` keeps the older posture, a
     /// canvas winit appends to `<body>`, which is what a page that feeds a
     /// `/gui_def` without attaching anything gets.
@@ -275,7 +275,7 @@ impl WebApp {
             .with_title(format!("clausters-gui {def_id}"))
             .with_inner_size(LogicalSize::new(CANVAS_SIZE.0 as f64, CANVAS_SIZE.1 as f64))
             // Not focused on creation: winit focuses a new canvas, and a
-            // browser scrolls a freshly focused element into view — so in a
+            // browser scrolls a freshly focused element into view -- so in a
             // document with several components the last one mounted would yank
             // the reader down to it. A click focuses it, which is when keyboard
             // input is wanted anyway.
@@ -336,8 +336,8 @@ impl WebApp {
     /// references load async through
     /// [`fetch_bulk`](super::bulk::fetch_bulk) and the fetch machine).
     ///
-    /// Called with a **fresh device** — a canvas attached, a GPU that just came
-    /// up — so the slots start empty and the tree is told that whatever it had
+    /// Called with a **fresh device** -- a canvas attached, a GPU that just came
+    /// up -- so the slots start empty and the tree is told that whatever it had
     /// handed over is gone.
     pub(super) fn build_resources(&mut self, def: i32) {
         let Some(slot) = self.canvases.get_mut(&def) else {
@@ -376,7 +376,7 @@ impl WebApp {
         // on the canvas.
         self.reload_bulk(def);
         // Whatever an element has for its slot reaches the card before the
-        // frame that draws it — a canvas with nothing live in it never ticks.
+        // frame that draws it -- a canvas with nothing live in it never ticks.
         if let (Some(slot), Some(tree)) =
             (self.canvases.get_mut(&def), self.host.window_def_mut(def))
         {
@@ -457,7 +457,7 @@ impl WebApp {
         drop(statuses);
         // **What this frame could not draw.** A view zoomed finer than its
         // summary left the span it was asked for on its slot; a page cannot
-        // map the samples, so it reads exactly that span back — which is what
+        // map the samples, so it reads exactly that span back -- which is what
         // makes the picture resolve to the sample here as it does natively.
         self.fetch_wanted_spans(def);
     }
@@ -480,7 +480,7 @@ impl WebApp {
     /// and winit prevents the default on the keys it sees, so Tab inside a
     /// mounted def would otherwise never reach the page: blurring is what makes
     /// the ring an *entrance and an exit* rather than a trap. The page decides
-    /// nothing here — it is the host that knows the ring ran out.
+    /// nothing here -- it is the host that knows the ring ran out.
     pub(super) fn blur(&self, def: i32) {
         use winit::platform::web::WindowExtWebSys;
         let Some(canvas) = self.canvases.get(&def).and_then(|s| s.window.canvas()) else {

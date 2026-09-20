@@ -1,8 +1,8 @@
 /**
  * The editor: what orchestrates a picture, a vocabulary and a history.
  *
- * {@link Editor} edits **one structure** — a buffer's samples, a break-point
- * curve, a timeline of events — and it imports nothing from the arrangement.
+ * {@link Editor} edits **one structure** -- a buffer's samples, a break-point
+ * curve, a timeline of events -- and it imports nothing from the arrangement.
  * What makes that possible is that it performs almost nothing itself: it opens a
  * window through a {@link View}, turns a gesture into a payload through a
  * {@link Domain}, answers the host through an {@link Echo}, and records what
@@ -15,14 +15,14 @@
  *   for its context ({@link Editing.of}) and never builds one, which is what
  *   makes two windows over one thing walk one undo order;
  * - **how an edit inverts is the crate's** (`history::Editable`), reached
- *   through the domain — never re-derived here, and never twice per language;
+ *   through the domain -- never re-derived here, and never twice per language;
  * - **what a number is measured in is the editor's**: the unit bridge (beats and
  *   seconds ↔ timeline samples) is here because it is the same bridge for every
  *   structure, and a view that computed its own would be a second answer.
  *
  * A multitrack application is this class plus what only a tree has: a held document,
  * several views of one multitrack, the lanes and clips, and a transport.
- * **Transport and render are not here** — a bare structure at most sounds; it
+ * **Transport and render are not here** -- a bare structure at most sounds; it
  * has no multitrack to move over.
  *
  * @module
@@ -54,7 +54,7 @@ let notAnEditHeld: readonly string[] = [];
  * hand is.
  *
  * They are answered generically and never reach a domain, because the crate is
- * explicit that screen state is never part of what is edited — and the list is
+ * explicit that screen state is never part of what is edited -- and the list is
  * **the crate's** (`clausters_document::view::NOT_AN_EDIT`) rather than this
  * module's, because it was written once here and once in the Python client's
  * editor, and a table that small drifts unread: a tag one client treats as
@@ -72,7 +72,7 @@ export function notAnEdit(): readonly string[] {
 }
 
 /**
- * The host an `open` acts on: the one named, else the ambient one — the same
+ * The host an `open` acts on: the one named, else the ambient one -- the same
  * resolution `guidef.View.open`, `plot` and `scope` share, so an editor is not
  * the one resource that has to be handed a host.
  *
@@ -99,7 +99,7 @@ export interface GenericEditorOptions<S> {
     context?: Editing | null;
     title?: string;
     /**
-     * Widgets appended to the window after the picture — a transport panel, a
+     * Widgets appended to the window after the picture -- a transport panel, a
      * readout. They are the script's, so the editor never touches their ids;
      * keep them clear of `baseId`.
      */
@@ -114,13 +114,13 @@ export interface GenericEditorOptions<S> {
      */
     baseId?: number;
     /**
-     * The {@link Application} to draw in — the host, the id space, the
+     * The {@link Application} to draw in -- the host, the id space, the
      * acknowledgement. Given none, the editor makes one of its own and is an
      * application of one; handed one, several editors share a window set and an
      * undo order.
      */
     /**
-     * The {@link Application} this editor draws in — the window set it shares a
+     * The {@link Application} this editor draws in -- the window set it shares a
      * host, an id space and an undo walk with. Its **acknowledgement stays its
      * own** ({@link Editor.echo}), since a conversation's floor is one view's.
      * Absent: one for this editor alone.
@@ -139,7 +139,7 @@ export class Editor<S = unknown> implements Adopting {
     title: string;
     size: [number, number];
     /**
-     * Widgets appended to the window after the picture. They are the script's —
+     * Widgets appended to the window after the picture. They are the script's --
      * the editor never touches their ids.
      */
     extra: GuiNode[];
@@ -153,7 +153,7 @@ export class Editor<S = unknown> implements Adopting {
      */
     composedIn: Editor | null = null;
     /**
-     * What of the composing editor's model this one draws — the element a
+     * What of the composing editor's model this one draws -- the element a
      * dedicated roll or signal view was opened over. `null` when this editor
      * stands alone.
      */
@@ -172,7 +172,7 @@ export class Editor<S = unknown> implements Adopting {
     selection: Selection | Record<string, never> = {};
     /**
      * **Where the reader is**, in this editor's own units (beats for a timeline,
-     * seconds for a multitrack, a take or a curve) —
+     * seconds for a multitrack, a take or a curve) --
      * the position cursor a click placed, and `null` until one
      * has been. It is where a playback starts and where a paste lands, which is
      * why it is worth keeping: the playhead is where the *music* is and moves on
@@ -183,11 +183,11 @@ export class Editor<S = unknown> implements Adopting {
     cursor: number | null = null;
     /**
      * Called with the beat the **position cursor** was placed at, whenever a
-     * click moves it — on the time ruler, or on the slack a click lands on when
+     * click moves it -- on the time ruler, or on the slack a click lands on when
      * it lands on nothing. `null` to be told nothing.
      *
      * Not an edit, and deliberately not a seek: the cursor says where the
-     * *reader* is, and what that means for the sound is the application's —
+     * *reader* is, and what that means for the sound is the application's --
      * normally cueing a stopped transport there, so the next play starts from
      * the mark, and leaving a rolling one alone.
      */
@@ -197,14 +197,14 @@ export class Editor<S = unknown> implements Adopting {
 
     /**
      * The **application** this editor draws in: the host, the widget-id space
-     * and the publish — everything true of a window set rather than of this
+     * and the publish -- everything true of a window set rather than of this
      * structure. Handed one, several editors share a window set and an undo
      * order; given none, this editor is an application of one, which is what
      * every editor was before there was a name for it.
      */
     readonly app: Application;
     /**
-     * **This view's** end of the acknowledgement protocol — the stamp, the
+     * **This view's** end of the acknowledgement protocol -- the stamp, the
      * floor, the corrections and the reason.
      *
      * One per editor and **not** one per application, which is where it used to
@@ -242,7 +242,7 @@ export class Editor<S = unknown> implements Adopting {
     protected readonly givenContext: Editing | null;
     /**
      * The identity this structure was registered in the history under, minted on
-     * the first edit — a structure you built has no id and is not going to be
+     * the first edit -- a structure you built has no id and is not going to be
      * given a stable one for this.
      */
     protected structureId: number | null = null;
@@ -310,7 +310,7 @@ export class Editor<S = unknown> implements Adopting {
     }
 
     /**
-     * Timeline samples in the **first** beat — the nominal ratio of the data↔view
+     * Timeline samples in the **first** beat -- the nominal ratio of the data↔view
      * bridge. A ratio at a position, not a constant: under a tempo that changes,
      * a later beat is a different number of samples wide.
      */
@@ -332,7 +332,7 @@ export class Editor<S = unknown> implements Adopting {
     }
 
     /**
-     * Timeline samples per second — the axis *is* samples, so this is the
+     * Timeline samples per second -- the axis *is* samples, so this is the
      * engine's sample rate. A length in seconds crosses on this one, and only an
      * onset crosses on {@link Editor.unitsPerBeat}.
      */
@@ -367,7 +367,7 @@ export class Editor<S = unknown> implements Adopting {
     }
 
     /**
-     * The id that draws `role`/`key` **of this structure** — the same number for
+     * The id that draws `role`/`key` **of this structure** -- the same number for
      * as long as it keeps being drawn ({@link Application.idFor}).
      *
      * The name is the structure's identity in the history, so two views of one
@@ -432,7 +432,7 @@ export class Editor<S = unknown> implements Adopting {
     // ---- the history: the data's, not this editor's ----
 
     /**
-     * The structure's editing context — its history, and the views over it.
+     * The structure's editing context -- its history, and the views over it.
      *
      * Reached through the **data**, so a second window gets the same one. That is
      * the whole of what makes an undo in either view update both, and it is why
@@ -444,7 +444,7 @@ export class Editor<S = unknown> implements Adopting {
     }
 
     /**
-     * The version — the counter the host names back on its next gesture. The
+     * The version -- the counter the host names back on its next gesture. The
      * context's, moved by its turns, steps and records and never here.
      */
     protected get version(): number {
@@ -474,7 +474,7 @@ export class Editor<S = unknown> implements Adopting {
     // ---- the forward draw ----
 
     /**
-     * The structure as a `window`-rooted GuiDef. Pure — it builds the tree and
+     * The structure as a `window`-rooted GuiDef. Pure -- it builds the tree and
      * the view's registry, and sends nothing.
      */
     draw(): GuiNode {
@@ -482,7 +482,7 @@ export class Editor<S = unknown> implements Adopting {
         // The draw is **bracketed**: every named widget asked for inside it
         // counts as still drawn, and what the view stopped drawing gives its id
         // back on the way out. That bracket is what lets an id be an identity
-        // rather than a lease — a widget still in the picture keeps its number,
+        // rather than a lease -- a widget still in the picture keeps its number,
         // and only one that is genuinely gone releases it.
         this.resetIds();
         const tree = this.view.draw(this);
@@ -492,7 +492,7 @@ export class Editor<S = unknown> implements Adopting {
 
     /**
      * `draw` the structure and open it on `host`, or on the **ambient** host when
-     * none is named — the same rule `guidef.View.open`, `plot` and `scope`
+     * none is named -- the same rule `guidef.View.open`, `plot` and `scope`
      * follow.
      *
      * **It also listens.** From here the gestures reach the structure as the
@@ -536,7 +536,7 @@ export class Editor<S = unknown> implements Adopting {
         return this.windowId;
     }
 
-    /** The open window's id, or `null` — the same number as {@link window}. */
+    /** The open window's id, or `null` -- the same number as {@link window}. */
     get id(): number | null {
         return this.windowId;
     }
@@ -551,7 +551,7 @@ export class Editor<S = unknown> implements Adopting {
      *
      * **The history is not closed with it.** An undo order belongs to the data
      * ({@link Editing}), so editing the same structure again resumes the same
-     * order — closing a window is not an edit, and never was.
+     * order -- closing a window is not an edit, and never was.
      */
     close(): this {
         const window = this.windowId;
@@ -568,7 +568,7 @@ export class Editor<S = unknown> implements Adopting {
      * Call `handler()` when this editor's window is closed; `null` clears it.
      *
      * The same verb `PlotWindow.onClosed` and `WindowHandle.onClosed` carry,
-     * over the same registry — so a window opened by {@link edit} and one
+     * over the same registry -- so a window opened by {@link edit} and one
      * opened by `plot` are told about in one way.
      */
     onClosed(handler: (() => void) | null): this {
@@ -580,13 +580,13 @@ export class Editor<S = unknown> implements Adopting {
     }
 
     /**
-     * Resolves when this editor's window is closed, or on `timeout` seconds —
+     * Resolves when this editor's window is closed, or on `timeout` seconds --
      * `true` for the first, `false` for the second.
      *
      * The page's shape of the reference client's `Editor.wait`: there a script
      * must not exit while the window is on screen and the call blocks a thread;
      * here nothing exits and nothing may block, so it is a promise. What both
-     * say is the same — read the structure back *after* the hand is done with
+     * say is the same -- read the structure back *after* the hand is done with
      * it.
      */
     wait(timeout?: number): Promise<boolean> {
@@ -616,7 +616,7 @@ export class Editor<S = unknown> implements Adopting {
         // `<id> <seq> <version> <tag> <payload…>`: the stamp and the version the
         // gesture was made against are the second and third arguments of every
         // event, and the envelope is all the decision reads. The payload never
-        // crosses for it — what a report *means* is the domain's, and it crosses
+        // crosses for it -- what a report *means* is the domain's, and it crosses
         // once, there.
         const id = Math.trunc(Number(rawArgs[0] ?? 0));
         const turn = this.echo.read({
@@ -677,7 +677,7 @@ export class Editor<S = unknown> implements Adopting {
      * This editor's window closed. Answers `false`: nothing changed.
      *
      * Closing a *view* is not an event of the history, so the context stays
-     * exactly as it is — what goes is this window's place in the list of who to
+     * exactly as it is -- what goes is this window's place in the list of who to
      * tell.
      */
     protected closedWindow(): boolean {
@@ -750,7 +750,7 @@ export class Editor<S = unknown> implements Adopting {
      * than stating an edit or saying what a view is looking at.
      *
      * The third kind, and it is the editor's rather than the domain's because
-     * what it asks for is a *window* — a multitrack's `"enter"` opens the box
+     * what it asks for is a *window* -- a multitrack's `"enter"` opens the box
      * that was double clicked, and opening a window is not something a
      * vocabulary of edits can say. Nothing here reaches a history: what the
      * editor it opened does afterwards is what lands in one.
@@ -773,8 +773,8 @@ export class Editor<S = unknown> implements Adopting {
     protected observe(wid: number, tag: string, values: readonly unknown[]): boolean {
         if (tag === "locate" && values.length > 0) {
             // A click on the time ruler: the reader put the position cursor
-            // there. It is kept here whatever else happens to it — a play starts
-            // from it, a paste lands on it — and it is not a seek: the playhead
+            // there. It is kept here whatever else happens to it -- a play starts
+            // from it, a paste lands on it -- and it is not a seek: the playhead
             // is never placed.
             this.cursor = this.position(Number(values[0]));
             // **Whoever has the transport is told**, and that is this editor
@@ -806,7 +806,7 @@ export class Editor<S = unknown> implements Adopting {
     /**
      * This editor's selection moved.
      *
-     * Nothing on its own — a structure's selection is that structure's. A view
+     * Nothing on its own -- a structure's selection is that structure's. A view
      * **composed** inside a bigger editor hands it up instead, because the range
      * an operation is given must be the same value whichever of the multitrack's
      * windows it was swept in.
@@ -838,7 +838,7 @@ export class Editor<S = unknown> implements Adopting {
      * The inverse is read **before** the edit lands ({@link Domain.current}),
      * which is the whole reason this is one call: a surface that let you apply
      * first and record second would let you record the wrong thing. A payload the
-     * structure was already at is applied by nobody and recorded by nobody — a
+     * structure was already at is applied by nobody and recorded by nobody -- a
      * resend is not an edit.
      */
     protected edit(payload: unknown, label: string, coalesce = false): boolean {
@@ -871,7 +871,7 @@ export class Editor<S = unknown> implements Adopting {
      *
      * The same rule as {@link Editor.edit}, and it is spelled out only because
      * there is no one-call form for a transaction: each inverse is read
-     * immediately before *that* payload lands, never all of them up front — an
+     * immediately before *that* payload lands, never all of them up front -- an
      * inverse read against a state two edits ago puts back a state that never
      * held.
      */
@@ -929,7 +929,7 @@ export class Editor<S = unknown> implements Adopting {
     /**
      * This editor's window went away: stop whatever it was driving.
      *
-     * Unsubscribing, here — an editor with no window has nothing to answer for,
+     * Unsubscribing, here -- an editor with no window has nothing to answer for,
      * and the host holds an open editor so a script need not, which is where
      * that stops. An editor that composed other views overrides it, because a
      * view *it* composed may still be on screen and fed from the same
@@ -942,7 +942,7 @@ export class Editor<S = unknown> implements Adopting {
     }
 
     /**
-     * Called with no arguments after any gesture that **changed the data** —
+     * Called with no arguments after any gesture that **changed the data** --
      * this window's, another window's over the same structure, or a step of the
      * history. `null` to be told nothing.
      *
@@ -952,7 +952,7 @@ export class Editor<S = unknown> implements Adopting {
     onChange: (() => void) | null = null;
 
     /**
-     * The structure changed in a turn — this editor's own gesture, another
+     * The structure changed in a turn -- this editor's own gesture, another
      * window's, or a step of the history.
      *
      * Separate from {@link Editor.adopt}, which is about *drawing*: a page that
@@ -969,8 +969,8 @@ export class Editor<S = unknown> implements Adopting {
      *
      * It takes nothing, and it used to take the turn's intents so a view could
      * adopt a placement or a length as a prop instead of redrawing. What this
-     * does is already props — one resync per widget and one acknowledgement,
-     * never a redefine — so the intents would only have narrowed which widgets,
+     * does is already props -- one resync per widget and one acknowledgement,
+     * never a redefine -- so the intents would only have narrowed which widgets,
      * and no view ever read one.
      *
      * A window that is not open has nothing to bring in step.
@@ -1013,7 +1013,7 @@ export class Editor<S = unknown> implements Adopting {
      * The history holds structures the crate cannot reach, so it applies nothing:
      * what comes back is an ordered list of legs, and it is the editor that hands
      * each to the domain that owns it. A leg naming a structure this editor does
-     * not hold is left alone — another view of the same context owns it, and one
+     * not hold is left alone -- another view of the same context owns it, and one
      * pile over several structures is the point.
      */
     protected step(direction: "undo" | "redo"): boolean {
@@ -1026,7 +1026,7 @@ export class Editor<S = unknown> implements Adopting {
      * told once.
      *
      * Called on the editor that walked, after the whole step has landed, so a
-     * window whose structure the step did not touch still comes back in step —
+     * window whose structure the step did not touch still comes back in step --
      * one entry can move several structures, and a picture of one of them is a
      * picture of the walk.
      */

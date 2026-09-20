@@ -7,8 +7,8 @@ Runs from the *installed* package, offline, like ``buffers/offline_render.py``::
     pip install ./clients/python
     python clients/python/examples/basics/graph_maths.py out.wav
 
-Every operator and math method beyond `+ - * /` — ``%``, ``min``/``max``, the
-comparisons, ``.midicps()``, ``.distort()``, ``.clip2()`` … — composes the
+Every operator and math method beyond `+ - * /` -- ``%``, ``min``/``max``, the
+comparisons, ``.midicps()``, ``.distort()``, ``.clip2()`` … -- composes the
 server's generic ``BinaryOpUGen``/``UnaryOpUGen``, computed by the same
 ``clausters-core`` code the client uses off the RT path (so a value you compute
 ahead of time and the UGen on the audio thread agree bit-for-bit). The point of
@@ -17,8 +17,8 @@ interest is the `SynthDef`: it does real per-sample maths, no Faust needed.
 The **range maps** are part of that surface and are shown here too:
 ``.linexp()`` and its five siblings map a signal off one range onto another
 through the very function the script's own ``linexp`` computes with. The
-vibrato below is the case worth reading — a vibrato is a *ratio*, not an
-offset — and its bounds are themselves signals, which a map allows.
+vibrato below is the case worth reading -- a vibrato is a *ratio*, not an
+offset -- and its bounds are themselves signals, which a map allows.
 
 This file is organized as ``# %%`` cells (the VS Code / Jupyter convention).
 Offline does not mean run-once: change an operator in the def cell and re-render
@@ -36,7 +36,7 @@ from clausters.defs import (DoneAction, Env, SynthDef, control, env_gen, out,
 from clausters.defs import Synth
 
 #: Where a run leaves its file when no path is given: ``examples/out/``, the
-#: git-ignored directory every generator in this tree writes to — beside the
+#: git-ignored directory every generator in this tree writes to -- beside the
 #: examples rather than in whatever directory you ran from. Made here so that
 #: rendering is one call and not two.
 OUT = pathlib.Path(__file__).resolve().parents[1] / "out"

@@ -1,20 +1,20 @@
 //! The virtual piano keyboard's graphic primitives: a playable keyboard laid
 //! out with **real piano proportions** (relative units, so it resizes freely),
 //! and an overview strip spanning the full MIDI range for zoom/pan navigation
-//! — all pure over a [`Draw`] (the flat-geometry [`crate::host::paint`]
+//! -- all pure over a [`Draw`] (the flat-geometry [`crate::host::paint`]
 //! painter), so everything is unit-testable without a window.
 //!
 //! The key geometry follows the real instrument, expressed only as ratios of
 //! the white-key width (the one derived unit): every white key is 1 unit wide,
 //! a black key [`BLACK_W`] units wide and [`BLACK_LEN`] of the white key's
 //! length, and the black keys are **not** centered on the white-key boundaries
-//! — within the C–E group the rear (upper) segments of C, D and E are equal
+//! -- within the C–E group the rear (upper) segments of C, D and E are equal
 //! (`(3 − 2b)/3` each), within F–B those of F, G, A and B are equal
 //! (`(4 − 3b)/4`), which is how the physical keyboard distributes them. All
 //! layout derives from the widget rect, so the drawing scales with it.
 //!
 //! Everything here is **display logic plus message shaping**; the one multitrack of
-//! general musical knowledge — note spelling and the MIDI↔hertz map — lives in
+//! general musical knowledge -- note spelling and the MIDI↔hertz map -- lives in
 //! `clausters_core::scale` per the placement rule.
 
 use clausters_core::scale;
@@ -27,7 +27,7 @@ use crate::host::theme::with_alpha;
 
 // --- Proportions (white-key units) -----------------------------------------
 
-/// Black-key width as a fraction of the white-key width — the real
+/// Black-key width as a fraction of the white-key width -- the real
 /// instrument's 13.7 mm over 23.5 mm.
 pub const BLACK_W: f32 = 13.7 / 23.5;
 /// Black-key length as a fraction of the white-key length.
@@ -116,7 +116,7 @@ pub fn n_white(min: i32, max: i32) -> usize {
 /// Compute the widget's layout: an optional label strip at the top, the
 /// overview strip (when `overview`), and the keyboard filling the rest. The
 /// visible range is normalized so both edges are white keys (min down, max up)
-/// — the keyboard always starts and ends on a full white key.
+/// -- the keyboard always starts and ends on a full white key.
 pub fn layout(
     rect: Rect,
     min: i32,
@@ -171,7 +171,7 @@ pub fn key_rect(l: &Layout, midi: i32) -> Option<Rect> {
     }
 }
 
-/// The key under `(x, y)` in the keyboard area, if any — black keys win over
+/// The key under `(x, y)` in the keyboard area, if any -- black keys win over
 /// the white keys they overlap (they are drawn on top).
 pub fn hit(l: &Layout, x: f32, y: f32) -> Option<i32> {
     if !l.keys.contains(x as f64, y as f64) {
@@ -203,7 +203,7 @@ pub fn hit(l: &Layout, x: f32, y: f32) -> Option<i32> {
 }
 
 /// The MIDI velocity a press height maps to within a key: 1 at the rear (top)
-/// edge, 127 at the front (bottom) edge — striking closer to the front plays
+/// edge, 127 at the front (bottom) edge -- striking closer to the front plays
 /// louder.
 pub fn velocity_at(l: &Layout, midi: i32, y: f32) -> i32 {
     let Some(r) = key_rect(l, midi) else {
@@ -348,7 +348,7 @@ pub fn draw(d: &mut Draw, l: &Layout, state: &PianoDraw) {
 
 /// Draw the overview strip: the full MIDI range compressed, the active range
 /// lit against the gray outside, black-key positions shaded, the pressed keys
-/// marked, and the visible window as a translucent box with bright edges — the
+/// marked, and the visible window as a translucent box with bright edges -- the
 /// keyboard's "ruler", dragged to pan and wheeled to zoom.
 pub fn draw_overview(
     d: &mut Draw,
@@ -403,7 +403,7 @@ pub fn draw_overview(
 }
 
 /// Draw the whole widget: the label strip (when labelled), the overview and
-/// the keyboard — the one entry the frame renderer calls.
+/// the keyboard -- the one entry the frame renderer calls.
 #[allow(clippy::too_many_arguments)] // one widget's flat prop set, all scalars
 pub fn draw_widget(
     d: &mut Draw,
@@ -614,7 +614,7 @@ mod tests {
             let x = overview_key_x(strip, p);
             assert_eq!(overview_hit(strip, x + 0.5), p);
         }
-        // Clamping happens at the caller (gestures) — the raw map is linear.
+        // Clamping happens at the caller (gestures) -- the raw map is linear.
         let (min, max) = center_range(60, 72, 100);
         assert_eq!(max - min, 12);
         assert!((min..=max).contains(&100) || max == MIDI_MAX);

@@ -3,7 +3,7 @@
 
 Two things have to agree across the languages, and they are of different kinds.
 
-**The parse** is each client's own code — `parse_midi` there, `parseMidi` here —
+**The parse** is each client's own code -- `parse_midi` there, `parseMidi` here --
 so the vectors freeze the reference client's answer for a spread of raw
 messages, including the ones that are supposed to decode to nothing.
 

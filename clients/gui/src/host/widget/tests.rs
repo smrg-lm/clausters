@@ -1,6 +1,6 @@
 //! The schema's own suite: every test here parses a `/gui_def` document with
 //! [`Widget::from_node`] and then applies props to it, because that round trip
-//! *is* what the model promises — a wire node in, a typed widget out, a
+//! *is* what the model promises -- a wire node in, a typed widget out, a
 //! `/gui_set` landing on the part of it that the prop names.
 
 use clausters_core::osc::OscType;
@@ -38,7 +38,7 @@ fn descendants_walk_parents_before_children_in_order() {
 }
 
 /// A plane's zoom is nameable *and* clearable: a positive number is the
-/// scale, and anything else — `0`, an empty string — puts it back to the
+/// scale, and anything else -- `0`, an empty string -- puts it back to the
 /// default, which is the only way the wire can ask for a default it has no
 /// number for.
 #[test]
@@ -265,7 +265,7 @@ fn waveform_by_server_buffer_starts_empty_with_the_buffer_number() {
         .unwrap();
     assert!(
         data.samples.is_empty(),
-        "no inline data yet — fetched later"
+        "no inline data yet -- fetched later"
     );
     assert_eq!(data.buffer, Some(7));
 }
@@ -735,7 +735,7 @@ fn editor_y_view_parses_clamps_and_applies() {
 }
 
 /// A navigable spectrum's frequency window is the x sibling of `y_view`: the
-/// same normalized reading, the same clamp, the same order-independence — and
+/// same normalized reading, the same clamp, the same order-independence -- and
 /// it arrives under the x axis' own `view_start`/`view_len`, which on a
 /// timeline member the group model takes instead.
 #[test]
@@ -858,7 +858,7 @@ fn the_six_names_parse_to_their_point_of_the_product() {
     assert_eq!(point(4), (Presentation::Spectrum, true, false));
     assert_eq!(point(5), (Presentation::Phase, true, false));
     // The seventh point the six names never had: a spectrum that navigates.
-    // It is opt-in — a bare `spectrum` is the spectroscope above — and it
+    // It is opt-in -- a bare `spectrum` is the spectroscope above -- and it
     // joins **no** time axis, because the axis it navigates is frequency.
     assert_eq!(point(6), (Presentation::Spectrum, true, true));
     assert!(w.children[6].kind.navigates_freq());
@@ -869,7 +869,7 @@ fn the_six_names_parse_to_their_point_of_the_product() {
 }
 
 /// A `/gui_set` key lands on the part of the model it names, and is refused
-/// where that part does not exist — the source keys on a stored element,
+/// where that part does not exist -- the source keys on a stored element,
 /// the analysis size under either of its two wire names.
 #[test]
 fn a_set_lands_on_the_part_of_the_model_it_names() {
@@ -1106,8 +1106,8 @@ fn apply_updates_value_and_event_value_reports_it() {
 /// fails until whoever added it has read why.
 ///
 /// The rule, if this test brought you here: **a container arranges and defines
-/// a coordinate system** — the layout pass has to know each one it places into,
-/// which is why they are a closed set — and **an element draws in one**, which
+/// a coordinate system** -- the layout pass has to know each one it places into,
+/// which is why they are a closed set -- and **an element draws in one**, which
 /// nothing outside it has to know at all. A leaf is a file in `host/elements/`
 /// implementing [`Element`] plus a row in `elements::builtin`; from outside the
 /// crate it is `clausters_gui::register`. A *third-party container* is

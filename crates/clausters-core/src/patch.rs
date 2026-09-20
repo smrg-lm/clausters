@@ -2,7 +2,7 @@
 //!
 //! The GUI patcher (the P track) is a **directed, typed graph**: boxes with
 //! typed inlets/outlets, a cord running `outlet → inlet`. A cord *is* a bus, but
-//! the user never numbers one — that bookkeeping is this module's job, kept here
+//! the user never numbers one -- that bookkeeping is this module's job, kept here
 //! (and not per client) because every client that draws a patch needs the
 //! identical translation. It is the front half a hand-wired GraphDef never
 //! needed: when the user named the buses, there was nothing to allocate; when the
@@ -21,7 +21,7 @@
 //! - **fan-out** (one outlet → many inlets) → the readers share the outlet's bus.
 //!
 //! Every net is a private bus (`b0`, `b1`, …). There is **no hardware node**:
-//! the buses are never drawn, so the hardware output is not one either — a signal
+//! the buses are never drawn, so the hardware output is not one either -- a signal
 //! reaches the speakers through a **terminal def** (a `dac`: an inlet, and an
 //! `Out.ar(0, …)` baked in, so no outlet), a member like any other.
 //!
@@ -32,14 +32,14 @@
 //! writers run before readers (see `src/osc/graphdef.rs`), so this pass adds no
 //! ordering and the audio path is untouched. The graphic is a DAG: a genuine
 //! feedback cycle is a code construction (nodes and groups in a control cycle),
-//! never a cord, so the pass does not resolve cycles — it faithfully wires
+//! never a cord, so the pass does not resolve cycles -- it faithfully wires
 //! whatever cords it is given.
 
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-/// A port's signal rate — the cord type. Cords of different rates never connect:
+/// A port's signal rate -- the cord type. Cords of different rates never connect:
 /// the rate is checked at the gesture and again here.
 ///
 /// `Audio` (`ar`) and `Control` (`kr`) are the two the **level-1** patcher wires,
@@ -65,11 +65,11 @@ pub enum Dir {
 }
 
 /// One port of a box: the def **control** it stands for, plus its direction and
-/// rate (both derived from the def — a control feeding an `In` is an inlet, one
+/// rate (both derived from the def -- a control feeding an `In` is an inlet, one
 /// feeding an `Out` an outlet).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Port {
-    /// The def control name — becomes the wired control in the output.
+    /// The def control name -- becomes the wired control in the output.
     pub name: String,
     pub dir: Dir,
     pub rate: Rate,
@@ -96,7 +96,7 @@ impl Port {
 
 /// One box on the canvas: a def with its typed ports. Every box is a member; a
 /// **terminal** def (a `dac`, reaching hardware via a baked `Out.ar(0, …)`) is
-/// one with inlets and no outlets — there is no special hardware box.
+/// one with inlets and no outlets -- there is no special hardware box.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PatchBox {
     /// The member def name (a SynthDef/FaustDef the server has).
@@ -143,7 +143,7 @@ pub struct Patch {
     pub cords: Vec<Cord>,
 }
 
-/// A private internal bus of the compiled graph — one per connected net of cords.
+/// A private internal bus of the compiled graph -- one per connected net of cords.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Bus {
     pub name: String,
@@ -161,7 +161,7 @@ pub struct Wiring {
 /// A compiled member: the box it came from, its def, and its wired controls.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Member {
-    /// Index into [`Patch::boxes`] — so a driver maps the member back to the box
+    /// Index into [`Patch::boxes`] -- so a driver maps the member back to the box
     /// the user drew.
     pub box_index: usize,
     pub def: String,
@@ -169,12 +169,12 @@ pub struct Member {
     pub controls: Vec<Wiring>,
 }
 
-/// The result of [`compile`]: the buses to declare and the members to wire — the
+/// The result of [`compile`]: the buses to declare and the members to wire -- the
 /// ingredients of a GraphDef spec, minus the parameter surface (which is the
 /// driver's, not the cord graph's).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Compiled {
-    /// Private internal buses — one per connected net.
+    /// Private internal buses -- one per connected net.
     pub buses: Vec<Bus>,
     /// One per box, in box order.
     pub members: Vec<Member>,
@@ -182,7 +182,7 @@ pub struct Compiled {
 
 /// Compiles a directed [`Patch`] into its [`Compiled`] bus wiring: one bus per
 /// connected net of cords, its writers summing, named `b0`, `b1`, …
-/// Deterministic — the output does not depend on cord order.
+/// Deterministic -- the output does not depend on cord order.
 ///
 /// Returns an error, naming the offending cord, when a cord references a missing
 /// box/port, runs the wrong way (not `outlet → inlet`), or joins mismatched
@@ -208,7 +208,7 @@ pub fn compile(patch: &Patch) -> Result<Compiled, String> {
         }
     }
 
-    // Union the ports each cord joins — the connected components are the buses.
+    // Union the ports each cord joins -- the connected components are the buses.
     let mut uf = UnionFind::new(total);
     for (ci, c) in patch.cords.iter().enumerate() {
         let from = port_at(patch, c.from_box, c.from_port).ok_or_else(|| {
@@ -302,7 +302,7 @@ fn port_at(patch: &Patch, box_i: usize, port_i: usize) -> Option<&Port> {
     patch.boxes.get(box_i)?.ports.get(port_i)
 }
 
-/// A disjoint-set forest with union-by-size and path halving — the connected
+/// A disjoint-set forest with union-by-size and path halving -- the connected
 /// components of the cord graph are the buses.
 struct UnionFind {
     parent: Vec<usize>,
@@ -345,7 +345,7 @@ mod tests {
     use super::*;
 
     /// `tone` (a source: outlet only), `trem` (in → out), `dac` (a terminal sink:
-    /// an inlet, no outlet — it reaches hardware via a baked `Out.ar(0, …)`).
+    /// an inlet, no outlet -- it reaches hardware via a baked `Out.ar(0, …)`).
     fn tone() -> PatchBox {
         PatchBox::member("tone", vec![Port::audio_out("out")])
     }
@@ -376,7 +376,7 @@ mod tests {
             ],
         };
         let c = compile(&patch).unwrap();
-        // Two private buses, one per link. There is no hardware bus — dac reaches
+        // Two private buses, one per link. There is no hardware bus -- dac reaches
         // the speakers on its own.
         assert_eq!(
             c.buses,
@@ -437,7 +437,7 @@ mod tests {
     #[test]
     fn a_shared_outlet_makes_transitive_readers_share_one_sum() {
         // A.out->B.in, A.out->D.in, C.out->B.in: A and C share B's bus (a sum),
-        // and because A writes one bus, D reads A+C too — the honest consequence
+        // and because A writes one bus, D reads A+C too -- the honest consequence
         // of a member's outlet being a single bus.
         let patch = Patch {
             boxes: vec![tone(), tone(), dac(), dac()], // A=0, C=1, B=2, D=3

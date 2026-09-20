@@ -2,8 +2,8 @@
 """Generate seq-vectors.json from the Python client's reference sequencing layer.
 
 The Python client is the reference; this script freezes what its automation
-lane emits — the internal control def's spec, the flat ``/buffer_gen "env"``
-argument list a curve discretizes into, and the break-point round trip — so the
+lane emits -- the internal control def's spec, the flat ``/buffer_gen "env"``
+argument list a curve discretizes into, and the break-point round trip -- so the
 TS side can assert it emits the same in `tests/seq-parity.test.ts`.
 
 The two sides are written independently and only the emitted values are
@@ -14,7 +14,7 @@ The JSON is committed; regenerate with:
 
     python3 gen-seq-vectors.py
 
-(from clients/web/tests/, with the Python client importable — the repo's
+(from clients/web/tests/, with the Python client importable -- the repo's
 .venv has it installed editable).
 """
 
@@ -61,7 +61,7 @@ def automation_cases():
         "duration": auto.duration(),
     })
 
-    # An Env built directly rather than drawn — the same object the widget
+    # An Env built directly rather than drawn -- the same object the widget
     # round-trips through.
     auto = Automation(Env.adsr(0.01, 0.2, 0.6, 0.4), None, name="amp")
     cases.append({

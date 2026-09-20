@@ -4,14 +4,14 @@
 operators and exposes named math methods, routing every one through four
 dispatch hooks a subclass implements:
 
-- ``_compose_unop(selector)``           — unary
-- ``_compose_binop(selector, other)``   — binary
-- ``_rcompose_binop(selector, other)``  — reflected binary (``other <op> self``)
-- ``_compose_narop(selector, *args, **static)`` — n-ary (the range maps)
+- ``_compose_unop(selector)``           -- unary
+- ``_compose_binop(selector, other)``   -- binary
+- ``_rcompose_binop(selector, other)``  -- reflected binary (``other <op> self``)
+- ``_compose_narop(selector, *args, **static)`` -- n-ary (the range maps)
 
 The ``selector`` strings are the same operator names used by
 `clausters.base.builtins` (value side) and by
-`clausters.defs.signals` (graph side) — so the *same* expression composes
+`clausters.defs.signals` (graph side) -- so the *same* expression composes
 either concrete numbers or a Faust/UGen graph depending on the subclass. This
 is what lets one piece of code describe both.
 """

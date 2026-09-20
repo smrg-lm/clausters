@@ -10,7 +10,7 @@ use clausters::server::ipc::Segment;
 // The group-binding tests below build a real synth to make a group's output
 // legible, which needs the `synth` def family (UGenSynth/synthdef::compile).
 // The transport-clock tests above them need neither, so only this half of
-// the file is gated — gating the whole file would silently drop the clock
+// the file is gated -- gating the whole file would silently drop the clock
 // tests' only coverage in a build without the def family.
 #[cfg(feature = "synth")]
 use std::sync::Arc;
@@ -30,7 +30,7 @@ use clausters::synthdef::{SynthDef, SynthDefSpec, compile};
 /// group's output legible without a def file: `ReplaceOut` at a constant bus
 /// with a constant value, the same pattern `tests/engine.rs` uses for its
 /// silencer def. `level` is control index 0 rather than a literal, so a test
-/// can move it later with `Cmd::SetControl` — which is how the scheduling
+/// can move it later with `Cmd::SetControl` -- which is how the scheduling
 /// tests below tell whether a bundle has fired.
 #[cfg(feature = "synth")]
 fn constant_def(bus: i32, level: f32) -> Arc<SynthDef> {
@@ -90,7 +90,7 @@ fn add_noise_synth_in_new_group(handle: &mut EngineHandle, group_id: i32, _bus: 
 }
 
 /// Builds a new group under the root and, inside it, a single synth that
-/// writes `level` to `bus` every block — the constant-output helper the
+/// writes `level` to `bus` every block -- the constant-output helper the
 /// transport tests use to tell a governed subtree's output from a live one's.
 #[cfg(feature = "synth")]
 fn add_constant_synth_in_new_group(handle: &mut EngineHandle, group_id: i32, bus: i32, level: f32) {
@@ -449,7 +449,7 @@ fn a_graph_reads_the_position_and_it_ramps_one_frame_per_sample() {
     );
 }
 
-/// A stopped transport holds the position rather than ramping it — the case a
+/// A stopped transport holds the position rather than ramping it -- the case a
 /// reader outside the governed group sees, since a governed one is frozen and
 /// never runs at all.
 #[test]
@@ -559,7 +559,7 @@ fn frozen_time_is_counted_to_the_sample_not_to_the_block() {
     // A stop and a resume that both land *inside* a block, at different
     // offsets. Crediting a whole block of frozen time whenever the transport
     // happens to be stopped at the block boundary loses (stop offset - resume
-    // offset) samples every cycle, and the error accumulates without bound —
+    // offset) samples every cycle, and the error accumulates without bound --
     // so ten cycles here, and the assertion is the exact sample count.
     const STOP_AT: u64 = 32;
     const RESUME_AT: u64 = 16;
@@ -1079,7 +1079,7 @@ fn render_take(blocks: usize, pause: Option<(u64, u64)>) -> Vec<f32> {
 /// span out of a paused render and it is the unpaused render, sample for
 /// sample.
 ///
-/// This one equality proves three things at once — the subtree's internal state
+/// This one equality proves three things at once -- the subtree's internal state
 /// survived the freeze, the transport clock stopped exactly when the DSP did,
 /// and the transport queue neither lost nor advanced an event. Over a
 /// seeded-noise def it also proves the stochastic process **continued** rather
@@ -1129,7 +1129,7 @@ fn a_pause_is_transparent_to_the_rendered_take() {
 /// An **audio** bus is a signal: it is cleared every block and nobody refills
 /// it, so it goes silent, and a live effect reading it decays naturally. A
 /// **control** bus is a value: control buses are not cleared, so it holds what
-/// it last had. That asymmetry is the point — a control bus falling to zero
+/// it last had. That asymmetry is the point -- a control bus falling to zero
 /// would make every parameter mapped to it jump on every pause.
 #[cfg(feature = "synth")]
 #[test]

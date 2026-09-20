@@ -3,9 +3,9 @@
 //!
 //! A host reports a stroke or a dragged sample and waits to be told what
 //! happened. The editor reads the message ([`Conversation`]), reads the gesture
-//! in the `samples` vocabulary (`clausters_editing::samples::intake`) — which
+//! in the `samples` vocabulary (`clausters_editing::samples::intake`) -- which
 //! carries the run it wrote **and** the run it replaced, so the inverse is taken
-//! from that one reading and nothing is kept between two calls — and answers:
+//! from that one reading and nothing is kept between two calls -- and answers:
 //! an acknowledgement, and the reload an overtaken gesture needs.
 //!
 //! # What it hands back rather than does
@@ -79,7 +79,7 @@ pub struct SamplesEditor {
 
 impl SamplesEditor {
     /// An editor over the take in `buffer`, measured by `layers`, whose history
-    /// is at `version` — or the reason the stack is refused ([`measures`]).
+    /// is at `version` -- or the reason the stack is refused ([`measures`]).
     pub fn new(
         buffer: i64,
         channels: u32,
@@ -195,7 +195,7 @@ impl SamplesEditor {
         ))
     }
 
-    /// **Every widget of the window, corrected**, with nothing to retire — what
+    /// **Every widget of the window, corrected**, with nothing to retire -- what
     /// a history step leaves behind, and what a second window over the take is
     /// told when another one wrote it.
     pub fn resync_all(&self, version: i64) -> Answer {
@@ -236,7 +236,7 @@ impl SamplesEditor {
         };
         // **The inverse is the reading's**: the run the stroke replaced arrived
         // in the same message, and a run that did not cover the write is no
-        // inverse at all — an entry the pile cannot invert is better not
+        // inverse at all -- an entry the pile cannot invert is better not
         // recorded than pretended.
         if let Some(backward) = taken.inverse {
             out.record = Some(Record {
@@ -311,7 +311,7 @@ struct Facts {
     version: Option<i64>,
 }
 
-/// A key that is present, whatever its value — `null` included.
+/// A key that is present, whatever its value -- `null` included.
 fn present<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -349,9 +349,9 @@ impl SamplesEditor {
     }
 }
 
-/// **An editor built from a JSON request** — `buffer`, `channels`, `name`,
+/// **An editor built from a JSON request** -- `buffer`, `channels`, `name`,
 /// `layers` (the measure stack, [`MEASURES`] when absent), `rate`,
-/// `title`, `w`, `h` and `version` (the history's counter) — or the reason it
+/// `title`, `w`, `h` and `version` (the history's counter) -- or the reason it
 /// cannot be: a request that is not JSON, or a measure stack that is refused.
 pub fn new_json(request: &str) -> Result<SamplesEditor, String> {
     let facts: Facts =
@@ -373,24 +373,24 @@ pub fn new_json(request: &str) -> Result<SamplesEditor, String> {
     Ok(editor)
 }
 
-/// **One verb of an editor, over JSON** — the door both clients bind.
+/// **One verb of an editor, over JSON** -- the door both clients bind.
 ///
 /// `request` names the `verb` and carries its arguments:
 ///
-/// - `sync` — any of `buffer`, `channels`, `name`, `rate`, `title`,
+/// - `sync` -- any of `buffer`, `channels`, `name`, `rate`, `title`,
 ///   `w`, `h`, `window`: the facts a caller holds, handed over before the verbs
 ///   that read them. Answers `{}`.
-/// - `layers` — `stack`, optional: measures the picture by it when given.
-///   Answers `{"layers", "measure"}` — the stack and the prop it is drawn with —
+/// - `layers` -- `stack`, optional: measures the picture by it when given.
+///   Answers `{"layers", "measure"}` -- the stack and the prop it is drawn with --
 ///   or `{"error"}` naming what was refused, keeping the stack it had.
-/// - `window` — `widget`: the window, as a GuiDef.
-/// - `props` — `widget`: the correction.
-/// - `event` — `addr`, `args` (a blob decoded to its numbers), `version`: an
+/// - `window` -- `widget`: the window, as a GuiDef.
+/// - `props` -- `widget`: the correction.
+/// - `event` -- `addr`, `args` (a blob decoded to its numbers), `version`: an
 ///   [`Outcome`].
-/// - `write` — `edit` (a `write` payload), `chunk` (the most values one
+/// - `write` -- `edit` (a `write` payload), `chunk` (the most values one
 ///   message carries, 8192 when absent): `{"steps"}`, what the write does to the
 ///   take's buffer.
-/// - `acknowledge` — `seq`, `version`, `reason`: an [`Answer`].
+/// - `acknowledge` -- `seq`, `version`, `reason`: an [`Answer`].
 ///
 /// An unknown verb answers `{}`.
 pub fn call_json(editor: &mut SamplesEditor, request: &str) -> String {

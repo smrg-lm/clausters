@@ -17,7 +17,7 @@ pub(super) enum Hole<'a> {
 
 /// Reads a template string as a hole, or `None` when it is ordinary text.
 ///
-/// Only a **whole** string is a placeholder — `"@lfo"` is the bus, `"bus @lfo"`
+/// Only a **whole** string is a placeholder -- `"@lfo"` is the bus, `"bus @lfo"`
 /// is prose. Substituting inside text would make every label a minefield and
 /// would have to invent a type for the result.
 pub(super) fn placeholder(s: &str) -> Option<Hole<'_>> {
@@ -94,8 +94,8 @@ fn substitute(value: &Value, ctx: &Ctx) -> Result<Value, Error> {
 }
 
 /// One widget node: its own id offset, its props substituted, its children
-/// walked. Ids are offset **structurally** — only the `id` of a node reached
-/// through `children` — so a prop that happens to be called `id` is left alone.
+/// walked. Ids are offset **structurally** -- only the `id` of a node reached
+/// through `children` -- so a prop that happens to be called `id` is left alone.
 pub(super) fn resolve_node(
     node: &Map<String, Value>,
     offset: i32,
@@ -154,7 +154,7 @@ pub(super) fn resolve_boot(list: &[Value], ctx: &Ctx) -> Result<Vec<Vec<Value>>,
     Ok(out)
 }
 
-/// Refuses a widget id used twice — the root's id counts, since it is offset
+/// Refuses a widget id used twice -- the root's id counts, since it is offset
 /// with the rest and a child numbered like the root would resolve onto it.
 pub(super) fn check_widget_ids(template: &Template) -> Result<(), Error> {
     fn walk(node: &Value, seen: &mut Vec<i64>) -> Result<(), Error> {

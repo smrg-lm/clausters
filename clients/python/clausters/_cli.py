@@ -5,16 +5,16 @@ on the environment's ``PATH``; each locates its native binary shipped inside
 the wheel (``clausters/_bin/``) and execs it, forwarding every argument. So
 ``clausters --tcp`` / ``clausters --shm /dev/shm/seg`` / ``clausters --nrt
 score out.wav`` and ``clausters-gui --standalone`` behave exactly like the
-cargo-built binaries — the wheel bundles both, so neither is installed apart.
+cargo-built binaries -- the wheel bundles both, so neither is installed apart.
 
-This is the **separate** server — a real process you can point UDP/TCP clients,
+This is the **separate** server -- a real process you can point UDP/TCP clients,
 ``ShmClient`` or several machines at. The **in-process embedded** server needs
 no command at all: `Session.embedded` opens one (`clausters.ipc.Clausters`
 is the handle it owns).
 
 Lookup precedence mirrors `clausters._libpath`: an explicit override
 (``CLAUSTERS_BIN``, ``CLAUSTERS_GUI_BIN``), the binary bundled in the wheel,
-then a source checkout's ``target/{release,debug}/`` — the workspace's for the
+then a source checkout's ``target/{release,debug}/`` -- the workspace's for the
 server, ``clients/gui``'s for the host, which is its own workspace.
 """
 
@@ -100,7 +100,7 @@ Anything else is passed to the server binary: `clausters --help` for its flags.
 def client_main(argv: "list[str]") -> int:
     """Run one of the `CLIENT_COMMANDS` against a running server.
 
-    This is the half of the console script that does **not** launch anything —
+    This is the half of the console script that does **not** launch anything --
     the way to reach a server whose client is gone (crashed, closed, or never
     Python at all) without writing a script to say one sentence to it. A stray
     server holds the audio device and may well still be sounding, and `kill`

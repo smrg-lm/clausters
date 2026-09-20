@@ -304,4 +304,4 @@ def run() -> None:
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     run()
 else:
-    print("up — run() to reopen the session and hear what it names")
+    print("up -- run() to reopen the session and hear what it names")

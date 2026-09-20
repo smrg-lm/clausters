@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Example Python client: generates defs as JSON and drives Clausters over
-OSC. Standard library only — no python-osc needed.
+OSC. Standard library only -- no python-osc needed.
 
 Start a server first:
 
@@ -19,7 +19,7 @@ then run one or more demos (default: status):
 `wavetable` computes a 256-point table in Python and plays it through
          `waveform` + `rdtable` (needs the faust feature).
 `bgen`   fills server buffers with `/buffer_gen` (sine1 wavetable, cheby transfer)
-         and plays them through the `Osc` and `Shaper` UGens — no Faust needed.
+         and plays them through the `Osc` and `Shaper` UGens -- no Faust needed.
 `buffer` writes a WAV, loads it with /buffer_allocRead, plays it with PlayBuf at
          the file's pitch (rate from /buffer_query.reply and /server_status), then frees it.
 `disk`   records a sine straight to a WAV with DiskOut, then streams it back
@@ -33,12 +33,12 @@ then run one or more demos (default: status):
          note frequencies from a `Dseq` (`"rate": "dr"`) into a Sine.
 `signal` builds Faust defs with the **Signal API** (`{"signals": […]}`): a
          sine from an explicit `recursion`/`self` phasor, and a one-pole
-         lowpass on noise — explicit sample-accurate feedback (needs the
+         lowpass on noise -- explicit sample-accurate feedback (needs the
          faust feature).
 `commands` exercises the command-set completion: control-range setters
          (`/node_setRange`), value queries (`/synth_getRange`), tree reordering (`/group_head`),
          control-bus ranges (`/bus_setRange`/`/bus_getRange`), a server command (`/server_cmd`)
-         and `/sched_clear` — no Faust needed.
+         and `/sched_clear` -- no Faust needed.
 `replies` the side-effect UGens: an **output-less** def (no `Out` at all)
          whose `SendTrig`/`SendReply` fire on a trigger control; a `/server_notify`
          client receives the `/node_trigger` and custom-address replies.
@@ -67,7 +67,7 @@ def _string(s: str) -> bytes:
 
 
 class Int64:
-    """Marker for an OSC int64 (`h`) argument — `/sched_at` sample targets."""
+    """Marker for an OSC int64 (`h`) argument -- `/sched_at` sample targets."""
 
     def __init__(self, value: int):
         self.value = int(value)
@@ -241,8 +241,8 @@ def stdlib_def() -> str:
 
 
 def wavetable_def() -> str:
-    """A wavetable oscillator whose table is *computed in Python* — the
-    first four harmonics of a saw — and shipped inside a `waveform` box. No
+    """A wavetable oscillator whose table is *computed in Python* -- the
+    first four harmonics of a saw -- and shipped inside a `waveform` box. No
     Faust source formatting, no server-side files."""
     n = 256
     table = [sum(math.sin(math.tau * k * i / n) / k for k in range(1, 5))
@@ -394,7 +394,7 @@ def demo_buffer(client: Client):
 
 def demo_bgen(client: Client):
     """Table oscillators: fill server buffers with `/buffer_gen` and read them
-    with `Osc` (wavetable) and `Shaper` (cheby waveshaping). No Faust needed —
+    with `Osc` (wavetable) and `Shaper` (cheby waveshaping). No Faust needed --
     this is the UGen-world counterpart of the `wavetable` demo above."""
     # 1. A wavetable: buffer 20 = a 1024-point table (2048 samples), built from
     #    the first few harmonics with sine1 (flags 7 = normalize+wavetable+clear).
@@ -483,7 +483,7 @@ def demo_disk(client: Client):
 def demo_bundle(client: Client):
     """An arpeggio scheduled entirely up front: every /synth_new and /node_free
     travels now inside a timetagged bundle, and the server fires them
-    sample-accurately — note the machine-steady rhythm."""
+    sample-accurately -- note the machine-steady rhythm."""
     notes = [330.0, 440.0, 550.0, 660.0, 880.0]
     print(f"bundle demo: scheduling {len(notes)} notes 0.4 s apart")
     for i, freq in enumerate(notes):
@@ -519,7 +519,7 @@ def signal_sine_def() -> str:
 
 
 def signal_lowpass_def() -> str:
-    """A one-pole lowpass `y = (1-a)·x + a·y'` reading audio input 0 — the
+    """A one-pole lowpass `y = (1-a)·x + a·y'` reading audio input 0 -- the
     `self`/`recursion` feedback is one sample, sample-accurate (a UGen graph
     cannot do this across nodes; see the `feedback` demo's one-block limit)."""
     a = sig_slider("a", 0.9, 0.0, 0.999, 0.001)
@@ -565,10 +565,10 @@ def demo_signal(client: Client):
 def demo_feedback(client: Client):
     """A resonant comb from LocalIn/LocalOut feedback. The graph is a DAG, so
     the loop goes through a synth-private feedback bus with one control block
-    (64 samples) of delay — a one-channel loop therefore rings at
+    (64 samples) of delay -- a one-channel loop therefore rings at
     sampleRate/64 (≈ 750 Hz at 48 kHz). A quiet 3 Hz impulse train re-excites
     it; the 0.98 feedback gain sets the decay. (LocalIn must come before
-    LocalOut — the builder adds them in call order, so it does.)"""
+    LocalOut -- the builder adds them in call order, so it does.)"""
     d = SynthDefBuilder("fbcomb")
     fb = d.add("LocalIn", 0)                          # channel 0, previous block
     exc = d.add("Mul", d.add("Impulse", 3.0), 0.3)   # 3 Hz excitation
@@ -580,7 +580,7 @@ def demo_feedback(client: Client):
     print("feedback demo: /def_send synth fbcomb (LocalIn/LocalOut resonant comb)")
     client.send("/def_send", "synth", d.blob())
     client.reply()
-    print("  /synth_new fbcomb 3005 — rings at sampleRate/64 ≈ 750 Hz")
+    print("  /synth_new fbcomb 3005 -- rings at sampleRate/64 ≈ 750 Hz")
     client.send("/synth_new", "fbcomb", 3005, 1, 0)
     time.sleep(3.0)
     client.send("/node_free", 3005)
@@ -591,9 +591,9 @@ def demo_demand(client: Client):
     yields the next one only when *pulled*; a `Demand` driver pulls it on each
     tick of a 4 Hz `Impulse`, holding the frequency between ticks. That held
     (control-like) signal drives a `Sine`, so the sine hops through the
-    sequence — a step sequencer with no per-note `/synth_new`. The `"rate": "dr"`
+    sequence -- a step sequencer with no per-note `/synth_new`. The `"rate": "dr"`
     on the `Dseq` marks it demand-rate; the compiler then only lets it feed
-    something that *pulls* it — a driver, or another demand ugen nesting it.
+    something that *pulls* it -- a driver, or another demand ugen nesting it.
     `repeats` 0 is the endless stream. This is the smallest member of a family
     of fourteen (`Duty`, `Dwhite`, `Dstutter`, ...); `examples/demand.py` shows
     the rest from Python."""
@@ -610,7 +610,7 @@ def demo_demand(client: Client):
     print("demand demo: /def_send synth dseqmelody (Impulse -> Demand -> Dseq)")
     client.send("/def_send", "synth", d.blob())
     client.reply()
-    print("  /synth_new dseqmelody 3013 — a 4 Hz step sequence looping 6 notes")
+    print("  /synth_new dseqmelody 3013 -- a 4 Hz step sequence looping 6 notes")
     client.send("/synth_new", "dseqmelody", 3013, 1, 0)
     time.sleep(3.0)
     client.send("/node_free", 3013)
@@ -620,7 +620,7 @@ def demo_fft(client: Client):
     """A frequency-domain chain: FFT -> PV_* -> IFFT. A noisy source is
     windowed and transformed by `FFT`, a `PV_BrickWall` low-passes it in the
     spectral domain (zeroing the top bins), and `IFFT` resynthesises audio by
-    overlap-add. No buffer is allocated — the spectral frame is synth-private
+    overlap-add. No buffer is allocated -- the spectral frame is synth-private
     scratch (SuperCollider's `LocalBuf` model). Only the `FFT` names the window
     size; the compiler propagates it down the chain. Then `/node_ugenCmd` swaps the
     analysis window live."""
@@ -636,11 +636,11 @@ def demo_fft(client: Client):
     print("fft demo: /def_send synth fftbrick (WhiteNoise -> FFT -> PV_BrickWall -> IFFT)")
     client.send("/def_send", "synth", d.blob())
     client.reply()
-    print("  /synth_new fftbrick 3020 — spectrally low-passed noise")
+    print("  /synth_new fftbrick 3020 -- spectrally low-passed noise")
     client.send("/synth_new", "fftbrick", 3020, 1, 0)
     time.sleep(1.5)
     # /node_ugenCmd <node> <ugenIndex> window <wintype>: ugen index 2 is the FFT.
-    print("  /node_ugenCmd 3020 2 window 4 — switch the FFT to a Blackman window")
+    print("  /node_ugenCmd 3020 2 window 4 -- switch the FFT to a Blackman window")
     client.send("/node_ugenCmd", 3020, 2, "window", 4.0)
     time.sleep(1.5)
     client.send("/node_free", 3020)
@@ -734,7 +734,7 @@ def demo_replies(client: Client):
     d.add("SendTrig", trig, 7.0, 0.5)  # -> /node_trigger node 7 0.5
     d.add("SendReply", trig, 42.0, 1.5, 2.5, label="/custom")  # -> /custom ...
 
-    print("replies demo: /def_send synth replies (no Out — side-effect only)")
+    print("replies demo: /def_send synth replies (no Out -- side-effect only)")
     client.send("/def_send", "synth", d.blob())
     client.reply(quiet=True)  # /done
     client.send("/synth_new", "replies", 3200, 1, 0)
@@ -777,7 +777,7 @@ def demo_serverinfo(client: Client):
     outputs = int(info[2])
     inputs = int(info[6])
     if inputs <= 0:
-        print("  (no live input — start the server with `--inputs 1` to hear it)")
+        print("  (no live input -- start the server with `--inputs 1` to hear it)")
         return
 
     # Input channels live just above the outputs: bus `outputs` is input 0.

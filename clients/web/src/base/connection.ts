@@ -1,21 +1,21 @@
 // The carrier seam: one connection interface, two carriers.
 //
 // Everything the client builds (defs, sequencing, the GUI driver) sits above
-// `Connection` and never names a transport — the same rule the Python client
+// `Connection` and never names a transport -- the same rule the Python client
 // keeps ("only a Server object knows the connection"). The two carriers:
 //
-// - `WsConnection` — a browser `WebSocket` to a `--ws` clausters server
+// - `WsConnection` -- a browser `WebSocket` to a `--ws` clausters server
 //   (default port 57120): the remote/native-server carrier, one OSC packet
 //   per binary frame (the server's WS wire format). Also works under node,
 //   whose global `WebSocket` speaks the same standard API.
-// - `pageConnection()` — the in-page engine: the audio server compiled to
+// - `pageConnection()` -- the in-page engine: the audio server compiled to
 //   wasm in this page's AudioWorklet, reached through the per-page
 //   `server()` singleton. No process, no socket.
 //
 // Beside the two carriers there is a third thing shaped like one and going
 // nowhere: `ScoreConnection`, which **writes time instead of waiting for it**.
 // It accumulates what a `Server` would have sent as a timestamped score for an
-// offline render, which is why it declares a `timeMode` — a live carrier
+// offline render, which is why it declares a `timeMode` -- a live carrier
 // stamps a bundle with the wall clock, a score with seconds from the render's
 // start. The Python client's `OscNrtInterface`, at this client's seam.
 
@@ -25,7 +25,7 @@ import { server } from "../engine/server.ts";
 import type { ClaustersServer } from "../engine/server.ts";
 
 /**
- * A synchronous view of a server's sample counter — what a sample-locked
+ * A synchronous view of a server's sample counter -- what a sample-locked
  * clock paces against and a `/sched_at` target is computed from.
  */
 export interface SampleClock {
@@ -46,7 +46,7 @@ export interface Connection {
      */
     readonly timeMode?: "unix" | "score";
     /**
-     * Where this carrier goes, when it goes anywhere addressable — a socket's
+     * Where this carrier goes, when it goes anywhere addressable -- a socket's
      * URL. The in-page engine and a score have none, and the receiving door
      * reads them as `"page"`: it is what a responder filtering by sender
      * (`OscFunc`'s `src`) compares, a browser having no `(host, port)` to
@@ -57,7 +57,7 @@ export interface Connection {
      * Whether a packet on this carrier is free of the datagram ceiling. A
      * stream (a WebSocket, a TCP socket) frames its own packets, so a bulk
      * round trip can use the server's whole frame ceiling; a carrier bounded
-     * by one fixed-size delivery — a datagram, the page's shared ring — must
+     * by one fixed-size delivery -- a datagram, the page's shared ring -- must
      * stay under it and keeps the classic chunk.
      *
      * Read by `Server.bulkChunk`, which is why it is a capability here rather
@@ -67,7 +67,7 @@ export interface Connection {
      */
     readonly stream?: boolean;
     /**
-     * Accumulates a bundle at `secs` from the render's start — a score
+     * Accumulates a bundle at `secs` from the render's start -- a score
      * carrier's structured entry point, and the reason a score never has to
      * decode bytes to learn when they were meant to happen. Live carriers
      * leave it out.
@@ -81,8 +81,8 @@ export interface Connection {
     /** Releases the carrier (never stops the shared in-page engine). */
     close(): void;
     /**
-     * Whether the other end is **gone** — the socket closed, the engine
-     * stopped — so this carrier reaches nothing and never will again.
+     * Whether the other end is **gone** -- the socket closed, the engine
+     * stopped -- so this carrier reaches nothing and never will again.
      *
      * Asked rather than required: a carrier that cannot tell leaves it out and
      * is assumed live, the way the reference client's event loop asks a source
@@ -100,7 +100,7 @@ export interface Connection {
     gone?(): boolean;
     /**
      * Bring up the server this carrier goes to, if bringing one up is
-     * something this carrier can do — what `Server.boot` asks of it.
+     * something this carrier can do -- what `Server.boot` asks of it.
      *
      * The carrier is what knows, exactly as in the reference client: there a
      * socket has a **process** behind it and `boot` spawns one, while an
@@ -108,12 +108,12 @@ export interface Connection {
      * Here the page's engine is the one that can be brought up (its
      * `AudioContext` starts suspended under the autoplay policy, so this is
      * the resume a gesture pays for), a score has nothing to start, and a
-     * socket points at a machine this page cannot spawn anything on — it says
+     * socket points at a machine this page cannot spawn anything on -- it says
      * so by leaving this out, and `Server.boot` refuses with `attach` named.
      */
     boot?(): Promise<void>;
     /**
-     * Take that server down — the pair of `boot`, and what `Server.quit` asks
+     * Take that server down -- the pair of `boot`, and what `Server.quit` asks
      * of a carrier whose server is not a process listening for `/quit`.
      *
      * A socket leaves it out: `/quit` on the wire is the whole story there,
@@ -121,7 +121,7 @@ export interface Connection {
      */
     quit?(): Promise<void>;
     /**
-     * The server's sample clock, where the carrier *shares* one with it —
+     * The server's sample clock, where the carrier *shares* one with it --
      * the in-page engine runs in this page's `AudioContext`, so its counter
      * is readable synchronously and exactly. A socket has no such thing and
      * leaves this out; `Server.sampleTimebase()` then anchors over `/clock_query`
@@ -130,14 +130,14 @@ export interface Connection {
     sampleClock?(): Promise<SampleClock>;
     /**
      * Installs decoded samples straight into a server buffer, where the
-     * carrier *shares* memory with the server — the in-page engine takes a
+     * carrier *shares* memory with the server -- the in-page engine takes a
      * whole file in one call, no `/buffer_getRange.reply` chunking and no OSC envelope per
      * sample. A socket has no such thing and leaves this out; `Buffer.load`
      * then writes the chunks instead. `samples` are interleaved.
      *
      * **It consumes `samples`.** The in-page carrier posts them to the worklet
-     * with their buffer in the transfer list — that is what makes it one copy
-     * instead of two — so the array is detached when this returns and belongs
+     * with their buffer in the transfer list -- that is what makes it one copy
+     * instead of two -- so the array is detached when this returns and belongs
      * to nobody. Pass something built for the call, or a copy: a caller's own
      * array must never come straight in here (`Buffer.fromSamples` slices for
      * exactly this reason).
@@ -157,7 +157,7 @@ export class WsConnection implements Connection {
     /** A WebSocket frames its own packets: no datagram ceiling to stay under. */
     readonly stream = true;
 
-    /** The socket's URL — what a receiver reports as this carrier's `src`. */
+    /** The socket's URL -- what a receiver reports as this carrier's `src`. */
     get url(): string {
         return this.socket.url;
     }
@@ -210,7 +210,7 @@ export class WsConnection implements Connection {
     }
 
     /**
-     * Closed or closing — the socket's own answer, which is the only one
+     * Closed or closing -- the socket's own answer, which is the only one
      * there is: `send` on a closed socket throws nothing a caller sees.
      */
     gone(): boolean {
@@ -222,13 +222,13 @@ export class WsConnection implements Connection {
 /**
  * The in-page carrier: a `Connection` over an engine in this tab.
  *
- * Defaults to the page's shared engine, which is what a page wants — its
+ * Defaults to the page's shared engine, which is what a page wants -- its
  * components play into one mix. Pass one built by `engine()` to carry a client
  * that must not share a node, bus and buffer space with the rest of the
  * document; several such clients in one page is the case this exists for.
  *
  * Closing detaches this connection's listeners; the engine keeps running (it
- * is the page's, or its owner's — not this connection's to stop).
+ * is the page's, or its owner's -- not this connection's to stop).
  */
 export async function pageConnection(
     target?: Promise<ClaustersServer> | ClaustersServer,
@@ -266,7 +266,7 @@ export async function pageConnection(
         gone: () => engine.context.state === "closed",
         // What bringing this carrier's server up means in a tab: the engine is
         // already instantiated (asking for the carrier is what instantiated
-        // it), and what is *not* running is the audio — an `AudioContext`
+        // it), and what is *not* running is the audio -- an `AudioContext`
         // starts suspended under the autoplay policy. So this is the resume,
         // and it belongs to a gesture: `Server.boot()` from a click.
         boot: () => engine.resume(),
@@ -281,7 +281,7 @@ export async function pageConnection(
         // One round trip pairs the engine's counter with the context's frame
         // counter; their difference is a fixed integer (the engine advances
         // one quantum per render quantum of this very context), so from here
-        // the counter is `currentTime` read synchronously — exact, and drift
+        // the counter is `currentTime` read synchronously -- exact, and drift
         // is not a thing between a clock and itself.
         sampleClock: async () => {
             const anchor = await engine.clockAnchor();
@@ -300,7 +300,7 @@ export async function pageConnection(
 
 /**
  * Accumulated NRT bundles, ordered by time, serialized to the binary score
- * (`[i32 len][packet]…`) the offline renderer consumes — the Python client's
+ * (`[i32 len][packet]…`) the offline renderer consumes -- the Python client's
  * `OscScore`.
  */
 export class Score {
@@ -324,7 +324,7 @@ export class Score {
     /**
      * The binary score: every bundle in time order, each framed by its
      * big-endian `i32` byte count. Sorting is stable, so two bundles at the
-     * same instant keep the order they were emitted in — which is what makes
+     * same instant keep the order they were emitted in -- which is what makes
      * a def and the synth that names it land in the right sequence.
      */
     bytes(): Uint8Array {
@@ -348,7 +348,7 @@ export class Score {
  * drains it).
  *
  * There is no server at the other end and nothing ever replies, which is the
- * whole point — an offline session is written by the same code that plays a live
+ * whole point -- an offline session is written by the same code that plays a live
  * one, and the difference is which carrier the `Server` was opened over.
  */
 export class ScoreConnection implements Connection {
@@ -367,7 +367,7 @@ export class ScoreConnection implements Connection {
     /**
      * The byte door, for anything that reaches past the structured one: the
      * packet is wrapped in a score bundle at time 0. Nothing in the client
-     * takes this path — `Server` branches on `timeMode` first — and it exists
+     * takes this path -- `Server` branches on `timeMode` first -- and it exists
      * so a `ScoreConnection` is a `Connection` in full rather than one with a
      * hole in it.
      */
@@ -392,7 +392,7 @@ export class ScoreConnection implements Connection {
 
     /**
      * A score has nothing to start, so booting it is a no-op rather than an
-     * error — the reference client's rule for its own offline and in-process
+     * error -- the reference client's rule for its own offline and in-process
      * carriers, kept here so `Server.boot()` reads the same against every
      * carrier a session can hold.
      */

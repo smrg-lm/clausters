@@ -1,7 +1,7 @@
 // The GUI client (mirrors `clausters/gui/__init__.py`).
 //
-// The GUI host is a second peer in the Clausters system — a *GUI server* for
-// the language clients and itself a *client of the audio server* — driven over
+// The GUI host is a second peer in the Clausters system -- a *GUI server* for
+// the language clients and itself a *client of the audio server* -- driven over
 // the same OSC encoding the audio server uses, with the `/gui_*` vocabulary.
 // This module is the TypeScript side of that protocol: `./guidef.ts` composes
 // a widget tree as JSON (the GUI analogue of a `SynthDef`), and `GuiHost`
@@ -19,7 +19,7 @@
 // In the browser the host is the wasm one on this page's canvas
 // (a handle over `pageGuiConnection()`, `boot`ed) or a native
 // `clausters-gui --ws` over a WebSocket (a handle over a `WsConnection`,
-// `attach`ed) — the same
+// `attach`ed) -- the same
 // object either way.
 
 export { formatWidgetInfo, GuiHost, guiHost, newGuiHost, pageGuiConnection, DEFAULT_PORT, DEFAULT_WS_PORT } from "./host.ts";

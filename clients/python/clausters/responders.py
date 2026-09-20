@@ -1,21 +1,21 @@
 """Responders: OscFunc / MidiFunc (port of ``sc3/base/responders.py``).
 
-The **input** half of the client. Until now the client was output-only — it
+The **input** half of the client. Until now the client was output-only -- it
 built OSC/MIDI and sent it to the server. Responders add the receive path and
 the client's role as a general MIDI/OSC hub, mirroring sclang's
 ``OSCFunc``/``MIDIFunc``: receive OSC and MIDI from *any* application, match and
-dispatch to a callback, and let that callback emit OSC/MIDI onward — to the
+dispatch to a callback, and let that callback emit OSC/MIDI onward -- to the
 Clausters server or to other apps.
 
 A responder registers a self-filtering handler with a **receiver** (the
 transport + demux thread): `clausters.base.OscReceiver` for OSC,
 `clausters.base.MidiReceiver` for MIDI. Pass one explicitly, or rely on the
 lazily-created module defaults (`default_osc_receiver` / `default_midi_receiver`
-— opt-in convenience, the one bit of process-wide state here, in the spirit of
+-- opt-in convenience, the one bit of process-wide state here, in the spirit of
 ``main.default_clock``).
 
 Callbacks run on the receiver's thread (or, if the receiver has a clock, on the
-clock thread): keep them quick and non-blocking — the golden rule. To *sequence*
+clock thread): keep them quick and non-blocking -- the golden rule. To *sequence*
 in response to an event, schedule a routine on a clock (non-blocking) instead of
 looping inside the callback.
 
@@ -109,19 +109,19 @@ class OscFunc:
     """Responder for incoming OSC messages.
 
     Registers ``func`` to fire when a message matching ``path`` arrives. The
-    callback is called ``func(msg, time, src)`` — ``msg`` the message as a list
+    callback is called ``func(msg, time, src)`` -- ``msg`` the message as a list
     ``[addr, arg1, …]``, ``time`` the bundle's Unix time (or ``None`` for an
     immediate / bare message), ``src`` the ``(host, port)`` of the sender.
 
     Args:
         func: the callback ``func(msg, time, src)``.
         path: the OSC address to match (a leading ``/`` is added if missing).
-        src: optional ``(host, port)`` — respond only to that sender. A port of
+        src: optional ``(host, port)`` -- respond only to that sender. A port of
             ``None`` matches any port from that host.
         arg_template: optional list matched against the message arguments by
             position; an entry is a literal (compared equal), a predicate
             callable, or ``None`` (matches anything). Shorter than the message
-            is fine — only the listed positions are checked.
+            is fine -- only the listed positions are checked.
         recv: the `clausters.base.OscReceiver` to register with; defaults to
             `default_osc_receiver`.
 
@@ -169,7 +169,7 @@ class OscFunc:
         self.disable()
 
     def one_shot(self):
-        """Free the responder after its first match — a one-time action."""
+        """Free the responder after its first match -- a one-time action."""
         inner = self.func
 
         def once(msg, time, src):
@@ -190,7 +190,7 @@ class MidiFunc:
     """Responder for incoming MIDI messages.
 
     Registers ``func`` to fire on channel-voice messages of a given type. The
-    callback is called ``func(message, src)`` — ``message`` a dict
+    callback is called ``func(message, src)`` -- ``message`` a dict
     (``{'type', 'channel', …}``, see `clausters.base._midiinterface.parse_midi`)
     and ``src`` the port name.
 
@@ -247,7 +247,7 @@ class MidiFunc:
         self.disable()
 
     def one_shot(self):
-        """Free the responder after its first match — a one-time action."""
+        """Free the responder after its first match -- a one-time action."""
         inner = self.func
 
         def once(message, src):

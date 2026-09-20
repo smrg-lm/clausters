@@ -3,18 +3,18 @@
 //! Two operator families, each as (a) a `#[repr(u32)]` enum so the C ABI can
 //! pass an op by integer, (b) a scalar `apply_*` function, and (c) a
 //! broadcasting slice `*_slice` function that writes into a caller-provided
-//! output (no allocation — the audio thread and the FFI both call these).
+//! output (no allocation -- the audio thread and the FFI both call these).
 //!
 //! Semantics: `Add`/`Sub`/`Mul`/`Div` are exactly the server's `dsp::binop`
 //! (so the refactored server stays bit-identical). The remaining ops mirror
 //! Faust's Signal API (`sin`, `log`, `min`, `pow`, …, see the server's
 //! `faust::signals`) with the same formula; they are *not* guaranteed
-//! bit-identical to Faust's LLVM codegen — that is the documented tolerance.
+//! bit-identical to Faust's LLVM codegen -- that is the documented tolerance.
 //!
 //! Slice broadcasting matches the server's [`at`] rule: a length-1 input is a
 //! constant broadcast over the block, any other length is indexed per frame.
 
-/// Reads input `i` from a block or a single-sample (constant) slice — the
+/// Reads input `i` from a block or a single-sample (constant) slice -- the
 /// server's `dsp::at`, kept in lockstep so slice ops broadcast identically.
 #[inline(always)]
 pub fn at(input: &[f32], i: usize) -> f32 {
@@ -73,7 +73,7 @@ pub enum BinaryOp {
     Thresh = 30,
     /// Clip `a` to the symmetric range `[-b, b]`.
     Clip2 = 31,
-    /// `a - clip2(a, b)` — the part of `a` outside `[-b, b]`.
+    /// `a - clip2(a, b)` -- the part of `a` outside `[-b, b]`.
     Excess = 32,
     /// Round `a` to the nearest multiple of `b` (`b == 0` passes `a` through).
     Round = 33,
@@ -143,7 +143,7 @@ impl BinaryOp {
         })
     }
 
-    /// The operator's **wire name** — the public identifier a def uses
+    /// The operator's **wire name** -- the public identifier a def uses
     /// (`BinaryOpUGen`'s `"op"` field). The numeric discriminant above is an
     /// internal C-ABI detail; names are what cross the wire and appear in docs.
     pub fn name(self) -> &'static str {
@@ -199,7 +199,7 @@ impl BinaryOp {
     ///
     /// A def stored before the vocabulary lost its three underscores still
     /// loads: `hypot_apx` resolves here and nothing emits it. That tolerance is
-    /// **input-only and permanent** — one line, no schedule, and the reason a
+    /// **input-only and permanent** -- one line, no schedule, and the reason a
     /// rename of a name that is inside stored documents cost nothing.
     pub fn from_name(name: &str) -> Option<BinaryOp> {
         let name = match name {
@@ -319,7 +319,7 @@ impl UnaryOp {
         })
     }
 
-    /// The operator's **wire name** — see [`BinaryOp::name`].
+    /// The operator's **wire name** -- see [`BinaryOp::name`].
     pub fn name(self) -> &'static str {
         use UnaryOp::*;
         match self {
@@ -366,7 +366,7 @@ impl UnaryOp {
     /// Resolves a wire name to the operator (the inverse of [`name`](Self::name)).
     ///
     /// A def stored before the vocabulary lost its three underscores still
-    /// loads: `as_int` and `as_float` resolve here and nothing emits them —
+    /// loads: `as_int` and `as_float` resolve here and nothing emits them --
     /// input-only and permanent, like [`BinaryOp::from_name`]'s.
     pub fn from_name(name: &str) -> Option<UnaryOp> {
         let name = match name {
@@ -381,12 +381,12 @@ impl UnaryOp {
 }
 
 /// `sqrt(2) - 1`, the coefficient of [`BinaryOp::HypotApx`]. Derived in `f64`
-/// and then rounded once, which is what scsynth's `kFSQRT2M1` does — computing
+/// and then rounded once, which is what scsynth's `kFSQRT2M1` does -- computing
 /// it in `f32` throughout would land a ULP away and cost the bit-parity the
 /// operator table exists for.
 const SQRT2_MINUS_1: f32 = (core::f64::consts::SQRT_2 - 1.0) as f32;
 
-/// Wraps `x` into `[lo, hi)`, scsynth's `sc_wrap` — including its two
+/// Wraps `x` into `[lo, hi)`, scsynth's `sc_wrap` -- including its two
 /// single-shift fast paths, which are not merely an optimization: the general
 /// branch below runs on the *already shifted* value, so a faithful port has to
 /// keep the same shape.
@@ -414,7 +414,7 @@ fn wrap(x: f32, lo: f32, hi: f32) -> f32 {
     x - range * ((x - lo) / range).floor()
 }
 
-/// Folds `x` into `[lo, hi]`, scsynth's `sc_fold` — reflecting at both ends as
+/// Folds `x` into `[lo, hi]`, scsynth's `sc_fold` -- reflecting at both ends as
 /// many times as needed. Note the general branch measures from the **original**
 /// `x`, not from the once-reflected value, as scsynth's does.
 ///
@@ -582,7 +582,7 @@ pub fn apply_binary(op: BinaryOp, a: f32, b: f32) -> f32 {
                 // scsynth computes `(x*y)/gcd`; dividing first keeps the same
                 // value while pushing the overflow threshold far out, and the
                 // saturation makes the worst case a finite number instead of a
-                // debug-build panic — this runs on the audio thread.
+                // debug-build panic -- this runs on the audio thread.
                 let g = gcd_i64(x, y);
                 (x / g).saturating_mul(y) as f32
             }
@@ -592,13 +592,13 @@ pub fn apply_binary(op: BinaryOp, a: f32, b: f32) -> f32 {
         // true hypotenuse: exact on the axes (one operand zero), +12.1% on the
         // diagonal, and worst at `atan(2 - sqrt(2))` ~ 30.4 deg, where the
         // ratio is `sqrt(1 + (2 - sqrt(2))^2)` ~ +15.9%. (The diagonal is the
-        // intuitive guess and it is not the maximum — the sweep in the tests
+        // intuitive guess and it is not the maximum -- the sweep in the tests
         // is what establishes the bound.)
         // Reproduced as scsynth defines it rather than "corrected", because the
         // whole contract of the operator is to be the cheap one and a def
         // ported from sclang must not change value. (scsynth's own comment
-        // above the function describes a *different* quantity — the octagonal
-        // distance `max + (sqrt(2)-1)*min` — which its formula does not
+        // above the function describes a *different* quantity -- the octagonal
+        // distance `max + (sqrt(2)-1)*min` -- which its formula does not
         // compute; the formula is what both implementations agree on.)
         HypotApx => {
             let (x, y) = (a.abs(), b.abs());
@@ -671,7 +671,7 @@ pub fn apply_unary(op: UnaryOp, x: f32) -> f32 {
 ///
 /// The **broadcast shape is resolved once, before the loop**: each arm slices
 /// its inputs to `out.len()` up front, so the body is a flat `f(x, y)` over
-/// slices of statically equal length — no per-sample branch, no bounds check,
+/// slices of statically equal length -- no per-sample branch, no bounds check,
 /// and a shape the autovectorizer can take. That is the whole point of this
 /// helper; it is what [`at`] cannot give, since its branch is per sample.
 ///
@@ -720,13 +720,13 @@ fn map1<F: Fn(f32) -> f32>(a: &[f32], out: &mut [f32], f: F) {
     }
 }
 
-/// `a*b + c` over broadcasting inputs — the fused multiply-accumulate, computed
+/// `a*b + c` over broadcasting inputs -- the fused multiply-accumulate, computed
 /// as `add(mul(a, b), c)` so it is bit-identical to the two operators applied in
 /// that order. Allocation-free.
 ///
 /// The body is deliberately the naive one, [`at`] per sample and all. Hoisting
-/// the broadcast shape out of it — one `const bool` per input, so the decision
-/// is made at compile time — was written, measured and reverted: it is worth
+/// the broadcast shape out of it -- one `const bool` per input, so the decision
+/// is made at compile time -- was written, measured and reverted: it is worth
 /// 1.03-1.23x on the operator alone and **nothing measurable at the engine**,
 /// because an arithmetic row is 5-10 ns of a block that spends ~135 ns in one
 /// `Sine`. `docs/decisions.md` carries the figures. Anyone tempted again should
@@ -769,7 +769,7 @@ pub fn sum4_slice(a: &[f32], b: &[f32], c: &[f32], d: &[f32], out: &mut [f32]) {
 /// from it; with the operator a constant at each call site it folds away, which
 /// is what leaves the loop body flat. Written out by hand this would be one arm
 /// per operator saying the same thing 77 times. A variant missing from the list
-/// below fails to compile — the generated match is exhaustive.
+/// below fails to compile -- the generated match is exhaustive.
 macro_rules! slice_dispatch {
     (binary: $($b:ident),+ $(,)?; unary: $($u:ident),+ $(,)?) => {
         /// Broadcasting binary op over slices into `out` (length defines the
@@ -813,7 +813,7 @@ slice_dispatch! {
 
 /// Scale-degree → MIDI note number: `degree` indexes `scale` (semitone offsets
 /// within one octave) in the pitch space `octave`/`root`, wrapping with octave
-/// carry — degree −1 on a 7-note scale is the 7th one octave down (floored
+/// carry -- degree −1 on a 7-note scale is the 7th one octave down (floored
 /// division, sclang semantics). An empty `scale` yields middle C (60). The
 /// event-value math every client's `Event` shares.
 pub fn degree_to_midinote(degree: f64, octave: f64, root: f64, scale: &[f32]) -> f64 {
@@ -877,8 +877,8 @@ mod tests {
     fn slice_ops_are_the_scalar_ops_element_by_element() {
         // The invariant the dispatch rests on: hoisting the operator match and
         // the broadcast shape out of the loop must not move a single bit. The
-        // reference here is the naive formulation the loops used to be —
-        // `apply_*` under `at` — checked bit-exactly (`to_bits`, so a NaN must
+        // reference here is the naive formulation the loops used to be --
+        // `apply_*` under `at` -- checked bit-exactly (`to_bits`, so a NaN must
         // be the *same* NaN) over every operator, every broadcast shape, and
         // operands that reach the edge cases: zero and signed zero, negatives
         // (`Pow`, `Sqrt`, `Log`), the shift and gcd integer casts, infinities
@@ -939,7 +939,7 @@ mod tests {
         // shows up here bit-exactly.
         //
         // Today the bodies *are* this formulation, so the assert is a
-        // restatement — deliberately. It is the harness for the next attempt at
+        // restatement -- deliberately. It is the harness for the next attempt at
         // rewriting them (the reverted broadcast hoist split on exactly these
         // sixteen shapes), which is when a restatement becomes a test.
         let vals = [0.0f32, -0.0, 1.5, -2.5, 1e30, f32::INFINITY, f32::NAN, 0.25];
@@ -1077,7 +1077,7 @@ mod tests {
         assert_eq!(apply_binary(Round, 1.7, 0.0), 1.7); // zero step = identity
     }
 
-    /// `fold2` reflects at both ends of `[-b, b]`, as many times as needed —
+    /// `fold2` reflects at both ends of `[-b, b]`, as many times as needed --
     /// the values below are hand-unfolded, not captured from the code.
     #[test]
     fn fold2_reflects_repeatedly() {
@@ -1136,7 +1136,7 @@ mod tests {
 
     /// `hypot_apx` is the cheap approximation, reproduced from scsynth's
     /// formula. It never under-estimates; its error is 0 on the axes, +12.1 %
-    /// on the diagonal, and peaks at +15.9 % near 30.4 deg — the maximum is
+    /// on the diagonal, and peaks at +15.9 % near 30.4 deg -- the maximum is
     /// *not* on the diagonal, which is why the bound is swept rather than
     /// assumed.
     #[test]

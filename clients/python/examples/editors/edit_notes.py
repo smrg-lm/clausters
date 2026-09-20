@@ -2,7 +2,7 @@
 """``edit(timeline)``: a roll over a timeline, with no multitrack under it.
 
 The same gesture that edits a track's notes in the multitrack, over a
-`clausters.seq.Timeline` a script filled — no arrangement, no document, no
+`clausters.seq.Timeline` a script filled -- no arrangement, no document, no
 track. Until now the only way to write a roll's edit back was an aggregate's
 member list, which needs a tree to be a member *of*; this is the timeline
 itself.
@@ -14,7 +14,7 @@ notes are the timeline's, so playing it after an edit plays what was drawn.
 **The lane under the grid is the timeline's OSC markers**, and it is edited the
 same way: drag one to move it, Ctrl+click one to remove it, Ctrl+Z to step back.
 A marker is matched back to its item by its **label**, which is the address it
-sends, so the message survives the drag — print it with ``read_back()``. Adding
+sends, so the message survives the drag -- print it with ``read_back()``. Adding
 one *there* is refused and says why, because a marker is the message it sends
 and the lane has no way to type an address: add it here in the script instead.
 
@@ -24,7 +24,7 @@ what was drawn without a step in between.
 
 **A note keeps what the roll cannot draw.** Order is the only identity the
 payload carries, so the i-th note's own `clausters.seq.Event` is *edited* rather
-than rebuilt from the five numbers a roll can say — which is what keeps the
+than rebuilt from the five numbers a roll can say -- which is what keeps the
 instrument, and everything else the author put on it.
 
 Run it as a script, or step through the cells::
@@ -49,7 +49,7 @@ from clausters.seq.event import Event
 # ## A timeline, filled the ordinary way
 #
 # Beats and events. The `instrument` on the last one is the point of the second
-# cell below: the roll cannot draw it, and editing must not lose it — and so are
+# cell below: the roll cannot draw it, and editing must not lose it -- and so are
 # the marker's arguments, which the lane draws even less of.
 
 # %%
@@ -64,7 +64,7 @@ timeline = Timeline([
 # %% [markdown]
 # ## One verb
 #
-# A `Timeline` opens as a `clausters.gui.editing.NotesEditor` — one `pianoroll`
+# A `Timeline` opens as a `clausters.gui.editing.NotesEditor` -- one `pianoroll`
 # widget, the crate's ``events`` vocabulary, and the timeline's own editing
 # context.
 
@@ -92,8 +92,8 @@ def play():
 
     The **free-standing** verb, not `clausters.Session.play`: that one plays an
     event *pattern*, and this is a timeline. `clausters.play` dispatches on what
-    the structure is — the same question `clausters.gui.edit` asked to open this
-    window — and a `clausters.seq.Timeline` plays itself, on a clock of its own
+    the structure is -- the same question `clausters.gui.edit` asked to open this
+    window -- and a `clausters.seq.Timeline` plays itself, on a clock of its own
     and the ambient session's server.
     """
     clausters.play(timeline)
@@ -102,7 +102,7 @@ def play():
 # %% [markdown]
 # ## What a roll cannot say
 #
-# Five numbers per note — start, length, pitch, velocity, channel. The
+# Five numbers per note -- start, length, pitch, velocity, channel. The
 # instrument, the amp and anything else the author wrote are none of them, and
 # they are still there after an edit.
 
@@ -121,7 +121,7 @@ def read_back():
 # %%
 def run():
     """Keep the window open until it is closed, then print what was drawn."""
-    print("edit the notes; space plays nothing here — call play(). Close when done.")
+    print("edit the notes; space plays nothing here -- call play(). Close when done.")
     editor.wait()
     print("the timeline, as it was left:")
     read_back()
@@ -131,4 +131,4 @@ def run():
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
     run()
 else:
-    print("up — play() to hear it, read_back() to see what survived the edit")
+    print("up -- play() to hear it, read_back() to see what survived the edit")

@@ -3,7 +3,7 @@
 //! The layout is one pass with no measurement and no constraint solver, so a
 //! natural size is a **pure function of the metrics table** ([`Metrics`]) and
 //! of the widget's own *presentation* props (its `text_size`, whether it
-//! carries a label, whether it wraps) — never of its **data**. A scope's
+//! carries a label, whether it wraps) -- never of its **data**. A scope's
 //! height must not follow its sample count and a label's width must not follow
 //! its string: a size that reads the data turns a `/gui_set` into a relayout of
 //! the window, which is both a visible jump and a per-message cost. A widget
@@ -12,49 +12,49 @@
 //! The split is **content vs surface**. Content whose extent the widget itself
 //! knows is intrinsic: a label's line, a button's box, a toggle, a number, a
 //! menu, a single-line field, a control's label strip. A surface whose extent
-//! is the caller's stays elastic — a panel, a scroll, a patch canvas, a track,
-//! the heavy views, a plot, a node tree, a canvas — and takes what the layout
+//! is the caller's stays elastic -- a panel, a scroll, a patch canvas, a track,
+//! the heavy views, a plot, a node tree, a canvas -- and takes what the layout
 //! gives it. Mixed is the ordinary case rather than the exception: a slider has
 //! a natural thickness across its track and is elastic along it; a ruler strip
 //! has a natural height and spans its axis.
 //!
 //! **What a size may read, stated once.** The line is not "never the data", it
 //! is **where the value is resolved**: a prop that settles at a *mutation
-//! point* — a `/gui_def`, a `/gui_set` — may size, exactly where the theme
+//! point* -- a `/gui_def`, a `/gui_set` -- may size, exactly where the theme
 //! already resolves, while a value that *streams* (a scope's samples, a meter's
 //! level, a bound number's turn) never can. So a `/gui_set` of a value still
 //! cannot relayout a window. The two are kept apart by which function answers:
 //! [`WidgetKind::natural_size`] reads no content at all, and only
-//! [`Element::hug`](super::Element::hug) — asked of a leaf inside a container
-//! that carries `hug`, and nowhere else — reads the content props a widget
+//! [`Element::hug`](super::Element::hug) -- asked of a leaf inside a container
+//! that carries `hug`, and nowhere else -- reads the content props a widget
 //! draws (a label's text, a menu's options). A container that hugs has *asked*
 //! for its size to follow what it holds; nothing else pays for it.
 //!
-//! It is also a pure function of the placement's **scale** — the zoom a widget
+//! It is also a pure function of the placement's **scale** -- the zoom a widget
 //! is seen through inside a `scroll` workspace, which is what its own text draws
 //! at (`text_size * scale`). A natural size that ignored it would promise a box
 //! for a 14-pixel line and then draw a 28-pixel one: the text spills into the
 //! next row, and a control that reserves strips for its label and its read-out
-//! (a knob) has nothing left for the part that matters — its disc collapses to a
+//! (a knob) has nothing left for the part that matters -- its disc collapses to a
 //! dot. Outside a workspace the scale is 1 and this is the identity.
 //!
 //! [`super::super::layout`] consumes this on a `row`/`col` main axis, in one
 //! resolution order: explicit `w`/`h` → explicit `weight` → natural size → a
 //! share of the leftover. The cross axis keeps filling. It asks
 //! [`Widget::natural_size`], not the kind's, because a **container** may be
-//! sized by what it holds — see [`Widget::hug_size`], which is still one
+//! sized by what it holds -- see [`Widget::hug_size`], which is still one
 //! bottom-up walk over these same pure functions and not a measurement pass.
 //!
 //! **A wanted size has a floor, and that is the other direction.** A strip
 //! shorter than what its children asked for used to place them at full size
-//! anyway, so the last of them was drawn off the edge — the container had no
+//! anyway, so the last of them was drawn off the edge -- the container had no
 //! way to ask for room back and no way to know what asking would cost. So a
 //! widget answers at both ends: [`Widget::floor_size`] is the smallest it
 //! still says what it is at, the layout takes the deficit out of the
 //! difference in proportion to what each offered, and a widget that offers
 //! nothing keeps what it asked for even though the strip still overflows.
 //! What is given up is the widget's own choice and never the container's
-//! guess — a labelled control drops its **label strip** and keeps its body,
+//! guess -- a labelled control drops its **label strip** and keeps its body,
 //! which is the same term the drawing stops reserving
 //! (`graphics::controls::label_height`), so the two cannot disagree about how
 //! much room the strip took. Still one pass and still no solver: the floor is
@@ -68,7 +68,7 @@ use super::{Flow, Layout, Widget, WidgetKind};
 /// A widget's wanted extent per axis, `None` on an axis meaning elastic.
 pub type Natural = (Option<f32>, Option<f32>);
 
-/// The height of one row of text plus the padding above and below it — the box
+/// The height of one row of text plus the padding above and below it -- the box
 /// a line of content needs.
 pub(crate) fn line_box(size: f32, m: &Metrics) -> f32 {
     font::height(size) + 2.0 * m.pad
@@ -82,7 +82,7 @@ pub(crate) fn control_box(size: f32, m: &Metrics) -> f32 {
 }
 
 /// The strip a labelled control reserves above its body (zero when unlabelled)
-/// — [`crate::host::graphics::controls::body_rect_at`]'s own reservation.
+/// -- [`crate::host::graphics::controls::body_rect_at`]'s own reservation.
 pub(crate) fn label_strip(has_label: bool, size: f32, m: &Metrics) -> f32 {
     if has_label {
         font::height(size) + font::descent(size) + m.pad
@@ -92,7 +92,7 @@ pub(crate) fn label_strip(has_label: bool, size: f32, m: &Metrics) -> f32 {
 }
 
 /// The width a run of text needs in a **cell** it is drawn into with the
-/// ordinary padding on both sides — a label's line, a button's caption.
+/// ordinary padding on both sides -- a label's line, a button's caption.
 pub(crate) fn text_box(text: &str, size: f32, m: &Metrics) -> f32 {
     font::width(text, size) + 2.0 * m.pad
 }
@@ -110,7 +110,7 @@ pub(crate) fn body_inset(m: &Metrics) -> f32 {
 }
 
 impl WidgetKind {
-    /// How big this widget wants to be, per axis — `None` meaning elastic (the
+    /// How big this widget wants to be, per axis -- `None` meaning elastic (the
     /// layout decides). Pure over the metrics, the widget's presentation props
     /// and the placement `scale` its text draws at (1.0 outside a workspace);
     /// see the module documentation for the content/surface split.
@@ -122,7 +122,7 @@ impl WidgetKind {
 
             // A registered element declares its own, under the same rule the
             // arms above follow: pure over the metrics, its presentation props
-            // and the scale — never over its data.
+            // and the scale -- never over its data.
             WidgetKind::Custom(el) => el.natural(m, scale),
 
             // -- Surfaces: the extent is the caller's --
@@ -130,7 +130,7 @@ impl WidgetKind {
         }
     }
 
-    /// The smallest extent this widget still says what it is at — the floor of
+    /// The smallest extent this widget still says what it is at -- the floor of
     /// [`natural_size`](WidgetKind::natural_size), and the other end of the
     /// range the layout resolves a squeezed strip over.
     ///
@@ -139,7 +139,7 @@ impl WidgetKind {
     /// of labels over a row of ticks, and there is no shorter form of it. A
     /// registered element answers for itself
     /// ([`Element::floor`](super::Element::floor)), and answering the natural
-    /// size — the default — means "nothing to give", which is the answer that
+    /// size -- the default -- means "nothing to give", which is the answer that
     /// keeps today's behavior for a widget that never thought about it.
     pub fn floor_size(&self, m: &Metrics, scale: f32) -> Natural {
         match self {
@@ -151,7 +151,7 @@ impl WidgetKind {
 }
 
 impl Widget {
-    /// How big this widget wants to be in the layout that places it — what
+    /// How big this widget wants to be in the layout that places it -- what
     /// [`super::super::layout`] resolves after an explicit size and an explicit
     /// weight.
     ///
@@ -169,7 +169,7 @@ impl Widget {
     }
 
     /// The smallest size this widget still says what it is at, in the layout
-    /// that places it — the floor of [`Widget::natural_size`], and the second
+    /// that places it -- the floor of [`Widget::natural_size`], and the second
     /// half of the range [`super::super::layout`] resolves a **squeezed** strip
     /// over.
     ///
@@ -206,7 +206,7 @@ impl Widget {
     }
 
     /// How big this widget wants to be **when it is being fitted to its
-    /// content** — the question a hugging container asks, and the one it asks
+    /// content** -- the question a hugging container asks, and the one it asks
     /// its own children in turn, so `hug` on the outermost container fits the
     /// whole subtree under it rather than one level of it.
     ///
@@ -218,7 +218,7 @@ impl Widget {
     /// and a `stack` takes the largest of **every** page (not the shown one, so
     /// flipping a pager does not resize it). And a **leaf** may answer from the
     /// props that describe its content ([`Element::hug`](super::Element::hug))
-    /// — a label's text, a menu's options — which its ordinary natural size may
+    /// -- a label's text, a menu's options -- which its ordinary natural size may
     /// not.
     ///
     /// `None` on an axis still means elastic, and it **propagates**: a
@@ -231,7 +231,7 @@ impl Widget {
 
     /// The one walk both fitted questions take, told apart by `want`: the
     /// composition is the same arrangement arithmetic either way, and only what
-    /// a **leaf** is asked differs — what its content wants, or the floor it
+    /// a **leaf** is asked differs -- what its content wants, or the floor it
     /// keeps of it.
     fn fitted(&self, m: &Metrics, scale: f32, want: Want) -> Natural {
         match &self.kind {
@@ -256,7 +256,7 @@ impl Widget {
                 match want {
                     Want::Content => content,
                     // A leaf that declared no floor on an axis gives nothing
-                    // there, so its floor is what it wanted — settled against
+                    // there, so its floor is what it wanted -- settled against
                     // the *content* size, since that is what is being composed.
                     Want::Floor => {
                         let floor = el.floor(m, scale);
@@ -283,9 +283,9 @@ impl Widget {
 /// Which end of a widget's range a fitting walk is asking for.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Want {
-    /// How big the content is — what a `hug` fits itself to.
+    /// How big the content is -- what a `hug` fits itself to.
     Content,
-    /// The smallest the content still says what it is at — what a squeezed
+    /// The smallest the content still says what it is at -- what a squeezed
     /// strip may take a widget down to.
     Floor,
 }
@@ -301,7 +301,7 @@ fn settle(floor: Option<f32>, wanted: Option<f32>) -> Option<f32> {
     }
 }
 
-/// The composition of `children`'s content sizes under one arrangement — the
+/// The composition of `children`'s content sizes under one arrangement -- the
 /// whole of what a hugging container adds, and one bottom-up walk over
 /// functions that were already pure.
 fn compose(
@@ -368,7 +368,7 @@ fn compose(
     (w.map(|w| w + pad), h.map(|h| h + pad))
 }
 
-/// The sum of the children's extents along one axis — elastic as a whole the
+/// The sum of the children's extents along one axis -- elastic as a whole the
 /// moment one of them is, since a container cannot know what a surface next to
 /// it will take.
 fn total(mut sizes: impl Iterator<Item = Option<f32>>) -> Option<f32> {
@@ -438,8 +438,8 @@ mod tests {
         }
     }
 
-    /// A labelled control gives up exactly its label strip — the term the
-    /// drawing stops reserving — and nothing else.
+    /// A labelled control gives up exactly its label strip -- the term the
+    /// drawing stops reserving -- and nothing else.
     #[test]
     fn a_labelled_control_gives_up_its_label_strip() {
         let m = Metrics::default();
@@ -610,7 +610,7 @@ mod tests {
     }
 
     /// The rule the milestone states out loud: a prop that settles at a
-    /// mutation point may size, a **value** may not — or a widget would resize
+    /// mutation point may size, a **value** may not -- or a widget would resize
     /// under the gesture writing it. A menu is the case that has both.
     #[test]
     fn a_prop_may_size_a_hug_and_a_value_may_not() {
@@ -645,7 +645,7 @@ mod tests {
     /// part that suggested a number: a knob is a label strip over a disc over a
     /// value read-out, one element drawing three things into one cell, and a
     /// width that fitted the disc alone ellipsized the name and clipped the
-    /// number — parts of the widget cut to fit the widget. Found by eye on
+    /// number -- parts of the widget cut to fit the widget. Found by eye on
     /// `gui_standalone`, which is why the assertion is over the *drawing's* own
     /// available widths and not over the terms of the sum.
     #[test]

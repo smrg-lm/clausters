@@ -3,7 +3,7 @@
 Where `SynthDef` and
 `FaustDef` each describe a *single* synthesis
 node, a `GraphDef` describes a whole **configuration of member nodes
-wired by buses** — an effect chain, a mixer, a layered instrument — that the
+wired by buses** -- an effect chain, a mixer, a layered instrument -- that the
 server stores and instantiates as one unit. It exposes a **named parameter
 surface**: ports that map to inner member controls, so the running instance is
 driven through the port names, never the private member node ids (the same
@@ -83,7 +83,7 @@ class MemberRef:
 
     **What that name is follows from what the member is**, which is the point:
     on an ordinary member it is one of its def's controls, and on a nested graph
-    (``kind="graph"``) it is one of *its* surface ports — re-exporting a child's
+    (``kind="graph"``) it is one of *its* surface ports -- re-exporting a child's
     interface, which is written the same way whichever it turns out to be."""
 
     def __init__(self, index: int, kind: str = "def"):
@@ -129,7 +129,7 @@ class GraphDef:
         collide.
 
         ``external=True`` declares a bus **whoever instantiates the graph
-        provides** — how a nested graph says it does not decide where it goes.
+        provides** -- how a nested graph says it does not decide where it goes.
         The parent names which of its own buses that is when it adds the member
         (`add`, ``kind="graph"``). A graph instantiated on its own is handed
         nothing and allocates everything, so one def works standalone and
@@ -157,11 +157,11 @@ class GraphDef:
         freed with its parent, and its ``controls`` name which of *this* graph's
         buses each of its external buses is. That is what lets a track hold
         clips and a clip hold an effect chain without either being a second
-        mechanism — and an effect can itself be a GraphDef.
+        mechanism -- and an effect can itself be a GraphDef.
 
         ``slot="name"`` makes it a member there is a **changing number of**:
         instantiated on demand by `clausters.defs.Group.add_slot`, once per
-        thing there is one of — a clip on a track, an effect in a chain, a voice
+        thing there is one of -- a clip on a track, an effect in a chain, a voice
         of an instrument. ``voice=True`` is the slot named ``"voice"``, spelled
         the way it was before slots had names, and it is what a MIDI note
         spawns."""
@@ -210,7 +210,7 @@ class GraphDef:
     @property
     def controls(self) -> list:
         """This def's surface ports as `clausters.defs.info.ControlInfo`
-        entries, in declaration order — the shape all three def families answer
+        entries, in declaration order -- the shape all three def families answer
         with, so a GUI reads one of them the same way. ``targets`` names what
         each port drives inside."""
         from .info import ControlInfo
@@ -274,7 +274,7 @@ class GraphDef:
     def plot_def(self, defs: dict | None = None, *, label: str | None = None,
                  w: int = 1000, h: int = 700, title: str | None = None, host=None):
         """Open this GraphDef's **structure** as a directed `patch` view in its
-        own window on the ambient GUI host — the level-1 patcher drawn from the
+        own window on the ambient GUI host -- the level-1 patcher drawn from the
         def itself (the inverse of building it), the host laying the boxes out as
         an inverted tree. One window per call, the `clausters.plot` posture; this
         shows the def's *structure*, where `clausters.plot(self)` renders its
@@ -284,7 +284,7 @@ class GraphDef:
         built from, so a box's ports are typed (a control feeding an ``In`` is an
         inlet, one feeding an ``Out`` an outlet); a member whose def is not
         resolvable draws port-less (no cords). ``label`` captions the patch panel
-        (defaults to ``"graphdef"`` — the panel names *what* is drawn, not the
+        (defaults to ``"graphdef"`` -- the panel names *what* is drawn, not the
         def's name); ``host`` is an explicit `clausters.gui.GuiHost``, ``None``
         resolves the ambient one. Returns a `clausters.plot.PatchWindow`
         (``.close()``)."""

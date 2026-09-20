@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Watching live buses with the free-standing ``scope`` — the three views.
+"""Watching live buses with the free-standing ``scope`` -- the three views.
 
 `clausters.scope` is the real-time sibling of `clausters.plot`: where `plot`
 draws a finished render, `scope` opens a window that follows **live audio
 buses**, frame by frame. One rule covers every view: the verb monitors
 ``channels`` consecutive buses from ``bus`` (each on its own audio tap, taken
 from the server's registry and released on ``win.close()``), and each view
-presents them its way — oscilloscope lanes, the stereo phase field, one
+presents them its way -- oscilloscope lanes, the stereo phase field, one
 spectrum curve per channel. The host reads the tap rings straight out of the
-server's shared-memory segment — zero messages per frame.
+server's shared-memory segment -- zero messages per frame.
 
 This is a **sequential visual tour**: each window appears alone, announces
 itself on the console, makes one live change *and comes back* (the trace
-window, the overlay, the stereo width, the frequency scale — all through
+window, the overlay, the stereo width, the frequency scale -- all through
 ``win.set`` or ``/node_set``), and closes before the next one opens. Watch the
 oscilloscope's corner read-out: ``lock`` means the trigger found a rising
 crossing and the trace stands still (the faint line marks the level);
@@ -36,10 +36,10 @@ PAUSE = 4.0
 server = Server().boot()
 
 # Left is a plain sine; right crossfades (with `spread`) from a copy of the
-# left (mono — a phasescope draws a vertical line) to a detuned sine
-# (decorrelated — the trace opens into the lozenge). Quiet on purpose.
+# left (mono -- a phasescope draws a vertical line) to a detuned sine
+# (decorrelated -- the trace opens into the lozenge). Quiet on purpose.
 # The control is lagged: an /node_set lands as a step, and stepping a crossfade
-# clicks — smoothing it is the def's job (the scopes themselves are passive:
+# clicks -- smoothing it is the def's job (the scopes themselves are passive:
 # a tap only copies a bus into shared memory and can never alter the sound).
 freq = control("freq", 220.0)
 spread = lag(control("spread", 0.0), 0.1)
@@ -53,7 +53,7 @@ drone.send(server)
 server.sync()
 node = Synth("scoping_drone", server=server)
 
-# %% 1/3 — the oscilloscope (view="signal"): both channels, phase-locked.
+# %% 1/3 -- the oscilloscope (view="signal"): both channels, phase-locked.
 print("1/3 signal: outs 0/1 as two lanes; 'lock' + the trigger line at 0")
 win = scope(0, channels=2)
 time.sleep(PAUSE)
@@ -68,7 +68,7 @@ win.set(overlay=0)
 time.sleep(PAUSE)
 win.close()
 
-# %% 2/3 — the phasescope (view="phase"): the stereo field of buses 0/1.
+# %% 2/3 -- the phasescope (view="phase"): the stereo field of buses 0/1.
 print("2/3 phase: mono reads as a vertical line (correlation ~ +1)")
 win = scope(0, view="phase")
 time.sleep(PAUSE)
@@ -80,10 +80,10 @@ node.set({"spread": 0.0})
 time.sleep(PAUSE)
 win.close()
 
-# %% 3/3 — the live spectrum (view="spectrum"): one curve per channel, and
+# %% 3/3 -- the live spectrum (view="spectrum"): one curve per channel, and
 # the four frequency scales in turn. The corner read-out names the FFT size
 # and the active scale (e.g. "2048 LOG").
-print("3/3 spectrum: outs 0/1, the 220 Hz peak — the corner reads '2048 LOG'")
+print("3/3 spectrum: outs 0/1, the 220 Hz peak -- the corner reads '2048 LOG'")
 node.set({"spread": 1.0})   # detune R so the two curves differ
 win = scope(0, view="spectrum", channels=2)
 time.sleep(PAUSE)
@@ -101,4 +101,4 @@ node.set({"amp": 0.0})
 time.sleep(0.3)
 node.free()
 server.close()
-print("done — three scopes appeared, retuned live and closed; taps all freed")
+print("done -- three scopes appeared, retuned live and closed; taps all freed")

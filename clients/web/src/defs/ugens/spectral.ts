@@ -4,7 +4,7 @@
 // A chain is a **frame**, not a signal: `fft` opens one, each `pv*` transforms
 // it in place and `ifft` closes it back to samples. Wire them in order
 // (`fft` → `pv*` → … → `ifft`). The frame is synth-private scratch (no buffer
-// to allocate), which is why only `fft` names a size — the server propagates
+// to allocate), which is why only `fft` names a size -- the server propagates
 // it down the chain.
 
 import { Ugen } from "./graph.ts";
@@ -26,7 +26,7 @@ export interface FftOptions {
  * Opens a spectral chain: windows `source` (an audio signal) and transforms
  * it to a spectral frame once per **hop**. `active > 0` runs the transform,
  * `<= 0` holds. These size the transform, so they are static fields given
- * **only here** — the server propagates them to the rest of the chain. The
+ * **only here** -- the server propagates them to the rest of the chain. The
  * window is also settable live with `Server.uCmd`. Feed the result to a `pv*`
  * filter or `ifft`.
  */
@@ -98,7 +98,7 @@ export const pvMax = (chainA: Channel, chainB: Channel): Ugen =>
     new Ugen("PV_Max", [chainA, chainB]);
 
 /**
- * Two-chain combiner: A's bins scaled by B's magnitudes — A's phases kept (a
+ * Two-chain combiner: A's bins scaled by B's magnitudes -- A's phases kept (a
  * spectral envelope transfer, the classic "vocoder" cross-synthesis).
  */
 export const pvMagMul = (chainA: Channel, chainB: Channel): Ugen =>
@@ -113,7 +113,7 @@ export const pvCopyPhase = (chainA: Channel, chainB: Channel): Ugen =>
 
 /**
  * While `freeze <= 0` stores each frame's magnitudes and passes through;
- * while `> 0` rescales every bin to the stored magnitudes — the spectral
+ * while `> 0` rescales every bin to the stored magnitudes -- the spectral
  * envelope holds while the phases keep running.
  */
 export const pvMagFreeze = (chain: Channel, freeze: Channel = 0.0): Ugen =>
@@ -121,7 +121,7 @@ export const pvMagFreeze = (chain: Channel, freeze: Channel = 0.0): Ugen =>
 
 /**
  * Averages each bin's magnitude over `bins` neighbors on each side (`0` is
- * transparent), phases untouched — a spectral blur.
+ * transparent), phases untouched -- a spectral blur.
  */
 export const pvMagSmear = (chain: Channel, bins: Channel = 0.0): Ugen =>
     new Ugen("PV_MagSmear", [chain, bins]);
@@ -163,11 +163,11 @@ export interface PvKernelOptions {
  * expressions built from `defs/pv_expr`'s terms (its `mag`/`phase`/
  * `binIndex`/`nbins`/`binfreq`/`param`) with the math methods; each maps one
  * bin's values to that bin's new magnitude / phase. An omitted expression is
- * the identity — and an identity `phase` keeps each bin's phase *exactly*
+ * the identity -- and an identity `phase` keeps each bin's phase *exactly*
  * (the cheap path: pure magnitude maps skip the polar conversion).
  *
  * `params` are extra signal inputs (controls, LFOs, constants) the
- * expressions read as `param(0)`, `param(1)`, … — sampled once per hop.
+ * expressions read as `param(0)`, `param(1)`, … -- sampled once per hop.
  *
  * An expression is a **pure per-bin map**: no state across bins or frames, no
  * reading other bins. Gates, tilts, masks and magnitude algebra belong here;
@@ -176,8 +176,8 @@ export interface PvKernelOptions {
  * synth` (stack discipline, parameter arity, unknown words) and rejects a bad
  * def with `/fail`.
  *
- * Note that `mag` is a raw transform magnitude — it scales with the input
- * level, the window and the `fftSize`, it is **not** normalized to 0..1 — so
+ * Note that `mag` is a raw transform magnitude -- it scales with the input
+ * level, the window and the `fftSize`, it is **not** normalized to 0..1 -- so
  * thresholds and constants must be calibrated to the signal (probe a
  * render, or `poll` a reference).
  *
@@ -212,14 +212,14 @@ export interface ConvOptions {
 }
 
 /**
- * Partitioned convolution: convolves `source` with a **prepared** kernel — a
+ * Partitioned convolution: convolves `source` with a **prepared** kernel -- a
  * buffer written by `dest.gen("prepare_partconv", fftSize, irBufnum)` (size
  * `dest` with `partconvFrames`). The IR's spectra are computed once, off the
  * audio thread; the UGen's steady per-block cost is flat (the partition
  * products are spread across the hop).
  *
- * `fftSize` is the transform size; the partition length — and the intrinsic
- * latency — is `fftSize / 2` samples. `partitions` caps the kernel length
+ * `fftSize` is the transform size; the partition length -- and the intrinsic
+ * latency -- is `fftSize / 2` samples. `partitions` caps the kernel length
  * this instance accepts (its pre-allocated state). Moving `kernel` to a
  * *different* prepared buffer crossfades over one partition; regenerating the
  * same buffer switches hard.
@@ -239,7 +239,7 @@ export const conv = (
 /**
  * Frames a kernel buffer needs to hold `irFrames` of impulse response
  * prepared at `fftSize` (partitions of `fftSize / 2`, plus the two-sample
- * header) — the size to `Buffer.alloc` before
+ * header) -- the size to `Buffer.alloc` before
  * `buf.gen("prepare_partconv", fftSize, irBufnum)`.
  */
 export function partconvFrames(irFrames: number, fftSize = 1024): number {

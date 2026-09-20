@@ -16,7 +16,7 @@
 //! | `op` | fields | Faust equivalent |
 //! |---|---|---|
 //! | `int`, `real` | `value` | constant |
-//! | `wire`, `cut` | — | `_`, `!` |
+//! | `wire`, `cut` | -- | `_`, `!` |
 //! | `seq`, `par`, `split`, `merge` | `in`: array of ≥ 2 boxes, folded left | `:` `,` `<:` `:>` |
 //! | `rec` | `in`: exactly 2 boxes | `~` |
 //! | `add` `sub` `mul` `div` `fmod` `pow` `min` `max` `atan2` `gt` `lt` `ge` `le` `eq` `ne` `and` `or` `xor` | `in`: exactly 2 boxes | binary operators |
@@ -28,12 +28,12 @@
 //! | `button`, `checkbox` | `label` | named control (0/1) |
 //! | `fconst`, `fvar` | `ctype`: `"int"`/`"real"`, `name`, `file` (optional) | `CboxFConst`/`CboxFVar` (runtime scalar, e.g. `fSamplingFreq` behind `ma.SR`) |
 //! | `hgroup`, `vgroup` | `label`, `in`: exactly 1 box | control grouping |
-//! | `waveform` | `values`: non-empty array of numbers | `waveform{…}` — outputs the (size, content) pair |
-//! | `rdtable` | `in`: size, init, ridx — or 2 boxes when a `waveform` stands in for (size, init) | `rdtable` |
-//! | `rwtable` | `in`: size, init, widx, wsig, ridx — or 4 boxes starting with a `waveform` | `rwtable` |
+//! | `waveform` | `values`: non-empty array of numbers | `waveform{…}` -- outputs the (size, content) pair |
+//! | `rdtable` | `in`: size, init, ridx -- or 2 boxes when a `waveform` stands in for (size, init) | `rdtable` |
+//! | `rwtable` | `in`: size, init, widx, wsig, ridx -- or 4 boxes starting with a `waveform` | `rwtable` |
 //! | `faust` | `src` | escape hatch: a complete Faust program (`process = …`) compiled with `CDSPToBoxes`, giving access to the stdlib (`os.osc`, `fi.lowpass`, …) as a composable box |
 //!
-//! Example — `sin(2π·phasor(freq)) * 0.2` with `freq` as a named control:
+//! Example -- `sin(2π·phasor(freq)) * 0.2` with `freq` as a named control:
 //!
 //! ```json
 //! {"op": "mul", "in": [
@@ -88,7 +88,7 @@ pub unsafe fn build_process(root: &Value, cstrings: &mut Vec<CString>) -> Result
 /// Sharing is the point, not just speed: every `CDSPToBoxes` evaluation
 /// mints fresh recursion symbols, so two fragments compiled from the same
 /// source are *not* structurally identical and defeat Faust's hash-consing
-/// — a duplicated stateful fragment (the JSON a client emits when one box
+/// -- a duplicated stateful fragment (the JSON a client emits when one box
 /// value is reused) would duplicate its state and its computation. Reusing
 /// the box pointer makes the duplicates literally the same subterm, which
 /// hash-consing then shares (`tests/faust_box.rs`, the CSE suite).
@@ -339,8 +339,8 @@ unsafe fn build_op(
             boxes.push(std::ptr::null_mut()); // CboxWaveform wants a NULL terminator
             Ok(unsafe { ffi::CboxWaveform(boxes.as_mut_ptr()) })
         }
-        // The table primitives take (size, init, read index) — rdtable — and
-        // (size, init, write index, write signal, read index) — rwtable. A
+        // The table primitives take (size, init, read index) -- rdtable -- and
+        // (size, init, write index, write signal, read index) -- rwtable. A
         // `waveform` box outputs the (size, init) pair itself, so each op
         // also accepts the form with one box less up front.
         "rdtable" => unsafe {
@@ -354,7 +354,7 @@ unsafe fn build_op(
     }
 }
 
-/// `seq(par(inputs…), primitive)` — how upstream's own `Cbox*TableAux`
+/// `seq(par(inputs…), primitive)` -- how upstream's own `Cbox*TableAux`
 /// helpers apply the 0-argument table primitives. Faust checks the summed
 /// output arity against the primitive's inputs at compile time.
 // The five build-context args (obj/op/path/cstrings/memo) thread through every

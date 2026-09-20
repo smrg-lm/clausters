@@ -41,21 +41,21 @@ type DefResources = (
 );
 
 impl App {
-    /// Opens the window a window-rooted GuiDef asks for — **or brings the one
+    /// Opens the window a window-rooted GuiDef asks for -- **or brings the one
     /// it already has up to the new tree**.
     ///
     /// Every `/gui_def` over a window root ends here, and most of them are
     /// *re*-defines: a structural edit, an aggregate expanded, a second view
     /// answering an edit made in the first. Destroying the OS window and
     /// creating another one for those is not a redraw, it is a window that
-    /// closes and reopens — it loses its place on the desktop, its size, its
+    /// closes and reopens -- it loses its place on the desktop, its size, its
     /// focus and a frame's worth of GPU bring-up, and it does it under a hand
     /// that may be in another window entirely.
     ///
     /// So a redefine **keeps the shell**: the window, its surface, its
     /// renderers and painters, where the pointer is and which modifiers are
-    /// down. What is rebuilt is what belongs to the *def* — the bulk slots, the
-    /// canvases, the pending fetches — which is exactly what the browser front
+    /// down. What is rebuilt is what belongs to the *def* -- the bulk slots, the
+    /// canvases, the pending fetches -- which is exactly what the browser front
     /// has always done with its canvas (`clear_def_state`, then build the
     /// resources again). The two are one host compiled twice, so they do this
     /// the same way.
@@ -118,7 +118,7 @@ impl App {
                 let ui_scale = window.scale_factor();
                 self.host.set_ui_scale(id, ui_scale as f32);
                 // A hugging window was sized before it had a scale, and the
-                // resolved table snaps its roles to whole pixels — so on a
+                // resolved table snaps its roles to whole pixels -- so on a
                 // fractional scale the estimate is a pixel or two under what the
                 // layout is about to draw. Ask again now that the table is the
                 // one the layout will use.
@@ -206,7 +206,7 @@ impl App {
     /// slots, the canvases and the buffer references a fetch will fill.
     ///
     /// Separate from the shell because a redefine rebuilds exactly this and
-    /// keeps everything else — which is what makes a redefine a redraw rather
+    /// keeps everything else -- which is what makes a redefine a redraw rather
     /// than a window closing and opening again.
     fn load_def_resources(&mut self, id: i32, gpu: &Gpu, renderers: &Renderers) -> DefResources {
         let mut waveforms = HashMap::new();
@@ -268,7 +268,7 @@ impl App {
         (waveforms, spectrograms, canvases, buffer_refs)
     }
 
-    /// **Serves whatever this window's elements were told to read again** — a
+    /// **Serves whatever this window's elements were told to read again** -- a
     /// take whose owner answered an edit with `reload`, which is what an undo
     /// over a server buffer is.
     ///
@@ -335,7 +335,7 @@ impl App {
     }
 
     /// User-initiated close: tell the script, then drop the window. A standalone
-    /// window has the placeholder origin (UDP port 0) — there is no script to
+    /// window has the placeholder origin (UDP port 0) -- there is no script to
     /// notify, so the `/gui_closed` is skipped (sending to port 0 fails with
     /// EINVAL).
     fn close_by_user(&mut self, id: i32) {
@@ -354,7 +354,7 @@ impl App {
     }
 
     /// Closes a window on user request, and quits the app once the last window is
-    /// gone in standalone mode — so the embedded audio server is dropped (and
+    /// gone in standalone mode -- so the embedded audio server is dropped (and
     /// `/server_quit`ed) rather than left running with no window. A script-driven host
     /// stays alive (the script may open another window); only standalone exits.
     pub(super) fn user_close(&mut self, id: i32, event_loop: &ActiveEventLoop) {
@@ -375,7 +375,7 @@ impl App {
 /// arm and re-derived from a presentation whether an element's file became a
 /// peak pyramid or a set of analyses, while a second one (`load_element_bulk`)
 /// already asked the declaration for everything mesh-drawn. They are one now,
-/// and the fork is `Needs::slot` — the same one the page forks on
+/// and the fork is `Needs::slot` -- the same one the page forks on
 /// (`host::web::bulk`, which this build does not compile), so a resource that
 /// lands in a lane natively
 /// lands in the same place in a browser.
@@ -387,12 +387,12 @@ impl App {
 /// buffers it can only ask another process for.
 ///
 /// One struct because the walk carries them together through every level of
-/// the tree and hands them back to one caller — three out-params threaded
+/// the tree and hands them back to one caller -- three out-params threaded
 /// through a recursion is the same thing spelled longer.
 struct BulkOut<'a> {
     waveforms: &'a mut HashMap<SlotAt, WaveformSlot>,
     spectrograms: &'a mut HashMap<SlotAt, SpectrogramSlot>,
-    /// `(widget_id, bufnum, shape_only)` — the deferred half.
+    /// `(widget_id, bufnum, shape_only)` -- the deferred half.
     buffers: &'a mut Vec<(i32, i32, bool)>,
 }
 
@@ -476,7 +476,7 @@ fn collect_canvases(tree: &Widget, gpu: &Gpu, out: &mut HashMap<i32, CanvasView>
 }
 
 /// Maps one declared resource with the native loader. A `Buffer` resolves to
-/// nothing here — it is the client leg's, and the reply lands the same way.
+/// nothing here -- it is the client leg's, and the reply lands the same way.
 fn resolve_bulk(want: &Bulk) -> Option<Loaded> {
     match want {
         Bulk::PeakCache(cache) => MmapLoader
@@ -529,7 +529,7 @@ mod tests {
     /// **A redefine must never destroy the window it is redefining**, and this
     /// is the one place that could make it do so again.
     ///
-    /// The rule cannot be checked by running the front — it needs an event loop
+    /// The rule cannot be checked by running the front -- it needs an event loop
     /// and a GPU adapter, so nothing in a test suite ever reaches
     /// [`App::open_window`]. What *can* be checked is that the one call which
     /// makes a window go away is not in it, which is exactly how the bug was

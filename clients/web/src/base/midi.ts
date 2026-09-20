@@ -3,22 +3,22 @@
 // The same RT/NRT seam as the OSC side, for MIDI. A `MidiServer` is the
 // double-dispatch counterpart of the OSC `Server`: a clock + routine plays the
 // *same* `Pbind` through it, and which **interface** it holds decides the
-// rendering — `MidiNrtInterface` accumulates a `MidiScore` (in beats) whose
+// rendering -- `MidiNrtInterface` accumulates a `MidiScore` (in beats) whose
 // bytes are a `.mid` or a MIDI 2.0 clip, `MidiRtInterface` sends the notes out
 // a MIDI port live.
 //
 // A *MIDI message* is raw status/data bytes. MIDI carries no timetags: timing
 // comes from the clock at emit time.
 //
-// The **input** side — a port decoded into message objects and demuxed to
-// `MidiFunc` responders — is `MidiReceiver` at the bottom, the MIDI
+// The **input** side -- a port decoded into message objects and demuxed to
+// `MidiFunc` responders -- is `MidiReceiver` at the bottom, the MIDI
 // counterpart of the OSC receiving door.
 //
 // **What the browser shapes differently, and it is one thing.** Web MIDI hands
 // a page the ports that already exist and lets it create none, so where the
 // Python client's `port` names a *virtual* port to open, here it names an
-// existing one to select. Everything above that — the parsing, the score, the
-// event mapping, the dispatch — is the same client in two languages. A page
+// existing one to select. Everything above that -- the parsing, the score, the
+// event mapping, the dispatch -- is the same client in two languages. A page
 // also has no filesystem, so `MidiScore` hands back the file's bytes and the
 // page decides what to do with them, exactly as `wavBytes` does for a take.
 
@@ -120,7 +120,7 @@ export class MidiScore {
         this.events.push([Number(beat), Uint8Array.from(messageBytes(message))]);
     }
 
-    /** Beat order, stable — a note-off keeps its place before a re-trigger. */
+    /** Beat order, stable -- a note-off keeps its place before a re-trigger. */
     sorted(): [number, Uint8Array][] {
         return this.events
             .map((e, i) => [e, i] as const)
@@ -144,7 +144,7 @@ export class MidiScore {
      * Standard MIDI File (`.mid`) bytes, written by the shared core.
      *
      * A page has no filesystem, so this hands the bytes back rather than
-     * taking a path — the same split `render`/`wavBytes` already makes for a
+     * taking a path -- the same split `render`/`wavBytes` already makes for a
      * take. The writer is `clausters-midi`'s, the one the Python client calls,
      * so the two produce the same file.
      */
@@ -154,8 +154,8 @@ export class MidiScore {
     }
 
     /**
-     * MIDI 2.0 Clip File (SMF2CLIP) bytes — note velocities at 16-bit
-     * resolution — on the same terms as `toSmf`.
+     * MIDI 2.0 Clip File (SMF2CLIP) bytes -- note velocities at 16-bit
+     * resolution -- on the same terms as `toSmf`.
      */
     toClip(ppq: number): Uint8Array {
         const [ticks, msgs] = this.ticked(ppq);
@@ -187,7 +187,7 @@ export class MidiNrtInterface implements MidiInterface {
 
 /**
  * How a real-time interface or a receiver picks its port. `P` is the port's
- * direction — an output for `MidiRtInterface`, an input for `MidiReceiver`.
+ * direction -- an output for `MidiRtInterface`, an input for `MidiReceiver`.
  */
 export interface MidiPortOptions<P = MidiOutputPort> {
     /**
@@ -249,7 +249,7 @@ export async function requestMidiPorts(
  * note-off onto the clock, the browser takes the deadline directly:
  * `MIDIOutput.send(data, timestamp)` schedules against `performance.now()`, so
  * the driver hands over the deadline it has already computed. Timing is still
- * best-effort by design — the port is the OS's, not ours.
+ * best-effort by design -- the port is the OS's, not ours.
  */
 export class MidiRtInterface implements MidiInterface {
     readonly isRealtime = true;
@@ -312,7 +312,7 @@ export interface MidiServerOptions {
 }
 
 /**
- * A MIDI destination for event patterns — the double-dispatch counterpart of
+ * A MIDI destination for event patterns -- the double-dispatch counterpart of
  * the OSC `Server`.
  *
  * A `Pbind` played on a clock with this as the destination renders each `Event`
@@ -350,7 +350,7 @@ export class MidiServer implements EventDestination {
     }
 
     /**
-     * Emits a raw MIDI message at the running routine's logical beat — the MIDI
+     * Emits a raw MIDI message at the running routine's logical beat -- the MIDI
      * counterpart of `Server.sendBundle` for a raw OSC message, and what
      * `MidiItem` renders through.
      */
@@ -391,12 +391,12 @@ export interface MidiReceiverOptions extends MidiPortOptions<MidiInputPort> {
 export type MidiHandler = (message: MidiMessage, src: string) => void;
 
 /**
- * A MIDI **input** port that demuxes to registered handlers — the transport
+ * A MIDI **input** port that demuxes to registered handlers -- the transport
  * under `MidiFunc`.
  *
  * It takes one of the browser's input ports (the page cannot make one), decodes
  * each message with `parseMidi`, and calls every registered handler with
- * `(message, src)` — `src` being the port's name. Dispatch is inline on the
+ * `(message, src)` -- `src` being the port's name. Dispatch is inline on the
  * message event by default, or through `clock.sched` when a clock is given; the
  * golden rule holds either way, a handler must not block its thread.
  */

@@ -29,7 +29,7 @@ from clausters.base import Routine
 from clausters.seq import Pbind, Pseq, Pwhite
 
 #: Where a run leaves its file when no path is given: ``examples/out/``, the
-#: git-ignored directory every generator in this tree writes to — beside the
+#: git-ignored directory every generator in this tree writes to -- beside the
 #: examples rather than in whatever directory you ran from. Made here so that
 #: rendering is one call and not two.
 OUT = pathlib.Path(__file__).resolve().parents[1] / "out"
@@ -63,7 +63,7 @@ session.seed(1)
 session.play(phrase)
 
 # A render ends at the score's **last event**, and the last one the phrase
-# writes is the gate closing on its final note — so without a later event the
+# writes is the gate closing on its final note -- so without a later event the
 # file stops there and the built-in instrument's 0.3 s release is cut off,
 # which is a click at the end of the take. `/node_free 0` after the tail is
 # that closing event.

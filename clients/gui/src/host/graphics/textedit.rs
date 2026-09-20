@@ -4,7 +4,7 @@
 //! drawing code so neither is obscured by caret arithmetic. It is deliberately
 //! **std-only** (no `unicode-segmentation`): the caret and the selection anchor
 //! are byte offsets into the widget's `value` string, always kept on `char`
-//! boundaries, and every motion is by `char` — the right granularity for the
+//! boundaries, and every motion is by `char` -- the right granularity for the
 //! embedded bitmap font, which is per-cell. The operations mutate the string in
 //! place (`String::insert_str`/`replace_range`) so the `value` stays the single
 //! source of truth the widget already emits as its event value.
@@ -60,7 +60,7 @@ fn next_boundary(value: &str, pos: usize) -> usize {
         .map_or(value.len(), |(i, _)| pos + i)
 }
 
-/// Re-lands `pos`/`anchor` on valid char boundaries within `value` — called
+/// Re-lands `pos`/`anchor` on valid char boundaries within `value` -- called
 /// after an external `/gui_set value` replaces the string under the caret.
 pub fn clamp(value: &str, caret: &mut Caret) {
     fn fix(value: &str, p: usize) -> usize {
@@ -206,7 +206,7 @@ fn run_end_right(value: &str, pos: usize) -> usize {
     p
 }
 
-/// Where the start of the word left of `pos` is — **two** runs when the first
+/// Where the start of the word left of `pos` is -- **two** runs when the first
 /// is separators, since a motion lands on a word rather than between two of
 /// them. Built on the same scan the delete takes, so the two can never drift
 /// into disagreeing about where a word begins.
@@ -230,20 +230,20 @@ fn word_end_right(value: &str, pos: usize) -> usize {
 }
 
 /// Moves the caret to the start of the word to its left (skipping any run of
-/// non-word chars first) — Ctrl+Left.
+/// non-word chars first) -- Ctrl+Left.
 pub fn move_word_left(value: &str, caret: &mut Caret, select: bool) {
     begin_move_extend(caret, select);
     caret.pos = word_start_left(value, caret.pos);
 }
 
-/// Moves the caret past the word to its right — Ctrl+Right.
+/// Moves the caret past the word to its right -- Ctrl+Right.
 pub fn move_word_right(value: &str, caret: &mut Caret, select: bool) {
     begin_move_extend(caret, select);
     caret.pos = word_end_right(value, caret.pos);
 }
 
 /// Ctrl+Backspace: deletes the selection, else the **run** to the caret's left
-/// — the word it is sitting after, or the separators between it and the
+/// -- the word it is sitting after, or the separators between it and the
 /// previous word (see [`run_start_left`]). Returns whether the content changed.
 pub fn backspace_word(value: &mut String, caret: &mut Caret) -> bool {
     if delete_selection(value, caret) {
@@ -258,7 +258,7 @@ pub fn backspace_word(value: &mut String, caret: &mut Caret) -> bool {
     true
 }
 
-/// Ctrl+Delete: the same forward — the run to the caret's right.
+/// Ctrl+Delete: the same forward -- the run to the caret's right.
 pub fn delete_word(value: &mut String, caret: &mut Caret) -> bool {
     if delete_selection(value, caret) {
         return true;
@@ -305,20 +305,20 @@ fn line_end(value: &str, pos: usize) -> usize {
     value[pos..].find('\n').map_or(value.len(), |i| pos + i)
 }
 
-/// Moves the caret to the start of its line — Home.
+/// Moves the caret to the start of its line -- Home.
 pub fn move_home(value: &str, caret: &mut Caret, select: bool) {
     begin_move_extend(caret, select);
     caret.pos = line_start(value, caret.pos);
 }
 
-/// Moves the caret to the end of its line — End.
+/// Moves the caret to the end of its line -- End.
 pub fn move_end(value: &str, caret: &mut Caret, select: bool) {
     begin_move_extend(caret, select);
     caret.pos = line_end(value, caret.pos);
 }
 
 /// Moves the caret up one line, keeping its column (clamped to the target
-/// line's length) — multiline only; a no-op on the first line.
+/// line's length) -- multiline only; a no-op on the first line.
 pub fn move_up(value: &str, caret: &mut Caret, select: bool) {
     begin_move_extend(caret, select);
     let start = line_start(value, caret.pos);
@@ -330,7 +330,7 @@ pub fn move_up(value: &str, caret: &mut Caret, select: bool) {
     caret.pos = col_to_byte(value, prev_start, start - 1, col);
 }
 
-/// Moves the caret down one line, keeping its column — multiline only; a no-op
+/// Moves the caret down one line, keeping its column -- multiline only; a no-op
 /// on the last line.
 pub fn move_down(value: &str, caret: &mut Caret, select: bool) {
     begin_move_extend(caret, select);
@@ -354,7 +354,7 @@ fn col_to_byte(value: &str, start: usize, end: usize, col: usize) -> usize {
         .map_or(end, |(i, _)| start + i)
 }
 
-/// Selects the whole string — Ctrl+A.
+/// Selects the whole string -- Ctrl+A.
 pub fn select_all(value: &str, caret: &mut Caret) {
     caret.anchor = Some(0);
     caret.pos = value.len();
@@ -370,7 +370,7 @@ pub fn line_col(value: &str, pos: usize) -> (usize, usize) {
     (line, col)
 }
 
-/// The byte offset of `(line, col)`, each clamped into range — the inverse of
+/// The byte offset of `(line, col)`, each clamped into range -- the inverse of
 /// [`line_col`], used to turn a click's row/column into a caret position.
 pub fn offset_of(value: &str, line: usize, col: usize) -> usize {
     let mut start = 0;
@@ -474,8 +474,8 @@ mod tests {
         assert_eq!(&s[..c.pos], "foo_bar");
     }
 
-    /// A word-wise delete takes **one run** per press — the word, then the
-    /// separators — where the motion crosses both in one step. Deleting is
+    /// A word-wise delete takes **one run** per press -- the word, then the
+    /// separators -- where the motion crosses both in one step. Deleting is
     /// destructive, so it steps smaller than the caret does.
     #[test]
     fn word_delete_takes_one_run_per_press() {
@@ -517,7 +517,7 @@ mod tests {
         assert_eq!(c.pos, 0, "past the separators, to the start of \"a\"");
     }
 
-    /// A selection wins over the word, in both directions — the rule the plain
+    /// A selection wins over the word, in both directions -- the rule the plain
     /// Backspace/Delete already follow.
     #[test]
     fn word_delete_takes_the_selection_when_there_is_one() {

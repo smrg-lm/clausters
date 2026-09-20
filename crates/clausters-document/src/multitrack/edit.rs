@@ -1,4 +1,4 @@
-//! What a multitrack editor **does**, written down — and the one place that
+//! What a multitrack editor **does**, written down -- and the one place that
 //! does it.
 //!
 //! [`crate::intent`] is the same discipline over the general tree, and this is
@@ -13,7 +13,7 @@
 //! A region belongs to a lane and a lane to a track, so *where a region is* is
 //! three coordinates and not one. [`MultitrackIntent::PlaceRegion`] states all
 //! of them together, which is why **moving a region to another track is one
-//! edit and not a remove plus an add** — one intent, one entry in a log, one
+//! edit and not a remove plus an add** -- one intent, one entry in a log, one
 //! undo. A vocabulary that spelled it as two would have a state between them
 //! where the region is nowhere, and every reader that redrew in between would
 //! see it.
@@ -23,13 +23,13 @@
 //! Splitting and joining a region are the only edits here that change *how many
 //! regions there are*, and they are also the only two this crate cannot work
 //! out on its own. The split point is on the multitrack's axis and a window
-//! into a source is on the content's — a recording's seconds read at a
-//! playrate, a node's own beats — and [`crate::timebase`] converts between the
+//! into a source is on the content's -- a recording's seconds read at a
+//! playrate, a node's own beats -- and [`crate::timebase`] converts between the
 //! two **never**: that is its whole premise, and it is not suspended because it
 //! would be convenient here. So the caller, who knows how its content is read,
 //! states the halves' content and the crate does the rest.
 //!
-//! Both also invert as [`MultitrackIntent::SetLane`] — the lane's previous
+//! Both also invert as [`MultitrackIntent::SetLane`] -- the lane's previous
 //! contents, whole. Nothing smaller describes putting back a region that was
 //! made out of two, and computing it back would be the same conversion refused
 //! one paragraph ago.
@@ -38,7 +38,7 @@
 //!
 //! No transport, no playback, no selection: what the multitrack holds is where the
 //! loop is, never whether looping is on. And no verb reads a fade's shape, a
-//! curve's interpolation or an automation's target — those travel opaquely for
+//! curve's interpolation or an automation's target -- those travel opaquely for
 //! the reason [`crate::points`] states, and an undo that straightened a curve
 //! would be losing the client's data rather than declining to read it.
 
@@ -75,8 +75,8 @@ pub enum SpanKind {
 /// would hold for it.
 ///
 /// One shape for the two arrivals. A join minting a source has to tell a
-/// client that is **already open** — the source table is the session's, not
-/// the multitrack's, so nothing about it is in the document the edit writes — and it
+/// client that is **already open** -- the source table is the session's, not
+/// the multitrack's, so nothing about it is in the document the edit writes -- and it
 /// has to say the same thing to a client that opens the saved file later. So
 /// the statement is the format's own [`Source`], carried on the intent, rather
 /// than a second vocabulary for the same fact.
@@ -99,8 +99,8 @@ pub enum MultitrackIntent {
     /// Adding a track, removing one and reordering them are one verb, because
     /// all three state the same thing: *the tracks are now these, in this
     /// order*. Whole rather than three verbs for the reason
-    /// [`crate::Intent::SetMembers`] is whole — a patch is a delta by another
-    /// name — and it costs what that one costs: the inverse a log holds is a
+    /// [`crate::Intent::SetMembers`] is whole -- a patch is a delta by another
+    /// name -- and it costs what that one costs: the inverse a log holds is a
     /// copy of the tracks.
     SetTracks {
         /// The tracks, in the order they are shown.
@@ -135,7 +135,7 @@ pub enum MultitrackIntent {
     /// **One edit, whatever moved.** A drag within a lane, a drag to another
     /// lane of the same track and a drag to another track are the same verb
     /// with different fields, so all three undo in one step. It never changes
-    /// what the region reads — that is [`MultitrackIntent::TrimRegion`] — so a
+    /// what the region reads -- that is [`MultitrackIntent::TrimRegion`] -- so a
     /// move cannot silently retime the material.
     PlaceRegion {
         /// The region being placed.
@@ -173,8 +173,8 @@ pub enum MultitrackIntent {
     ///
     /// Naming the resulting ids is what keeps this absolute: applying it twice
     /// leaves the same multitrack, because the second time the halves are already
-    /// there. The two contents are the caller's to state — see the module
-    /// docs — and `None` leaves a half reading exactly what the region read.
+    /// there. The two contents are the caller's to state -- see the module
+    /// docs -- and `None` leaves a half reading exactly what the region read.
     SplitRegion {
         /// The region being split. Gone when this applies.
         region: NodeId,
@@ -209,7 +209,7 @@ pub enum MultitrackIntent {
         /// already exists.
         ///
         /// A region is a window onto one source, so fragments in an order
-        /// their source does not have have no region that describes them —
+        /// their source does not have have no region that describes them --
         /// what is missing is the source, and this is it: spans of whatever
         /// the fragments read, in the order they are shown
         /// ([`crate::session::Location::Segments`]).
@@ -217,7 +217,7 @@ pub enum MultitrackIntent {
         /// It rides on the intent because a source table is the **session's**
         /// and a multitrack is not: the edit happens while the thing is open, so
         /// the sentence has to reach a client the same way a split's minted
-        /// name does — by being told, not by being derived. A client applying
+        /// name does -- by being told, not by being derived. A client applying
         /// this learns *there is a source N made of these spans*, realizes it,
         /// and writes it into its table; a client that opens the saved session
         /// reads the same statement out of the file.
@@ -255,7 +255,7 @@ pub enum MultitrackIntent {
         /// Its points, in order.
         points: Vec<Point>,
     },
-    /// A marker is at this instant with this name — placed if it was not there,
+    /// A marker is at this instant with this name -- placed if it was not there,
     /// moved or renamed if it was.
     SetMarker {
         /// Its identity.
@@ -288,7 +288,7 @@ pub enum MultitrackIntent {
     ///
     /// The map is the multitrack's, so an edit to it is the multitrack's, and stating it
     /// whole is what makes adding, moving and removing an entry one verb. It is
-    /// small — a map has tempo changes, not a tempo per beat — which is why
+    /// small -- a map has tempo changes, not a tempo per beat -- which is why
     /// this one is whole where a lane's regions get a verb of their own.
     SetTempoMap {
         /// The entries; kept in position order.
@@ -325,8 +325,8 @@ impl MultitrackIntent {
 
     /// What this edit addresses, when it addresses one thing by name.
     ///
-    /// `None` for the edits that name the multitrack itself — the tracks, the two
-    /// maps, a range — which is also what keeps them from coalescing with each
+    /// `None` for the edits that name the multitrack itself -- the tracks, the two
+    /// maps, a range -- which is also what keeps them from coalescing with each
     /// other by accident.
     pub fn subject(&self) -> Option<NodeId> {
         match self {
@@ -459,7 +459,7 @@ fn edit(
 }
 
 /// The edit describing what the multitrack says **now** about what `intent`
-/// addresses — what a refusal of any kind hands back, and what a log records as
+/// addresses -- what a refusal of any kind hands back, and what a log records as
 /// the inverse.
 ///
 /// `None` when the multitrack cannot describe it: the region is gone, the lane is
@@ -1024,7 +1024,7 @@ pub fn intent_of(payload: &Opaque) -> Option<MultitrackIntent> {
 ///
 /// A hundred small drags of one region are one undo; a drag of the next one is
 /// not. The edits that name the multitrack itself key on the kind alone, which is
-/// right for them — a run of tempo adjustments is also one thing the person
+/// right for them -- a run of tempo adjustments is also one thing the person
 /// did.
 pub fn coalesce_key(intent: &MultitrackIntent) -> String {
     match intent.subject() {
@@ -1051,7 +1051,7 @@ pub struct MultitrackEdit<'a> {
 
 impl<'a> MultitrackEdit<'a> {
     /// Edited against whatever it currently says and snapping to
-    /// nothing — what a script that just read it wants.
+    /// nothing -- what a script that just read it wants.
     pub fn new(multitrack: &'a mut Multitrack) -> Self {
         Self {
             multitrack,

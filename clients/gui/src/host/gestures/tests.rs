@@ -38,7 +38,7 @@ fn host_from(json: &str) -> Host {
 /// The bar is chrome along the bottom edge and the tree is laid out above it,
 /// so a test that computes its own pixels from the framebuffer would be aiming
 /// at a rectangle the widget no longer occupies. These tests are about what a
-/// gesture does, not about where the chrome is, so their windows carry none —
+/// gesture does, not about where the chrome is, so their windows carry none --
 /// and the bar's own behaviour is tested where it belongs, on a window that
 /// has one.
 fn no_status_bar(host: &mut Host, def_id: i32) {
@@ -49,7 +49,7 @@ fn no_status_bar(host: &mut Host, def_id: i32) {
     }
 }
 
-/// Where the layout put widget `id` in window `def_id` — the rectangle a test
+/// Where the layout put widget `id` in window `def_id` -- the rectangle a test
 /// aims its presses inside, rather than guessing at pixels the size table owns.
 fn placed_rect(host: &Host, ctx: &GestureCtx, id: i32) -> Rect {
     let tree = host.window_def(ctx.def_id).unwrap();
@@ -88,7 +88,7 @@ fn has_emit_tag(effects: &[GestureEffect], id: i32, tag: &str) -> bool {
     })
 }
 
-/// The arguments of the last event emitted for `id` — what a reader on the
+/// The arguments of the last event emitted for `id` -- what a reader on the
 /// other end of the wire would actually receive.
 fn emitted_args(effects: &[GestureEffect], id: i32) -> Option<Vec<OscType>> {
     effects.iter().rev().find_map(|e| match e {
@@ -123,7 +123,7 @@ fn menu_index(host: &Host, id: i32) -> usize {
     }
 }
 
-/// The open list of menu `id`, read off the widget — which is where it lives:
+/// The open list of menu `id`, read off the widget -- which is where it lives:
 /// the machine keeps no note of who opened what.
 fn menu_popup(host: &Host, id: i32) -> Option<crate::host::layout::Rect> {
     host.window_def(1)
@@ -265,7 +265,7 @@ fn patch_host() -> Host {
     )
 }
 
-/// The patcher element behind widget 7 — its graph and its selection are view
+/// The patcher element behind widget 7 -- its graph and its selection are view
 /// state, reached through the element's own `as_any` door.
 #[cfg(feature = "patcher")]
 fn patcher(host: &Host) -> &crate::host::elements::patch::Patch {
@@ -289,7 +289,7 @@ fn selection_of(host: &Host) -> Vec<usize> {
 
 /// The whole widget-binding chain from a real press: a toggle bound to a
 /// `stack`'s `index` flips the page inside the host, the window is asked to
-/// repaint, and **nothing leaves for the script** — the point of a binding.
+/// repaint, and **nothing leaves for the script** -- the point of a binding.
 #[test]
 fn a_press_on_a_bound_toggle_flips_the_stack_it_drives() {
     let mut host = host_from(
@@ -309,7 +309,7 @@ fn a_press_on_a_bound_toggle_flips_the_stack_it_drives() {
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
     // The toggle sits in the window's top strip (its declared height), and
-    // the press lands on its box, at the left of the cell — the rest of that
+    // the press lands on its box, at the left of the cell -- the rest of that
     // strip is the layout's air, not the control.
     let mut effects = g.press(&mut host, &ctx, 20.0, 20.0);
     effects.extend(g.release(&mut host, &ctx, 20.0, 20.0));
@@ -415,7 +415,7 @@ fn a_plain_drag_marquees_and_shift_pans_leaving_the_selection() {
     // **The paper beside the graph is the workspace's**, with no modifier at
     // all: the panel hugs the boxes and the widget's rect is whatever the
     // scroll view gave it, so a drag out here pans rather than sweeping a
-    // marquee over nothing — which is what it used to do, in both fronts.
+    // marquee over nothing -- which is what it used to do, in both fronts.
     let outside = ((panel.x + panel.w + 20.0) as f64, 200.0);
     g.press(&mut host, &plain, outside.0, outside.1);
     g.drag_to(&mut host, &plain, outside.0 - 40.0, 160.0);
@@ -493,7 +493,7 @@ fn dragging_the_empty_plane_pans_both_axes() {
 fn the_plane_pans_every_direction_from_its_origin() {
     // The regression this fixes: a plane sitting at the content's top-left
     // corner (its default) used to be clamped dead against down/right
-    // drags — half the gestures did nothing and it read as broken. The
+    // drags -- half the gestures did nothing and it read as broken. The
     // free plane overscrolls, so every direction moves it.
     let mut host = workspace("");
     let mut g = Gestures::default();
@@ -516,7 +516,7 @@ fn the_plane_pans_every_direction_from_its_origin() {
 /// The same anchor, on a plane whose **content follows the zoom**: a graph
 /// sizes its plane to itself-but-never-below-the-viewport, so the visible
 /// content shrinks as the zoom grows. Clamping the new pan against the
-/// content of the *old* zoom slid the plane out from under the cursor —
+/// content of the *old* zoom slid the plane out from under the cursor --
 /// invisible on a plane with an explicit `content_w`, which is why the test
 /// above did not catch it.
 // A graph-sized plane is a patcher's: without the family the same node is the
@@ -537,7 +537,7 @@ fn wheel_zoom_over_a_graph_sized_plane_holds_the_cursor_too() {
     let ctx = GestureCtx::new(1, 600, 400);
     let (cx, cy) = (420.0, 260.0);
     let area = crate::host::layout::Rect::new(0.0, 0.0, 600.0, 400.0);
-    // Where the graph itself sits on screen — the thing an eye tracks, and
+    // Where the graph itself sits on screen -- the thing an eye tracks, and
     // the thing the content extent moves when it follows the zoom.
     let graph = |host: &Host| {
         crate::host::layout::layout(area, host.window_def(1).unwrap(), &m)
@@ -663,7 +663,7 @@ fn slider_press_and_drag_set_the_value_and_emit() {
     // Dragging to the far right pins the value at max.
     g.drag_to(&mut host, &ctx, 399.0, 25.0);
     assert_eq!(slider_value(&host, 10), 10.0);
-    // The release reports nothing — the value left on every step — but the
+    // The release reports nothing -- the value left on every step -- but the
     // window repaints: an element that drew itself held has to be drawn let go.
     let effects = g.release(&mut host, &ctx, 399.0, 25.0);
     assert_eq!(effects, vec![GestureEffect::Redraw(1)]);
@@ -725,8 +725,8 @@ fn a_press_the_hand_slid_off_is_no_click() {
 }
 
 /// **A binding swallows the value and never the command.** A bound button
-/// drives the audio server with no script in the path — that is what
-/// `/gui_bind` is for — and the script still hears the click, because a command
+/// drives the audio server with no script in the path -- that is what
+/// `/gui_bind` is for -- and the script still hears the click, because a command
 /// is not a value and has nowhere else to go.
 #[test]
 fn a_binding_swallows_the_value_and_never_the_interface_events() {
@@ -751,7 +751,7 @@ fn a_binding_swallows_the_value_and_never_the_interface_events() {
     );
 }
 
-/// The tags a widget reported, in order — an interface event is one string and
+/// The tags a widget reported, in order -- an interface event is one string and
 /// nothing else, which is what tells it from a value here.
 fn tags(effects: &[GestureEffect], widget: i32) -> Vec<String> {
     effects
@@ -841,13 +841,13 @@ fn a_knob_turns_on_cursor_motion_and_captures_nothing() {
 /// **The air a layout leaves around a control is the window's, not the
 /// control's.** A checkbox stretched across a row is a small box with a word
 /// beside it and a great deal of nothing after that; pressing the nothing used
-/// to flip the value. The filter is the machine's — the element only declares
-/// its shape — so this is the same mechanism the knob and the slider go
+/// to flip the value. The filter is the machine's -- the element only declares
+/// its shape -- so this is the same mechanism the knob and the slider go
 /// through, checked once at the level where it is applied.
 #[test]
 fn a_toggle_does_not_flip_from_the_air_beside_it() {
     // The panel that showed it: a row of mixed controls, so the toggle's cell
-    // is as tall as its tallest sibling and as wide as its share of the row —
+    // is as tall as its tallest sibling and as wide as its share of the row --
     // air on both axes, which is the case a width-only bound reads as no fix.
     let mut host = host_from(
         r#"{"type":"window","margin":0,"children":[
@@ -939,8 +939,8 @@ fn waveform_press_and_drag_select_a_range() {
     assert!(has_emit_tag(&effects, 50, "selection"));
     let effects = g.drag_to(&mut host, &ctx, 600.0, 150.0);
     assert!(has_emit_tag(&effects, 50, "selection"));
-    // The selection landed in the widget's navigation group — where every
-    // reader of it looks — with a positive length.
+    // The selection landed in the widget's navigation group -- where every
+    // reader of it looks -- with a positive length.
     let key = host.timeline_key(50).unwrap();
     assert!(host.timelines().state(key).unwrap().sel_len > 0.0);
 }
@@ -1090,7 +1090,7 @@ fn copy_reads_the_samples_and_cut_and_paste_leave_as_intents() {
     assert_eq!(args[0], OscType::String("cut".into()));
     assert_eq!(args.len(), 3, "the span it names: {args:?}");
 
-    // Paste: the position, the kind, the document, and the payload beside it —
+    // Paste: the position, the kind, the document, and the payload beside it --
     // the clipboard travels *with* the intent, because it is the host's and the
     // owner may never have seen what is on it.
     let effects = g
@@ -1128,8 +1128,8 @@ fn a_copy_the_host_cannot_honestly_make_is_refused() {
 
 /// **A sweep to the first sample leaves the pointer off the view, and the copy
 /// is still the selection's.** Dragging to the very start or end of the contents
-/// parks the pointer in the window's margin — or outside the window, where there
-/// is no pointer at all — and a copy addressed only to what is under it answered
+/// parks the pointer in the window's margin -- or outside the window, where there
+/// is no pointer at all -- and a copy addressed only to what is under it answered
 /// nothing, silently, over a selection plainly on screen. The window's most
 /// recent selection is the fallback addressee, and the last one made wins.
 #[test]
@@ -1150,7 +1150,7 @@ fn a_block_operation_falls_back_to_the_window_s_last_selection() {
     // Both views hold one, the second made last: that is the one addressed.
     host.select_timeline(54, 0.0, 4.0);
     host.select_timeline(55, 2.0, 5.0);
-    // Off the window entirely — what `CursorLeft` leaves behind.
+    // Off the window entirely -- what `CursorLeft` leaves behind.
     let effects = g
         .clipboard_key(&mut host, &ctx, ClipVerb::Copy, -1.0, -1.0, &mut clip)
         .expect("the selection answers where the pointer does not");
@@ -1180,7 +1180,7 @@ fn a_block_operation_falls_back_to_the_window_s_last_selection() {
 
 /// **A mapped take is readable, and a slot does not take that away.** The
 /// navigable views are the ones the clipboard was written for, and they are also
-/// the ones whose data a loader routes into a GPU slot — so for a while a copy
+/// the ones whose data a loader routes into a GPU slot -- so for a while a copy
 /// over the very source it was meant for refused, the element holding nothing
 /// while the picture on screen was drawn from the samples. The element keeps the
 /// pyramid the slot draws (`frame::keep_data`), and the copy reads it.
@@ -1241,7 +1241,7 @@ fn wheel_zooms_the_time_axis_and_emits_the_view() {
 
 /// The lane count is two halves of one answer: the front knows how many
 /// channels reached the card, the widget knows what it does with them. An
-/// overlaid trace draws one lane out of four channels, a stacked one four —
+/// overlaid trace draws one lane out of four channels, a stacked one four --
 /// and the machine, which divides by it, asks rather than matching on a kind.
 #[test]
 fn a_widget_says_how_it_stacks_what_the_front_uploaded() {
@@ -1263,10 +1263,10 @@ fn a_widget_says_how_it_stacks_what_the_front_uploaded() {
 }
 
 /// The amplitude axis zooms symmetrically: whatever lane the cursor is
-/// over, the window keeps its centre — so every channel's zero line stays
+/// over, the window keeps its centre -- so every channel's zero line stays
 /// at its lane's centre instead of sliding out of the lane. The regression
 /// this fixes: the anchor used to be the cursor's height within its lane,
-/// which is meaningless for the *other* lanes of one shared window — a
+/// which is meaningless for the *other* lanes of one shared window -- a
 /// wheel near the top of channel 2 pushed every channel's wave to the
 /// bottom of its lane, clipped.
 #[test]
@@ -1281,7 +1281,7 @@ fn the_amplitude_axis_zooms_about_its_centre_whatever_lane_is_under_the_cursor()
     // Four channels: the body splits into four lanes.
     ctx.slot_channels.insert(61, 4);
     // Wheel over the y-ruler strip (left of the body), high inside the
-    // *last* lane — the worst case for a cursor-derived anchor.
+    // *last* lane -- the worst case for a cursor-derived anchor.
     let effects = g.wheel(&mut host, &ctx, 10.0, 212.0, 4.0);
     assert!(has_emit_tag(&effects, 61, "view_y"));
     let (start, len) = host
@@ -1340,7 +1340,7 @@ fn set_x_window(host: &mut Host, id: i32, start: f32, len: f32) {
 }
 
 /// The wheel over a navigable spectrum zooms its **frequency** axis, anchored
-/// at the cursor — and it reports the element's own `"view_x"`, not a group's
+/// at the cursor -- and it reports the element's own `"view_x"`, not a group's
 /// `"view"`, because there is no group: the axis belongs to the element the way
 /// every vertical axis already does.
 #[test]
@@ -1363,7 +1363,7 @@ fn the_wheel_zooms_a_spectrums_frequency_axis_under_the_cursor() {
 }
 
 /// A drag anywhere on the axis pans it, absolutely from the press snapshot,
-/// and `R` puts the whole axis back — the same key that resets the timelines,
+/// and `R` puts the whole axis back -- the same key that resets the timelines,
 /// since to a reader it is the same "show me all of it".
 #[test]
 fn a_drag_pans_the_frequency_axis_and_r_resets_it() {
@@ -1471,7 +1471,7 @@ fn a_roll_asked_for_the_range_by_name_sweeps_the_span() {
     assert!(host.timelines().state(key).unwrap().sel_len > 0.0);
 }
 
-/// The multi-note selection of a roll — view state no query reports, reached
+/// The multi-note selection of a roll -- view state no query reports, reached
 /// through the element's own `as_any` door, which is what it is for.
 fn selected_notes(host: &Host, id: i32) -> Vec<usize> {
     let WidgetKind::Custom(el) = &host.window_def(1).unwrap().find(id).unwrap().kind else {
@@ -1538,11 +1538,11 @@ fn a_gui_set_of_the_table_keeps_the_modifiers_it_does_not_name() {
 /// press: an element drawn rounder or smaller than its cell answers the wheel
 /// only where it is drawn, and the air around it belongs to whatever the
 /// container puts there. A wheel is worse to get wrong than a press, since it
-/// is not aimed at all — it is where the hand happened to leave the pointer.
+/// is not aimed at all -- it is where the hand happened to leave the pointer.
 #[test]
 fn the_wheel_reads_the_same_shape_the_press_does() {
     /// A leaf drawn as the disc inscribed in its cell, answering both the press
-    /// and the wheel — the two questions that must agree on where it is.
+    /// and the wheel -- the two questions that must agree on where it is.
     #[derive(Debug, Clone)]
     struct Dial;
     impl crate::host::widget::Element for Dial {
@@ -1596,7 +1596,7 @@ fn the_wheel_reads_the_same_shape_the_press_does() {
         first_emit(&effects, 90).is_some(),
         "the dial answered where it is drawn: {effects:?}"
     );
-    // The corner of the same cell is outside the disc — and outside the hit
+    // The corner of the same cell is outside the disc -- and outside the hit
     // slop around it, which is a few pixels and not a hundred.
     let corner = (cell.x as f64 + 1.0, cell.y as f64 + 1.0);
     let effects = g.wheel(&mut host, &ctx, corner.0, corner.1, 1.0);
@@ -1633,7 +1633,7 @@ fn score_host() -> Host {
     )
 }
 
-/// What the page says is selected **now** — read the way a `/gui_query` reads
+/// What the page says is selected **now** -- read the way a `/gui_query` reads
 /// it, since a ported leaf answers for itself rather than showing its variant.
 #[cfg(feature = "notation")]
 fn score_selected(host: &Host) -> Option<String> {
@@ -1720,7 +1720,7 @@ fn dragging_a_note_up_the_staff_transposes_it_in_diatonic_steps() {
     // diatonic step is the default 90 page units = 90 px
     g.press(&mut host, &ctx, 556.0, 196.0);
     // Two steps up. The displacement is drawn while the drag lasts and reports
-    // nothing on the way — so what the machine owes it is the frame that draws
+    // nothing on the way -- so what the machine owes it is the frame that draws
     // it, and the edit only travels on release.
     let moving = g.drag_to(&mut host, &ctx, 556.0, 16.0);
     assert!(transpose_emits(&moving).is_empty(), "nothing until release");
@@ -1818,7 +1818,7 @@ fn note_emits(effects: &[GestureEffect]) -> Vec<(i32, i32, i32, i32)> {
         .collect()
 }
 
-/// The keyboard element behind widget 70 — the concrete leaf, through the
+/// The keyboard element behind widget 70 -- the concrete leaf, through the
 /// trait's downcast door, which is what an element's own state is asserted on.
 fn keys_of(host: &Host) -> &crate::host::elements::keys::Keys {
     host.window_def(1)
@@ -1942,8 +1942,8 @@ fn piano_fixed_velocity_and_grayed_keys() {
     );
     assert!(note_emits(&effects).is_empty());
     assert!(piano_pressed(&host).is_empty());
-    // The press is still **taken** — the keyboard is what the reader pointed
-    // at, and letting it through would pan whatever is behind it — so it is
+    // The press is still **taken** -- the keyboard is what the reader pointed
+    // at, and letting it through would pan whatever is behind it -- so it is
     // held like any other, and lets go with nothing to report.
     let effects = g.release(&mut host, &ctx, c.x as f64, c.y as f64);
     assert!(note_emits(&effects).is_empty());
@@ -2048,7 +2048,7 @@ fn piano_voice_mode_tracks_one_node_per_held_pitch() {
 
 /// A window with one editable `text` field (id 5) filling it. It is
 /// **natural-sized**, so it is a control-high strip at the top of the window
-/// rather than the whole pane — every press below aims inside that strip.
+/// rather than the whole pane -- every press below aims inside that strip.
 fn text_host() -> Host {
     host_from(r#"{"type":"window","margin":0,"children":[{"id":5,"type":"text"}]}"#)
 }
@@ -2110,14 +2110,14 @@ fn key(g: &Gestures, host: &mut Host, ctx: &GestureCtx, k: Key) -> Option<Vec<Ge
 
 /// **A press on the axis' own ruler leaves the focus alone.** The position
 /// cursor is placed on the ruler and nowhere else, so dropping the focus there
-/// would take the multitrack's keys away with every mark a reader puts down — point
+/// would take the multitrack's keys away with every mark a reader puts down -- point
 /// at a box, place the cursor, split. A ruler takes no focus of its own (it is
 /// **`A` in a track's header, through the whole machine** *(found 2026-09-12 by
 /// the user: "el boton A no funciona")*.
 ///
 /// The element's own test presses it at the indent the *element* asks for. What
 /// a window actually hands it is the **navigation group's** gutter, and that is
-/// the number the drawing and the hit test both have to be laid out at — so a
+/// the number the drawing and the hit test both have to be laid out at -- so a
 /// fourth cell that fits one and not the other is a button drawn where nothing
 /// answers. This presses the pixels a person presses.
 #[test]
@@ -2242,7 +2242,7 @@ fn a_press_focuses_the_field_and_typing_emits_on_every_keystroke() {
     let mut host = text_host();
     let mut g = Gestures::default();
     let ctx = GestureCtx::new(1, 600, 400);
-    // A press focuses the field and says so — but does not edit it, so there
+    // A press focuses the field and says so -- but does not edit it, so there
     // is no value event: a click is not an edit.
     let e = g.press(&mut host, &ctx, 30.0, 15.0);
     assert_eq!(host.focused(), Some((1, 5)));
@@ -2261,7 +2261,7 @@ fn a_press_focuses_the_field_and_typing_emits_on_every_keystroke() {
 }
 
 /// **A drag that reports nothing still repaints.** Extending a text selection
-/// changes the picture and not the value, so there is nothing to deliver — and
+/// changes the picture and not the value, so there is nothing to deliver -- and
 /// a window with no other frame source would have shown the old selection until
 /// something else moved.
 #[test]
@@ -2314,7 +2314,7 @@ fn a_press_elsewhere_moves_the_focus_and_reports_both_ends() {
     );
 }
 
-/// A press on something that reads no keyboard drops the focus — which is how
+/// A press on something that reads no keyboard drops the focus -- which is how
 /// a caret disappears when you click away from a field.
 #[test]
 fn a_press_on_a_widget_that_takes_no_focus_clears_it() {
@@ -2374,7 +2374,7 @@ fn tab_past_the_last_stop_hands_the_keyboard_back() {
 }
 
 /// A window with nothing focusable hands Tab straight back, rather than
-/// swallowing it — the same exit, reached without ever entering.
+/// swallowing it -- the same exit, reached without ever entering.
 #[test]
 fn tab_in_a_window_with_no_ring_leaves_at_once() {
     let mut host = host_from(r#"{"type":"window","children":[{"id":9,"type":"button"}]}"#);
@@ -2385,7 +2385,7 @@ fn tab_in_a_window_with_no_ring_leaves_at_once() {
     assert!(e.iter().any(|f| matches!(f, GestureEffect::FocusOut(1))));
 }
 
-/// A script may point the keyboard itself — and is refused when it points at
+/// A script may point the keyboard itself -- and is refused when it points at
 /// something that reads none, rather than being left waiting for keystrokes
 /// that cannot arrive.
 #[test]
@@ -2551,7 +2551,7 @@ fn a_wheel_against_the_time_axis_bound_reports_nothing() {
 }
 
 /// The window a spectrum is **showing**, which is its request opened up to what
-/// the analysis resolves where it sits — what the frame draws and `"view_x"`
+/// the analysis resolves where it sits -- what the frame draws and `"view_x"`
 /// reports, as against the `x_window` that was asked for.
 fn shown_x_window(host: &Host, id: i32) -> (f64, f64) {
     host.window_def(1)
@@ -2565,7 +2565,7 @@ fn shown_x_window(host: &Host, id: i32) -> (f64, f64) {
 
 /// **Panning to the end of a frequency axis stops there.** The zoom floor is
 /// measured forward from the window's left edge, and a pan hands over an edge
-/// that is off the axis — that is what dragging past it means, the write
+/// that is off the axis -- that is what dragging past it means, the write
 /// clamping it a step later. Charging that overshoot to the floor widened the
 /// window by however far the drag had gone, and the next step of the drag read
 /// the wider window and went further: the picture rushed out to the whole axis
@@ -2604,8 +2604,8 @@ fn a_pan_past_the_axis_end_stops_at_its_floor() {
 }
 
 /// **A pan does not spend the zoom it travels through.** Down a log axis the
-/// window has to open — four bins at 20 Hz are a quarter of the axis, and no
-/// zoom can be finer than the analysis under it — but what the reader *asked*
+/// window has to open -- four bins at 20 Hz are a quarter of the axis, and no
+/// zoom can be finer than the analysis under it -- but what the reader *asked*
 /// for is kept, so the way back up returns the window they set rather than the
 /// one the bottom of the axis imposed.
 #[test]
@@ -2766,7 +2766,7 @@ fn pad(
     }))
 }
 
-/// Every `/gui_event` a gesture asked for on `id`, in order — a list of
+/// Every `/gui_event` a gesture asked for on `id`, in order -- a list of
 /// messages, since a release may report several.
 fn emitted(effects: &[GestureEffect], id: i32) -> Vec<Vec<OscType>> {
     effects
@@ -2795,7 +2795,7 @@ fn pad_taken(host: &Host, id: i32) -> i32 {
 }
 
 /// The default gesture table hands a leaf the press, so a registered element
-/// gets one with no `gestures` prop and nothing else to configure — and what
+/// gets one with no `gestures` prop and nothing else to configure -- and what
 /// it claims leaves as the widget's value, on the same `/gui_event` path a
 /// built-in control's does.
 #[test]
@@ -2823,7 +2823,7 @@ fn a_registered_element_takes_the_press_and_its_value_leaves() {
 /// The press is **held**: a claim opens a drag that carries no geometry, so
 /// every motion and the release land on the element that took it. What it
 /// reports on release travels as an edit-back payload (a tagged list), not as a
-/// value — the element says which by how many arguments it sends.
+/// value -- the element says which by how many arguments it sends.
 #[test]
 fn a_claim_holds_the_press_through_the_drag_and_the_release() {
     crate::register("test_pad", pad);
@@ -2852,7 +2852,7 @@ fn a_claim_holds_the_press_through_the_drag_and_the_release() {
 }
 
 /// Declining is the other half of the contract: the press goes back to the
-/// chain, which here is the plane under it — so it pans, exactly as a press on
+/// chain, which here is the plane under it -- so it pans, exactly as a press on
 /// a lane's empty space or a patcher's bare canvas does.
 #[test]
 fn a_declined_press_falls_through_to_the_plane() {
@@ -2876,7 +2876,7 @@ fn a_declined_press_falls_through_to_the_plane() {
     crate::unregister("test_pad");
 }
 
-/// D1: a sample is a grabbable point. The whole route in one test — press the
+/// D1: a sample is a grabbable point. The whole route in one test -- press the
 /// disc, drag it, and one intent leaves on release carrying both the value it
 /// reached and the one it came from, so the owner can apply it and invert it
 /// without remembering anything.
@@ -2934,7 +2934,7 @@ fn a_dragged_sample_leaves_as_one_absolute_intent() {
         "the edit is still in flight"
     );
 
-    // And the acknowledgement is what lets go of it — O3's *drop every pending
+    // And the acknowledgement is what lets go of it -- O3's *drop every pending
     // at or below the stamp*, with the drawing finally following the outbox.
     let seq = match &effects[..] {
         [.., crate::host::gestures::GestureEffect::Emit { seq, .. }] => *seq,
@@ -2967,7 +2967,7 @@ fn a_dragged_sample_leaves_as_one_absolute_intent() {
     );
 }
 
-/// The step **declines where a sample is not a thing on screen** — the trace
+/// The step **declines where a sample is not a thing on screen** -- the trace
 /// draws no discs there, so there is nothing to grab, and a plan that names it
 /// falls through instead of offering a grab the picture does not show.
 #[test]
@@ -2998,9 +2998,9 @@ fn grabbing_a_sample_declines_when_they_are_not_drawn() {
     );
 }
 
-/// D2: the draw mode. A stroke writes every sample it passes — including the
+/// D2: the draw mode. A stroke writes every sample it passes -- including the
 /// ones *between* two motion events, which is what makes it a stroke and not a
-/// comb — and leaves as one intent carrying both runs.
+/// comb -- and leaves as one intent carrying both runs.
 #[test]
 fn a_stroke_writes_every_sample_it_passes_and_leaves_as_one_intent() {
     let def = r#"{"type":"window","children":[
@@ -3049,7 +3049,7 @@ fn a_stroke_writes_every_sample_it_passes_and_leaves_as_one_intent() {
 
 /// **A stroke belongs to the channel it started on.** Dragging up out of a
 /// lane must clamp to *that* channel's maximum, not read the value the lane
-/// above would show at the same height — which is what a stereo stroke did
+/// above would show at the same height -- which is what a stereo stroke did
 /// until the read was made lane-explicit: the pencil jumped back to mid-scale
 /// the moment it left its own lane.
 #[test]
@@ -3093,7 +3093,7 @@ fn a_stroke_leaving_its_lane_clamps_to_its_own_channels_end() {
 }
 
 /// **A stroke stops at the edge of the picture.** The pointer keeps reporting
-/// past the window — that is what a drag grab is for — and a pencil that
+/// past the window -- that is what a drag grab is for -- and a pencil that
 /// followed it would go on rewriting samples nobody can see, discovered only by
 /// scrolling there afterwards.
 #[test]
@@ -3160,8 +3160,8 @@ fn drawing_is_refused_out_loud_when_a_pixel_is_more_than_a_sample() {
 /// consumes, and the two things that write to it.
 ///
 /// It is here rather than beside the model because everything worth checking
-/// about it is a *host* fact — the area the tree is laid out in, an emitted
-/// event, an acknowledgement — and none of it is reachable from a `Status`
+/// about it is a *host* fact -- the area the tree is laid out in, an emitted
+/// event, an acknowledgement -- and none of it is reachable from a `Status`
 /// alone.
 mod status_bar {
     use super::*;
@@ -3230,7 +3230,7 @@ mod status_bar {
                 .any(|e| matches!(e, GestureEffect::Emit { .. })),
             "the band is chrome: nothing under it was pressed"
         );
-        // Open, it is taller — and the press that closes it is the one aimed
+        // Open, it is taller -- and the press that closes it is the one aimed
         // at where it now is.
         let open_band = host.status_bar_rect(1, 800, 400).unwrap();
         assert!(open_band.h > band.h, "the log area is several lines");
@@ -3442,11 +3442,11 @@ fn the_pencil_waits_for_the_dots_the_trace_draws() {
 /// **A fault is said out loud and consumed; nothing to act on is declined.**
 ///
 /// The two are one line apart in the arms and they are not the same thing. A
-/// step that finds nothing to act on where the picture is good — the samples
-/// are not drawn one by one — is not this gesture's press, so the plan tries
+/// step that finds nothing to act on where the picture is good -- the samples
+/// are not drawn one by one -- is not this gesture's press, so the plan tries
 /// its next step, which is what `"sample select"` is composed of and what
 /// `docs/gui-protocol.md` specifies for `sample`. A step that finds the picture
-/// *wrong* — a view holding no samples at all — has hit a fault, and falling
+/// *wrong* -- a view holding no samples at all -- has hit a fault, and falling
 /// through there is how the pencil silently became a selection tool after an
 /// undo (found 2026-09-07, `editors/edit_samples`).
 #[test]
@@ -3479,7 +3479,7 @@ fn a_view_with_no_samples_refuses_instead_of_sweeping() {
 }
 
 /// **The position cursor is placed where a click lands on nothing.** It says
-/// where the *reader* is — where a playback starts and where a paste lands — so
+/// where the *reader* is -- where a playback starts and where a paste lands -- so
 /// it is never a side effect of pointing *at* something: a click on a note is
 /// that note's and moves no line, while the grid nothing is drawn on, and the
 /// ruler, are the ordinary ways to say "here".
@@ -3517,8 +3517,8 @@ fn a_click_on_the_rolls_grid_puts_the_cursor_where_it_pointed() {
         host.timelines().state(key).unwrap().playhead < 0.0,
         "the playhead is not the cursor"
     );
-    // The roll's **own ruler strip** — the bottom `ruler_h` of its rect, drawn
-    // by the view rather than by a widget — places it too.
+    // The roll's **own ruler strip** -- the bottom `ruler_h` of its rect, drawn
+    // by the view rather than by a widget -- places it too.
     let rect = placed_rect(&host, &ctx, 90);
     let on_ruler = (rect.y + rect.h) as f64 - 2.0;
     let far = grid.x as f64 + grid.w as f64 * 0.5;
@@ -3584,7 +3584,7 @@ fn the_rolls_paste_lands_on_the_windows_cursor() {
 /// **A click on a multitrack places the cursor.** The gesture the widget's own
 /// map does not name and the machine owns: a press that never left the slop is
 /// where the hand pointed, so it locates over bare stack and over a clip alike
-/// — and a sweep, which left a rectangle, does not.
+/// -- and a sweep, which left a rectangle, does not.
 ///
 /// It is the one verb of the whole vocabulary that a `multitrack` inherits
 /// rather than implements, which is exactly why nothing tested it.
@@ -3661,7 +3661,7 @@ fn a_click_on_a_multitrack_locates_and_a_sweep_does_not() {
         "a rectangle is not a cursor"
     );
 
-    // Beside the axis — the header gutter — there is no position and no click.
+    // Beside the axis -- the header gutter -- there is no position and no click.
     let effects = {
         g.press(&mut host, &ctx, body.x as f64 - 10.0, on_ruler);
         g.release(&mut host, &ctx, body.x as f64 - 10.0, on_ruler)
@@ -3672,7 +3672,7 @@ fn a_click_on_a_multitrack_locates_and_a_sweep_does_not() {
     );
 }
 
-/// **A double click is two presses close in time and in place** — and the rule
+/// **A double click is two presses close in time and in place** -- and the rule
 /// is the machine's, counted from the clock the front hands it, because winit
 /// reports no click count and a browser reports one of its own. Two fronts
 /// answering differently is exactly the divergence the shared machine is for.
@@ -3705,7 +3705,7 @@ fn two_presses_close_in_time_and_place_are_one_double_click() {
     assert_eq!(g.count_press(&ctx, 400.0, 51.0), 1);
 }
 
-/// A front with no clock sees every press as a single one — which is what a
+/// A front with no clock sees every press as a single one -- which is what a
 /// front with no clock can honestly say, and it is what every test that never
 /// sets `now_ms` is relying on.
 #[test]

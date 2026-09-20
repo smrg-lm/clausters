@@ -133,7 +133,7 @@ fn report(label: &str, ns: f64, baseline: Option<f64>) {
 
 fn main() {
     println!(
-        "transport cost — {SAMPLE_RATE} Hz, blocks of {BLOCK_SIZE} frames \
+        "transport cost -- {SAMPLE_RATE} Hz, blocks of {BLOCK_SIZE} frames \
          (budget {BLOCK_BUDGET_NS:.0} ns)"
     );
 
@@ -175,7 +175,7 @@ fn main() {
     // Routing happens once per enqueued bundle, so the load that matters is
     // bundles *arriving*, not bundles pending. Each measured block therefore
     // enqueues a fresh batch before processing.
-    println!("\ntraffic dependence — routing runs once per arriving bundle:");
+    println!("\ntraffic dependence -- routing runs once per arriving bundle:");
     for &voices in &[64usize, 512, 2048] {
         println!("  {voices}-voice tree:");
         for &per_block in &[0usize, 8, 64] {

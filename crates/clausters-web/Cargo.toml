@@ -12,7 +12,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # The engine itself, lean: both def families plus the embed seam (the
-# in-memory ring segment and the render entry). No cpal and no midir — the
+# in-memory ring segment and the render entry). No cpal and no midir -- the
 # browser has neither; the AudioWorklet is the backend. `faust` here means the
 # FaustDef *family*, not libfaust: on wasm32 the compiler is `libfaust-wasm` in
 # the page's Worker and the def arrives as a second module linked into this

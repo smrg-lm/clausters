@@ -3,18 +3,18 @@
 //! A [`Buffer`]'s **shape is fixed and its contents are not**: the frame count,
 //! the channel count and the sample rate are decided when it is allocated and
 //! never change, while every sample is an atomic cell any thread may read or
-//! write at any time. That is scsynth's model — buffer contents are mutable,
+//! write at any time. That is scsynth's model -- buffer contents are mutable,
 //! and a `RecordBuf` writing while a `PlayBuf` reads is the ordinary case, not
 //! a hazard to design around.
 //!
 //! **Why the cells are atomic, since the answer is not the obvious one.** A
 //! `u32` holds the sample's `f32` bits exactly (`from_bits`/`to_bits` compile to
-//! nothing — there is no `AtomicF32` in the standard library, and that is the
+//! nothing -- there is no `AtomicF32` in the standard library, and that is the
 //! only reason for the type). Atomics are not here for indivisibility: a
 //! naturally aligned 32-bit store is already indivisible on every target we
 //! run on. They are here to make the write **legal at all**. Two threads touching one
 //! non-atomic location with a writer among them is a data race, which is
-//! undefined behaviour — so the compiler may hoist a load out of a loop and
+//! undefined behaviour -- so the compiler may hoist a load out of a loop and
 //! reuse a value forever, and a plain `&[f32]` written behind its back reads
 //! stale samples with no symptom to debug.
 //!
@@ -61,20 +61,20 @@ pub fn empty_pool_with(count: usize) -> BufferPool {
 /// Interleaved sample data plus its shape. See the module docs for what is
 /// fixed (the shape) and what is not (every sample).
 pub struct Buffer {
-    /// Interleaved samples as `f32` bit patterns, one atomic cell each — owned
+    /// Interleaved samples as `f32` bit patterns, one atomic cell each -- owned
     /// here, or in a region a second process can map (see [`Storage`]).
     data: Storage,
     channels: usize,
     frames: usize,
     sample_rate: f64,
-    /// **How far this buffer has been written**, in frames — the buffer's own
+    /// **How far this buffer has been written**, in frames -- the buffer's own
     /// counter, always here.
     ///
     /// It used to live only in the shared segment's directory row, which made
     /// it a fact about *sharing* rather than about the samples: a server with
     /// no segment recorded exactly as it does now and could not say how far it
-    /// had got, so `/buffer_stream` — the command for clients that cannot map
-    /// anything, which is most of them — had nothing to report. The frontier
+    /// had got, so `/buffer_stream` -- the command for clients that cannot map
+    /// anything, which is most of them -- had nothing to report. The frontier
     /// is the buffer's, so it is kept with the samples and published from
     /// here to whoever else wants it.
     written: AtomicU64,
@@ -90,7 +90,7 @@ pub struct Buffer {
 /// directory's row, an offline render implements nothing, and the audio thread
 /// calls one method that stores a number.
 pub trait Frontier: Send + Sync {
-    /// Raises the published frontier to `frame` — the highest wins, so two
+    /// Raises the published frontier to `frame` -- the highest wins, so two
     /// writers on one buffer cannot pull it backwards.
     fn raise(&self, frame: u64);
 }
@@ -108,7 +108,7 @@ pub trait Frontier: Send + Sync {
 pub enum Storage {
     /// The server's own memory: what a buffer is with no segment attached.
     Owned(Vec<AtomicU32>),
-    /// A region a peer can map by name, for a server that has an IPC segment —
+    /// A region a peer can map by name, for a server that has an IPC segment --
     /// the samples an editor draws and writes without a message
     /// (`dsp::region`).
     #[cfg(unix)]
@@ -116,7 +116,7 @@ pub enum Storage {
     /// **Other buffers' samples**: a join, read through the parts it is made of
     /// rather than out of cells of its own (`dsp::stitch`). This is the one
     /// form with no cells at all, which is why [`Storage::cells`] answers an
-    /// `Option` — see [`Stitch`](crate::dsp::stitch::Stitch) for what that
+    /// `Option` -- see [`Stitch`](crate::dsp::stitch::Stitch) for what that
     /// costs and what it takes away (nothing: a stitch is replaced, not
     /// written).
     Stitched(crate::dsp::stitch::Stitch),
@@ -137,7 +137,7 @@ impl Storage {
     }
 }
 
-/// A stretch of one buffer that reads with no lookup — what
+/// A stretch of one buffer that reads with no lookup -- what
 /// [`Buffer::run_at`] hands out.
 ///
 /// It is `Copy` and holds only borrows, so a reader keeps one in a local across
@@ -145,14 +145,14 @@ impl Storage {
 /// because the buffer it borrows cannot be replaced while it is borrowed.
 #[derive(Clone, Copy)]
 pub struct Run<'a> {
-    /// The buffer this is a run of — what a frame outside the run is read
+    /// The buffer this is a run of -- what a frame outside the run is read
     /// through.
     buffer: &'a Buffer,
     /// The part and its source's cells, when the buffer is a join. `None` is a
     /// plain buffer, whose run is the whole of it.
     part: Option<crate::dsp::stitch::PartRun<'a>>,
     /// The cells of a plain buffer, taken once so a read inside the run is an
-    /// indexed load — the same saving the part gives a join, so the fast path
+    /// indexed load -- the same saving the part gives a join, so the fast path
     /// is uniform rather than a stitched-only branch.
     cells: Option<&'a [AtomicU32]>,
     /// The first frame of the run, on this buffer's own axis.
@@ -162,7 +162,7 @@ pub struct Run<'a> {
 }
 
 impl Run<'_> {
-    /// Whether `frame` is inside this run — the check a reader makes per sample
+    /// Whether `frame` is inside this run -- the check a reader makes per sample
     /// instead of a lookup.
     #[inline]
     pub fn holds(&self, frame: usize) -> bool {
@@ -188,7 +188,7 @@ impl Run<'_> {
 }
 
 impl std::fmt::Debug for Buffer {
-    /// Shape only — buffers hold millions of samples.
+    /// Shape only -- buffers hold millions of samples.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Buffer")
             .field("frames", &self.frames)
@@ -237,7 +237,7 @@ impl Buffer {
     }
 
     /// The same buffer, publishing **how far it has been written** to whoever
-    /// gave it a sink — the directory row a peer reads to draw a recording as
+    /// gave it a sink -- the directory row a peer reads to draw a recording as
     /// it fills.
     ///
     /// A buffer with no sink (every buffer with no segment behind it) records
@@ -252,7 +252,7 @@ impl Buffer {
     /// filled, kept here and mirrored into the directory row when there is
     /// one.
     ///
-    /// Called from the audio thread once per block by whoever wrote — one or
+    /// Called from the audio thread once per block by whoever wrote -- one or
     /// two relaxed read-modify-writes and nothing else. A picture of a
     /// recording is the only reader, and what it does with a frame that is
     /// being written as it reads is what it does with every other one.
@@ -264,18 +264,18 @@ impl Buffer {
     }
 
     /// **How far this buffer has been written**, in frames, or `0` for one
-    /// nothing recorded into — a buffer that arrived whole is samples
+    /// nothing recorded into -- a buffer that arrived whole is samples
     /// everywhere and has no frontier at all.
     ///
     /// It is a *hint*, like the row a peer reads: several writers may share a
     /// buffer and nothing here says which of them wrote what. Its one reader
-    /// is a picture of a recording — `/buffer_stream` summarizes up to it, and
+    /// is a picture of a recording -- `/buffer_stream` summarizes up to it, and
     /// a mapping peer reads the same number out of the segment.
     pub fn frontier(&self) -> u64 {
         self.written.load(Ordering::Relaxed)
     }
 
-    /// Where this buffer's samples live — what a pool consults to hand a peer
+    /// Where this buffer's samples live -- what a pool consults to hand a peer
     /// the name of a region, and nothing else.
     pub fn storage(&self) -> &Storage {
         &self.data
@@ -297,7 +297,7 @@ impl Buffer {
         self.sample_rate
     }
 
-    /// The raw cells, `frames * channels` of them, interleaved — for a reader
+    /// The raw cells, `frames * channels` of them, interleaved -- for a reader
     /// running its own tight loop over a span (a convolution kernel, a
     /// wavetable). Read one with [`load`](Self::load); nothing else about the
     /// representation is anybody's business.
@@ -305,8 +305,8 @@ impl Buffer {
     /// `None` for a **stitched** buffer, which owns no samples: a caller that
     /// needs a contiguous span must say so, and refusing it here is what makes
     /// that a compile error at every one of the five places rather than a
-    /// silently empty slice. Everything that reads sample by sample —
-    /// [`sample`](Self::sample), [`at`](Self::at), a summary — works on a join
+    /// silently empty slice. Everything that reads sample by sample --
+    /// [`sample`](Self::sample), [`at`](Self::at), a summary -- works on a join
     /// with no change at all.
     #[inline]
     pub fn cells(&self) -> Option<&[AtomicU32]> {
@@ -365,7 +365,7 @@ impl Buffer {
         }
     }
 
-    /// Whether this buffer is a join — what a write path checks before
+    /// Whether this buffer is a join -- what a write path checks before
     /// refusing, and what `/buffer_query` reports so a client never tries.
     #[inline]
     pub fn is_stitched(&self) -> bool {
@@ -374,7 +374,7 @@ impl Buffer {
 
     /// One cell's value. The single door every read goes through, so the
     /// ordering is stated once: **relaxed**, because a sample carries no
-    /// happens-before relationship to any other — see the module docs.
+    /// happens-before relationship to any other -- see the module docs.
     #[inline]
     pub fn load(cell: &AtomicU32) -> f32 {
         f32::from_bits(cell.load(Ordering::Relaxed))
@@ -432,7 +432,7 @@ impl Buffer {
         }
     }
 
-    /// **One channel of this buffer, read where it lies** — the door every
+    /// **One channel of this buffer, read where it lies** -- the door every
     /// summary goes through.
     ///
     /// Interleaved storage puts a channel's frames `channels` apart, so
@@ -446,7 +446,7 @@ impl Buffer {
         }
     }
 
-    /// A snapshot of the whole buffer, interleaved — what a caller that wants a
+    /// A snapshot of the whole buffer, interleaved -- what a caller that wants a
     /// plain slice takes instead of borrowing one. It is a *reading*, not a
     /// view: samples written after it are not in it, which is the honest shape
     /// for the network and NRT sides that serve, resample or write out a
@@ -492,7 +492,7 @@ impl Buffer {
 ///
 /// It holds a borrow rather than a copy: a summary is a read over the cells the
 /// engine is writing, which is the same concurrency every other reader of a
-/// buffer takes — some old samples and some new, never half of one.
+/// buffer takes -- some old samples and some new, never half of one.
 pub struct BufferChannel<'a> {
     buffer: &'a Buffer,
     channel: usize,

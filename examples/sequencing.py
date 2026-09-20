@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """The high-level client: pattern sequencing with one seam for NRT and live.
 
-A guided tour of the Python client's sequencing layer — the part a musician
+A guided tour of the Python client's sequencing layer -- the part a musician
 actually touches. The idea ported from sc3: a `Pbind` combines per-key value
 patterns into a stream of note `Event`s, and an `EventStreamPlayer` plays them
 on a `TempoClock`, emitting each at its exact logical beat. The **seam**: the
 *same* pattern runs offline (NRT, accumulating a score the embed renderer turns
 into samples) or live (RT, over UDP to a running server) depending only on which
-`Server` interface the `Session` holds — the routine never changes.
+`Server` interface the `Session` holds -- the routine never changes.
 
 `Session` bundles a `Server` + `TempoClock` with explicit, no-global ergonomics
 (`Session.nrt(...)` / `Session.live(...)`), so an offline session for plotting

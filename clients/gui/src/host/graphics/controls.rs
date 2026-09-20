@@ -17,7 +17,7 @@ use crate::host::paint::{Color, Draw, Mesh};
 use crate::host::widget::size;
 use crate::host::widget::{Align, Range};
 
-/// The label strip height when a control carries a label, else 0 — **and 0 when
+/// The label strip height when a control carries a label, else 0 -- **and 0 when
 /// the cell cannot hold both**.
 ///
 /// A squeezed control drops its label before it squeezes its body: a field box
@@ -43,8 +43,8 @@ pub fn body_rect(rect: Rect, has_label: bool, m: &Metrics) -> Rect {
     body_rect_at(rect, has_label, m.text_scale, m)
 }
 
-/// The control body (the rect minus its label strip — sized by the widget's
-/// `text_size` — and a small inset).
+/// The control body (the rect minus its label strip -- sized by the widget's
+/// `text_size` -- and a small inset).
 pub fn body_rect_at(rect: Rect, has_label: bool, text_size: f32, m: &Metrics) -> Rect {
     let top = rect.y + label_height(rect.h, has_label, text_size, m);
     Rect::new(
@@ -57,7 +57,7 @@ pub fn body_rect_at(rect: Rect, has_label: bool, text_size: f32, m: &Metrics) ->
 
 /// The strip a control reserves at the **bottom** of its body for its value
 /// read-out: one row of text and the gap above it. The number lives there and
-/// nowhere else, so it never lands on the thing it is reading — a knob's disc,
+/// nowhere else, so it never lands on the thing it is reading -- a knob's disc,
 /// a slider's groove and handle.
 pub fn readout_h(text_size: f32, m: &Metrics) -> f32 {
     font::height(text_size) + m.pad
@@ -80,7 +80,7 @@ pub fn slider_track(rect: Rect, has_label: bool, text_size: f32, m: &Metrics) ->
     )
 }
 
-/// **The band a slider is actually drawn in**, inside its track area — the
+/// **The band a slider is actually drawn in**, inside its track area -- the
 /// groove down the middle plus the handle's grip across it, which is as thick
 /// as this control ever gets.
 ///
@@ -88,7 +88,7 @@ pub fn slider_track(rect: Rect, has_label: bool, text_size: f32, m: &Metrics) ->
 /// slider fills a fraction of it: a groove `track_thick` across with a grip
 /// `handle_grip` long over it, centred. So the area answers for a control that
 /// is drawn several times thinner than it, which is why the press reads this
-/// instead — the hit is the drawing, the same rule the dial and the notehead
+/// instead -- the hit is the drawing, the same rule the dial and the notehead
 /// follow (`graphics::shape`).
 pub fn slider_groove(body: Rect, vertical: bool, m: &Metrics) -> Rect {
     if vertical {
@@ -108,7 +108,7 @@ pub fn slider_fraction(body: Rect, px: f64) -> f32 {
     (((px as f32) - body.x) / body.w).clamp(0.0, 1.0)
 }
 
-/// The 0..1 fraction along a vertical track at pixel `py` — bottom is 0, top is
+/// The 0..1 fraction along a vertical track at pixel `py` -- bottom is 0, top is
 /// 1, so dragging up raises the value (for a `vertical` slider).
 pub fn slider_fraction_v(body: Rect, py: f64) -> f32 {
     if body.h <= 0.0 {
@@ -208,7 +208,7 @@ pub fn slider(d: &mut Draw, r: &Range, rect: Rect, vertical: bool, size: f32) {
     value_text(d, &fmt(r.value), readout, size);
 }
 
-/// **Where a knob's dial is**, as `(cx, cy, radius)` inside its `body` — one
+/// **Where a knob's dial is**, as `(cx, cy, radius)` inside its `body` -- one
 /// function so the drawing and the hit-test cannot disagree about the disc.
 ///
 /// The read-out takes a strip at the bottom of the body and the disc is sized
@@ -233,14 +233,14 @@ pub fn knob(d: &mut Draw, r: &Range, rect: Rect, size: f32) {
     value_text(d, &fmt(r.value), readout, size);
 }
 
-/// **The dial itself** — the ring, the face and the pointer at `fraction` of a
+/// **The dial itself** -- the ring, the face and the pointer at `fraction` of a
 /// 270-degree sweep, min at lower-left and max at lower-right.
 ///
 /// Apart from the widget so that a *header's* level knob is the same dial as a
 /// `knob` widget's rather than a second drawing of the same idea: a control
 /// that reads one way in one place and another way in another is two controls
-/// to a reader. What the widget adds around it is its own — a label strip, a
-/// read-out — and a header cell has room for neither.
+/// to a reader. What the widget adds around it is its own -- a label strip, a
+/// read-out -- and a header cell has room for neither.
 pub fn knob_dial(d: &mut Draw, cx: f32, cy: f32, radius: f32, fraction: f32) {
     let (mesh, _, theme) = d.parts();
     mesh.disc(cx, cy, radius, theme.track);
@@ -340,14 +340,14 @@ pub fn toggle_box(rect: Rect, m: &Metrics) -> Rect {
 }
 
 /// **What a toggle answers the pointer on**: the box, plus the label beside it
-/// when there is one — the two things drawn, and nothing of the cell the
+/// when there is one -- the two things drawn, and nothing of the cell the
 /// layout stretched around them.
 ///
 /// A checkbox is a small square with a word next to it, and a cell it does not
 /// fill on **either** axis: a row of controls is as tall as the tallest of
 /// them, so a toggle beside a slider gets a column of air over and under its
 /// box as well as the run of it after the label. Both are the layout's, not the
-/// control's, so a click landing on them goes back to the chain — the first
+/// control's, so a click landing on them goes back to the chain -- the first
 /// pass here bounded only the width, which is exactly half a fix and reads as
 /// none at all in the panel that showed it.
 ///
@@ -401,7 +401,7 @@ pub fn toggle(d: &mut Draw, on: bool, label: Option<&str>, rect: Rect, size: f32
 /// (it then draws the selection and the blinking-less caret). The **layout does
 /// not depend on focus**: a multiline field always lays its lines top-aligned
 /// like a text editor (not a centered label), and a single-line field always
-/// sits on one vertically-centered row — an unfocused field uses a caret at the
+/// sits on one vertically-centered row -- an unfocused field uses a caret at the
 /// start (scroll offset 0), so the pre-written text reads exactly as it will
 /// once clicked into. A single-line field clips overflow with an ellipsis when
 /// unfocused, and scrolls to the caret when focused. (A `menu`'s read-out reuses
@@ -412,7 +412,7 @@ pub fn menu_row_h(text_size: f32, m: &Metrics) -> f32 {
 }
 
 /// The rectangle an open `menu`'s list occupies: the width of the menu's cell,
-/// one [`menu_row_h`] per option, hanging **below** the cell — or above it when
+/// one [`menu_row_h`] per option, hanging **below** the cell -- or above it when
 /// there is no room below, so a menu at the bottom of a window still opens.
 ///
 /// One function for the drawing and for the hit-test, so a click lands on the
@@ -502,8 +502,8 @@ pub fn menu(d: &mut Draw, current: &str, label: Option<&str>, rect: Rect, size: 
     );
 }
 
-/// Draws an editable text field: its label strip, its body, the visible text —
-/// scrolled to the caret when `caret` is `Some` (the field is focused) — and,
+/// Draws an editable text field: its label strip, its body, the visible text --
+/// scrolled to the caret when `caret` is `Some` (the field is focused) -- and,
 /// then, the selection and the caret themselves.
 pub fn field(
     d: &mut Draw,
@@ -584,7 +584,7 @@ fn visible_line(line: &str, hstart: usize, cols: usize, text_w: f32, size: f32) 
 }
 
 /// Draws one line of a field: its visible glyphs (scrolled by `hstart` columns,
-/// clipped to the body), and — only when `caret` is `Some` (focused) — the
+/// clipped to the body), and -- only when `caret` is `Some` (focused) -- the
 /// selection highlight over its selected span and the caret when it falls on
 /// this line. `line_byte` is the byte offset of the line's start in `value`.
 #[allow(clippy::too_many_arguments)] // the line and its window, past the context
@@ -674,7 +674,7 @@ pub fn caret_at(
     let cols = font::fit_chars(text_w, size);
     let caret_col = textedit::line_col(value, current.pos).1;
     // The column a click lands on is **measured against the glyphs actually
-    // shown**, the same string `draw_line` drew — which is what makes a click
+    // shown**, the same string `draw_line` drew -- which is what makes a click
     // land on the letter it points at with a proportional face, and is exactly
     // the old cell division under the fixed-pitch one.
     let col_at = |line: &str, hstart: usize| {
@@ -714,7 +714,7 @@ fn value_text(d: &mut Draw, s: &str, body: Rect, size: f32) {
 /// range can ever show, plus the insets [`value_text`] draws it inside (the
 /// body's on both sides and its own on the right).
 ///
-/// It measures the **bounds**, never the current value — `min` and `max` are
+/// It measures the **bounds**, never the current value -- `min` and `max` are
 /// props and the value is not, so a control fitted to its content keeps one
 /// width while it is turned instead of resizing under the hand turning it.
 pub(crate) fn readout_w(r: &Range, size: f32, m: &Metrics) -> f32 {
@@ -746,7 +746,7 @@ fn fmt(v: f32) -> String {
 ///
 /// It is the same term [`label_height`] stops reserving once the cell cannot
 /// hold both, read from one place so the floor a widget offers and the drawing
-/// that follows cannot name different numbers — offer a strip the drawing
+/// that follows cannot name different numbers -- offer a strip the drawing
 /// keeps and the body is cut instead; keep one the drawing drops and the
 /// control floats in dead space. Unlabelled, there is nothing to give and this
 /// is zero.
@@ -762,7 +762,7 @@ pub fn field_h(r: &Range, m: &Metrics, scale: f32) -> f32 {
 }
 
 /// A horizontal slider's thickness: the label strip, the body inset, the
-/// handle's grip across the track and the read-out strip under it — the same
+/// handle's grip across the track and the read-out strip under it -- the same
 /// reservation the drawing makes ([`slider_track`]), so the groove
 /// gets the grip it asked for and the number gets its own row.
 pub fn slider_thick(r: &Range, m: &Metrics, scale: f32) -> f32 {
@@ -774,7 +774,7 @@ pub fn slider_thick(r: &Range, m: &Metrics, scale: f32) -> f32 {
 }
 
 /// A vertical slider's width: the grip across the track, inset in the body.
-/// The value read-out shares that width and ellipsizes — a number's own length
+/// The value read-out shares that width and ellipsizes -- a number's own length
 /// is data, and no size here may follow it.
 pub fn slider_across(m: &Metrics) -> f32 {
     size::body_inset(m) + m.handle_grip.max(m.box_side)

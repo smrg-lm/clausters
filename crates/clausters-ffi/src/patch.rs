@@ -4,8 +4,8 @@
 /// [`Patch`](clausters_core::patch::Patch) as JSON in (`patch`/`patch_len`), its
 /// [`Compiled`](clausters_core::patch::Compiled) bus wiring as JSON written to
 /// `out` (capacity `out_cap`). Returns the number of bytes the output JSON needs
-/// — written iff it fit, so a caller sizes with a first call (a null/small `out`)
-/// then fills — or `0` when the input is not readable JSON for a `Patch`.
+/// -- written iff it fit, so a caller sizes with a first call (a null/small `out`)
+/// then fills -- or `0` when the input is not readable JSON for a `Patch`.
 ///
 /// A **compile** error (a malformed cord: reversed, mismatched rate, out of
 /// range) is not a `0`: it comes back *as* the output JSON, the object

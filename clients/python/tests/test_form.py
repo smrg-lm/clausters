@@ -1,4 +1,4 @@
-"""The concrete model (Fase 1A) — pure structure and temporal algebra.
+"""The concrete model (Fase 1A) -- pure structure and temporal algebra.
 
 No server: these check the temporal *character* of an element (from its
 onset/duration), the temporal *relation* derived from an `Aggregate`'s member
@@ -263,7 +263,7 @@ def test_flatten_logical_aggregate_is_deferred():
 
 def test_a_vector_without_an_instrument_has_no_sound_of_its_own():
     # Data, not an audio clip: it contributes structure (and draws in the editor),
-    # but nothing plays it, so flattening emits no event — and asking for the
+    # but nothing plays it, so flattening emits no event -- and asking for the
     # event it would play says exactly what is missing.
     assert flatten(Aggregate([(0.0, Vector(object()))])) == []
     with pytest.raises(NotImplementedError, match="instrument"):
@@ -322,7 +322,7 @@ def _inner_addr(raw: bytes) -> str:
 def test_render_matches_handbuilt_timeline_nrt():
     """A concrete aggregate rendered through the arrangement produces the same score
     (the same /synth_new start beats) as the equivalent flat timeline played by
-    hand — proving the flatten is correct and the change of state deterministic.
+    hand -- proving the flatten is correct and the change of state deterministic.
     NRT only (an offline session), so no socket and no port clash."""
     _embed_or_skip()
     from clausters import Session
@@ -365,7 +365,7 @@ def test_render_matches_handbuilt_timeline_nrt():
 def test_a_vector_sounds_through_the_instrument_that_plays_it():
     """A vector wraps a buffer, and a buffer is data: it needs an instrument (a
     def whose `buf` control plays it) to become an audio clip. With one,
-    flattening emits the event that plays it; without one it is structure only —
+    flattening emits the event that plays it; without one it is structure only --
     it contributes no event."""
     from clausters.defs.buffer import Buffer as ServerBuffer
 
@@ -387,7 +387,7 @@ def test_a_vector_sounds_through_the_instrument_that_plays_it():
 
 def test_a_placement_length_trims_what_the_element_plays():
     """A clip's length is what you hear of it: a placement `dur` drops the events
-    past its end and sizes a single-event element to it — the DAW rule, and what
+    past its end and sizes a single-event element to it -- the DAW rule, and what
     resizing a clip in the editor must actually change."""
     from clausters.defs.buffer import Buffer as ServerBuffer
     from clausters.seq.event import Event as SeqEvent
@@ -406,7 +406,7 @@ def test_a_placement_length_trims_what_the_element_plays():
     assert len(flatten(lane)) == 4
 
     # A take shortened by its placement sounds for exactly that long (its own
-    # event is untouched — a placement never rewrites the element).
+    # event is untouched -- a placement never rewrites the element).
     take = Vector(ServerBuffer(bufnum=1, frames=100), duration=4.0,
                   instrument="sampler")
     song = Aggregate([(0.0, 1.5, take)])
@@ -427,7 +427,7 @@ def test_generator_def_name_from_string_or_object():
 
 def test_logical_aggregate_translates_to_the_same_graphdef():
     """A logical aggregate of two nodes (source -> sink through an internal bus)
-    produces the same GraphDef spec as building it directly — the 1:1 mapping."""
+    produces the same GraphDef spec as building it directly -- the 1:1 mapping."""
     from clausters.defs import GraphDef
 
     g = Aggregate(kind=LOGICAL, name="chain", buses=[("mix", "audio")])

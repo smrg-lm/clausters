@@ -15,8 +15,8 @@
   <body>
     <main>
       <div>What one Faust def costs the compiler's arena, for as long as the
-        tab lives. The page keeps <b>one</b> lib context and never destroys it —
-        destroying one poisons the next (<code>docs/decisions.md</code>) — so
+        tab lives. The page keeps <b>one</b> lib context and never destroys it --
+        destroying one poisons the next (<code>docs/decisions.md</code>) -- so
         every def's terms stay in that arena and this is what says by how much.
         The number it prints is the one written on
         <code>docs/src/platform.md</code>, together with how many defs a tab
@@ -28,7 +28,7 @@
     <!--
       A measurement, not an acceptance: it is deliberately absent from
       test.sh's page list, the way tests/wheel.html is. There is no threshold
-      here to assert — the answer is a number, it moves with the compiler's own
+      here to assert -- the answer is a number, it moves with the compiler's own
       version, and a ceiling written into a suite would only say that today's
       libfaust is today's libfaust. Run it by hand (or with ?smoke=1, which
       auto-starts it) when the vendored compiler moves, and carry the new

@@ -4,8 +4,8 @@
 A `d*` builder is not a signal. It is a **stream**: it has no samples, only a
 next value, and between two pulls it does nothing at all. What turns a stream
 into sound is a **driver**, and there are three. `demand` is *told* when to
-pull, by a trigger. `duty` and `tduty` bring their own clock — every ``dur``
-seconds they pull one ``level`` — and since **both** of those are pulled, a
+pull, by a trigger. `duty` and `tduty` bring their own clock -- every ``dur``
+seconds they pull one ``level`` -- and since **both** of those are pulled, a
 stream of durations against a stream of pitches is a sequencer whose two parts
 need not be the same length. `duty` holds each level until the next is due;
 `tduty` emits it on that one sample and is silent in between, which makes it a
@@ -20,7 +20,7 @@ Two conventions carry the whole family:
 * **A stream goes anywhere a number goes.** `dseq([dseries(3, 1, 1), 9])` is
   four items, not two: a list source **drains** a nested stream before moving
   on, and restarts it when it comes round to it again. That is the whole reason
-  the family exists — a sequence of *phrases* rather than of numbers.
+  the family exists -- a sequence of *phrases* rather than of numbers.
 
 The file has two halves. The first is a short sequence; the second is a bench that
 plays each claim above as a stream straight onto a bus and then **measures it
@@ -65,7 +65,7 @@ def envelope(seconds):
 # ---- 1. the sequencer: two streams of different lengths -------------------------
 #
 # `duty` pulls a duration *and* a level, so the melody is two independent
-# streams. Five pitches against three durations is not a five-note phrase — the
+# streams. Five pitches against three durations is not a five-note phrase -- the
 # pair only realigns after fifteen notes, which is the cheapest polyrhythm there
 # is and something a fixed note list cannot express at all.
 #
@@ -82,8 +82,8 @@ def melody() -> SynthDef:
 # ---- 2. phrases, not numbers ----------------------------------------------------
 #
 # The nesting. A slot of this `dseq` is itself a stream, so the outer sequence
-# yields a *phrase* — the four rising notes of the `dseries`, then two drawn
-# from a small set, then the fixed 60 — and comes back round to restart each of
+# yields a *phrase* -- the four rising notes of the `dseries`, then two drawn
+# from a small set, then the fixed 60 -- and comes back round to restart each of
 # them. This is the property the whole family is built around.
 
 def phrase() -> SynthDef:
@@ -96,7 +96,7 @@ def phrase() -> SynthDef:
 # ---- 3. stutter --------------------------------------------------------------
 #
 # `dstutter` repeats each item of another stream, and its count is pulled per
-# item — so the count can be a stream too. Here a `drand` decides between one
+# item -- so the count can be a stream too. Here a `drand` decides between one
 # and four repetitions, which is a rhythm made of nothing but repetition.
 
 def stutter() -> SynthDef:
@@ -108,7 +108,7 @@ def stutter() -> SynthDef:
 
 # ---- 4. one order, replayed -----------------------------------------------------
 #
-# `dshuf` shuffles **once** and then replays that order — which is what makes it
+# `dshuf` shuffles **once** and then replays that order -- which is what makes it
 # a riff rather than a random walk. `drand` in its place would give a different
 # bassline every pass; here the ear gets to learn one.
 
@@ -122,8 +122,8 @@ def shuffle() -> SynthDef:
 # ---- 5. a stream as a control ---------------------------------------------------
 #
 # Nothing says a demand stream has to carry pitch. `dbrown` walks between two
-# bounds by at most `step` per item — **folded** at a bound, so it turns around
-# instead of piling up against it — and here it walks a filter's cutoff, one
+# bounds by at most `step` per item -- **folded** at a bound, so it turns around
+# instead of piling up against it -- and here it walks a filter's cutoff, one
 # step per sixteenth.
 
 def walk() -> SynthDef:
@@ -148,14 +148,14 @@ def perc() -> SynthDef:
 # ---- 7. the bench: each claim as a stream on a bus ------------------------------
 #
 # Every row below is one `duty` at the same slow clock, writing its pulled
-# values straight to bus 0 — no oscillator, no envelope, so a sample read in the
+# values straight to bus 0 -- no oscillator, no envelope, so a sample read in the
 # middle of slot *k* is exactly the *k*-th value the stream yielded. The values
 # are all non-zero on purpose: `done_action` frees the node the moment a stream
 # ends, so **silence marks the end of the stream** and the number of sounding
 # slots is the number of items.
 #
 # An endless stream has no such end, so those rows carry a `line` that frees
-# them instead — an ordinary UGen root beside the `out`, which is all a
+# them instead -- an ordinary UGen root beside the `out`, which is all a
 # "second root" ever is.
 
 def bench(name, stream, endless=False) -> SynthDef:
@@ -203,7 +203,7 @@ EXACT = {
 def slots(samples, section):
     """The values one bench row yielded: the sample at the middle of each slot
     (where a held value is unambiguous), up to the point the node freed itself
-    and the bus went quiet — which is exactly where the stream ended."""
+    and the bus went quiet -- which is exactly where the stream ended."""
     values = []
     for k in range(int(BENCH / SLOT)):
         i = int((section * BENCH + (k + 0.5) * SLOT) * SR)
@@ -265,7 +265,7 @@ def check(name, values):
     if name == "folded":
         if not all(2.0 <= v <= 5.0 for v in values):
             bad.append(f"folded: {min(values):.3f}..{max(values):.3f} leaves [2, 5]")
-        # Folding reflects, so a step never *lands* further than it was told —
+        # Folding reflects, so a step never *lands* further than it was told --
         # the reflection is inside the same 0.5 the walk was given.
         jumps = [abs(b - a) for a, b in zip(values, values[1:])]
         if jumps and max(jumps) > 0.5 + 1e-4:
@@ -278,7 +278,7 @@ def check(name, values):
 # `duty` keeps its countdown in f64 and carries the remainder across pulls
 # (``count += dur * sr``, never ``count = dur * sr``), so a duration that is not
 # a whole number of samples does not accumulate error. At 48 kHz a 1/300 s slot
-# is 160 samples exactly, but 1/700 is 68.57 — this measures where the 700th
+# is 160 samples exactly, but 1/700 is 68.57 -- this measures where the 700th
 # change actually lands.
 
 def drift_check():

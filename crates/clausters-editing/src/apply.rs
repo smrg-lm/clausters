@@ -3,16 +3,16 @@
 //!
 //! [`Instance::reconcile`](crate::instance::Instance::reconcile) says *what* to
 //! do and deliberately not how; this is the how, written once. It was written
-//! three times — the Python client's `Playback.apply`, the web client's, and
-//! the GUI host's own — and the host's copy was the one that sent a buffer's
+//! three times -- the Python client's `Playback.apply`, the web client's, and
+//! the GUI host's own -- and the host's copy was the one that sent a buffer's
 //! fill before its allocation and silenced the multitrack. The clients had it right
 //! only because their `Buffer.from_samples` waited for the allocation inside
 //! itself, which is a rule nobody could read off the op.
 //!
 //! So the waiting is **stated**, as [`Step`]s: a message to send, a `/done` to
 //! wait for, a barrier to close. An endpoint walks the steps with its own
-//! socket and its own way of waiting — a script blocks, a page awaits, the host
-//! resumes on the reply — and none of them decides what goes on the wire.
+//! socket and its own way of waiting -- a script blocks, a page awaits, the host
+//! resumes on the reply -- and none of them decides what goes on the wire.
 //!
 //! The numbers come from the endpoint's [`IdSpaces`], which is the core's one
 //! allocation policy, so what this hands out cannot collide with anything else
@@ -21,8 +21,8 @@
 //! # Taken from the reference client
 //!
 //! Every message here is the one the Python client's objects send for the same
-//! op — `Group.graph`, `Group`, `Group.add_slot`, `Group.move_slot`, `Synth`, `Node.set`,
-//! `Buffer.from_samples`, `Buffer.free`, `Server.transport_group` — with the
+//! op -- `Group.graph`, `Group`, `Group.add_slot`, `Group.move_slot`, `Synth`, `Node.set`,
+//! `Buffer.from_samples`, `Buffer.free`, `Server.transport_group` -- with the
 //! same add actions and the same order, so replacing that client's applier
 //! with this one changes nothing a server can see.
 
@@ -34,7 +34,7 @@ use serde_json::{Value, json};
 
 use crate::instance::{Handle, Op, Port, Ports};
 
-/// Where a node goes relative to its target — the server's add actions.
+/// Where a node goes relative to its target -- the server's add actions.
 const ADD_TAIL: i32 = 1;
 const ROOT: i32 = 0;
 const ADD_BEFORE: i32 = 2;
@@ -66,7 +66,7 @@ pub enum Step {
 /// own -- and they are the same everywhere now ([`Op::Transport`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Endpoint {
-    /// The most samples one `/buffer_setRange` carries — the endpoint's
+    /// The most samples one `/buffer_setRange` carries -- the endpoint's
     /// transport bound.
     pub chunk: usize,
 }
@@ -104,7 +104,7 @@ impl Applier {
         self.nodes.get(handle).copied()
     }
 
-    /// The first bus of the run a handle became, and how long it is — what a
+    /// The first bus of the run a handle became, and how long it is -- what a
     /// meter strip is read from.
     pub fn bus(&self, handle: &str) -> Option<(i32, usize)> {
         self.buses.get(handle).copied()
@@ -389,7 +389,7 @@ fn send(addr: &str, args: Vec<OscType>) -> Step {
 
 /// **The steps as JSON**, for a client that walks them in its own language.
 ///
-/// `{"send": {"addr", "args"}}` with each argument tagged by its OSC type —
+/// `{"send": {"addr", "args"}}` with each argument tagged by its OSC type --
 /// `{"i": n}`, `{"f": x}`, `{"s": "…"}`, and `{"b": [x, …]}` for a blob of
 /// little-endian `f32`, which the client packs; `{"await": {"command",
 /// "index"}}`; `{"sync": id}`.

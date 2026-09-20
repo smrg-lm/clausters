@@ -2,7 +2,7 @@
 // (mirrors `clausters/base/builtins.py`).
 //
 // The value side of the operations the client applies to concrete numbers.
-// They go through `clausters-core` — so they are computed in **f32**, matching
+// They go through `clausters-core` -- so they are computed in **f32**, matching
 // the server by construction; a JS number is f64 and would diverge. The
 // music-theory conversions (`midicps`, `dbamp`, …) go through the core too,
 // so a value computed here and the same op running on the audio thread agree
@@ -23,7 +23,7 @@ import {
     unary as coreUnary,
 } from "../core/clausters_core_web.js";
 
-/** A number or an array of them — what every builtin accepts and returns. */
+/** A number or an array of them -- what every builtin accepts and returns. */
 export type Num = number | readonly number[];
 
 /** A unary builtin: array in, array out. */
@@ -64,7 +64,7 @@ function binop(op: string, a: Num, b: Num): Num {
 }
 
 /**
- * One unary builtin by its core name — the extensible door behind the named
+ * One unary builtin by its core name -- the extensible door behind the named
  * exports below (`unary("midicps", 60)`).
  */
 export const unary = (op: string, x: Num): Num => unop(op, x);
@@ -224,7 +224,7 @@ export const linlin = (
 ): Num => mapOp("linlin", x, inLo, inHi, outLo, outHi, 0, clip);
 
 /**
- * `x` off a linear range onto an exponential one — a fader position to a
+ * `x` off a linear range onto an exponential one -- a fader position to a
  * frequency. The output ends must not straddle zero; one *at* zero is nudged to
  * the smallest same-signed value rather than giving a NaN.
  */
@@ -232,7 +232,7 @@ export const linexp = (
     x: Num, inLo: number, inHi: number, outLo: number, outHi: number, clip: Clip = "minmax",
 ): Num => mapOp("linexp", x, inLo, inHi, outLo, outHi, 0, clip);
 
-/** `x` off an exponential range onto a linear one — a frequency to a fader position. */
+/** `x` off an exponential range onto a linear one -- a frequency to a fader position. */
 export const explin = (
     x: Num, inLo: number, inHi: number, outLo: number, outHi: number, clip: Clip = "minmax",
 ): Num => mapOp("explin", x, inLo, inHi, outLo, outHi, 0, clip);
@@ -244,8 +244,8 @@ export const expexp = (
 
 /**
  * `x` off a linear range onto one **bent** by `curve`: 0 is linear, negative
- * builds fast then slow — most of the output spent on the first half of the
- * input — and positive the reverse, which is the fine-at-the-bottom feel a
+ * builds fast then slow -- most of the output spent on the first half of the
+ * input -- and positive the reverse, which is the fine-at-the-bottom feel a
  * frequency or an amplitude control wants. Unlike {@link linexp} the bend spans
  * zero freely.
  */

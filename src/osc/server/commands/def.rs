@@ -8,13 +8,13 @@
 use super::super::*;
 
 impl OscServer {
-    /// Gives `name` to `kind`, freeing it in the other two def kinds — in
+    /// Gives `name` to `kind`, freeing it in the other two def kinds -- in
     /// memory and on disk.
     ///
     /// A name identifies **one** def: sending a def under a name another kind
     /// holds replaces it, last one wins. Without this the two entries coexist
     /// and lookup order decides which answers, which is silently wrong
-    /// everywhere the name is resolved — instancing, `/def_query`, and the bus
+    /// everywhere the name is resolved -- instancing, `/def_query`, and the bus
     /// usage the parallel scheduler reads.
     ///
     /// For a Faust def this runs at **submit** time, before the compile
@@ -38,10 +38,10 @@ impl OscServer {
         }
     }
 
-    /// `/def_send <family> <payload…>` — sends a def of any family: `"synth"`
+    /// `/def_send <family> <payload…>` -- sends a def of any family: `"synth"`
     /// (one `SynthDefSpec` JSON blob), `"faust"` (a name and a def payload) or
     /// `"graph"` (one `GraphDefSpec` JSON blob). The family is a wire argument
-    /// rather than three commands because it is already a datum of a def — it
+    /// rather than three commands because it is already a datum of a def -- it
     /// is what [`Self::handle_def_query`] reports back under the same name and
     /// the same three spellings.
     ///
@@ -88,7 +88,7 @@ impl OscServer {
     }
 
     /// `/def_send graph <json>`: load a GraphDef (validate + store), persist its
-    /// spec verbatim, and reply `/done`. Cheap — no JIT, just validation.
+    /// spec verbatim, and reply `/done`. Cheap -- no JIT, just validation.
     fn handle_def_send_graph(&mut self, args: &[OscType], from: ClientId) {
         match self.translator.d_graph(args) {
             Ok(name) => {
@@ -130,7 +130,7 @@ impl OscServer {
     }
 
     /// `/def_load path`: loads a SynthDef from a JSON spec file on disk (the
-    /// Clausters def format — the same body `/def_send synth` carries), on demand,
+    /// Clausters def format -- the same body `/def_send synth` carries), on demand,
     /// complementing the boot-time reload. GraphDefs load through `/def_send graph`.
     pub(in crate::osc::server) fn handle_def_load(
         &mut self,
@@ -187,7 +187,7 @@ impl OscServer {
     /// def because the control surface is variable-length: an aggregate would
     /// nest, and a large catalog would outgrow a UDP datagram.
     ///
-    /// Retrieval only — the def store persists across sessions, so this is how
+    /// Retrieval only -- the def store persists across sessions, so this is how
     /// a client learns what a running server actually holds.
     pub(in crate::osc::server) fn handle_def_query(
         &mut self,

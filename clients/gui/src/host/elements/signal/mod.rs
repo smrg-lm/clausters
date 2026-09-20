@@ -1,19 +1,19 @@
 //! The **signal element**: one element for every view of a signal, whatever
 //! shape the signal arrives in and whatever the view lets you do with it.
 //!
-//! The catalog grew these one at a time — `waveform`, `plot`, `scope`,
-//! `spectrum`, `spectrogram`, `phasescope` — and ended up spelling one idea six
+//! The catalog grew these one at a time -- `waveform`, `plot`, `scope`,
+//! `spectrum`, `spectrogram`, `phasescope` -- and ended up spelling one idea six
 //! ways. They differ along exactly three axes, and nothing else:
 //!
-//! - **Presentation** ([`Presentation`]) — what is drawn: the signal against
+//! - **Presentation** ([`Presentation`]) -- what is drawn: the signal against
 //!   time, its magnitude spectrum against frequency, its time-frequency
 //!   distribution, or the phase relationship of a stereo pair.
-//! - **Source** ([`Source`]) — where the samples come from, and in which of the
+//! - **Source** ([`Source`]) -- where the samples come from, and in which of the
 //!   arrangement layer's two states: **random-access** (a buffer, a file, an
-//!   inline array — addressable, so it can be navigated and sliced) or
-//!   **forward-only** (a bus at a rate — the newest window, and no addressable
+//!   inline array -- addressable, so it can be navigated and sliced) or
+//!   **forward-only** (a bus at a rate -- the newest window, and no addressable
 //!   past).
-//! - **Capabilities** ([`Caps`]) — what the view lets you do with it: navigate
+//! - **Capabilities** ([`Caps`]) -- what the view lets you do with it: navigate
 //!   it, select in it, edit it.
 //!
 //! Each of the six is a point in that product, and the points nobody built are
@@ -25,13 +25,13 @@
 //! to the element.** The columns and the time-frequency texture go on the
 //! window's GPU pipelines; the curves go into its triangle mesh
 //! ([`trace`]).
-//! Which one draws a signal is therefore invisible to composition — an element
+//! Which one draws a signal is therefore invisible to composition -- an element
 //! costs a GPU slot only when it is a *navigable* heavy view
 //! ([`SignalElement::is_gpu_view`]), so a multitrack of clip bodies costs none.
 //!
-//! The wire says the **point** of the product — `view` (the presentation),
+//! The wire says the **point** of the product -- `view` (the presentation),
 //! the source props (a `bus` is forward-only, anything else addressable) and
-//! `navigable` — and [`point`] is where each combination's defaults live. The
+//! `navigable` -- and [`point`] is where each combination's defaults live. The
 //! six names the catalog grew (`waveform`, `scope`, `spectrum`, …) were six
 //! points of it, and they are the two clients' builder names now, nothing the
 //! host knows about.
@@ -70,7 +70,7 @@ pub const DEFAULT_BASE_BUCKET: usize = 256;
 /// The curve is the one layer whose vertical is not the picture's: peak, level
 /// and reconstruction are amplitudes and share the view's axis, while a
 /// loudness reading is in LUFS and needs a scale of its own. So the scale
-/// travels with the measure, on the element, beside `fft_size` and the rest —
+/// travels with the measure, on the element, beside `fft_size` and the rest --
 /// the same rule the track states for a measure's own parameters.
 ///
 /// The scale is EBU Tech 3341's, named by its top: the **`+9`** scale runs from
@@ -82,17 +82,17 @@ pub struct LoudnessLayer {
     /// The target loudness, in LUFS: the line the curve is read against, and
     /// the zero of the LU scale. EBU R 128's −23 by default.
     pub target: f64,
-    /// How far over the target the scale reaches, in LU — 9 or 18, the two
+    /// How far over the target the scale reaches, in LU -- 9 or 18, the two
     /// scales Tech 3341 specifies. The bottom is twice that under it.
     pub scale: f64,
-    /// Whether the layer draws its own LU ruler, on the right of the body —
+    /// Whether the layer draws its own LU ruler, on the right of the body --
     /// the left strip being the picture's own axis.
     pub ruler: bool,
     /// Whether the numbers are written beside the curve: the integrated
     /// loudness, the range, the true peak and the ratio between the last two.
     pub stats: bool,
     /// The measured curve, or `None` until there is something to measure it
-    /// from — no loudness measure asked for, no samples, or no sample rate
+    /// from -- no loudness measure asked for, no samples, or no sample rate
     /// stated (a 400 ms window means nothing without one).
     pub profile: Option<Arc<clausters_core::loudness::Profile>>,
     /// The aggregates over the span the read-out names, kept with the span
@@ -141,12 +141,12 @@ impl LoudnessLayer {
 /// delivery specification asks for, over the selection or over the whole take.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LoudnessSummary {
-    /// The span measured, in frames — kept so the same one is not measured
+    /// The span measured, in frames -- kept so the same one is not measured
     /// twice, and so a stale figure can never be drawn as a current one.
     pub span: (u64, u64),
     /// The gated integrated loudness, the range and the two maxima.
     pub loudness: clausters_core::loudness::Loudness,
-    /// The true peak of the span, in dBTP — the other half of R 128, and what
+    /// The true peak of the span, in dBTP -- the other half of R 128, and what
     /// makes the peak-to-loudness ratio beside it.
     pub true_peak_db: f32,
 }
@@ -156,7 +156,7 @@ pub struct LoudnessSummary {
 ///
 /// It rides the slot frame for the reason the measures and the domain do: the
 /// frame draws what the element *stated*, so the curve, the picture under it
-/// and the chrome around them agree — and the profile is an `Arc`, so stating
+/// and the chrome around them agree -- and the profile is an `Arc`, so stating
 /// it costs a pointer rather than the take.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct LoudnessFrame {
@@ -177,14 +177,14 @@ pub struct LoudnessFrame {
 /// What a signal element draws.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Presentation {
-    /// Value against time — the trace, whether navigable (the heavy waveform),
+    /// Value against time -- the trace, whether navigable (the heavy waveform),
     /// static (a plot) or a triggered live window (a scope).
     #[default]
     Signal,
-    /// Magnitude against frequency, in dB — one analysis of a stored signal, or
+    /// Magnitude against frequency, in dB -- one analysis of a stored signal, or
     /// one per frame of a live one.
     Spectrum,
-    /// Magnitude against time *and* frequency — the STFT, drawn as a texture.
+    /// Magnitude against time *and* frequency -- the STFT, drawn as a texture.
     TimeFrequency,
     /// The phase relationship of a stereo pair (the rotated Lissajous figure).
     Phase,
@@ -203,7 +203,7 @@ impl Presentation {
         })
     }
 
-    /// The `view` word this presentation is named by — [`parse`](Self::parse)
+    /// The `view` word this presentation is named by -- [`parse`](Self::parse)
     /// the other way, so a caller that builds an element from props writes the
     /// same word the wire does.
     pub fn name(self) -> &'static str {
@@ -215,7 +215,7 @@ impl Presentation {
         }
     }
 
-    /// Whether this presentation has a GPU renderer at all — the two that
+    /// Whether this presentation has a GPU renderer at all -- the two that
     /// resolve a whole buffer against a navigable time axis. Whether a given
     /// element *takes* it is [`SignalElement::is_gpu_view`].
     pub fn is_heavy(self) -> bool {
@@ -225,7 +225,7 @@ impl Presentation {
 
 /// A **random-access** source: samples the host can address, so an element over
 /// it can navigate, slice and (later) edit. The four ways they arrive are tried
-/// in precedence order — `cache`, `path`, `buffer`, then whatever came inline —
+/// in precedence order -- `cache`, `path`, `buffer`, then whatever came inline --
 /// and the first three fill `samples` (or a pyramid) when the resource is
 /// mapped or fetched.
 #[derive(Debug, Clone)]
@@ -239,21 +239,21 @@ pub struct Data {
     pub base_bucket: usize,
     /// **Bulk**: resolve this source as a peak pyramid rather than as an array
     /// of samples. It is a property of the source's *size*, not of the drawing
-    /// — a take is minutes of audio and reaches the host as a pyramid (a
+    /// -- a take is minutes of audio and reaches the host as a pyramid (a
     /// mapped file, a peaks cache, a fetched buffer), a plotted sequence is a
     /// few thousand values and reaches it whole. Both draw through the same
     /// [`trace::Trace`], which is why this is one flag and not two code paths.
     pub bulk: bool,
     /// The resolved pyramid of a [`bulk`](Self::bulk) source, once a loader has
-    /// mapped or fetched it. `None` until then — and always, for a source that
+    /// mapped or fetched it. `None` until then -- and always, for a source that
     /// is not bulk, which keeps its samples inline instead.
     pub body: Option<Arc<WaveformData>>,
 }
 
 impl Data {
     /// The one column source this data draws through: its resolved pyramid
-    /// when it has one, else its inline samples. Every signal drawing — the
-    /// GPU waveform, a plot, a clip's take — reads its columns from here.
+    /// when it has one, else its inline samples. Every signal drawing -- the
+    /// GPU waveform, a plot, a clip's take -- reads its columns from here.
     pub fn trace(&self) -> trace::Trace<'_> {
         match &self.body {
             Some(d) => trace::Trace::Data(d),
@@ -261,14 +261,14 @@ impl Data {
         }
     }
 
-    /// Whether the source has nothing to draw yet — no pyramid and no samples.
+    /// Whether the source has nothing to draw yet -- no pyramid and no samples.
     pub fn is_empty(&self) -> bool {
         self.body.is_none() && self.samples.is_empty()
     }
 }
 
 /// A **forward-only** source: `channels` adjacent buses read live at `rate`.
-/// There is no addressable past — the ring holds the newest window — so what
+/// There is no addressable past -- the ring holds the newest window -- so what
 /// the element sees is a policy: how long a window (`window_ms`), where it is
 /// aligned (`trigger`, a rising crossing in the first channel), and whether it
 /// is frozen (`hold`).
@@ -285,7 +285,7 @@ pub struct Bus {
     ///
     /// A forward-only source has no addressable past, which is what stops it
     /// being navigable: there is nothing behind the newest window to zoom out
-    /// to. Retention is what supplies one — the host keeps this many seconds of
+    /// to. Retention is what supplies one -- the host keeps this many seconds of
     /// the bus and the view reads *that*, so a span the axis declares is a span
     /// the axis can be navigated over. It is a policy of the **axis**, not of
     /// the drawing: the same seconds mean the same seconds whatever the frame
@@ -294,7 +294,7 @@ pub struct Bus {
     pub retention: f32,
 }
 
-/// Where a signal element's samples come from — the arrangement layer's own
+/// Where a signal element's samples come from -- the arrangement layer's own
 /// generated/generator split seen from the view: a rendered thing that can be
 /// read backwards and sliced, or a running one that can only be watched.
 #[derive(Debug, Clone)]
@@ -320,7 +320,7 @@ impl Source {
         }
     }
 
-    /// The random-access half, mutably — a bulk load lands its samples here.
+    /// The random-access half, mutably -- a bulk load lands its samples here.
     pub fn data_mut(&mut self) -> Option<&mut Data> {
         match self {
             Source::Data(d) => Some(d),
@@ -359,7 +359,7 @@ pub struct Caps {
 }
 
 /// The value axis of the presentations that measure one. Either side omitted
-/// auto-fits to the data — the arbitrary-range sequence case; the live views
+/// auto-fits to the data -- the arbitrary-range sequence case; the live views
 /// name both, so nothing moves under them.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ValueRange {
@@ -384,14 +384,14 @@ impl ValueRange {
         }
     }
 
-    /// The range with each auto side filled in from `(lo, hi)` — for a drawing
+    /// The range with each auto side filled in from `(lo, hi)` -- for a drawing
     /// that has no data pass of its own to auto-fit against.
     pub fn resolved(&self, lo: f32, hi: f32) -> (f32, f32) {
         (self.min.unwrap_or(lo), self.max.unwrap_or(hi))
     }
 }
 
-/// The spectral parameters, shared by every presentation that runs an FFT — the
+/// The spectral parameters, shared by every presentation that runs an FFT -- the
 /// live curve, the stored one and the time-frequency texture. Only `fft_size`
 /// and `hop` are analysis inputs; the rest are display controls, which is why
 /// the texture can change all of them for the cost of a uniform write.
@@ -441,8 +441,8 @@ pub struct Display {
 /// One view of one signal: a presentation of a source, what the user may do
 /// with it, and the parameters that presentation reads.
 ///
-/// The axis chrome — both ruler strips, the sample rate, the selection and the
-/// playhead — lives in [`EditorProps`] for *every* presentation, not only the
+/// The axis chrome -- both ruler strips, the sample rate, the selection and the
+/// playhead -- lives in [`EditorProps`] for *every* presentation, not only the
 /// navigable ones: the strips a live scope shows are the same two strips, and
 /// keeping one place for them is what lets one element be swapped for another
 /// without the chrome moving.
@@ -456,24 +456,24 @@ pub struct SignalElement {
     /// A factor of the element rather than a composition of widgets: two
     /// elements measuring differently on one rectangle are not layers, because
     /// each paints its own field before it draws and the second one hides the
-    /// first. So the layering is here — one body, one axis, one ruler, one
+    /// first. So the layering is here -- one body, one axis, one ruler, one
     /// upload, and a [`Stack`] of pictures over them.
     pub layers: Stack,
-    /// **Whether these samples are being written right now** — the `fills` prop.
+    /// **Whether these samples are being written right now** -- the `fills` prop.
     ///
     /// The host cannot infer it and must not try. A buffer publishes a write
     /// frontier, but a frontier is not the question: a `BufWr` dropping one
     /// sample into the middle of a take read from a file raises one too, and a
     /// view that stopped drawing past it would erase the rest of the file.
-    /// What separates the two cases is *intent* — the client allocated an empty
-    /// buffer to record into — so the client is what says so.
+    /// What separates the two cases is *intent* -- the client allocated an empty
+    /// buffer to record into -- so the client is what says so.
     ///
     /// Set, the view draws its samples up to [`Self::written`] and nothing
     /// past it: a recording is samples up to its frontier and **nothing**
     /// beyond, where the buffer's own zeros are silence the picture would
     /// otherwise draw a flat line across.
     pub fills: bool,
-    /// **How far the samples have been written**, in frames — the buffer's
+    /// **How far the samples have been written**, in frames -- the buffer's
     /// write frontier, read by the host from the shared segment and pushed in
     /// through [`Samples::set_written`](crate::host::widget::element::Samples::set_written).
     ///
@@ -487,7 +487,7 @@ pub struct SignalElement {
     pub display: Display,
     pub editor: EditorProps,
     /// The cached spectral analysis of a **stored** [`Presentation::Spectrum`]
-    /// — recomputed at the element's mutation points (parse, a bulk load
+    /// -- recomputed at the element's mutation points (parse, a bulk load
     /// landing samples, a `/gui_set` touching what it reads), never per frame.
     pub analysis: Option<Arc<crate::host::graphics::signal::plot::PlotSpectrum>>,
     /// What a **live** presentation has accumulated from its forward-only
@@ -505,7 +505,7 @@ pub struct SignalElement {
     /// uploads.
     pub slot_dirty: bool,
     /// **This element was told its resource moved and has not been served
-    /// since** — the `reload` prop, waiting for a loader.
+    /// since** -- the `reload` prop, waiting for a loader.
     ///
     /// Re-reading is the element *forgetting* what it resolved, so the ask is
     /// not "have I got a body" (which is also true while a fetch is in flight,
@@ -530,7 +530,7 @@ pub struct SignalElement {
 }
 
 impl SignalElement {
-    /// A bare element at the preset's configuration — the base the wire's props
+    /// A bare element at the preset's configuration -- the base the wire's props
     /// are then read over.
     pub fn from_preset(p: &Preset) -> SignalElement {
         let mut editor = EditorProps::parse(&serde_json::Map::new(), p.ruler_y);
@@ -576,14 +576,14 @@ impl SignalElement {
         }
     }
 
-    /// Whether any measure this element draws is read in LU — the test for
+    /// Whether any measure this element draws is read in LU -- the test for
     /// whether a profile is worth measuring at all.
     pub fn wants_loudness(&self) -> bool {
         self.layers.has_loudness()
     }
 
     /// **The span the read-out names**: the selection where there is one, the
-    /// whole take where there is not — which is what every editor does with a
+    /// whole take where there is not -- which is what every editor does with a
     /// statistics window, RX's included.
     pub fn loudness_span(&self) -> (u64, u64) {
         let frames = self.loudness.profile.as_ref().map_or(0, |p| p.frames());
@@ -596,7 +596,7 @@ impl SignalElement {
         }
     }
 
-    /// **Measures the take's loudness, at the element's mutation points** —
+    /// **Measures the take's loudness, at the element's mutation points** --
     /// never in a frame: a profile is a pass over the samples, and a curve
     /// re-measured per repaint would cost the take a frame.
     ///
@@ -720,7 +720,7 @@ impl SignalElement {
     /// `min`/`max`, defaulting to full-scale amplitude
     /// ([`crate::waveform::DEFAULT_DOMAIN`]).
     ///
-    /// Every presentation reads it — the take in a clip, the plot, the live
+    /// Every presentation reads it -- the take in a clip, the plot, the live
     /// scope and, since the divergence closed, the navigable GPU trace, which
     /// used to be pinned to ±1 and drop a declared range on the floor.
     pub fn domain(&self) -> (f32, f32) {
@@ -728,8 +728,8 @@ impl SignalElement {
         self.value.resolved(lo, hi)
     }
 
-    /// The element's **value axis** inside the rect it was placed in — the
-    /// second measuring axis a marquee restricts a selection on — or `None`
+    /// The element's **value axis** inside the rect it was placed in -- the
+    /// second measuring axis a marquee restricts a selection on -- or `None`
     /// where its vertical is not a value.
     ///
     /// Only a **navigable trace** answers. A time-frequency picture's vertical
@@ -768,7 +768,7 @@ impl SignalElement {
     }
 
     /// The element's samples over a span of its own frames, interleaved with
-    /// the rate it was taken at — the copy a clipboard gets.
+    /// the rate it was taken at -- the copy a clipboard gets.
     ///
     /// Only a **random-access** source answers: a live bus has no addressable
     /// past to hand over, and a bulk source that resolved to a pyramid with no
@@ -800,13 +800,13 @@ impl SignalElement {
     }
 
     /// Whether the element owns a GPU slot: a navigable heavy presentation.
-    /// Everything else — a plot, a live curve, a clip's take — draws into the
+    /// Everything else -- a plot, a live curve, a clip's take -- draws into the
     /// window's shared mesh.
     pub fn is_gpu_view(&self) -> bool {
         self.caps.navigable && self.presentation.is_heavy()
     }
 
-    /// Whether the element draws a **texture** — a time-frequency layer,
+    /// Whether the element draws a **texture** -- a time-frequency layer,
     /// sampled a texel per pixel off an uploaded STFT. The trace has two
     /// drawings of one signal (the decimated columns of a navigable view, the
     /// mesh when it is a clip's take); this one has a single drawing, so a clip
@@ -820,14 +820,14 @@ impl SignalElement {
             .has(crate::host::graphics::signal::layers::Paint::Spectrogram)
     }
 
-    /// Whether the element draws any **trace** — a measure of the signal
+    /// Whether the element draws any **trace** -- a measure of the signal
     /// against time, which is every layer that is not the texture.
     pub fn draws_traces(&self) -> bool {
         self.layers.drawn_measures().next().is_some()
     }
 
     /// **What this element's vertical axis measures**, resolved: what the stack
-    /// put on the axis, and — where every layer sits in a box of its own — the
+    /// put on the axis, and -- where every layer sits in a box of its own -- the
     /// presentation's own quantity, since the axis is still drawn and still has
     /// to be in some unit.
     pub fn axis_domain(&self) -> layers::Domain {
@@ -874,8 +874,8 @@ impl SignalElement {
     /// navigable spectrum, the one presentation whose horizontal domain is not
     /// the window's time.
     ///
-    /// Such an axis is addressable with no retention at all — every bin is
-    /// there every frame — so navigating it needs no history and no navigation
+    /// Such an axis is addressable with no retention at all -- every bin is
+    /// there every frame -- so navigating it needs no history and no navigation
     /// group: it is one normalized window the element carries alone
     /// ([`EditorProps::x_view`]), exactly as the vertical window of a
     /// spectrogram's frequency axis already is. Nothing else in a window
@@ -884,7 +884,7 @@ impl SignalElement {
         self.caps.navigable && self.presentation == Presentation::Spectrum
     }
 
-    /// Whether the element navigates the window's shared **time** axis — the
+    /// Whether the element navigates the window's shared **time** axis -- the
     /// capability that joins a navigation group, which is every navigable
     /// presentation but the spectrum.
     pub fn navigates_time(&self) -> bool {
@@ -892,7 +892,7 @@ impl SignalElement {
     }
 
     /// The rate this element's frequency axis is placed by: its own when it
-    /// names one — a stored analysis carries the rate of what it analyzed —
+    /// names one -- a stored analysis carries the rate of what it analyzed --
     /// else the server's, which is what a live tap is running at.
     pub fn freq_rate(&self, server_rate: f64) -> f64 {
         if self.editor.sample_rate > 0.0 {
@@ -906,8 +906,8 @@ impl SignalElement {
     /// was asked for ([`EditorProps::x_view`]), opened up wherever it is finer
     /// than the analysis behind it resolves.
     ///
-    /// The two are deliberately kept apart. What is *stored* is the request —
-    /// the reader's last zoom, or a script's `/gui_set` — and the floor is a
+    /// The two are deliberately kept apart. What is *stored* is the request --
+    /// the reader's last zoom, or a script's `/gui_set` -- and the floor is a
     /// function of where the window sits: on a log axis a window narrow enough
     /// at 12 kHz cannot exist at 100 Hz, where four bins already span a quarter
     /// of the axis. Were the opening written back, a pan down the axis would
@@ -916,7 +916,7 @@ impl SignalElement {
     /// closes again as soon as there is room, so a gesture undoes itself.
     ///
     /// This is the window the frame draws, the gesture anchors in, and the
-    /// `"view_x"` event reports — everything but what is written down.
+    /// `"view_x"` event reports -- everything but what is written down.
     pub fn freq_window(&self, server_rate: f64) -> (f64, f64) {
         let (start, len) = self.editor.x_view();
         self.freq_window_of(server_rate, start, len)
@@ -966,7 +966,7 @@ impl SignalElement {
     }
 }
 
-/// One point of the element's product — a presentation over a source kind,
+/// One point of the element's product -- a presentation over a source kind,
 /// with the capabilities and the defaults that combination carries.
 ///
 /// The wire names the point directly (`view`, the source props, `navigable`),
@@ -984,14 +984,14 @@ pub struct Preset {
     pub spectral: Spectral,
     /// The default x strip.
     pub ruler: Ruler,
-    /// The default y strip — the unit this presentation measures in.
+    /// The default y strip -- the unit this presentation measures in.
     pub ruler_y: RulerY,
     /// The default live window, in milliseconds (forward-only sources only).
     pub window_ms: f32,
     /// The wire name of the analysis size: the spectral views say `fft_size`,
     /// the time-frequency one says `window_size`.
     pub size_prop: &'static str,
-    /// Whether a random-access source of this preset is [`Data::bulk`] — the
+    /// Whether a random-access source of this preset is [`Data::bulk`] -- the
     /// navigable heavy views, whose sources are takes rather than sequences.
     pub bulk: bool,
 }
@@ -1021,8 +1021,8 @@ fn freq_nav(navigable: bool) -> Caps {
 /// navigates.
 ///
 /// `navigable` separates the two addressable traces, and it separates more
-/// than a capability: a navigating view resolves its source as a **take** —
-/// through the peak pyramid, never as an array of samples — and pins its
+/// than a capability: a navigating view resolves its source as a **take** --
+/// through the peak pyramid, never as an array of samples -- and pins its
 /// value axis, while a still one holds the sequence itself and auto-fits an
 /// axis nobody named. That is why it is an argument here rather than a flag
 /// applied afterwards.
@@ -1062,7 +1062,7 @@ pub fn point(view: Presentation, live: bool, navigable: bool) -> Preset {
             ..base
         },
         // The spectrum navigates **frequency**, so `navigable` costs it no
-        // history and no group — but not a selection either: a span of hertz is
+        // history and no group -- but not a selection either: a span of hertz is
         // not something the model can hand back to a source that has no such
         // axis to slice.
         (Presentation::Spectrum, true) => Preset {
@@ -1097,8 +1097,8 @@ mod tests {
     use super::*;
 
     /// **The amplitude unit labels the axis; it never maps it.** Editing is in
-    /// linear amplitude and only there — the decision at "A take is drawn in
-    /// amplitude and heard in decibels" — and there is no runtime guard to
+    /// linear amplitude and only there -- the decision at "A take is drawn in
+    /// amplitude and heard in decibels" -- and there is no runtime guard to
     /// write for it, because [`ValueAxis`] carries no unit at all: it holds the
     /// body, the visible window, the domain and the lane count, and the
     /// inversion is `waveform::display_to_value`, which takes the domain and
@@ -1157,7 +1157,7 @@ mod tests {
     }
 
     /// The six views the catalog named separately are six **distinct** points
-    /// of one product — which is why the wire says the point and no table of
+    /// of one product -- which is why the wire says the point and no table of
     /// names is left to keep in step with it.
     #[test]
     fn the_six_views_are_distinct_points_of_the_product() {

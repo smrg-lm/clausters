@@ -1,6 +1,6 @@
 //! **What is sounding**: the multitrack's instance, and the steps that make it match.
 //!
-//! A standalone host plays a multitrack the way every other endpoint does — through
+//! A standalone host plays a multitrack the way every other endpoint does -- through
 //! [`clausters_document::multitrack::nodes::plan`], which says what a multitrack
 //! *needs*, [`clausters_editing::instance::Instance`], which answers the
 //! **difference** between that and what a server already holds, and
@@ -16,7 +16,7 @@
 //!
 //! It did, twice over. `document::sound` was the host's own reconciler, and
 //! when that went, the ops were turned into messages here while the Python
-//! client turned them into messages in `playback.py` — two translations of one
+//! client turned them into messages in `playback.py` -- two translations of one
 //! vocabulary, and the host's was the one that sent a buffer's fill before the
 //! buffer existed and went silent. The applier is that translation, once, and
 //! every endpoint binds it.
@@ -34,7 +34,7 @@
 //!
 //! Nothing here decides *what* to play. A question about order, about which
 //! node a port belongs to, or about what a curve's table holds is the crate's,
-//! and if the answer looks wrong the fix goes there — where both clients read
+//! and if the answer looks wrong the fix goes there -- where both clients read
 //! it too.
 
 use std::collections::HashMap;
@@ -81,16 +81,16 @@ pub(crate) struct Exchange {
 /// carried out.
 #[derive(Debug, Default)]
 pub struct Playing {
-    /// The instance, the applier and the transport — the crate's, as every
+    /// The instance, the applier and the transport -- the crate's, as every
     /// endpoint holds it. Made on the first sync, and it makes the transport's
     /// group itself.
     multitrack: Option<MultitrackPlayback>,
-    /// The steps not carried out yet, across both servers — the crate's walk.
+    /// The steps not carried out yet, across both servers -- the crate's walk.
     run: Runner,
 }
 
 impl Playing {
-    /// The meters the multitrack is writing, as `(track id, first bus, channels)` —
+    /// The meters the multitrack is writing, as `(track id, first bus, channels)` --
     /// what a mixer strip is drawn from.
     pub fn meters(&self) -> Vec<(u64, i32, usize)> {
         self.multitrack
@@ -307,10 +307,10 @@ impl Host {
     /// derived from the multitrack, the reconciler answers the difference, the
     /// applier turns it into steps, and this sends them. A node that did not
     /// change costs nothing, and an edit reaches a node that is already
-    /// running — so a box moved while the multitrack plays is heard where it was
+    /// running -- so a box moved while the multitrack plays is heard where it was
     /// dropped, with nothing that is sounding cut.
     ///
-    /// It is a no-op for a host with no multitrack and for one with no server — a
+    /// It is a no-op for a host with no multitrack and for one with no server -- a
     /// session opens, edits, undoes and saves without either.
     pub fn sound_multitrack(&mut self) -> usize {
         #[cfg(test)]
@@ -391,7 +391,7 @@ impl Host {
         self.set_props(widget, vec![("meters".into(), value)], &mut fx);
     }
 
-    /// Frees everything the multitrack made — what closing a window owes the server,
+    /// Frees everything the multitrack made -- what closing a window owes the server,
     /// and what a host that stops owning a multitrack owes it.
     pub fn hush_multitrack(&mut self) {
         let Some(multitrack) = self.instance.multitrack.as_mut() else {

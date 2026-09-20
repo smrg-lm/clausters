@@ -19,7 +19,7 @@
             white-space: pre-wrap; align-self: stretch; }
       .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
       /* The canvas is an element: the document sizes it, and the host draws
-         into whatever it gets — full width here, and just as full on a
+         into whatever it gets -- full width here, and just as full on a
          phone. */
       #stage { align-self: stretch; height: min(70vh, 560px); }
       #stage canvas { display: block; width: 100%; height: 100%; }
@@ -40,7 +40,7 @@ the wheel zooms and <b>r</b> resets; each selection comes back to this page as a
 <b>Ctrl+C</b> on the waveform, then <b>Ctrl+V</b>: hear exactly what was copied.
 <b>Copy is a read</b>, so the host does it alone and nothing arrives here.
 <b>Paste changes data</b>, which the host does not own, so it arrives as a
-request with the clipboard travelling beside it — the kind, the document, and
+request with the clipboard travelling beside it -- the kind, the document, and
 the samples as one little-endian <code>f32</code> blob. This page puts the block
 in a buffer of its own and plays it once; nothing is written back over the take.
 
@@ -153,7 +153,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         win.widget("wave").set({
           selStart: Math.trunc(frames / 2), selLen: Math.trunc(frames / 4),
         });
-        log(`opened window ${win.id} — drag to select, Shift+drag to pan, `
+        log(`opened window ${win.id} -- drag to select, Shift+drag to pan, `
           + "wheel to zoom, r to reset");
 
         let synth = null;
@@ -208,7 +208,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
           const blockFrames = Number(block.frames);
           log(`pasted ${blockFrames} frames x ${channels} ch at `
             + `${block.sample_rate.toFixed(0)} Hz `
-            + `(${(blockFrames / block.sample_rate).toFixed(3)} s) — auditioning it`);
+            + `(${(blockFrames / block.sample_rate).toFixed(3)} s) -- auditioning it`);
           if (clipVoice !== null) clipVoice.free();
           const previous = clipBuf;
           clipBuf = await Buffer.alloc(blockFrames, channels, { server });

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Adding and removing instruments — clausters components</title>
+    <title>Adding and removing instruments -- clausters components</title>
     <link rel="icon" href="data:," />
     <style>
       :root { color-scheme: dark; }
@@ -29,9 +29,9 @@
       <h1>Adding and removing instruments</h1>
 
       <p>An instrument is an element, so a page can add one and take it away
-      again. Removing it gives back everything it took — its window, the nodes
+      again. Removing it gives back everything it took -- its window, the nodes
       its boot instantiated, and the widget, node and bus ids it drew from the
-      page's pools — while everything else on the page keeps sounding.</p>
+      page's pools -- while everything else on the page keeps sounding.</p>
 
       <p>Press <strong>power</strong> once (the browser wants one gesture for
       the whole page), then add a few instruments and remove them. Listen: the
@@ -51,7 +51,7 @@
     </main>
 
     <!--
-      examples/lifecycle — the other half of the mount: what an element gives
+      examples/lifecycle -- the other half of the mount: what an element gives
       back when it leaves the document.
 
       What it shows: components created and removed from script
@@ -62,11 +62,11 @@
 
       What it needs: a browser with a WebGL2 or WebGPU adapter, and the
       graph-controls bundle generated first (it lands in examples/out/, which
-      is git-ignored — nothing here is committed):
+      is git-ignored -- nothing here is committed):
 
           node ../panels/graph-controls/make_bundle.mjs
 
-      How to run it: serve the PACKAGE ROOT (clients/web — never this folder;
+      How to run it: serve the PACKAGE ROOT (clients/web -- never this folder;
       the generated module imports /dist/runtime.js):
 
           cd clients/web && ./build.sh && python3 -m http.server
@@ -83,7 +83,7 @@
       /**
        * Adds one instrument. A tag registered by a bundle's generated module
        * is an ordinary custom element: created, given its attributes and
-       * appended, it mounts itself — and starts sounding as soon as the page
+       * appended, it mounts itself -- and starts sounding as soon as the page
        * has had its gesture.
        */
       function add() {
@@ -105,7 +105,7 @@
       document.getElementById("drop").onclick = drop;
       document.getElementById("churn").onclick = async () => {
         // Twenty instances in and out again. The counters below should end
-        // exactly where they began — that is the whole point of the unmount.
+        // exactly where they began -- that is the whole point of the unmount.
         for (let i = 0; i < 20; i++) {
             const el = add();
             await new Promise((r) => setTimeout(r, 120));
@@ -114,7 +114,7 @@
       };
 
       // The occupancy readout. The pools are built on the shared core's
-      // registry, which is loaded with the first mount — before that there is
+      // registry, which is loaded with the first mount -- before that there is
       // nothing to ask.
       setInterval(() => {
         let pools;

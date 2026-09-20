@@ -3,7 +3,7 @@
 
 The acceptance W13 is written against is "one session, one score": a session
 written once emits a score **byte-identical** to the Python client's for the
-same input. This script freezes that side of it — the Python client plays a few
+same input. This script freezes that side of it -- the Python client plays a few
 small pieces into an offline session and the accumulated score bytes are
 recorded; `tests/score-parity.test.ts` writes the same pieces with the TS
 client and compares the bytes.
@@ -16,20 +16,20 @@ and every command's argument tagging along the way.
 The pieces play the server's **built-in** instrument and send no def, on
 purpose. A def's wire payload is JSON *text*, and the two clients' serializers
 lay it out differently (Python spaces its separators and writes `440.0` where
-`JSON.stringify` writes `440`) — a difference in formatting, not in the def,
+`JSON.stringify` writes `440`) -- a difference in formatting, not in the def,
 and one `tests/def-parity.test.ts` already pins by comparing the parsed spec.
 Letting it into these vectors would replace a meaningful byte comparison with
 a formatting one.
 
-The pieces are deliberately small and written twice by hand — once here, once
-in TypeScript — because a generated pair would only prove the generator
+The pieces are deliberately small and written twice by hand -- once here, once
+in TypeScript -- because a generated pair would only prove the generator
 agrees with itself.
 
 The JSON is committed; regenerate with:
 
     python3 gen-score-vectors.py
 
-(from clients/web/tests/, with the Python client importable — the repo's
+(from clients/web/tests/, with the Python client importable -- the repo's
 .venv has it installed editable).
 """
 
@@ -46,7 +46,7 @@ from clausters.session import Session  # noqa: E402
 
 
 def one_synth(session):
-    """One instance of the built-in instrument, freed a second later — the
+    """One instance of the built-in instrument, freed a second later -- the
     smallest score there is, and the shape every `render(def)` produces."""
     server = session.server
     node = Synth("default", {"freq": 330.0}, server=server)
@@ -67,7 +67,7 @@ def a_routine(session):
 
 
 def a_pattern(session):
-    """An event pattern, which is the same thing through the pattern layer —
+    """An event pattern, which is the same thing through the pattern layer --
     and the case where the client's own event defaults (sustain, the release
     message) reach the score."""
     Pbind(degree=Pseq([0, 2, 4]), dur=0.25, amp=0.15).play(
@@ -89,8 +89,8 @@ ENV_POINTS = 64
 def env_traces():
     """What `plot(Env)` draws, rendered through the engine's own EnvGen.
 
-    Both clients now render an envelope the same way — a one-node offline
-    render, gate-released at the sustain point — so this freezes the drawn
+    Both clients now render an envelope the same way -- a one-node offline
+    render, gate-released at the sustain point -- so this freezes the drawn
     curve itself: the frame count, the peak, and a decimated trace. It is the
     check that "what you plot is what an EnvGen plays" holds *across* clients
     and not just within one.

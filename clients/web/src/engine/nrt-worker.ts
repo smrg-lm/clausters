@@ -1,15 +1,15 @@
 // The NRT worker: the browser's version of the thread that is neither audio
 // nor interface.
 //
-// A native server has one for exactly this work — reading a soundfile,
-// decoding it, building the buffer — off both the audio thread and the network
+// A native server has one for exactly this work -- reading a soundfile,
+// decoding it, building the buffer -- off both the audio thread and the network
 // one. The engine in a page had no such thread, so the work landed on the
 // AudioWorklet, which owes a block of audio every 2.67 ms. This is that thread.
 //
 // It does three things and holds nothing:
 //
 //  - reads a file out of the page's own filesystem (OPFS, reachable only from
-//    a dedicated Worker — see `./opfs.ts`),
+//    a dedicated Worker -- see `./opfs.ts`),
 //  - decodes it with **our** decoder, the same one a native server runs.
 //    `decodeAudioData` is right there and is the wrong answer: it is a
 //    different decoder, so the same file would become different samples in a
@@ -17,7 +17,7 @@
 //    and
 //  - compiles a Faust def. This is the page's compiler thread: natively a
 //    `/def_send faust` compiles on a thread of its own and answers late, and
-//    that is exactly what happens here — the module comes back to the worklet,
+//    that is exactly what happens here -- the module comes back to the worklet,
 //    which links it into the engine's own memory.
 //
 // The samples go back as a **transferred** buffer, so crossing the thread
@@ -63,7 +63,7 @@ interface FaustRequest {
     ticket: number;
     /** The def's name, for the compiler's own error messages. */
     name: string;
-    /** `"source"`, `"boxes"` or `"signals"` — which format `def` is in. */
+    /** `"source"`, `"boxes"` or `"signals"` -- which format `def` is in. */
     kind: string;
     def: string;
 }
@@ -71,8 +71,8 @@ interface FaustRequest {
 /**
  * `/buffer_write`: put a span of a buffer in the page's filesystem.
  *
- * The runs arrive one per serving turn — the samples leave the engine's memory
- * paced, the way a long load arrives paced — and the file is written **once**,
+ * The runs arrive one per serving turn -- the samples leave the engine's memory
+ * paced, the way a long load arrives paced -- and the file is written **once**,
  * at `final`. Nothing is visible until then, which is the same rule a staged
  * load follows: a half-written file is not a shorter take, it is a wrong one.
  * That is what separates this from `record`, which rewrites its file at every
@@ -198,7 +198,7 @@ let decoder: Promise<Decoder> | null = null;
  *  live, and what the Faust shim reads them out of. */
 let decoderMemory: WebAssembly.Memory | null = null;
 
-/** Loads the decoder once, on the first read — a page that never reads a
+/** Loads the decoder once, on the first read -- a page that never reads a
  *  soundfile never fetches it. */
 function load(): Promise<Decoder> {
     if (decoder === null) {
@@ -217,7 +217,7 @@ function load(): Promise<Decoder> {
 // The Faust compiler's own glue, imported the same way and for the same
 // reason: a page whose bundle carries no FaustDef never fetches the several
 // megabytes of it. `libfaust-wasm` is an Emscripten module with a filesystem
-// of its own — the `.data` beside it is the Faust standard library, which is
+// of its own -- the `.data` beside it is the Faust standard library, which is
 // what lets a def `import("stdfaust.lib")`.
 /** What a compilation produces: the module's bytes and the JSON beside it. */
 type FaustArtifact = { cfactory: number; data: Uint8Array | number[]; json: string };
@@ -269,14 +269,14 @@ type FaustShim = {
 let faust: Promise<{ lib: FaustLib; mod: FaustModule }> | null = null;
 let faustShim: FaustShim | null = null;
 /**
- * Whether the compiler currently has a lib context — the arena a box or signal
+ * Whether the compiler currently has a lib context -- the arena a box or signal
  * tree is built in.
  *
  * **It is opened and never closed, and that is deliberate.** The native path
  * brackets every def with `createLibContext`..`destroyLibContext`
  * (`faust::compiler`). Here, destroying it *poisons the next one*: a def built
  * afterwards loses the term merging Faust's hash-consing does, so a graph that
- * shares a subterm stops sharing it and a recursion over it never terminates —
+ * shares a subterm stops sharing it and a recursion over it never terminates --
  * reported as a stack overflow inside the compiler, with nothing pointing back
  * at the def that closed the previous context. Reproduced down to two defs (a
  * box with a `rec`, then anything recursive) and gone the moment the destroy
@@ -528,7 +528,7 @@ async function handle(request: Request, post: (r: Response, t?: Transferable[]) 
  * `STACK_SIZE=8MB`, the same order as a native thread's): wasm frames sit on
  * the JavaScript engine's own stack, which is about a megabyte, and libfaust
  * recurses over the term graph of everything compiled so far. A native server
- * never meets this — it gets a whole thread's stack, and a fresh lib context
+ * never meets this -- it gets a whole thread's stack, and a fresh lib context
  * per def besides.
  */
 const OUT_OF_STACK = /stack overflow|call stack size exceeded/i;
@@ -537,13 +537,13 @@ const OUT_OF_STACK = /stack overflow|call stack size exceeded/i;
  * Throws the compiler away, so the next def is compiled by a fresh instance.
  *
  * This is the one way out of an exhausted stack that the page actually has.
- * The context cannot be destroyed and reopened — that poisons the next def
- * (see `contextLive`) — but a whole new Emscripten instance has a new memory,
+ * The context cannot be destroyed and reopened -- that poisons the next def
+ * (see `contextLive`) -- but a whole new Emscripten instance has a new memory,
  * a new arena and a new context, and poisons nothing, because the poisoning
  * was always a *destroyed* context and not a second one. It costs an
  * instantiation, and that is cheaper than it looks: the fetch is in cache and
  * the module is already compiled, so twelve distinct recursive signal defs in a
- * row — six of these between them — average 18 ms each, against the 9 ms a def
+ * row -- six of these between them -- average 18 ms each, against the 9 ms a def
  * that never overflows costs (`tests/faust-arena.html`). `/def_send faust` has
  * always answered late besides.
  */
@@ -554,7 +554,7 @@ function discardCompiler(): void {
     reloads++;
 }
 
-/** How many compilers this Worker has been through — reported by
+/** How many compilers this Worker has been through -- reported by
  *  `faust-heap`, and how `tests/faust-arena.html` says what a tab pays. */
 let reloads = 0;
 
@@ -564,13 +564,13 @@ let reloads = 0;
  * `internalMemory` is false: the module must import `env.memory` so it can be
  * instantiated against the engine's own. `-ftz 2` is the same flag a native
  * factory is compiled with, so a decaying tail cannot strand either thread in
- * subnormal math — the architecture-independent half of the denormal rule, and
+ * subnormal math -- the architecture-independent half of the denormal rule, and
  * one of the places the two builds have to agree exactly.
  *
  * A def that exhausts the call stack is compiled again in a **fresh compiler**
  * and only then reported as failed: the accumulated term graph is what ran the
  * stack out, and nothing about the def itself was wrong. Retried once, never
- * twice — a def that overflows a compiler that has compiled nothing is a def
+ * twice -- a def that overflows a compiler that has compiled nothing is a def
  * too deep for a tab, and saying so is the honest answer.
  */
 async function compile(request: FaustRequest): Promise<Response> {
@@ -612,8 +612,8 @@ async function compileOnce(request: FaustRequest): Promise<Response> {
     const stripped = stripFaustData(Uint8Array.from(out.data));
     // The bytes travel, not a `WebAssembly.Module`. A Module is
     // structured-cloneable and posting one into an AudioWorklet *appears* to
-    // work — the send succeeds and the message is then dropped on arrival, with
-    // no error raised on either side — because a worklet is not in this
+    // work -- the send succeeds and the message is then dropped on arrival, with
+    // no error raised on either side -- because a worklet is not in this
     // Worker's agent cluster. So the worklet compiles them itself: a Faust
     // module is a couple of kilobytes, which is microseconds once per def,
     // against a silence nothing reports.
@@ -628,14 +628,14 @@ async function compileOnce(request: FaustRequest): Promise<Response> {
 const FAUST_ARGS = "-ftz 2";
 
 /**
- * The three def formats, each to its own entry point — the same three a native
+ * The three def formats, each to its own entry point -- the same three a native
  * server has, and the reason the whole shim exists.
  *
  * Source goes straight in. A box tree and a signal tree are read by
  * `faust::boxes` and `faust::signals`, in this Worker's wasm: the *server's*
  * interpreters, not a second reading of the schema written in TypeScript. What
  * they build lives in the compiler's arena, so it is only valid between
- * `createLibContext` and `destroyLibContext` — the factory is made inside that
+ * `createLibContext` and `destroyLibContext` -- the factory is made inside that
  * bracket too, exactly as the native path does it.
  */
 async function factory(

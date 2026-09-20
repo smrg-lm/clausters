@@ -1,4 +1,4 @@
-//! The phase family: everything driven by one accumulating phase — the
+//! The phase family: everything driven by one accumulating phase -- the
 //! band-limited `Saw`/`Pulse`, the deliberately band-*un*limited `LF*` shapes,
 //! and `Phasor` -- plus `TransportPos`, which is a phase the *transport* owns
 //! rather than one this file accumulates.
@@ -11,7 +11,7 @@
 //! `f64_is_for_the_position_not_the_phase`). For the **wrapped phase** it changes
 //! nothing audible:
 //! the value never leaves `[0, 1)`, so the rounding error per step is about one
-//! ulp of 1.0 and random-walks nowhere — over ten seconds an `f32` phase and an
+//! ulp of 1.0 and random-walks nowhere -- over ten seconds an `f32` phase and an
 //! `f64` one both read 55.0003 Hz for a 55 Hz saw. The precision is for
 //! [`Phasor`], whose position is **not** wrapped into a small range: as a buffer
 //! index eight minutes into a 48 kHz file it is past 2^24, where consecutive
@@ -22,17 +22,17 @@
 //! *fixed-point* phase, coarser again.)
 //!
 //! **Band-limiting is PolyBLEP, not a band-limited impulse train.** scsynth
-//! builds `Saw`/`Pulse` from a discrete-summation impulse train — a sine table
-//! divided by a cosecant table — smoothed by a leaky integrator with a `0.999`
+//! builds `Saw`/`Pulse` from a discrete-summation impulse train -- a sine table
+//! divided by a cosecant table -- smoothed by a leaky integrator with a `0.999`
 //! pole. That costs a division per sample, two tables, and a settling transient
 //! plus a residual DC droop from the integrator. [`poly_blep`] costs a handful
-//! of arithmetic ops only on the samples adjacent to a discontinuity — four per
-//! cycle — and has no state, no tables and no DC error.
+//! of arithmetic ops only on the samples adjacent to a discontinuity -- four per
+//! cycle -- and has no state, no tables and no DC error.
 //!
 //! Its honest cost is that it stays *quasi*-band-limited: the correction is a
 //! polynomial approximation of the band-limited step, so a residual remains and
 //! grows with the fundamental. The correction here is **fourth order**, spanning
-//! two samples on each side of the discontinuity rather than one — the measured
+//! two samples on each side of the discontinuity rather than one -- the measured
 //! difference over the second-order form is +29 dB at 105 Hz and +10 to +12 dB
 //! over the rest of the range, for four polynomial evaluations per cycle instead
 //! of two. The figures (alias SNR, 48 kHz, against the same waveform generated
@@ -47,7 +47,7 @@
 //! At 105 Hz that is within about 2.5 dB of the measurement's own floor (a pure
 //! tone reads 99.2 dB through the same analysis), so the low end is as clean as
 //! the harness can see. `tests/oscillators.rs` regenerates both columns on every
-//! run — the naive baseline is computed there, not hardcoded, so the comparison
+//! run -- the naive baseline is computed there, not hardcoded, so the comparison
 //! stays honest if either side changes.
 //!
 //! **The `LF*` shapes are not band-limited, on purpose**, exactly as in scsynth:
@@ -73,7 +73,7 @@ use crate::dsp::{ProcessCtx, UGen, at};
 /// ```
 ///
 /// which is continuous at `+/-1` and `+/-2`, vanishes at `+/-2`, is
-/// antisymmetric, and jumps by exactly `-2` across `x = 0` — that jump is what
+/// antisymmetric, and jumps by exactly `-2` across `x = 0` -- that jump is what
 /// cancels the waveform's own. The quadratic two-sample residual is the same
 /// construction one order down (`K` the triangular B-spline), and it is what the
 /// wide-`dt` fallback below uses.
@@ -144,7 +144,7 @@ pub fn poly_blep(t: f64, dt: f64) -> f64 {
 /// A normalized phase accumulator in `[0, 1)`.
 ///
 /// `advance` returns the phase *before* stepping, so a caller reads the value it
-/// is about to emit and then moves on — which is what keeps the first output
+/// is about to emit and then moves on -- which is what keeps the first output
 /// sample equal to the initial phase rather than one increment past it.
 #[derive(Clone, Copy)]
 struct Phase(f64);
@@ -235,7 +235,7 @@ impl UGen for Saw {
 /// Band-limited pulse in `[-1, 1]`. Inputs: 0 frequency in Hz, 1 pulse width as
 /// a fraction of the cycle (`0.5` = square).
 ///
-/// Built as a naive square with a PolyBLEP correction at each of its two edges —
+/// Built as a naive square with a PolyBLEP correction at each of its two edges --
 /// equivalent to the difference of two phase-shifted band-limited saws, but
 /// without building either. Width is clamped away from `0` and `1`, where
 /// the two edges would coincide and the waveform would collapse to silence with
@@ -297,12 +297,12 @@ impl UGen for Pulse {
 }
 
 /// The waveform an [`Lf`] oscillator draws from its phase. None of these is
-/// band-limited — that is the point of the family.
+/// band-limited -- that is the point of the family.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum LfShape {
     /// Rising ramp in `[-1, 1]`, starting at `0` for an initial phase of `0`.
     Saw,
-    /// Square in `[0, 1]` (scsynth's range for `LFPulse` — a gate, not a
+    /// Square in `[0, 1]` (scsynth's range for `LFPulse` -- a gate, not a
     /// bipolar waveform like [`Pulse`]), duty cycle from input 2.
     Pulse,
     /// Triangle in `[-1, 1]`, starting at `0` and rising.
@@ -314,18 +314,18 @@ pub enum LfShape {
 }
 
 /// The non-band-limited modulation shapes: `LFSaw`, `LFPulse`, `LFTri`,
-/// `VarSaw`. Inputs: 0 frequency in Hz, 1 initial phase, and — only for the
-/// shapes that have a duty cycle — 2 width. A shape without one declares two
+/// `VarSaw`. Inputs: 0 frequency in Hz, 1 initial phase, and -- only for the
+/// shapes that have a duty cycle -- 2 width. A shape without one declares two
 /// inputs rather than three: a UGen that advertises an input it ignores lies to
 /// `/ugen_query`, and a client palette would draw an inlet that does nothing.
 ///
-/// **Initial phase is in cycles, `[0, 1)`** — a deliberate deviation from
+/// **Initial phase is in cycles, `[0, 1)`** -- a deliberate deviation from
 /// scsynth, whose `iphase` is in `[0, 2)` for the `LF*` family because its
 /// accumulator happens to run over `[-1, 1]`. Exposing an implementation detail
 /// as a unit is exactly the kind of wart this project does not inherit; every
 /// phase this crate exposes is in cycles.
 ///
-/// The initial phase is read **once**, at the first sample, and ignored after —
+/// The initial phase is read **once**, at the first sample, and ignored after --
 /// it names where the oscillator starts, not a running offset.
 pub struct Lf {
     shape: LfShape,
@@ -407,7 +407,7 @@ impl UGen for Lf {
 /// sample**, wrapping at `end`, and jumping to `reset_pos` on a trigger.
 ///
 /// Inputs: 0 trigger, 1 rate, 2 start, 3 end, 4 reset position. `rate` is in
-/// output units per sample, not Hz — that is scsynth's contract and the reason
+/// output units per sample, not Hz -- that is scsynth's contract and the reason
 /// `Phasor` is the natural index source for a buffer reader (a rate of `1`
 /// advances one frame per sample). It is not band-limited and is not meant to
 /// be listened to directly.
@@ -465,24 +465,24 @@ impl UGen for Phasor {
     }
 }
 
-/// The **transport's position**, as a signal — what a buffer
+/// The **transport's position**, as a signal -- what a buffer
 /// reader follows so that seeking, looping and pausing are the transport's
 /// and not each reader's.
 ///
 /// One input, `offset` in frames, subtracted from the position: a clip that
 /// starts at sample `offset` of the transport reads its own samples from frame 0
 /// when the transport reaches it. That is what the input is *for*, but it is
-/// also what keeps the output precise — see below.
+/// also what keeps the output precise -- see below.
 ///
 /// It ramps by one frame per sample while the transport rolls and **holds**
 /// while it is stopped, at whatever rate it runs (one `kr` sample covers a
 /// whole slice, so the step is the slice's length). A node inside the governed
 /// group is frozen and does not run at all while the transport is stopped, so
-/// the holding case is for a reader outside it — or on a server with no group
+/// the holding case is for a reader outside it -- or on a server with no group
 /// bound, where nothing freezes.
 ///
 /// **Precision.** A signal is `f32`, which represents every integer exactly up
-/// to 2^24 — about 5.8 minutes at 48 kHz — and in steps of 2 for a while after
+/// to 2^24 -- about 5.8 minutes at 48 kHz -- and in steps of 2 for a while after
 /// that. This is the catalog's existing arithmetic (`Phasor` keeps an `f64`
 /// internally and outputs `f32` just the same, and `BufRd` takes its phase as
 /// a signal), and the `offset` input is the answer to it: the subtraction

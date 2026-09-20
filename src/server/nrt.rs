@@ -5,17 +5,17 @@
 //! other formats via symphonia), WAV writing (hound) and zeroing. The
 //! network thread submits [`NrtRequest`]s and drains
 //! [`NrtResult`]s on its own schedule, installs the produced buffer in the
-//! engine via `Cmd::SetBuffer`, and sends the async `/done`/`/fail` reply —
+//! engine via `Cmd::SetBuffer`, and sends the async `/done`/`/fail` reply --
 //! same pattern as the Faust compiler thread.
 //!
 //! One queue means buffer commands complete **in submission order** (a
 //! `/buffer_free` right after a `/buffer_alloc` cannot overtake it), which is why even
-//! `/buffer_free` — no I/O at all — travels through here.
+//! `/buffer_free` -- no I/O at all -- travels through here.
 //!
 //! Every job here **replaces** a buffer rather than writing into one: `/buffer_read`
 //! into an existing buffer and `/buffer_zero` build a replacement from the current
 //! contents, and the engine swaps it in. A buffer's contents *are* writable
-//! (see [`crate::dsp::buffer`]) — this is a property of these commands, which
+//! (see [`crate::dsp::buffer`]) -- this is a property of these commands, which
 //! change a buffer wholesale and off the audio thread, and not of the buffer.
 
 use crate::osc::ClientId;
@@ -67,7 +67,7 @@ pub enum NrtJob {
     },
     /// `/buffer_gen`: fill/generate into a same-shape replacement of the current
     /// buffer (wavetable generators, waveshaping tables, buffer copies). Pure
-    /// computation — no I/O — but ordered through this queue like the rest so a
+    /// computation -- no I/O -- but ordered through this queue like the rest so a
     /// `/buffer_gen` cannot overtake a pending `/buffer_alloc` on the same buffer.
     Gen {
         current: Arc<Buffer>,
@@ -83,7 +83,7 @@ pub enum NrtJob {
     /// writes to one buffer is submitted before any of them completes, so every
     /// one of them would otherwise copy the same pre-batch contents and the last
     /// installed would silently erase the rest. The runner therefore chains
-    /// them — see [`NrtChain`].
+    /// them -- see [`NrtChain`].
     Set {
         base: Arc<Buffer>,
         writes: Vec<SampleWrite>,
@@ -99,7 +99,7 @@ pub enum NrtJob {
     /// of them completes, so the runner chains them (see [`NrtChain`]).
     Edit { base: Arc<Buffer>, op: EditOp },
     /// `/buffer_fill`: runs of one repeated value, addressed flat like
-    /// [`NrtJob::Set`] — `(start, count, value)` each. Kept apart from `Set`
+    /// [`NrtJob::Set`] -- `(start, count, value)` each. Kept apart from `Set`
     /// rather than expanded into one: a fill says how *many* samples it writes
     /// and building them would allocate the run it exists to avoid.
     ///
@@ -108,14 +108,14 @@ pub enum NrtJob {
         base: Arc<Buffer>,
         fills: Vec<(usize, usize, f32)>,
     },
-    /// `/buffer_stitch`: a **join** — a buffer whose samples are spans of other
+    /// `/buffer_stitch`: a **join** -- a buffer whose samples are spans of other
     /// buffers, installed whole like every other replacement here.
     ///
     /// The sources are resolved at parse time and held by `Arc`, which is what
     /// keeps a take alive for as long as something is stitched over it. They
     /// are the buffers the *mirror* named, so a source replaced (rather than
     /// written into) between the parse and the install stays the one that was
-    /// asked for — the same staleness every other job's `base` has, and for the
+    /// asked for -- the same staleness every other job's `base` has, and for the
     /// same reason.
     Stitch {
         channels: usize,
@@ -131,7 +131,7 @@ pub enum NrtJob {
 /// land.
 ///
 /// The stride is what makes one job serve both addressings. `/buffer_set` and
-/// `/buffer_setRange` write *adjacent* samples — stride 1 — which is the right
+/// `/buffer_setRange` write *adjacent* samples -- stride 1 -- which is the right
 /// shape for filling a buffer and the wrong one for editing a **channel** of
 /// one: in interleaved storage a channel's frames are `channels` apart, so a
 /// stereo left channel is a strided run and no contiguous command can express
@@ -157,7 +157,7 @@ impl SampleWrite {
         }
     }
 
-    /// One past the last sample this write touches — what a bounds check
+    /// One past the last sample this write touches -- what a bounds check
     /// compares against, and the one place the stride is arithmetic rather than
     /// a step.
     pub fn end(&self) -> usize {
@@ -168,7 +168,7 @@ impl SampleWrite {
     }
 }
 
-/// One destructive edit, parsed. The span is in **frames** — a selection is a
+/// One destructive edit, parsed. The span is in **frames** -- a selection is a
 /// stretch of time across every channel, which is a different unit from the
 /// flat interleaved index `/buffer_set*` speaks.
 #[derive(Debug, Clone, Copy)]
@@ -188,7 +188,7 @@ pub enum EditOp {
 }
 
 impl EditOp {
-    /// The frames this edit touches, as `(start, frames)` — what an in-place
+    /// The frames this edit touches, as `(start, frames)` -- what an in-place
     /// write reads out and puts back, so the cost is the edit's rather than the
     /// buffer's.
     pub fn span(&self) -> (usize, usize) {
@@ -246,7 +246,7 @@ pub struct NrtResult {
 ///
 /// The queue is the serialization point for buffer mutation, so "the current
 /// contents" of a buffer means *current in the queue*, not current in the
-/// network-side mirror — the mirror only catches up when results are drained,
+/// network-side mirror -- the mirror only catches up when results are drained,
 /// which happens after a whole batch has been submitted. A job that builds a
 /// replacement from the existing contents ([`NrtJob::Set`]) therefore takes its
 /// base from here when the queue has already produced one.
@@ -254,7 +254,7 @@ pub struct NrtResult {
 /// The chain is consulted **only while the queue still owes work on that
 /// index**, which the submitter says with [`NrtRequest::chained`]. With nothing
 /// in flight the network-side mirror has caught up and its snapshot is the
-/// authority — which is also what keeps a buffer installed outside the queue
+/// authority -- which is also what keeps a buffer installed outside the queue
 /// (the embed door's `install_buffer`) from being undone by a stale entry.
 #[derive(Default)]
 pub struct NrtChain(std::collections::HashMap<i32, Arc<Buffer>>);
@@ -302,7 +302,7 @@ pub struct NrtThread {
 impl NrtThread {
     /// Spawns the worker. `waker`, when the server has a socket front, is
     /// poked after each finished job so the command loop reports it at once
-    /// instead of at its next idle tick — a job that took 2 ms was answered
+    /// instead of at its next idle tick -- a job that took 2 ms was answered
     /// 100 ms later without it.
     pub fn spawn(waker: Option<Waker>, meters: Arc<crate::server::meters::Meters>) -> Self {
         let (req_tx, req_rx) = mpsc::channel::<NrtRequest>();
@@ -376,7 +376,7 @@ impl Drop for NrtThread {
 
 /// How the server runs its NRT jobs: on the background [`NrtThread`] (the
 /// native run loop), or **inline** on the calling thread (the headless pulled
-/// server) — same submission order, same results, no thread. Inline is
+/// server) -- same submission order, same results, no thread. Inline is
 /// the wasm mode (no threads there) and the accepted relaxation that buffer
 /// work happens on whichever thread drives the server.
 pub enum NrtRunner {
@@ -396,7 +396,7 @@ pub enum NrtRunner {
     ///
     /// This is the browser's mode. Reading a soundfile means a filesystem and a
     /// decoder, and in a page the filesystem is a JS API reachable only from a
-    /// Worker — so the job leaves, and its samples come back through the staged
+    /// Worker -- so the job leaves, and its samples come back through the staged
     /// load rather than through this queue, which is why nothing large ever
     /// passes through here.
     ///
@@ -415,7 +415,7 @@ pub enum NrtRunner {
 }
 
 /// A job the host is asked to do, with everything it needs and nothing that
-/// lives in the engine — which is why only some kinds can be one.
+/// lives in the engine -- which is why only some kinds can be one.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DelegatedJob {
     /// Answer with this (see [`NrtRunner::finish_delegated`]).
@@ -431,7 +431,7 @@ pub struct DelegatedJob {
 ///
 /// The rest stay. `Read`, `Gen`, `Set`, `Edit` and `Fill` all carry the
 /// buffer's current contents *and* produce new contents for the same buffer, so
-/// delegating them would ship megabytes out and back to save arithmetic — they
+/// delegating them would ship megabytes out and back to save arithmetic -- they
 /// run here, under the serving budget. `Alloc` stays for the other reason: the
 /// buffer is built in this module's own memory, so a host allocating in its
 /// memory would only add a copy back.
@@ -449,7 +449,7 @@ pub enum DelegatedKind {
     },
     /// `/buffer_write`: encode a span of the buffer and put it in the host's
     /// filesystem. One payload out and none back, which is what makes it the
-    /// easiest job in the set to delegate — and the payload leaves in runs
+    /// easiest job in the set to delegate -- and the payload leaves in runs
     /// ([`NrtRunner::delegated_write_chunk`]) rather than in one copy, for the
     /// reason a staged load exists: the thread handing it over owes a block.
     Write {
@@ -490,7 +490,7 @@ fn delegated_kind(job: &NrtJob) -> Option<DelegatedKind> {
             buffer,
         } => {
             // The span is settled here, once, so the host and this side cannot
-            // disagree about how much there is — the same clamping `write_wav`
+            // disagree about how much there is -- the same clamping `write_wav`
             // does before it writes.
             let (_, frames) = write_span(buffer, *buf_start, *num_frames);
             Some(DelegatedKind::Write {
@@ -564,7 +564,7 @@ impl NrtRunner {
     ///
     /// The host walks the span with this rather than being handed it whole. A
     /// one-minute stereo take is 7 ms of copying, and the thread asking is the
-    /// one that owes the next block — the same measurement that made a long
+    /// one that owes the next block -- the same measurement that made a long
     /// *load* arrive in runs (`ServeBudget::install_frames` is the run to size
     /// from, there and here).
     ///
@@ -601,7 +601,7 @@ impl NrtRunner {
     /// already installed the result (a staged load), so all this owes is the
     /// `/done`; `Err` becomes the `/fail`, carrying the host's own message.
     ///
-    /// A ticket that is not the outstanding one is ignored — a late answer to a
+    /// A ticket that is not the outstanding one is ignored -- a late answer to a
     /// job that was already given up on must not report against whatever
     /// followed it.
     pub fn finish_delegated(&mut self, ticket: u64, outcome: Result<(), String>) {
@@ -631,12 +631,12 @@ impl NrtRunner {
     }
 
     /// Queues a job. In thread mode the thread picks it up; in inline mode it
-    /// waits for [`pump`](Self::pump) — **it does not run here**. Fails only if
+    /// waits for [`pump`](Self::pump) -- **it does not run here**. Fails only if
     /// the NRT thread died.
     ///
     /// Inline submission used to run the job on the spot, which put a buffer
     /// allocation, a file read and a decode on whatever thread drove the
-    /// server — the audio thread, in the browser. Queueing splits "the command
+    /// server -- the audio thread, in the browser. Queueing splits "the command
     /// arrived" from "the work happened" so a caller can bound the second, and
     /// it is the same seam a job runner in another thread plugs into.
     #[allow(clippy::result_large_err)]
@@ -657,7 +657,7 @@ impl NrtRunner {
     /// The budget is a **count, not a duration**: `Instant` panics on
     /// `wasm32-unknown-unknown`, which is the target this exists for, and a
     /// counted budget is deterministic enough to assert on. It bounds how many
-    /// jobs a turn starts, not how long one of them takes — a single huge
+    /// jobs a turn starts, not how long one of them takes -- a single huge
     /// allocation is one job and is indivisible here.
     pub fn pump(&mut self, budget: usize) -> usize {
         let (pending, results, chain, delegating, blocked) = match self {
@@ -911,7 +911,7 @@ fn wrote_frames(first: usize, last: usize, channels: usize) -> NrtAction {
     }
 }
 
-/// Keeps only `channels` of `buffer`, in the order given — the de-interleave
+/// Keeps only `channels` of `buffer`, in the order given -- the de-interleave
 /// behind `/buffer_readChannel` and `/buffer_allocReadChannel`.
 ///
 /// An empty selection is every channel, unchanged, which is what the two
@@ -920,7 +920,7 @@ fn wrote_frames(first: usize, last: usize, channels: usize) -> NrtAction {
 /// mono file is a mistake worth hearing about, not a silent track.
 ///
 /// The order is honoured and repeats are allowed, so `[1, 0]` swaps a stereo
-/// pair and `[0, 0]` makes a mono file into a two-channel one — both are what
+/// pair and `[0, 0]` makes a mono file into a two-channel one -- both are what
 /// naming channels explicitly is *for*, and neither costs anything to permit.
 pub fn select_channels(buffer: &Buffer, channels: &[usize]) -> Result<Buffer, String> {
     if channels.is_empty() {
@@ -958,7 +958,7 @@ pub fn select_channels(buffer: &Buffer, channels: &[usize]) -> Result<Buffer, St
 /// Reads an audio-file slice into an interleaved buffer. WAV goes through
 /// hound (exact, int24-aware, cheap frame seek); every other extension decodes
 /// through symphonia (FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF, ...). Both
-/// keep the file's own sample rate — the engine never resamples; clients
+/// keep the file's own sample rate -- the engine never resamples; clients
 /// compensate via `PlayBuf`'s rate.
 ///
 /// Public because it is the server's whole answer to "read a soundfile", and
@@ -979,7 +979,7 @@ pub fn read_audio(path: &str, file_start: usize, num_frames: i64) -> Result<Buff
 
 /// [`read_audio`]'s answer over **bytes already in memory** rather than a path.
 ///
-/// Same decoders, same rules, same result — only the source differs, which is
+/// Same decoders, same rules, same result -- only the source differs, which is
 /// what a caller with no filesystem needs: a page reads a file through its own
 /// APIs and hands the bytes here, so a tab and a window decode one file into
 /// one set of samples. Decoding through the browser's own decoder instead would
@@ -1023,7 +1023,7 @@ fn read_symphonia(path: &str, file_start: usize, num_frames: i64) -> Result<Buff
     read_symphonia_stream(stream, ext, path, file_start, num_frames)
 }
 
-/// The symphonia decode itself, over whatever media source was opened — a file
+/// The symphonia decode itself, over whatever media source was opened -- a file
 /// natively, a cursor over bytes where there is no filesystem (see
 /// [`read_audio_bytes`]). `ext` is the probe hint and `label` only names the
 /// source in error messages.
@@ -1123,13 +1123,13 @@ fn read_symphonia_stream(
 
 /// Reads a WAV slice into an interleaved buffer. Integer samples are scaled
 /// to ±1 by their bit depth; the buffer keeps the file's sample rate (the
-/// engine does not resample — clients compensate via `PlayBuf`'s rate).
+/// engine does not resample -- clients compensate via `PlayBuf`'s rate).
 fn read_wav(path: &str, file_start: usize, num_frames: i64) -> Result<Buffer, String> {
     let reader = hound::WavReader::open(path).map_err(|e| format!("{path}: {e}"))?;
     read_wav_reader(reader, path, file_start, num_frames)
 }
 
-/// The WAV decode itself, over whatever hound opened — a file natively, a
+/// The WAV decode itself, over whatever hound opened -- a file natively, a
 /// cursor over bytes where there is no filesystem to open (see
 /// [`read_audio_bytes`]). `label` only names the source in error messages.
 fn read_wav_reader<R: std::io::Read + std::io::Seek>(
@@ -1177,7 +1177,7 @@ fn read_wav_reader<R: std::io::Read + std::io::Seek>(
 ///
 /// Paired with [`encode_wav_frames`] this is a WAV file in two pieces, which is
 /// what a *streaming* writer needs: the header cannot be written correctly
-/// until the length is known, so it is written twice — once as a placeholder,
+/// until the length is known, so it is written twice -- once as a placeholder,
 /// once at the end. `sample_format` is the scsynth name (`int16` | `int24` |
 /// `float`).
 pub fn wav_header(
@@ -1209,7 +1209,7 @@ pub fn wav_header(
     Ok(out)
 }
 
-/// Encodes interleaved `f32` samples into WAV sample bytes — the body a
+/// Encodes interleaved `f32` samples into WAV sample bytes -- the body a
 /// [`wav_header`] describes, and nothing else.
 ///
 /// It exists so the **scaling and the clamp live in one place**: a caller

@@ -8,9 +8,9 @@
  * **It decides nothing.** What a track and a clip *are* on the server is the
  * shared core's; which of them a given multitrack needs, the difference between
  * that and what is already sounding, the messages that carry it out and **how
- * it is played** — the sample a second of the multitrack is when the
+ * it is played** -- the sample a second of the multitrack is when the
  * transport is located, what play, pause, stop and cue send, and that a paused
- * meter is zeroed — are `MultitrackPlayback`, in the shared crate.
+ * meter is zeroed -- are `MultitrackPlayback`, in the shared crate.
  * The GUI host playing a session with no page behind it holds the same object,
  * so the two are one program. What is left here is what a language genuinely
  * owns: a socket, and waiting on it.
@@ -22,7 +22,7 @@
  * rebuilding the tree on every edit would restart everything that is sounding,
  * and a hand dragging a box would hear its own gesture as a stutter. So a track,
  * a clip and a reader are each added once and set thereafter, and only what a
- * set cannot express is torn down and made again — which is the reconciler's
+ * set cannot express is torn down and made again -- which is the reconciler's
  * rule and is written down there.
  *
  * **Steps: the crate says what waits.** An operation never carries a node id,
@@ -30,8 +30,8 @@
  * table from each operation's handle to what it became, allocates those from
  * the server's id spaces, and answers **steps**: a message to send, a `/done`
  * the rest waits for, a barrier. A buffer's fill waiting for its allocation is
- * one of those steps, stated once, and every endpoint — this page, the Python
- * client and the GUI host playing one on its own — carries out the same
+ * one of those steps, stated once, and every endpoint -- this page, the Python
+ * client and the GUI host playing one on its own -- carries out the same
  * list.
  *
  * @module
@@ -53,12 +53,12 @@ export class Playback {
     /** The master's own level. */
     readonly gain: number;
     /**
-     * The multitrack as it is playing — the crate's, as the host's is. Made in
+     * The multitrack as it is playing -- the crate's, as the host's is. Made in
      * `prepare`, which knows how many samples one fill may carry on this server.
      */
     private instance: MultitrackPlayback | null = null;
     /**
-     * The steps not carried out yet — the crate's walk, as the script's and the
+     * The steps not carried out yet -- the crate's walk, as the script's and the
      * GUI host's are. Made in `prepare`, beside the playback.
      */
     private runner: StepRunner | null = null;
@@ -114,8 +114,8 @@ export class Playback {
      * The multitrack went on screen: draw the line from the engine's own
      * position.
      *
-     * A playback is built before the window is — a multitrack can be played by a
-     * page that never draws it — so this is where the two meet, and it is one
+     * A playback is built before the window is -- a multitrack can be played by a
+     * page that never draws it -- so this is where the two meet, and it is one
      * statement: `GuiHost.headClock` and the transport's own are the same
      * decision, and letting them disagree draws a line nobody put there.
      */
@@ -160,7 +160,7 @@ export class Playback {
         void this.syncAsync();
     }
 
-    /** {@link Playback.sync}, waited for — what a page's own setup uses. */
+    /** {@link Playback.sync}, waited for -- what a page's own setup uses. */
     async syncAsync(): Promise<void> {
         if (this.instance === null) return;
         const bridge = this.editor.bridge;
@@ -179,8 +179,8 @@ export class Playback {
      * Carry the steps of an answer out through the crate's runner.
      *
      * What may go out is sent; where something is awaited, the runner puts the
-     * message it waits on last, and that one is sent as a request — so the
-     * reply cannot arrive before anyone is listening for it — and its reply is
+     * message it waits on last, and that one is sent as a request -- so the
+     * reply cannot arrive before anyone is listening for it -- and its reply is
      * handed back, which releases the rest. Which reply releases what is the
      * runner's, as it is the script's and the GUI host's.
      */
@@ -195,7 +195,7 @@ export class Playback {
     // ---- the transport ----
 
     /**
-     * Whether it is rolling, as the engine last answered — the answer
+     * Whether it is rolling, as the engine last answered -- the answer
      * that is already known. Asking afresh is {@link Playback.refresh}, for the
      * reason every request in a page is a promise: a page waits for an answer
      * instead of blocking on it.

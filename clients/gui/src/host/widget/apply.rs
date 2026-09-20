@@ -1,4 +1,4 @@
-//! Applying a `/gui_set` key/value to a live [`WidgetKind`] — the incremental
+//! Applying a `/gui_set` key/value to a live [`WidgetKind`] -- the incremental
 //! wire-to-schema update, one arm per widget type. Split out of the schema
 //! ([`super`]) alongside [`super::build`] so the enum reads separately from the
 //! two long wire matches; the shared setter helpers live in [`super::parse`].
@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use super::*;
 
-/// Applies one `/gui_set` key/value to `widget` — its kind's own keys.
+/// Applies one `/gui_set` key/value to `widget` -- its kind's own keys.
 pub(super) fn apply_widget(widget: &mut Widget, key: &str, v: &Value) -> bool {
     apply_kind(&mut widget.kind, key, v)
 }
@@ -55,7 +55,7 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
         // A free-standing ruler is its editor chrome and nothing else: the
         // unit it labels (`ruler`), the rate and the beat grid, the link that
         // joins it to the lanes. Without this arm a `/gui_set` of any of them
-        // was recorded in the registry and never reached the drawing — a
+        // was recorded in the registry and never reached the drawing -- a
         // script could not change the unit of the strip it had just built.
         WidgetKind::TimeRuler { editor } => editor.apply(key, v),
         WidgetKind::Custom(el) => el.set(key, v),

@@ -2,11 +2,11 @@
 //! in the real audio callback before the sound breaks?
 //!
 //! Unlike `examples/bench` (offline throughput: how fast `process_block`
-//! spins with nobody pacing it), this drives the production path — cpal
-//! callback, real-time scheduling, the OSC front door — and watches the
+//! spins with nobody pacing it), this drives the production path -- cpal
+//! callback, real-time scheduling, the OSC front door -- and watches the
 //! server's own CPU meter (`/server_status.reply`): average and peak per-block load
 //! as a percentage of the block budget, plus the late-block counter (blocks
-//! that exceeded their budget — the engine-side xrun proxy).
+//! that exceeded their budget -- the engine-side xrun proxy).
 //!
 //! Run the server first (single core = the default `--workers 0`; raise the
 //! node table for large counts), then ramp:
@@ -21,7 +21,7 @@
 //! The default server build runs the callback under real-time scheduling
 //! (the `rtprio` feature), which is what makes the numbers measure DSP
 //! throughput; against a server built without it, the ceiling is scheduling
-//! jitter instead — roughly half the capacity (see BUILD.md).
+//! jitter instead -- roughly half the capacity (see BUILD.md).
 //!
 //! The two axes of the test:
 //! - `--sines n`: sinusoids summed **inside one def** (per-node DSP weight);
@@ -33,7 +33,7 @@
 //! Cross-check xruns externally with `pw-top` (the ERR column) while it runs.
 //!
 //! Keep `--limit` under 100: past sustained-100% the callback stops sleeping
-//! between cycles and RTKit's RLIMIT_RTTIME watchdog raises SIGXCPU — the
+//! between cycles and RTKit's RLIMIT_RTTIME watchdog raises SIGXCPU -- the
 //! server's guard then demotes the audio thread back to SCHED_OTHER (the
 //! server survives, but the measurement is over: the ramp is no longer
 //! testing a real-time thread). Sooner with small quanta
@@ -203,7 +203,7 @@ fn recv(
 }
 
 /// Waits for a reply whose address matches, skipping others (2 s timeout).
-/// A `/fail` while waiting is fatal and reported verbatim — e.g. the server
+/// A `/fail` while waiting is fatal and reported verbatim -- e.g. the server
 /// rejecting the stress def.
 fn expect(
     socket: &UdpSocket,
@@ -234,7 +234,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // /server_status round-trip also confirms the server is new enough to report
     // the CPU meter (poll_status errors out on the older field set).
     poll_status(&socket, addr, &mut fails)
-        .map_err(|e| format!("{e} — expected a running server on {addr} (cargo run --release)"))?;
+        .map_err(|e| format!("{e} -- expected a running server on {addr} (cargo run --release)"))?;
 
     // Ship the def and wait for /done.
     let json = stress_def_json(opts.sines, opts.amp);
@@ -267,7 +267,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // One ramp step: /synth_new × step, frequencies spread deterministically.
         // Throttled in small batches: hundreds of adds landing on one block
         // boundary make *that* block run late (250 tree inserts inside one
-        // 1.33 ms budget) — an artifact of the ramp, not steady-state load.
+        // 1.33 ms budget) -- an artifact of the ramp, not steady-state load.
         for burst in 0..opts.step {
             if burst % 25 == 0 && burst > 0 {
                 std::thread::sleep(Duration::from_millis(25));
@@ -294,7 +294,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let fails_before = fails;
         // Two polls: the first closes the peak window holding the node
         // insertion transient; the second reads a clean steady-state window.
-        // Only the clean window decides the stop — an insertion-time late
+        // Only the clean window decides the stop -- an insertion-time late
         // block is the ramp's fault, not sustained overload (it is still
         // reported, as a note).
         let (_, _, late_mid) = poll_status(&socket, addr, &mut fails)?;
@@ -322,7 +322,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             break;
         }
         if late_step > 0 {
-            stop_reason = format!("{late_step} late block(s) — the callback missed its budget");
+            stop_reason = format!("{late_step} late block(s) -- the callback missed its budget");
             break;
         }
         if peak > opts.limit {

@@ -95,7 +95,7 @@ impl OscServer {
         })
     }
 
-    /// A server with **no socket front** — the pulled mode. Commands and
+    /// A server with **no socket front** -- the pulled mode. Commands and
     /// replies travel only through the ring attached with
     /// [`Self::attach_ipc`], and the host drives the loop by calling
     /// [`Self::step`] before each block instead of [`Self::run`]. This is the
@@ -105,7 +105,7 @@ impl OscServer {
     /// Differences from [`Self::bind`], all consequences of having no thread
     /// of its own: NRT jobs run **inline** on the driving thread (same order,
     /// same results), and streams/timetags take their time from the **engine
-    /// sample clock** rather than the wall clock (`TimeSource::Sample`) —
+    /// sample clock** rather than the wall clock (`TimeSource::Sample`) --
     /// `unix_epoch` (Unix seconds at sample 0) anchors that axis so a
     /// wall-clocked client's bundle timetags still land correctly; pass the
     /// current time for live use, or any fixed origin for deterministic runs.
@@ -218,7 +218,7 @@ impl OscServer {
             self.faust_submitted += 1;
         }
         // Without the `faust` feature there is no compiler to reload them, so a
-        // bundle's Faust defs are silently inert — warn so a standalone built
+        // bundle's Faust defs are silently inert -- warn so a standalone built
         // without `faust` does not look like it "lost" instruments.
         #[cfg(not(feature = "faust"))]
         if std::fs::read_dir(store.faustdefs_dir())
@@ -276,13 +276,13 @@ impl OscServer {
         self.store = Some(store);
     }
 
-    /// What a reload does with the defs that did not load: name them, or —
-    /// under `--prune-defs` — drop them.
+    /// What a reload does with the defs that did not load: name them, or --
+    /// under `--prune-defs` -- drop them.
     ///
     /// Failing to load is **not** by itself a reason to delete: a def whose
     /// family this build lacks fails too, and a `--no-default-features` boot
     /// would eat the library. So the default is to say which def and where the
-    /// library is, once, with the one command that clears it — the warnings
+    /// library is, once, with the one command that clears it -- the warnings
     /// were repeating every boot forever with no way to tell what they were
     /// about (a `PlayBuf` that grew from four inputs to seven left seven of
     /// them on the author's machine).
@@ -293,7 +293,7 @@ impl OscServer {
         if !self.prune_dead_defs {
             warn!(
                 "{} persisted def(s) did not load, and will warn again at every boot; they are in \
-                 {} — drop them with `clausters --prune-defs`",
+                 {} -- drop them with `clausters --prune-defs`",
                 dead.len(),
                 defs_dir.display()
             );
@@ -397,14 +397,14 @@ impl OscServer {
 
     /// One pulled iteration of the serving loop: drain the ring, run queued
     /// buffer jobs, send due stream snapshots, collect garbage and async
-    /// results. The headless counterpart of one [`Self::run`] turn — call it
+    /// results. The headless counterpart of one [`Self::run`] turn -- call it
     /// before each `process_block` (or at any convenient cadence). Returns
     /// `true` once a `/server_quit` has arrived.
     ///
     /// **A turn drains what fits, not everything.** The ceiling is
     /// [`ServeBudget`] ([`Self::set_budget`]), because this turn is spent on
     /// the thread that owes the next block of audio: what does not fit stays
-    /// queued — in the ring, or in the runner — and is taken on the following
+    /// queued -- in the ring, or in the runner -- and is taken on the following
     /// turns, in arrival order. Nothing is dropped and no reply is lost; a
     /// burst becomes latency instead of a missed deadline.
     pub fn step(&mut self) -> bool {
@@ -444,7 +444,7 @@ impl OscServer {
         self.budget = budget;
     }
 
-    /// Hands the jobs the host does better over to it — reading a soundfile,
+    /// Hands the jobs the host does better over to it -- reading a soundfile,
     /// where the filesystem is the host's and not ours. Off by default: a
     /// server that does not call this runs every job itself, as before.
     pub fn delegate_jobs(&mut self) {
@@ -502,7 +502,7 @@ impl OscServer {
 
     /// One housekeeping pass: the garbage the audio thread handed back, and
     /// whatever the async workers finished. Every path out of the recv runs
-    /// it — a packet, an idle tick, and a wake datagram alike — so a result is
+    /// it -- a packet, an idle tick, and a wake datagram alike -- so a result is
     /// reported as soon as the loop learns of it.
     pub(in crate::osc::server) fn collect_async(&mut self) {
         self.collect_garbage();
@@ -541,7 +541,7 @@ impl OscServer {
                 Garbage::RejectedSynth { id, why, .. } | Garbage::RejectedGroup { id, why, .. } => {
                     // Don't touch the mirror: on a duplicate-ID rejection the
                     // original node is still alive under this ID. The rejected
-                    // id never became a node — return it to its registry, and
+                    // id never became a node -- return it to its registry, and
                     // tell the `/server_notify` clients (the rejection is async, so
                     // there is no requester to reply to): a client registry
                     // reconciles its in-flight id off this `/fail`, since no
@@ -580,7 +580,7 @@ impl OscServer {
             // sibling IDs on this side, so previous/next are -1. The name is
             // the group's `/group_name` (empty for a synth or an unnamed
             // group): a client watching the tree learns *which* channel came
-            // up or went away without a follow-up query — and for a death
+            // up or went away without a follow-up query -- and for a death
             // there is no query left to make, which is why the mirror keeps
             // the label one beat longer than the entry.
             let name = match (ev.is_group, ev.kind) {
@@ -642,7 +642,7 @@ impl OscServer {
         }
     }
 
-    /// Retunes the socket read timeout — the run loop's idle tick — to the
+    /// Retunes the socket read timeout -- the run loop's idle tick -- to the
     /// fastest subscribed stream period, so streams keep their cadence without
     /// traffic. The 2 ms IPC poll (`attach_ipc`) is faster than any allowed
     /// period and wins unconditionally; without streams the tick falls back to
@@ -652,7 +652,7 @@ impl OscServer {
             return;
         }
         // A `/server_notify` client is a subscriber too, and the thing it
-        // subscribed to is filled by the audio thread — which cannot wake this
+        // subscribed to is filled by the audio thread -- which cannot wake this
         // loop. So it shortens the tick exactly as a stream does; see
         // `NOTIFY_INTERVAL`.
         let notify = (!self.clients.is_empty()).then_some(NOTIFY_INTERVAL);

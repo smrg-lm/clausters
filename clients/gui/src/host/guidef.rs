@@ -4,13 +4,13 @@
 //! window/widget tree rides as JSON in a single `/gui_def` argument (a string
 //! or a blob), exactly as a `SynthDef` rides `/def_send synth`, so JSON is the payload
 //! and OSC is the framing. serde's number handling keeps integer ids `i64` and
-//! continuous values `f64` distinct across the wire — the "flat primitives at
+//! continuous values `f64` distinct across the wire -- the "flat primitives at
 //! the boundary" rule the rest of the project relies on.
 //!
 //! The node type is deliberately **generic**: `{ id, type, <props…>, children }`.
 //! The catalog of widget *types* (containers, controls, the heavy GPU views)
 //! grows by adding a renderer/handler in later milestones, never by changing
-//! this shape — the host parses, registers and introspects any tree without
+//! this shape -- the host parses, registers and introspects any tree without
 //! knowing the concrete widget types yet (no GPU here).
 
 use std::fmt::Write as _;
@@ -47,7 +47,7 @@ pub struct GuiNode {
 
 impl GuiNode {
     /// Parses a GuiDef tree from the `/gui_def` JSON argument (a UTF-8 string or
-    /// a raw blob — both are accepted, like `/def_send synth`).
+    /// a raw blob -- both are accepted, like `/def_send synth`).
     pub fn parse(bytes: &[u8]) -> Result<GuiNode, serde_json::Error> {
         serde_json::from_slice(bytes)
     }

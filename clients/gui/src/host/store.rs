@@ -1,10 +1,10 @@
-//! On-disk persistence of GuiDefs — the GUI counterpart of the server's def store.
+//! On-disk persistence of GuiDefs -- the GUI counterpart of the server's def store.
 //!
 //! A GuiDef persists the same way a `SynthDef`/`GraphDef` does on the server
 //! (`src/server/defstore.rs`): JSON under a `defs/` subdirectory of the data
 //! directory, keyed by name, the JSON being the transparent source of truth. The
-//! GUI keeps its own small store rather than linking the server's — the same
-//! independence the rest of the gui crate holds — and resolves the **same** data
+//! GUI keeps its own small store rather than linking the server's -- the same
+//! independence the rest of the gui crate holds -- and resolves the **same** data
 //! directory, so a bundle's SynthDefs (`defs/synthdefs`), GraphDefs
 //! (`defs/graphdefs`) and GuiDefs (`defs/guidefs`) sit side by side and the
 //! standalone host can read them all.
@@ -25,7 +25,7 @@ const DATA_DIR_ENV: &str = "CLAUSTERS_DATA_DIR";
 /// Resolves the data directory the same way the server does: an explicit
 /// override wins, then `$CLAUSTERS_DATA_DIR`, then `$XDG_DATA_HOME/clausters`,
 /// then `$HOME/.local/share/clausters`. `None` when nothing is set and no home
-/// can be found — persistence is then disabled.
+/// can be found -- persistence is then disabled.
 pub fn resolve_data_dir(cli_override: Option<&str>) -> Option<PathBuf> {
     if let Some(path) = cli_override {
         return Some(PathBuf::from(path));
@@ -142,7 +142,7 @@ impl super::DefStore for GuiStore {
     }
 }
 
-/// The GuiDef root's `boot` messages — moved to the platform-agnostic
+/// The GuiDef root's `boot` messages -- moved to the platform-agnostic
 /// [`bundle`](super::bundle) module (the browser bundle boot needs it too);
 /// re-exported so the native standalone path keeps its `store::` spelling.
 pub use super::bundle::boot_messages;

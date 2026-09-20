@@ -1,6 +1,6 @@
 """The arrangement: tracks, lanes, regions, and the timeline they sit on.
 
-This is the client's side of `clausters_document::arrangement` — the model a
+This is the client's side of `clausters_document::arrangement` -- the model a
 multitrack editor edits, and the one the three classic applications (audio
 editor, multitrack editor, score editor) are built over. The crate defines the
 format; this module is the idiomatic way to write one and read one back, the
@@ -8,8 +8,8 @@ same way `clausters.document` is the idiomatic way to reach an edit.
 
 The vocabulary is the field's own and not this project's invention:
 
-- A **source** is samples. It lives outside the arrangement — the session's
-  table says where — and is never overwritten.
+- A **source** is samples. It lives outside the arrangement -- the session's
+  table says where -- and is never overwritten.
 - A `Region` is **one placed thing**: a span of the timeline (where it starts,
   how long, its fades, which of the overlapping ones is on top) plus a
   `Content` saying what fills it. Six regions over one source are six
@@ -29,7 +29,7 @@ A region is not a clip
 
 `Region` is the model's word; **clip** is the picture's. A clip, a lane row, a
 waveform are what the host draws; a region is what an edit names. Keeping them
-apart is deliberate — the multitrack's defects came from the thing drawn and the
+apart is deliberate -- the multitrack's defects came from the thing drawn and the
 thing addressed being one object.
 
 Time
@@ -39,7 +39,7 @@ Everything placed here is placed in **seconds**: a region's position, length
 and fades, every automation point, the markers, the loop and the punch. A
 multitrack is governed by physical time, the way the server and the clients are,
 and no tempo change moves anything in it. What fills a region is measured in its
-own source's units — seconds of a recording, beats of a node — and the two are
+own source's units -- seconds of a recording, beats of a node -- and the two are
 not the same axis. The crate makes that a type; here it is a rule the field
 names say (`position` and `length` are the region's, `start` and `duration` are
 its window's).
@@ -139,7 +139,7 @@ class Content:
 
     A window carries its `playrate` (a property of *this* placement: two regions
     over one source may play it at two rates) and the `args` of **this**
-    evaluation, for a window onto something generated — a function placed twice
+    evaluation, for a window onto something generated -- a function placed twice
     is two evaluations, possibly with different arguments, and the document
     carries them without reading them.
     """
@@ -152,7 +152,7 @@ class Content:
     other: "dict | None" = None
     #: Whether the window **wraps**: past the end of the source it begins
     #: again, and before the beginning it shows the source's own tail. What a
-    #: box longer than what it reads means — the alternative being that it
+    #: box longer than what it reads means -- the alternative being that it
     #: simply stops, which is what a box that does not loop does. A property of
     #: *this* placement, like `playrate`: two regions over one recording may
     #: loop and not loop.
@@ -161,11 +161,11 @@ class Content:
     @classmethod
     def onto(cls, window: dict, *, playrate: float = 1.0,
              args: "dict | None" = None, looping: bool = False) -> "Content":
-        """A window onto a source — a `clausters.form` segment reference, or any
+        """A window onto a source -- a `clausters.form` segment reference, or any
         `{"source": …, "start": …, "duration": …}` the crate accepts.
 
-        `duration` is how much of the source the window **reaches** — the whole
-        take, or the sum of a join's segments — and not how much the region
+        `duration` is how much of the source the window **reaches** -- the whole
+        take, or the sum of a join's segments -- and not how much the region
         shows: the region's own `length` says that, and a trim that hides part
         of the source leaves `duration` alone so the edge can be pulled back."""
         return cls(fill="window", window=window, playrate=playrate, args=args,
@@ -226,7 +226,7 @@ class Region:
     fade_in: "Fade | None" = None
     fade_out: "Fade | None" = None
     muted: bool = False
-    #: The curves that act on **this placement alone** — its own gain, its pan,
+    #: The curves that act on **this placement alone** -- its own gain, its pan,
     #: the parameters of whatever fills it. The same `Automation` a track
     #: carries, in the other place it belongs: a track's curve runs the length
     #: of the track and is drawn in a lane beside it, a region's runs the length
@@ -244,7 +244,7 @@ class Region:
         """Whether the two occupy any of the same time.
 
         Half-open, so a region ending exactly where the next begins does not
-        overlap it — which is what makes a cut into two regions not a crossfade.
+        overlap it -- which is what makes a cut into two regions not a crossfade.
         """
         return self.position < other.end and other.position < self.end
 
@@ -292,7 +292,7 @@ class Region:
 class Lane:
     """One of a track's several contents: an ordered list of regions.
 
-    Ardour's structure and our name — its *playlist* is this, and that word is
+    Ardour's structure and our name -- its *playlist* is this, and that word is
     spent on something else everywhere. `place` keeps the list in position
     order, so a re-saved session is stable and a diff of two saves is the edits
     rather than the iteration order.
@@ -347,7 +347,7 @@ class Automation:
     """A curve over one parameter, in the arrangement's own time.
 
     `target` says **what this automates** in the client's terms and is never
-    read here — a control name, a bus, a plugin's parameter index — the same
+    read here -- a control name, a bus, a plugin's parameter index -- the same
     door a leaf's configuration is, and for the same reason. The points are
     `{"at": seconds, "value": v, "data": …}`, the shape `clausters.document`'s
     points vocabulary already carries.
@@ -399,7 +399,7 @@ class Track:
     """A row of the arrangement: several lanes, one of them playing, the curves
     over it, and whatever the client says it is.
 
-    **What a track *is* — an instrument, a bus, a folder — is not here.** That
+    **What a track *is* -- an instrument, a bus, a folder -- is not here.** That
     is `config`, carried and never interpreted, for the reason a leaf is opaque:
     a def is code in the language of whoever wrote it. What the document owns is
     the structure: which lanes, which one plays, what is placed on them.
@@ -435,7 +435,7 @@ class Track:
 
     @property
     def end(self) -> float:
-        """Where the track's last region ends, across **every** lane — what it
+        """Where the track's last region ends, across **every** lane -- what it
         spans rather than what it plays, since an alternate take is still part
         of the multitrack."""
         return max((lane.end for lane in self.lanes), default=0.0)
@@ -594,12 +594,12 @@ class Multitrack:
     """
 
     #: What this multitrack is *at*, and the whole of what a stale edit is stale
-    #: against — the twin of the document's own version, and deliberately a
+    #: against -- the twin of the document's own version, and deliberately a
     #: second counter: an editor of the multitrack is not editing the tree, so one
     #: number would make every edit to either look like a change to both.
     version: int = FIRST_VERSION
     tracks: list = field(default_factory=list)
-    #: How wide the multitrack is, in channels — the master's own width, and what a
+    #: How wide the multitrack is, in channels -- the master's own width, and what a
     #: track's output is mixed into. Here for the reason `Track.channels` is.
     channels: int = 2
     tempo: list = field(default_factory=list)
@@ -615,12 +615,12 @@ class Multitrack:
 
     @property
     def end(self) -> float:
-        """Where the last region ends, across every track and every lane — how
+        """Where the last region ends, across every track and every lane -- how
         long the multitrack is."""
         return max((t.end for t in self.tracks), default=0.0)
 
     def regions(self):
-        """Every region, in track then lane then position order — **every**
+        """Every region, in track then lane then position order -- **every**
         lane, not only the ones that play, because an alternate take still names
         the source it plays."""
         for track in self.tracks:
@@ -657,7 +657,7 @@ class Multitrack:
 
     def set_tempo(self, tempo: Tempo) -> None:
         """Adds a tempo entry, in position order, replacing any already at that
-        beat — two tempos at one position is a state the map should not hold."""
+        beat -- two tempos at one position is a state the map should not hold."""
         self.tempo = [t for t in self.tempo if t.at != tempo.at]
         self.tempo.append(tempo)
         self.tempo.sort(key=lambda t: t.at)
@@ -737,7 +737,7 @@ class Source:
     The two fields a naive format leaves out and then cannot add are here:
     `provenance`, a reference to whatever produced the samples, carried opaquely
     so re-generating stays possible *without the document knowing how*; and
-    `editing`, a destructive edit that has not been confirmed — a save never
+    `editing`, a destructive edit that has not been confirmed -- a save never
     blocks on a confirmation, so a saved session has to be able to say *this is
     a working copy of that, and the person has not decided yet*.
     """
@@ -750,7 +750,7 @@ class Source:
     #: ``"external"`` (the user's own file), ``"session"`` (saved beside the
     #: document) or ``"temporary"`` (a working copy that dies with the edit).
     lifetime: str = "session"
-    #: Which generation of the content this is — bumped by a destructive edit,
+    #: Which generation of the content this is -- bumped by a destructive edit,
     #: so a reader holding an older copy knows to re-read.
     generation: int = 0
     channels: "int | None" = None
@@ -770,7 +770,7 @@ class Source:
 
     @classmethod
     def volatile(cls, lifetime: str = "session") -> "Source":
-        """Samples that have not been written down — a buffer never exported, a
+        """Samples that have not been written down -- a buffer never exported, a
         result never saved. A session may hold one, because saving must not be
         blocked by it, but a reader that finds one knows the samples are not
         there and opens that element unresolved rather than pretending."""
@@ -829,8 +829,8 @@ class Source:
 class FrozenSource:
     """A source a session names and this process does not hold.
 
-    Reading a session written elsewhere — or written here before a buffer was
-    allocated — gives a reference and not an object. Rather than losing it, a
+    Reading a session written elsewhere -- or written here before a buffer was
+    allocated -- gives a reference and not an object. Rather than losing it, a
     region's window holds this: the same ``bufnum`` a real buffer answers with,
     plus what the table said about where the samples are and what shape they
     have, so a re-save keeps every location it was given.
@@ -1098,17 +1098,17 @@ class Session:
     and is a **file**.
 
     The `document` field carries the general tree for what is not an
-    arrangement. It is the leg being walked off — what every current reader
-    opens — and what replaces it is already here: a composite region carries
+    arrangement. It is the leg being walked off -- what every current reader
+    opens -- and what replaces it is already here: a composite region carries
     that same tree, placed.
     """
 
-    #: The format version this build writes — `clausters.document.SESSION_FORMAT`,
+    #: The format version this build writes -- `clausters.document.SESSION_FORMAT`,
     #: which is the crate's `session::FORMAT`. A session **read** in an older
     #: format is migrated to this one first (`read`), since its numbers are
     #: read differently: format 2 placed the multitrack in beats.
     format: int = SESSION_FORMAT
-    #: The multitrack. Always present, possibly empty — which mirrors the crate,
+    #: The multitrack. Always present, possibly empty -- which mirrors the crate,
     #: where an absent arrangement reads as an empty one rather than as nothing.
     multitrack: "Multitrack" = field(default_factory=lambda: Multitrack())
     #: How the multitrack was being **looked at**: one entry per window. Carried for
@@ -1119,7 +1119,7 @@ class Session:
     document: "dict | None" = None
     #: Where each source is, keyed by source id.
     sources: dict = field(default_factory=dict)
-    #: What produced the session as a whole — the scripts behind it — carried
+    #: What produced the session as a whole -- the scripts behind it -- carried
     #: opaquely. The document never knows how to re-run them; it only has to not
     #: lose the reference.
     provenance: "dict | None" = None
@@ -1159,7 +1159,7 @@ class Session:
         return self.sources.get(int(id))
 
     def volatile(self) -> list:
-        """Sources whose samples are not written down anywhere — what a save
+        """Sources whose samples are not written down anywhere -- what a save
         consults before promising the file is complete."""
         return sorted(id for id, s in self.sources.items() if not s.is_resolvable)
 
@@ -1168,7 +1168,7 @@ class Session:
         return sorted(id for id, s in self.sources.items() if s.is_being_edited)
 
     def dangling(self) -> list:
-        """Sources the multitrack names but the table does not hold — what an opening
+        """Sources the multitrack names but the table does not hold -- what an opening
         reader reports rather than discovering one element at a time.
 
         **Every** lane is walked and not only the ones that play: an alternate

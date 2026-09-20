@@ -12,7 +12,7 @@
 //!
 //! **On measuring a spectrum exactly.** Two of these ([`alias_snr_db`],
 //! [`amplitude_at`]) are exact only when the analysis window spans a whole
-//! number of the signal's periods — *coherent sampling*. Under that condition a
+//! number of the signal's periods -- *coherent sampling*. Under that condition a
 //! rectangular window has no spectral leakage at all, so a component's energy
 //! sits in one bin and nothing bleeds into its neighbours. The alternative,
 //! windowing a non-coherent signal, buries anything below the window's sidelobe
@@ -31,7 +31,7 @@
 use clausters_core::fft;
 use clausters_core::window::Window;
 
-/// Root mean square of a block — the amplitude measure to compare against an
+/// Root mean square of a block -- the amplitude measure to compare against an
 /// analytic gain. A sine of peak amplitude `a` has an RMS of `a / sqrt(2)`.
 pub fn rms(x: &[f32]) -> f32 {
     if x.is_empty() {
@@ -45,7 +45,7 @@ pub fn peak(x: &[f32]) -> f32 {
     x.iter().fold(0.0f32, |m, &v| m.max(v.abs()))
 }
 
-/// Mean of the block — its DC component.
+/// Mean of the block -- its DC component.
 pub fn dc(x: &[f32]) -> f32 {
     if x.is_empty() {
         return 0.0;
@@ -59,7 +59,7 @@ pub fn dc(x: &[f32]) -> f32 {
 /// It measures over the span *between the first and last crossing*, not over
 /// the buffer: counting crossings and dividing by the buffer's length silently
 /// throws away the partial period at each end, which biases the estimate low by
-/// up to one whole period. Over a 0.2 s window that is a granularity of 5 Hz —
+/// up to one whole period. Over a 0.2 s window that is a granularity of 5 Hz --
 /// enough that a 330 Hz tone reads 325 whenever the buffer happens to start
 /// just after a crossing, which is exactly the intermittent failure this
 /// replaced. Between crossings the only error left is where each one sits
@@ -117,7 +117,7 @@ pub fn dft_at(x: &[f32], hz: f32, sr: f32) -> (f64, f64) {
     (re, im)
 }
 
-/// Peak amplitude of the sinusoidal component at `hz` — the scale a real
+/// Peak amplitude of the sinusoidal component at `hz` -- the scale a real
 /// sinusoid of amplitude `a` reports as `a`.
 pub fn amplitude_at(x: &[f32], hz: f32, sr: f32) -> f32 {
     let (re, im) = dft_at(x, hz, sr);
@@ -133,7 +133,7 @@ pub fn phase_at(x: &[f32], hz: f32, sr: f32) -> f32 {
 /// The complex response a filter applied to a signal, measured from an actual
 /// input/output pair at one frequency: `(gain, phase_shift_radians)`.
 ///
-/// Feed it the *steady-state* portion of both buffers — a filter's first
+/// Feed it the *steady-state* portion of both buffers -- a filter's first
 /// samples are its transient, and including them measures the transient too.
 pub fn response_at(input: &[f32], output: &[f32], hz: f32, sr: f32) -> (f32, f32) {
     let (ir, ii) = dft_at(input, hz, sr);
@@ -155,7 +155,7 @@ pub fn response_at(input: &[f32], output: &[f32], hz: f32, sr: f32) -> (f32, f32
 /// Both conditions matter for [`alias_snr_db`]. Whole periods make the analysis
 /// leak-free. An *odd* bin index `k` is coprime to the power-of-two `n`, which
 /// is what keeps aliased partials off the harmonic bins: a partial at `m·k`
-/// folds to `|m·k − j·n|` bins, a multiple of `gcd(k, n)` — with `gcd = k` the
+/// folds to `|m·k − j·n|` bins, a multiple of `gcd(k, n)` -- with `gcd = k` the
 /// aliases would land exactly on top of the harmonics and be invisible.
 pub fn coherent_freq(target: f32, sr: f32, n: usize) -> f32 {
     let exact = target as f64 * n as f64 / sr as f64;
@@ -169,7 +169,7 @@ pub fn coherent_freq(target: f32, sr: f32, n: usize) -> f32 {
 }
 
 /// Ratio, in dB, between the energy of a periodic signal's harmonics and
-/// everything else below Nyquist — the standard figure for how much an
+/// everything else below Nyquist -- the standard figure for how much an
 /// oscillator aliases. Higher is cleaner.
 ///
 /// `x.len()` must be a size [`clausters_core::fft`] supports and `f0` must come
@@ -222,7 +222,7 @@ pub fn alias_snr_db(x: &[f32], f0: f32, sr: f32) -> f32 {
 /// Welch-averaged power spectrum: `x` split into `n`-sample frames overlapping
 /// by half, each windowed, the magnitudes squared and averaged over frames.
 ///
-/// Averaging is what makes a *noise* floor assertable — a single frame's bins
+/// Averaging is what makes a *noise* floor assertable -- a single frame's bins
 /// are themselves random with 100 % relative standard deviation, so a slope fit
 /// over one frame is meaningless. Returns `n / 2` bins, bin `b` centred at
 /// `b · sr / n`.
@@ -290,7 +290,7 @@ pub fn spectral_slope_db_per_octave(x: &[f32], sr: f32, lo_hz: f32, hi_hz: f32) 
 /// Delay of `y` relative to `x` in samples, to sub-sample resolution.
 ///
 /// Cross-correlates the two and refines the peak with a parabola through its
-/// two neighbours — the standard estimator, exact for a symmetric peak and
+/// two neighbours -- the standard estimator, exact for a symmetric peak and
 /// accurate to a small fraction of a sample otherwise. Searches lags in
 /// `0..max_lag`, so it measures a *delay*, not a lead.
 pub fn group_delay_samples(x: &[f32], y: &[f32], max_lag: usize) -> f32 {

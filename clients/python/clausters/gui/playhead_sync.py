@@ -1,6 +1,6 @@
 """`PlayheadSync`: play, pause, stop and locate, with the views' playhead in step.
 
-Every time view the host draws — a lane, a piano-roll, an engraved page — shows
+Every time view the host draws -- a lane, a piano-roll, an engraved page -- shows
 the same line, and every script that plays into one needs the same four buttons.
 This is that logic, once, independent of which widget it drives.
 
@@ -8,11 +8,11 @@ This is that logic, once, independent of which widget it drives.
 anchor: the sample-clock value the view's time 0 maps to. The host reads the
 engine's clock every frame and draws the line from there, so a pass costs *one*
 message, not one per frame. A transport that is not playing is the other half of
-that number — ``playhead_at`` goes negative and the static ``playhead`` holds
+that number -- ``playhead_at`` goes negative and the static ``playhead`` holds
 the cursor where the music was left, which is what makes pause look like pause.
 
 **Two axes meet here.** The anchor lives on the engine's sample clock (samples,
-always); the static cursor lives on the *view's* own axis — timeline samples for
+always); the static cursor lives on the *view's* own axis -- timeline samples for
 a lane, milliseconds for an engraved page. `PlayheadSync` converts to the first
 itself and takes `to_units` for the second, which is the whole of what a view
 has to say about its units.
@@ -46,8 +46,8 @@ from .. import _native
 __all__ = ["PlayheadSync"]
 
 #: How often a rolling transport asks itself whether the pass has ended, in
-#: seconds. It is not the line's frame rate — the host sweeps that from the
-#: engine's clock without being told — only how sharply the cursor parks at the
+#: seconds. It is not the line's frame rate -- the host sweeps that from the
+#: engine's clock without being told -- only how sharply the cursor parks at the
 #: end of the pass.
 TICK = 0.05
 
@@ -59,7 +59,7 @@ class PlayheadSync:
     Args:
         host: the `clausters.gui.host.GuiHost` the widgets live on. May be
             ``None`` and set later (a view that is drawn before it is opened).
-        ids: the widget ids showing the line — one id, a sequence of them, or a
+        ids: the widget ids showing the line -- one id, a sequence of them, or a
             callable returning either, for a view that redraws (its lanes are
             new widgets, and the transport must find the current ones).
         source: ``source(at, **kw)`` starts a pass at beat ``at`` and returns
@@ -79,7 +79,7 @@ class PlayheadSync:
             `update` parks the cursor when a pass ends. Read on each use, so a
             structure that grew
             (a clip dragged past the end) ends where it now ends.
-        head_clock: which counter the view's line is drawn from —  ``"device"``
+        head_clock: which counter the view's line is drawn from --  ``"device"``
             (the default: the engine's sample clock, which never stops, so this
             class owns the position and anchors the line to it) or
             ``"transport"`` (the **server's transport position**, so the server
@@ -116,7 +116,7 @@ class PlayheadSync:
         #: In ``"transport"`` the position, the rolling state, the seek and the loop
         #: are all the audio server's, and this class holds none of them.
         self.head_clock = str(head_clock)
-        #: The server the anchor queries for its clock — the destination of the
+        #: The server the anchor queries for its clock -- the destination of the
         #: last `play`, or whatever `anchor` was given.
         self.server = None
         self._playhead = None
@@ -124,7 +124,7 @@ class PlayheadSync:
         self._ended = False  # the end of a pass was already parked (send it once)
         #: The **tail**: `(clock beat, timeline beat)` at the moment the scan
         #: drained. A scan runs out when it renders its *last item*, not when
-        #: the sound is over — the last clip is still sounding, and the line
+        #: the sound is over -- the last clip is still sounding, and the line
         #: must go on crossing it. `None` outside that stretch.
         self._tail = None
         self._ticking = False  # a self-driven `update` is scheduled
@@ -178,8 +178,8 @@ class PlayheadSync:
     def playing(self) -> bool:
         """Whether anything is sounding: a pass is rolling, **or** its scan has
         drained and the last item is still ringing (the tail). It goes False on
-        its own at the end of the pass — where the last item ends, not where it
-        started — which is what `update` decides.
+        its own at the end of the pass -- where the last item ends, not where it
+        started -- which is what `update` decides.
 
         The tail counts as playing because everything a caller does with this
         answer is true of it: a pause holds where the music is, a seek starts a
@@ -221,7 +221,7 @@ class PlayheadSync:
         The clock is the **pass's own** (a timeline's hidden one), and it
         has to be *rolling*: an offline render computes the whole pass in an
         instant and its beat is the queue's, not the wall's, so there is no tail
-        to sweep and the cursor parks straight away — exactly as it did before
+        to sweep and the cursor parks straight away -- exactly as it did before
         this existed."""
         if self._tail is None:
             return None
@@ -237,7 +237,7 @@ class PlayheadSync:
 
         **The read is separate from the answer** because asking is a round trip
         and `position` is not: a counter refreshes on its own tick, a button
-        reads what is already known, and the *line* refreshes neither — the host
+        reads what is already known, and the *line* refreshes neither -- the host
         draws it straight from the segment, every frame, with nothing sent. On a
         device-clock transport this does nothing, since the position is here.
 
@@ -269,7 +269,7 @@ class PlayheadSync:
 
     def samples_to_beats(self, samples: float) -> float:
         """Samples of the transport → beats, through the same map `beats_to_samples`
-        goes the other way — so what the engine reports and what the ruler draws
+        goes the other way -- so what the engine reports and what the ruler draws
         are one function read in two directions. Seconds, where what plays
         holds no map."""
         secs = float(samples) / self.sample_rate if self.sample_rate > 0 else 0.0
@@ -296,14 +296,14 @@ class PlayheadSync:
 
     @property
     def at(self) -> float:
-        """The beat a bare `play` starts from — where a `pause`, a `locate` or the
+        """The beat a bare `play` starts from -- where a `pause`, a `locate` or the
         end of a pass left the transport. It is *not* `position`: a play while
         already playing restarts from here, not from where the music got to."""
         return self._at
 
     def play(self, server=None, *, at: float | None = None, **kw):
-        """Play (or resume) from beat ``at`` — the transport's position by
-        default — and anchor the line to the engine clock. ``server`` is where
+        """Play (or resume) from beat ``at`` -- the transport's position by
+        default -- and anchor the line to the engine clock. ``server`` is where
         the anchor's clock query goes (remembered for later passes); any other
         keyword goes on to `source`. Returns what the pass plays.
 
@@ -340,12 +340,12 @@ class PlayheadSync:
 
     def pause(self) -> float:
         """Halt where we are: the cursor stays on what the music stopped on, and
-        `play` resumes from there. What is already sounding keeps sounding —
+        `play` resumes from there. What is already sounding keeps sounding --
         stopping a playhead is not a panic button (the script owns its voices).
         Returns the position it stopped at.
 
         **Governed** (a server transport holds the samples), the playhead is
-        not stopped at all — it is starved of time. `/transport_stop` freezes
+        not stopped at all -- it is starved of time. `/transport_stop` freezes
         the server's subtree and its queue, the clock freezes with them, and the
         scan simply stops making progress. That is what lets `resume` continue
         the sound rather than start it again."""
@@ -363,7 +363,7 @@ class PlayheadSync:
             else:
                 self._halt()
             return self.position
-        # Where the music stopped — including inside the tail, where the scan
+        # Where the music stopped -- including inside the tail, where the scan
         # has drained but the last clip is still sounding.
         self._at = self.position
         if self.governed:
@@ -384,7 +384,7 @@ class PlayheadSync:
         reads what it plays as it now stands and starts it again from `at`,
         resume picks the frozen sound back up. Governed, the server still holds
         every node's internal state and every scheduled bundle, so what comes
-        back is the same sound carried on — a stochastic texture continues
+        back is the same sound carried on -- a stochastic texture continues
         mid-gesture instead of restarting. Ungoverned there is nothing frozen to
         continue, so this falls back to `play`."""
         if not self.governed:
@@ -438,7 +438,7 @@ class PlayheadSync:
         return self
 
     def loop(self, start: float | None = None, end: float | None = None):
-        """The span the position wraps inside, in beats — or, with
+        """The span the position wraps inside, in beats -- or, with
         no arguments (or ``None``), looping off.
 
         **The transport's only**, because it is the only one the engine can wrap:
@@ -464,8 +464,8 @@ class PlayheadSync:
         """Have the end of the pass noticed, without a script asking.
 
         `update` is the question "has it ended yet", and somebody has to ask it.
-        That used to be the script's own loop — which is how every example came
-        to have one — and it is now the host's
+        That used to be the script's own loop -- which is how every example came
+        to have one -- and it is now the host's
         `clausters.base.appclock.AppClock`, the same thread the window's
         gestures arrive on. A transport with no host (a view built but never
         opened) simply keeps `update` as the manual call it always was.
@@ -488,7 +488,7 @@ class PlayheadSync:
         "Still something to notice" is **not** `playing`: a scan that has just
         run out is not playing and is exactly the moment `update` exists for, so
         stopping there would leave the cursor sweeping off the end forever. It
-        is something sounding, or a drained scan that has not been parked yet —
+        is something sounding, or a drained scan that has not been parked yet --
         and a `pause`, which keeps its playhead without ending it, stops the
         asking until the next `play`."""
         ph = self._playhead
@@ -511,7 +511,7 @@ class PlayheadSync:
 
         The pass says when it ran out (`clausters.seq.Timeline.finished`),
         so the end needs no timing here: the cursor stops at the `extent`
-        rather than sweeping off the view, and stays there — the transport is
+        rather than sweeping off the view, and stays there -- the transport is
         *at the end*, so it is a `locate` (a rewind) that goes back to the top."""
         ph = self._playhead
         if self._ended or ph is None or not ph.finished:
@@ -520,8 +520,8 @@ class PlayheadSync:
         clock = self._pass_clock()
         if end > ph.position() and getattr(clock, "rolling", False):
             if self._tail is None:
-                # From the moment the last item was *rendered* — which is a
-                # loop pass or two before anyone noticed — not from now.
+                # From the moment the last item was *rendered* -- which is a
+                # loop pass or two before anyone noticed -- not from now.
                 since = getattr(ph, "scanned_at", None)
                 if since is None and getattr(ph, "_player", None) is not None:
                     # A timeline's clock beat *is* its beat, and it holds the
@@ -544,9 +544,9 @@ class PlayheadSync:
         beat ``at`` and sweeps on with the audio. Returns whether it could.
 
         The anchor is a **query**: it asks the server for its clock, and a server
-        that does not answer leaves the view without a line — so the failure is
+        that does not answer leaves the view without a line -- so the failure is
         reported, not swallowed (a playhead that silently never appears is the
-        worst of both). A destination with no engine clock — an NRT score — has
+        worst of both). A destination with no engine clock -- an NRT score -- has
         nothing to anchor to and answers False.
         """
         from ..errors import ReplyTimeout
@@ -581,7 +581,7 @@ class PlayheadSync:
         return self
 
     def cursor(self, beat):
-        """Draw (or clear) the static cursor — the located position of a
+        """Draw (or clear) the static cursor -- the located position of a
         transport that is not playing. ``None`` clears it, which is what the
         clock anchor does when a pass takes the line over."""
         if self.host is None:

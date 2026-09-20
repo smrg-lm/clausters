@@ -3,7 +3,7 @@
 //! Where a SynthDef/FaustDef persists a *single* synthesis node, a GraphDef
 //! persists a whole **configuration of nodes wired by buses**: an effect
 //! chain, a mixer, a layered instrument. It is a network-thread /
-//! translation-time abstraction only — instantiating one expands into the
+//! translation-time abstraction only -- instantiating one expands into the
 //! primitives that already exist (a group, member `/synth_new`s, `/node_map`
 //! wiring), so the audio thread never learns the word "GraphDef" and
 //! RT-safety is untouched.
@@ -11,14 +11,14 @@
 //! A GraphDef exposes a **named parameter surface**: ports that map to inner
 //! member controls (with optional linear scaling). All external actuation
 //! (`/node_set`, ...) targets the surface, *never* the private member node ids
-//! — the same encapsulation a composite SynthDef would give. The instance's
+//! -- the same encapsulation a composite SynthDef would give. The instance's
 //! internal buses are private to each instantiation, allocated from a
 //! reserved range at the top of the bus space (away from client-owned buses,
 //! the same idea as the reserved auto node-id range).
 //!
 //! The spec ([`GraphDefSpec`]) is the transparent source of truth, persisted
 //! verbatim as `defs/graphdefs/<name>.json`. There is no compiled artifact
-//! to cache — a GraphDef references other defs, which carry their own.
+//! to cache -- a GraphDef references other defs, which carry their own.
 
 use std::collections::HashMap;
 
@@ -28,8 +28,8 @@ use serde::{Deserialize, Serialize};
 /// of each bus space so it never collides with client-allocated buses. The
 /// base is `bus_count - reserved`, computed from the live counts in
 /// `CmdTranslator::new` (so it tracks `--audio-buses`/`--control-buses`).
-/// The constants live in `clausters_core::registry` — the shared resource
-/// model — so client allocators subtract the same reservation they were built
+/// The constants live in `clausters_core::registry` -- the shared resource
+/// model -- so client allocators subtract the same reservation they were built
 /// against. Documented in `docs/schemas.md`.
 pub use clausters_core::registry::{graph_audio_reserved, graph_control_reserved};
 
@@ -54,7 +54,7 @@ pub struct GraphBus {
     /// inside another does not invent its own output, it is handed one, and the
     /// parent names which of *its* buses that is (see [`MemberKind::Graph`]).
     ///
-    /// It is a declaration and not a switch — what actually decides is whether
+    /// It is a declaration and not a switch -- what actually decides is whether
     /// the instantiation was handed this name, and a graph instantiated on its
     /// own by `/graph_new` is handed nothing and allocates everything. So the
     /// same def works standalone and nested, and this is here to say which
@@ -69,14 +69,14 @@ fn one() -> usize {
 
 /// A control value of a member: a literal `f32`, or the *name* of an internal
 /// bus (resolved to its allocated first index at instantiation). The bus form
-/// is how a member is wired — its bus-selecting control (`out`/`in` on a
+/// is how a member is wired -- its bus-selecting control (`out`/`in` on a
 /// Faust def, or whatever control feeds an `Out`/`In` UGen) is set to a
 /// private bus, uniformly for SynthDef and FaustDef members.
 ///
 /// **A bus name may name one of its channels**, `"mix:1"`, resolving to the
-/// bus's first index plus 1 — and `"OUT:1"` names the hardware's second
+/// bus's first index plus 1 -- and `"OUT:1"` names the hardware's second
 /// channel, so a master's own stereo output is written the same way. A UGen has one output, so a stereo writer is two
-/// `Out` rows and each of them needs *its own* bus index — and a member cannot
+/// `Out` rows and each of them needs *its own* bus index -- and a member cannot
 /// compute one, because a bus-selecting input must be a control or a constant
 /// for the wiring to be readable at all. Without this, a multichannel private
 /// bus could be allocated and only its first channel could ever be reached,
@@ -160,12 +160,12 @@ pub struct GraphMember {
     pub voice: bool,
     /// **A slot: a member there is a changing number of.**
     ///
-    /// A shared member (no slot) is instantiated once at `/graph_new` — the
+    /// A shared member (no slot) is instantiated once at `/graph_new` -- the
     /// always-on part: buses, mixer, effects. A slot member is instantiated on
     /// demand by `/graph_addSlot`, once per thing there is one of, wired to the
     /// same private buses: a voice of a synth, a clip on a track, an effect in a
-    /// chain. They are one mechanism because they are one question — how many of
-    /// these are there right now — and the answer changes while the graph is
+    /// chain. They are one mechanism because they are one question -- how many of
+    /// these are there right now -- and the answer changes while the graph is
     /// sounding, which is why it cannot be a member list.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slot: Option<String>,
@@ -184,8 +184,8 @@ impl GraphMember {
     }
 }
 
-/// One inner target of a surface port: a member's control — or, for a member
-/// that is itself a graph, one of **its** ports — with optional linear scaling
+/// One inner target of a surface port: a member's control -- or, for a member
+/// that is itself a graph, one of **its** ports -- with optional linear scaling
 /// applied to the incoming value (`mul`·x + `add`).
 ///
 /// Two scalings compose the way two functions do: the outer one runs first, so
@@ -199,7 +199,7 @@ pub struct SurfaceTarget {
     /// The member's control, for a [`MemberKind::Def`] member.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub control: String,
-    /// The member's own surface **port**, for a [`MemberKind::Graph`] member —
+    /// The member's own surface **port**, for a [`MemberKind::Graph`] member --
     /// which is what re-exporting a nested graph's interface is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub port: Option<String>,
@@ -323,7 +323,7 @@ impl GraphDefSpec {
         Ok(())
     }
 
-    /// The slot a port drives, or `None` when it is a shared port — which is
+    /// The slot a port drives, or `None` when it is a shared port -- which is
     /// what says whether its default is applied at `/graph_new` or at
     /// `/graph_addSlot`. A port with no targets is shared.
     pub fn port_slot(&self, port: &str) -> Option<&str> {
@@ -352,8 +352,8 @@ use std::sync::Arc;
 /// A resolved surface: port name → `(member node id, control index, mul, add)`.
 pub type ResolvedSurface = HashMap<String, Vec<(i32, u32, f32, f32)>>;
 
-/// How deeply GraphDefs may be nested inside each other. A cycle — a graph that
-/// contains itself, however indirectly — is a def that cannot be instantiated
+/// How deeply GraphDefs may be nested inside each other. A cycle -- a graph that
+/// contains itself, however indirectly -- is a def that cannot be instantiated
 /// at all, and this is what says so instead of recursing until the stack ends.
 pub const MAX_GRAPH_DEPTH: usize = 8;
 
@@ -377,7 +377,7 @@ pub struct GraphInstance {
     /// themselves graphs. Freed with this one, and what a re-exported port
     /// resolves through.
     pub children: HashMap<usize, i32>,
-    /// The slot sub-group ids spawned inside this instance (voices included —
+    /// The slot sub-group ids spawned inside this instance (voices included --
     /// a voice is the slot named `"voice"`).
     pub voices: HashSet<i32>,
 }
@@ -390,7 +390,7 @@ pub struct GraphVoice {
     /// Which slot this fills. A voice is `"voice"`.
     pub slot: String,
     pub surface: ResolvedSurface,
-    /// Member index → node id, for the slot's one-node members — what
+    /// Member index → node id, for the slot's one-node members -- what
     /// `/graph_moveSlot` re-wires against the instance it moves into.
     pub nodes: HashMap<usize, i32>,
     /// Member index → sub-instance group id, as in [`GraphInstance::children`].

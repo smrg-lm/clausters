@@ -1,15 +1,15 @@
-//! Adaptive ruler tick math for the editor-grade views — pure, display-only.
+//! Adaptive ruler tick math for the editor-grade views -- pure, display-only.
 //!
 //! A time axis under the waveform/spectrogram, an amplitude axis beside the
 //! waveform and a frequency axis beside the spectrogram need tick positions
 //! and labels that stay legible at any zoom. The math is classic editor
-//! chrome: each unit owns a ladder of candidate steps — a 1-2-5 decimal
+//! chrome: each unit owns a ladder of candidate steps -- a 1-2-5 decimal
 //! progression (time in seconds or samples; amplitude in normalized/percent/
 //! integer sample units; zoomed-in frequency spans), a binary/bar ladder on
 //! the musical `beats` axis (labels `bar:beat` off the client's quant grid,
 //! via the shared `clausters_core::tempoclock::bar`/`beat_in_bar`), a fixed
 //! mirrored dB rung list on the dBFS amplitude axis, and decade ticks on the
-//! wide frequency axis — and the layout picks the smallest step whose
+//! wide frequency axis -- and the layout picks the smallest step whose
 //! **measured labels fit**: each candidate is tried against its *own*
 //! formatted labels (`font::width`/`height` at the ruler's font scale, in
 //! device pixels, so HiDPI is exact), never against a mean width. Every
@@ -20,7 +20,7 @@
 //! from `clausters_core::scale`), so a tick labeled 1 kHz sits exactly on the
 //! 1 kHz row of pixels. No GPU, no widget types: positions come out as
 //! fractions of the visible span, and the two strip painters here
-//! ([`draw_ticks_h`]/[`draw_ticks_v`]) turn them into mesh geometry — one
+//! ([`draw_ticks_h`]/[`draw_ticks_v`]) turn them into mesh geometry -- one
 //! drawing of a ruler strip, shared by every ruled view (the editor-grade
 //! frames and the plot).
 
@@ -73,8 +73,8 @@ pub(crate) enum TimeUnit<'a> {
 }
 
 /// The ruler's own reading of the host's size roles: the `caption_scale` its
-/// labels render at — the layout measures every candidate label at that scale,
-/// so what fits in the math is exactly what fits on screen — plus the
+/// labels render at -- the layout measures every candidate label at that scale,
+/// so what fits in the math is exactly what fits on screen -- plus the
 /// `label_gap` between two drawn labels and the `tick_gap` between any two
 /// drawn ticks (labels drop before ticks do).
 #[derive(Debug, Clone, Copy)]
@@ -96,7 +96,7 @@ impl Gaps {
     }
 
     /// Minimum device pixels between labels on a vertical axis: one line of
-    /// text plus clear space — the measured-height counterpart of `label`.
+    /// text plus clear space -- the measured-height counterpart of `label`.
     fn label_v(&self) -> f64 {
         font::height(self.scale) as f64 + self.gap
     }
@@ -140,7 +140,7 @@ fn decimal_steps(axis_len: f64, width_px: f64, min_step: f64, g: Gaps) -> Vec<f6
 }
 
 /// The smallest candidate step whose formatted labels fit `width_px` without
-/// collision — each candidate tried against its **own** labels via
+/// collision -- each candidate tried against its **own** labels via
 /// [`labels_fit`]. When nothing fits (a degenerate strip), a step wider than
 /// the window leaves at most one visible label, which cannot collide.
 fn fit_step(
@@ -273,7 +273,7 @@ pub(crate) fn time_ticks(
 /// **The axis is still samples, and only the marks move.** Without a map a
 /// beat is worth a fixed number of them, so the ticks are evenly spaced and
 /// the placement is a straight line. With one, each tick is placed by asking
-/// the map what second its beat falls on — majors and minors alike, which is
+/// the map what second its beat falls on -- majors and minors alike, which is
 /// what makes a subdivision inside a ramp land where it sounds instead of
 /// halfway between two beats that are themselves moving.
 #[allow(clippy::too_many_arguments)]
@@ -310,7 +310,7 @@ fn beat_ticks(
     emit_time_ticks(b0, blen, width_px, step, step / 2.0, pos, &fmt, g)
 }
 
-/// The second a beat falls on, per the map (0 without one — a caller that has
+/// The second a beat falls on, per the map (0 without one -- a caller that has
 /// no map never reaches this).
 fn m_secs(map: Option<&TempoMap>, b: f64) -> f64 {
     map.map_or(0.0, |m| m.secs_at(b))
@@ -347,7 +347,7 @@ fn beat_steps(blen: f64, width_px: f64, quant: f64, g: Gaps) -> Vec<f64> {
 }
 
 /// The narrowest gap, in device pixels, between two neighbouring ticks at
-/// multiples of `step` — the axis' own spacing rather than its length divided
+/// multiples of `step` -- the axis' own spacing rather than its length divided
 /// by a count, which are the same number only while `pos` is a straight line.
 fn min_gap_px(
     step: f64,
@@ -376,7 +376,7 @@ fn min_gap_px(
 
 /// Emits the ticks of a horizontal axis: majors (labeled by `fmt`) at
 /// multiples of `step`, minors at multiples of `minor` when they clear the
-/// minimum tick gap. `pos` places an axis value as a fraction of the strip —
+/// minimum tick gap. `pos` places an axis value as a fraction of the strip --
 /// a straight line for every unit but the mapped beat.
 #[allow(clippy::too_many_arguments)]
 fn emit_time_ticks(
@@ -479,10 +479,10 @@ fn fmt_hz(f: f64) -> String {
     }
 }
 
-/// The cursor-readout form of a sample position in clock time — millisecond
+/// The cursor-readout form of a sample position in clock time -- millisecond
 /// precision, refined to the view's pixel resolution (`secs_per_px`) when a
 /// pixel spans less than a millisecond, so at deep zoom the readout never
-/// shows fewer decimals than the ruler labels — falling back to a sample
+/// shows fewer decimals than the ruler labels -- falling back to a sample
 /// count when no rate is known.
 pub(crate) fn readout_time(sample: f64, sample_rate: f64, secs_per_px: f64) -> String {
     if sample_rate > 0.0 {
@@ -505,7 +505,7 @@ pub(crate) fn readout_samples(sample: f64) -> String {
 /// The decimals a cursor readout needs to resolve `step` (one pixel of the
 /// view, in the readout's unit), floored at the unit's base precision so a
 /// coarse view never loses it and capped at the matching ruler labels' own
-/// cap — the readout never shows fewer decimals than the ruler.
+/// cap -- the readout never shows fewer decimals than the ruler.
 fn readout_decimals(step: f64, floor: usize, cap: usize) -> usize {
     if step > 0.0 {
         (-step.log10()).ceil().clamp(floor as f64, cap as f64) as usize
@@ -522,9 +522,9 @@ fn readout_decimals(step: f64, floor: usize, cap: usize) -> usize {
 /// It reads the axis' `map` where there is one, for the reason the ticks do:
 /// a read-out naming a different beat from the tick under it would be two
 /// answers about one pixel. It takes `secs_per_px` rather than beats per
-/// pixel because **under a map that is a local rate** — how much of a beat a
+/// pixel because **under a map that is a local rate** -- how much of a beat a
 /// pixel is worth depends on the tempo where the cursor is, not on an average
-/// of the multitrack — and deriving it here is what keeps the two read-outs (the
+/// of the multitrack -- and deriving it here is what keeps the two read-outs (the
 /// waveform's and the roll's) from each doing that conversion their own way.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn readout_beats(
@@ -606,7 +606,7 @@ pub(crate) fn fmt_decimal(v: f64, step: f64) -> String {
 }
 
 /// The dBFS rung candidates of the amplitude axis, walking outward from full
-/// scale — round values the greedy spacing filter thins to what fits.
+/// scale -- round values the greedy spacing filter thins to what fits.
 const DB_RUNGS: [f64; 17] = [
     -96.0, -72.0, -60.0, -48.0, -36.0, -30.0, -24.0, -18.0, -12.0, -10.0, -8.0, -6.0, -5.0, -4.0,
     -3.0, -2.0, -1.0, // 0 dB is handled as the walk's endpoint below.
@@ -734,7 +734,7 @@ pub(crate) fn amp_ticks(
     }
 }
 
-/// The ticks of a plain linear **value axis** over `[lo, hi]` — any range, not
+/// The ticks of a plain linear **value axis** over `[lo, hi]` -- any range, not
 /// tied to an amplitude convention (no margin, no full-scale): the `plot`'s
 /// vertical ruler for arbitrary numeric sequences. The step is the smallest
 /// 1-2-5 rung whose labels (one line of text each) keep clear space over
@@ -778,7 +778,7 @@ pub(crate) fn readout_value(v: f64, span: f64) -> String {
 }
 
 /// Display coordinate `d` (0 = axis bottom, 1 = Nyquist) → frequency in Hz,
-/// the exact mapping the spectrogram shader applies per scale — the single
+/// the exact mapping the spectrogram shader applies per scale -- the single
 /// inversion the ruler ticks and the cursor readout both use. `f_lo_norm` is
 /// the shader's normalized log-axis floor (~20 Hz / Nyquist).
 pub(crate) fn display_to_hz(d: f64, nyquist: f64, scale: FreqScale, f_lo_norm: f64) -> f64 {
@@ -814,7 +814,7 @@ pub(crate) fn hz_to_display(f: f64, nyquist: f64, scale: FreqScale, f_lo_norm: f
 /// `[y_start, y_start + y_len)` of the axis (bottom = the axis floor, top =
 /// Nyquist at no zoom), matching the spectrogram shader's display→bin mapping
 /// for `scale`. A **wide** window (a decade or more) uses the classic decade
-/// scheme — 1/2/5 multiples labeled, the remaining integer multiples as
+/// scheme -- 1/2/5 multiples labeled, the remaining integer multiples as
 /// minors, thinned by the measured label height (the log and perceptual
 /// scales compress unevenly). A **narrow** (zoomed) window, and the linear
 /// axis at any zoom, fits a plain 1-2-5 ladder in hertz against its measured
@@ -894,7 +894,7 @@ pub(crate) fn hz_ticks(
     } else {
         // A 1-2-5 ladder in hertz over the visible range, fit against the
         // measured label heights at the *actual* (possibly nonlinear) tick
-        // positions — the worst local gap decides.
+        // positions -- the worst local gap decides.
         let span = f_top - f_bot;
         let candidates = decimal_steps(span, height_px, 1.0, g);
         let fits = |step: f64| {
@@ -948,10 +948,10 @@ pub(crate) fn hz_ticks(
 
 /// The ticks of a **horizontal** frequency axis over the visible display
 /// window `[x_start, x_start + x_len)` of `[0, Nyquist]`, across `width_px`
-/// device pixels — the spectral x ruler. The horizontal twin of [`hz_ticks`],
+/// device pixels -- the spectral x ruler. The horizontal twin of [`hz_ticks`],
 /// down to the two schemes it picks between: a **wide** window (a decade or
 /// more, on a non-linear scale) walks the decades with 1/2/5 labeled, and a
-/// **narrow** (zoomed) one — like the linear axis at any zoom — fits a plain
+/// **narrow** (zoomed) one -- like the linear axis at any zoom -- fits a plain
 /// 1-2-5 ladder in hertz over what is actually visible, so zooming keeps
 /// revealing finer round frequencies. What differs is only how a label is
 /// measured: by its *width*, edge-clamped exactly as the renderer draws it,
@@ -1077,7 +1077,7 @@ pub(crate) fn hz_ticks_h(
 }
 
 /// The display name of a frequency scale, as the spectral views' corner
-/// read-out tags it — three letters each, so the tag's footprint is constant
+/// read-out tags it -- three letters each, so the tag's footprint is constant
 /// across scales.
 pub(crate) fn scale_tag(scale: FreqScale) -> &'static str {
     match scale {
@@ -1090,7 +1090,7 @@ pub(crate) fn scale_tag(scale: FreqScale) -> &'static str {
 
 /// Draws the ticks of a horizontal ruler `strip`: a mark against the edge
 /// `dir` names (taller when labeled), the label centered on it and
-/// edge-clamped into the strip. The one drawing of the x-ruler strip — the
+/// edge-clamped into the strip. The one drawing of the x-ruler strip -- the
 /// editor frames, the plot and the free-standing ruler all call it.
 ///
 /// **The marks hug the side the content is on** ([`RulerDir`]), so a tick and
@@ -1098,7 +1098,7 @@ pub(crate) fn scale_tag(scale: FreqScale) -> &'static str {
 /// top ([`RulerDir::Up`]), a ruler placed above a stack of lanes draws along
 /// its bottom.
 /// **How far down the strip a tick's label sits**, and how tall the tick
-/// itself is — named because a marker's arrow and its text stand on this same
+/// itself is -- named because a marker's arrow and its text stand on this same
 /// row, and two literals in two files is how they come to disagree the first
 /// time either moves.
 pub(crate) const TICK_H: f32 = 6.0;
@@ -1140,7 +1140,7 @@ pub(crate) fn draw_ticks_h(d: &mut Draw, strip: Rect, ticks: &[Tick], dir: Ruler
 /// starting at `strip_x`. `frac` 0 is the row's bottom. The one drawing of
 /// the y-ruler strip, whatever the unit (amplitude, frequency, plain value).
 /// The clear space `draw_ticks_v` leaves between a label's right edge and the
-/// body it labels — so the width a strip must reserve is its widest label plus
+/// body it labels -- so the width a strip must reserve is its widest label plus
 /// this.
 const LABEL_GAP: f32 = 10.0;
 
@@ -1195,7 +1195,7 @@ pub(crate) fn amp_strip_w(
 ///
 /// A meter's axis is linear *in decibels*, so its ladder is a regular step and
 /// not the 1-2-5 progression a value axis walks or the outward crowd
-/// [`amp_ticks`] thins — the same reason the three exist separately. The step
+/// [`amp_ticks`] thins -- the same reason the three exist separately. The step
 /// is the coarsest of the field's (3, 6, 12, 24, 48 dB) that still gives every
 /// mark a line of text to itself, so a tall meter is read in sixes and a short
 /// one in twenty-fours rather than in a ladder nobody can read. The floor is
@@ -1251,8 +1251,8 @@ pub(crate) enum Side {
 /// [`draw_ticks_v`] on either side of the body: the ticks point **into** the
 /// strip and the labels stack against the body's edge, mirrored for the right.
 ///
-/// A meter is the widget that needs the choice — a column is narrow and which
-/// hand the numbers fall on is the layout's, not the drawing's — and the
+/// A meter is the widget that needs the choice -- a column is narrow and which
+/// hand the numbers fall on is the layout's, not the drawing's -- and the
 /// mirror is here rather than there so one routine owns where a tick and its
 /// number sit relative to the axis they name.
 pub(crate) fn draw_ticks_v_side(
@@ -1297,7 +1297,7 @@ pub(crate) fn draw_ticks_v(d: &mut Draw, body_x: f32, strip_x: f32, row: Rect, t
     let (mesh, metrics, theme) = d.parts();
     let scale = metrics.caption_scale;
     // **A row shorter than one caption keeps its ticks and drops their
-    // labels** — the rule a squeezed control already follows
+    // labels** -- the rule a squeezed control already follows
     // ([`crate::host::graphics::controls::label_height`]): a line that does not
     // fit is a drawing that lies, while a tick with no number is merely terser.
     // It is also what keeps the placement below well-formed: the label's band
@@ -1331,7 +1331,7 @@ mod tests {
     }
 
     /// **A row too short for a line of text still draws its ticks, and drops
-    /// their labels** — and above all does not panic.
+    /// their labels** -- and above all does not panic.
     ///
     /// It used to. The label's y was `clamp`ed into the band from `row.y` to
     /// `row.y + row.h` less one line of text, whose upper bound falls *below*
@@ -1339,7 +1339,7 @@ mod tests {
     /// `f32::clamp` panics on an inverted range. The guard above it tested `row.h` against a literal
     /// four, a number that predates the text and is not the height the
     /// arithmetic needs, so every row between it and a caption's height was a
-    /// crash — reached by dragging a window's corner in, which is how it was
+    /// crash -- reached by dragging a window's corner in, which is how it was
     /// found.
     #[test]
     fn a_row_shorter_than_its_own_caption_drops_the_label_and_does_not_panic() {
@@ -1458,7 +1458,7 @@ mod tests {
 
     /// Recomputes the drawn label intervals of a horizontal ruler the way the
     /// frame renderer draws them (centered, edge-clamped) and asserts none
-    /// overlap — the acceptance property.
+    /// overlap -- the acceptance property.
     fn assert_no_h_collisions(ticks: &[Tick], width_px: f64, ctx: &str) {
         let mut spans: Vec<(f64, f64)> = ticks
             .iter()
@@ -2251,7 +2251,7 @@ mod tests {
     }
 
     /// Zooming a frequency x axis reveals **finer** round frequencies inside
-    /// the window and drops everything outside it — the property L8 fixed for
+    /// the window and drops everything outside it -- the property L8 fixed for
     /// every other axis, now that this one navigates too. The vertical twin
     /// has had it since the spectrogram's frequency window; this is the same
     /// rule read across the strip instead of up it.
@@ -2281,7 +2281,7 @@ mod tests {
                     "{scale:?}: {f} Hz drawn outside [{lo}, {hi}]"
                 );
             }
-            // Finer, measured where the comparison is fair — inside the
+            // Finer, measured where the comparison is fair -- inside the
             // window, which is the only place both rulers describe. (A
             // nonlinear axis packs its bottom decade tightly, so the smallest
             // gap over the *whole* ruler says nothing about the zoom.)

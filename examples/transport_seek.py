@@ -2,7 +2,7 @@
 """Seeking and looping a buffer by moving the **transport**, not the reader.
 
 A buffer player normally carries its own position: it starts at frame 0 and
-runs. This shows the other shape — a reader whose phase *is* the transport's
+runs. This shows the other shape -- a reader whose phase *is* the transport's
 position (`TransportPos` -> `BufRd`), so the three things an
 editor wants belong to the transport and not to the def:
 
@@ -20,7 +20,7 @@ it is the server's.
 The take is four one-second tones at different pitches, so every move is
 audible immediately: locate to the third second and the third pitch is what
 comes out. The script narrates what it is doing and prints the position it
-reads back from `/transport_query` beside it — the two should agree.
+reads back from `/transport_query` beside it -- the two should agree.
 
 Needs an audio device (it boots its own server and plays through the sound
 card). Run it:
@@ -52,7 +52,7 @@ TONES = [220.0, 277.183, 329.628, 440.0]  # one per second: A, C#, E, A
 
 def samples():
     """One second of each tone, with a short fade at every seam so the joins
-    are not clicks — the seam this example is about is the loop's, and a
+    are not clicks -- the seam this example is about is the loop's, and a
     buffer full of steps would put a click at every one."""
     samples = []
     fade = int(0.01 * SR)
@@ -67,8 +67,8 @@ def follower_def():
     """The reader: its phase is the transport's position, so it plays wherever
     the transport is standing.
 
-    `offset` is where these samples start on that axis — 0 here, since the
-    take *is* the whole of it — and it is subtracted inside `transport_pos` rather
+    `offset` is where these samples start on that axis -- 0 here, since the
+    take *is* the whole of it -- and it is subtracted inside `transport_pos` rather
     than after it, which is what keeps the position exact in a long take (a
     signal is 32-bit, and beyond about six minutes at 48 kHz it can no longer
     count single frames).

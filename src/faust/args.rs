@@ -5,7 +5,7 @@
 //! [`crate::dsp::denormals`]) and a def compiled without it in one place and
 //! with it in the other is a def whose tails behave differently. The stdlib
 //! search is the one thing that differs, and it differs because the platforms
-//! do — see [`FaustArgs::defaults`].
+//! do -- see [`FaustArgs::defaults`].
 
 use std::ffi::{CString, c_char, c_int};
 
@@ -21,7 +21,7 @@ impl FaustArgs {
     /// - `-I <dir>` for the Faust stdlib (`stdfaust.lib` and friends), so
     ///   both raw-source defs and `faust` fragments inside JSON can
     ///   `import()` it. The directory comes from `$FAUST_PREFIX/share/faust`,
-    ///   falling back to `~/.local`, then `/usr/local` — same search order
+    ///   falling back to `~/.local`, then `/usr/local` -- same search order
     ///   as build.rs. **In a page there is no directory to name**: the
     ///   compiler carries the standard library inside its own virtual
     ///   filesystem, where it is already on the search path.

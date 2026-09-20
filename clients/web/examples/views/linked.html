@@ -25,7 +25,7 @@
 The classic editor layout is <b>one item with parts</b>: a waveform lane and a
 spectrogram lane of the same sound under one time axis, with one selection. This
 page renders a stereo phrase offline and composes the two heavy views over that
-single payload with <code>link: 1</code> — the shared <b>navigation group</b>:
+single payload with <code>link: 1</code> -- the shared <b>navigation group</b>:
 
 <b>zoom, pan and drag-selection on either lane move both</b> (the group owns the
 horizontal view, the selection and the playhead; each member keeps only its own
@@ -33,7 +33,7 @@ vertical window); the script sees <b>one</b> event stream, carrying the
 interacted lane's id rather than one event per member; a <code>set</code> of
 <code>viewStart</code>/<code>viewLen</code>, <code>selStart</code>/<code>selLen</code>
 or <code>playheadAt</code> on <b>any</b> member applies group-wide; and
-membership is <b>live</b> — setting <code>link</code> moves a lane between
+membership is <b>live</b> -- setting <code>link</code> moves a lane between
 groups, a negative one unlinks it.</div>
 
       <div class="row">
@@ -98,7 +98,7 @@ groups, a negative one unlinks it.</div>
         log(`rendered ${frames} frames (${(frames / SR).toFixed(2)} s) offline`);
 
         // One payload, two lanes: the samples cross once and both views are fed
-        // from the same source — the page's counterpart of one mapped file.
+        // from the same source -- the page's counterpart of one mapped file.
         const phrase = gui.source(take.samples);
 
         const session = await Session.embed();
@@ -111,7 +111,7 @@ groups, a negative one unlinks it.</div>
             windowSize: 1024, dbFloor: -90.0, link: 1, ruler: "off",
           }),
         ).open($("stage"));
-        log(`opened window ${win.id} — wheel/drag on either lane drives both`);
+        log(`opened window ${win.id} -- wheel/drag on either lane drives both`);
 
         // A set on **any** member is a set on the group.
         win.widget("spect").set({ selStart: frames / 2, selLen: frames / 4 });
@@ -130,11 +130,11 @@ groups, a negative one unlinks it.</div>
         win.widget("spect").onEvent(onGroup("spect"));
         win.onClosed(() => log("window closed"));
 
-        // Interactive first: both lanes are linked — wheel/drag on either one
+        // Interactive first: both lanes are linked -- wheel/drag on either one
         // drives both. The membership demo runs a few seconds in, near enough
         // to be watched and late enough not to land on the first gesture.
         log(`in ${DEMO_AT.toFixed(0)} s the spectrogram unlinks for `
-          + `${DIVERGE.toFixed(0)} s, then rejoins — nothing here drives it`);
+          + `${DIVERGE.toFixed(0)} s, then rejoins -- nothing here drives it`);
         host.clock.sched(DEMO_AT, membership);
       }
 

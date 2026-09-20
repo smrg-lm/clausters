@@ -1,6 +1,6 @@
 // The page's own filesystem: the origin private file system (OPFS).
 //
-// A tab has one, and it is where a soundfile a page reads actually lives —
+// A tab has one, and it is where a soundfile a page reads actually lives --
 // `/buffer_allocRead "take.wav"` in a window names the server's filesystem, and
 // this is the only thing a tab has to mean by it. The path is resolved under
 // the origin's root directory, `/`-separated, with no `..` and no escape: there
@@ -9,7 +9,7 @@
 // **Everything here runs in a dedicated Worker, and has to.** The synchronous
 // access handle (`createSyncAccessHandle`) is restricted to dedicated workers
 // by the File System standard, precisely so nobody blocks the main thread with
-// it, and the AudioWorklet reaches no storage at all — its scope has no
+// it, and the AudioWorklet reaches no storage at all -- its scope has no
 // `navigator`, the same minimality that already cost the engine a `TextDecoder`
 // shim. So the filesystem lives where the NRT worker is, which is the same
 // division the native server makes: file work belongs to the thread that owes
@@ -54,7 +54,7 @@ export async function readFile(path: string): Promise<Uint8Array> {
  * Two ways in, because the platform has two. In a dedicated Worker the
  * synchronous access handle is the one that is everywhere; on the main thread
  * it does not exist at all (by standard, so nobody freezes a page with it) and
- * the writable stream stands in — which is the pair that is *not* everywhere,
+ * the writable stream stands in -- which is the pair that is *not* everywhere,
  * WebKit having been late to it. Whichever is present is used, and if neither
  * is, that is said rather than guessed at.
  */
@@ -89,7 +89,7 @@ export async function writeFile(
 
 /**
  * A byte range of a file, for reading it a part at a time. `length` past the
- * end simply returns what is there — a short read is the end of the file, not
+ * end simply returns what is there -- a short read is the end of the file, not
  * an error.
  *
  * The synchronous access handle reads at an offset, which is what makes a
@@ -139,7 +139,7 @@ export async function exists(path: string): Promise<boolean> {
     }
 }
 
-/** The file's extension, lowercased and without the dot — the decoder's format
+/** The file's extension, lowercased and without the dot -- the decoder's format
  *  hint. Empty when there is none, which still probes by content. */
 export function extensionOf(path: string): string {
     const name = path.slice(path.lastIndexOf("/") + 1);

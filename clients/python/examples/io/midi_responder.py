@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Drive the server from a MIDI keyboard — a MidiFunc turning notes into synths.
+"""Drive the server from a MIDI keyboard -- a MidiFunc turning notes into synths.
 
 The MIDI counterpart of `osc_responder.py`: `MidiFunc` listens on a virtual MIDI
 **input** port (other apps/devices route into it) and dispatches each message to
 a callback. Here a note-on starts a synth on the Clausters server and the
-matching note-off frees it — the client-side mirror of the server's own direct
+matching note-off frees it -- the client-side mirror of the server's own direct
 MIDI path (a server can be played by MIDI it receives itself, or by a client
 that listens to MIDI and forwards `/synth_new`).
 
@@ -18,7 +18,7 @@ opens a virtual MIDI input port named ``clausters-in``::
     python clients/python/examples/io/midi_responder.py [seconds]
 
 That port is a loose cable until you wire a MIDI source into it. With the script
-running, connect a keyboard (or any source) to it — list ports with ``pw-link
+running, connect a keyboard (or any source) to it -- list ports with ``pw-link
 -o`` / ``-i`` and wire them with ``pw-link``, or visually in qpwgraph; with raw
 ALSA, ``aconnect``. Play: each key sounds a synth until released.
 

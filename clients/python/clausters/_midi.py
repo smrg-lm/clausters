@@ -8,7 +8,7 @@ plays and records MIDI with nothing else present; a source checkout falls back
 to ``target/``, where a plain ``cargo build -p clausters-midi`` leaves a
 library without the ports (rebuild it with ``--features live``).
 
-Boundary rule (same as `clausters._native`): only flat data crosses — ints
+Boundary rule (same as `clausters._native`): only flat data crosses -- ints
 and byte buffers in, ``bytes`` out. The library is loaded lazily and version
 checked on first use, so importing this module never fails just because the
 cdylib has not been built yet.
@@ -122,8 +122,8 @@ def write_smf(events, ppq: int) -> bytes:
 
 
 def write_clip(events, ppq: int) -> bytes:
-    """MIDI 2.0 Clip File (SMF2CLIP) bytes — note velocities at 16-bit
-    resolution — from timed channel-voice events."""
+    """MIDI 2.0 Clip File (SMF2CLIP) bytes -- note velocities at 16-bit
+    resolution -- from timed channel-voice events."""
     return _write(lib().clausters_midi_write_clip, events, ppq)
 
 

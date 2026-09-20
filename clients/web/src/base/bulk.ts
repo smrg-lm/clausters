@@ -1,16 +1,16 @@
 // Bulk samples at the boundary: the little-endian `f32` blob, both ways.
 //
 // **The rule this module exists to keep in one place.** A payload whose length
-// scales with the *audio* — a buffer range, a scope window, a waveform to draw
-// — crosses as raw little-endian `f32`; a payload whose length scales with the
+// scales with the *audio* -- a buffer range, a scope window, a waveform to draw
+// -- crosses as raw little-endian `f32`; a payload whose length scales with the
 // *parameters* stays typed OSC arguments (`docs/schemas.md`). The reason is not
 // tidiness: N samples as N float arguments costs N type tags and N encode steps
 // at each end, which is thousands of times slower than one byte copy at the
 // sizes an editor works with, and wider on the wire besides.
 //
-// So every path carrying samples — `/buffer_setRange` and
+// So every path carrying samples -- `/buffer_setRange` and
 // `/buffer_getRange.reply`, `/bus_tapStream.reply`, a `waveform`'s `blob` prop,
-// `/buffer_export`'s file — goes through these two functions rather than looping
+// `/buffer_export`'s file -- goes through these two functions rather than looping
 // per sample. The loop that stays is the typed array's, which is native.
 //
 // The one thing worth centralizing beyond speed is **endianness**: a
@@ -27,7 +27,7 @@ export const LITTLE_ENDIAN = new Uint8Array(Uint16Array.of(1).buffer)[0] === 1;
 
 /**
  * Samples packed as a little-endian `f32` blob. `samples` may be a
- * `Float32Array`, a plain array, or anything iterable — the conversion is one
+ * `Float32Array`, a plain array, or anything iterable -- the conversion is one
  * native call, never a loop over the samples here.
  */
 export function samplesToBlob(samples: ArrayLike<number> | Iterable<number>): Uint8Array {
@@ -42,7 +42,7 @@ export function samplesToBlob(samples: ArrayLike<number> | Iterable<number>): Ui
 }
 
 /**
- * A little-endian `f32` blob unpacked into a `Float32Array` — the inverse of
+ * A little-endian `f32` blob unpacked into a `Float32Array` -- the inverse of
  * `samplesToBlob`, and what every reply carrying samples is read with.
  *
  * Throws when the blob is not a whole number of `f32`s, which is the only way

@@ -1,4 +1,4 @@
-//! Drawing a document as a multitrack — the host's own `Editor`.
+//! Drawing a document as a multitrack -- the host's own `Editor`.
 //!
 //! The Python client has one and it is the reference; this is the port a
 //! standalone host needs, because a host with no language client still has to
@@ -10,7 +10,7 @@
 //!
 //! A lane, a clip and a time ruler are all **`field`** on the wire, told apart
 //! by the props they carry (`dur` makes a clip, a bare ruler makes a ruler,
-//! anything else is a lane) — the protocol's "generic on the wire, typed in the
+//! anything else is a lane) -- the protocol's "generic on the wire, typed in the
 //! renderer" invariant, which the Python builders' names hide and this had to
 //! learn the hard way: a tree that says `"type": "track"` builds nothing, and
 //! an empty window is all it says about it.
@@ -18,7 +18,7 @@
 //! # It builds a GuiDef, and nothing else
 //!
 //! What comes out is the ordinary `{id, type, props, children}` tree the host
-//! already parses — no new widget, no new prop, no path into the tree that a
+//! already parses -- no new widget, no new prop, no path into the tree that a
 //! script could not take. That is the point: a standalone editor is this host
 //! driven by itself, so anything it can draw a script can draw too, and
 //! anything it cannot is missing for both.
@@ -28,7 +28,7 @@
 //! An aggregate of pitched clangs draws as a **roll** from the tree alone,
 //! because the pitches are in the tree. A **take** cannot: the document names a
 //! source and never says where the samples are, so drawing one needs the
-//! session's table resolved to something a host can read — which is
+//! session's table resolved to something a host can read -- which is
 //! [`super::sources`], and is why `Look` takes the resolved [`Takes`] rather
 //! than the session. Given none, a take is still drawn: its placement and its
 //! name, honest about the rest.
@@ -53,10 +53,10 @@ pub struct Bound {
 /// How the picture is scaled and labelled.
 #[derive(Debug, Clone, Copy)]
 pub struct Look<'a> {
-    /// Samples per beat — what a clip's `offset` is drawn with, since the
+    /// Samples per beat -- what a clip's `offset` is drawn with, since the
     /// shared time axis measures samples and a placement is in beats.
     pub units_per_beat: f64,
-    /// Samples per second — what a clip's `dur` is drawn with when the data
+    /// Samples per second -- what a clip's `dur` is drawn with when the data
     /// it shows is measured in seconds ([`clausters_document::Body::duration_unit`]:
     /// a take's length is a wall-clock fact, so no tempo scales it).
     pub units_per_second: f64,
@@ -71,20 +71,20 @@ pub struct Look<'a> {
     ///
     /// **It must clear the GuiDef's own id**, because a def's id is its root
     /// widget's: a tree numbered from 1 handed to `/gui_def 1` collides with
-    /// itself, and the registry drops the whole subtree — which looks like an
+    /// itself, and the registry drops the whole subtree -- which looks like an
     /// empty window and one line in the log.
     pub first_id: i32,
     /// The document's **content**: the nodes a window names
     /// ([`clausters_document::SegmentSource::Node`]).
     ///
     /// A cut over notes leaves two windows onto one timeline, and the timeline
-    /// is here rather than in either of them — so without this a split roll clip
+    /// is here rather than in either of them -- so without this a split roll clip
     /// draws as an empty rectangle, which is the picture for *the samples are
     /// elsewhere* and a lie about notes the document is holding.
     pub content: Option<&'a [Node]>,
     /// The session's samples, once somebody has resolved it to buffers.
     ///
-    /// `None` — or a source missing from it — draws a take as its placement and
+    /// `None` -- or a source missing from it -- draws a take as its placement and
     /// its name, which is what a host with no server can honestly show: the
     /// document holds no samples, so an empty clip here means *the samples are
     /// elsewhere*, not that there is none.
@@ -110,7 +110,7 @@ impl Default for Look<'_> {
 pub struct Drawn {
     /// The GuiDef, ready for `/gui_def`.
     pub def: Value,
-    /// The `multitrack` widget's id — the **one** widget the whole multitrack is
+    /// The `multitrack` widget's id -- the **one** widget the whole multitrack is
     /// drawn by, and the one an edit-back arrives on.
     pub widget: i32,
     /// The multitrack as the widget's two props, and the nodes behind them.
@@ -128,7 +128,7 @@ pub struct Drawn {
 /// One lane of the multitrack, and the two things a lane change has to know
 /// about it.
 ///
-/// A lane is not a container in the document — the document has aggregates —
+/// A lane is not a container in the document -- the document has aggregates --
 /// so a picture of one has to record which aggregate its clips are *members
 /// of*, and where that aggregate sits on the shared axis. Without the first, a
 /// clip that crossed the stack has nowhere to be moved to; without the second,
@@ -141,7 +141,7 @@ pub struct LaneRow {
     pub node: NodeId,
     /// The aggregate whose members are this lane's clips.
     pub holder: NodeId,
-    /// Where that aggregate starts, in beats — the offsets its members are
+    /// Where that aggregate starts, in beats -- the offsets its members are
     /// relative to.
     pub base: Beats,
 }
@@ -167,7 +167,7 @@ pub struct Picture {
     pub lanes: Vec<LaneRow>,
     /// The clips, in document order.
     pub clips: Vec<ClipRow>,
-    /// **The picture, as props** — every key the widget draws from, exactly as
+    /// **The picture, as props** -- every key the widget draws from, exactly as
     /// the projection wrote it.
     ///
     /// A map rather than the two fields this was, and the difference is the
@@ -200,7 +200,7 @@ fn name_of(node: NodeId) -> String {
 }
 
 /// The node a name on the wire stands for. A name this host did not write is
-/// `None` rather than a guess — the same rule [`super::Owner::read_event`]
+/// `None` rather than a guess -- the same rule [`super::Owner::read_event`]
 /// follows for a payload it does not recognize.
 pub(crate) fn node_named(name: &str) -> Option<NodeId> {
     name.parse::<u64>().ok().map(NodeId)
@@ -209,13 +209,13 @@ pub(crate) fn node_named(name: &str) -> Option<NodeId> {
 /// The lane height a lane is drawn at, in logical pixels.
 const LANE_H: f64 = 96.0;
 
-/// The lanes and clips a document draws as — the whole multitrack, in the widget's
+/// The lanes and clips a document draws as -- the whole multitrack, in the widget's
 /// own vocabulary.
 ///
 /// One lane per top-level member: an **aggregate** becomes a lane of its
 /// members' clips (which is what a track is), and anything else becomes a lane
-/// holding one clip. Nesting deeper than that is drawn flat for now — an
-/// aggregate inside an aggregate is one lane of its own, in document order —
+/// holding one clip. Nesting deeper than that is drawn flat for now -- an
+/// aggregate inside an aggregate is one lane of its own, in document order --
 /// because an expanded/collapsed state is a thing the *editor* holds and this
 /// has nowhere yet to keep one.
 pub fn multitrack(document: &Document, look: &Look<'_>) -> Picture {
@@ -371,13 +371,13 @@ pub fn draw(document: &Document, look: &Look<'_>, title: &str) -> Drawn {
 const EDITOR_ROW_H: f64 = 120.0;
 
 /// The tallest a take's editor is built, however many channels it holds. Past
-/// this the lanes get thinner instead — a pane taller than the window would
+/// this the lanes get thinner instead -- a pane taller than the window would
 /// push the arrangement off the screen, which is worse than a cramped lane.
 const EDITOR_MAX_H: f64 = 360.0;
 
 /// **The pane a take opens in is as tall as the take is wide**: samples with
 /// four channels is four rows, and a view that shows two of them is a picture
-/// of half the file — the same argument that makes a clip draw every channel.
+/// of half the file -- the same argument that makes a clip draw every channel.
 ///
 /// It is declared **here, by what built the tree**, and not asked of the widget:
 /// a natural size that followed its data would relayout the window whenever a
@@ -387,8 +387,8 @@ const EDITOR_MAX_H: f64 = 360.0;
 ///
 /// It stops growing at [`EDITOR_MAX_H`], and what that costs is stated rather
 /// than hidden: an ambisonic take's sixteen rows are drawn, at sixteenths of
-/// that height. Making many channels *readable* — scrolling the pane, folding
-/// rows, choosing which to show — is a design this does not have yet
+/// that height. Making many channels *readable* -- scrolling the pane, folding
+/// rows, choosing which to show -- is a design this does not have yet
 /// (`clients/gui/PLAN.md`, "Future directions").
 fn editor_height(channels: Option<u32>) -> f64 {
     let rows = channels.unwrap_or(1).max(1) as f64;
@@ -419,7 +419,7 @@ struct LaneBuild {
     clips: Vec<ClipBuild>,
 }
 
-/// One box under construction, in **timeline units** — the axis' own — because
+/// One box under construction, in **timeline units** -- the axis' own -- because
 /// that is what the widget takes.
 struct ClipBuild {
     node: NodeId,
@@ -436,8 +436,8 @@ struct ClipBuild {
 /// The rule is the shape of the multitrack rather than a depth: an aggregate whose
 /// members are leaves is a lane of clips (that is what a lane *is*), and an
 /// aggregate of aggregates is not one lane but each of theirs. A multitrack is
-/// nested as deeply as the author nested it — a multitrack of aggregates of tracks
-/// of clangs is three deep before a single note is reached — so anything that
+/// nested as deeply as the author nested it -- a multitrack of aggregates of tracks
+/// of clangs is three deep before a single note is reached -- so anything that
 /// stops at a fixed depth draws the containers and calls it a picture, which is
 /// an empty clip where the music was.
 ///
@@ -568,7 +568,7 @@ fn take_editors(
             // widget a take draws as, and the three-gesture plan it offers, are
             // one rule the clients draw by too
             // (`clausters_document::view::catalogue`). What is stated here is
-            // only what is this pane's — where it sits in the stack, and that
+            // only what is this pane's -- where it sits in the stack, and that
             // its ruler counts frames because it is beside a document that does.
             //
             // **The head is anchored at 0, and that is the whole of drawing it.**
@@ -576,7 +576,7 @@ fn take_editors(
             // (`HeadClock::Transport`), so the sweep from an anchor of 0 is the
             // position itself: it stands still while the transport is stopped,
             // jumps where a locate puts it and wraps where the engine wraps it.
-            // No `playhead_loop` here for the same reason — the loop is the
+            // No `playhead_loop` here for the same reason -- the loop is the
             // transport's, and wrapping an already-wrapped number would double it.
             let mut props = catalogue::waveform(&catalogue::Waveform {
                 buffer: Some(i64::from(take.bufnum)),
@@ -597,8 +597,8 @@ fn take_editors(
 
 /// The samples a node draws, when it names some and somebody resolved it.
 /// The length a clip is drawn at, **in timeline units**: the placement's where
-/// it overrides, else the element's own, else **the samples'** — a take placed
-/// 1:1 is as long as it is, which is the one length nobody has to state — else
+/// it overrides, else the element's own, else **the samples'** -- a take placed
+/// 1:1 is as long as it is, which is the one length nobody has to state -- else
 /// a beat, because a clip with no length at all would be a line.
 ///
 /// The unit conversion is part of the rule rather than the caller's: a length
@@ -611,7 +611,7 @@ fn take_editors(
 /// applied edit ([`super::super::Host::adopt`]): a placement whose length went
 /// back to *unstated* has to be redrawn at whatever that means here, and an
 /// adopter with a shorter rule of its own left the clip at the size the hand
-/// had given it — which is an undo that moves the document and not the picture.
+/// had given it -- which is an undo that moves the document and not the picture.
 pub(crate) fn clip_units(
     member: &Member,
     takes: Option<&super::sources::Takes>,
@@ -640,7 +640,7 @@ pub(crate) fn clip_units(
 ///
 /// A **take** is one buffer, and so is a clip left by a *trim*: a single window
 /// onto one file, which is what a cut leaves on each side. A clip assembled
-/// from several windows is drawn empty rather than as its first multitrack — an
+/// from several windows is drawn empty rather than as its first multitrack -- an
 /// honest "the samples are elsewhere" instead of a picture of a third of them
 /// (the widget draws one body per box; see `clients/gui/PLAN.md`, "Found by
 /// use").
@@ -660,7 +660,7 @@ fn take_of(node: &Node, look: &Look<'_>) -> Option<super::sources::Take> {
 ///
 /// A cut over notes is two windows onto one timeline: the timeline is a node in
 /// [`Document::content`] and each half names it. What a half draws is the notes
-/// inside its window, shifted back to its own start — the same reading the
+/// inside its window, shifted back to its own start -- the same reading the
 /// clients do, made here so a host with no client draws a split multitrack the way
 /// the multitrack is.
 fn windowed_notes(node: &Node, look: &Look<'_>) -> Option<Vec<(Beats, Beats, f32)>> {
@@ -691,7 +691,7 @@ fn windowed_notes(node: &Node, look: &Look<'_>) -> Option<Vec<(Beats, Beats, f32
     Some(out)
 }
 
-/// The `notes` body of an aggregate of clangs — the flat `start dur pitch velocity
+/// The `notes` body of an aggregate of clangs -- the flat `start dur pitch velocity
 /// channel` quintuples the roll reads, in **beats** here and scaled by the
 /// caller.
 ///
@@ -706,7 +706,7 @@ fn notes_of(members: &[Member]) -> Option<Vec<(Beats, Beats, f32)>> {
         };
         // The configuration is the client's own opaque object: this reads two
         // keys out of it and understands nothing else, which is the rule the
-        // document is built on — a host does not interpret a leaf's config, it
+        // document is built on -- a host does not interpret a leaf's config, it
         // only draws what it can recognize.
         let pitch = config
             .0
@@ -714,7 +714,7 @@ fn notes_of(members: &[Member]) -> Option<Vec<(Beats, Beats, f32)>> {
             .and_then(Value::as_f64)
             .or_else(|| config.0.get("note").and_then(Value::as_f64))?;
         // The sounding length: the clang's own `dur`, the placement's, or a
-        // beat — a note with no length would be a line.
+        // beat -- a note with no length would be a line.
         let dur = m
             .dur
             .or(m.node.duration)
@@ -731,7 +731,7 @@ fn notes_of(members: &[Member]) -> Option<Vec<(Beats, Beats, f32)>> {
 ///
 /// The keys are the clients' own (`clausters.form.document`'s `MIXING`), which
 /// is what makes a multitrack muted in a script open muted here. A lane whose
-/// configuration says nothing is not muted and is at unity — the widget's props
+/// configuration says nothing is not muted and is at unity -- the widget's props
 /// are three values and not three optional ones, so *absent* is drawn as the
 /// default rather than left unsaid.
 ///
@@ -799,7 +799,7 @@ mod tests {
         &def["children"][0]
     }
 
-    /// The flat props, back as groups — the reading every payload of this
+    /// The flat props, back as groups -- the reading every payload of this
     /// shape gets.
     fn groups(prop: &Value, n: usize) -> Vec<Vec<Value>> {
         let flat = prop.as_array().expect("a flat array");
@@ -895,7 +895,7 @@ mod tests {
 
     /// A clip's offset is **absolute on the shared axis** while a member's is
     /// relative to its aggregate: the two are added once, here, or every lane
-    /// after the first would draw in the wrong place — and the lane records
+    /// after the first would draw in the wrong place -- and the lane records
     /// what they were added *to*, so an edit-back can subtract it again.
     #[test]
     fn a_nested_placement_is_absolute_on_the_shared_axis() {
@@ -1067,7 +1067,7 @@ mod take_tests {
 
     /// **A trim is still one window onto one file**, so the box it leaves draws
     /// that file and reads from the frame the trim moved it to. A clip
-    /// assembled from *several* windows draws empty instead — one box, one
+    /// assembled from *several* windows draws empty instead -- one box, one
     /// body, and a picture of a third of the samples would be worse than none.
     #[test]
     fn one_window_draws_its_samples_from_where_it_starts_and_several_draw_none() {
@@ -1225,7 +1225,7 @@ mod take_tests {
 
     /// **A pane as tall as the take is wide.** Four channels are four rows,
     /// and the height is declared by what builds the tree rather than asked of
-    /// the widget — a natural size that followed its data would relayout the
+    /// the widget -- a natural size that followed its data would relayout the
     /// window on every `/gui_set`.
     #[test]
     fn a_wide_takes_editor_opens_taller_and_stops_at_the_cap() {
@@ -1239,7 +1239,7 @@ mod take_tests {
         );
     }
 
-    /// Unresolved — no session, no server, a missing file — is a box with a
+    /// Unresolved -- no session, no server, a missing file -- is a box with a
     /// name and no body, and **not** a refusal: what the document says still
     /// moves, undoes and saves.
     #[test]
@@ -1319,7 +1319,7 @@ mod registry_tests {
     }
 
     /// **The tree a document draws actually reaches the registry**, which is
-    /// not the same claim as the JSON being right — and is the one a unit test
+    /// not the same claim as the JSON being right -- and is the one a unit test
     /// over the JSON cannot make.
     ///
     /// Written for a bug that shipped: a def's id *is* its root widget's, so a
@@ -1376,7 +1376,7 @@ mod registry_tests {
         );
         let mut host = Host::new();
         open(&mut host, def_id, &drawn);
-        // The collided id still *resolves* — to the window itself — which is
+        // The collided id still *resolves* -- to the window itself -- which is
         // exactly why presence is the wrong question and the kind is the right
         // one: what was dropped is the multitrack, not the number.
         assert!(
@@ -1425,7 +1425,7 @@ mod depth_tests {
     /// **A multitrack is nested as deeply as its author nested it**, and this
     /// draws the leaves wherever they are. The shape that found the bug is the
     /// ordinary one: a multitrack of aggregates of tracks of clangs, three
-    /// aggregates deep before a single note — and a walk that stopped at two
+    /// aggregates deep before a single note -- and a walk that stopped at two
     /// drew the containers and called it a picture, which is an empty clip
     /// where the music was.
     #[test]
@@ -1519,7 +1519,7 @@ mod roll_tests {
         }
     }
 
-    /// **A track is one clip**, which is what a track is in every editor — and
+    /// **A track is one clip**, which is what a track is in every editor -- and
     /// what a document of clangs has to become to be read as music rather than
     /// as a row of empty rectangles.
     ///

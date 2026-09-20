@@ -4,7 +4,7 @@
 //! over a network transport (the Python client's `UdpSampleClock`, the future
 //! TS client alike): anchors are `(local monotonic time, counter)` pairs from
 //! `/clock_query` round trips, fitted over a sliding window (JACK-DLL / Ableton-Link
-//! in spirit). The transport — sockets, threads, round-trip midpoints — stays
+//! in spirit). The transport -- sockets, threads, round-trip midpoints -- stays
 //! in the host language; this module owns only the model, so every client
 //! predicts the same sample from the same anchors.
 

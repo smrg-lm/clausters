@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Generate patch-vectors.json from the Python client's patcher models.
 
-The patcher is one model written twice — `clausters/defs/patch.py` and
-`clients/web/src/defs/patch.ts` — and what has to agree is what leaves it: the
+The patcher is one model written twice -- `clausters/defs/patch.py` and
+`clients/web/src/defs/patch.ts` -- and what has to agree is what leaves it: the
 `{boxes, cords}` a def decodes into, and the widget schema the host is handed.
 A Def view is a *reading* of a def, so a difference here is a picture that shows
 one client a graph the other does not have.
@@ -15,7 +15,7 @@ The JSON is committed; regenerate with:
 
     python3 gen-patch-vectors.py
 
-(from clients/web/tests/, with the Python client importable — the repo's .venv
+(from clients/web/tests/, with the Python client importable -- the repo's .venv
 has it installed editable).
 """
 
@@ -33,7 +33,7 @@ from clausters.defs.signals import hslider, sin  # noqa: E402
 
 def tremolo_sine() -> SynthDef:
     """Every cord weight in one graph: audio (heavy), control (thin) and the
-    init (dashed) scalar — the def `examples/editors/patch2.py` is written around."""
+    init (dashed) scalar -- the def `examples/editors/patch2.py` is written around."""
     freq = control("freq", 220.0)
     amp = control("amp", 0.2)
     detune = control("detune", 1.5, rate="ir")

@@ -12,7 +12,7 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 default = []
-# Live MIDI output over the OS's standard MIDI (ALSA seq on Linux) via midir —
+# Live MIDI output over the OS's standard MIDI (ALSA seq on Linux) via midir --
 # a virtual output port. Off by default so the file writers (SMF/clip) need no
 # system MIDI dependency; build the client cdylib with it for live output.
 live = ["dep:midir"]

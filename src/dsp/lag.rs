@@ -1,6 +1,6 @@
 //! One-pole smoothers: `Lag` (symmetric) and `VarLag` (separate up/down
 //! times). These are the single lag implementation the typed controls reuse
-//! — a lagged control compiles to an inserted `Lag`/`VarLag` UGen rather than a
+//! -- a lagged control compiles to an inserted `Lag`/`VarLag` UGen rather than a
 //! bespoke control path (see `synthdef::compile`), so client-authored `Lag`
 //! and control smoothing share exactly this DSP.
 //!
@@ -11,7 +11,7 @@
 
 use crate::dsp::{ProcessCtx, UGen, at};
 
-/// `ln(0.001)` — the smoother converges to within -60 dB over `time` seconds.
+/// `ln(0.001)` -- the smoother converges to within -60 dB over `time` seconds.
 const LOG001: f32 = -6.907_755_4;
 
 #[inline]
@@ -67,7 +67,7 @@ impl UGen for Lag {
 }
 
 /// `VarLag(in, lagUp, lagDown)`: a one-pole smoother with separate rise and
-/// fall times — `lagUp` while the input is above the state, `lagDown` while
+/// fall times -- `lagUp` while the input is above the state, `lagDown` while
 /// below. Inputs 0 `in`, 1 `lagUp`, 2 `lagDown`.
 pub struct VarLag {
     y: f32,

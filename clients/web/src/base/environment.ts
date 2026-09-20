@@ -1,13 +1,13 @@
 // The environment: an isolated place to make sound (mirrors
 // `clausters/base/environment.py`).
 //
-// An `Environment` is the unit of isolation — a `server`, its clock(s), and
+// An `Environment` is the unit of isolation -- a `server`, its clock(s), and
 // its own random context. **Both the default session (`base/main.ts`) and an
 // explicit `Session` (`../session.ts`) are Environments**: the default one is
 // simply the one used when none is named, and a named session is the same kind
-// of thing with its own state. That is what lets several coexist — a page
+// of thing with its own state. That is what lets several coexist -- a page
 // against its own engine beside one against a `--ws` server, each reproducible
-// on its own seed — without touching each other.
+// on its own seed -- without touching each other.
 //
 // This base carries only what every environment shares: the seedable random
 // context and the `server` slot. The ambient resolution (which environment a
@@ -43,7 +43,7 @@ export class RandomContext {
     }
 
     /**
-     * This context's value stream — the shared core generator, so the same
+     * This context's value stream -- the shared core generator, so the same
      * seed replays the same values in every client language. Created lazily,
      * seeded from entropy unless `seed` was called.
      */

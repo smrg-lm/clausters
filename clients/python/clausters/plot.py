@@ -1,4 +1,4 @@
-"""The free-standing ``plot`` — one verb for looking at a signal.
+"""The free-standing ``plot`` -- one verb for looking at a signal.
 
 `plot` is the visual sibling of `clausters.play`: it plots whatever you hand
 it, resolving the ambient context so you never spell out a host or a renderer
@@ -6,34 +6,34 @@ for a quick look. Each call opens its **own window** on the GUI host (booted
 lazily on first use; plots ride the bulk file path, so no audio server is
 involved unless the object itself needs one). It dispatches by kind:
 
-- a **def** — a `clausters.defs.SynthDef`, `clausters.defs.FaustDef` or
-  `clausters.defs.GraphDef` — is **rendered offline** (an ephemeral NRT
+- a **def** -- a `clausters.defs.SynthDef`, `clausters.defs.FaustDef` or
+  `clausters.defs.GraphDef` -- is **rendered offline** (an ephemeral NRT
   session: the def is sent, instanced with ``controls``, freed at ``dur``) and
   its output plotted, every channel in its own lane. The way to eyeball what a
   def actually produces without a server or an audio device.
-- a bare **expression** — a `clausters.defs.Ugen` graph, a
+- a bare **expression** -- a `clausters.defs.Ugen` graph, a
   `clausters.defs.ChannelList` of them, a Faust `clausters.defs.Signal` or
-  `clausters.defs.Box` — takes the same offline path through the
+  `clausters.defs.Box` -- takes the same offline path through the
   ephemeral-def coercion `play` uses (`clausters.defs.asdef.as_def`), so
   ``plot(sine(440) * 0.5)`` shows the signal directly. It plots as wide as it
   writes: one lane, unless a channel list or a `Box` brings its own width, or
   ``channels`` says otherwise.
 - an `clausters.defs.Env` is rendered through the server's own ``EnvGen`` (a
   one-node NRT render, gate-released at its sustain point when it has one), so
-  the drawn curve is exactly what the engine plays — not a client-side
-  re-evaluation. An `clausters.seq.automation.Automation` plots the same way —
-  its curve is an `Env` — labelled with the automation's control name.
+  the drawn curve is exactly what the engine plays -- not a client-side
+  re-evaluation. An `clausters.seq.automation.Automation` plots the same way --
+  its curve is an `Env` -- labelled with the automation's control name.
 - a `clausters.defs.Buffer` (or a buffer number) is fetched from the ambient
   **live** server (`clausters.base.main.Main.resolve_server`) with its shape
-  and sample rate, and plotted — the way to check a buffer's contents.
-- any other **iterable of numbers** — a list, a stdlib ``array``, a
-  `clausters.seq.pattern.Pattern` (``Pseq``, ``Pwhite``, …) or any stream — is
+  and sample rate, and plotted -- the way to check a buffer's contents.
+- any other **iterable of numbers** -- a list, a stdlib ``array``, a
+  `clausters.seq.pattern.Pattern` (``Pseq``, ``Pwhite``, …) or any stream -- is
   read (up to ``n`` values for the endless ones) and plotted as a
   sequence: index counts on the x axis and the value axis **auto-fitted** to
   the data, whatever its range. A list of per-channel lists plots multichannel.
 
 ``view="spectrum"`` plots the averaged magnitude spectrum instead (dB against
-frequency on ``freq_scale`` — log/linear/mel/bark), analyzed host-side with the
+frequency on ``freq_scale`` -- log/linear/mel/bark), analyzed host-side with the
 same shared-core FFT the spectrogram uses. Either way the window is static
 (no zoom, pan or editing) but measured: x/y rulers fit the data and hovering
 reads out the exact sample or bin under the cursor.
@@ -76,8 +76,8 @@ class PlotWindow:
         self.widget_id = widget_id
 
     def set(self, **props):
-        """Live-set plot props (``view``, ``min``/``max`` — a number, or
-        ``"auto"`` to refit — ``freq_scale``, ``db_floor``/``db_ceil``,
+        """Live-set plot props (``view``, ``min``/``max`` -- a number, or
+        ``"auto"`` to refit -- ``freq_scale``, ``db_floor``/``db_ceil``,
         ``ruler``/``ruler_y``, ``label``…) via ``/gui_set``."""
         self.host.set(self.widget_id, **props)
         return self
@@ -91,7 +91,7 @@ class PlotWindow:
 
     @property
     def closed(self) -> bool:
-        """Whether this window is gone — closed by a hand or by `close`."""
+        """Whether this window is gone -- closed by a hand or by `close`."""
         return int(self.id) not in self.host._open
 
     def wait(self, timeout: "float | None" = None) -> bool:
@@ -124,24 +124,24 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
     """Plot ``obj`` in its own window on the ambient GUI host.
 
     Args:
-        obj: what to plot — a def (`SynthDef`/`FaustDef`/`GraphDef`, rendered
+        obj: what to plot -- a def (`SynthDef`/`FaustDef`/`GraphDef`, rendered
             offline) or a bare expression (`Ugen`/`ChannelList`/`Signal`/
             `Box`, coerced to an ephemeral def first), an `Env` or
             `Automation` (rendered
             through ``EnvGen``), a `Buffer` or buffer number (fetched from
             the ambient live server), or an iterable of numbers / of
             per-channel number lists, read up to ``n`` values.
-        dur: seconds a def is held before it is freed — the rendered length.
+        dur: seconds a def is held before it is freed -- the rendered length.
         controls: ``{name: value}`` controls (ports, for a `GraphDef`) the
             instance is started with.
-        defs: extra defs the render needs first — a `GraphDef`'s **member
+        defs: extra defs the render needs first -- a `GraphDef`'s **member
             defs** (the ephemeral offline session starts empty, so they must
             ride along), or any def ``obj``'s graph references.
         n: how many values to take from an endless sequence (`Pwhite` and
             friends).
         sample_rate: the offline render's rate; also places a fetched buffer's
             time axis when the server reports none.
-        channels: how many channels to show. ``None`` derives it — a bare
+        channels: how many channels to show. ``None`` derives it -- a bare
             expression is as wide as it writes (`clausters.defs.expr_channels`),
             an already-built def defaults to 2. Ignored for the other kinds (a
             buffer brings its own; sequences infer it).
@@ -150,29 +150,29 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
         min: value-axis sides of the signal view; ``None`` auto-fits that side
             to the data.
         max: see ``min``.
-        freq_scale: spectrum frequency axis — ``"log"`` (default),
+        freq_scale: spectrum frequency axis -- ``"log"`` (default),
             ``"linear"``, ``"mel"``, ``"bark"``.
         fft_size: spectrum analysis size (a power of two, default 2048).
         db_floor: spectrum dB window (default ``-100`` / ``0``).
         db_ceil: see ``db_floor``.
-        ruler: the signal view's time (x) unit — ``"time"`` (clock seconds,
+        ruler: the signal view's time (x) unit -- ``"time"`` (clock seconds,
             the default when the data has a sample rate), ``"samples"``
             (plain sample counts, the default for rate-less sequences) or
             ``"off"`` to hide the strip. Live-switchable later via
             ``win.set(ruler=...)``.
         ruler_y: ``"off"`` hides the value-axis strip (shown by default).
         label: the plot's label strip (defaults to something sensible per
-            kind — the def's name, ``expr``, ``buffer <n>``, ``env``, an
+            kind -- the def's name, ``expr``, ``buffer <n>``, ``env``, an
             automation's control name, ``sequence``).
         title: the window title (defaults to the label).
         w: window width in px.
         h: window height (default sized to the channel count).
         host: an explicit `clausters.gui.GuiHost`; ``None`` resolves the
-            ambient one — the current (or default) session's `Session.gui`
+            ambient one -- the current (or default) session's `Session.gui`
             host if one is up, else a host `plot` boots and owns.
 
     Returns:
-        A `PlotWindow` — ``.set(...)`` retunes the display live (e.g.
+        A `PlotWindow` -- ``.set(...)`` retunes the display live (e.g.
         ``view="spectrum"``), ``.close()`` closes it.
     """
     samples, chans, rate, kind_label = _resolve(
@@ -183,7 +183,7 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
     from .gui import guidef
 
     # Widget ids live in the host's one global namespace (all windows, all
-    # scripts on it), so each plot's widget takes a fresh unique id — a
+    # scripts on it), so each plot's widget takes a fresh unique id -- a
     # repeated id would be skipped at define time and /gui_set would hit
     # whichever widget registered it first.
     widget_id = host.alloc_id()
@@ -212,7 +212,7 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
 
 
 class PatchWindow:
-    """One open patcher window — a def's **structure** (not its sound): its GUI
+    """One open patcher window -- a def's **structure** (not its sound): its GUI
     ``host``, the window ``id`` and the `patch` widget's id::
 
         win = my_graphdef.plot_def()
@@ -239,7 +239,7 @@ class PatchWindow:
 
     @property
     def closed(self) -> bool:
-        """Whether this window is gone — closed by a hand or by `close`."""
+        """Whether this window is gone -- closed by a hand or by `close`."""
         return int(self.id) not in self.host._open
 
     def wait(self, timeout: "float | None" = None) -> bool:
@@ -247,7 +247,7 @@ class PatchWindow:
 
         What a **script** ends with, so the patch is still on screen when the
         eye gets to it; a ``# %%`` notebook calls nothing. ``True`` when it
-        closed, ``False`` on ``timeout`` — the same verb `PlotWindow.wait`,
+        closed, ``False`` on ``timeout`` -- the same verb `PlotWindow.wait`,
         `clausters.gui.handle.WindowHandle.wait` and
         `clausters.gui.editing.Editor.wait` carry."""
         return self.host._wait_while(lambda: not self.closed, timeout)
@@ -263,7 +263,7 @@ class PatchWindow:
 def _open_patch_view(model, *, label=None, w: int = 1000, h: int = 700,
                      title=None, host=None) -> PatchWindow:
     """Open a `clausters.defs.GraphPatch` or `clausters.defs.DefPatch` as a
-    directed `patch` view in its own window on the ambient GUI host — the
+    directed `patch` view in its own window on the ambient GUI host -- the
     structure opener behind the `plot_def` methods. One window per call, the
     `plot` posture: the patch sits in a `scroll` workspace (pan/zoom), no audio
     server involved. The **host lays the boxes out** and sizes the scrollable
@@ -284,7 +284,7 @@ def _open_patch_view(model, *, label=None, w: int = 1000, h: int = 700,
 # ---- dispatch: turning the object into interleaved samples ----
 
 def _resolve(obj, *, dur, controls, defs, n, sample_rate, channels):
-    """Resolves ``obj`` to ``(samples, channels, sample_rate, label)`` —
+    """Resolves ``obj`` to ``(samples, channels, sample_rate, label)`` --
     interleaved floats; ``sample_rate`` 0 marks an index (sequence) axis."""
     from .defs.asdef import as_def, expr_channels
     from .defs.buffer import Buffer
@@ -303,7 +303,7 @@ def _resolve(obj, *, dur, controls, defs, n, sample_rate, channels):
     if isinstance(obj, Expr):
         # A bare expression: the same ephemeral-def coercion play uses. Plot
         # configures its render for what is being looked at, so the expression
-        # is as wide as it writes — `expr_channels` is the one place that
+        # is as wide as it writes -- `expr_channels` is the one place that
         # knows (a channel list's non-sinks, a Box's own arity, else one). An
         # expression that routes itself entirely (only sinks) says 0, and
         # there is nothing to infer: fall back to a stereo look.
@@ -322,7 +322,7 @@ def _resolve(obj, *, dur, controls, defs, n, sample_rate, channels):
 
 
 def _render_def(obj, dur, controls, defs, sample_rate, channels):
-    """A def's offline samples — `clausters.render.bounce_def`, the shared
+    """A def's offline samples -- `clausters.render.bounce_def`, the shared
     change of state (`render` delivers it, `plot` draws it)."""
     from .render import bounce_def
 
@@ -330,7 +330,7 @@ def _render_def(obj, dur, controls, defs, sample_rate, channels):
 
 
 def _render_env(env, sample_rate):
-    """Renders an `Env` through the engine's own ``EnvGen`` — what you plot is
+    """Renders an `Env` through the engine's own ``EnvGen`` -- what you plot is
     what an ``EnvGen`` plays. A sustained envelope (``release_node``) has its
     gate closed at the sustain point, so the release segments show too."""
     from .defs import SynthDef, control, env_gen, out
@@ -355,7 +355,7 @@ def _render_env(env, sample_rate):
 
 def _fetch_buffer(bufnum, fallback_rate):
     """Fetches a buffer's interleaved samples and shape from the ambient live
-    server (the running/default session's) — the buffer-contents check."""
+    server (the running/default session's) -- the buffer-contents check."""
     from .base.main import main
 
     server = main.resolve_server(None)
@@ -403,11 +403,11 @@ def _ambient_host(server=None):
     it was registered), so its client leg is whoever registered it's business.
 
     ``server`` is the audio server the caller needs the host to be a client
-    of — `clausters.scope` passes the resolved live server so the owned host
+    of -- `clausters.scope` passes the resolved live server so the owned host
     boots with its address and shared-memory segment (the tap/bus read path);
     `plot` passes nothing (plot data rides mapped files, no client leg). An
     owned host booted leg-less is **rebooted** wired when a leg is first
-    needed — any windows still open on it close (a session's host never is:
+    needed -- any windows still open on it close (a session's host never is:
     `Session.gui` wires the leg from the start)."""
     global _own_host, _own_host_server
     from .base.main import main, default_session

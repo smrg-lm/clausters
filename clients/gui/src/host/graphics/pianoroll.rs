@@ -1,7 +1,7 @@
 //! The piano-roll **drawing**: a note grid, a piano keyboard gutter, a
 //! velocity lane and an OSC lane, all pure over a [`Draw`] (the
 //! flat-geometry [`crate::host::paint`] painter) so they are unit-testable without a
-//! window — the static-view posture of `track`/`bpf`.
+//! window -- the static-view posture of `track`/`bpf`.
 //!
 //! What a note **is**, and what a hand does to a list of them, is
 //! [`structures::notes`](crate::host::structures::notes); this is where those
@@ -10,21 +10,21 @@
 //! notes in it rather than by whoever draws them first.
 //!
 //! This module is **shared by two consumers**, on the crate's standing rule
-//! that a model and its hit-test primitives are extracted once and reused —
+//! that a model and its hit-test primitives are extracted once and reused --
 //! the same way `points::place_point`/`insert_point` serve both the `bpf` widget
 //! and the automation clip:
 //!
-//! - the dedicated **`pianoroll` widget** — an editor-grade view with a
+//! - the dedicated **`pianoroll` widget** -- an editor-grade view with a
 //!   keyboard, rulers, group navigation, selection and a playhead, drawing MIDI
 //!   notes in the grid and OSC markers in their lane;
-//! - the multitrack **`clip` body** — a clip with `notes` draws its compact
+//! - the multitrack **`clip` body** -- a clip with `notes` draws its compact
 //!   piano-roll by calling [`draw_notes`] on the clip's rect, so a note lines up
 //!   on the shared time axis and the two never disagree on geometry.
 //!
 //! Everything here is **display logic** (pixel mapping, hit-testing, drag
 //! clamps): it stays gui-side per the placement rule. The one multitrack of general
-//! musical knowledge — the MIDI-note ↔ name/black-key spelling drawn on the
-//! keyboard and the pitch ruler — lives in `clausters_core::scale`.
+//! musical knowledge -- the MIDI-note ↔ name/black-key spelling drawn on the
+//! keyboard and the pitch ruler -- lives in `clausters_core::scale`.
 
 use clausters_core::scale;
 
@@ -39,7 +39,7 @@ use crate::viewport::View;
 
 // --- Layout ---------------------------------------------------------------
 
-/// The keyboard gutter a roll asks for, device pixels — its *own* structural
+/// The keyboard gutter a roll asks for, device pixels -- its *own* structural
 /// geometry. What it actually gets is its navigation group's shared indent
 /// (`crate::host::timeline::group_indent`), which is this when the roll is alone on
 /// its axis and wider when it shares one with a lane.
@@ -67,7 +67,7 @@ pub struct Regions {
 
 /// Split a widget rect into its piano-roll regions. `osc`/`velocity` reserve
 /// their strips only when on; `ruler_on` reserves the bottom time strip.
-/// `indent` is the group's shared gutter — the keyboard fills it, so the grid
+/// `indent` is the group's shared gutter -- the keyboard fills it, so the grid
 /// starts where every other member of the axis starts its body.
 pub fn regions(
     rect: Rect,
@@ -111,7 +111,7 @@ fn to_x(s: f64, nav: &View, body: Rect) -> f64 {
 /// **The roll's vertical axis**: one band per semitone of the window
 /// `[lo, hi]`, the top band being pitch `hi`.
 ///
-/// The window shows every whole row `lo..=hi` — `hi - lo + 1` of them — so the
+/// The window shows every whole row `lo..=hi` -- `hi - lo + 1` of them -- so the
 /// pixel axis spans `[lo - 0.5, hi + 0.5]` and the extreme rows draw in full
 /// instead of being clipped at the grid edges.
 ///
@@ -130,7 +130,7 @@ pub fn row_height(lo: f32, hi: f32, grid: Rect) -> f32 {
     grid.h / rows
 }
 
-/// The integer pitches whose rows show in the window `[lo - 0.5, hi + 0.5]` —
+/// The integer pitches whose rows show in the window `[lo - 0.5, hi + 0.5]` --
 /// what everything drawn *per row* iterates, so the bands, the dividers, the
 /// keys and the labels are the same set of rows.
 fn rows_in_view(lo: f32, hi: f32) -> std::ops::RangeInclusive<i32> {
@@ -138,7 +138,7 @@ fn rows_in_view(lo: f32, hi: f32) -> std::ops::RangeInclusive<i32> {
 }
 
 /// The part of a bar of height `h` centred on `yc` that falls inside `grid`,
-/// as `(y, height)` — `None` when none of it does. The vertical counterpart of
+/// as `(y, height)` -- `None` when none of it does. The vertical counterpart of
 /// the note's horizontal clamp to the grid bounds.
 fn visible_band(yc: f32, h: f32, grid: Rect) -> Option<(f32, f32)> {
     let y = (yc - h * 0.5).max(grid.y);
@@ -149,12 +149,12 @@ fn visible_band(yc: f32, h: f32, grid: Rect) -> Option<(f32, f32)> {
 /// Whether any part of pitch `p`'s row shows in the window `[lo - 0.5, hi + 0.5]`.
 ///
 /// The row of `p` spans `[p - 0.5, p + 0.5]`, so it is in view while `p` is
-/// within **a whole row** of the window's ends — half of it is enough. Asking
+/// within **a whole row** of the window's ends -- half of it is enough. Asking
 /// for the row's *centre* to be inside instead drops a note the moment it is
 /// half cut, which is exactly when it should still be half drawn.
 ///
-/// The horizontal axis says this by construction — a note off the time window
-/// clamps to a zero-width span and is skipped — while the vertical one has to
+/// The horizontal axis says this by construction -- a note off the time window
+/// clamps to a zero-width span and is skipped -- while the vertical one has to
 /// be asked.
 pub fn pitch_visible(p: f32, lo: f32, hi: f32) -> bool {
     p > lo - 1.0 && p < hi + 1.0
@@ -162,11 +162,11 @@ pub fn pitch_visible(p: f32, lo: f32, hi: f32) -> bool {
 
 /// A pitch's y pixel (its row centre), **unclamped**: a pitch outside the
 /// window maps above or below `grid` instead of onto its edge. Whatever is
-/// placed *on* a row — a note bar — wants this one and cuts itself against the
+/// placed *on* a row -- a note bar -- wants this one and cuts itself against the
 /// grid, because a row leaving the view is cut, not slid back in.
 pub fn row_center(pitch: f32, lo: f32, hi: f32, grid: Rect) -> f32 {
     // The band the pitch sits on, measured from the grid's top: pitch `hi` is
-    // band 0. Deliberately **not** `Bands::at`, which clamps to the stack — a
+    // band 0. Deliberately **not** `Bands::at`, which clamps to the stack -- a
     // row leaving the view is cut where it is, not slid back in, and the caller
     // is the one that cuts it (`visible_band`).
     grid.y + (hi + 0.5 - pitch) * row_height(lo, hi, grid)
@@ -174,7 +174,7 @@ pub fn row_center(pitch: f32, lo: f32, hi: f32, grid: Rect) -> f32 {
 
 /// A pitch's y pixel (its row centre) **inside** `grid`: high pitch at the top.
 /// The axis spans `[lo - 0.5, hi + 0.5]`, so pitch `hi` centres half a row
-/// below the top edge and pitch `lo` half a row above the bottom — every row is
+/// below the top edge and pitch `lo` half a row above the bottom -- every row is
 /// fully visible. Clamped to the grid, which is what the chrome painted *per
 /// row* wants (the shaded bands, the keyboard keys, the C labels): those are
 /// drawn for the rows in view and must not bleed into the strip above or below.
@@ -183,7 +183,7 @@ pub fn pitch_to_y(pitch: f32, lo: f32, hi: f32, grid: Rect) -> f32 {
 }
 
 /// The (fractional) pitch a y pixel maps to over the `[lo - 0.5, hi + 0.5]`
-/// window — the inverse of [`pitch_to_y`], so a drop lands on the row it is
+/// window -- the inverse of [`pitch_to_y`], so a drop lands on the row it is
 /// drawn on.
 pub fn y_to_pitch(y: f32, lo: f32, hi: f32, grid: Rect) -> f32 {
     hi + 0.5 - bands(lo, hi, grid).index_of(y - grid.y)
@@ -205,7 +205,7 @@ pub fn draw_grid_background(d: &mut Draw, grid: Rect, lo: f32, hi: f32) {
     for p in rows_in_view(lo, hi) {
         let yc = row_center(p as f32, lo, hi, grid);
         // The band is the row's own slice of the window, cut where the grid
-        // ends — never slid inside it, which would stack the rows above the
+        // ends -- never slid inside it, which would stack the rows above the
         // window onto the top one and put the shading out of step with the keys.
         if scale::is_black_key(p)
             && rh >= 1.0
@@ -230,8 +230,8 @@ pub fn draw_grid_background(d: &mut Draw, grid: Rect, lo: f32, hi: f32) {
 
 /// Draw a set of notes over the pitch window `[lo, hi]` of `grid`, placed on
 /// the shared `nav` time axis (offset added, so a clip's roll moves with the
-/// clip). `field` is the pixel domain the `nav` window spans horizontally — the
-/// lane body for a multitrack clip, the grid itself for the dedicated view — and
+/// clip). `field` is the pixel domain the `nav` window spans horizontally -- the
+/// lane body for a multitrack clip, the grid itself for the dedicated view -- and
 /// each note's x clamps to `grid`'s bounds; `grid` also gives the pitch rows and
 /// the note height. Passing the clip rect for both would rescale the note by the
 /// clip's own width, drifting the roll off its clip under a pan/zoom. The one
@@ -260,12 +260,12 @@ pub fn draw_notes(
     // always said: a note never collapses below `NOTE_MIN_H`, and a grid
     // shorter than one bar cuts it (`visible_band`) rather than shrinking it.
     // Written as a `clamp` this inverted its own range on such a grid and
-    // panicked — reachable by dragging a window's corner in.
+    // panicked -- reachable by dragging a window's corner in.
     let h = rh.min(grid.h).max(NOTE_MIN_H);
     let (x_lo, x_hi) = (grid.x, grid.x + grid.w);
     for (i, n) in notes.iter().enumerate() {
-        // x maps through `field` — the pixel domain the shared `nav` spans (the
-        // lane body for a clip, the grid itself for the dedicated view) — then
+        // x maps through `field` -- the pixel domain the shared `nav` spans (the
+        // lane body for a clip, the grid itself for the dedicated view) -- then
         // clamps to the clip's own `grid` bounds, exactly as `track::draw_curve`
         // maps its points. Using `grid` for both would rescale the note by the
         // clip's width, so notes drifted off their clip under a pan/zoom.
@@ -308,7 +308,7 @@ pub fn draw_notes(
     }
 }
 
-/// Label each C row at the left edge of a roll body — the compact pitch ruler
+/// Label each C row at the left edge of a roll body -- the compact pitch ruler
 /// for a roll drawn **without** a keyboard gutter (the multitrack `clip`'s
 /// body; the dedicated widget names its Cs on the keyboard instead). Draws
 /// only when a semitone row is tall enough to read a label.
@@ -432,7 +432,7 @@ pub struct NoteHit {
     pub part: Part,
 }
 
-/// The note under `(x, y)` in the grid, if any — the last drawn (topmost) match
+/// The note under `(x, y)` in the grid, if any -- the last drawn (topmost) match
 /// wins. Returns the edge part when the cursor is within `EDGE_PX` of a wide
 /// enough note's start/end, else the body.
 #[allow(clippy::too_many_arguments)] // one time-and-pitch mapping, all scalars
@@ -451,7 +451,7 @@ pub fn note_hit(
     // always said: a note never collapses below `NOTE_MIN_H`, and a grid
     // shorter than one bar cuts it (`visible_band`) rather than shrinking it.
     // Written as a `clamp` this inverted its own range on such a grid and
-    // panicked — reachable by dragging a window's corner in.
+    // panicked -- reachable by dragging a window's corner in.
     let h = rh.min(grid.h).max(NOTE_MIN_H);
     let mut found: Option<NoteHit> = None;
     for (i, n) in notes.iter().enumerate() {
@@ -473,7 +473,7 @@ pub fn note_hit(
     found
 }
 
-/// The timeline (region-relative) sample position a grid x pixel maps back to —
+/// The timeline (region-relative) sample position a grid x pixel maps back to --
 /// the inverse of [`to_x`], for placing a dragged/added note.
 pub fn time_at(grid: Rect, nav: &View, offset: f64, x: f32) -> f64 {
     let s = nav.start + nav.len * ((x - grid.x) as f64 / grid.w.max(1.0) as f64);
@@ -481,7 +481,7 @@ pub fn time_at(grid: Rect, nav: &View, offset: f64, x: f32) -> f64 {
 }
 
 /// The 0..127 velocity a cursor height maps to within the velocity lane
-/// (lane bottom = 0, lane top = 127; clamped) — the inverse of the lane's bar
+/// (lane bottom = 0, lane top = 127; clamped) -- the inverse of the lane's bar
 /// drawing, shared by the single-bar and block velocity drags.
 pub fn velocity_at(lane: Rect, y: f64) -> i32 {
     let frac = ((lane.y + lane.h - y as f32) / lane.h.max(1.0)).clamp(0.0, 1.0);
@@ -540,7 +540,7 @@ mod tests {
     }
 
     /// A note outside the visible pitch window is *gone*, not flattened against
-    /// the edge — where a zoomed-in roll would stack every note above it into
+    /// the edge -- where a zoomed-in roll would stack every note above it into
     /// one bar and let a press grab any of them at a pitch none of them has.
     #[test]
     fn a_note_outside_the_pitch_window_is_neither_drawn_nor_grabbable() {
@@ -569,8 +569,8 @@ mod tests {
     }
 
     /// A row on its way out of the window is **cut** by the grid's edge. The
-    /// alternative — sliding the whole bar back inside, which is what clamping
-    /// its top did — draws the note on a row that is not its own, and the note
+    /// alternative -- sliding the whole bar back inside, which is what clamping
+    /// its top did -- draws the note on a row that is not its own, and the note
     /// stops moving while the axis under it keeps going.
     #[test]
     fn a_row_leaving_the_view_is_cut_rather_than_pushed_back_in() {
@@ -614,7 +614,7 @@ mod tests {
 
     #[test]
     fn pitch_labels_draw_only_when_the_rows_can_be_read() {
-        // One octave over 240px: ~20px rows — the C label fits.
+        // One octave over 240px: ~20px rows -- the C label fits.
         let mut mesh = Mesh::new();
         draw_pitch_labels(
             &mut Draw::new(&mut mesh, &Metrics::default(), &Theme::default()),
@@ -623,7 +623,7 @@ mod tests {
             67.0,
         );
         assert!(mesh.vertex_count() > 0, "a readable C row gets its name");
-        // Eight octaves over the same height: sub-3px rows — nothing draws.
+        // Eight octaves over the same height: sub-3px rows -- nothing draws.
         let mut mesh = Mesh::new();
         draw_pitch_labels(
             &mut Draw::new(&mut mesh, &Metrics::default(), &Theme::default()),

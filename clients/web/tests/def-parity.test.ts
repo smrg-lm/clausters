@@ -4,7 +4,7 @@
 // set of graphs; each case here rebuilds the same graph with the TS builders
 // and asserts the emitted spec is identical. The two surfaces are written
 // independently (TypeScript composes by method where Python composes by
-// operator) — what has to match is only the wire, which is the whole point of
+// operator) -- what has to match is only the wire, which is the whole point of
 // the shared def format.
 //
 // Needs the core wasm staged (`./build.sh`); run with `npm test`.
@@ -108,7 +108,7 @@ const vectors: Vectors = JSON.parse(
 
 const find = <T extends { name: string }>(rows: T[], name: string): T => {
     const row = rows.find((r) => r.name === name);
-    assert.ok(row, `no vector named '${name}' — regenerate def-vectors.json`);
+    assert.ok(row, `no vector named '${name}' -- regenerate def-vectors.json`);
     return row;
 };
 
@@ -280,7 +280,7 @@ const synthdefs: Record<string, () => SynthDef> = {
         ),
 
     // The state-variable filter, once with the tap gains given directly and
-    // once swept by `svfMorph` — with a signal position, whose clamps are
+    // once swept by `svfMorph` -- with a signal position, whose clamps are
     // graph nodes, and with a constant one, whose clamps fold to numbers.
     svf_taps: () =>
         new SynthDef(
@@ -346,9 +346,9 @@ test("FaustDef parity: two outputs", () => {
     assert.deepEqual(JSON.parse(def.dumpDef()), expected);
 });
 
-// The box algebra's three vectors. Written against the TS surface only — the
+// The box algebra's three vectors. Written against the TS surface only -- the
 // application is `.call(…)` where Python calls the box itself and `.outs()` is
-// the same enumeration — so what is compared is the emitted tree, never the
+// the same enumeration -- so what is compared is the emitted tree, never the
 // spelling that built it.
 
 test("FaustDef parity: a box tree of library fragments", () => {

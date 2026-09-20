@@ -9,8 +9,8 @@ Runs from the *installed* package, offline, like ``chain.py``::
 
 The pipeline is the whole point:
 
-1. The impulse response — here a synthetic one, exponentially decaying noise
-   (~0.7 s), written to a WAV and loaded with ``Buffer.read`` — lives in an
+1. The impulse response -- here a synthetic one, exponentially decaying noise
+   (~0.7 s), written to a WAV and loaded with ``Buffer.read`` -- lives in an
    ordinary buffer.
 2. ``kernel.gen("prepare_partconv", fft_size, ir.bufnum)`` partitions
    it and computes every partition's spectrum **once, off the audio thread**,
@@ -21,7 +21,7 @@ The pipeline is the whole point:
    hop, so a long reverb tail does not spike the block where the FFT lands.
 
 The convolver has an intrinsic latency of ``fft_size / 2`` samples (the
-partition length) — at 1024 that is ~10.7 ms, inaudible as the reverb's
+partition length) -- at 1024 that is ~10.7 ms, inaudible as the reverb's
 predelay here. Left channel: the dry pluck. Right channel: the convolved
 tail (100% wet, so the reverb is obvious).
 
@@ -57,7 +57,7 @@ from clausters.defs import (
 )
 
 #: Where a run leaves its file when no path is given: ``examples/out/``, the
-#: git-ignored directory every generator in this tree writes to — beside the
+#: git-ignored directory every generator in this tree writes to -- beside the
 #: examples rather than in whatever directory you ran from. Made here so that
 #: rendering is one call and not two.
 OUT = pathlib.Path(__file__).resolve().parents[1] / "out"
@@ -102,7 +102,7 @@ def pluck(kernel_bufnum: int, partitions: int, name: str = "pluck") -> SynthDef:
                   done_action=DoneAction.NONE)
     sig = sine(freq) * env * 0.5
     wet = conv(sig, float(kernel_bufnum), fft_size=FFT_SIZE, partitions=partitions)
-    # A convolution's gain is the IR's energy (sqrt of its summed squares —
+    # A convolution's gain is the IR's energy (sqrt of its summed squares --
     # here ~13x for 0.7 s of decaying noise), so the wet side takes a small
     # make-up gain; scale the IR itself instead when its level matters.
     return SynthDef(name, out(0.0, sig * 0.6), out(1.0, wet * 0.04))

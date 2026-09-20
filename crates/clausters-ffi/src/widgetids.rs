@@ -206,7 +206,7 @@ pub unsafe extern "C" fn clausters_widgetids_in_use(h: *mut FfiWidgetIds) -> u64
     with_ids(h, 0, |ids| ids.in_use() as u64)
 }
 
-/// How many of them answer to a name — the bound on a
+/// How many of them answer to a name -- the bound on a
 /// [`clausters_widgetids_retire`] buffer.
 ///
 /// # Safety

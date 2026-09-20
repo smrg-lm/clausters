@@ -4,7 +4,7 @@
 A *bundle* is a data directory that holds a named GuiDef beside the
 SynthDefs/GraphDefs it needs. ``clausters-gui --standalone <name>`` boots such a
 bundle against an **embedded** audio server (loaded in-process), runs the
-GuiDef's ``boot`` messages to bring the instrument up, then opens its window — a
+GuiDef's ``boot`` messages to bring the instrument up, then opens its window -- a
 self-contained instrument with **no separate audio server and no language client
 running**. This is the GUI counterpart of the server's MIDI-standalone preset:
 the saved definitions are enough to launch a working program on their own.
@@ -19,17 +19,17 @@ the layout is the whole story:
 
 Two GuiDef features make a saved tree self-driving, so it needs no live script:
 
-- a root ``boot`` list — OSC messages the standalone host sends right after the
+- a root ``boot`` list -- OSC messages the standalone host sends right after the
   defs load, to instantiate the instrument (here one ``/synth_new`` creating node
   1000 from the drone SynthDef);
-- a widget ``bind`` prop — the declarative form of ``/gui_bind``, wiring the
+- a widget ``bind`` prop -- the declarative form of ``/gui_bind``, wiring the
   knob's value **straight to the embedded server** (here ``/node_set 1000 freq``),
   so turning it changes the pitch with no round-trip through any script.
 
 The int/float distinction is preserved end to end: node ids are written as
 integers (``1000``) and stay integers on the wire; control values are floats.
 
-Run it (the client importable as usual — ``pip install ./clients/python`` or
+Run it (the client importable as usual -- ``pip install ./clients/python`` or
 ``PYTHONPATH=clients/python``)::
 
     python clients/python/examples/panels/standalone.py
@@ -44,17 +44,17 @@ It writes the two files and prints, e.g.::
 The ``standalone`` feature links the embedded audio server into ``clausters-gui``
 (off by default, since it pulls the engine + audio backend). Run that command
 (from ``clients/gui``) and a window opens whose knob drives the drone's frequency
-on the embedded server — no other process involved. Close the window to stop.
+on the embedded server -- no other process involved. Close the window to stop.
 Needs a display and a Vulkan/Metal/DX12/GL adapter.
 
-The same bundle also boots **in a browser tab** — the engine in an
+The same bundle also boots **in a browser tab** -- the engine in an
 AudioWorklet, the GUI host on a canvas, still no server process. That path
 needs one extra file (a ``bundle.json`` manifest, since HTTP cannot list
 directories) and the served page; the script prints those steps too. See "A
 standalone bundle in a tab" in ``docs/clients.md``.
 
 **Its pair in the web client is a node script**,
-``clients/web/examples/panels/standalone.mjs`` — the same two files written by
+``clients/web/examples/panels/standalone.mjs`` -- the same two files written by
 the same calls in the other language. The page beside it,
 ``standalone.html``, is not this example's other half: it is the counterpart of
 *running* ``clausters-gui --standalone``, in a tab. A page never writes a
@@ -94,7 +94,7 @@ OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
 # %%
 def drone() -> SynthDef:
     """A quiet stereo sine drone whose pitch is the ``freq`` control (default
-    160 Hz) — the boot ``/synth_new`` instantiates it and the knob's binding drives
+    160 Hz) -- the boot ``/synth_new`` instantiates it and the knob's binding drives
     its ``freq``."""
     sig = sine(freq=control("freq", 160.0)) * 0.2
     return SynthDef(SYNTH_NAME, out(0.0, sig), out(1.0, sig))
@@ -137,7 +137,7 @@ def write_bundle(data_dir: str):
 
     A SynthDef file is exactly the ``/def_send synth`` spec JSON (``SynthDef.dump_def``);
     a GuiDef record wraps the tree with the id it is defined under,
-    ``{"id": <int>, "gui": <tree>}`` — the standalone host replays it as
+    ``{"id": <int>, "gui": <tree>}`` -- the standalone host replays it as
     ``/gui_def <id> <tree>``.
     """
     synthdefs = os.path.join(data_dir, "defs", "synthdefs")
@@ -186,7 +186,7 @@ def run(data_dir: str = OUT):
     print(f"    ln -s {data_dir} my-bundle")
     print("    python3 -m http.server  # then open")
     print("    http://localhost:8000/examples/panels/standalone.html?bundle=/my-bundle\n")
-    print("the engine runs in an AudioWorklet, the GUI on a canvas — no server "
+    print("the engine runs in an AudioWorklet, the GUI on a canvas -- no server "
           "process anywhere.")
     return synth_path, gui_path
 

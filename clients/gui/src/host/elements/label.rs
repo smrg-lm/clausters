@@ -1,4 +1,4 @@
-//! `label` — static text in a rect.
+//! `label` -- static text in a rect.
 //!
 //! The first leaf to move behind the trait, and the smallest complete one: four
 //! props, one draw, a natural height, and the wheel falling through it. What
@@ -32,7 +32,7 @@ pub(super) fn build(
     Ok(Box::new(from_props(props)))
 }
 
-/// The props a `label` node carries, read once — shared by the constructor
+/// The props a `label` node carries, read once -- shared by the constructor
 /// and by the tests beside it.
 fn from_props(props: &Map<String, Value>) -> Label {
     Label {
@@ -146,7 +146,7 @@ mod tests {
         assert_eq!(l.align, Align::Start);
     }
 
-    /// A wrapped label's line count follows its string, which is data — so it
+    /// A wrapped label's line count follows its string, which is data -- so it
     /// stays elastic and clips, while an unwrapped one knows its one line.
     #[test]
     fn only_an_unwrapped_label_knows_its_height() {

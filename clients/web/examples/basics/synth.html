@@ -22,8 +22,8 @@
   <body>
     <main>
       <div id="note">A SynthDef is built here, in the page, out of the same
-lowercase callables the Python client uses — a saw through a resonant filter,
-under an ADSR — then sent, instanced and retuned live.
+lowercase callables the Python client uses -- a saw through a resonant filter,
+under an ADSR -- then sent, instanced and retuned live.
 
 The <b>carrier</b> is the choice below, and it is the only line of this page
 that knows about one: the default runs the audio server in this tab's
@@ -74,7 +74,7 @@ server over a WebSocket. Everything after that line is the same code.</div>
       // ---- the def: pure client-side value, no connection in sight ----
       //
       // TypeScript has no operator overloading, so the graph composes by
-      // method — `saw(freq).mul(amp)` where the Python client writes
+      // method -- `saw(freq).mul(amp)` where the Python client writes
       // `saw(freq) * amp`. The JSON both emit is identical.
       const freq = control("freq", 220.0);
       const cutoff = control("cutoff", 1200.0, { lag: 0.05 });
@@ -132,7 +132,7 @@ server over a WebSocket. Everything after that line is the same code.</div>
       function release() {
         if (!note) return;
         // Dropping the gate plays the envelope's release segments, and its
-        // done action frees the node — the note ends itself.
+        // done action frees the node -- the note ends itself.
         note.set({ gate: 0.0 });
         note = null;
       }

@@ -29,7 +29,7 @@ control bus, above a <b>waveform</b> of a server buffer.
 
 <b>This page names what to look at and draws none of it.</b> A GuiDef says
 <code>gui.meter(bus)</code>, <code>gui.scope(bus)</code>,
-<code>gui.waveform({ buffer })</code> — a bus number and a buffer number — and
+<code>gui.waveform({ buffer })</code> -- a bus number and a buffer number -- and
 the <b>GUI host</b> subscribes, measures and paints: the trigger that makes the
 trace stand still, the peak columns and the join that inks an edge are all its,
 out of the same <code>clausters-core</code> the server computes with. There is
@@ -46,7 +46,7 @@ part is the tree below and the <code>bus.set</code> that animates it.</div>
 
     <!--
       The web twin of the Python client's `views/meters.py`: the data paths as
-      the client is meant to use them — named, not read. A meter reads a control
+      the client is meant to use them -- named, not read. A meter reads a control
       bus, a scope reads an audio bus, and a waveform reads a server buffer, and
       in every case this page says *what to look at* while the host does the
       reading and the drawing.
@@ -55,7 +55,7 @@ part is the tree below and the <code>bus.set</code> that animates it.</div>
       paths from the script and checks them as numbers.
 
       Needs: ./build.sh from clients/web (dist/ is git-ignored), then any static
-      server over this directory — `python3 -m http.server` and open
+      server over this directory -- `python3 -m http.server` and open
       examples/views/meters.html. A WebGPU-capable browser; the host falls back to
       WebGL2 where it must.
     -->
@@ -79,7 +79,7 @@ part is the tree below and the <code>bus.set</code> that animates it.</div>
 
       const SR = 48000;
 
-      /** A second of a 220 Hz sine — what the waveform draws. */
+      /** A second of a 220 Hz sine -- what the waveform draws. */
       function sineSamples(freq = 220.0, secs = 1.0, sr = SR) {
         const frames = Math.trunc(secs * sr);
         const samples = new Float32Array(frames);

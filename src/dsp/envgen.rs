@@ -96,12 +96,12 @@ impl UGen for EnvGen {
             let time_scale = at(inputs[3], i);
 
             let trig = gate > 0.0 && self.gate_prev <= 0.0;
-            // A falling gate releases — and so does a gate found *already*
+            // A falling gate releases -- and so does a gate found *already*
             // closed on the very first sample. A live client's note-on and
             // note-off can land in the same command drain (both applied
             // before the node's first block), so the envelope never sees an
             // edge; without this it would play its segments and sustain
-            // forever on a closed gate — a stuck, audible node. Born
+            // forever on a closed gate -- a stuck, audible node. Born
             // released, it plays the release segment from the initial level
             // and finishes, so the done action still frees the node.
             let born = !self.primed;

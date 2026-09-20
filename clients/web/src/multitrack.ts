@@ -2,7 +2,7 @@
  * The multitrack: tracks, lanes, regions, and the timeline they sit on
  * (mirrors `clausters/multitrack.py`).
  *
- * This is the client's side of `clausters_document::multitrack` — the model a
+ * This is the client's side of `clausters_document::multitrack` -- the model a
  * multitrack editor edits, and the one the three classic applications (audio
  * editor, multitrack editor, score editor) are built over. The crate defines
  * the format; this module is the idiomatic way to write one and read one back,
@@ -10,8 +10,8 @@
  *
  * The vocabulary is the field's own and not this project's invention:
  *
- * - A **source** is samples. It lives outside the arrangement — the session's
- *   table says where — and is never overwritten.
+ * - A **source** is samples. It lives outside the arrangement -- the session's
+ *   table says where -- and is never overwritten.
  * - A {@link Region} is **one placed thing**: a span of the timeline (where it
  *   starts, how long, its fades, which of the overlapping ones is on top) plus
  *   a {@link Content} saying what fills it. Six regions over one source are six
@@ -32,7 +32,7 @@
  *
  * `Region` is the model's word; **clip** is the picture's. A clip, a lane row,
  * a waveform are what the host draws; a region is what an edit names. Keeping
- * them apart is deliberate — the multitrack's defects came from the thing drawn
+ * them apart is deliberate -- the multitrack's defects came from the thing drawn
  * and the thing addressed being one object.
  *
  * ## Time
@@ -41,7 +41,7 @@
  * and fades, every automation point, the markers, the loop and the punch. A
  * multitrack is governed by physical time, the way the server and the clients
  * are, and no tempo change moves anything in it. What fills a region is measured
- * in its own source's units — seconds of a recording, beats of a node — and the
+ * in its own source's units -- seconds of a recording, beats of a node -- and the
  * two are not the same axis. The crate makes that a type; here it is a rule the
  * field names say (`position` and `length` are the region's, `start` and
  * `duration` are its window's).
@@ -164,7 +164,7 @@ export class Fade {
  *
  * A window carries its `playrate` (a property of *this* placement: two regions
  * over one source may play it at two rates) and the `args` of **this**
- * evaluation, for a window onto something generated — a function placed twice
+ * evaluation, for a window onto something generated -- a function placed twice
  * is two evaluations, possibly with different arguments, and the document
  * carries them without reading them.
  */
@@ -178,7 +178,7 @@ export class Content {
     /**
      * Whether the window **wraps**: past the end of the source it begins again,
      * and before the beginning it shows the source's own tail. What a box longer
-     * than what it reads means — the alternative being that it simply stops,
+     * than what it reads means -- the alternative being that it simply stops,
      * which is what a box that does not loop does. A property of *this*
      * placement, like `playrate`: two regions over one recording may loop and
      * not loop.
@@ -198,8 +198,8 @@ export class Content {
     /**
      * A window onto a source: `{ source, start, duration }`.
      *
-     * `duration` is how much of the source the window **reaches** — the whole
-     * take, or the sum of a join's segments — and not how much the region
+     * `duration` is how much of the source the window **reaches** -- the whole
+     * take, or the sum of a join's segments -- and not how much the region
      * shows: the region's own `length` says that, and a trim that hides part of
      * the source leaves `duration` alone so the edge can be pulled back.
      */
@@ -264,7 +264,7 @@ export class Region {
     name?: string;
     /**
      * Which of the overlapping regions on this lane draws and plays on top.
-     * Overlap is legal and ordinary — a crossfade *is* an overlap — so the
+     * Overlap is legal and ordinary -- a crossfade *is* an overlap -- so the
      * stack needs an order that survives a save.
      */
     layer: number;
@@ -272,7 +272,7 @@ export class Region {
     fadeOut?: Fade;
     muted: boolean;
     /**
-     * The curves that act on **this placement alone** — its own gain, its pan,
+     * The curves that act on **this placement alone** -- its own gain, its pan,
      * the parameters of whatever fills it.
      *
      * The same {@link Automation} a track carries, in the other place it
@@ -317,7 +317,7 @@ export class Region {
 
     /**
      * Whether the two occupy any of the same time. Half-open, so a region
-     * ending exactly where the next begins does not overlap it — which is what
+     * ending exactly where the next begins does not overlap it -- which is what
      * makes a cut into two regions not a crossfade.
      */
     overlaps(other: Region): boolean {
@@ -361,7 +361,7 @@ export class Region {
 /**
  * One of a track's several contents: an ordered list of regions.
  *
- * Ardour's structure and our name — its *playlist* is this, and that word is
+ * Ardour's structure and our name -- its *playlist* is this, and that word is
  * spent on something else everywhere. {@link Lane.place} keeps the list in
  * position order, so a re-saved session is stable and a diff of two saves is
  * the edits rather than the iteration order.
@@ -424,7 +424,7 @@ export class Lane {
  * A curve over one parameter, in the arrangement's own time.
  *
  * `target` says **what this automates** in the client's terms and is never read
- * here — a control name, a bus, a plugin's parameter index — the same door a
+ * here -- a control name, a bus, a plugin's parameter index -- the same door a
  * leaf's configuration is, and for the same reason.
  */
 export class Automation {
@@ -489,7 +489,7 @@ export class Automation {
  * A row of the arrangement: several lanes, one of them playing, the curves over
  * it, and whatever the client says it is.
  *
- * **What a track *is* — an instrument, a bus, a folder — is not here.** That is
+ * **What a track *is* -- an instrument, a bus, a folder -- is not here.** That is
  * `config`, carried and never interpreted, for the reason a leaf is opaque: a
  * def is code in the language of whoever wrote it. What the document owns is
  * the structure: which lanes, which one plays, what is placed on them.
@@ -559,7 +559,7 @@ export class Track {
     }
 
     /**
-     * Where the track's last region ends, across **every** lane — what it spans
+     * Where the track's last region ends, across **every** lane -- what it spans
      * rather than what it plays, since an alternate take is still part of the
      * multitrack.
      */
@@ -738,14 +738,14 @@ export class Span {
 export class Multitrack {
     /**
      * What this multitrack is *at*, and the whole of what a stale edit is stale
-     * against — the twin of the document's own version, and deliberately a
+     * against -- the twin of the document's own version, and deliberately a
      * second counter: an editor of the multitrack is not editing the tree, so one
      * number would make every edit to either look like a change to both.
      */
     version = FIRST_VERSION;
     tracks: Track[] = [];
     /**
-     * How wide the multitrack is, in channels — the master's own width, and what a
+     * How wide the multitrack is, in channels -- the master's own width, and what a
      * track's output is mixed into. Here for the reason {@link Track.channels}
      * is.
      */
@@ -763,7 +763,7 @@ export class Multitrack {
     }
 
     /**
-     * Where the last region ends, across every track and every lane — how long
+     * Where the last region ends, across every track and every lane -- how long
      * the multitrack is.
      */
     get end(): number {
@@ -771,7 +771,7 @@ export class Multitrack {
     }
 
     /**
-     * Every region, in track then lane then position order — **every** lane,
+     * Every region, in track then lane then position order -- **every** lane,
      * not only the ones that play, because an alternate take still names the
      * source it plays.
      */
@@ -786,7 +786,7 @@ export class Multitrack {
      * bars fall over its seconds, with the reader's default of one beat a second
      * where it states no tempo.
      *
-     * It places nothing — every position here is already seconds — and is what
+     * It places nothing -- every position here is already seconds -- and is what
      * a ruler draws from and what a script asks to put something on a bar. Built
      * afresh on each call, so an edited tempo is the one read.
      */
@@ -818,7 +818,7 @@ export class Multitrack {
 
     /**
      * Adds a tempo entry, in position order, replacing any already at that beat
-     * — two tempos at one position is a state the map should not hold.
+     * -- two tempos at one position is a state the map should not hold.
      */
     setTempo(tempo: Tempo): void {
         this.tempo = this.tempo.filter((t) => t.at !== tempo.at);
@@ -891,7 +891,7 @@ export class Multitrack {
  * The two fields a naive format leaves out and then cannot add are here:
  * `provenance`, a reference to whatever produced the samples, carried opaquely
  * so re-generating stays possible *without the document knowing how*; and
- * `editing`, a destructive edit that has not been confirmed — a save never
+ * `editing`, a destructive edit that has not been confirmed -- a save never
  * blocks on a confirmation, so a saved session has to be able to say *this is a
  * working copy of that, and the person has not decided yet*.
  */
@@ -908,7 +908,7 @@ export class Source {
      * document) or `"temporary"` (a working copy that dies with the edit).
      */
     lifetime: string;
-    /** Which generation of the content this is — bumped by a destructive edit. */
+    /** Which generation of the content this is -- bumped by a destructive edit. */
     generation: number;
     channels?: number;
     frames?: number;
@@ -1066,7 +1066,7 @@ export class TrackView {
     /** Whether the row is collapsed to its header. */
     collapsed = false;
     /**
-     * Whether the track's other lanes are shown under the one that plays —
+     * Whether the track's other lanes are shown under the one that plays --
      * comping open, in a word. Closed by default: a track with six takes on it
      * is one row until somebody asks to see them.
      */
@@ -1119,8 +1119,8 @@ export class LaneView {
  * One window's picture of one multitrack: where it is looking, how far it is zoomed,
  * what the hand is holding, how tall each track is drawn.
  *
- * None of that is what the multitrack *is* — a selection and a zoom are each
- * window's and never the multitrack's — and all of it is state a person loses
+ * None of that is what the multitrack *is* -- a selection and a zoom are each
+ * window's and never the multitrack's -- and all of it is state a person loses
  * on a reopen unless something writes it down. A session carries a **list** of
  * these, because a multitrack drawn in two windows has two views and they disagree
  * on purpose.
@@ -1132,7 +1132,7 @@ export class View {
     /** What the window is called, when a person named it. */
     name?: string;
     /**
-     * The stretch of the timeline on screen, in seconds — the zoom and the
+     * The stretch of the timeline on screen, in seconds -- the zoom and the
      * horizontal scroll, which are one fact and not two. Absent shows the whole
      * multitrack.
      */
@@ -1142,7 +1142,7 @@ export class View {
     /**
      * The grid this window snaps to, in beats. Zero snaps nothing. It is here
      * rather than in the multitrack because two windows over one multitrack may snap
-     * differently — the arranger to a bar, the editor below it to a sixteenth.
+     * differently -- the arranger to a bar, the editor below it to a sixteenth.
      * A musical grid over a multitrack in seconds, taken through its tempo map by
      * the window: the ruler's configuration, not a unit of the placement.
      */
@@ -1175,7 +1175,7 @@ export class View {
     }
 
     /**
-     * How this track is drawn, to be edited — created on first use, which is
+     * How this track is drawn, to be edited -- created on first use, which is
      * what makes "nobody has touched it" cost nothing to store.
      */
     trackView(id: number): TrackView {
@@ -1307,21 +1307,21 @@ export class View {
  */
 export class Session {
     /**
-     * The format version this build writes — {@link SESSION_FORMAT}, the crate's
+     * The format version this build writes -- {@link SESSION_FORMAT}, the crate's
      * `session::FORMAT`. A session **read** in an older format is migrated to
      * this one first ({@link Session.read}), since its numbers are read
      * differently: format 2 placed the multitrack in beats.
      */
     format = SESSION_FORMAT;
     /**
-     * The multitrack. Always present, possibly empty — which mirrors the crate,
+     * The multitrack. Always present, possibly empty -- which mirrors the crate,
      * where an absent arrangement reads as an empty one rather than as nothing.
      */
     multitrack = new Multitrack();
     /**
      * How the multitrack was being **looked at**: one entry per window. Carried for
-     * the reason every program in the field carries it — reopening a multitrack into
-     * the window it was left in is what a person expects — and a reader that
+     * the reason every program in the field carries it -- reopening a multitrack into
+     * the window it was left in is what a person expects -- and a reader that
      * ignores it opens the same multitrack.
      */
     views: View[] = [];
@@ -1333,7 +1333,7 @@ export class Session {
     /** Where each source is, keyed by source id. */
     sources = new Map<number, Source>();
     /**
-     * What produced the session as a whole — the scripts behind it — carried
+     * What produced the session as a whole -- the scripts behind it -- carried
      * opaquely.
      */
     provenance?: unknown;
@@ -1349,7 +1349,7 @@ export class Session {
      * {@link Session.load} reads relative paths against that file's folder, and
      * {@link Session.save} writes back to it.
      *
-     * The path is on the filesystem `Buffer.read` names — the disk under node,
+     * The path is on the filesystem `Buffer.read` names -- the disk under node,
      * and the page's own storage (`opfs`) in a tab.
      */
     static async open(path: string): Promise<Session> {
@@ -1379,7 +1379,7 @@ export class Session {
     }
 
     /**
-     * Sources whose samples are not written down anywhere — what a save
+     * Sources whose samples are not written down anywhere -- what a save
      * consults before promising the file is complete.
      */
     volatile(): number[] {
@@ -1398,7 +1398,7 @@ export class Session {
     }
 
     /**
-     * Sources the multitrack names but the table does not hold — what an opening
+     * Sources the multitrack names but the table does not hold -- what an opening
      * reader reports rather than discovering one element at a time.
      *
      * **Every** lane is walked and not only the ones that play: an alternate
@@ -1497,13 +1497,13 @@ export class Session {
      * (`editingLoad`), so a session opens the same here, in the Python client
      * and in the GUI host.
      *
-     * `beside` is the folder a relative path is read against — the session
+     * `beside` is the folder a relative path is read against -- the session
      * file's own, on **the server's** filesystem; when omitted, the folder of
      * the file the session was opened from or saved to, else the current one.
      * The answer maps source id to
-     * {@link Buffer} for every source that loaded; a source that cannot — a
+     * {@link Buffer} for every source that loaded; a source that cannot -- a
      * volatile one, one the table does not hold, a join over a take that did not
-     * load — is left out and named in a warning. Rejects when the server refuses
+     * load -- is left out and named in a warning. Rejects when the server refuses
      * a read or a stitch (a file that is not there), after freeing what the load
      * had made.
      */
@@ -1547,11 +1547,11 @@ export class Session {
  * The same shape for both places a curve lives, because it is the same curve: a
  * track's automation is drawn as a **row of its own** under that track and runs
  * the whole timeline, a region's is drawn as a **layer inside that box** and
- * runs as long as the box does. `owner` says which — a track's id for a row, a
+ * runs as long as the box does. `owner` says which -- a track's id for a row, a
  * region's for a layer.
  */
 export interface Curve {
-    /** The automation it draws — its identity, and its name on the wire. */
+    /** The automation it draws -- its identity, and its name on the wire. */
     automation: number;
     /** What it hangs from: a track (a row) or a region (a layer). */
     owner: number;
@@ -1569,7 +1569,7 @@ export interface Curve {
  * **A multitrack as the props the multitrack widget is drawn with.**
  *
  * The rows, the boxes, the automations over both, their break-points, which of
- * them are hidden and which boxes loop — everything a multitrack has from the
+ * them are hidden and which boxes loop -- everything a multitrack has from the
  * document alone, in the flat shapes the wire carries. What a caller adds is
  * what is a function of something *else*: the position cursor, the meter buses,
  * the widget's own chrome.

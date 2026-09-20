@@ -2,7 +2,7 @@
 //
 // Compiles the wasm module here (async, streaming), registers the processor
 // module, and hands the compiled WebAssembly.Module to the worklet through
-// processorOptions — the worklet instantiates it synchronously in its
+// processorOptions -- the worklet instantiates it synchronously in its
 // constructor, so no async work ever happens on the audio thread.
 //
 // The returned handle speaks raw OSC bytes (send / onReply); bring a codec
@@ -15,7 +15,7 @@
 export interface ClaustersEngine {
     context: AudioContext;
     node: AudioWorkletNode;
-    /** Reply callback slot — one consumer; multiplexers own it and fan out. */
+    /** Reply callback slot -- one consumer; multiplexers own it and fan out. */
     /** Every reply, with the tag of the client it is for (`peer`). */
     onReply: ((packet: Uint8Array, peer: number) => void) | null;
     onQuit: (() => void) | null;
@@ -30,7 +30,7 @@ export interface ClaustersEngine {
     dispose(): void;
     /** One complete OSC packet; the bytes are transferred, not copied. */
     /**
-     * One complete OSC packet to the engine, authored by `peer` — which of the
+     * One complete OSC packet to the engine, authored by `peer` -- which of the
      * page's clients is speaking. The server keeps a subscription and a reply
      * queue per client, so two of them sharing this engine (a script and a GUI
      * host) must not send under the same tag.
@@ -74,7 +74,7 @@ export interface BootOptions {
     workletUrl?: URL | string;
     /**
      * The NRT worker: the thread that reads the page's filesystem and decodes,
-     * so the AudioWorklet does neither. Optional in every sense — a browser
+     * so the AudioWorklet does neither. Optional in every sense -- a browser
      * with no `Worker`, a refused port transfer or a Worker that does not
      * answer all leave the engine doing the work itself, which is what it did
      * before this existed.
@@ -84,7 +84,7 @@ export interface BootOptions {
      * How many control buses one `/bus_stream` subscription may list, the
      * page's half of the server's `--max-stream-buses` (default 4096). A
      * document whose canvases hold hundreds of live widgets subscribes a bus
-     * per meter, and the union is one subscription — so this is the knob that
+     * per meter, and the union is one subscription -- so this is the knob that
      * decides how large a page may grow before the engine refuses it, the same
      * decision an operator makes on a server process.
      *
@@ -210,7 +210,7 @@ export async function bootClausters({
  * **Why a handshake.** The channel is a `MessagePort` transferred *into* an
  * AudioWorklet, which the HTML standard allows (a `MessagePort` is transferable
  * and is exposed to the AudioWorklet scope) but which no documentation settles
- * for every engine — WebKit has a history of transferables into worklets, and
+ * for every engine -- WebKit has a history of transferables into worklets, and
  * nothing here can drive Safari to find out. So the Worker is asked to answer
  * over the port before anything relies on it: if the answer comes, the engine
  * starts delegating; if it does not, the page keeps the engine exactly as it

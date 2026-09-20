@@ -23,7 +23,7 @@ const INPUT_RING_BLOCKS: usize = 8;
 /// **Which devices this server holds, and under what name.**
 ///
 /// An audio application is expected to say where its sound comes from and
-/// where it goes, and to come back under the same name when it is restarted —
+/// where it goes, and to come back under the same name when it is restarted --
 /// a patchbay reconnects by name, and a server whose ports are called
 /// something new every run drops the user's routing every time. This is that
 /// surface: `--host`, `--device`, `--input-device` and `--client-name`.
@@ -33,7 +33,7 @@ const INPUT_RING_BLOCKS: usize = 8;
 /// the session.
 #[derive(Debug, Default, Clone)]
 pub struct Devices {
-    /// The audio host (backend) to use, by name — `jack`, `alsa`, `pipewire`,
+    /// The audio host (backend) to use, by name -- `jack`, `alsa`, `pipewire`,
     /// `coreaudio`, `wasapi`, whatever this build has. `None` takes cpal's
     /// default, which prefers PipeWire on Linux where it is compiled in.
     pub host: Option<String>,
@@ -46,7 +46,7 @@ pub struct Devices {
     /// What this server calls itself to the audio graph.
     ///
     /// PipeWire reads its properties from the environment, which is the only
-    /// door cpal leaves open — without one its nodes are named
+    /// door cpal leaves open -- without one its nodes are named
     /// `cpal-playback-<pid>`, so a restarted server never gets its ports back
     /// and every connection a person made is lost. Under JACK the client name
     /// comes from the *device* instead, so `--device` is what names it there.
@@ -57,7 +57,7 @@ impl Devices {
     /// Applies what has to be in place **before** the host is created: the
     /// PipeWire node name, which is read from the environment at connect time.
     ///
-    /// An environment that already names the application is left alone — the
+    /// An environment that already names the application is left alone -- the
     /// person who set `PIPEWIRE_PROPS` meant it.
     pub fn arm(&self) {
         let Some(name) = &self.client_name else {
@@ -76,7 +76,7 @@ impl Devices {
         }
     }
 
-    /// Every host and device this build can see, as lines to print — what
+    /// Every host and device this build can see, as lines to print -- what
     /// `--list-devices` answers, and where the names the other flags take come
     /// from.
     pub fn list() -> Vec<String> {
@@ -140,7 +140,7 @@ fn pick_host(want: Option<&String>) -> cpal::Host {
 }
 
 /// Finds a device by name among `devices`, exactly first and then by a
-/// case-insensitive substring — device names are long and a person types the
+/// case-insensitive substring -- device names are long and a person types the
 /// part that identifies theirs.
 fn pick_device(
     devices: impl Iterator<Item = cpal::Device>,
@@ -298,7 +298,7 @@ pub fn start(
     // transparently), so we do not gate on `supported_output_configs`, which
     // under-reports there. Hosts that reject the rate (CoreAudio, WASAPI, plain
     // ALSA) make `build_*_stream` fail, and we fall back to the device's own
-    // rate — the gap then shows up as `nominal != actual` in `/server_status.reply`.
+    // rate -- the gap then shows up as `nominal != actual` in `/server_status.reply`.
     let rates = match requested_sample_rate {
         Some(hz) if hz != device_rate => [Some(hz), Some(device_rate)],
         _ => [Some(device_rate), None],

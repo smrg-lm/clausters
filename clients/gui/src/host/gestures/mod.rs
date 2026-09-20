@@ -1,4 +1,4 @@
-//! The shared pointer-gesture state machine — one press → drag → release
+//! The shared pointer-gesture state machine -- one press → drag → release
 //! interpreter over the widget tree for **both fronts**.
 //!
 //! The machine owns the in-progress [`Drag`] and turns pointer/wheel/keyboard
@@ -6,7 +6,7 @@
 //! model modules) plus a list of [`GestureEffect`]s for whatever only the front
 //! can do: emitting `/gui_event` over its transport and requesting repaints.
 //! The front supplies the per-call [`GestureCtx`] (framebuffer size, modifier
-//! keys, the heavy views' lane counts — the one datum that lives in front-side
+//! keys, the heavy views' lane counts -- the one datum that lives in front-side
 //! GPU slots) and nothing else: every gesture is made of cursor positions, on
 //! either front, so neither has anything to capture.
 //!
@@ -21,10 +21,10 @@
 //! open, whether the pointer sits in a lane's edge-scroll band).
 //!
 //! The **phases are one child module each**, because that is how a gesture is
-//! read and changed — a variant's press, its drag and its release are three
+//! read and changed -- a variant's press, its drag and its release are three
 //! places in three matches, and having them in three files instead of one
 //! thousand-line one is what keeps the three in view of each other:
-//! [`press`] (the containers' plans, then the element under the cursor — where
+//! [`press`] (the containers' plans, then the element under the cursor -- where
 //! every `Drag` is opened), [`drag`] (what a held drag moves, what its release
 //! delivers, and the edge-scroll frame step that continues one), and
 //! [`wheel`] (the phase that opens no drag at all).
@@ -33,7 +33,7 @@
 //! press → drag → release without the plumbing in between: [`effects`] is what
 //! a gesture *delivers* (the one place the bound-vs-event decision is made),
 //! [`nav`] is what it *reads and moves* (hit-testing, a scroll plane, a
-//! timeline group's pan/zoom/selection), and [`keys`] is the keyboard half —
+//! timeline group's pan/zoom/selection), and [`keys`] is the keyboard half --
 //! text editing and the block operations, which share nothing with the pointer
 //! but the `Gestures` state they hang off.
 
@@ -63,7 +63,7 @@ pub enum GestureEffect {
     /// Repaint the window rooted at this def id (a gesture on one window may
     /// touch linked views in others, so this is not always the pressed window).
     Redraw(i32),
-    /// The keyboard focus **left this window's tree** — Tab stepped past the
+    /// The keyboard focus **left this window's tree** -- Tab stepped past the
     /// last stop on the ring, or there was no ring at all.
     ///
     /// A desktop front has nothing to do about it (nothing is focused, and the
@@ -85,17 +85,17 @@ pub struct GestureCtx {
     pub ctrl: bool,
     pub alt: bool,
     /// The channel count the front found in each widget's GPU slot, by widget
-    /// id — a waveform's channels, a spectrogram's analysis lanes: what is
+    /// id -- a waveform's channels, a spectrogram's analysis lanes: what is
     /// actually on the card, which is the only half of the answer the front
     /// has. How a widget *arranges* them is the widget's
     /// ([`WidgetKind::rows`]), and a widget missing here counts as one row.
     pub slot_channels: HashMap<i32, usize>,
-    /// The server's sample rate (`0.0` when this front does not know it) — the
+    /// The server's sample rate (`0.0` when this front does not know it) -- the
     /// same one the frame draws with. A gesture over a *measured* axis needs
     /// it: a frequency axis has a resolution, and the zoom is not allowed past
     /// it.
     pub sample_rate: f64,
-    /// The engine's sample clock (`0.0` when this front does not know it) — the
+    /// The engine's sample clock (`0.0` when this front does not know it) -- the
     /// same one the frame sweeps the playhead with. **One cursor** needs it: a
     /// click that lands while the transport is running re-anchors the sweep, and
     /// the anchor is a clock value.
@@ -105,16 +105,16 @@ pub struct GestureCtx {
     ///
     /// The one fact a double click needs and the machine cannot have: two
     /// presses are one gesture when they are close in *time* as well as in
-    /// space, and there is no clock in the agnostic core — `std::time::Instant`
+    /// space, and there is no clock in the agnostic core -- `std::time::Instant`
     /// does not exist on wasm, which is the same seam that made the browser's
     /// frame tick a `setInterval`. So the front reads its own (`Instant` here,
-    /// `Date.now` in a page) and the **rule** — how close is close — stays
+    /// `Date.now` in a page) and the **rule** -- how close is close -- stays
     /// here, where there is one of it.
     pub now_ms: f64,
 }
 
 impl GestureCtx {
-    /// A bare context (no modifiers, no lane info) — enough for the control
+    /// A bare context (no modifiers, no lane info) -- enough for the control
     /// widgets and for tests.
     pub fn new(def_id: i32, fb_w: u32, fb_h: u32) -> Self {
         Self {
@@ -131,7 +131,7 @@ impl GestureCtx {
         }
     }
 
-    /// The lane count a widget stacks on screen — the divisor for
+    /// The lane count a widget stacks on screen -- the divisor for
     /// lane-relative y gestures. The two halves of one answer: what the front
     /// uploaded, and what the widget makes of it.
     fn rows(&self, id: i32, kind: &WidgetKind) -> usize {
@@ -141,23 +141,23 @@ impl GestureCtx {
 
 /// An in-progress pointer drag, by what it is driving.
 ///
-/// A drag is either a **container's navigation plan** — panning, selecting,
+/// A drag is either a **container's navigation plan** -- panning, selecting,
 /// scrolling a coordinate system, which is a property of that system and not of
-/// anything drawn in it — or [`Drag::Element`], which carries no geometry at
+/// anything drawn in it -- or [`Drag::Element`], which carries no geometry at
 /// all: what the drag *means* lives in the element, where its state belongs,
 /// and what the machine keeps is the sequence.
 #[derive(Clone)]
 enum Drag {
     /// An element is holding the press. The machine remembers only what it
-    /// alone can answer for: **where** it is ([`element::At`] — which widget or
+    /// alone can answer for: **where** it is ([`element::At`] -- which widget or
     /// which body of which container, the placement the press was measured
-    /// against, the axis it was placed on) — plus whether it asked for the axis
+    /// against, the axis it was placed on) -- plus whether it asked for the axis
     /// under it to keep scrolling while the cursor is held past an edge, which
     /// is the group's to pan and not the element's
     /// ([`Take::edge_scroll`](super::widget::element::Take::edge_scroll)).
     Element { at: element::At, edge: bool },
-    /// **The marquee**: the objects a rectangle covers — a patcher's boxes, a
-    /// multitrack's clips — and nothing else.
+    /// **The marquee**: the objects a rectangle covers -- a patcher's boxes, a
+    /// multitrack's clips -- and nothing else.
     ///
     /// It writes no span and leaves no picture: the rectangle is the gesture's
     /// own, drawn while the hand holds it and gone when it lets go, and what
@@ -166,7 +166,7 @@ enum Drag {
     /// thing selected; the two are not one gesture with two pictures.
     ///
     /// One drag for all of them, because sweeping a rectangle is one gesture:
-    /// `at` is the element to ask what fell inside — a patcher, which claimed
+    /// `at` is the element to ask what fell inside -- a patcher, which claimed
     /// the press because only it knows where its paper ends; a multitrack,
     /// whose clips are its own; a roll, whose notes are.
     Marquee {
@@ -187,14 +187,14 @@ enum Drag {
     },
     /// Sweeping a selection on a timeline container: `anchor` is the sample
     /// under the press, and the selection spans from it to the cursor's sample.
-    /// An element that sweeps a *rectangle* over that span — a roll picking the
-    /// notes inside it — takes the press itself and asks for the selection, so
+    /// An element that sweeps a *rectangle* over that span -- a roll picking the
+    /// notes inside it -- takes the press itself and asks for the selection, so
     /// this stays the container's own sweep.
     ///
     /// `value` is that sweep's **second axis**, present where the view under
     /// the press measures one: the axis as it stood at the press, and the value
-    /// the press was at. Snapshotted rather than re-read — unlike the time
-    /// window, which a linked view can scroll under a held drag — because the
+    /// the press was at. Snapshotted rather than re-read -- unlike the time
+    /// window, which a linked view can scroll under a held drag -- because the
     /// vertical window only moves by a gesture of its own, and a sweep measured
     /// against two different windows would report a range the hand never drew.
     Select {
@@ -203,7 +203,7 @@ enum Drag {
         nav_start: f64,
         nav_len: f64,
         anchor: f64,
-        /// Where the press landed, in window pixels — what tells a sweep from a
+        /// Where the press landed, in window pixels -- what tells a sweep from a
         /// **click that trembled**. A hand releasing a button moves it a pixel
         /// or two, and without this that reads as a selection two samples wide:
         /// harmless for a copy and audible the moment it is also a loop.
@@ -211,7 +211,7 @@ enum Drag {
         /// Where the press landed vertically, for the **other** axis of the
         /// rectangle: the lanes a sweep down a multitrack stack crosses. Kept
         /// beside `origin_x` rather than inside `value`, because a stack of
-        /// lanes is not a measured value — it is the second axis a lane has,
+        /// lanes is not a measured value -- it is the second axis a lane has,
         /// and the one a roll spells in semitones.
         origin_y: f64,
         value: Option<(ValueAxis, f64)>,
@@ -221,7 +221,7 @@ enum Drag {
         /// lane, whose contents are the clips the machine places).
         element: Option<element::At>,
     },
-    /// Dragging one **sample** of a navigable trace vertically — the smallest
+    /// Dragging one **sample** of a navigable trace vertically -- the smallest
     /// destructive edit, and the one that proves the whole route.
     ///
     /// The axis is snapshotted at the press, unlike a selection's: a sample is
@@ -240,7 +240,7 @@ enum Drag {
     /// The run itself lives in the element's pending, where the drawing can
     /// find it; what is held here is where the last motion event left the
     /// pointer, so the samples *between* two events are filled rather than
-    /// skipped — a fast stroke leaves no holes.
+    /// skipped -- a fast stroke leaves no holes.
     Draw {
         id: i32,
         axis: ValueAxis,
@@ -264,7 +264,7 @@ enum Drag {
     /// Panning a spectrum's **frequency** window from a drag anywhere on its
     /// axis: `x_start` is the window snapshot at the press, `body_w` the pixels
     /// one window's worth spans. Absolute from the snapshot, exactly like
-    /// [`Drag::PanY`], and per-element for the same reason — a frequency axis
+    /// [`Drag::PanY`], and per-element for the same reason -- a frequency axis
     /// is in no navigation group.
     PanX {
         id: i32,
@@ -290,26 +290,26 @@ enum Drag {
 ///
 /// A press is not yet a gesture: the same movement is a click or a sweep
 /// depending on what happens next, so what a click *means* is decided at the
-/// release. And a click means one thing on every view — the cursor goes there —
+/// release. And a click means one thing on every view -- the cursor goes there --
 /// which is why this is the machine's and not an arm's: the press may have been
 /// taken by a clip, a note, a marquee or nothing at all, and the answer is the
 /// same in all four cases. **The content does not move the cursor and does not
 /// define it**; the axis under the pointer is what names the time.
 #[derive(Debug, Clone, Copy)]
 struct Click {
-    /// The container whose axis the press was measured against — the navigation
+    /// The container whose axis the press was measured against -- the navigation
     /// group's member, which is what a locate addresses.
     id: i32,
     /// That axis' body, so the release reads the same pixels the press did.
     body: Rect,
-    /// The **ruler strip the press was on**, or `None` anywhere else — the
+    /// The **ruler strip the press was on**, or `None` anywhere else -- the
     /// slack of a stack, a grid nothing is drawn on. Both place the mark; only
     /// the strip carries markers, and the release asks it which one was under
     /// the pointer, since a click on a marker is that marker's moment rather
     /// than the pixel's. It is derived at the press because a gesture may have
     /// travelled off the strip it began on.
     ruler: Option<Rect>,
-    /// Where the press landed, in window pixels — what tells a click from a
+    /// Where the press landed, in window pixels -- what tells a click from a
     /// gesture, against the same hit slop every other sweep uses.
     origin_x: f64,
 }
@@ -318,7 +318,7 @@ struct Click {
 /// under it landed on the axis. The front holds one per window (the browser's
 /// single canvas holds one).
 /// How close in time two presses must be to be one double click, in
-/// milliseconds — the platform-neutral value, since the machine has no system
+/// milliseconds -- the platform-neutral value, since the machine has no system
 /// preference to read and both fronts must answer the same way.
 const DOUBLE_MS: f64 = 400.0;
 
@@ -331,7 +331,7 @@ const DOUBLE_PX: f64 = 6.0;
 pub struct Gestures {
     drag: Option<Drag>,
     click: Option<Click>,
-    /// Where and when the last press landed, and what number it was — the whole
+    /// Where and when the last press landed, and what number it was -- the whole
     /// of what a double click is made of. See [`GestureCtx::now_ms`] for why
     /// the clock comes from the front.
     repeat: Option<(f64, f64, f64, u32)>,
@@ -364,7 +364,7 @@ impl Gestures {
         count
     }
 
-    /// What [`count_press`](Self::count_press) last answered — how the press
+    /// What [`count_press`](Self::count_press) last answered -- how the press
     /// hands the number to whichever element ends up taking it, without
     /// threading it through every step on the way.
     fn clicks(&self) -> u32 {
@@ -376,7 +376,7 @@ impl Gestures {
     }
 
     /// What this drag is holding, in the terms the frame draws affordances by
-    /// ([`crate::host::frame::Grab`]) — the rectangle a marquee is sweeping, or
+    /// ([`crate::host::frame::Grab`]) -- the rectangle a marquee is sweeping, or
     /// that something else has the pointer.
     pub(crate) fn grab(&self) -> crate::host::frame::Grab {
         use crate::host::frame::Grab;
@@ -395,7 +395,7 @@ impl Gestures {
 
     /// Whether a drag is currently held against the edge of the axis it is on,
     /// so the front must keep ticking ([`Self::tick`]) even though the pointer
-    /// is standing still — a held cursor produces no events, and the view has
+    /// is standing still -- a held cursor produces no events, and the view has
     /// to keep moving under it.
     pub fn edge_scrolling(&self, cx: f64) -> bool {
         self.edge_direction(cx) != 0.0
@@ -406,8 +406,8 @@ impl Gestures {
     /// scrolling drag is in flight). The margin reaches *outside* the body too,
     /// so a cursor pinned at the window's own edge keeps scrolling.
     ///
-    /// The two drags that ask for it name their body differently — a clip's is
-    /// the lane's, an element's is its own rect past the group's gutter — and
+    /// The two drags that ask for it name their body differently -- a clip's is
+    /// the lane's, an element's is its own rect past the group's gutter -- and
     /// the arithmetic after that is one.
     fn edge_direction(&self, cx: f64) -> f64 {
         let (body_x, body_w) = match self.drag {

@@ -1,7 +1,7 @@
 """Time: the beat↔second map, and the questions it answers.
 
 A **beat is not a unit of time**. It is a logical coordinate, and what turns
-one into a second is the tempo — which can change as it goes. So the two
+one into a second is the tempo -- which can change as it goes. So the two
 things the word "tempo" covers are kept apart here:
 
 - the **tempo function**, what a user writes: the tempo at a beat, and how it
@@ -18,7 +18,7 @@ come from two *positions* (`TempoMap.span_secs`), never from a beat count and a
 tempo.
 
 A `clausters.base.TempoClock` holds a map and reads it to pace and to stamp;
-this module is the other half — the same map read as a **question about the
+this module is the other half -- the same map read as a **question about the
 music**, with no clock running and nothing playing:
 
     >>> from clausters.base.time import TempoMap, secs_to_samples
@@ -42,13 +42,13 @@ rest of this work. Writing ``T0`` and ``T1`` for the tempos at the two ends:
 | ``"exponential"`` | ``T0 * (T1/T0)**u`` |
 | a curvature ``c`` | ``A + B*exp(c*u)``, with ``B = -(T1-T0)/(1-exp(c))`` and ``A = T0 + (T1-T0)/(1-exp(c))`` |
 
-A curvature of 0 **is** linear — the knob is continuous through its middle
-rather than a shape apart — positive starts slow and negative starts fast.
+A curvature of 0 **is** linear -- the knob is continuous through its middle
+rather than a shape apart -- positive starts slow and negative starts fast.
 That is `Env`'s own convention, and these are `Env`'s own shape numbers, so one
 vocabulary spells a tempo curve and an amplitude curve. A shape is named by the
 plain string a caller writes (``"lin"`` and ``"exp"`` are accepted too), and a
 unit the same way: ``"beats"``, or ``"seconds"`` (``"secs"``). They are options,
-not constants to import — an unknown spelling is refused rather than quietly
+not constants to import -- an unknown spelling is refused rather than quietly
 taken for beats.
 
 **The seconds** are the integral of ``1/T`` over the beat axis. Per unit of
@@ -64,28 +64,28 @@ beat, ``K`` is that integral from ``u = 0`` to ``u = 1``:
 so a stretch ``db`` beats wide lasts ``db * K`` seconds. **This is where an
 average of the two tempos goes wrong**: over eight beats from 1 to 2 beats a
 second the true length is ``log(2)/0.125 = 5.545`` s and the average says
-``8/1.5 = 5.333`` s — a fifth of a second, audible and, drawn, visible.
+``8/1.5 = 5.333`` s -- a fifth of a second, audible and, drawn, visible.
 
 **The extent in seconds** follows from the same ``K``, and it is why the shapes
 are written over ``u`` rather than over beats: ``K`` does not depend on how wide
 the segment is, so asking for a change that lasts ``dt`` seconds is one
-division — ``db = dt / K`` — exact for every shape and never a search. For a
+division -- ``db = dt / K`` -- exact for every shape and never a search. For a
 straight ramp that makes ``db`` the logarithmic mean of the two tempos times the
 seconds.
 
-**The inverse** — the beat falling on a second, which a running clock reads on
-every `TempoClock.beats` — is closed for ``"linear"``
+**The inverse** -- the beat falling on a second, which a running clock reads on
+every `TempoClock.beats` -- is closed for ``"linear"``
 (``u = T0*(exp(k*s) - 1)/k``, ``k = T1 - T0``) and for ``"exponential"``
 (``u = -log(1 - s*T0*log(T1/T0))/log(T1/T0)``). A curvature mixes ``u`` and
 ``exp(c*u)`` and has **no** closed inverse, so the core solves it with a
-safeguarded Newton iteration — one implementation, so every client inverts to
+safeguarded Newton iteration -- one implementation, so every client inverts to
 the same place. It is also why `Env`'s ``sin`` and ``wel`` are **not** tempo
 shapes: they integrate in closed form but invert transcendentally, and
 inverting is the operation a clock cannot pay for on every read.
 
 The free conversions beside it are the rest of the time seam every client
-shares — the beat grid (`bar`, `beat_in_bar`, `quant_delay`) and the sample
-axis (`secs_to_samples`, `samples_to_secs`) — re-exported here so the whole of
+shares -- the beat grid (`bar`, `beat_in_bar`, `quant_delay`) and the sample
+axis (`secs_to_samples`, `samples_to_secs`) -- re-exported here so the whole of
 "what time is it, in which unit" reads from one import.
 """
 
@@ -136,6 +136,6 @@ def secs_to_samples(secs: float, sample_rate: float) -> int:
 
 
 def samples_to_secs(samples: int, sample_rate: float) -> float:
-    """A sample count → seconds at ``sample_rate`` — the inverse of
+    """A sample count → seconds at ``sample_rate`` -- the inverse of
     `secs_to_samples`."""
     return _native.samples_to_secs(int(samples), float(sample_rate))

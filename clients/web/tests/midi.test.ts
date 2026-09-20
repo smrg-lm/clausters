@@ -1,7 +1,7 @@
 // The MIDI layer, over ports that do not exist.
 //
 // A page cannot open a MIDI port and headless Chrome has none to offer, so
-// every port here is a stand-in — which is exactly why `MidiOutputPort` and
+// every port here is a stand-in -- which is exactly why `MidiOutputPort` and
 // `MidiInputPort` are named as *shapes* rather than borrowed from the DOM: a
 // test satisfies them in three lines, as the OSC suites satisfy `Connection`.
 // What that leaves untested is the browser's own plumbing (the grant, the port
@@ -10,8 +10,8 @@
 // The frozen vectors (`gen-midi-vectors.py`) carry the reference client's
 // answers. Two kinds: the parse and the note mapping are each client's own
 // arithmetic, so they are compared; the file bytes are **one** implementation
-// reached two ways — `clausters-midi` over the C ABI there, the same writers
-// through the core's wasm door here — so comparing them proves the door is
+// reached two ways -- `clausters-midi` over the C ABI there, the same writers
+// through the core's wasm door here -- so comparing them proves the door is
 // wired to the shared writer and not to a second one.
 
 import assert from "node:assert/strict";
@@ -41,7 +41,7 @@ import type { ManualTicker } from "../src/base/clock.ts";
 import { flush } from "./flush.ts";
 
 /**
- * Advances a manual clock by `seconds`, firing every wake it arms — the same
+ * Advances a manual clock by `seconds`, firing every wake it arms -- the same
  * harness `clock.test.ts` uses, so a beat here means what it means there.
  */
 function runner(clock: TempoClock, timebase: ManualTimebase, ticker: ManualTicker) {

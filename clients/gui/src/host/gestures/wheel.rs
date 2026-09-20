@@ -1,6 +1,6 @@
 //! What the **wheel** does: zoom and scroll, over whatever is under the cursor.
 //!
-//! The odd phase out — it opens no [`Drag`](super::Drag) and ends none, so it
+//! The odd phase out -- it opens no [`Drag`](super::Drag) and ends none, so it
 //! reads the same chain a press does and acts immediately. Which axis it moves
 //! is the container's, not the widget's: a navigable view zooms its time window
 //! (its value window with the modifier), a scroll plane zooms or scrolls its
@@ -12,7 +12,7 @@ use super::super::{Host, scroll};
 use super::nav::*;
 use super::{GestureCtx, GestureEffect, Gestures, element};
 
-/// One wheel event as the shell reported it, in the shell's own terms — the
+/// One wheel event as the shell reported it, in the shell's own terms -- the
 /// two shapes every source has, and the only two this crate has to know.
 ///
 /// It exists so the arithmetic below can live here, where the wheel's meaning
@@ -21,24 +21,24 @@ use super::{GestureCtx, GestureEffect, Gestures, element};
 /// the conversion to *steps* is written once.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum WheelDelta {
-    /// Scroll in **lines** — an X11 wheel button, a browser's
+    /// Scroll in **lines** -- an X11 wheel button, a browser's
     /// `DOM_DELTA_LINE`.
     Lines(f64),
-    /// Scroll in **physical pixels** — a trackpad, a browser's
+    /// Scroll in **physical pixels** -- a trackpad, a browser's
     /// `DOM_DELTA_PIXEL` (which winit has already multiplied by the window's
     /// scale factor before it reaches us).
     Pixels(f64),
 }
 
-/// What a **line** report means on a shell — the half of the calibration that
+/// What a **line** report means on a shell -- the half of the calibration that
 /// is not a number everywhere.
 #[derive(Debug, Clone, Copy)]
 pub enum Lines {
     /// One notch is this many lines, in a unit the shell shares with us. X11
     /// and Wayland send exactly one line per notch, so the count divides.
     Per(f64),
-    /// The magnitude is the **viewer's own scroll preference** — how far a
-    /// document moves per notch — so it is not ours to divide by. Measured at
+    /// The magnitude is the **viewer's own scroll preference** -- how far a
+    /// document moves per notch -- so it is not ours to divide by. Measured at
     /// **6** in Firefox 153 on X11, uniform across every event, and it is a
     /// setting rather than a browser constant: the next machine may say 3.
     ///
@@ -55,20 +55,20 @@ pub enum Lines {
 /// report into zoom steps.
 ///
 /// **A notch is a count, not a distance**, and that is the whole of why this
-/// type exists. The same two lines were copied into all three shells —
-/// `LineDelta(_, y) => y`, `PixelDelta(p) => p.y / 50.0` — and the divisor was
+/// type exists. The same two lines were copied into all three shells --
+/// `LineDelta(_, y) => y`, `PixelDelta(p) => p.y / 50.0` -- and the divisor was
 /// calibrated for the native trackpad, so a wheel click was one step in a
 /// window and several in a page. The input was never normalized *per shell*,
 /// and one divisor cannot be right for two sources.
 ///
 /// **The pixel figure is logical**, which is the second half. winit hands a
 /// browser's `deltaY` over already converted from CSS pixels to physical ones,
-/// so the same notch on a 2x display reports twice the pixels — and dividing
+/// so the same notch on a 2x display reports twice the pixels -- and dividing
 /// that by a constant makes the zoom rate a property of the *display*. A
 /// trackpad reports physical pixels natively for the same reason. So the scale
 /// comes off before the divisor does.
 ///
-/// **What the host does with a step is its own quantum** — `0.85^steps` for a
+/// **What the host does with a step is its own quantum** -- `0.85^steps` for a
 /// zoom, [`super::super::scroll::WHEEL_PAN_PX`] for a pan, `1.1^steps` for a
 /// lane's height. None of them is a distance the platform has an opinion about,
 /// which is why honouring a raw delta was never respecting a preference; it was
@@ -97,7 +97,7 @@ impl Wheel {
     /// **measured at 120 CSS pixels** per notch in Chrome 151 on X11, identical
     /// across every event. It goes in as read: `deltaY` is already in CSS
     /// pixels, winit converts it to physical ones with the window's scale
-    /// factor, and [`Self::steps`] divides that back out — so the ratio cancels
+    /// factor, and [`Self::steps`] divides that back out -- so the ratio cancels
     /// and the constant stays in the browser's own unit.
     pub const BROWSER: Wheel = Wheel {
         lines: Lines::Notch,
@@ -130,7 +130,7 @@ impl Wheel {
 
 impl Gestures {
     /// Wheel over a timeline view: zoom the shared time axis anchored at the
-    /// cursor, or — over the y-ruler strip / the piano-roll's keyboard gutter —
+    /// cursor, or -- over the y-ruler strip / the piano-roll's keyboard gutter --
     /// zoom the vertical display window anchored at the cursor's height.
     pub fn wheel(
         &mut self,
@@ -161,7 +161,7 @@ impl Gestures {
         };
         // A spectrum zooms its **frequency** axis, anchored at the cursor: the
         // one navigable axis in the host that is not the window's time, and the
-        // one that needs no history behind it — every bin is there every frame.
+        // one that needs no history behind it -- every bin is there every frame.
         if let Some(axis) = freq_axis(host, ctx, &found)
             && axis.surface.contains(cx, cy)
         {
@@ -179,7 +179,7 @@ impl Gestures {
         } = found;
         // **An element with a wheel of its own wins over the container it sits
         // in**: a keyboard's range, and whatever a registered element navigates
-        // — a picture it owns is what the reader pointed at. `None` back means
+        // -- a picture it owns is what the reader pointed at. `None` back means
         // it has none, and the container gets its turn below.
         if let WidgetKind::Custom(_) = kind {
             let at = element::At::widget(id, rect, found_scale, indent);
@@ -187,7 +187,7 @@ impl Gestures {
             // hit shape and every pointer question reads it: the wheel over the
             // corner of a knob's cell used to reach the element rather than the
             // axis drawn behind it, which is the same mistake the press made
-            // before it was filtered — and worse to meet, since a wheel is not
+            // before it was filtered -- and worse to meet, since a wheel is not
             // even aimed, it is where the hand happened to leave the pointer.
             let reported = element::with(host, ctx, at, |el, input| {
                 el.hit_area(input)
@@ -220,7 +220,7 @@ impl Gestures {
                         0.5
                     } else {
                         // The lane under the cursor, read off the view's own
-                        // band stack — the same question a roll asks about a
+                        // band stack -- the same question a roll asks about a
                         // semitone and a multitrack about a lane.
                         let bands = y.bands();
                         let local = cy - axis.body.y as f64;
@@ -236,7 +236,7 @@ impl Gestures {
         }
         // The 2D workspace: wheel zooms the plane anchored at the cursor;
         // with zoom disabled it pans along the axis instead (Shift pans x in
-        // a two-axis workspace) — the plain scroll view's wheel. A widget
+        // a two-axis workspace) -- the plain scroll view's wheel. A widget
         // with its own wheel (a timeline view, a piano) won above.
         if let Some((id, area, view)) = interact::plane_of(&chain) {
             let zoom = view.zoom(host.metrics_for(def_id));
@@ -259,8 +259,8 @@ impl Gestures {
             }
         }
         // Nothing under the pointer claimed the wheel. The fall-through is for
-        // pixels with **nothing drawn on them** — a gap between lanes, the
-        // slack under the last one, a container's margin — where in a window
+        // pixels with **nothing drawn on them** -- a gap between lanes, the
+        // slack under the last one, a container's margin -- where in a window
         // with one axis those pixels *are* that axis, so the wheel means there
         // what it means over a lane: Ctrl the lanes' thickness, otherwise the
         // time zoom, anchored at the cursor.
@@ -268,8 +268,8 @@ impl Gestures {
         // Over an element that draws a picture of its own and simply has no
         // wheel, they are not empty: the reader pointed at that element (it was
         // asked above and declined). The press path shares the mechanism and
-        // means it differently — Shift+drag pans the axis from anywhere at all,
-        // over any element — so the question is asked here and not there.
+        // means it differently -- Shift+drag pans the axis from anywhere at all,
+        // over any element -- so the question is asked here and not there.
         if !kind.is_bare_surface() {
             return out;
         }
@@ -316,7 +316,7 @@ mod wheel_tests {
         // Chrome reports pixels, where the magnitude *is* the information: a
         // trackpad's stream cannot be counted, so that half stays a divisor.
         // 120 CSS pixels a notch, measured. winit hands them over multiplied by
-        // the window's scale factor, which is what the second argument undoes —
+        // the window's scale factor, which is what the second argument undoes --
         // so the notch is a step on every display rather than on one.
         for ratio in [1.0, 1.5, 2.0, 2.5] {
             let pixels = Wheel::BROWSER.steps(WheelDelta::Pixels(120.0 * ratio), ratio);

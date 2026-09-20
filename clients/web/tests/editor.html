@@ -27,8 +27,8 @@
       The acceptance behind examples/views/editor.html (clients/web/test.sh, headless
       Chrome): ?smoke=1 auto-runs. A decoded file reaches a server buffer
       through `Buffer.load` (fetch + decodeAudioData + the carrier's bulk
-      install), the host draws it from `buffer:` — which makes it fetch the
-      samples with /buffer_query + /buffer_getRange over its client leg — and the transport
+      install), the host draws it from `buffer:` -- which makes it fetch the
+      samples with /buffer_query + /buffer_getRange over its client leg -- and the transport
       is asserted **audibly** on an analyser: silent, then sounding under play,
       silent again under pause with the node still in the tree, sounding after
       resume, and gone after stop.
@@ -55,8 +55,8 @@
       /**
        * A WAV the page builds and serves to itself as an object URL: the
        * example takes a file from an <input>, and a headless run has none.
-       * What is under test is the path a real file takes — fetch, decode,
-       * install — not where the bytes came from.
+       * What is under test is the path a real file takes -- fetch, decode,
+       * install -- not where the bytes came from.
        */
       function wavUrl({ frames = 192000, rate = 48000, hz = 220 } = {}) {
         const bytes = new ArrayBuffer(44 + frames * 2);

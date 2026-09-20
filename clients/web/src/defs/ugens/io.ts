@@ -11,7 +11,7 @@ import type { Channel } from "./graph.ts";
 
 /**
  * Reads an audio bus (sampled per block). Named `in_` because `in` is a
- * reserved word — the wire name is still `In`.
+ * reserved word -- the wire name is still `In`.
  */
 export const in_ = (bus: Channel = 0.0): Ugen => new Ugen("In", [bus]);
 
@@ -19,7 +19,7 @@ export const in_ = (bus: Channel = 0.0): Ugen => new Ugen("In", [bus]);
 export const inCtl = (bus: Channel = 0.0): Ugen => new Ugen("InCtl", [bus]);
 
 /**
- * One writer per channel on consecutive buses (`bus`, `bus+1`, …) — the
+ * One writer per channel on consecutive buses (`bus`, `bus+1`, …) -- the
  * point where a channel list becomes buses. The base `bus` must be a number:
  * a signal bus cannot be offset per channel client-side.
  */
@@ -68,7 +68,7 @@ export function replaceOut(
 }
 
 /**
- * Writes `signal`'s latest per-block value to a **control** `bus` — the
+ * Writes `signal`'s latest per-block value to a **control** `bus` -- the
  * write side of `inCtl`. Passes `signal` through as its output.
  */
 export function outCtl(bus: Channel, signal: Channel): Ugen;
@@ -95,8 +95,8 @@ export function outCtl(
  * fall of `decay` decibels per second, and a peak held `hold` seconds before it
  * starts falling.
  *
- * One block is one measurement — the block's own peak in, the whole block out
- * at what the meter now reads — which is what a meter is and what a control bus
+ * One block is one measurement -- the block's own peak in, the whole block out
+ * at what the meter now reads -- which is what a meter is and what a control bus
  * carries, so a finer answer would be samples nothing can read. The rules are
  * the shared crate's (`measure::Ballistics`), so every meter drawn anywhere
  * falls at the same rate.
@@ -116,9 +116,9 @@ export const meter = (
  * run of `run` consecutive samples at or over `ceiling` is one over, however
  * long it goes on.
  *
- * The count and not a flag, because the flag is a *reader's* state — a meter's
+ * The count and not a flag, because the flag is a *reader's* state -- a meter's
  * red lamp stays lit until a hand puts it out, and two windows watching one bus
- * each have their own — while the count is the signal's. Pair it with
+ * each have their own -- while the count is the signal's. Pair it with
  * {@link outCtl} and hand the bus to a `meter` widget's `clip`: the widget
  * differences the count and lights up on an over it has not seen.
  *
@@ -141,8 +141,8 @@ export const clipCount = (
 
 /**
  * A **meter's level over the reconstructed signal**: the same ballistics as
- * {@link meter} — instantaneous attack, a fall of `decay` decibels per second, a
- * peak held `hold` seconds — but what goes in is the block's **true peak**
+ * {@link meter} -- instantaneous attack, a fall of `decay` decibels per second, a
+ * peak held `hold` seconds -- but what goes in is the block's **true peak**
  * rather than its largest sample.
  *
  * The signal between two samples can reach past both: a tone sampled so that
@@ -203,7 +203,7 @@ export const poll = (
 // tab. The paths there are `/`-separated under the origin's root.
 //
 // It used to say a tab had no path to stream from or to, and that a def naming
-// one was rejected. Both are false now — but the browser's streaming is not the
+// one was rejected. Both are false now -- but the browser's streaming is not the
 // native one either, and the difference is written down rather than left to be
 // heard: the reader is a Worker handing spans across a message port instead of
 // a thread sharing a ring, so a stream starts after a longer lead and an
@@ -212,7 +212,7 @@ export const poll = (
 // `clients/web/docs/src/platform.md` carries both.
 
 /**
- * Streams a file from disk, one file frame per server sample (no resampling —
+ * Streams a file from disk, one file frame per server sample (no resampling --
  * pitch follows the sample-rate ratio). Mono per UGen: `chan` picks the
  * channel, a stereo file is two `diskIn`s. `loop` restarts at the end of the
  * stream. `path` and `loop` are **static** fields and ride in the options
@@ -236,7 +236,7 @@ export const diskIn = (chan: Channel = 0.0, { path, loop = false }: DiskInOption
  *
  * It delivers audio out of the graph, so it is a valid def root on its own:
  * `play(diskOut(sig, { path }))` records **without sounding**. To record and
- * hear the same take, route it yourself — `out(0, diskOut(sig, { path }))`, which is
+ * hear the same take, route it yourself -- `out(0, diskOut(sig, { path }))`, which is
  * what the pass-through output is for.
  */
 export interface DiskOutOptions {
@@ -254,7 +254,7 @@ export const diskOut = (signal: Channel, { path, format = "int16" }: DiskOutOpti
 /**
  * Reads synth-private feedback channel `channel` (a constant); pairs with
  * `localOut` for one-block feedback. `LocalIn` must precede its `LocalOut`
- * — the `SynthDef`'s topological order does that as long as the output
+ * -- the `SynthDef`'s topological order does that as long as the output
  * graph reaches the `localIn` before the `localOut`.
  */
 export const localIn = (channel: Channel = 0.0): Ugen =>

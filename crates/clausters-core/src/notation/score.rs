@@ -1,16 +1,16 @@
 //! The stateful, editable score: a document held open so it can be edited and
-//! re-engraved against the same ids — and the **engraver port** it drives.
+//! re-engraved against the same ids -- and the **engraver port** it drives.
 //!
 //! Engraving one-shot (load, draw, discard) needs no state. This is the other
 //! one: the engraver stays open, so an edit lands on the very document the
 //! display list was drawn from. The MEI `xml:id`s survive editing, which is what
-//! lets a host keep its selection across the round trip — the id the user
+//! lets a host keep its selection across the round trip -- the id the user
 //! clicked still names the same note afterwards.
 //!
 //! **Why this lives in the core and not beside the engraver.** Everything here
 //! is *logic*: which calls an edit is made of and in what order, when the
 //! document has to be reloaded, what an undo step is and where the stack lives.
-//! There is one of each of those, and both clients drive it — a native caller
+//! There is one of each of those, and both clients drive it -- a native caller
 //! over libverovio, a page over the same engraver compiled to wasm. The part
 //! that genuinely differs is only *how a call reaches verovio*, and that is the
 //! whole of [`Engraver`].
@@ -41,7 +41,7 @@ const UNDO_LIMIT: usize = 64;
 ///
 /// Each method is one verovio toolkit call, named as the C wrapper names it.
 /// An implementation does the crossing and nothing else: no ordering, no
-/// caching, no recovery — those are [`Score`]'s, once.
+/// caching, no recovery -- those are [`Score`]'s, once.
 ///
 /// **Failure is a value, not an error type.** A crossing can fail for reasons
 /// that are the caller's (unloadable data, an action verovio refuses) and for
@@ -49,14 +49,14 @@ const UNDO_LIMIT: usize = 64;
 /// state machine treats both the same way: it rolls back. Each implementation
 /// keeps its own richer error where it has one.
 pub trait Engraver {
-    /// What [`Engraver::lock`] hands back — a guard for the native library's
+    /// What [`Engraver::lock`] hands back -- a guard for the native library's
     /// FFI lock, or `()` where the engraver cannot be reached concurrently at
     /// all (a page has one thread).
     type Guard;
 
     /// Taken for the whole of one public [`Score`] operation, which is what
     /// makes a sequence of calls one atomic use of the engraver. A native
-    /// binding returns its FFI lock's guard here — libverovio has process-wide
+    /// binding returns its FFI lock's guard here -- libverovio has process-wide
     /// state, so two scores must not be inside it at once.
     fn lock(&self) -> Self::Guard;
 
@@ -84,12 +84,12 @@ pub trait Engraver {
 }
 
 /// The engraver's options for one page, as the JSON object it is configured
-/// with — `scale` (staff size), `page_width` (the page units a score wraps into
+/// with -- `scale` (staff size), `page_width` (the page units a score wraps into
 /// systems at) and whatever `extra` a caller merges over them.
 ///
 /// Here rather than in a binding because these are what a page *looks like*,
 /// and two clients configuring their engravers differently would draw the same
-/// score two ways — a display list that cannot be compared across clients, which
+/// score two ways -- a display list that cannot be compared across clients, which
 /// is the one thing the shared engraver was for. A caller passing non-object
 /// JSON as `extra` has it ignored rather than refused.
 pub fn engrave_options(scale: i32, page_width: i32, extra: Option<&str>) -> String {
@@ -116,7 +116,7 @@ pub fn engrave_options(scale: i32, page_width: i32, extra: Option<&str>) -> Stri
 ///
 /// The drawing layers are flattened in, so the serialized object is exactly the
 /// display list plus `cursors` and `notes`: one JSON value carries the whole
-/// page. All three come out of a single engraving because they must — the
+/// page. All three come out of a single engraving because they must -- the
 /// engraver mints fresh `xml:id`s on every load, so ids from two engravings do
 /// not line up.
 #[derive(Debug, Clone, Serialize)]
@@ -127,7 +127,7 @@ pub struct Page {
     /// Where the playhead goes: the timemap folded into page geometry.
     pub cursors: Vec<Cursor>,
     /// What sounds: one event per note, in milliseconds and MIDI pitch. The
-    /// client's own layer — a driver plays it, the host never sees it.
+    /// client's own layer -- a driver plays it, the host never sees it.
     pub notes: Vec<NoteEvent>,
 }
 
@@ -144,13 +144,13 @@ pub struct NoteEvent {
 /// A loaded score, kept alive so it can be **edited** and re-engraved.
 ///
 /// Every edit runs the same three steps, because verovio needs all of them: the
-/// editor action, then `commit` (which is what re-runs the layout — an action
+/// editor action, then `commit` (which is what re-runs the layout -- an action
 /// alone changes the document but leaves the drawing stale), then a reload of the
 /// edited MEI. That last step looks redundant and is not: the MIDI/timemap cache
 /// is *not* invalidated by an edit, so without it a transposed note keeps
 /// sounding at its old pitch.
 ///
-/// Undo is ours, not verovio's — a stack of MEI snapshots. Reloading the document
+/// Undo is ours, not verovio's -- a stack of MEI snapshots. Reloading the document
 /// to refresh those caches resets the editor's own undo stack, so its stack could
 /// not survive the cycle anyway; and its `canUndo`/`canRedo` are unreliable (a
 /// successful edit can leave `canUndo` false) while `undo` on an empty stack
@@ -177,8 +177,8 @@ impl<E: Engraver> Score<E> {
     /// Load `data` into `engraver` and keep the document open, or `None` when
     /// the engraver could not read it.
     ///
-    /// Constructing the engraver — a resource path, options, whatever the
-    /// binding needs — happens before this and belongs to the binding.
+    /// Constructing the engraver -- a resource path, options, whatever the
+    /// binding needs -- happens before this and belongs to the binding.
     pub fn open(engraver: E, data: &str) -> Option<Self> {
         let sheet = {
             let _guard = engraver.lock();
@@ -200,33 +200,33 @@ impl<E: Engraver> Score<E> {
     }
 
     /// The engraver underneath, for a binding's own escape hatch (verovio's
-    /// `editInfo`, its version string) — never for driving an edit, which is
+    /// `editInfo`, its version string) -- never for driving an edit, which is
     /// what this type is for.
     pub fn engraver(&self) -> &E {
         &self.engraver
     }
 
-    /// This score engraved into a [`Page`] — from the live document, so it
+    /// This score engraved into a [`Page`] -- from the live document, so it
     /// reflects every edit applied so far.
     pub fn display_list(&mut self, page: i32) -> Page {
         let _guard = self.engraver.lock();
         self.page_locked(page)
     }
 
-    /// The score as MEI, ids and all — the format to persist, and what the undo
+    /// The score as MEI, ids and all -- the format to persist, and what the undo
     /// stack is made of.
     pub fn mei(&self) -> String {
         let _guard = self.engraver.lock();
         self.mei_locked()
     }
 
-    /// Replace the document with `mei` — **a state, not a step**.
+    /// Replace the document with `mei` -- **a state, not a step**.
     ///
     /// The door for an owner that keeps the order somewhere else: a client
     /// whose editing context holds one history over several structures records
     /// a score's edit as the MEI it produced, and puts a previous one back
     /// through here. That is the same shape every other editable structure has
-    /// — an absolute payload, idempotent, carrying no direction — and it is why
+    /// -- an absolute payload, idempotent, carrying no direction -- and it is why
     /// a score can join an undo order that also holds curves, samples and
     /// notes.
     ///
@@ -331,12 +331,12 @@ impl<E: Engraver> Score<E> {
         true
     }
 
-    /// Move the note `element_id` by `steps` **diatonic** steps along the staff —
-    /// up when positive — as one undo step.
+    /// Move the note `element_id` by `steps` **diatonic** steps along the staff --
+    /// up when positive -- as one undo step.
     ///
-    /// It is the **model's** move where the page named a model item — the note
+    /// It is the **model's** move where the page named a model item -- the note
     /// takes the key signature's alteration for the letter it lands on, which
-    /// is what reading in a key means — and falls back to the engraver's editor
+    /// is what reading in a key means -- and falls back to the engraver's editor
     /// only for an element this layer did not write, which is the one case
     /// there is no item to move.
     ///
@@ -377,14 +377,14 @@ impl<E: Engraver> Score<E> {
     }
 
     /// Move the note `element_id` **to** the diatonic staff position
-    /// `position` on `page` — whole steps from its staff's top line, positive
-    /// upward — as one undo step.
+    /// `position` on `page` -- whole steps from its staff's top line, positive
+    /// upward -- as one undo step.
     ///
     /// This is the pitch edit as it **travels**: absolute, so applying it twice
     /// leaves the note where it is and a page re-engraved under the gesture
     /// needs no rebasing. The relative call underneath is verovio's
     /// requirement, not the wire's, and the delta is computed here against the
-    /// engraving rather than carried from wherever the gesture happened —
+    /// engraving rather than carried from wherever the gesture happened --
     /// which is the whole point, since the two can differ.
     ///
     /// Both sides read the position off the same drawing
@@ -403,7 +403,7 @@ impl<E: Engraver> Score<E> {
     }
 
     /// Apply one raw verovio editor action (`set`, `insert`, `delete`, ...) as a
-    /// single undo step — the escape hatch for what [`Score::transpose`] does not
+    /// single undo step -- the escape hatch for what [`Score::transpose`] does not
     /// cover. `param` is the action's parameter object as a JSON string (`"{}"`
     /// for none). Returns whether verovio accepted it; a rejected action leaves
     /// the score untouched.
@@ -453,7 +453,7 @@ impl<E: Engraver> Score<E> {
     /// Read the model back out of whatever the engraver now holds.
     ///
     /// Called after every path that changes the document without going through
-    /// [`Score::apply`] — an undo, a redo, a raw editor action — because a
+    /// [`Score::apply`] -- an undo, a redo, a raw editor action -- because a
     /// model that had drifted from the page would apply the next operation to a
     /// score nobody is looking at.
     fn resync_locked(&mut self) {

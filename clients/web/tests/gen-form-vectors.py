@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Generate form-vectors.json from the Python client's reference arrangement.
 
-The arrangement is one layer written twice — `clausters/form/` and
-`clients/web/src/form/` — and what has to agree is not the source but the two
+The arrangement is one layer written twice -- `clausters/form/` and
+`clients/web/src/form/` -- and what has to agree is not the source but the two
 things that leave it: the **document** a tree is written as (a shared
 format three languages read) and the **flattened timeline** it renders to (the
 absolute beats, and the events at them, including what a placement's length
@@ -11,15 +11,15 @@ trims).
 So this script builds a handful of trees with the Python surface and
 freezes both for each one; `tests/form-parity.test.ts` rebuilds the same
 trees with the TypeScript surface and asserts the same two results. A
-rule that drifts into one client — a trim rounding differently, a config key
-spelled the language's way rather than the file's — fails here instead of in a
+rule that drifts into one client -- a trim rounding differently, a config key
+spelled the language's way rather than the file's -- fails here instead of in a
 aggregate that reopens wrong.
 
 The JSON is committed; regenerate with:
 
     python3 gen-form-vectors.py
 
-(from clients/web/tests/, with the Python client importable — the repo's .venv
+(from clients/web/tests/, with the Python client importable -- the repo's .venv
 has it installed editable).
 """
 
@@ -112,7 +112,7 @@ def a_curve_on_its_event():
     """An envelope attached to the note it shapes: a simultaneous aggregate of a
     `Clang` and a base `Element` wrapping an `Automation`.
 
-    The curve is the case the writer has to get right leaf-side — a base
+    The curve is the case the writer has to get right leaf-side -- a base
     `Element` is also what an *unknown* body comes back as, and telling the two
     apart is what decides whether the document carries the break-points or the
     automation's own fields.
@@ -129,7 +129,7 @@ def a_curve_on_its_event():
 def a_mixed_aggregate():
     """The tree's own mixing: a muted lane, a soloed one, and a level.
 
-    Both halves travel — the document (mixing rides in the node's configuration,
+    Both halves travel -- the document (mixing rides in the node's configuration,
     and what is at its default states nothing) and the flattened timeline (one
     solo anywhere silences every branch that is not on a soloed path, and a
     level multiplies into the event's `amp`). A lane's *height* appears in
@@ -146,7 +146,7 @@ def a_mixed_aggregate():
     return aggregate
 
 
-#: (name, builder). Each is built twice — once here, once in TypeScript.
+#: (name, builder). Each is built twice -- once here, once in TypeScript.
 CASES = [
     ("an_aggregate", an_aggregate),
     ("a_trimmed_placement", a_trimmed_placement),

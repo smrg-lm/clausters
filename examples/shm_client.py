@@ -11,7 +11,7 @@ then:
 
 Everything below talks to the server through mapped memory only: no socket
 anywhere. Commands and replies travel a byte ring inside the segment, and the
-**data plane** — the sample clock and the control buses — is read and written
+**data plane** -- the sample clock and the control buses -- is read and written
 directly, with no command and no round trip at all. The mapping is Python's
 own `mmap`; where everything *is* inside it comes from the shared core, which
 is the one place the layout is written down. The audible part: a synth
@@ -62,7 +62,7 @@ def main():
         print(f"  bus 7 = {v}  (readback {c.ctl_get(7):.2f})")
         time.sleep(0.5)
     c.send(osc.message("/node_free", 4000))
-    print("done — the server is still running (quit it with /server_quit or Ctrl-C).")
+    print("done -- the server is still running (quit it with /server_quit or Ctrl-C).")
     c.close()
 
 

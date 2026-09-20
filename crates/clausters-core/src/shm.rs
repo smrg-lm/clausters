@@ -1,9 +1,9 @@
 //! The shared-memory segment: **one definition of the layout**, and the reader
 //! every process uses.
 //!
-//! The segment is the local data plane — the clocks, the control buses as the
+//! The segment is the local data plane -- the clocks, the control buses as the
 //! very words the engine reads, the audio taps, the per-bus levels, the buffer
-//! directory — plus a pair of byte rings carrying OSC. Four processes look at
+//! directory -- plus a pair of byte rings carrying OSC. Four processes look at
 //! it: the server that writes it, the GUI host, the Python client, and any
 //! later peer.
 //!
@@ -19,7 +19,7 @@
 //!
 //! **What stays outside.** Getting the memory: `mmap` of a file, a heap
 //! allocation, a `memoryview` over Python's `mmap`. That is the one genuinely
-//! platform-shaped part, so each process does it and hands the address here —
+//! platform-shaped part, so each process does it and hands the address here --
 //! which is also what keeps this module compiling for wasm, where there is no
 //! mapping at all and a page keeps talking OSC.
 //!
@@ -30,7 +30,7 @@
 //! ```
 //!
 //! Everything after the two rings is a **trailing region sized at run time**,
-//! and every offset is derived from the header rather than fixed — which is
+//! and every offset is derived from the header rather than fixed -- which is
 //! what lets `--control-buses`, `--taps` and `--tap-frames` be options instead
 //! of recompiles. The buffer directory is the tail, and *its* row count is what
 //! remains of the mapped length rather than a header field: the header has no
@@ -46,7 +46,7 @@ pub const MAGIC: u32 = 0x5541_4C43;
 
 /// The segment layout version, checked on attach. Every binary boundary is
 /// versioned and refused on mismatch (the scsynth plugin-ABI lesson); what each
-/// version changed is recorded in `docs/ipc.md`, not here — a changelog in a
+/// version changed is recorded in `docs/ipc.md`, not here -- a changelog in a
 /// constant is a changelog nobody updates.
 pub const ABI_VERSION: u32 = 11;
 
@@ -64,7 +64,7 @@ pub const FRAME_HEADER: usize = 8;
 pub const DEFAULT_TAPS: usize = 8;
 
 /// Default per-tap ring capacity in samples (`--tap-frames`): a power of two,
-/// ~341 ms at 48 kHz — comfortably more than twice any oscilloscope window.
+/// ~341 ms at 48 kHz -- comfortably more than twice any oscilloscope window.
 pub const DEFAULT_TAP_FRAMES: usize = 16384;
 
 /// Each tap slot starts 64-byte aligned: the cursor gets its own cache line
@@ -72,7 +72,7 @@ pub const DEFAULT_TAP_FRAMES: usize = 16384;
 /// ring follows without straddling the cursor's line.
 pub const TAP_ALIGN: usize = 64;
 
-/// Audio-bus slots a segment gets when nobody says otherwise — the server's
+/// Audio-bus slots a segment gets when nobody says otherwise -- the server's
 /// own default audio-bus count, so a segment created with no `--audio-buses`
 /// can report on every bus that server has.
 ///
@@ -87,7 +87,7 @@ pub const DEFAULT_AUDIO_BUS_SLOTS: usize = 1024;
 /// server asserts the two agree.
 pub const BLOCK: usize = 64;
 
-/// Directory rows a segment gets when nobody says otherwise — the server's own
+/// Directory rows a segment gets when nobody says otherwise -- the server's own
 /// default buffer count, so a segment created with no `--max-buffers` describes
 /// every buffer it can allocate.
 pub const DEFAULT_BUFFER_ROWS: usize = 4096;
@@ -109,7 +109,7 @@ struct Header {
     /// Audio-bus count: the length of the per-bus directory and level table
     /// between the control slots and the tap region.
     audio_buses: u32,
-    /// **Who serves the command plane** — the pid that claimed the rings, or 0
+    /// **Who serves the command plane** -- the pid that claimed the rings, or 0
     /// while they are free. It occupies the word that kept `transport_clock`
     /// 8-byte aligned, so it is a meaning given to space that was already there
     /// rather than a field anything had to move for.
@@ -120,7 +120,7 @@ struct Header {
     control_owner: AtomicU32,
     /// Samples elapsed *under the transport*, frozen while it is stopped. The
     /// sample clock above never stops, so a reader pacing on the device wants
-    /// that one — but this one is monotonic too, which is what a scheduler
+    /// that one -- but this one is monotonic too, which is what a scheduler
     /// needs and what a **playhead does not**: for where the transport *is*, read
     /// `transport_position`.
     transport_clock: AtomicU64,
@@ -175,7 +175,7 @@ struct BufferRow {
     ///
     /// It is a *hint* and not a promise. A buffer may have several writers and
     /// nothing here says which of them wrote what, or that everything before
-    /// it is final — what it answers is the one question a picture of a
+    /// it is final -- what it answers is the one question a picture of a
     /// recording has to ask and cannot otherwise: how far does the samples go
     /// now. Outside the seqlock deliberately: it moves every block while the
     /// shape does not move at all, and folding it into the row's version would
@@ -261,8 +261,8 @@ fn next_odd(counter: u64) -> u64 {
 /// The **shape** of a mapped segment, derived from its header once: how many of
 /// each thing it holds, and where each region starts.
 ///
-/// A peer that cannot call into this crate — a `ctypes` client reading the
-/// mapping with `memoryview` — asks for this and does its own arithmetic
+/// A peer that cannot call into this crate -- a `ctypes` client reading the
+/// mapping with `memoryview` -- asks for this and does its own arithmetic
 /// against *these* numbers instead of recomputing the layout, which is the
 /// whole point.
 #[repr(C)]
@@ -301,13 +301,13 @@ pub struct Shape {
 /// A mapped segment: the address, its length, and everything either end does
 /// with it.
 ///
-/// The accessors the **audio thread** reaches — the levels it publishes per
-/// bus per block, the tap ring it appends to, the clocks it stores — are
+/// The accessors the **audio thread** reaches -- the levels it publishes per
+/// bus per block, the tap ring it appends to, the clocks it stores -- are
 /// `#[inline]`, because they were inlined inside one crate before this module
 /// existed and a cross-crate call per bus per block is a cost the move should
 /// not have introduced.
 ///
-/// It owns no memory and frees none — whoever mapped it keeps it alive, which
+/// It owns no memory and frees none -- whoever mapped it keeps it alive, which
 /// is the one thing this type trusts its caller for. Every access is an atomic
 /// load or store on a word the layout above places, so a `View` is safe to
 /// share and safe to read while another process writes: per-cell atomicity, no
@@ -396,7 +396,7 @@ impl View {
         let tap_frames = header.tap_frames as usize;
         let buffers_offset = buffer_region_offset(control_buses, audio_buses, taps, tap_frames);
         // The mapped length must cover every region the header claims, plus
-        // whole directory rows — the one region whose count is the segment's
+        // whole directory rows -- the one region whose count is the segment's
         // own length rather than a field.
         if len < buffers_offset || !(len - buffers_offset).is_multiple_of(size_of::<BufferRow>()) {
             return Err("segment size does not match its header");
@@ -490,7 +490,7 @@ impl View {
     /// `alive` decides whether an existing claim still stands: a pid nothing
     /// answers to is stale and is taken over, which is what makes killing a
     /// server recoverable rather than terminal. Asking the *operating system*
-    /// whether a process exists is the caller's job — this crate has no
+    /// whether a process exists is the caller's job -- this crate has no
     /// business knowing what a process is.
     pub fn claim_control(&self, pid: u32, alive: impl Fn(u32) -> bool) -> bool {
         let owner = &self.header().control_owner;
@@ -532,7 +532,7 @@ impl View {
         self.shape.control_buses as usize
     }
 
-    /// The control-bus array — *the* buses, the words `InCtl` reads.
+    /// The control-bus array -- *the* buses, the words `InCtl` reads.
     #[inline]
     pub fn controls(&self) -> &[AtomicU32] {
         // SAFETY: the region is `control_buses` words at `controls_offset`,
@@ -602,7 +602,7 @@ impl View {
     }
 
     /// Audio bus `bus`'s level: the peak magnitude of the engine's last block,
-    /// or `0.0` where the bus is silent or out of range. What a meter reads —
+    /// or `0.0` where the bus is silent or out of range. What a meter reads --
     /// one number per block instead of a ring, so metering every bus costs no
     /// tap at all.
     #[inline]
@@ -682,7 +682,7 @@ impl View {
 
     /// Copies the **newest** `out.len()` samples of tap `i` into `out`,
     /// returning the stream position (total samples written) at the window's
-    /// end — `None` when the tap index is out of range, the window is empty or
+    /// end -- `None` when the tap index is out of range, the window is empty or
     /// larger than half the ring, or the tap has not yet written a full window.
     ///
     /// The half-ring cap makes a torn read need the writer to lap half the ring
@@ -767,7 +767,7 @@ impl View {
     }
 
     /// What a peer needs to map buffer `bufnum`: its generation (which names
-    /// the region) and its shape — or `None` when the slot is empty or out of
+    /// the region) and its shape -- or `None` when the slot is empty or out of
     /// range. Read under the generation twice, so a row caught mid-write is
     /// re-read rather than believed.
     pub fn buffer_info(&self, bufnum: usize) -> Option<BufferShape> {
@@ -808,7 +808,7 @@ impl View {
         }
     }
 
-    /// Appends one packet to the outbound ring, tagged for `peer` — who wrote
+    /// Appends one packet to the outbound ring, tagged for `peer` -- who wrote
     /// it (client → server) or who it is for (server → client). `false` when
     /// the ring lacks space: backpressure, and the caller may retry, since
     /// nothing was dropped.
@@ -834,7 +834,7 @@ impl View {
     }
 
     /// Pops one packet from the inbound ring into `buf`, returning its peer tag
-    /// and its length. A malformed length — a hostile or crashed peer — drops
+    /// and its length. A malformed length -- a hostile or crashed peer -- drops
     /// the whole ring contents and returns `None`, which is the resync.
     pub fn try_pop(&self, role: Role, buf: &mut [u8]) -> Option<(u32, usize)> {
         let ring = self.inbound(role);
@@ -885,7 +885,7 @@ impl View {
         Some(self.row(bufnum)?.frontier.load(Ordering::Relaxed))
     }
 
-    /// Raises the frontier of `bufnum` to `frame` — **the highest wins**, so
+    /// Raises the frontier of `bufnum` to `frame` -- **the highest wins**, so
     /// two writers on one buffer cannot pull it backwards and a looping
     /// recorder does not either.
     ///
@@ -914,7 +914,7 @@ fn write_ring(ring: &Ring, at: u32, bytes: &[u8]) {
     let data = ring.data.as_ptr() as *mut u8;
     let start = at as usize % RING_CAPACITY;
     let first = bytes.len().min(RING_CAPACITY - start);
-    // SAFETY: SPSC — only the producer writes between head and tail, and the
+    // SAFETY: SPSC -- only the producer writes between head and tail, and the
     // range was checked to fit before calling.
     unsafe {
         std::ptr::copy_nonoverlapping(bytes.as_ptr(), data.add(start), first);
@@ -926,7 +926,7 @@ fn read_ring(ring: &Ring, at: u32, into: &mut [u8]) {
     let data = ring.data.as_ptr();
     let start = at as usize % RING_CAPACITY;
     let first = into.len().min(RING_CAPACITY - start);
-    // SAFETY: SPSC — only the consumer reads between tail and head.
+    // SAFETY: SPSC -- only the consumer reads between tail and head.
     unsafe {
         std::ptr::copy_nonoverlapping(data.add(start), into.as_mut_ptr(), first);
         std::ptr::copy_nonoverlapping(data, into.as_mut_ptr().add(first), into.len() - first);

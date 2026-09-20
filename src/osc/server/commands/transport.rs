@@ -12,7 +12,7 @@ use super::super::*;
 ///
 /// Nothing else here needs one. Rolling, stopping, saying where the transport is
 /// and looping a span of it are all in samples, and an audio editor has no
-/// tempo to declare — asking it to invent one so that `/transport_play` will
+/// tempo to declare -- asking it to invent one so that `/transport_play` will
 /// answer is asking it to write down a number nobody reads.
 const NO_GRID: &str = "no beat grid defined (/transport_set)";
 
@@ -81,7 +81,7 @@ impl OscServer {
 
     /// Pushes the current transport state to every `/server_notify` client, so a
     /// responder on `/transport_query.reply` re-aligns or rolls its playhead live when
-    /// the conductor changes the grid, plays, stops or locates — no polling.
+    /// the conductor changes the grid, plays, stops or locates -- no polling.
     pub(in crate::osc::server) fn broadcast_transport(&self) {
         let push = self.transport_reply_args();
         for client in &self.clients {
@@ -89,7 +89,7 @@ impl OscServer {
         }
     }
 
-    /// `/transport_query` — reads the shared beat grid plus the rolling state.
+    /// `/transport_query` -- reads the shared beat grid plus the rolling state.
     /// Replies `/transport_query.reply (origin_sample:int64, tempo:double,
     /// defined:int32, playing:int32, position:double)`, all zeros (and `defined`
     /// 0) when no grid is set.
@@ -98,12 +98,12 @@ impl OscServer {
         self.reply(from, "/transport_query.reply", args);
     }
 
-    /// `/transport_set <origin_sample:int64> <tempo:double>` — sets the shared
+    /// `/transport_set <origin_sample:int64> <tempo:double>` -- sets the shared
     /// beat grid for phase-aligning several clients on the master sample clock
     /// (last writer wins), stopped at position 0, and replies `/done`. The grid
     /// is `beat b -> sample origin_sample + b·rate/tempo`; a client joins by
     /// reading it with [`Self::handle_transport_query`] and quantizing its start
-    /// onto it. The server only stores/broadcasts it — in-memory (resets on
+    /// onto it. The server only stores/broadcasts it -- in-memory (resets on
     /// restart), never scheduling audio from it.
     ///
     /// The rolling state (play/stop/locate) rides on top: see
@@ -152,7 +152,7 @@ impl OscServer {
         Ok(())
     }
 
-    /// `/transport_play [position:double]` — start the transport rolling. With a
+    /// `/transport_play [position:double]` -- start the transport rolling. With a
     /// `position` argument, playback starts from that song-position beat;
     /// without one, from where it last stopped/located. Every client's playhead
     /// obeys the broadcast (starting from `position`, quantized to the shared
@@ -198,7 +198,7 @@ impl OscServer {
         Ok(())
     }
 
-    /// `/transport_stop` — stop the transport. Every client's playhead halts at
+    /// `/transport_stop` -- stop the transport. Every client's playhead halts at
     /// its current point; `position` holds for the next play.
     pub(in crate::osc::server) fn handle_transport_stop(&mut self, from: ClientId) {
         self.transport.playing = false;
@@ -213,7 +213,7 @@ impl OscServer {
         self.broadcast_transport();
     }
 
-    /// `/transport_locate <position:double>` — set the song position **in
+    /// `/transport_locate <position:double>` -- set the song position **in
     /// beats** (where play starts or, while playing, seeks to). Every client's
     /// playhead locates to it; the `playing` flag is unchanged.
     ///
@@ -242,7 +242,7 @@ impl OscServer {
         Ok(())
     }
 
-    /// `/transport_locateSample <sample:int64>` — locate on the transport's own
+    /// `/transport_locateSample <sample:int64>` -- locate on the transport's own
     /// **sample** axis, which is what an audio editor addresses.
     ///
     /// The sibling of [`Self::handle_transport_locate`] and not a replacement:
@@ -279,20 +279,20 @@ impl OscServer {
         Ok(())
     }
 
-    /// `/transport_loop [<start:int64> <end:int64>]` — the span of the transport's axis
+    /// `/transport_loop [<start:int64> <end:int64>]` -- the span of the transport's axis
     /// the position wraps inside, in samples; **no arguments turns looping
     /// off**.
     ///
     /// Two forms rather than a third `enabled` argument: what a loop toggle
     /// needs to remember is the span it last used, and that is the client's to
-    /// keep — the server holding a disabled span would be a second copy of a
+    /// keep -- the server holding a disabled span would be a second copy of a
     /// number the client already has, which is the one thing this protocol
     /// avoids everywhere else.
     ///
     /// The span is **half-open**: the end sample is the first one not played,
     /// so a loop of `0..n` over an `n`-sample take plays every frame exactly
     /// once and joins its own start with no repeat. An empty or inverted span
-    /// fails rather than being silently ignored — it is always a mistake, and
+    /// fails rather than being silently ignored -- it is always a mistake, and
     /// the engine's wrap would not terminate over one.
     ///
     /// Turning a loop on does **not** move the transport: it keeps playing from
@@ -327,7 +327,7 @@ impl OscServer {
         Ok(())
     }
 
-    /// `/transport_group <int32 group>` — binds the group the transport
+    /// `/transport_group <int32 group>` -- binds the group the transport
     /// governs, or unbinds with a negative id.
     ///
     /// It is its own command rather than an argument of `/transport_set`

@@ -3,14 +3,14 @@
 //!
 //! One structure for all of them, which is the same decision the wire makes: a
 //! point is a time, a value, a shape and the amount that shape takes, and where
-//! the curve *hangs* — a widget of its own, a row under a track, a layer inside
-//! a box — changes nothing about what it is. What a hand does to one is here
+//! the curve *hangs* -- a widget of its own, a row under a track, a layer inside
+//! a box -- changes nothing about what it is. What a hand does to one is here
 //! too: place it between its neighbours, add one that inherits the segment it
 //! split, remove one, bend the segment either side of it.
 //!
 //! The **value** axis is part of the structure and not of the picture: a curve
 //! is read in a range, linearly or geometrically ([`value_fraction`] and its
-//! inverse), because that is what the numbers *mean* — a gain curve read in
+//! inverse), because that is what the numbers *mean* -- a gain curve read in
 //! decibels is not the same curve read in amplitude, whoever draws it. Where
 //! those fractions land in pixels is `graphics::bpf`'s, and the two meet at the
 //! fraction.
@@ -21,7 +21,7 @@ use serde_json::Value;
 
 use crate::viewport::{Axis, Unit};
 
-/// The custom-curvature clamp — past this the segment is visually a step.
+/// The custom-curvature clamp -- past this the segment is visually a step.
 const CURVE_LIMIT: f32 = 32.0;
 
 /// One breakpoint: its position, and the shape/curve of the segment *leaving*
@@ -35,7 +35,7 @@ pub struct BpfPoint {
 }
 
 /// Parses the `points` property: a flat `[t, v, shape, curve, …]` JSON array
-/// (or that array as a JSON string, the `/gui_set` carrier — OSC key/value
+/// (or that array as a JSON string, the `/gui_set` carrier -- OSC key/value
 /// pairs are scalars). Incomplete trailing quads are dropped; the points are
 /// sorted by time and their values clamped into `[lo, hi]`. `None` when the
 /// value is not an array at all.
@@ -76,7 +76,7 @@ pub fn parse_points(v: &Value, lo: f32, hi: f32) -> Option<Vec<BpfPoint>> {
 }
 
 /// The default envelope when a def names no points: a flat line at `lo` over a
-/// unit domain — predictable, and immediately editable.
+/// unit domain -- predictable, and immediately editable.
 pub fn default_points(lo: f32) -> Vec<BpfPoint> {
     vec![
         BpfPoint {
@@ -123,7 +123,7 @@ pub fn value_at(points: &[BpfPoint], t: f64) -> f32 {
     points.last().map_or(0.0, |p| p.value)
 }
 
-/// The 0..1 display fraction of `value` in `[lo, hi]` — linear, or geometric
+/// The 0..1 display fraction of `value` in `[lo, hi]` -- linear, or geometric
 /// when `exp` (frequency-like ranges; requires `0 < lo < hi`, falling back to
 /// linear otherwise). Inverse of [`fraction_to_value`].
 pub fn value_fraction(value: f32, lo: f32, hi: f32, exp: bool) -> f32 {
@@ -147,7 +147,7 @@ pub fn fraction_to_value(t: f32, lo: f32, hi: f32, exp: bool) -> f32 {
     }
 }
 
-/// Places breakpoint `i` at time `t` and `value` — the mapping-free core of a
+/// Places breakpoint `i` at time `t` and `value` -- the mapping-free core of a
 /// point drag: the time stays monotonic (clamped between its neighbours, and
 /// into `[0, dom]`), the value is taken as given (the caller mapped it out of
 /// its own display range). The pixel-mapped [`Axes::move_point`](crate::host::graphics::bpf::Axes::move_point) edits through
@@ -208,15 +208,15 @@ pub fn drag_curve(points: &mut [BpfPoint], i: usize, dy_frac: f64) {
     bend_curve(points, i, dy_frac, from);
 }
 
-/// Bends segment `i` to the curvature `from` plus `dy_frac` of the field —
+/// Bends segment `i` to the curvature `from` plus `dy_frac` of the field --
 /// **absolute against the press**, which is what `from` is for.
 ///
 /// The relative form (each step measured from the last, like a knob) drifts,
 /// and a curve is not a knob: a knob is dragged under a locked pointer with
 /// nothing on screen to stay level with, while a segment is a shape the hand is
-/// pointing at. Two things went wrong with it. The clamp **eats motion** — drag
+/// pointing at. Two things went wrong with it. The clamp **eats motion** -- drag
 /// past the limit and the steps beyond it are swallowed, so coming back leaves
-/// the bend short by however far it went — and a pointer that leaves the
+/// the bend short by however far it went -- and a pointer that leaves the
 /// element keeps accumulating whatever motion still arrives, so the curve is out
 /// of phase with the hand from then on. Anchored at the press there is one
 /// answer for a given cursor position: leave the area, come back, and the shape
@@ -260,8 +260,8 @@ pub fn points_json(points: &[BpfPoint]) -> Value {
 }
 
 /// The envelope's vertical discontinuities: for every breakpoint time where
-/// the curve jumps — a zero-width segment (coincident points), a hold
-/// segment's end, a step segment's start — the `(time, lo, hi)` value span
+/// the curve jumps -- a zero-width segment (coincident points), a hold
+/// segment's end, a step segment's start -- the `(time, lo, hi)` value span
 /// the jump covers, the breakpoint values sharing that time included so a
 /// disc always sits on the drawn curve. Every shape is monotone within its
 /// segment, so jumps can only occur at breakpoint times.
@@ -410,7 +410,7 @@ mod tests {
             },
         ];
         assert_eq!(discontinuities(&hold, 0.0), vec![(1.0, 0.0, 1.0)]);
-        // A step segment jumps to its target at its start — the connector
+        // A step segment jumps to its target at its start -- the connector
         // also ties the point's own (off-curve) disc to the drawn line.
         let step = vec![
             BpfPoint {

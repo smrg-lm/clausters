@@ -1,6 +1,6 @@
 //! What was copied: one mechanism, whatever the payload.
 //!
-//! A clipboard that is a `String` can carry a notes block and nothing else —
+//! A clipboard that is a `String` can carry a notes block and nothing else --
 //! and the moment it has to carry samples, the only way to keep it a string is
 //! base64 inside JSON, which is the re-encode the project's bulk rule exists to
 //! forbid: 4/3 the memory, on the one payload that is large by definition. So
@@ -12,7 +12,7 @@
 //! # The structure names blobs; it does not hold them
 //!
 //! [`Clipboard`] serializes whole as JSON, and a bulk payload appears in it as
-//! an **index** into the blobs travelling alongside — the same convention a
+//! an **index** into the blobs travelling alongside -- the same convention a
 //! GuiDef's `"blob": <index>` prop already uses. That is what lets one
 //! clipboard cross a wire, a window boundary and a process without anything
 //! being re-encoded on the way. [`Clipboard::blobs`] says how many must
@@ -46,7 +46,7 @@ use crate::{Member, NodeId};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Content {
-    /// Text, which is what the host-wide clipboard was before it had kinds —
+    /// Text, which is what the host-wide clipboard was before it had kinds --
     /// a field's contents, and the flat notes block that still travels this
     /// way.
     Text {
@@ -66,7 +66,7 @@ pub enum Content {
         channels: u32,
         /// Frames per channel.
         frames: u64,
-        /// The rate this was taken at. **Carried, never acted on** — see the
+        /// The rate this was taken at. **Carried, never acted on** -- see the
         /// module docs.
         sample_rate: f64,
         /// Which of the accompanying blobs holds it: interleaved
@@ -95,7 +95,7 @@ pub enum Content {
 }
 
 impl Content {
-    /// The kind's name on the wire — what a reader dispatches on, and what a
+    /// The kind's name on the wire -- what a reader dispatches on, and what a
     /// reader that does not understand this kind reports.
     pub fn kind(&self) -> &'static str {
         match self {
@@ -123,7 +123,7 @@ pub struct Clipboard {
 }
 
 impl Clipboard {
-    /// Text — a field's contents, or the flat notes block.
+    /// Text -- a field's contents, or the flat notes block.
     pub fn text(text: impl Into<String>) -> Self {
         Self::of(Content::Text { text: text.into() })
     }
@@ -180,7 +180,7 @@ impl Clipboard {
         self
     }
 
-    /// The kind's name — see [`Content::kind`].
+    /// The kind's name -- see [`Content::kind`].
     pub fn kind(&self) -> &'static str {
         self.content.kind()
     }
@@ -211,7 +211,7 @@ impl Clipboard {
     }
 
     /// How many `f32` values the accompanying blob should hold, for the kinds
-    /// that have one — what validates a payload against its header.
+    /// that have one -- what validates a payload against its header.
     pub fn values(&self) -> Option<usize> {
         match &self.content {
             Content::Samples {
@@ -241,7 +241,7 @@ impl Clipboard {
 
     /// Reads whatever is on the clipboard.
     ///
-    /// A clipboard document if it is one, and [`Content::Text`] otherwise —
+    /// A clipboard document if it is one, and [`Content::Text`] otherwise --
     /// which is what keeps everything that travelled as a string working. The
     /// fallback is an explicit door rather than an untagged guess: a guess
     /// would read a *stored string that happens to be JSON* as a structure, and

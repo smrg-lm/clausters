@@ -20,7 +20,7 @@
       <p id="verdict">running…</p>
 
       <p>The other half of the writer: <code>write</code> takes a directory and
-      is a node verb, <code>files</code> is the same bundle as text — and a
+      is a node verb, <code>files</code> is the same bundle as text -- and a
       page that has just authored one mounts what it holds, with nothing
       served and nothing fetched.</p>
 
@@ -39,7 +39,7 @@
           through disk" means;
         - the unmount gives back everything the mount took.
 
-      The verdict is beaconed as a fetch — the standard web-smoke posture
+      The verdict is beaconed as a fetch -- the standard web-smoke posture
       (docs/decisions.md).
     -->
     <script type="module">
@@ -69,7 +69,7 @@
 
       // The instrument: a tone whose amplitude follows an LFO, and the LFO
       // published on a control bus so a meter can draw it. The bus reaches the
-      // def as a **control** — the rule that lets two instances share one def.
+      // def as a **control** -- the rule that lets two instances share one def.
       function tone() {
         const freq = defs.control("freq", 220.0);
         const lfoBus = defs.control("lfo_bus", 0.0);
@@ -102,7 +102,7 @@
       }
 
       async function accept() {
-        // The core is the writer's validator, so it goes in first — the same
+        // The core is the writer's validator, so it goes in first -- the same
         // `await loadCore()` a node script writing a bundle would run, here
         // finding the module next to the glue instead of on disk.
         await loadCore();
@@ -152,7 +152,7 @@
         if (failed) throw new Error(`/fail: ${failed}`);
 
         // Nothing was served: the bundle never existed anywhere but in this
-        // tab. (The page's own modules are in the timeline, of course — what
+        // tab. (The page's own modules are in the timeline, of course -- what
         // must not be there is a bundle path.)
         const fetched = performance.getEntriesByType("resource")
           .filter((r) => /page-voice|bundle\.json|defs\/guidefs/.test(r.name));

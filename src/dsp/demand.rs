@@ -4,7 +4,7 @@
 //! driver owns**: the driver ([`Demand`], [`Duty`]) decides when a value is
 //! needed and pulls one; the source ([`Dlist`], [`Dramp`], …) yields the next
 //! item of its stream, or `NaN` once it has none left. Between two pulls the
-//! source does nothing at all — a stream has no samples, only a next value.
+//! source does nothing at all -- a stream has no samples, only a next value.
 //!
 //! **Streams nest.** That is the whole point of the family, and it is what
 //! shapes this module: a source's *inputs* may themselves be streams, so
@@ -17,7 +17,7 @@
 //! capped at compile time. Nothing here allocates.
 //!
 //! **Who resets whom.** A parent that returns to a child it has already
-//! drained resets it first, so the child's stream replays — that is what makes
+//! drained resets it first, so the child's stream replays -- that is what makes
 //! `Dseq(2, Dseries(3, 0, 1))` give `0 1 2 0 1 2` rather than `0 1 2` and
 //! silence. The reset is **lazy** (marked when the child is left, performed
 //! just before it is read again), because doing it eagerly would restart a
@@ -30,7 +30,7 @@
 //!
 //! **`repeats` and the endless stream.** sclang says `inf`; a def cannot. Our
 //! wire format rejects a non-finite constant (and JSON has no spelling for
-//! one), so **`repeats <= 0` is the endless stream** here — which is also what
+//! one), so **`repeats <= 0` is the endless stream** here -- which is also what
 //! a client would guess from a count. A positive count behaves exactly as
 //! scsynth's, `inf` still works if a client manages to send it, and a `NaN`
 //! (an exhausted stream feeding the count) still means zero, since there the
@@ -38,15 +38,15 @@
 //!
 //! The cores, one per family, with the scsynth names on the wire:
 //!
-//! - [`Dramp`] — `Dseries` (add) and `Dgeom` (multiply): the same walk with a
+//! - [`Dramp`] -- `Dseries` (add) and `Dgeom` (multiply): the same walk with a
 //!   different step operator.
-//! - [`Drandom`] — `Dwhite`/`Diwhite` (independent draws) and
+//! - [`Drandom`] -- `Dwhite`/`Diwhite` (independent draws) and
 //!   `Dbrown`/`Dibrown` (a bounded random walk), float or integer.
-//! - [`Dlist`] — `Dseq`, `Drand`, `Dxrand` and `Dshuf`: one traversal of a
+//! - [`Dlist`] -- `Dseq`, `Drand`, `Dxrand` and `Dshuf`: one traversal of a
 //!   value list, differing only in what picks the next slot. This is the core
 //!   that flattens nested streams, so all four inherit it.
-//! - [`Dstutter`], [`Dswitch1`], [`Dbufrd`] — one machine each.
-//! - [`Demand`] and [`Duty`] — the drivers, which turn pulls into samples.
+//! - [`Dstutter`], [`Dswitch1`], [`Dbufrd`] -- one machine each.
+//! - [`Demand`] and [`Duty`] -- the drivers, which turn pulls into samples.
 
 use clausters_core::builtins::fold;
 use clausters_core::rng;
@@ -81,7 +81,7 @@ impl Repeats {
     }
 
     /// Latches the count on the first pull since the last reset. Returns
-    /// whether this *was* that first pull — the moment a source also latches
+    /// whether this *was* that first pull -- the moment a source also latches
     /// whatever else it only reads once (a ramp's start value).
     fn begin(&mut self, inputs: &mut dyn DemandInputs) -> bool {
         if self.started {
@@ -148,7 +148,7 @@ pub enum RampKind {
 ///
 /// The step is read on **every** pull, so it may itself be a stream (a series
 /// whose increment comes from a `Drand` is an ordinary thing to want); a `NaN`
-/// there — an exhausted step stream — leaves the last step in place rather than
+/// there -- an exhausted step stream -- leaves the last step in place rather than
 /// ending the ramp. `start` is read once, on the first pull.
 pub struct Dramp {
     kind: RampKind,
@@ -238,8 +238,8 @@ impl RandKind {
 /// clipped would pile up against the bound instead of turning around.
 ///
 /// Randomness comes from [`clausters_core::rng`], seeded per instance from the
-/// same shared counter the noise generators use — two `Dwhite`s in one graph
-/// must not draw the same stream — and reproducible from an explicit seed.
+/// same shared counter the noise generators use -- two `Dwhite`s in one graph
+/// must not draw the same stream -- and reproducible from an explicit seed.
 pub struct Drandom {
     kind: RandKind,
     rep: Repeats,
@@ -264,7 +264,7 @@ impl Drandom {
         }
     }
 
-    /// A uniform draw on `[lo, hi]` — over the integers when the kind is an
+    /// A uniform draw on `[lo, hi]` -- over the integers when the kind is an
     /// integer one, where both ends are included.
     fn draw(&mut self) -> f32 {
         if self.kind.is_int() {
@@ -373,7 +373,7 @@ pub struct Dlist {
     index: usize,
     /// Shuffled slot order (`Dshuf`), rebuilt on every reset.
     perm: [u8; MAX_UGEN_INPUTS],
-    /// Whether the slot about to be read must be restarted first — set when a
+    /// Whether the slot about to be read must be restarted first -- set when a
     /// slot is left, honoured just before it is read again.
     reset_child: bool,
 }
@@ -449,7 +449,7 @@ impl UGen for Dlist {
         if self.rep.begin(inputs) {
             match self.order {
                 ListOrder::Shuf => self.shuffle(n),
-                // A random order is random from its *first* item too — starting
+                // A random order is random from its *first* item too -- starting
                 // at slot 0 and only then drawing would make the head of every
                 // `Drand` predictable.
                 ListOrder::Rand | ListOrder::Xrand => {
@@ -512,7 +512,7 @@ impl UGen for Dlist {
 
 /// `Dstutter(n, value)`: repeats each item of `value` `n` times.
 ///
-/// Both inputs are pulled — `n` per item, so the repeat count can itself vary —
+/// Both inputs are pulled -- `n` per item, so the repeat count can itself vary --
 /// and either running out ends the stream. Unlike the list sources it resets
 /// both inputs outright when it is reset, since it has only the one value
 /// stream and no notion of moving on.
@@ -607,7 +607,7 @@ impl UGen for Dswitch1 {
 /// `Dbufrd(bufnum, phase, loop, channel)`: reads one frame of a buffer at the
 /// frame index `phase` yields.
 ///
-/// The natural companion to a demand phase source — `Dbufrd` with a `Dseries`
+/// The natural companion to a demand phase source -- `Dbufrd` with a `Dseries`
 /// phase walks a buffer as a step sequence. `channel` sits last so the sclang
 /// argument order still reads correctly; it exists because every other buffer
 /// reader in this catalog takes one. Out of range it wraps when `loop` is set
@@ -650,7 +650,7 @@ impl UGen for Dbufrd {
 // Drivers: Demand, Duty, TDuty
 // ---------------------------------------------------------------------------
 
-/// Input slot of [`Demand`]'s source. Its own business, not a shared rule —
+/// Input slot of [`Demand`]'s source. Its own business, not a shared rule --
 /// the other drivers name streams in more than one slot.
 const DEMAND_SOURCE: usize = 2;
 
@@ -708,7 +708,7 @@ impl UGen for Demand {
 pub enum DutyKind {
     /// `Duty`: hold it until the next one is due.
     Hold,
-    /// `TDuty`: emit it on that one sample and nothing in between — a stream
+    /// `TDuty`: emit it on that one sample and nothing in between -- a stream
     /// of triggers whose amplitudes come from `level`.
     Trigger,
 }
@@ -716,7 +716,7 @@ pub enum DutyKind {
 /// `Duty(dur, reset, level, done_action)` and
 /// `TDuty(dur, reset, level, done_action, gap_first)`: a driver with its own
 /// clock. Every `dur` seconds it pulls one `level`, so it needs no external
-/// trigger — where [`Demand`] is told when to pull, this one decides.
+/// trigger -- where [`Demand`] is told when to pull, this one decides.
 ///
 /// Both `dur` and `level` are pulled, and that is the point: a `Dseq` of
 /// durations against a `Dseq` of pitches is a sequencer, in two streams that
@@ -731,7 +731,7 @@ pub struct Duty {
     kind: DutyKind,
     /// Samples remaining before the next pull.
     count: f64,
-    /// Last level pulled — what `Duty` holds between pulls.
+    /// Last level pulled -- what `Duty` holds between pulls.
     level: f32,
     prev_reset: Edge,
     /// Set once a stream has ended; cleared by a reset.
@@ -789,7 +789,7 @@ impl UGen for Duty {
                 self.restart(inputs);
             }
             // Between pulls (and after the last one) `Duty` holds its level and
-            // `TDuty` is silent. A finished stream stops pulling entirely —
+            // `TDuty` is silent. A finished stream stops pulling entirely --
             // otherwise a `NaN` duration would ask for a value every sample.
             if self.count > 0.0 || self.finished {
                 self.count -= 1.0;

@@ -6,15 +6,15 @@
 // **signal tree** the server's `/def_send faust` consumes (`{"signals": [ <node>, …
 // ]}`, one node per output).
 //
-// As in `./ugens.ts`, composition is by **method** rather than by operator —
-// TypeScript has no operator overloading — so `hslider("freq", …).sin()` and
+// As in `./ugens.ts`, composition is by **method** rather than by operator --
+// TypeScript has no operator overloading -- so `hslider("freq", …).sin()` and
 // `sin(x).mul(0.2)` both compose the graph. Plain numbers are constants
 // (Faust `int`/`real`); explicit feedback uses `recursion`/`self_` (one
 // sample of delay), and `input(n)` reads audio input `n`.
 //
 // The methods come from `./expr.ts`'s `FaustExpr`, the roof this shares with
 // the box algebra, so the vocabulary is the whole operator surface every
-// expression in this package answers to — and the ones the Faust signal API
+// expression in this package answers to -- and the ones the Faust signal API
 // has no op for (`.hypot()`, `.midicps()`, the shifts a *box* lacks) throw
 // where they are written, as they do in the reference client. `.rsub(1)` is
 // `1 - sig`, the operand order a method cannot otherwise say.
@@ -122,7 +122,7 @@ export const delay1 = (x: SignalInput): Signal =>
  * A foreign **constant**: a scalar the server resolves once, at def-compile
  * time, from its runtime (Faust `CsigFConst`). `ctype` is `"int"` or
  * `"real"`, `name` the runtime symbol, `file` the include that declares it.
- * The building block of `sr` — prefer that helper for sample rate.
+ * The building block of `sr` -- prefer that helper for sample rate.
  */
 export const fconst = (ctype: "int" | "real", name: string, file = ""): Signal =>
     new Signal({ op: "fconst", ctype, name, file });
@@ -136,7 +136,7 @@ export const fvar = (ctype: "int" | "real", name: string, file = ""): Signal =>
 
 /**
  * The engine's sample rate as a `Signal`, read from the server at
- * def-compile time — the port of Faust's `ma.SR`, clamp included.
+ * def-compile time -- the port of Faust's `ma.SR`, clamp included.
  *
  * Use this instead of baking a JS constant: a def built with `sr` is correct
  * at whatever rate the server (or NRT renderer) actually runs.
@@ -199,7 +199,7 @@ export const rem = binary("rem");
 //
 // Unlike the sample rate, these are *literals* in Faust too (`ma.PI` is the
 // double constant, not a runtime value), so a JS number is exactly what the
-// compiler bakes in — no server round-trip is involved. They become constant
+// compiler bakes in -- no server round-trip is involved. They become constant
 // signals as soon as they meet a Signal in an expression.
 export const PI = 3.141592653589793;
 /** 2·PI; Faust has no `ma.TAU`, this is just the literal. */

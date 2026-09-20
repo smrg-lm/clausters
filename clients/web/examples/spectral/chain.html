@@ -26,8 +26,8 @@
 
 <code>fft</code> analyses a bright source into a spectral <b>frame</b>, each
 <code>pv*</code> transforms that frame in place, and <code>ifft</code>
-overlap-adds it back to samples. No buffer is allocated — the frame is
-synth-private scratch on the server — so the chain is just wired UGen to UGen,
+overlap-adds it back to samples. No buffer is allocated -- the frame is
+synth-private scratch on the server -- so the chain is just wired UGen to UGen,
 and only <code>fft</code> names the window size, which the server propagates
 down the chain.
 

@@ -183,7 +183,7 @@ def on_edit(tag: str, *values) -> None:
     """Apply one dragged sample, then say so.
 
     The payload is the event's tag followed by its flat values, so the tag is
-    what says which gesture this was — this lane emits only one, and the check
+    what says which gesture this was -- this lane emits only one, and the check
     is what keeps that true when it grows a second.
     """
     if tag == "refused":

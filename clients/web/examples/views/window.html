@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>clausters: the first pixels — a navigable waveform</title>
+    <title>clausters: the first pixels -- a navigable waveform</title>
     <link rel="icon" href="data:," />
     <style>
       html, body { margin: 0; min-height: 100%; background: #0d0d12;
@@ -26,11 +26,11 @@ It builds a view holding a <code>label</code> and the heavy
 <code>waveform</code>, feeds it a generated signal through a
 <code>source</code>, and opens it on the GUI host. The host draws the waveform;
 the wheel zooms toward the pointer, left-drag pans, <b>R</b> resets. Then the
-source is pointed at other samples and the same view redraws — a
+source is pointed at other samples and the same view redraws -- a
 <code>source</code> is addressable, so what it holds can change without the tree
 being rebuilt.
 
-No audio server is involved — the signal is generated here — so this brings up
+No audio server is involved -- the signal is generated here -- so this brings up
 only the GUI host.</div>
 
       <div class="row">
@@ -81,7 +81,7 @@ only the GUI host.</div>
 
         sig = gui.source(decayingSine(8000, 120.0));
         await gui.view(
-          { title: "clausters-gui — waveform", w: 720, h: 360, layout: "col" },
+          { title: "clausters-gui -- waveform", w: 720, h: 360, layout: "col" },
           gui.label("Decaying sine (wheel: zoom, drag: pan, R: reset)", { name: "caption" }),
           gui.waveform({ name: "wave", data: sig }),
         ).open($("stage"));
@@ -93,7 +93,7 @@ only the GUI host.</div>
       $("slower").onclick = () => {
         sig.set(decayingSine(8000, 40.0));
         $("slower").disabled = true;
-        log("the same view now draws a slower sine — the source was pointed at "
+        log("the same view now draws a slower sine -- the source was pointed at "
           + "other samples, and every live widget it feeds was pushed to");
       };
     </script>

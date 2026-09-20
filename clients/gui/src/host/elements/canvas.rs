@@ -1,7 +1,7 @@
-//! `canvas` — a script's own fragment shader over the widget area.
+//! `canvas` -- a script's own fragment shader over the widget area.
 //!
 //! The leaf that proves an element can be a **heavy view**. It cannot draw into
-//! the window's one mesh — a shader is not triangles the batch can carry — so
+//! the window's one mesh -- a shader is not triangles the batch can carry -- so
 //! instead of implementing the mesh half of `draw` for its picture it *claims a
 //! slot*, and the frame maintains that slot keyed by widget id exactly as it
 //! does for a waveform's geometry or a spectrogram's texture.
@@ -12,7 +12,7 @@
 //! costs the pipeline the window already paid for and nothing per widget.
 //!
 //! Its uniforms are the second half. Four params ride the wire as numbers a
-//! script sets, and any of them may instead name a control bus — resolved here,
+//! script sets, and any of them may instead name a control bus -- resolved here,
 //! per frame, from the world, which is the same read a meter does and costs the
 //! same nothing. The picture follows the clock whatever the params do, so a
 //! canvas declares itself animated and the window repaints for it.
@@ -43,7 +43,7 @@ pub(super) fn build(
     Ok(Box::new(from_props(props)))
 }
 
-/// The props a `canvas` node carries, read once — shared by the constructor and
+/// The props a `canvas` node carries, read once -- shared by the constructor and
 /// by the tests beside it.
 fn from_props(props: &Map<String, Value>) -> Canvas {
     Canvas {
@@ -198,8 +198,8 @@ mod tests {
         assert!(!c.set("nonesuch", &Value::from(1)));
     }
 
-    /// The claim is static — it is what a window allocates the slot from,
-    /// before any frame — and the buses ride beside it as an ordinary
+    /// The claim is static -- it is what a window allocates the slot from,
+    /// before any frame -- and the buses ride beside it as an ordinary
     /// declaration.
     #[test]
     fn it_claims_the_shader_slot_and_declares_its_buses() {

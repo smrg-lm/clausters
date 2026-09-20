@@ -21,7 +21,7 @@ use super::*;
 pub(super) struct Grab {
     /// The clip the hand has, by index.
     pub(super) clip: usize,
-    /// Which part of it — the body, or one of the two edges.
+    /// Which part of it -- the body, or one of the two edges.
     pub(super) part: Part,
     /// Where it sat when the press landed.
     pub(super) orig: Placement,
@@ -33,7 +33,7 @@ pub(super) struct Grab {
     /// **The axis the press found**, for a widget on no navigation group.
     ///
     /// Such a widget's axis is its own extent, and a drag *changes* the extent
-    /// — so re-deriving it per frame stretches the pixel-to-time map under the
+    /// -- so re-deriving it per frame stretches the pixel-to-time map under the
     /// hand, the next step reads further, and the box runs away from the
     /// pointer. On a group the axis is read live instead, because there it is
     /// the group's and pans under the drag on purpose ([`Take::edge_scroll`]).
@@ -53,7 +53,7 @@ pub(super) struct Sizing {
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Fading {
     pub(super) lane: usize,
-    /// The knob's own cell — how far a full turn is, in pixels.
+    /// The knob's own cell -- how far a full turn is, in pixels.
     pub(super) cell: Rect,
     /// The level the press found: a turn is measured from it.
     pub(super) from: f32,
@@ -61,12 +61,12 @@ pub(super) struct Fading {
     pub(super) at: f64,
 }
 
-/// The block a hand took, as `(index, offset, row)` per clip — the snapshot
+/// The block a hand took, as `(index, offset, row)` per clip -- the snapshot
 /// `boxes::move_block` clamps against, so a block stopped at an edge does
 /// not fold against it.
 pub(super) type Block = Vec<(usize, f64, f32)>;
 impl Multitrack {
-    /// The clip under `(x, y)`, and which part of it — **the topmost first**,
+    /// The clip under `(x, y)`, and which part of it -- **the topmost first**,
     /// since a later clip is drawn over an earlier one and the eye takes the
     /// one it can see.
     pub(super) fn clip_at(&self, input: &Input, at: (f64, f64)) -> Option<(usize, Part)> {
@@ -89,7 +89,7 @@ impl Multitrack {
                 let cr = track::clip_rect(body, x0, x1);
                 // **A grip is hit on the pixels it was drawn on.** The same
                 // call the drawing made, so the handle and its hit area cannot
-                // disagree — the case nobody tests.
+                // disagree -- the case nobody tests.
                 let local = track::clip_local_view(body, &nav, c.place.offset, c.place.dur, cr);
                 let ends = track::clip_ends_on_screen(&local, c.place.dur);
                 if let Some((_, side)) = track::clip_grip_at(cr, ends, input.metrics, at.0 as f32) {
@@ -123,7 +123,7 @@ impl Multitrack {
     /// A press on a lane's header: the two toggles land on the press, the fader
     /// takes the drag.
     ///
-    /// **The mixer state is the document's**, so all three report — and they
+    /// **The mixer state is the document's**, so all three report -- and they
     /// report the `"lanes"` list, not the one lane, because what a report says
     /// here is the multitrack as it now stands.
     pub(super) fn press_header(
@@ -214,7 +214,7 @@ impl Multitrack {
                 });
                 Claim::take()
             }
-            // **The bottom edge is the row's own height** — the vertical zoom
+            // **The bottom edge is the row's own height** -- the vertical zoom
             // of one track, which is what a hand reaches for when one take
             // needs to be read closely and the rest do not. Screen state, like
             // the scroll: nothing on the wire sets or reports it.
@@ -245,7 +245,7 @@ impl Multitrack {
 
     /// The gesture a curve reads its own geometry from: the rectangle it was
     /// drawn in, and the axis it was drawn against. A body has no gutter of its
-    /// own — the header band is the multitrack's — so the indent is zero.
+    /// own -- the header band is the multitrack's -- so the indent is zero.
     pub(super) fn on_curve<'a>(input: &Input<'a>, rect: Rect, space: TimeSpace) -> Input<'a> {
         Input {
             rect,
@@ -255,7 +255,7 @@ impl Multitrack {
         }
     }
 
-    /// Where a curve by name was drawn, and the space it was drawn against —
+    /// Where a curve by name was drawn, and the space it was drawn against --
     /// the geometry a gesture on it is read with, taken from the one answer the
     /// drawing used.
     pub(super) fn curve_place(&self, name: &str, input: &Input) -> Option<(Rect, TimeSpace)> {
@@ -265,8 +265,8 @@ impl Multitrack {
             .map(|(_, rect, space)| (rect, space))
     }
 
-    /// **A press on a curve's own contents** — a break-point, or the line
-    /// between two of them — never on the rectangle it shares with what is
+    /// **A press on a curve's own contents** -- a break-point, or the line
+    /// between two of them -- never on the rectangle it shares with what is
     /// under it.
     ///
     /// That is what leaves the background to the container: a press on a box's
@@ -333,9 +333,9 @@ impl Multitrack {
 
 impl Multitrack {
     /// **A press takes a clip or a header control, and declines everywhere
-    /// else.** The slack between clips and beside them is the container's —
+    /// else.** The slack between clips and beside them is the container's --
     /// that is where a click places the transport's cursor and a sweep starts a
-    /// marquee — so a press that found neither goes back to the chain rather
+    /// marquee -- so a press that found neither goes back to the chain rather
     /// than being swallowed.
     pub(super) fn press_at(&mut self, at: (f64, f64), input: &Input) -> Claim {
         self.grab = None;
@@ -370,7 +370,7 @@ impl Multitrack {
             return Claim::take();
         }
         // **A press selects the layer it lands on**, and what lands on a curve
-        // is its own points and the line between them — never the rectangle it
+        // is its own points and the line between them -- never the rectangle it
         // shares with the box under it. So an envelope drawn across a box
         // leaves that box draggable by every pixel the line is not on.
         if let Some(claim) = self.press_curve(at, input) {
@@ -379,7 +379,7 @@ impl Multitrack {
         let Some((clip, part)) = self.clip_at(input, at) else {
             return Claim::Decline;
         };
-        // **A box is entered to edit it**, and entering is a double click —
+        // **A box is entered to edit it**, and entering is a double click --
         // the gesture a desktop already spends on "open this". What leaves is
         // the box's name and nothing else: which editor that box asks for is a
         // question about its *contents*, and this widget owns where things are
@@ -423,7 +423,7 @@ impl Multitrack {
         });
         Claim::Take(Take {
             // Held past the edge of the axis, the machine keeps ticking and
-            // pans the group under the hand — a clip dragged off the right of
+            // pans the group under the hand -- a clip dragged off the right of
             // the window has to keep moving, and a held cursor sends nothing.
             edge_scroll: true,
             ..Take::default()
@@ -433,7 +433,7 @@ impl Multitrack {
 
 impl Multitrack {
     /// **What a rectangle swept over the stack caught.** The marquee's one
-    /// question, answered with the clips the rectangle covered — of every lane
+    /// question, answered with the clips the rectangle covered -- of every lane
     /// it crossed, since a selection the stack's sweep made is not one lane's.
     pub(super) fn swept(&mut self, from: (f64, f64), to: (f64, f64), input: &Input) -> Swept {
         let before = self.selected.len();
@@ -446,7 +446,7 @@ impl Multitrack {
         Swept {
             changed: before != self.selected.len() || !self.selected.is_empty(),
             // **No band.** A multitrack's second axis is the stack of lanes,
-            // not a value, so a rectangle over it restricts no value range —
+            // not a value, so a rectangle over it restricts no value range --
             // the vertical half said *which clips*, and nothing else.
             band: None,
         }
@@ -456,7 +456,7 @@ impl Multitrack {
 impl Multitrack {
     /// The clips follow the hand; **the edit leaves on release.**
     ///
-    /// One gesture is one edit — a placement per frame would be an undo step
+    /// One gesture is one edit -- a placement per frame would be an undo step
     /// per frame, and a round trip whose acknowledgement the next frame
     /// outruns. What moves here is the picture. The **fader** is the exception
     /// and is not one: it is a control, its value *is* what the hand is doing,
@@ -565,7 +565,7 @@ impl Multitrack {
             || self.clips[grab.clip].place != grab.orig;
         if !moved {
             // **A press that moved nothing is a click, and a click selects the
-            // box it landed on** — alone, whatever was held before, which is
+            // box it landed on** -- alone, whatever was held before, which is
             // what makes a hand able to point at one clip and then act on it
             // (place the cursor, split it, delete it). Alt is still the
             // additive one, and it answered at the press.
@@ -592,7 +592,7 @@ impl Multitrack {
     /// stack has and the axis does not:
     ///
     /// - `Shift` **scrolls the stack**, so a track that fell off the bottom is
-    ///   reachable. The scroll is clamped to what there is to see — a stack
+    ///   reachable. The scroll is clamped to what there is to see -- a stack
     ///   that fits does not move at all, and one that does not cannot be pushed
     ///   past its last row, which is the difference between a scroll and a
     ///   surface that can be lost.
@@ -604,7 +604,7 @@ impl Multitrack {
     ///
     /// **A facility, and it says so.** These are here because the example needs
     /// to reach a stack taller than its window, and which keys they are is not
-    /// settled — see `clients/gui/PLAN.md`, "The whole interaction vocabulary is
+    /// settled -- see `clients/gui/PLAN.md`, "The whole interaction vocabulary is
     /// provisional" and "A shortcut is the application's, not the widget's".
     pub(super) fn wheeled(
         &mut self,
@@ -638,7 +638,7 @@ impl Multitrack {
             // **Taken whether it moves or not** *(found 2026-09-12 by the user:
             // "cuando llega al limite pasa a hacer zoom temporal")*. Passing an
             // unusable wheel on is the right rule for a *surface* under the
-            // pointer, which is why the scroll plane behind this one keeps it —
+            // pointer, which is why the scroll plane behind this one keeps it --
             // and it is the wrong one for a **modifier**, which is an address
             // rather than a place. Shift said *the stack*, so a stack already
             // at its end answers by doing nothing: reaching the last track and
@@ -654,8 +654,8 @@ impl Multitrack {
 impl Multitrack {
     /// The verbs a hand has over what it is holding.
     ///
-    /// `q` quantizes onto the lane's own `snap` grid — the grid a drag already
-    /// lands on — `e` splits at the window's cursor and `j` joins a touching
+    /// `q` quantizes onto the lane's own `snap` grid -- the grid a drag already
+    /// lands on -- `e` splits at the window's cursor and `j` joins a touching
     /// run, Delete removes (the **selected track**, with everything on it, when
     /// no box is held), and `Ctrl`+`C`/`X`/`V` move a block through the
     /// host-wide clipboard. All of them act on **the held set**, across the
@@ -670,7 +670,7 @@ impl Multitrack {
     /// that does not work.
     ///
     /// **The letters are the ones a clip already answered to on a lane.** Which
-    /// keys they are is not settled — see `clients/gui/PLAN.md`, "A shortcut is
+    /// keys they are is not settled -- see `clients/gui/PLAN.md`, "A shortcut is
     /// the application's, not the widget's".
     pub(super) fn keyed(&mut self, key: &Key, input: &mut KeyInput) -> Option<Events> {
         // **Delete acts on what is in hand, and a track can be in hand.** The
@@ -712,7 +712,7 @@ impl Multitrack {
                 boxes::discard(self, &held).then(|| self.clips_event())
             }
             // The clipboard is the host's one string, so a block travels between
-            // multitracks and windows — and rides it in the same JSON form a
+            // multitracks and windows -- and rides it in the same JSON form a
             // `/gui_set clips` accepts, which is the carrier every non-scalar
             // here uses.
             Key::Char('c') | Key::Char('C') | Key::Char('x') | Key::Char('X')
@@ -730,7 +730,7 @@ impl Multitrack {
                     .clipboard
                     .set_text(&model::clips_json(&block).to_string());
                 if !matches!(key, Key::Char('x') | Key::Char('X')) {
-                    // A copy changed nothing, so it reports nothing — but it
+                    // A copy changed nothing, so it reports nothing -- but it
                     // consumed the key.
                     return Some(Events::none());
                 }

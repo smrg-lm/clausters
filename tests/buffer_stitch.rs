@@ -165,7 +165,7 @@ fn a_join_reads_the_part_a_frame_belongs_to() {
 }
 
 /// **The order is the join's, not the file's.** The same take read twice, the
-/// second half before the first — which is the case a reader with one `start`
+/// second half before the first -- which is the case a reader with one `start`
 /// and one `span` cannot express at all.
 #[test]
 fn one_take_can_be_joined_out_of_order() {
@@ -182,7 +182,7 @@ fn one_take_can_be_joined_out_of_order() {
 }
 
 /// **A channel map is routing.** A mono take heard on both sides of a stereo
-/// join is the same samples twice, and a channel mapped to nothing is silence —
+/// join is the same samples twice, and a channel mapped to nothing is silence --
 /// how *loud* each side is belongs to the mixer, not here.
 #[test]
 fn a_channel_map_routes_and_does_not_scale() {
@@ -233,7 +233,7 @@ fn a_part_fades_where_it_was_asked_to() {
 }
 
 /// **A join is read, never written.** Writing through would turn one edit into
-/// an edit of several takes, so every write path refuses it by name — and says
+/// an edit of several takes, so every write path refuses it by name -- and says
 /// what to do instead.
 #[test]
 fn a_join_refuses_to_be_written() {
@@ -259,7 +259,7 @@ fn a_join_refuses_to_be_written() {
 }
 
 /// **What cannot be read is refused rather than read wrong**: a part past the
-/// end of its source, a map of the wrong width, and a source at another rate —
+/// end of its source, a map of the wrong width, and a source at another rate --
 /// a join is not a resampler.
 #[test]
 fn a_join_that_cannot_be_read_is_refused() {
@@ -279,7 +279,7 @@ fn a_join_that_cannot_be_read_is_refused() {
     assert!(!narrow.is_empty(), "a map of the wrong width is refused");
 }
 
-/// **What a join costs per sample, measured rather than argued** — the same
+/// **What a join costs per sample, measured rather than argued** -- the same
 /// method the `Buffer` module docs quote for the atomics: an interpolated
 /// random-access read over 64-frame blocks, a plain buffer against a join over
 /// the same samples. Ignored by default because it is a measurement and not an
@@ -303,7 +303,7 @@ fn what_a_join_costs_per_sample() {
         FRAMES,
         SR,
     ));
-    // The same samples as one part, and as many short parts — the second is
+    // The same samples as one part, and as many short parts -- the second is
     // what a comping pass looks like and the case the cursor is for.
     let one = Buffer::stitched(
         Stitch::new(

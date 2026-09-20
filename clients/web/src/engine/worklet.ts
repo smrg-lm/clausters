@@ -1,6 +1,6 @@
 // The AudioWorklet processor: the engine lives here, in pulled mode.
 //
-// Topology (docs/decisions.md): one wasm instance — OSC translate + engine —
+// Topology (docs/decisions.md): one wasm instance -- OSC translate + engine --
 // inside the AudioWorkletGlobalScope. The main thread compiles the
 // WebAssembly.Module (async, off this thread) and passes it through
 // processorOptions; the constructor instantiates it *synchronously* with
@@ -8,7 +8,7 @@
 // over the MessagePort both ways; commands cross into the engine through the
 // in-memory ring (inside WebServer). No SharedArrayBuffer, no COOP/COEP.
 //
-// Each 128-frame render quantum is one WebServer.process call — a serving
+// Each 128-frame render quantum is one WebServer.process call -- a serving
 // turn (ring, streams, garbage, async results) before each 64-frame engine
 // block, so command pacing stays fine and deterministic (see
 // tests/headless.rs, which drives the same path natively).
@@ -126,7 +126,7 @@ class ClaustersProcessor extends AudioWorkletProcessor {
     outstanding: Map<number, number>;
     /** The `/buffer_write` being handed over, a run per turn. */
     writing: { ticket: number; frames: number; at: number } | null;
-    /** Where that write goes and in what format — constant for its whole run. */
+    /** Where that write goes and in what format -- constant for its whole run. */
     write: { path: string; channels: number; sampleRate: number; format: string } | null;
     /** `DiskIn` streams: where each one has read to, and what it could not
      *  hand over yet. */
@@ -263,7 +263,7 @@ class ClaustersProcessor extends AudioWorkletProcessor {
 
     /**
      * Hands the engine's next job to the Worker, if there is one waiting. At
-     * most one is ever out — the buffer queue waits on it, which is what keeps
+     * most one is ever out -- the buffer queue waits on it, which is what keeps
      * `/buffer_*` completing in submission order the way a native server's
      * single NRT thread does.
      */
@@ -313,8 +313,8 @@ class ClaustersProcessor extends AudioWorkletProcessor {
     /**
      * Hands the Worker one run of the outstanding `/buffer_write`.
      *
-     * The run is `installFrames` — the same ceiling a staged *load* copies
-     * under, and for the same measurement — so a long take leaves over as many
+     * The run is `installFrames` -- the same ceiling a staged *load* copies
+     * under, and for the same measurement -- so a long take leaves over as many
      * turns as it needs instead of stalling one. Only the last run carries
      * `final`, and only that one is answered: the runs are ordered by the port,
      * and an early ack arriving after the last run was posted would answer the
@@ -343,7 +343,7 @@ class ClaustersProcessor extends AudioWorkletProcessor {
     }
 
     /**
-     * The write landed — the whole of it, since only the last run is answered
+     * The write landed -- the whole of it, since only the last run is answered
      * (or the first one that failed).
      */
     onWritten(result: WriteResult): void {
@@ -355,8 +355,8 @@ class ClaustersProcessor extends AudioWorkletProcessor {
     }
 
     /**
-     * The Worker answered. The samples are installed here — they have to be,
-     * the buffer pool being this module's memory — but in runs, under the same
+     * The Worker answered. The samples are installed here -- they have to be,
+     * the buffer pool being this module's memory -- but in runs, under the same
      * ceiling every install pays, and only then is the command answered.
      */
     onNrtResult(result: ReadResult): void {

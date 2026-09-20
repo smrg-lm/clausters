@@ -22,21 +22,21 @@
       <div id="note">Text on the light widgets: <code>textSize</code>,
 <code>wrap</code> and <code>align</code>.
 
-Every text-bearing light widget — <code>label</code>, <code>button</code>,
+Every text-bearing light widget -- <code>label</code>, <code>button</code>,
 <code>toggle</code>, <code>text</code>, <code>number</code>, <code>menu</code>
-and the control labels on <code>slider</code>/<code>knob</code> — takes a
+and the control labels on <code>slider</code>/<code>knob</code> -- takes a
 <code>textSize</code>: a glyph scale over the host's font, whose default 2.0 is
 exactly the size everything drew at before the prop existed.
 
 The face writes <b>both cases</b> and the <b>Latin-1</b> letters, so a label, a
 track name or a file path in Spanish, French or German reads as written. Its
-cell is 5 columns by a 7-row body — the height a line reserves — and a diacritic
+cell is 5 columns by a 7-row body -- the height a line reserves -- and a diacritic
 draws above that body while a descender draws below it, which is why an accented
 line needs no more room than an unaccented one.
 
 <code>label</code> additionally takes <code>wrap</code> (word wrap on the
 measured width of the words; lines past the label's bottom edge are dropped) and
-<code>align</code> — <code>"start"</code>, <code>"center"</code> or
+<code>align</code> -- <code>"start"</code>, <code>"center"</code> or
 <code>"end"</code>, applied per line. Single-line text that overflows its rect
 clips with an ellipsis instead of bleeding into its neighbor.</div>
 
@@ -100,7 +100,7 @@ clips with an ellipsis instead of bleeding into its neighbor.</div>
       // script later drives are *named* (the `title` label, the `center`
       // paragraph and the `field`).
 
-      /** The same label at growing `textSize` — 1.0 up to 4.0. */
+      /** The same label at growing `textSize` -- 1.0 up to 4.0. */
       const sizes = () => gui.panel(
         { layout: "col" },
         ...[1.0, 1.5, 2.0, 3.0, 4.0].map((s) => gui.label(`text size ${s}`, { textSize: s })),

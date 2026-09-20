@@ -9,12 +9,12 @@
  *
  * **How an edit inverts is the crate's**, reached through {@link domainEdit}:
  * the payload goes in with the curve as it stands, and what comes back is the
- * curve as it now is *and* the payload that puts it back — one call, because the
+ * curve as it now is *and* the payload that puts it back -- one call, because the
  * inverse has to be read before the edit lands. Nothing here computes an
  * inverse, which is the whole reason the domain seam exists.
  *
  * **What a shape is stays the client's.** The crate carries a point's `data` and
- * never reads it, so the segment shapes an `Env` needs travel in it — without
+ * never reads it, so the segment shapes an `Env` needs travel in it -- without
  * that an undo put the curve back straight, which is losing the data rather than
  * declining to interpret it.
  *
@@ -69,7 +69,7 @@ export class PointsDomain extends Domain<Automation> {
     override readonly ingested = true;
 
     /**
-     * The curve as the crate holds it — the state `current` is read against and
+     * The curve as the crate holds it -- the state `current` is read against and
      * `project` writes back.
      *
      * **The `Env` seam, not a gesture.** It is here rather than in the crate for
@@ -121,7 +121,7 @@ export function flatPoints(points: readonly CratePoint[]): number[] {
  * dragged in.
  *
  * Pass the axis a view already has as `kept` and it is held, widened only where
- * the data stopped fitting inside it — a range recomputed on every redraw makes
+ * the data stopped fitting inside it -- a range recomputed on every redraw makes
  * an edit rescale the picture, so dragging one point visibly moves every other
  * one.
  *
@@ -144,7 +144,7 @@ export function curveAxis(
 export class PointsView extends View<Automation> {
     /**
      * The value axis this view is drawing against, and the time it spans, kept
-     * per structure so a redraw does not re-fit them. Both only ever **grow** —
+     * per structure so a redraw does not re-fit them. Both only ever **grow** --
      * see {@link axis}.
      */
     private kept = new Map<unknown, [number, number]>();
@@ -157,7 +157,7 @@ export class PointsView extends View<Automation> {
      * **The projection is the crate's** (`pointsProps`): the points, the value
      * axis they stand on and the time they span, all in one answer, so a page
      * and a script set the same widget with the same props. What is kept here
-     * is only what a *view* keeps — the axis and the span in hand — because
+     * is only what a *view* keeps -- the axis and the span in hand -- because
      * both only ever grow, and a curve that refits while a point is being
      * dragged moves every other point on screen.
      */

@@ -1,10 +1,10 @@
 //! The demand family (U8): the pull protocol, the sources and the drivers.
 //!
 //! Two harnesses, because the family has two things to check. [`Values`] drives
-//! a source directly through the [`DemandInputs`] trait — that is where a
+//! a source directly through the [`DemandInputs`] trait -- that is where a
 //! stochastic stream's seed is reachable, so reproducibility and distribution
-//! are tested there. Everything about *wiring* — nesting, resets propagating,
-//! a driver's clock — goes through a real def and [`stream`], where an
+//! are tested there. Everything about *wiring* -- nesting, resets propagating,
+//! a driver's clock -- goes through a real def and [`stream`], where an
 //! `Impulse` clocks a `Demand` as fast as a trigger can be clocked and the
 //! audio bus simply *is* the stream, one item every other frame.
 //!
@@ -15,9 +15,9 @@
 //!
 //! On the testing rules this family inherits: there is no filter and no
 //! oscillator here, so the analytic-response and alias-SNR rules do not apply.
-//! The long-run numerical rule does — [`Duty`]'s countdown is an accumulator,
+//! The long-run numerical rule does -- [`Duty`]'s countdown is an accumulator,
 //! exactly the kind of state that reads correctly for a second and drifts over
-//! a minute — and so does the block-split rule, since a driver's clock has to
+//! a minute -- and so does the block-split rule, since a driver's clock has to
 //! survive a scheduled bundle cutting its block in two.
 
 #![cfg(feature = "synth")]
@@ -267,7 +267,7 @@ fn dwhite_is_uniform_between_its_bounds() {
 
 #[test]
 fn diwhite_covers_both_ends_of_its_range() {
-    // Integers on [1, 4] inclusive — four values, each about a quarter of the
+    // Integers on [1, 4] inclusive -- four values, each about a quarter of the
     // draws. The inclusive upper end is the part that is easy to get wrong.
     let n = 20_000;
     let v = pulls(
@@ -306,7 +306,7 @@ fn a_walk_folds_at_the_bound_rather_than_piling_up_against_it() {
     // The reason the walk folds instead of clipping: a clipped walk parks on
     // its bounds, and the histogram says so. With a step a fifth of the range,
     // no value should be within a hundredth of a bound more than a few percent
-    // of the time — a clipping walk sits there roughly a third of it.
+    // of the time -- a clipping walk sits there roughly a third of it.
     let n = 20_000;
     let v = pulls(
         &mut Drandom::with_seed(RandKind::Brown, 5),
@@ -380,7 +380,7 @@ fn a_list_slot_is_drained_rather_than_sampled_once() {
     // A nested stream is not one item of the list: the parent stays on the slot
     // until it answers `NaN`. So a three-item series followed by a constant is
     // a four-item pass, and the reset on the way round makes the next pass the
-    // same one — 0 1 2 9, again and again, not 0 9 1 9.
+    // same one -- 0 1 2 9, again and again, not 0 9 1 9.
     let g = [
         ugen("Dseries", &[3.0, 0.0, 1.0]),
         ugen_wired("Dseq", &[0.0, 0.0, 9.0], &[(1, 0)]),
@@ -423,7 +423,7 @@ fn dxrand_never_picks_the_slot_it_just_used() {
 
 #[test]
 fn dshuf_replays_one_order() {
-    // A shuffle is drawn once per stream, not once per pass — that is what
+    // A shuffle is drawn once per stream, not once per pass -- that is what
     // separates it from `Drand`. Four passes over four values: a permutation,
     // and the same one every time.
     let v = stream1("Dshuf", &[0.0, 1.0, 2.0, 3.0, 4.0], 16);
@@ -474,7 +474,7 @@ fn a_stutter_count_may_itself_be_a_stream() {
 #[test]
 fn dswitch1_takes_one_item_from_the_branch_it_picks() {
     // The `1` in the name. The index alternates between two series, and each
-    // keeps its own place — an unselected branch is not advanced, which is what
+    // keeps its own place -- an unselected branch is not advanced, which is what
     // separates this from a list source draining a slot.
     let g = [
         ugen("Dseq", &[0.0, 0.0, 1.0]),
@@ -530,7 +530,7 @@ fn dbufrd_not_looping_holds_the_last_frame_instead_of_wrapping() {
         ugen_wired("Dbufrd", &[0.0, 0.0, 0.0, 0.0], &[(1, 0)]),
     ];
     let v = stream_over(&g, 1, 6, &buffers);
-    // Frames 5, 6, 7, then 8, 9, 10 — all held at the last one.
+    // Frames 5, 6, 7, then 8, 9, 10 -- all held at the last one.
     assert_eq!(v, vec![105.0, 106.0, 107.0, 107.0, 107.0, 107.0]);
 
     // And off the front, where a `rem_euclid` would have jumped to the end.
@@ -553,7 +553,7 @@ fn nesting_deeper_than_the_limit_is_refused_at_compile_time() {
     // A pull recurses once per level, inside the audio callback, so the depth
     // is a *compile* error rather than a runtime guard: the honest place to
     // say no is where a human is still watching, not on the thread that would
-    // run off its stack. The limit is 16, and both sides of it are checked —
+    // run off its stack. The limit is 16, and both sides of it are checked --
     // a cap nothing reaches is not a cap, and a cap that fires one level early
     // costs a legitimate def.
     let chain = |depth: usize| {
@@ -629,7 +629,7 @@ fn duty(kind: &str, dur: f32, extra: &[f32], frames: usize) -> Vec<f32> {
     render(&json, frames, &[])
 }
 
-/// Every sample where the signal is non-zero, with its value — a `TDuty`'s
+/// Every sample where the signal is non-zero, with its value -- a `TDuty`'s
 /// triggers.
 fn fires(v: &[f32]) -> Vec<(usize, f32)> {
     v.iter()
@@ -639,7 +639,7 @@ fn fires(v: &[f32]) -> Vec<(usize, f32)> {
         .collect()
 }
 
-/// Every sample where a held signal takes a new value — a `Duty`'s steps.
+/// Every sample where a held signal takes a new value -- a `Duty`'s steps.
 fn steps(v: &[f32]) -> Vec<(usize, f32)> {
     let mut out = Vec::new();
     for (i, s) in v.iter().enumerate() {
@@ -688,7 +688,7 @@ fn tduty_is_silent_between_its_triggers() {
 fn tduty_can_open_with_a_gap_instead_of_a_trigger() {
     // `gap_first`: the first duration is spent before the first level is pulled
     // at all, so the stream starts one period late and still starts at its
-    // first value — the trigger near sample 10 is level 1, not level 2.
+    // first value -- the trigger near sample 10 is level 1, not level 2.
     let v = duty("TDuty", 10.0 / SR, &[1.0], 32);
     let fires = fires(&v);
     assert!(v[..9].iter().all(|s| *s == 0.0), "opened with a gap");
@@ -717,7 +717,7 @@ fn a_driver_stops_when_its_level_stream_runs_out() {
 fn duty_does_not_drift_over_ten_seconds() {
     // The long-run numerical test this family's one accumulator asks for. The
     // period is deliberately not a whole number of samples (1/300 s is 160
-    // samples at 48 kHz — so use a prime-ish rate instead): rounding it per
+    // samples at 48 kHz -- so use a prime-ish rate instead): rounding it per
     // item instead of carrying the remainder in `f64` would put the last event
     // of ten seconds several hundred samples off.
     let dur = 1.0 / 311.0;
@@ -739,7 +739,7 @@ fn duty_does_not_drift_over_ten_seconds() {
         .collect();
     let period = dur * SR;
     assert!(fires.len() > 3000, "only {} triggers", fires.len());
-    // Every trigger within a sample of where the exact period puts it — the
+    // Every trigger within a sample of where the exact period puts it -- the
     // whole ten seconds, not just the first.
     for (n, &i) in fires.iter().enumerate() {
         let want = n as f32 * period;
@@ -868,7 +868,7 @@ fn no_input_produces_a_non_finite_sample() {
 #[test]
 fn a_pull_reads_a_modulated_input_at_the_sample_it_happens_on() {
     // An ordinary (`ar`) input of a demand UGen is read at the frame the pull
-    // lands on, not at the top of the block — the frame propagates down the
+    // lands on, not at the top of the block -- the frame propagates down the
     // nesting, scsynth's `inNumSamples` in spirit. A `Duty` whose level is a
     // ramping signal therefore steps up across the block.
     let json = format!(

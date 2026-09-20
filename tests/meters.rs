@@ -72,7 +72,7 @@ fn one_run_is_one_over_however_long() {
     );
 }
 
-/// The pessimistic meter is the same UGen with `run` of 1 — which is why the
+/// The pessimistic meter is the same UGen with `run` of 1 -- which is why the
 /// rule is a parameter and not a constant in the drawing.
 #[test]
 fn a_run_of_one_is_the_pessimistic_meter() {
@@ -151,7 +151,7 @@ fn the_fall_is_the_declared_decibels_per_second() {
 }
 
 /// A hold keeps the mark up for the seconds it was given before any of that
-/// happens — the half of a meter that waits to be read.
+/// happens -- the half of a meter that waits to be read.
 #[test]
 fn a_held_peak_does_not_move_while_it_is_held() {
     let n = BLOCK_SIZE * 64;
@@ -164,7 +164,7 @@ fn a_held_peak_does_not_move_while_it_is_held() {
 // ---- the rate the reading is taken at ----
 
 /// **A control-rate meter still reads every sample.** It emits one number a
-/// block — which is what a control bus carries — and its audio-rate input is
+/// block -- which is what a control bus carries -- and its audio-rate input is
 /// still the whole block, so the peak it reports is the block's and not the
 /// first sample of it. This is the reading a meter exists to not get wrong, and
 /// it was wrong here: both UGens walked their own output, which at `kr` is one
@@ -188,7 +188,7 @@ fn a_control_rate_meter_reads_the_whole_block() {
 }
 
 /// The same for the count: a run is the whole of what it counts, so a reader
-/// taking one sample a block would not be coarse — it would be counting a
+/// taking one sample a block would not be coarse -- it would be counting a
 /// different thing.
 #[test]
 fn a_control_rate_count_sees_the_run() {

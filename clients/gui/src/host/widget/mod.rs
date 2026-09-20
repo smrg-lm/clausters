@@ -5,14 +5,14 @@
 //! widget type is added. This module is the other half of that principle: the
 //! *renderer* turns a `GuiNode` into a **typed** [`Widget`] it knows how to lay
 //! out and draw. Adding a widget type is a new [`WidgetKind`] variant plus a
-//! handler here and in the renderer — not a protocol change. An unrecognized
+//! handler here and in the renderer -- not a protocol change. An unrecognized
 //! type is not an error: it becomes [`WidgetKind::Unknown`], laid out (it
 //! reserves its space) but not painted, so a host built today renders the parts
 //! of a newer GuiDef it understands and ignores the rest.
 //!
 //! The standardized widgets at this milestone are `window` + `panel`/layout
 //! (`row`/`col`/`grid`/`free`) + `label`, plus the heavy `waveform` view, fed
-//! its samples either inline (`"data": [f32…]`) or — for bulk — from an OSC blob
+//! its samples either inline (`"data": [f32…]`) or -- for bulk -- from an OSC blob
 //! carried alongside the JSON in the same `/gui_def` message (`"blob": <index>`).
 //! Both keep the int/float distinction and the "flat primitives at the boundary"
 //! rule; a server buffer reference (`"buffer"`) is recognized but deferred to the
@@ -27,8 +27,8 @@
 //! Four of them are one arm per widget type, which is the shape this schema
 //! keeps producing: [`build`] turns a `GuiNode` into a `WidgetKind`
 //! (construction), [`apply`] applies a `/gui_set` key to a live one (mutation),
-//! [`size`] says how big a kind wants to be ([`WidgetKind::natural_size`]) —
-//! the same pass in the other direction — and [`query`] answers what a widget
+//! [`size`] says how big a kind wants to be ([`WidgetKind::natural_size`]) --
+//! the same pass in the other direction -- and [`query`] answers what a widget
 //! currently *is*: its event value, the bus it reads, the editor chrome it
 //! carries, and which body of a clip owns the data a caller asked the clip for.
 //! [`props`] is the fifth child and the only one that is not a pass: the prop
@@ -38,7 +38,7 @@
 //! model's shape. All of them are descendants, so they share the private
 //! prop-reading helpers ([`parse`]) without exposing them.
 //!
-//! Per-widget *behavior* (drawing, hit-testing, editing) is not here at all —
+//! Per-widget *behavior* (drawing, hit-testing, editing) is not here at all --
 //! it lives in each widget's own module (`bpf`, `pianoroll`, `track`, `patch`,
 //! `textedit`, …); this module owns only the typed data and its wire mapping.
 
@@ -49,7 +49,7 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use super::guidef::GuiNode;
-// Sibling widget modules the wire matches reach via `super::` — re-imported here
+// Sibling widget modules the wire matches reach via `super::` -- re-imported here
 // so the `build`/`apply` child modules resolve the same paths (a descendant sees
 // the parent's private `use` items).
 use super::elements::signal;
@@ -94,7 +94,7 @@ pub enum WidgetKind {
         hug: bool,
         /// The `status` prop: whether this window carries the host's **status
         /// bar** along its bottom edge ([`crate::host::status`]). **On by
-        /// default** — the bar is the host's own voice, and the refusals it
+        /// default** -- the bar is the host's own voice, and the refusals it
         /// exists to show were already being said into nothing. A window that
         /// wants the pixels back turns it off.
         status: bool,
@@ -110,7 +110,7 @@ pub enum WidgetKind {
     },
     /// A container showing **one child at a time**: the one at `index`, filling
     /// the container's area (its `flow`'s margin inset). The others are hidden
-    /// — skipped by the layout, so they are neither drawn nor hit — but they
+    /// -- skipped by the layout, so they are neither drawn nor hit -- but they
     /// stay in the tree, which is what makes a switch cheap: a hidden heavy
     /// element keeps its GPU slot and its bus watch, since both are collected
     /// from the tree and not from the placements, so flipping back re-uploads
@@ -120,7 +120,7 @@ pub enum WidgetKind {
     /// blank page, not a clamped one, so a pager cannot silently show the wrong
     /// child. With `index` bound to a `toggle` or a `menu`
     /// ([`bind`](super::bind)) this is the whole of tabs, a pager, and
-    /// alternating two views of one signal — composition, not a widget.
+    /// alternating two views of one signal -- composition, not a widget.
     ///
     /// It carries a `margin` rather than a whole [`Flow`]: a stack makes no
     /// arrangement, so the `gap` between children and a `grid`'s column count
@@ -128,13 +128,13 @@ pub enum WidgetKind {
     Stack {
         index: i32,
         margin: Option<f32>,
-        /// The `hug` prop, as a panel's — composed over **every** page rather
+        /// The `hug` prop, as a panel's -- composed over **every** page rather
         /// than the shown one, so flipping a pager does not resize it.
         hug: bool,
     },
     /// The 2D workspace: a container whose children live in a **virtual
     /// content area** seen through a scrolling, zooming window ([`ScrollView`]).
-    /// General first — the default pans both axes and zooms at the cursor; the
+    /// General first -- the default pans both axes and zooms at the cursor; the
     /// constrained scroll views (`axis`, `zoom: 0`) degrade from it by
     /// configuration. `layout` arranges the children *inside* the content
     /// area (default `free`), exactly as a panel does inside its rect.
@@ -144,14 +144,14 @@ pub enum WidgetKind {
         view: ScrollView,
     },
     /// A **free-standing time ruler**: the shared axis of a navigation group,
-    /// drawn as a strip the *document* places — the DAW's ruler above its
+    /// drawn as a strip the *document* places -- the DAW's ruler above its
     /// tracks.
     ///
     /// It exists because a ruler over a multitrack belongs to the **axis**, not
     /// to any one lane. A `track`'s own `ruler` strip is reserved out of that
     /// lane's height, so ruling a stack of lanes meant picking one to carry it
     /// (and to pay for it), and the strip then sat wherever that lane happened
-    /// to be — between two lanes, unless it was the last. This widget owns its
+    /// to be -- between two lanes, unless it was the last. This widget owns its
     /// own box instead: put it above the lanes (or below) and no lane loses a
     /// pixel.
     ///
@@ -159,7 +159,7 @@ pub enum WidgetKind {
     /// group named by `editor.link` and reads that group's window, so it labels
     /// exactly what the lanes show and moves with them. A press locates the
     /// transport, as a lane's own ruler strip does. Its thickness is the `h`
-    /// place prop, like any other widget's — the builders default it.
+    /// place prop, like any other widget's -- the builders default it.
     TimeRuler { editor: EditorProps },
     /// A **registered element**: a leaf this build renders through the
     /// [`Element`] trait rather than through an arm of this enum, built by the
@@ -169,7 +169,7 @@ pub enum WidgetKind {
     /// It sits beside the built-ins rather than replacing them: the built-in
     /// names are matched first, so a registration can neither shadow one nor
     /// change what an existing def means, and a name nothing registered stays
-    /// [`Unknown`](WidgetKind::Unknown) — laid out and not painted, the
+    /// [`Unknown`](WidgetKind::Unknown) -- laid out and not painted, the
     /// behavior an older host already has against a newer script.
     Custom(Box<dyn Element>),
     /// A type this build does not render yet. Laid out so it reserves space, but
@@ -192,9 +192,9 @@ pub struct Widget {
     pub place: Place,
     /// The `theme` prop: a partial role table (`role -> "#rrggbb[aa]"`, the
     /// same shape as the TOML style file) overlaying the parent's theme for
-    /// this widget's whole subtree — a **theme group**.
+    /// this widget's whole subtree -- a **theme group**.
     pub theme_over: Option<serde_json::Map<String, Value>>,
-    /// The `color` prop: the single-color shorthand — an overlay of just the
+    /// The `color` prop: the single-color shorthand -- an overlay of just the
     /// roles that carry this widget's function (see
     /// [`Theme::accent_seeded`](super::theme::Theme::accent_seeded)).
     pub color: Option<super::paint::Color>,
@@ -205,22 +205,22 @@ pub struct Widget {
     pub gestures: Option<GestureMap>,
     /// The `opacity` prop: how opaque this widget's **subtree** draws, `1.0`
     /// (fully opaque) when it says nothing. Declared here and resolved into
-    /// [`alpha`](Self::alpha) — a group's opacity multiplies its children's,
+    /// [`alpha`](Self::alpha) -- a group's opacity multiplies its children's,
     /// the way a theme group's overlay reaches them.
     pub opacity: Option<f32>,
     /// The `radius` prop: the corner radius this widget's own boxes are drawn
     /// with, in **logical** pixels (the placement's scale resolves it, like
     /// every other length on the wire). `None` is a square corner. Unlike
-    /// `opacity` it is this widget's alone — a container's rounding says
+    /// `opacity` it is this widget's alone -- a container's rounding says
     /// nothing about the controls inside it.
     pub radius: Option<f32>,
     /// The resolved theme this widget draws with, produced at mutation points
     /// by [`resolve_style`] (an [`Arc`] clone per widget, so the per-frame
     /// path reads exactly one theme and pays nothing). `None` until the first
-    /// resolve — the renderer falls back to the host theme.
+    /// resolve -- the renderer falls back to the host theme.
     pub theme: Option<Arc<super::theme::Theme>>,
     /// The resolved opacity of this widget, the product of its own `opacity`
-    /// and every ancestor's — written at the same mutation point as
+    /// and every ancestor's -- written at the same mutation point as
     /// [`theme`](Self::theme), never per frame. The radius is not here because
     /// it does not inherit and because it is logical: the frame resolves it
     /// against the placement's scale.
@@ -231,7 +231,7 @@ pub struct Widget {
     /// It is the visualization half of the same idea the active layer is the
     /// editing half of: the layered contents of a container are a stack of
     /// pictures, and which of them are shown is a separate question from which
-    /// one a hand is editing — several drawn at once, one edited. A hidden
+    /// one a hand is editing -- several drawn at once, one edited. A hidden
     /// layer is not placed, so it is neither drawn nor hit nor selectable by
     /// pointing at it, and it keeps its address in the stack
     /// ([`crate::host::layers`]) so showing it again changes nothing else.
@@ -240,13 +240,13 @@ pub struct Widget {
     /// ([`layers::Selection::set_hidden`](crate::host::layers::Selection::set_hidden)),
     /// and that is deliberate rather than incidental: a container's contents
     /// share one rectangle, so hiding one costs the others nothing. Hiding a
-    /// widget a *layout* gave space to is a question about that space — does
-    /// the gap close, or stay? — and the answer belongs with the pass that
+    /// widget a *layout* gave space to is a question about that space -- does
+    /// the gap close, or stay? -- and the answer belongs with the pass that
     /// hands it out, on the day something needs it.
     pub visible: bool,
     /// **Where on its container's time axis this node sits**, when it occupies
     /// a stretch of it rather than the whole: `(at, dur)` in the container's
-    /// own units, from the `at`/`dur` props. `None` — the ordinary case — fills
+    /// own units, from the `at`/`dur` props. `None` -- the ordinary case -- fills
     /// whatever the container gives it.
     ///
     /// It is what makes a body a **placement** rather than an overlay: a clip
@@ -259,7 +259,7 @@ pub struct Widget {
     /// zero reads in the source, whether the window loops, whether the picture
     /// is fitted instead of read frame for sample ([`SourceWindow`]).
     ///
-    /// `None` means *the container's* — a body with no window of its own is
+    /// `None` means *the container's* -- a body with no window of its own is
     /// drawn through the clip's, which is every clip written as flat props. A
     /// clip's own `None` is the identity window (from the first frame, once).
     pub window: Option<SourceWindow>,
@@ -271,11 +271,11 @@ pub struct Widget {
     /// layering is not one widget's idea. A `clip` is the first container that
     /// draws several editable things on one rectangle; an audio editor's view
     /// is the next, and a container that grows contents later grows layers
-    /// with them. The rules — one layer acts at a time, and only it offers an
-    /// affordance — are [`crate::host::layers`], and this is where the answer
+    /// with them. The rules -- one layer acts at a time, and only it offers an
+    /// affordance -- are [`crate::host::layers`], and this is where the answer
     /// is kept.
     pub layer: super::layers::Layer,
-    /// Whether this widget is in the **hand's selection** — a clip a marquee
+    /// Whether this widget is in the **hand's selection** -- a clip a marquee
     /// swept over, which a block move, a quantize or a delete then acts on as
     /// one.
     ///
@@ -285,16 +285,16 @@ pub struct Widget {
     /// the tree, so the only place its mark can live is the node.
     ///
     /// **Native view state, and it does not travel.** A selection is what a
-    /// hand is holding, not what the multitrack is — the document is explicit
-    /// that what a view is currently editing is never part of it — so nothing
+    /// hand is holding, not what the multitrack is -- the document is explicit
+    /// that what a view is currently editing is never part of it -- so nothing
     /// on the wire sets or reports this, exactly as nothing reports which notes
     /// a roll has selected.
     pub selected: bool,
     pub children: Vec<Widget>,
 }
 
-/// Applies one `/gui_set` key/value to a widget: its kind's own keys, plus —
-/// for a `clip` — the props of the bodies it holds as children. See
+/// Applies one `/gui_set` key/value to a widget: its kind's own keys, plus --
+/// for a `clip` -- the props of the bodies it holds as children. See
 /// [`apply::apply_widget`].
 pub fn apply_widget(widget: &mut Widget, key: &str, v: &Value) -> bool {
     apply::apply_widget(widget, key, v)
@@ -342,7 +342,7 @@ fn set_style_number(
 /// Walking from `base` (the host theme), a `theme` prop overlays the inherited
 /// table for its subtree, a `color` prop re-seeds the function roles for its
 /// one widget, and an `opacity` prop multiplies the opacity its subtree draws
-/// at — all at this **mutation point** (a `/gui_def`, a `/gui_set`), never per
+/// at -- all at this **mutation point** (a `/gui_def`, a `/gui_set`), never per
 /// frame. Recursive and cheap by construction: a widget with none of them
 /// shares its parent's `Arc` and its parent's alpha.
 pub fn resolve_style(widget: &mut Widget, base: &Arc<super::theme::Theme>) {
@@ -352,7 +352,7 @@ pub fn resolve_style(widget: &mut Widget, base: &Arc<super::theme::Theme>) {
 fn resolve_style_under(widget: &mut Widget, base: &Arc<super::theme::Theme>, alpha: f32) {
     // Opacity **composes**: a control at 0.5 inside a panel at 0.5 draws at
     // 0.25, which is what makes a fade a property of a group rather than of one
-    // box. What it is not is layer compositing — see [`super::paint::Ink`].
+    // box. What it is not is layer compositing -- see [`super::paint::Ink`].
     let alpha = (alpha * widget.opacity.unwrap_or(1.0)).clamp(0.0, 1.0);
     widget.alpha = alpha;
     let group = match &widget.theme_over {
@@ -389,7 +389,7 @@ impl Widget {
     ///
     /// A free-standing ruler exists to rule what is beside it, so one dropped
     /// into a window with nothing said is asking for that window's axis. Every
-    /// other timeline view stays out — a `waveform` beside a multitrack is
+    /// other timeline view stays out -- a `waveform` beside a multitrack is
     /// showing its own buffer, and joining it to the multitrack's axis would
     /// be a guess; a `multitrack` owns its own stack, so its lanes share an
     /// axis by construction rather than by being linked one to another.
@@ -470,7 +470,7 @@ impl Widget {
     /// string carrier (the scalar wire, like `points`); an empty string (or
     /// empty object) clears the group, an empty `color` clears the accent, and
     /// a negative `opacity`/`radius` clears that prop back to the default.
-    /// Returns whether the key was a style key that applied — the caller
+    /// Returns whether the key was a style key that applied -- the caller
     /// re-resolves the window's style.
     pub fn style_apply(&mut self, key: &str, v: &Value) -> bool {
         match key {
@@ -509,7 +509,7 @@ impl Widget {
                     None => false,
                 }
             }
-            // Both are plain numbers, and a **negative** one clears the prop —
+            // Both are plain numbers, and a **negative** one clears the prop --
             // the same escape an empty `color` is, since no number in either
             // range means "say nothing".
             "opacity" => set_style_number(&mut self.opacity, v, opacity_value),
@@ -519,7 +519,7 @@ impl Widget {
     }
 
     /// Applies a `/gui_set gestures` to this container: the same overlay the
-    /// prop takes at build time, on top of the kind's defaults — so a set names
+    /// prop takes at build time, on top of the kind's defaults -- so a set names
     /// only the modifiers it changes and an empty table restores the defaults.
     /// Returns whether the value was usable.
     pub fn gestures_apply(&mut self, v: &Value) -> bool {
@@ -532,7 +532,7 @@ impl Widget {
     }
 
     /// Every widget in this subtree, `self` first and each child's subtree in
-    /// order — the tree's one traversal.
+    /// order -- the tree's one traversal.
     ///
     /// Nearly everything a pass wants from the tree is a filter over this: the
     /// live buses a window reads, the timeline views on an axis, the ids the
@@ -552,7 +552,7 @@ impl Widget {
         self.descendants().find(|w| w.id == Some(id))
     }
 
-    /// Runs `f` over this widget and every one below it — the mutable
+    /// Runs `f` over this widget and every one below it -- the mutable
     /// counterpart of [`descendants`](Self::descendants), for a pass that
     /// writes the same field everywhere (clearing a selection).
     pub fn walk_mut(&mut self, f: &mut impl FnMut(&mut Widget)) {
@@ -575,7 +575,7 @@ impl Widget {
 /// The pre-order walk of a widget subtree ([`Widget::descendants`]).
 ///
 /// An explicit stack rather than a recursion, so a caller can `filter`,
-/// `find` or `any` over the tree and stop where it likes — a deep tree costs
+/// `find` or `any` over the tree and stop where it likes -- a deep tree costs
 /// no call frames.
 pub struct Descendants<'a> {
     stack: Vec<&'a Widget>,

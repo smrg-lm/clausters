@@ -7,14 +7,14 @@
 //!
 //! 1. every released resource becomes allocatable again;
 //! 2. no monotonically increasing counter;
-//! 3. no operation may lose track of a resource — a failed release reports
+//! 3. no operation may lose track of a resource -- a failed release reports
 //!    instead of silently dropping, exhaustion is an explicit `None`, never a
 //!    wrap.
 //!
 //! The registry is a dense occupancy map over `[base, base + capacity)` with a
 //! next-fit scan hint, so a run of `width` contiguous ids (a multichannel bus)
 //! allocates and coalesces with no free-list bookkeeping. It is **passive**:
-//! callers feed it events (an `/node_end` arrival, an engine rejection) — it
+//! callers feed it events (an `/node_end` arrival, an engine rejection) -- it
 //! never calls out, which keeps it identical across the FFI bindings and
 //! wasm-compatible.
 //!
@@ -63,7 +63,7 @@ pub fn graph_control_reserved(control_buses: usize) -> usize {
 }
 
 /// The boot-derived partition of the node-id space, every range scaled from
-/// the engine's node-table capacity (`--max-nodes`) — the one resource that
+/// the engine's node-table capacity (`--max-nodes`) -- the one resource that
 /// actually bounds concurrent nodes. Id 0 is the root group; ids below
 /// `client_base` stay reserved for well-known client use (scsynth
 /// convention). The server reports the client range over `/server_query`, so
@@ -72,7 +72,7 @@ pub fn graph_control_reserved(control_buses: usize) -> usize {
 pub struct NodeIdPartition {
     /// First id a client's registry hands out.
     pub client_base: i64,
-    /// Client id-space size: node-table capacity with in-flight margin — ids
+    /// Client id-space size: node-table capacity with in-flight margin -- ids
     /// allocated whose `/synth_new` or `/node_end` is still travelling.
     pub client_capacity: usize,
     /// First id of the server's auto range (`/synth_new -1`, GraphDef members).
@@ -103,7 +103,7 @@ impl NodeIdPartition {
     }
 }
 
-/// Why a [`Registry::release`] was refused. The refused range is untouched —
+/// Why a [`Registry::release`] was refused. The refused range is untouched --
 /// a failed release never clears a partial run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReleaseError {
@@ -202,7 +202,7 @@ impl Registry {
     }
 
     /// Allocates `width` contiguous ids and returns the first, or `None` when
-    /// no such run exists — exhaustion is an explicit failure, never a wrap.
+    /// no such run exists -- exhaustion is an explicit failure, never a wrap.
     /// `width` 0 counts as 1.
     pub fn alloc(&mut self, width: usize) -> Option<i64> {
         let w = width.max(1);
@@ -224,8 +224,8 @@ impl Registry {
         }
     }
 
-    /// Returns `width` ids starting at `first` to the pool. Refuses — leaving
-    /// the map untouched — if any id is out of range or not allocated, so a
+    /// Returns `width` ids starting at `first` to the pool. Refuses -- leaving
+    /// the map untouched -- if any id is out of range or not allocated, so a
     /// double release (or a foreign id) is reported, never absorbed into a
     /// corrupt map. `width` 0 counts as 1.
     pub fn release(&mut self, first: i64, width: usize) -> Result<(), ReleaseError> {
@@ -254,8 +254,8 @@ impl Registry {
     }
 
     /// **Marks a specific run allocated**, answering whether it could: every id
-    /// of `[first, first + width)` inside the space and free. Refused whole —
-    /// nothing is marked — otherwise. `width` 0 counts as 1.
+    /// of `[first, first + width)` inside the space and free. Refused whole --
+    /// nothing is marked -- otherwise. `width` 0 counts as 1.
     ///
     /// What moving live allocations into a narrower space takes: the ids a
     /// client already holds are claimed in the new map at the numbers they
@@ -359,7 +359,7 @@ mod tests {
     fn every_release_is_reusable() {
         let mut r = Registry::new(0, 3);
         // Cycle far past capacity: with release-before-alloc the space never
-        // exhausts — the no-monotonic-counter invariant in action.
+        // exhausts -- the no-monotonic-counter invariant in action.
         for _ in 0..100 {
             let id = r
                 .alloc(1)

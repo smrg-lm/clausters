@@ -1,10 +1,10 @@
-//! `text` — an editable field: the leaf whose state is a **caret**.
+//! `text` -- an editable field: the leaf whose state is a **caret**.
 //!
 //! The one leaf that reads the keyboard, and the reason the focus seam exists.
 //! What it holds between keystrokes is not a value the script sent: it is where
 //! the insertion point is and what is selected, which no `/gui_set` writes and
 //! no `/gui_query` reports. That lived on the widget's enum arm, and the editing
-//! itself lived in the gesture machine — a whole parallel path through the
+//! itself lived in the gesture machine -- a whole parallel path through the
 //! host's *one* focused field, because a `WidgetKind` arm cannot own a caret and
 //! the machine had nowhere else to put the arms.
 //!
@@ -13,13 +13,13 @@
 //! string; [`Element::press`] drops the caret where the click landed and
 //! [`Element::drag`] extends the selection from it, so the drag's anchor is a
 //! field of this struct rather than a variant of the machine's `Drag`. The
-//! *model* stays [`crate::host::graphics::textedit`] — pure caret arithmetic
-//! over a `String`, unit-tested without a window — and the drawing stays
+//! *model* stays [`crate::host::graphics::textedit`] -- pure caret arithmetic
+//! over a `String`, unit-tested without a window -- and the drawing stays
 //! [`controls::field`], which is the same rule every ported leaf follows: the
 //! element owns its state, not its geometry.
 //!
 //! **Every content change delivers**, exactly as a numeric control delivers on
-//! every drag step — never gated on Enter. A single-line field ignores Enter
+//! every drag step -- never gated on Enter. A single-line field ignores Enter
 //! altogether, because there is nothing for it to mean when the value has
 //! already been sent.
 
@@ -35,8 +35,8 @@ use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input, 
 use crate::host::widget::parse;
 use crate::host::widget::size::{Natural, body_inset, control_box, label_strip};
 
-/// An editable text-entry field: the string, how it is presented, and — while
-/// it is being edited — the caret and the selection anchor.
+/// An editable text-entry field: the string, how it is presented, and -- while
+/// it is being edited -- the caret and the selection anchor.
 #[derive(Debug, Clone)]
 pub struct Text {
     pub value: String,
@@ -79,7 +79,7 @@ fn from_props(props: &Map<String, Value>) -> Text {
 
 impl Text {
     /// The caret offset a point lands on, reconstructing the layout the
-    /// renderer drew through — so a click lands on the glyph it points at.
+    /// renderer drew through -- so a click lands on the glyph it points at.
     fn caret_at(&self, at: (f64, f64), input: &Input) -> usize {
         controls::caret_at(
             input.rect,
@@ -108,7 +108,7 @@ impl Element for Text {
                 .map(|s| {
                     self.value = s.to_string();
                     // The caret/selection may now point past the new string or
-                    // off a char boundary — re-land it.
+                    // off a char boundary -- re-land it.
                     textedit::clamp(&self.value, &mut self.caret);
                 })
                 .is_some(),
@@ -170,7 +170,7 @@ impl Element for Text {
     }
 
     /// Every key it answers is a character it stores, which is the whole of
-    /// what this asks — so the browser shell hands it a composed one.
+    /// what this asks -- so the browser shell hands it a composed one.
     fn takes_text(&self) -> bool {
         true
     }
@@ -209,7 +209,7 @@ impl Element for Text {
         // highlight.
         self.caret.anchor = (pos != anchor).then_some(anchor);
         // Selecting changes nothing about the value, so there is nothing to
-        // report — the redraw a claim already asks for is the whole effect.
+        // report -- the redraw a claim already asks for is the whole effect.
         Events::none()
     }
 
@@ -281,7 +281,7 @@ impl Element for Text {
             // The ring's, never the field's.
             Key::Tab => return None,
         }
-        // Consumed either way — the caret moved, which is a repaint — and a
+        // Consumed either way -- the caret moved, which is a repaint -- and a
         // content change also delivers the new value, ungated.
         Some(if changed {
             self.events()
@@ -319,7 +319,7 @@ mod tests {
     }
 
     /// Types `keys` into `field` with `mods` held, returning what the last one
-    /// reported — the whole of what a front does per keystroke.
+    /// reported -- the whole of what a front does per keystroke.
     fn type_keys(field: &mut Text, mods: Mods, keys: &[Key]) -> Option<Events> {
         let mut clipboard = crate::host::clipboard::Clip::default();
         let mut last = None;
@@ -344,7 +344,7 @@ mod tests {
         assert_eq!(field.caret.pos, 2, "the caret cannot sit past the string");
     }
 
-    /// Every keystroke that changes the content delivers the new value — the
+    /// Every keystroke that changes the content delivers the new value -- the
     /// rule a numeric control follows on every drag step, never gated on Enter.
     #[test]
     fn typing_delivers_the_value_on_every_change() {
@@ -364,7 +364,7 @@ mod tests {
     }
 
     /// Enter is a newline in a multiline field and nothing at all in a
-    /// single-line one — which is still *consumed*, so it cannot reach a view's
+    /// single-line one -- which is still *consumed*, so it cannot reach a view's
     /// shortcut behind the field.
     #[test]
     fn enter_is_a_newline_only_where_there_are_lines() {
@@ -448,7 +448,7 @@ mod tests {
         assert_eq!(field.value, "a");
     }
 
-    /// A press drops the caret and a drag extends the selection from it — the
+    /// A press drops the caret and a drag extends the selection from it -- the
     /// drag's anchor being the field's own state, which is what let the
     /// machine's `TextSelect` variant go.
     #[test]

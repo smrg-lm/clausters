@@ -7,7 +7,7 @@
 // and the player advances by the event's `delta`.
 //
 // By default a note **frees** its synth after `sustain` (`/node_free`) rather
-// than closing a gate — unless `hasGate` is set, in which case it sends
+// than closing a gate -- unless `hasGate` is set, in which case it sends
 // `gate 0` (for defs whose envelope has a release node and a done action that
 // frees the synth once the release finishes). The built-in `"default"`
 // instrument is the exception: it carries such an envelope and is always
@@ -34,8 +34,8 @@ const RESERVED = new Set([
 /**
  * The reserved keys that say what the note is on a **page** rather than what it
  * does in the air, read by `gui.notation.sheetFromNotes` and written back by
- * `gui.notation.toTimeline`. Every one is a musical fact —
- * `articulations: ["stacc"]`, not an instruction to shorten a drawn value —
+ * `gui.notation.toTimeline`. Every one is a musical fact --
+ * `articulations: ["stacc"]`, not an instruction to shorten a drawn value --
  * which is what lets the same key be read in both directions.
  */
 export const NOTATION_KEYS = [
@@ -104,8 +104,8 @@ export interface EventDestination {
  * An event may also carry what the note is **on a page**
  * ({@link NOTATION_KEYS}): `articulations`, `dynamic`, `ornament`, `grace`,
  * `stem`, `spelling`, `accidental` and `tie`. They change nothing about how the
- * event sounds — an articulation is honoured when a *score* is read, not when
- * an event is played — and they are reserved, so none of them reaches the synth
+ * event sounds -- an articulation is honoured when a *score* is read, not when
+ * an event is played -- and they are reserved, so none of them reaches the synth
  * as a control. What reads them is `gui.notation.sheetFromNotes`.
  */
 export class Event {
@@ -214,13 +214,13 @@ export class Event {
     /**
      * Plays this event on `destination` (double dispatch): the OSC `Server`
      * turns it into `/synth_new` plus a release, a MIDI destination into note
-     * on/off — without the clock or the routine knowing which.
+     * on/off -- without the clock or the routine knowing which.
      *
      * Returns **this event, with its keys completed**: the derived quantities
-     * are written in (`midinote`, `freq`, `delta`, `sustain` — the values
+     * are written in (`midinote`, `freq`, `delta`, `sustain` -- the values
      * actually used) along with `node` (the synth's node id; `null` for a
      * rest) and `server` (the destination), so the note stays actionable
-     * after the fact — `free` cuts it, `release` ends it musically. The
+     * after the fact -- `free` cuts it, `release` ends it musically. The
      * scheduled self-release still arrives regardless.
      *
      * Outside a clock the note plays immediately; inside a routine it emits
@@ -269,6 +269,6 @@ export class Event {
 
 /**
  * A silent `Event` that sounds nothing but still advances time by `dur`
- * beats — a rest in the sequence.
+ * beats -- a rest in the sequence.
  */
 export const rest = (dur = 1.0): Event => new Event({ type: "rest", dur });

@@ -2,7 +2,7 @@
 // (mirrors `clausters/base/clock.py`).
 //
 // The seam between the shared core and the host language. The clock owns the
-// scheduling queue and the beat/second arithmetic — both of them
+// scheduling queue and the beat/second arithmetic -- both of them
 // `clausters-core`'s, reached through the wasm door, so timing matches the
 // server's own sample clock. The queue holds **routines** (and one-shot
 // callables); resuming a routine (the `yield` driver) stays in TypeScript.
@@ -10,7 +10,7 @@
 // The defining property is that the **logical beat advances only by the
 // routines' yields**, never by wall-clock drift: a routine that yields `0.25`
 // is resumed exactly a quarter-beat later, whatever the browser's timers do.
-// That is what makes inter-event timing exact — and, with a `SampleClockTimebase`,
+// That is what makes inter-event timing exact -- and, with a `SampleClockTimebase`,
 // sample-accurate. The wake-up only has to arrive within the emission
 // headroom (`Server.latency`); the exactness rides on the timetag, not on the
 // wake-up.
@@ -18,7 +18,7 @@
 // The clock does **not** talk to the server. It only schedules and reports
 // time (`beats`, `beats2secs`, `startTime`); emitting belongs to `Server`,
 // which reads the clock of the routine it is resuming. Anchoring to a
-// server's sample clock is likewise the Server's job — `server.sampleTimebase()`
+// server's sample clock is likewise the Server's job -- `server.sampleTimebase()`
 // hands back a timebase this clock merely reads, and `joinTransport` reads a
 // server's shared grid **once**, at the join, keeping three numbers: after it
 // the clock is as offline as before.
@@ -67,7 +67,7 @@ export interface Ticker {
 
 /**
  * The page-thread ticker. Correct everywhere, but clamped when nested and
- * throttled to about a second in a background tab — which is why the browser
+ * throttled to about a second in a background tab -- which is why the browser
  * default is the worker one.
  */
 export function timerTicker(): Ticker {
@@ -191,7 +191,7 @@ interface Entry {
 export interface TempoClockOptions {
     /**
      * The physical time this clock reads and waits against, and **fixed for
-     * the clock's life** — a clock never changes mode. Omitted, it is the
+     * the clock's life** -- a clock never changes mode. Omitted, it is the
      * active session's (an embedded or live session is on the server's sample
      * clock, an offline one on its `LogicalTimebase`), and with no session
      * active the page's monotonic clock. A clock made while a session is
@@ -210,7 +210,7 @@ export interface TempoClockOptions {
     tempoMap?: TempoMap;
     /**
      * A label. Says *what* this clock is (`"lead"`, `"canon 3"`), never which
-     * one it is — the same rule a document node's name follows. It is what a
+     * one it is -- the same rule a document node's name follows. It is what a
      * saved clock is recognised by when an arrangement is written against it.
      */
     name?: string;
@@ -225,7 +225,7 @@ export interface SetTempoOptions {
     /** The shape of the change. An envelope carries its own. */
     curve?: CurveSpec;
     /**
-     * The beat to write at. Omitted, the gesture is written *here* — which is
+     * The beat to write at. Omitted, the gesture is written *here* -- which is
      * not quite the same as `beats()`; see {@link TempoClock.setTempo}.
      */
     at?: number;
@@ -240,15 +240,15 @@ export class TempoClock {
      * breakpoint on it instead of overwriting the one anchor there used to be,
      * so what a tempo change moved stays knowable afterwards.
      *
-     * It is a pure function of a beat — it knows nothing of *now* — which is
+     * It is a pure function of a beat -- it knows nothing of *now* -- which is
      * what lets an editor draw the structure from the same one the clock plays by.
      *
-     * Assigning it hands the clock a tempo written elsewhere — a timeline's
-     * map, a multitrack's — and the map is **adopted, not copied**: a second
+     * Assigning it hands the clock a tempo written elsewhere -- a timeline's
+     * map, a multitrack's -- and the map is **adopted, not copied**: a second
      * clock assigned the same map is reading the same map, and a gesture
      * written on either is written on both. Pass `m.copy()` to fork instead.
      *
-     * Do it before `start` — replacing the map under a running clock moves
+     * Do it before `start` -- replacing the map under a running clock moves
      * every beat that has not fired yet, which is a seek and not a tempo
      * change.
      *
@@ -259,7 +259,7 @@ export class TempoClock {
      * already computed, and only then reads the new map. Its own gesture
      * ({@link TempoClock.setTempo}) wakes it at once; for an edit written
      * from elsewhere, call {@link TempoClock.resync} on the clocks
-     * reading it — or compare `map.version`, which is what it is there for.
+     * reading it -- or compare `map.version`, which is what it is there for.
      */
     get map(): TempoMap {
         return this.tempoMapHeld;
@@ -275,7 +275,7 @@ export class TempoClock {
      *
      * **Only these two are worth keeping.** Its position is transport, its
      * queue is what happens to be scheduled, and its timebase is a choice of
-     * the *run* — whether it paces against the page's clock or a server's
+     * the *run* -- whether it paces against the page's clock or a server's
      * sample counter says nothing about the tempo. `load` reads it back.
      *
      * A structure that holds a tempo saves its own map rather than a clock: a
@@ -291,7 +291,7 @@ export class TempoClock {
     /**
      * A clock rebuilt from what {@link TempoClock.dump} wrote: the same name,
      * the same tempo map, and a timebase that is this run's rather than the
-     * saved one's (there is no saved one — see `dump`). `undefined` on
+     * saved one's (there is no saved one -- see `dump`). `undefined` on
      * anything this client could not have written.
      */
     static load(json: string, options: TempoClockOptions = {}): TempoClock | undefined {
@@ -309,7 +309,7 @@ export class TempoClock {
     }
 
     /**
-     * Wake the driver so it re-reads the map — after an edit written through
+     * Wake the driver so it re-reads the map -- after an edit written through
      * another holder of a **shared** map.
      *
      * A clock's own gesture ({@link TempoClock.setTempo}) does this for you.
@@ -344,12 +344,12 @@ export class TempoClock {
      * **A clock built while a session is ambient adopts it**, and the session
      * keeps it and closes it. That is not a convenience: it is the
      * back-reference ambient resolution follows, and a play running on this
-     * clock resolves *that* session's server and random root — which is what
+     * clock resolves *that* session's server and random root -- which is what
      * keeps several sessions on one page isolated from each other. A clock
      * built with no session ambient has `null` here and resolves against the
      * default session.
      *
-     * The clock still never talks to a server — this is a field it is read
+     * The clock still never talks to a server -- this is a field it is read
      * through, not a collaborator it calls.
      */
     session: SessionLike | null = null;
@@ -395,7 +395,7 @@ export class TempoClock {
     // ---- beat/second math (through the core) ----
 
     /**
-     * Beats per second **at the beat the clock is on** — the tempo that is
+     * Beats per second **at the beat the clock is on** -- the tempo that is
      * sounding, read from the map (`map.tempoAt(beats())`). Inside a routine
      * this clock is waking, that beat is the routine's logical one (`beats`).
      *
@@ -430,7 +430,7 @@ export class TempoClock {
         return this.tempoMapHeld.secsAt(beats);
     }
 
-    /** Seconds as a beat position — the inverse of {@link TempoClock.beats2secs}. */
+    /** Seconds as a beat position -- the inverse of {@link TempoClock.beats2secs}. */
     secs2beats(secs: number): number {
         return this.tempoMapHeld.beatsAt(secs);
     }
@@ -440,13 +440,13 @@ export class TempoClock {
      *
      * **Inside a routine this clock is waking, the routine's logical beat**:
      * the yield-exact instant the wake is for, which everything it emits is
-     * stamped at and {@link TempoClock.setTempo} writes at — not wherever
+     * stamped at and {@link TempoClock.setTempo} writes at -- not wherever
      * physical time has got to by the time the code reads it. That is sclang's
      * rule, and it is what makes a routine read the same numbers live and
      * offline.
      *
      * Anywhere else, the paced elapsed beat while running (what scheduling
-     * relative to "now" reads), else the yield-driven logical beat — before the
+     * relative to "now" reads), else the yield-driven logical beat -- before the
      * first `start`, and after a `stop`, which holds the beat it reached.
      */
     beats(): number {
@@ -482,7 +482,7 @@ export class TempoClock {
      *   item due before `beat` at once, late, and a locate back makes each wait
      *   the difference;
      * - bundles already sent inside the server's latency sound where they were
-     *   — nothing recalls them;
+     *   -- nothing recalls them;
      * - the tempo map does not change: a locate back before a tempo change
      *   replays it, a locate forward enters the tempo there;
      * - `quant` on the clock's own grid follows the new beat (a joined grid is
@@ -533,7 +533,7 @@ export class TempoClock {
      * (`Server.transportStop` on a governed group). The timebase only decides
      * how long to sleep between events and how to stamp one, so a page whose
      * server froze would otherwise keep advancing beats and scheduling events
-     * ahead — running away from a transport that is not moving. Freezing stops the
+     * ahead -- running away from a transport that is not moving. Freezing stops the
      * beat instead of stopping the playhead: what was already scheduled stays
      * scheduled, and the server's frozen queue holds it.
      *
@@ -558,7 +558,7 @@ export class TempoClock {
      * (`start`, not yet `stop`ped).
      *
      * False before the first `start` and during an offline render, whose beat is
-     * the queue's position and not the wall's — the distinction a caller needs
+     * the queue's position and not the wall's -- the distinction a caller needs
      * before treating `beats()` as a thing that moves while it waits (a
      * transport sweeping a cursor over the last item's tail). Freezing does not
      * change it: a frozen clock is rolling and held.
@@ -588,8 +588,8 @@ export class TempoClock {
     }
 
     /**
-     * The wall-clock origin (Unix seconds) of the current beat axis — the
-     * instant beat 0 falls on — or `null` before the first `start`. The
+     * The wall-clock origin (Unix seconds) of the current beat axis -- the
+     * instant beat 0 falls on -- or `null` before the first `start`. The
      * Server turns a logical beat into a timetag from it: the **wall** clock,
      * kept apart from the monotonic pacing source so timetags stay valid Unix
      * time. A `stop` leaves it in place (it is the axis a later `start`
@@ -620,20 +620,20 @@ export class TempoClock {
      * current instant, so the beat the clock is on keeps mapping to the second
      * it already mapped to and nothing already scheduled jumps.
      *
-     * With `over` it is a **shape written over a stretch** — an accelerando or
+     * With `over` it is a **shape written over a stretch** -- an accelerando or
      * a ritardando reaching `tempo` and holding it. And `tempo` may be an
      * envelope (anything with `levels`, `times` and `curves`), in which case
      * the whole shape is written in one call and `over` is not needed: its own
      * times are the extents.
      *
-     * `unit` says what `over` (or an envelope's times) measures — `"beats"`,
+     * `unit` says what `over` (or an envelope's times) measures -- `"beats"`,
      * or `"seconds"` (`"secs"`). In seconds the width in beats is solved
      * exactly, so an accelerando can be asked for by how long it lasts rather
      * than by how many beats it covers. `curve` is the shape: `"linear"`
      * (`"lin"`), `"exponential"` (`"exp"`) or a numeric curvature (0 is linear, positive starts slow, negative starts
      * fast); an envelope carries its own and this is ignored.
      *
-     * A tempo envelope is of **finite duration** — after its last segment the
+     * A tempo envelope is of **finite duration** -- after its last segment the
      * tempo it reached holds. A sustain or a loop point is refused rather than
      * ignored: those are a gate's ideas, and a document's tempo has no gate.
      *
@@ -641,8 +641,8 @@ export class TempoClock {
      * beats before it stay convertible afterwards.
      *
      * **Where "here" is.** With no `at`, a gesture made from inside a routine
-     * on this clock is written at the routine's own **logical** beat — the
-     * yield-exact instant every event of that wake already shares — and
+     * on this clock is written at the routine's own **logical** beat -- the
+     * yield-exact instant every event of that wake already shares -- and
      * anywhere else at `beats()`. The two differ by however far the driver has
      * paced past the wake, which is inaudible and is not nothing: it is what
      * writes a breakpoint at 3.00034 instead of 3, and a map that will be
@@ -650,13 +650,13 @@ export class TempoClock {
      * where explicitly, in beats, which is also how a tempo is written for a
      * document before any clock has run.
      *
-     * **Against a map that was written ahead of the clock** — a document's tempo
+     * **Against a map that was written ahead of the clock** -- a document's tempo
      * track, a shared map, anything with breakpoints still in front of the
-     * playhead — the gesture says *from here on*, and what was planned after
+     * playhead -- the gesture says *from here on*, and what was planned after
      * this beat is dropped. That is what a live change means: the past is
      * untouched and stays convertible, and the future is the one being played
      * now. A rehearsal that must not rewrite the document runs on
-     * `clock.map = timeline.map.copy()` — adopting is authoring, forking is
+     * `clock.map = timeline.map.copy()` -- adopting is authoring, forking is
      * performing.
      */
     setTempo(
@@ -674,7 +674,7 @@ export class TempoClock {
             if (over === undefined) {
                 // A breakpoint, not an overwrite. The map keeps the second `at`
                 // already fell on, which is what makes the change free of a
-                // discontinuity — and, unlike the single anchor this used to
+                // discontinuity -- and, unlike the single anchor this used to
                 // be, it also keeps every earlier tempo, so the beats before
                 // the change stay convertible.
                 this.tempoMapHeld.push(at, tempo);
@@ -717,7 +717,7 @@ export class TempoClock {
     /**
      * Adopts a master `server`'s shared `/transport_set` beat grid as this
      * clock's tempo and grid, so a `quant`-ed routine starts on the **same**
-     * beat as every other client joined to it — a page opened halfway through
+     * beat as every other client joined to it -- a page opened halfway through
      * a bar still lands on the next bar line the conductor and every other
      * client land on.
      *
@@ -728,7 +728,7 @@ export class TempoClock {
      * `/clock_query` anchor (drift-bounded, and re-joining re-anchors it).
      *
      * The rule the clock never bends holds here too: it does not *talk* to a
-     * server — this reads the grid once, off a handle you pass, and keeps
+     * server -- this reads the grid once, off a handle you pass, and keeps
      * three numbers. Nothing about a joined clock is asynchronous afterwards.
      */
     async joinTransport(server: Server, timeout?: number): Promise<this> {
@@ -745,7 +745,7 @@ export class TempoClock {
             return this;
         }
         // The grid's origin is a sample; a wall-clock clock cannot read that
-        // axis, so the `/clock_query` anchor maps it to Unix time — the same
+        // axis, so the `/clock_query` anchor maps it to Unix time -- the same
         // core conversion the server uses, so both grids are one grid.
         const anchor = await server.request("/clock_query", [], {
             expect: ["/clock_query.reply"],
@@ -764,7 +764,7 @@ export class TempoClock {
 
     /**
      * Stops following a joined transport: `quant` snaps against this clock's
-     * own elapsed beats again. The tempo the grid set is kept — leaving the
+     * own elapsed beats again. The tempo the grid set is kept -- leaving the
      * grid is not a tempo change.
      */
     leaveTransport(): this {
@@ -783,7 +783,7 @@ export class TempoClock {
      *
      * The two are deliberately different axes. The clock's beat starts when
      * *it* starts; the shared one is the conductor's, running whether this
-     * page is playing or not — which is exactly what makes two pages started
+     * page is playing or not -- which is exactly what makes two pages started
      * seconds apart agree on where the next bar falls.
      */
     gridBeat(): number {
@@ -856,7 +856,7 @@ export class TempoClock {
      *
      * An item due now used to be resumed on the scheduling call's own stack,
      * so `play()` on a running clock ran the routine's first pass *before it
-     * returned* — where the Python client pushes and lets its own thread pick
+     * returned* -- where the Python client pushes and lets its own thread pick
      * the routine up, so `play()` returns first. That is what
      * `Routine.run(function* () { … })` needs: the name is bound by the
      * assignment this call is on the right-hand side of, and a first pass that
@@ -864,8 +864,8 @@ export class TempoClock {
      *
      * A microtask is the whole of the fix, and it is deliberately *not* the
      * ticker: an item with no wait left is due, and making it wait for a tick
-     * would be saying it is not. Nothing about the timing moves — a beat is
-     * computed from the timebase, not counted in wakes — so the item still
+     * would be saying it is not. Nothing about the timing moves -- a beat is
+     * computed from the timebase, not counted in wakes -- so the item still
      * runs at the beat it was scheduled for. The clock's own pacing already
      * lives off the page thread (`workerTicker`); this is about which *stack*
      * resumes a generator, which is always the page's, since a routine closes
@@ -886,7 +886,7 @@ export class TempoClock {
      * `quant` starts it on the next beat that is a multiple of it (`4` = the
      * next bar in 4/4); 0 or undefined starts it now. The grid is the clock's
      * own elapsed beats, or a shared one once the clock has joined a transport
-     * (`joinTransport`) — which is what makes several clients start together.
+     * (`joinTransport`) -- which is what makes several clients start together.
      */
     play<T extends Schedulable>(item: T, quant?: number): T {
         this.sched(quant ? quantDelay(this.gridBeat(), quant) : 0, item);
@@ -917,7 +917,7 @@ export class TempoClock {
     }
 
     /**
-     * Removes one scheduled `item` (by identity), leaving the rest in order —
+     * Removes one scheduled `item` (by identity), leaving the rest in order --
      * how a playhead stops or seeks without clearing everything else.
      */
     unsched(item: Schedulable): this {
@@ -962,7 +962,7 @@ export class TempoClock {
         // Both origins are placed so `beats()` continues from where the clock
         // was stopped. A beat's position in seconds is measured from the beat
         // axis' zero, so resuming at beat *b* puts the origins `beats2secs(b)`
-        // seconds in the past — the wall one too, or the timetag of the first
+        // seconds in the past -- the wall one too, or the timetag of the first
         // event after a restart would be that far off.
         const held = this.beats2secs(this.logicalBeat);
         this.monoStart = this.timebase.now() - held; // the pacing origin
@@ -977,11 +977,11 @@ export class TempoClock {
      *
      * Offline, physical time is a `LogicalTimebase` and every clock on it has
      * its origin there, as a live clock has its origin on the monotonic clock.
-     * Rendering drives **every** clock of that time that is started — this one
-     * is started by rendering it, at the run's current second — in the order
+     * Rendering drives **every** clock of that time that is started -- this one
+     * is started by rendering it, at the run's current second -- in the order
      * their items fall in seconds, so a script with several clocks renders as
      * it plays. A clock on any other timebase throws: a clock never changes
-     * mode, so offline is a clock made on a `LogicalTimebase` — which every
+     * mode, so offline is a clock made on a `LogicalTimebase` -- which every
      * clock of an offline session is.
      *
      * Returns when nothing is due (or the next item falls after `untilBeat`, a
@@ -996,8 +996,8 @@ export class TempoClock {
      * `maxSteps` bounds the number of **resumes**, throwing once it is passed.
      * It defaults to no bound, which is the right default: a long offline
      * render of a real score is meant to run for a long time. It is for the
-     * caller who knows its source might never end — a render of an endless
-     * event pattern (`render`) — because a routine cannot report that
+     * caller who knows its source might never end -- a render of an endless
+     * event pattern (`render`) -- because a routine cannot report that
      * itself: a routine that throws loses its own place and nothing else, so a
      * guard inside one is swallowed by design.
      *
@@ -1059,7 +1059,7 @@ export class TempoClock {
 
     /**
      * Stops the driver, holding the beat it reached. What is queued stays
-     * queued: `stop`/`start` is a transport, not a reset — `clear` is the
+     * queued: `stop`/`start` is a transport, not a reset -- `clear` is the
      * reset.
      */
     stop(): this {
@@ -1070,7 +1070,7 @@ export class TempoClock {
             return this;
         }
         // Freeze the beat first: from here `beats()` reports it, because the
-        // clock is no longer running. The two origins are deliberately kept —
+        // clock is no longer running. The two origins are deliberately kept --
         // they stay the correct origins of the beat axis a later `start`
         // resumes, and a Server emitting one last event reads them.
         this.logicalBeat = this.beats();
@@ -1090,7 +1090,7 @@ export class TempoClock {
     /**
      * One turn of the driver: resume everything due, then arm the wake for
      * whatever comes next. Re-entrant calls (a routine scheduling from inside
-     * its own wake) are absorbed — the loop re-reads the queue anyway.
+     * its own wake) are absorbed -- the loop re-reads the queue anyway.
      */
     private pump(): void {
         if (!this.running || this.pumping || this.timebase instanceof LogicalTimebase) return;
@@ -1154,7 +1154,7 @@ function driveOffline(timebase: LogicalTimebase, until: number | undefined, maxS
             if (best === null || (until !== undefined && best[0] > until)) break;
             if (maxSteps !== undefined && ++steps > maxSteps) {
                 throw new Error(
-                    `render: still going after ${maxSteps} resumes — ` +
+                    `render: still going after ${maxSteps} resumes -- ` +
                         "the source does not end on its own",
                 );
             }

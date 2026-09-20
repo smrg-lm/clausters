@@ -2,20 +2,20 @@
 //!
 //! The crate's **fourth** editable domain, and the one that finishes the set the
 //! clients' views ask for: a roll draws events, and until now the only way to
-//! write one back was [`Intent::SetMembers`](crate::Intent::SetMembers) — an
+//! write one back was [`Intent::SetMembers`](crate::Intent::SetMembers) -- an
 //! aggregate's members, which needs a tree to be a member *of*. A timeline the
 //! caller built has no aggregate and no document, and it is edited by the same
 //! gesture in the same view.
 //!
 //! The vocabulary is one verb, *the events are now these*, for the reason
-//! [`points`](crate::points) has one: a roll's edit is already whole-list —
-//! notes added, moved and removed arrive as the list that resulted — so the
+//! [`points`](crate::points) has one: a roll's edit is already whole-list --
+//! notes added, moved and removed arrive as the list that resulted -- so the
 //! edit stating the previous list is its inverse and nothing else is needed.
 //!
 //! # What this decides about events: nothing
 //!
 //! An event is a position and a payload the crate never reads. No pitch, no
-//! duration, no channel, no unit for `at` — beats for a roll on the musical
+//! duration, no channel, no unit for `at` -- beats for a roll on the musical
 //! grid, seconds for a lane of markers, and the crate does not ask which, the
 //! same way it does not ask what a leaf's configuration means. What would be
 //! decided by giving an event fields is exactly the question
@@ -42,7 +42,7 @@ pub const EVENTS: &str = "events";
 /// One event: where it sits, and what it says there.
 ///
 /// `at` is in whatever the timeline is drawn against, and `data` is the event
-/// itself — carried and never interpreted, like every other [`Opaque`] here.
+/// itself -- carried and never interpreted, like every other [`Opaque`] here.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Event {
     /// Where the event sits.
@@ -74,7 +74,7 @@ impl Events {
         Self(events)
     }
 
-    /// The edit stating what this timeline holds now — its own inverse, read
+    /// The edit stating what this timeline holds now -- its own inverse, read
     /// before another one lands.
     pub fn state(&self) -> EventsIntent {
         EventsIntent::SetEvents {
@@ -130,7 +130,7 @@ impl Editable for Events {
 /// One verb over one timeline, like a curve's: every edit here is the same
 /// thing done the same way, so a note dragged across the grid is one undo when
 /// the caller says the hand did not stop. The span that makes a samples key
-/// more than the domain name has no counterpart here — a whole-list edit names
+/// more than the domain name has no counterpart here -- a whole-list edit names
 /// no span.
 pub fn coalesce_key(payload: &Opaque) -> Option<String> {
     serde_json::from_value::<EventsIntent>(payload.0.clone()).ok()?;

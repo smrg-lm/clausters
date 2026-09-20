@@ -1,4 +1,4 @@
-//! B1: the pulled-mode server (`ClaustersHeadless`) — no device, no sockets,
+//! B1: the pulled-mode server (`ClaustersHeadless`) -- no device, no sockets,
 //! no threads; the test is the host, driving `process_block` and the ring
 //! from one thread, exactly the way the browser's AudioWorklet does.
 
@@ -134,7 +134,7 @@ fn bus_stream_replies_pace_on_the_sample_clock() {
         vec![OscType::Int(100), OscType::Int(3)],
     )));
     // 0.35 s of sample time at a 100 ms period: the immediate snapshot plus
-    // three paced ones — deterministic, because headless stream time *is*
+    // three paced ones -- deterministic, because headless stream time *is*
     // the sample clock, not the wall.
     pull(&mut server, (0.35 * SR) as usize / BLOCK_SIZE);
     let sets: Vec<_> = replies(&server)

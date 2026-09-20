@@ -4,10 +4,10 @@
 //! here so the answers can be re-checked when either changes:
 //!
 //! 1. **Should the waveform draw into the shared `Mesh` instead of its own
-//!    pipeline?** Yes — and the measurement below is why it *could*. Both
+//!    pipeline?** Yes -- and the measurement below is why it *could*. Both
 //!    destinations build the same six vertices per min/max column into the same
-//!    `[x, y, r, g, b, a]` layout, and the column *computation* — the
-//!    peak-pyramid reads — dominates so heavily that the choice of destination
+//!    `[x, y, r, g, b, a]` layout, and the column *computation* -- the
+//!    peak-pyramid reads -- dominates so heavily that the choice of destination
 //!    is noise. With cost out of the way what remained was that a second
 //!    destination is a second implementation of the same drawing, and the two
 //!    had already drifted (the pipeline's polyline dropped the sample past the
@@ -50,7 +50,7 @@ fn build_data() -> WaveformData {
     WaveformData::from_interleaved(&interleaved, CHANNELS, BASE_BUCKET)
 }
 
-/// The column computation alone — the work every destination shares.
+/// The column computation alone -- the work every destination shares.
 fn columns_only(data: &WaveformData, view: &View, w: u32) -> f32 {
     let spp = view.samples_per_px(w);
     let mut acc = 0.0f32;
@@ -146,7 +146,7 @@ fn the_column_computation_dominates_the_per_frame_cost() {
 /// the window (a shader module and two pipelines inside every waveform view, one
 /// of each inside every `SpectrogramRenderer`, and a spectrogram building one
 /// renderer per channel); the "after" is what is left now that the split has
-/// happened *and* the waveform has no pipeline at all — its picture is triangles
+/// happened *and* the waveform has no pipeline at all -- its picture is triangles
 /// in the window's mesh. Kept as an executable statement of the invariant, so a
 /// future change that puts a pipeline back inside an element fails here.
 #[test]
@@ -155,7 +155,7 @@ fn pipelines_belong_to_the_window_not_to_the_element() {
     fn pipeline_objects(waveforms: usize, spectrogram_channels: usize, shared: bool) -> usize {
         if shared {
             // One `Renderers`: the spectrogram's pipeline and its shader
-            // module. The waveforms add nothing — they draw through the
+            // module. The waveforms add nothing -- they draw through the
             // window's painter, which exists for the chrome regardless.
             let _ = waveforms;
             1 + 1
@@ -200,8 +200,8 @@ fn pipelines_belong_to_the_window_not_to_the_element() {
 /// texture is `R8Unorm`, one byte a texel, so the bytes are the texels.
 ///
 /// This is E18's before/after. The "before" is what a tick cost until the ring
-/// existed — a fresh `Stft`, a fresh texture, and a write of every column in
-/// the span — and the "after" is the columns that actually landed, written
+/// existed -- a fresh `Stft`, a fresh texture, and a write of every column in
+/// the span -- and the "after" is the columns that actually landed, written
 /// twice because the ring is stored twice so its window never wraps. Kept as an
 /// executable statement of the invariant, so a change that goes back to
 /// rebuilding the picture per tick fails here.
@@ -219,7 +219,7 @@ fn a_waterfall_uploads_the_hop_not_the_span() {
     }
 
     // The milestone's own numbers: an eight-second span at hop 512 and
-    // fft_size 1024, 48 kHz, ticking at 30 fps — so a tick lands two or three
+    // fft_size 1024, 48 kHz, ticking at 30 fps -- so a tick lands two or three
     // columns.
     let (bins, landed) = (512, 3);
     let span_8s = (8.0 * 48_000.0 / 512.0f64).ceil() as usize;

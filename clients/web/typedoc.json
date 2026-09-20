@@ -2,7 +2,7 @@
     "$schema": "https://typedoc.org/schema.json",
     // The API-reference generator for the web client's book: TypeDoc reads the
     // TSDoc comments off the package facade (`src/index.ts`) and writes the
-    // reference pages of `docs/src/` — the TypeScript counterpart of the
+    // reference pages of `docs/src/` -- the TypeScript counterpart of the
     // Python client's pydoc-markdown.yml. Both the generated pages and the
     // built book are git-ignored; run `docs/build.sh`.
     //

@@ -1,4 +1,4 @@
-//! Every verb the multitrack admits, one test each — which is this milestone's
+//! Every verb the multitrack admits, one test each -- which is this milestone's
 //! acceptance and not a coverage target: a vocabulary nobody has exercised is a
 //! vocabulary whose refusals are guesses.
 
@@ -412,7 +412,7 @@ fn a_regions_own_curve_is_the_same_verb_in_the_other_place() {
     // A track's curve runs the length of the track and is drawn in a lane
     // beside it; a region's runs the length of the region and is drawn inside
     // it. Both exist, neither stands in for the other, and **the verb is one**
-    // — which is the whole reason a region carries the same `Automation` a
+    // -- which is the whole reason a region carries the same `Automation` a
     // track does rather than a second type.
     let mut multitrack = multitrack();
     let curve = Automation::new(NodeId(30), Opaque(serde_json::json!({ "ctl": "gain" })));

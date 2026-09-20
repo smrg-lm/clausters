@@ -3,7 +3,7 @@
 //! This is the crate's **third** editable domain, and the one whose absence was
 //! visible from outside: [`Intent::WriteSamples`](crate::Intent::WriteSamples)
 //! names a node, so writing samples has until now required a
-//! [`Document`](crate::Document) to hold one — and even then it does not write
+//! [`Document`](crate::Document) to hold one -- and even then it does not write
 //! them. What that intent applies is a **generation bump**, the signal every
 //! reader of those samples needs in order to know its copy is stale; the values
 //! themselves are the owner's to write, and
@@ -13,21 +13,21 @@
 //! So the destructive edit had no inverse anywhere, which is why a host holding
 //! the data could draw over a take and a client without it could not. Here the
 //! span *is* the structure, and the inverse is what it held read before the edit
-//! lands — the same rule [`points`](crate::points) states, over data instead of
+//! lands -- the same rule [`points`](crate::points) states, over data instead of
 //! parameters.
 //!
 //! # The structure is borrowed, never held
 //!
 //! [`Samples`] is a view over whoever owns the memory: a client's buffer, a
 //! host's mapped file, a test's vector. The crate copies nothing and outlives
-//! nothing — a domain that held a second copy of a take would be the largest
+//! nothing -- a domain that held a second copy of a take would be the largest
 //! thing in the process and the one most certainly stale. What it does own is
 //! the arithmetic: which frames a channel's span touches, and what was there
 //! before.
 //!
 //! The samples are **interleaved**, so a span is **strided**: one channel's run
 //! of frames, `channels` apart. That is how a client holds a stereo take and how
-//! the wire already describes an edit to one — a channel is a coordinate of the
+//! the wire already describes an edit to one -- a channel is a coordinate of the
 //! span, not a fact about the source.
 //!
 //! # What this decides about samples: nothing
@@ -44,7 +44,7 @@ use crate::history::{Applied, Editable};
 /// The domain name a span of samples is registered under.
 pub const SAMPLES: &str = "samples";
 
-/// An edit to samples. One verb, stating the result — the absolute rule the
+/// An edit to samples. One verb, stating the result -- the absolute rule the
 /// rest of the crate's vocabularies follow, and for the same reason: an edit
 /// that states values is idempotent, and its inverse is the edit stating the
 /// values that were there.
@@ -55,7 +55,7 @@ pub enum SamplesIntent {
     Write {
         /// Which channel of the interleaved samples the span belongs to.
         ///
-        /// Defaults to 0 when absent, which is what every mono edit means — the
+        /// Defaults to 0 when absent, which is what every mono edit means -- the
         /// same default [`Intent::WriteSamples`](crate::Intent::WriteSamples)
         /// takes, so the two spell one thing.
         #[serde(default)]
@@ -221,7 +221,7 @@ fn payload_of(channel: u32, start: u64, values: Vec<f32>) -> Opaque {
     })
 }
 
-/// The empty write at a position — what an unloggable or refused edit answers
+/// The empty write at a position -- what an unloggable or refused edit answers
 /// with, since it is the one payload that states no values.
 fn empty(channel: u32, start: u64) -> Opaque {
     payload_of(channel, start, Vec::new())

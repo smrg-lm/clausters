@@ -1,6 +1,6 @@
 // A tempo map as a value: shared between clocks, written out, read back.
 //
-// The map is not a field of anything — it is a value on the beat axis, the
+// The map is not a field of anything -- it is a value on the beat axis, the
 // peer of a `Timeline`, and a clock is the process that moves over it. These
 // are the three facts that follow, and `clients/python/tests/test_tempomap.py`
 // asserts the same ones in the same order.

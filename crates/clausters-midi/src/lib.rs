@@ -1,20 +1,20 @@
 //! Reusable MIDI file I/O for clausters clients (and, later, the server).
 //!
 //! Same contract as `clausters-ffi` and the server's embed ABI: **only flat
-//! data crosses** — integers and pointer+length arrays in, a malloc'd byte
+//! data crosses** -- integers and pointer+length arrays in, a malloc'd byte
 //! buffer out (the same shape as `clausters_render`/`clausters_free_samples`),
 //! never a library type. A per-language wrapper (Python `ctypes` now) sits on
 //! top; check [`clausters_midi_abi_version`] first.
 //!
 //! Scope (client output): write a **Standard MIDI File** (`.mid`, SMF type
-//! 0, via `midly`) — the interop format every DAW reads — and a **MIDI 2.0
+//! 0, via `midly`) -- the interop format every DAW reads -- and a **MIDI 2.0
 //! Clip File** (SMF2CLIP, assembled from `midi2`'s typed UMP messages) that
 //! carries note velocities at 16-bit resolution instead of SMF's 7 bits. With
 //! the `live` feature, also a virtual MIDI **output port** (midir/ALSA) for
-//! real-time playback, and — for the client's responder layer — a virtual MIDI
+//! real-time playback, and -- for the client's responder layer -- a virtual MIDI
 //! **input port** that other apps/devices route into, drained by polling (no
 //! callback crosses the boundary, keeping the flat-data contract). (The planned
-//! `midi2-clip` crate is a v0.1.0 stub — `write_clip_file` is `todo!()` — so
+//! `midi2-clip` crate is a v0.1.0 stub -- `write_clip_file` is `todo!()` -- so
 //! the clip container is built here.)
 
 use midi2::channel_voice2::{NoteOff, NoteOn};
@@ -52,7 +52,7 @@ fn data_len(status: u8) -> Option<usize> {
     }
 }
 
-/// A parsed channel-voice **note** event — the subset a live note consumer
+/// A parsed channel-voice **note** event -- the subset a live note consumer
 /// (the GUI host's note painting) reads off the wire with [`parse_note`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NoteEvent {
@@ -69,8 +69,8 @@ pub enum NoteEvent {
 
 /// The note event carried by a raw MIDI message, if any: a note-on (a
 /// zero-velocity note-on reads as a note-off, the wire convention) or a
-/// note-off. Anything else — other channel-voice types, system messages,
-/// truncated data — is `None`.
+/// note-off. Anything else -- other channel-voice types, system messages,
+/// truncated data -- is `None`.
 pub fn parse_note(bytes: &[u8]) -> Option<NoteEvent> {
     match bytes {
         [s, p, v] if s & 0xF0 == 0x90 && *v > 0 => Some(NoteEvent::On {
@@ -127,14 +127,14 @@ pub fn write_smf(events: &[TimedMessage], ppq: u16) -> Vec<u8> {
 // ---- MIDI 2.0 Clip File (SMF2CLIP) ----
 //
 // The full-resolution format the plan wanted. The planned `midi2-clip` crate
-// (v0.1.0) turned out to be a stub — its `write_clip_file` is `todo!()` — so
+// (v0.1.0) turned out to be a stub -- its `write_clip_file` is `todo!()` -- so
 // the file is assembled here from `midi2`'s typed UMP messages (the message
 // layer the plan pinned, which *is* functional): the 8-byte `SMF2CLIP` header,
 // then a UMP stream of DCTPQ + Start of Clip + (Delta Clockstamp + Channel
 // Voice 2) per event + End of Clip, words big-endian. MIDI 1.0 note velocities
 // are widened to 16 bits, so a clip carries them at full resolution.
 
-/// Widen a 7-bit value to 16 bits (bit-repeat fill, 0→0 and 127→65535) — the
+/// Widen a 7-bit value to 16 bits (bit-repeat fill, 0→0 and 127→65535) -- the
 /// same scaling the server uses for live MIDI 1.0 input.
 fn scale_7_to_16(v: u8) -> u16 {
     let v = (v & 0x7f) as u16;
@@ -401,7 +401,7 @@ pub mod live {
 
     /// Opaque live input handle. `midir` runs the input callback on its own
     /// thread; it pushes each raw message into an `mpsc` channel the caller
-    /// drains by polling — so no callback ever crosses the C boundary (the
+    /// drains by polling -- so no callback ever crosses the C boundary (the
     /// flat-data contract) and the host language keeps control of its threads.
     /// Dropping the handle closes the virtual port and stops the input thread.
     pub struct Input {
@@ -410,7 +410,7 @@ pub mod live {
     }
 
     impl Input {
-        /// Opens a virtual MIDI input port named `name` — the safe Rust face
+        /// Opens a virtual MIDI input port named `name` -- the safe Rust face
         /// of [`clausters_midi_input_open`], for in-process consumers (the GUI
         /// host's live note painting). Dropping the handle closes the port.
         pub fn open(name: &str) -> Option<Input> {

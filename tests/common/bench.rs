@@ -1,13 +1,13 @@
 //! The UGen bench: one place that turns a **subject** into a running def.
 //!
 //! `tests/common/subjects.json` declares the UGens under test, one entry per
-//! row. This module is the Rust half of that file's contract — it assembles a
+//! row. This module is the Rust half of that file's contract -- it assembles a
 //! subject into a SynthDef, renders it, and drives the rules from the
 //! `audio-testing` skill that are the same for every UGen:
 //!
-//! * **rule 5, the block split** — a scheduled bundle cuts a block in two, and
+//! * **rule 5, the block split** -- a scheduled bundle cuts a block in two, and
 //!   a stateful UGen must not notice. [`assert_split_agrees`].
-//! * **rule 4, the long run** — ten seconds of output stays finite and bounded.
+//! * **rule 4, the long run** -- ten seconds of output stays finite and bounded.
 //!   The cheap half of the rule, the one that catches an `f64` state regressing
 //!   to `f32` by the NaN it eventually produces; the *numerical* half (does the
 //!   filter still have its analytic gain, did the ramp land on its target) is
@@ -15,8 +15,8 @@
 //!   [`assert_long_run_is_bounded`].
 //! * finiteness over every subject of a milestone. [`assert_renders_finite`].
 //!
-//! Everything a family claims about *its own* signal — an alias SNR, a transfer
-//! function, a decay envelope — stays in that family's suite, where it can be
+//! Everything a family claims about *its own* signal -- an alias SNR, a transfer
+//! function, a decay envelope -- stays in that family's suite, where it can be
 //! written against the closed form. This module deliberately knows no DSP.
 //!
 //! The other half of the contract is `examples/audition.py`, which reads the
@@ -65,7 +65,7 @@ pub struct Subject {
     /// `{"ugen": 0}`. See [`source_signal`] for the shapes.
     #[serde(default)]
     pub source: Option<String>,
-    /// UGens the subject needs *before* it — a demand source feeding a driver.
+    /// UGens the subject needs *before* it -- a demand source feeding a driver.
     /// They follow the source, so their indices start at 1 when there is one.
     #[serde(default)]
     pub prelude: Vec<Value>,
@@ -77,7 +77,7 @@ pub struct Subject {
     pub statics: Map<String, Value>,
     /// How many rows the family emits for one logical UGen. A panner is two
     /// rows differing only in a trailing `chan` index, which the bench appends
-    /// — the same thing the Python builder does.
+    /// -- the same thing the Python builder does.
     #[serde(default = "one")]
     pub channels: usize,
     #[serde(default)]
@@ -247,7 +247,7 @@ impl<'a> Run<'a> {
 /// Renders a whole def, one vector per output channel.
 ///
 /// A `cut` render processes every block as two calls sharing the block's input
-/// — offsets `0..cut` and `cut..BLOCK_SIZE` — which is exactly what the engine
+/// -- offsets `0..cut` and `cut..BLOCK_SIZE` -- which is exactly what the engine
 /// does when a timed bundle lands mid-block.
 pub fn render_def(def_json: &str, run: &Run) -> Vec<Vec<f32>> {
     let spec: SynthDefSpec = serde_json::from_str(def_json)
@@ -349,13 +349,13 @@ fn wrap(ugen_json: &str, with_input: bool) -> String {
 ///
 /// The tolerance is not a fudge factor: both renders execute the same
 /// arithmetic in the same order, so a correct UGen agrees to well under it. It
-/// leaves room for the one place a split legitimately reorders work — a
+/// leaves room for the one place a split legitimately reorders work -- a
 /// coefficient recomputed once per slice instead of once per block.
 ///
 /// **A stochastic source cannot be driven from here**, and asking is an error
 /// rather than a skip. Comparing two renders means comparing two synth
 /// instances, and each instance of a noise UGen seeds from a shared counter on
-/// purpose (correlated noise summed with itself is a comb filter) — while the
+/// purpose (correlated noise summed with itself is a comb filter) -- while the
 /// wire has no seed input to pin, since a def has no way to name one. So the
 /// two renders differ at sample 0 for a reason that is not a bug. The split
 /// rule still applies to those rows; `tests/noise.rs` discharges it one level
@@ -387,7 +387,7 @@ pub fn assert_split_agrees(s: &Subject, samples: usize, at: usize) {
 ///
 /// A long run is where a state variable narrowed to `f32` finally shows: the
 /// accumulated error either walks off to a NaN or parks the signal against a
-/// rail. `bound` is generous on purpose — this assert is about the numbers
+/// rail. `bound` is generous on purpose -- this assert is about the numbers
 /// still being numbers, not about the level being right. What the level *should*
 /// be is a claim only the family can make, and it makes it in its own suite.
 pub fn assert_long_run_is_bounded(s: &Subject, seconds: f32, bound: f32) {

@@ -9,7 +9,7 @@
 //!
 //! The wire's own framing. A `draw` carries its run as a little-endian `f32`
 //! blob, which is a `memoryview` in one client and an `ArrayBuffer` in the
-//! other and cannot be either of those in a JSON request — so a client decodes
+//! other and cannot be either of those in a JSON request -- so a client decodes
 //! the blob and this reads the numbers. That is the crate's standing rule
 //! rather than an exception: it defines edits and does not encode them.
 
@@ -100,7 +100,7 @@ pub fn write(
     })
 }
 
-/// The gesture as the write it is, with the run it replaced as its inverse —
+/// The gesture as the write it is, with the run it replaced as its inverse --
 /// [`write()`] behind the JSON reading a client's report arrives as.
 pub fn intake(tag: &str, values: &[Value]) -> Intake {
     if !answers(tag) || values.len() < 4 {
@@ -126,7 +126,7 @@ pub fn intake(tag: &str, values: &[Value]) -> Intake {
 /// samples; a take with more channels is written one channel at a time with
 /// `/buffer_setRangeChannel`, whose positions are that channel's frames, so the
 /// other channels are never read or written. The run is sent in chunks of at
-/// most `chunk` values — the endpoint's transport bound — and the last one's
+/// most `chunk` values -- the endpoint's transport bound -- and the last one's
 /// `/done` is awaited, so a caller that walks the steps learns of a refusal
 /// (a run past the end of the buffer) rather than losing the write silently.
 ///

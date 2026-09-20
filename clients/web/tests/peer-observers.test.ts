@@ -5,8 +5,8 @@
  * The engine keeps a reply queue **per client** (`docs/ipc.md`): a page holding
  * both a script and a GUI host claims a tag each, and `addReply(fn)` with no
  * peer hears only the default client's replies. So a page that watches the
- * *host's* `/bus_stream` subscription — every bundle page and every
- * component page does, because the meter belongs to the host — must register
+ * *host's* `/bus_stream` subscription -- every bundle page and every
+ * component page does, because the meter belongs to the host -- must register
  * under `ANY_PEER`, the observer door.
  *
  * Getting it wrong fails **silently and in the worst direction**: the listener
@@ -18,7 +18,7 @@
  * would have caught it are not in CI and the readouts are only looked at by
  * hand.
  *
- * The check is deliberately textual — a page is a plain module no type-checker
+ * The check is deliberately textual -- a page is a plain module no type-checker
  * reads, and the mistake is a missing argument, which is exactly what a type
  * cannot catch here (the parameter is optional by design, for the common page
  * that has one client).
@@ -56,8 +56,8 @@ test("a page reading /bus_stream.reply registers as an observer", async () => {
             const call = source.slice(start, end + 1);
             // A listener that never mentions the stream is reading its own
             // client's replies and is right without a peer. One that does
-            // mention it has a decision to make — the stream belongs to
-            // whoever subscribed — so it states which client it means, either
+            // mention it has a decision to make -- the stream belongs to
+            // whoever subscribed -- so it states which client it means, either
             // way. Declared rather than forbidden: a page watching its own
             // subscription is legitimate, and `DEFAULT_PEER` says it meant to.
             if (!call.includes("/bus_stream.reply")) continue;

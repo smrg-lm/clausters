@@ -20,7 +20,7 @@ impl OscServer {
         }
     }
 
-    /// Bundles with the "immediately" timetag (or a past one — scsynth also
+    /// Bundles with the "immediately" timetag (or a past one -- scsynth also
     /// runs late bundles right away) execute now; future timetags are
     /// converted to a sample target and shipped to the engine's scheduler,
     /// which fires them sample-accurately.
@@ -48,7 +48,7 @@ impl OscServer {
     }
 
     /// Builds every message of a timed bundle into engine commands (synths
-    /// boxed, names resolved — all the allocating work happens now) and
+    /// boxed, names resolved -- all the allocating work happens now) and
     /// sends them as one atomic [`Cmd::Schedule`].
     fn schedule_bundle(&mut self, bundle: OscBundle, delta: f64, from: ClientId) {
         let counter = self.handle.current_samples();
@@ -110,13 +110,13 @@ impl OscServer {
         Flow::Continue
     }
 
-    /// `/sched_at <int64 target> <blob packet>` — a timed bundle whose time
+    /// `/sched_at <int64 target> <blob packet>` -- a timed bundle whose time
     /// is an absolute position on the **sample clock** instead of an NTP
     /// timetag (the OSC timetag format is NTP by spec, so sample targets get
     /// a container message rather than a reinterpreted tag; both front-ends
     /// feed the same engine queue and coexist freely). The blob is a complete
     /// OSC packet; all its leaf messages execute atomically at the target
-    /// sample — nested bundle timetags inside the blob are **ignored**, one
+    /// sample -- nested bundle timetags inside the blob are **ignored**, one
     /// `/sched_at` is one instant. Past targets run at the start of the next
     /// block, like late NTP bundles.
     fn handle_sched_at(&mut self, msg: &OscMessage, from: ClientId) {
@@ -195,7 +195,7 @@ impl OscServer {
     /// With no argument it is the panic button it always was: both queues, the
     /// device one and the transport one. With `"transport"` it drops the
     /// **transport queue alone**, which is what a client re-cueing a plan after
-    /// a locate asks for — the transport clock does not jump, so bundles queued
+    /// a locate asks for -- the transport clock does not jump, so bundles queued
     /// for the position left behind would sound at it, and clearing everything
     /// would take every other client's score with them.
     fn handle_sched_clear(&mut self, msg: &OscMessage, from: ClientId) {
@@ -215,14 +215,14 @@ impl OscServer {
         self.reply(from, "/done", vec![OscType::String(ADDR.into())]);
     }
 
-    /// `/sched_atTransport <int64 target> <blob packet>` — like
+    /// `/sched_atTransport <int64 target> <blob packet>` -- like
     /// [`Self::handle_sched_at`], but the target is a position on the
     /// **transport** clock rather than the device one.
     ///
     /// A client naming an absolute sample has to pick an axis before the server
     /// classifies the packet, and in the ordinary case it can: classification
     /// derives from the destination, which the client chose. So the value of
-    /// declaring the axis is not disambiguation — it is **verification**. The
+    /// declaring the axis is not disambiguation -- it is **verification**. The
     /// server compares the declaration against its own classification and fails
     /// when they disagree, instead of playing the bundle in the wrong place,
     /// which is what a silently mismatched axis would do.
@@ -696,7 +696,7 @@ mod tests {
     /// wrong place is not a style problem: the command becomes **unreachable**,
     /// answering `unknown command` while sitting right there in the list. A
     /// misfiled `/buffer_gain` is what this test was written for, and nothing
-    /// else would have caught it — the row exists, the handler compiles, and
+    /// else would have caught it -- the row exists, the handler compiles, and
     /// only the lookup fails.
     #[test]
     fn the_command_table_is_sorted() {

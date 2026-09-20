@@ -1,7 +1,7 @@
 //! A read-only memory map of a local file: the bulk-data path that bypasses OSC.
 //!
-//! The crate's bulk-data rule — large payloads move between processes through
-//! **local shared resources**, not the network — needs the host to read a
+//! The crate's bulk-data rule -- large payloads move between processes through
+//! **local shared resources**, not the network -- needs the host to read a
 //! multi-megabyte
 //! buffer (or its prebuilt peak cache) that a client wrote, or the audio server
 //! exported, without it crossing a UDP datagram or being re-sent per frame. A
@@ -91,7 +91,7 @@ impl MappedFile {
     }
 
     /// The mapped bytes as little-endian `f32`s, de-interleaved into **all**
-    /// `channels` channels (a trailing partial frame is ignored) — the
+    /// `channels` channels (a trailing partial frame is ignored) -- the
     /// multichannel read the editor-grade views build their rows from.
     pub fn channels_f32(&self, channels: usize) -> Vec<Vec<f32>> {
         let channels = channels.max(1);

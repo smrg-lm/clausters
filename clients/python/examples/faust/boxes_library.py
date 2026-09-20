@@ -10,8 +10,8 @@ Runs from the *installed* package, offline, like ``buffers/offline_render.py``::
 ``clausters.defs.boxes`` reuses the Faust libraries **without transcribing
 them**: ``box.faust(...)`` compiles any Faust expression into a ``Box`` that
 composes like a primitive. This example builds an instrument out of three
-library pieces — an oscillator (``os.osc``), a lowpass (``fi.lowpass``) and a
-stereo reverb (``re.stereo_freeverb``) — wired to sliders and arithmetic
+library pieces -- an oscillator (``os.osc``), a lowpass (``fi.lowpass``) and a
+stereo reverb (``re.stereo_freeverb``) -- wired to sliders and arithmetic
 built in Python, then renders a short phrase offline and writes a WAV.
 
 The two application stages at work, kept apart in the syntax:
@@ -37,7 +37,7 @@ from clausters.defs import boxes as box
 from clausters.defs import Synth
 
 #: Where a run leaves its file when no path is given: ``examples/out/``, the
-#: git-ignored directory every generator in this tree writes to — beside the
+#: git-ignored directory every generator in this tree writes to -- beside the
 #: examples rather than in whatever directory you ran from. Made here so that
 #: rendering is one call and not two.
 OUT = pathlib.Path(__file__).resolve().parents[1] / "out"
@@ -60,7 +60,7 @@ def soft_voice(name: str = "soft_voice") -> FaustDef:
     # an ordinary Box, so `* amp` composes arithmetic around it.
     # si.smoo is the library's one-pole smoother: it turns a slider's steps
     # into ramps, so `/node_set amp 0` below fades the voice out instead of
-    # cutting it off — a step to zero is a click, and this file is rendered to
+    # cutting it off -- a step to zero is a click, and this file is rendered to
     # be listened to.
     tone = box.faust("os.osc", ins=1, outs=1)(freq) * box.faust(
         "si.smoo", ins=1, outs=1)(amp)

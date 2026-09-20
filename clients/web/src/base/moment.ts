@@ -59,7 +59,7 @@ export class Moment {
     }
 
     /**
-     * Unix seconds — what an OSC timetag is made of. With no clock, or before
+     * Unix seconds -- what an OSC timetag is made of. With no clock, or before
      * the clock's first `start` placed its wall-clock origin, this is now plus
      * whatever the moment carries.
      */

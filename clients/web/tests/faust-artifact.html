@@ -45,7 +45,7 @@
           `struct ${json.size}`);
     } else {
       say(`PASS: libfaust ${lib.version()} compiled ${bytes.length} B against external ` +
-          `memory — struct ${json.size} B, ${json.inputs} in, ${json.outputs} out, ` +
+          `memory -- struct ${json.size} B, ${json.inputs} in, ${json.outputs} out, ` +
           `${exp.length} exports including compute and setParamValue`);
     }
   } catch (e) { say("FAIL: " + (e && e.message ? e.message : e)); }

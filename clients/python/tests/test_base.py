@@ -216,7 +216,7 @@ def test_a_tempo_change_leaves_the_beats_before_it_convertible():
     do: after the change, the beats **before** it still report the seconds they
     actually fell on.
 
-    The clock never asks — it only reads its own now — but a view of the structure
+    The clock never asks -- it only reads its own now -- but a view of the structure
     asks constantly, and a clock that extrapolated its current slope backwards
     would answer that beat 4 happened at a second it did not.
     """
@@ -238,7 +238,7 @@ def test_a_tempo_change_leaves_the_beats_before_it_convertible():
 
 def test_the_conversions_are_the_affine_ones_while_one_tempo_governs():
     """The map is an addition, not a replacement: with a single tempo it
-    computes the expression this clock always computed, term for term — not a
+    computes the expression this clock always computed, term for term -- not a
     close number."""
     _ffi_or_skip()
     from clausters import _native
@@ -408,7 +408,7 @@ def test_stop_holds_the_beat_and_start_resumes_it():
         clk.start()
         assert clk.beats() == pytest.approx(held, abs=0.1)
         # The wall-clock origin moved with it, so the held beat still maps to
-        # now — which is what keeps a bundle's timetag honest across a stop.
+        # now -- which is what keeps a bundle's timetag honest across a stop.
         assert clk.beats2secs(clk.beats()) == pytest.approx(
             time.time() - clk.start_time, abs=0.1
         )
@@ -491,7 +491,7 @@ if __name__ == "__main__":
             try:
                 fn()
                 print(f"ok   {name}")
-            except BaseException as e:  # noqa: BLE001 — smoke harness
+            except BaseException as e:  # noqa: BLE001 -- smoke harness
                 kind = type(e).__name__
                 skip = kind in ("Skipped", "OutcomeException")
                 print(f"{'skip' if skip else 'FAIL'} {name}: {e}")
@@ -501,7 +501,7 @@ if __name__ == "__main__":
 
 def test_the_score_interface_renders_and_reports_the_take():
     """The interface owns the score, so it owns the render: `Server.render`
-    only forwards to it. Rendering through it directly is the same contract —
+    only forwards to it. Rendering through it directly is the same contract --
     a `RenderStats`, carrying the seed the render drew. (That the seed replays
     a *noisy* take is test_render_verb's job; this scene has no noise in it.)"""
     _ffi_or_skip()

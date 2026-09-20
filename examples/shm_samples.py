@@ -12,14 +12,14 @@ then:
 What it shows: a pool buffer's **samples are a file a peer maps**, not a
 message it asks for. The buffer is allocated over the ring (allocation has
 semantics beyond the samples, so it stays a command), and from there every
-sample this script writes goes straight into the memory the engine reads —
+sample this script writes goes straight into the memory the engine reads --
 `/buffer_setRange` is never sent, and neither is `/buffer_get`. The audible
 part is the same buffer played twice: once as the tone written into the cells,
 then again after a hand-written fade-out that no command carried.
 
 The one line to hold on to: what a peer may write is **samples**, samples it
-already has. Every *operation* over samples — a gain, a fade, a reverse, a
-render — is the server's verb and is asked for over the ring, however easy
+already has. Every *operation* over samples -- a gain, a fade, a reverse, a
+render -- is the server's verb and is asked for over the ring, however easy
 mapped memory makes the other thing.
 """
 
@@ -72,7 +72,7 @@ def main():
         addr, _ = osc.decode(c.request(osc.message("/def_send", "synth", d.blob())))
         assert addr == "/done", addr
         c.send(osc.message("/synth_new", "shmplay", 4100, 1, 0))
-        print(f"playing the take ({SECONDS:.0f}s) — a plain tone")
+        print(f"playing the take ({SECONDS:.0f}s) -- a plain tone")
         time.sleep(SECONDS + 0.2)
         c.send(osc.message("/node_free", 4100))
 
@@ -95,7 +95,7 @@ def main():
     # leaves that reply in the ring for whoever attaches next.
     addr, _ = osc.decode(c.request(osc.message("/buffer_free", BUFNUM)))
     assert addr == "/done", addr
-    print("done — the server is still running (quit it with /server_quit or Ctrl-C).")
+    print("done -- the server is still running (quit it with /server_quit or Ctrl-C).")
     c.close()
 
 

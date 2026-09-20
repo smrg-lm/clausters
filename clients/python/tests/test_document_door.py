@@ -84,7 +84,7 @@ def test_a_domain_that_is_not_a_document_answers_here_too():
 # ---- the multitrack: a whole multitrack state across the seam ----
 
 def a_multitrack() -> dict:
-    """Two tracks, two lanes on the first, a region on each — the smallest
+    """Two tracks, two lanes on the first, a region on each -- the smallest
     multitrack a move between tracks has somewhere to move to."""
     vocals = Track(id=10, name="vocals", lanes=[Lane(id=11), Lane(id=12)])
     vocals.lanes[0].place(Region(id=100, position=0.0, length=4.0,

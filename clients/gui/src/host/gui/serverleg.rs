@@ -31,7 +31,7 @@ impl App {
         for (widget_id, bufnum, shape_only) in refs {
             // **Mapped samples need no conversation.** When the take is in a
             // region this host can open, its samples are read straight out of
-            // it — no `/buffer_query`, no chunked `/buffer_getRange`, no
+            // it -- no `/buffer_query`, no chunked `/buffer_getRange`, no
             // waiting. The fetch machine below stays exactly as it is for
             // everybody else: a remote server, a page, a host with no segment.
             #[cfg(unix)]
@@ -53,9 +53,9 @@ impl App {
     /// Places a take out of the mapped samples, returning whether it was
     /// there. The zero-message half of [`Self::start_buffer_fetches`].
     ///
-    /// **Nothing is read out.** The picture is built over the mapping itself —
+    /// **Nothing is read out.** The picture is built over the mapping itself --
     /// one [`crate::host::mapped::MappedChannel`] per channel, summarized
-    /// where it lies — so opening a ten-minute take allocates its pyramid and
+    /// where it lies -- so opening a ten-minute take allocates its pyramid and
     /// no copy of the samples. What the analysis path needs is the one
     /// exception, and it says so where it takes it.
     #[cfg(unix)]
@@ -270,7 +270,7 @@ impl App {
     }
 
     /// Without the `standalone` feature there is no embed link, so draining its
-    /// replies is nothing — kept so the event loop calls it unconditionally.
+    /// replies is nothing -- kept so the event loop calls it unconditionally.
     #[cfg(not(feature = "standalone"))]
     pub(super) fn drain_embed_replies(&mut self) {}
 
@@ -325,7 +325,7 @@ impl App {
             // **Somebody else wrote these samples.** A peer editing a shared
             // buffer stores into the cells and announces the span; the server
             // broadcasts it to everyone but the writer. A picture reading the
-            // mapping is already the new one — what it needs is to be told
+            // mapping is already the new one -- what it needs is to be told
             // which columns to re-summarize.
             "/buffer_touched" => {
                 if let [
@@ -341,7 +341,7 @@ impl App {
             }
             // **A recording this host cannot read, reported by the server.**
             // The overview of the frames that appeared, for a view holding its
-            // own copy of the samples — the wire's answer to the frontier a
+            // own copy of the samples -- the wire's answer to the frontier a
             // mapping reads for free.
             "/buffer_stream.reply" => {
                 if let Some((bufnum, start, bucket, stats)) = crate::host::stream_report(&msg.args)
@@ -462,7 +462,7 @@ impl App {
     }
 
     /// A buffer finished downloading (interleaved, every channel kept): look
-    /// up each waiting widget and build its view — a multichannel waveform, or
+    /// up each waiting widget and build its view -- a multichannel waveform, or
     /// one STFT lane per channel for a spectrogram. The buffer's `/buffer_query.reply`
     /// sample rate also fills a widget's unknown `sample_rate`, so its ruler
     /// and readout label real time.
@@ -482,7 +482,7 @@ impl App {
         );
         for want in wants {
             // The fetch was keyed by a widget id, and for a clip that is the
-            // *clip's* — a body carries none — so the reply resolves to the
+            // *clip's* -- a body carries none -- so the reply resolves to the
             // element that wanted the samples rather than to the container.
             // What is copied out is the **declaration**, never the widget: a
             // slot says where the data goes, and its parameters say what has to
@@ -554,7 +554,7 @@ impl App {
                             channels,
                         };
                         // A clip addressed the fetch for its body, so the
-                        // door looks one level in for itself — and the buffer
+                        // door looks one level in for itself -- and the buffer
                         // number goes with it, for the element that asked for
                         // several and has to put each where it belongs.
                         w.take_bulk_of(bufnum, raw);
@@ -570,7 +570,7 @@ impl App {
     /// **The span a view had zoomed past its summary into**, landed: the
     /// samples go under that view's overview as a window, and it draws them.
     ///
-    /// The slot lets the samples go first, as every other write here does —
+    /// The slot lets the samples go first, as every other write here does --
     /// the element is then the sole owner and the window costs the run rather
     /// than a copy of the summary.
     fn place_window(
@@ -707,8 +707,8 @@ impl App {
     /// summary of that length, and the summary is filled rather than the
     /// samples downloaded.
     ///
-    /// The picture is the whole of the box the take fills — so the axis does
-    /// not move while it fills — and what fills it comes from one of two
+    /// The picture is the whole of the box the take fills -- so the axis does
+    /// not move while it fills -- and what fills it comes from one of two
     /// places, which is what `ask_summary` says: a take being **written** has
     /// its overview pushed as it appears (`/buffer_stream`), and one standing
     /// still is asked for it (`/buffer_peaks`). Either way the samples stay
@@ -825,7 +825,7 @@ impl App {
     /// hold their own copy of the samples.
     ///
     /// The other half of [`Self::resummarize`], and the one a mapped host
-    /// never reaches: with no segment to open — a remote server, a page —
+    /// never reaches: with no segment to open -- a remote server, a page --
     /// the samples this host draws are a download, so an edit somebody else
     /// made is not in them and no summary over them can find it. What the
     /// announcement gives is where to look, and this asks for exactly that
@@ -841,7 +841,7 @@ impl App {
                 .and_then(|tree| crate::host::span_to_read_back(tree, bufnum))
         }) else {
             // **The announcement is the second ask.** Nothing here has a
-            // picture of this buffer with a shape to put a span into — which is
+            // picture of this buffer with a shape to put a span into -- which is
             // what a join looks like a moment after the edit that minted it:
             // its box named the buffer in the turn the stitch was sent, the
             // first ask answered with no frames at all, and a take remembered
@@ -872,7 +872,7 @@ impl App {
         let mut redraw = Vec::new();
         for def_id in self.host.window_def_ids() {
             // A pyramid a slot is holding cannot be written in place, so the
-            // samples go first — the same order a streamed report takes, and
+            // samples go first -- the same order a streamed report takes, and
             // for the same reason. **Only the slots drawing this buffer**: a
             // slot released and not refilled draws nothing, so releasing every
             // one of them blanks every other take in the window.
@@ -904,7 +904,7 @@ impl App {
         }
     }
 
-    /// The widgets of `def_id` drawing server buffer `bufnum` — whose GPU
+    /// The widgets of `def_id` drawing server buffer `bufnum` -- whose GPU
     /// slots a write to that buffer has to release before the element rewrites
     /// the pyramid they share.
     fn widgets_drawing(&self, def_id: i32, bufnum: i32) -> Vec<i32> {
@@ -973,7 +973,7 @@ impl App {
         }
     }
 
-    /// Whether this window draws samples that is **still being written** —
+    /// Whether this window draws samples that is **still being written** --
     /// a frontier that has moved and has not reached the end of the buffer.
     ///
     /// It is the wake condition for a recording, and it is deliberately narrow
@@ -1014,7 +1014,7 @@ impl App {
     ///
     /// This is the half of a live picture that a mapping cannot give by
     /// itself. The samples are already the engine's own cells, so a zoomed-in
-    /// view is current with nothing done at all — but the *overview* is a
+    /// view is current with nothing done at all -- but the *overview* is a
     /// summary of what was there when it was taken, and nothing announces an
     /// engine write (a `RecordBuf` filling a take says nothing on the wire,
     /// correctly). What the writer does publish is how far it has got, and
@@ -1022,7 +1022,7 @@ impl App {
     ///
     /// Called on the frame tick. Costs one relaxed load per drawn buffer while
     /// nothing is recording, and the summary of the new frames when something
-    /// is — never the take.
+    /// is -- never the take.
     #[cfg(unix)]
     pub(super) fn follow_recordings(&mut self) -> Vec<i32> {
         let Some(samples) = self.host.shared_buffers() else {
@@ -1037,7 +1037,7 @@ impl App {
             };
             for w in tree.descendants() {
                 // A body carries no id of its own, so what is followed is the
-                // widget that does — the same addressing every other samples
+                // widget that does -- the same addressing every other samples
                 // path here uses.
                 let (Some(id), Some(el)) = (w.id, w.kind.as_samples()) else {
                     continue;
@@ -1061,9 +1061,9 @@ impl App {
         for (def_id, widget_id, drawn, frontier) in moved {
             self.frontiers.insert((def_id, widget_id), frontier);
             // **The slot gives the samples back before the element writes to
-            // it.** A pyramid a slot is holding cannot be written in place —
+            // it.** A pyramid a slot is holding cannot be written in place --
             // the element would be patching a picture under a renderer that
-            // never asked — so the refresh below would have to copy it first,
+            // never asked -- so the refresh below would have to copy it first,
             // and that copy is the size of the whole take rather than of the
             // block that just arrived. Letting go is a refcount, the write is
             // then the block's own cost, and the slot is refilled before the
@@ -1086,7 +1086,7 @@ impl App {
                 continue;
             };
             // **Every channel in one refresh.** The frontier is the buffer's,
-            // not a channel's, so they all advance together — and a refresh
+            // not a channel's, so they all advance together -- and a refresh
             // per channel would copy the whole view's summary once per
             // channel, which is the quadratic shape this had first.
             // **How far it is written is a fact the element is told**, beside
@@ -1104,7 +1104,7 @@ impl App {
         redraw
     }
 
-    /// Off Unix there is no mapped samples to follow — the picture arrives by
+    /// Off Unix there is no mapped samples to follow -- the picture arrives by
     /// message there, and so does the news that it changed.
     #[cfg(not(unix))]
     pub(super) fn follow_recordings(&mut self) -> Vec<i32> {

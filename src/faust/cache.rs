@@ -1,5 +1,5 @@
 //! Bitcode cache layer over the libfaust factory (the "A" layer of def
-//! persistence — see [`crate::server::defstore`]).
+//! persistence -- see [`crate::server::defstore`]).
 //!
 //! A compiled factory is opaque LLVM JIT state and cannot be serialized, but
 //! libfaust can write/read its **bitcode** (target-independent LLVM IR,
@@ -147,7 +147,7 @@ fn clear_bitcode(dir: &Path, name: &str) {
     }
 }
 
-/// Persists a freshly compiled def: writes the bitcode (best-effort — a
+/// Persists a freshly compiled def: writes the bitcode (best-effort -- a
 /// failure just disables the speed cache for this def) and then the
 /// authoritative JSON record. Both atomic.
 pub fn persist(factory: &FaustFactory, name: &str, payload: &CompilePayload, dir: &Path) {

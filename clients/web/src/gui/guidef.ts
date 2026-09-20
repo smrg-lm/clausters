@@ -2,14 +2,14 @@
 //
 // A GuiDef is the GUI analogue of a `SynthDef`/`GraphDef`: a tree of
 // `{id, type, ...props, children}` nodes serialized to JSON and carried inside
-// one OSC argument. These helpers compose that tree as plain objects — they
+// one OSC argument. These helpers compose that tree as plain objects -- they
 // are **host-agnostic**, just as building a `SynthDef` is server-agnostic;
 // only `GuiHost` knows how to send one. The root node carries no `id` (it
 // comes from the `/gui_def <id>` argument); every child carries its own.
 //
 // **The option names are this language's, the props are the wire's.** Each
 // builder takes camelCase options (`textSize`, `baseBucket`, `selStart`) and
-// writes the host's snake_case props — the same split the def builders keep,
+// writes the host's snake_case props -- the same split the def builders keep,
 // so the JSON is identical to the Python client's while the surface reads as
 // TypeScript. A prop this client does not know yet (a newer host's) can be
 // passed straight through under its wire name.
@@ -19,7 +19,7 @@
 // one, writing it into your object in place; or pass small ints yourself (the
 // allocator starts at 1000, so hand-picked ids below that never collide).
 // Better still, pass `name: "cutoff"` to any builder and address the widget by
-// that name through the window handle — the name is **client-only** and is
+// that name through the window handle -- the name is **client-only** and is
 // stripped from the JSON by `toJson`.
 //
 // **Numbers.** JSON from JavaScript has one number type, so `480` and `480.0`
@@ -55,7 +55,7 @@ export interface GuiNode {
 
 /**
  * Inline `data` ceiling: at most this many floats ride the GuiDef JSON.
- * Anything longer travels as a **blob** beside it — the bulk path, where the
+ * Anything longer travels as a **blob** beside it -- the bulk path, where the
  * samples are bytes rather than JSON numbers. The same number the Python
  * client uses, so a source of the same length makes the same decision in both.
  */
@@ -73,7 +73,7 @@ export const SOURCE_PROPS = ["data", "blob", "path", "cache", "buffer"] as const
  * redraw says in place of re-sending them.
  *
  * A `/gui_def` names every widget in the subtree it redraws, and a clip's
- * samples are the largest payload in the system — so a lane redrawn because one
+ * samples are the largest payload in the system -- so a lane redrawn because one
  * clip moved would carry every other clip's audio with it. `data: KEEP` names
  * that audio instead: the widget is described in full, its bulk is not, and the
  * host carries the run it is already holding onto the widget that kept its
@@ -90,7 +90,7 @@ export const SOURCE_PROPS = ["data", "blob", "path", "cache", "buffer"] as const
 export const KEEP = "keep";
 
 /**
- * The **structure** prop names a {@link Source} may stand in for — the heavy
+ * The **structure** prop names a {@link Source} may stand in for -- the heavy
  * props that carry a payload rather than a scalar and are not samples. Each
  * rides in the prop it is named by, so unlike the sample carriers there is
  * nothing to choose: what the source adds is that the payload stays
@@ -105,19 +105,19 @@ export const STRUCTURE_PROPS = [
 export type Carrier = (typeof SOURCE_PROPS)[number] | (typeof STRUCTURE_PROPS)[number];
 
 /**
- * The payload a view draws, as something you hold — and can change.
+ * The payload a view draws, as something you hold -- and can change.
  *
  * A widget's heavy props are the ones that carry a **payload rather than a
  * scalar**, and there are two families of them. The samples of a signal view,
- * which the wire spells several ways — `data` (a small array inline in the
+ * which the wire spells several ways -- `data` (a small array inline in the
  * JSON), `blob` (an index into the message's trailing binary arguments), `path`
  * (a mapped raw-f32 file, native hosts only), `cache` (a prebuilt peak
- * pyramid), `buffer` (a server buffer number) — where which one is right is a
+ * pyramid), `buffer` (a server buffer number) -- where which one is right is a
  * question about **size and where the samples already are**, not about what is
  * being drawn, and `blob: 0` in particular is a correspondence kept by hand
  * between the widget and the `open` call that had better pass that blob first.
  * And the **structures**: a curve's `points`, a roll's `notes` and `osc`, a
- * patcher's `boxes` and `cords`, a score's `displayList` — each of which rides
+ * patcher's `boxes` and `cords`, a score's `displayList` -- each of which rides
  * in its own prop and has exactly one way to travel.
  *
  * A `Source` answers it and stays addressable:
@@ -136,7 +136,7 @@ export type Carrier = (typeof SOURCE_PROPS)[number] | (typeof STRUCTURE_PROPS)[n
  *
  * It is the same relation a `control` has with a knob: the entry point named
  * once, and referred to instead of copied. One source in two views is **one
- * payload and two references**, which is what makes the blobs interchangeable —
+ * payload and two references**, which is what makes the blobs interchangeable --
  * said by the program rather than by convention, and the index assigned for
  * you.
  *
@@ -156,7 +156,7 @@ export class Source {
     readonly #structure: boolean;
     readonly #fixed: Props;
     /**
-     * `{node, prop}` for every node this source was placed in — the definitions
+     * `{node, prop}` for every node this source was placed in -- the definitions
      * it feeds, rewritten by `set` so a later `open` sends what it holds now.
      */
     readonly #bound: { node: GuiNode; prop: string }[] = [];
@@ -251,7 +251,7 @@ export class Source {
     }
 
     /**
-     * The wire props this source expands to — what a builder puts into the node
+     * The wire props this source expands to -- what a builder puts into the node
      * in place of the prop it was passed as. A `blob` source expands to its
      * fixed props only: the index is the position its bytes take in the
      * `/gui_def` message, which `GuiHost.open` assigns. A structure is
@@ -266,7 +266,7 @@ export class Source {
 
     /**
      * The node keys this source's expansion occupies, so a rewrite clears
-     * exactly what the last one wrote — the five carriers for samples (they are
+     * exactly what the last one wrote -- the five carriers for samples (they are
      * one slot spelled five ways), the prop's own keys for a structure.
      */
     slots(): readonly string[] {
@@ -295,7 +295,7 @@ export class Source {
      * Point this source at another payload: the **definitions** that hold it
      * are rewritten, and every widget already drawing it is told to redraw.
      *
-     * A view open twice is updated twice — the payload belongs to the
+     * A view open twice is updated twice -- the payload belongs to the
      * definition, so both instances follow; the per-instance door stays
      * `win.widget("wave").set(...)`.
      *
@@ -303,7 +303,7 @@ export class Source {
      * would have normalized it, and rides out through the `/gui_set` door its
      * prop already has (a flat list as the JSON string a scalar-only wire
      * needs, an engraved page as the whole `display_list`). Of the sample
-     * carriers only the two that **hold** the samples take it — the inline
+     * carriers only the two that **hold** the samples take it -- the inline
      * `data` and the `blob` a long payload spills to, which are this platform's
      * pair for the reference client's `data` and `path`. The carrier is fixed
      * when the source is made, there and here: a widget on screen was built
@@ -323,7 +323,7 @@ export class Source {
         const samples = payload as ArrayLike<number> | Iterable<number>;
         if (this.#carrier !== "data" && this.#carrier !== "blob") {
             throw new TypeError(
-                `this source names a ${this.#carrier}, which it does not own — ` +
+                `this source names a ${this.#carrier}, which it does not own -- ` +
                     "change the samples where they live and call reload()",
             );
         }
@@ -333,7 +333,7 @@ export class Source {
                 `${values.length} samples do not fit the inline carrier this ` +
                     `source was made with (at most ${INLINE_MAX}). A source's ` +
                     "carrier is fixed when it is made, because a widget on screen " +
-                    "was built around it — make this one from a long array, so it " +
+                    "was built around it -- make this one from a long array, so it " +
                     "spills from the start",
             );
         }
@@ -350,7 +350,7 @@ export class Source {
     }
 
     /**
-     * Tell every widget drawing this source to read it again — the samples are
+     * Tell every widget drawing this source to read it again -- the samples are
      * where they were and they moved (a server buffer recorded into, a cache
      * rebuilt, a file rewritten from outside).
      */
@@ -358,7 +358,7 @@ export class Source {
         if (this.#structure) {
             throw new TypeError(
                 `a ${this.#carrier} source holds its own payload, so there is ` +
-                    "nowhere for it to have moved — call set() with the structure " +
+                    "nowhere for it to have moved -- call set() with the structure " +
                     "it should draw now",
             );
         }
@@ -375,7 +375,7 @@ export class Source {
     private liveProps(): Record<string, PropValue> {
         if (this.#carrier === "display_list") {
             // `props()` is already the drawing layers, which is exactly what a
-            // live page replaces — the client-side keys of a display list (its
+            // live page replaces -- the client-side keys of a display list (its
             // `notes`) never ride the wire, here or in a definition.
             return { display_list: this.props() } as Record<string, PropValue>;
         }
@@ -412,7 +412,7 @@ export interface SourceInput {
 }
 
 /**
- * The payload a view draws, as a {@link Source} — held, referred to, and
+ * The payload a view draws, as a {@link Source} -- held, referred to, and
  * changed in place of being copied into a prop.
  *
  * For **samples**, give it an iterable of floats, or name samples that already
@@ -442,7 +442,7 @@ export function source(
 
 /**
  * Put `props` into `node` in place of the keys the source it belongs to
- * occupies — its {@link Source.slots}, not every key a source could ever
+ * occupies -- its {@link Source.slots}, not every key a source could ever
  * write, so one heavy prop's source never clears another's.
  */
 function rewriteSource(node: GuiNode, props: Props, slots: readonly string[]): void {
@@ -454,12 +454,12 @@ function rewriteSource(node: GuiNode, props: Props, slots: readonly string[]): v
 const SCOPES = new Set(["window"]);
 
 /**
- * One node of a GuiDef tree, as the thing a program composes and then opens —
+ * One node of a GuiDef tree, as the thing a program composes and then opens --
  * the GUI's counterpart of a `SynthDef`.
  *
  * Built by the builders in this module, never directly: `knob(...)`,
  * `layout(a, b)` and `view(...)` all return one. Composition is nesting, and
- * the object *is* the document — its own properties are what
+ * the object *is* the document -- its own properties are what
  * `JSON.stringify` writes, so nothing on the wire changes:
  *
  * ```ts
@@ -483,7 +483,7 @@ export class View implements GuiNode {
 
     /**
      * `name -> node` for this view's own scope, built once at construction
-     * from the children's already-built scopes — so composing a tree costs one
+     * from the children's already-built scopes -- so composing a tree costs one
      * pass over each node, not one per lookup.
      */
     readonly #scope: Map<string, GuiNode>;
@@ -497,7 +497,7 @@ export class View implements GuiNode {
 
     /**
      * The {@link Source} objects feeding this node's props, so opening it can
-     * tell each which live widget draws it — and, for a blob source, where its
+     * tell each which live widget draws it -- and, for a blob source, where its
      * bytes went in the message. Client-side only.
      */
     readonly #sources: { prop: string; source: Source }[] = [];
@@ -513,7 +513,7 @@ export class View implements GuiNode {
      * the descent at a nested view (which is registered by its own name and
      * keeps the names inside it).
      *
-     * The node's *own* name is not in its scope — a view is not found inside
+     * The node's *own* name is not in its scope -- a view is not found inside
      * itself; it is found in the scope of whatever contains it. A child built
      * as a `View` already has its scope, so a tree costs one pass per node.
      */
@@ -534,7 +534,7 @@ export class View implements GuiNode {
     static #claim(scope: Map<string, GuiNode>, name: string, node: GuiNode): void {
         if (scope.has(name)) {
             throw new Error(
-                `duplicate widget name "${name}" in one view — a name is how this ` +
+                `duplicate widget name "${name}" in one view -- a name is how this ` +
                     "client addresses a widget, so two widgets cannot share one. " +
                     "Rename one, or put them in nested views, which scope their names.",
             );
@@ -553,7 +553,7 @@ export class View implements GuiNode {
     /**
      * The named widget in this view's scope.
      *
-     * Throws if nothing carries that name here — including when the name is
+     * Throws if nothing carries that name here -- including when the name is
      * inside a nested view, which is a scope of its own:
      * `v.find("osc1").find("freq")`.
      */
@@ -598,20 +598,20 @@ export class View implements GuiNode {
      *
      * The resource is the subject: `view(...).open()` rather than
      * `host.open(view(...))`. `host` follows the ambient rule every other
-     * visual verb follows (`plot`, `scope`) — the one registered with
+     * visual verb follows (`plot`, `scope`) -- the one registered with
      * `setAmbientHost`, else the current or default session's host when one is
      * up, else a host the ambient layer opens on this page and owns.
      *
      * `element` is where a page draws it: the view takes that element's box,
      * and the canvas inside it is made for you. It is the browser's own
-     * argument — the Python client's `View.open` has no counterpart for it,
-     * because a script gets an OS window — and a host reached over a socket
+     * argument -- the Python client's `View.open` has no counterpart for it,
+     * because a script gets an OS window -- and a host reached over a socket
      * refuses one for the same reason. A page that names none gets a canvas of
      * its own, appended to the document: *a view with no element is a canvas*,
      * which is how a page finishes *a view with no parent is a window*.
      *
      * It is `async` because the page's host boots asynchronously (the core
-     * wasm, the GPU device) — the one difference from the Python client's
+     * wasm, the GPU device) -- the one difference from the Python client's
      * `View.open`, which has a process to talk to and nothing to await.
      */
     async open(
@@ -638,7 +638,7 @@ export interface WidgetOptions {
     /** The widget's id; omitted, `GuiHost.open`/`define` assigns one. */
     id?: number;
     /**
-     * A client-only handle name — `win.widget("cutoff")` — stripped from the
+     * A client-only handle name -- `win.widget("cutoff")` -- stripped from the
      * JSON.
      */
     name?: string;
@@ -654,7 +654,7 @@ export interface WidgetOptions {
      *
      * The main axis resolves in one order: a fixed `w`/`h`, else an explicit
      * `weight`, else the widget's **natural size** (how big that kind of
-     * widget wants to be — a control knows, a view does not), else a share of
+     * widget wants to be -- a control knows, a view does not), else a share of
      * the leftover at weight 1. The cross axis always fills. A natural size
      * follows the host's sizing table, never the widget's data.
      */
@@ -677,14 +677,14 @@ export interface WidgetOptions {
      * at `0.5` inside a panel at `0.5` draws at `0.25`. A negative number
      * clears it.
      *
-     * It fades the flat drawing — the chrome, the controls and the text. A
+     * It fades the flat drawing -- the chrome, the controls and the text. A
      * heavy view's picture (a waveform's trace, a spectrogram's texture, a
      * `canvas` shader) is drawn by its own pipeline and keeps its own opacity.
      */
     opacity?: number;
     /**
      * The corner radius of the boxes this widget draws, in logical pixels.
-     * Unlike `opacity` it applies to this widget alone — a rounded panel says
+     * Unlike `opacity` it applies to this widget alone -- a rounded panel says
      * nothing about the controls in it. Each box clamps it to half its shorter
      * side, so the widget's own frame rounds while the hairlines inside it (a
      * divider, a tick, a track edge) keep their shape. A negative number
@@ -694,7 +694,7 @@ export interface WidgetOptions {
     /**
      * A **container's** gesture table: what a drag on it does, by modifier
      * modifier (`drag` for the plain drag, `shift`, `ctrl`, `alt`), each value an
-     * ordered plan of steps — `element` (hand the press to whatever is under
+     * ordered plan of steps -- `element` (hand the press to whatever is under
      * the cursor: a clip, a note, a box; it may decline), `pan`, `select`,
      * `locate`, `none`.
      *
@@ -728,7 +728,7 @@ export interface ContainerOptions extends WidgetOptions {
     cols?: number;
     /**
      * A partial color-role table (`{"role": "#rrggbb[aa]"}`) overlaying the
-     * parent's theme for the whole subtree — a **theme group**, recursive by
+     * parent's theme for the whole subtree -- a **theme group**, recursive by
      * construction. An empty table clears it.
      */
     theme?: Record<string, string>;
@@ -745,7 +745,7 @@ export interface TimelineOptions extends WidgetOptions {
     /**
      * **The labelled points on the time axis**: `[time, label, color]` triples
      * (label and colour optional), drawn as an **arrow into the ruler's
-     * ticks** — never a line down the picture, which is what a playhead and a
+     * ticks** -- never a line down the picture, which is what a playhead and a
      * selection band are. **Ctrl+click** on the ruler adds one, numbered, or
      * removes the one under the pointer, and a **click** on one puts the
      * transport at the exact time it was placed at rather than at the pixel
@@ -771,7 +771,7 @@ export interface TimelineOptions extends WidgetOptions {
      * A map of one segment says exactly what `tempo` says, so pass one only
      * where the tempo moves.
      *
-     * Takes the map itself or the JSON its `dump` writes — a script holds one
+     * Takes the map itself or the JSON its `dump` writes -- a script holds one
      * and a stored def the other, and every structural prop travels as a
      * string since OSC carries no arrays.
      */
@@ -788,8 +788,8 @@ export interface TimelineOptions extends WidgetOptions {
     selLen?: number;
     /**
      * The selection's **second axis**: the band of values it is restricted to,
-     * in the view's own domain (`min`/`max`), or an empty/inverted pair — the
-     * default — for no restriction. A sweep with height sets them and reports
+     * in the view's own domain (`min`/`max`), or an empty/inverted pair -- the
+     * default -- for no restriction. A sweep with height sets them and reports
      * them as two further arguments of the `"selection"` event; a sweep along
      * one height leaves them alone and reports the two numbers it always did.
      */
@@ -799,7 +799,7 @@ export interface TimelineOptions extends WidgetOptions {
      * **The position cursor** (negative = none): where a playback starts and
      * where a paste lands, in the axis' own units.
      *
-     * The other line, and the one a hand *places* — by a click that landed on
+     * The other line, and the one a hand *places* -- by a click that landed on
      * **nothing**: the time ruler, the slack between boxes, a grid nothing is
      * drawn on. A click *on* something is that thing's and moves no line.
      * Neither playhead prop is it: those two are one
@@ -810,7 +810,7 @@ export interface TimelineOptions extends WidgetOptions {
      */
     cursor?: number;
     /**
-     * The engine sample-clock value at timeline position 0 — the playhead
+     * The engine sample-clock value at timeline position 0 -- the playhead
      * sweeps on its own from there (negative = none).
      */
     playheadAt?: number;
@@ -823,7 +823,7 @@ export interface TimelineOptions extends WidgetOptions {
     /**
      * The sweep's **loop region**, in the same sample units as `playhead`:
      * with a positive length the swept line wraps inside it instead of running
-     * straight past, which is what a looping playback does — so a looped
+     * straight past, which is what a looping playback does -- so a looped
      * region is followed on the same one anchor, still with no message per
      * frame. A non-positive length is the straight pass.
      */
@@ -841,13 +841,13 @@ export interface TimelineOptions extends WidgetOptions {
      * Whether this view's window **follows its content**. The default (`true`,
      * and what every view did before there was a switch) refits a window that
      * was showing the whole timeline when the content changes, so a view that
-     * grows goes on showing all of it — right for a monitor.
+     * grows goes on showing all of it -- right for a monitor.
      *
      * `false` says the window is the **reader's**: the extent is still
      * registered, so the axis knows how far it can go, and nothing moves it.
      * That is what an editor wants, because there the content change is mostly
-     * the reader's own edit — undoing a trim, splitting a clip, dragging one
-     * onto another lane — and an edit that re-frames the view is the window
+     * the reader's own edit -- undoing a trim, splitting a clip, dragging one
+     * onto another lane -- and an edit that re-frames the view is the window
      * starting over under the hand that made it. It is the axis' own property,
      * so **one view asking to be left alone leaves the whole navigation group
      * alone**.
@@ -855,7 +855,7 @@ export interface TimelineOptions extends WidgetOptions {
     autofit?: boolean;
     /**
      * The axis pair written the long way, for a property this client does not
-     * name flat yet — `{ x: { unit: "beats", tempo: 2.0 }, y: { bit_depth: 16 } }`.
+     * name flat yet -- `{ x: { unit: "beats", tempo: 2.0 }, y: { bit_depth: 16 } }`.
      * Merged over the flat options per axis, so what it names wins.
      */
     axes?: AxisPair;
@@ -868,7 +868,7 @@ export interface SourceOptions extends WidgetOptions {
     // written the long way can adopt a source without moving the option.
     /**
      * A prebuilt peak-pyramid file (fetched in the browser); the most compact
-     * bulk path — the raw samples are never loaded.
+     * bulk path -- the raw samples are never loaded.
      */
     cache?: string | Source;
     /** A file of raw little-endian `f32` samples the host maps (fetches). */
@@ -876,7 +876,7 @@ export interface SourceOptions extends WidgetOptions {
     /** A server buffer number, pulled over the host's client leg. */
     buffer?: number | Source;
     /**
-     * A short signal inline in the JSON, or {@link KEEP} — the run the host is
+     * A short signal inline in the JSON, or {@link KEEP} -- the run the host is
      * already drawing, named rather than re-sent.
      */
     data?: readonly number[] | Source | typeof KEEP;
@@ -894,7 +894,7 @@ export interface SourceOptions extends WidgetOptions {
 
 /**
  * A props object under wire names, with the options that were left out
- * dropped — the shape every builder assembles.
+ * dropped -- the shape every builder assembles.
  */
 export type Props = Record<string, unknown>;
 
@@ -934,7 +934,7 @@ const PLOT_VIEW: Record<string, string> = { signal: "trace", spectrum: "spectrum
 /**
  * The axis pair a two-axis container's chrome belongs to, written the long
  * way. Every builder that takes the chrome flat also takes this, and what is
- * named here **wins** over the flat option describing the same property — the
+ * named here **wins** over the flat option describing the same property -- the
  * flat keywords are the shorthand, this is the pair itself.
  */
 export interface AxisPair {
@@ -965,14 +965,14 @@ function axes(x: Props, y: Props, given?: AxisPair): Props {
 
 /**
  * The children of a container, as a plain array (or absent when there are
- * none — an empty `children` key would be noise on the wire).
+ * none -- an empty `children` key would be noise on the wire).
  */
 function kids(children: readonly GuiNode[] | undefined): GuiNode[] | undefined {
     return children && children.length > 0 ? [...children] : undefined;
 }
 
 /**
- * A generic widget node `{id?, type, ...props, children?}` — the building
+ * A generic widget node `{id?, type, ...props, children?}` -- the building
  * block every other builder wraps, and the escape hatch for a widget type
  * this client does not name yet. Everything but `id`/`name`/`children` is a
  * property, kept verbatim under the key you write.
@@ -995,7 +995,7 @@ export function node(
             throw new TypeError(
                 `${type}: a source names a view's payload, so it goes in a prop ` +
                     `that is one of ${[...SOURCE_PROPS, ...STRUCTURE_PROPS].join(", ")}` +
-                    ` — not "${key}"`,
+                    ` -- not "${key}"`,
             );
         }
     }
@@ -1003,7 +1003,7 @@ export function node(
     if (id !== undefined) {
         if (!Number.isInteger(id)) {
             throw new TypeError(
-                `widget id must be an integer, got ${String(id)} — omit it to ` +
+                `widget id must be an integer, got ${String(id)} -- omit it to ` +
                     "let GuiHost.open assign one",
             );
         }
@@ -1032,7 +1032,7 @@ export function node(
 
 /**
  * A container with **no axes**, arranging its children by `flow`:
- * `"row"`, `"col"` (the default), `"grid"`, `"free"` — or `"stack"`, which
+ * `"row"`, `"col"` (the default), `"grid"`, `"free"` -- or `"stack"`, which
  * shows one child at a time, the one `index` names, and lays out and draws
  * none of the others. A stack is not a different container: it is this one
  * with a selection instead of an arrangement.
@@ -1073,7 +1073,7 @@ export function layout(
 /**
  * A container with **two axes locked to one scale**: a pannable, zoomable
  * plane in content units. `axis`/`zoom` constrain it (see `scroll`), and with
- * `boxes`/`cords` it is the **patcher** — the boxes are what the plane places
+ * `boxes`/`cords` it is the **patcher** -- the boxes are what the plane places
  * and the cords the wires between them, which is all `patch` ever added.
  */
 export function plane(
@@ -1137,8 +1137,8 @@ export interface SignalLayer {
     /** Where anything solos, only the soloed layers are drawn. */
     solo?: boolean;
     /**
-     * Which vertical it is read on: `"axis"` maps through the body's own — and
-     * is what the y ruler and the cursor read-out report — while `"box"`
+     * Which vertical it is read on: `"axis"` maps through the body's own -- and
+     * is what the y ruler and the cursor read-out report -- while `"box"`
      * normalizes into the rectangle with a scale of its own. Two layers
      * claiming the axis for different quantities is refused.
      */
@@ -1156,7 +1156,7 @@ export type SignalLayers = string | (string | SignalLayer)[];
  * **Every view of a signal**, as the one element they are: a presentation of
  * a source, with the capabilities offered over it.
  *
- * `view` is the presentation — `"trace"` (the default), `"spectrum"`,
+ * `view` is the presentation -- `"trace"` (the default), `"spectrum"`,
  * `"spectrogram"` or `"phase"`. The source is either `bus` (with `rate`),
  * read forward-only, or the addressable `data`/`blob`/`buffer`/`path`/`cache`,
  * which is what lets a view navigate, slice and select. `navigable`,
@@ -1185,7 +1185,7 @@ export function signal(
          * what stops it being navigable: there is nothing behind the newest
          * window to zoom out to. This supplies one, so
          * `signal({ view: "spectrogram", bus: 0, retention: 8, navigable: true })`
-         * is a **waterfall** — eight seconds of live spectrum you can zoom and
+         * is a **waterfall** -- eight seconds of live spectrum you can zoom and
          * pan like a file. It is a policy of the axis, not of the drawing: the
          * same seconds mean the same seconds at any frame rate, FFT size or
          * hop, and a `GuiHost.set` of it resizes the history live.
@@ -1199,7 +1199,7 @@ export function signal(
          * EBU Tech 3341's default scale, or 18; the bottom is twice that under
          * the target), `loudnessRuler` draws the layer's own LU ruler on the
          * right of the body, and `loudnessStats` writes the numbers over the
-         * picture — the integrated loudness, the range, the true peak and the
+         * picture -- the integrated loudness, the range, the true peak and the
          * ratio between the last two, over the selection where there is one.
          * A loudness layer needs `sampleRate` to mean anything, since its
          * windows are counted in samples.
@@ -1214,13 +1214,13 @@ export function signal(
         baseBucket?: number;
         navigable?: boolean;
         /**
-         * The samples are **being written into as they are drawn** — a take you
+         * The samples are **being written into as they are drawn** -- a take you
          * are recording. The view draws it up to the buffer's write frontier
          * and leaves the axis past it empty, rather than drawing a flat line
          * across the buffer's own zeros: past the frontier there is no
-         * silence, there is nothing yet. The host cannot infer it — a
+         * silence, there is nothing yet. The host cannot infer it -- a
          * frontier alone does not tell a recording from a loaded take one
-         * write touched — so the client that allocated the buffer says so.
+         * write touched -- so the client that allocated the buffer says so.
          * Clear it when the take is finished.
          */
         fills?: boolean;
@@ -1234,16 +1234,16 @@ export function signal(
          * band-limited reconstruction between the samples, drawn once they are
          * separate points, with the peaks that leave full scale marked),
          * `"momentary"` and `"short"` (the loudness curves) and
-         * `"spectrogram"` (the time-frequency texture) — as one
+         * `"spectrogram"` (the time-frequency texture) -- as one
          * space-separated string, or as a list whose entries may say what a
          * layer does with itself ({@link SignalLayer}). The order is yours:
          * `"rms peak"` draws the level under the envelope, `"peak rms"` over
-         * it. The default is the presentation's own — `"peak signal"` for a
+         * it. The default is the presentation's own -- `"peak signal"` for a
          * trace, `"spectrogram"` for the time-frequency view.
          *
          * A factor of the view rather than a composition of widgets: one body,
          * one axis, one ruler, one selection, one playhead and one upload,
-         * with a drawing per layer over them — two views on one rectangle are
+         * with a drawing per layer over them -- two views on one rectangle are
          * not layers, the second paints its own field over the first. A peak
          * cache built before the level measure existed draws no body rather
          * than zeros, and a source that is a summary and nothing else draws no
@@ -1261,7 +1261,7 @@ export function signal(
         at?: number;
         dur?: number;
         /**
-         * **Inside a `clip`**: this body's own window onto its buffer — the
+         * **Inside a `clip`**: this body's own window onto its buffer -- the
          * source frame it reads from, and whether that window wraps. A body
          * that names neither reads through the clip's own window, which is
          * every take written as a clip prop.
@@ -1312,7 +1312,7 @@ export function signal(
 /**
  * A view's **root**: a container that becomes an OS window (a canvas, in the
  * browser) when nothing holds it, and an ordinary component when something
- * does. It takes no id — a root's id is the `/gui_def` argument.
+ * does. It takes no id -- a root's id is the `/gui_def` argument.
  *
  * There is one node type, not two. A view with no parent is a window, so this
  * is the container to reach for when the thing being built is the whole of
@@ -1321,13 +1321,13 @@ export function signal(
  * hold their own `freq`.
  *
  * Any node opens ({@link View.open}): `knob({}).open()` is a window that is a
- * knob. Use `view()` when the window's own properties matter — a title, a
- * size, a theme — since a root that is not one is framed in a window that hugs
+ * knob. Use `view()` when the window's own properties matter -- a title, a
+ * size, a theme -- since a root that is not one is framed in a window that hugs
  * whatever it holds.
  *
  * `w`/`h` size the OS window (the canvas, in the browser); `layout` places
  * the children, tuned by `margin`/`gap`/`cols`. A fixed-height bar over a
- * weighted content area over a fixed status strip — the application shell —
+ * weighted content area over a fixed status strip -- the application shell --
  * is just `view({ layout: "col" }, bar({ h: 28 }), content(), status({ h: 20 }))`.
  *
  * `window` is the older spelling of this builder and still works.
@@ -1346,7 +1346,7 @@ export function view(
     hug?: boolean;
     /**
      * The host's **status bar**: a band along the window's bottom edge saying
-     * what it last did and what it last refused — a stroke over samples the
+     * what it last did and what it last refused -- a stroke over samples the
      * picture is not drawing one by one, an edit an owner answered with a
      * reason. **On unless this turns it off**, and it is the host's: nothing
      * here writes to it, because the host already knows what it did and
@@ -1419,14 +1419,14 @@ export function panel(
  * A `stack` container showing **one child at a time**: the one at `index`.
  *
  * The shown page fills the container (`margin` insets it); the hidden ones are
- * not laid out and not drawn, so a page costs nothing while it is away — but
+ * not laid out and not drawn, so a page costs nothing while it is away -- but
  * they stay in the tree, so a heavy view keeps its GPU slot across a switch and
  * comes back without re-uploading anything.
  *
  * `index` is live via `set`, and it is the prop a control **binds** to: a
  * toggle or a menu bound to it (`GuiHost.bindWidget`, or an inline
  * `bind: ["widget", stackId, "index"]`) flips the page with no round-trip
- * through this script — which is what makes tabs, a pager and a
+ * through this script -- which is what makes tabs, a pager and a
  * waveform/spectrogram switch composition rather than widgets. An `index`
  * outside the children shows nothing: a blank page rather than a clamped one.
  */
@@ -1465,7 +1465,7 @@ export function stack(
  * A `scroll` container: a 2D workspace onto a virtual content area.
  *
  * The children lay out into a content area larger than the widget, seen
- * through a window that pans and zooms — dragging the empty plane pans it,
+ * through a window that pans and zooms -- dragging the empty plane pans it,
  * the wheel zooms anchored at the cursor. The constrained scroll views are
  * this same widget configured down: `{ axis: "y", zoom: false }` is a plain
  * vertical scroll view, `{ axis: "x", zoom: false }` a horizontal strip, the
@@ -1492,7 +1492,7 @@ export function scroll(
          * zoom of its own starts at the **display's scale**, so one content unit
          * is one logical pixel and the boxes come up the size they are meant to
          * look. Pass a number (or turn the wheel) and it is literal from then
-         * on; `set({viewZoom: 0})` clears it again — how a script says "back to
+         * on; `set({viewZoom: 0})` clears it again -- how a script says "back to
          * the default" for a number it cannot name.
          */
         viewX?: number;
@@ -1529,7 +1529,7 @@ export function scroll(
 
 /**
  * Static `label` text. `textSize` is the glyph scale over the host's font
- * (default 2.0 — every text-bearing widget takes it; a host drawing with its
+ * (default 2.0 -- every text-bearing widget takes it; a host drawing with its
  * embedded 5x7 face quantizes it to half-steps, one built with a rasterizer
  * takes it as sent); `wrap` word-
  * wraps to the label's width (off, an overflowing line clips with an
@@ -1556,7 +1556,7 @@ export interface RangeOptions extends WidgetOptions {
     /**
      * The bend of the range the handle travels: `0` (the default) is linear,
      * negative spends most of the range on the first half of the travel and
-     * positive on the last half — the fine-at-the-bottom feel a frequency or
+     * positive on the last half -- the fine-at-the-bottom feel a frequency or
      * an amplitude control wants. The same bend `lincurve` runs, read by the
      * host out of the shared core.
      */
@@ -1568,7 +1568,7 @@ export interface RangeOptions extends WidgetOptions {
      * `min` and never past `max`: a grid that does not divide the range
      * (`0..10` by `3`) stops on the last whole step, `9`, rather than on an
      * off-grid `10`, and a reversed range (`min > max`) steps from its own
-     * `min` downward. A value *you* send is drawn as sent — the step is a rule
+     * `min` downward. A value *you* send is drawn as sent -- the step is a rule
      * about the hand, not a constraint on the document.
      */
     step?: number;
@@ -1602,7 +1602,7 @@ export interface ControlLike {
     name: string;
     default: number;
     /**
-     * A `ControlInfo`'s range, which only a **Faust** parameter fills — read
+     * A `ControlInfo`'s range, which only a **Faust** parameter fills -- read
      * structurally, because on a graph `Control` `min`/`max` are the binary
      * operators and naming the fields here would collide with them.
      */
@@ -1619,8 +1619,8 @@ export interface ControlLike {
 /**
  * Whether `x` is a control rather than an option bag.
  *
- * Both carry a `name` — a control's is the one the server addresses, an option
- * bag's is the handle index — so the tell is `default`, which every control has
+ * Both carry a `name` -- a control's is the one the server addresses, an option
+ * bag's is the handle index -- so the tell is `default`, which every control has
  * (a `Control` object and a `ControlInfo` alike) and no widget option is. In
  * Python the two are told apart by position, one positional and the rest
  * keywords; TypeScript has one positional slot, so it reads the shape.
@@ -1633,7 +1633,7 @@ function isControl(x: unknown): x is ControlLike {
 
 /**
  * A control's own props for a widget built from it: its name and its default as
- * the value — plus a range only where the control genuinely has one.
+ * the value -- plus a range only where the control genuinely has one.
  *
  * The **entry point named once**, for what a def actually knows: what the
  * control is called (which is what `/node_set` addresses) and what it starts at.
@@ -1643,11 +1643,11 @@ function isControl(x: unknown): x is ControlLike {
  * a GraphDef port is a name the server takes any float for; neither says how a
  * knob should be drawn. The one control that arrives with a range is a **Faust**
  * parameter, because `hslider(label, init, min, max, step)` cannot be written
- * without one and the compiled DSP reports it back — Faust's syntax showing
+ * without one and the compiled DSP reports it back -- Faust's syntax showing
  * through, not a range this client declares.
  *
  * Explicit options win: the control says what it is, the call says how to draw
- * it. That includes `name`, which is the handle's index — the two are usually
+ * it. That includes `name`, which is the handle's index -- the two are usually
  * the same string and need not be.
  */
 function fromControl(
@@ -1662,7 +1662,7 @@ function fromControl(
         ?? (typeof info.min === "number" ? [info.min, info.max as number] : [undefined, undefined]);
     if (needsRange && lo === undefined && given.min === undefined) {
         throw new Error(
-            `control '${control.name}' has no range to be drawn over — spell one ` +
+            `control '${control.name}' has no range to be drawn over -- spell one ` +
                 `on the widget (knob(${control.name}, { min: …, max: … })). Only a ` +
                 "FaustDef's parameter brings its own, from the hslider that " +
                 "declared it",
@@ -1699,7 +1699,7 @@ function controlArgs<T>(
 /**
  * A rotary `knob` over a continuous range.
  *
- * Takes a def's control first — `knob(freq)`, `knob(sd.control("freq"))` — and
+ * Takes a def's control first -- `knob(freq)`, `knob(sd.control("freq"))` -- and
  * reads its **name** and its **default** off it, so the widget and the graph
  * cannot disagree about what `"freq"` is. The **range is the widget's**:
  * `knob(freq, { min: 110.0, max: 880.0 })`. Only a Faust parameter arrives with
@@ -1774,12 +1774,12 @@ export interface ButtonOptions extends WidgetOptions {
  * `mode` says which of the two pointer primitives reaches the server:
  *
  * - `"gate"` (the default) sends `on` at the press and `off` when the button is
- *   let go, so the value lasts exactly as long as the button is held — what an
+ *   let go, so the value lasts exactly as long as the button is held -- what an
  *   envelope's gate reads, and what a trigger control ignores the tail of by
  *   definition.
  * - `"press"` sends `on` at the press and nothing after it: the bang.
  *
- * Takes a def's control first, like {@link knob} — a gate needs no range, so
+ * Takes a def's control first, like {@link knob} -- a gate needs no range, so
  * none is required here:
  *
  * ```ts
@@ -1789,15 +1789,15 @@ export interface ButtonOptions extends WidgetOptions {
  *
  * **A widget cannot make a value instantaneous**: what is sent is held by
  * whoever receives it. So `mode: "press"` against a def's control is only a
- * bang where the control returns to zero on its own — a `rate: "tr"`, which the
- * server resets after one block — and building it over any other control
+ * bang where the control returns to zero on its own -- a `rate: "tr"`, which the
+ * server resets after one block -- and building it over any other control
  * throws, since it would leave `on` standing forever. A button that drives no
  * control has no such trouble: it emits a `/gui_event` and one message *is* an
  * event.
  *
  * `on`/`off` are the two values it sends (`1`/`0` by default). Press and
- * release are the primitives, and a **click** — a press and a release that
- * landed inside — is a composed gesture rather than a mode.
+ * release are the primitives, and a **click** -- a press and a release that
+ * landed inside -- is a composed gesture rather than a mode.
  */
 export function button(
     control?: ControlLike | ButtonOptions,
@@ -1854,7 +1854,7 @@ export interface ToggleOptions extends WidgetOptions {
  *
  * The state is a boolean; **the two values it stands for need not be**. A
  * bypass lives at `0.0`/`0.7` and a mode at `1`/`2`, and neither is a span a
- * widget could be drawn over — which is why they are a pair and not a
+ * widget could be drawn over -- which is why they are a pair and not a
  * `min`/`max`:
  *
  * ```ts
@@ -1879,7 +1879,7 @@ export function toggle(
 }
 
 /**
- * An editable `text` field. The entered string is emitted on **every** edit —
+ * An editable `text` field. The entered string is emitted on **every** edit --
  * like a slider's value, never gated on Enter. `multiline` allows embedded
  * newlines and a growing field; `value` seeds the contents (and sets them
  * live).
@@ -1909,8 +1909,8 @@ export function text(
 /**
  * A `menu` over `options` (strings), emitting the chosen `index`.
  *
- * A press **opens the list** over the window — the field grown downward by a
- * row per option, flipped above it near the bottom edge — and a press on a row
+ * A press **opens the list** over the window -- the field grown downward by a
+ * row per option, flipped above it near the bottom edge -- and a press on a row
  * picks it; a press anywhere else dismisses it and picks nothing. The list is
  * the host's, so a bound menu drives its target with no round trip through the
  * page.
@@ -1933,7 +1933,7 @@ export function menu(
  * The editor-grade `waveform` view, fed its samples by `cache`/`path`/
  * `buffer`/`data`/`blob` (the host's precedence order).
  *
- * Every channel is drawn — stacked lanes sharing the time axis, or per-color
+ * Every channel is drawn -- stacked lanes sharing the time axis, or per-color
  * overlaid traces with `overlay`. The rulers, the selection, the playhead and
  * the navigation group are the shared timeline chrome; `rulerY` labels the
  * amplitude axis (`"norm"`, `"db"`, `"bits"`, `"percent"`, `"off"`).
@@ -1962,7 +1962,7 @@ export function waveform(
          * since `db`/`bits`/`percent` are units of full scale.
          *
          * A column is the min/max of what the signal did in that pixel, never
-         * extended to the zero line — the body of a zoomed-out waveform is the
+         * extended to the zero line -- the body of a zoomed-out waveform is the
          * data filling it, not a fill the drawing adds. Zoomed in far enough,
          * each sample is marked with a dot.
          */
@@ -1970,10 +1970,10 @@ export function waveform(
         /** The top of the value domain (see `min`). */
         max?: number;
         /**
-         * **The stack the picture is**, back to front — `"peak"` (the
+         * **The stack the picture is**, back to front -- `"peak"` (the
          * envelope), `"rms"` (the level body), `"signal"` (the reconstruction
          * between the samples), the loudness curves, `"spectrogram"` (the
-         * texture) — as one space-separated string or as a list whose entries
+         * texture) -- as one space-separated string or as a list whose entries
          * say what a layer does with itself ({@link SignalLayer}). The default
          * is `"peak signal"`, and the whole of it is in {@link signal}. A stack
          * is a prop of *one* view and not two views layered: a view paints its
@@ -1990,7 +1990,7 @@ export function waveform(
          * EBU Tech 3341's default scale, or 18; the bottom is twice that under
          * the target), `loudnessRuler` draws the layer's own LU ruler on the
          * right of the body, and `loudnessStats` writes the numbers over the
-         * picture — the integrated loudness, the range, the true peak and the
+         * picture -- the integrated loudness, the range, the true peak and the
          * ratio between the last two, over the selection where there is one.
          * A loudness layer needs `sampleRate` to mean anything, since its
          * windows are counted in samples.
@@ -2003,7 +2003,7 @@ export function waveform(
         /** Write the loudness numbers over the picture (see `loudnessTarget`). */
         loudnessStats?: boolean;
         /**
-         * The samples are **being written into as they are drawn** — a take you
+         * The samples are **being written into as they are drawn** -- a take you
          * are recording. The picture stops at the buffer's write frontier and
          * the axis past it stays empty; see `signal`.
          */
@@ -2038,13 +2038,13 @@ export function waveform(
 
 /**
  * The editor-grade `spectrogram` (STFT time-frequency) view, fed like the
- * `waveform` and carrying the same chrome — here `yStart`/`yLen` slice the
+ * `waveform` and carrying the same chrome -- here `yStart`/`yLen` slice the
  * **frequency** display axis.
  *
  * The analysis: `windowSize` is the FFT size (a power of two, default 1024)
  * and `hop` the frame advance (default half the window). The display is live:
  * the dB window `[dbFloor, dbCeil]` sets the contrast, `freqScale` picks the
- * frequency axis (`"log"` — the default — `"linear"`, `"mel"` or `"bark"`)
+ * frequency axis (`"log"` -- the default -- `"linear"`, `"mel"` or `"bark"`)
  * and `colormap` picks 0 viridis / 1 magma / 2 grayscale.
  */
 export function spectrogram(
@@ -2058,7 +2058,7 @@ export function spectrogram(
         logFreq?: boolean;
         colormap?: number;
         /**
-         * **The stack the texture is one layer of** — which is how a wave goes
+         * **The stack the texture is one layer of** -- which is how a wave goes
          * *over* a spectrogram rather than beside it:
          * `layers: ["spectrogram", { draw: "peak", y: "box" }]` is one element,
          * one time axis, one selection, one playhead. Documented whole in
@@ -2092,7 +2092,7 @@ export function spectrogram(
 }
 
 /**
- * A static `plot` of a signal — measurement without navigation: it does not
+ * A static `plot` of a signal -- measurement without navigation: it does not
  * zoom, pan or edit. `view` picks the presentation: `"signal"` (the default;
  * value against time, the whole sequence always drawn) or `"spectrum"` (the
  * averaged magnitude spectrum, analyzed host-side with the shared-core FFT).
@@ -2112,7 +2112,7 @@ export function plot(
         dbFloor?: number;
         dbCeil?: number;
         freqScale?: string;
-        /** The layer stack the columns are drawn as — see {@link signal}. */
+        /** The layer stack the columns are drawn as -- see {@link signal}. */
         layers?: SignalLayers;
         /** The same prop under its older name. */
         measure?: string;
@@ -2130,7 +2130,7 @@ export function plot(
         label: text, axes: pair, ...rest
     } = options;
     // A plot is the trace (or the spectrum) of a signal that does **not**
-    // navigate — the capability, not a different element.
+    // navigate -- the capability, not a different element.
     return node("signal", {
         ...rest,
         view: PLOT_VIEW[view ?? "signal"] ?? view,
@@ -2158,10 +2158,10 @@ export function plot(
 
 /**
  * A level `meter` on `bus`, read from the audio server's shared segment every
- * frame — no OSC per frame at all.
+ * frame -- no OSC per frame at all.
  *
- * At `rate` `"audio"` (the default) it meters an audio bus — bus 0 is the first
- * hardware output, so `meter()` is the console meter on the left out — reading
+ * At `rate` `"audio"` (the default) it meters an audio bus -- bus 0 is the first
+ * hardware output, so `meter()` is the console meter on the left out -- reading
  * the level the server publishes per block. That level is the **peak of every
  * sample of the block**, held with a decay, so a transient is caught even
  * though the display refreshes far slower than the engine. At `"control"` it
@@ -2173,7 +2173,7 @@ export function plot(
  * **decibels**; a control bus carries whatever the script put there, so it is
  * drawn over `min`..`max` (default `0`/`1`). `scale` of `"db"` or `"linear"`
  * settles it either way. A decibel meter bottoms out at `floorDb` (-60 dB, the
- * strip a mix is read on) or at the dynamic range of a resolution — `bits` 16
+ * strip a mix is read on) or at the dynamic range of a resolution -- `bits` 16
  * is -96 dB, 24 is -144, and a 32-bit float carries a 24-bit significand so it
  * takes 24 as well. `ruler` puts the numbers on the `"left"` (the default for a
  * decibel meter) or the `"right"`, and `false` leaves the column bare; a meter
@@ -2194,8 +2194,8 @@ export function plot(
  * past full scale the signal went is written over the columns, in the size every
  * line drawn over a picture here is written in.
  *
- * `readout` of `false` drops **every number the meter writes** — the level at
- * its foot and the lamp's figure — and `ruler` of `false` drops the ladder. The
+ * `readout` of `false` drops **every number the meter writes** -- the level at
+ * its foot and the lamp's figure -- and `ruler` of `false` drops the ladder. The
  * two together are a **bare column**, which is a meter and not a degraded one:
  * it is what a strip of them down the edge of a track header is, where there is
  * no room for either and the picture is the whole of what it has to say.
@@ -2279,7 +2279,7 @@ export function meter(
  * display window of each bus's samples, aligned on a rising crossing of
  * `trigger` found in the first channel, so a periodic signal draws a stable
  * trace and the channels keep their true relative phase. Naming the bus is all
- * a script does — the GUI host has the server record it and stops when nothing
+ * a script does -- the GUI host has the server record it and stops when nothing
  * draws it. At `"control"` it plots the control buses' recent history instead,
  * one sample per frame tick. `hold` freezes the trace.
  */
@@ -2302,7 +2302,7 @@ export function scope(
          * EBU Tech 3341's default scale, or 18; the bottom is twice that under
          * the target), `loudnessRuler` draws the layer's own LU ruler on the
          * right of the body, and `loudnessStats` writes the numbers over the
-         * picture — the integrated loudness, the range, the true peak and the
+         * picture -- the integrated loudness, the range, the true peak and the
          * ratio between the last two, over the selection where there is one.
          * A loudness layer needs `sampleRate` to mean anything, since its
          * windows are counted in samples.
@@ -2321,7 +2321,7 @@ export function scope(
          */
         ruler?: boolean | string;
         rulerY?: boolean | string;
-        /** The layer stack the columns are drawn as — see {@link signal}. */
+        /** The layer stack the columns are drawn as -- see {@link signal}. */
         layers?: SignalLayers;
         /** The same prop under its older name. */
         measure?: string;
@@ -2367,7 +2367,7 @@ export function scope(
 
 /**
  * A `phasescope` (goniometer) of the stereo pair `bus` (left) and `bus + 1`
- * (right) — the adjacent-channel layout the whole family uses — drawn as the
+ * (right) -- the adjacent-channel layout the whole family uses -- drawn as the
  * 45°-rotated Lissajous figure: vertical is the mid, horizontal the side, so
  * mono reads as a vertical line and anti-phase as horizontal. An age-faded
  * trail spans the last `windowMs` and a correlation read-out sits under the
@@ -2403,8 +2403,8 @@ export function phasescope(
  *
  * `navigable` turns the **frequency axis** into one you can move: drag it to
  * pan, wheel over it to zoom under the cursor, `R` to see all of it again. It
- * needs no history behind it — unlike a live time axis, every bin is there
- * every frame — so it is one window the view carries alone, in normalized
+ * needs no history behind it -- unlike a live time axis, every bin is there
+ * every frame -- so it is one window the view carries alone, in normalized
  * units over `[0, Nyquist]`: `viewStart`/`viewLen` (`0, 1` = the whole axis),
  * live via `GuiHost.set` and reported as a `"view_x"` event. It is off by
  * default; without it this is the watching spectroscope it has always been.
@@ -2489,25 +2489,25 @@ export function nodetree(
 // ---- the editors ----
 
 /**
- * A drawable `bpf` break-point function — the envelope editor.
+ * A drawable `bpf` break-point function -- the envelope editor.
  *
  * Break-points `(time, value)` plus a per-segment shape using the server's
  * own envelope shape numbers, evaluated host-side through the same shared
- * math its `EnvGen` plays — what you draw is what you hear. `points` takes
+ * math its `EnvGen` plays -- what you draw is what you hear. `points` takes
  * either the flat wire quads `[t, v, shape, curve, …]` or a list of
  * `[time, value]` / `[time, value, curve]` tuples whose curve is an `Env`
  * shape name or a numeric curvature (see `envToPoints`/`pointsToEnv` for the
  * `Env` round trip). Editing flows back as `"points"` with the flat list.
  *
  * The widget is general on purpose (the automation-lane shape): values live
- * in `[min, max]` — unipolar, bipolar or any parameter span — and `exp` gives
+ * in `[min, max]` -- unipolar, bipolar or any parameter span -- and `exp` gives
  * a frequency-like range a geometric display scale.
  *
  * It is a **view** as well as a picture. Given an axis pair it draws its own
  * field with a time strip under it and a value strip left of it
  * (`axes: { y: { unit: "value" } }` is the plain 1-2-5 ladder a parameter's
  * values want, as against the amplitude ones), and it joins the navigation
- * group `link` names — so a curve stacked with a {@link timeruler} shares
+ * group `link` names -- so a curve stacked with a {@link timeruler} shares
  * that ruler's window and gutter, and the ruler rules the curve. Both strips
  * default **off**, so a bare `bpf` is the bare envelope it has always been.
  */
@@ -2543,23 +2543,23 @@ export function bpf(
 
 /**
  * The editor-grade `pianoroll`: a keyboard gutter, a note grid, a velocity
- * lane and an OSC lane — the timeline sibling of the compact `clip`
+ * lane and an OSC lane -- the timeline sibling of the compact `clip`
  * roll, drawing the same notes with editing, rulers and navigation.
  *
  * `notes` are `[start, dur, pitch]` or `[start, dur, pitch, velocity,
  * channel]` MIDI notes (times in timeline samples, pitch drawn over
  * `[min, max]`); `osc` are `[time, label]` (or bare `time`) markers, one per
  * OSC or raw-MIDI timeline item, in a **read-only** lane: a roll edits what
- * has a pitch, which is what its grid is a grid of, and a message has none —
+ * has a pitch, which is what its grid is a grid of, and a message has none --
  * the flag is a lossy view of one (its address as a label, its arguments not
  * drawn), so there is nothing there a hand could write. Add one with
  * `timeline.add(beat, new OscItem(addr, ...))` and it appears. An edit flows
  * back as a flat `"notes"` event. `midiIn` arms live MIDI painting in the
  * native host.
  *
- * **A plain drag over the grid sweeps the notes** the rectangle covered — the
+ * **A plain drag over the grid sweeps the notes** the rectangle covered -- the
  * rectangles the notes *are*, the same gesture a patcher's canvas has over its
- * boxes and a lane has over its clips — and it writes **no time span**. A
+ * boxes and a lane has over its clips -- and it writes **no time span**. A
  * *time range* over the same grid is the other selection, asked for by name
  * (`gestures: { drag: "select" }`), exactly as on a lane.
  */
@@ -2646,7 +2646,7 @@ export function piano(
 
 /**
  * A free-standing **time ruler**: the shared axis drawn as a strip the document
- * places — a DAW's ruler above its tracks.
+ * places -- a DAW's ruler above its tracks.
  *
  * A `track`'s own `ruler` is reserved out of *that lane's* height, so ruling a
  * stack of lanes means picking one to carry it and to pay for it, and the strip
@@ -2655,24 +2655,24 @@ export function piano(
  *
  * It reads the axis of the group named by `link`; with **no** `link` it joins
  * the window's lanes on its own, since a free-standing ruler exists to rule
- * them —
- * and its ticks are indented by the **group's** gutter — the widest any member
- * asks for — so they stand over the samples they label.
+ * them --
+ * and its ticks are indented by the **group's** gutter -- the widest any member
+ * asks for -- so they stand over the samples they label.
  *
  * **The ruler is where the time range is swept.** Two selections live at once
- * over a stack of lanes or a roll — the **data** one (the clips, the boxes, the
+ * over a stack of lanes or a roll -- the **data** one (the clips, the boxes, the
  * notes a rectangle covered: what gets edited) and the **time range** (a span
  * the group keeps, drawn as a band, looped by the transport: what gets played)
- * — and they are told apart by where the gesture began, not by a mode: the body
+ * -- and they are told apart by where the gesture began, not by a mode: the body
  * sweeps the first, the ruler the second. So a **drag scrolls** the axis,
  * **Alt+drag sweeps the range**, the wheel zooms, and a **click places the
- * position cursor** — a drag that never left the slop is where the hand
+ * position cursor** -- a drag that never left the slop is where the hand
  * pointed. The slack of a stack places it too; what never does is a click *on*
  * something, which is that thing's. On a signal the
  * range is not a second thing: the frames and the span are one selection there,
  * so the ruler is another hand onto the one the view already has. And a lane's
- * own `ruler`, a roll's and a signal's are **strips** rather than widgets — the
- * press lands on the view — so the table is read from where the press landed:
+ * own `ruler`, a roll's and a signal's are **strips** rather than widgets -- the
+ * press lands on the view -- so the table is read from where the press landed:
  * the bottom of a view that has a ruler answers with the ruler's table, whoever
  * drew it.
  * `h` is this one's thickness in logical pixels.
@@ -2684,7 +2684,7 @@ export function timeruler(
         /**
          * **Which side its content is on**, so the ticks and numbers hug that
          * edge and a tick touches the pixels it names: `"down"` (the default
-         * here — a ruler placed above the lanes draws along its bottom) or
+         * here -- a ruler placed above the lanes draws along its bottom) or
          * `"up"` for one placed below them. A strip a view reserves under its
          * own body is always `"up"`, and nothing has to say so.
          */
@@ -2739,7 +2739,7 @@ export function flatClips(clips: ClipSpec): (number | string)[] {
         out.push(String(name), lane === undefined ? "" : String(lane),
             Number(offset ?? 0), Number(dur ?? 0), Number(start ?? 0),
             label === undefined ? "" : String(label),
-            // **Buffer 0 is a buffer** — the first one an allocator hands out —
+            // **Buffer 0 is a buffer** -- the first one an allocator hands out --
             // so "no source" is spelled negative, as every other absence here.
             Math.trunc(source ?? -1));
     }
@@ -2757,7 +2757,7 @@ export type BoxNoteSpec = readonly (readonly [
 ])[];
 
 /**
- * The flat `box start dur pitch velocity channel` sextuples the host reads — a
+ * The flat `box start dur pitch velocity channel` sextuples the host reads -- a
  * note per entry, each naming the box it is in.
  *
  * One list for the whole widget rather than one per box, which is the shape
@@ -2833,7 +2833,7 @@ export function flatLayers(layers: LayerSpec): (number | string)[] {
 }
 
 /**
- * The flat `curve time value shape amount` quintuples the host reads — a
+ * The flat `curve time value shape amount` quintuples the host reads -- a
  * break-point per entry, each naming the curve it is on.
  *
  * One list for every curve there is, rows and layers alike: a break-point is a
@@ -2853,7 +2853,7 @@ export function flatCurvePoints(points: CurvePointSpec): (number | string)[] {
  * drawn on one shared time axis.
  *
  * It is the {@link pianoroll} of a multitrack. A roll is one widget holding its
- * notes; this is one widget holding its lanes and its clips — so you
+ * notes; this is one widget holding its lanes and its clips -- so you
  * **describe** the multitrack rather than composing a tree of `track` and `clip`
  * widgets, and there is exactly one thing that owns it. A lane
  * cannot sit in a void: it is a row of this widget, never a box you place.
@@ -2862,10 +2862,10 @@ export function flatCurvePoints(points: CurvePointSpec): (number | string)[] {
  * `[name, lane, offset, dur, start, label, source]`, with `offset`/`dur`/`start`
  * in timeline samples, `lane` naming one of the lanes and `source` the **server
  * buffer** the clip is a window onto (a negative number, the default, draws an
- * empty box — `0` is a real buffer). The samples are
+ * empty box -- `0` is a real buffer). The samples are
  * the server's: the host maps them out of the shared segment or fetches them
  * over its leg, so two clips over one take cost one download. **The name is the
- * identity** — the client's own word, not a widget id — so a clip is addressed,
+ * identity** -- the client's own word, not a widget id -- so a clip is addressed,
  * drawn and reported by the same name the script already calls it. A clip
  * naming a lane that is not there is kept and drawn nowhere, so renaming a lane
  * loses nothing.
@@ -2874,7 +2874,7 @@ export function flatCurvePoints(points: CurvePointSpec): (number | string)[] {
  * a buffer draws those samples; one named in `notes` draws them as a roll,
  * fitted to its own pitch range and with no keyboard and no lanes. Both are
  * drawn by the very elements that stand on their own elsewhere, handed the
- * clip's own axis and drawing no chrome of their own — a clip is a window onto a
+ * clip's own axis and drawing no chrome of their own -- a clip is a window onto a
  * picture, never a second implementation of one. `view` chooses how a clip of
  * samples is drawn (`"trace"`, the default, or `"spectrogram"`) for every clip
  * at once.
@@ -2886,7 +2886,7 @@ export function flatCurvePoints(points: CurvePointSpec): (number | string)[] {
  * the whole timeline, because a track's gain does not begin and end with a
  * clip. `layers` is `[name, box, label, min, max]`: a **clip envelope**, drawn
  * inside the clip it names, over whatever that clip draws and lasting exactly
- * as long as it does — a clip's own dynamic envelope, its pan, its per-clip
+ * as long as it does -- a clip's own dynamic envelope, its pan, its per-clip
  * effect parameters. A layer takes no height, because it is as tall as the clip
  * it is on. `points` is `[curve, time, value, shape, amount]` for **every**
  * curve there is, each naming the curve it is on the way a note names its box.
@@ -2898,7 +2898,7 @@ export function flatCurvePoints(points: CurvePointSpec): (number | string)[] {
  * is hidden is not edited either.
  *
  * It **places**; a clip is entered to edit. The contents of a clip draw
- * read-only here — this widget owns *where* things are, not what is inside them.
+ * read-only here -- this widget owns *where* things are, not what is inside them.
  */
 export function multitrack(
     options: TimelineOptions & {
@@ -2954,13 +2954,13 @@ export function multitrack(
  * An engraved music-notation `score` page. The host is only the renderer: it
  * fits the engraved page into the widget and tessellates its primitives.
  *
- * `displayList` is the semantic engraving — `vb` (the page-unit viewBox),
+ * `displayList` is the semantic engraving -- `vb` (the page-unit viewBox),
  * `glyphs` (the SMuFL outline table), `prims` (the placed primitives),
  * `cursors` (the engraved timemap) and `step` (page units per diatonic step)
- * — which a client produces from its own score. A click emits `"element"`
+ * -- which a client produces from its own score. A click emits `"element"`
  * with the primitive's `xml:id`; `editable` turns on the drag that emits
- * `"transpose" id position` — the diatonic staff position the note *reaches*,
- * from its staff's top line, positive upward — a *request* the driver applies
+ * `"transpose" id position` -- the diatonic staff position the note *reaches*,
+ * from its staff's top line, positive upward -- a *request* the driver applies
  * and answers with a re-engraved page. The position is absolute rather than a
  * displacement, so a resend cannot move the note twice and a page re-engraved
  * under the gesture needs no rebasing.
@@ -2969,7 +2969,7 @@ export function multitrack(
  * meaning for `editable` because it takes over a gesture that already does
  * something: on any other page, pressing blank paper clears the selection. With
  * it on, a press on blank paper inside a staff emits
- * `"insert" <after-xml:id> <position> <staff>` — the element the new note would
+ * `"insert" <after-xml:id> <position> <staff>` -- the element the new note would
  * *follow* on that staff (empty before everything on it), the staff position,
  * and which staff from the top. The host names a place and nothing more: a
  * staff position is not a pitch until something knows the clef and the key, and
@@ -3020,13 +3020,13 @@ export function score(
 /**
  * A `patch` **patcher**: a directed, typed signal graph drawn as boxes with
  * inlets on top and outlets on the bottom, and a **cord** per `outlet ->
- * inlet` connection. The buses are not drawn — a cord *is* a bus.
+ * inlet` connection. The buses are not drawn -- a cord *is* a bus.
  *
  * `boxes` and `cords` are the widget's split schema: each box is
  * `{def, inlets, outlets, x?, y?}` (a port is a bare name for audio, or
  * `{name, rate}`), and `cords` is the flat `[fromBox, outlet, toBox, inlet,
  * …]` list of indices. Dragging a box flows back as `"move"`, and dragging an
- * outlet onto an inlet as `"wire"` — the driver owns the geometry and the
+ * outlet onto an inlet as `"wire"` -- the driver owns the geometry and the
  * graph, and re-renders.
  */
 export function patch(
@@ -3048,12 +3048,12 @@ export function patch(
 }
 
 /**
- * A `canvas` running a script-supplied WGSL shader over the widget area —
+ * A `canvas` running a script-supplied WGSL shader over the widget area --
  * custom visuals.
  *
  * `shader` is the body of a `shade` function the host wraps and runs:
  * `fn shade(uv: vec2<f32>, frag: vec4<f32>) -> vec4<f32>`. Inside it the host
- * exposes `u.resolution`, `u.time` and `u.params` — four values driven either
+ * exposes `u.resolution`, `u.time` and `u.params` -- four values driven either
  * from the script (`set(id, { param0: … })` lands in `u.params.x`) or from a
  * control bus per slot (`buses`), read every frame, so a shader animates from
  * OSC parameters and from live server audio at once.
@@ -3155,7 +3155,7 @@ function sourceProps(options: Pick<SourceOptions,
         ["cache", cache],
         ["path", path],
         ["buffer", buffer],
-        // A `Source` and `KEEP` pass through untouched — `node` expands a
+        // A `Source` and `KEEP` pass through untouched -- `node` expands a
         // source into the carrier it picked, and a keep is a word about the
         // host's own copy; anything else is read into an array here.
         [
@@ -3238,7 +3238,7 @@ export function flatCords(cords: readonly number[]): number[] {
  *
  * `elements` is the last of them and the odd one: not a drawing layer but the
  * list of ids that name a **sounding element**, which the engraving walk knows
- * and a renderer cannot re-derive — to the host an id is an id, and a staff's
+ * and a renderer cannot re-derive -- to the host an id is an id, and a staff's
  * lines carry the staff's. It is what lets a press on blank paper say which
  * element it fell after.
  */
@@ -3274,7 +3274,7 @@ const STRUCTURES: Record<string, { props: (v: unknown) => Props; slots: readonly
 /**
  * A structure argument as it goes into the node: a {@link Source} passes
  * through untouched (`node` expands it into the props it carries), anything
- * else is normalized here — the same call the source would have made.
+ * else is normalized here -- the same call the source would have made.
  */
 function held<T>(value: T | Source | undefined, flatten: (v: T) => unknown): unknown {
     if (value === undefined || value instanceof Source) return value;
@@ -3283,7 +3283,7 @@ function held<T>(value: T | Source | undefined, flatten: (v: T) => unknown): unk
 
 /**
  * A `markers` argument: `[time, label, color]`, `[time, label]` or a bare
- * `time` per marker — the label and the colour both optional.
+ * `time` per marker -- the label and the colour both optional.
  */
 export type MarkerSpec = readonly (
     | number
@@ -3332,7 +3332,7 @@ export function toJson(tree: GuiNode): string {
 
 /**
  * A shallow copy of `node` (and its subtree) without the client-only `name`,
- * so serialization never leaks it to the host — whether or not the tree went
+ * so serialization never leaks it to the host -- whether or not the tree went
  * through `GuiHost`'s id/name walk.
  */
 function stripNames(tree: GuiNode): GuiNode {
@@ -3347,7 +3347,7 @@ function stripNames(tree: GuiNode): GuiNode {
 }
 
 /**
- * Samples packed as a little-endian `f32` blob — the bulk form a `waveform`
+ * Samples packed as a little-endian `f32` blob -- the bulk form a `waveform`
  * reads through `blob`. Flat bytes at the boundary, the rule the rest of the
  * client follows.
  */

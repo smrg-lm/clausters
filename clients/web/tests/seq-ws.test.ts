@@ -1,7 +1,7 @@
 // The sequencing layer end to end against a real `clausters --ws` server.
 //
 // The WS half of W3's acceptance: a routine schedules events that reach a real
-// server and free themselves, under **both** timebases — the monotonic one
+// server and free themselves, under **both** timebases -- the monotonic one
 // (wall-clock timetags) and the sample one anchored on the server's `/clock_query`.
 // What the client puts on the wire is asserted byte for byte in
 // `timed-send.test.ts`; what is asserted here is that a real server accepts it
@@ -12,7 +12,7 @@
 // applies each message as it is translated, and a note's `/synth_new` and its
 // release are sent in the same instant (only their timetags differ). So the
 // mirror shows a scheduled note born and freed at once while the engine still
-// has it sounding — a property of the mirror, not of the schedule.
+// has it sounding -- a property of the mirror, not of the schedule.
 //
 // Needs the debug server built (`cargo build` at the workspace root) and the
 // core wasm staged (`./build.sh`). Skips (does not fail) when the binary is
@@ -114,7 +114,7 @@ function noteLog(server: Server) {
 
 /**
  * Notifications are emitted on a block boundary and cross a socket, so the
- * tolerance is generous — this is a liveness-and-order assertion, not the
+ * tolerance is generous -- this is a liveness-and-order assertion, not the
  * sample-exactness one (that is `timed-send.test.ts`'s, on the bytes).
  */
 function assertNear(
@@ -273,7 +273,7 @@ test("two clocks join one grid and land on the same bar", {
         });
         await server.setTransport(Number(anchor.args[0]), 2.0);
 
-        // Two independent clients on it — one on wall time, one locked to the
+        // Two independent clients on it -- one on wall time, one locked to the
         // server's sample clock. They share nothing but the grid.
         const wall = new TempoClock(1.0);
         await wall.joinTransport(server);
@@ -314,7 +314,7 @@ test("a timeline on the server's transport follows the conductor over the wire",
 }, async () => {
     await withServer(async (server) => {
         await awaitEngine(server);
-        // The transport owns the nodes it plays, so it needs a group bound —
+        // The transport owns the nodes it plays, so it needs a group bound --
         // and the timeline's items are placed under it.
         const governed = new Group({ server });
         await server.transportGroup(governed.id);

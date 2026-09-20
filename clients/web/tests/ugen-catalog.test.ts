@@ -5,7 +5,7 @@
 // Every builder here is a hand-written mirror of a row the server owns, and
 // nothing else compares the two: a builder assembles its wire list explicitly,
 // so parameters in the wrong order still emit a valid def that compiles, type-
-// checks and sounds right. What drifts is the *signature* — the name a caller
+// checks and sounds right. What drifts is the *signature* -- the name a caller
 // reads, and the label a patcher's Def view puts on an inlet, which it takes
 // from the builder's parameter names by position. This is the test that sees
 // it, and it is the port of
@@ -15,8 +15,8 @@
 // stripping still carries both.
 //
 // Three declared lists say where a builder legitimately departs from the wire.
-// They are asserted **exact** — every entry must still name a live kind with a
-// live builder — so a renamed or removed UGen cannot leave a stale excuse
+// They are asserted **exact** -- every entry must still name a live kind with a
+// live builder -- so a renamed or removed UGen cannot leave a stale excuse
 // behind that quietly drops a row from the contrast.
 
 import { readFileSync } from "node:fs";
@@ -55,7 +55,7 @@ const NO_BUILDER: Record<string, string> = {
 
 /**
  * Kinds whose parameters are the wire's, plus or minus a declared tail. The
- * common prefix is still contrasted — only the tail is excused.
+ * common prefix is still contrasted -- only the tail is excused.
  */
 const TRAILING: Record<string, string> = {
     // Static configuration, not a signal: it sizes the private line.
@@ -205,7 +205,7 @@ test("the TS builders match the server's UGen catalog", () => {
             assert.ok(
                 kind.name in NO_BUILDER,
                 `${kind.name} has no TypeScript builder and is not declared as ` +
-                    `built another way — the packages move together, so a kind ` +
+                    `built another way -- the packages move together, so a kind ` +
                     `the server grew needs one here too`,
             );
             continue;
@@ -230,7 +230,7 @@ test("the TS builders match the server's UGen catalog", () => {
 
         const declared = kind.name in TRAILING;
         // An options object carries named slots, so the positional contrast
-        // ends where one begins — but only for a kind that declares it, so an
+        // ends where one begins -- but only for a kind that declares it, so an
         // undeclared `{}` cannot quietly truncate the check.
         const optsAt = ps.findIndex((p) => p.options);
         const cut = declared && optsAt >= 0 ? optsAt : Infinity;
@@ -249,7 +249,7 @@ test("the TS builders match the server's UGen catalog", () => {
                 `wire inputs ${JSON.stringify(want)}`,
         );
 
-        // A numeric default must be the server's own, at f32 — the value the
+        // A numeric default must be the server's own, at f32 -- the value the
         // client sends when the caller leaves the slot alone.
         for (let k = 0; k < n; k++) {
             const lit = ps[k].default;
@@ -278,7 +278,7 @@ test("every declared exception still names a live kind and builder", () => {
     }
     for (const name of Object.keys(NO_BUILDER)) {
         assert.ok(kinds.has(name), `${name} is no longer in the catalog`);
-        assert.ok(!byKind.has(name), `${name} has a builder now — undeclare it`);
+        assert.ok(!byKind.has(name), `${name} has a builder now -- undeclare it`);
     }
     for (const name of Object.keys(ALIASES)) {
         assert.ok(kinds.has(name), `${name} is no longer in the catalog`);

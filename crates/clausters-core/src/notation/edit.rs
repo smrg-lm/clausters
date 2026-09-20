@@ -1,7 +1,7 @@
 //! The edit verbs: what a hand does to one item.
 //!
-//! The same family as the operators — a function from a sheet to a sheet, crossing
-//! as data — and the same reason they are here rather than in a client: a
+//! The same family as the operators -- a function from a sheet to a sheet, crossing
+//! as data -- and the same reason they are here rather than in a client: a
 //! standalone host opened on a saved session has no client language in the
 //! process, and the score it opens has to be editable there. So the arithmetic,
 //! the validation and the refusals are all on this side, and a client
@@ -21,7 +21,7 @@
 //!
 //! **Nothing here reaches the engraver.** An edit rewrites the model and the
 //! page is engraved again from it, which is why the editing surface owes nothing
-//! to what a layout engine's own editor can express — inserting a measure and
+//! to what a layout engine's own editor can express -- inserting a measure and
 //! splitting a voice are ordinary operations here and are not in that vocabulary
 //! at all.
 
@@ -37,7 +37,7 @@ pub enum At {
     After(u64),
 }
 
-/// The item `id` is not in this sheet — the one refusal every verb here shares.
+/// The item `id` is not in this sheet -- the one refusal every verb here shares.
 fn missing(id: u64) -> String {
     format!("no item with id {id} is in this score")
 }
@@ -95,7 +95,7 @@ pub fn insert(
 }
 
 /// Take an item out. Everything after it in that voice moves earlier by its
-/// value — see [`silence`] for the other thing this could mean.
+/// value -- see [`silence`] for the other thing this could mean.
 pub fn delete(mut sheet: Sheet, id: u64) -> Result<Sheet, String> {
     sheet.assign_ids();
     let (si, vi, ii) = sheet.locate(id).ok_or_else(|| missing(id))?;
@@ -129,7 +129,7 @@ pub fn set_dur(mut sheet: Sheet, id: u64, dur: Ratio) -> Result<Sheet, String> {
     Ok(sheet)
 }
 
-/// Give an item different pitches — one for a note, several for a chord, none
+/// Give an item different pitches -- one for a note, several for a chord, none
 /// to make it a rest (which is [`silence`], reached the other way).
 ///
 /// The value and the id are kept, so this is the same item newly spelled rather
@@ -164,13 +164,13 @@ pub fn set_pitches(mut sheet: Sheet, id: u64, pitches: Vec<Pitch>) -> Result<She
 
 /// Tie an item into the one after it, or untie it.
 ///
-/// This is the tie a caller *writes* — the note goes on sounding through the
-/// next item — and it is stored. The ties an emitter adds where a value crosses
+/// This is the tie a caller *writes* -- the note goes on sounding through the
+/// next item -- and it is stored. The ties an emitter adds where a value crosses
 /// a barline are made from the projection and never stored, so the two compose
 /// instead of overwriting each other.
 ///
-/// **A tie joins two notes of the same pitch** — that is what a tie is, as
-/// against a slur — so one asked to join a note to a different pitch is refused
+/// **A tie joins two notes of the same pitch** -- that is what a tie is, as
+/// against a slur -- so one asked to join a note to a different pitch is refused
 /// here, at the verb. Written anyway it engraves as nothing: the emitter puts
 /// out the `@tie`, the engraver cannot match it, and the only sign is a warning
 /// on a stream no client shows. A chord may tie partially (one of its pitches
@@ -180,7 +180,7 @@ pub fn set_pitches(mut sheet: Sheet, id: u64, pitches: Vec<Pitch>) -> Result<She
 /// # Errors
 /// When the item is a rest (nothing sounds through a silence), is the last in
 /// its voice (there is nothing to tie into), or the next item shares no pitch
-/// with it — each saying which.
+/// with it -- each saying which.
 pub fn tie(mut sheet: Sheet, id: u64, tied: bool) -> Result<Sheet, String> {
     sheet.assign_ids();
     let (si, vi, ii) = sheet.locate(id).ok_or_else(|| missing(id))?;
@@ -244,7 +244,7 @@ fn spell(pitches: &[Pitch]) -> String {
 /// mark at all.
 ///
 /// # Errors
-/// When the item is not in the sheet, or is a rest — a rest has no pitch to
+/// When the item is not in the sheet, or is a rest -- a rest has no pitch to
 /// articulate and nothing to say about how long it sounds.
 pub fn set_marks(mut sheet: Sheet, id: u64, marks: Marks) -> Result<Sheet, String> {
     sheet.assign_ids();
@@ -307,8 +307,8 @@ pub fn remove_spanner(mut sheet: Sheet, kind: &str, from: u64, to: u64) -> Resul
 /// Move items to another voice on the same staff, leaving rests where they were.
 ///
 /// How two lines written as one come apart. The items keep their ids and their
-/// place in time — a rest of each one's length holds the gap open in the voice
-/// it left — so nothing before or after either line moves, and a caller's ids
+/// place in time -- a rest of each one's length holds the gap open in the voice
+/// it left -- so nothing before or after either line moves, and a caller's ids
 /// still name the same notes.
 ///
 /// The target voice is created when it is not there yet, and is padded with a
@@ -391,7 +391,7 @@ pub fn to_voice(mut sheet: Sheet, ids: &[u64], target: usize) -> Result<Sheet, S
 /// omitted one and an emptied one look identical on the wire.
 ///
 /// # Errors
-/// Never — a header is text and there is nothing to refuse.
+/// Never -- a header is text and there is nothing to refuse.
 pub fn set_header(mut sheet: Sheet, header: Header) -> Result<Sheet, String> {
     sheet.header = header;
     Ok(sheet)
@@ -455,7 +455,7 @@ fn measure_index(measure: usize) -> Result<usize, String> {
 }
 
 /// Move an item along the staff by `steps` **diatonic** places, up when
-/// positive — what dragging a note on the page is.
+/// positive -- what dragging a note on the page is.
 ///
 /// The arrival takes the **key signature's** alteration for the letter it lands
 /// on, which is what reading in a key means: dragging a note onto a B in E flat
@@ -468,7 +468,7 @@ fn measure_index(measure: usize) -> Result<usize, String> {
 /// than guessed at.
 ///
 /// # Errors
-/// When no item has that id, or it is a rest — a rest has no pitch to move, and
+/// When no item has that id, or it is a rest -- a rest has no pitch to move, and
 /// silently doing nothing would read as a gesture that failed to register.
 pub fn move_steps(mut sheet: Sheet, id: u64, steps: i32) -> Result<Sheet, String> {
     sheet.assign_ids();
@@ -499,7 +499,7 @@ pub fn move_steps(mut sheet: Sheet, id: u64, steps: i32) -> Result<Sheet, String
 /// means, once the clef and the key are known.
 ///
 /// `position` is whole diatonic steps from the staff's **top line**, positive
-/// upward — the coordinate a gesture on the page reports, because it is the one
+/// upward -- the coordinate a gesture on the page reports, because it is the one
 /// thing a renderer can measure without knowing any notation.
 ///
 /// This is where the rest of it is known, and it is here rather than in a

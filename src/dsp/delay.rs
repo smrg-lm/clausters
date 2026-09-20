@@ -1,13 +1,13 @@
 //! The delay core: one line behind all nine of scsynth's delay names.
 //!
 //! `DelayN/L/C`, `CombN/L/C` and `AllpassN/L/C` are the same circular buffer
-//! with two independent parameters — how a fractional tap is interpolated
+//! with two independent parameters -- how a fractional tap is interpolated
 //! (`N` none, `L` linear, `C` cubic) and what, if anything, is fed back
 //! (nothing, a comb, an allpass). One implementation, nine rows, no algebra
 //! written three times.
 //!
 //! **The line is either synth-private memory or a pool buffer**, and the same
-//! nine algorithms serve both — which is why there are eighteen names and one
+//! nine algorithms serve both -- which is why there are eighteen names and one
 //! implementation. A private line is allocated in `build`, on the network
 //! thread, sized from the static `max_delay` and the
 //! [`BuildCtx`](super::registry::BuildCtx) sample rate (that is the whole reason
@@ -15,7 +15,7 @@
 //! `BufDelay*`/`BufComb*`/`BufAllpass*` reads and writes a **channel of a pool
 //! buffer** instead, resolved per block from its `bufnum` input: the delay's
 //! contents are then addressable, so they can be inspected, resampled, saved or
-//! played by another node — the *shared* case, which is the whole difference.
+//! played by another node -- the *shared* case, which is the whole difference.
 //! What the two share is the circular line's arithmetic, held here once
 //! ([`Storage`] says where the samples are and nothing else does).
 //!
@@ -31,7 +31,7 @@
 //! things that vary.
 //!
 //! **These do not report [`UGen::latency`].** Their delay is the point of the
-//! UGen, not an artifact to be compensated — that hook exists for a UGen whose
+//! UGen, not an artifact to be compensated -- that hook exists for a UGen whose
 //! processing happens to lag (the partitioned convolver) and feeds a future
 //! plugin-delay compensation. Compensating a musical delay would silently undo
 //! what the user asked for.
@@ -43,7 +43,7 @@ use crate::dsp::{ProcessCtx, UGen, at};
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Interp {
     /// Round to the nearest stored sample (`*N`). Cheapest, and the only one
-    /// that is exact — at the price of quantizing the delay to whole samples,
+    /// that is exact -- at the price of quantizing the delay to whole samples,
     /// which zipper-modulates when the delay time moves.
     None,
     /// Linear between the two neighbours (`*L`).
@@ -58,10 +58,10 @@ pub enum Interp {
 pub enum Feedback {
     /// A pure delay: what goes in comes out later, once.
     None,
-    /// Feedback comb — `y[n] = x[n-D] + g*y[n-D]`, a resonator with a harmonic
+    /// Feedback comb -- `y[n] = x[n-D] + g*y[n-D]`, a resonator with a harmonic
     /// series of peaks.
     Comb,
-    /// Schroeder allpass — the same pole/zero pair arranged so the magnitude
+    /// Schroeder allpass -- the same pole/zero pair arranged so the magnitude
     /// response is exactly flat and only the phase is shaped. The building
     /// block of a reverb's diffusion stage.
     Allpass,
@@ -84,7 +84,7 @@ fn cubic(x: f64, y0: f64, y1: f64, y2: f64, y3: f64) -> f64 {
 /// a factor of 1000, and the gain per round trip follows from the ratio of the
 /// delay to it.
 ///
-/// A negative decay time gives a negated gain — scsynth allows it, and it
+/// A negative decay time gives a negated gain -- scsynth allows it, and it
 /// inverts the comb's peaks into troughs. A zero delay or a zero decay silences
 /// the feedback path rather than dividing by zero.
 #[inline]
@@ -103,7 +103,7 @@ fn feedback_gain(delay_secs: f64, decay_secs: f64) -> f64 {
 /// Where a delay line's samples live.
 ///
 /// The one thing that differs between the private family and the `Buf*` one.
-/// Everything else — the interpolation, the feedback, the wrap — is the same
+/// Everything else -- the interpolation, the feedback, the wrap -- is the same
 /// arithmetic over whichever of these is underneath.
 pub enum Storage {
     /// Synth-private memory, allocated at build and read by nobody else.
@@ -111,7 +111,7 @@ pub enum Storage {
     /// precision would change nothing and cost twice the cache.
     Private(Vec<f32>),
     /// One channel of a pool buffer, both named by **inputs** and resolved per
-    /// block — `bufnum` and `chan`, exactly as every other buffer UGen names
+    /// block -- `bufnum` and `chan`, exactly as every other buffer UGen names
     /// them, so a line can be moved between buffers and channels by a
     /// `/node_set` like anything else.
     Pool,
@@ -120,7 +120,7 @@ pub enum Storage {
 /// A line as one block sees it: the samples, wherever they are.
 ///
 /// Borrowed for the length of `process` and no longer, because a pool line is
-/// resolved out of the buffer pool afresh each block — the `bufnum` input may
+/// resolved out of the buffer pool afresh each block -- the `bufnum` input may
 /// name a different buffer between one and the next.
 enum Line<'a> {
     Private(&'a mut [f32]),
@@ -192,7 +192,7 @@ fn read_at(line: &Line, write: usize, interp: Interp, back: f64) -> f64 {
 }
 
 /// One delay line. Inputs for the private family: 0 the signal, 1 the delay
-/// time in seconds, and — for the comb and allpass forms — 2 the decay time.
+/// time in seconds, and -- for the comb and allpass forms -- 2 the decay time.
 /// The `Buf*` family prepends 0 the buffer index and 1 the channel.
 pub struct Delay {
     line: Storage,
@@ -200,7 +200,7 @@ pub struct Delay {
     write: usize,
     interp: Interp,
     feedback: Feedback,
-    /// Longest delay a **private** instance can read, in frames — always at
+    /// Longest delay a **private** instance can read, in frames -- always at
     /// least three short of the line so a cubic tap's neighbours stay inside
     /// it. A pool line computes the same bound per block from the buffer it
     /// lands on, which is the only thing it cannot know at build.
@@ -224,7 +224,7 @@ impl Delay {
     }
 
     /// A line over whatever pool buffer and channel its first two inputs name
-    /// — the `Buf*` family. Nothing is allocated: the buffer is the client's,
+    /// -- the `Buf*` family. Nothing is allocated: the buffer is the client's,
     /// and so is clearing it.
     pub fn over_buffer(interp: Interp, feedback: Feedback) -> Self {
         Self {
@@ -236,7 +236,7 @@ impl Delay {
         }
     }
 
-    /// Whether this instance reads its `bufnum`/`chan` from inputs 0 and 1 —
+    /// Whether this instance reads its `bufnum`/`chan` from inputs 0 and 1 --
     /// which is also how many inputs the signal and the times are offset by.
     #[inline]
     fn buffered(&self) -> bool {
@@ -327,7 +327,7 @@ impl UGen for Delay {
                         Feedback::Comb => (x + g * delayed, delayed),
                         // Schroeder allpass: the stored value carries the
                         // feedback, and the output mixes it against the tap so
-                        // the numerator and denominator are reciprocal — which
+                        // the numerator and denominator are reciprocal -- which
                         // is what makes the magnitude exactly flat.
                         _ => {
                             let v = x + g * delayed;

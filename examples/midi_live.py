@@ -3,7 +3,7 @@
 
 The same `Pbind` that renders to a `.mid` can instead drive a live MIDI output
 port: `MidiServer(interface=MidiRtInterface(...))`. Each note goes out the port
-in real time (note-on at its beat, note-off scheduled after the sustain) — no
+in real time (note-on at its beat, note-off scheduled after the sustain) -- no
 timetags, best-effort, the way live MIDI works. Connect the port to a synth or
 to this server's own MIDI input (`clausters --midi`) with `pw-link` (or wire it
 visually in qpwgraph).

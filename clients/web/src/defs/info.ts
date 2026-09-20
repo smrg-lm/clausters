@@ -1,7 +1,7 @@
 // What the server reports about its resources: the records and their parsers
 // (mirrors `clausters/defs/info.py`).
 //
-// One rule holds for every resource the server owns — a node, a buffer, a def:
+// One rule holds for every resource the server owns -- a node, a buffer, a def:
 //
 // * an **Info** is a frozen-in-time record of **one** instance, identified by
 //   itself (`id`, `bufnum`, `name`), carrying no server and no commands,
@@ -9,18 +9,18 @@
 //   exactly that record,
 // * the **server** asks about every instance of a type (`Server.queryBuffers`,
 //   `Server.queryDefs`, `Server.queryTree`) and answers with a structure of
-//   those same records — an array, or a `Tree`,
+//   those same records -- an array, or a `Tree`,
 // * and a resource that is **not there** is a state, not an error: the record
 //   comes back with `exists = false` rather than throwing, so one dead id
 //   never aborts a query about the others.
 //
 // The records live here rather than next to one resource because both ends
 // need them: `Server` builds them from the catalog replies, and `Node`/
-// `Buffer` from their own. A bus has no record at all — the server does not
+// `Buffer` from their own. A bus has no record at all -- the server does not
 // model one (its index and width are the client allocator's invention), which
 // is why there is no `BusInfo`.
 
-/** Any decoded OSC argument — what a reply parser walks. */
+/** Any decoded OSC argument -- what a reply parser walks. */
 export type ReplyArgs = readonly (number | string | boolean | null | Uint8Array)[];
 
 /**
@@ -58,7 +58,7 @@ export interface ControlInfo {
  */
 export interface DefInfo {
     name: string;
-    /** `"synth"`, `"faust"` or `"graph"` — empty when the name is unknown. */
+    /** `"synth"`, `"faust"` or `"graph"` -- empty when the name is unknown. */
     family: string;
     controls: ControlInfo[];
     exists: boolean;
@@ -79,7 +79,7 @@ export interface BufferInfo {
 /**
  * One named input slot of a UGen, in **wire order**.
  *
- * The wire is positional — a def lists input values, it never names them — so
+ * The wire is positional -- a def lists input values, it never names them -- so
  * this is what a palette labels an inlet with, and `default` is what to offer
  * when the user leaves the slot alone.
  */
@@ -93,7 +93,7 @@ export interface UgenInput {
  *
  * This is a **type**, not an instantiated resource: there is no handle for it
  * and so no `exists`. `arity` is the input count, or `-1` for a variadic kind
- * — whose `inputs` then name only the fixed head (`EnvGen`'s five before the
+ * -- whose `inputs` then name only the fixed head (`EnvGen`'s five before the
  * envelope array). `rates` are the rates the kind may be instantiated at and
  * `defaultRate` the one a def gets by omitting `rate`. `exec`, `bus`,
  * `opFamily` and `spectral` expose the compiler's own classification; the ones
@@ -120,7 +120,7 @@ export interface NodeMap {
 }
 
 /**
- * A node the server holds — a synth or a group — at one moment.
+ * A node the server holds -- a synth or a group -- at one moment.
  *
  * Unlike a buffer's, this record goes stale on its own: an envelope runs, a
  * mapped control follows its bus, a `doneAction` frees the node. It is a
@@ -252,7 +252,7 @@ export function formatNodeInfo(info: NodeInfo): string {
 /**
  * The node tree from one group down: a `NodeInfo` plus its children.
  *
- * The structure is the only thing the tree adds — every entry is the same
+ * The structure is the only thing the tree adds -- every entry is the same
  * record `Node.info` returns, so reading a tree needs no follow-up query. The
  * queried group is the root, and its own `parent`/`prev`/`next` are unknown
  * (`-1`): the reply starts at it, so it has no siblings to report.
@@ -305,7 +305,7 @@ export class Tree {
         const info = this.info;
         if (info.isGroup) {
             // The children are the tree's own knowledge, so emptiness is read
-            // from them rather than from the record's `head` — the one line a
+            // from them rather than from the record's `head` -- the one line a
             // group's own formatter cannot write for it.
             const named = info.name ? ` "${info.name}"` : "";
             const head = `${pad}group ${info.id}${named}${groupModes(info)}`
@@ -317,7 +317,7 @@ export class Tree {
 }
 
 /**
- * Python's `%g`, which is what every record line here is written against —
+ * Python's `%g`, which is what every record line here is written against --
  * exported because the GUI's own record (`formatWidgetInfo`) prints values off
  * the same wire and has to round them the same way.
  */
@@ -406,7 +406,7 @@ export function parseNodeInfo(args: ReplyArgs): NodeInfo {
 /**
  * Recursively parses `count` entries of a `/group_queryTree.reply` starting at
  * `i`; returns the subtrees and the next index. A synth has child-count −1.
- * Every entry is `id, childCount, name` — the group's `/group_name` or the
+ * Every entry is `id, childCount, name` -- the group's `/group_name` or the
  * synth's def name.
  *
  * The wire gives the nesting; the siblings and a group's head/tail follow from
@@ -483,7 +483,7 @@ export function parseQueryTree(args: ReplyArgs): Tree {
 
 /**
  * One `/def_query.reply` reply: `name, family, numControls` then per control `name,
- * default, rate` — plus `min, max, step` for a Faust parameter, or
+ * default, rate` -- plus `min, max, step` for a Faust parameter, or
  * `numTargets` and the target tuples for a graph port.
  */
 export function parseDefInfo(args: ReplyArgs): DefInfo {

@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Receive OSC and relay it to the server — the client as an OSC hub.
+"""Receive OSC and relay it to the server -- the client as an OSC hub.
 
 Until now the client was output-only. `OscFunc` adds the **input** path: it
 listens for OSC from *any* application and dispatches matching messages to a
 callback, which here plays a synth on the Clausters server. This is the
-client-side counterpart of driving the server directly — the server can be
+client-side counterpart of driving the server directly -- the server can be
 played by OSC it receives itself, or by a client that listens to OSC from
 elsewhere and forwards `/synth_new`.
 
 It also shows the **transport push** (the shared grid reacting live): the
 receiver registers `/server_notify` on its own socket, so when any client sets the
 server's `/transport_set`, the server pushes the new grid back and an
-`OscFunc('/transport_query.reply')` re-aligns this client — no polling.
+`OscFunc('/transport_query.reply')` re-aligns this client -- no polling.
 
 `Session.live` boots an audio server if none is up, so this runs on its own (it self-sends a few `/note` messages and one transport change to
 demonstrate, but it will relay anything sent to its port from another app too)::

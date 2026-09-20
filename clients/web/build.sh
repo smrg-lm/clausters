@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the clausters web package: compile the three wasm crates (the engine,
 # the GUI host, the shared core's OSC codec), stage their wasm-bindgen bundles
-# into dist/, and emit the TypeScript sources next to them — dist/ is the
+# into dist/, and emit the TypeScript sources next to them -- dist/ is the
 # complete, servable package (src/ -> dist/ 1:1; the staged bundles are the
 # browser's _bin/_libs).
 #
@@ -59,7 +59,7 @@ fi
 (cd ../.. && cargo build -p clausters-web -p clausters-core-web -p clausters-nrt-web \
     --lib $flag --target wasm32-unknown-unknown)
 # The GUI host (its own workspace under clients/gui). `font-atlas` compiles in
-# its glyph rasterizer, so a page may draw text with a real typeface — it ships
+# its glyph rasterizer, so a page may draw text with a real typeface -- it ships
 # none, so the page fetches one and hands it over (`gui.bridge.font(bytes)`), and
 # until it does the host draws its embedded bitmap face exactly as a build
 # without the feature would.
@@ -141,7 +141,7 @@ fi
 if [ -d node_modules ]; then
     npm run --silent build
 else
-    echo "note: node_modules missing — run 'npm install' then 'npm run build'" >&2
+    echo "note: node_modules missing -- run 'npm install' then 'npm run build'" >&2
 fi
 
 echo "package staged: dist/ (modules + engine/ gui-host/ core/ wasm bundles + vendor/verovio)"

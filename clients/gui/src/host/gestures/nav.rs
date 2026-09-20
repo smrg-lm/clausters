@@ -16,7 +16,7 @@ use super::super::widget::{ScrollView, Widget, WidgetKind};
 use super::effects::{emit, emit_view, redraw_all};
 use super::{GestureCtx, GestureEffect};
 
-/// The rectangle spanned by two corner points, whatever their order — the
+/// The rectangle spanned by two corner points, whatever their order -- the
 /// marquee's own geometry, and the one every sweep is drawn from.
 pub(crate) fn corner_rect(a: (f64, f64), b: (f64, f64)) -> Rect {
     let (x0, x1) = (a.0.min(b.0), a.0.max(b.0));
@@ -24,7 +24,7 @@ pub(crate) fn corner_rect(a: (f64, f64), b: (f64, f64)) -> Rect {
     Rect::new(x0 as f32, y0 as f32, (x1 - x0) as f32, (y1 - y0) as f32)
 }
 
-/// The deepest widget under `(x, y)` and the containers over it — the lane
+/// The deepest widget under `(x, y)` and the containers over it -- the lane
 /// counts the vertical axes are panned through coming off the front's context.
 pub(super) fn hit(host: &Host, ctx: &GestureCtx, x: f64, y: f64) -> Option<Hit> {
     interact::hit(host, ctx.def_id, ctx.fb_w, ctx.fb_h, x, y, &|id, kind| {
@@ -87,7 +87,7 @@ pub(super) fn timeline_ids(tree: &Widget) -> Vec<i32> {
         // and a time ruler are on it too, and a multitrack whose clips carry
         // notes, curves or nothing at all has no signal element anywhere. Asked
         // the narrower question this found no view to reset in such a window
-        // and did nothing at all — the wheel zoomed the axis and the key that
+        // and did nothing at all -- the wheel zoomed the axis and the key that
         // undoes that was inert, which is a worse answer than not offering it.
         .filter(|w| w.is_timeline())
         .filter_map(|w| w.id)
@@ -103,7 +103,7 @@ pub(super) fn freq_nav_ids(tree: &Widget) -> Vec<i32> {
 }
 
 /// Writes the selection spanning samples `a..b` (any order, clamped to the
-/// timeline) into view `id`'s navigation group — every member follows — and
+/// timeline) into view `id`'s navigation group -- every member follows -- and
 /// emits **one** `"selection" start len` event, carrying the interacted
 /// member's id.
 ///
@@ -115,11 +115,11 @@ pub(super) fn freq_nav_ids(tree: &Widget) -> Vec<i32> {
 /// selection that is only a span is exactly the two numbers this has always
 /// sent, so a reader of the old form keeps working and one that understands the
 /// second axis is told when there is one. Passing `None` clears any range the
-/// widget carried — a new sweep replaces the old selection whole, rather than
+/// widget carried -- a new sweep replaces the old selection whole, rather than
 /// leaving a restriction from a gesture the hand has finished with.
 /// Hands the element the run the hand is holding, or takes it back.
 ///
-/// Returns whether the element is one that can hold one — a press that cannot
+/// Returns whether the element is one that can hold one -- a press that cannot
 /// place its pending has nothing to draw and declines, rather than starting a
 /// drag whose feedback would be invisible.
 pub(super) fn set_pending(
@@ -141,7 +141,7 @@ pub(super) fn set_pending(
 /// widely spaced positions; writing only those would leave the contents combed
 /// with holes. Filling them by interpolation is what makes the stroke a stroke.
 ///
-/// The run stays contiguous and may grow either way — a stroke that doubles
+/// The run stays contiguous and may grow either way -- a stroke that doubles
 /// back keeps one run rather than two, which is what makes it one intent.
 pub(super) fn extend_stroke(
     host: &mut Host,
@@ -161,7 +161,7 @@ pub(super) fn extend_stroke(
     };
     let (lo, hi) = (from.0.min(to.0), from.0.max(to.0));
     // Grow the run to cover the new reach, asking the element what each newly
-    // covered sample *was* — that is what keeps the intent invertible.
+    // covered sample *was* -- that is what keeps the intent invertible.
     let read = |frame: usize| -> f32 {
         host.window_def(def_id)
             .and_then(|t| t.find(id))
@@ -200,7 +200,7 @@ pub(super) fn extend_stroke(
 /// **What a marquee caught**, asked of whoever holds the contents: the element
 /// under it.
 ///
-/// One call, so every swept rectangle in the host is the same gesture — which
+/// One call, so every swept rectangle in the host is the same gesture -- which
 /// is the point of there being one [`Drag::Marquee`](super::Drag::Marquee). A
 /// rectangle of no size covers nothing, so this is also what a press does, and
 /// what makes a click let go.
@@ -216,8 +216,8 @@ pub(super) fn marquee_caught(
     }
 }
 
-/// **What the rectangle caught, of an element's own contents** — a patcher's
-/// boxes, a roll's notes — and the band of its second axis it covered, where it
+/// **What the rectangle caught, of an element's own contents** -- a patcher's
+/// boxes, a roll's notes -- and the band of its second axis it covered, where it
 /// has one.
 pub(super) fn sweep_element(
     host: &mut Host,
@@ -267,7 +267,7 @@ pub(super) fn set_selection(
 /// the selection the span it loops inside.
 ///
 /// `place` is what separates the two moments a sweep speaks to the transport,
-/// and getting it wrong is audible. The **loop follows the drag live** — a span
+/// and getting it wrong is audible. The **loop follows the drag live** -- a span
 /// can be redrawn while the take repeats inside it, and setting one never moves
 /// the multitrack, so the sound goes on from where it is and simply wraps somewhere
 /// else. The **head is placed once**, by the press: locating on every frame of
@@ -275,7 +275,7 @@ pub(super) fn set_selection(
 /// retrigger per frame rather than as a selection being drawn.
 ///
 /// **Two conditions, and neither is "something is playing".** The host must be
-/// the one that bound the governed group (`Host::owns_transport`) — a script
+/// the one that bound the governed group (`Host::owns_transport`) -- a script
 /// owns its own transport, and a sweep in a window it happens to be drawing is
 /// not a request to seek it. And the view must draw **contents**: the
 /// transport's position is in frames of the multitrack, so a sweep on a lane
@@ -306,9 +306,9 @@ pub(super) fn transport_follows_selection(
 
 /// Places the **position cursor**: the timeline position under the pointer
 /// becomes the group's, drawn at once on every lane so the click lands where
-/// you see it, and leaves as `/gui_event <id> "locate" <position>` — where the
+/// you see it, and leaves as `/gui_event <id> "locate" <position>` -- where the
 /// owner starts a playback from and where a paste of its own would land.
-/// **The marker a press at `cx` landed on**, over the strip it was drawn in —
+/// **The marker a press at `cx` landed on**, over the strip it was drawn in --
 /// asked of the group's *current* window, since the axis may have moved since
 /// the markers were set.
 pub(super) fn marker_under(
@@ -326,7 +326,7 @@ pub(super) fn marker_under(
 
 /// Writes the widget's markers and reports them: the flat `time label color`
 /// list, the same shape a `/gui_set markers` takes and a `/gui_query` gives
-/// back — **the time and the text are what the owner is handed**, and what it
+/// back -- **the time and the text are what the owner is handed**, and what it
 /// stores against its own document.
 pub(super) fn set_markers(
     host: &mut Host,
@@ -369,7 +369,7 @@ pub(super) fn set_markers(
 /// `None` where it is on no navigation group and nowhere a cut or a paste could
 /// land.
 ///
-/// The **position cursor** — the line a click on the ruler placed — because
+/// The **position cursor** -- the line a click on the ruler placed -- because
 /// that is the one a hand put somewhere on purpose: a cut and a paste land where
 /// the reader is, not where the music happens to have got to. Where none has
 /// been placed it falls back to the playhead ([`GroupState::head_at`]), so a
@@ -398,7 +398,7 @@ pub(super) fn locate_at(
     // placed, it starts from here and, while the transport runs, it is the
     // engine's own position. So a click mid-playback moves the mark and
     // nothing else. The `"locate"` below tells the owner where the reader put
-    // it — the host owns where the cursor *is*, the owner owns what it means.
+    // it -- the host owns where the cursor *is*, the owner owns what it means.
     let roots = host.set_timeline_cursor(id, pos);
     // What the owner is told is the mark as placed, on its sample, and as a
     // double: an `f32` holds a whole sample only up to 2^24 of them.
@@ -463,7 +463,7 @@ pub(super) const EDGE_MARGIN: f64 = 28.0;
 pub(super) const EDGE_SCROLL_PER_SEC: f64 = 0.9;
 
 /// Writes timeline view `id`'s vertical display window (clamped) into its
-/// editor props and emits the `"view_y" y_start y_len` event — the vertical
+/// editor props and emits the `"view_y" y_start y_len` event -- the vertical
 /// sibling of [`emit_view`]'s range.
 pub(super) fn set_y_view(
     host: &mut Host,
@@ -507,7 +507,7 @@ pub(super) fn set_y_view(
     out.push(GestureEffect::Redraw(def_id));
 }
 
-/// The [`FreqAxis`] of the widget a hit landed on, if it navigates one — the
+/// The [`FreqAxis`] of the widget a hit landed on, if it navigates one -- the
 /// widget's own answer, since where the picture sits inside its rectangle is
 /// its region split and not the machine's.
 pub(super) fn freq_axis(host: &Host, ctx: &GestureCtx, hit: &interact::Hit) -> Option<FreqAxis> {
@@ -548,7 +548,7 @@ pub(super) fn value_axis(
 /// spans a body of at most a few thousand pixels, so a billionth of it is a
 /// millionth of a pixel; a timeline window is measured in whole samples, so a
 /// billionth of one is nothing either. In both units this is float noise rather
-/// than a movement — and it matters because a bound that is itself a function
+/// than a movement -- and it matters because a bound that is itself a function
 /// of the window's position converges to it by last bits rather than landing on
 /// it, and each of those last bits would otherwise be an event.
 const VIEW_EPSILON: f64 = 1e-9;
@@ -558,7 +558,7 @@ const VIEW_EPSILON: f64 = 1e-9;
 /// **A gesture that moves nothing says nothing.** An axis pressed against a
 /// bound goes on receiving wheel steps and drag motion, and re-emitting the
 /// window it already had fills a script's event stream with a view that never
-/// changed — the reader turning the wheel at the end of an axis is not asking
+/// changed -- the reader turning the wheel at the end of an axis is not asking
 /// anything, and the script should not be told they were.
 fn window_moved(a: (f64, f64), b: (f64, f64)) -> bool {
     (a.0 - b.0).abs() > VIEW_EPSILON || (a.1 - b.1).abs() > VIEW_EPSILON
@@ -612,7 +612,7 @@ fn asked_x_len(host: &Host, def_id: i32, id: i32) -> f64 {
 ///
 /// The distinction is the whole of why the two are kept apart: a pan down a log
 /// axis has to open the window (four bins at 100 Hz are a quarter of the axis),
-/// and writing that opening back would make the pan spend the zoom — the way
+/// and writing that opening back would make the pan spend the zoom -- the way
 /// up would then arrive somewhere nobody asked to be, and one gesture would no
 /// longer undo itself.
 pub(super) fn pan_x_view(
@@ -627,15 +627,15 @@ pub(super) fn pan_x_view(
     set_x_view(host, out, def_id, id, start, len, sample_rate);
 }
 
-/// Writes spectrum `id`'s **frequency** window — the request, clamped through
-/// the same normalized axis the vertical one uses — and emits the
+/// Writes spectrum `id`'s **frequency** window -- the request, clamped through
+/// the same normalized axis the vertical one uses -- and emits the
 /// `"view_x" start len` event carrying the window that request produces. The
 /// horizontal sibling of [`set_y_view`], and deliberately not the group's
 /// `"view"`: this window belongs to the element, so nothing else moves with it.
 ///
 /// A request that shows the reader exactly what they are already looking at is
 /// **not written down**. It is the wheel at the end of an axis: it asks for a
-/// window the axis cannot give, so the one already there stands — and with it
+/// window the axis cannot give, so the one already there stands -- and with it
 /// the length the reader chose where it *was* available, which the axis will
 /// hand back the moment the pan returns somewhere it fits.
 pub(super) fn set_x_view(
@@ -753,7 +753,7 @@ pub(super) fn zoom_timeline(
     redraw_all(out, &roots);
 }
 
-/// Whether view `id`'s group window differs from the `before` snapshot — the
+/// Whether view `id`'s group window differs from the `before` snapshot -- the
 /// timeline sibling of [`window_moved`], in samples rather than normalized
 /// units.
 fn group_view_moved(host: &Host, id: i32, before: Option<(f64, f64, usize)>) -> bool {

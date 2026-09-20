@@ -131,7 +131,7 @@ impl Drop for CompilerThread {
 }
 
 /// libfaust keeps global compiler state: concurrent compilations in one
-/// process SIGSEGV (verified empirically — parallel test runs crashed). One
+/// process SIGSEGV (verified empirically -- parallel test runs crashed). One
 /// server has one compiler thread, but tests and embedders may hold several,
 /// so the actual FFI call is serialized process-wide.
 static COMPILE_LOCK: Mutex<()> = Mutex::new(());
@@ -145,7 +145,7 @@ pub fn ffi_lock() -> std::sync::MutexGuard<'static, ()> {
 
 /// The LLVM target the factory JITs for, as a Faust `triple:mcpu` string.
 ///
-/// Empty — the default, and what a production server wants — means the host
+/// Empty -- the default, and what a production server wants -- means the host
 /// machine: LLVM detects the CPU and emits code tuned for it. The
 /// `CLAUSTERS_FAUST_TARGET` env var overrides it; CI sets a baseline CPU
 /// (`:x86-64`) because virtualized runners can misreport their CPU features and
@@ -157,7 +157,7 @@ pub(crate) fn host_target() -> CString {
 
 /// Holds the global FFI lock with the libfaust context open; dropping it
 /// destroys the context (before releasing the lock). Boxes built inside are
-/// arena pointers that die with the context — only the factory survives.
+/// arena pointers that die with the context -- only the factory survives.
 struct LibContext {
     _lock: std::sync::MutexGuard<'static, ()>,
 }
@@ -188,7 +188,7 @@ impl Drop for LibContext {
 ///
 /// Runs with the FPU in normal precision: the NRT renderer calls this from
 /// its flush-to-zero render thread, and libfaust's front-end must not do
-/// its double math (interval typing, constant folding) in FTZ/DAZ mode —
+/// its double math (interval typing, constant folding) in FTZ/DAZ mode --
 /// its interval assertions abort the process on a flushed bound (see
 /// [`crate::dsp::denormals::normal_precision`]).
 pub fn compile(name: &str, payload: &CompilePayload) -> Result<FaustDef, String> {
@@ -203,7 +203,7 @@ pub fn compile(name: &str, payload: &CompilePayload) -> Result<FaustDef, String>
 }
 
 /// Runs one request: on a startup reload, tries the bitcode cache first
-/// (skipping the Faust front-end); otherwise — and on any cache miss —
+/// (skipping the Faust front-end); otherwise -- and on any cache miss --
 /// compiles from source. When persistence is on, a fresh compile (re)writes
 /// the cache. The cache is non-authoritative: a miss is silent and always
 /// recoverable.

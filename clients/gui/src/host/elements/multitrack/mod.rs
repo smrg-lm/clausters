@@ -5,7 +5,7 @@
 //! holding its notes; this is one widget holding its lanes and clips, drawing
 //! its own headers, its own stack and its own boxes on the shared time axis.
 //! What that replaces is a *tree* of `Track` widgets under whatever generic
-//! container a script picked — a shape with nobody in it that owned the multitrack,
+//! container a script picked -- a shape with nobody in it that owned the multitrack,
 //! so a gesture had nowhere to report *the multitrack* and reported what the hand
 //! did to whichever widget it touched. `clients/gui/PLAN.md`'s `G34` carries
 //! the whole argument.
@@ -16,7 +16,7 @@
 //! name, so what comes back names what the script already knows.
 //!
 //! **It places; a clip is entered to edit.** A clip's contents draw read-only
-//! here — this widget owns *where* things are, not what is inside them — and
+//! here -- this widget owns *where* things are, not what is inside them -- and
 //! editing one is opening it in the editor its structure asks for. That is what
 //! keeps a heavy widget from becoming every widget, and it is the line the three
 //! applications are drawn on: the multitrack places, the audio editor and the
@@ -100,7 +100,7 @@ const SNAP_PX: f32 = 8.0;
 const MIN_LANE_H: f32 = 40.0;
 const MAX_LANE_H: f32 = 8.0 * LANE_H;
 
-/// An automation row's thickness when nothing says otherwise — shorter than a
+/// An automation row's thickness when nothing says otherwise -- shorter than a
 /// lane, because what it draws is one line and not a stack of boxes.
 const CURVE_H: f32 = 40.0;
 
@@ -132,10 +132,10 @@ pub struct Multitrack {
     /// **The clip envelopes**: each a layer drawn inside the box it names, over
     /// whatever that box draws and lasting exactly as long as it does.
     ///
-    /// The same type as a track's automation and the same element draws it —
+    /// The same type as a track's automation and the same element draws it --
     /// what differs is where it hangs, which is the whole of the distinction.
     pub(crate) layers: Vec<model::Curve>,
-    /// **The break-point element per curve, by name** — rows and layers alike,
+    /// **The break-point element per curve, by name** -- rows and layers alike,
     /// each the `curve` element in its body form.
     ///
     /// A curve is the one content here a hand may *edit*, so unlike a take or a
@@ -143,14 +143,14 @@ pub struct Multitrack {
     /// views are editable layers over a read-only base, which is what a box
     /// being a window onto a picture leaves room for.
     bodies: HashMap<String, crate::host::elements::curve::Curve>,
-    /// **Which layer the hand is on**, by curve name; `None` is the placement —
+    /// **Which layer the hand is on**, by curve name; `None` is the placement --
     /// the boxes themselves.
     ///
     /// One layer is active at a time and it is the only one that acts or offers
     /// an affordance. Here a layer has a name, so it is named: the `points:1`
     /// ordinal is what a container whose layers are anonymous falls back to.
     layer: Option<String>,
-    /// **How tall each track is drawn**, by lane name — the vertical zoom a
+    /// **How tall each track is drawn**, by lane name -- the vertical zoom a
     /// hand set by pulling a header's bottom edge.
     ///
     /// Screen state, like the scroll and the box selection: nothing on the wire
@@ -159,7 +159,7 @@ pub struct Multitrack {
     /// because the wire has always carried one, and a reader who zoomed a track
     /// in must not lose it to the next fader move.
     zoom: HashMap<String, f32>,
-    /// **How tall each automation row is drawn**, by curve name — the same
+    /// **How tall each automation row is drawn**, by curve name -- the same
     /// screen state [`Multitrack::zoom`] is, for the other kind of row.
     ///
     /// A table of its own rather than one keyed by "whatever the row is called"
@@ -172,14 +172,14 @@ pub struct Multitrack {
     ///
     /// A meter is a *bus*, not a value: the host reads it every frame, straight
     /// out of the shared segment, so a level that moves every block costs no
-    /// message at all. What the client says is where to look — which is the
+    /// message at all. What the client says is where to look -- which is the
     /// only half of it a client could know, since it is the client that
     /// allocated the buses and put the meters on the track.
     ///
     /// Empty is the ordinary state: a multitrack nobody is playing has no meters,
     /// and a header with nothing to read draws no strip.
     meters: HashMap<String, LaneMeter>,
-    /// **Which boxes wrap**, by name — the `loops` prop, a name set exactly as
+    /// **Which boxes wrap**, by name -- the `loops` prop, a name set exactly as
     /// `hidden` is.
     ///
     /// Not a field of the `clips` septuple, because nothing here changes it: a
@@ -188,7 +188,7 @@ pub struct Multitrack {
     /// here is what an edge drag may do and how the samples are drawn under a
     /// box longer than they are.
     loops: Vec<String>,
-    /// **The spans each join is made of**, by box name — the `segments` prop.
+    /// **The spans each join is made of**, by box name -- the `segments` prop.
     ///
     /// A box named here is drawn from the takes these spans read, span by span,
     /// and its own source is never fetched: a join owns no samples, so the
@@ -201,19 +201,19 @@ pub struct Multitrack {
     /// placement.
     hidden: Vec<String>,
     /// The curve a press handed the drag to, and its break-points as they stood
-    /// when the press landed — what says on release whether anything changed.
+    /// when the press landed -- what says on release whether anything changed.
     holding: Option<(String, Value)>,
     /// Which clips the hand is holding, by index. **The hand's, not the
     /// multitrack's**: nothing on the wire sets or reports it, exactly as nothing
     /// reports which notes a roll has selected.
     pub(crate) selected: Vec<usize>,
-    /// Which **track** the hand is on, by row index — the second coordinate a
+    /// Which **track** the hand is on, by row index -- the second coordinate a
     /// paste needs (the position cursor says *when*, this says *where*), and
     /// what Delete acts on when there is one.
     ///
     /// The hand's, like the box selection and for the same reason: nothing on
     /// the wire sets or reports it, because it is not a fact about the multitrack.
-    /// One at a time — a paste has one anchor, and a mixer strip wanting
+    /// One at a time -- a paste has one anchor, and a mixer strip wanting
     /// several is a different question than this one.
     pub(crate) track: Option<usize>,
     /// How far the stack is scrolled, in logical pixels. Screen state, so it
@@ -223,12 +223,12 @@ pub struct Multitrack {
     pub(crate) gap: f32,
     /// The grid a placement lands on, in timeline samples; `0` is no grid.
     pub(crate) snap: f64,
-    /// The shared axis, the selection and the playhead — the same props every
+    /// The shared axis, the selection and the playhead -- the same props every
     /// timeline view carries.
     pub(crate) editor: EditorProps,
     /// A caption drawn in the corner.
     pub(crate) label: Option<String>,
-    /// **How a box of samples is drawn** — the presentation its body element
+    /// **How a box of samples is drawn** -- the presentation its body element
     /// takes: `"trace"` (the default) or `"spectrogram"`, the same signal seen
     /// the other way.
     ///
@@ -236,14 +236,14 @@ pub struct Multitrack {
     /// normal case, and a box that wanted its own would be a prop nobody has
     /// asked for. It reaches the bodies through the element they are.
     pub(crate) view: Presentation,
-    /// **The take bodies, by server buffer number** — what a box's picture is
+    /// **The take bodies, by server buffer number** -- what a box's picture is
     /// drawn from, one entry however many boxes read it.
     ///
     /// It is the element's because the samples are: a buffer arrives once
     /// (`Element::bulk_of`) and every box over it draws the same pyramid,
     /// which is what makes six views of one recording cost one download.
     ///
-    /// Each is a **signal element in its body form** — the very element that
+    /// Each is a **signal element in its body form** -- the very element that
     /// stands on its own elsewhere, drawn through
     /// [`Element::draw_body`] against
     /// the box's own axis and with no chrome of its own. A box is a window onto
@@ -259,7 +259,7 @@ pub struct Multitrack {
     /// leaves this set when its samples are known to have changed under it
     /// ([`Samples::forget_take`]), which is how it is asked for again.
     asked: HashSet<i32>,
-    /// **The roll bodies, by box name** — a box whose contents are notes rather
+    /// **The roll bodies, by box name** -- a box whose contents are notes rather
     /// than samples.
     ///
     /// Per box and not per source, because notes are the box's: two boxes over
@@ -267,7 +267,7 @@ pub struct Multitrack {
     /// element is the roll that stands on its own elsewhere, drawn through its
     /// body door with no keyboard, no strips and no chrome.
     rolls: HashMap<String, Notes>,
-    /// **The samples a spectral box owes its slot**, by buffer — kept when they
+    /// **The samples a spectral box owes its slot**, by buffer -- kept when they
     /// land and transformed by the next [`Slotted::fills`], which takes them.
     ///
     /// A time-frequency picture is a texture, and a texture is uploaded rather
@@ -276,7 +276,7 @@ pub struct Multitrack {
     /// worth cloning; they are held only until the next tick asks.
     ///
     /// It is the multitrack's and not the body element's because a body over a
-    /// *server buffer* resolves its samples as a pyramid — the right answer for
+    /// *server buffer* resolves its samples as a pyramid -- the right answer for
     /// a trace, and nothing a transform can read.
     pending: HashMap<i32, (Vec<f32>, usize)>,
     /// The drag in flight. **The state lives in the element**; the machine
@@ -332,8 +332,8 @@ impl Multitrack {}
 /// asks of whoever holds some.
 ///
 /// The row is the **lane's index**, so `in_rect`, `move_block` and `quantize`
-/// — already written and already tested against a roll's notes and a lane's
-/// clips — work here unchanged. Writing the row back is what makes a block
+/// -- already written and already tested against a roll's notes and a lane's
+/// clips -- work here unchanged. Writing the row back is what makes a block
 /// dragged across the stack change the lanes its clips name: one field each,
 /// with nothing removed and nothing inserted.
 impl Placements for Multitrack {
@@ -366,7 +366,7 @@ impl Placements for Multitrack {
 /// A clip's identity is its **name**, which is what a report names it by and
 /// what a correction finds it again by, so a second box may not be a copy of
 /// the first in the one field that says which box it is. `fresh_name` is that
-/// rule and it is the whole of what is specific here — the cut itself, the
+/// rule and it is the whole of what is specific here -- the cut itself, the
 /// halves' spans and the window each keeps onto its source are the arithmetic
 /// every box on a time axis shares.
 impl boxes::Holder for Multitrack {
@@ -480,8 +480,8 @@ impl Element for Multitrack {
         }
     }
 
-    /// **The plan a hand on the stack runs.** The element first — that is a
-    /// clip and a header control — then a marquee over what it declined, which
+    /// **The plan a hand on the stack runs.** The element first -- that is a
+    /// clip and a header control -- then a marquee over what it declined, which
     /// is the bare stack. Shift pans the shared axis, as it does everywhere.
     ///
     /// A **click** (a sweep that never left the slop) is a rectangle of no
@@ -550,7 +550,7 @@ impl OnAxis for Multitrack {
     /// **The empty bars after the last clip are ordinary time.** A view of a
     /// signal stops at its last sample; a multitrack is composed into the space
     /// after what it already holds, so the axis is not bounded by the boxes on
-    /// it — which is also where its authoring headroom comes from.
+    /// it -- which is also where its authoring headroom comes from.
     fn unbounded_axis(&self) -> bool {
         true
     }
@@ -583,7 +583,7 @@ impl OnAxis for Multitrack {
         header.width(m)
     }
 
-    /// How far the multitrack reaches on the axis — what an autofit and a scroll
+    /// How far the multitrack reaches on the axis -- what an autofit and a scroll
     /// size themselves against.
     fn content_span(&self) -> Option<f64> {
         Some(model::extent(&self.clips))
@@ -593,7 +593,7 @@ impl OnAxis for Multitrack {
 impl Slotted for Multitrack {
     /// **The spectral boxes**, each over its own take's texture: a
     /// time-frequency picture samples one, so it is drawn in the GPU pass and
-    /// not into the mesh — and this element holds several, one per buffer its
+    /// not into the mesh -- and this element holds several, one per buffer its
     /// boxes are windows onto, which is why they are named by a key.
     ///
     /// Empty unless the widget's `view` asks for one, and empty for a box whose
@@ -617,7 +617,7 @@ impl Slotted for Multitrack {
     /// **What each take body has for its slot**, under the buffer it draws.
     ///
     /// One entry per source rather than per box: the analysis is the take's, so
-    /// six boxes over one recording are one upload — the same rule that makes
+    /// six boxes over one recording are one upload -- the same rule that makes
     /// them one download.
     fn fills(&mut self) -> Vec<(SlotKey, SlotFill)> {
         let pending: Vec<(i32, (Vec<f32>, usize))> = self.pending.drain().collect();
@@ -646,7 +646,7 @@ impl Samples for Multitrack {
     fn bulk_of(&mut self, bufnum: i32, data: Loaded) -> bool {
         let view = self.view;
         // **The transform happens here for a spectral box**, because a body
-        // over a server buffer resolves its samples as a pyramid — the right
+        // over a server buffer resolves its samples as a pyramid -- the right
         // answer for a trace, and nothing a transform can read. The loader does
         // exactly this for a standalone spectral view, from the same samples.
         if view == Presentation::TimeFrequency

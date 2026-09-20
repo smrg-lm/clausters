@@ -1,21 +1,21 @@
 """Definitions and server resources (port of ``sc3/synth``).
 
-The definition layer — both def formats, FaustDefs and UGen-graph SynthDefs —
+The definition layer -- both def formats, FaustDefs and UGen-graph SynthDefs --
 and the server resources:
 
-- `signals` — lowercase callables mapping Faust's Signal
+- `signals` -- lowercase callables mapping Faust's Signal
   API; compose them (operators or functions) into the JSON signal tree.
-- `boxes` — the same pattern over Faust's Box API: point-free composition
+- `boxes` -- the same pattern over Faust's Box API: point-free composition
   plus the `boxes.faust` escape hatch that turns any Faust expression
   (the stdlib included) into a composable `Box`.
-- `faustdef` — `FaustDef`: build the ``/def_send faust``
+- `faustdef` -- `FaustDef`: build the ``/def_send faust``
   payload (signal tree, source, or box tree) and list its controls.
 - `node` / `bus` /
-  `buffer` — `Synth`/`Group`/`Bus`/
+  `buffer` -- `Synth`/`Group`/`Bus`/
   `Buffer` and their client-side allocators.
-- `server` — `Server`: the live OSC round-trip
+- `server` -- `Server`: the live OSC round-trip
   (definitions, nodes, buses, buffers, ``/done``/``/fail``, ``/server_notify``).
-- `ugens` / `synthdef` — the UGen
+- `ugens` / `synthdef` -- the UGen
   graph (lowercase callables → `Ugen`/`Control`) and
   `SynthDef` (``/def_send synth``), the UGen-graph counterpart of the Faust
   `signals` / `FaustDef` pair.

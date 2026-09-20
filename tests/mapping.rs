@@ -1,4 +1,4 @@
-//! M11: `/node_map` and `/node_mapAudio` — buses as a live source of node parameters.
+//! M11: `/node_map` and `/node_mapAudio` -- buses as a live source of node parameters.
 //! Engine-level, no audio device: commands go in through the FIFO, audio comes
 //! out of `process_block`, and a zero-crossing estimate does the listening.
 
@@ -29,7 +29,7 @@ fn default_def() -> Arc<SynthDef> {
     Arc::new(compile(default_spec()).unwrap())
 }
 
-/// Writes its `level` control (default 660) into an audio bus every block —
+/// Writes its `level` control (default 660) into an audio bus every block --
 /// a DC source to drive `/node_mapAudio` from.
 fn dc_def() -> Arc<SynthDef> {
     let json = format!(

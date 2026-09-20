@@ -2,7 +2,7 @@
 //
 // Encoding and decoding go through `clausters-core` compiled to wasm (the
 // `core/` staged bundle), so the bytes are identical to the server's and the
-// Python client's by construction — the parity vectors in `tests/` hold this.
+// Python client's by construction -- the parity vectors in `tests/` hold this.
 // This module replaces the interim hand-written page codec the B milestones
 // used (temporary from day one, removed with the consolidation into this
 // package).
@@ -55,7 +55,7 @@ export function decodePacket(bytes: Uint8Array): OscMessage[] {
 
 /**
  * A decoded message plus the time of the bundle that carried it, in Unix
- * seconds — `null` for a bare message and for an immediate bundle, which says
+ * seconds -- `null` for a bare message and for an immediate bundle, which says
  * "now" rather than an instant. A nested bundle's messages carry the innermost
  * timetag.
  */
@@ -64,7 +64,7 @@ export interface TimedOscMessage extends OscMessage {
 }
 
 /**
- * `decodePacket` keeping each message's bundle time — what the responder layer
+ * `decodePacket` keeping each message's bundle time -- what the responder layer
  * reads, so a callback is handed the same `time` the Python client hands its
  * own. Requires a prior `loadCore()`.
  */
@@ -93,7 +93,7 @@ export const toBundle = (messages: readonly TimedMessage[]): BundleMessage[] =>
     messages.map(([addr, ...args]) => ({ addr, args: args.map(oscArg) }));
 
 /**
- * Encodes a bundle stamped at `unixSecs` — the wall clock the server reads as
+ * Encodes a bundle stamped at `unixSecs` -- the wall clock the server reads as
  * an NTP timetag, which is how a message gets a *time*. A message on its own
  * has none: it means "now".
  */
@@ -105,7 +105,7 @@ export function encodeBundle(
 }
 
 /**
- * Encodes a bundle stamped at `secs` **from the start of a render** — the
+ * Encodes a bundle stamped at `secs` **from the start of a render** -- the
  * bundle an NRT score is made of.
  *
  * The same packing as `encodeBundle` on a different epoch: a score's time is
@@ -139,7 +139,7 @@ export type MsgArg = number | string | boolean | bigint | Uint8Array | OscArg;
  * One argument tagged **by inference**: an integral number rides as an int32,
  * a fractional one as a float32, a boolean as the 1/0 the wire carries (OSC
  * has no bool), a string as a string and bytes as a blob. A JS number is a
- * double with no int/float distinction, so this is a guess — the clients tag
+ * double with no int/float distinction, so this is a guess -- the clients tag
  * what they know by position instead, and pass an explicit `[tag, value]`
  * pair wherever the guess would be wrong.
  */

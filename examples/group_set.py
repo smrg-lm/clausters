@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Drive a whole group with one `/node_set` — scsynth group semantics.
+"""Drive a whole group with one `/node_set` -- scsynth group semantics.
 
 A command addressed to a **group** transfers the named parameters down its
 subtree to every synth that has a control with that name (recursing through
 subgroups, stopping at each synth). So one `group.set({...})` reaches
-every voice in the group at once — the cheapest way to move a parameter across
+every voice in the group at once -- the cheapest way to move a parameter across
 a bank of nodes without naming each one.
 
 Here three `default` voices share a group; a single `/node_set` on the group
@@ -64,7 +64,7 @@ def main():
     print("one /node_set on the group drove all three voices.")
 
     if path:
-        print(f"wrote {path} — listen with: pw-play {path}")
+        print(f"wrote {path} -- listen with: pw-play {path}")
 
 
 if __name__ == "__main__":

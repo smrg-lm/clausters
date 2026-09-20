@@ -1,5 +1,5 @@
-"""Follow-up to C5: the execution context is thread-local, so several clocks —
-and a live RT clock next to an offline NRT render — run in one script without
+"""Follow-up to C5: the execution context is thread-local, so several clocks --
+and a live RT clock next to an offline NRT render -- run in one script without
 clobbering each other. This is the no-global-state litmus test.
 """
 
@@ -76,7 +76,7 @@ def test_two_clocks_render_independently():
     tb = threading.Thread(target=run, args=("b", [1000.0, 2000.0, 3000.0, 4000.0]))
     ta.start(); tb.start(); ta.join(); tb.join()
 
-    # exact, yield-driven timing in both — no cross-thread interference
+    # exact, yield-driven timing in both -- no cross-thread interference
     assert _starts(results["a"]) == [0.0, 0.5, 1.0, 1.5]
     assert _starts(results["b"]) == [0.0, 0.5, 1.0, 1.5]
     # and each score kept its own frequencies
@@ -87,7 +87,7 @@ def test_two_clocks_render_independently():
 def test_rt_and_nrt_in_the_same_script():
     _embed_or_skip()
     # A live RT clock churning on a background thread (emits to a socket with no
-    # listener — harmless), set up to thrash the execution context fast.
+    # listener -- harmless), set up to thrash the execution context fast.
     rt_server = Server(interface=OscUdpInterface().start())
     rt_clock = TempoClock(tempo=50.0)
 

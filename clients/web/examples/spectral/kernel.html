@@ -31,11 +31,11 @@ This renders a <b>tilted spectral gate</b>, an operation in no catalog: the gate
 threshold rises with frequency, so the noise floor is swept away progressively
 harder toward the highs, leaving a dark, sparse residue. The left channel is the
 raw source; the right is the gated one. The threshold is an ordinary control, so
-a running server can sweep it live with <code>/node_set</code> — a kernel stays
+a running server can sweep it live with <code>/node_set</code> -- a kernel stays
 fully modulatable.
 
-What an expression can <b>not</b> do — state across frames, moving energy
-between bins, reading another chain — stays with the dedicated
+What an expression can <b>not</b> do -- state across frames, moving energy
+between bins, reading another chain -- stays with the dedicated
 <code>pv*</code> filters.</div>
 
       <div class="row">
@@ -79,7 +79,7 @@ between bins, reading another chain — stays with the dedicated
        * A short attack and release, opened at birth and closed by the gate.
        *
        * Noise switched on at full amplitude starts the take on a step, which
-       * is a click — audible on the first sample of a take meant to be heard.
+       * is a click -- audible on the first sample of a take meant to be heard.
        * Two hundredths of a second of ramp costs nothing and is not the
        * subject here; the same envelope closes the take when the routine
        * drops the gate.
@@ -98,13 +98,13 @@ between bins, reading another chain — stays with the dedicated
        * Noise -> FFT -> a user-written tilted gate -> IFFT, on the right.
        *
        * The expression reads like the rule it implements: keep a bin only when
-       * its magnitude clears a threshold that grows with the bin index —
+       * its magnitude clears a threshold that grows with the bin index --
        * `thresh` at DC, `5 * thresh` at Nyquist. `mag >= t` evaluates to 1 or 0
        * per bin, so multiplying by it *is* the gate; the phase is untouched,
        * which keeps the kernel on the exact, cheap magnitude-scaling path.
        *
        * **Calibrating the threshold**: bin magnitudes are on the FFT's scale,
-       * not 0..1 — for this source they spread over roughly 0.5..5 with a
+       * not 0..1 -- for this source they spread over roughly 0.5..5 with a
        * median near 2.3, so the default 2.0 puts the gate at that median at DC
        * and far above the loudest bins up high.
        */
@@ -136,7 +136,7 @@ between bins, reading another chain — stays with the dedicated
           yield 0.25;
           // The score's closing event, after the release: a render ends at its
           // last event, so without this one the take would stop where the gate
-          // closed and the tail would be cut — the click again, at the other
+          // closed and the tail would be cut -- the click again, at the other
           // end.
           session.server.sendBundle([["/node_free", 0]]);
         }

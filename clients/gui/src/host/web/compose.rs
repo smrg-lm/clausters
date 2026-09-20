@@ -3,14 +3,14 @@
 //!
 //! A `<canvas>` is not editable, so no browser will run an input method over
 //! one. What reaches it from a dead key is `key: "Dead"` and then the *base*
-//! letter — the composed character is never produced at all, and neither is a
+//! letter -- the composed character is never produced at all, and neither is a
 //! `beforeinput` or a composition event. The same hole swallows every IME:
 //! Japanese, Chinese, Korean, and any Latin keyboard whose accents are dead
 //! keys.
 //!
 //! The answer is the one thing browsers do offer: an **editable element**. Each
 //! canvas gets an invisible `<input>` beside it, and the keyboard is aimed at
-//! whichever of the two is right —
+//! whichever of the two is right --
 //!
 //! - **the canvas**, whenever the focus is not in a text widget, so every
 //!   gesture, shortcut and ring walk keeps arriving exactly as it did;
@@ -21,15 +21,15 @@
 //! While the field holds the keyboard it is the shell's only key source, so it
 //! forwards each thing exactly once, over three listeners:
 //!
-//! - **`beforeinput`** — a letter typed outright, or a pasted run.
-//! - **`compositionend`** — what an input method *finished*, and only that.
+//! - **`beforeinput`** -- a letter typed outright, or a pasted run.
+//! - **`compositionend`** -- what an input method *finished*, and only that.
 //!   A composition is a negotiation: a dead key emits the bare accent first
 //!   and settles on the accented letter afterwards, an IME shows a whole
 //!   phrase in progress. The host has no notion of text that is still being
-//!   decided — a widget stores what it is given — so every intermediate step
+//!   decided -- a widget stores what it is given -- so every intermediate step
 //!   is dropped and the result is delivered whole. Forwarding the steps is
 //!   what put a stray `´` in front of the `é`.
-//! - **`keydown`** — what is not text at all (the arrows, Backspace, Tab,
+//! - **`keydown`** -- what is not text at all (the arrows, Backspace, Tab,
 //!   Escape) plus the chords, since a `Ctrl+C` is a command and never a
 //!   character. A keydown that *is* a character is dropped here and left to
 //!   the two above, which is what keeps a letter from arriving twice.
@@ -42,8 +42,8 @@
 //! **It is a workaround and it is kept where one belongs.** Nothing about a
 //! host, a widget or a protocol wants an invisible `<input>` in the document;
 //! it is there because the platform offers no other way to reach an input
-//! method, and the whole of it — the element, its two listeners, the focus
-//! aiming and the key vocabulary it maps back — is this file. The native front
+//! method, and the whole of it -- the element, its two listeners, the focus
+//! aiming and the key vocabulary it maps back -- is this file. The native front
 //! needs none of it (winit composes through xkb before the host sees a key),
 //! and this module is compiled only for wasm, so nothing outside a browser
 //! build reads a line of it.
@@ -77,7 +77,7 @@ const HIDDEN: &str = "position:fixed;top:0;left:0;width:1px;height:1px;\
 impl Composer {
     /// Builds the field for `def_id` and wires its two listeners, or `None` if
     /// the document will not have it (which leaves the canvas keyboard exactly
-    /// as it was — the field only ever *adds* composition).
+    /// as it was -- the field only ever *adds* composition).
     pub(super) fn attach(host: HostId, def_id: i32) -> Option<Composer> {
         let document = web_sys::window()?.document()?;
         let input = document.create_element("input").ok()?;
@@ -128,7 +128,7 @@ impl Composer {
         // ends.** A composition is the one thing here that cannot be
         // cancelled: the browser uses the element's own value as its pending
         // buffer, and it writes into it around `compositionend` rather than
-        // before it — so clearing there races the write and sometimes loses.
+        // before it -- so clearing there races the write and sometimes loses.
         // Clearing at the start cannot: whatever the last one left is gone
         // before this one puts anything in. Without it the buffer accumulates,
         // and Chrome re-reports the whole of it when a sequence it cannot
@@ -229,7 +229,7 @@ fn send(host: HostId, event: WebEvent) {
 
 impl WebApp {
     /// Points the keyboard at whichever element is right for the focus this
-    /// def now has — the one call the rest of the shell makes into this module,
+    /// def now has -- the one call the rest of the shell makes into this module,
     /// after anything that could have moved a focus.
     pub(super) fn aim_keyboard(&mut self, def_id: i32) {
         let text = self.host.focus_takes_text(def_id);
@@ -255,7 +255,7 @@ impl WebApp {
     ///
     /// The modifiers ride along because the browser reports them on the event
     /// and winit's `ModifiersChanged` does not reach a canvas that no longer
-    /// holds the DOM focus — the same reason [`CanvasSlot::mods`] is read off
+    /// holds the DOM focus -- the same reason [`CanvasSlot::mods`] is read off
     /// the pointer events.
     pub(super) fn on_composed_key(&mut self, def_id: i32, key: &str, mods: u8) {
         if let Some(slot) = self.canvases.get(&def_id) {

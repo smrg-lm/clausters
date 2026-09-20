@@ -3,7 +3,7 @@
 //! A multitrack, a take and whatever else is on screen walk one history, and no
 //! application holds one of its own. An editor is always opened *in* an
 //! [`Editing`]; one opened alone is an `Editing` with one member, and two opened
-//! in the same one walk one order — which is the whole of how two applications
+//! in the same one walk one order -- which is the whole of how two applications
 //! share an undo.
 //!
 //! # What the context does, and what it hands back
@@ -22,8 +22,8 @@
 //!
 //! # A structure is named by its key
 //!
-//! A member declares what it edits — a take by its buffer, a multitrack by the multitrack
-//! — and a second member declaring the same key is the same structure in the
+//! A member declares what it edits -- a take by its buffer, a multitrack by the multitrack
+//! -- and a second member declaring the same key is the same structure in the
 //! order. Two windows over one take are one structure, so an undo in either
 //! walks the edit the other made.
 
@@ -301,8 +301,8 @@ impl Editing {
         self.version
     }
 
-    /// **Records an entry** under `member`'s structure — what an external
-    /// member hands over for an edit it applied itself — continuing the entry
+    /// **Records an entry** under `member`'s structure -- what an external
+    /// member hands over for an edit it applied itself -- continuing the entry
     /// before it when `coalesce` says the hand has not stopped. Answers whether
     /// the history took it, and moves the version when it did.
     pub fn record(&mut self, member: MemberId, record: &Record, coalesce: bool) -> bool {
@@ -316,7 +316,7 @@ impl Editing {
         taken
     }
 
-    /// **Records an entry already built over structures of this context** —
+    /// **Records an entry already built over structures of this context** --
     /// what an embedder in Rust hands over when it builds its entries with a
     /// vocabulary's own types (the document's log, say) rather than as JSON.
     /// Answers whether the history took it, and moves the version when it did.
@@ -330,7 +330,7 @@ impl Editing {
 
     /// **Applies and records through a vocabulary's own door**: `apply` is
     /// handed the history and `member`'s structure, and answers whether it
-    /// recorded — what an embedder in Rust does when the vocabulary applies and
+    /// recorded -- what an embedder in Rust does when the vocabulary applies and
     /// records in one call (the document's `apply_logged_in`). The version moves
     /// when it did.
     pub fn record_with(
@@ -540,26 +540,26 @@ struct RecordedLeg {
     key: Option<String>,
 }
 
-/// **One verb of a context, over JSON** — the door both clients bind.
+/// **One verb of a context, over JSON** -- the door both clients bind.
 ///
 /// `request` names the `verb` and carries its arguments:
 ///
-/// - `openMultitrack` — `key`, and what a multitrack editor is built from
+/// - `openMultitrack` -- `key`, and what a multitrack editor is built from
 ///   (`clausters_apps::multitrack::editor::new_json`, the version aside):
 ///   `{"member", "structure"}`, or `{"error"}`.
-/// - `openSamples` — `key`, and what a samples editor is built from
+/// - `openSamples` -- `key`, and what a samples editor is built from
 ///   (`clausters_apps::samples::editor::new_json`): `{"member", "structure"}`,
 ///   or `{"error"}`.
-/// - `external` — `key`, `domain`: `{"member", "structure"}`.
-/// - `event` — `member`, `addr`, `args`: a [`Turned`], or `null`.
-/// - `step` — `direction` (`"undo"` or `"redo"`): a [`Stepped`].
-/// - `record` — `member`, `label`, `legs` (`forward`, `backward`, `key`),
+/// - `external` -- `key`, `domain`: `{"member", "structure"}`.
+/// - `event` -- `member`, `addr`, `args`: a [`Turned`], or `null`.
+/// - `step` -- `direction` (`"undo"` or `"redo"`): a [`Stepped`].
+/// - `record` -- `member`, `label`, `legs` (`forward`, `backward`, `key`),
 ///   `coalesce`: `{"recorded", "version"}`.
-/// - `member` — `member`, and a verb of that member's own door with its
+/// - `member` -- `member`, and a verb of that member's own door with its
 ///   arguments, the version filled in: what that door answers. `event` and
 ///   `apply` are the context's and answer `{}` here.
-/// - `moved` — an edit that leaves no entry: `{"version"}`, moved on.
-/// - `state` — `{"version", "canUndo", "canRedo", "undoLabel", "redoLabel"}`.
+/// - `moved` -- an edit that leaves no entry: `{"version"}`, moved on.
+/// - `state` -- `{"version", "canUndo", "canRedo", "undoLabel", "redoLabel"}`.
 ///
 /// An unknown verb answers `{}`.
 pub fn call_json(editing: &mut Editing, request: &str) -> String {

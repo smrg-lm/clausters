@@ -27,12 +27,12 @@
 A <b>routine</b> is a generator: it <code>yield</code>s a number of beats and
 the <code>TempoClock</code> resumes it exactly that many beats later. The
 logical beat advances only by those yields, so the music never drifts with the
-browser's timers — the wake-up only has to arrive within the emission
+browser's timers -- the wake-up only has to arrive within the emission
 headroom, and the exact time rides on the bundle's timetag.
 
 A <b>pattern</b> (<code>Pbind</code>) is the generative form: forward-only,
-like the routine underneath it. A <b>timeline</b> is the seekable form — an
-editable list of items with <b>its own tempo map</b> — and its transport is its
+like the routine underneath it. A <b>timeline</b> is the seekable form -- an
+editable list of items with <b>its own tempo map</b> -- and its transport is its
 own: play, pause, stop, locate, loop.
 
 The clock is paced by <code>server.sampleTimebase()</code>, which over the
@@ -44,7 +44,7 @@ halves are on the engine's clock.
 
 The tempo slider is the two tempi side by side: on a <b>bare clock</b> it is
 <code>setTempo</code>, a live gesture pinning the current instant; on a
-<b>timeline</b> it is an edit of the plan — the map is truncated at the position
+<b>timeline</b> it is an edit of the plan -- the map is truncated at the position
 and a new tempo written there, which pins that instant for the same reason.</div>
 
       <div class="row">
@@ -129,7 +129,7 @@ and a new tempo written there, which pins that instant for the same reason.</div
         await voice().send(server);
         log(`connected over the ${kind === "page" ? "in-page engine" : "WebSocket"}`);
 
-        // The Server anchors the timebase — it is the object that knows the
+        // The Server anchors the timebase -- it is the object that knows the
         // carrier. The clock only reads it, and never talks to a server.
         const timebase = await server.sampleTimebase();
         clock = new TempoClock(Number(el("tempo").value), { timebase });

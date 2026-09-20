@@ -16,19 +16,19 @@ export class Decoded {
     readonly sampleRate: number;
     /**
      * Interleaved samples, `frames * channels` of them. Moves the vector out,
-     * so a second call returns nothing — the buffer is meant to be handed on.
+     * so a second call returns nothing -- the buffer is meant to be handed on.
      */
     readonly samples: Float32Array;
 }
 
 /**
- * Decodes a soundfile already in memory — the Worker's whole job.
+ * Decodes a soundfile already in memory -- the Worker's whole job.
  *
  * `ext` is the format hint (`"wav"`, `"flac"`, …, no dot; an empty hint still
  * probes by content). `label` names the source in an error. `file_start` and
  * `num_frames` slice it exactly as `/buffer_allocRead` does, with
  * `num_frames <= 0` meaning "to the end", and `channels` selects and reorders
- * them exactly as `/buffer_allocReadChannel` does — empty being every channel.
+ * them exactly as `/buffer_allocReadChannel` does -- empty being every channel.
  *
  * The selection goes through the server's own `select_channels` rather than a
  * de-interleave written here: one rule, one implementation, or the two clients
@@ -41,13 +41,13 @@ export function decodeAudio(bytes: Uint8Array, ext: string, label: string, file_
 
 /**
  * Encodes interleaved samples into WAV sample bytes, at the same scale and
- * with the same clamp a native `DiskOut` writes — which is the whole reason it
+ * with the same clamp a native `DiskOut` writes -- which is the whole reason it
  * is here rather than in the page: a second conversion is a second answer.
  */
 export function encodeWavFrames(samples: Float32Array, sample_format: string): Uint8Array;
 
 /**
- * Builds a Faust **box** from a JSON box tree — `faust::boxes`, the same
+ * Builds a Faust **box** from a JSON box tree -- `faust::boxes`, the same
  * interpreter a native server runs, driven here against the compiler the page
  * carries.
  *
@@ -62,7 +62,7 @@ export function encodeWavFrames(samples: Float32Array, sample_format: string): U
 export function faustBoxFromJson(json: string): number;
 
 /**
- * Builds a Faust **signal vector** from a JSON signal tree —
+ * Builds a Faust **signal vector** from a JSON signal tree --
  * `faust::signals`, the twin of the above. The handles come back in
  * declaration order, one per output.
  *
@@ -76,7 +76,7 @@ export function faustSignalsFromJson(json: string): Uint32Array;
  * instantiated against the engine's own linear memory.
  *
  * The Faust wasm backend writes the DSP's JSON into a data segment at
- * **absolute offset 0**, unconditionally — external memory included — and
+ * **absolute offset 0**, unconditionally -- external memory included -- and
  * rustc links the engine with `--stack-first`, so offset 0 is the engine's
  * stack. Instantiating the module as emitted would write over it. Nothing
  * reads that copy (the JSON the page uses is the one the compiler returns
@@ -90,7 +90,7 @@ export function faustSignalsFromJson(json: string): Uint32Array;
 export function stripFaustData(module: Uint8Array): Uint8Array;
 
 /**
- * A canonical 44-byte WAV header for `dataBytes` of sample data — the first
+ * A canonical 44-byte WAV header for `dataBytes` of sample data -- the first
  * half of a file a page writes in pieces.
  *
  * The recording door is two calls rather than one because the header carries a

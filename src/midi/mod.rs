@@ -1,11 +1,11 @@
 //! MIDI: standard channel-voice messages as a node/control actuation path
 //!.
 //!
-//! Standard MIDI — note on/off, velocity, aftertouch, pitch-bend, control
-//! change, program change — is the **primary** way to drive synthesis nodes
+//! Standard MIDI -- note on/off, velocity, aftertouch, pitch-bend, control
+//! change, program change -- is the **primary** way to drive synthesis nodes
 //! and their named `f32` input controls from a sequencer, the interoperable
 //! path any DAW or controller speaks. (SysEx, when it lands, is reserved for
-//! the non-musical control plane — SynthDef/FaustDef load, buffers, topology —
+//! the non-musical control plane -- SynthDef/FaustDef load, buffers, topology --
 //! never a tunnel for every OSC command.)
 //!
 //! This module is **transport-independent**: it parses/represents a decoded
@@ -13,7 +13,7 @@
 //! mapping to engine commands lives in [`crate::osc::translate::CmdTranslator`]
 //! (`translate_midi`), which synthesizes the equivalent `/synth_new` / `/node_set` /
 //! `/node_free` and reuses the OSC path, so a MIDI-driven voice is byte-identical
-//! to the OSC one. The wire transport (how UMP/MIDI bytes arrive — UDP MIDI
+//! to the OSC one. The wire transport (how UMP/MIDI bytes arrive -- UDP MIDI
 //! 2.0, ALSA seq, or a virtual port) is the remaining open decision; see
 //! `PLAN.md`. All of this runs on the network thread, never the audio
 //! thread.
@@ -159,7 +159,7 @@ pub fn parse_midi1(status: u8, data1: u8, data2: u8) -> Option<ChannelVoiceMessa
 /// or adds entries.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct MidiBinding {
-    /// Instrument def name (SynthDef *or* FaustDef — actuated identically).
+    /// Instrument def name (SynthDef *or* FaustDef -- actuated identically).
     pub instrument: String,
     pub target: i32,
     pub action: i32,
@@ -180,7 +180,7 @@ pub struct MidiBinding {
     pub programs: HashMap<u8, String>,
     /// when the instrument is a **GraphDef**, the shared instance group
     /// spawned at bind time. A note then spawns a per-voice sub-graph
-    /// (`/graph_newVoice`) inside it instead of a plain `/synth_new`. Runtime only —
+    /// (`/graph_newVoice`) inside it instead of a plain `/synth_new`. Runtime only --
     /// not persisted (it is re-instantiated on restore).
     #[serde(skip)]
     pub graph_instance: Option<i32>,
@@ -225,7 +225,7 @@ pub struct MidiBindings {
 }
 
 impl MidiBindings {
-    /// Bindings whose voice ids come from `[base, base + capacity)` — the
+    /// Bindings whose voice ids come from `[base, base + capacity)` -- the
     /// MIDI range of the node-id partition.
     pub fn new(base: i64, capacity: usize) -> Self {
         Self {
@@ -237,7 +237,7 @@ impl MidiBindings {
 
     /// Allocate a node ID for a MIDI-spawned voice; `None` when every id in
     /// the range is still tied to a live or in-flight voice (ids return as
-    /// their nodes end — the range recycles, never counts up).
+    /// their nodes end -- the range recycles, never counts up).
     pub fn alloc_id(&mut self) -> Option<i32> {
         self.ids.alloc(1).map(|id| id as i32)
     }

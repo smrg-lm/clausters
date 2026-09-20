@@ -3,7 +3,7 @@
 // `<clausters-bundle src="<bundle url>">` mounts a bundle into a canvas of its
 // own. On the desktop `clausters-gui` opens a window per GuiDef and the window
 // manager places it; here the canvas is an element and **the document places
-// it** — CSS, the order of the markup, the flow of the page. That is the whole
+// it** -- CSS, the order of the markup, the flow of the page. That is the whole
 // substitution: canvases interleave with prose and images, so one page can be
 // an interactive text with the instrument sounding beside the paragraph that
 // explains it.
@@ -20,7 +20,7 @@
 // module.
 //
 // Mounting is two phases, because the host does not need audio and the engine
-// does — and the AudioContext is page-wide, so N power buttons would be wrong:
+// does -- and the AudioContext is page-wide, so N power buttons would be wrong:
 // the GuiDef opens and draws on connect, and the engine half goes out on the
 // first gesture **anywhere on the page**, whichever component received it.
 // Until then a component shows its power affordance over its canvas;
@@ -28,14 +28,14 @@
 // singletons.
 //
 // Unmounting is the mirror of that, and it is **not** two phases: an element
-// removed from the DOM gives back everything it took at once — its window, its
-// nodes, its ids — and what the page shares (the engine, the host, the defs
+// removed from the DOM gives back everything it took at once -- its window, its
+// nodes, its ids -- and what the page shares (the engine, the host, the defs
 // and the buffers) stays. Removing a component is therefore a complete
 // undoing, and an element connected again mounts afresh from the same bundle,
 // with a new allocation, rather than resuming the one it had. The other
 // direction closes too: a window the *host* closes (a `/gui_closed`, which is
 // what a native `--ws` host sends when the user closes the window a component
-// mounted into) reaches the element, which unmounts and says so — no live tag
+// mounted into) reaches the element, which unmounts and says so -- no live tag
 // over a freed def.
 //
 // Failures stay local: a component that cannot fetch or resolve its bundle
@@ -61,8 +61,8 @@ const BUTTON_STYLE = `
 
 /**
  * The components waiting for the page's first gesture, and whether it came.
- * The AudioContext is page-wide, so any component's power affordance — or a
- * `<clausters-power>` — starts every one of them.
+ * The AudioContext is page-wide, so any component's power affordance -- or a
+ * `<clausters-power>` -- starts every one of them.
  */
 const waiting = new Set<ClaustersBundle>();
 let gestured = false;
@@ -80,7 +80,7 @@ export async function startPage(): Promise<void> {
 
 export class ClaustersBundle extends HTMLElement {
     /**
-     * The declared parameters, once the manifest is read — the attributes
+     * The declared parameters, once the manifest is read -- the attributes
      * this element answers to. `preset` and `src` are always among them.
      */
     private canvas: HTMLCanvasElement;
@@ -98,14 +98,14 @@ export class ClaustersBundle extends HTMLElement {
     /**
      * The mount and the unmount, one after another.
      *
-     * Both are asynchronous and the DOM calls them synchronously — moving an
-     * element is a disconnect immediately followed by a connect — so they queue
+     * Both are asynchronous and the DOM calls them synchronously -- moving an
+     * element is a disconnect immediately followed by a connect -- so they queue
      * rather than race: an unmount that started must finish giving its ids back
      * before the mount that follows takes new ones.
      */
     private work: Promise<void> = Promise.resolve();
     /**
-     * The bundle a generated tag mounts, when the markup names none — set by
+     * The bundle a generated tag mounts, when the markup names none -- set by
      * `defineComponent`'s subclass and reflected into `src` on connect.
      *
      * It is a field rather than an attribute written in the constructor
@@ -122,7 +122,7 @@ export class ClaustersBundle extends HTMLElement {
             <style>
                 :host { display: block; position: relative; }
                 /*
-                  touch-action: none — a drag inside a widget is a *value*, not
+                  touch-action: none -- a drag inside a widget is a *value*, not
                   a scroll. Without it a phone pans the page and the host never
                   sees the gesture. The page still scrolls everywhere else,
                   including the margins around this element.
@@ -211,11 +211,11 @@ export class ClaustersBundle extends HTMLElement {
     }
 
     /**
-     * Phase 2: this component's engine half — its defs, its samples, its boot
+     * Phase 2: this component's engine half -- its defs, its samples, its boot
      * list.
      *
-     * Two callers reach here for the same component — the page's gesture and
-     * the component itself, once the gesture already happened — so the second
+     * Two callers reach here for the same component -- the page's gesture and
+     * the component itself, once the gesture already happened -- so the second
      * one **awaits the first** rather than returning early. Returning early
      * would resolve while the defs were still travelling, and whatever the
      * caller did next would find them missing.
@@ -239,8 +239,8 @@ export class ClaustersBundle extends HTMLElement {
     /**
      * Gives this instance back: its window and its widgets (`/gui_free`), the
      * nodes its boot instantiated (`/node_free`), the canvas the host held for
-     * it, and every id it drew from the page's pools. The page's own — the
-     * engine, the host, the defs it sent, the samples it loaded — is untouched,
+     * it, and every id it drew from the page's pools. The page's own -- the
+     * engine, the host, the defs it sent, the samples it loaded -- is untouched,
      * and so is every other component on the page.
      *
      * `hostClosed` is the `/gui_closed` path: the window is already gone on the
@@ -283,7 +283,7 @@ export class ClaustersBundle extends HTMLElement {
     }
 
     /**
-     * What this instance was allocated, by symbol name — its node ids, its
+     * What this instance was allocated, by symbol name -- its node ids, its
      * buses, its buffers. What a page needs to talk to *this* component.
      */
     get symbols(): Record<string, number> | null {
@@ -291,7 +291,7 @@ export class ClaustersBundle extends HTMLElement {
     }
 
     /**
-     * Every attribute except the element's own — the tag's parameter values,
+     * Every attribute except the element's own -- the tag's parameter values,
      * as strings. The resolver ignores what the manifest does not declare, so
      * `class` and `style` pass through harmlessly.
      */
@@ -305,7 +305,7 @@ export class ClaustersBundle extends HTMLElement {
     }
 
     /**
-     * The canvas' backing store, in device pixels, from the element's box —
+     * The canvas' backing store, in device pixels, from the element's box --
      * the host never reads the DOM, so the element reports the pixels.
      */
     private sizeCanvas(): void {
@@ -316,16 +316,16 @@ export class ClaustersBundle extends HTMLElement {
 
     /**
      * What a component watches: its box and the display's scale both drive
-     * `resize` (they move independently — browser zoom or a monitor of another
+     * `resize` (they move independently -- browser zoom or a monitor of another
      * density changes the scale with the CSS box untouched), and its place in
-     * the viewport drives `set_visible` — a canvas nobody is looking at is
+     * the viewport drives `set_visible` -- a canvas nobody is looking at is
      * skipped on the tick and drops its buses from the stream.
      */
     private observe(): void {
         const defId = this.mounted?.defId;
         if (defId === undefined) return;
         // The way back from the host: `/gui_closed <def>` is a window closed
-        // there rather than here — the user closing it on a native `--ws` host,
+        // there rather than here -- the user closing it on a native `--ws` host,
         // which drives the same components over a socket. The element that
         // mounted the def is who must hear it.
         const closed = (packet: Uint8Array) => {
@@ -418,7 +418,7 @@ customElements.define("clausters-bundle", ClaustersBundle);
 customElements.define("clausters-power", ClaustersPower);
 
 /**
- * Registers `tag` as a component mounting the bundle at `base` — what a
+ * Registers `tag` as a component mounting the bundle at `base` -- what a
  * bundle's generated `index.js` calls, so a page gets a named tag from one
  * import:
  *
@@ -428,8 +428,8 @@ customElements.define("clausters-power", ClaustersPower);
  * ```
  *
  * The tag is `<clausters-bundle>` with its `src` already filled in, so
- * everything the generic element does — the attributes, `preset`, the
- * two-phase mount — works on it unchanged. Registering the same tag twice is
+ * everything the generic element does -- the attributes, `preset`, the
+ * two-phase mount -- works on it unchanged. Registering the same tag twice is
  * a no-op, so two copies of a generated module on one page are harmless.
  */
 export function defineComponent(tag: string, base: string | URL): void {

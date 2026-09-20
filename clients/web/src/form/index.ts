@@ -1,10 +1,10 @@
-// The **arrangement** — the client-side layer under the multitrack editor
+// The **arrangement** -- the client-side layer under the multitrack editor
 // (mirrors `clausters/form/__init__.py`).
 //
 // A recursive algebra of elements for composing music: the five primitives
-// (`Clang`, `Sequence`, `Vector` — with `Segments`, the same primitive over
-// several windows — `Track`, `Generator`) as thin adornments over the objects
-// the client already has, and `Aggregate` — the one new structure — placing
+// (`Clang`, `Sequence`, `Vector` -- with `Segments`, the same primitive over
+// several windows -- `Track`, `Generator`) as thin adornments over the objects
+// the client already has, and `Aggregate` -- the one new structure -- placing
 // elements recursively with an offset and deriving their temporal relation. An
 // element is *generated* (the rendered thing: random-access, editable) or a
 // *generator* (the algorithm that renders it: forward-only), and evaluating the

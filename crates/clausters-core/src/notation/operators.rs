@@ -2,7 +2,7 @@
 //! what edits one note of it.
 //!
 //! Every one of them is a function from a sheet to a sheet, which is what lets
-//! them compose — `concat(transpose(a, 2), b)` is a sentence, and the result of
+//! them compose -- `concat(transpose(a, 2), b)` is a sentence, and the result of
 //! composing two operations is the operation on the composed score. None of
 //! them mutates anything a caller holds.
 //!
@@ -11,8 +11,8 @@
 //! a phrase and the barlines stay where they were, so the music re-bars across
 //! them and ties where it must. An operation on the grid does not rewrite
 //! notes: change the meter and the same notes fall in different measures.
-//! Only the three that *add or remove time* — [`insert_measures`],
-//! [`remove_measures`] and [`repeat`] — touch both, and they say so.
+//! Only the three that *add or remove time* -- [`insert_measures`],
+//! [`remove_measures`] and [`repeat`] -- touch both, and they say so.
 //!
 //! **Where two sheets meet, ids are re-minted.** Two items answering to one id
 //! would both answer to one edit, so the incoming sheet's items are renumbered
@@ -28,7 +28,7 @@ use crate::ratio::Ratio;
 ///
 /// An item straddling the cut is divided in two: the first part keeps the id
 /// and, if it sounds, ties into the second, which takes a fresh one. That is
-/// the tie a *musical* split makes — the note goes on sounding across the cut —
+/// the tie a *musical* split makes -- the note goes on sounding across the cut --
 /// as against the tie an emitter adds at a barline, which is made from the
 /// projection and never stored.
 fn split_at(items: &[Item], t: Ratio, mint: &mut dyn FnMut() -> u64) -> (Vec<Item>, Vec<Item>) {
@@ -113,7 +113,7 @@ fn renumber(sheet: &mut Sheet, from: u64) -> u64 {
 ///
 /// What removes items has to do this, or the score becomes unwritable: the
 /// emitter refuses a spanner pointing at a note that is not there, and rightly
-/// — but a caller who deleted a note did not ask for a score that cannot be
+/// -- but a caller who deleted a note did not ask for a score that cannot be
 /// engraved. The slur over it goes with it.
 pub(super) fn prune_spanners(sheet: &mut Sheet) {
     let live: std::collections::HashSet<u64> = sheet
@@ -127,7 +127,7 @@ pub(super) fn prune_spanners(sheet: &mut Sheet) {
 
 /// One score after another.
 ///
-/// The content joins end to end — each voice of `b` continues the voice of `a`
+/// The content joins end to end -- each voice of `b` continues the voice of `a`
 /// in the same position, with a rest filling any voice of `a` that ran short,
 /// so the two do not slide against each other.
 ///
@@ -220,7 +220,7 @@ pub fn concat(mut a: Sheet, b: &Sheet) -> Result<Sheet, String> {
 /// `as_staff` decides what "at the same time" means on the page: `false` puts
 /// `b`'s voices on `a`'s own staves, which is counterpoint on one staff;
 /// `true` appends `b`'s staves below `a`'s, which is a second hand or a second
-/// instrument. Both are superposition — the difference is where the notes are
+/// instrument. Both are superposition -- the difference is where the notes are
 /// written, not when they sound.
 ///
 /// # Errors
@@ -259,7 +259,7 @@ pub fn stack(mut a: Sheet, b: &Sheet, as_staff: bool) -> Result<Sheet, String> {
 /// `count` is the **total** number of times it is heard, so `2` is one repeat
 /// and `1` changes nothing. The copies go where the original is, pushing
 /// everything after it later, and the grid grows by as many measures as the
-/// repeated stretch spans — this is one of the three operations that adds time,
+/// repeated stretch spans -- this is one of the three operations that adds time,
 /// so both structures move together.
 ///
 /// # Errors
@@ -385,7 +385,7 @@ pub fn retrograde(mut sheet: Sheet, span: &Span) -> Result<Sheet, String> {
 /// interval pattern allows and spells the accidental where it does not, which
 /// is what an inversion written by hand looks like.
 ///
-/// Left without an axis, the first sounding pitch of the span is used — the
+/// Left without an axis, the first sounding pitch of the span is used -- the
 /// line turns about its own first note.
 pub fn invert(mut sheet: Sheet, axis: Option<Pitch>, span: &Span) -> Result<Sheet, String> {
     sheet.assign_ids();
@@ -427,7 +427,7 @@ pub fn invert_pitch(pitch: &Pitch, axis: &Pitch) -> Pitch {
 /// Augmentation is `2`, diminution is `1/2`, and anything else is the same
 /// operation at another ratio. **The grid does not move**, which is the point:
 /// the phrase is re-barred against the barlines it already had, tying across
-/// them where a value now overruns one — which is what augmentation looks like
+/// them where a value now overruns one -- which is what augmentation looks like
 /// on a page and what a caller means by it.
 ///
 /// # Errors

@@ -33,13 +33,13 @@ Issues = "https://github.com/smrg-lm/clausters/issues"
 
 # `clausters` on the PATH: runs the bundled standalone server binary (a separate
 # networked / shared-memory server). The in-process embedded server needs no
-# command — it is imported (`clausters.Clausters`).
+# command -- it is imported (`clausters.Clausters`).
 [project.scripts]
 clausters = "clausters._cli:main"
 clausters-gui = "clausters._cli:gui_main"
 
 # Development-only dependencies (PEP 735): the test runner. Not part of the
-# published package — install with `pip install --group dev` (or `uv sync`).
+# published package -- install with `pip install --group dev` (or `uv sync`).
 [dependency-groups]
 dev = ["pytest>=7"]
 
@@ -50,8 +50,8 @@ packages = ["clausters", "clausters.base", "clausters.seq", "clausters.defs",
 
 # The cargo-built artifacts that build_native.py stages into the package: the
 # cdylibs in _libs/ (embedded server / numeric core), libfaust (also _libs/, so a
-# FaustDef compiles on a machine without it — the LLVM it JITs with is linked
-# inside it, statically) and the two binaries in _bin/ — the standalone server
+# FaustDef compiles on a machine without it -- the LLVM it JITs with is linked
+# inside it, statically) and the two binaries in _bin/ -- the standalone server
 # and the visual server, each with its own console-script (`clausters`,
 # `clausters-gui`; the host is also launched by `Session.gui`). Bundled in the
 # wheel so an installed package is self-contained: server, Faust and GUI, no
@@ -59,7 +59,7 @@ packages = ["clausters", "clausters.base", "clausters.seq", "clausters.defs",
 # (libfaust.so.2, libzstd.so.1) are what the loader asks for.
 #
 # libverovio (the `score` widget's engraver) is covered by the same `.so` glob;
-# `_libs/verovio/**` is its SMuFL resource data, which has to travel with it —
+# `_libs/verovio/**` is its SMuFL resource data, which has to travel with it --
 # verovio bakes its resource path in at build time, so a staged copy is told
 # where its data is at runtime. Thousands of one-glyph files, hence the
 # recursive glob.

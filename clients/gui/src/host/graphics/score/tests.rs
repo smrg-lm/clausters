@@ -1,6 +1,6 @@
 //! The module's own suite: it engraves a page from a display list, then asks
-//! the questions the fronts ask — what is under this point, where does the
-//! playhead sit, what does a drag of this many pixels mean in steps — and
+//! the questions the fronts ask -- what is under this point, where does the
+//! playhead sit, what does a drag of this many pixels mean in steps -- and
 //! checks the geometry that comes back.
 
 use lyon::tessellation::FillTessellator;
@@ -253,7 +253,7 @@ fn playhead_at_sweeps_off_the_engine_clock() {
 }
 
 /// A page with a notehead glyph at (500, 200) sitting on a full-width staff
-/// line — the two overlapping hit targets a click has to choose between.
+/// line -- the two overlapping hit targets a click has to choose between.
 fn indexed_page() -> ScoreData {
     let props: Map<String, Value> = serde_json::from_str(
         r#"{
@@ -285,7 +285,7 @@ fn a_click_names_the_element_under_it() {
     assert_eq!(data.hit(rect, 100.0, 380.0), None);
 }
 
-/// A staff line with a notehead written **on** it — the box that traps the
+/// A staff line with a notehead written **on** it -- the box that traps the
 /// tightest-box rule, since a hairline the width of the system covers less area
 /// than the oval sitting on it.
 fn note_on_a_line() -> ScoreData {
@@ -308,7 +308,7 @@ fn note_on_a_line() -> ScoreData {
 /// hairline the width of the system, so its *area* is smaller than the
 /// notehead's and the tightest box is the wrong answer for half the page: every
 /// note on a line rather than in a space. The page says which ids sound, and
-/// that is what decides — which is also what keeps a note under a beam, a slur
+/// that is what decides -- which is also what keeps a note under a beam, a slur
 /// or a hairpin reachable.
 #[test]
 fn a_note_on_a_staff_line_wins_over_the_line() {
@@ -358,7 +358,7 @@ fn a_notehead_is_hit_as_the_oval_it_is_drawn_as() {
     // wins where two overlap, and that rule is untouched).
     assert_eq!(data.hit(rect, 550.0, 190.0), Some("n1"), "the head itself");
     // A hair inside the box's top-left corner: inside the rectangle, outside
-    // the oval — and it used to name the note.
+    // the oval -- and it used to name the note.
     assert_ne!(data.hit(rect, b.x0 + 1.0, b.y0 + 1.0), Some("n1"));
     // The staff line, whose own extent is a stroke, is unaffected.
     assert_eq!(data.hit(rect, 100.0, 200.0), Some("staff"));
@@ -464,7 +464,7 @@ fn the_drag_moves_the_drawn_geometry_by_whole_steps() {
 /// A treble staff with a middle C below it, in verovio's own numbers (the
 /// engraved page of `4CDEF/` at scale 40): five lines 180 apart, the
 /// notehead a whole line position below the last, and the ledger line the
-/// engraver drew for it — tagged with the staff, as verovio tags it.
+/// engraver drew for it -- tagged with the staff, as verovio tags it.
 fn staffed_page() -> ScoreData {
     let props: Map<String, Value> = serde_json::from_str(
         r#"{
@@ -588,7 +588,7 @@ fn line_prim_renders_within_clip() {
 
 /// **A press on blank paper names a place, in the ids the client engraved.**
 /// The host is the only one that can measure where the finger went; it says so
-/// and stops there — no pitch, because that needs a clef and a key it does not
+/// and stops there -- no pitch, because that needs a clef and a key it does not
 /// have, and no duration, because a click implies none.
 #[test]
 fn a_press_on_blank_paper_names_the_staff_the_step_and_what_it_follows() {

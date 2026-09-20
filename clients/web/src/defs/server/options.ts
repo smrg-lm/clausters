@@ -6,8 +6,8 @@
 // talking to was actually built and booted with, which is not always the same
 // thing; `ServerStatus` is the answer to `Server.status`: what it is doing
 // right now, which changes between two calls. The `ServerOptions` half of the
-// Python module — every flag a
-// *launched* server takes, and the command line it becomes — has no
+// Python module -- every flag a
+// *launched* server takes, and the command line it becomes -- has no
 // counterpart here: a page cannot start a process, so a web client always
 // meets a server that is already running.
 
@@ -49,7 +49,7 @@ export const DEFAULT_TAPS = 8;
 
 /**
  * Frames per audio-tap ring on a server started with the default `--tap-frames`
- * — the other half of `DEFAULT_TAPS`, and what sizes a window over a tap before
+ * -- the other half of `DEFAULT_TAPS`, and what sizes a window over a tap before
  * `/server_query` answers with the real shape.
  */
 export const DEFAULT_TAP_FRAMES = 16384;
@@ -66,7 +66,7 @@ export interface ServerSizing {
     maxNodes: number;
     maxBuffers: number;
     /**
-     * Hardware output channels — the audio buses reserved at the bottom of
+     * Hardware output channels -- the audio buses reserved at the bottom of
      * the space, which the allocator never hands out.
      */
     channels: number;
@@ -91,8 +91,8 @@ export interface ServerInfo extends ServerSizing {
      * How many control buses one `/bus_stream` subscription may list
      * (`--max-stream-buses`), **as it applies to this client's carrier**: the
      * server's configured ceiling clamped by what one reply carries over the
-     * transport asking. A subscription is one client's whole live picture — a
-     * page of many canvases asks for a bus per meter — so a client that draws
+     * transport asking. A subscription is one client's whole live picture -- a
+     * page of many canvases asks for a bus per meter -- so a client that draws
      * a lot reads this rather than assuming. Falls back to the historical 128
      * against a server too old to report it.
      */
@@ -101,7 +101,7 @@ export interface ServerInfo extends ServerSizing {
 
 /**
  * The server's configuration as the readable block `print` shows in the Python
- * client (`ServerInfo.__str__`) — same fields, same order, same wording.
+ * client (`ServerInfo.__str__`) -- same fields, same order, same wording.
  *
  * A free function rather than a method for the reason the record formatters in
  * `defs/info.ts` are: `ServerInfo` is an interface, so it carries none.
@@ -129,7 +129,7 @@ export function formatServerInfo(info: ServerInfo): string {
 }
 
 /**
- * The live counters a running server reports over `/server_status` — the
+ * The live counters a running server reports over `/server_status` -- the
  * answer to {@link Server.status}.
  *
  * The reply carries exactly these fields, in this order: the four counts, the
@@ -140,7 +140,7 @@ export function formatServerInfo(info: ServerInfo): string {
  * exponential moving average with a ~1 s time constant, the peak is the worst
  * single block **since the previous call**, so every call reports the peak of
  * its own interval and reading it resets the window. Expect the peak to sit
- * well above the average — the callback must fit its worst block, not its
+ * well above the average -- the callback must fit its worst block, not its
  * mean. In an offline render both measure render speed, since there is no
  * callback.
  */
@@ -151,8 +151,8 @@ export function formatServerInfo(info: ServerInfo): string {
  * The server times **itself** rather than asking the operating system, so the
  * reading is the same on every platform: each piece of work brackets itself
  * with a monotonic clock and adds the elapsed time to its role's slot. What is
- * measured is therefore the *work* — a block, a stage of a parallel group, a
- * serving turn, an NRT job, a compilation — and not the thread that ran it.
+ * measured is therefore the *work* -- a block, a stage of a parallel group, a
+ * serving turn, an NRT job, a compilation -- and not the thread that ran it.
  *
  * `busy` is time the work was **in progress**, not per cent of a core: a DSP
  * worker spinning for its next stage is burning a core and is idle by this
@@ -187,7 +187,7 @@ export function loadName(load: Load): string {
 }
 
 /**
- * The readable block {@link Server.load}'s rows print as, one line per role —
+ * The readable block {@link Server.load}'s rows print as, one line per role --
  * the same lines, in the same order, as the Python client's `format_load`.
  *
  * A free function for the same reason {@link formatServerStatus} is one.
@@ -226,7 +226,7 @@ export interface ServerStatus {
     /** The rate the device actually runs at; it drifts from the nominal one. */
     actualSampleRate: number;
     /**
-     * Blocks that missed their budget since boot — cumulative. An occasional
+     * Blocks that missed their budget since boot -- cumulative. An occasional
      * increment is a warning, a steady climb is audible trouble. `0` against a
      * server too old to report it.
      */
@@ -235,7 +235,7 @@ export interface ServerStatus {
 
 /**
  * The server's live counters as the readable block `print` shows in the Python
- * client (`ServerStatus.__str__`) — same fields, same order, same wording.
+ * client (`ServerStatus.__str__`) -- same fields, same order, same wording.
  *
  * A free function for the same reason {@link formatServerInfo} is one.
  */

@@ -2,7 +2,7 @@
 """Synchronous offline render through the embed C ABI.
 
 The "scientific workflow" call: hand a binary score to the library, block
-until it is rendered, get the samples back as flat float32 — no server, no
+until it is rendered, get the samples back as flat float32 -- no server, no
 OSC sockets, no asynchrony, ready to analyze or plot. Build the library
 once:
 
@@ -13,7 +13,7 @@ then:
     python3 examples/embed_render.py [out.wav]
 
 The binding returns a stdlib ``array('f')``; a numpy user would wrap it
-with ``numpy.frombuffer(samples, dtype=numpy.float32)`` — their choice, not
+with ``numpy.frombuffer(samples, dtype=numpy.float32)`` -- their choice, not
 a dependency of the binding.
 """
 
@@ -54,7 +54,7 @@ def main():
     print(f"seed {stats.seed}")
 
     if path:
-        print(f"wrote {path} — listen with: pw-play {path}")
+        print(f"wrote {path} -- listen with: pw-play {path}")
 
 
 def array_to_int16(samples) -> bytes:

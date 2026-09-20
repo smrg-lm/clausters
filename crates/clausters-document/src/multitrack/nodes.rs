@@ -1,4 +1,4 @@
-//! **From a multitrack to the nodes that play it** — the instance plan.
+//! **From a multitrack to the nodes that play it** -- the instance plan.
 //!
 //! [`clausters_core::mixer`] says what a track and a clip *are* on the server;
 //! this says which of them a given [`Multitrack`] needs, wired to which
@@ -6,7 +6,7 @@
 //! nothing left for a client to decide, which is the point: a multitrack plays the
 //! same in both of them because neither of them works it out.
 //!
-//! What a caller still owns is what only a caller can know — where a source's
+//! What a caller still owns is what only a caller can know -- where a source's
 //! samples actually are (a buffer number is a running server's fact, not a
 //! document's) and what a node's id is. Everything in between is here.
 //!
@@ -39,8 +39,8 @@ use crate::{NodeId, SourceId};
 /// What a caller knows about a source that the document does not: where its
 /// samples are on a running server, and how wide they are.
 ///
-/// A buffer number is not a property of a multitrack — the same multitrack opened twice
-/// has two of them — which is exactly why the document holds a source id and a
+/// A buffer number is not a property of a multitrack -- the same multitrack opened twice
+/// has two of them -- which is exactly why the document holds a source id and a
 /// session table holds this.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct SourceInfo {
@@ -95,7 +95,7 @@ pub struct PlannedCurve {
 pub struct PlannedClip {
     /// The region this plays, which is the identity the editor knows it by.
     pub region: NodeId,
-    /// The slot of its track it is added to — the source's width picks it.
+    /// The slot of its track it is added to -- the source's width picks it.
     pub slot: String,
     /// Its own gain, before the track's.
     pub gain: f32,
@@ -116,7 +116,7 @@ pub struct PlannedTrack {
     pub channels: usize,
     /// Its fader, linear.
     pub gain: f32,
-    /// `1.0` when the mixer's rule silences it — its own mute, or somebody
+    /// `1.0` when the mixer's rule silences it -- its own mute, or somebody
     /// else's solo.
     pub mute: f32,
     /// The clips to add to it, in the order they are on the timeline.
@@ -128,7 +128,7 @@ pub struct PlannedTrack {
 /// The whole multitrack as instances: one graph, and everything else a slot.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Plan {
-    /// The graph to instantiate — `mt.multitrack.<channels>`.
+    /// The graph to instantiate -- `mt.multitrack.<channels>`.
     pub graph: String,
     /// How wide the master is.
     pub channels: usize,
@@ -249,7 +249,7 @@ pub fn track_gain(track: &Track) -> f32 {
 /// because what a mark does to everything else is a rule about a mixer and not
 /// a fact about a multitrack. This is that rule, in one place: with nothing soloed
 /// every unmuted track plays; with anything soloed, only the soloed ones do,
-/// and a track that is both soloed and muted is still muted — a mute is a
+/// and a track that is both soloed and muted is still muted -- a mute is a
 /// statement about *this* track and a solo is a statement about the others.
 pub fn track_mute(multitrack: &Multitrack, track: &Track) -> f32 {
     let soloing = multitrack.tracks.iter().any(|t| t.soloed);
@@ -262,7 +262,7 @@ pub fn track_mute(multitrack: &Multitrack, track: &Track) -> f32 {
 /// nothing, since a multitrack is in seconds.
 ///
 /// A multitrack that never said a tempo did not say one, and the document
-/// refuses to invent one — that would be the format deciding a musical
+/// refuses to invent one -- that would be the format deciding a musical
 /// question. So the default arrives from the caller, in beats per second.
 pub fn tempo_map(multitrack: &Multitrack, default_tempo: f64) -> TempoMap {
     let changes: Vec<clausters_core::tempomap::TempoChange> = multitrack
@@ -471,7 +471,7 @@ mod tests {
     }
 
     /// **The source's width picks the slot**, because a mono take is panned
-    /// into the track and a stereo one is balanced — one reader against two.
+    /// into the track and a stereo one is balanced -- one reader against two.
     #[test]
     fn the_source_width_picks_the_slot_and_the_readers() {
         let plan = plan(&multitrack(), 48_000.0, &sources());
@@ -546,7 +546,7 @@ mod json_tests {
     /// round-trips in the type and not through the JSON is exactly the kind of
     /// gap nothing else catches. This one is worth a test rather than a
     /// comment: [`SegmentSource`](crate::SegmentSource) is untagged, so a
-    /// `SourceRef` missing a defaulted field does not fail — the window quietly
+    /// `SourceRef` missing a defaulted field does not fail -- the window quietly
     /// becomes opaque content, drawn as a box and played by nothing.
     #[test]
     fn a_multitrack_written_by_a_client_plans() {

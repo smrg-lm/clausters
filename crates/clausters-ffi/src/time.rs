@@ -1,4 +1,4 @@
-//! Beats, seconds, samples and NTP timetags — the conversions every client must agree on.
+//! Beats, seconds, samples and NTP timetags -- the conversions every client must agree on.
 
 use super::*;
 
@@ -37,7 +37,7 @@ pub extern "C" fn clausters_core_samples_to_secs(samples: i64, sample_rate: f64)
 }
 
 /// The server's sample counter at Unix instant `unix_secs`, from an anchor
-/// (`anchor_sample` at `anchor_unix`) and the sample rate — the `/sched_at`
+/// (`anchor_sample` at `anchor_unix`) and the sample rate -- the `/sched_at`
 /// target conversion.
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_core_unix_to_sample(
@@ -57,7 +57,7 @@ pub extern "C" fn clausters_core_quant_delay(pos: f64, quant: f64) -> f64 {
 }
 
 /// The bar index a beat position falls in on a grid of `quant` beats per bar
-/// (0-based; `quant <= 0` → 0, no bar grid) — the display complement of
+/// (0-based; `quant <= 0` → 0, no bar grid) -- the display complement of
 /// [`clausters_core_quant_delay`].
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_core_bar(beats: f64, quant: f64) -> f64 {
@@ -73,7 +73,7 @@ pub extern "C" fn clausters_core_beat_in_bar(beats: f64, quant: f64) -> f64 {
 
 /// Packs raw NTP-scale seconds (any epoch: Unix + offset for wire timetags,
 /// seconds-from-start for an NRT score) into the 64 timetag bits
-/// (`seconds << 32 | fractional`), rounding the fraction — the one packing rule
+/// (`seconds << 32 | fractional`), rounding the fraction -- the one packing rule
 /// every client shares.
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_core_ntp_timetag(ntp_secs: f64) -> u64 {

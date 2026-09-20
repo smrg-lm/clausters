@@ -4,7 +4,7 @@
 //!
 //! It is **platform-agnostic**: `wgpu` and `winit` both compile for `wasm32`
 //! (the WebGPU backend over an HTML `<canvas>`), so the device/surface setup
-//! lives once. The only platform difference is *when* it is awaited — natively
+//! lives once. The only platform difference is *when* it is awaited -- natively
 //! `pollster::block_on(Gpu::new(window))` in `resumed`, on the web an async task
 //! that resolves the adapter/device without blocking the browser's main thread.
 
@@ -36,13 +36,13 @@ impl Gpu {
     /// path blocks on it); the adapter/device requests are the only await points.
     ///
     /// `samples` is the antialiasing the front asked for (`1` = none), clamped
-    /// to what the adapter reports for the surface format — the whole of MSAA's
+    /// to what the adapter reports for the surface format -- the whole of MSAA's
     /// cost model: one multisampled attachment per window, nothing per widget.
     ///
     /// Returns an error rather than panicking when no GPU is available, so the
     /// front can surface a clear message instead of aborting. On the web this is
     /// rare: [`new_instance`] prefers WebGPU where the browser truly supports it
-    /// and otherwise falls back to **WebGL2**, which nearly every browser has —
+    /// and otherwise falls back to **WebGL2**, which nearly every browser has --
     /// so a Linux/older-Android browser whose WebGPU is disabled still renders.
     pub(crate) async fn new(window: Arc<Window>, samples: u32) -> Result<Self, String> {
         let size = window.inner_size();
@@ -76,7 +76,7 @@ impl Gpu {
         surface.configure(&device, &config);
         // What the adapter actually offers for this format: an unsupported
         // count is a warning and a single-sampled pass, never a failure to
-        // open — the picture is the same picture, with harder edges.
+        // open -- the picture is the same picture, with harder edges.
         let asked = samples.max(1);
         let samples = if adapter
             .get_texture_format_features(config.format)
@@ -160,7 +160,7 @@ impl Gpu {
 /// On the web it enables **both** the WebGPU and the WebGL2 backends and decides
 /// at instance creation through `new_instance_with_webgpu_detection`: it keeps
 /// WebGPU only when the browser can actually create a WebGPU adapter (the helper
-/// probes for one, not just for `navigator.gpu` — Linux Chrome exposes that
+/// probes for one, not just for `navigator.gpu` -- Linux Chrome exposes that
 /// property yet cannot create an adapter), and otherwise drops to WebGL2. That
 /// runtime fall-through is what gives the web host reach on browsers where
 /// WebGPU is disabled. Native uses the default backends unchanged.

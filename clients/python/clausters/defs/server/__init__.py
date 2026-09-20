@@ -13,7 +13,7 @@ A routine sequences events by calling `send_bundle`; swapping the
 Server's interface retargets every routine from live RT to an NRT score without
 touching clock or routine.
 
-Where things live: this module holds the `Server` itself — the interface, the
+Where things live: this module holds the `Server` itself -- the interface, the
 allocators, the raw OSC paths and the server's own lifecycle. Beside it,
 `options` (the configuration it is booted with and the configuration it
 reports), `queries` (what a running server holds), `transport` (the shared beat
@@ -145,7 +145,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         #: the communication interface (RT/TCP by default, NRT/score, …). The
         #: Server owns it; swapping it is the RT/NRT seam. ``transport`` picks
         #: the default carrier when no explicit ``interface`` is given:
-        #: ``"tcp"`` (the command plane — reliable, and a def or a bulk read is
+        #: ``"tcp"`` (the command plane -- reliable, and a def or a bulk read is
         #: not bounded by a datagram; the connection opens lazily on first
         #: use), ``"udp"`` (each packet must fit a datagram) or ``"ws"``. UDP
         #: remains the *discovery* protocol: `boot` probes over it before
@@ -193,10 +193,10 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         # sized from the options so client and server agree by construction.
         # The node-id range comes from the shared partition formula
         # (`--max-nodes` scales every range); in score (NRT) mode it is
-        # unbounded — an offline render has no live `/node_end` stream to recycle
+        # unbounded -- an offline render has no live `/node_end` stream to recycle
         # from, and no real-time bound on ids over the score's length.
         #: which slice of the server's client id space this handle allocates
-        #: from — the whole of it unless a second client shares the server
+        #: from -- the whole of it unless a second client shares the server
         #: (`clausters.base.IdShare`). Every space is sliced the same way, so a
         #: handle is one share of everything rather than of one pool.
         self.share = WHOLE_SHARE if share is None else share
@@ -229,16 +229,16 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         A `Server` is a handle: constructing one runs nothing and reaches
         nothing, which is what makes it cheap to build one before there is
         anything to talk to. This is the verb that brings up what it points at,
-        and what that means is the carrier's to say —
+        and what that means is the carrier's to say --
 
         - the default carriers (TCP/UDP/WS) have a process behind them, so this
           spawns the standalone ``clausters`` server and waits until it answers
           -- which it does only once its audio device is sounding, so a note
           played on the next line is placed on a stream already running --
-          at **this handle's own address** — the process is told to bind it, so
+          at **this handle's own address** -- the process is told to bind it, so
           several servers run side by side, one per port;
         - an offline or in-process carrier has nothing to start, and this is a
-          no-op rather than an error — an NRT score is already "up".
+          no-op rather than an error -- an NRT score is already "up".
 
         Booting is for a server that is **not there yet**: if something already
         answers on the port, this raises rather than adopting it, because a
@@ -251,7 +251,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         itself.
 
         Args:
-            shm: the shared-memory segment — ``"auto"`` picks one, a path
+            shm: the shared-memory segment -- ``"auto"`` picks one, a path
                 forces it, ``None`` launches without one. Remembered for a GUI
                 to map (`shm`).
             verbose: server log verbosity (``1``/``2``/``3`` -> ``-v``/``-vv``/
@@ -307,7 +307,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         behind by a client that crashed (still holding the audio device, quite
         possibly still sounding), one launched from a terminal, one another
         process owns. Ownership is the difference, and it runs through the whole
-        pair — this handle did not start the process, so `close` releases the
+        pair -- this handle did not start the process, so `close` releases the
         connection and leaves the server standing. Stopping it is `quit`, which
         the server obeys over the wire, and cutting only its sound is `free_all`.
 
@@ -333,7 +333,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
             return self                  # an offline or in-process carrier
         if not server_is_up(self.target.host, self.target.port, timeout=timeout):
             raise ServerError(
-                f"no server answers at {self.target.host}:{self.target.port} — "
+                f"no server answers at {self.target.host}:{self.target.port} -- "
                 "`boot()` one there, or point this handle where one is running")
         # The server answering now is not necessarily the one this handle last
         # spoke to, and a stream carrier cannot tell the difference by itself
@@ -351,7 +351,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         (`query_info`), and return ``self``.
 
         The constructor sizes them from `options`, which is the client's *own*
-        picture of the server — right by construction for a server this handle
+        picture of the server -- right by construction for a server this handle
         booted, a guess for any other. This replaces the guess with the answer.
         `attach` calls it for you.
         """
@@ -384,7 +384,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         """Send one message. **A message has no time**: in a bundle it would
         carry the immediate timetag, and alone it means exactly that.
 
-        The interface is the same one in real time and offline, and so is this —
+        The interface is the same one in real time and offline, and so is this --
         immediate is immediate. Logical time belongs to the **bundle** path:
         `send_bundle`, `Event.play`, and the patterns built on them. So creating
         a node with `send_msg` from inside a routine is an **error**, not
@@ -399,8 +399,8 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         (default: the ambient `Moment`) plus ``delay_beats``, plus this
         server's `latency`.
 
-        Inside a routine the moment is the routine's **exact logical beat** —
-        the yield-accumulated one, not wall-clock now — so inter-event timing
+        Inside a routine the moment is the routine's **exact logical beat** --
+        the yield-accumulated one, not wall-clock now -- so inter-event timing
         stays exact. Outside any routine it is wall-clock now, and the delay
         reads as seconds.
 
@@ -446,7 +446,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
     def play_event(self, event):
         """Play a note `Event` as OSC: `/synth_new`
         then `/node_free` (or `gate 0`) after the sustain. The OSC side of the
-        double dispatch — a MIDI destination renders the same event as note
+        double dispatch -- a MIDI destination renders the same event as note
         on/off. Returns the synth node id (or None for a rest).
 
         Release is by ``gate 0`` when the event sets ``has_gate`` **or** the
@@ -457,7 +457,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         timetagged bundles at the ambient `Moment`: inside a routine that is
         its exact logical beat, so a sequence stays sample-tight; outside any
         clock it is wall-clock now, and the sustain reads as seconds
-        (tempo 1.0) — so a bare ``Event().play()`` sounds now and frees itself
+        (tempo 1.0) -- so a bare ``Event().play()`` sounds now and frees itself
         without a `TempoClock`."""
         if event.get("type") == "rest":
             return None
@@ -478,7 +478,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
     def send_bundle_after(self, delay_secs: float, *messages):
         """Emit a timetagged bundle of ``(addr, *args)`` messages at wall-clock
         now + ``delay_secs`` (+ `latency`), ignoring whatever clock is in
-        flight — the **clockless** entry point to `send_bundle`, for a delay
+        flight -- the **clockless** entry point to `send_bundle`, for a delay
         that is a duration in seconds rather than a position in the music. In
         score (NRT) mode the delay is seconds from the render start."""
         self.send_bundle(*messages, at=Moment(None, delay_secs))
@@ -517,7 +517,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
 
         This and `_request_batch` are the two places a ``timeout`` is finally
         read, which is why they are the only two that resolve ``None`` against
-        the handle's `timeout` — everything above just passes the argument down
+        the handle's `timeout` -- everything above just passes the argument down
         untouched."""
         timeout = self.timeout if timeout is None else timeout
         self.send_msg(addr, *args)
@@ -544,7 +544,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         ``/done`` terminator (the shape the introspection queries use, whose
         result is a variable number of messages). Returns a list of arg lists.
 
-        Blocking, RT only — like every query here, never call it from a
+        Blocking, RT only -- like every query here, never call it from a
         routine."""
         timeout = self.timeout if timeout is None else timeout
         self.send_msg(addr, *args)
@@ -589,7 +589,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         the half the other client takes.
 
         What a launcher does when it starts a client that allocates on this
-        server too — `clausters.Session.gui` gives the GUI host its half with
+        server too -- `clausters.Session.gui` gives the GUI host its half with
         ``--id-share``. This handle keeps the first half of its share of every
         space (node ids, buses, buffers) and every id it already holds keeps
         its number; the other client takes the second half.
@@ -609,7 +609,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
 
         The shape is the core's (`_native.IdSpaces`): the node table's client
         range, the audio buses above the server's own outputs, both bus spaces
-        clear of their GraphDef windows, the buffers — each sliced by this
+        clear of their GraphDef windows, the buffers -- each sliced by this
         handle's share. The outputs are the server's; until the server has
         said (a booted server with no ``outputs`` flag follows its device), two
         is assumed, which is the page client's same assumption before its own
@@ -631,7 +631,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         """Starts the ``/node_end`` listener once per server handle: a dedicated
         `OscReceiver` registered with ``/server_notify 1`` **from its own socket**, so
         the server's node-lifecycle pushes land here whatever transport the
-        command path uses (UDP, TCP, WS — notify registration is per source).
+        command path uses (UDP, TCP, WS -- notify registration is per source).
         Ids outside the client range (the server's auto/MIDI ranges, other
         clients) are ignored by `NodeIdAllocator.free`. Score
         (NRT) interfaces skip this: their registry is unbounded and an offline
@@ -646,7 +646,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
                 self.nodes.free(int(args[0]))
             elif addr == "/fail" and len(args) >= 3 and isinstance(args[2], int):
                 # An engine rejection (duplicate id / full table) is async:
-                # the node never existed, so no /node_end will come — reconcile
+                # the node never existed, so no /node_end will come -- reconcile
                 # the in-flight id here instead of losing it.
                 self.nodes.free(int(args[2]))
 
@@ -679,7 +679,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         """Renders the accumulated score (the interface must be an
         `OscNrtInterface`). Schedule a closing bundle (e.g. ``/node_free 0``)
         so the render has a defined duration. ``workers`` adds DSP threads
-        for the score's parallel groups — bit-identical, only faster.
+        for the score's parallel groups -- bit-identical, only faster.
 
         Always returns a `clausters.render.RenderStats`. **``path`` chooses
         where the audio goes, not whether there is any**:
@@ -690,15 +690,15 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
 
         The file is written by the server, not here: the score goes to the
         ``clausters --nrt`` renderer, which streams straight to disk. That is
-        why nothing has to cross into Python — a long bounce never
-        builds millions of floats just to be written out — and why
+        why nothing has to cross into Python -- a long bounce never
+        builds millions of floats just to be written out -- and why
         ``sample_format`` (``"float"``, ``"int24"``, ``"int16"``) is
         available at all. It also means the binary must be findable, the same
         way `clausters.launch` finds it.
 
         ``seed`` starts the render's stochastic UGens. Left ``None`` the
         render draws a fresh one, so a score with noise in it is a new take
-        every time — a random process is unpredictable first. The seed it used
+        every time -- a random process is unpredictable first. The seed it used
         comes back in ``stats.seed``; pass that back here to replay exactly
         that take.
         """
@@ -782,7 +782,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         proportion to its length rather than to its size; firing the batch and
         closing it with one barrier costs one round trip for the whole of it.
         What that would otherwise give up is the error, since a chunk's
-        ``/fail`` arrives while nobody is listening — so the barrier listens for
+        ``/fail`` arrives while nobody is listening -- so the barrier listens for
         both, and the first one wins.
         """
         self._sync_counter += 1
@@ -799,7 +799,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         buffer alloc. RT only (in NRT the renderer
         already serializes async work at time 0). Returns the id used.
 
-        **Blocking — never call from a routine.** This (and any ``wait=True``)
+        **Blocking -- never call from a routine.** This (and any ``wait=True``)
         blocks the calling thread on a reply: fine on your own thread, but it
         would freeze the clock thread if called from inside a routine generator
         (see `Routine`). It also polls the socket
@@ -812,7 +812,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
 
     def free_all(self):
         """Free every node on the server, leaving it running and empty
-        (``/group_deepFree`` on the root group) — sclang's ``CmdPeriod``.
+        (``/group_deepFree`` on the root group) -- sclang's ``CmdPeriod``.
 
         The panic button, and the one that keeps the most: whatever is sounding
         stops, while the server holds on to its defs, buffers and MIDI bindings.
@@ -824,7 +824,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         """Stop the server (``/server_quit``).
 
         The wire command, so it is the server that stops rather than this end
-        of it — `close` is the other half, releasing the interface and any
+        of it -- `close` is the other half, releasing the interface and any
         process this handle booted.
 
         What getting another one costs depends on where it was: a launched
@@ -873,14 +873,14 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
 
     def sample_clock(self, window: int = 64, timeout: float = 2.0):
         """**This server's** sample-clock reader: an `EmbedSampleClock` when the
-        server is in-process (the embed interface exposes the counter directly —
+        server is in-process (the embed interface exposes the counter directly --
         no socket, no round trips), otherwise a `UdpSampleClock` tracking it
         over UDP. Pass its ``.timebase()`` to a `clausters.base.TempoClock` to
         anchor timing to the server and schedule by ``/sched_at``.
 
         **One reader per server, built on the first call and returned by every
         one after it.** There is a single sample counter to model, so a second
-        model of it is not a second opinion — it is another socket, another
+        model of it is not a second opinion -- it is another socket, another
         thread re-anchoring the same number, and another warmup. Ten clocks
         locked to one server used to cost ten of each and two seconds of
         warmup; they now share this one.
@@ -904,7 +904,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
 
     def release_sample_clock(self):
         """Close this server's shared sample-clock reader, if it built one, and
-        forget it — the next `sample_clock` builds a fresh one.
+        forget it -- the next `sample_clock` builds a fresh one.
 
         Called by `close`, and by `sample_timebase` when the reader turns out
         to have no master to anchor against, so a failed probe does not leave a
@@ -923,7 +923,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         `sample_clock`, probed, warmed up and tracking; an in-process embedded
         server is read directly, with no round trip.
 
-        **Blocking over UDP** (it does `/clock_query` round trips) — call it
+        **Blocking over UDP** (it does `/clock_query` round trips) -- call it
         before `start`/`run`, never from inside a routine.
 
         Raises `RuntimeError` for an offline server, which has no sample clock,

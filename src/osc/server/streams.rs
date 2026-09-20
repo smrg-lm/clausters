@@ -16,9 +16,9 @@ use super::*;
 /// `bucket` frames from `first_frame`, bucket-major and channel-minor, min,
 /// max and mean square each, as little-endian `f32`.
 ///
-/// The arithmetic is [`clausters_core::peaks::overview`] — the same function
+/// The arithmetic is [`clausters_core::peaks::overview`] -- the same function
 /// that folds the result on the other end reads it here, so the layout is
-/// stated once — and the buffer is read a bucket at a time through
+/// stated once -- and the buffer is read a bucket at a time through
 /// [`crate::dsp::buffer::Buffer::channel`], never copied.
 pub(in crate::osc::server) fn overview_blob(
     buffer: &crate::dsp::buffer::Buffer,
@@ -40,7 +40,7 @@ pub(in crate::osc::server) fn overview_blob(
 
 impl OscServer {
     /// `/bus_stream periodMs busIndex...`: subscribes this client to a periodic
-    /// `/bus_set` snapshot of the listed control buses — the network counterpart
+    /// `/bus_set` snapshot of the listed control buses -- the network counterpart
     /// of reading the shared-memory segment, for clients that cannot map it (a
     /// browser GUI host's meters/scopes over WebSocket). One subscription per
     /// client, replaced on every call; `periodMs <= 0` or an empty list
@@ -90,7 +90,7 @@ impl OscServer {
     /// Sends every due stream its `/bus_stream.reply` snapshot. Called once per run-loop
     /// iteration; the socket timeout is tuned so an idle loop still ticks at
     /// the fastest subscribed period (see [`Self::retune_timeout`]). Reading a
-    /// control bus is one relaxed atomic load — no engine round-trip.
+    /// control bus is one relaxed atomic load -- no engine round-trip.
     pub(in crate::osc::server) fn pump_streams(&mut self) {
         if self.streams.is_empty() {
             return;
@@ -124,8 +124,8 @@ impl OscServer {
 
     /// Starts recording audio bus `bus`, if it is not already: picks a free
     /// ring, tells the engine to append that bus to it every block, and counts
-    /// one more watcher. Idempotent per watcher — two views of the same bus
-    /// share one ring — and the caller never learns the index: the segment's
+    /// one more watcher. Idempotent per watcher -- two views of the same bus
+    /// share one ring -- and the caller never learns the index: the segment's
     /// directory maps the bus to it (see [`Segment::tap_of_bus`]).
     ///
     /// [`Segment::tap_of_bus`]: crate::server::ipc::Segment::tap_of_bus
@@ -172,7 +172,7 @@ impl OscServer {
         }
     }
 
-    /// `/bus_tap bus watch`: asks the server to make audio bus `bus` readable —
+    /// `/bus_tap bus watch`: asks the server to make audio bus `bus` readable --
     /// `watch = 1` starts, `0` stops. **The bus is the only number a client
     /// names**: which of the segment's rings carries it is the server's own
     /// bookkeeping, published in the segment's bus directory for whoever reads
@@ -213,8 +213,8 @@ impl OscServer {
     }
 
     /// `/bus_tapStream periodMs frames bus...`: subscribes this client to a
-    /// periodic `/bus_tapStream.reply` snapshot — the newest `frames` samples of each
-    /// listed **audio bus** — the network counterpart of reading the segment's
+    /// periodic `/bus_tapStream.reply` snapshot -- the newest `frames` samples of each
+    /// listed **audio bus** -- the network counterpart of reading the segment's
     /// tap rings, for clients (a browser oscilloscope) that cannot map it. The
     /// subscription *is* the watch: it starts recording each bus it lists and
     /// stops when it is replaced, cancelled or its connection dies, so a
@@ -318,7 +318,7 @@ impl OscServer {
     }
 
     /// Removes the tap subscriptions matching `doomed` and releases the watch
-    /// each held on its buses — the one place a subscription's recording stops,
+    /// each held on its buses -- the one place a subscription's recording stops,
     /// whether it was replaced, cancelled or lost with its connection.
     pub(in crate::osc::server) fn drop_tap_streams(&mut self, doomed: impl Fn(&TapStream) -> bool) {
         let mut released = Vec::new();
@@ -337,7 +337,7 @@ impl OscServer {
 
     /// Sends every due tap stream its `/bus_tapStream.reply` snapshots. Called once per
     /// run-loop iteration, like [`Self::pump_streams`]. Reading a tap ring is
-    /// a lock-free shared-memory copy — no engine round-trip.
+    /// a lock-free shared-memory copy -- no engine round-trip.
     pub(in crate::osc::server) fn pump_tap_streams(&mut self) {
         if self.tap_streams.is_empty() {
             return;
@@ -356,8 +356,8 @@ impl OscServer {
 
     /// One `/bus_tapStream.reply tap endPosition blob` per tap of stream `i` that has a
     /// full window: `endPosition` is the tap's stream position (total samples
-    /// written) at the window's end — consecutive snapshots overlap or gap by
-    /// exactly the position delta — and the blob is the window's raw
+    /// written) at the window's end -- consecutive snapshots overlap or gap by
+    /// exactly the position delta -- and the blob is the window's raw
     /// little-endian `f32` samples.
     fn send_tap_snapshots(&mut self, i: usize) {
         let Some(segment) = self.handle.segment().cloned() else {
@@ -393,13 +393,13 @@ impl OscServer {
     }
 
     /// `/buffer_stream periodMs bucket bufnum...`: subscribes this client to
-    /// the **overview of samples as it is written** — what a peer that can
+    /// the **overview of samples as it is written** -- what a peer that can
     /// map the region reads for free, for a client that cannot.
     ///
     /// The server acks `/done "/buffer_stream"` and then sends, every
     /// `periodMs`, one `/buffer_stream.reply bufnum startFrame bucket blob`
     /// per watched buffer whose write frontier has moved past a whole bucket
-    /// since the last report — and nothing at all for one that has not moved,
+    /// since the last report -- and nothing at all for one that has not moved,
     /// so a still buffer costs no traffic.
     ///
     /// **The unit is the summary and not the samples**, which is the whole
@@ -489,7 +489,7 @@ impl OscServer {
     ///
     /// The blob is bucket-major and channel-minor: for each bucket in order,
     /// for each channel, `min`, `max` and **mean square** as raw little-endian
-    /// `f32` — the same three statistics the peak pyramid stores, in the same
+    /// `f32` -- the same three statistics the peak pyramid stores, in the same
     /// energy form, so a client folds them into its own summary without
     /// converting anything.
     ///
@@ -510,7 +510,7 @@ impl OscServer {
             else {
                 continue;
             };
-            // **The buffer's own frontier, or the row's — whichever is
+            // **The buffer's own frontier, or the row's -- whichever is
             // further.** This used to read the row alone, which made the
             // command work only where it was least needed: a client that
             // cannot map is exactly who it is for, and most of those talk to a

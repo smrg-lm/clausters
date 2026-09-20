@@ -1,7 +1,7 @@
 // The warp family, against the Python client's own values.
 //
 // `linlin` and its seven siblings are SuperCollider's, and both clients bind
-// the same `clausters_core::warp` — so the test that matters is not that the
+// the same `clausters_core::warp` -- so the test that matters is not that the
 // numbers are plausible but that they are *the same numbers*, computed in f32
 // on both sides. The reference values here are sclang's, as they are in
 // `clients/python/tests/test_range_maps.py`, and the two files assert the same

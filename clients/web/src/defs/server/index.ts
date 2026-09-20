@@ -3,8 +3,8 @@
 //
 // A `Server` is the only object that knows a connection: defs, nodes, buses
 // and buffers are built transport-agnostically and reach the server through
-// here. Which carrier is underneath — the in-page engine or a `--ws` native
-// server — is `Connection`'s business and never named above it.
+// here. Which carrier is underneath -- the in-page engine or a `--ws` native
+// server -- is `Connection`'s business and never named above it.
 //
 // **Everything that waits is a promise.** Where the Python client blocks a
 // thread on a reply (`sync`, `add_synthdef(wait=True)`), this one returns a
@@ -15,16 +15,16 @@
 // **Argument typing.** A JS number is a double, with no int/float
 // distinction, so this module tags by **position**, not by value: node ids,
 // bus indices, buffer numbers and add actions go out as int32, control values
-// as float32 — which is what each of them is. The free-form `sendMsg` infers
+// as float32 -- which is what each of them is. The free-form `sendMsg` infers
 // (an integral number is an int32) and takes an explicit `[tag, value]` pair
 // wherever that guess is wrong.
 //
-// **Where things live.** This module holds the `Server` itself — the
+// **Where things live.** This module holds the `Server` itself -- the
 // connection, the allocators, the raw OSC paths, the request machinery and the
 // server's own lifecycle. Beside it, `options` (the configuration it is sized
 // from and the configuration it reports), `queries` (what a running server
 // holds), `streams` (the subscriptions the server pushes) and `transport` (the
-// shared beat grid, and the group it governs) — the same split the Python
+// shared beat grid, and the group it governs) -- the same split the Python
 // package makes, as mixins rather than collaborators precisely so no attribute
 // path moves.
 //
@@ -42,7 +42,7 @@ import {
 import type { MsgArg, OscMessage, TimedMessage } from "../../base/osc.ts";
 import { ROOT_NODE_ID } from "../node.ts";
 /**
- * This area's logger — every message and bundle sent to the audio server, and
+ * This area's logger -- every message and bundle sent to the audio server, and
  * every reply. Silent unless `CLAUSTERS_LOG=server` (or `watch("server")`).
  */
 const log = area("server");
@@ -113,7 +113,7 @@ export type { TransportGrid, TransportState } from "./transport.ts";
 
 /**
  * A plain value a message argument may take, or an explicit `[tag, value]`
- * pair when the inferred type is wrong (the codec's own type — re-exported
+ * pair when the inferred type is wrong (the codec's own type -- re-exported
  * here, where the commands take it).
  */
 export type { MsgArg };
@@ -133,7 +133,7 @@ const DEFAULT_WS_URL = "ws://127.0.0.1:57120";
 export type ServerTransportName = "page" | "ws";
 
 /**
- * What {@link Server} is built with — the reference client's constructor, in
+ * What {@link Server} is built with -- the reference client's constructor, in
  * the shape a page takes it.
  */
 export interface ServerOptions {
@@ -142,14 +142,14 @@ export interface ServerOptions {
     /** The `clausters --ws` address, when `transport` is `"ws"`. */
     url?: string;
     /**
-     * *Which* in-page engine, when it is not this page's own — the address of
+     * *Which* in-page engine, when it is not this page's own -- the address of
      * a server in a tab, where the reference client uses a port. Read it off a
      * handle that booted one ({@link Server.engine}) to point a second handle
      * at the same server, which is what `attach` is for.
      */
     engine?: ClaustersServer;
     /**
-     * A carrier built by hand, which wins over `transport` — the reference
+     * A carrier built by hand, which wins over `transport` -- the reference
      * client's `interface=`. This is how an offline handle is made
      * (`new Server({ connection: new ScoreConnection() })`, the page's
      * `Server(interface=OscNrtInterface())`) and how a handle is pointed at one
@@ -165,7 +165,7 @@ export interface ServerOptions {
      * `Server` handle is built against a process whose options the same script
      * chose, so the numbers are already known. A page's engine is compiled with
      * its defaults and a handle that never boots or attaches has nothing to ask,
-     * which is the case this exists for — an offline score, or a handle sized by
+     * which is the case this exists for -- an offline score, or a handle sized by
      * whoever knows.
      */
     sizing?: Partial<ServerSizing>;
@@ -235,7 +235,7 @@ function scoreSecs(when: Moment): number {
 }
 
 export class Server {
-    // Where this handle's server is, and its address — the constructor's
+    // Where this handle's server is, and its address -- the constructor's
     // `transport`/`url`. Private, and named apart from the option, because
     // `Server.transport()` is already the transport grid's query; the reference
     // client keeps its own `transport=` out of the instance for the same
@@ -246,7 +246,7 @@ export class Server {
     private audio: ClaustersServer | null;
 
     /**
-     * The in-page engine this handle talks to, once it has one — `null` over a
+     * The in-page engine this handle talks to, once it has one -- `null` over a
      * socket or a score, where there is no engine in this tab to name.
      *
      * This is a server's *address* in a page: hand it to a second handle
@@ -285,7 +285,7 @@ export class Server {
     get connection(): Connection {
         if (!this.conn) {
             throw new ServerError(
-                "this handle has no carrier yet — boot() one, attach() to a " +
+                "this handle has no carrier yet -- boot() one, attach() to a " +
                     "server already running, or build it with an explicit " +
                     "`connection`.",
             );
@@ -293,13 +293,13 @@ export class Server {
         return this.conn;
     }
     /**
-     * The slice of the server's client id space this handle allocates from —
+     * The slice of the server's client id space this handle allocates from --
      * the whole of it unless a second client shares the server (`IdShare`).
      * Halved by {@link Server.splitShare}.
      */
     share: IdShare;
     /**
-     * The sizes this client's allocators were built against — the constructor's
+     * The sizes this client's allocators were built against -- the constructor's
      * guess until {@link Server.reconcile} replaces it with the server's own
      * answer, which is why neither this nor the allocators under it is `readonly`.
      */
@@ -325,7 +325,7 @@ export class Server {
 
     /**
      * **This client's id spaces** on this server: one `IdSpaces` the four
-     * allocators are views of, shaped by `sizing` and sliced by `share` — the
+     * allocators are views of, shaped by `sizing` and sliced by `share` -- the
      * core's policy (`clausters_core::ids`), so the outputs at the bottom of
      * the audio space are the server's own count and the GraphDef windows stay
      * clear. A score's node space is unbounded: an offline score has no
@@ -359,7 +359,7 @@ export class Server {
      * half the other client takes.
      *
      * What a launcher does when it starts a client that allocates on this
-     * server too — `Session.gui` gives the GUI host its half. This handle
+     * server too -- `Session.gui` gives the GUI host its half. This handle
      * keeps the first half of its share of every space (node ids, buses,
      * buffers) and every id it already holds keeps its number; the other
      * client takes the second half.
@@ -407,7 +407,7 @@ export class Server {
         this.built.buffers = value;
     }
     /**
-     * Seconds added to every timed send — the scheduling headroom. Kept here
+     * Seconds added to every timed send -- the scheduling headroom. Kept here
      * so the sequencing layer (a later milestone) has one place to read it.
      *
      * A **score** carrier sets it to 0 in the constructor: latency is lead
@@ -416,7 +416,7 @@ export class Server {
     latency = 0.05;
 
     /**
-     * Whether this handle writes a score instead of sending to a server —
+     * Whether this handle writes a score instead of sending to a server --
      * the carrier's `timeMode`, read where the difference shows: how a bundle
      * is stamped, whether a confirmation can ever arrive, and whether node
      * ids have to be recycled.
@@ -433,7 +433,7 @@ export class Server {
     timeout = DEFAULT_TIMEOUT;
 
     /**
-     * Whether {@link Server.boot} brought this server up — ownership, the way
+     * Whether {@link Server.boot} brought this server up -- ownership, the way
      * the reference client remembers the process it started. It is what makes
      * {@link Server.close} stop the engine rather than only let go of it, and
      * what anything asking whether this page owns what it is talking to reads.
@@ -452,7 +452,7 @@ export class Server {
      */
     private lastLoad: { uptime: number; busy: Map<string, number> } | null = null;
     /**
-     * The receiving door this server's connection is read through — the one
+     * The receiving door this server's connection is read through -- the one
      * place a packet is decoded, and the receiver a responder registers with
      * (`new OscFunc(fn, "/node_start", { recv: server.receiver })`, which is
      * also what the ambient default resolves to).
@@ -464,7 +464,7 @@ export class Server {
     get receiver(): OscReceiver {
         if (!this.recv) {
             throw new ServerError(
-                "this handle has no receiving door yet — it opens with the " +
+                "this handle has no receiving door yet -- it opens with the " +
                     "carrier, in boot() or attach().",
             );
         }
@@ -480,19 +480,19 @@ export class Server {
      *
      * `transport` names where that server is, the way the reference names it
      * with a transport and an address, and the handle opens the carrier itself
-     * when a verb needs it — asynchronously, which a constructor cannot be but
+     * when a verb needs it -- asynchronously, which a constructor cannot be but
      * {@link Server.boot} and {@link Server.attach} already are:
      *
-     * - `"page"` (the default) — the audio server compiled to wasm in this tab.
-     * - `"ws"` — a `clausters --ws` server at `url`.
+     * - `"page"` (the default) -- the audio server compiled to wasm in this tab.
+     * - `"ws"` -- a `clausters --ws` server at `url`.
      *
      * Then one of the two verbs, and **they are what say who owns what**, as in
-     * the reference: {@link Server.boot} brings up a server this handle owns —
-     * so two booted handles are two servers, not two views of one — and
+     * the reference: {@link Server.boot} brings up a server this handle owns --
+     * so two booted handles are two servers, not two views of one -- and
      * {@link Server.attach} connects to one already running and owns nothing.
      * With neither, the allocators keep `sizing` (the compiled defaults when it
      * is absent), which is right only for a server whose configuration you
-     * already know — an offline score, or one you sized yourself.
+     * already know -- an offline score, or one you sized yourself.
      */
     constructor(
         {
@@ -528,7 +528,7 @@ export class Server {
     }
 
     /**
-     * Wires the receiving door onto a carrier, once it exists — from the
+     * Wires the receiving door onto a carrier, once it exists -- from the
      * constructor when one was handed in, else from `boot`/`attach` when the
      * handle opens its own.
      */
@@ -543,7 +543,7 @@ export class Server {
      * `own` is the difference between the two verbs and is the whole of it: a
      * boot gets an engine of its own (its own `AudioContext`, its own node, bus
      * and buffer space), an attach the one already running in this page. A
-     * socket is neither — it points at a server this page did not start and
+     * socket is neither -- it points at a server this page did not start and
      * cannot, so `boot` refuses it before we get here.
      */
     private async openCarrier(own: boolean): Promise<Connection> {
@@ -557,7 +557,7 @@ export class Server {
                 throw new ServerError(
                     "the carrier this handle was built with is closed, and a " +
                         "connection made elsewhere is not this handle's to " +
-                        "replace — build a new one and a Server around it.",
+                        "replace -- build a new one and a Server around it.",
                 );
             }
             this.dropCarrier();
@@ -575,7 +575,7 @@ export class Server {
             const found = this.audio ?? (own ? ownEngine() : pageEngineIfUp());
             if (!found) {
                 throw new ServerError(
-                    "no engine is running in this page — attach() is for a " +
+                    "no engine is running in this page -- attach() is for a " +
                         "server already up, and nothing has booted one here. " +
                         "boot() one instead, which brings up its own.",
                 );
@@ -623,7 +623,7 @@ export class Server {
      * client, where a socket has a process behind it and an offline interface
      * has nothing to start:
      *
-     * - `transport: "page"` brings up an **engine of this handle's own** — its
+     * - `transport: "page"` brings up an **engine of this handle's own** -- its
      *   own `AudioContext`, its own node, bus and buffer space. So two booted
      *   handles are two servers that share nothing, which is what
      *   `Server().boot()` and `Server(port=57130).boot()` are in the reference
@@ -637,7 +637,7 @@ export class Server {
      *
      * **The page's shared engine is not what this returns**, and that is the
      * point of the pair: components on one page belong to one mix, and reaching
-     * that one is {@link Server.attach} — the verb for a server this handle did
+     * that one is {@link Server.attach} -- the verb for a server this handle did
      * not start. Booting where one is already up is a second server here rather
      * than the reference's refusal, because a tab can hold several engines
      * where a machine holds one server per port; what does not change is that a
@@ -659,7 +659,7 @@ export class Server {
         if (this.carrierKind === "ws" && !this.conn) {
             throw new ServerError(
                 `this handle points at ${this.carrierUrl} and a page can start nothing ` +
-                    "there — attach() to the server running at that address, or " +
+                    "there -- attach() to the server running at that address, or " +
                     "boot() one with the default transport, which brings up an " +
                     "engine in this tab.",
             );
@@ -668,7 +668,7 @@ export class Server {
         if (!connection.boot) {
             throw new ServerError(
                 `this carrier goes to ${connection.url ?? "somewhere"} and a ` +
-                    "page can start nothing there — attach() to the server " +
+                    "page can start nothing there -- attach() to the server " +
                     "running at that address.",
             );
         }
@@ -685,7 +685,7 @@ export class Server {
      *
      * The other half of `boot`, for the server nobody here started: one on
      * another machine, one launched from a terminal, one another tab owns.
-     * Ownership is the difference and it runs through the pair — this handle
+     * Ownership is the difference and it runs through the pair -- this handle
      * did not start that server, so `close` releases the carrier and leaves it
      * standing, and stopping it is `quit`, which it obeys over the wire.
      *
@@ -693,7 +693,7 @@ export class Server {
      * nothing behind it (a socket that accepts but speaks no OSC, a port wired
      * to an engine that never came up) throws here instead of swallowing every
      * later message. That refusal is the reference client's `attach`, and it is
-     * not optional — it is what the verb is for.
+     * not optional -- it is what the verb is for.
      */
     async attach({
         reconcile = true,
@@ -707,7 +707,7 @@ export class Server {
         } catch (error) {
             if (!(error instanceof ReplyTimeout)) throw error;
             throw new ServerError(
-                `no server answers on ${this.connection.url ?? "this carrier"} — ` +
+                `no server answers on ${this.connection.url ?? "this carrier"} -- ` +
                     `nothing replied to /server_query within ${timeout}s. ` +
                     "boot() one, or point this handle where one is running.",
             );
@@ -723,7 +723,7 @@ export class Server {
      * (`/server_query`), and return `this`.
      *
      * The constructor sizes them from what it was told, which is the client's
-     * *own* picture of the server — right by construction for one this page
+     * *own* picture of the server -- right by construction for one this page
      * booted, a guess for any other. This replaces the guess with the answer,
      * and `boot`/`attach` call it for you.
      *
@@ -769,7 +769,7 @@ export class Server {
      *
      * The raw seam under the responders: it sees everything, in arrival order,
      * with no matching of its own. To respond to *one* address, `OscFunc` is
-     * the door (`new OscFunc(fn, "/node_end", { recv: server.receiver })`) —
+     * the door (`new OscFunc(fn, "/node_end", { recv: server.receiver })`) --
      * it filters by address, sender and arguments, and it is what the reference
      * client offers under the same name.
      */
@@ -813,13 +813,13 @@ export class Server {
      * Sends one message. **A message has no time**: in a bundle it would
      * carry the immediate timetag, and alone it means exactly that. Logical
      * time belongs to the bundle path, which a later milestone brings; use
-     * this for what has no place in a timeline — sending defs, allocating
+     * this for what has no place in a timeline -- sending defs, allocating
      * buffers, opening the groups a session is built on.
      */
     sendMsg(addr: string, ...args: MsgArg[]): void {
         log.debug("-> %s %s", addr, args);
         if (this.scoring) {
-            // A message has no time, so in a score it lands at the top —
+            // A message has no time, so in a score it lands at the top --
             // which is exactly what "no time" means for a render.
             this.connection.addBundle!(0, [{ addr, args: args.map(oscArg) }]);
             return;
@@ -830,22 +830,22 @@ export class Server {
     // ---- timed sends: the bundle path ----
     //
     // Where `sendMsg` means "now", these carry a *time*. The time is the
-    // running routine's exact logical beat — yield-accumulated, never
-    // wall-clock — so a sequence stays tight however late the wake-up was, and
+    // running routine's exact logical beat -- yield-accumulated, never
+    // wall-clock -- so a sequence stays tight however late the wake-up was, and
     // `latency` is the headroom that absorbs that lateness.
 
     /**
      * Emits a bundle of messages at `at` (default: the ambient `Moment`) plus
      * `delayBeats`, plus this server's `latency`.
      *
-     * Inside a routine the moment is the routine's **exact logical beat** —
-     * the yield-accumulated one, never wall-clock — so a sequence stays tight
+     * Inside a routine the moment is the routine's **exact logical beat** --
+     * the yield-accumulated one, never wall-clock -- so a sequence stays tight
      * however late the wake-up was. Outside any routine it is wall-clock now,
      * and the delay reads as seconds.
      *
      * What this adds to a plain OSC bundle is what belongs to *this* server:
      * its `latency`, and scheduling by absolute sample (`/sched_at`) when the
-     * clock is anchored to the server's own — drift-free and exact to the
+     * clock is anchored to the server's own -- drift-free and exact to the
      * sample. For any other application, `OscDestination` sends standard
      * bundles with the same logical timing.
      */
@@ -871,7 +871,7 @@ export class Server {
             return;
         }
         if (this.scoring) {
-            // NRT: seconds of the run's logical time — the moment's beat put
+            // NRT: seconds of the run's logical time -- the moment's beat put
             // through its clock, from that clock's origin on that time.
             this.connection.addBundle!(scoreSecs(when), toBundle(messages));
             return;
@@ -893,7 +893,7 @@ export class Server {
 
     /**
      * Emits a bundle at wall-clock now + `delaySecs` (+ `latency`), ignoring
-     * whatever clock is in flight — the **clockless** entry point to
+     * whatever clock is in flight -- the **clockless** entry point to
      * `sendBundle`, for a delay that is a duration in seconds rather than a
      * position in the music.
      */
@@ -907,7 +907,7 @@ export class Server {
 
     /**
      * `/sched_at <absolute sample> <packet>`: the sample-exact path. The inner
-     * bundle is immediate — the outer command's own target carries the time.
+     * bundle is immediate -- the outer command's own target carries the time.
      */
     private sendSched(sample: number, messages: readonly TimedMessage[]): void {
         this.sendMsg("/sched_at", ["h", sample], [
@@ -954,7 +954,7 @@ export class Server {
      * One timing path, whatever the context. Both messages go out as timed
      * bundles at the ambient `Moment`: inside a routine that is its exact
      * logical beat, so a sequence stays sample-tight; outside any clock it is
-     * wall-clock now, and the sustain reads as seconds — so a single
+     * wall-clock now, and the sustain reads as seconds -- so a single
      * `new Event().play(server)` sounds now and frees itself with no clock at
      * all.
      */
@@ -1005,7 +1005,7 @@ export class Server {
 
     /**
      * Sends `addr` and collects every `reply` message until the batch's
-     * `/done` terminator — the shape the introspection queries take, whose
+     * `/done` terminator -- the shape the introspection queries take, whose
      * result is a variable number of messages.
      */
     requestBatch(
@@ -1047,8 +1047,8 @@ export class Server {
         timeout?: number,
     ): Promise<OscMessage> {
         if (this.scoring) {
-            // Nothing answers a score. The command still goes in — it is part
-            // of the take — and the confirmation this call is named for
+            // Nothing answers a score. The command still goes in -- it is part
+            // of the take -- and the confirmation this call is named for
             // simply does not exist offline.
             this.sendMsg(addr, ...args);
             return { addr: "/done", args: [addr] };
@@ -1073,7 +1073,7 @@ export class Server {
      * bulk write (`Buffer.setSamples`) slow in proportion to its length rather
      * than its size; firing the batch and closing it with one barrier costs one
      * round trip for the whole of it. What that would otherwise give up is the
-     * error, since a chunk's `/fail` arrives while nobody is listening — so the
+     * error, since a chunk's `/fail` arrives while nobody is listening -- so the
      * barrier listens for both, and the first one wins.
      */
     async barrier(timeout?: number): Promise<void> {
@@ -1097,7 +1097,7 @@ export class Server {
 
     /**
      * The async barrier (scsynth `/server_sync`): resolves only once every async
-     * command sent earlier — def compiles, buffer jobs — has completed.
+     * command sent earlier -- def compiles, buffer jobs -- has completed.
      * Returns the id used.
      */
     async sync(timeout?: number): Promise<number> {
@@ -1123,8 +1123,8 @@ export class Server {
      * engine's own renderer and the samples come back. `Session.render` drains
      * the clock first and then calls this.
      *
-     * Schedule a closing bundle — freeing the root group, or whatever ends the
-     * session — so the render has a defined length: it stops when the score
+     * Schedule a closing bundle -- freeing the root group, or whatever ends the
+     * session -- so the render has a defined length: it stops when the score
      * does, and commands do not sound.
      */
     async render(options: RenderOptions = {}): Promise<RenderStats> {
@@ -1156,14 +1156,14 @@ export class Server {
 
     /**
      * Samples per bulk round trip **for this carrier**: a carrier bounded by
-     * one fixed-size delivery — a datagram, the page's shared ring — keeps the
+     * one fixed-size delivery -- a datagram, the page's shared ring -- keeps the
      * classic 1024; a stream carrier uses the frame ceiling the server
      * advertises (`/server_query`, queried once and cached), minus headroom for
      * the reply's OSC envelope. A server that does not answer leaves the
      * conservative number too.
      *
      * Which of the two a carrier is is the carrier's own answer
-     * (`Connection.stream`), never a list of types here — and it is what
+     * (`Connection.stream`), never a list of types here -- and it is what
      * decides whether a reply comes back at all: the ring drops one it cannot
      * hold, silently, so a chunk sized from a stream's ceiling reads nothing on
      * a page.
@@ -1215,7 +1215,7 @@ export class Server {
 
     /**
      * Where the server's time is going (`/server_load`): one {@link Load} per
-     * role — the audio block, each DSP worker, the serving turn, the NRT job
+     * role -- the audio block, each DSP worker, the serving turn, the NRT job
      * queue and the Faust compiler.
      *
      * {@link Server.status} answers *is the server keeping up*; this answers
@@ -1223,7 +1223,7 @@ export class Server {
      * actually asks.
      *
      * The server reports seconds **since it booted**, and the `share` of each
-     * row is computed here against this `Server`'s previous call — so two
+     * row is computed here against this `Server`'s previous call -- so two
      * clients polling at once each measure their own interval, unlike the peak
      * in `status`. The first call has no interval and leaves `share` unset;
      * call it twice, a second or so apart, to read a load. `formatLoad` reads
@@ -1268,7 +1268,7 @@ export class Server {
     }
 
     /**
-     * Registers (or drops) this client for the server's pushes — `/node_end`
+     * Registers (or drops) this client for the server's pushes -- `/node_end`
      * node deaths, `/node_trigger` triggers, the transport broadcasts. Registering is
      * what lets the node-id registry recycle.
      */
@@ -1295,7 +1295,7 @@ export class Server {
     private recycling: OscFunc | null = null;
 
     /**
-     * Returns a node id to the registry as its `/node_end` arrives — the
+     * Returns a node id to the registry as its `/node_end` arrives -- the
      * side-channel that keeps the client range from exhausting.
      *
      * It is an ordinary `OscFunc` on this server's receiver: the client's own
@@ -1319,10 +1319,10 @@ export class Server {
      *
      * The Server resolves it, because the Server is what knows the carrier:
      *
-     * - **in-page** — the engine runs in this page's `AudioContext`, so one
+     * - **in-page** -- the engine runs in this page's `AudioContext`, so one
      *   anchor fixes the integer offset between the two counters and the
      *   sample is then readable synchronously, exactly, with no drift.
-     * - **over a socket** — `/clock_query` round trips feed the core's sample-clock
+     * - **over a socket** -- `/clock_query` round trips feed the core's sample-clock
      *   model, which regresses local time against the server's counter. The
      *   warmup spreads `anchors` round trips `gap` seconds apart (a
      *   regression needs a span, not a burst), and `trackEvery` keeps
@@ -1372,7 +1372,7 @@ export class Server {
 
     /**
      * Closes this server's shared sample-clock reader, if it built one, and
-     * forgets it — the next {@link Server.sampleTimebase} builds a fresh one.
+     * forgets it -- the next {@link Server.sampleTimebase} builds a fresh one.
      *
      * Called by {@link Server.close}. A clock never calls it: the reader
      * belongs to the server and other clocks may still be reading it.
@@ -1392,7 +1392,7 @@ export class Server {
     /**
      * The drift the sample-clock model has measured, in parts per million, or
      * `null` when this server is not being tracked (the in-page carrier needs
-     * no model — it shares the page's audio clock).
+     * no model -- it shares the page's audio clock).
      */
     get clockDriftPpm(): number | null {
         return this.clock?.driftPpm ?? null;
@@ -1400,7 +1400,7 @@ export class Server {
 
     /**
      * Frees every node on the server, leaving it running and empty
-     * (`/group_deepFree` on the root group) — sclang's `CmdPeriod`.
+     * (`/group_deepFree` on the root group) -- sclang's `CmdPeriod`.
      *
      * The panic button, and the one that keeps the most: whatever is sounding
      * stops, while the server holds on to its defs and buffers. {@link quit} is
@@ -1412,13 +1412,13 @@ export class Server {
     }
 
     /**
-     * Stop the server — the pair of {@link Server.boot}, and the verb for a
+     * Stop the server -- the pair of {@link Server.boot}, and the verb for a
      * server this page did not start either.
      *
      * `/server_quit` goes out first, which is the whole story for a server
      * listening on a socket: it obeys whoever sends it. Then the carrier is
      * asked to take its own server down, because the page's engine is not a
-     * process listening for anything — it *is* the server, so stopping it is
+     * process listening for anything -- it *is* the server, so stopping it is
      * closing its `AudioContext`, and nothing restarts it.
      *
      * {@link Server.close} is the other end **for a server this page does not
@@ -1438,7 +1438,7 @@ export class Server {
 
     /**
      * Detaches this server from its connection. Pending requests reject, and
-     * a **shared in-page engine keeps running** — it is the page's, not this
+     * a **shared in-page engine keeps running** -- it is the page's, not this
      * handle's to stop.
      *
      * The carrier follows the same ownership rule as everything else here: one
@@ -1447,7 +1447,7 @@ export class Server {
      * constructor** is left open, because it is the caller's. Either way this
      * handle is usable afterwards.
      *
-     * **And, if this handle {@link Server.boot}-ed the server, stops it** —
+     * **And, if this handle {@link Server.boot}-ed the server, stops it** --
      * the same rule the reference client's `Server.close` follows for the
      * process it launched. Ownership is what separates the two endings: an
      * attached handle lets go and the server stands, a booted one takes its
@@ -1483,7 +1483,7 @@ export class Server {
 
 // Mixin composition: the queries and the stream subscriptions are grouped in
 // their own modules but are still `Server`'s own methods, exactly as the
-// Python package's mixins are — copying the prototypes is what makes
+// Python package's mixins are -- copying the prototypes is what makes
 // `server.queryTree(...)` the same call it was before the split.
 for (const mixin of [ServerQueries, ServerStreams, ServerTransport]) {
     for (const name of Object.getOwnPropertyNames(mixin.prototype)) {

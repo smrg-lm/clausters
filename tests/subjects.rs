@@ -1,7 +1,7 @@
 //! The subject table itself, contrasted against the catalog it describes.
 //!
 //! `tests/common/subjects.json` names the UGens the U suites test and the ear
-//! auditions. It is hand-written, so it can drift from the registry — a renamed
+//! auditions. It is hand-written, so it can drift from the registry -- a renamed
 //! row, an input added to a family, a milestone that grew a kind and did not
 //! grow a subject. These tests are what makes drifting fail loudly instead of
 //! quietly shrinking the coverage the other suites believe they have.
@@ -9,7 +9,7 @@
 //! Three claims: the table describes rows that exist, with the arity they
 //! really have; every row of U1–U8 that a suite could test *has* a subject; and
 //! every subject actually renders. The rules that measure a signal live in the
-//! milestone suites — this file only guards the declaration.
+//! milestone suites -- this file only guards the declaration.
 
 #![cfg(feature = "synth")]
 

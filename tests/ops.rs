@@ -41,7 +41,7 @@ fn render_const(json: &str) -> f32 {
     blk[0]
 }
 
-/// One rendered block of audio bus 0 — for the defs whose output moves within
+/// One rendered block of audio bus 0 -- for the defs whose output moves within
 /// it, which `render_const` refuses by construction.
 fn render_block(json: &str) -> Vec<f32> {
     let def = compile(serde_json::from_str::<SynthDefSpec>(json).unwrap()).unwrap();

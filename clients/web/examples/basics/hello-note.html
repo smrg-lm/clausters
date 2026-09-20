@@ -24,7 +24,7 @@
 No <b>Session</b>, no clock wiring. <code>boot</code> adopts the server as the
 <b>default session</b>, so <code>play</code> finds it on its own. A bare
 event outside any clock plays immediately and frees itself after its sustain,
-and the phrase under it runs on the default session's clock — created and
+and the phrase under it runs on the default session's clock -- created and
 started for you.
 
 Nothing is sent first: <code>default</code> is the server's own built-in
@@ -44,14 +44,14 @@ instrument, and it carries the gated envelope that makes a note end.</div>
       call: open a server, `play` one event, `play` a pattern.
 
       Two differences, both the page's and neither a surface: the script's cells
-      are buttons here, because a browser starts no audio without a gesture —
+      are buttons here, because a browser starts no audio without a gesture --
       the first click is what an AudioContext needs, and it is why opening the
       server is a button rather than the first line to run; and where the script
       sleeps between cells to let the sound happen, the page simply leaves the
       buttons there. Both are the same three calls in the same order.
 
       Serve clients/web (the package root) and open
-      /examples/basics/hello-note.html — the page imports ../../dist, so the
+      /examples/basics/hello-note.html -- the page imports ../../dist, so the
       served root has to contain it. Build it first: ./build.sh
     -->
     <script type="module">

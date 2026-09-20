@@ -552,7 +552,7 @@ fn the_arrangements_own_door_still_records_through_the_generic_one() {
 }
 
 /// The shape `O20` is for: a stroke over a *placed* take is one gesture with a
-/// leg in each domain — the tree's, which says the samples moved, and the
+/// leg in each domain -- the tree's, which says the samples moved, and the
 /// samples' own, which says what they now hold and what they held. One entry,
 /// undone in one step, and consistent at every point in between.
 mod a_stroke_over_a_placed_take {

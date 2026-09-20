@@ -5,7 +5,7 @@
 // The same three calls the browser gets over wasm, opened to a native binding
 // (the Python writer's pre-flight first). The pass is
 // `clausters_core::bundle`; these are only the JSON boundary, and they follow
-// `clausters_core_patch_compile`'s convention exactly — JSON in, JSON out into
+// `clausters_core_patch_compile`'s convention exactly -- JSON in, JSON out into
 // a caller buffer, returning the size it needs, with an error coming back *as*
 // the output object so a caller reads one channel.
 
@@ -21,7 +21,7 @@ fn write_json(json: Vec<u8>, out: *mut u8, out_cap: usize) -> usize {
 
 /// What one instance of a bundle needs allocated: a
 /// [`RequirementsRequest`](clausters_core::bundle::RequirementsRequest) as JSON
-/// in (the `bundle.json` manifest, plus the template when the caller has it —
+/// in (the `bundle.json` manifest, plus the template when the caller has it --
 /// a bundle written before the contract has its id block measured from it), the
 /// [`Requirements`](clausters_core::bundle::Requirements) as JSON out. `0` when
 /// the input is not a readable request.
@@ -90,7 +90,7 @@ pub unsafe extern "C" fn clausters_core_bundle_resolve(
 /// The writers' pre-flight: a
 /// [`ValidateRequest`](clausters_core::bundle::ValidateRequest) as JSON in (the
 /// manifest, the template, and the def payloads to check for holes), and either
-/// `{"ok":true}` or `{"error": …}` out — so a bundle that would fail to mount
+/// `{"ok":true}` or `{"error": …}` out -- so a bundle that would fail to mount
 /// fails to be written. `0` means the input was not a readable request.
 ///
 /// # Safety

@@ -1,15 +1,15 @@
 // The score model: notation as data, and operations as data over it (mirrors
 // `clausters/gui/notation/sheet.py`).
 //
-// A **sheet** is a plain object — two durational structures that do not contain
+// A **sheet** is a plain object -- two durational structures that do not contain
 // each other, the metric layout (`grid`) and the content (`staves` of voices of
 // items), with every duration an exact rational written `[numerator,
 // denominator]`. It is data all the way: this module holds no handle, nothing
 // has to be freed, and composing operations creates no intermediate anybody
 // owns.
 //
-// **The logic is not here.** Every operation — its arithmetic, its validation
-// and its refusals — is `clausters_core::notation`, reached through the core's
+// **The logic is not here.** Every operation -- its arithmetic, its validation
+// and its refusals -- is `clausters_core::notation`, reached through the core's
 // wasm door, and this module is a shell of names that assembles the operation
 // and hands it over. That is not only the non-divergence rule: a **standalone
 // host has no client language in the process at all**, and a score it opens has
@@ -37,7 +37,7 @@ import {
 import type { Slot } from "./mei.ts";
 
 /**
- * An exact rational, as `[numerator, denominator]` — a duration or a position
+ * An exact rational, as `[numerator, denominator]` -- a duration or a position
  * in whole notes, so a quarter is `[1, 4]` and a triplet eighth `[1, 12]`.
  */
 export type Ratio = [number, number];
@@ -45,7 +45,7 @@ export type Ratio = [number, number];
 /**
  * A score as data. Deliberately loose here: the shape is the core's, it grows
  * with each milestone, and a client that pinned every field would have to be
- * edited every time the model does — which is how two clients come to disagree
+ * edited every time the model does -- which is how two clients come to disagree
  * about what a sheet is.
  */
 export interface Sheet {
@@ -63,7 +63,7 @@ export interface Op {
 
 /**
  * How the symbols are read: the whole of what the interpreter believes. Loose
- * for the same reason a {@link Sheet} is — the fields are the core's, they grow
+ * for the same reason a {@link Sheet} is -- the fields are the core's, they grow
  * with the reading, and a client that pinned them would drift from it.
  */
 export interface Interpretation {
@@ -93,7 +93,7 @@ export interface PerformedNote {
     /** The model id of the item it came from. */
     id: number;
     /**
-     * Which enharmonic spelling the writer chose — `"sharp"` or `"flat"` —
+     * Which enharmonic spelling the writer chose -- `"sharp"` or `"flat"` --
      * where the note is altered at all; absent on a natural, where nothing was
      * chosen. A written fact on a sounding note, and here for one reason: a
      * client that plays a score and writes it back has only `pitch`, and a
@@ -102,11 +102,11 @@ export interface PerformedNote {
     spelling?: string;
     /**
      * `"written"` where the accidental is one the writer wants printed even
-     * though the key already implies it — a courtesy sign.
+     * though the key already implies it -- a courtesy sign.
      */
     accidental?: string;
     /**
-     * What is written on the note beyond its pitch and value, **verbatim** —
+     * What is written on the note beyond its pitch and value, **verbatim** --
      * not what the interpreter made of it. A staccato is already honoured in
      * `sustain` and is still here, because a client writing the note back
      * writes the staccato rather than a shortened length. Absent where the
@@ -139,13 +139,13 @@ export interface TransposeOptions {
 }
 
 /**
- * Lift a **voice** — the flat slot stream, `{ midis: [60], ticks: 8 }` per note
- * or chord and `{ ticks: 8 }` per rest — into a sheet.
+ * Lift a **voice** -- the flat slot stream, `{ midis: [60], ticks: 8 }` per note
+ * or chord and `{ ticks: 8 }` per rest -- into a sheet.
  *
  * The bridge a client crosses once. Reducing `seq` data to slots reads this
  * language's types and stays in this client; everything above the slot is the
  * shared model. Ticks become exact durations and MIDI numbers become
- * **spelled** pitches in the accidental world `key` implies — the only choice a
+ * **spelled** pitches in the accidental world `key` implies -- the only choice a
  * bare number leaves, and the reason the key is asked for here rather than at
  * the end.
  *
@@ -158,7 +158,7 @@ export interface TransposeOptions {
  * exactly the item it always did, and an unknown key is refused rather than
  * dropped.
  *
- * What a slot cannot say is anything that is not one note's — a slur, a meter
+ * What a slot cannot say is anything that is not one note's -- a slur, a meter
  * change, a title. Those are written *beside* the voice, with the verbs below,
  * and the **nth slot becomes the item with id n + 1**, which is how a caller
  * names its own notes to them.
@@ -178,7 +178,7 @@ export function fromVoice(
  * these, and this is what they all call; reach for it directly to send an
  * operation this shell has no helper for yet.
  *
- * Throws with the core's own sentence when the operation is refused — a measure
+ * Throws with the core's own sentence when the operation is refused -- a measure
  * range that runs backwards, a parameter that is not readable. Nothing changes
  * on a refusal: the sheet crossed by value, so the caller still holds what it
  * sent.
@@ -188,7 +188,7 @@ export function apply(sheet: Sheet, op: Op): Sheet {
 }
 
 /**
- * Write `sheet` out as MEI — what {@link engrave} and {@link Score} read.
+ * Write `sheet` out as MEI -- what {@link engrave} and {@link Score} read.
  *
  * Throws with the emitter's reason when the model holds something MEI cannot be
  * written for yet: a duration that is not an exact note value (a tuplet), an
@@ -204,7 +204,7 @@ export function toMei(sheet: Sheet): string {
  *
  * The other return path, and not the one {@link toNotes} is: that turns a score
  * into sound, this turns a *document* into a score. A page opened from typed
- * text — ABC, MusicXML, a hand-written MEI — is a document and nothing else
+ * text -- ABC, MusicXML, a hand-written MEI -- is a document and nothing else
  * until this reads one, which is why none of the verbs above can touch it
  * before that.
  *
@@ -213,8 +213,8 @@ export function toMei(sheet: Sheet): string {
  * covered.
  *
  * What the model does not hold is **what the engraver recomputes when nobody
- * chose it** — automatic beaming, the line breaks that merely fit, the staff
- * geometry — so it is not read and is not loss. What a writer chose is held:
+ * chose it** -- automatic beaming, the line breaks that merely fit, the staff
+ * geometry -- so it is not read and is not loss. What a writer chose is held:
  * the header, the barlines, the breaks, the beams. Ids written by this layer
  * come back; a document from anywhere else gets fresh ones.
  *
@@ -229,7 +229,7 @@ export function fromMei(mei: string): Sheet {
  *
  * What a staccato does to a length, what `mf` is in amplitude, how far a
  * crescendo travels, which positions in the bar are stressed. Read it, change
- * what you disagree with, and pass it back to {@link toNotes} — that is the
+ * what you disagree with, and pass it back to {@link toNotes} -- that is the
  * whole of overriding an interpretation, and nothing in the core is edited to
  * play a score in another style.
  *
@@ -252,8 +252,8 @@ export function interpretation(): Interpretation {
  * over a stretch of notes rather than a mark on any of them, and a tie is one
  * sound of the summed length.
  *
- * Each note carries **two lengths** — `dur`, what is written, and `sustain`,
- * what is heard — in beats (a quarter is one beat by default,
+ * Each note carries **two lengths** -- `dur`, what is written, and `sustain`,
+ * what is heard -- in beats (a quarter is one beat by default,
  * `interp.beat_unit`); plus `t`, `pitch`, `amp`, the `staff` and `voice` it was
  * written on, and the model `id` it came from. The pair of lengths maps
  * straight onto an `Event`'s `dur` and `sustain`, which is what
@@ -263,8 +263,8 @@ export function interpretation(): Interpretation {
  * field left out of it keeps its default, so overriding one is a one-key
  * object.
  *
- * **The instrument is not in the notation** — a staff does not say what plays
- * it — so the notes name their staff and the binding is made where the score is
+ * **The instrument is not in the notation** -- a staff does not say what plays
+ * it -- so the notes name their staff and the binding is made where the score is
  * rendered.
  */
 export function toNotes(sheet: Sheet, interp?: Interpretation): PerformedNote[] {
@@ -278,8 +278,8 @@ export function toNotes(sheet: Sheet, interp?: Interpretation): PerformedNote[] 
  * `undefined` where it was not written from one.
  *
  * The step between a selection on the page and a verb on the model. The page
- * names elements the way the emitter wrote them — `n7` is the item, `n7-2` a
- * part of it split across a barline, `n7-p1` one pitch of a chord — and all
+ * names elements the way the emitter wrote them -- `n7` is the item, `n7-2` a
+ * part of it split across a barline, `n7-p1` one pitch of a chord -- and all
  * three are item 7, which is what lets a gesture anywhere on a note reach the
  * note.
  *
@@ -298,7 +298,7 @@ export function itemId(elementId: string): number | undefined {
  *
  * **The parity surface the binding table cannot provide.** Operations ride
  * inside a payload through one symbol, so nothing fails when one client grows a
- * verb the other lacks — the same structural blindness that let five builder
+ * verb the other lacks -- the same structural blindness that let five builder
  * divergences stand. Both clients are read against this list instead.
  */
 export function ops(): OpSpec[] {
@@ -306,7 +306,7 @@ export function ops(): OpSpec[] {
 }
 
 /**
- * The span of measures `first` to `last`, **1-based and inclusive** — the
+ * The span of measures `first` to `last`, **1-based and inclusive** -- the
  * numbers a reader says out loud.
  *
  * This only *names* the span. What stretch of time it covers is resolved by the
@@ -323,7 +323,7 @@ export function measures(first: number, last: number): unknown {
  * major third up from C is E, not F-flat.
  *
  * `semitones` is the chromatic size, positive upward. `steps` is the diatonic
- * size — how many places the notehead moves on the staff — and left out it is
+ * size -- how many places the notehead moves on the staff -- and left out it is
  * the ordinary reading of that many semitones (4 semitones is a major third, so
  * 2 steps). Pass it to ask for the interval nobody's shorthand means, a
  * diminished third over a major second.
@@ -345,8 +345,8 @@ export function transpose(
  * A written pitch: the letter its notehead sits on, its scientific octave (`4`
  * is the octave of middle C) and how many semitones it is altered by.
  *
- * Naming a pitch, not deriving one. Spelling a MIDI number is a *rule* — `F#`
- * and `Gb` are one number and two notes — so it happens in the core, on the way
+ * Naming a pitch, not deriving one. Spelling a MIDI number is a *rule* -- `F#`
+ * and `Gb` are one number and two notes -- so it happens in the core, on the way
  * in through {@link fromVoice}; a caller writing a note into a score names the
  * note it means.
  */
@@ -383,8 +383,8 @@ export function concat(sheet: Sheet, other: Sheet): Sheet {
 /**
  * `other` at the same time as `sheet`.
  *
- * `asStaff: false` writes its voices on the same staves — counterpoint on one
- * staff; `true` appends staves below — a second hand or instrument. Both are
+ * `asStaff: false` writes its voices on the same staves -- counterpoint on one
+ * staff; `true` appends staves below -- a second hand or instrument. Both are
  * superposition; the difference is where the notes are written.
  *
  * Throws when the two grids differ: two scores cannot share a moment while
@@ -395,7 +395,7 @@ export function stack(sheet: Sheet, other: Sheet, { asStaff = false } = {}): She
 }
 
 /**
- * A stretch played `count` times in a row — `2` is one repeat, `1` changes
+ * A stretch played `count` times in a row -- `2` is one repeat, `1` changes
  * nothing.
  *
  * The copies go where the original is, pushing what follows later, and the grid
@@ -421,7 +421,7 @@ export function retrograde(sheet: Sheet, { span }: { span?: unknown } = {}): She
  *
  * Exact in both dimensions the model keeps apart: the notehead reflects across
  * the axis on the staff and the sound reflects across it in semitones, with the
- * accidental taking up what is left — which is what an inversion written by hand
+ * accidental taking up what is left -- which is what an inversion written by hand
  * looks like. Without an axis, the line turns about its own first note.
  */
 export function invert(
@@ -497,8 +497,8 @@ export function insert(
         after?: number;
         pitches?: unknown[];
         /**
-         * A place on the staff — whole diatonic steps from its **top line**,
-         * positive upward — which is what the page's own `"insert"` gesture
+         * A place on the staff -- whole diatonic steps from its **top line**,
+         * positive upward -- which is what the page's own `"insert"` gesture
          * reports, since a renderer can measure a place and not a pitch. Given,
          * the pitch is worked out from that staff's clef and the key, so
          * clicking the middle line in E flat writes a B flat and no client has
@@ -518,7 +518,7 @@ export function insert(
 /**
  * Take an item out; everything after it moves earlier by its value.
  *
- * Not {@link silence} — that leaves a rest and nothing moves. Confusing the two
+ * Not {@link silence} -- that leaves a rest and nothing moves. Confusing the two
  * is how a score comes out shorter than it was with no obvious sign of where.
  */
 export function del(sheet: Sheet, id: number): Sheet {
@@ -542,7 +542,7 @@ export function setDur(sheet: Sheet, id: number, dur: Ratio | number): Sheet {
 }
 
 /**
- * Give an item different pitches — one for a note, several for a chord, none to
+ * Give an item different pitches -- one for a note, several for a chord, none to
  * make it a rest. The value and the id are kept, so this is the same item newly
  * spelled rather than a replacement.
  */
@@ -553,7 +553,7 @@ export function setPitches(sheet: Sheet, id: number, pitches: unknown[]): Sheet 
 /**
  * Tie an item into the one after it, or untie it.
  *
- * This is the tie you *write* — the note goes on sounding through the next item.
+ * This is the tie you *write* -- the note goes on sounding through the next item.
  * The ties added where a value crosses a barline are made when the page is
  * written and are never stored, so the two compose.
  */
@@ -656,7 +656,7 @@ export function header(fields: HeaderFields = {}): HeaderFields {
 
 /**
  * Move an item along the staff by `steps` **diatonic** places, up when positive
- * — what dragging a note on the page is.
+ * -- what dragging a note on the page is.
  *
  * The arrival takes the **key signature's** alteration for the letter it lands
  * on, which is what reading in a key means: dragging a note onto a B in E flat
@@ -683,7 +683,7 @@ export function setHeader(sheet: Sheet, fields: HeaderFields): Sheet {
 
 /**
  * Give `measure` (1-based) a right barline: `"end"`, `"rptstart"`, `"rptend"`,
- * `"rptboth"`, `"dbl"`, `"invis"` — or `"single"`, which takes the override
+ * `"rptboth"`, `"dbl"`, `"invis"` -- or `"single"`, which takes the override
  * back rather than storing one saying "ordinary".
  *
  * A repeat barline is **notation**: it is drawn, and it is not what makes a

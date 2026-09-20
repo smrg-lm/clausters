@@ -1,12 +1,12 @@
 """OSC destination interfaces (port of ``sc3/base/_oscinterface.py``).
 
 The swap point that lets one clock + routine target real time **or** an NRT
-score without changing the routine. Every interface speaks the same two calls —
+score without changing the routine. Every interface speaks the same two calls --
 ``send_msg(target, addr, *args)`` and ``send_bundle(target, when, *messages)``
-— and declares a ``time_mode`` so the clock knows what ``when`` means:
+-- and declares a ``time_mode`` so the clock knows what ``when`` means:
 
-- ``'unix'``  — ``when`` is an absolute wall-clock instant (RT, sent now).
-- ``'score'`` — ``when`` is seconds from the render start (NRT, accumulated).
+- ``'unix'``  -- ``when`` is an absolute wall-clock instant (RT, sent now).
+- ``'score'`` -- ``when`` is seconds from the render start (NRT, accumulated).
 
 A *message* is a tuple ``(addr, arg1, …)``. The timetag↔sample math lives in
 the native core; this layer only encodes and routes.
@@ -20,7 +20,7 @@ from . import _osclib
 
 
 class OscReceiver:
-    """A UDP listener that demuxes incoming OSC to registered handlers — the
+    """A UDP listener that demuxes incoming OSC to registered handlers -- the
     **input** counterpart of the output interfaces above, and the transport
     under `clausters.responders.OscFunc`.
 
@@ -33,7 +33,7 @@ class OscReceiver:
 
     Dispatch threading:
 
-    - With no ``clock``, handlers run **inline on the receiver thread** — keep
+    - With no ``clock``, handlers run **inline on the receiver thread** -- keep
       them quick and non-blocking (the golden rule), and to *sequence* in
       response, schedule a routine on a clock (non-blocking) rather than looping
       here.
@@ -138,7 +138,7 @@ class OscInterface:
     #: bulk round trip can use the server's whole frame ceiling; a datagram
     #: carrier must stay under `_UDP_MAX` and keeps the classic chunk. Read by
     #: `clausters.defs.Server._bulk_chunk`, which is why it is a capability
-    #: here rather than a list of types there — a carrier this module never
+    #: here rather than a list of types there -- a carrier this module never
     #: heard of answers the question for itself.
     stream = False
 
@@ -186,7 +186,7 @@ class OscInterface:
 
 
 #: The most bytes one UDP datagram can carry (the IPv4 ceiling minus headers).
-#: A packet over this cannot be sent at all — the OS rejects it — so the UDP
+#: A packet over this cannot be sent at all -- the OS rejects it -- so the UDP
 #: interface refuses it early with an error naming the transport that can.
 _UDP_MAX = 65507
 
@@ -257,8 +257,8 @@ class OscUdpInterface(OscInterface):
 
 
 class OscTcpInterface(OscInterface):
-    """Real-time TCP, length-prefixed. Each OSC packet — message or
-    bundle — goes out as a 4-byte big-endian length followed by the bytes, the
+    """Real-time TCP, length-prefixed. Each OSC packet -- message or
+    bundle -- goes out as a 4-byte big-endian length followed by the bytes, the
     same framing scsynth uses and the server's ``osc::tcp`` expects; replies
     arrive framed the same way over the one connection. A drop-in for
     `OscUdpInterface` (the ``target`` argument is ignored: the connection
@@ -344,7 +344,7 @@ class OscTcpInterface(OscInterface):
         The socket goes back to **blocking** on the way out, and that is not
         housekeeping. A timeout in Python belongs to the *socket*, not to the
         call that set it, so one left behind governs the next ``sendall`` as
-        well — and `recv` walks this with a shrinking remainder, so a request
+        well -- and `recv` walks this with a shrinking remainder, so a request
         that spends its budget leaves microseconds on it. The next send that
         cannot complete at once then raises instead of waiting, which is a
         send this client never gave a deadline to.
@@ -396,7 +396,7 @@ class OscTcpInterface(OscInterface):
 
 
 class OscWsInterface(OscInterface):
-    """Real-time WebSocket. Each OSC packet — message or bundle — goes out as one
+    """Real-time WebSocket. Each OSC packet -- message or bundle -- goes out as one
     WebSocket binary message and replies arrive the same way, the framing the
     server's ``osc::ws`` expects (the frame *is* the packet boundary, so there is
     no length prefix, unlike `OscTcpInterface`). A drop-in for the other
@@ -404,9 +404,9 @@ class OscWsInterface(OscInterface):
     its peer). Start the server with ``--ws`` (a ``ws``-feature build).
 
     The handshake and framing live in the **native core**
-    (`clausters._native.WsClient`, ``tungstenite``) — the same WebSocket
+    (`clausters._native.WsClient`, ``tungstenite``) -- the same WebSocket
     implementation the server uses, reached by ctypes like the shm/embed
-    transports — so there is no second implementation to maintain here. This is
+    transports -- so there is no second implementation to maintain here. This is
     the transport a browser can reach (it cannot open raw UDP or map shared
     memory); the browser itself uses the native ``WebSocket`` API
     (`examples/ws_ping.html`), not this class. ``wss://`` (TLS) is out of scope."""
@@ -490,12 +490,12 @@ class OscNrtInterface(OscInterface):
                sample_format: str = "float"):
         """Renders the accumulated score, and reports what that did.
 
-        This is where a score becomes audio — `clausters.defs.Server.render`
+        This is where a score becomes audio -- `clausters.defs.Server.render`
         and `clausters.Session.render` are the surfaces, this is the one
         implementation, because the score is this interface's own.
 
         Schedule a closing bundle (e.g. ``/node_free 0``) at the end so the render
-        has a defined duration — scsynth semantics (its commands do not sound).
+        has a defined duration -- scsynth semantics (its commands do not sound).
         ``workers`` adds DSP threads for the score's parallel groups.
 
         Returns a `clausters.render.RenderStats` either way. ``path`` chooses
@@ -506,7 +506,7 @@ class OscNrtInterface(OscInterface):
 
         ``seed`` starts the render's stochastic UGens; ``None`` draws a fresh
         one, so a score with noise in it is a new take every time. The seed
-        used comes back in ``stats.seed`` — hand it back to replay that take.
+        used comes back in ``stats.seed`` -- hand it back to replay that take.
         """
         from .. import ipc
         from ..render import RenderStats, render_to_file
@@ -527,8 +527,8 @@ class OscEmbedInterface(OscInterface):
     """Real-time, in-process: the embedded server as just another OSC
     destination.
 
-    It encodes exactly like `OscUdpInterface` — same wire bytes, same
-    NTP-timetagged bundles — but instead of a socket it delivers each packet to
+    It encodes exactly like `OscUdpInterface` -- same wire bytes, same
+    NTP-timetagged bundles -- but instead of a socket it delivers each packet to
     an in-process `clausters.ipc.Clausters` server by function call, and reads
     replies by polling it. The embedded server decodes those bytes through the
     very same command path as the networked one, and (running in this process)
@@ -536,8 +536,8 @@ class OscEmbedInterface(OscInterface):
     semantics match UDP exactly.
 
     The point is uniformity: a `Server` / `Session` driven through this
-    interface behaves identically to one over UDP/TCP — the same routines,
-    patterns and defs — because the only thing that changed is the transport.
+    interface behaves identically to one over UDP/TCP -- the same routines,
+    patterns and defs -- because the only thing that changed is the transport.
     ``target`` is ignored, like `OscTcpInterface` (the handle already knows its
     server).
 

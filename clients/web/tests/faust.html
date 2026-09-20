@@ -15,8 +15,8 @@
   <body>
     <main>
       <div>A FaustDef compiled and sounding in a tab, with no server process.
-        The def is compiled by <code>libfaust-wasm</code> in the NRT worker —
-        the page's compiler thread — and the module it emits is linked into the
+        The def is compiled by <code>libfaust-wasm</code> in the NRT worker --
+        the page's compiler thread -- and the module it emits is linked into the
         engine's own memory, so the Faust node is a node like any other:
         addressed by <code>/node_set</code>, summing into a bus, freed with the
         rest.</div>
@@ -88,7 +88,7 @@
 
         // The same DSP three times, in the three forms `/def_send faust`
         // accepts: Faust source, a box tree and a signal tree. They are not
-        // three ways of saying something similar — the box and signal trees are
+        // three ways of saying something similar -- the box and signal trees are
         // read by the server's own interpreters (`faust::boxes`,
         // `faust::signals`), the same programs a native server runs, so the
         // three must give the same sound and the same control name.
@@ -99,7 +99,7 @@
           process = os.osc(freq) * 0.4;
         `;
         // sin(2*pi*phasor(freq)) * 0.4, the phasor written point-free with
-        // the box algebra (`defs/boxes`) — the doc example of the schema
+        // the box algebra (`defs/boxes`) -- the doc example of the schema
         // itself, built by the client rather than spelled as JSON. Each
         // `wire()` is its own input: the five here are the five `_` the same
         // program has in Faust, which is the rule `FaustDef.fromBox` checks.

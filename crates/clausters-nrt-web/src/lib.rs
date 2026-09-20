@@ -3,18 +3,18 @@
 //! door) and of `clausters-core-web` (the shared core's).
 //!
 //! **Why a second wasm module and not the engine's.** The work this carries is
-//! the work that natively belongs to a thread that is neither audio nor UI —
-//! reading and decoding a soundfile — and in a browser that thread is a
+//! the work that natively belongs to a thread that is neither audio nor UI --
+//! reading and decoding a soundfile -- and in a browser that thread is a
 //! dedicated Worker. The Worker cannot use the engine's module: that one lives
 //! in the AudioWorklet, holds the node tree, and is exactly the thread this
 //! work has to leave. So the decoder is bound again, in a shell that carries
-//! nothing else — no engine, no def families, no ring.
+//! nothing else -- no engine, no def families, no ring.
 //!
 //! **Why not the browser's own decoder.** `decodeAudioData` is right there and
 //! is the wrong answer: it is a different decoder from the one a native server
 //! runs, so the same file would become different samples in a tab and in a
 //! window. That is a divergence in *values*, which is worse than one in surface
-//! because nothing names it and nobody reports it. The shell owns no logic —
+//! because nothing names it and nobody reports it. The shell owns no logic --
 //! `read_audio_bytes` is the server's own answer to "read a soundfile", reached
 //! here as it is reached over the C ABI.
 //!
@@ -41,7 +41,7 @@ pub struct Decoded {
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 impl Decoded {
     /// Interleaved samples, `frames * channels` of them. Moves the vector out,
-    /// so a second call returns nothing — the buffer is meant to be handed on.
+    /// so a second call returns nothing -- the buffer is meant to be handed on.
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(getter))]
     pub fn samples(&mut self) -> Vec<f32> {
         std::mem::take(&mut self.samples)
@@ -63,13 +63,13 @@ impl Decoded {
     }
 }
 
-/// Decodes a soundfile already in memory — the Worker's whole job.
+/// Decodes a soundfile already in memory -- the Worker's whole job.
 ///
 /// `ext` is the format hint (`"wav"`, `"flac"`, …, no dot; an empty hint still
 /// probes by content). `label` names the source in an error. `file_start` and
 /// `num_frames` slice it exactly as `/buffer_allocRead` does, with
 /// `num_frames <= 0` meaning "to the end", and `channels` selects and reorders
-/// them exactly as `/buffer_allocReadChannel` does — empty being every channel.
+/// them exactly as `/buffer_allocReadChannel` does -- empty being every channel.
 ///
 /// The selection goes through the server's own `select_channels` rather than a
 /// de-interleave written here: one rule, one implementation, or the two clients
@@ -105,7 +105,7 @@ pub fn decode_audio(
     })
 }
 
-/// A canonical 44-byte WAV header for `dataBytes` of sample data — the first
+/// A canonical 44-byte WAV header for `dataBytes` of sample data -- the first
 /// half of a file a page writes in pieces.
 ///
 /// The recording door is two calls rather than one because the header carries a
@@ -122,7 +122,7 @@ pub fn wav_header_bytes(
 }
 
 /// Encodes interleaved samples into WAV sample bytes, at the same scale and
-/// with the same clamp a native `DiskOut` writes — which is the whole reason it
+/// with the same clamp a native `DiskOut` writes -- which is the whole reason it
 /// is here rather than in the page: a second conversion is a second answer.
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = encodeWavFrames))]
 pub fn encode_wav_frames_bytes(samples: &[f32], sample_format: &str) -> Result<Vec<u8>, String> {
@@ -133,7 +133,7 @@ pub fn encode_wav_frames_bytes(samples: &[f32], sample_format: &str) -> Result<V
 /// instantiated against the engine's own linear memory.
 ///
 /// The Faust wasm backend writes the DSP's JSON into a data segment at
-/// **absolute offset 0**, unconditionally — external memory included — and
+/// **absolute offset 0**, unconditionally -- external memory included -- and
 /// rustc links the engine with `--stack-first`, so offset 0 is the engine's
 /// stack. Instantiating the module as emitted would write over it. Nothing
 /// reads that copy (the JSON the page uses is the one the compiler returns
@@ -148,7 +148,7 @@ pub fn strip_faust_data(module: &[u8]) -> Result<Vec<u8>, String> {
     clausters::faust::wasm_module::strip_data_section(module)
 }
 
-/// Builds a Faust **box** from a JSON box tree — `faust::boxes`, the same
+/// Builds a Faust **box** from a JSON box tree -- `faust::boxes`, the same
 /// interpreter a native server runs, driven here against the compiler the page
 /// carries.
 ///
@@ -165,7 +165,7 @@ pub fn faust_box_from_json(json: &str) -> Result<u32, String> {
     unsafe { clausters::faust::compiler::box_from_json(json) }
 }
 
-/// Builds a Faust **signal vector** from a JSON signal tree —
+/// Builds a Faust **signal vector** from a JSON signal tree --
 /// `faust::signals`, the twin of the above. The handles come back in
 /// declaration order, one per output.
 ///

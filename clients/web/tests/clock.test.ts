@@ -90,7 +90,7 @@ test("Routine.run wraps and plays in one call", async () => {
     const at: number[] = [];
     clock.start();
     // The name is left bound to the **routine**, not to the function, which is
-    // what lets it still be paused and stopped — the reason the shortcut reads
+    // what lets it still be paused and stopped -- the reason the shortcut reads
     // as a decorator in the Python client. The body reads the clock rather than
     // the routine: on this side the first resumption happens inside `play`,
     // before `melody` is bound (see the plan's "a running clock resumes what it
@@ -119,7 +119,7 @@ test("late wake-ups do not shift the music", async () => {
         }
     });
     clock.start().play(routine);
-    // Every wake arrives 40 ms after it was due — jitter the emission headroom
+    // Every wake arrives 40 ms after it was due -- jitter the emission headroom
     // absorbs. The logical beats must be untouched by it.
     await run(3, { late: 0.04 });
     assert.deepEqual(at, [0, 0.5, 1, 1.5, 2, 2.5]);
@@ -407,7 +407,7 @@ test("a frozen clock wakes nothing, and thaw does not burst what was due", async
 /**
  * A fake server that answers the two reads a join makes: the grid itself, and
  * the `/clock_query` anchor a wall-clock clock maps it through. Nothing else
- * of `Server` is reached, which is the point — the clock keeps three numbers
+ * of `Server` is reached, which is the point -- the clock keeps three numbers
  * and never talks to it again.
  */
 function transportServer(
@@ -428,7 +428,7 @@ function transportServer(
 }
 
 /**
- * One sample counter, and clocks pacing against it — two independent clients
+ * One sample counter, and clocks pacing against it -- two independent clients
  * on one server's clock, as far as this layer can tell. The ticker records
  * the absolute instant it was armed at, so the driver can fire several clocks
  * in the order their wakes fall due.
@@ -472,7 +472,7 @@ function sampleGrid(rate = 48000) {
     };
 
     // Advances the counter to `seconds`, firing each armed wake at its own
-    // instant and in order — the one property the ordering of two clients
+    // instant and in order -- the one property the ordering of two clients
     // depends on.
     const runTo = async (seconds: number) => {
         // Whatever the `play`s deferred runs first, so every clock has armed
@@ -541,7 +541,7 @@ test("two clocks joined to one grid land on the same bar", async () => {
     play(second, "second");
 
     await runTo(10);
-    // The next bar of the *shared* grid, for both — and they reach it from
+    // The next bar of the *shared* grid, for both -- and they reach it from
     // different beats of their own, which is exactly what a grid is for.
     assert.equal(started.first?.grid, 4);
     assert.equal(started.second?.grid, 4);

@@ -12,7 +12,7 @@
       Everything reaching the in-page engine goes through one shared-memory
       ring. The server used to see all of it as a single client
       (`ClientId::Ring`), and `/bus_stream` is one subscription per client,
-      replaced on each call — so the script and the GUI host, both pushing
+      replaced on each call -- so the script and the GUI host, both pushing
       through `engine.send`, took the stream from each other, and the loss was
       permanent in one direction: the host only re-subscribes when its own
       widget set changes. Ring frames now carry a peer tag, so the two are two

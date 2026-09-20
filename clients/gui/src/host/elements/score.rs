@@ -1,8 +1,8 @@
-//! `score` — an engraved notation page: the leaf whose state is a **document
+//! `score` -- an engraved notation page: the leaf whose state is a **document
 //! it does not own**.
 //!
 //! The host holds geometry, never the score: a client engraves and sends a
-//! semantic display list, and everything here is a *reading* of that drawing —
+//! semantic display list, and everything here is a *reading* of that drawing --
 //! which element is under the cursor, how far up the staff a drag has moved it,
 //! where the playback cursor sits at a given millisecond. The page itself and
 //! all of that reading stay in [`crate::host::graphics::score`], which is the model; this
@@ -17,10 +17,10 @@
 //! notation while it happens.
 //!
 //! **An edit is an intent, and the preview outlives the gesture.** The release
-//! reports `"transpose" <xml:id> <position>` — the diatonic staff position the
+//! reports `"transpose" <xml:id> <position>` -- the diatonic staff position the
 //! note reaches, in the owner's units rather than pixels, and **absolute** so
 //! that a resend cannot move the note twice and a page re-engraved under the
-//! gesture needs no rebasing — and
+//! gesture needs no rebasing -- and
 //! the displacement **stays drawn** until the client answers with a re-engraved
 //! page, because dropping it first would show the old pitch for a frame. That
 //! is why `display_list` replaces the drawing and keeps the chrome.
@@ -39,7 +39,7 @@ use crate::host::widget::parse;
 #[derive(Debug, Clone)]
 pub struct Score {
     pub data: ScoreData,
-    /// The press this drag started from, in window pixels — the origin the
+    /// The press this drag started from, in window pixels -- the origin the
     /// step count is measured from, so it is absolute from the snapshot rather
     /// than accumulated. `None` when no drag is in flight.
     origin_y: Option<f64>,
@@ -59,7 +59,7 @@ impl Element for Score {
     fn set(&mut self, key: &str, v: &Value) -> bool {
         let data = &mut self.data;
         match key {
-            // Replace the engraved page in place — the answer to an edit, and
+            // Replace the engraved page in place -- the answer to an edit, and
             // the reason a score does not have to be redefined to change. Only
             // the drawing travels: the chrome (playhead, selection) is the
             // host's own state and survives, so the note the user is editing
@@ -140,7 +140,7 @@ impl Element for Score {
         Needs {
             // A score carries its **own** playhead anchor rather than a
             // navigation group's, so it is the widget itself that says its
-            // cursor is sweeping — without this the window stops following the
+            // cursor is sweeping -- without this the window stops following the
             // clock and the cursor freezes where it was anchored.
             clock: self.data.playhead_at >= 0.0,
             ..Needs::default()
@@ -157,7 +157,7 @@ impl Element for Score {
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
-        // A press names the engraved element under it by its MEI id — the same
+        // A press names the engraved element under it by its MEI id -- the same
         // id the client engraved from, so a driver resolves it in its own
         // score. Pressing blank paper clears the selection.
         let picked = self
@@ -199,7 +199,7 @@ impl Element for Score {
         // ...and, on an editable score, holding it drags the element's pitch. A
         // press that does not move stays a plain selection: the release emits
         // nothing more. A read-only page (the default) still selects and
-        // reports the element above, but a drag does nothing — the host holds
+        // reports the element above, but a drag does nothing -- the host holds
         // no score, so an edit the client will not apply is a gesture it cannot
         // fulfil.
         let dragging = self.data.editable && picked.is_some();
@@ -212,8 +212,8 @@ impl Element for Score {
         }
         // A press on blank paper, on a page that takes note entry, reports
         // *where* it landed rather than only that nothing is there. The host
-        // names a place — the staff, how far up it, the element it would follow
-        // — and nothing else: a staff position is not a pitch until something
+        // names a place -- the staff, how far up it, the element it would follow
+        // -- and nothing else: a staff position is not a pitch until something
         // knows the clef and the key, and a duration is a choice nobody made by
         // clicking. Both are the client's, which is the line every other score
         // gesture already draws.
@@ -243,7 +243,7 @@ impl Element for Score {
     fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
         // Absolute from the press, quantized to whole steps: the page is
         // redrawn only when the drag crosses one, so the pixels between two
-        // pitches cost nothing. Nothing is reported until the release — what
+        // pitches cost nothing. Nothing is reported until the release -- what
         // travels is the finished intent.
         let Some(origin_y) = self.origin_y else {
             return Events::none();
@@ -260,7 +260,7 @@ impl Element for Score {
         let Some(drag) = self.data.drag.as_ref() else {
             return Events::none();
         };
-        // A drag that ended where it started retires here — there is nothing to
+        // A drag that ended where it started retires here -- there is nothing to
         // ask the client for. One that moved **keeps its displacement drawn**:
         // the host owns no notation, so it cannot re-engrave the page itself,
         // and dropping the preview now would show the old pitch until the
@@ -369,14 +369,14 @@ mod tests {
     }
 
     /// The window pixel a page point lands on, through the same fit the
-    /// renderer draws with — so a test presses where the ink is.
+    /// renderer draws with -- so a test presses where the ink is.
     fn at(score: &Score, rect: Rect, px: f32, py: f32) -> (f64, f64) {
         let fit = score.data.fit(rect);
         let [x, y] = fit.apply(px, py);
         (x as f64, y as f64)
     }
 
-    /// A click names the element under it and clears on blank paper — the
+    /// A click names the element under it and clears on blank paper -- the
     /// inspection half, which is **not** gated by `editable`.
     #[test]
     fn a_press_selects_the_element_under_it() {
@@ -435,7 +435,7 @@ mod tests {
 
     /// An editable page displaces the element as the drag crosses whole
     /// diatonic steps, and the release reports the intent in the owner's units
-    /// — the staff position it lands on, never pixels and never a displacement.
+    /// -- the staff position it lands on, never pixels and never a displacement.
     #[test]
     fn an_editable_page_transposes_in_whole_steps() {
         let metrics = Metrics::default();
@@ -453,7 +453,7 @@ mod tests {
         // The note is engraved two steps below the staff's top line, so a drag
         // of two steps up lands it *on* that line: the payload is the position
         // reached (0), not the displacement (2). The two differ here on
-        // purpose — with the note engraved on the line they would coincide and
+        // purpose -- with the note engraved on the line they would coincide and
         // a relative payload would pass this test.
         assert_eq!(score.data.staff_position("n1"), Some(-2));
         let events = score.release((press.0, press.1 - 2.0 * step_px), true, &input);
@@ -472,7 +472,7 @@ mod tests {
     }
 
     /// A drag that ends where it started asks for nothing and drops its
-    /// preview — the press was a selection after all.
+    /// preview -- the press was a selection after all.
     #[test]
     fn a_drag_that_moved_nothing_retires_on_release() {
         let metrics = Metrics::default();
@@ -485,7 +485,7 @@ mod tests {
     }
 
     /// A swept page declares that it reads the clock and a still one does not
-    /// — the declaration that used to be a `live.rs` arm asking what kind of
+    /// -- the declaration that used to be a `live.rs` arm asking what kind of
     /// widget this was.
     #[test]
     fn a_swept_page_declares_that_it_reads_the_clock() {
@@ -495,8 +495,8 @@ mod tests {
         assert!(score.needs().clock);
     }
 
-    /// A re-engraved page keeps the host's own chrome — the selection the user
-    /// is editing, the playhead — and retires the drag preview it answers.
+    /// A re-engraved page keeps the host's own chrome -- the selection the user
+    /// is editing, the playhead -- and retires the drag preview it answers.
     #[test]
     fn a_new_display_list_keeps_the_chrome_and_retires_the_preview() {
         let mut score = page(true);
@@ -518,7 +518,7 @@ mod tests {
     }
     /// **A press on blank paper reports a place, on a page that asked for one.**
     /// It names the staff, how far up it, and the element the note would follow
-    /// — and nothing else. A staff position is not a pitch until something
+    /// -- and nothing else. A staff position is not a pitch until something
     /// knows the clef and the key, and the host knows neither.
     #[test]
     fn a_page_taking_note_entry_reports_where_a_press_landed() {

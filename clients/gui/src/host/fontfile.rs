@@ -1,7 +1,7 @@
-//! The native [`FontSource`] — a typeface read from a file.
+//! The native [`FontSource`] -- a typeface read from a file.
 //!
 //! The crate embeds **no** outline face. A font is hundreds of kilobytes with a
-//! license of its own, and a native machine already has faces installed — so
+//! license of its own, and a native machine already has faces installed -- so
 //! the `font-atlas` build points at one (`--font <path>`, or `[gui] font` in
 //! the config) and, with nothing named, looks through the usual system places.
 //! Finding none is not a failure: the embedded bitmap face draws, as it always
@@ -9,7 +9,7 @@
 //!
 //! The read is the mmap the rest of the bulk path uses, on the platforms that
 //! have it: the file is mapped, parsed once into the rasterizer's own tables and
-//! unmapped — the bytes are never held.
+//! unmapped -- the bytes are never held.
 
 use crate::host::diag;
 use std::path::{Path, PathBuf};
@@ -35,7 +35,7 @@ pub struct FontFile {
 }
 
 impl FontFile {
-    /// The face at `path`, whatever it is — the `--font` answer, so a path that
+    /// The face at `path`, whatever it is -- the `--font` answer, so a path that
     /// turns out unreadable warns at load time rather than being skipped here.
     pub fn at(path: impl Into<PathBuf>) -> Self {
         Self { path: path.into() }
@@ -85,7 +85,7 @@ mod tests {
         assert!(FontFile::at("/nonexistent/face.ttf").face().is_none());
     }
 
-    /// Whatever the system offers, it is a file that reads — the search must
+    /// Whatever the system offers, it is a file that reads -- the search must
     /// never answer a path it cannot open.
     #[test]
     fn the_system_face_reads_when_there_is_one() {

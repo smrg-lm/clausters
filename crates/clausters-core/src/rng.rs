@@ -5,7 +5,7 @@
 //! the xorshift step / sample scaling are the exact code the server's
 //! `WhiteNoise` UGen now calls. Allocation-free.
 
-/// SplitMix64 — mixes a raw seed into a well-distributed state word. The same
+/// SplitMix64 -- mixes a raw seed into a well-distributed state word. The same
 /// constant the server uses to seed successive `WhiteNoise` instances.
 #[inline]
 pub fn splitmix64(mut x: u64) -> u64 {
@@ -21,7 +21,7 @@ pub fn splitmix64(mut x: u64) -> u64 {
 ///
 /// A server hands out one seed per stochastic UGen by walking this stride from
 /// wherever the sequence *starts*, so two generators in one graph never share a
-/// stream — correlated "noise" sums to a comb filter rather than to more noise.
+/// stream -- correlated "noise" sums to a comb filter rather than to more noise.
 /// It lives here, with the generator, so a client can reproduce a server-side
 /// stream exactly. Where the walk starts is [`entropy_seed`]'s business, not
 /// this constant's.
@@ -30,8 +30,8 @@ pub const SEED_STRIDE: u64 = 0x9E37_79B9_7F4A_7C15;
 /// A fresh starting seed, drawn from the platform's entropy.
 ///
 /// **A random process is unpredictable first and reproducible on request.**
-/// Anything that starts a seed sequence without being told which one — a
-/// server booting, a render with no seed configured — calls this, so the same
+/// Anything that starts a seed sequence without being told which one -- a
+/// server booting, a render with no seed configured -- calls this, so the same
 /// score sounds different every time it is played, the way a random process in
 /// a take is meant to. Fixing the seed is the *caller's* deliberate act, and
 /// what it gives is the replay: `--seed`, `RenderConfig::seed`, `seed=` in the
@@ -41,8 +41,8 @@ pub const SEED_STRIDE: u64 = 0x9E37_79B9_7F4A_7C15;
 /// Whoever draws one must **report it back** (`RenderStats::seed`), or the take
 /// you just liked is unrepeatable.
 ///
-/// On `wasm32` there is no entropy reachable from this crate — `SystemTime` is
-/// not implemented there — so this returns a fixed value and the JS door takes
+/// On `wasm32` there is no entropy reachable from this crate -- `SystemTime` is
+/// not implemented there -- so this returns a fixed value and the JS door takes
 /// a seed explicitly, from `crypto.getRandomValues` at the edge that has it.
 pub fn entropy_seed() -> u64 {
     #[cfg(not(target_arch = "wasm32"))]
@@ -105,7 +105,7 @@ impl WhiteNoise {
 /// …): the same splitmix64 seeding and xorshift64 step as [`WhiteNoise`], but
 /// yielding `f64` uniforms and bounded integers instead of audio samples. It
 /// lives here so a seeded pattern replays the **same stream in every client
-/// language** — the host language's own RNG (e.g. Python's Mersenne Twister)
+/// language** -- the host language's own RNG (e.g. Python's Mersenne Twister)
 /// must never leak into sequenced values.
 #[derive(Clone, Copy)]
 pub struct Rng {
@@ -122,7 +122,7 @@ impl Rng {
     }
 
     /// A generator resuming from a raw `state` word (the flat form that
-    /// crosses the C ABI between calls). Only zero is illegal for xorshift —
+    /// crosses the C ABI between calls). Only zero is illegal for xorshift --
     /// an even state is a normal mid-stream value, so it must pass unchanged.
     #[inline]
     pub fn from_state(state: u64) -> Self {

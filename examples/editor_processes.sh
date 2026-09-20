@@ -5,7 +5,7 @@
 #
 # What it shows: **the samples outlive the process that plays them.** One
 # server owns the segment and the takes in it (standing in for the editor's
-# on-demand session — same code, no audio device needed to own samples); a
+# on-demand session -- same code, no audio device needed to own samples); a
 # second one attaches to the same segment, holds the audio device, and plays
 # what the first owns. Then the player is killed and another is started, and
 # the take is still there and still plays: nothing about the samples moved,

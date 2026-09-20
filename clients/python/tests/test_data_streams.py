@@ -1,7 +1,7 @@
 """The three subscriptions of `clausters.data`, over a fake server.
 
-The wire is the whole of them — a subscription sent from the stream's own
-socket, a ``/done`` ack, then replies decoded into whatever the stream keeps —
+The wire is the whole of them -- a subscription sent from the stream's own
+socket, a ``/done`` ack, then replies decoded into whatever the stream keeps --
 so a fake server standing in for the real one exercises every line and needs no
 audio device. What is asserted is the claim rather than the mechanism, and for
 the recording one it is the same claim the web client's ``tests/recording.html``
@@ -28,7 +28,7 @@ BUFNUM = 7
 
 class FakeServer:
     """A UDP socket that acks ``/buffer_stream`` and pushes reports back to
-    whoever subscribed — the server's half of this conversation, and nothing
+    whoever subscribed -- the server's half of this conversation, and nothing
     else."""
 
     def __init__(self):

@@ -1,7 +1,7 @@
 """Envelopes: the breakpoint builder, the generator, and what `done` frees.
 
 `Env` is the shape, `env_gen` plays it, and a `DoneAction` says what becomes of
-the node when it ends — the one place in the package where a UGen's completion
+the node when it ends -- the one place in the package where a UGen's completion
 reaches the node tree.
 """
 
@@ -11,7 +11,7 @@ from .graph import Ugen
 
 
 class DoneAction:
-    """The action `env_gen` takes when its envelope finishes — scsynth's full
+    """The action `env_gen` takes when its envelope finishes -- scsynth's full
     done-action set (0-15). Pass one as ``done_action``. The relative actions
     (3-13, 15) act on the synth's neighbours in its group; a paused node is
     resumed with `Server.run` (``/node_run``)."""
@@ -21,7 +21,7 @@ class DoneAction:
     #: Pause the synth (stops processing; it stays in the tree). Resume with
     #: `Server.run`.
     PAUSE_SELF = 1
-    #: Free the synth — the usual choice for a one-shot or a released note.
+    #: Free the synth -- the usual choice for a one-shot or a released note.
     FREE_SELF = 2
     #: Free the synth and the preceding node.
     FREE_SELF_AND_PREV = 3
@@ -148,7 +148,7 @@ class Env:
 
     @classmethod
     def step(cls, levels, times, release_node=None, loop_node=None):
-        """A step sequence: **each value held for its duration** — `levels`
+        """A step sequence: **each value held for its duration** -- `levels`
         and `times` have the *same* length, unlike the raw constructor
         (``Env.step([0, 1], [0.5, 0.5])`` holds 0 for 0.5, then 1 for 0.5).
 
@@ -215,14 +215,14 @@ def line(start=0.0, end=1.0, dur=1.0, done_action=DoneAction.NONE) -> Ugen:
     """A single ramp from ``start`` to ``end`` over ``dur`` seconds, then held.
 
     It is an `env_gen` with one linear segment, so it takes the same
-    `DoneAction` set — ``line(1, 0, 2, DoneAction.FREE_SELF)`` is a two-second
+    `DoneAction` set -- ``line(1, 0, 2, DoneAction.FREE_SELF)`` is a two-second
     fade that frees its synth. Cheap at ``rate="kr"``, which is where a sweep
     usually belongs."""
     return Ugen("Line", [start, end, dur, float(done_action)])
 
 
 def x_line(start=0.01, end=1.0, dur=1.0, done_action=DoneAction.NONE) -> Ugen:
-    """`line` in equal *ratios* rather than equal steps — the shape that reads
+    """`line` in equal *ratios* rather than equal steps -- the shape that reads
     as straight when it drives a frequency or a gain.
 
     ``start`` and ``end`` must be non-zero and share a sign; a zero is nudged to
@@ -232,7 +232,7 @@ def x_line(start=0.01, end=1.0, dur=1.0, done_action=DoneAction.NONE) -> Ugen:
 
 def free_self(signal) -> Ugen:
     """Frees the enclosing synth while ``signal`` is greater than zero, passing
-    it through unchanged. The trigger-driven counterpart of a `DoneAction` —
+    it through unchanged. The trigger-driven counterpart of a `DoneAction` --
     use it when what ends the note is not the envelope."""
     return Ugen("FreeSelf", [signal])
 
@@ -245,7 +245,7 @@ def pause_self(signal) -> Ugen:
 
 
 def done(source) -> Ugen:
-    """1 once ``source`` has finished, 0 before — a trigger the rest of the
+    """1 once ``source`` has finished, 0 before -- a trigger the rest of the
     graph can read.
 
     ``source`` must be a ugen that *can* finish (`env_gen`, `line`, `x_line`);
@@ -284,8 +284,8 @@ def env_to_points(env, *, time_at: float = 0.0) -> list:
 
 
 def points_to_env(points, *, time_at: float = 0.0, **env_kwargs):
-    """A ``bpf`` breakpoint list — the flat ``t v shape curve ...`` quads a
-    ``"points"`` event carries — as an `Env`: absolute times become segment
+    """A ``bpf`` breakpoint list -- the flat ``t v shape curve ...`` quads a
+    ``"points"`` event carries -- as an `Env`: absolute times become segment
     durations and each segment keeps its shape (the numeric curvature for the
     custom shape, the shape name otherwise).
 

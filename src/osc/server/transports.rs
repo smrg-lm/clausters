@@ -81,8 +81,8 @@ impl OscServer {
 
     /// attaches the ring endpoint of an IPC segment. The run loop then
     /// drains it on every iteration; to keep ring latency low without a
-    /// cross-process semaphore (v1 trade-off), the socket timeout — the
-    /// loop's tick — is shortened.
+    /// cross-process semaphore (v1 trade-off), the socket timeout -- the
+    /// loop's tick -- is shortened.
     pub fn attach_ipc(&mut self, peer: crate::server::ipc::IpcPeer) -> io::Result<()> {
         if let Some(socket) = &self.socket {
             socket.set_read_timeout(Some(Duration::from_millis(2)))?;
@@ -96,7 +96,7 @@ impl OscServer {
     /// reads the clocks and the buses out of it and maps the samples the
     /// owner publishes, while its clients reach it over its own sockets.
     ///
-    /// This is what the RT server does in the editor's arrangement — it holds
+    /// This is what the RT server does in the editor's arrangement -- it holds
     /// the devices and plays samples somebody else owns, so killing it takes
     /// no take with it.
     pub fn attach_segment(&mut self, segment: std::sync::Arc<crate::server::ipc::Segment>) {
@@ -121,8 +121,8 @@ impl OscServer {
     /// The reader's half of [`Self::share_buffers_at`]: this server maps the
     /// samples the owner published, and publishes none of its own.
     ///
-    /// Every live row is mapped now — a server started against a segment that
-    /// already holds a session's takes has them all — and a buffer the owner
+    /// Every live row is mapped now -- a server started against a segment that
+    /// already holds a session's takes has them all -- and a buffer the owner
     /// allocates *later* arrives by `/buffer_attach`, which is the same rule
     /// the whole design follows: samples never travel, but allocation and
     /// lifetime are messages.
@@ -144,7 +144,7 @@ impl OscServer {
     /// plays **the very cells** the owner is editing.
     ///
     /// `Err` when there is no shared segment, when the directory row is empty,
-    /// or when the region behind it cannot be opened — each said in its own
+    /// or when the region behind it cannot be opened -- each said in its own
     /// words, because they are three different situations for whoever asked.
     #[cfg(unix)]
     pub fn attach_shared_buffer(&mut self, index: usize) -> Result<(), String> {
@@ -161,7 +161,7 @@ impl OscServer {
     }
 
     /// Off Unix the samples are unreachable: a region is a file another
-    /// process opens, and there is no equivalent — so a server there says so
+    /// process opens, and there is no equivalent -- so a server there says so
     /// rather than pretending. The wasm engine in a page is the case this is
     /// really about, and a page keeps `/buffer_getRange`.
     #[cfg(not(unix))]
@@ -176,7 +176,7 @@ impl OscServer {
     }
 
     /// [`drain_ring`](Self::drain_ring) with a ceiling on how many packets one
-    /// call handles. What is left stays in the ring — it is the queue — and the
+    /// call handles. What is left stays in the ring -- it is the queue -- and the
     /// next call takes it, in order. Used by the pulled [`OscServer::step`],
     /// where the turn is borrowed from the audio callback.
     pub(in crate::osc::server) fn drain_ring_limited(&mut self, limit: usize) -> Flow {

@@ -1,10 +1,10 @@
-"""The shared playhead sync (`clausters.gui.playhead_sync`) — play/pause/stop/locate and
+"""The shared playhead sync (`clausters.gui.playhead_sync`) -- play/pause/stop/locate and
 the view's playhead line.
 
 No host and no server: a fake host records the `/gui_set`s, a fake server answers
 the clock query, and the pass is a stub whose end is reached by hand (what a
-real timeline does with its own clock is `test_timeline_play.py`'s). What is checked is the line —
-which of the two numbers is written, in which unit — and the state machine around
+real timeline does with its own clock is `test_timeline_play.py`'s). What is checked is the line --
+which of the two numbers is written, in which unit -- and the state machine around
 it, not what the widgets do with it.
 """
 
@@ -57,11 +57,11 @@ class NrtServer(FakeServer):
 
 class Pass:
     """What a `source` hands back: the timeline it is playing, as `PlayheadSync`
-    reads it — its map, its position, whether it is playing, and whether it ran
+    reads it -- its map, its position, whether it is playing, and whether it ran
     out. A stub, so a test decides when the plan runs out; what a real timeline
     does with its own clock is `test_timeline_play.py`'s."""
 
-    #: The beats its items sit on — the last one is where a drained plan stops.
+    #: The beats its items sit on -- the last one is where a drained plan stops.
     items = (0.0, 1.0, 2.0)
 
     def __init__(self, clock, at=0.0):
@@ -115,7 +115,7 @@ def test_a_locate_draws_the_cursor_and_turns_the_anchor_off():
 
 
 def test_the_cursor_is_drawn_in_the_views_own_unit():
-    """A page places its cursor in milliseconds, not samples — the whole of what
+    """A page places its cursor in milliseconds, not samples -- the whole of what
     a view has to say about its units."""
     host = FakeHost()
     tp = transport(host, to_units=lambda beats: beats * 1000.0 / TEMPO)
@@ -287,7 +287,7 @@ def test_without_an_extent_it_parks_on_the_last_item():
 
 
 class RollingClock(TempoClock):
-    """A clock whose beat is set by hand instead of by a thread — a *rolling*
+    """A clock whose beat is set by hand instead of by a thread -- a *rolling*
     clock (its beat is the wall's, so a transport may sweep the last item's
     tail over it) that a test can move deterministically."""
 
@@ -309,7 +309,7 @@ class RollingClock(TempoClock):
 def test_the_last_item_keeps_the_line_until_the_sound_actually_ends():
     """A scan runs out when it renders its **last item**, and the last clip is
     still sounding then. Parking the cursor there jumps the line to the end
-    while the sound goes on — so the drained scan starts a *tail* the line
+    while the sound goes on -- so the drained scan starts a *tail* the line
     sweeps, and only its end parks the cursor."""
     host = FakeHost()
     clock = RollingClock(TEMPO)
@@ -577,7 +577,7 @@ def test_a_transport_sync_loops_in_the_engine():
 
 def test_a_source_still_cues_a_pass_of_voices_and_only_on_a_locate():
     """The two halves meet in `play`: what follows the transport by itself needs
-    no pass, and what fires voices does — so a source is still called, and a
+    no pass, and what fires voices does -- so a source is still called, and a
     locate cues it again while nothing re-cues on an edit."""
     cued = []
 

@@ -1,7 +1,7 @@
 """Two clients on one server: the id spaces they split, and the arithmetic
 that keeps them apart.
 
-The client range is one range, and every client allocates from it — exact
+The client range is one range, and every client allocates from it -- exact
 while a server has one client, a fiction the moment it has two -- two
 processes driving one server, a script authoring beside a page on the same
 engine.
@@ -72,7 +72,7 @@ def test_two_clients_of_one_server_cannot_collide():
 
 def test_a_shared_client_keeps_the_servers_reservations():
     # The output buses are the server's, not a client's, so neither share may
-    # hand them out — a split must not open a hole below itself.
+    # hand them out -- a split must not open a hole below itself.
     page = Server(share=IdShare(1, 2))
     whole = Server()
     assert page.audio_buses.alloc(2).index >= 2

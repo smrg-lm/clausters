@@ -5,7 +5,7 @@
 //! samples: a buffer is sized at run time and a ten-minute stereo take is
 //! 230 MB, while the segment is sized once at boot. So a buffer's samples are
 //! its own file beside the segment, named from the segment's path, the buffer
-//! number and the generation — and this module opens it.
+//! number and the generation -- and this module opens it.
 //!
 //! **What this changes for the host is the round trip, not the copy.** Drawing
 //! a take used to be `/buffer_query` plus a chunked `/buffer_getRange`
@@ -17,7 +17,7 @@
 //! same segment.
 //!
 //! **It carries data, not computation.** A peer writes samples it already
-//! holds — a drawn stroke, a pasted block, a take it loaded. Every *operation*
+//! holds -- a drawn stroke, a pasted block, a take it loaded. Every *operation*
 //! over samples (a gain, a fade, a reverse, a render) is still asked for over
 //! the wire and performed by the server, which is the rule the whole system
 //! rests on: one place performs audio processing. Mapped memory makes the
@@ -45,7 +45,7 @@ use super::shm::SharedSegment;
 /// named from.
 ///
 /// Held beside the segment rather than inside it because the two answer
-/// different questions — the segment is *shape and time*, this is *samples* —
+/// different questions -- the segment is *shape and time*, this is *samples* --
 /// and because a host may read a segment (meters, scopes) without ever mapping
 /// a take.
 pub struct SharedBuffers {
@@ -55,7 +55,7 @@ pub struct SharedBuffers {
 
 impl SharedBuffers {
     /// Reads `segment`'s samples out of the regions beside `path`, which is
-    /// the segment's own file — the `--shm` path the server was given.
+    /// the segment's own file -- the `--shm` path the server was given.
     pub fn new(segment: Arc<SharedSegment>, path: PathBuf) -> Self {
         Self { segment, path }
     }
@@ -96,7 +96,7 @@ impl SharedBuffers {
     }
 
     /// **The overview the server keeps beside buffer `bufnum`'s region**, when
-    /// there is one — the summary read instead of computed.
+    /// there is one -- the summary read instead of computed.
     ///
     /// A view over a mapped take builds its pyramid by streaming the samples
     /// once, which is bounded but real: a ten-minute stereo take is 57.6
@@ -120,7 +120,7 @@ impl SharedBuffers {
         (self.segment.buffer_info(bufnum)?.generation == shape.generation).then_some(summary)
     }
 
-    /// **How far buffer `bufnum` has been written**, in frames — the number a
+    /// **How far buffer `bufnum` has been written**, in frames -- the number a
     /// picture of a recording needs and cannot get any other way, since the
     /// samples arrive with nothing said about them (the server's S20).
     ///
@@ -130,13 +130,13 @@ impl SharedBuffers {
         self.segment.buffer_frontier(bufnum)
     }
 
-    /// The sample rate the directory reports for `bufnum` — what turns a
+    /// The sample rate the directory reports for `bufnum` -- what turns a
     /// block of *seconds* into frames without mapping anything.
     pub fn rate(&self, bufnum: usize) -> Option<f64> {
         Some(self.segment.buffer_info(bufnum)?.sample_rate)
     }
 
-    /// Whether the directory holds a live buffer under `bufnum` — the cheap
+    /// Whether the directory holds a live buffer under `bufnum` -- the cheap
     /// question, asked before deciding whether a take needs fetching at all.
     pub fn holds(&self, bufnum: usize) -> bool {
         self.segment.buffer_info(bufnum).is_some()
@@ -145,7 +145,7 @@ impl SharedBuffers {
 
 /// The name a buffer's region has: the segment's path plus the suffix the
 /// **shared core** builds from the buffer number and the generation, so a
-/// freed buffer's file and its replacement can never share a name — and so
+/// freed buffer's file and its replacement can never share a name -- and so
 /// this process and the server never disagree about which file that is.
 fn region_path(segment: &Path, bufnum: usize, generation: u64) -> PathBuf {
     let mut name = segment.as_os_str().to_os_string();
@@ -156,7 +156,7 @@ fn region_path(segment: &Path, bufnum: usize, generation: u64) -> PathBuf {
 /// One take's samples, mapped read/write: **the server's own memory**.
 ///
 /// Interleaved, the layout every buffer has, and every cell an `AtomicU32`
-/// holding `f32` bits — the same words the engine reads, so a store here is
+/// holding `f32` bits -- the same words the engine reads, so a store here is
 /// audible on the next block with nothing sent. Concurrency is what the buffer
 /// model has always promised and no more: per-sample atomicity, no ordering
 /// between samples, a reader crossing a writer seeing some old and some new.
@@ -177,7 +177,7 @@ impl Drop for MappedBuffer {
     fn drop(&mut self) {
         // SAFETY: the exact mapping made in `open`. Unmapping releases *this*
         // view; the file itself outlives it, and an unlinked one dies with the
-        // last mapping — which is what makes freeing a take safe while
+        // last mapping -- which is what makes freeing a take safe while
         // somebody is drawing it.
         unsafe { libc::munmap(self.ptr as *mut libc::c_void, (self.cells * 4).max(1)) };
     }
@@ -221,24 +221,24 @@ impl MappedBuffer {
         })
     }
 
-    /// Channels, frames and sample rate — the take's shape, as the directory
+    /// Channels, frames and sample rate -- the take's shape, as the directory
     /// reported it when this was mapped.
     pub fn shape(&self) -> (usize, usize, f64) {
         (self.channels, self.frames, self.sample_rate)
     }
 
-    /// Every sample, interleaved — one read of the whole take.
+    /// Every sample, interleaved -- one read of the whole take.
     ///
     /// **A picture does not need this** and no longer asks for it: a view reads
     /// the region where it lies ([`MappedChannel`]). What is left here is the
-    /// caller that genuinely consumes every sample — an analysis, which is a
+    /// caller that genuinely consumes every sample -- an analysis, which is a
     /// reading of the whole signal by definition.
     pub fn read_all(&self) -> Vec<f32> {
         (0..self.cells).map(|i| self.at(i)).collect()
     }
 
     /// Copies `out.len()` frames of `channel`, from frame `start`, out of the
-    /// mapping. Past the end is silence — the readers here never ask for one,
+    /// mapping. Past the end is silence -- the readers here never ask for one,
     /// and a draw path is the wrong place to learn that.
     pub fn read_channel_into(&self, channel: usize, start: usize, out: &mut [f32]) {
         if channel >= self.channels {
@@ -289,13 +289,13 @@ impl MappedBuffer {
     }
 }
 
-/// One channel of a mapped take, as a peak pyramid's [`Source`] — **the
+/// One channel of a mapped take, as a peak pyramid's [`Source`] -- **the
 /// picture's door to the samples**.
 ///
 /// It holds the mapping alive and reads through it; nothing is copied out. A
 /// read may cross a writer and see some old samples and some new, which is the
 /// buffer model's promise since the cells became atomic and is exactly what a
-/// picture can live with — the alternative is a lock on the audio thread's own
+/// picture can live with -- the alternative is a lock on the audio thread's own
 /// memory.
 pub struct MappedChannel {
     take: Arc<MappedBuffer>,
@@ -308,7 +308,7 @@ impl MappedChannel {
         Self { take, channel }
     }
 
-    /// One source per channel of `take`, in channel order — what a
+    /// One source per channel of `take`, in channel order -- what a
     /// multichannel view is built from.
     pub fn channels_of(take: Arc<MappedBuffer>) -> Vec<Arc<dyn Source + Send + Sync>> {
         let (channels, _, _) = take.shape();

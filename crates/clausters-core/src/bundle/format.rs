@@ -1,7 +1,7 @@
 //! The manifest and what a resolution produces: the format's own types.
 //!
-//! Everything here is `serde` shape — what `bundle.json` declares, what a
-//! template carries, what the caller allocates, what comes back — plus the one
+//! Everything here is `serde` shape -- what `bundle.json` declares, what a
+//! template carries, what the caller allocates, what comes back -- plus the one
 //! [`Error`] the passes speak. No logic: the passes are in [`super`], the
 //! substitution in [`super::resolve`].
 
@@ -31,7 +31,7 @@ fn one() -> u32 {
     1
 }
 
-/// The symbols a bundle needs allocated — the `@` half of the holes.
+/// The symbols a bundle needs allocated -- the `@` half of the holes.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SymbolTable {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -70,7 +70,7 @@ pub(super) enum Namespace {
     Buffer,
 }
 
-/// A declared parameter's type — the `$` half of the holes.
+/// A declared parameter's type -- the `$` half of the holes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ParamType {
@@ -93,7 +93,7 @@ impl fmt::Display for ParamType {
 
 /// One declared parameter: its type, its default, and the range it accepts.
 ///
-/// A parameter with no `default` is required — the tag or a preset must supply
+/// A parameter with no `default` is required -- the tag or a preset must supply
 /// it, and mounting without it is an error rather than a silent zero.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ParamSpec {
@@ -114,7 +114,7 @@ pub struct ParamSpec {
 /// parameters, which is exactly what it has).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Manifest {
-    /// The bundle's name — also the prefix its def names carry, since a def
+    /// The bundle's name -- also the prefix its def names carry, since a def
     /// name is a global namespace on the server.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
@@ -125,7 +125,7 @@ pub struct Manifest {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub graphdefs: Vec<String>,
     /// The width of the id block one instance needs: the **highest** local
-    /// widget id the template uses, the root's included. Not a count — the
+    /// widget id the template uses, the root's included. Not a count -- the
     /// template may number sparsely (`1`, `10`, `20`), and what the caller
     /// allocates is a contiguous run wide enough for the numbering.
     #[serde(default, skip_serializing_if = "is_zero")]
@@ -155,7 +155,7 @@ fn is_false(b: &bool) -> bool {
     !*b
 }
 
-/// The persisted GuiDef record — `{ "id": <i32>, "gui": <tree> }` — read as the
+/// The persisted GuiDef record -- `{ "id": <i32>, "gui": <tree> }` -- read as the
 /// template it is: its widget ids are local `1..N`, and its props may hold
 /// placeholders.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -196,7 +196,7 @@ pub struct Resolved {
     /// **not** in it: it left in [`boot`](Self::boot), so no caller can send it
     /// twice.
     pub tree: Value,
-    /// The root's `boot` messages, resolved — each `[addr, args…]`, with the
+    /// The root's `boot` messages, resolved -- each `[addr, args…]`, with the
     /// int/float distinction JSON already carries.
     pub boot: Vec<Vec<Value>>,
     /// The merged parameter values that produced the tree, typed as declared.
@@ -230,12 +230,12 @@ pub enum Error {
         max: Option<f64>,
     },
     /// The manifest declares a narrower id block than the template numbers
-    /// into — two instances offset by it would overlap.
+    /// into -- two instances offset by it would overlap.
     WidgetBlock { declared: usize, needed: usize },
     /// One widget id used twice in a template (the root's id counts): the two
     /// would resolve to the same widget.
     DuplicateWidgetId(i64),
-    /// One name declared in two symbol namespaces — `@name` would be ambiguous.
+    /// One name declared in two symbol namespaces -- `@name` would be ambiguous.
     DuplicateSymbol(String),
     /// A placeholder found where none may live (a def payload).
     PlaceholderInDef(String),

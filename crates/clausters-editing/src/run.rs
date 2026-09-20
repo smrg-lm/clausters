@@ -154,18 +154,18 @@ fn server_name(server: Server) -> &'static str {
 ///
 /// `request` names a `verb`:
 ///
-/// - `push` — `to` (`"sound"` or `"samples"`, sound when absent) and `steps`,
+/// - `push` -- `to` (`"sound"` or `"samples"`, sound when absent) and `steps`,
 ///   in the shape a playback answers them ([`crate::apply::steps_json`]).
 ///   Answers `{}`.
-/// - `ready` — answers `messages`, each `{"to", "addr", "args"}` with the
+/// - `ready` -- answers `messages`, each `{"to", "addr", "args"}` with the
 ///   arguments tagged as a step's are, and `awaiting`: `null`, or `{"from",
 ///   "step"}` for the step the queue is now held behind. **When something is
 ///   awaited, the last message is the one it waits on** -- the barrier itself,
 ///   or the command a `/done` answers -- which is what lets a client that
 ///   pairs a send with its reply send that one last.
-/// - `reply` — `from`, `addr` and `args` (tagged): answers `{"reply":
+/// - `reply` -- `from`, `addr` and `args` (tagged): answers `{"reply":
 ///   "released"}`, `{"reply": "unrelated"}`, or `{"reply": "refused", "args"}`.
-/// - `idle` — answers `{"idle": bool}`.
+/// - `idle` -- answers `{"idle": bool}`.
 ///
 /// A verb it does not know answers `{"error": ...}`.
 pub fn call_json(run: &mut Runner, request: &str) -> String {

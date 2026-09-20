@@ -1,6 +1,6 @@
 //! The finite-resource registries on the server side: the auto node-id range
 //! (`/synth_new -1`, GraphDef members) and the MIDI voice range are occupancy
-//! maps scaled from `--max-nodes`, recycled as nodes die — never counters.
+//! maps scaled from `--max-nodes`, recycled as nodes die -- never counters.
 //! Exhaustion is an explicit command error; a failed instantiation hands back
 //! every id and bus it took.
 
@@ -128,11 +128,11 @@ fn midi_voice_ids_recycle_with_the_voices() {
 
 #[test]
 fn failed_graph_instantiation_leaks_no_ids() {
-    // A GraphDef referencing a missing member def fails at make_synth —
+    // A GraphDef referencing a missing member def fails at make_synth --
     // after ids were not yet taken; and a def whose second member is missing
     // fails the same way. Either way, repeating the failure far past the
     // auto range's width keeps failing with the *def* error, never with an
-    // id-exhaustion error — nothing leaks.
+    // id-exhaustion error -- nothing leaks.
     let mut t = tiny_translator(4);
     let part = NodeIdPartition::from_max_nodes(4);
     t.d_graph(&[OscType::String(

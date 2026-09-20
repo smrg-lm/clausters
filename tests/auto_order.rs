@@ -1,4 +1,4 @@
-//! M12: auto-sorted groups — bus-connection analysis, `/group_sortMode`,
+//! M12: auto-sorted groups -- bus-connection analysis, `/group_sortMode`,
 //! `/group_queryTree`, `/group_dumpGraph`. Real UDP round-trips against a manually
 //! ticked engine (no audio device), like `tests/osc.rs`.
 
@@ -191,7 +191,7 @@ fn auto_group_reorders_a_reversed_chain() {
         vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
     );
     server.send("/group_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
-    // Deliberately reversed: master, then fx, then source — each /synth_new
+    // Deliberately reversed: master, then fx, then source -- each /synth_new
     // triggers a re-sort, so the final order must be src → fx → master.
     for (name, id) in [("master", 1001), ("fx", 1002), ("src", 1003)] {
         server.send(
@@ -221,7 +221,7 @@ fn auto_group_reorders_a_reversed_chain() {
 fn n_mapa_adds_a_read_edge_and_resorts() {
     // `src` writes bus 16; `default` reads no bus statically, so an auto group
     // leaves the two in insertion order. Mapping default's freq to bus 16 with
-    // /node_mapAudio makes it read that bus — a writer-before-reader edge that must
+    // /node_mapAudio makes it read that bus -- a writer-before-reader edge that must
     // re-sort src ahead of it (M11 feeding the M12/M13 analysis).
     let server = Server::spawn();
     server.d_recv(&src_def());
@@ -259,7 +259,7 @@ fn n_mapa_adds_a_read_edge_and_resorts() {
     server.wait_for_order(100, &[1002, 1001]);
 
     // Unmapping drops the read edge. The sort is stable, so the now
-    // unconstrained pair keeps its current order rather than snapping back —
+    // unconstrained pair keeps its current order rather than snapping back --
     // re-sorting must not deadlock or shuffle it.
     server.send(
         "/node_mapAudio",
@@ -432,8 +432,8 @@ fn query_tree_reports_structure_and_controls() {
 
 #[test]
 fn query_tree_detail_two_carries_a_full_node_info_per_entry() {
-    // Detail 2 appends what `/node_query.reply` carries beyond the controls — the maps
-    // and the inferred bus lists — so a client can build one record per node
+    // Detail 2 appends what `/node_query.reply` carries beyond the controls -- the maps
+    // and the inferred bus lists -- so a client can build one record per node
     // out of the tree alone, with no follow-up `/node_query`.
     let server = Server::spawn();
     server.send(
@@ -813,7 +813,7 @@ fn n_query_reports_node_detail() {
 #[test]
 fn a_named_group_is_reported_and_resolved_by_path() {
     // The name is a label on top of the id, so it must come back in every
-    // report the server makes about the node — and be resolvable to the id,
+    // report the server makes about the node -- and be resolvable to the id,
     // which is what the client actually commands with.
     let server = Server::spawn();
     server.send(

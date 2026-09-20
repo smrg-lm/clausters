@@ -2,8 +2,8 @@
 //! bands a timeline view places its boxes on.
 //!
 //! A semitone row in a piano roll and a lane in a multitrack are the same
-//! structure — a band of the vertical axis, holding boxes that share a time
-//! axis with every other band — and they differ in exactly one thing: a
+//! structure -- a band of the vertical axis, holding boxes that share a time
+//! axis with every other band -- and they differ in exactly one thing: a
 //! chromatic roll's bands are all the same height, and a multitrack's are not.
 //! So this is an **enum with two arms** rather than two modules: [`Uniform`]
 //! for a roll (arithmetic, no storage at all) and [`Table`] for lanes (prefix
@@ -14,15 +14,15 @@
 //!
 //! # Why an enum and not a trait object
 //!
-//! [`band`](Bands::band) is the call inside a draw loop — once per row of
-//! chrome, once per box — and it was measured at 1.4-2.2 ns in **both** arms,
+//! [`band`](Bands::band) is the call inside a draw loop -- once per row of
+//! chrome, once per box -- and it was measured at 1.4-2.2 ns in **both** arms,
 //! against ~49 ns per widget for the layout pass that runs beside it. The
 //! `match` hoists out of the loop once per pass and the `Uniform` arm compiles
 //! to the arithmetic that was written by hand before this module existed. A
 //! `dyn` call would be the one thing that could not be hoisted.
 //!
-//! [`index_at`](Bands::index_at) — the vertical hit-test, once per pointer
-//! event — is 2.3 ns uniform and 6-15 ns tabulated, growing logarithmically:
+//! [`index_at`](Bands::index_at) -- the vertical hit-test, once per pointer
+//! event -- is 2.3 ns uniform and 6-15 ns tabulated, growing logarithmically:
 //! 60,000x the bands cost 2.1x the lookup. Against the 9.5-112 us a pointer
 //! event already pays to lay the window out, the vertical lookup is 0.02%.
 //!
@@ -32,7 +32,7 @@
 //! domain: it exists with nothing in it, and its index *is* data (the pitch
 //! travels in the payload). A lane is a thing that exists, with a node behind
 //! it. So moving a note between rows changes a number in the same list, while
-//! moving a clip between lanes reparents — and that is the owner's business,
+//! moving a clip between lanes reparents -- and that is the owner's business,
 //! not this module's.
 //!
 //! And **the vertical is the container's, never the group's**. A roll linked to
@@ -45,14 +45,14 @@ use std::ops::Range;
 /// adds its rectangle's `y`).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum Bands {
-    /// No bands at all — a view whose rows have not arrived yet. Every question
+    /// No bands at all -- a view whose rows have not arrived yet. Every question
     /// below answers about an empty stack rather than refusing.
     #[default]
     None,
-    /// Every band the same height — the chromatic roll. Holds **nothing**: the
+    /// Every band the same height -- the chromatic roll. Holds **nothing**: the
     /// count and one height are the whole of it.
     Uniform { n: usize, h: f32 },
-    /// Bands of their own heights — the lanes of a multitrack. Stored as the
+    /// Bands of their own heights -- the lanes of a multitrack. Stored as the
     /// `n + 1` **edges** rather than as `n` heights, so a band and a lookup are
     /// both a read instead of a running sum.
     Table { edges: Vec<f32> },
@@ -86,7 +86,7 @@ impl Bands {
         }
     }
 
-    /// Whether the stack is empty — a view with no lanes, a roll with no rows.
+    /// Whether the stack is empty -- a view with no lanes, a roll with no rows.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -100,7 +100,7 @@ impl Bands {
         }
     }
 
-    /// Band `i` as `(y, height)` — the draw loop's call. An index past the end
+    /// Band `i` as `(y, height)` -- the draw loop's call. An index past the end
     /// answers with the stack's end and no height, rather than panicking: a
     /// drawing pass that has fallen out of step should draw nothing, not stop.
     pub fn band(&self, i: usize) -> (f32, f32) {
@@ -120,7 +120,7 @@ impl Bands {
         }
     }
 
-    /// The band a position falls in — **the vertical hit-test**. `None` above
+    /// The band a position falls in -- **the vertical hit-test**. `None` above
     /// the first band or below the last.
     pub fn index_at(&self, y: f32) -> Option<usize> {
         if y < 0.0 || y >= self.total() {
@@ -137,7 +137,7 @@ impl Bands {
         .filter(|i| *i < self.len())
     }
 
-    /// The half-open range of bands any part of `[y0, y1)` touches — what a
+    /// The half-open range of bands any part of `[y0, y1)` touches -- what a
     /// drawing pass iterates, so the chrome, the dividers and the labels are
     /// the same set of bands. Clamped to the stack; a reversed range comes back
     /// empty.
@@ -164,7 +164,7 @@ impl Bands {
     /// The position of a **fractional** index: `at(0.0)` is the top of the
     /// first band, `at(1.5)` the middle of the second.
     ///
-    /// This is what a continuous axis over the stack needs — a note's pitch is
+    /// This is what a continuous axis over the stack needs -- a note's pitch is
     /// a number before it is a row, and a bar half a semitone off is drawn half
     /// a row off. Clamped to the stack's own span at both ends.
     pub fn at(&self, i: f32) -> f32 {
@@ -214,7 +214,7 @@ impl Bands {
 mod tests {
     use super::*;
 
-    /// The two arms answer the same questions about the same stack — which is
+    /// The two arms answer the same questions about the same stack -- which is
     /// the whole claim: a roll's rows and a multitrack's lanes differ in
     /// storage and in nothing a caller asks.
     #[test]
@@ -264,7 +264,7 @@ mod tests {
         assert_eq!(b.window(26.0, 19.0), b.window(19.0, 26.0));
     }
 
-    /// A fractional index and a position are inverses, in both arms — what a
+    /// A fractional index and a position are inverses, in both arms -- what a
     /// pitch axis needs, since a pitch is a number before it is a row.
     #[test]
     fn a_fractional_index_and_a_position_are_inverses() {

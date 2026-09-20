@@ -20,7 +20,7 @@
     <main>
       <div id="note">a playable piano as one web component: the bundle below
 (authored by make_bundle.mjs) opens a virtual keyboard
-whose keys the GUI host maps to server voices on the wasm engine in this tab —
+whose keys the GUI host maps to server voices on the wasm engine in this tab --
 a /synth_new per key press, a gate release per key up, no server process, no
 script in between. Drag the strip above the keys to pan the MIDI range, wheel
 over it to zoom; grayed keys are outside the instrument's active range. The
@@ -41,19 +41,19 @@ power button is the autoplay gesture.</div>
       boot the same files on the desktop.
 
       The bundle ships its own ES module: importing it registers the
-      `piano-keys` tag and **nothing of the TypeScript client is loaded** — the run time is
+      `piano-keys` tag and **nothing of the TypeScript client is loaded** -- the run time is
       the engine, the host and the mount (dist/runtime.js), which is what the
       generated module imports.
 
-      Serve from clients/web — the PACKAGE ROOT, never this folder: the
+      Serve from clients/web -- the PACKAGE ROOT, never this folder: the
       imports below reach ../../../dist/, which must stay inside the served
       root (serving piano/ itself turns them into 404s/MIME errors). From
       clients/web:  python3 -m http.server  and open /examples/panels/piano/.
 
-      ?smoke=1 asserts the voice chain end to end — the same /synth_new … gate 1 a
+      ?smoke=1 asserts the voice chain end to end -- the same /synth_new … gate 1 a
       key press makes the host send, verified sounding by the envelope the
       voice publishes on **this instance's own** control bus, then gated off
-      and verified silent — beaconing the verdict as a fetch, the standard
+      and verified silent -- beaconing the verdict as a fetch, the standard
       web-smoke posture under headless Chrome (scripts/smoke-web.sh piano). (A real key press needs a
       pointer; the browser harness covers input.)
     -->
@@ -85,7 +85,7 @@ power button is the autoplay gesture.</div>
       async function smokeAsserts(id) {
         await loadCore();
         const engine = await server();
-        // The bus this instance was allocated — not a fixed 0. That is the
+        // The bus this instance was allocated -- not a fixed 0. That is the
         // difference between a bundle and a component.
         const envBus = element.symbols.env;
         let latest = 0;
@@ -113,7 +113,7 @@ power button is the autoplay gesture.</div>
           ["s", "gate"], ["f", 1.0], ["s", "env_bus"], ["f", envBus],
         ]));
         await until(() => latest > 0.5, "the voice envelope never opened");
-        // The key release: gate 0 — the envelope falls and the node frees.
+        // The key release: gate 0 -- the envelope falls and the node frees.
         engine.send(encodeMessage("/node_set",
           [["i", NODE], ["s", "gate"], ["f", 0.0]]));
         await until(() => latest < 0.05, "the voice never released");

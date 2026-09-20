@@ -162,7 +162,7 @@ fn raw_source_defs_resolve_stdlib_imports() {
 }
 
 /// F5: a `waveform` standing in for (size, init) of `rdtable`, read by a
-/// wrapping integer counter — the output must walk the table verbatim.
+/// wrapping integer counter -- the output must walk the table verbatim.
 #[test]
 fn waveform_rdtable_cycles_through_the_table() {
     // counter = (+(1) ~ _) - 1 = 0, 1, 2, …; idx = counter & 3.
@@ -322,7 +322,7 @@ fn semantic_errors_from_faust_are_forwarded() {
 }
 
 /// One compile touching every op of the schema. Constants feed everything so
-/// the graph has no inputs; the output arity is whatever it is — the point
+/// the graph has no inputs; the output arity is whatever it is -- the point
 /// is that every `Cbox*` symbol gets called once (typos in the hand-written
 /// FFI only fail at call time).
 #[test]

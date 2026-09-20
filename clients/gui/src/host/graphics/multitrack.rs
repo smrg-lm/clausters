@@ -2,20 +2,20 @@
 //!
 //! This is the model half of the multitrack widget ([`crate::host::elements`]),
 //! and the thing that tells it from [`super::track`]: `track` draws a *widget
-//! tree* — a `Track` container holding `Clip` children, one widget per box —
+//! tree* -- a `Track` container holding `Clip` children, one widget per box --
 //! while this holds the multitrack as **data** the way [`super::pianoroll`]
 //! holds a roll's notes. A lane is a row of this structure, not a widget, so it
 //! cannot sit in a void and there is exactly one thing that owns it.
 //!
 //! That is the whole reason the type exists. With the lanes spread over N
 //! widgets there was nobody to report *the multitrack*, so a gesture reported
-//! what the hand did to whichever widget it touched — under one of three tags,
+//! what the hand did to whichever widget it touched -- under one of three tags,
 //! chosen by the gesture rather than by the clip, which two independent readers
 //! got wrong (`clients/gui/PLAN.md`, `G34`). One owner answers with the result
 //! instead, exactly as a roll answers with its notes.
 //!
 //! Pure over geometry and numbers: no `Host`, no props map, no wire. What a
-//! *mixer* makes of a lane's mute, solo and gain is not decided here either —
+//! *mixer* makes of a lane's mute, solo and gain is not decided here either --
 //! that is the client's rule, as it is the document's (`clausters-document`
 //! says a solo is the mixer's rule and not the model's). This carries the
 //! numbers and places the boxes.
@@ -48,7 +48,7 @@ pub enum Row {
 /// name it.
 ///
 /// The vertical axis of a multitrack was the lanes and is now the rows, because
-/// a track automation is a row of its own — a lane of curve under the lane of
+/// a track automation is a row of its own -- a lane of curve under the lane of
 /// boxes, spanning the whole timeline the way the track does. Everything that
 /// reads the vertical axis reads it here, so the drawing and the hit test
 /// cannot disagree about where a row begins.
@@ -75,7 +75,7 @@ impl Stack {
     /// altogether** *(found 2026-09-12 by the user: "la A sigue sin ocultar ni
     /// mostrar")*.
     ///
-    /// A hidden curve is not a curve drawn as nothing — it is a row that is not
+    /// A hidden curve is not a curve drawn as nothing -- it is a row that is not
     /// there. Reserving its band and skipping the drawing leaves a hole exactly
     /// where the row was, which is a picture that does not change when a hand
     /// hides one and does not change when it shows one either: the same gap,
@@ -130,7 +130,7 @@ impl Stack {
         self.entries.get(i).map(|(r, _)| *r)
     }
 
-    /// How tall the stack is — a scroll's content height, and what says whether
+    /// How tall the stack is -- a scroll's content height, and what says whether
     /// it scrolls at all. The last band's trailing gap is not counted: it is
     /// the room a drop below the stack lands in, not room the stack occupies.
     pub fn content_height(&self) -> f32 {
@@ -140,7 +140,7 @@ impl Stack {
         self.bands().total() - self.gap
     }
 
-    /// Where each row lands inside `rect`, scrolled down by `scroll` pixels —
+    /// Where each row lands inside `rect`, scrolled down by `scroll` pixels --
     /// **including the ones off either end**, so a caller that hit-tests reads
     /// the same rects the drawing used.
     pub fn rects(&self, rect: Rect, scroll: f32) -> Vec<Rect> {
@@ -155,7 +155,7 @@ impl Stack {
             .collect()
     }
 
-    /// The row a pointer is **on**, or `None` off the stack entirely — the
+    /// The row a pointer is **on**, or `None` off the stack entirely -- the
     /// *press*' question.
     pub fn row_at(&self, rect: Rect, scroll: f32, y: f64) -> Option<usize> {
         self.bands().index_at(y as f32 - rect.y + scroll)
@@ -174,7 +174,7 @@ impl Stack {
     /// The lane a hand **is heading for**, always: the nearest row's lane,
     /// clamped to the stack at both ends.
     ///
-    /// A drag has to answer for every pixel the pointer crosses — the gaps, the
+    /// A drag has to answer for every pixel the pointer crosses -- the gaps, the
     /// automation rows, the space past either end. An automation row answers
     /// with the lane it belongs to, which is the only lane a clip dropped there
     /// could sensibly mean.
@@ -196,7 +196,7 @@ impl Stack {
             .unwrap_or(0)
     }
 
-    /// Where each **lane** lands, by lane index — what places the clips.
+    /// Where each **lane** lands, by lane index -- what places the clips.
     pub fn lane_rects(&self, rect: Rect, scroll: f32, lanes: usize) -> Vec<Rect> {
         let rects = self.rects(rect, scroll);
         let mut out = vec![Rect::new(rect.x, rect.y, rect.w, 0.0); lanes];
@@ -252,7 +252,7 @@ mod tests {
         }
     }
 
-    /// **A track automation is a row of its own, under the lane it names** —
+    /// **A track automation is a row of its own, under the lane it names** --
     /// not a layer on it and not a lane of clips. So the vertical axis is the
     /// rows, and the lane below an automation is where the automation left it.
     #[test]
@@ -273,8 +273,8 @@ mod tests {
         assert_eq!(lane_rects[1].y, 148.0);
     }
 
-    /// **A press on an automation row is not a press on a lane** — nothing of
-    /// a lane is drawn there — but a *drag* still has to answer, and it answers
+    /// **A press on an automation row is not a press on a lane** -- nothing of
+    /// a lane is drawn there -- but a *drag* still has to answer, and it answers
     /// with the lane the row belongs to.
     #[test]
     fn a_curve_row_answers_a_drag_and_not_a_press() {

@@ -5,12 +5,12 @@ The classic editor layout is **one item with parts**: a waveform lane and a
 spectrogram lane of the same sound under one time axis, with one selection.
 This example renders a stereo phrase offline, writes it once as a raw ``f32``
 file, and composes the two heavy views over that single mapped resource with
-``link=1`` — the shared **navigation group**:
+``link=1`` -- the shared **navigation group**:
 
 - **zoom, pan and drag-selection on either lane move both**: the group owns
   the horizontal view, the selection and the playhead; each member keeps only
   its own vertical (amplitude / frequency) window;
-- the script sees **one** event stream — a gesture emits a single
+- the script sees **one** event stream -- a gesture emits a single
   ``"view"``/``"selection"`` event carrying the interacted lane's id, not one
   per member;
 - ``set`` of ``view_start``/``view_len`` (samples; non-positive
@@ -20,9 +20,9 @@ file, and composes the two heavy views over that single mapped resource with
   negative ``link`` unlinks it (it keeps the view it had and diverges).
 
 Both lanes are *named* (``wave``/``spect``), so the script drives the group and
-reads its one event stream by name — never by widget id.
+reads its one event stream by name -- never by widget id.
 
-The composition is plain GuiDef — existing containers plus the ``link`` prop,
+The composition is plain GuiDef -- existing containers plus the ``link`` prop,
 no new widget kind. A stack of linked lanes needs only one time-ruler strip:
 the top lane keeps ``ruler="time"``, the bottom one switches its own off.
 
@@ -44,7 +44,7 @@ SR = 48_000.0
 
 # %% [markdown]
 # ## Render the phrase offline and write the shared resource
-# One NRT render, one raw f32 file — both lanes map the same bytes.
+# One NRT render, one raw f32 file -- both lanes map the same bytes.
 
 # %%
 nrt = Session.nrt()
@@ -61,7 +61,7 @@ samples_to_file(list(inter), raw_path)
 
 # %% [markdown]
 # ## Compose the linked item
-# Both lanes name ``link=1``. The spectrogram turns its own time ruler off —
+# Both lanes name ``link=1``. The spectrogram turns its own time ruler off --
 # with the navigation shared, the waveform's strip rules for the whole stack.
 # Both are *named*, so the script drives them by name.
 
@@ -75,12 +75,12 @@ spectrogram(name="spect", path=raw_path, channels=2, sample_rate=SR,
        window_size=1024, db_floor=-90.0, link=1, ruler="off"),
 title="Linked lanes: one timeline, one selection", w=960, h=640,
 ).open()
-print(f"opened window {win} — wheel/drag on either lane drives both")
+print(f"opened window {win} -- wheel/drag on either lane drives both")
 
 # %% [markdown]
 # ## Drive the group from the script
 # Any member's handle addresses the group: select on the spectrogram, zoom via
-# the waveform — both lanes follow either way.
+# the waveform -- both lanes follow either way.
 
 # %%
 win["spect"].set(sel_start=float(frames // 2), sel_len=float(frames // 4))
@@ -105,11 +105,11 @@ win.on_closed(lambda: print("window closed"))
 # ## Live membership
 # Call this from a cell (or let the script run it a few seconds in): it unlinks
 # the spectrogram (which keeps its view and diverges), navigates the waveform
-# alone, then re-links — the spectrogram snaps back to the group.
+# alone, then re-links -- the spectrogram snaps back to the group.
 
 # %%
 #: How long the two lanes stay apart, in seconds. Long enough to *see* one
-#: move without the other, which is the whole thing this demonstrates — at a
+#: move without the other, which is the whole thing this demonstrates -- at a
 #: second and a half it reads as a flicker and the point is lost.
 DIVERGE = 3.0
 
@@ -141,12 +141,12 @@ def _relink():
 # %%
 if __name__ == "__main__":
     try:
-        # Interactive first: both lanes are linked — wheel/drag on either one
+        # Interactive first: both lanes are linked -- wheel/drag on either one
         # drives both. The membership demo runs a few seconds in, near enough
         # to be watched and late enough not to land on the first gesture; the
         # run itself ends when you close the window.
         print(f"in {DEMO_AT:.0f} s the spectrogram unlinks for {DIVERGE:.0f} s, "
-              "then rejoins — nothing here drives it")
+              "then rejoins -- nothing here drives it")
         gui.clock.sched(DEMO_AT, demo_membership)
         win.wait()
         gui.close(win)

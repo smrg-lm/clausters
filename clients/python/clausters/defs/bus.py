@@ -3,14 +3,14 @@
 Mirrors the server's bus model (`dsp`): audio buses (``0..channels`` are the
 hardware outputs) and single-float control buses. Like scsynth, the client owns
 allocation; the server just indexes. A `Bus` is a flat
-``(index, channels, rate)`` — only flat data ever leaves for the wire.
+``(index, channels, rate)`` -- only flat data ever leaves for the wire.
 
 Buses are a finite boot-time resource, so each allocator is a **registry** (the
 core's occupancy map): a freed run is always reusable, adjacent runs coalesce,
 a double free is refused loudly, and exhaustion raises instead of wrapping. The
 allocatable space excludes the hardware outputs at the bottom (``reserved``)
 and the GraphDef private-bus range at the top (the core's
-``GRAPH_*_BUS_RESERVED``, clamped to the space) — those buses belong to the
+``GRAPH_*_BUS_RESERVED``, clamped to the space) -- those buses belong to the
 server's own registry.
 
 The allocators carry **no default size of their own**: how many buses exist is
@@ -35,18 +35,18 @@ class Bus:
 
     Two rates, and they are different things:
 
-    - **Audio** — a block of samples per channel every block, the signal
+    - **Audio** -- a block of samples per channel every block, the signal
       itself. Buses ``0..outputs`` are the hardware outputs, which is why
       ``out(0, …)`` is what you hear; `audio` allocates above them. Read one
       with the ``in_`` UGen, write one with ``out``.
-    - **Control** — one float, updated per block: a parameter, not a signal. A
+    - **Control** -- one float, updated per block: a parameter, not a signal. A
       slow envelope, a knob, an LFO. Cheap enough to have thousands. Read one
       with ``in_ctl``, and this is the rate `Node.map` binds a control to, so
       one writer drives many synths with the client out of the loop.
 
     Both are a finite boot-time resource sized by `ServerOptions`, so a bus is
     allocated and `free`d like memory. The `set` / `get` pair works on control
-    buses only — that is the client writing a parameter directly — while
+    buses only -- that is the client writing a parameter directly -- while
     `watch` opens an audio bus for reading, which is how a scope or a meter
     sees a signal without a message per frame.
 
@@ -77,7 +77,7 @@ class Bus:
 
     Attributes:
         index: the first slot of the run. This is the number that goes on the
-            wire and into a def's ``bus`` control — nodes are aimed at it.
+            wire and into a def's ``bus`` control -- nodes are aimed at it.
         channels: how many contiguous slots the run covers.
         rate: ``"audio"`` or ``"control"``.
         server: the `Server` this bus was allocated on; `None` falls back to
@@ -86,7 +86,7 @@ class Bus:
 
     def __init__(self, index: int, channels: int = 1, rate: str = "audio",
                  server=None):
-        """Names an existing run of buses by index — bus 0 is the first
+        """Names an existing run of buses by index -- bus 0 is the first
         hardware output on every server, so a fixed index is a meaningful thing
         to write down. To take a **free** run out of the server's pool instead,
         use `audio` or `control`, which is what a script normally wants.
@@ -174,7 +174,7 @@ class _Allocator:
 
     def alloc(self, channels: int = 1, server=None) -> Bus:
         """A run of ``channels`` contiguous buses, stamped with the ``server``
-        whose pool this is. Raises when no such run is free — exhaustion is an
+        whose pool this is. Raises when no such run is free -- exhaustion is an
         explicit failure, never an aliased index."""
         index = self._spaces.alloc(self.SPACE, channels)
         if index is None:
@@ -183,7 +183,7 @@ class _Allocator:
 
     def free(self, bus: Bus):
         """Returns the bus's run to the pool. A double free (or a bus this
-        allocator never handed out) raises — losing track of a bus is a
+        allocator never handed out) raises -- losing track of a bus is a
         client bug, never absorbed silently."""
         if not self._spaces.release(self.SPACE, bus.index, bus.channels):
             raise RuntimeError(

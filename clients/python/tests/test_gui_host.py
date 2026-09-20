@@ -1,7 +1,7 @@
 """G25 client leg: `GuiHost` transport selection.
 
 Pure-unit, no live host: the constructor picks the interface for the carrier
-(TCP by default — a `/gui_def` tree is not bounded by a datagram — UDP on
+(TCP by default -- a `/gui_def` tree is not bounded by a datagram -- UDP on
 request) without touching the network; connecting is `start()`'s job. The live
 TCP round-trip against a real host is exercised by the GUI examples and by
 the host's own Rust tests (`clients/gui/src/host/tcp.rs`).
@@ -33,7 +33,7 @@ def test_unknown_transport_is_refused():
 
 
 def test_a_supplied_interface_is_used_as_is():
-    """The seam a carrier this module does not know about comes in through —
+    """The seam a carrier this module does not know about comes in through --
     the same one `clausters.defs.Server` already has."""
     iface = _Recorder()
     host = GuiHost(interface=iface)
@@ -206,7 +206,7 @@ def test_a_non_integer_widget_id_is_refused():
 
 def test_the_id_is_never_positional():
     """The id is a keyword everywhere, so the positional slot is the widget's
-    own contents — and the two ways of getting that wrong both raise."""
+    own contents -- and the two ways of getting that wrong both raise."""
     from clausters.gui import guidef
 
     # A leaf with no contents takes no positional at all...
@@ -233,7 +233,7 @@ def test_the_id_is_never_positional():
 
 def test_load_names_a_persisted_def_and_allocates_nothing():
     """`/gui_load` replays a def the host saved, under the id it was saved
-    with — so the client neither allocates ids nor resolves names for it."""
+    with -- so the client neither allocates ids nor resolves names for it."""
     host = GuiHost(interface=_Recorder())
     host.load("mixer")
     assert host._osc.sent == [("/gui_load", "mixer")]
@@ -264,7 +264,7 @@ def test_attach_refuses_an_address_nobody_answers():
 
 def test_attach_does_not_probe_a_supplied_carrier():
     """A carrier this module does not know about may reach a host that answers
-    no UDP probe, so the verification is skipped there — the line
+    no UDP probe, so the verification is skipped there -- the line
     `clausters.defs.Server.attach` draws with ``_own_carrier``."""
     iface = _Recorder()
     host = GuiHost(port=57997, interface=iface).attach(adopt_ambient=False)
@@ -297,7 +297,7 @@ def test_attach_adopts_the_ambient_host_first_wins():
 
 def test_a_session_takes_a_host_it_did_not_boot():
     """The visual half of taking a `Server` the session did not start: the
-    constructor, not a verb of its own — and then `gui` launches nothing."""
+    constructor, not a verb of its own -- and then `gui` launches nothing."""
     from clausters import Session
     from clausters.base import OscNrtInterface
     from clausters.defs import Server

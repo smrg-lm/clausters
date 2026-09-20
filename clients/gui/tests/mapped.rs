@@ -1,14 +1,14 @@
 //! The host against a **real** segment: one the server wrote, and the samples
 //! beside it.
 //!
-//! The layout itself is `clausters_core::shm` now, tested there — so what is
+//! The layout itself is `clausters_core::shm` now, tested there -- so what is
 //! left to check here is the part that is genuinely this crate's: that a host
 //! maps what a server published, reads the planes it draws from, and edits the
 //! samples in place. Gated on `standalone`, the feature that links the server,
 //! because that is what makes a real segment available to build one from.
 //!
 //! This replaced three tests that built a segment file by hand from this
-//! crate's own idea of the layout — a mirror tested against itself, which is
+//! crate's own idea of the layout -- a mirror tested against itself, which is
 //! exactly the shape of check that passed for a week while the reader refused
 //! every valid segment.
 
@@ -166,7 +166,7 @@ fn a_take_the_server_published_is_drawn_and_edited_in_place() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// The picture is built **over the mapping** — the whole of H7 against a real
+/// The picture is built **over the mapping** -- the whole of H7 against a real
 /// segment: the summary follows the server's own cells, and a write by anybody
 /// is a write to what is drawn.
 #[test]
@@ -250,7 +250,7 @@ fn a_view_follows_the_frontier_of_a_take_being_recorded() {
         "an allocated take has recorded nothing"
     );
 
-    // The engine records a block: the cells first, then the frontier — the
+    // The engine records a block: the cells first, then the frontier -- the
     // order a writing UGen publishes in.
     let record = |from: usize, to: usize, v: f32| {
         for i in from..to {

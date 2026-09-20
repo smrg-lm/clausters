@@ -4,7 +4,7 @@
 // covers the ordinary path and not the one that leaves the mess: node runs no
 // `finally` when it is *signalled*, so a killed test run (a Ctrl-C, a harness
 // timeout, a `kill` of the runner) leaves an audio server holding its thread
-// and its device, or a GUI host holding its window — invisible until the next
+// and its device, or a GUI host holding its window -- invisible until the next
 // run finds the port taken.
 //
 // So the handlers live here rather than being copied into each suite: five
@@ -32,7 +32,7 @@ export interface Spawned {
  * Spawns `bin` with `args`, killing it on the ordinary teardown (`stop`) and
  * on a signal that would otherwise skip it.
  *
- * The signal path is deliberately blunt — SIGKILL, then exit — because there
+ * The signal path is deliberately blunt -- SIGKILL, then exit -- because there
  * is nothing to wind down: the process is a test fixture, and what matters is
  * that nothing survives this one.
  */

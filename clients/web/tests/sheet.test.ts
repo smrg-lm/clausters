@@ -4,7 +4,7 @@
 // The model crosses as data and so do the operations, which buys a new verb for
 // no ABI at all and costs the one thing the binding table used to give free: it
 // sees one symbol and no verbs. So the catalog is what parity is read against,
-// and this file is that reading for the web client — the same assertions the
+// and this file is that reading for the web client -- the same assertions the
 // Python one makes, in the same order.
 //
 // Needs `./build.sh` (the core wasm). Run with `npm test`.
@@ -598,7 +598,7 @@ test("a page and a roll walk one order", {
     // a window holding a page and a lane has **one** Ctrl+Z.
     const score = await notation.Score.open("X:1\nT:t\nM:4/4\nL:1/4\nK:C\nC D E F |\n");
     const timeline = new Timeline([[0.0, new Event({ midinote: 72, dur: 1.0 })]], { tempo: 2.0 });
-    // One context for both — what a window drawing the two would build.
+    // One context for both -- what a window drawing the two would build.
     const editor = await edit(timeline, {
         sampleRate: 48_000,
         context: Editing.of(score),

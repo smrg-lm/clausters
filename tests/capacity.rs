@@ -1,4 +1,4 @@
-//! M10: bounded-memory audit — every preallocated structure has a defined,
+//! M10: bounded-memory audit -- every preallocated structure has a defined,
 //! non-fatal behavior when it fills (the table lives in
 //! `docs/architecture.md`). These tests overflow each one on purpose and
 //! assert the engine neither panics, nor blocks, nor stops processing.
@@ -57,7 +57,7 @@ fn synth_count(handle: &EngineHandle) -> u32 {
 
 /// Garbage FIFO (1024) + holding list (64) overflow: the audio thread must
 /// `mem::forget` the excess (a bounded leak) instead of blocking or
-/// freeing on the RT path — and keep working.
+/// freeing on the RT path -- and keep working.
 #[test]
 fn garbage_overflow_leaks_instead_of_blocking() {
     // A small node slab keeps the boot-scaled garbage FIFO at its 1024 floor
@@ -99,7 +99,7 @@ fn garbage_overflow_leaks_instead_of_blocking() {
     );
 }
 
-/// Event FIFO (2048) overflow: `/node_start`//`/node_end` are best-effort — extra
+/// Event FIFO (2048) overflow: `/node_start`//`/node_end` are best-effort -- extra
 /// events drop silently, nothing else is affected.
 #[test]
 fn event_overflow_drops_silently() {
@@ -175,7 +175,7 @@ fn full_group_rejects_extra_children() {
 }
 
 /// S7: the node slab is boot-time configurable. A small `--max-nodes` overflows
-/// exactly at its capacity, root included — same graceful rejection as the
+/// exactly at its capacity, root included -- same graceful rejection as the
 /// default 1024, just sooner.
 #[test]
 fn small_max_nodes_overflows_predictably() {

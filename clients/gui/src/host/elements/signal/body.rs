@@ -2,11 +2,11 @@
 //! drag a navigable view hands to the container under it, and the picture it
 //! draws as a clip's body.
 //!
-//! Both answers say the same thing from two sides — *the axis is not mine*. A
+//! Both answers say the same thing from two sides -- *the axis is not mine*. A
 //! view placed on a navigation group lets a plain drag sweep the group's
 //! selection and Shift pan its window, because those gestures belong to the
 //! axis rather than to the picture drawn on it; and a take inside a clip draws
-//! with **no chrome at all** — no ruler, no gutter, no navigation — against the
+//! with **no chrome at all** -- no ruler, no gutter, no navigation -- against the
 //! clip's own local span, because the clip is what says where in time it sits.
 
 use super::SignalElement;

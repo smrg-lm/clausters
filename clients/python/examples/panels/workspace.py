@@ -3,13 +3,13 @@
 
 `scroll` shows its children through a window onto a **virtual content area**
 larger than the widget. It is deliberately *general first*: the default is the
-full 2D plane — drag the empty background to pan both axes, wheel to zoom
-anchored at the cursor — and the familiar constrained scroll views are that
+full 2D plane -- drag the empty background to pan both axes, wheel to zoom
+anchored at the cursor -- and the familiar constrained scroll views are that
 same widget configured down, not separate widgets:
 
-- ``axis="y", zoom=False`` — a plain vertical scroll view (the wheel scrolls),
-- ``axis="x", zoom=False`` — a horizontal strip,
-- the default — the free plane.
+- ``axis="y", zoom=False`` -- a plain vertical scroll view (the wheel scrolls),
+- ``axis="x", zoom=False`` -- a horizontal strip,
+- the default -- the free plane.
 
 This example puts all three in one window so the degeneration is visible side
 by side, and prints the ``"view" x y zoom`` events the gestures emit. Every pane
@@ -97,7 +97,7 @@ def horizontal_strip() -> dict:
 # %%
 def workspace() -> dict:
     return view(
-        panel(panel(label("free plane — drag to pan, wheel to zoom"),
+        panel(panel(label("free plane -- drag to pan, wheel to zoom"),
                     button(name="reset", label="reset view", w=120.0),
                     layout="row", h=26.0, margin=0),
               plane(),
@@ -117,7 +117,7 @@ def workspace() -> dict:
 
 # %%
 def on_view(name: str):
-    """A pane's ``"view"`` edit-back, wired by name — the same three keys the
+    """A pane's ``"view"`` edit-back, wired by name -- the same three keys the
     reset button sets back."""
     def handler(tag, *vals):
         if tag == "view" and len(vals) >= 3:

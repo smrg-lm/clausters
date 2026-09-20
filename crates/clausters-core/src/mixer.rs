@@ -1,4 +1,4 @@
-//! **What a multitrack is as nodes and groups** — its node system,
+//! **What a multitrack is as nodes and groups** -- its node system,
 //! written once.
 //!
 //! An automation whose target says `gain` has to drive the *same* `gain` the
@@ -7,7 +7,7 @@
 //! module is that something: the defs a multitrack is made of, and the names their
 //! surfaces answer to.
 //!
-//! It is here, and not in a client, for the reason [`crate::patch`] is here —
+//! It is here, and not in a client, for the reason [`crate::patch`] is here --
 //! every client that plays a multitrack needs the identical wiring, and a wiring
 //! written twice is two answers waiting to differ. A caller states the facts
 //! (how many channels a track has, which buffer a box reads) and gets the
@@ -17,7 +17,7 @@
 //! # The shape, and why it is the field's
 //!
 //! Every fixed-channel DAW has the same channel strip, and the order is not
-//! arbitrary — it is what makes gain staging, sends and metering mean what
+//! arbitrary -- it is what makes gain staging, sends and metering mean what
 //! people expect:
 //!
 //! ```text
@@ -82,7 +82,7 @@ pub const START: &str = "start";
 /// **Not initial-rate**, deliberately: `BufRd` looks the buffer up once a
 /// block, so this is an ordinary control and changing which buffer a box reads
 /// is a `/node_set` rather than a new node. That matters because re-cutting a
-/// join *is* a new buffer — a stitched one is replaced rather than edited — and
+/// join *is* a new buffer -- a stitched one is replaced rather than edited -- and
 /// a box that had to be rebuilt for it would stop and restart every time a hand
 /// moved a seam.
 pub const BUF: &str = "buf";
@@ -309,7 +309,7 @@ pub fn curve_def() -> Value {
 /// out per channel, with the ballistics that make a level legible.
 ///
 /// A meter is **one number a block**, which is exactly what a control bus
-/// carries — so a metered strip costs one node and one bus per channel, and a
+/// carries -- so a metered strip costs one node and one bus per channel, and a
 /// host reads a *range* of buses rather than one per message. A finer answer
 /// would be samples nothing can read.
 ///
@@ -355,8 +355,8 @@ pub fn meter_def(channels: usize) -> Result<Value, String> {
 /// The wire from a track to the master is one of these at unity, and that is
 /// not a detour: a strip writes to its own [`POST_BUS`] so that a meter has
 /// something to read that is *this strip* (see there), and something has to
-/// carry it the rest of the way. Having a gain on it means an extra send —
-/// post-fader, since `post` is after the fader — is another instance of this
+/// carry it the rest of the way. Having a gain on it means an extra send --
+/// post-fader, since `post` is after the fader -- is another instance of this
 /// def pointed at another bus, and needs no new mechanism when sends are taken.
 pub fn send_def(channels: usize) -> Result<Value, String> {
     check(channels, "send")?;
@@ -821,7 +821,7 @@ mod tests {
     }
 
     /// **A stereo source is balanced and given a width**, which is a different
-    /// law from a pan and is why one word covers both — and the balance leaves
+    /// law from a pan and is why one word covers both -- and the balance leaves
     /// the centre alone, which is the whole difference and what three strips in
     /// series would otherwise cost 9 dB for.
     #[test]

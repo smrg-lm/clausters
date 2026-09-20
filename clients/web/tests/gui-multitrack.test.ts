@@ -1,8 +1,8 @@
-// `gui.Multitrack` — the multitrack a `multitrack` widget draws, held here.
+// `gui.Multitrack` -- the multitrack a `multitrack` widget draws, held here.
 //
 // No host and no window: a fake widget records what is set on it and hands back
 // the event a hand's gesture would have sent. What is checked is that the object
-// is the multitrack — that a report replaces it whole, and that a script never has to
+// is the multitrack -- that a report replaces it whole, and that a script never has to
 // parse a payload or carry an id.
 //
 // The same cases the Python client's `test_gui_multitrack.py` checks, in the

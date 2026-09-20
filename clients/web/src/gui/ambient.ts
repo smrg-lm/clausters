@@ -3,13 +3,13 @@
 //
 // `plot` (and, later, `scope`) opens its window on *some* host without being
 // told which. The ladder they resolve through is: a host registered here, else
-// the current — or default — session's `gui()` host if one is already up, else
+// the current -- or default -- session's `gui()` host if one is already up, else
 // one the verb opens on the page and owns.
 //
 // The registry's reason to exist is the first rung, and it is the same one the
 // reference client has: a front this module can neither open nor point
-// elsewhere — a canvas over a carrier of the caller's own, a test double
-// collecting packets — is registered by whoever built it, and wins outright.
+// elsewhere -- a canvas over a carrier of the caller's own, a test double
+// collecting packets -- is registered by whoever built it, and wins outright.
 
 import type { AppClock } from "../base/appclock.ts";
 import type { GuiHost } from "./host.ts";
@@ -34,8 +34,8 @@ export function ambientHost(): GuiHost | null {
  * The {@link AppClock} of `host`, or of the ambient one.
  *
  * The application's clock: **seconds**, on the loop the windows are drawn on.
- * It is where anything that touches a window belongs — an animation, a periodic
- * read-out, a follow-up to a gesture — and it is what a routine on the musical
+ * It is where anything that touches a window belongs -- an animation, a periodic
+ * read-out, a follow-up to a gesture -- and it is what a routine on the musical
  * `TempoClock` reaches through `defer`, since that one must never block:
  *
  * ```js

@@ -1,7 +1,7 @@
 //! **The painting**: the lyon fill, the painter's strokes, and the drag's
 //! ledger lines.
 //!
-//! Everything that puts a triangle in the mesh lives here — the page's
+//! Everything that puts a triangle in the mesh lives here -- the page's
 //! primitives ([`ScoreData::render`]), the selection highlight, the playback
 //! cursor's line, and the ledger lines a pitch drag owes the page while it is
 //! in flight. Glyphs are filled through lyon in the path's **own** coordinate
@@ -23,7 +23,7 @@ use crate::host::paint::{Color, Mesh};
 
 impl ScoreData {
     /// `fit`, shifted by the drag preview when `id` is the element being
-    /// dragged — the one place the displacement enters the drawing, so every
+    /// dragged -- the one place the displacement enters the drawing, so every
     /// primitive of a note (notehead, stem, dots) travels with it.
     pub(super) fn prim_fit(&self, fit: Affine, id: Option<&str>) -> Affine {
         match &self.drag {
@@ -58,14 +58,14 @@ impl ScoreData {
         let fit = self.fit(rect);
         mesh.set_clip(Some(intersect(rect, clip)));
         // Curve-flattening tolerance in page units so it lands ~1/3 device
-        // pixel after fitting — fine enough to read smooth, coarse enough to
+        // pixel after fitting -- fine enough to read smooth, coarse enough to
         // keep the triangle count bounded by the screen, not the notation.
         let tol_page = 0.33 / fit.sx.max(f32::MIN_POSITIVE);
         // under the ink, so the engraving still reads through the highlight
         self.draw_selection(mesh, fit, colors.selection);
         // A dragged notehead takes its ledger lines with it: the engraved ones
         // stay where the staff put them, so they are dropped and re-derived at
-        // the displaced pitch — which is also how they disappear when the note
+        // the displaced pitch -- which is also how they disappear when the note
         // comes back onto the staff.
         let ledgers = self.drag_ledgers();
         if let Some(l) = &ledgers {
@@ -140,7 +140,7 @@ impl ScoreData {
         mesh.set_clip(clip);
     }
 
-    /// Highlight every primitive of the selected element — one MEI id can own
+    /// Highlight every primitive of the selected element -- one MEI id can own
     /// several (a note is a notehead plus its stem), so the whole gesture of it
     /// lights up rather than one glyph of it.
     fn draw_selection(&self, mesh: &mut Mesh, fit: Affine, color: Color) {
@@ -176,7 +176,7 @@ impl ScoreData {
     }
 
     /// The ledger lines a notehead centred on page-y `y` needs on `staff`,
-    /// outward from it — empty while the note is on the staff. One line per
+    /// outward from it -- empty while the note is on the staff. One line per
     /// whole line position past the staff's own, and a note in the space
     /// *beyond* the last one gains no further line: the engraving rule, and the
     /// reason this is not simply "one line per step".
@@ -204,7 +204,7 @@ impl ScoreData {
         let drag = self.drag.as_ref()?;
         // the element's first primitive is its notehead (verovio draws it
         // before the stem), which is what a ledger line is centred on and sized
-        // from — the stem and flag would stretch the box out of shape.
+        // from -- the stem and flag would stretch the box out of shape.
         let head = self.hits.iter().find(|h| h.id == drag.id)?.bounds;
         let y = 0.5 * (head.y0 + head.y1);
         let staff = self.staff_at(y)?;
@@ -220,13 +220,13 @@ impl ScoreData {
 }
 
 /// A ledger line reaches past the notehead by about a fifth of its width on
-/// each side, and is stroked heavier than a staff line — verovio's proportions,
+/// each side, and is stroked heavier than a staff line -- verovio's proportions,
 /// so a previewed ledger sits among the engraved ones without looking foreign.
 const LEDGER_OVERHANG: f32 = 0.22;
 const LEDGER_WEIGHT: f32 = 1.7;
 
 /// What the drag preview owes the page in ledger lines: `ys` to draw across
-/// `x0..x1`, and the `staff` they belong to — which is also what identifies the
+/// `x0..x1`, and the `staff` they belong to -- which is also what identifies the
 /// engraved ledger lines the dragged notehead is leaving behind.
 struct Ledgers {
     ys: Vec<f32>,
@@ -237,7 +237,7 @@ struct Ledgers {
 }
 
 impl Ledgers {
-    /// Whether this primitive is a ledger line of the dragged notehead — a
+    /// Whether this primitive is a ledger line of the dragged notehead -- a
     /// short horizontal stroke off the staff, over the notehead's own column.
     /// The engraver draws them per staff, not inside the note, so they carry
     /// the staff's id and cannot travel with it: they are dropped from the
@@ -284,7 +284,7 @@ fn xf_shrink(xf: Affine) -> f32 {
 /// Parse an SVG path `d`, flatten + fill it with lyon, and emit the triangles
 /// into `mesh` after mapping each vertex through `xf`. Tessellation happens in
 /// the path's own coordinate space (tolerance `tol`), then the resulting
-/// vertices are mapped — cheaper than transforming every bezier control point,
+/// vertices are mapped -- cheaper than transforming every bezier control point,
 /// and correct because `xf` is affine.
 pub(super) fn fill_path(
     mesh: &mut Mesh,

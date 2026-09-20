@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""The application shell: menu bar, working area, a report strip — layout props.
+"""The application shell: menu bar, working area, a report strip -- layout props.
 
 Every widget takes the **generic place props** and every container the flow
 props, so a GuiDef composes a real application face from the same light
 elements a control panel uses:
 
-- ``w``/``h`` fix a child's main-axis size in a ``row``/``col`` — the menu bar
+- ``w``/``h`` fix a child's main-axis size in a ``row``/``col`` -- the menu bar
   and the report strip here are ``h``-fixed rows;
-- ``weight`` shares the leftover among the flexible children (default 1) —
+- ``weight`` shares the leftover among the flexible children (default 1) --
   the working area takes everything between the two bars, and inside it the
   sidebar is ``w``-fixed while the scope stretches;
 - ``margin``/``gap`` tune a container's inset and spacing (the shell sets both
   to 0 so the bars run edge to edge, and reintroduces them inside);
 - in a ``free`` container, ``x``/``y`` (+ ``w``/``h``) place a child
-  absolutely — not used here, same props, different layout.
+  absolutely -- not used here, same props, different layout.
 
 Those numbers are **logical pixels**: the host multiplies every declared length
 (and every ``text_size``) by the display's own scale, one scale per window,
@@ -40,9 +40,9 @@ content plane, which carries a zoom of its own -- see ``workspace.py``.
 
 Everything is live: the sidebar's controls retune a quiet server voice, the
 oscilloscope draws the server's **actual stereo output** (the two hardware output buses,
-buses 0/1, read by the host from shared memory — zero per-frame messages),
+buses 0/1, read by the host from shared memory -- zero per-frame messages),
 and the report strip is a plain ``label`` the script rewrites via ``set`` on
-every event — the whole "application" is one GuiDef plus ordinary client
+every event -- the whole "application" is one GuiDef plus ordinary client
 code.
 
 That strip is the **script's**, and it is not the host's status bar. The band
@@ -57,8 +57,8 @@ Install once, from the repo root::
     python -m venv .venv
     .venv/bin/pip install -e ./clients/python      # bundles the server + GUI binaries
 
-Run it cell by cell (Shift+Enter), or as a plain script —
-``python clients/python/examples/panels/shell.py`` — which stays open for a
+Run it cell by cell (Shift+Enter), or as a plain script --
+``python clients/python/examples/panels/shell.py`` -- which stays open for a
 while, then tears everything down. Needs a display, a GPU adapter and an
 audio device.
 """
@@ -74,7 +74,7 @@ from clausters.defs import Synth
 # %% [markdown]
 # ## Launch the server and the GUI
 # `Session.live()` boots the server with a shared-memory segment (`shm="auto"`),
-# and `session.gui()` maps the same segment — the oscilloscope reads the audio
+# and `session.gui()` maps the same segment -- the oscilloscope reads the audio
 # buses straight from it.
 
 # %%
@@ -84,7 +84,7 @@ gui = session.gui()
 
 # %% [markdown]
 # ## A quiet voice to drive from the shell
-# A gated sine (amp well below the default — this is a layout demo, not a
+# A gated sine (amp well below the default -- this is a layout demo, not a
 # listening test) with the conventional `freq`/`amp`/`gate` surface.
 
 # %%

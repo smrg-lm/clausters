@@ -9,12 +9,12 @@ verbs (``play``, ``render``, ``plot``, ``scope``), the three hosts (`Session`,
 `Server`, `GuiHost`), the server's resources, the three def formats, the
 timing types, the handful of grid and unit conversions beside them (``bar``,
 ``beat_in_bar``, ``quant_delay``, ``secs_to_samples``, ``samples_to_secs``),
-and the layer modules themselves. Everything enumerative — the UGen and
+and the layer modules themselves. Everything enumerative -- the UGen and
 signal callables, the value patterns, the GUI widgets, the sixty-odd numeric
-builtins — is named through its module (``defs.sine``, ``seq.Pbind``,
+builtins -- is named through its module (``defs.sine``, ``seq.Pbind``,
 ``gui.knob``, ``builtins.midicps``): there are too many of them for a flat
 namespace to stay readable. ``builtins`` is one of those modules and is named
-at the top level for that reason — it is `clausters.builtins`, which shadows
+at the top level for that reason -- it is `clausters.builtins`, which shadows
 nothing, and not Python's own. The transports and the
 process launchers are named through theirs (`clausters.ipc`,
 `clausters.launch`), because you reach them as a return value or an argument
@@ -22,65 +22,65 @@ of the layer above, not by instantiating them.
 
 The layers:
 
-- `clausters.ipc` — the low-level local transports (embedded server, shared
+- `clausters.ipc` -- the low-level local transports (embedded server, shared
   memory, offline render), reached through `Session.embedded` and
   ``Server.shm`` rather than built by hand. The top-level ``render`` is the
   dispatching verb (`clausters.render`), whose ``bytes`` branch is exactly
   `clausters.ipc.render`.
-- `clausters.log` — what the client did, said out loud: every command sent to
+- `clausters.log` -- what the client did, said out loud: every command sent to
   the audio server and to the GUI host, every reply, and the editing path's own
   joints. Silent unless asked (`clausters.log.watch`, or ``CLAUSTERS_LOG=1``),
   because the library is one half of a conversation and a traceback says
   nothing about the other half.
-- `clausters._native` — the ctypes binding over the shared native core
+- `clausters._native` -- the ctypes binding over the shared native core
   (``clausters-ffi``): builtins, seeded white noise and clock/sample math, all
   matching the server by construction.
-- `clausters.base` — the server-agnostic base layer: builtins, absobject,
+- `clausters.base` -- the server-agnostic base layer: builtins, absobject,
   stream, clock, netaddr, the OSC/MIDI destination interfaces and the OSC wire
   encoder.
-- `clausters.seq` — the sequencing layer: events, value patterns and ``Pbind``,
+- `clausters.seq` -- the sequencing layer: events, value patterns and ``Pbind``,
   the event-stream player, and timelines that play themselves. `Event`,
   `rest` and `Timeline` are re-exported here; the ``P*`` patterns
   are not, and stay under `clausters.seq`.
-- `clausters.defs` — the definition layer and server resources: the
+- `clausters.defs` -- the definition layer and server resources: the
   ``signals``/`FaustDef` pair, the UGen-graph ``ugens``/`SynthDef` pair, the
-  node/bus/buffer handles and the `Server`. Its core names — `Server`,
+  node/bus/buffer handles and the `Server`. Its core names -- `Server`,
   `ServerOptions`, `Synth`, `Group`, `AddAction`, `SynthDef`, `FaustDef`,
-  `GraphDef`, `Bus`, `Buffer` — are re-exported here; the UGen and signal
+  `GraphDef`, `Bus`, `Buffer` -- are re-exported here; the UGen and signal
   callables are not, and stay under `clausters.defs`.
-- `clausters.data` — what the server keeps *sending*, because what is being
+- `clausters.data` -- what the server keeps *sending*, because what is being
   watched changes faster than anything could ask: control buses
   (`clausters.data.BusStream`), an audio bus's samples
   (`clausters.data.TapStream`) and a take as it records
   (`clausters.data.RecordingStream`). The GUI host reads the same three paths
   itself; this is them opened to the script.
-- `clausters.form` — a **frozen** algebra of elements
+- `clausters.form` -- a **frozen** algebra of elements
   over the sequencing/def layers, for composing at any granularity.
-- `clausters.segments` — a **window onto contents** and a run of windows read
+- `clausters.segments` -- a **window onto contents** and a run of windows read
   as one: what a join assembles and a split takes apart, over samples
   (`BufferSegments`) or over a timeline of events (`NoteSegments`). A window is
   about the contents, not about where they sit in time, which is why it is
   here and not in the arrangement.
-- `clausters.responders` — `OscFunc`/`MidiFunc`, callbacks on incoming OSC
+- `clausters.responders` -- `OscFunc`/`MidiFunc`, callbacks on incoming OSC
   replies and live MIDI.
-- `clausters.gui` — the `GuiHost` and GuiDef building for the Clausters GUI
+- `clausters.gui` -- the `GuiHost` and GuiDef building for the Clausters GUI
   host. The host is re-exported here; the widget callables are not.
-- `clausters.play` — the free-standing `play`, one verb for every playable,
+- `clausters.play` -- the free-standing `play`, one verb for every playable,
   resolved against the ambient session.
-- `clausters.render` — the free-standing `render`, one verb for the change
+- `clausters.render` -- the free-standing `render`, one verb for the change
   of state to sound: scores, defs and bare expressions, arrangement
   elements, timelines, patterns and routines, bounced offline to samples or
   a WAV (or delegated to a live destination).
-- `clausters.plot` / `clausters.scope` — the free-standing visual verbs: one
+- `clausters.plot` / `clausters.scope` -- the free-standing visual verbs: one
   window per call on the ambient GUI host, for a rendered signal (`plot`) or
   a live bus through the server's audio taps (`scope`).
-- `clausters.session` — `Session`, an explicit isolated environment; and the
+- `clausters.session` -- `Session`, an explicit isolated environment; and the
   default session (`default_session`) it falls back to.
-- `clausters.launch` — launching and owning the server and GUI processes.
+- `clausters.launch` -- launching and owning the server and GUI processes.
   You drive these through `Session.live` / `Session.gui` and `Server.boot` /
   ``GuiHost.boot``, which own the processes and read their choices back
   (``Server.shm`` is the segment ``shm="auto"`` picked).
-- `clausters.config` — the shared TOML configuration, read-only.
+- `clausters.config` -- the shared TOML configuration, read-only.
 """
 
 from . import _native
@@ -125,7 +125,7 @@ from .session import Session
 
 __all__ = [
     # the layers, for the names too many to spell out flat: the UGen and
-    # signal callables (defs), the value patterns (seq), the widgets (gui) —
+    # signal callables (defs), the value patterns (seq), the widgets (gui) --
     # and the transports and process launchers (ipc, launch), which you reach
     # through Session and Server rather than by instantiating them.
     "base",

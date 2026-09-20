@@ -4,8 +4,8 @@
 //! emits intents but holds no data; a client writes a multitrack through its
 //! own idiomatic surface (`clausters.form` in Python) but does not define what
 //! an edit *means*; the audio server stores sources and never edits at all.
-//! What sits between them — the tree, what an edit does to it, and what an
-//! edit's inverse is — is here, once, so that the three deployment modes
+//! What sits between them -- the tree, what an edit does to it, and what an
+//! edit's inverse is -- is here, once, so that the three deployment modes
 //! (client + host + server, the `standalone` host with no language at all, and
 //! a headless client) bind one model instead of re-deriving it.
 //!
@@ -19,11 +19,11 @@
 //! - **The tree stays general, and the arrangement is beside it rather than
 //!   projected out of it.** *(Changed 2026-09-06.)* This used to read "there is
 //!   no lane, no vertical position and no type-per-container here", with a
-//!   multitrack as a *projection* of the general tree — and a projection has
+//!   multitrack as a *projection* of the general tree -- and a projection has
 //!   nowhere to keep the state a multitrack has, so that state ended up in the
 //!   widget tree, which is drawn, and drawing frees. So [`multitrack`] holds
-//!   the model the field actually has — source, region, lane, track, automation
-//!   — and the general tree is what a
+//!   the model the field actually has -- source, region, lane, track, automation
+//!   -- and the general tree is what a
 //!   [`Content::Composite`](multitrack::Content::Composite) region *places*.
 //!   Nothing the tree could say is lost; it gains a position.
 //! - **Sources are never overwritten.** A [`SourceRef`] names samples and
@@ -33,7 +33,7 @@
 //! # The shape
 //!
 //! A [`Document`] is a version and a root [`Node`]. A node is temporal metadata
-//! — an optional onset and duration — plus a [`Body`] saying what it is. The
+//! -- an optional onset and duration -- plus a [`Body`] saying what it is. The
 //! onset is in **beats** and the duration is in the unit of the data it measures
 //! ([`Body::duration_unit`]: seconds for a body that references samples, beats
 //! for one made of events), which is the one thing about the shape a reader has
@@ -94,8 +94,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-/// Beats. The unit of every **onset** here — a member's offset, a node's own
-/// onset, the grid an edit snaps to — because a placement is a musical decision
+/// Beats. The unit of every **onset** here -- a member's offset, a node's own
+/// onset, the grid an edit snaps to -- because a placement is a musical decision
 /// and takes the unit of what contains it.
 pub type Beats = f64;
 
@@ -131,7 +131,7 @@ pub enum TimeUnit {
 /// A length already in beats never reaches one of these.
 pub type SecsToBeats<'a> = &'a dyn Fn(Beats, f64) -> Beats;
 
-/// The conversion for a multitrack at **one constant tempo** — the only case where
+/// The conversion for a multitrack at **one constant tempo** -- the only case where
 /// a length in seconds is a multiplication.
 ///
 /// Written out so a caller that genuinely has one number says so at the call
@@ -157,14 +157,14 @@ pub struct SourceId(pub u64);
 /// This is the whole of what makes one document serve every language: a
 /// generator is code, a def is a def, a pattern is a pattern, and the document
 /// knows only that something is there and where it sits. A writer that does not
-/// understand a payload preserves it — losing a generator's configuration on a
+/// understand a payload preserves it -- losing a generator's configuration on a
 /// round trip through a host that cannot read it would lose the multitrack.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Opaque(pub serde_json::Value);
 
 impl Opaque {
-    /// An empty configuration — a leaf whose author had nothing to say.
+    /// An empty configuration -- a leaf whose author had nothing to say.
     pub fn none() -> Self {
         Self(serde_json::Value::Null)
     }
@@ -231,7 +231,7 @@ pub struct SourceRef {
     /// The content generation last seen. Bumped by a destructive edit.
     ///
     /// **Defaulted, and that is not a convenience.** [`SegmentSource`] is
-    /// untagged, so a `SourceRef` that will not read does not fail — it falls
+    /// untagged, so a `SourceRef` that will not read does not fail -- it falls
     /// through to the next variant, and then the whole [`Body`] or
     /// [`Content`](crate::multitrack::Content) around it becomes `Unknown`. A
     /// window would quietly stop being a window, drawn as opaque and played by
@@ -248,8 +248,8 @@ pub struct SourceRef {
 /// What a window is onto: samples, or a **node of this document**.
 ///
 /// Two things a window can be over, and the difference is where the contents
-/// live. **Samples** live outside the document — a [`SourceRef`] names them and
-/// a session's table says where they are — which is what makes a window onto
+/// live. **Samples** live outside the document -- a [`SourceRef`] names them and
+/// a session's table says where they are -- which is what makes a window onto
 /// them cheap: two windows are two references and nothing is copied. A
 /// **node** is content the document itself holds, in [`Document::content`], and
 /// naming one gives exactly the same thing for contents the crate cannot put in
@@ -307,13 +307,13 @@ impl SegmentSource {
 
 /// One window of a [`Body::Segments`]: which source, from where, for how long.
 ///
-/// **Both are in the unit the source measures** — seconds for samples, whose
+/// **Both are in the unit the source measures** -- seconds for samples, whose
 /// seconds were fixed when they were recorded and which no tempo change moves;
 /// beats for a node.
 ///
 /// Said twice because it was written down wrong once: this said the *start* was
 /// in frames while [`multitrack::picture::Box::start`] said seconds, and every
-/// reader of it — the picture, the host, both clients — meant seconds. A unit
+/// reader of it -- the picture, the host, both clients -- meant seconds. A unit
 /// stated one way and meant the other is the cheapest possible bug to write and
 /// among the more expensive to find, since nothing about it is visible until a
 /// box plays from somewhere nobody put it. [`SourceRef::range`] is the one that
@@ -349,10 +349,10 @@ pub struct SegmentRef {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Grouping {
-    /// The members relate **in time** — a section holding clips, a melody
+    /// The members relate **in time** -- a section holding clips, a melody
     /// holding note clangs. No processing relation.
     Concrete,
-    /// The members relate by **processing or generation** — a bus-wired chain
+    /// The members relate by **processing or generation** -- a bus-wired chain
     /// on the server, a generative dependency on the client.
     Logical,
 }
@@ -360,7 +360,7 @@ pub enum Grouping {
 /// One placed member of a [`Body::Aggregate`]: an element, and where it sits.
 ///
 /// The offset is relative to the aggregate that holds it, which is what makes the
-/// recursion work — a subtree can be moved by moving one number.
+/// recursion work -- a subtree can be moved by moving one number.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Member {
     /// Start, in beats, relative to the enclosing aggregate.
@@ -380,7 +380,7 @@ impl Member {
         self.dur.or(self.node.duration)
     }
 
-    /// The unit [`Member::length`] is in — the placed node's
+    /// The unit [`Member::length`] is in -- the placed node's
     /// ([`Node::duration_unit`]).
     pub fn duration_unit(&self) -> TimeUnit {
         self.node.duration_unit()
@@ -407,19 +407,19 @@ impl Member {
 /// each names a way samples can be organized rather than a widget or a file
 /// format:
 ///
-/// - [`Body::Clang`] — parameters or actions that happen **together**. One or
+/// - [`Body::Clang`] -- parameters or actions that happen **together**. One or
 ///   more, simultaneous. A punctual clang (no duration) may reference a
 ///   generator and fire it live.
-/// - [`Body::Sequence`] — a **fixed, non-simultaneous** succession. It may
+/// - [`Body::Sequence`] -- a **fixed, non-simultaneous** succession. It may
 ///   contain aggregates, so a sequence of sections is a sequence.
-/// - [`Body::Vector`] — a succession of data at **constant rate**.
+/// - [`Body::Vector`] -- a succession of data at **constant rate**.
 ///   [`Body::Segments`] is the same primitive assembled from several windows,
 ///   not a sixth kind.
 ///   Audio or control, and the only body that names samples directly.
-/// - [`Body::Aggregate`] — the **recursive container**. Its job is to group elements,
+/// - [`Body::Aggregate`] -- the **recursive container**. Its job is to group elements,
 ///   of mixed kinds, and it is what a multitrack lane is a restricted
 ///   projection *of*.
-/// - [`Body::Generator`] — a **program that produces** any of the others,
+/// - [`Body::Generator`] -- a **program that produces** any of the others,
 ///   generators included: a def, a pattern, a routine. Its code is opaque; what
 ///   it produces is ordinary tree.
 ///
@@ -433,7 +433,7 @@ pub enum Body {
         /// The clang itself, in the client's terms.
         #[serde(default, skip_serializing_if = "Opaque::is_empty")]
         config: Opaque,
-        /// The generator this clang fires when it happens, if any — the
+        /// The generator this clang fires when it happens, if any -- the
         /// reference that makes structure resolvable at run time rather than
         /// only at render time.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -453,24 +453,24 @@ pub enum Body {
     Vector {
         /// The samples.
         source: SourceRef,
-        /// How these samples are meant to sound — a vector is *data*, so what
+        /// How these samples are meant to sound -- a vector is *data*, so what
         /// plays it (an instrument, its controls) is configuration, and
         /// configuration is the client's to interpret.
         #[serde(default, skip_serializing_if = "Opaque::is_empty")]
         config: Opaque,
     },
     /// Data at constant rate, assembled from **several windows**: which source,
-    /// from which frame, for how long — read back to back as one thing.
+    /// from which frame, for how long -- read back to back as one thing.
     ///
     /// It is the same primitive [`Body::Vector`] is, over more than one multitrack
     /// of samples: joining fragments of two files makes one, and cutting one
     /// apart gives back the windows it was made of. Nothing is copied, which is
-    /// the whole point — the segments are references, exactly as a vector's own
+    /// the whole point -- the segments are references, exactly as a vector's own
     /// is.
     Segments {
         /// The samples, in reading order.
         segments: Vec<SegmentRef>,
-        /// How it is meant to sound — one configuration for the whole of it,
+        /// How it is meant to sound -- one configuration for the whole of it,
         /// because what this element *is* is one thing to play.
         #[serde(default, skip_serializing_if = "Opaque::is_empty")]
         config: Opaque,
@@ -483,7 +483,7 @@ pub enum Body {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         members: Vec<Member>,
         /// The writer's own restrictions on this aggregate, carried and **never
-        /// interpreted** — the same door a generator's code goes through.
+        /// interpreted** -- the same door a generator's code goes through.
         ///
         /// There is one aggregate kind here and there will go on being one: a
         /// multitrack's track is *an aggregate with the restrictions of a view*, and
@@ -500,7 +500,7 @@ pub enum Body {
     },
     /// A program that produces elements.
     Generator {
-        /// The generator's own configuration — code, or a reference to it.
+        /// The generator's own configuration -- code, or a reference to it.
         /// Opaque by construction.
         #[serde(default, skip_serializing_if = "Opaque::is_empty")]
         config: Opaque,
@@ -509,7 +509,7 @@ pub enum Body {
         /// The change of state the arrangement already has a verb for: a
         /// generator element becoming a generated one, by being *rendered*.
         /// It is here rather than derived because a host with no language
-        /// attached has nothing to derive it with — a generator is code, and
+        /// attached has nothing to derive it with -- a generator is code, and
         /// the frozen result is the whole of what such a host can show.
         ///
         /// It is reachable by [`Node::walk`] and [`Node::find`], because a
@@ -532,7 +532,7 @@ pub enum Body {
 pub enum Relation {
     /// Duration-only members tiling contiguously.
     Successive,
-    /// Every member starts and ends together — the container that can be
+    /// Every member starts and ends together -- the container that can be
     /// reinterpreted, which is what enables the recursion.
     Simultaneous,
     /// Any other combination.
@@ -544,9 +544,9 @@ pub enum Relation {
 pub enum Character {
     /// Both an onset and a duration.
     Segment,
-    /// An onset and no duration — a point in time.
+    /// An onset and no duration -- a point in time.
     Punctual,
-    /// A duration and no onset — a length waiting to be placed.
+    /// A duration and no onset -- a length waiting to be placed.
     Relative,
     /// Neither: a container that only a parent gives concrete time.
     Abstract,
@@ -562,7 +562,7 @@ pub struct Node {
     /// The rule is the server's own, taken verbatim rather than invented here
     /// (`docs/schemas.md`, on `/group_new`'s name): the id remains what every
     /// intent addresses and every outcome reports, and the name is a second way
-    /// to *refer* to the same node — one the author chooses, that says what the
+    /// to *refer* to the same node -- one the author chooses, that says what the
     /// node is, and that survives being read back. A node is born named or
     /// stays anonymous; an anonymous one is reachable exactly as before,
     /// because nothing addresses by name.
@@ -576,7 +576,7 @@ pub struct Node {
     /// one. A placed element usually takes its onset from its [`Member`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub onset: Option<Beats>,
-    /// Length, when known, **in the unit of the body** — seconds for a body
+    /// Length, when known, **in the unit of the body** -- seconds for a body
     /// that references samples, beats for one made of events. Read it
     /// through [`Node::duration_unit`] rather than assuming one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -637,7 +637,7 @@ impl Node {
         self.body.members()
     }
 
-    /// The unit this node's `duration` — and the `dur` of any placement of it —
+    /// The unit this node's `duration` -- and the `dur` of any placement of it --
     /// is in. See [`Body::duration_unit`].
     pub fn duration_unit(&self) -> TimeUnit {
         self.body.duration_unit()
@@ -651,7 +651,7 @@ impl Node {
         }
     }
 
-    /// Visits this node and every node below it, parents before children —
+    /// Visits this node and every node below it, parents before children --
     /// including a generator's rendered result, which a reader must see.
     pub fn walk(&self, visit: &mut impl FnMut(&Node)) {
         visit(self);
@@ -676,7 +676,7 @@ impl Node {
 }
 
 impl Body {
-    /// What this body is called on the wire — its `kind` tag, and what a
+    /// What this body is called on the wire -- its `kind` tag, and what a
     /// message about a node says it is.
     pub fn kind(&self) -> &'static str {
         match self {
@@ -690,8 +690,8 @@ impl Body {
         }
     }
 
-    /// This body's configuration — the client's own terms, carried and never
-    /// interpreted — for the bodies that have one.
+    /// This body's configuration -- the client's own terms, carried and never
+    /// interpreted -- for the bodies that have one.
     ///
     /// Public because a **reader** needs it as much as [`Intent::Configure`]
     /// does: a driver drawing a document has to show what a leaf says about
@@ -794,12 +794,12 @@ impl Body {
 ///
 /// The version is the document half of the two counters (the other is each
 /// [`SourceRef`]'s `generation`). It is what lets an intent made against a
-/// stale picture be reported as stale rather than applied blind — the case a
+/// stale picture be reported as stale rather than applied blind -- the case a
 /// log alone cannot see, because the document can move by routes that are not
 /// gestures: a script editing the multitrack, a second editor, a re-render.
 ///
 /// **A version starts at one**, because zero is what an
-/// [`intent::Against`] means by *unstated* — the same reservation the GUI
+/// [`intent::Against`] means by *unstated* -- the same reservation the GUI
 /// host's sequence numbers make, and for the same reason: an unedited document
 /// is a real state that an editor must be able to name, so it cannot share a
 /// number with "I cannot say".
@@ -813,13 +813,13 @@ pub struct Document {
     /// **Content the tree reads rather than places**: the nodes a
     /// [`SegmentSource::Node`] names.
     ///
-    /// The tree is placement — where things sit and how they nest — and every
+    /// The tree is placement -- where things sit and how they nest -- and every
     /// node in it is somewhere at some time. This is the other half, and it
     /// exists for the same reason a session has a source table: **two windows
     /// onto one thing need the thing to live somewhere neither of them owns**.
     /// Samples solve it by living outside the document entirely; a timeline of
     /// notes cannot, because its notes are nodes an intent has to be able to
-    /// name, so it lives here instead — once, with its own ids, referred to by
+    /// name, so it lives here instead -- once, with its own ids, referred to by
     /// as many windows as the multitrack has.
     ///
     /// Empty in every document that has no shared content, which is why it is
@@ -886,7 +886,7 @@ impl Document {
         ))
     }
 
-    /// Whether this is [`Document::empty`] and nothing else — an unedited,
+    /// Whether this is [`Document::empty`] and nothing else -- an unedited,
     /// anonymous, empty aggregate with no content beside it.
     ///
     /// What a session consults before writing the field at all, so a session
@@ -896,7 +896,7 @@ impl Document {
         *self == Self::empty()
     }
 
-    /// The same document with `content` held beside the tree — the nodes a
+    /// The same document with `content` held beside the tree -- the nodes a
     /// [`SegmentSource::Node`] names.
     pub fn with_content(mut self, content: Vec<Node>) -> Self {
         self.content = content;
@@ -905,7 +905,7 @@ impl Document {
 
     /// Every node of this document: the tree, then the content it reads.
     ///
-    /// Content is not placement, so it is not *in* the tree — but it is in the
+    /// Content is not placement, so it is not *in* the tree -- but it is in the
     /// document, and everything that asks "what nodes are there" (an id check,
     /// a source table, a staleness scan) means both halves.
     pub fn walk(&self, visit: &mut impl FnMut(&Node)) {
@@ -923,19 +923,19 @@ impl Document {
     }
 
     /// The first node id that names two **different** nodes, described so the
-    /// message says which two — or `None`, which is what a document must be.
+    /// message says which two -- or `None`, which is what a document must be.
     ///
     /// **An id names one node.** An intent addresses a node by its id, and an
     /// id that names two different things is applied to whichever the lookup
     /// reaches first while the client that sent it keeps the other: one
     /// gesture, two destinations, and on screen the thing the hand moved comes
     /// back to where it was. Nothing downstream can recover from it, so it is
-    /// refused at the door — checked every time a document is deserialized,
+    /// refused at the door -- checked every time a document is deserialized,
     /// which is the one place every writer passes through.
     ///
     /// **A repeated id whose nodes are identical is carried, not refused**, and
     /// the line is deliberate. That is one element *placed twice*: the document
-    /// is ambiguous — which placement does an intent name? — but it is
+    /// is ambiguous -- which placement does an intent name? -- but it is
     /// consistent, and what an id identifies in that case is an open question
     /// with three answers, one of which is to forbid it. Refusing here would
     /// pick that answer by accident, from inside a check about something else.

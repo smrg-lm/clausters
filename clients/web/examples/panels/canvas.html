@@ -21,8 +21,8 @@
     <main>
       <div id="note">A <code>canvas</code> widget runs a script-supplied WGSL
 shader over its area, ShaderToy-style. The host gives the shader three uniforms
-— <code>u.time</code>, <code>u.resolution</code> and a <code>u.params</code>
-vec4 — and the params are driven <b>two ways</b>, which is the whole point of
+-- <code>u.time</code>, <code>u.resolution</code> and a <code>u.params</code>
+vec4 -- and the params are driven <b>two ways</b>, which is the whole point of
 the widget:
 
 <code>u.params.x</code> from the <b>script</b>: <code>set({ param0: … })</code>
@@ -32,7 +32,7 @@ frame (zero OSC), exactly the path the meters use. The <code>buses</code>
 argument maps a control bus onto a param slot.
 
 So the same shader animates from an OSC parameter and from live server audio at
-once — which needs the host's client leg pointed at the server, wired by
+once -- which needs the host's client leg pointed at the server, wired by
 <code>session.gui()</code>.</div>
 
       <div class="row">
@@ -112,7 +112,7 @@ fn shade(uv: vec2<f32>, frag: vec4<f32>) -> vec4<f32> {
         clearInterval(sweeping);
         $("stop").disabled = true;
         log("the sweep stopped: the ring holds and the green channel holds, "
-          + "but `u.time` keeps running — the host draws either way");
+          + "but `u.time` keeps running -- the host draws either way");
       };
     </script>
   </body>

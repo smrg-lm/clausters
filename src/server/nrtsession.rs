@@ -1,16 +1,16 @@
-//! The NRT server driven by commands instead of by a score — the mode an
+//! The NRT server driven by commands instead of by a score -- the mode an
 //! editor works in.
 //!
 //! [`super::render`] is the batch side: it takes a whole score and returns a
 //! file, start to end. An editor cannot work that way, because interaction is
-//! not predictable — it answers a document, not a timeline. This module is the
+//! not predictable -- it answers a document, not a timeline. This module is the
 //! same engine taking **operations on demand**.
 //!
 //! **There is no server clock.** Nothing advances between commands and nothing
 //! can be scheduled against a running `now`: the only thing that moves time is
 //! [`NrtSession::run`], and it moves exactly the frames it was asked for. Two
 //! tiers follow from that and conflating them is the mistake this module exists
-//! to prevent — a **buffer-editing** command has no timeline in any sense
+//! to prevent -- a **buffer-editing** command has no timeline in any sense
 //! (applying a gain to a span is not an event at an instant), while a **render**
 //! operation has one *internally*: a self-contained score starting at 0 and
 //! lasting the span. So determinism here is of **process, not of time**: the
@@ -26,7 +26,7 @@
 //! is only who owns the clock: here the caller does, and it hands it over one
 //! operation at a time.
 //!
-//! **In this mode a pool buffer may be mutated in place** — the immutability
+//! **In this mode a pool buffer may be mutated in place** -- the immutability
 //! contract is a real-time rule, not a property of a buffer, and there is no
 //! audio thread here to race. Nothing in this module does that yet; it is what
 //! the editing verbs will use.
@@ -53,7 +53,7 @@ pub struct SessionConfig {
     /// DSP helper threads for `/group_parallel` groups; 0 runs everything on
     /// the calling thread.
     pub workers: usize,
-    /// Starting seed for the stochastic UGens. `None` takes a fresh one — the
+    /// Starting seed for the stochastic UGens. `None` takes a fresh one -- the
     /// same choice `RenderConfig::seed` offers, and the same reason to pin it:
     /// an operation is only repeatable if its seed is.
     pub seed: Option<u64>,
@@ -161,7 +161,7 @@ impl NrtSession {
                     format!("cannot open the shared segment at {}: {e}", path.display())
                 })?;
                 // A session is driven through the ring, so it has to be the
-                // one serving it — and it owns the samples it publishes.
+                // one serving it -- and it owns the samples it publishes.
                 // Finding the command plane taken means another server is
                 // already the owner here, which is a wiring mistake worth
                 // saying out loud rather than half-working.
@@ -189,7 +189,7 @@ impl NrtSession {
         // **The clocks belong to the device, and this mode has none.** The
         // frames a session runs are what an operation asked for, not time
         // passing, so publishing them into the segment would report a playhead
-        // that moves whenever somebody applies a fade — and in the arrangement
+        // that moves whenever somebody applies a fade -- and in the arrangement
         // this mode exists for, the process that *does* have a device is
         // writing those very words from another process.
         engine.silence_time_publication();
@@ -197,14 +197,14 @@ impl NrtSession {
             nominal_sample_rate: cfg.sample_rate,
             actual_sample_rate: cfg.sample_rate,
         };
-        // Headless: no socket, and a sample clock rather than a wall one —
+        // Headless: no socket, and a sample clock rather than a wall one --
         // the same `TimeSource` the offline drive already uses, because a
         // session that answered `/clock_query` with the wall clock would be
         // reporting a time nothing here advances.
         let mut server = OscServer::headless(info, handle, 0.0);
         let seed = cfg.seed.unwrap_or_else(clausters_core::rng::entropy_seed);
         server.set_seed(seed);
-        // This driver owns the clock, so `/buffer_render` is legal here — and
+        // This driver owns the clock, so `/buffer_render` is legal here -- and
         // only here.
         server.enable_offline_renders();
         server
@@ -212,7 +212,7 @@ impl NrtSession {
             .map_err(|e| e.to_string())?;
         if let Some(path) = &cfg.shm {
             // With a segment on disk, every buffer this session installs lives
-            // in a region beside it — which is what lets an editor draw and
+            // in a region beside it -- which is what lets an editor draw and
             // write the samples of a server that has no audio device at all.
             server.share_buffers_at(path.clone());
         }
@@ -255,7 +255,7 @@ impl NrtSession {
     }
 
     /// Delivers one complete OSC packet. `false` means the ring was
-    /// momentarily full — retry after [`Self::settle`].
+    /// momentarily full -- retry after [`Self::settle`].
     pub fn send(&self, packet: &[u8]) -> bool {
         self.peer.push(crate::server::ipc::DEFAULT_PEER, packet)
     }
@@ -284,7 +284,7 @@ impl NrtSession {
     /// completed `/buffer_alloc` reaches the pool as `Cmd::SetBuffer` and only
     /// the engine can install it, which in real time the next block does a
     /// millisecond later. Here there is no next block until an operation asks
-    /// for one, so the engine drains explicitly — the alternative being to
+    /// for one, so the engine drains explicitly -- the alternative being to
     /// process a block nobody wanted, which is the clock this mode is defined
     /// as not having.
     ///
@@ -306,13 +306,13 @@ impl NrtSession {
         quit
     }
 
-    /// Runs the graph for `frames` and installs the result in buffer `index` —
+    /// Runs the graph for `frames` and installs the result in buffer `index` --
     /// the body of `/buffer_render`, and reachable directly for a caller that
     /// is already in Rust.
     ///
     /// What lands is `frames` frames of the first [`Self::channels`] output
     /// buses, and it **replaces** what the index held rather than being laid
-    /// into it — the operation's own length and width are what they are, and
+    /// into it -- the operation's own length and width are what they are, and
     /// fitting them into a shape allocated earlier would mean either truncating
     /// a render or leaving half a buffer stale. The index must already be
     /// allocated, which is the caller saying that slot is the one they mean.
@@ -360,7 +360,7 @@ impl NrtSession {
         Ok(())
     }
 
-    /// [`Self::run`] into a fresh interleaved buffer — the shape an operation
+    /// [`Self::run`] into a fresh interleaved buffer -- the shape an operation
     /// that has to hand its samples back wants.
     pub fn run_to_vec(&mut self, frames: u64) -> Result<Vec<f32>, String> {
         let mut out = Vec::with_capacity(frames as usize * self.channels);
@@ -380,7 +380,7 @@ impl Drop for NrtSession {
         self.segment.release_control();
         // And a session that created its segment takes it with it, regions
         // and all. Unlinking leaves every mapping a player still holds valid
-        // until it drops it — the same property freeing one buffer relies on —
+        // until it drops it -- the same property freeing one buffer relies on --
         // so this ends the samples rather than pulling it out from under
         // somebody.
         let Some(path) = self.owned_segment.take() else {

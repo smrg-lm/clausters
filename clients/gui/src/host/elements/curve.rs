@@ -1,4 +1,4 @@
-//! `curve` — a drawable break-point function, standing on its own or filling a
+//! `curve` -- a drawable break-point function, standing on its own or filling a
 //! clip's automation body.
 //!
 //! **One element, two placements**, which is the whole reason it is the leaf
@@ -7,7 +7,7 @@
 //! handed the container's axis ([`Ctx::time`]) and draws bare against it, over
 //! the clip's span. The mapping is one object either way ([`bpf::Axes`]), so a
 //! breakpoint is grabbed by the pixels it was drawn on and the edit that leaves
-//! is the same `"points"` payload — a script consumes it without caring which
+//! is the same `"points"` payload -- a script consumes it without caring which
 //! view drew it.
 //!
 //! The edit is expressed in the **owner's terms**: the whole breakpoint list in
@@ -32,7 +32,7 @@ use crate::host::{font, metrics::Metrics, ruler};
 use crate::viewport::View;
 
 /// A break-point function over `[min, max]`, using the server's own envelope
-/// shape numbers — what it draws is what an `EnvGen` plays.
+/// shape numbers -- what it draws is what an `EnvGen` plays.
 #[derive(Debug, Clone)]
 pub struct Curve {
     points: Vec<BpfPoint>,
@@ -43,7 +43,7 @@ pub struct Curve {
     duration: f64,
     exp: bool,
     label: Option<String>,
-    /// The grab in flight — the state that used to be two `Drag` variants,
+    /// The grab in flight -- the state that used to be two `Drag` variants,
     /// because the widget could not hold it.
     grab: Option<Grab>,
     /// Whether a hand may edit this curve. See `notes::Notes::editable`: the
@@ -61,7 +61,7 @@ pub struct Curve {
     /// clip's automation is drawn against the clip's axes and rules nothing.
     editor: EditorProps,
     /// Whether this curve is a **container's body** rather than a view of its
-    /// own — the one thing the placement cannot be asked, now that a standalone
+    /// own -- the one thing the placement cannot be asked, now that a standalone
     /// curve is a navigation-group member too and so is handed a
     /// [`TimeSpace`] exactly like a body is.
     ///
@@ -86,7 +86,7 @@ struct Regions {
 enum Grab {
     Point(usize),
     /// A segment bent by a vertical drag, measured **from the press**: the y it
-    /// started at and the curvature it had. Absolute, not incremental — see
+    /// started at and the curvature it had. Absolute, not incremental -- see
     /// [`points::bend_curve`] for what the incremental form got wrong.
     Segment {
         index: usize,
@@ -105,8 +105,8 @@ pub(super) fn build(
 /// The **body** flavor: the same element, drawn inside a rectangle a container
 /// already decided and over the axis that container hands it.
 ///
-/// It is the same parse as a standalone curve's — one product of one set of
-/// props, which is what keeps the two placements from drifting — with the
+/// It is the same parse as a standalone curve's -- one product of one set of
+/// props, which is what keeps the two placements from drifting -- with the
 /// chrome dropped and the placement told. What a multitrack builds through this
 /// is both of its curves: a track automation's row and a box's envelope layer
 /// are the same element in two places, and the only difference between them is
@@ -159,7 +159,7 @@ impl Curve {
     /// element in two places" costs. A **body** fills the rectangle its clip
     /// drew; a **view** draws inside its own field, with the strips and the
     /// label outside it. Either one follows the group's window when it is on a
-    /// navigation group ([`Ctx::time`]) and its own domain when it is on none —
+    /// navigation group ([`Ctx::time`]) and its own domain when it is on none --
     /// so a curve stacked with a ruler shows the ruler's time, and a curve
     /// standing alone shows all of itself.
     fn axes(
@@ -243,7 +243,7 @@ impl Curve {
     /// take right now.
     ///
     /// A body only owns the rectangle while it is the container's active edit
-    /// layer — inactive, the rectangle means the clip's own drag. A **view**
+    /// layer -- inactive, the rectangle means the clip's own drag. A **view**
     /// owns its field always: sharing an axis with a ruler is not being layered
     /// under anything, and a group hands out no active layer for a member to be.
     fn active(&self, time: Option<TimeSpace>) -> bool {
@@ -295,8 +295,8 @@ impl Curve {
     }
 
     /// The edit-back payload: the `"points"` tag plus the flat `t v shape curve`
-    /// list — the envelope's own units, which is what its owner applies.
-    /// The break-points as they now stand — what a container holding this as
+    /// list -- the envelope's own units, which is what its owner applies.
+    /// The break-points as they now stand -- what a container holding this as
     /// a layer reports them *with its own identity* in front of, since there
     /// the payload is the whole multitrack's curves and not this one's.
     pub(crate) fn points(&self) -> &[BpfPoint] {
@@ -318,7 +318,7 @@ impl Element for Curve {
                 self.editable = on;
                 true
             }
-            // The full breakpoint list replaces in one set — the flat
+            // The full breakpoint list replaces in one set -- the flat
             // `[t, v, shape, curve, …]` array, or that array as a JSON string
             // (the `/gui_set` scalar carrier).
             "points" => match points::parse_points(v, self.min, self.max) {
@@ -361,9 +361,9 @@ impl Element for Curve {
             self.draw_rulers(d, ctx);
         }
         // What a bend would take: the segment being held, or the one under the
-        // pointer when nothing is. Only where the curve can be edited at all —
+        // pointer when nothing is. Only where the curve can be edited at all --
         // an affordance over a read-only body would announce a gesture that is
-        // about to be refused — and only while this curve is the **active edit
+        // about to be refused -- and only while this curve is the **active edit
         // layer** of whatever placed it. That is the defect this closes: inside
         // a clip the segment used to light up whether or not the curve was the
         // layer in hand, and a press there moved the clip, which is exactly the
@@ -399,13 +399,13 @@ impl Element for Curve {
     }
 
     /// A clip's body: the line over the clip's own axis, with none of the
-    /// chrome [`draw`](Self::draw) paints when it stands on its own — no label,
+    /// chrome [`draw`](Self::draw) paints when it stands on its own -- no label,
     /// no field, no border, because the clip drew those.
     ///
     /// **This existing is the whole of it.** `Element::draw_body` defaults to
     /// drawing nothing, and a curve went without it: a clip carrying `points`
     /// built its body, placed it and collected it for the pass, and the pass
-    /// called a method that did nothing — so an automation lane was an empty
+    /// called a method that did nothing -- so an automation lane was an empty
     /// rectangle in every client, native and browser alike. What hid it is that
     /// the tests drove `draw` with a `TimeSpace`, which is the *standalone*
     /// door taking the body-shaped branch, and the two doors are only the same
@@ -423,7 +423,7 @@ impl Element for Curve {
     }
 
     /// **A curve's own contents are its break-points and the segments between
-    /// them** — the line, not the field it is drawn over. Everything else in
+    /// them** -- the line, not the field it is drawn over. Everything else in
     /// the rectangle is the container's, which is how an automation drawn
     /// across a whole clip still leaves the clip draggable.
     ///
@@ -469,7 +469,7 @@ impl Element for Curve {
         // Bending a **segment** is the gesture of whoever holds the layer.
         // Standing on its own the whole field is the element's; inside a
         // container it is the element's while this curve is the **active**
-        // layer — which is what selecting the curve means, and what the lit
+        // layer -- which is what selecting the curve means, and what the lit
         // segment says is on offer. Inactive, the rectangle means the
         // container's own drag (moving a clip, resizing it), so the press goes
         // back to it.
@@ -490,13 +490,13 @@ impl Element for Curve {
 
     /// The curve follows the hand; **the edit leaves on release**.
     ///
-    /// One gesture is one edit — the rule `Drag::Draw` and `Drag::Sample`
+    /// One gesture is one edit -- the rule `Drag::Draw` and `Drag::Sample`
     /// already state at their own release, and the one this never had. A value
     /// per frame is a document edit per frame: a hundred entries in the history
     /// for one bend, and a hundred round trips whose acknowledgements the next
     /// frame outruns, so every frame after the first names a version its owner
     /// has moved past and comes back refused. The picture is then snapped to the
-    /// answer of the first frame, over and over — a curve trembling under the
+    /// answer of the first frame, over and over -- a curve trembling under the
     /// hand editing it.
     fn drag(&mut self, at: (f64, f64), input: &Input) -> Events {
         let ax = self.axes(input.rect, input.indent, input.metrics, input.time);
@@ -516,7 +516,7 @@ impl Element for Curve {
     }
 
     fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
-        // What the drag amounts to, once — see `drag`.
+        // What the drag amounts to, once -- see `drag`.
         let held = self.grab.take().is_some();
         if held {
             self.points_event()
@@ -607,7 +607,7 @@ mod tests {
         }
     }
 
-    /// A ramp with no label, so its field is the whole rect inset by the pad —
+    /// A ramp with no label, so its field is the whole rect inset by the pad --
     /// the geometry both placements are compared against.
     fn ramp() -> Curve {
         from_props(&props(
@@ -650,7 +650,7 @@ mod tests {
         assert!(matches!(c.grab, Some(Grab::Point(1))));
 
         // As a body: the container's rectangle *is* the field, and the window
-        // it hands down is what maps time to pixels — here the second half of
+        // it hands down is what maps time to pixels -- here the second half of
         // the clip, so the same last point sits at the same right edge.
         let mut c = ramp();
         let time = Some(TimeSpace::of(
@@ -668,8 +668,8 @@ mod tests {
         assert!(matches!(c.grab, Some(Grab::Point(1))));
     }
 
-    /// A drag reports the whole list in the envelope's own units — the owner's
-    /// terms, never a pixel delta — and the release adds nothing to it.
+    /// A drag reports the whole list in the envelope's own units -- the owner's
+    /// terms, never a pixel delta -- and the release adds nothing to it.
     #[test]
     fn a_point_drag_reports_the_edited_list() {
         let m = Metrics::default();

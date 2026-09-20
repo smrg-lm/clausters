@@ -1,17 +1,17 @@
-//! the embed C ABI (feature `embed`) — Clausters as a library.
+//! the embed C ABI (feature `embed`) -- Clausters as a library.
 //!
 //! The cdylib (`libclausters.so` / `.dylib` / `.dll`) is the **canonical
 //! language-agnostic surface**: thin bindings in any language sit on top of
 //! it (Python via stdlib `ctypes` in `clients/python/clausters.py`,
 //! JavaScript via Node/Deno FFI later). The boundary follows the project
-//! rule: only **basic structures** cross it — flat `f32` arrays as
+//! rule: only **basic structures** cross it -- flat `f32` arrays as
 //! pointer + length, integers, NUL-terminated error strings. Never a
 //! library type: a numpy array can *view* the returned pointer without
 //! copying, but that is the client's choice, not a dependency.
 //!
 //! Two entry points:
 //!
-//! - [`clausters_render`]: the synchronous "scientific" call — render a
+//! - [`clausters_render`]: the synchronous "scientific" call -- render a
 //!   binary score offline and get the interleaved samples back. No audio
 //!   device, no threads, no asynchrony; blocks the *caller* only.
 //! - `clausters_open`/`clausters_send`/`clausters_poll`: a full live
@@ -61,7 +61,7 @@ fn write_error(msg: &str, buf: *mut u8, cap: usize) {
 /// timetags in seconds from the start) synchronously.
 ///
 /// `seed` starts the render's stochastic UGens: pass **NULL for a fresh take**
-/// (the default — a random process is unpredictable first), or a pointer to
+/// (the default -- a random process is unpredictable first), or a pointer to
 /// the seed of a take you want repeated. Either way the seed actually used
 /// comes back in `out_seed`, which is what makes the take repeatable at all.
 /// See [`crate::server::render::RenderConfig::seed`].
@@ -97,7 +97,7 @@ pub unsafe extern "C" fn clausters_render(
         // SAFETY: caller contract.
         unsafe { std::slice::from_raw_parts(score, score_len) }
     };
-    // SAFETY: caller contract — NULL means "draw one".
+    // SAFETY: caller contract -- NULL means "draw one".
     let seed = if seed.is_null() {
         None
     } else {
@@ -151,7 +151,7 @@ pub unsafe extern "C" fn clausters_free_samples(ptr: *mut f32, samples: u64) {
 }
 
 /// An in-process server in **pulled mode**: engine + serving logic with
-/// **no device, no sockets and no threads** — the host owns the audio thread
+/// **no device, no sockets and no threads** -- the host owns the audio thread
 /// and calls [`ClaustersHeadless::process_block`] itself, callback-style.
 /// This is the native face of the browser build (the AudioWorklet calls
 /// exactly this from its render quantum) and a supported embed mode in its
@@ -163,13 +163,13 @@ pub unsafe extern "C" fn clausters_free_samples(ptr: *mut f32, samples: u64) {
 /// ([`ClaustersHeadless::send`]), replies are pulled from the reply ring
 /// ([`ClaustersHeadless::poll_into`]), and each `process_block` first runs
 /// one serving turn (`OscServer::step`: drain the ring, pump `/bus_stream`/
-/// `/bus_tapStream`, collect async results) — so everything the socket server
+/// `/bus_tapStream`, collect async results) -- so everything the socket server
 /// does, paced by the host's own callback. NRT jobs run inline on the
 /// calling thread, and stream periods/timetags follow the **engine sample
 /// clock** (deterministic under offline drive; see `OscServer::headless`).
 ///
 /// Not RT-strict: the serving turn allocates (translate, NRT) on the calling
-/// thread, the accepted relaxation of this mode — a host that needs the
+/// thread, the accepted relaxation of this mode -- a host that needs the
 /// native no-alloc audio callback uses `Clausters` (its own threads) or
 /// the full server instead.
 pub struct ClaustersHeadless {
@@ -189,7 +189,7 @@ pub struct ClaustersHeadless {
 impl ClaustersHeadless {
     /// Builds the pulled server: `sample_rate`/`channels` are the host
     /// callback's format; `unix_epoch` (Unix seconds at sample 0) anchors
-    /// the sample axis for wall-clocked clients' timetags — pass the current
+    /// the sample axis for wall-clocked clients' timetags -- pass the current
     /// time for live use, any fixed value for deterministic runs.
     pub fn new(sample_rate: f64, channels: usize, unix_epoch: f64) -> Result<Self, String> {
         use crate::osc::server::{OscServer, ServerInfo};
@@ -198,7 +198,7 @@ impl ClaustersHeadless {
         let (engine, handle) = crate::server::engine::engine_pair_full(
             sample_rate as f32,
             channels,
-            0, // workers: sequential, bit-identical — the only wasm mode
+            0, // workers: sequential, bit-identical -- the only wasm mode
             Some(Arc::clone(&segment)),
             crate::server::engine::DEFAULT_AUDIO_BUSES,
             crate::server::engine::DEFAULT_CONTROL_BUSES,
@@ -230,8 +230,8 @@ impl ClaustersHeadless {
     ///
     /// It is a setter rather than a constructor argument because this engine
     /// boots from an audio callback's format and nothing else: an embedder
-    /// that wants another ceiling — a page whose document holds hundreds of
-    /// live canvases — says so before it starts serving. What a client then
+    /// that wants another ceiling -- a page whose document holds hundreds of
+    /// live canvases -- says so before it starts serving. What a client then
     /// gets is this clamped by the ring it reads over, which is the number
     /// `/server_query.reply` hands it.
     pub fn set_max_stream_buses(&mut self, n: usize) {
@@ -242,7 +242,7 @@ impl ClaustersHeadless {
     /// command ring; it takes effect on the next [`Self::process_block`].
     /// Returns `false` when the ring is momentarily full (backpressure).
     ///
-    /// Sends as [`ipc::DEFAULT_PEER`](crate::server::ipc::DEFAULT_PEER) — the
+    /// Sends as [`ipc::DEFAULT_PEER`](crate::server::ipc::DEFAULT_PEER) -- the
     /// single client a segment used to have. An embedder carrying **several**
     /// independent clients (a page whose script and GUI host share one engine)
     /// gives each its own tag with [`Self::send_as`], which is what keeps their
@@ -252,7 +252,7 @@ impl ClaustersHeadless {
     }
 
     /// [`Self::send`], authored by `peer`. The tag is the embedder's to assign:
-    /// there is no handshake on the ring and none is needed — the server only
+    /// there is no handshake on the ring and none is needed -- the server only
     /// has to tell its clients apart, not name them.
     pub fn send_as(&self, peer: u32, packet: &[u8]) -> bool {
         self.peer.push(peer, packet)
@@ -296,7 +296,7 @@ impl ClaustersHeadless {
         Ok(())
     }
 
-    /// Sets what one serving turn may do — one turn runs before each engine
+    /// Sets what one serving turn may do -- one turn runs before each engine
     /// block, on this same thread, so its ceiling is the audio callback's.
     /// See [`ServeBudget`](crate::osc::server::ServeBudget); the default is
     /// [`ServeBudget::default`](crate::osc::server::ServeBudget::default).
@@ -311,7 +311,7 @@ impl ClaustersHeadless {
         self.server.backlog()
     }
 
-    /// Hands the jobs the host does better over to it — today that is reading
+    /// Hands the jobs the host does better over to it -- today that is reading
     /// a soundfile, whose filesystem belongs to the host: a page reaches its
     /// own storage through APIs the engine has none of.
     ///
@@ -406,7 +406,7 @@ impl ClaustersHeadless {
 
     /// Installs host-provided samples as buffer `index` (interleaved,
     /// `data.len() = frames * channels`): the browser's `/buffer_allocRead`
-    /// replacement — the page fetches and decodes (Web Audio's
+    /// replacement -- the page fetches and decodes (Web Audio's
     /// `decodeAudioData`), then hands the engine the samples. Runs on the
     /// calling thread through the same install path as the async `/buffer_*`
     /// commands, so `/buffer_query` and the def machinery see it identically.
@@ -440,14 +440,14 @@ impl ClaustersHeadless {
     /// is right for a short take and wrong for a long one: on the thread that
     /// owes the next block, a five-minute stereo take measures at some 14x the
     /// browser's render quantum (`examples/measure_turn.rs`). A count-based
-    /// serving budget cannot divide it, because it is one call — so the load
+    /// serving budget cannot divide it, because it is one call -- so the load
     /// is divided instead, and the host paces it: `begin`, then
     /// [`buffer_load_chunk`](Self::buffer_load_chunk) as often as it likes,
     /// then [`buffer_load_end`](Self::buffer_load_end).
     ///
     /// **Nothing is visible until `end`.** The buffer under `index` is
     /// untouched while the staged one fills, so the engine never reads a half
-    /// written take — the same "a job replaces the buffer wholesale" rule the
+    /// written take -- the same "a job replaces the buffer wholesale" rule the
     /// async `/buffer_*` path follows. Dropping the ticket without ending it
     /// simply discards the work.
     pub fn buffer_load_begin(
@@ -512,14 +512,14 @@ impl ClaustersHeadless {
 }
 
 /// An in-process **on-demand session**: engine, network loop and buffers,
-/// with **no audio device** — the mode an editor works in.
+/// with **no audio device** -- the mode an editor works in.
 ///
 /// `Clausters` below is the other door and the difference is the whole point:
 /// that one is a full real-time server, holding the machine's input and
 /// output. (Named rather than linked: it is behind the `realtime` feature, and
 /// a link would resolve only in the builds that compile it in.) This one holds nothing but computation. It performs the editing
 /// verbs, renders on demand ([`/buffer_render`](crate::server::nrtsession)),
-/// and — given a `shm` path — **owns the buffers**: every buffer it installs
+/// and -- given a `shm` path -- **owns the buffers**: every buffer it installs
 /// lives in a region beside the segment, where a peer draws it, a peer edits
 /// it, and a separate RT server plays it.
 ///
@@ -527,8 +527,8 @@ impl ClaustersHeadless {
 /// window on a server: the editor and its buffers outlive the process that
 /// happens to be making sound, and killing the player takes no take with it.
 ///
-/// It is driven exactly like `Clausters` — [`send`](Self::send) an OSC packet,
-/// [`poll_into`](Self::poll_into) a reply — so a caller swaps one for the
+/// It is driven exactly like `Clausters` -- [`send`](Self::send) an OSC packet,
+/// [`poll_into`](Self::poll_into) a reply -- so a caller swaps one for the
 /// other without learning a second protocol. The session runs on its own
 /// thread, serving the ring and performing what arrives; dropping this stops
 /// it.
@@ -555,7 +555,7 @@ impl ClaustersSession {
             .spawn(move || {
                 // One turn per pass, then a short sleep when nothing came:
                 // this mode has no clock, so there is nothing to pace against
-                // and nothing to be late for — only work to pick up.
+                // and nothing to be late for -- only work to pick up.
                 while !flag.load(Ordering::Relaxed) {
                     if session.settle() {
                         break;
@@ -583,7 +583,7 @@ impl ClaustersSession {
         self.peer.try_pop(buf).map(|(_, len)| len)
     }
 
-    /// The segment this session publishes into — the buffers' directory,
+    /// The segment this session publishes into -- the buffers' directory,
     /// the control buses, and the clocks somebody *else* writes.
     pub fn segment(&self) -> &Arc<Segment> {
         &self.segment
@@ -611,7 +611,7 @@ impl Drop for ClaustersSession {
 /// This is also the **direct Rust API** behind the C ABI: a Rust embedder
 /// (the GUI host's standalone mode, for one) constructs it with
 /// [`Clausters::open`] and drives it with [`Clausters::send`]/
-/// [`Clausters::poll_into`], dropping it to shut the server down — the same
+/// [`Clausters::poll_into`], dropping it to shut the server down -- the same
 /// in-process server the `clausters_open`/`_send`/`_poll`/`_close` C exports
 /// wrap thinly for non-Rust callers.
 #[cfg(feature = "realtime")]
@@ -628,7 +628,7 @@ impl Clausters {
     /// Opens the default audio device and starts a full server in-process
     /// (`workers` engine helper threads; 0 picks a sensible default). The
     /// returned handle owns the audio stream and the network thread; dropping
-    /// it shuts the server down. No def store is attached — use
+    /// it shuts the server down. No def store is attached -- use
     /// [`Clausters::open_with_data_dir`] to also load persisted defs.
     pub fn open(workers: usize) -> Result<Clausters, String> {
         Clausters::open_with_data_dir(workers, None)
@@ -637,7 +637,7 @@ impl Clausters {
     /// Like [`Clausters::open`] but also attaches the on-disk def store at
     /// `data_dir`, loading whatever it holds before the server starts serving:
     /// persisted SynthDefs, Faust defs (with the `faust` feature), GraphDefs,
-    /// MIDI bindings and the `boot.json` preset — the same startup the
+    /// MIDI bindings and the `boot.json` preset -- the same startup the
     /// standalone server binary performs. This is how the GUI's standalone mode
     /// brings a whole bundle up from a data directory. `None` keeps the server
     /// empty. A store that cannot be opened is logged and skipped, not fatal.
@@ -673,7 +673,7 @@ impl Clausters {
         };
         // The socket is an ephemeral localhost port: unused by the embed
         // client (commands go through the ring), it just drives the loop's
-        // tick — and doubles as an escape hatch for debugging.
+        // tick -- and doubles as an escape hatch for debugging.
         let mut server =
             OscServer::bind(("127.0.0.1", 0), info, handle).map_err(|e| e.to_string())?;
         server
@@ -703,7 +703,7 @@ impl Clausters {
         })
     }
 
-    /// The IPC segment this server publishes into — the same data plane a
+    /// The IPC segment this server publishes into -- the same data plane a
     /// `--shm` server writes to a file, here in memory.
     ///
     /// An in-process host reads the clocks, the control buses, the per-bus
@@ -822,7 +822,7 @@ pub unsafe extern "C" fn clausters_poll(handle: *mut Clausters, buf: *mut u8, ca
 }
 
 /// The engine's sample counter (block-accurate, written by the audio
-/// thread) — the sample clock with zero transport jitter.
+/// thread) -- the sample clock with zero transport jitter.
 ///
 /// # Safety
 /// `handle` from [`clausters_open`].
@@ -849,7 +849,7 @@ pub unsafe extern "C" fn clausters_sample_rate(handle: *mut Clausters) -> f64 {
 }
 
 /// Writes a control bus directly in the data plane: the engine's `InCtl`
-/// reads this very atomic on the next block — no command, no round trip.
+/// reads this very atomic on the next block -- no command, no round trip.
 ///
 /// # Safety
 /// `handle` from [`clausters_open`].
@@ -891,7 +891,7 @@ pub unsafe extern "C" fn clausters_close(handle: *mut Clausters) {
     drop(unsafe { Box::from_raw(handle) });
 }
 
-/// Reads an audio file into a malloc'd **interleaved** `f32` buffer — the
+/// Reads an audio file into a malloc'd **interleaved** `f32` buffer -- the
 /// same decoder `/buffer_allocRead` uses, so a client never needs one of its own.
 /// WAV goes through hound; FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and the
 /// rest through symphonia. Integer files are scaled to `[-1, 1]`: whatever the
@@ -899,7 +899,7 @@ pub unsafe extern "C" fn clausters_close(handle: *mut Clausters) {
 ///
 /// Reads `num_frames` frames from `file_start` (`num_frames <= 0` means "to
 /// the end"). Writes the frame count, channel count and the file's own sample
-/// rate — the decoder never resamples — into the three out pointers. On
+/// rate -- the decoder never resamples -- into the three out pointers. On
 /// failure returns NULL and writes a message into (`err`, `err_cap`).
 ///
 /// Free the result with [`clausters_free_samples`], passing

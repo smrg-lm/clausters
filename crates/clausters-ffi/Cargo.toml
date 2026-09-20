@@ -16,7 +16,7 @@ default = []
 # encoder): logic every client shares, so no binding reimplements it. Off by
 # default, exactly as in the core it forwards to.
 notation = ["clausters-core/notation"]
-# The engraver and the editable score on top of it — this one links libverovio,
+# The engraver and the editable score on top of it -- this one links libverovio,
 # so it stays opt-in the way the Faust family does in the server. The Python
 # reference wheel turns it on (clients/python/build_native.py).
 verovio = ["notation", "dep:clausters-notation", "clausters-notation/verovio"]

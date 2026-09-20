@@ -7,7 +7,7 @@
 //! backend writes the DSP's JSON into a **data segment at absolute offset 0**,
 //! unconditionally, external memory included. Instantiating such a module
 //! against the engine's memory therefore writes over the engine's own first
-//! bytes — which, on a `wasm32-unknown-unknown` link, is the bottom of the
+//! bytes -- which, on a `wasm32-unknown-unknown` link, is the bottom of the
 //! stack (rustc passes `--stack-first`, so the stack occupies the low
 //! megabyte).
 //!
@@ -24,7 +24,7 @@
 /// Removes the module's data section, returning the shortened module.
 ///
 /// Refuses (with a message) if there is more than one data segment, or if the
-/// one there is does not start at offset 0 — either would mean the backend
+/// one there is does not start at offset 0 -- either would mean the backend
 /// grew a use for that memory that this has not accounted for, and dropping it
 /// blind would be the kind of corruption nobody traces back here.
 ///

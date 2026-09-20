@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Reading the server's node tree as structured data (and steering its logs).
 
-The node tree — groups, synths, ids, defs, controls, `/node_map` bindings, the
-inferred bus usage — is available to a client as **structured replies**, never
+The node tree -- groups, synths, ids, defs, controls, `/node_map` bindings, the
+inferred bus usage -- is available to a client as **structured replies**, never
 by scraping the server's console. This builds a small tree and reads it back
 three ways:
 
@@ -17,7 +17,7 @@ three ways:
     (``/group_dumpGraph``), a debugging aid.
 
 The server's own logs are a separate channel (its stderr), which the client can
-retune live with ``/server_verbosity`` (level) and ``/server_dumpOsc`` (OSC-traffic target) —
+retune live with ``/server_verbosity`` (level) and ``/server_dumpOsc`` (OSC-traffic target) --
 shown at the end. No Faust needed; a plain server build works.
 
     cargo build --release
@@ -85,7 +85,7 @@ def main():
         group, _a, b = build_tree(server)
 
         tree = server.query_tree()
-        print("query_tree() — printing a tree draws it:")
+        print("query_tree() -- printing a tree draws it:")
         print(tree)
 
         print("\n...and it is data, not text: every entry is a NodeInfo, so a")
@@ -95,13 +95,13 @@ def main():
                 print(f"  {info.id} {info.defname} maps {info.maps} "
                       f"(reads {info.reads}, writes {info.writes})")
 
-        print(f"\nb.info() — the same record, asked of the node itself:")
+        print(f"\nb.info() -- the same record, asked of the node itself:")
         print(f"  {b.info()}")
 
         gone = Synth.from_id(4242, "beep", server=server)
         print(f"  a node that was never there: exists={gone.info().exists}")
 
-        print(f"\ndump_graph({group.id}) — inferred bus graph (debug text):")
+        print(f"\ndump_graph({group.id}) -- inferred bus graph (debug text):")
         print(server.dump_graph(group.id), end="")
 
         # The logs are a separate channel: the client can retune the server's

@@ -4,10 +4,10 @@ A small hierarchy so callers can catch *what* went wrong concretely instead of
 guessing from a stray ``AttributeError`` or a generic ``OSError``. Everything
 derives from `ClaustersError`, and each leaf *also* derives from the
 builtin it used to be raised as (``OSError``, ``RuntimeError``,
-``BufferError``, ``TimeoutError``, ``ValueError``) — so existing
+``BufferError``, ``TimeoutError``, ``ValueError``) -- so existing
 ``except OSError:`` / ``except RuntimeError:`` code (and the test-suite skips)
-keep working unchanged while new code can be precise. `ClaustersError` — the
-one you catch when you do not care which — is re-exported at the top level;
+keep working unchanged while new code can be precise. `ClaustersError` -- the
+one you catch when you do not care which -- is re-exported at the top level;
 the leaves are named through this module:
 
     from clausters import errors
@@ -37,7 +37,7 @@ class LibraryNotFoundError(LibraryError, OSError):
 
 
 class LibraryFeatureError(LibraryError, OSError):
-    """The cdylib loaded but a required FFI symbol is missing — it was built
+    """The cdylib loaded but a required FFI symbol is missing -- it was built
     without the Cargo feature that exports it.
 
     The concrete cause behind the otherwise cryptic ``undefined symbol`` /

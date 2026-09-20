@@ -8,7 +8,7 @@
 //!
 //! **Where the two backends differ is only how the pointer is delivered.**
 //! Natively libfaust asks for it through the UI glue's `addSoundfile`
-//! callback; in a page there is no glue and no callback — the module's own
+//! callback; in a page there is no glue and no callback -- the module's own
 //! JSON declares the byte offset of each `Soundfile*` field, moved to the front
 //! of the struct by the wasm backend, and the host stores the address there
 //! itself. What is *in* the struct is this one piece of code either way, which
@@ -68,7 +68,7 @@ impl SoundfileData {
             })
             .collect();
 
-        // `fBuffers`: MAX_CHAN pointers — real channels first, the rest alias
+        // `fBuffers`: MAX_CHAN pointers -- real channels first, the rest alias
         // earlier ones (Faust's `shareBuffers`).
         let mut channel_ptrs: Vec<*mut f32> = vec![std::ptr::null_mut(); ffi::FAUST_MAX_CHAN];
         for (c, buf) in channels_data.iter_mut().enumerate() {

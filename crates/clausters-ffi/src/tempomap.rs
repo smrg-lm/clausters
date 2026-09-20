@@ -32,7 +32,7 @@ pub unsafe extern "C" fn clausters_tempomap_version(h: *const TempoMap) -> u64 {
     }
 }
 
-/// The map written out as JSON — its breakpoints, without the derived seconds.
+/// The map written out as JSON -- its breakpoints, without the derived seconds.
 /// Follows the `clausters_core_bundle_*` convention: JSON out into a caller
 /// buffer, returning the size it needs (`0` for a null handle).
 ///
@@ -59,7 +59,7 @@ pub unsafe extern "C" fn clausters_tempomap_dump(
 }
 
 /// A map read back from the JSON [`clausters_tempomap_dump`] writes. Null when
-/// the bytes are not a map this client could have written — the breakpoints
+/// the bytes are not a map this client could have written -- the breakpoints
 /// are replayed through the ordinary writers, so every rule a live gesture
 /// obeys is checked here.
 ///
@@ -78,7 +78,7 @@ pub unsafe extern "C" fn clausters_tempomap_load(json: *const u8, len: usize) ->
     }
 }
 
-/// **A map from a multitrack's authored tempo entries** — the JSON array a
+/// **A map from a multitrack's authored tempo entries** -- the JSON array a
 /// document's `tempo` list is, plus the tempo a multitrack that never said one
 /// leaves to its reader. Null when the bytes are not such a list.
 ///
@@ -86,7 +86,7 @@ pub unsafe extern "C" fn clausters_tempomap_load(json: *const u8, len: usize) ->
 /// write: a ramp reaches the *next* entry, the default is prepended when the
 /// first entry is past beat 0, and no entries at all is the default alone.
 /// Each entry is `{"beats": …, "tempo": …, "ramp": bool}` with the tempo in
-/// beats **per second**, as every tempo in this module is — a document writing
+/// beats **per second**, as every tempo in this module is -- a document writing
 /// beats per minute divides once, where it reads its own field.
 ///
 /// # Safety
@@ -131,7 +131,7 @@ struct Change {
 }
 
 /// A new map of one constant-tempo segment with `base_beats` falling on
-/// `base_seconds` — the affine triple a running clock already holds, so
+/// `base_seconds` -- the affine triple a running clock already holds, so
 /// adopting a map changes no result. Null on invalid arguments.
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_tempomap_anchored(
@@ -158,7 +158,7 @@ pub unsafe extern "C" fn clausters_tempomap_free(h: *mut TempoMap) {
     }
 }
 
-/// An independent copy of `h` — what handing a multitrack's map to a clock takes,
+/// An independent copy of `h` -- what handing a multitrack's map to a clock takes,
 /// so neither one's edits reach the other. Null when `h` is null.
 ///
 /// # Safety
@@ -198,7 +198,7 @@ pub unsafe extern "C" fn clausters_tempomap_tempo_at(h: *const TempoMap, b: f64)
     unsafe { h.as_ref() }.map_or(0.0, |m| m.tempo_at(b))
 }
 
-/// How long the stretch from `b0` to `b1` lasts, in seconds — the only correct
+/// How long the stretch from `b0` to `b1` lasts, in seconds -- the only correct
 /// way to turn a length in beats into a length in time, since the same span
 /// lasts differently depending on where it sits.
 ///
@@ -262,7 +262,7 @@ pub unsafe extern "C" fn clausters_tempomap_ramp(
 
 /// [`clausters_tempomap_ramp`] in an explicit shape: `shape` is the envelope
 /// shape number (1 linear, 2 exponential, 5 a numeric curvature) and
-/// `curvature` is read only by shape 5. Returns 0, or -1 when refused —
+/// `curvature` is read only by shape 5. Returns 0, or -1 when refused --
 /// including for a shape number no tempo curve has.
 ///
 /// # Safety
@@ -290,7 +290,7 @@ pub unsafe extern "C" fn clausters_tempomap_shaped(
 /// Writes a whole tempo envelope from beat `at`: `n` segments, so `tempos`
 /// holds `n + 1` values and `extents`, `shapes` and `curvatures` hold `n` each.
 /// `seconds` reads the extents as wall clock rather than as beats. Returns 0,
-/// or -1 when refused — and a refused envelope writes nothing.
+/// or -1 when refused -- and a refused envelope writes nothing.
 ///
 /// # Safety
 /// `h` must be a live map handle, and the four arrays must hold the lengths
@@ -365,7 +365,7 @@ pub unsafe extern "C" fn clausters_tempomap_len(h: *const TempoMap) -> u32 {
 }
 
 /// Writes segment `i` into `out` as `[beats, secs, tempo, curve, end_beats,
-/// end_tempo]` — `curve` is 0 for a constant tempo and 1 for a ramp, whose two
+/// end_tempo]` -- `curve` is 0 for a constant tempo and 1 for a ramp, whose two
 /// trailing fields are 0.0 when it is not one. Returns 0, or -1 when the index
 /// is out of range.
 ///
@@ -408,7 +408,7 @@ pub unsafe extern "C" fn clausters_tempomap_segment(
 }
 
 /// The last segment's affine triple, written into `out` as `[base_beats,
-/// base_seconds, tempo]` — what a clock caches so reading *now* stays three
+/// base_seconds, tempo]` -- what a clock caches so reading *now* stays three
 /// float operations with no search.
 ///
 /// # Safety

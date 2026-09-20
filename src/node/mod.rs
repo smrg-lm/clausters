@@ -5,7 +5,7 @@
 //! lists (inserts are rejected when a list is at capacity, never grown).
 //! Slot 0 is the root group (node ID 0), which always exists and cannot be
 //! freed or moved. Freed nodes are handed to a caller-provided sink, which
-//! must route them to the garbage FIFO — nothing heap-allocated is dropped
+//! must route them to the garbage FIFO -- nothing heap-allocated is dropped
 //! here.
 
 use std::cell::UnsafeCell;
@@ -15,7 +15,7 @@ use crate::dsp::{DoneAction, ProcessCtx, ReplyMsg, StageMask};
 use crate::server::workers::WorkerPool;
 
 /// What the tree processes. Implemented by `synthdef::instance::UGenSynth`
-/// and, in the F fork, by `FaustSynth` — both built off the audio thread
+/// and, in the F fork, by `FaustSynth` -- both built off the audio thread
 /// and shipped in as `Box<dyn SynthNode>`.
 pub trait SynthNode: Send {
     /// Processes one block. Output happens through `Out` UGens writing to the
@@ -38,13 +38,13 @@ pub trait SynthNode: Send {
     }
     /// Routes a `/node_ugenCmd` payload to the UGen at `index`. Out-of-range indices
     /// are ignored. The default has no addressable UGens (e.g. a Faust synth is
-    /// one opaque block). Runs on the audio thread — allocation-free.
+    /// one opaque block). Runs on the audio thread -- allocation-free.
     fn ugen_command(&mut self, _index: u32, _cmd: &crate::dsp::UGenCmd) {}
 
-    /// Intrinsic latency of this synth in samples — the sum of its UGens'
+    /// Intrinsic latency of this synth in samples -- the sum of its UGens'
     /// intrinsic latencies: how far its output lags its input by
     /// construction, e.g. a partitioned convolver's partition length.
-    /// Informational for now — the graph does not yet compensate parallel
+    /// Informational for now -- the graph does not yet compensate parallel
     /// paths (see `docs/model-vs-daw.md`); a future PDC pass consumes this.
     fn latency(&self) -> usize {
         0
@@ -60,8 +60,8 @@ pub trait SynthNode: Send {
 
     /// Tells the synth its node id, once, when the engine inserts it into the
     /// tree (every path funnels there: OSC, NRT scores, graphdef and MIDI
-    /// voices, direct embedding). `UGenSynth` forwards it to its UGens — the
-    /// consumer is `FFT`'s hop-phase stagger. Runs on the audio thread —
+    /// voices, direct embedding). `UGenSynth` forwards it to its UGens -- the
+    /// consumer is `FFT`'s hop-phase stagger. Runs on the audio thread --
     /// must stay allocation-free. Default: ignored (e.g. a Faust synth).
     fn set_node_id(&mut self, _id: i32) {}
 
@@ -74,7 +74,7 @@ pub trait SynthNode: Send {
 
     /// Drains the reply messages this synth's UGens buffered during the block
     /// into `sink`, each stamped with `node_id`. Runs on the audio thread after
-    /// the block — allocation-free. Default: nothing to drain.
+    /// the block -- allocation-free. Default: nothing to drain.
     fn drain_replies(&mut self, _node_id: i32, _sink: &mut dyn FnMut(ReplyMsg)) {}
 }
 
@@ -138,7 +138,7 @@ impl AddAction {
 
 /// Where to move an existing node. `Before`/`After` place it relative to a
 /// sibling (`/node_before`, `/node_after`); `Head`/`Tail` place it as the first/last
-/// child of a group (`/group_head`, `/group_tail`) — for those two the `target` is the
+/// child of a group (`/group_head`, `/group_tail`) -- for those two the `target` is the
 /// destination **group** itself, not a sibling. `/node_order` uses all four.
 #[derive(Clone, Copy, Debug)]
 pub enum Place {
@@ -221,7 +221,7 @@ impl Group {
     ///
     /// Not public: every caller that has a [`crate::dsp::Limits`] must go
     /// through [`Group::with_capacity`] with its `max_group_children`, and a
-    /// constructor that silently answers 512 makes forgetting that invisible —
+    /// constructor that silently answers 512 makes forgetting that invisible --
     /// the group simply rejects the 513th child, and only a client watching for
     /// the rejection notices. The live server (`osc::translate`) and the
     /// offline renderer both pass their configured limit.
@@ -255,13 +255,13 @@ pub enum FreedNode {
     },
 }
 
-/// An ancestor whose **presence in the tree has already been established** —
+/// An ancestor whose **presence in the tree has already been established** --
 /// see [`NodeTree::is_under`].
 ///
 /// It carries the id and not a slot index, which is the whole finding behind
 /// it: the walk up the parent links compares *ids*, so an index would be
 /// carried and never read. What the repeated lookup actually bought was one
-/// bit — that the ancestor is in the tree at all — for a full scan of the
+/// bit -- that the ancestor is in the tree at all -- for a full scan of the
 /// slots, once per question.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Anchor(i32);
@@ -285,7 +285,7 @@ impl Default for NodeTree {
 
 // SAFETY: the `UnsafeCell`s in `slots` are only accessed concurrently
 // during `process`, where the stage scheduler hands **disjoint
-// subtrees** to the workers — each slot is reached by exactly one thread
+// subtrees** to the workers -- each slot is reached by exactly one thread
 // per slice. Every other method takes `&mut self`.
 unsafe impl Sync for NodeTree {}
 
@@ -294,7 +294,7 @@ pub struct NodeTree {
     /// Pre-allocated stack for the depth-first processing traversal.
     dfs_stack: Vec<usize>,
     /// Pre-allocated stack for recursive frees: (slot, parent node ID at the
-    /// time of unlinking — the parent slot may already be gone by then).
+    /// time of unlinking -- the parent slot may already be gone by then).
     free_stack: Vec<(usize, i32)>,
     synth_count: usize,
     group_count: usize,
@@ -369,7 +369,7 @@ impl NodeTree {
     /// each with [`Self::done_node`]. Two accessors rather than a draining
     /// closure so the caller can `free` each node between reads without a
     /// second borrow of the tree. The count may exceed [`MAX_NODES`] if a
-    /// split block re-queued a node — the extra reads just miss (a `free` of an
+    /// split block re-queued a node -- the extra reads just miss (a `free` of an
     /// already-gone id is a no-op), so it is clamped here.
     ///
     /// Relaxed is enough: the queue is written under the parallel scheduler and
@@ -507,7 +507,7 @@ impl NodeTree {
     }
 
     /// Frees the subtree rooted at `idx` (already unlinked from its parent),
-    /// reporting every node to `sink` parent-first — the order `/node_end`
+    /// reporting every node to `sink` parent-first -- the order `/node_end`
     /// notifications go out in.
     fn free_subtree(&mut self, idx: usize, parent_id: i32, sink: &mut dyn FnMut(FreedNode)) {
         debug_assert!(self.free_stack.is_empty());
@@ -543,7 +543,7 @@ impl NodeTree {
 
     /// Inserts a node relative to `target` according to `action`. On success
     /// returns the parent group's node ID (for `/node_start`). On failure
-    /// returns the node back — with the `Reject` saying which failure it was —
+    /// returns the node back -- with the `Reject` saying which failure it was --
     /// so the caller can dispose of it RT-safely and report it for what it is.
     /// A `Replace` frees the target's subtree through `sink`.
     pub fn insert(
@@ -773,7 +773,7 @@ impl NodeTree {
             .is_some_and(|idx| self.group_of(idx).is_some())
     }
 
-    /// Pauses (`paused = true`) or resumes (`false`) a node — a synth or a
+    /// Pauses (`paused = true`) or resumes (`false`) a node -- a synth or a
     /// whole group. `/node_run` and the pause/resume done actions route here.
     /// Returns `false` if the ID is unknown. Never allocates.
     pub fn set_paused(&mut self, id: i32, paused: bool) -> bool {
@@ -786,7 +786,7 @@ impl NodeTree {
         }
     }
 
-    /// Whether `id` sits at or under `ancestor` — the query that routes a
+    /// Whether `id` sits at or under `ancestor` -- the query that routes a
     /// scheduled bundle to the transport queue or the device one. A walk up
     /// `parent`, so it allocates nothing and is safe to call while draining
     /// commands on the audio thread. `id == ancestor` counts: a message to
@@ -801,7 +801,7 @@ impl NodeTree {
         }
     }
 
-    /// Establishes that `ancestor` is in the tree, once — see
+    /// Establishes that `ancestor` is in the tree, once -- see
     /// [`NodeTree::is_under`]. `None` when no node carries that id, which is
     /// the caller's cue to answer `false` without walking anything.
     pub fn anchor(&self, ancestor: i32) -> Option<Anchor> {
@@ -812,7 +812,7 @@ impl NodeTree {
     ///
     /// The lookup behind an id is a linear scan of the slots, and
     /// `is_descendant_of` does two of them: one to find `id`, and one whose
-    /// only purpose is to answer *is the ancestor there at all* — repeated for
+    /// only purpose is to answer *is the ancestor there at all* -- repeated for
     /// every message of a bundle, about a node that had not moved. The caller
     /// asks that once ([`NodeTree::anchor`]) and this walks up from `id` alone,
     /// which halves what a bundle's classification costs.
@@ -843,7 +843,7 @@ impl NodeTree {
     /// Applies a queued freeing/relative [`DoneAction`] (everything except
     /// `None`/`PauseSelf`, which are handled inline during the walk): frees this
     /// node and, per the action, its previous/next sibling, the run of nodes to
-    /// the group's head/tail, or the enclosing group — or pauses/resumes/
+    /// the group's head/tail, or the enclosing group -- or pauses/resumes/
     /// deep-frees a neighbour. Runs on the audio thread during the done drain,
     /// so it only reuses the allocation-free `free`/`free_all`/`deep_free`
     /// machinery (the pre-allocated stacks). Neighbours are resolved *before*
@@ -1073,7 +1073,7 @@ impl NodeTree {
     /// allocation. Children of groups flagged parallel (`/group_parallel`) run
     /// in dependency **stages** on the worker pool.
     pub fn process(&mut self, ctx: &ProcessCtx, pool: &WorkerPool) {
-        // SAFETY: entry point — this thread owns the whole tree; the pool
+        // SAFETY: entry point -- this thread owns the whole tree; the pool
         // only ever receives disjoint subtrees.
         unsafe { self.process_index(ROOT_SLOT, ctx, pool) }
     }
@@ -1089,7 +1089,7 @@ impl NodeTree {
         let Some(slot) = (unsafe { &mut *self.slots[idx].get() }).as_mut() else {
             return;
         };
-        // A paused node is skipped whole — a synth stays silent, a group skips
+        // A paused node is skipped whole -- a synth stays silent, a group skips
         // its entire subtree.
         if slot.paused {
             return;
@@ -1155,7 +1155,7 @@ impl NodeTree {
     /// Greedy stage partition of a parallel group's children, in order:
     /// a child joins the current stage while it writes nothing the stage
     /// reads or writes and reads nothing the stage writes; conflicts close
-    /// the stage (those children run after — sequential semantics
+    /// the stage (those children run after -- sequential semantics
     /// preserved); a `dynamic` child (signal-driven bus index) always runs
     /// alone. Since stage members touch pairwise disjoint buses and stages
     /// run in child order, the output is **bit-identical** to sequential
@@ -1196,7 +1196,7 @@ impl NodeTree {
     }
 
     /// A node's bus usage; for groups, the union over the subtree. Pure
-    /// bitops over engine-owned masks — RT-safe.
+    /// bitops over engine-owned masks -- RT-safe.
     fn subtree_usage(&self, idx: usize) -> StageMask {
         match self.slot(idx).map(|s| &s.kind) {
             Some(NodeKind::Synth { usage, .. }) => *usage,
@@ -1421,7 +1421,7 @@ mod tests {
     /// Resolving the group once and walking up from each target is what keeps
     /// a bundle's classification from scanning the tree twice per message
     /// (`Engine::bundle_is_governed`). It is the same walk, so it has to give
-    /// the same answers — including the two `false`s an unknown id earns.
+    /// the same answers -- including the two `false`s an unknown id earns.
     #[test]
     fn an_anchored_ancestor_answers_as_the_plain_one_does() {
         let t = tree_with_group_2_holding_synth_3();
@@ -1444,7 +1444,7 @@ mod tests {
     ///
     /// This is the property that let the anchor stay this simple. Freeing the
     /// group and letting another node take its slot is the case an *index*
-    /// would have got wrong — it would have answered for whoever moved in, and
+    /// would have got wrong -- it would have answered for whoever moved in, and
     /// routed a bundle to the wrong queue in silence. The walk compares ids, so
     /// there is nothing to invalidate and no snapshot to keep in step.
     #[test]

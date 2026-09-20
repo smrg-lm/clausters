@@ -368,7 +368,7 @@ jobs:
   # so the Faust sections (whose numbers include whatever the LLVM JIT chose
   # that run, and which the gate never fails on) are simply not compiled in.
   #
-  # Opt out with `[no-bench]` anywhere in the PR's head commit message — a
+  # Opt out with `[no-bench]` anywhere in the PR's head commit message -- a
   # change that knowingly trades speed for something else should be able to say
   # so and move on.
   bench:

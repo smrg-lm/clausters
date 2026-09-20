@@ -2,13 +2,13 @@
 //! cpal.
 //!
 //! A [`Score`] is a time-ordered list of OSC bundles. On disk it uses the
-//! scsynth binary score format — `[i32 big-endian byte count][OSC packet]`
-//! repeated — where each bundle's NTP timetag is read as **seconds from the
+//! scsynth binary score format -- `[i32 big-endian byte count][OSC packet]`
+//! repeated -- where each bundle's NTP timetag is read as **seconds from the
 //! start of the render** (the immediate tag is time 0). Rendering is single
 //! threaded and synchronous: async commands (defs, buffers) complete before
 //! time advances, like scsynth's NRT mode, while the schedulable subset
 //! travels through the engine's own queue, so a bundle landing
-//! mid-block splits the block exactly as it would in real time — the offline
+//! mid-block splits the block exactly as it would in real time -- the offline
 //! render of a score is sample-identical to a perfectly timed live take.
 //!
 //! The render ends at the time of the **last** bundle, whose commands
@@ -57,13 +57,13 @@ impl Score {
         Ok(Self::sorted(events))
     }
 
-    /// Every `/def_send faust` in the score, as `(name, format, text)` — the
+    /// Every `/def_send faust` in the score, as `(name, format, text)` -- the
     /// same three fields a live compile job carries (`"source"`, `"boxes"` or
     /// `"signals"`).
     ///
     /// What it is for: a host whose Faust compiler answers *later* than the
-    /// renderer can wait. A native server has none — it compiles a def where it
-    /// stands — but a page's compiler is another scope, so the page reads the
+    /// renderer can wait. A native server has none -- it compiles a def where it
+    /// stands -- but a page's compiler is another scope, so the page reads the
     /// score here, compiles and links each def, and the render then finds them
     /// (see `faust::compiler_web`). Reading the score twice is the price of not
     /// writing a second reader of it in another language.
@@ -176,7 +176,7 @@ pub struct RenderConfig {
     /// bit-identical to sequential (disjoint stages), just faster.
     pub workers: usize,
     /// Where this render's stochastic UGens start their seeds, or `None` to
-    /// draw one from entropy ([`clausters_core::rng::entropy_seed`]) — the
+    /// draw one from entropy ([`clausters_core::rng::entropy_seed`]) -- the
     /// default.
     ///
     /// A random process is unpredictable first: an unconfigured render is a
@@ -216,14 +216,14 @@ pub struct RenderStats {
     /// Peak magnitude per output channel, measured as the render streams.
     ///
     /// The driver already walks every sample on its way to the sink, so this
-    /// costs a compare per sample and saves the caller a second pass — which
+    /// costs a compare per sample and saves the caller a second pass -- which
     /// matters most for [`render_to_wav`], where the samples are gone by the
     /// time the call returns and measuring them again would mean reading the
     /// file back.
     pub peak: Vec<f32>,
     /// RMS per output channel over the whole render.
     pub rms: Vec<f32>,
-    /// The seed this render's stochastic UGens actually started from —
+    /// The seed this render's stochastic UGens actually started from --
     /// whatever [`RenderConfig::seed`] asked for, or the one drawn from
     /// entropy when it asked for nothing.
     ///
@@ -237,7 +237,7 @@ pub struct RenderStats {
 /// block) to `sink`. This is the core the WAV and in-memory frontends wrap.
 ///
 /// Side effect: leaves the calling thread in flush-to-zero FPU mode (see
-/// [`crate::dsp::denormals`]) — the same mode the real-time callback runs
+/// [`crate::dsp::denormals`]) -- the same mode the real-time callback runs
 /// in, so the offline render stays sample-identical to a live take.
 pub fn render(
     score: &Score,
@@ -254,7 +254,7 @@ pub fn render(
     let total = (score.duration() * sr).round() as u64;
     if total == 0 {
         return Err(
-            "empty render: a score ends at its last bundle's time — close it with a \
+            "empty render: a score ends at its last bundle's time -- close it with a \
              final bundle (e.g. an /node_free) at the total duration"
                 .into(),
         );
@@ -268,7 +268,7 @@ pub fn render(
     let mut sumsq = vec![0.0f64; channels];
 
     // Resolved once, here, so the number that goes into the translator is the
-    // number that comes back in the stats — a take is only repeatable if the
+    // number that comes back in the stats -- a take is only repeatable if the
     // render reports the seed it actually used.
     let seed = cfg.seed.unwrap_or_else(clausters_core::rng::entropy_seed);
 
@@ -438,7 +438,7 @@ impl Renderer {
     }
 
     /// Translates one event's messages into engine commands, running async
-    /// commands (defs, buffers) synchronously right now — scsynth NRT
+    /// commands (defs, buffers) synchronously right now -- scsynth NRT
     /// semantics: they complete before time advances.
     fn event_cmds(&mut self, messages: &[OscMessage]) -> Result<Vec<Cmd>, String> {
         let mut cmds = Vec::new();
@@ -493,7 +493,7 @@ impl Renderer {
                 };
                 // The buffer is built now, but installed sample-accurately
                 // with the rest of the event's commands. It lands in the
-                // translator's pool — the same one `make_synth` reads to fill a
+                // translator's pool -- the same one `make_synth` reads to fill a
                 // Faust `soundfile("<bufnum>", n)` zone, so soundfile resolves
                 // offline exactly as it does on the live server.
                 match run_job(job)? {
@@ -535,7 +535,7 @@ impl Renderer {
 
     /// Offline rendering compiles a def where it stands, and in a page the
     /// Faust compiler is a different scope answering later (see
-    /// `faust::compiler_web`) — there is no turn in which a result could
+    /// `faust::compiler_web`) -- there is no turn in which a result could
     /// arrive, because time does not advance until the def is loaded.
     ///
     /// So a page does the same work in the other order: the host reads the

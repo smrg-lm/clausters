@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Recording into a buffer while another node plays it: the looper.
 
-A buffer's contents are **mutable**, and only its shape is fixed — frames,
+A buffer's contents are **mutable**, and only its shape is fixed -- frames,
 channels and sample rate are settled at allocation and never change, while
 every sample can be written at any time, by a UGen or by a `/buffer_*`
 command, with anything else reading it. Nothing has to be declared: there is
@@ -17,7 +17,7 @@ subject here. In five acts, each audible on its own:
    unchanged: the recording stops without the loop noticing.
 3. **Overdub.** `pre_level` 1 makes each frame `new + old` instead of `new`,
    so a second pass at another pitch **adds** to the loop. Then `pre_level`
-   below 1 fades the older layers a little more each pass — that pair is what
+   below 1 fades the older layers a little more each pass -- that pair is what
    makes the UGen a looper rather than a tape head.
 4. **A one-shot that frees itself.** A non-looping `play_buf` cued to the
    second half of the buffer with `done_action` 2: it plays once and its node
@@ -25,7 +25,7 @@ subject here. In five acts, each audible on its own:
    loud. A rising `trigger` re-cues it, so one player is a re-usable voice.
 5. **A delay through a shared buffer.** `buf_comb_c` runs its line inside the
    pool buffer rather than in synth-private memory, so the delay's own
-   contents are a buffer like any other — readable, savable, and here written
+   contents are a buffer like any other -- readable, savable, and here written
    to a WAV at the end.
 
 **Nothing here clicks, and the two reasons are the interesting part.** The
@@ -34,7 +34,7 @@ recorded phrase is a windowed note followed by a silence, retriggered by an
 the loop's seam, and every change of what is being written is made *during*
 that silence, where a change writes nothing and can leave no step behind.
 And the reader is started **after** the writer and runs at the same rate, so
-it trails it by a fixed distance forever and never crosses the write head —
+it trails it by a fixed distance forever and never crosses the write head --
 what it reads is always a frame the writer is done with.
 
 Needs an audio device (it boots its own server and plays through the sound
@@ -111,15 +111,15 @@ def player_def():
 
 def oneshot_def():
     """A player that ends. Cued to `start_pos`, not looping, and freeing its
-    own node when the pass reaches the end (`done_action` 2) — so a sample
+    own node when the pass reaches the end (`done_action` 2) -- so a sample
     fired from a pattern leaves nothing behind.
 
     One trigger control drives both the player and the envelope: the rising
     edge re-cues the reader to `start_pos` and restarts the window over it,
     which is what makes the node re-usable rather than single-use. The grain
     is deliberately shorter than the gap between triggers, so a re-cue always
-    lands in silence: both the reader's jump and the envelope's — which
-    restarts from its initial level rather than gliding from wherever it was —
+    lands in silence: both the reader's jump and the envelope's -- which
+    restarts from its initial level rather than gliding from wherever it was --
     are steps, and a step is inaudible only where there is nothing to step.
     The window is also shorter than what is left of the buffer, so the pass
     ends in silence and the node's own end is inaudible too.
@@ -142,7 +142,7 @@ def echo_def():
     """A comb delay whose line lives **in a pool buffer**. The private
     `comb_c` allocates its own memory at build and nobody can look at it;
     this one's line is the buffer, so the delay's contents can be read,
-    resampled or written to disk like any other buffer — which is what the
+    resampled or written to disk like any other buffer -- which is what the
     last act does with it.
 
     `detect_silence` frees the voice once the tail has rung out, so nothing

@@ -1,7 +1,7 @@
 //! **What a `/gui_set` means to a signal element.**
 //!
-//! The keys are grouped the way the model is — the source, the value axis, the
-//! spectral parameters, the chrome — so a key lands wherever it means
+//! The keys are grouped the way the model is -- the source, the value axis, the
+//! spectral parameters, the chrome -- so a key lands wherever it means
 //! something, whatever the element's wire name was: a `window_size` on a
 //! spectrogram and an `fft_size` on a spectrum are one field, and a key a
 //! presentation does not read is simply not one of its props.
@@ -86,9 +86,9 @@ impl SignalElement {
             // it back to the data fit.
             "min" => set_opt_f(&mut self.value.min, v),
             "max" => set_opt_f(&mut self.value.max, v),
-            // The spectral parameters. The analysis size answers to both names —
+            // The spectral parameters. The analysis size answers to both names --
             // the spectral views say `fft_size`, the time-frequency one
-            // `window_size` — since one field is behind them.
+            // `window_size` -- since one field is behind them.
             "fft_size" | "window_size" => v
                 .as_u64()
                 .filter(|n| clausters_core::fft::supports(*n as usize))
@@ -116,7 +116,7 @@ impl SignalElement {
                 .as_i64()
                 .map(|n| self.spectral.colormap = n as i32)
                 .is_some(),
-            // The loudness layer's own scale and guides — the parameters of a
+            // The loudness layer's own scale and guides -- the parameters of a
             // measure live with the measure, on the element.
             "loudness_target" => v.as_f64().map(|x| self.loudness.target = x).is_some(),
             // Tech 3341 specifies two scales and names them by their top; a
@@ -133,7 +133,7 @@ impl SignalElement {
             "overlay" => truthy(v).map(|b| self.display.overlay = b).is_some(),
             // **Live, and both ways.** A client arms it when it starts
             // recording into the buffer and clears it when the take is
-            // finished — and clearing it is what turns the picture back into
+            // finished -- and clearing it is what turns the picture back into
             // the whole of the samples, which is right: what was written is
             // now all there is, and a frontier stopped at the buffer's end
             // would have said the same thing only by accident.
@@ -171,7 +171,7 @@ impl SignalElement {
             },
             // **The samples, live.** An owner that applied an edit pushes the
             // samples that now hold, and the picture becomes the document's
-            // again — which is what "the acknowledgement corrects the picture"
+            // again -- which is what "the acknowledgement corrects the picture"
             // means for an inline source, and what lets a pending drawing be
             // dropped without the edit disappearing with it. Only inline
             // samples: a mapped file or cache is re-read by remapping it, which
@@ -206,8 +206,8 @@ impl SignalElement {
                 _ => false,
             },
             // **The samples changed where they live; read them again.** Bulk
-            // resolution is idempotent by design — a resolved source stops
-            // asking — so re-reading is the element *forgetting* what it
+            // resolution is idempotent by design -- a resolved source stops
+            // asking -- so re-reading is the element *forgetting* what it
             // resolved, and the loader picking it up on the next pass. One door
             // for every form: a mapped file, a peaks cache, a server buffer.
             //
@@ -233,7 +233,7 @@ impl SignalElement {
         // over the samples, so it happens where what it reads moved: the
         // measures themselves (a layer turned on), the rate a window is
         // counted in, and the samples. The *span* is cheaper and moves far more
-        // often — a hand sweeping a selection — so it is its own point.
+        // often -- a hand sweeping a selection -- so it is its own point.
         if handled
             && matches!(
                 key,
@@ -287,7 +287,7 @@ mod data_tests {
 
     /// The owner's half of an edit: the samples that now hold are pushed, and
     /// the picture is the document's again. Without this the pending drawing
-    /// could never be dropped — letting go of it would take the edit with it.
+    /// could never be dropped -- letting go of it would take the edit with it.
     #[test]
     fn inline_samples_can_be_replaced_live() {
         use crate::host::widget::element::Element;

@@ -6,7 +6,7 @@
 //! JSON, which is the re-encode the project's bulk rule exists to forbid, at
 //! 4/3 the memory, on the one payload that is large by definition.
 //!
-//! So the clipboard is [`clausters_document::clipboard::Clipboard`] — the
+//! So the clipboard is [`clausters_document::clipboard::Clipboard`] -- the
 //! crate's type, not a second definition of it, because the whole point of that
 //! format is that one clipboard crosses a window, a def and a process
 //! unchanged. The **structure names blobs and does not hold them**, so this
@@ -15,7 +15,7 @@
 //! # The text case is not a special case
 //!
 //! A field still cuts and pastes a string, and it does it through
-//! [`Clip::text`]/[`Clip::set_text`] — `Content::Text` is one of the kinds, and
+//! [`Clip::text`]/[`Clip::set_text`] -- `Content::Text` is one of the kinds, and
 //! `Clipboard::parse` reads anything that is not a clipboard document as text.
 //! That is what lets the browser front keep swapping the *page's* clipboard
 //! string in and out around a key: what crosses that boundary is a string
@@ -52,7 +52,7 @@ impl Clip {
         &self.blobs
     }
 
-    /// Whether the payloads that arrived match the header — the check that
+    /// Whether the payloads that arrived match the header -- the check that
     /// tells a **truncated** paste from an empty one, since pasting silence
     /// would be worse than declining.
     pub fn is_whole(&self) -> bool {
@@ -74,7 +74,7 @@ impl Clip {
         self.blobs = blobs;
     }
 
-    /// Puts a block of interleaved samples on it — the copy an editor makes.
+    /// Puts a block of interleaved samples on it -- the copy an editor makes.
     pub fn put_samples(&mut self, samples: Arc<[f32]>, channels: u32, sample_rate: f64) {
         let frames = samples.len() as u64 / u64::from(channels.max(1));
         self.put(
@@ -84,7 +84,7 @@ impl Clip {
     }
 
     /// The text on it: the string a field pastes, which is the content itself
-    /// when it is text and its **serialization** when it is anything else — so
+    /// when it is text and its **serialization** when it is anything else -- so
     /// a structured clipboard read as text is the document rather than nothing,
     /// and a field that pastes it gets something it can see.
     pub fn text(&self) -> String {
@@ -99,7 +99,7 @@ impl Clip {
     }
 
     /// Puts a string on it, reading a clipboard document if that is what it is
-    /// ([`Clipboard::parse`] — a door rather than a guess).
+    /// ([`Clipboard::parse`] -- a door rather than a guess).
     ///
     /// The bulk is dropped, because a string cannot carry it: a document that
     /// arrives this way with a blob index is a header whose payload is gone,
@@ -109,7 +109,7 @@ impl Clip {
         self.blobs.clear();
     }
 
-    /// The blob at `index` as the bytes that carry it — little-endian `f32`,
+    /// The blob at `index` as the bytes that carry it -- little-endian `f32`,
     /// the one encoding bulk uses everywhere here.
     pub fn blob_bytes(&self, index: usize) -> Option<Vec<u8>> {
         self.blobs.get(index).map(|b| encode_samples(b))

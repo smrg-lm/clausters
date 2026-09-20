@@ -1,19 +1,19 @@
 //! The multitrack `track`/`clip` graphic unit: the DAW-style lane view.
 //!
 //! A `track` is a horizontal lane of the shared timeline; a `clip` is a placed
-//! rectangle on it spanning `[offset, offset + dur]` in timeline sample units —
+//! rectangle on it spanning `[offset, offset + dur]` in timeline sample units --
 //! the model's **graphic unit** (length = duration). This module draws that
 //! unit: a left header naming the track, the lane field, and one framed
-//! rectangle per clip with its label and a body — a decimated waveform, or a
+//! rectangle per clip with its label and a body -- a decimated waveform, or a
 //! **piano-roll** of note events when the clip carries `notes` (the events
 //! track's scalar-vertical view). Pure over a [`Draw`] (the flat-geometry
-//! [`crate::host::paint`] painter), so it is unit-testable without a window — the
+//! [`crate::host::paint`] painter), so it is unit-testable without a window -- the
 //! same posture as the static `plot`/`bpf` views.
 //!
 //! The tracks of one window share **one time axis** (aligned lanes): the frame
 //! renderer computes the common span (the longest clip end) and maps every
 //! lane's clips through the same [`View`], so a clip at offset 8 lines up
-//! across tracks. Placement/geometry is display logic — this stays gui-side.
+//! across tracks. Placement/geometry is display logic -- this stays gui-side.
 
 use clausters_core::measure;
 
@@ -29,7 +29,7 @@ use crate::host::widget::{SourceWindow, WidgetKind};
 use crate::viewport::View;
 
 /// A piano-roll note. Re-exported from [`super::pianoroll`], the module that
-/// owns the note model and the drawing/hit-test primitives — a clip's roll and
+/// owns the note model and the drawing/hit-test primitives -- a clip's roll and
 /// the dedicated `pianoroll` view share the one type so they never disagree on
 /// geometry.
 pub use crate::host::structures::notes::Note;
@@ -38,13 +38,13 @@ pub use crate::host::structures::notes::Note;
 ///
 /// A lane header used to be one number in the size table (`header_w`) holding
 /// one string. It is a strip of controls: a name, the mute/solo pair, a level
-/// fader — so its width follows what it carries, and a lane that carries more
+/// fader -- so its width follows what it carries, and a lane that carries more
 /// says so. The parts are presence-driven: a lane that names no `mute` prop
 /// offers no mute button, so a header stays exactly the name strip it was
 /// unless a script asks for more.
 ///
 /// `w` overrides the whole calculation, because an explicit size always wins
-/// over a natural one (the layout's own rule) — and because the *shared* indent
+/// over a natural one (the layout's own rule) -- and because the *shared* indent
 /// of a navigation group is the widest wish on it
 /// ([`crate::host::timeline::group_indents`]), so one lane declaring a wide header
 /// moves the axis for the roll and the ruler stacked with it.
@@ -59,7 +59,7 @@ pub struct Header {
     /// The level knob's value over `[0, 1]`, when the lane offers one.
     pub level: Option<f32>,
     /// **Whether this track's automation rows are shown**, when the lane offers
-    /// the toggle. `None` on a lane with no automation to show or hide — a
+    /// the toggle. `None` on a lane with no automation to show or hide -- a
     /// button for rows that do not exist is a button that does nothing.
     pub curves: Option<bool>,
     /// **What the track is producing**, one entry per channel: the level and
@@ -113,7 +113,7 @@ impl Header {
 }
 
 /// A header's parts, laid out inside its band. A part is `None` when the lane
-/// does not offer it **or** when the band is too small to draw it — a short
+/// does not offer it **or** when the band is too small to draw it -- a short
 /// lane keeps its name and drops the controls, the way a natural size degrades
 /// everywhere else.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -138,16 +138,16 @@ pub enum HeaderPart {
     Level,
     /// **The automation toggle**: show or hide the rows under this track.
     ///
-    /// A facility rather than a design — which rows a multitrack shows is the
+    /// A facility rather than a design -- which rows a multitrack shows is the
     /// multitrack's, and reaching every one of them from a track's header is the
     /// shortest thing that makes an arrangement with automation readable while
     /// the rules that replace it are worked out.
     Curves,
-    /// **The bottom edge of the band**, where a drag resizes the row — the
+    /// **The bottom edge of the band**, where a drag resizes the row -- the
     /// vertical zoom of one track, which is what a hand reaches for when one
     /// take needs to be read closely and the rest do not.
     Edge,
-    /// **The band itself**, where no control is — what makes the track
+    /// **The band itself**, where no control is -- what makes the track
     /// pointable at. A header is a surface and not just a shelf for three
     /// buttons: the space beside them is how a track is selected, and how one
     /// is asked for.
@@ -233,7 +233,7 @@ pub fn header_parts(band: Rect, header: &Header, m: &Metrics) -> HeaderParts {
     parts
 }
 
-/// The header part under `(x, y)`, if any — the press's read of
+/// The header part under `(x, y)`, if any -- the press's read of
 /// [`header_parts`].
 pub fn header_hit(band: Rect, header: &Header, m: &Metrics, x: f64, y: f64) -> Option<HeaderPart> {
     let parts = header_parts(band, header, m);
@@ -258,7 +258,7 @@ pub fn header_hit(band: Rect, header: &Header, m: &Metrics, x: f64, y: f64) -> O
 }
 
 /// **How deep the resize strip along a header's bottom edge is**, in logical
-/// pixels — the same allowance a box's own edges have, since it is the same
+/// pixels -- the same allowance a box's own edges have, since it is the same
 /// question: how close to an edge a hand has to be to mean it.
 pub const EDGE_PX: f32 = 5.0;
 
@@ -304,7 +304,7 @@ fn draw_header_controls(d: &mut Draw, band: Rect, header: &Header) {
     toggle(parts.mute, header.mute == Some(true), "M", theme.warn);
     toggle(parts.solo, header.solo == Some(true), "S", theme.hilite);
     // **`A` for the automation under this track**, lit when its rows are shown
-    // — the toggle reads as on when there is something to see, the way the two
+    // -- the toggle reads as on when there is something to see, the way the two
     // beside it read as on when they are doing something.
     toggle(parts.curves, header.curves == Some(true), "A", theme.accent);
     if let (Some(r), Some(level)) = (parts.level, header.level) {
@@ -323,14 +323,14 @@ fn draw_header_controls(d: &mut Draw, band: Rect, header: &Header) {
 
 /// **A track shows what it produces**: one column per channel down the right
 /// edge of the header, over the amplitude the track is making *after
-/// everything has been applied* — its clips' gains, its curves and its fader.
+/// everything has been applied* -- its clips' gains, its curves and its fader.
 ///
 /// It is the one place in a multitrack where the picture is of the **sound** rather
 /// than of the description, which is why it is worth the strip: everything else
 /// in a header says what was asked for, and this says what came out.
 ///
 /// The column stands in decibels ([`clausters_core::measure::meter_fraction`])
-/// and is drawn by [`meters::draw_column`], the one column in this host — so a
+/// and is drawn by [`meters::draw_column`], the one column in this host -- so a
 /// track's meter, a `meter` widget and a mixer's strip read alike, down to
 /// where the green becomes red.
 fn draw_meter_strip(
@@ -364,7 +364,7 @@ fn draw_meter_strip(
 /// The lane body of a track's `rect`: the part right of the header band, and
 /// above the time-ruler strip when the lane draws one (`ruler`). The renderer
 /// and the hit-test both call this, so a clip occupies the same pixels either
-/// way — pass the same flag (a lane with `Ruler::Off` reserves no strip, which
+/// way -- pass the same flag (a lane with `Ruler::Off` reserves no strip, which
 /// is the un-rulered default).
 ///
 /// `indent` is the **group's**, not the lane's own header width (see
@@ -398,12 +398,12 @@ fn to_x(s: f64, nav: &View, body: Rect) -> f64 {
 /// lane `body` through the shared `nav`, clamped to the body. Returns `None`
 /// when the clip has no duration or falls entirely outside the visible window.
 ///
-/// **A clip that is on screen is drawn, however short it is** — as a *line*
+/// **A clip that is on screen is drawn, however short it is** -- as a *line*
 /// when it gets that short. A span thinner than `min_w` is widened to it (kept
 /// inside the body, so a clip at the far edge grows leftwards instead of hanging
 /// out), and `min_w` is the **hairline** every drawn line in the host uses,
 /// nothing more: the alternative is a clip that exists, plays and is addressable
-/// but occupies no pixel — nothing to see, nothing to grab, and no way back
+/// but occupies no pixel -- nothing to see, nothing to grab, and no way back
 /// except guessing where to zoom.
 ///
 /// **The floor is a hairline and not a grabbable width**, which is the whole
@@ -411,7 +411,7 @@ fn to_x(s: f64, nav: &View, body: Rect) -> f64 {
 /// *lies about the length*: the clip stops narrowing as the reader zooms out and
 /// stops widening as they zoom in, so the picture says "this clip is about that
 /// long" at every scale and the one thing a timeline exists to show is the one
-/// thing it stops showing. A hairline says only "a clip is here" — the line
+/// thing it stops showing. A hairline says only "a clip is here" -- the line
 /// tracks the zoom the whole way down, and zooming *in* is what brings it back
 /// to a width the hand can take (where the grip is over the line, since a clip
 /// this narrow is all grip). What is not floored at all is a clip off the window
@@ -439,7 +439,7 @@ pub fn clip_x_range(
 }
 
 /// One clip's rectangle inside the lane `body`, given the x range its span
-/// occupies (`clip_x_range`) — the renderer and the hit-test both call it, so a
+/// occupies (`clip_x_range`) -- the renderer and the hit-test both call it, so a
 /// clip's body is edited on the pixels it is drawn on.
 pub fn clip_rect(body: Rect, x0: f32, x1: f32) -> Rect {
     Rect::new(x0, body.y + 1.0, x1 - x0, (body.h - 2.0).max(0.0))
@@ -447,7 +447,7 @@ pub fn clip_rect(body: Rect, x0: f32, x1: f32) -> Rect {
 
 /// A clip's **own** time axis: the part of `[0, dur]` its drawn rectangle `cr`
 /// shows, in clip-local units. A clip rectangle is clamped to the lane body, so
-/// a clip half-scrolled off the left is drawn starting at some `t > 0` — this is
+/// a clip half-scrolled off the left is drawn starting at some `t > 0` -- this is
 /// that window.
 ///
 /// It is what makes a clip a coordinate system rather than a rectangle the lane
@@ -477,13 +477,13 @@ fn local_x(cr: Rect, local: &View, t: f64) -> f32 {
     (cr.x as f64 + (t - local.start) / local.len * cr.w as f64) as f32
 }
 
-/// The clip-local time an x pixel of `cr` falls on — the inverse of [`local_x`].
+/// The clip-local time an x pixel of `cr` falls on -- the inverse of [`local_x`].
 fn local_t(cr: Rect, local: &View, x: f64) -> f64 {
     local.start + local.len * (x - cr.x as f64) / cr.w.max(1.0) as f64
 }
 
 /// Draws one track lane into `rect`: the header (with `label` and its
-/// controls) and the lane field. **Not** its clips — those are widgets the
+/// controls) and the lane field. **Not** its clips -- those are widgets the
 /// layout places, drawn from their own placements ([`draw_clip`]), so the lane
 /// draws what a lane is and nothing else.
 ///
@@ -500,7 +500,7 @@ pub fn draw(
     selected: bool,
 ) {
     let (mesh, m, theme) = d.parts();
-    // The header band on the left — the group's indent, so every member of the
+    // The header band on the left -- the group's indent, so every member of the
     // axis starts its body at the same x. What the lane puts in that band is
     // its own (a name, and the controls it offers).
     let band = timeline::gutter_band(rect, indent);
@@ -554,7 +554,7 @@ pub fn draw_clip(d: &mut Draw, cr: Rect, selected: bool) {
 /// Which **ends** of a clip are on screen, read off the clip's own axis: the
 /// slice of `[0, dur]` its drawn rectangle shows. A clip scrolled half off the
 /// left is drawn starting at some `t > 0`, and its start is not on screen at
-/// all — the left edge of its rectangle is the *window's* edge, not the clip's.
+/// all -- the left edge of its rectangle is the *window's* edge, not the clip's.
 ///
 /// This is what a grip has to ask before it draws: an affordance at the pixel a
 /// clamp landed on says "the clip ends here", which is a lie, and it was read
@@ -571,18 +571,18 @@ pub fn clip_ends_on_screen(local: &View, dur: f64) -> (bool, bool) {
 /// where the clip is too narrow to hold two of them and stays all body.
 ///
 /// The renderer and the hit-test both call it, so the strip that lights up is
-/// the strip that resizes — the rule every other part of this module follows.
+/// the strip that resizes -- the rule every other part of this module follows.
 /// **A clip too narrow for two grips keeps one**, and it is the one that gets
 /// the reader out of the corner: its **end**, the edge that lengthens it (the
 /// start when the end is the one off screen). Two strips on a rectangle that
-/// cannot hold them would overlap, so the press could not tell them apart —
+/// cannot hold them would overlap, so the press could not tell them apart --
 /// but returning neither left a clip shrunk to a sliver with no affordance at
 /// all, movable and never growable. One grip keeps every state reversible.
 ///
 /// The one grip is **as wide as the clip and no wider**, down to the hairline a
 /// collapsed clip is drawn as ([`clip_x_range`]): a grip is a promise the press
 /// keeps, so it can only be offered on pixels the press can be given. A clip
-/// drawn as a line therefore carries its expand grip *on the line* — enough to
+/// drawn as a line therefore carries its expand grip *on the line* -- enough to
 /// take once the zoom has widened it, and never a plate hanging over the trace
 /// that is not the clip's.
 pub fn clip_grips(cr: Rect, ends: (bool, bool), m: &Metrics) -> (Option<Rect>, Option<Rect>) {
@@ -609,12 +609,12 @@ pub enum ClipSide {
     End,
 }
 
-/// The grip a pointer at `cursor_x` is **on** — the strip under the cursor, and
+/// The grip a pointer at `cursor_x` is **on** -- the strip under the cursor, and
 /// `None` anywhere else on the clip.
 ///
 /// **An affordance is drawn where it acts, and nowhere else.** This used to
 /// light the grip of whichever *half* the pointer was in, so a strip a dozen
-/// pixels wide announced itself from the middle of the clip — and then the
+/// pixels wide announced itself from the middle of the clip -- and then the
 /// press there did not resize, because the middle of a clip is its body and the
 /// body is what a body element (a roll's notes, a curve's points) is grabbed
 /// through. A grip lit that far from its own pixels is a promise the press
@@ -637,7 +637,7 @@ pub fn clip_grip_at(
 }
 
 /// The grip on a **named** side, for a caller that knows which one it wants
-/// rather than asking where the pointer is — a drag already holding an edge.
+/// rather than asking where the pointer is -- a drag already holding an edge.
 pub fn clip_grip_on(
     cr: Rect,
     ends: (bool, bool),
@@ -652,7 +652,7 @@ pub fn clip_grip_on(
     .map(|r| (r, side))
 }
 
-/// Draws one clip grip — the affordance for the resize gesture, shown while the
+/// Draws one clip grip -- the affordance for the resize gesture, shown while the
 /// pointer is on that side of the clip.
 ///
 /// It is a **plate**, the same translucent ground a caption over a picture sits
@@ -663,7 +663,7 @@ pub fn clip_grip_on(
 ///
 /// **The symbol is a parameter of the gesture, not of the clip.** An edge drag
 /// means *trim* on one arrangement and *stretch* on another, and the day a lane
-/// says which, the arrow is where that is announced — an outward chevron for
+/// says which, the arrow is where that is announced -- an outward chevron for
 /// the edge that moves, another mark for the contents that stretches under it.
 pub fn draw_clip_grip(d: &mut Draw, grip: Rect, side: ClipSide) {
     let (mesh, m, theme) = d.parts();
@@ -703,14 +703,14 @@ pub fn draw_clip_selection(d: &mut Draw, cr: Rect) {
 /// Draws a clip's **name**, into whichever mesh is painted over its bodies.
 ///
 /// It is a separate call because a name has to read: drawn with the box, the
-/// take's trace goes over it, and the time-frequency texture — which is not
-/// mesh at all but a GPU pass after every mesh — hides it outright. So the box
+/// take's trace goes over it, and the time-frequency texture -- which is not
+/// mesh at all but a GPU pass after every mesh -- hides it outright. So the box
 /// is the base mesh's and the name is the overlay's, the same split the
 /// playhead and the selection already take.
 ///
 /// The name is **kept inside the box it names**: `cr` is the clip's *visible*
 /// rectangle (the span clamped to the lane), so a name written at its own
-/// length runs out of a clip narrower than the string — over the neighbour that
+/// length runs out of a clip narrower than the string -- over the neighbour that
 /// starts there, which is the one place it must never be. It truncates with the
 /// ellipsis instead, the rule every other single line in the host follows, and
 /// a clip with no room for a glyph draws no name rather than a stray mark.
@@ -727,14 +727,14 @@ pub fn draw_clip_label(d: &mut Draw, cr: Rect, label: &str) {
     );
 }
 
-/// Draws one clip **body** — a child element of a clip — into the clip's
+/// Draws one clip **body** -- a child element of a clip -- into the clip's
 /// rectangle, against the clip's own axis. This is the whole of what "a clip is
 /// a container" comes to: the element says what it is, the container says where it
 /// is, and neither knows about the lane, the group's window or the clip's
 /// offset on it.
 ///
 /// The bodies **layer**, back to front, because that is the order the layout
-/// placed them in: the take, the events over it, the envelope over both — an
+/// placed them in: the take, the events over it, the envelope over both -- an
 /// automation drawn on top of the contents it shapes is one clip, not two, and
 /// each body keeps its own value axis.
 pub fn draw_body_widget(
@@ -755,7 +755,7 @@ pub fn draw_body_widget(
 /// pixel maps back through the clip's own axis to a clip-local time, and that
 /// through the clip's **window** onto the contents ([`SourceWindow`]).
 ///
-/// `None` where the window is off the contents — a clip stretched past the end
+/// `None` where the window is off the contents -- a clip stretched past the end
 /// of a buffer it does not loop. Nothing was recorded there, so nothing is
 /// drawn and nothing is read; the alternative is a flat line that looks like
 /// silence somebody recorded.
@@ -780,13 +780,13 @@ pub fn clip_source_at(
 
 /// Draws a clip's signal body inside the *visible* part of the clip (`cr`),
 /// reading its samples through the one column source every signal view shares
-/// ([`Trace`]) — a loaded take answers from its peak pyramid, an inline sketch
+/// ([`Trace`]) -- a loaded take answers from its peak pyramid, an inline sketch
 /// straight off its slice, and the drawing is the same either way.
 ///
 /// The body is drawn **from the source, per visible pixel**, mapped back
 /// through the clip's own axis, which is what makes it scroll and stretch with
 /// the view instead of squashing into whatever slice is on screen. Never
-/// resolves finer than the screen — the one graphics rule.
+/// resolves finer than the screen -- the one graphics rule.
 // mesh + rect + axis + span + source + range + look: one body's draw.
 // The rect, the axis it is placed on, the source, its domain and what it
 // measures: distinct inputs to one drawing pass, as in `draw_channel` below it.
@@ -812,14 +812,14 @@ pub(crate) fn draw_take(
     }
     // **Every channel is drawn**, stacked, exactly as the standalone view
     // stacks its rows: a clip is a picture of the contents and a stereo take
-    // whose right channel is nowhere on it is a picture of half of one — which
+    // whose right channel is nowhere on it is a picture of half of one -- which
     // is also what an edit on that channel would land in, invisibly. `overlay`
     // is the same choice the standalone view offers, and it arrives the same
     // way (the element's own prop), so the two never disagree about what a
     // channel is.
     let rows = if overlay { 1 } else { trace.channels().max(1) };
     // **The window is drawn a run at a time**, each run a stretch of clip time
-    // over which it stays inside the contents — one run for the ordinary case,
+    // over which it stays inside the contents -- one run for the ordinary case,
     // one per iteration for a looping clip, and none at all where a clip
     // reaches past contents it does not loop. Each run is an *affine* window,
     // which is what lets one renderer draw all of them: the wrap lives in the
@@ -1045,12 +1045,12 @@ mod tests {
         // A zero-duration clip draws nothing.
         assert!(clip_x_range(body, &nav, 160.0, 0.0, 12.0).is_none());
 
-        // **A clip on screen is drawn however short it is** — as the line the
+        // **A clip on screen is drawn however short it is** -- as the line the
         // floor is. A hundredth of a sample is a fortieth of a pixel here: with
         // no floor the rectangle is geometry the rasterizer has nothing to put
         // down, which is a clip that plays, answers a query and occupies no
         // pixel. The floor the layout passes is the hairline, so what comes
-        // back marks where the clip is and claims nothing about its length —
+        // back marks where the clip is and claims nothing about its length --
         // widen it to a grabbable strip instead and the clip would stop
         // narrowing as the reader zooms out.
         let (x0, x1) = clip_x_range(body, &nav, 160.0, 0.01, 0.0).expect("still a clip");
@@ -1075,7 +1075,7 @@ mod tests {
 
     /// The geometry a clip is drawn with, for a lane spanning `nav`: the
     /// rectangle the layout would place it at and the clip's own axis. The
-    /// tests below draw bodies exactly as the frame does — through
+    /// tests below draw bodies exactly as the frame does -- through
     /// `(rect, local)` and nothing else.
     fn placed(offset: f64, dur: f64, nav: &View) -> (Rect, View) {
         let m = Metrics::default();
@@ -1160,7 +1160,7 @@ mod tests {
     fn a_body_reads_the_source_through_the_axis_under_zoom_and_pan() {
         // The bug this pins: a partially visible clip must draw the *part of its
         // take that is on screen*, not squash the whole take into the visible
-        // sliver — so a pixel maps back through the axis to the source.
+        // sliver -- so a pixel maps back through the axis to the source.
         let m = Metrics::default();
         let lane_rect = lane_body(lane(), false, m.header_w, &m);
         let (dur, total) = (400.0, 1000.0);

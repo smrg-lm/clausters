@@ -151,7 +151,7 @@
         await server.sync();
 
         // The band that was wiped has to collapse while the one that was kept
-        // survives — an `ifft` that reconstructs everything, or nothing,
+        // survives -- an `ifft` that reconstructs everything, or nothing,
         // fails both halves.
         if (!(lpHigh < rawHigh - 20)) {
           throw new Error(
@@ -169,7 +169,7 @@
         // ---- the demand streams ----
         //
         // `duty` pulls one item every `dur` seconds and holds it, and *both*
-        // its inputs are streams — so the whole sequence lives in the def and
+        // its inputs are streams -- so the whole sequence lives in the def and
         // no client clock is involved. The stream has to be heard to advance:
         // the two pitches are each dominant at some point, and neither is
         // there the whole time.

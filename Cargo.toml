@@ -17,9 +17,9 @@ resolver = "3"
 
 # **The one place the package version is written.** Eight crates carried the
 # same number and nothing checked that they still agreed; they inherit it now
-# (`version.workspace = true`), and the three manifests that cannot inherit —
+# (`version.workspace = true`), and the three manifests that cannot inherit --
 # `clients/gui` is its own workspace, and `pyproject.toml`/`package.json` are
-# not Cargo's — are written from here by `scripts/set-version.sh` and contrasted
+# not Cargo's -- are written from here by `scripts/set-version.sh` and contrasted
 # by `tests/versions.rs`. Bumping a release is editing this line and running
 # that script; the rules for *which* number are the `release-versioning` skill's.
 [workspace.package]
@@ -47,15 +47,15 @@ crate-type = ["rlib", "cdylib"]
 [features]
 default = ["synth", "faust", "realtime", "midi", "pipewire", "rtprio"]
 # The SynthDef family (scsynth-style UGen graphs): the UGen library, the def
-# compiler (`/def_send synth`) and `UGenSynth`. Default. Independent from — and
-# combinable with — `faust`: a custom build can ship either def family alone
+# compiler (`/def_send synth`) and `UGenSynth`. Default. Independent from -- and
+# combinable with -- `faust`: a custom build can ship either def family alone
 # (e.g. `--no-default-features --features faust,realtime,midi` is a
 # Faust-only server) or both. With neither, only the engine core remains
 # (groups, buses, buffers, transports) and every `/synth_new` fails.
 synth = []
 # cpal backend. Can be disabled for tests/CI without an audio device.
 realtime = ["dep:cpal"]
-# M17 live MIDI input via midir (ALSA seq on Linux — the same system MIDI any
+# M17 live MIDI input via midir (ALSA seq on Linux -- the same system MIDI any
 # DAW/controller uses; reuses the libasound cpal already links). Off in
 # `--no-default-features` builds, which have no system audio/MIDI deps.
 midi = ["dep:midir"]
@@ -69,7 +69,7 @@ midi = ["dep:midir"]
 # through PipeWire. The default `midi` feature keeps the ALSA backend.
 midi-jack = ["midi", "midir/jack"]
 # The FaustDef family: libfaust embedding (Signal/Box API + LLVM JIT, `/def_send faust`).
-# Default — the two def families are peers, and a server that cannot compile a
+# Default -- the two def families are peers, and a server that cannot compile a
 # FaustDef is a partial product. The cost is a build dependency: it needs
 # libfaust built with the LLVM backend (see BUILD.md for the recipe), located
 # by build.rs through FAUST_PREFIX, falling back to ~/.local, then /usr/local.
@@ -89,7 +89,7 @@ pipewire = ["realtime", "cpal/pipewire"]
 # Real-time scheduling for the audio callback thread. Default, because it is
 # the standard operating mode of every production audio client on Linux
 # (scsynth, JACK and PipeWire clients alike): without it the callback runs as
-# SCHED_OTHER and scheduling jitter — not DSP throughput — breaks the audio
+# SCHED_OTHER and scheduling jitter -- not DSP throughput -- breaks the audio
 # at roughly half the machine's capacity. cpal promotes the thread to
 # SCHED_FIFO/RR through RTKit over DBus (`audio_thread_priority`; build-dep
 # `libdbus-1-dev` on Linux). The binary also arms a SIGXCPU guard so RTKit's
@@ -148,14 +148,14 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # WebSocket transport (`osc::ws`): a first-class carrier of the same OSC encoding
-# beside UDP/TCP/shm — the one a browser can reach — so it is always built on
+# beside UDP/TCP/shm -- the one a browser can reach -- so it is always built on
 # native, like the TCP and shared-memory transports (not behind a feature).
 # Synchronous, no async runtime: the handshake + frame codec over a std
 # `TcpStream`, matching the thread-per-connection model `osc::tcp` uses. Default
 # features only (handshake, no TLS): we serve `ws://`, not `wss://`. Target-gated
 # off wasm32 (its `rand` pulls `getrandom`, which cannot build there): in the
 # browser the engine *is* in the page, so a WebSocket server front is meaningless
-# — the page pushes OSC bytes straight into the in-memory ring.
+# -- the page pushes OSC bytes straight into the in-memory ring.
 tungstenite = "0.21"
 
 [target.'cfg(unix)'.dependencies]

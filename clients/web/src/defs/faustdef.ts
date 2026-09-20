@@ -14,7 +14,7 @@
 // All three forms compile and sound against the in-page engine too: the page
 // has a Faust compiler of its own (`libfaust-wasm`, in the NRT worker), the
 // signal and box trees are read there by the *server's* own interpreters, and
-// the module the compiler emits is linked into the engine's memory — so a Faust
+// the module the compiler emits is linked into the engine's memory -- so a Faust
 // node is a node like any other. Nothing here names a carrier.
 
 import type { MsgArg } from "../base/osc.ts";
@@ -44,7 +44,7 @@ export class FaustDef {
     }
 
     /**
-     * @internal — how {@link DefPatch} reads a signal tree back out. The twin of
+     * @internal -- how {@link DefPatch} reads a signal tree back out. The twin of
      * the Python client's `_payload`: private to the package, not surface.
      */
     get patchPayload(): unknown {
@@ -88,7 +88,7 @@ export class FaustDef {
     /**
      * Sends this def to the server via `/def_send faust` and returns its name.
      *
-     * `/def_send faust` compiles asynchronously and answers when it is done —
+     * `/def_send faust` compiles asynchronously and answers when it is done --
      * on a native server's compiler thread, and in a page in the NRT worker,
      * which carries `libfaust-wasm` and links the module it emits into the
      * engine's own memory. Either carrier, the same command and the same
@@ -113,7 +113,7 @@ export class FaustDef {
     }
 
     /**
-     * The def serialized to text — the `/def_send faust <name> <payload>` wire
+     * The def serialized to text -- the `/def_send faust <name> <payload>` wire
      * payload: a JSON signal/box tree, or the Faust source string verbatim.
      */
     dumpDef(): string {
@@ -128,7 +128,7 @@ export class FaustDef {
 
     /**
      * Open this def's **structure** as a directed `patch` view in its own
-     * window on the ambient GUI host — the level-2 patcher drawn from the def's
+     * window on the ambient GUI host -- the level-2 patcher drawn from the def's
      * signal graph (every signal op a box, every operand a cord), the host
      * laying the boxes out as an inverted tree. One window per call, the `plot`
      * posture; this shows the def's *structure*, where `plot(this)` renders its
@@ -138,7 +138,7 @@ export class FaustDef {
      * node; a **box-tree** or **source** def is opaque and draws as a single box
      * (its internals are the Faust compiler's, not reconstructable
      * client-side). `label` captions the patch panel (defaults to `"faustdef"`
-     * — the panel names *what* is drawn, not the def's name); `host` is an
+     * -- the panel names *what* is drawn, not the def's name); `host` is an
      * explicit `GuiHost`, absent resolves the ambient one. Resolves with a
      * `PatchWindow` (`close()`).
      */
@@ -164,7 +164,7 @@ export class FaustDef {
     }
 
     /**
-     * This def's control surface as `ControlInfo` entries, in tree order — the
+     * This def's control surface as `ControlInfo` entries, in tree order -- the
      * shape all three def families answer with.
      *
      * A Faust control is the one that **brings its own range**: an
@@ -179,7 +179,7 @@ export class FaustDef {
         return params;
     }
 
-    /** One control by name, as a `ControlInfo` — `fd.control("cutoff")`. */
+    /** One control by name, as a `ControlInfo` -- `fd.control("cutoff")`. */
     control(name: string): ControlInfo {
         for (const info of this.controls()) {
             if (info.name === name) return info;

@@ -1,4 +1,4 @@
-// The free-standing `play` — one verb for everything playable (mirrors
+// The free-standing `play` -- one verb for everything playable (mirrors
 // `clausters/play.py`).
 //
 // `play` is the interactive front door: it plays whatever you hand it against
@@ -6,25 +6,25 @@
 // take. Like SuperCollider's `play` (and the Python client's), it dispatches
 // by kind:
 //
-// - an `Event` — or a plain **object** of event keys — → a note (immediate
+// - an `Event` -- or a plain **object** of event keys -- → a note (immediate
 //   outside a clock, timetagged inside one);
 // - an `EventPattern` (a `Pbind`) → an `EventStreamPlayer` on a clock;
 // - a `Routine`/`Stream`, or a bare **generator** (object or function) →
 //   scheduled on a clock;
 // - a **def** (`SynthDef` / `FaustDef` / `GraphDef`) → sent and instanced on
-//   the server. Returns the node handle — it plays until you free it;
+//   the server. Returns the node handle -- it plays until you free it;
 // - a bare **expression** (a UGen graph, a `ChannelList`, a Faust `Signal`) →
 //   the same, through the ephemeral-def coercion (`defs/asdef.ts`), so
 //   `play(sine(440).mul(0.5))` sounds a def it wrapped for you;
 // - a `Timeline` → played on its own clock (`Timeline.play`), on the ambient
 //   server;
 // - an `Automation` → its lane synth triggered and its targets mapped
-//   (`await auto.prepare(server)` first — see below);
+//   (`await auto.prepare(server)` first -- see below);
 // - a `Buffer` → sounded through the stock playbuf instrument (a buffer
-//   sounds through an instrument; here the verb provides the default one —
+//   sounds through an instrument; here the verb provides the default one --
 //   `rate`/`amp` controls, freed when the take ends);
 // - anything else following the **timeline-item protocol**
-//   (`play(destination)` — an `OscItem`, …) → dispatched to it with the
+//   (`play(destination)` -- an `OscItem`, …) → dispatched to it with the
 //   ambient server.
 //
 // Everything resolves against the ambient environment (the running session,
@@ -207,7 +207,7 @@ function isGeneratorFunction(value: unknown): boolean {
 /**
  * A `Routine` over a generator: a generator *function* is wrapped directly; an
  * already-created generator object is played through once (a `reset` cannot
- * restart it — pass the function to keep it re-runnable).
+ * restart it -- pass the function to keep it re-runnable).
  */
 function asRoutine(playable: unknown): Routine {
     if (isGeneratorFunction(playable)) {
@@ -220,7 +220,7 @@ function asRoutine(playable: unknown): Routine {
  * Sends `def` (any family) and instances it: `/graph_new` for a `GraphDef`,
  * `/synth_new` otherwise. Returns the node handle.
  *
- * The send is not awaited — `play` is a synchronous verb — but the carrier is
+ * The send is not awaited -- `play` is a synchronous verb -- but the carrier is
  * ordered, so the def is on its way before the creation that names it.
  */
 function playDef(
@@ -237,8 +237,8 @@ function playDef(
 
 /**
  * A buffer sounds through an instrument (see `docs/decisions.md`); here the
- * verb provides the stock one — one `playBuf` lane per channel, with `rate`
- * and `amp` controls — and frees it when the take ends (the buffer's frames
+ * verb provides the stock one -- one `playBuf` lane per channel, with `rate`
+ * and `amp` controls -- and frees it when the take ends (the buffer's frames
  * over its rate). Returns the `Synth`.
  */
 function playBuffer(buffer: Buffer, server: Server, controls?: Controls): Synth {

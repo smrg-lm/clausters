@@ -4,14 +4,14 @@
 //! window of a server audio tap and draws the magnitude curve. Like the
 //! oscilloscope, the *signal* work is pure and shared by both fronts: the tick
 //! feeds a [`SpectrumState`] the raw tap window and the render draws the stored
-//! curve, so the browser is pixel-faithful. The whole per-frame analysis — the
-//! Hann window, the FFT and the normalized decibel curve — comes from
+//! curve, so the browser is pixel-faithful. The whole per-frame analysis -- the
+//! Hann window, the FFT and the normalized decibel curve -- comes from
 //! `clausters_core::spectrum` (the same code the spectrogram and a client
 //! drawing its own curve read), so every spectrum in the system agrees bin for
 //! bin; only what plotting needs is computed here.
 //!
-//! The analysis keeps two per-bin traces across frames — an exponential average
-//! (raw per-frame FFTs flicker) and an optional decaying peak-hold — because
+//! The analysis keeps two per-bin traces across frames -- an exponential average
+//! (raw per-frame FFTs flicker) and an optional decaying peak-hold -- because
 //! both are stateful and cheap to carry between ticks. The drawing maps them to
 //! the screen through a linear/log/mel/bark frequency axis (the [`FreqScale`]
 //! geometry the spectrogram and its rulers share) with one curve point per
@@ -174,15 +174,15 @@ pub(crate) fn axis_geometry(sample_rate: f64) -> (f64, f64) {
 
 /// The fewest analysis bins a navigable frequency axis will show across its
 /// whole body. Below this the curve stops being a measurement and becomes the
-/// interpolation between two neighbouring bins — a straight line that no longer
+/// interpolation between two neighbouring bins -- a straight line that no longer
 /// answers to the signal, which is all a zoom past the analysis gives.
 const MIN_VISIBLE_BINS: f64 = 4.0;
 
 /// **The narrowest window a frequency axis may be zoomed to**, in display
 /// coordinates, at a window starting at `start`.
 ///
-/// A display axis has no natural floor of its own — the normalized `Axis` uses
-/// a fraction of its extent, which is a number about the *screen* — but a
+/// A display axis has no natural floor of its own -- the normalized `Axis` uses
+/// a fraction of its extent, which is a number about the *screen* -- but a
 /// spectrum's axis is over a measured domain, and that domain has a resolution:
 /// one FFT bin, `sample_rate / fft_size` hertz wide. So the floor is the
 /// display width of [`MIN_VISIBLE_BINS`] of them, measured through the very
@@ -192,8 +192,8 @@ const MIN_VISIBLE_BINS: f64 = 4.0;
 /// is both far too coarse at the top and far too fine at the bottom.
 ///
 /// `start` is read as the display coordinate it is, **clamped onto the axis**.
-/// A pan hands over a window that begins off the axis — that is what dragging
-/// past the edge means, and the write clamps it a step later — and measuring
+/// A pan hands over a window that begins off the axis -- that is what dragging
+/// past the edge means, and the write clamps it a step later -- and measuring
 /// the bins forward from there would charge the overshoot to the floor: the
 /// window would be widened by however far the drag had gone, and the next step
 /// of the same drag reads that wider window and goes further still, until the
@@ -336,7 +336,7 @@ pub(crate) fn draw_spectrum(
             continue;
         }
         // The bin (fractional) a screen column maps to, through the display→Hz
-        // geometry shared with the spectrogram and its rulers — the column's
+        // geometry shared with the spectrogram and its rulers -- the column's
         // position across the *visible window* of the axis, which is the one
         // remapping a navigable frequency axis costs the drawing.
         let bin_at = |c: usize| -> f32 {
@@ -446,7 +446,7 @@ mod tests {
     }
     use super::*;
 
-    /// The bin whose smoothed magnitude is largest — where a pure tone peaks.
+    /// The bin whose smoothed magnitude is largest -- where a pure tone peaks.
     fn peak_bin(state: &SpectrumState) -> usize {
         state
             .avg_db

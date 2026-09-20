@@ -28,7 +28,7 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
     )),
     // The one-segment envelopes: the same engine with its header filled
     // in, so they inherit the shape arithmetic and the whole done-action set.
-    // Unlike `EnvGen` they run at either rate — a ramp is the archetypal `kr`
+    // Unlike `EnvGen` they run at either rate -- a ramp is the archetypal `kr`
     // UGen, and a `kr` one costs a block's worth of work per block.
     desc_done(desc(
         "Line",

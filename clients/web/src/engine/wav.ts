@@ -5,7 +5,7 @@
 // decoder (`read_audio_bytes`) and writing one through its own encoder
 // (`encodeWavFrames`), so a page and a window turn the same bytes into the same
 // numbers. What is left here is parsing chunk offsets and re-emitting a
-// canonical header — pure framing, where a second implementation cannot make
+// canonical header -- pure framing, where a second implementation cannot make
 // two different answers, only a wrong one.
 //
 // It exists for streaming: reading a whole file to learn where its samples
@@ -35,7 +35,7 @@ export const HEAD_BYTES = 4096;
 
 /**
  * Reads the shape out of the first bytes of a file. Throws if those bytes do
- * not contain both chunks — read more and call again.
+ * not contain both chunks -- read more and call again.
  */
 export function parseShape(head: Uint8Array): WavShape {
     const view = new DataView(head.buffer, head.byteOffset, head.byteLength);
@@ -86,7 +86,7 @@ export function parseShape(head: Uint8Array): WavShape {
 /**
  * A whole small WAV: a canonical header the given shape describes, followed by
  * `body`. This is how a *span* of a big file becomes something the decoder can
- * read — the decoder wants a file, and a range of one is not a file until it
+ * read -- the decoder wants a file, and a range of one is not a file until it
  * has a header of its own.
  */
 export function wrapSpan(shape: WavShape, body: Uint8Array): Uint8Array<ArrayBuffer> {

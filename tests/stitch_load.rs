@@ -5,7 +5,7 @@
 //! microbenchmark of nothing but the load exaggerates every added operation.
 //! This measures what a multitrack actually is: many `PlayBuf` readers running in
 //! one engine, once over plain buffers and once over joins of the same samples,
-//! timed by `process_block` — the budget the audio thread is actually spending.
+//! timed by `process_block` -- the budget the audio thread is actually spending.
 //!
 //! Ignored by default, because it is a measurement and not an assertion:
 //! `cargo test --release --test stitch_load -- --ignored --nocapture`.
@@ -55,7 +55,7 @@ fn take() -> Arc<Buffer> {
     ))
 }
 
-/// The same samples as a join of `parts` pieces, each fading into the next —
+/// The same samples as a join of `parts` pieces, each fading into the next --
 /// which is what a comping pass cut by hand looks like.
 fn joined(src: &Arc<Buffer>, parts: usize) -> Arc<Buffer> {
     joined_with(src, parts, 64)

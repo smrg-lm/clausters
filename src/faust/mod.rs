@@ -1,11 +1,11 @@
 //! The FaustDef family: one def kind, two backends.
 //!
 //! A `FaustDef` is a compiled Faust program the node tree can instantiate, and
-//! the `faust` feature means exactly that the family exists — **not** that
+//! the `faust` feature means exactly that the family exists -- **not** that
 //! libfaust is linked in. Which compiler produces the def and how an instance
 //! is computed depend on the target:
 //!
-//! - **Native** — libfaust with the LLVM JIT, embedded through the
+//! - **Native** -- libfaust with the LLVM JIT, embedded through the
 //!   hand-written [`ffi`] binding. [`compiler`] runs the dedicated compilation
 //!   thread, [`boxes`] and [`signals`] map the JSON def formats to the Box and
 //!   Signal APIs, [`factory`] owns a compiled factory and [`cache`] persists
@@ -13,7 +13,7 @@
 //!   and the binding is ours: distro packages ship without the LLVM backend
 //!   and without headers, and the existing crates (`faust-build`,
 //!   `faust-types`) do build-time Faust→Rust codegen, not JIT embedding.
-//! - **wasm32** — a page has no LLVM, so the compiler is `libfaust-wasm`
+//! - **wasm32** -- a page has no LLVM, so the compiler is `libfaust-wasm`
 //!   running in the engine's Worker and the def arrives as a **second wasm
 //!   module linked into the engine's own linear memory**, its `compute` reached
 //!   through the engine's `__indirect_function_table`. `compiler_web` is the
@@ -22,18 +22,18 @@
 //!   the engine's own memory".
 //!
 //! Both backends publish the same `faust::compiler` and `faust::synth` paths,
-//! so everything above them — the def table, `/def_send faust`, `/node_set`,
-//! the bus mapping, the done actions — is one piece of code.
+//! so everything above them -- the def table, `/def_send faust`, `/node_set`,
+//! the bus mapping, the done actions -- is one piece of code.
 //!
 //! Threading contract on the native side (see the `faust-embedding` skill):
 //! everything in `ffi` except `computeCDSPInstance` allocates or locks and must
-//! stay off the audio thread; the lib context is global and single-threaded —
+//! stay off the audio thread; the lib context is global and single-threaded --
 //! the dedicated compiler thread serializes it naturally. In a page the same
 //! separation is the Worker's, and the audio thread only ever calls the
 //! module's `compute`.
 
 // The def formats and the binding they drive: one interpreter on both
-// targets. On wasm32 the `ffi` symbols are not linked but **imported** — the
+// targets. On wasm32 the `ffi` symbols are not linked but **imported** -- the
 // page binds them to the compiler it carries (see `compiler_web`).
 pub mod args;
 pub mod boxes;
@@ -75,7 +75,7 @@ pub struct ParamSpec {
 }
 
 /// What `/def_send faust` carries: one of the three def formats. Shared by
-/// both backends — the wire is the same in a window and in a tab.
+/// both backends -- the wire is the same in a window and in a tab.
 pub enum CompilePayload {
     /// Raw Faust source code.
     Source(String),
@@ -88,7 +88,7 @@ pub enum CompilePayload {
 impl CompilePayload {
     /// Classifies a `/def_send faust` def string: raw Faust source unless it
     /// starts with `{`, then a signal tree if the JSON object has a top-level
-    /// `"signals"` key, otherwise a box tree. The sniff is unambiguous —
+    /// `"signals"` key, otherwise a box tree. The sniff is unambiguous --
     /// Faust source never starts with `{`, and a box def's root is a single
     /// box node (`{"op": …}`), never an object keyed by `"signals"`.
     pub fn classify(def: String) -> Self {

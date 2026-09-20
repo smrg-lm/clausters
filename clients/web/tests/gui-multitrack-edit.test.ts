@@ -1,10 +1,10 @@
 // Editing a **multitrack**: the picture, the report and the history.
 //
-// `MultitrackEditor` is the multitrack as one of the fundamental structures —
+// `MultitrackEditor` is the multitrack as one of the fundamental structures --
 // which is what gives it the undo every other editor has. What is checked here
 // is the seam rather than the mapping: the mapping is the crate's
 // (`multitrackProps`/`editingIntake`, the same one the standalone host draws
-// and reads with), so what could still be wrong is this client's half — the axis
+// and reads with), so what could still be wrong is this client's half -- the axis
 // a box crosses to, which buffer a source was read into, and whether a report
 // that means several edits lands as **one** entry.
 //
@@ -117,7 +117,7 @@ test("a row per track and a box per region", () => {
 
 test("the widget is told the flat rows and not one row per number", () => {
     // The props are already the wire's, so the node is made from them rather
-    // than through the `multitrack` builder — whose `lanes`/`clips` are the
+    // than through the `multitrack` builder -- whose `lanes`/`clips` are the
     // *tuples* a page types, and which flattened an already-flat list a second
     // time: seven rows named `10`, `one`, `96`, `false`, `false`, `1`, `false`.
     //
@@ -134,7 +134,7 @@ test("the widget is told the flat rows and not one row per number", () => {
 });
 
 test("the multitrack is ruled from above by a strip of its own", () => {
-    // An editor is where a position is read, and the widget draws no ruler — so
+    // An editor is where a position is read, and the widget draws no ruler -- so
     // the view places one above it, on the multitrack's own axis.
     //
     // The two have to be in **one navigation group**: an unlinked widget is a
@@ -157,13 +157,13 @@ test("the position cursor is kept and told and is not an edit", () => {
     // is `"locate"` with where it landed.
     //
     // It is where a playback starts and where a paste lands, so the editor keeps
-    // it — the playhead is where the *music* is and moves on its own, and an
+    // it -- the playhead is where the *music* is and moves on its own, and an
     // anchor that moved on its own would not be an anchor. It is not an edit and
     // reaches no history.
     const ed = editor(multitrack());
     ed.draw();
     // **It arrives on the ruler**, which is where it is placed and nowhere else
-    // — so the strip is a named widget of this picture like any other, or the
+    // -- so the strip is a named widget of this picture like any other, or the
     // one gesture that places the cursor would land outside the only object
     // that could hear it.
     const view = ed.view as MultitrackView;
@@ -227,7 +227,7 @@ test("a name the host minted is answered with the one the multitrack kept", () =
     // split, and in both it mints the word while the document mints the id.
     //
     // Until the picture goes back the two are naming the same thing
-    // differently, and a name the multitrack does not know is not ignored — it is
+    // differently, and a name the multitrack does not know is not ignored -- it is
     // read as something *new*. So the next report about that box minted it
     // again, and again after that.
     const held = multitrack();
@@ -281,8 +281,8 @@ test("a name the host minted is answered with the one the multitrack kept", () =
 });
 
 test("rewind puts the cursor back at the top", () => {
-    // The cursor's own verb. Stop goes back to the **mark** — which is what
-    // tells it from pause — so with nothing else the way back to the top is
+    // The cursor's own verb. Stop goes back to the **mark** -- which is what
+    // tells it from pause -- so with nothing else the way back to the top is
     // finding beat zero on screen and clicking it.
     const ed = editor(multitrack());
     ed.cursor = 12.0;
@@ -292,7 +292,7 @@ test("rewind puts the cursor back at the top", () => {
 
 test("buffer zero is a buffer", () => {
     // The first buffer an allocator hands out is a buffer, and a box over it
-    // draws — `|| -1` said it did not, so the first take a page loaded was the
+    // draws -- `|| -1` said it did not, so the first take a page loaded was the
     // one take its boxes could not draw.
     //
     // Found by use 2026-09-10, on the box the example loads first.
@@ -340,7 +340,7 @@ test("a move reaches the multitrack and undoes", () => {
 });
 
 test("a block move is one entry", () => {
-    // A report is the multitrack, so one message can mean several edits — and they are
+    // A report is the multitrack, so one message can mean several edits -- and they are
     // one thing a hand did, so Ctrl+Z walks back over all of it.
     const held = multitrack();
     const ed = editor(held);
@@ -372,7 +372,7 @@ test("a clip that crossed changes track and undoes", () => {
 
 test("a box the multitrack does not know becomes a region", () => {
     // A split names its halves after the box they came from, which is no region
-    // id — and that is how a new box is told from a moved one.
+    // id -- and that is how a new box is told from a moved one.
     const held = multitrack();
     const ed = editor(held);
     assert.ok(report(ed, [
@@ -489,7 +489,7 @@ test("every curve's points travel in one list on this window's axis", () => {
 });
 
 test("a point dragged is one edit and the curve that did not move is not", () => {
-    // The report is every curve there is, so what it means is the difference —
+    // The report is every curve there is, so what it means is the difference --
     // and an undo puts the shape back, since the crate carries a point's data
     // without reading it.
     const written = curved();
@@ -539,7 +539,7 @@ class FakeTake {
 
 test("entering a box opens its contents on the multitrack's history", async () => {
     // The multitrack places; a box is entered to edit. What a box holds is a
-    // structure like any other, so entering one is `edit` over that structure —
+    // structure like any other, so entering one is `edit` over that structure --
     // and it is opened on the **multitrack's** editing context, so one undo order
     // walks both.
     const take = new FakeTake();
@@ -557,7 +557,7 @@ test("entering a box opens its contents on the multitrack's history", async () =
 
 /**
  * `FakeTake` plus the read-back and the option-object write the samples domain
- * actually uses — a `Buffer`'s own shape, since a stand-in with a different one
+ * actually uses -- a `Buffer`'s own shape, since a stand-in with a different one
  * is a test that passes against a client nobody has.
  */
 class Take extends FakeTake {
@@ -600,7 +600,7 @@ class Take extends FakeTake {
     }
 }
 
-/** Lets the samples domain's write queue drain — its writes are a promise chain. */
+/** Lets the samples domain's write queue drain -- its writes are a promise chain. */
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 test("a reopened box undoes its own edit and not the multitrack's", async () => {
@@ -611,7 +611,7 @@ test("a reopened box undoes its own edit and not the multitrack's", async () => 
     // window steps. The identity is the context's, minted per structure, so the
     // new editor projects the legs the old one recorded.
     //
-    // Written 2026-09-09 while diagnosing the same fault in the Python client —
+    // Written 2026-09-09 while diagnosing the same fault in the Python client --
     // an undo in a reopened box's window stepping the multitrack's last edit.
     // It does not reproduce here either.
     const take = new Take();
@@ -644,11 +644,11 @@ test("a box closed does not block the multitrack's undo", async () => {
     // **The pile's scope is the context's, not a window's.**
     //
     // An entry names a structure, and what puts an edit back onto one is its
-    // *vocabulary* — neither of which is on screen. When the applier was a
+    // *vocabulary* -- neither of which is on screen. When the applier was a
     // **view** instead, a box entered from a multitrack and then closed left an entry
     // nobody could apply: the step was refused, and since a refused step puts
     // the cursor back, the very next undo hit the same entry. The pile was not
-    // missing one step, it was **blocked** — every edit the multitrack had made
+    // missing one step, it was **blocked** -- every edit the multitrack had made
     // behind that entry was unreachable until the box was opened again.
     //
     // Found by use 2026-09-12, by hand, in the Python example. The earlier
@@ -729,7 +729,7 @@ test("the windows entered from a multitrack close with it", async () => {
 
 test("a gesture that changed the data says so once", () => {
     // The page's door onto an edit: one call per gesture however many edits it
-    // took, because that is what a hand did — and a window is not exempt from
+    // took, because that is what a hand did -- and a window is not exempt from
     // being told about its own gesture.
     const ed = editor(multitrack());
     let told = 0;
@@ -816,7 +816,7 @@ test("a layer's points are its box's own time", () => {
  * The instance plan for an editor's multitrack, the way `Playback` asks for it.
  *
  * The plan itself is the crate's and is tested there; what these check is the
- * **crossing** — that this client hands it the multitrack, the axis and the source
+ * **crossing** -- that this client hands it the multitrack, the axis and the source
  * table it actually holds, which is the half a client can get wrong on its own.
  */
 /**
@@ -880,7 +880,7 @@ test("a box is planned in frames from where its window opens", () => {
 
 test("a muted box and an unloaded source are not read", () => {
     // Two different answers: a muted box is planned at nothing, and a box whose
-    // source nobody loaded is not planned at all — the second is a multitrack that
+    // source nobody loaded is not planned at all -- the second is a multitrack that
     // arrived without its takes, which is not the same as a silent one.
     const ed = editor(multitrack());
     const region = ed.structure.tracks[0].lanes[0].regions[0];
@@ -895,7 +895,7 @@ test("a muted box and an unloaded source are not read", () => {
 
 test("the source table carries the width that picks the wiring", () => {
     // A mono take is panned into its track and a stereo one is balanced, so
-    // which clip def a box goes in follows from the source's width — and the
+    // which clip def a box goes in follows from the source's width -- and the
     // width is the client's to report, since only it loaded the samples.
     const ed = editor(multitrack());
     const table = ed.bridge.sources.table();
@@ -907,7 +907,7 @@ test("the source table carries the width that picks the wiring", () => {
 
 test("the mixer rules reach the plan and a solo silences the rest", () => {
     // The document holds the flags and never reads them: what a track
-    // contributes is the mixer's rule, and the mixer is in the crate — so both
+    // contributes is the mixer's rule, and the mixer is in the crate -- so both
     // clients get the same answer instead of each writing one.
     const ed = editor(multitrack());
     const [one, two] = ed.structure.tracks;

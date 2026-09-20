@@ -2,10 +2,10 @@
 
 Two ways to feed a `SampleClockTimebase`:
 
-- `UdpSampleClock` — over UDP, where the client can't read the sample counter
+- `UdpSampleClock` -- over UDP, where the client can't read the sample counter
   directly, it queries the server's ``/clock_query`` and models the counter (below).
-- `EmbedSampleClock` — for an in-process embedded server, whose handle exposes
-  the counter itself: no socket, no round trips, no model — every read *is* the
+- `EmbedSampleClock` -- for an in-process embedded server, whose handle exposes
+  the counter itself: no socket, no round trips, no model -- every read *is* the
   counter. It mirrors the tracker's surface so `Server.sample_timebase` treats
   both alike.
 
@@ -16,15 +16,15 @@ The UDP tracker models
 from ``(local monotonic time, counter)`` anchor pairs, a least-squares line over
 a sliding window (JACK-DLL / Ableton-Link in spirit; same model as the server's
 ``examples/sample_clock.py``). The TempoClock then paces against this and the
-Server schedules every event by absolute sample with ``/sched_at`` — drift-free.
+Server schedules every event by absolute sample with ``/sched_at`` -- drift-free.
 
 Query latency does not accumulate: an anchor is paired with the *midpoint* of
 its round trip, whose half-width is a bounded uncertainty that only shifts the
 whole grid by a constant. Relative timing stays sample-exact by construction.
 
 Why this is drift-free, and what *can* fail. Each event's target is an absolute
-sample recomputed from the routine's absolute logical beat — ``round((origin +
-beat / tempo) * sample_rate)`` — not stepped from the previous event, so error
+sample recomputed from the routine's absolute logical beat -- ``round((origin +
+beat / tempo) * sample_rate)`` -- not stepped from the previous event, so error
 never accumulates: at 48 kHz the target stays integer-exact within ``float64``
 for hours. The fitted line above only sizes the *lead* (how far ahead the
 ``/sched_at`` is queued), never the event time, which the server's own counter
@@ -35,14 +35,14 @@ run at perfect spacing just means the lead was never violated.
 
 Surviving suspend. The server's counter counts samples *actually emitted*, so it
 freezes when the audio device suspends (system sleep, or the sink going idle)
-and resumes in place — it is not a wall clock. A ``/sched_at`` keyed to an absolute
+and resumes in place -- it is not a wall clock. A ``/sched_at`` keyed to an absolute
 sample simply waits in the server's queue and fires when the counter reaches it,
 so the audio grid stays sample-exact across the gap (consecutive events keep
 their exact spacing; the freeze just drops out of the timeline). The tracker
 rides this automatically: while the counter is stalled its anchors fit a flat
 slope, so the predictor stops running ahead and the lead/backlog stays bounded;
 on resume the slope recovers. Only the wall-clock *phase* shifts, by the suspend
-duration — relative sample spacing is preserved.
+duration -- relative sample spacing is preserved.
 """
 
 import threading
@@ -160,7 +160,7 @@ class UdpSampleClock:
 
     @property
     def tracking(self) -> bool:
-        """Whether the background re-anchoring loop is running — which is also
+        """Whether the background re-anchoring loop is running -- which is also
         what says this reader has a model already, so a second clock locking to
         the same server does not anchor and warm it up again."""
         return self._tracking
@@ -191,11 +191,11 @@ class UdpSampleClock:
 class EmbedSampleClock:
     """The in-process counterpart of `UdpSampleClock`: reads an embedded
     server's sample counter straight from its handle (`clausters.ipc.Clausters`
-    or `ShmClient` — anything with ``clock`` and ``sample_rate``).
+    or `ShmClient` -- anything with ``clock`` and ``sample_rate``).
 
     There is nothing to track: the counter is shared memory, so `anchor` /
     `warmup` / `track` are trivial no-ops kept only for surface parity with the
-    UDP tracker, and they never block or time out. `close` releases nothing —
+    UDP tracker, and they never block or time out. `close` releases nothing --
     the handle belongs to the interface that opened it.
     """
 

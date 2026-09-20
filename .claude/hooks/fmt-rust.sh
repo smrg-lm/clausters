@@ -11,14 +11,14 @@
 # manifest per file. Every crate is edition 2024 and there is no rustfmt.toml,
 # so a bare `rustfmt --edition 2024` is exactly what `cargo fmt` would do.
 #
-# Always exits 0 — a file that does not parse yet (mid-refactor) must not
+# Always exits 0 -- a file that does not parse yet (mid-refactor) must not
 # block the edit; the next fmt pass picks it up.
 set -uo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 
 # This hook reads its input with jq and shells out to rustfmt, neither of which
-# it ships. Miss either and it would not error — it would parse nothing, match
+# it ships. Miss either and it would not error -- it would parse nothing, match
 # nothing and exit 0: the protection off, looking exactly like the protection
 # on. So say so, then get out of the way. A machine that cannot run the check is
 # not a reason to stop the work.
@@ -43,7 +43,7 @@ if [ -n "$missing" ]; then
         # anyway (a read-only TMPDIR) does not print a shell error of its own.
         : 2>/dev/null >"$stamp"
         {
-            echo "clausters: the fmt-rust hook is inert — missing on PATH:$missing."
+            echo "clausters: the fmt-rust hook is inert -- missing on PATH:$missing."
             echo "Rust files are NOT being formatted on write, so the tree will drift"
             echo "out of \`cargo fmt --check\`. rustfmt ships with rustup (ensure"
             echo "~/.cargo/bin is on the PATH of a non-interactive shell); jq is a"
@@ -64,7 +64,7 @@ esac
 # ...and inside this checkout. A session can edit Rust anywhere on the machine,
 # and the `--edition 2024` below is a fact about *this* tree only. On the
 # command line it overrides the edition another project declares, so an older
-# crate would be parsed by 2024's rules — `gen`, an ordinary identifier there,
+# crate would be parsed by 2024's rules -- `gen`, an ordinary identifier there,
 # is a reserved keyword here. Its style config is not the issue: rustfmt finds
 # that project's rustfmt.toml on its own, walking up from the file. The edition
 # is the part this hook would impose, and reformatting someone else's tree

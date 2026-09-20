@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """A live patch wired by hand: server config, groups, two def kinds, buses
-and a buffer — all through the Python client's own resources.
+and a buffer -- all through the Python client's own resources.
 
 This is the *low-level* half of a pair (the high-level half is
 ``examples/persistent_graphdef.py``, which packages the same ideas as a stored
@@ -28,7 +28,7 @@ The signal flow::
     freqBus (control) --map--> fsine.freq
 
 Real audio hardware is required (a live RT server). Build the server with the
-Faust feature first, then run this — it starts and stops its own server:
+Faust feature first, then run this -- it starts and stops its own server:
 
     cargo build --release --features faust
     python3 examples/live_patch.py

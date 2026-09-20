@@ -57,7 +57,7 @@ def _manylinux(plat):
     the ``manylinux_X_Y`` family, whose X.Y is the *oldest glibc the binaries
     run on*. The cdylibs are built on this very machine, so the honest bound
     is the build machine's own glibc version (PEP 600 says nothing about the
-    non-glibc shared libs they link — libasound/libpipewire are the user's
+    non-glibc shared libs they link -- libasound/libpipewire are the user's
     system libraries, resolved at runtime like any audio app's). Non-glibc
     (musl) or non-Linux platforms keep their tag unchanged.
     """

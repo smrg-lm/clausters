@@ -2,7 +2,7 @@
 
 A GuiDef is the GUI analogue of a ``SynthDef``/``GraphDef``: a tree of
 ``{id, type, ...props, children}`` nodes serialized to JSON and carried inside
-one OSC argument. These helpers compose that tree as plain ``dict``s — they are
+one OSC argument. These helpers compose that tree as plain ``dict``s -- they are
 **host-agnostic**, just like building a ``SynthDef`` is server-agnostic; only
 `clausters.gui.host.GuiHost` knows how to send one. The root node carries no
 ``id`` (it comes from the ``/gui_def <id>`` argument); every child carries an
@@ -13,8 +13,8 @@ node: a **container** owning 0, 1 or 2 axes (`layout`, `plane`, `field`, and
 the `window` root), an **element** drawn against those axes (`signal`, `notes`,
 `curve`, `score`, `keys`, `nodes`, `meter`, `canvas`, `label`), and a
 **control**, which is an element with a value and no axis (`slider`, `knob`,
-`number`, `button`, `toggle`, `text`, `menu`). The chrome of an axis — its
-ruler, its navigation window, the selection, the playhead, the value range —
+`number`, `button`, `toggle`, `text`, `menu`). The chrome of an axis -- its
+ruler, its navigation window, the selection, the playhead, the value range --
 belongs to the **container's** ``axes``, not to each element drawn against it.
 
 The builders named after widgets (`panel`, `stack`, `scroll`, `waveform`,
@@ -22,12 +22,12 @@ The builders named after widgets (`panel`, `stack`, `scroll`, `waveform`,
 builds a model node with the props of one common case, and takes its axis
 chrome as flat keywords (``ruler=``, ``link=``, ``min=``) which it packs into
 the pair for you. `layout`, `plane`, `field` and `signal` are the general
-builders beside them, for the cases no shortcut names — a lane that is also a
+builders beside them, for the cases no shortcut names -- a lane that is also a
 clip, a plane that is neither a scroll view nor a patcher, a presentation over
 a source the shortcuts do not pair.
 
 **Address a widget by name, not by id.** Pass ``name="cutoff"`` to any builder
-and `GuiHost.open` hands back a window handle you index by that name —
+and `GuiHost.open` hands back a window handle you index by that name --
 ``win["cutoff"].set(value=…)``, ``win["cutoff"].on_event(fn)``. The name is a
 **client-only** key: it labels the widget for the ``name -> handle`` map and is
 stripped from the JSON, so it never rides the wire. Unlike the assigned id
@@ -35,9 +35,9 @@ stripped from the JSON, so it never rides the wire. Unlike the assigned id
 a live `set` addresses against.
 
 **The id is a keyword argument on every builder, and never the first one.** The
-positional slot belongs to what the widget is made of — a container's children
+positional slot belongs to what the widget is made of -- a container's children
 (``panel(knob(), slider())``), a label's text (``label("hello")``), a meter's
-bus (``meter(4)``), a menu's options — so an ordinary tree mentions no ids at
+bus (``meter(4)``), a menu's options -- so an ordinary tree mentions no ids at
 all. `GuiHost.open` / `GuiHost.define` then assigns each widget a fresh
 host-unique id **in the document it sends**, leaving the tree you wrote as you
 wrote it. An id names a live widget, so it belongs to the instance `open` hands
@@ -45,36 +45,36 @@ back, not to the definition: the way to a widget is its ``name`` through that
 handle (``win["cutoff"]``), and one tree opens as many times as you like.
 
 Passing ``id=`` explicitly stays supported for the cases that need a fixed
-number (small ints are fine — the host client allocates from 1000 up, so hand
+number (small ints are fine -- the host client allocates from 1000 up, so hand
 ids below 1000 never collide with assigned ones). **Widget ids live in one
 namespace per host**, across *all* windows, like the server's node ids: two
 windows must not reuse an id, which is the bookkeeping the assigned ids and the
 names exist to spare you.
 
 The int/float distinction is the user's to make and is preserved end to end:
-write ``480`` for an integer property and ``480.0`` for a float — ``json.dumps``
+write ``480`` for an integer property and ``480.0`` for a float -- ``json.dumps``
 keeps them apart in the JSON text and the host's serde parse keeps them apart on
 the wire (ids stay integers, control values stay floats).
 
 **Every widget takes the generic place props**, applied by the container's
 layout (all in **logical** pixels, all optional, all live via ``set``):
 
-- ``w``/``h`` — a fixed main-axis size in a ``row``/``col`` (``w`` in a row,
+- ``w``/``h`` -- a fixed main-axis size in a ``row``/``col`` (``w`` in a row,
   ``h`` in a col); in ``free``, the widget's size.
-- ``weight`` — the share of the leftover a child takes in a ``row``/``col``,
+- ``weight`` -- the share of the leftover a child takes in a ``row``/``col``,
   and the way to stretch a control past the size it asks for.
-- ``x``/``y`` — the position inside a ``free`` container; a free child with
+- ``x``/``y`` -- the position inside a ``free`` container; a free child with
   none of these props overlays the whole container area.
 
 A ``row``/``col`` resolves its main axis in **one order**: a fixed ``w``/``h``,
-else an explicit ``weight``, else the widget's **natural size** — how big that
-kind of widget wants to be, which the host knows — else a share of the
+else an explicit ``weight``, else the widget's **natural size** -- how big that
+kind of widget wants to be, which the host knows -- else a share of the
 leftover at weight 1. The cross axis always fills. So a control (a ``button``,
 a ``knob``, a single-line ``text``, a ``label``) stacked in a ``col`` is one
 control-high row rather than half the window, while views (a ``waveform``, a
 ``pianoroll``) have no natural size and split the rest between them.
 
-A **container** is one of those views — it takes what it is given — unless it
+A **container** is one of those views -- it takes what it is given -- unless it
 carries ``hug``, and then it wants exactly what it holds: a ``row`` adds its
 children up along its axis and takes the tallest of them across it, a ``col``
 the other way round, a ``grid`` counts its cells. That is how a strip of
@@ -86,8 +86,8 @@ is one the container hands back to the layout.
 
 What a size may read is fixed by **where the value is resolved**: a prop that
 settles when you build or ``set`` it (a label's text, a menu's options) may size
-a container that hugs, and a *value* — a number being turned, a field being
-typed into, a scope's samples — never sizes anything, so no stream of values
+a container that hugs, and a *value* -- a number being turned, a field being
+typed into, a scope's samples -- never sizes anything, so no stream of values
 ever moves a layout. Outside a ``hug`` nothing reads the content at all.
 
 Those numbers are **logical**, not the screen's: the host multiplies every
@@ -95,7 +95,7 @@ declared length (and ``text_size``, a glyph scale) by the display's own scale,
 one number per window, resolved when the scale changes and never per frame. So a
 ``h=28`` strip looks like a 28-pixel strip everywhere, and a script never asks
 what it is running on. The one exception is a ``scroll`` workspace's content
-plane — its ``content_w``/``content_h``, its ``view_x``/``view_y`` and its
+plane -- its ``content_w``/``content_h``, its ``view_x``/``view_y`` and its
 children's place props are content units, physical pixels on the plane, because
 the plane carries a zoom of its own.
 
@@ -103,8 +103,8 @@ Containers (``window``/``panel``/``scroll``) additionally take ``margin`` (the
 inset before their children, default 6), ``gap`` (between children, default 6)
 and ``cols`` (a fixed ``grid`` column count; default near-square);
 ``window``/``panel``/``stack`` also take ``hug``. A
-fixed-height menu bar over a weighted content area over a fixed status bar —
-the application shell — is just ``window(bar(h=28), content(), status(h=20),
+fixed-height menu bar over a weighted content area over a fixed status bar --
+the application shell -- is just ``window(bar(h=28), content(), status(h=20),
 layout="col")``.
 
 When the content does not fit its container, `scroll` is the container that
@@ -114,23 +114,23 @@ strip) are that same widget configured down.
 
 **Every widget also takes the style props**, both live via ``set``:
 
-- ``color`` — one ``"#rrggbb[aa]"`` that re-seeds the roles carrying the
+- ``color`` -- one ``"#rrggbb[aa]"`` that re-seeds the roles carrying the
   widget's function: the accent family (a slider's handle and fill, a button
   face, a meter's bar), the trace, the first series color of a multichannel
   view, a clip's body. An empty string clears it.
-- ``theme`` — on a container (`window`/`panel`/`scroll`/`track`), a partial
+- ``theme`` -- on a container (`window`/`panel`/`scroll`/`track`), a partial
   color-role table (``{"role": "#rrggbb[aa]"}``, the same shape as the host's
-  TOML style file) overlaying the parent's theme for the whole subtree — a
+  TOML style file) overlaying the parent's theme for the whole subtree -- a
   **theme group**, recursive by construction. On a window root it persists
   with a named def. An empty table clears the group.
-- ``opacity`` — how opaque the widget draws, ``0.0``–``1.0``. Like ``theme`` it
+- ``opacity`` -- how opaque the widget draws, ``0.0``–``1.0``. Like ``theme`` it
   is a **group's** property: it multiplies down the whole subtree, so a control
   inside a panel at ``0.5`` that is itself at ``0.5`` draws at ``0.25``. A
-  negative number clears it. It fades the flat drawing — the chrome, the
+  negative number clears it. It fades the flat drawing -- the chrome, the
   controls and the text; a heavy view's picture (a waveform's trace, a
   spectrogram's texture, a ``canvas`` shader) is drawn by its own pipeline and
   keeps its own.
-- ``radius`` — the corner radius of the boxes this widget draws, in logical
+- ``radius`` -- the corner radius of the boxes this widget draws, in logical
   pixels. Unlike ``opacity`` it applies to the widget alone: a rounded panel
   says nothing about the controls in it. Each box clamps it to half its shorter
   side, so a widget's own frame rounds while the hairlines inside it (a
@@ -138,15 +138,15 @@ strip) are that same widget configured down.
 
 **A container also declares its gestures.** Panning, sweeping a selection and
 locating the transport belong to the coordinate system a container gives its
-contents, not to what is drawn in it — which is why Shift+drag pans the same
+contents, not to what is drawn in it -- which is why Shift+drag pans the same
 way over a ``waveform``, a ``track`` lane, a ``pianoroll`` and a ``timeruler``.
 A ``gestures`` prop replaces that mapping, keyed by modifier (``drag``
 for the plain drag, ``shift``, ``ctrl``, ``alt``), each value an ordered plan
-of steps: ``element`` (hand the press to whatever is under the cursor — a clip,
-a note, a box — which may decline), ``pan``, ``select`` (sweep the time span),
-``marquee`` (sweep the objects a rectangle covers — a lane's clips, a patcher's
-boxes — and no span), ``select_box`` (the same sweep restricted to the band of
-values it covered — a rectangle, which declines where the picture measures only
+of steps: ``element`` (hand the press to whatever is under the cursor -- a clip,
+a note, a box -- which may decline), ``pan``, ``select`` (sweep the time span),
+``marquee`` (sweep the objects a rectangle covers -- a lane's clips, a patcher's
+boxes -- and no span), ``select_box`` (the same sweep restricted to the band of
+values it covered -- a rectangle, which declines where the picture measures only
 time), ``sample`` (grab the sample under the pointer and drag it vertically,
 declining below the zoom that draws each one as a disc), ``draw`` (write the
 value under the pointer over every sample a stroke passes, refused out loud
@@ -225,13 +225,13 @@ __all__ = [
 
 # ------------------------------------------------------------------ the object
 #
-# `View`: a GUI node as an object — the AST a client builds and then opens.
+# `View`: a GUI node as an object -- the AST a client builds and then opens.
 #
 # A `clausters.gui.guidef` builder used to return a bare ``dict``, which is why
 # the *host* had to be the subject of the sentence (``host.open(tree)``) while
 # every other resource is its own subject (``synthdef.send(server)``,
 # ``clausters.plot(obj)``). A `View` closes that asymmetry: it is the GUI's
-# counterpart of a `clausters.defs.SynthDef` — a tree a program composes and
+# counterpart of a `clausters.defs.SynthDef` -- a tree a program composes and
 # sends, not a live widget. The live widget is what `View.open` gives back.
 #
 # `View` **is a ``dict``**, so the document it serializes is byte-identical to the
@@ -240,8 +240,8 @@ __all__ = [
 # carries, `to_json`, and `open`.
 #
 # **A name is the client's index, not an id.** The host never reads a widget's
-# ``name`` — `clausters.gui.guidef.to_json` strips it before the document goes out
-# — so ``view.find("cutoff")`` and ``win["cutoff"]`` are tables this client builds
+# ``name`` -- `clausters.gui.guidef.to_json` strips it before the document goes out
+# -- so ``view.find("cutoff")`` and ``win["cutoff"]`` are tables this client builds
 # by walking the tree. Two rules follow, and both are enforced here:
 #
 # - **A duplicate name in one view is an error**, raised while the tree is being
@@ -263,7 +263,7 @@ _SCOPES = ("window",)
 class View(dict):
     """One node of a GuiDef tree: a ``dict`` that also knows how to be opened.
 
-    Built by the `clausters.gui.guidef` builders, never directly — ``knob(...)``,
+    Built by the `clausters.gui.guidef` builders, never directly -- ``knob(...)``,
     ``layout(a, b)`` and ``window(...)`` all return one. Composition is nesting,
     exactly as before::
 
@@ -290,7 +290,7 @@ class View(dict):
         #: Client-side only; the name is all that reaches the wire.
         self._control = None
         #: ``name -> View`` for this view's own scope, built once at
-        #: construction from the children's already-built scopes — so composing
+        #: construction from the children's already-built scopes -- so composing
         #: a tree costs one pass over each node, not one per lookup.
         self._scope = _scope_of(self)
 
@@ -303,7 +303,7 @@ class View(dict):
 
     @property
     def name(self):
-        """The node's own name, or ``None`` — the client-side label `find`
+        """The node's own name, or ``None`` -- the client-side label `find`
         resolves and the host never sees."""
         return self.get("name")
 
@@ -315,7 +315,7 @@ class View(dict):
     def find(self, name: str) -> "View":
         """The named widget in this view's scope.
 
-        Raises `KeyError` if nothing carries that name here — including when the
+        Raises `KeyError` if nothing carries that name here -- including when the
         name is inside a nested view, which is a scope of its own::
 
             v.find("osc1").find("freq")
@@ -349,7 +349,7 @@ class View(dict):
 
         The resource is the subject: ``window(...).open()`` rather than
         ``host.open(window(...))``. ``host`` follows the ambient rule every other
-        visual verb follows (`clausters.plot`, `clausters.scope`) — the one
+        visual verb follows (`clausters.plot`, `clausters.scope`) -- the one
         registered with `clausters.gui.set_ambient_host`, else the current or
         default session's `gui` host, else a standalone host booted and owned by
         the ambient layer. Trailing ``blobs`` and an explicit ``id`` ride through
@@ -374,7 +374,7 @@ def _scope_of(node: dict) -> dict:
     the descent at a nested view (which is registered by its own name and keeps
     the names inside it).
 
-    The node's *own* name is not in its scope — a view is not found inside
+    The node's *own* name is not in its scope -- a view is not found inside
     itself; it is found in the scope of whatever contains it.
     """
     scope: dict = {}
@@ -394,7 +394,7 @@ def _claim(scope: dict, name: str, node):
     """Record ``name -> node``, refusing a name already taken in this scope."""
     if name in scope:
         raise ValueError(
-            f"duplicate widget name {name!r} in one view — a name is how this "
+            f"duplicate widget name {name!r} in one view -- a name is how this "
             "client addresses a widget, so two widgets cannot share one. Rename "
             "one, or put them in nested views, which scope their names.")
     scope[name] = node
@@ -404,7 +404,7 @@ def _claim(scope: dict, name: str, node):
 
 
 #: Inline ``data`` ceiling: at most this many floats ride the GuiDef JSON.
-#: Anything longer spills to a temp raw-``f32`` file the host maps — the bulk
+#: Anything longer spills to a temp raw-``f32`` file the host maps -- the bulk
 #: path, where the samples never touch OSC. The same number `clausters.plot`
 #: has always used, now in one place.
 INLINE_MAX = 2048
@@ -442,19 +442,19 @@ def _remove_spilled():
 
 
 class Source:
-    """The payload a view draws, as something you hold — and can change.
+    """The payload a view draws, as something you hold -- and can change.
 
     A widget's heavy props are the ones that carry a **payload rather than a
     scalar**, and there are two families of them. The samples of a signal view,
-    which the wire spells several ways — ``data`` (a small list inline in the
+    which the wire spells several ways -- ``data`` (a small list inline in the
     JSON), ``blob`` (an index into the message's trailing binary arguments),
     ``path`` (a mapped raw-f32 file), ``cache`` (a prebuilt peak pyramid),
-    ``buffer`` (a server buffer number) — where which one is right is a question
+    ``buffer`` (a server buffer number) -- where which one is right is a question
     about **size and where the samples already are**, not about what you are
     drawing, and ``blob=0`` in particular is a correspondence kept by hand
     between the widget and the ``open`` call that had better pass that blob
     first. And the **structures**: a curve's ``points``, a roll's ``notes`` and
-    ``osc``, a patcher's ``boxes`` and ``cords``, a score's ``display_list`` —
+    ``osc``, a patcher's ``boxes`` and ``cords``, a score's ``display_list`` --
     each of which rides in its own prop and has exactly one way to travel.
 
     A `Source` answers it for you and stays addressable::
@@ -474,7 +474,7 @@ class Source:
     prop that names the input you mean; the object decides how it travels, so
     the view never mentions a carrier.
 
-    One source in two views is **one payload and two references** — which is
+    One source in two views is **one payload and two references** -- which is
     what makes the blobs interchangeable, said by the program rather than by
     convention.
 
@@ -482,7 +482,7 @@ class Source:
     decided from what it first holds: a short list stays inline, a long one
     spills to a temp raw-f32 file that the source keeps for its life; `set` then
     writes through that same carrier, because a widget already on screen was
-    built around it — inline samples are replaced with a ``/gui_set data``, and
+    built around it -- inline samples are replaced with a ``/gui_set data``, and
     a file is **rewritten in place** and re-read with a ``/gui_set reload``,
     which is the host's own pair of doors for "the samples are now these" and
     "they are where they were, and they moved". For a structure the carrier is
@@ -519,7 +519,7 @@ class Source:
             raise TypeError(
                 "channels/sample_rate/base_bucket describe samples, and this "
                 f"source carries a {next(iter(held))} structure")
-        #: ``(node, prop)`` for every node this source was placed in — the
+        #: ``(node, prop)`` for every node this source was placed in -- the
         #: definitions it feeds, rewritten by `set` so a later `open` sends the
         #: payload it holds now.
         self._bound: list = []
@@ -553,7 +553,7 @@ class Source:
         return self._carrier
 
     def props(self) -> dict:
-        """The wire props this source expands to — what a builder puts into the
+        """The wire props this source expands to -- what a builder puts into the
         node in place of the prop it was passed as. A structure is normalized
         here, so a definition carries the same flat form it would have carried
         written out by hand."""
@@ -563,7 +563,7 @@ class Source:
 
     def slots(self) -> tuple:
         """The node keys this source's expansion occupies, so a rewrite clears
-        exactly what the last one wrote — the five carriers for samples (they
+        exactly what the last one wrote -- the five carriers for samples (they
         are one slot spelled five ways), the prop's own keys for a structure."""
         if self._structure:
             return _STRUCTURES[self._carrier][1]
@@ -574,7 +574,7 @@ class Source:
         it are rewritten, and every widget already drawing it is told to
         redraw.
 
-        A view open twice is updated twice — the payload belongs to the
+        A view open twice is updated twice -- the payload belongs to the
         definition, so both instances follow; the per-instance door stays
         ``win["wave"].set(...)``.
 
@@ -598,7 +598,7 @@ class Source:
         samples = payload
         if self._carrier not in ("data", "path"):
             raise TypeError(
-                f"this source names a {self._carrier}, which it does not own — "
+                f"this source names a {self._carrier}, which it does not own -- "
                 "change the samples where they live and call reload()")
         values = [float(x) for x in samples]
         if self._carrier == "data":
@@ -607,7 +607,7 @@ class Source:
                     f"{len(values)} samples do not fit the inline carrier this "
                     f"source was made with (at most {INLINE_MAX}). A source's "
                     "carrier is fixed when it is made, because a widget on "
-                    "screen was built around it — make this one from a long "
+                    "screen was built around it -- make this one from a long "
                     "list, or from a path=, so it spills from the start")
             self._value = values
             for node, _ in self._bound:
@@ -623,13 +623,13 @@ class Source:
         return self
 
     def reload(self) -> "Source":
-        """Tell every widget drawing this source to read it again — the samples
+        """Tell every widget drawing this source to read it again -- the samples
         are where they were and they moved (a file rewritten from outside, a
         server buffer recorded into, a cache rebuilt)."""
         if self._structure:
             raise TypeError(
                 f"a {self._carrier} source holds its own payload, so there is "
-                "nowhere for it to have moved — call set() with the structure "
+                "nowhere for it to have moved -- call set() with the structure "
                 "it should draw now")
         for host, wid in list(self._live):
             host.set(wid, reload=1)
@@ -642,7 +642,7 @@ class Source:
         which is the host's door for replacing a drawing in place."""
         if self._carrier == "display_list":
             # `props()` is already the drawing layers, which is exactly what a
-            # live page replaces — the client-side keys of a display list (its
+            # live page replaces -- the client-side keys of a display list (its
             # `notes`) never ride the wire, here or in a definition.
             return {"display_list": self.props()}
         return self.props()
@@ -656,7 +656,7 @@ class Source:
 #: redraw says in place of re-sending them.
 #:
 #: A ``/gui_def`` names every widget in the subtree it redraws, and a clip's
-#: samples are the largest payload in the system — so a lane redrawn because one
+#: samples are the largest payload in the system -- so a lane redrawn because one
 #: clip moved would carry every other clip's audio with it. ``data=KEEP`` names
 #: that audio instead: the widget is described in full, its bulk is not, and the
 #: host carries the run it is already holding onto the widget that kept its
@@ -689,7 +689,7 @@ SOURCE_PROPS = ("data", "blob", "path", "cache", "buffer")
 
 def _rewrite_source(node: dict, props: dict, slots):
     """Put ``props`` into ``node`` in place of the keys the source it belongs to
-    occupies — its `Source.slots`, not every key a source could ever write, so
+    occupies -- its `Source.slots`, not every key a source could ever write, so
     one heavy prop's source never clears another's."""
     for key in slots:
         node.pop(key, None)
@@ -701,7 +701,7 @@ def source(samples=None, *, buffer: "int | None" = None, path: "str | None" = No
            boxes=None, cords=None, display_list: "dict | None" = None,
            channels: "int | None" = None, sample_rate: "float | None" = None,
            base_bucket: "int | None" = None) -> Source:
-    """The payload a view draws, as a `Source` — held, referred to, and changed
+    """The payload a view draws, as a `Source` -- held, referred to, and changed
     in place of being copied into a prop.
 
     For **samples**, give it an iterable of floats, or name samples that already
@@ -735,9 +735,9 @@ def node(type: str, *, children=None, id: int | None = None, **props) -> View:
     The building block every other helper wraps. ``children`` is an iterable of
     nodes for a container and any other keyword is a property (kept verbatim, so
     its int/float type is preserved). ``id`` is keyword-only here as it is in
-    every builder — normally left out, so the host assigns one.
+    every builder -- normally left out, so the host assigns one.
 
-    The value is a `clausters.gui.guidef.View` — a ``dict`` subclass, so the
+    The value is a `clausters.gui.guidef.View` -- a ``dict`` subclass, so the
     document is exactly what it always was, and the tree can also be looked up by
     name (`View.find`) and opened (`View.open`). Building it is where a
     **duplicate name** is caught: two widgets sharing one name in a single view
@@ -754,12 +754,12 @@ def node(type: str, *, children=None, id: int | None = None, **props) -> View:
         if isinstance(value, Source):
             raise TypeError(
                 f"{type}: a source names a view's payload, so it goes in a prop "
-                f"that is one of {', '.join(SOURCE_PROPS + STRUCTURE_PROPS)} — "
+                f"that is one of {', '.join(SOURCE_PROPS + STRUCTURE_PROPS)} -- "
                 f"not {key!r}")
     if id is not None:
         if not isinstance(id, int) or isinstance(id, bool):
             raise TypeError(
-                f"widget id must be an int or None, got {id!r} — omit the id "
+                f"widget id must be an int or None, got {id!r} -- omit the id "
                 "to let GuiHost.open assign one")
         out["id"] = id
     out.update(props)
@@ -768,7 +768,7 @@ def node(type: str, *, children=None, id: int | None = None, **props) -> View:
         for child in kids:
             if not isinstance(child, dict):
                 raise TypeError(
-                    f"{type}: a child must be a widget node, got {child!r} — the "
+                    f"{type}: a child must be a widget node, got {child!r} -- the "
                     "id is a keyword argument, so children come first: "
                     f"{type}(child, ..., id=…)")
         out["children"] = kids
@@ -795,7 +795,7 @@ def layout(*children, flow: str | None = None, index: int | None = None,
            id: int | None = None, **props) -> View:
     """A container with **no axes**, arranging its children by ``flow``.
 
-    ``flow`` is ``"row"``, ``"col"`` (the default), ``"grid"``, ``"free"`` — or
+    ``flow`` is ``"row"``, ``"col"`` (the default), ``"grid"``, ``"free"`` -- or
     ``"stack"``, which shows **one child at a time**, the one ``index`` names,
     and lays out and draws none of the others. A stack is not a different
     container: it is this one with a selection instead of an arrangement, which
@@ -830,8 +830,8 @@ def plane(*children, flow: str | None = None, axis: str | None = None,
 
     The children lay out into a content area larger than the widget, seen
     through a window that pans and zooms. ``axis`` (``"both"``/``"x"``/``"y"``)
-    and ``zoom`` constrain it — a plain vertical scroll view is
-    ``axis="y", zoom=False`` — and ``view_x``/``view_y``/``view_zoom`` are the
+    and ``zoom`` constrain it -- a plain vertical scroll view is
+    ``axis="y", zoom=False`` -- and ``view_x``/``view_y``/``view_zoom`` are the
     window itself. See `scroll` for the whole of it.
 
     With ``boxes`` and ``cords`` the plane is a **patcher**: the boxes are what
@@ -864,11 +864,11 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
     """**Every view of a signal**, as the one element they are: a presentation
     of a source, with the capabilities offered over it.
 
-    - ``view`` — the presentation: ``"trace"`` (the default; value against
+    - ``view`` -- the presentation: ``"trace"`` (the default; value against
       time), ``"spectrum"`` (magnitude against frequency), ``"spectrogram"``
       (the STFT, magnitude against time *and* frequency) or ``"phase"`` (the
       goniometer of a stereo pair).
-    - ``layers`` — **the stack the picture is**, back to front. A layer is
+    - ``layers`` -- **the stack the picture is**, back to front. A layer is
       named by what it draws: ``"peak"`` (the min/max envelope the signal
       reached), ``"rms"`` (the symmetric body of the level it held, in the body
       color role), ``"signal"`` (the band-limited reconstruction between the
@@ -876,16 +876,16 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
       full scale marked), ``"momentary"`` and ``"short"`` (the loudness curves),
       and ``"spectrogram"`` (the time-frequency texture). Two shapes: a
       space-separated string (``"peak rms"``) or a list, whose entries may be
-      dicts saying what one layer does with itself —
+      dicts saying what one layer does with itself --
       ``{"draw": "rms", "alpha": 0.5, "y": "box", "visible": False,
       "solo": True}``. The order is yours: ``"rms peak"`` draws the level under
       the envelope, ``"peak rms"`` over it. The default is the presentation's
-      own — ``"peak signal"`` for a trace, ``"spectrogram"`` for the
+      own -- ``"peak signal"`` for a trace, ``"spectrogram"`` for the
       time-frequency view. ``measure`` is the same prop under its older name.
 
       It is a factor of the view rather than a composition of widgets: one
       body, one axis, one ruler, one selection, one playhead and one upload,
-      with a drawing per layer over them — two views on one rectangle are not
+      with a drawing per layer over them -- two views on one rectangle are not
       layers, the second paints its own field over the first. (The
       `multitrack`'s ``layers`` is the same idea one container down: a curve
       layered on a clip.)
@@ -897,7 +897,7 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
         hidden layer keeps its place in the order, and where anything solos
         only the soloed layers are drawn.
       - ``y`` is which vertical the layer is read on. ``"axis"`` maps through
-        the body's own — the amplitude or frequency window a zoom opens — and
+        the body's own -- the amplitude or frequency window a zoom opens -- and
         is what the y ruler and the cursor read-out report; ``"box"``
         normalizes into the rectangle with a scale of its own. The default
         follows what the layer measures, so a loudness curve is already in its
@@ -908,36 +908,36 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
 
       A source whose peak cache was built before the level measure existed
       draws no body rather than a flat line of zeros, and a source that is a
-      summary and nothing else — a peaks cache, a streamed overview — draws no
+      summary and nothing else -- a peaks cache, a streamed overview -- draws no
       ``"spectrogram"`` layer, since an analysis is made from samples.
 
-    - the **source** — ``bus`` (with ``rate``) is forward-only, read live;
+    - the **source** -- ``bus`` (with ``rate``) is forward-only, read live;
       ``data``/``blob``/``buffer``/``path``/``cache`` are addressable samples,
       which is what lets a view navigate, slice and select. ``channels``
       de-interleaves it, ``base_bucket`` sizes the peak pyramid.
-    ``fills`` says the buffer is **being written into as it is drawn** — a
+    ``fills`` says the buffer is **being written into as it is drawn** -- a
     take you are recording. The view then draws it up to the buffer's write
     frontier and leaves the axis past it empty, instead of drawing a flat line
     across the buffer's own zeros: past the frontier there is no silence, there
     is no samples yet. The host cannot infer this and does not try, because a
     frontier alone does not distinguish a recording from a loaded take that one
-    write touched — you allocated the buffer, so you are what knows. Clear it
+    write touched -- you allocated the buffer, so you are what knows. Clear it
     (``set(fills=False)``) when the take is finished and the whole of the
     samples is drawn again.
 
-    - the **capabilities** — ``navigable`` (zooms and pans its axes, and joins
+    - the **capabilities** -- ``navigable`` (zooms and pans its axes, and joins
       the navigation group its x axis names), ``selectable``, ``editable``.
       Over ``view="spectrum"`` it means the **frequency** axis instead: that x
       is not time, so it navigates on a window of its own
       (``axes={"x": {"start": ..., "len": ...}}``, normalized over
       ``[0, Nyquist]``, reported as ``"view_x"``) and joins no group. It is the
       one view where ``navigable`` is off unless asked for.
-    - ``retention`` — **seconds of history the host keeps of a ``bus``** (0 =
+    - ``retention`` -- **seconds of history the host keeps of a ``bus``** (0 =
       none, the default). A forward-only source has no addressable past, which
       is what stops it being navigable: there is nothing behind the newest
       window to zoom out to. This is what supplies one, so
       ``signal(view="spectrogram", bus=0, retention=8.0, navigable=True)`` is a
-      **waterfall** — eight seconds of live spectrum you can zoom and pan like a
+      **waterfall** -- eight seconds of live spectrum you can zoom and pan like a
       file. It is a policy of the axis, not of the drawing: the same seconds
       mean the same seconds at any frame rate, FFT size or hop, and a
       `GuiHost.set` of it resizes the history live.
@@ -958,7 +958,7 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
     ``dur`` place this body on a **stretch** of the clip's own time (a clip
     holding three segments of three files holds three takes, each over its own
     third), and ``start``/``loop`` are that body's own **window** onto its
-    samples — the frame it reads from, and whether it wraps. A body that names
+    samples -- the frame it reads from, and whether it wraps. A body that names
     none of them fills the clip and reads through the clip's own window, which
     is every take written as a clip prop.
     """
@@ -995,7 +995,7 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
 
     Any node opens (`clausters.gui.guidef.View.open`): ``knob(...).open()`` is a
     window that is a knob. Use ``view()`` when the window's own properties
-    matter — a title, a size, a theme — since a root that is not one is framed
+    matter -- a title, a size, a theme -- since a root that is not one is framed
     in a window that hugs whatever it holds.
 
     ``w``/``h`` size the OS window; ``layout`` (``row``/``col``/``grid``/
@@ -1004,13 +1004,13 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
 
     ``hug`` sizes the window to its content instead: the OS window opens as
     big as what it holds on the axes that settle, keeping the declared ``w``/
-    ``h`` on the others — a window with one control in it is that control,
+    ``h`` on the others -- a window with one control in it is that control,
     not a pane with a strip at the top. In a page there is no window to size,
     so a mounted GuiDef takes the box the element gives it and only the
     containers inside it hug.
 
     ``status`` is the host's **status bar**, a band along the window's bottom
-    edge saying what it last did and what it last refused — a stroke over
+    edge saying what it last did and what it last refused -- a stroke over
     samples the picture is not drawing one by one, an edit an owner answered
     with a reason.
     It is **on unless this turns it off**, and it is the host's: nothing here
@@ -1021,7 +1021,7 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
 
     ``theme`` is a partial color-role table (``{"role": "#rrggbb[aa]"}``, the
     same shape as the host's TOML style file) overlaying the host theme for
-    the whole window — a **theme group**. On the root it persists with a named
+    the whole window -- a **theme group**. On the root it persists with a named
     def, so a standalone bundle ships its look.
     """
     extra = _drop_none(title=title, w=w, h=h, flow=flow or layout, margin=margin, gap=gap,
@@ -1048,13 +1048,13 @@ def panel(*children, flow: str | None = None, layout: str | None = None,
     ``grid`` column count. As a child, a panel takes the same place props as
     any widget (``w``/``h``/``weight``, or ``x``/``y`` in a ``free`` parent).
 
-    ``hug`` makes it want its content rather than its share of the leftover —
+    ``hug`` makes it want its content rather than its share of the leftover --
     a strip of controls that says how tall it is instead of being told (see
     the module docstring for what a size may read).
 
     ``theme`` (a partial ``{"role": "#rrggbb[aa]"}`` table) makes the panel a
-    **theme group**: the overlay styles its whole subtree — a transport bar
-    dimmed, a recording strip warm — recursively over the parent's theme.
+    **theme group**: the overlay styles its whole subtree -- a transport bar
+    dimmed, a recording strip warm -- recursively over the parent's theme.
     ``color`` re-seeds just the accent family for the panel itself.
     """
     extra = _drop_none(flow=flow or layout, margin=margin, gap=gap, cols=cols,
@@ -1070,14 +1070,14 @@ def stack(*children, index: int | None = None, margin: float | None = None,
     """A ``stack`` container showing **one child at a time**: the one at ``index``.
 
     The shown page fills the container (``margin`` insets it); the hidden ones
-    are not laid out and not drawn, so a page costs nothing while it is away —
+    are not laid out and not drawn, so a page costs nothing while it is away --
     but they stay in the tree, so a heavy view keeps its GPU slot and its bus
     reads across a switch and comes back without re-uploading anything.
 
     ``index`` is live via ``set``, and it is the prop a control **binds** to:
     a toggle or a menu bound to it (`GuiHost.bind_widget`, or an inline
     ``bind=["widget", stack_id, "index"]``) flips the page with no round-trip
-    through this script — which is what makes tabs, a pager and a
+    through this script -- which is what makes tabs, a pager and a
     waveform/spectrogram switch composition rather than widgets::
 
         pages = stack(waveform(data=take), spectrogram(data=take), name="views")
@@ -1085,7 +1085,7 @@ def stack(*children, index: int | None = None, margin: float | None = None,
         ...
         host.bind_widget(win["picker"].id, win["views"].id, "index")
 
-    An ``index`` outside the children shows nothing — a blank page rather than
+    An ``index`` outside the children shows nothing -- a blank page rather than
     a clamped one, so a pager that runs off the end never shows the wrong
     child.
 
@@ -1108,7 +1108,7 @@ def scroll(*children, axis: str | None = None, zoom: bool | None = None,
     """A ``scroll`` container: a 2D workspace onto a virtual content area.
 
     The children lay out into a content area larger than the widget, seen
-    through a window that pans and zooms — dragging the empty plane pans it,
+    through a window that pans and zooms -- dragging the empty plane pans it,
     the wheel zooms anchored at the cursor. The general case is the full 2D
     workspace; the constrained scroll views come from configuration, not from
     a different widget:
@@ -1152,12 +1152,12 @@ def _built_from(widget: View, control) -> View:
 
 def _from_control(control, given: dict, props: dict, *, needs_range: bool) -> dict:
     """A control's own props for a widget built from it: its name and its
-    default as the value — plus a range only where the control genuinely has
+    default as the value -- plus a range only where the control genuinely has
     one.
 
     The **entry point named once**, for what a def actually knows: what the
     control is called (which is what ``/node_set`` addresses) and what it starts
-    at. Anything with ``name`` and ``default`` is accepted — the graph's own
+    at. Anything with ``name`` and ``default`` is accepted -- the graph's own
     `clausters.defs.Control` object, or the `clausters.defs.info.ControlInfo`
     every def family answers with (``sd["freq"]``, ``fd["cutoff"]``,
     ``gd["mix"]``).
@@ -1167,24 +1167,24 @@ def _from_control(control, given: dict, props: dict, *, needs_range: bool) -> di
     port is a name the server takes any float for; neither says how a knob
     should be drawn. The one control that arrives with a range is a **Faust**
     parameter, because ``hslider(label, init, min, max, step)`` cannot be
-    written without one and the compiled DSP reports it back — Faust's syntax
+    written without one and the compiled DSP reports it back -- Faust's syntax
     showing through, not a range this client declares.
 
     Explicit keywords win: the control says what it is, the call says how to draw
     it. That includes ``name=``, which is the handle's index and is taken out of
-    ``props`` here so it does not collide with the control's own — the two are
+    ``props`` here so it does not collide with the control's own -- the two are
     usually the same string and need not be.
     """
     name = getattr(control, "name", None)
     if not isinstance(name, str):
         raise TypeError(
-            f"not a def's control: {control!r} — pass a control (from "
+            f"not a def's control: {control!r} -- pass a control (from "
             "`clausters.defs.control`, or a def's `sd['freq']`) or spell "
             "min=/max=/value= yourself")
     lo, hi = getattr(control, "range", None) or (None, None)
     if needs_range and lo is None and given.get("min") is None:
         raise ValueError(
-            f"control {name!r} has no range to be drawn over — spell one on the "
+            f"control {name!r} has no range to be drawn over -- spell one on the "
             f"widget (knob({name}, min=…, max=…)). Only a FaustDef's parameter "
             "brings its own, from the hslider that declared it")
     given = dict(given)
@@ -1202,7 +1202,7 @@ def label(text: str = "", *, text_size: float | None = None, wrap: bool | None =
           ) -> View:
     """Static ``label`` text, passed positionally: ``label("hello")``.
 
-    ``text_size`` is the glyph scale over the host's font (default 2.0 —
+    ``text_size`` is the glyph scale over the host's font (default 2.0 --
     every text-bearing widget takes it). A host drawing with its embedded
     bitmap face quantizes it to half-steps, so a glyph's own pixels stay
     equal; one built with a rasterizer takes it as sent. ``wrap=True``
@@ -1224,7 +1224,7 @@ def knob(control=None, *, label: str | None = None, min: float | None = None,
     """A rotary ``knob`` over a continuous range. ``text_size`` scales its
     label and value read-out.
 
-    Pass a **def's control** positionally and the knob is built from it — its
+    Pass a **def's control** positionally and the knob is built from it -- its
     name, its default as the value, and the range it declared::
 
         freq = control("freq", 220.0, min=110.0, max=880.0)
@@ -1255,14 +1255,14 @@ def slider(control=None, *, label: str | None = None, min: float | None = None,
 
     ``curve`` bends the range the handle travels: ``0`` (the default) is
     linear, negative spends most of the range on the first half of the travel,
-    positive on the last half — the fine-at-the-bottom feel a frequency or an
+    positive on the last half -- the fine-at-the-bottom feel a frequency or an
     amplitude control wants. It is the same bend `lincurve` runs, and the host
     reads it out of the shared core, so a control feels the way the value it
     produces was computed::
 
         slider(amp, min=0.0, max=1.0, curve=4.0)
 
-    ``step`` is the grid a **drag** lands on, in the value's own units —
+    ``step`` is the grid a **drag** lands on, in the value's own units --
     ``step=1.0`` over ``0..127`` is the integers a MIDI note number wants, and
     a FaustDef's parameter arrives with the one its ``hslider`` declared. It is
     counted from ``min`` and never leaves the range: a grid that does not
@@ -1308,12 +1308,12 @@ def button(control=None, *, label: str | None = None, mode: str | None = None,
 
     - ``"gate"`` (the default) sends ``on`` at the press and ``off`` when the
       button is let go, so the value lasts exactly as long as the button is
-      held — what an `clausters.defs.ugens.env_gen` gate reads, and what a
+      held -- what an `clausters.defs.ugens.env_gen` gate reads, and what a
       trigger control ignores the tail of by definition.
     - ``"press"`` sends ``on`` at the press and nothing after it: the bang.
 
     Pass a **def's control** positionally and the button is built from it, like
-    `knob` — a gate needs no range, so none is required here::
+    `knob` -- a gate needs no range, so none is required here::
 
         gate = control("gate", 0.0)
         trig = control("trig", 0.0, rate="tr")
@@ -1323,8 +1323,8 @@ def button(control=None, *, label: str | None = None, mode: str | None = None,
 
     **A widget cannot make a value instantaneous**: what is sent is held by
     whoever receives it. So ``mode="press"`` against a def's control is only a
-    bang where the control returns to zero on its own — a ``rate="tr"``, which
-    the server resets after one block — and building it over any other control
+    bang where the control returns to zero on its own -- a ``rate="tr"``, which
+    the server resets after one block -- and building it over any other control
     raises, since it would leave ``on`` standing forever. A button that drives
     no control has no such trouble: it emits a ``/gui_event`` and one message
     *is* an event.
@@ -1334,8 +1334,8 @@ def button(control=None, *, label: str | None = None, mode: str | None = None,
 
         button(amp, on=0.7, off=0.0, label="duck")
 
-    Press and release are the primitives, and a **click** — a press and a
-    release that landed inside — is a composed gesture rather than a mode."""
+    Press and release are the primitives, and a **click** -- a press and a
+    release that landed inside -- is a composed gesture rather than a mode."""
     if mode is not None and mode not in ("gate", "press"):
         raise ValueError(
             f"unknown button mode {mode!r}; use \"gate\" (on while held) or "
@@ -1366,13 +1366,13 @@ def toggle(control=None, *, label: str | None = None, value: bool | None = None,
     or ``off``, ``1``/``0`` by default (OSC has no bool). ``text_size`` scales
     its label.
 
-    Takes a def's control positionally, like `knob` — a 0/1 control (a Faust
+    Takes a def's control positionally, like `knob` -- a 0/1 control (a Faust
     ``checkbox``, a `clausters.defs.control` with no range) needs none, so no
     range is required here.
 
     The state is a boolean; **the two values it stands for need not be**. A
     bypass lives at ``0.0``/``0.7`` and a mode at ``1``/``2``, and neither is a
-    span a widget could be drawn over — which is why they are a pair and not a
+    span a widget could be drawn over -- which is why they are a pair and not a
     ``min``/``max``::
 
         toggle(bypass, on=0.7, off=0.0, label="wet")"""
@@ -1393,7 +1393,7 @@ def text(*, value: str | None = None, label: str | None = None, text_size: float
          ) -> View:
     """An editable ``text`` field. The user types into it and the entered string
     is emitted as a ``/gui_event`` (or forwarded to the server when bound) on
-    **every** edit — like a slider's value, never gated on Enter. ``multiline``
+    **every** edit -- like a slider's value, never gated on Enter. ``multiline``
     allows embedded newlines (Enter inserts one) and a growing field; ``value``
     seeds the initial contents (and ``/gui_set value`` sets it live). ``text_size``
     scales the field text and its label."""
@@ -1409,8 +1409,8 @@ def menu(options=(), *, index: int | None = None, label: str | None = None,
     """A ``menu`` over ``options`` (a list of strings), emitting the chosen
     ``index``.
 
-    A press **opens the list** over the window — the field grown downward by a
-    row per option, flipped above it near the bottom edge — and a press on a row
+    A press **opens the list** over the window -- the field grown downward by a
+    row per option, flipped above it near the bottom edge -- and a press on a row
     picks it; a press anywhere else dismisses it and picks nothing. The list is
     the host's, so a bound menu (`GuiHost.bind`/`bind_widget`) drives its target
     with no round trip through this script. ``text_size`` scales the shown
@@ -1442,39 +1442,39 @@ def waveform(*, autofit: bool | None = None,
     """The heavy ``waveform`` view, fed its samples one of several ways (in the
     host's precedence order):
 
-    - ``cache`` — a path to a prebuilt peak-pyramid file (see `peaks_cache_file`)
+    - ``cache`` -- a path to a prebuilt peak-pyramid file (see `peaks_cache_file`)
       the host memory-maps and renders directly; the raw samples are never
       loaded. The most compact **bulk path**: nothing rides OSC. A cache built
       with ``channels > 1`` holds every channel in the one file.
-    - ``path`` — a path to a file of raw little-endian ``f32`` samples (see
+    - ``path`` -- a path to a file of raw little-endian ``f32`` samples (see
       `samples_to_file`, or the server's ``/buffer_export``) the host memory-maps; a
       **multi-megabyte buffer renders with no OSC and no re-send**.
-    - ``buffer`` — a server buffer number; the host fetches its samples from the
+    - ``buffer`` -- a server buffer number; the host fetches its samples from the
       audio server over OSC (it must be started with ``--server``). The async
       fallback when a shared file is not available.
-    - ``data`` — a small list of floats embedded inline in the JSON;
-    - ``blob`` — the index of a binary blob carried beside the JSON in the same
+    - ``data`` -- a small list of floats embedded inline in the JSON;
+    - ``blob`` -- the index of a binary blob carried beside the JSON in the same
       ``/gui_def`` message (see `samples_to_blob` and `GuiHost.define`).
 
     ``channels`` is the interleaved channel count of ``path``/``data``/``blob``
-    (default 1): **every** channel is kept and drawn — stacked lanes sharing the
+    (default 1): **every** channel is kept and drawn -- stacked lanes sharing the
     time axis by default, or per-color overlaid traces with ``overlay=True``.
 
-    ``layers`` is the stack the picture is, back to front — ``"peak"`` (the
+    ``layers`` is the stack the picture is, back to front -- ``"peak"`` (the
     envelope), ``"rms"`` (the level body), ``"signal"`` (the reconstruction
     between the samples), the loudness curves, ``"spectrogram"`` (the texture),
     as one space-separated string or as a list whose entries may say what a
     layer does with itself (``alpha``, ``visible``, ``solo``, ``y``). The
     default is ``"peak signal"``, and ``measure`` is the same prop under its
     older name; the whole of it is in `signal`. A stack is a prop of *one* view
-    and not two views layered — a view paints its own field before it draws, so
+    and not two views layered -- a view paints its own field before it draws, so
     the second would hide the first.
     ``base_bucket`` sets the peak-pyramid bucket size (default 256); for ``path``
     it also keys the sibling cache the host writes beside the file.
 
     The rulers (each in its own strip beside the view, each independently
-    switchable off, all live via ``GuiHost.set`` — so a menu or button in the
-    same GUI can retune them): ``ruler`` labels the time axis — ``"time"``
+    switchable off, all live via ``GuiHost.set`` -- so a menu or button in the
+    same GUI can retune them): ``ruler`` labels the time axis -- ``"time"``
     (the default; clock time, using ``sample_rate`` or the rate the source
     brings), ``"samples"``, ``"beats"`` (musical time: ``tempo`` in beats per
     second, or ``tempo_map`` for a tempo that changes, ``beat_at`` the beat
@@ -1483,7 +1483,7 @@ def waveform(*, autofit: bool | None = None,
     ``ruler_y``: over data that is in beats (a timeline) they are read from the
     data -- its map -- and over data that is not they are a presentation choice,
     never a tempo the data holds.
-    ``ruler_y`` labels the amplitude axis — ``"norm"`` (the default;
+    ``ruler_y`` labels the amplitude axis -- ``"norm"`` (the default;
     normalized [-1, 1]), ``"db"`` (dBFS), ``"bits"`` (integer sample values at
     the ``bit_depth`` resolution, default 16), ``"percent"`` (0-100% of full
     scale), or ``"off"``. It **labels** the axis and does not map it: the
@@ -1499,7 +1499,7 @@ def waveform(*, autofit: bool | None = None,
 
     A column is the **min/max of what the signal did in that pixel**, never
     extended to the zero line: the solid body of a zoomed-out waveform is the
-    data filling it, not a fill the drawing adds — which is why a subsonic
+    data filling it, not a fill the drawing adds -- which is why a subsonic
     signal (a 1 Hz curve, whose samples do not fit the screen either) draws as
     the curve it is. Zoom in far enough that consecutive samples stand apart
     and each one is **marked with a dot**: the line between them is
@@ -1510,7 +1510,7 @@ def waveform(*, autofit: bool | None = None,
     ``/gui_event id "selection" start len``; Shift+drag pans, the wheel zooms).
     A selection is a **count of samples**: ``sel_len`` is how many it holds and
     ``sel_start`` is the first, snapped whether set from here or swept with the
-    pointer — never a band of pixels standing between two samples. A sweep takes
+    pointer -- never a band of pixels standing between two samples. A sweep takes
     the samples it passed over, so one joins when the cursor reaches it.
     ``sel_min``/``sel_max`` restrict it on the **value axis**, in the domain's
     own units: a sweep with height reports them as two further arguments
@@ -1519,14 +1519,14 @@ def waveform(*, autofit: bool | None = None,
     An empty or inverted pair is no restriction, which is the default.
     ``playhead_at`` draws a playhead tracking the engine sample clock: pass the
     ``/clock_query`` sample value that corresponds to buffer position 0 (negative or
-    omitted = no playhead). ``playhead`` is the **static** counterpart — a
+    omitted = no playhead). ``playhead`` is the **static** counterpart -- a
     position in samples where a located, stopped transport parks the line
     (negative = none); it stands still while ``playhead_at`` is off, so a
     paused cursor does not drift with the clock.
 
     ``cursor`` is the **other line**: the **position cursor**, in samples
     (negative = none), where a playback starts and where a paste lands. It is
-    the one a hand *places* — by a click that landed on **nothing**: the time
+    the one a hand *places* -- by a click that landed on **nothing**: the time
     ruler, the slack between boxes, a grid nothing is drawn on. A click *on*
     something is that thing's and moves no line. The two playhead props, by
     contrast, are one line in two states and both say where the *music* is. So the content never moves it, playing never moves
@@ -1536,21 +1536,21 @@ def waveform(*, autofit: bool | None = None,
     places it.
     ``playhead_loop_start``/``playhead_loop_len`` (in
     samples) make that sweep **wrap** inside the region instead of running
-    straight past it — what a looping playback does, so playing a selection on
+    straight past it -- what a looping playback does, so playing a selection on
     a loop can be followed on the same one anchor and still costs no message
     per frame; a non-positive length is the straight pass. ``y_start``/``y_len`` set the **vertical view
-    window** — the visible slice of the amplitude axis, in normalized display
+    window** -- the visible slice of the amplitude axis, in normalized display
     units where ``0, 1`` (the default) is the full axis: the wheel over the
     y-ruler strip zooms it, dragging the strip pans it, and every change is
     reported as ``/gui_event id "view_y" y_start y_len`` (a non-positive
-    ``y_len`` resets to the full axis). The zoom is **symmetric about zero** —
+    ``y_len`` resets to the full axis). The zoom is **symmetric about zero** --
     it keeps the window's centre, so on a multichannel file every channel's
     zero line stays at the centre of its own lane and the traces grow and
     shrink in place; drag the strip to reach an off-centre region.
 
     ``link`` puts the view in a shared **navigation group**: every timeline
     view (waveform or spectrogram, in any window) declaring the same ``link``
-    id shares one horizontal view, selection and playhead — a zoom, pan or
+    id shares one horizontal view, selection and playhead -- a zoom, pan or
     drag-selection on any member moves all of them, and setting
     ``view_start``/``view_len`` (samples; a non-positive ``view_len`` resets
     to the whole timeline), ``sel_start``/``sel_len`` or ``playhead_at`` via
@@ -1613,27 +1613,27 @@ def spectrogram(*, autofit: bool | None = None,
     places the frequency axis for ``path``/inline sources (a fetched ``buffer``
     brings its own rate). The display is live (``GuiHost.set``): the dB window
     ``[db_floor, db_ceil]`` (default ``-90``/``0``) controls contrast,
-    ``freq_scale`` picks the frequency axis — ``"log"`` (the default),
+    ``freq_scale`` picks the frequency axis -- ``"log"`` (the default),
     ``"linear"``, ``"mel"`` or ``"bark"`` (``log_freq`` is the legacy boolean
-    alias for the first two) — and ``colormap`` picks 0 viridis / 1 magma /
+    alias for the first two) -- and ``colormap`` picks 0 viridis / 1 magma /
     2 grayscale.
 
     The rulers ride their own strips beside the view: ``ruler_y`` (``"hz"``,
     the default, or ``"off"``) draws the frequency ruler, its tick positions
     following ``freq_scale``; ``ruler`` labels the time axis exactly as on the
     `waveform` (``"time"``/``"samples"``/``"beats"`` with
-    ``tempo`` (beats per second), ``beat_at`` and ``quant`` (**beats per bar**, the grid a ``bar:beat`` label counts on — not a length in samples), or ``"off"``). The rest of the editor
+    ``tempo`` (beats per second), ``beat_at`` and ``quant`` (**beats per bar**, the grid a ``bar:beat`` label counts on -- not a length in samples), or ``"off"``). The rest of the editor
     chrome (``sel_start``/``sel_len``, ``playhead_at``/``playhead`` and their
     ``playhead_loop_start``/``playhead_loop_len`` region, drag-to-select /
-    Shift+drag pan / wheel zoom) also works exactly as on the `waveform` —
+    Shift+drag pan / wheel zoom) also works exactly as on the `waveform` --
     ``sel_min``/``sel_max`` restricting the selection to a band of the value
-    axis, which here is a band of **frequencies** —
+    axis, which here is a band of **frequencies** --
     including the vertical view window ``y_start``/``y_len``, which here
     slices the **frequency display axis** (normalized, ``0, 1`` = the full
     axis, whatever the ``freq_scale``): wheel over the Hz-ruler strip zooms,
     dragging it pans, changes emit ``/gui_event id "view_y" y_start y_len``.
 
-    ``link`` joins a shared navigation group exactly as on the `waveform` —
+    ``link`` joins a shared navigation group exactly as on the `waveform` --
     the classic composition is a waveform lane and a spectrogram lane of the
     same render under one ``link``, scrolling and selecting in lockstep.
 
@@ -1675,9 +1675,9 @@ def meter(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
     segment each frame (zero OSC messages; the host must be started with
     ``--shm`` pointing at the server's segment).
 
-    At ``rate="audio"`` (the default) it meters an **audio** bus — bus 0 is the
+    At ``rate="audio"`` (the default) it meters an **audio** bus -- bus 0 is the
     first hardware output, so ``meter()`` is the console meter on the left out
-    — reading the level the server publishes per block. That level is the
+    -- reading the level the server publishes per block. That level is the
     **peak of every sample of the block**, held with a decay, so a transient is
     caught even though the display refreshes far slower than the engine. At
     ``rate="control"`` it reads a control bus's current value instead: pair that
@@ -1689,7 +1689,7 @@ def meter(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
     drawn over ``min``..``max`` (default ``0``/``1``). ``scale="db"`` or
     ``"linear"`` settles it either way. A decibel meter bottoms out at
     ``floor_db`` (-60 dB, the strip a mix is read on) or at the dynamic range of
-    a resolution — ``bits=16`` is -96 dB, ``bits=24`` is -144, and a 32-bit
+    a resolution -- ``bits=16`` is -96 dB, ``bits=24`` is -144, and a 32-bit
     float carries a 24-bit significand so it takes 24 as well. ``ruler`` puts
     the numbers on the ``"left"`` (the default for a decibel meter) or the
     ``"right"``, and ``False`` leaves the column bare; a meter with no room for
@@ -1755,7 +1755,7 @@ def scope(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
     every frame and aligned on a rising crossing of ``trigger`` found in the
     **first** channel (default level ``0.0``, with hysteresis; free-running
     when the signal never crosses), so a periodic signal draws a stable trace
-    and the channels keep their true relative phase — a lock/free read-out
+    and the channels keep their true relative phase -- a lock/free read-out
     names which mode it is in. Asking to see an audio bus is all a script does:
     the GUI host has the server record it and stops when nothing draws it.
 
@@ -1789,7 +1789,7 @@ def phasescope(bus: int = 0, *, window_ms: float | None = None, hold: bool | Non
                label: str | None = None, color: str | None = None,
                id: int | None = None, **props) -> View:
     """A ``phasescope`` (goniometer) of the stereo pair ``bus`` (left) and
-    ``bus + 1`` (right) — the adjacent-channel layout the whole family uses —
+    ``bus + 1`` (right) -- the adjacent-channel layout the whole family uses --
     drawn as the 45°-rotated Lissajous figure: vertical is the mid
     ``(L + R)/√2``, horizontal the side ``(L - R)/√2``, the audio-engineering
     convention where mono reads as a vertical line, anti-phase as horizontal
@@ -1817,7 +1817,7 @@ def spectrum(bus: int = 0, *, channels: int | None = None, fft_size: int | None 
     audio buses starting at ``bus``: one forward FFT per channel per frame of
     the newest ``fft_size`` window (default 2048), magnitudes in dB over
     ``[db_floor, db_ceil]`` (default ``-100``/``0``), the frequency axis on
-    ``freq_scale`` — ``"log"`` (the default), ``"linear"``, ``"mel"`` or
+    ``freq_scale`` -- ``"log"`` (the default), ``"linear"``, ``"mel"`` or
     ``"bark"`` (``log_freq`` is the legacy boolean alias). The channels overlay
     as color-coded curves in one field. ``averaging`` (0..1, default 0.5)
     exponentially smooths each bin so the curve does not flicker; ``peak_hold``
@@ -1830,8 +1830,8 @@ def spectrum(bus: int = 0, *, channels: int | None = None, fft_size: int | None 
 
     ``navigable`` turns the **frequency axis** into one you can move: drag it
     to pan, wheel over it to zoom under the cursor, ``R`` to see all of it
-    again. It needs no history behind it — unlike a live time axis, every bin
-    is there every frame — so it is one window the view carries alone, in
+    again. It needs no history behind it -- unlike a live time axis, every bin
+    is there every frame -- so it is one window the view carries alone, in
     normalized units over ``[0, Nyquist]``: ``view_start``/``view_len``
     (``0, 1`` = the whole axis), live via `GuiHost.set` and reported as a
     ``"view_x"`` event. It is off by default; without it this is the watching
@@ -1868,23 +1868,23 @@ def nodetree(*, group: int = 0, controls: bool | None = None, label: str | None 
 def bpf(*, points=None, min: float | None = None, max: float | None = None,
         duration: float | None = None, exp: bool | None = None, label: str | None = None,
         color: str | None = None, axes: dict | None = None, id: int | None = None, **props) -> View:
-    """A drawable ``bpf`` break-point function — the envelope editor.
+    """A drawable ``bpf`` break-point function -- the envelope editor.
 
     Breakpoints ``(time, value)`` plus a per-segment shape using the server's
     own envelope shape numbers, evaluated host-side through the same shared
-    math the server's ``EnvGen`` plays — what you draw is what you hear.
+    math the server's ``EnvGen`` plays -- what you draw is what you hear.
     ``points`` accepts either the flat quad list ``[t, v, shape, curve, ...]``
     (the wire form: shapes int, everything else float) or a list of tuples
     ``(time, value)`` / ``(time, value, shape)`` where ``shape`` is an
-    `Env`-style curve spec — a name (``"lin"``, ``"exp"``, ``"sin"``,
+    `Env`-style curve spec -- a name (``"lin"``, ``"exp"``, ``"sin"``,
     ``"step"``, ``"hold"``, ...) or a numeric curvature. Omitting ``points``
     draws a flat, immediately editable line. See `env_to_points` /
     `points_to_env` for the round trip with `clausters.defs.Env`.
 
     The widget is general on purpose (the automation-lane shape): values live in
-    ``[min, max]`` — unipolar (the ``0``/``1`` default), bipolar, or any
+    ``[min, max]`` -- unipolar (the ``0``/``1`` default), bipolar, or any
     parameter span; an on/off lane is the ``"hold"`` shape over ``0``/``1``
-    (each point's value held until the next point — ``"step"``, per the
+    (each point's value held until the next point -- ``"step"``, per the
     SuperCollider semantics, instead jumps to the *target* level at segment
     start, so a step segment shows the next point's value);
     ``exp=True`` gives frequency-like ranges a geometric display scale
@@ -1895,14 +1895,14 @@ def bpf(*, points=None, min: float | None = None, max: float | None = None,
     field with a time strip under it and a value strip left of it
     (``axes={"y": {"unit": "value"}}`` is the plain 1-2-5 ladder a parameter's
     values want, as against the amplitude ones), and it joins the navigation
-    group ``link`` names — so a curve stacked with a `timeruler` shares that
+    group ``link`` names -- so a curve stacked with a `timeruler` shares that
     ruler's window and gutter, and the ruler rules the curve. Both strips
     default **off**, so a bare ``bpf`` is the bare envelope it has always been.
 
-    Editing (drag a point — times stay monotonic; drag a segment vertically to
+    Editing (drag a point -- times stay monotonic; drag a segment vertically to
     bend its curvature; Ctrl+click adds a point, Ctrl+click on one removes it)
     flows back per the **edit-back pattern**:
-    ``/gui_event <id> "points" <t v shape curve ...>`` to the script — or, when
+    ``/gui_event <id> "points" <t v shape curve ...>`` to the script -- or, when
     the widget is bound (`GuiHost.bind` or an inline ``bind``), the flat list
     is forwarded straight to the audio server after the binding's prefix.
     Setting is live too: ``GuiHost.set(id, points=json.dumps(flat))`` replaces
@@ -1957,7 +1957,7 @@ def _flat_notes(notes) -> list:
 
 
 def _flat_boxes(boxes) -> list:
-    """A patcher's ``boxes`` as the list the wire carries — each box its own
+    """A patcher's ``boxes`` as the list the wire carries -- each box its own
     ``{"def": name, "inlets": [...], "outlets": [...], "x": …, "y": …}`` dict,
     kept verbatim (the schema is the host's, not this client's to reshape)."""
     return list(boxes)
@@ -1976,7 +1976,7 @@ def _score_props(display_list) -> dict:
 
     ``elements`` is the last of them and the odd one: not a drawing layer but
     the list of ids that name a **sounding element**, which the engraving walk
-    knows and a renderer cannot re-derive — to the host an id is an id, and a
+    knows and a renderer cannot re-derive -- to the host an id is an id, and a
     staff's lines carry the staff's. It is what lets a press on blank paper say
     which element it fell after."""
     dl = dict(display_list or {})
@@ -1988,7 +1988,7 @@ def _score_props(display_list) -> dict:
 #: The **structure** props a `Source` may stand in for: for each one, how a
 #: value of it normalizes to the props a definition carries, and the node keys
 #: that expansion occupies (all but the engraved page write the prop they are
-#: named by). A structure has one way to travel — its own prop — so unlike the
+#: named by). A structure has one way to travel -- its own prop -- so unlike the
 #: sample carriers there is nothing to choose, and what the source adds is that
 #: the payload stays addressable after the definition is written.
 _STRUCTURES = {
@@ -2010,7 +2010,7 @@ STRUCTURE_PROPS = tuple(_STRUCTURES)
 def _held(value, flatten):
     """A structure argument as it goes into the node: a `Source` passes through
     untouched (`node` expands it into the props it carries), anything else is
-    normalized here — the same call the source would have made."""
+    normalized here -- the same call the source would have made."""
     if value is None or isinstance(value, Source):
         return value
     return flatten(value)
@@ -2042,7 +2042,7 @@ def _flat_lanes(lanes) -> list:
 
 def _flat_box_notes(notes) -> list:
     """Normalizes ``notes`` to the flat ``box start dur pitch velocity
-    channel`` sextuples the host reads — a note per entry, each naming the box
+    channel`` sextuples the host reads -- a note per entry, each naming the box
     it is in.
 
     One list for the whole widget rather than one per box, which is the shape
@@ -2069,7 +2069,7 @@ def _flat_box_notes(notes) -> list:
 
 def _flat_curves(curves) -> list:
     """Normalizes ``curves`` to the flat ``name lane label min max height``
-    sextuples the host reads — a **track automation**, a row of its own under
+    sextuples the host reads -- a **track automation**, a row of its own under
     the lane it names, as long as the timeline."""
     out: list = []
     for curve in curves:
@@ -2091,7 +2091,7 @@ def _flat_curves(curves) -> list:
 
 def _flat_layers(layers) -> list:
     """Normalizes ``layers`` to the flat ``name box label min max`` quintuples
-    the host reads — a **clip envelope**, drawn inside the box it names.
+    the host reads -- a **clip envelope**, drawn inside the box it names.
 
     It carries no height, and the shape is the statement: a layer is as tall as
     the box it is drawn on, where a row is as tall as it asks."""
@@ -2114,7 +2114,7 @@ def _flat_layers(layers) -> list:
 
 def _flat_curve_points(points) -> list:
     """Normalizes ``points`` to the flat ``curve time value shape amount``
-    quintuples the host reads — a break-point per entry, each naming the curve
+    quintuples the host reads -- a break-point per entry, each naming the curve
     it is on.
 
     One list for every curve there is, rows and layers alike: a break-point is
@@ -2206,16 +2206,16 @@ def plot(*, data=None, blob: int | None = None,
                  db_floor: float | None = None, db_ceil: float | None = None,
                  freq_scale: str | None = None, label: str | None = None, color: str | None = None,
                  axes: dict | None = None, id: int | None = None, **props) -> View:
-    """A static ``plot`` of a signal — measurement without navigation. Unlike
+    """A static ``plot`` of a signal -- measurement without navigation. Unlike
     the heavy `waveform`, it does not zoom, pan or edit; it is the catalog's
     "plot of an NRT-generated signal/file", grown x/y rulers, multichannel
     lanes and a hover readout. Its samples come from:
 
-    - ``path`` — a file of raw little-endian ``f32`` (see `samples_to_file`, or
+    - ``path`` -- a file of raw little-endian ``f32`` (see `samples_to_file`, or
       an NRT render written out) the host memory-maps; the **bulk path**, no
-      OSC. ``channels`` (default 1) de-interleaves it — **every** channel is
+      OSC. ``channels`` (default 1) de-interleaves it -- **every** channel is
       drawn, as stacked lanes or as ``overlay=True`` per-color traces.
-    - ``cache`` — a peaks cache written beside the take, and ``buffer`` — a
+    - ``cache`` -- a peaks cache written beside the take, and ``buffer`` -- a
       server buffer the host fetches over its own leg. The same two sources the
       `waveform` reads: a plot and a waveform are one element seen with and
       without navigation, so they take the same sources.
@@ -2223,30 +2223,30 @@ def plot(*, data=None, blob: int | None = None,
     ``layers`` is the stack drawn on the field, exactly as on the `waveform`
     (``measure`` is its older name); a plot is the same element without
     navigation, so it draws the same layers.
-    - ``data`` — a small list of floats inline in the JSON;
-    - ``blob`` — the index of a binary blob carried beside the JSON (see
+    - ``data`` -- a small list of floats inline in the JSON;
+    - ``blob`` -- the index of a binary blob carried beside the JSON (see
       `samples_to_blob` and `GuiHost.define`).
 
     ``view`` picks the presentation (the set is host-extensible; live via
     ``GuiHost.set``):
 
-    - ``"signal"`` (default) — value against time/index. The whole sequence is
+    - ``"signal"`` (default) -- value against time/index. The whole sequence is
       always drawn (a polyline when it fits the width, a min/max envelope per
-      pixel column when it does not — no visual aliasing). The value axis is
+      pixel column when it does not -- no visual aliasing). The value axis is
       ``[min, max]``; **omit either side and it auto-fits to the data** (the
       arbitrary-range sequence case, e.g. the values of a ``Pwhite``); set a
       side back to auto live with ``GuiHost.set(id, min="auto")``.
-    - ``"spectrum"`` — the averaged magnitude spectrum of the (short) signal,
+    - ``"spectrum"`` -- the averaged magnitude spectrum of the (short) signal,
       one curve per channel: dB over ``[db_floor, db_ceil]`` (default
-      ``-100``/``0``) against frequency on ``freq_scale`` — ``"log"`` (the
-      default), ``"linear"``, ``"mel"`` or ``"bark"`` — analyzed host-side at
+      ``-100``/``0``) against frequency on ``freq_scale`` -- ``"log"`` (the
+      default), ``"linear"``, ``"mel"`` or ``"bark"`` -- analyzed host-side at
       ``fft_size`` (a power of two, default 2048) with the same shared-core
       FFT the spectrogram uses, so the two agree bin for bin.
 
     The rulers sit in their own strips and are live: ``ruler`` labels the x
-    axis — ``"samples"`` (index counts; what an unknown rate falls back to),
+    axis -- ``"samples"`` (index counts; what an unknown rate falls back to),
     ``"time"`` (the default; clock time when ``sample_rate`` is given) or
-    ``"off"`` — and ``ruler_y`` (``"off"`` to hide) labels the value axis (dB
+    ``"off"`` -- and ``ruler_y`` (``"off"`` to hide) labels the value axis (dB
     on the spectrum view). ``sample_rate`` also places the spectral frequency
     axis. Hovering the body shows a hairline plus the exact value under the
     cursor: sample index/time and the **sample's value** on the signal view,
@@ -2262,7 +2262,7 @@ def plot(*, data=None, blob: int | None = None,
     if overlay is not None:
         extra["overlay"] = 1 if overlay else 0
     # A plot is the trace (or the spectrum) of a signal that does **not**
-    # navigate — the capability, not a different element.
+    # navigate -- the capability, not a different element.
     return node("signal", id=id, view=_PLOT_VIEW.get(view or "signal", view),
                 navigable=0, **extra, **props)
 
@@ -2285,7 +2285,7 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
     ``vb`` (the ``[width, height]`` page-unit viewBox), ``glyphs`` (a SMuFL
     codepoint-to-outline table) and ``prims`` (the placed glyphs, lines and
     fills). Build it from a score with `clausters.gui.notation.engrave`, which
-    drives verovio — an optional dependency the host never needs.
+    drives verovio -- an optional dependency the host never needs.
 
     Every primitive carries the MEI ``xml:id`` it was engraved from, and that id
     is what a **click** reports: pressing the page emits an ``"element"`` event
@@ -2294,16 +2294,16 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
     paper. The clicked element is highlighted; ``selected`` sets or clears that
     highlight from the script (``GuiHost.set(score_id, selected="")`` clears
     it). Since the id is the client's own, a driver resolves it straight back to
-    the note in its score — the seam the editing round trip is built on.
+    the note in its score -- the seam the editing round trip is built on.
 
     **Editing is opt-in** with ``editable=True``. On an editable score a drag on
     an element moves it up or down the staff in whole diatonic steps, drawn as it
-    goes, and the release emits ``"transpose" <xml:id> <position>`` — the staff
+    goes, and the release emits ``"transpose" <xml:id> <position>`` -- the staff
     position the note **reaches**, in whole steps from its staff's top line,
     positive upward. It is absolute rather than a displacement, so a resend
     cannot move the note twice and one arriving after the page was re-engraved
     still lands where it says. The host owns
-    no score, so that event is a request, not a result — the driver applies it
+    no score, so that event is a request, not a result -- the driver applies it
     (`clausters.gui.notation.Score.transpose_to` takes exactly those two
     arguments)
     and sends the re-engraved page back with
@@ -2311,7 +2311,7 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
     replaces the drawing in place. The displacement stays drawn until that page
     arrives, so the note never flicks back to its old pitch; the playhead and
     the selection survive it, so the edited note stays selected. **Default (a
-    plain view): a drag does nothing** — the host cannot fulfil an edit the
+    plain view): a drag does nothing** -- the host cannot fulfil an edit the
     driver will not apply, so a read-only page must not offer the gesture.
     Selection and the ``"element"`` click are *not* gated by ``editable``:
     inspecting a page (clicking a note to hear it) is not editing it. Toggle it
@@ -2323,28 +2323,28 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
     clears the selection, and a page that had not asked for note entry would
     start reporting an insertion every time a user dismissed one. With it on, a
     press that lands on blank paper inside a staff emits
-    ``"insert" <after-xml:id> <position> <staff>`` — the element the new note
+    ``"insert" <after-xml:id> <position> <staff>`` -- the element the new note
     would **follow** on that staff (empty when the press is before everything on
     it), the staff position in whole steps from the top line, and which staff,
     counted from the top. The host names a *place* and nothing more: a staff
     position is not a pitch until something knows the clef and the key, and a
     duration is a choice nobody made by clicking. Both are the driver's, which
-    is the same line every other score gesture draws — and
+    is the same line every other score gesture draws -- and
     `clausters.gui.notation.insert` is what turns the three into an operation.
 
     The **playback cursor** rides the display list's ``cursors`` track (the
     engraved timemap: musical time in ms to the placed x of the event sounding
     then), and it is driven exactly like the timeline views':
 
-    - ``playhead_at`` — the engine sample-clock value at score time 0. Set it
+    - ``playhead_at`` -- the engine sample-clock value at score time 0. Set it
       once when a pass starts (``server.request("/clock_query", …)``) and the cursor
       *sweeps* on its own, since the host reads the clock every frame; a
       negative value stops it. ``sample_rate`` converts clock to musical time
       (omitted / ``0`` = the server's own rate).
-    - ``playhead`` — a **static** time in ms, for a stopped transport located on
+    - ``playhead`` -- a **static** time in ms, for a stopped transport located on
       a note (negative = no cursor). It stands still while ``playhead_at`` is
       off, so a paused cursor does not drift with the clock.
-    - ``playhead_loop_start``/``playhead_loop_len`` — a **loop region** in ms:
+    - ``playhead_loop_start``/``playhead_loop_len`` -- a **loop region** in ms:
       the sweep wraps inside it instead of running off the page, so a repeated
       passage keeps the cursor on it. A non-positive length is the straight
       pass.
@@ -2385,7 +2385,7 @@ def multitrack(*, lanes=(), clips=(), notes=(), curves=(), layers=(),
     them, drawn on one shared time axis.
 
     It is the `pianoroll` of a multitrack. A roll is one widget holding its notes;
-    this is one widget holding its lanes and its clips — so you **describe** the
+    this is one widget holding its lanes and its clips -- so you **describe** the
     multitrack rather than composing a tree of `track` and `clip` widgets, and there
     is exactly one thing that owns it. A lane cannot sit in a void: it is a row
     of this widget, never a box you place somewhere.
@@ -2394,11 +2394,11 @@ def multitrack(*, lanes=(), clips=(), notes=(), curves=(), layers=(),
     ``clips`` a sequence of ``(name, lane, offset, dur, start, label, source)``,
     with ``offset``/``dur``/``start`` in timeline samples, ``lane`` naming one of
     the lanes and ``source`` the **server buffer** the clip is a window onto
-    (a negative number, the default, draws an empty box — ``0`` is a real
+    (a negative number, the default, draws an empty box -- ``0`` is a real
     buffer). The samples are the server's: the host maps them
     out of the shared segment or fetches them over its leg, so two clips over one
-    take cost one download. **The name is the identity** — the client's own word, not a widget
-    id — so a clip is addressed, drawn and reported by the same name the script
+    take cost one download. **The name is the identity** -- the client's own word, not a widget
+    id -- so a clip is addressed, drawn and reported by the same name the script
     already calls it. A clip naming a lane that is not there is kept and drawn
     nowhere, so renaming a lane loses nothing.
 
@@ -2411,7 +2411,7 @@ def multitrack(*, lanes=(), clips=(), notes=(), curves=(), layers=(),
     names a buffer draws those samples; one named in ``notes`` draws them as a
     roll, fitted to its own pitch range and with no keyboard and no lanes. Both
     are drawn by the very elements that stand on their own elsewhere, handed the
-    clip's own axis and drawing no chrome of their own — a clip is a window onto
+    clip's own axis and drawing no chrome of their own -- a clip is a window onto
     a picture, never a second implementation of one. ``notes`` is a sequence of
     ``(box, start, dur, pitch, velocity, channel)``, each note naming the clip
     it is in, and ``view`` chooses how a clip of samples is drawn (``"trace"``,
@@ -2425,7 +2425,7 @@ def multitrack(*, lanes=(), clips=(), notes=(), curves=(), layers=(),
     because a track's gain does not begin and end with a clip. ``layers`` is a
     sequence of ``(name, box, label, min, max)``: a **clip envelope**, drawn
     inside the clip it names, over whatever that clip draws and lasting exactly
-    as long as it does — a clip's own dynamic envelope, its pan, its per-clip
+    as long as it does -- a clip's own dynamic envelope, its pan, its per-clip
     effect parameters. A layer takes no height, because it is as tall as the
     clip it is on. ``points`` is a sequence of
     ``(curve, time, value, shape, amount)`` for **every** curve there is, each
@@ -2438,7 +2438,7 @@ def multitrack(*, lanes=(), clips=(), notes=(), curves=(), layers=(),
     space-separated; what is hidden is not edited either.
 
     It **places**; a clip is entered to edit. The contents of a clip draw
-    read-only here — this widget owns *where* things are, not what is inside
+    read-only here -- this widget owns *where* things are, not what is inside
     them::
 
         multitrack(lanes=[("drums", "", 96, 0, 0, 0.8),
@@ -2475,30 +2475,30 @@ def timeruler(*, h: float = 20.0, autofit: bool | None = None, cursor: float | N
               link: int | None = None, theme: dict | None = None, color: str | None = None,
               markers=None, axes: dict | None = None, id: int | None = None, **props) -> View:
     """A free-standing **time ruler**: the shared axis drawn as a strip the
-    document places — a DAW's ruler above its tracks.
+    document places -- a DAW's ruler above its tracks.
 
     A `track`'s own ``ruler`` is a strip reserved out of *that lane's* height, so
     ruling a stack of lanes means choosing one to carry it and to pay for it,
-    and the strip then sits wherever that lane sits — between two lanes, unless
+    and the strip then sits wherever that lane sits -- between two lanes, unless
     it is the last. This widget has a box of its own instead: put it above the
     lanes and no lane loses a pixel.
 
     It reads the axis of the navigation group named by ``link``, so it labels
     exactly what those lanes show and moves with them. With **no** ``link`` it
-    joins the window's lanes on its own — a free-standing ruler exists to rule
-    them — so a ruler dropped under a stack needs nothing said; pass a ``link``
+    joins the window's lanes on its own -- a free-standing ruler exists to rule
+    them -- so a ruler dropped under a stack needs nothing said; pass a ``link``
     id only to follow a group that is not this window's lanes. ``ruler`` is the unit (``"time"`` the default, ``"samples"``,
     ``"beats"``), with ``sample_rate`` labelling real time and
-    ``tempo`` (beats per second), ``beat_at`` and ``quant`` (**beats per bar**, the grid a ``bar:beat`` label counts on — not a length in samples) labelling beats, exactly as on a lane. Its
-    ticks are indented by the **group's** gutter — the widest any member asks
-    for — so they stand over the samples they label when it is stacked with the
+    ``tempo`` (beats per second), ``beat_at`` and ``quant`` (**beats per bar**, the grid a ``bar:beat`` label counts on -- not a length in samples) labelling beats, exactly as on a lane. Its
+    ticks are indented by the **group's** gutter -- the widest any member asks
+    for -- so they stand over the samples they label when it is stacked with the
     lanes. (``link`` names a navigation
     group, not a widget: it is its own small namespace, unrelated to the ids the
     host assigns.)
 
     ``markers`` are the **labelled points on the time axis**: ``(time, label,
     color)`` triples (label and colour optional), drawn as an **arrow into the
-    ruler's ticks** — never a line down the picture, which is what a playhead
+    ruler's ticks** -- never a line down the picture, which is what a playhead
     and a selection band are. **Ctrl+click** on the ruler adds one, *numbered*,
     or removes the one under the pointer, and a **click** on one puts the
     transport at the exact time it was placed at rather than at the pixel the
@@ -2510,26 +2510,26 @@ def timeruler(*, h: float = 20.0, autofit: bool | None = None, cursor: float | N
     against its own document.
 
     **The ruler is where the time range is swept.** Two selections live at once
-    over a stack of lanes or a roll — the **data** one (the clips, the boxes,
+    over a stack of lanes or a roll -- the **data** one (the clips, the boxes,
     the notes a rectangle covered: what gets edited) and the **time range** (a
     span the group keeps, drawn as a band, looped by the transport: what gets
-    played) — and they are told apart by where the gesture began, not by a mode:
+    played) -- and they are told apart by where the gesture began, not by a mode:
     the body sweeps the first, the ruler the second. So a **drag scrolls** the
     axis, **Alt+drag sweeps the range**, the wheel zooms, and a **click places
-    the position cursor** (emitting ``"locate"``) — a drag that never left the
+    the position cursor** (emitting ``"locate"``) -- a drag that never left the
     slop is where the hand pointed. **The ruler is the only place it is
     placed**, which is what makes it the reader's mark rather than a side
     effect of pointing at something. On a signal the range is not a second thing: the frames
     and the span are one selection there, so the ruler is another hand onto the
     one the view already has. And a lane's own ``ruler``, a roll's and a
-    signal's are **strips** rather than widgets — the press lands on the view —
+    signal's are **strips** rather than widgets -- the press lands on the view --
     so the table is read from where the press landed: the bottom of a view that
     has a ruler answers with the ruler's table, whoever drew it. ``h`` is this
     one's thickness in logical pixels.
 
     ``dir`` says **which side its content is on**, and the ticks and numbers
     hug that edge so a tick touches the pixels it names: ``"down"`` (the
-    default here — a ruler placed above the lanes draws along its bottom) or
+    default here -- a ruler placed above the lanes draws along its bottom) or
     ``"up"`` for one placed below them. A strip a view reserves under its own
     body is always ``"up"``, and nothing has to say so::
 
@@ -2557,20 +2557,20 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
               y_start: float | None = None, y_len: float | None = None, label: str | None = None,
               color: str | None = None, markers=None, axes: dict | None = None, id: int | None = None, **props) -> View:
     """The dedicated editor-grade ``pianoroll`` view: a piano keyboard gutter, a
-    note grid, an optional velocity lane and an OSC lane — the timeline
+    note grid, an optional velocity lane and an OSC lane -- the timeline
     sibling of the compact `clip` piano-roll body, drawing the **same notes** with
     the same geometry (they share the host's ``pianoroll`` primitives), plus
     editing, rulers and navigation.
 
     Content:
 
-    - ``notes`` — an iterable of ``(start, dur, pitch)`` or ``(start, dur, pitch,
+    - ``notes`` -- an iterable of ``(start, dur, pitch)`` or ``(start, dur, pitch,
       velocity, channel)`` MIDI notes: times in timeline samples, ``pitch`` a MIDI
       note number drawn over the ``[min, max]`` window (default the 88-key range
       21–108), ``velocity`` ``0..127`` (default 100), ``channel`` ``0..15``. The
       notes are the MIDI messages the roll represents.
-    - ``osc`` — an iterable of ``(time, label)`` (or bare ``time``) markers, one
-      per OSC or raw-MIDI timeline item, drawn as flags in a lane below the grid —
+    - ``osc`` -- an iterable of ``(time, label)`` (or bare ``time``) markers, one
+      per OSC or raw-MIDI timeline item, drawn as flags in a lane below the grid --
       the messages the roll carries alongside the notes. **The lane is
       read-only.** A roll edits what has a pitch, which is what its grid is a
       grid of; a message has none, and the flag is a lossy view of it (the
@@ -2582,9 +2582,9 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
     roll's own ruler strip when it has one (see `timeruler`, which documents
     them).
 
-    **A plain drag over the grid sweeps the notes** the rectangle covered — the
+    **A plain drag over the grid sweeps the notes** the rectangle covered -- the
     rectangles the notes *are*, the same gesture a patcher's canvas has over its
-    boxes and a lane has over its clips — and it writes **no time span**. A
+    boxes and a lane has over its clips -- and it writes **no time span**. A
     *time range* over the same grid is the other selection, asked for by name
     (``gestures={"drag": "select"}``), exactly as on a lane.
 
@@ -2594,16 +2594,16 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
     set a note's velocity; Ctrl+click the OSC lane to add/remove an event, drag
     one to move it. ``snap`` is the drag grid in timeline samples (``0`` = whole
     samples). An edit flows back as a flat ``"notes"`` event (``start dur pitch
-    velocity channel …``) or ``"osc"`` event (``time label …``) — the edit-back
-    pattern — so a driver updates the arrangement and re-renders.
+    velocity channel …``) or ``"osc"`` event (``time label …``) -- the edit-back
+    pattern -- so a driver updates the arrangement and re-renders.
 
     Navigation and chrome mirror the heavy editor views: it is a timeline widget,
     so ``link`` joins/splits its navigation group (zoom with the wheel over the
     grid, pan with Shift+drag, all group-wide); ``ruler`` places a time ruler
     (``"time"``/``"samples"``/``"beats"``, default ``"time"``) with
-    ``sample_rate``/``tempo`` (beats per second), ``beat_at`` and ``quant`` (**beats per bar**, the grid a ``bar:beat`` label counts on — not a length in samples) labelling it; ``sel_start``/
+    ``sample_rate``/``tempo`` (beats per second), ``beat_at`` and ``quant`` (**beats per bar**, the grid a ``bar:beat`` label counts on -- not a length in samples) labelling it; ``sel_start``/
     ``sel_len`` mark a time selection and ``sel_min``/``sel_max`` restrict it to
-    a band of **pitches** — the roll's own y axis, so a marquee reports the
+    a band of **pitches** -- the roll's own y axis, so a marquee reports the
     whole semitones it swept over at both ends; ``playhead_at`` sweeps a playhead from the
     engine clock (``playhead`` sets a static cursor, and
     ``playhead_loop_start``/``playhead_loop_len`` wrap the sweep inside a
@@ -2612,9 +2612,9 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
     zoom/pan. ``velocity=False`` hides the velocity lane; ``osc_lane=True`` opens
     the OSC lane even with no events (to author them). ``midi_in=True`` arms
     **live MIDI painting** in the native host: it opens a virtual MIDI input
-    port ("clausters-gui") and paints incoming notes into this roll — at the
+    port ("clausters-gui") and paints incoming notes into this roll -- at the
     running playhead, or step-entering on the ``snap`` grid when the transport
-    is stopped — flowing back as the usual ``"notes"`` events (the standalone
+    is stopped -- flowing back as the usual ``"notes"`` events (the standalone
     host's live input; a script can equally paint via a `clausters.responders.
     MidiFunc` and ``/gui_set``)."""
     extra = _drop_none(
@@ -2650,19 +2650,19 @@ def piano(*, min: int | None = None, max: int | None = None, active_min: int | N
 
     Range and navigation:
 
-    - ``min``/``max`` — the visible MIDI range (default 36–96; ``min`` snaps
+    - ``min``/``max`` -- the visible MIDI range (default 36–96; ``min`` snaps
       down to a white key so the keyboard starts on a full key).
-    - ``overview`` — the strip above the keys showing the full 0–127 range with
+    - ``overview`` -- the strip above the keys showing the full 0–127 range with
       the visible window marked: drag it to pan, wheel over it to zoom (wheel
       over the keys pans by white keys). On by default.
-    - ``pan`` — set ``False`` to disable all range navigation (the keyboard
+    - ``pan`` -- set ``False`` to disable all range navigation (the keyboard
       stays fixed on ``min``/``max``). Range changes flow back as a
       ``"range" min max`` event and are settable via ``set`` (the browser's
       path).
-    - ``active_min``/``active_max`` — the mapped range: keys outside it draw
+    - ``active_min``/``active_max`` -- the mapped range: keys outside it draw
       grayed and are inert, visualizing what the instrument answers to.
 
-    Playing emits **MIDI-shaped** note events — ``"note" pitch velocity state
+    Playing emits **MIDI-shaped** note events -- ``"note" pitch velocity state
     channel`` (ints; ``state`` 1 on press, 0 on release), so a consumer can
     translate them 1:1 to MIDI note-on/note-off. Dragging across keys
     glissandos (off + on). ``velocity`` fixes the press velocity; unset, it
@@ -2671,17 +2671,17 @@ def piano(*, min: int | None = None, max: int | None = None, active_min: int | N
 
     Mapping to server instruments, two ways:
 
-    - **Programmed (events)** — leave the widget unbound and map ``"note"``
+    - **Programmed (events)** -- leave the widget unbound and map ``"note"``
       events to voices in the script: ``state 1`` spawns a synth (`clausters.defs.Synth`
       with ``freq``/``amp`` from pitch/velocity), ``state 0`` sends its
       ``gate=0``. Fully programmable, like driving any GuiDef.
-    - **Host voices** — set ``voice`` to a SynthDef name and the *host* manages
+    - **Host voices** -- set ``voice`` to a SynthDef name and the *host* manages
       one server voice per held key: ``/synth_new <voice> … freq <hz> amp <vel/127>
       gate 1`` on press, ``gate 0`` on release. The def must have
       ``freq``/``amp``/``gate`` controls and free itself on release (an
       ``Env.adsr`` with ``FREE_SELF``). ``voice_args`` is an iterable of extra
       ``(name, value)`` control pairs for the ``/synth_new``. This path needs no
-      script in the loop — a saved GuiDef bundle plays standalone."""
+      script in the loop -- a saved GuiDef bundle plays standalone."""
     extra = _drop_none(min=min, max=max, active_min=active_min,
                        active_max=active_max, velocity=velocity,
                        channel=channel, voice=voice,
@@ -2701,31 +2701,31 @@ def patch(*, boxes=None, cords=None, label: str | None = None, color: str | None
     """A ``patch`` **patcher**: a directed, typed signal graph (a level-1
     `clausters.defs.GraphPatch`, compiling to a `clausters.defs.GraphDef`), drawn
     as boxes with **inlets on top and outlets on the bottom** and a **cord** per
-    ``outlet -> inlet`` connection. The buses are not drawn — a cord *is* a bus.
+    ``outlet -> inlet`` connection. The buses are not drawn -- a cord *is* a bus.
 
     ``boxes`` and ``cords`` are the widget's split schema, exactly what
-    `GraphPatch.to_widget` produces — pass it straight through (the model is
+    `GraphPatch.to_widget` produces -- pass it straight through (the model is
     conventionally ``p`` so it does not shadow this ``patch`` builder):
 
         patch(**p.to_widget(geometry), name="patch")
 
-    - ``boxes`` — each ``{"def": name, "inlets": [...], "outlets": [...],
+    - ``boxes`` -- each ``{"def": name, "inlets": [...], "outlets": [...],
       "x"?, "y"?}``; a port is a bare name (audio) or ``{"name", "rate"}``
       (control), and ``x``/``y`` place the box (absent, it auto-stacks).
-    - ``cords`` — a flat ``[from_box, outlet, to_box, inlet, ...]`` list, the
+    - ``cords`` -- a flat ``[from_box, outlet, to_box, inlet, ...]`` list, the
       indices within each box's inlet/outlet lists.
 
     A box is drawn as three bands: a top strip of **inlet cells** and a bottom
     strip of **outlet cells** (both green, ``port_strip``), the def name in the
     wider middle (blue, ``object_fill``). Each port is a labelled square holding
-    its name — the square a cord connects to — so a box reads like its signal flow
+    its name -- the square a cord connects to -- so a box reads like its signal flow
     (an edge with no ports keeps its strip, empty). The band, port, and cord colors
     are theme roles (``port_strip``, ``port``, ``object_fill``, ``cord``),
     configurable per widget through the ``theme`` prop like any other color.
 
     The patch is a **pan/zoom canvas**, so put it in a `scroll` workspace: a plain
     drag on empty canvas sweeps the marquee box-selection, and **Shift+drag pans**
-    (wheel zooms, anchored at the cursor) — the heavy-view convention. A box drags
+    (wheel zooms, anchored at the cursor) -- the heavy-view convention. A box drags
     freely (moving a selected box moves the whole selection), each move flowing
     back as ``/gui_event <id> "move" <index> <x> <y>`` (canvas units) so the
     driver owns the geometry.
@@ -2733,7 +2733,7 @@ def patch(*, boxes=None, cords=None, label: str | None = None, color: str | None
     Dragging an outlet onto an inlet (either grab order) **draws a cord**,
     refusing a rate mismatch; the edit flows back as ``/gui_event <id> "wire"
     <src_box> <outlet> <dst_box> <inlet>`` (the ports by name), so a driver adds
-    the cord to its `GraphPatch` and re-renders — the clips' edit-back pattern.
+    the cord to its `GraphPatch` and re-renders -- the clips' edit-back pattern.
     """
     extra = _drop_none(
         boxes=_held(boxes, _flat_boxes),
@@ -2786,7 +2786,7 @@ keys = piano
 def to_json(tree: dict) -> str:
     """Serializes a GuiDef tree to the JSON string carried in ``/gui_def``.
 
-    The client-only ``name`` key (a stable handle name — see
+    The client-only ``name`` key (a stable handle name -- see
     `clausters.gui.host.GuiHost.open`) is stripped from every node: it labels
     the widget for the host client's ``name -> handle`` map and never rides the
     wire."""
@@ -2795,7 +2795,7 @@ def to_json(tree: dict) -> str:
 
 def _strip_names(node: dict) -> dict:
     """A shallow copy of ``node`` (and its subtree) without the client-only
-    ``name`` key — so serialization never leaks it to the host, whether or not
+    ``name`` key -- so serialization never leaks it to the host, whether or not
     the tree went through `clausters.gui.host.GuiHost`'s id/name walk."""
     out = {k: v for k, v in node.items() if k != "name"}
     children = node.get("children")
@@ -2813,7 +2813,7 @@ samples_to_blob = _samples_to_blob
 
 
 def samples_to_file(samples, path: str) -> str:
-    """Writes `samples` to `path` as raw little-endian ``f32`` — the **local
+    """Writes `samples` to `path` as raw little-endian ``f32`` -- the **local
     shared resource** a ``waveform(path=...)`` maps. Unlike `samples_to_blob`
     (which rides the ``/gui_def`` message and so must fit a datagram), a file has
     no size limit: this is how a multi-megabyte buffer reaches the host without
@@ -2825,11 +2825,11 @@ def samples_to_file(samples, path: str) -> str:
 
 def peaks_cache_file(samples, path: str, base_bucket: int = 256, channels: int = 1) -> str:
     """Builds the peak-pyramid cache for `samples` (via the shared native core,
-    so it is byte-identical to the host's own) and writes it to `path` — the most
+    so it is byte-identical to the host's own) and writes it to `path` -- the most
     compact bulk path, mapped by a ``waveform(cache=...)``. The host renders the
     overview without ever loading the raw samples. With ``channels > 1`` the
     samples are interleaved frames and the file is the **multichannel** cache
-    (one resource, a pyramid per channel — the editor-grade stacked lanes).
+    (one resource, a pyramid per channel -- the editor-grade stacked lanes).
     Returns `path`."""
     from .._native import peaks_cache  # lazy: only needs the cdylib if used
 
@@ -2840,7 +2840,7 @@ def peaks_cache_file(samples, path: str, base_bucket: int = 256, channels: int =
 
 def peaks_cache_update_file(path: str, samples, start: int, frames: int) -> str:
     """Rewrites the part of the cache at `path` that a **frame span** touched,
-    from `samples` (the whole interleaved buffer as it now stands) — the owner's
+    from `samples` (the whole interleaved buffer as it now stands) -- the owner's
     half of an edit, so the picture that maps this file follows without the
     take being re-summarized.
 
@@ -2860,7 +2860,7 @@ def peaks_cache_update_file(path: str, samples, start: int, frames: int) -> str:
 def peaks_cache_empty_file(path: str, frames: int, channels: int = 1,
                            base_bucket: int = 256) -> str:
     """Writes the cache of a take **allocated and not yet recorded into** to
-    `path` — `frames` frames of `channels` channels, every bucket a measured
+    `path` -- `frames` frames of `channels` channels, every bucket a measured
     zero. The file a ``waveform(cache=...)`` maps before the recording starts,
     grown from there by `peaks_cache_stream_file`.
 
@@ -2873,15 +2873,15 @@ def peaks_cache_empty_file(path: str, frames: int, channels: int = 1,
 
 
 def peaks_cache_stream_file(path: str, start_frame: int, bucket: int, stats) -> str:
-    """Folds a ``/buffer_stream.reply`` report into the cache at `path` — the
+    """Folds a ``/buffer_stream.reply`` report into the cache at `path` -- the
     listener's half of a recording being drawn, for a client that hears about
     the samples rather than mapping it.
 
     `stats` is the reply's blob read as floats, **bucket-major and
     channel-minor**: for each bucket of `bucket` frames in order, for each
     channel, ``min``, ``max`` and mean square. `start_frame` is where the report
-    begins on the buffer's own sample axis. Nothing is measured here — the
-    writer measured — so a picture mapping this file grows as the take does,
+    begins on the buffer's own sample axis. Nothing is measured here -- the
+    writer measured -- so a picture mapping this file grows as the take does,
     at about 2 kB/s per channel against the 190 the audio would cost.
 
     Returns `path`. Raises `ValueError` when the report is on another grid than
@@ -2899,8 +2899,8 @@ def peaks_cache_stream_file(path: str, start_frame: int, bucket: int, stats) -> 
 
 def correlation(left, right) -> float | None:
     """The stereo **correlation** (Pearson's r) of two equal-length channels,
-    in ``[-1, 1]`` — ``+1`` mono/in-phase, ``0`` decorrelated, ``-1`` anti-phase
-    — via the shared native core, so a headless capture reads the identical
+    in ``[-1, 1]`` -- ``+1`` mono/in-phase, ``0`` decorrelated, ``-1`` anti-phase
+    -- via the shared native core, so a headless capture reads the identical
     number the GUI phasescope draws. ``None`` when it is undefined (empty input
     or a constant channel: silence/DC). Pair it with ``Server.stream_taps`` to
     measure a live stereo signal without the GUI."""
@@ -2912,7 +2912,7 @@ def correlation(left, right) -> float | None:
 def lissajous(left, right) -> list:
     """The **Lissajous / goniometer** coordinates of stereo pairs ``(left,
     right)``: each maps to ``(x, y)`` with ``x`` the side ``(L - R)/√2`` and
-    ``y`` the mid ``(L + R)/√2`` — the rotated stereo plane a goniometer draws.
+    ``y`` the mid ``(L + R)/√2`` -- the rotated stereo plane a goniometer draws.
     The geometry lives once in the shared native core (the phasescope draws the
     same points); useful for plotting or driving a stereo image in
     electroacoustic work. Returns a list of ``(x, y)`` tuples."""
@@ -2922,7 +2922,7 @@ def lissajous(left, right) -> list:
 
 
 def _value(x, cast=float):
-    """``x`` coerced with ``cast``, unless it is a **bundle placeholder** —
+    """``x`` coerced with ``cast``, unless it is a **bundle placeholder** --
     ``"@symbol"`` (an id the mount allocates) or ``"$param"`` (a value the tag
     supplies), which passes through untouched for the mount to fill.
 
@@ -2981,7 +2981,7 @@ def _tempo_map(value):
 
     A map or the string are both accepted because a script has one and a stored
     def has the other, and the axis means the same thing either way. Every
-    structural prop travels as a string — OSC carries no arrays, so a
+    structural prop travels as a string -- OSC carries no arrays, so a
     ``/gui_set`` of one could not be spelled otherwise.
     """
     if value is None or isinstance(value, str):
@@ -2994,8 +2994,8 @@ def _axes(_axes_given: dict | None = None, **flat) -> dict:
 
     The ruler, the navigation window, the selection, the playhead and the value
     range describe the **container's axes** rather than each element drawn
-    against them, so they ride nested. The builders still take them flat —
-    that is the shorthand a script types — and this is where the two meet.
+    against them, so they ride nested. The builders still take them flat --
+    that is the shorthand a script types -- and this is where the two meet.
     ``_axes_given`` is an explicit ``axes`` argument, which wins over the flat
     keywords for any axis it names.
     """

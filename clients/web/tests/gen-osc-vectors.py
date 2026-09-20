@@ -12,7 +12,7 @@ Arguments are recorded in the TS client's tagged form ([tag, value]) with
 blobs as hex strings (JSON has no bytes).
 
 It also writes osc-decode-vectors.json, the other direction: packets the
-Python encoder cannot build (a **timetag argument** — `/clock_query.reply`'s
+Python encoder cannot build (a **timetag argument** -- `/clock_query.reply`'s
 anchor) paired with what the reference *decoder* reads out of them. Encode
 parity is byte parity and says nothing about what a value means once it has
 crossed; a timetag is where the two answers differed.
@@ -35,7 +35,7 @@ def blob_hex(value):
 
 
 CASES = [
-    # (name, addr, [tagged args])  — the tags mirror base/osc.ts OscArg.
+    # (name, addr, [tagged args])  -- the tags mirror base/osc.ts OscArg.
     ("no_args", "/server_status", []),
     ("s_new", "/synth_new", [
         ("s", "sine"), ("i", 1000), ("i", 0), ("i", 1),

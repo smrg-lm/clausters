@@ -2,13 +2,13 @@
 //
 // A destination owns the carrier the bytes leave through, the target they go
 // to, and the policy that turns a logical moment into a timetag. `Server` is
-// the destination we control — it adds that server's latency and schedules by
+// the destination we control -- it adds that server's latency and schedules by
 // absolute sample when the clock is anchored to the server's own.
 // `OscDestination` is every other one: standard OSC and nothing else.
 //
 // The page cannot open a UDP socket, so a destination here rides a
 // `Connection` exactly as the server does: for an external application that
-// means its WebSocket bridge. The Python client, which can, defaults to UDP —
+// means its WebSocket bridge. The Python client, which can, defaults to UDP --
 // the difference is the carrier, never the timing.
 
 import type { Connection } from "./connection.ts";
@@ -38,12 +38,12 @@ export interface Destination {
  * An OSC application we do not control.
  *
  * Standard OSC only: a message, or a bundle carrying an NTP timetag. No
- * latency — that is a property of *our* audio pipeline, and what another
+ * latency -- that is a property of *our* audio pipeline, and what another
  * application needs is its own business, asked for as an explicit delay. No
  * `/sched_at` (our command).
  *
  * The carrier is **created and closed by the destination unless one is passed**,
- * in which case it is borrowed and left alone — the reference client's rule,
+ * in which case it is borrowed and left alone -- the reference client's rule,
  * where `OscDestination(host, port)` opens a UDP interface of its own and
  * `interface=` hands it one. A page's only carrier to another application is a
  * WebSocket and opening one is asynchronous, so the owning form is
@@ -76,7 +76,7 @@ export class OscDestination implements Destination {
         if (this.ownsConnection) this.connection.close?.();
     }
 
-    /** Sends one message. **A message has no time** — it means "now". */
+    /** Sends one message. **A message has no time** -- it means "now". */
     sendMsg(addr: string, ...args: MsgArg[]): void {
         this.connection.send(encodeMessage(addr, args.map(oscArg)));
     }

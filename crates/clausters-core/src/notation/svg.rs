@@ -2,7 +2,7 @@
 //!
 //! verovio lays a score out into an SVG of SMuFL glyph outlines and engraving
 //! strokes; this walks that SVG into the flat, resolution-independent display
-//! list the host tessellates — a glyph-outline table keyed by SMuFL codepoint
+//! list the host tessellates -- a glyph-outline table keyed by SMuFL codepoint
 //! plus placed glyphs, staff lines, stems, fills and text in verovio page
 //! units, each carrying the MEI `xml:id` it was engraved from. The host draws
 //! it knowing nothing about MEI or verovio, so any client that produces this
@@ -34,12 +34,12 @@ pub struct DisplayList {
     pub glyphs: BTreeMap<String, String>,
     pub prims: Vec<Prim>,
     pub step: f64,
-    /// Which of the ids on `prims` name a **sounding element** — a note, a
-    /// chord's note, a rest — as against the furniture that also carries one: a
+    /// Which of the ids on `prims` name a **sounding element** -- a note, a
+    /// chord's note, a rest -- as against the furniture that also carries one: a
     /// staff's lines take the staff's id, a layer's take the layer's.
     ///
     /// The walk already knows which is which (`is_element_class`, private: a
-    /// link there resolves only in a build documenting private items — it is
+    /// link there resolves only in a build documenting private items -- it is
     /// what decides that a note's parts stop having ids of their own), and this
     /// is that knowledge written down instead of thrown away. A host cannot
     /// re-derive it: to a renderer an id is an id, and telling a notehead from a
@@ -51,8 +51,8 @@ pub struct DisplayList {
     /// The page's **systems**, each the `[y_top, y_bottom]` its staves span,
     /// top to bottom.
     ///
-    /// A renderer clusters the staff lines into staves on its own — the spacing
-    /// says where one ends — but it cannot tell a **grand staff from two
+    /// A renderer clusters the staff lines into staves on its own -- the spacing
+    /// says where one ends -- but it cannot tell a **grand staff from two
     /// systems** that way: the two staves of a piano part are further apart
     /// than the lines of one staff and closer than two systems, and any
     /// threshold between those holds for one page size and not the next. What
@@ -65,7 +65,7 @@ pub struct DisplayList {
 
 /// One placed primitive. The `k` discriminator names the kind; every primitive
 /// carries the `id` of the element it belongs to (omitted when it belongs to no
-/// element — layer/staff furniture above the note level).
+/// element -- layer/staff furniture above the note level).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "k")]
 pub enum Prim {
@@ -183,7 +183,7 @@ pub fn svg_to_display_list(svg: &str) -> DisplayList {
 // verovio only emits translate()/scale() transforms; an (offset, scale) pair
 // composes them exactly, so we carry that instead of a full matrix.
 
-/// An affine as (tx, ty, sx, sy) — the only transforms verovio emits.
+/// An affine as (tx, ty, sx, sy) -- the only transforms verovio emits.
 type Xf = (f64, f64, f64, f64);
 const IDENTITY: Xf = (0.0, 0.0, 1.0, 1.0);
 
@@ -335,7 +335,7 @@ fn walk(
         }
         "polyline" if node.attribute("points").is_some() => {
             // a stroked open path (hairpin, some brackets): a thick polyline,
-            // not a fill — filling its endpoints would paint a solid wedge.
+            // not a fill -- filling its endpoints would paint a solid wedge.
             let pts = points(node.attribute("points").unwrap());
             if pts.len() >= 2 {
                 prims.push(Prim::Line {
@@ -561,7 +561,7 @@ fn viewbox(node: Node) -> [f64; 2] {
 // -- staff geometry ---------------------------------------------------------
 
 /// The page-y of every staff line, ascending. A staff line is a wide horizontal
-/// `line` prim — the one geometry the same on every system, the ruler both the
+/// `line` prim -- the one geometry the same on every system, the ruler both the
 /// system clustering and the diatonic step are measured against.
 pub(super) fn staff_line_ys(prims: &[Prim]) -> Vec<f64> {
     let mut ys: Vec<f64> = prims
@@ -634,7 +634,7 @@ fn leading_hex(s: &str) -> usize {
 }
 
 /// A single `M x y L x y` segment (a staff line / stem / ledger line), else
-/// `None` — mirrors the anchored `^M..L..$` match on the trimmed path data.
+/// `None` -- mirrors the anchored `^M..L..$` match on the trimmed path data.
 fn parse_line(d: &str) -> Option<(f64, f64, f64, f64)> {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| {
@@ -652,7 +652,7 @@ fn parse_line(d: &str) -> Option<(f64, f64, f64, f64)> {
 /// One engraved staff: the page-y of its top and bottom lines.
 ///
 /// Derived from the drawing rather than from the document, because a page is
-/// all a reader of a display list has — which is the same position the GUI host
+/// all a reader of a display list has -- which is the same position the GUI host
 /// is in, and the reason this lives here instead of in either consumer.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Staff {
@@ -664,13 +664,13 @@ impl DisplayList {
     /// The staves on this page: its longest horizontal strokes, clustered into
     /// systems.
     ///
-    /// Within a staff the lines sit one space — two diatonic steps — apart, so
+    /// Within a staff the lines sit one space -- two diatonic steps -- apart, so
     /// a wider gap starts the next system. Sorted top to bottom.
     ///
     /// A staff line is picked out by being **long relative to the other
     /// horizontal strokes on the page**, not relative to the page: a short
     /// phrase engraved onto a wide sheet draws a system across a fraction of
-    /// it, and measuring against the viewBox would find no staff at all — which
+    /// it, and measuring against the viewBox would find no staff at all -- which
     /// is exactly what it did before this rule replaced it. What it has to be
     /// told apart from is ledger lines (a notehead wide) and beams (a few
     /// noteheads), both an order of magnitude shorter, so the threshold has
@@ -713,8 +713,8 @@ impl DisplayList {
     /// rebasing against a page that was re-engraved under it, which is what a
     /// gesture crossing a wire requires.
     ///
-    /// The element's **first** primitive is its notehead — verovio draws it
-    /// before the stem — and that is what the position is measured from; the
+    /// The element's **first** primitive is its notehead -- verovio draws it
+    /// before the stem -- and that is what the position is measured from; the
     /// stem and flag would pull the box off the pitch. The staff is the
     /// **nearest** one, since a note off the staff still belongs to it (that is
     /// what ledger lines are for). `None` when the id is not on the page or the
@@ -748,7 +748,7 @@ impl DisplayList {
     }
 }
 
-/// How far a page-y sits from a staff — zero anywhere between its outer lines.
+/// How far a page-y sits from a staff -- zero anywhere between its outer lines.
 fn staff_distance(s: &Staff, y: f64) -> f64 {
     (s.y0 - y).max(y - s.y1).max(0.0)
 }
@@ -759,7 +759,7 @@ mod tests {
 
     // A minimal verovio-shaped SVG: the outer <svg>, a <defs> glyph, the inner
     // definition-scale <svg> with a staff line, a placed notehead, a slur fill
-    // and a text — one of each primitive kind.
+    // and a text -- one of each primitive kind.
     const SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
       <defs><g id="E0A4-abc"><path d="M0 0 C1 1 2 2 3 3Z"/></g></defs>
       <svg class="definition-scale" viewBox="0 0 1000 400">
@@ -975,7 +975,7 @@ mod tests {
     }
 
     /// The position is measured from the staff's top line, positive upward, in
-    /// whole diatonic steps — the absolute coordinate a pitch edit names.
+    /// whole diatonic steps -- the absolute coordinate a pitch edit names.
     #[test]
     fn a_position_is_steps_above_the_top_line() {
         assert_eq!(page(160.0).staff_position("n1"), Some(0)); // on the top line
@@ -985,7 +985,7 @@ mod tests {
     }
 
     /// A note off the staff still belongs to it, which is what ledger lines are
-    /// for — so the position keeps counting rather than jumping to the nearer
+    /// for -- so the position keeps counting rather than jumping to the nearer
     /// system once the note leaves the lines.
     #[test]
     fn a_note_off_the_staff_keeps_counting_from_its_own() {

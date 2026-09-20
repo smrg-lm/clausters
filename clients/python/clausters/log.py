@@ -1,11 +1,11 @@
-"""What the client did, said out loud — the debugging door for the whole
+"""What the client did, said out loud -- the debugging door for the whole
 package.
 
 A client session fails in ways nothing else can see. The library is one half of
 a conversation: it sends OSC to an audio server and to a GUI host, both of which
 answer on their own schedule and neither of which is inside the process. So when
-something does not happen — a note that never sounds, a widget that stays where
-the hand left it, a def the server never got — the only question worth asking is
+something does not happen -- a note that never sounds, a widget that stays where
+the hand left it, a def the server never got -- the only question worth asking is
 *what actually went out and what came back*, and nothing in a traceback says.
 
 The areas, each a logger under `clausters` so a caller can raise or silence one
@@ -25,8 +25,8 @@ level comparison.
 
 Two doors, and they mean different things. `watch()` is the one a script calls
 (and `unwatch()` puts it back); `CLAUSTERS_LOG` is for the case this exists for
-— a person running an example, watching a window, about to do the thing that
-breaks — and takes an area or a list of them (`CLAUSTERS_LOG=1` for everything,
+-- a person running an example, watching a window, about to do the thing that
+breaks -- and takes an area or a list of them (`CLAUSTERS_LOG=1` for everything,
 `CLAUSTERS_LOG=gui,server` for two, `CLAUSTERS_LOG=gui.editing` for one).
 
 The web client's `base/log.ts` is this module, area for area and door for door.
@@ -56,13 +56,13 @@ def watch(area: str = "", stream=None, level: int = logging.DEBUG) -> logging.Lo
     """Print one area of the client's log to ``stream`` (stderr by default), and
     answer the logger it armed.
 
-    ``area`` is relative to `clausters` — ``""`` for everything, ``"gui"``,
+    ``area`` is relative to `clausters` -- ``""`` for everything, ``"gui"``,
     ``"server"``, ``"gui.editing"``. Idempotent per logger.
     """
     named = log if not area else logging.getLogger(f"clausters.{area}")
     if _already_watched(named):
         # **An ancestor is already printing this.** A record propagates up, so a
-        # handler here as well would print every line of this area twice — which
+        # handler here as well would print every line of this area twice -- which
         # is what `CLAUSTERS_LOG=gui,gui.editing` did, and a doubled log is one
         # a reader stops trusting.
         named.setLevel(level)
@@ -77,7 +77,7 @@ def watch(area: str = "", stream=None, level: int = logging.DEBUG) -> logging.Lo
 
 
 def unwatch(area: "str | None" = None) -> None:
-    """Stop printing one area — the handler this module installed goes and any
+    """Stop printing one area -- the handler this module installed goes and any
     the caller added stays. ``unwatch()`` silences everything.
 
     The other half of `watch`, and what a test that armed an area uses to leave

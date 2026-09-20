@@ -28,7 +28,7 @@ export interface TransportGrid {
  * The rolling state, plus the grid when one is defined, as `transportState()`
  * reports it.
  *
- * `originSample` and `tempo` are `null` until a client has defined a grid —
+ * `originSample` and `tempo` are `null` until a client has defined a grid --
  * the transport exists whether or not anyone has, because rolling, stopping
  * and saying where the transport is need no beats.
  */
@@ -41,7 +41,7 @@ export interface TransportState {
     playing: boolean;
     /**
      * The song-position **beat**: where play starts, or where a stop left it.
-     * 0 while there is no grid, since there is nothing to measure it against —
+     * 0 while there is no grid, since there is nothing to measure it against --
      * `positionSample` is the live one either way.
      */
     position: number;
@@ -50,16 +50,16 @@ export interface TransportState {
     /**
      * The transport clock: samples elapsed under the transport, held while it
      * is stopped. The device clock (`/clock_query`, the taps, the streams)
-     * never stops, and this one holds — but it is monotonic all the same, so a
+     * never stops, and this one holds -- but it is monotonic all the same, so a
      * locate does not move it. For where the transport *is*, read
      * `positionSample`.
      */
     transportSample: number;
     /**
-     * Where the transport stands, in samples of its own axis —
+     * Where the transport stands, in samples of its own axis --
      * what a playhead draws. Not a clock: it jumps to wherever a locate puts
      * it and wraps inside `loop`. Read from the engine as of its last
-     * completed block — except right after a locate, which the server answers
+     * completed block -- except right after a locate, which the server answers
      * with the place it located to until a block has applied it, so a reply in
      * the same breath as a locate (its own broadcast above all) never reports
      * the place the transport is leaving.
@@ -96,7 +96,7 @@ export class ServerTransport {
      * `originSample` on the sample clock, advancing at `tempo` beats per
      * second. One client (the conductor) sets it; the others read it. Last
      * writer wins, and defining the grid resets the rolling state to stopped at
-     * position 0 — so a bound group freezes with it.
+     * position 0 -- so a bound group freezes with it.
      */
     async setTransport(
         this: Server,
@@ -151,7 +151,7 @@ export class ServerTransport {
      * one bound, the **engine** enforces it: `transportStop` freezes that
      * subtree and the server's transport clock, `transportPlay` thaws them.
      * Every node in the subtree keeps its internal state across the freeze, so
-     * a resume continues the sound rather than restarting it — which is the
+     * a resume continues the sound rather than restarting it -- which is the
      * only thing a pause can mean for sound the server generates itself.
      *
      * Freeing the group unbinds the transport, and unbinding thaws whatever it
@@ -171,7 +171,7 @@ export class ServerTransport {
      * Schedules `messages` at an absolute sample on the **transport** axis
      * (`/sched_atTransport`), the counterpart of `sendBundle`'s device axis.
      *
-     * Declaring the axis is not about disambiguation — classification is
+     * Declaring the axis is not about disambiguation -- classification is
      * deterministic, and a client that bound the group knows which of its nodes
      * are governed. It is about **verification**: the server compares the
      * declaration against its own classification and fails when they disagree,
@@ -220,7 +220,7 @@ export class ServerTransport {
     }
 
     /**
-     * Sets the shared transport's song position (`/transport_locate`) — where
+     * Sets the shared transport's song position (`/transport_locate`) -- where
      * play starts, or where it seeks to while playing. Every following playhead
      * locates to it. Broadcast to `/server_notify` clients.
      *
@@ -259,7 +259,7 @@ export class ServerTransport {
     }
 
     /**
-     * Sets — or clears, with `null` — the span the transport loops
+     * Sets -- or clears, with `null` -- the span the transport loops
      * inside (`/transport_loop`), in samples.
      *
      * The span is **half-open**: `[0, n]` over an `n`-sample take plays every

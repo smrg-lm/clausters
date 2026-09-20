@@ -4,14 +4,14 @@
 // resumes the generator, and the value it yields is a *time to wait* (in
 // beats) before the next resumption. What resumes routines on a schedule is
 // the clock (`base/clock.ts`); here we only define the protocol. This is the
-// part that stays in the host language — `yield` is JavaScript control flow
+// part that stays in the host language -- `yield` is JavaScript control flow
 // and never moves to Rust.
 //
 // **A routine must never block, and must never `await`.** It runs on the
 // page's one thread: blocking it stalls every other routine, the timeline and
 // the rendering. Cede time by yielding instead. In particular, to send a def
 // from inside a routine use the non-waiting form (`def.send(server, // { wait: false })`) and yield enough time before the `/synth_new` that depends on
-// it — never `await server.sync()`. That is also why the driver takes
+// it -- never `await server.sync()`. That is also why the driver takes
 // `function*` and not `async function*`: the ambient "what is running right
 // now" (`base/context.ts`) is only sound while a wake runs to completion.
 
@@ -34,7 +34,7 @@ export class StopStream extends Error {
  * Thrown from inside a routine to yield `value` and then **reset** the routine,
  * so its next resumption starts the generator afresh.
  *
- * A generator cannot restart itself — `return` ends it for good — so the way
+ * A generator cannot restart itself -- `return` ends it for good -- so the way
  * back to the beginning is to leave through here: `next` catches it, resets,
  * and hands the value on as the delay, exactly as the Python client's
  * `YieldAndReset` does.
@@ -98,7 +98,7 @@ export abstract class Stream {
      *
      * With none, the ambient ladder resolves one: the clock of the routine
      * running right now, else the active session's, else the **default
-     * session's** — created at tempo 1.0 and started on first use. So
+     * session's** -- created at tempo 1.0 and started on first use. So
      * `new Routine(f).play()` needs no session, no clock and no server.
      */
     play(clock?: TempoClock, quant?: number): this {
@@ -154,7 +154,7 @@ export type RoutineFunc = (
 
 /**
  * The state a routine is in. `paused` is a routine held out of the queue
- * without being finished — `pause` puts it there, `play` resumes it.
+ * without being finished -- `pause` puts it there, `play` resumes it.
  */
 export type RoutineState = "init" | "running" | "done" | "paused";
 
@@ -163,7 +163,7 @@ export type RoutineState = "init" | "running" | "done" | "paused";
  *
  * Each `next` resumes it; a yielded number is the delay in beats before the
  * routine should be resumed again. The generator's own locals are its musical
- * state, which is why a routine is forward-only — the seekable counterpart is
+ * state, which is why a routine is forward-only -- the seekable counterpart is
  * `seq/timeline.ts`.
  */
 export class Routine extends Stream {
@@ -186,7 +186,7 @@ export class Routine extends Stream {
      *
      * Sugar for `new Routine(func).play(clock, quant)`, and sclang's
      * `Routine.run`. Both arguments resolve exactly as in `play`, so with
-     * neither the routine lands on the ambient clock — no `Session` and no
+     * neither the routine lands on the ambient clock -- no `Session` and no
      * booted server needed.
      *
      * ```js
@@ -205,7 +205,7 @@ export class Routine extends Stream {
      * The body may read that name on its **first** pass, which is the whole
      * point of the shortcut: a running clock resumes what it is handed after
      * the scheduling call has returned, so the assignment has happened by the
-     * time the generator runs. It did not always — the first pass used to run
+     * time the generator runs. It did not always -- the first pass used to run
      * inside `play`, on its own stack, and threw here where the Python one did
      * not.
      */
@@ -224,7 +224,7 @@ export class Routine extends Stream {
 
     /**
      * Resumes the generator once (sending it `inval`) and returns the value it
-     * yields — a delay in beats — or throws `StopStream` when it finishes.
+     * yields -- a delay in beats -- or throws `StopStream` when it finishes.
      * The clock calls this on each wake; you rarely call it yourself.
      */
     next(inval?: unknown): unknown {
@@ -258,7 +258,7 @@ export class Routine extends Stream {
     /**
      * Takes this routine off its clock, keeping its position; returns itself.
      * The generator is untouched, so a later `play` resumes it at the very
-     * `yield` it was paused on — the counterpart of `reset`, which throws that
+     * `yield` it was paused on -- the counterpart of `reset`, which throws that
      * position away. Pausing a routine that is not scheduled does nothing.
      */
     pause(): this {
@@ -284,7 +284,7 @@ export class Routine extends Stream {
 }
 
 /**
- * The clock an ambient play schedules on — the running routine's, else the
+ * The clock an ambient play schedules on -- the running routine's, else the
  * active session's, else the default session's, created and started here on
  * first use (never at import: a page that only draws must not start a clock
  * by loading a module).

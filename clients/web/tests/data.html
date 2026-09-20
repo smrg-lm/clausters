@@ -16,7 +16,7 @@
     <main>
       <div>the data paths read by the <b>script</b>: a control bus and an audio
         tap streamed off the engine in this page's AudioWorklet, and a buffer
-        read out of it — checked as <b>numbers</b>. Looking at any of it is a
+        read out of it -- checked as <b>numbers</b>. Looking at any of it is a
         view's job and the GUI host draws those; what is asserted here is that
         the figures arrive and are the ones the host would draw from.</div>
       <button id="boot">boot + read</button>
@@ -70,9 +70,9 @@
           + `${info.controlBuses} control buses`);
         if (info.taps === 0) throw new Error("the engine has no tap region");
 
-        // What feeds the paths: a tone on a pair of audio buses — the second
+        // What feeds the paths: a tone on a pair of audio buses -- the second
         // channel the first inverted, so the pair has a correlation the graph
-        // fixes — and an LFO on a control bus. Both are ordinary defs; nothing
+        // fixes -- and an LFO on a control bus. Both are ordinary defs; nothing
         // about them knows anything is reading.
         const audioBus = Bus.audio(2, { server });
         const ctlBus = Bus.control(1, { server });
@@ -152,7 +152,7 @@
         }
 
         // The reduction over what came back: a client builds the cache and
-        // hands it on — to a `waveform` widget, to a file — and never reads a
+        // hands it on -- to a `waveform` widget, to a file -- and never reads a
         // picture out of it. So what is checked here is the path (the samples
         // arrived, the cache is over them) and not a column: the columns are
         // the host's, and the cache's bytes are pinned against the Python

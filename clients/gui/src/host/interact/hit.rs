@@ -2,10 +2,10 @@
 //! question, and the per-element hit-tests that read the answer finer.
 //!
 //! [`hit`] lays the window out once and hands back the deepest interactive
-//! widget plus the [`Frame`] chain of containers over it — the containment the
+//! widget plus the [`Frame`] chain of containers over it -- the containment the
 //! layout already resolved ([`chain_of`]), each container's coordinate system
-//! resolved with it ([`time_axis`], [`view_of`]). The second question — *where
-//! on* the element the point landed — is the element's own, asked through the
+//! resolved with it ([`time_axis`], [`view_of`]). The second question -- *where
+//! on* the element the point landed -- is the element's own, asked through the
 //! trait.
 //!
 //! The rule that keeps these honest is that they reconstruct **the geometry the
@@ -19,12 +19,12 @@ use super::coords::{Coords, Frame, Hit, TimeAxis, YAxis};
 use crate::viewport::View;
 
 /// The [`Hit`] under `(x, y)` in window `def_id`. Containers (`window`/`panel`)
-/// are not hit targets — except `scroll`, whose empty area is the pan gesture's
+/// are not hit targets -- except `scroll`, whose empty area is the pan gesture's
 /// surface (its children, laid out through its view transform, still win over
 /// it). A widget scrolled out of its container's window (outside its clip) is
 /// not hit. `fb_w`/`fb_h` is the window's framebuffer size in device pixels.
 ///
-/// `lanes` answers how many channel lanes a stacked heavy view draws — the one
+/// `lanes` answers how many channel lanes a stacked heavy view draws -- the one
 /// datum the host tree does not hold (it lives in the front's GPU slots), and
 /// the divisor a vertical axis is panned through.
 ///
@@ -69,7 +69,7 @@ pub(crate) fn hit(
 /// all of them), plus every **lane** on it.
 ///
 /// It is what a gesture falls back to when the pointer is not over a timeline
-/// at all — the gap between two lanes, the slack under the last one, a
+/// at all -- the gap between two lanes, the slack under the last one, a
 /// container's margin. In a window built around one axis those pixels are not a
 /// third thing the user meant: they are the axis with nothing drawn on them.
 /// With two groups there is no such answer, so there is no fallback either.
@@ -110,7 +110,7 @@ pub(crate) fn sole_time_axis(
 }
 
 /// The containers from the window down to `i`, `i` itself included when it is
-/// one — walked back through [`super::super::layout::Placed::parent`], which is the containment the
+/// one -- walked back through [`super::super::layout::Placed::parent`], which is the containment the
 /// layout pass already resolved.
 fn chain_of(
     host: &Host,
@@ -152,12 +152,12 @@ fn chain_of(
     chain
 }
 
-/// **A ruler strip answers as a ruler, whoever drew it** — the widget's own
+/// **A ruler strip answers as a ruler, whoever drew it** -- the widget's own
 /// table everywhere else.
 ///
 /// A free-standing `timeruler` is a widget, so its table is its kind's and this
-/// changes nothing for it. The ruler a *view* reserves out of its own height —
-/// a lane's `ruler` prop, a roll's, a signal's — is not a widget at all: the
+/// changes nothing for it. The ruler a *view* reserves out of its own height --
+/// a lane's `ruler` prop, a roll's, a signal's -- is not a widget at all: the
 /// press lands on the lane or on the element, and their table is the body's, so
 /// without this a drag on the strip sweeps clips or notes and Alt never reaches
 /// the time range. Two selections told apart by *where* the gesture began need
@@ -195,7 +195,7 @@ fn map_for(host: &Host, def_id: i32, p: &layout::Placed, y: f64) -> GestureMap {
     }
 }
 
-/// The [`TimeAxis`] of a placed timeline view — the geometry the renderer drew
+/// The [`TimeAxis`] of a placed timeline view -- the geometry the renderer drew
 /// through, resolved once here rather than by each gesture from the kind it
 /// happens to have hit. The body is the strip samples map onto; the vertical
 /// axis is the band left of it, when the view has one.
@@ -217,7 +217,7 @@ fn time_axis(
         // Every other member answers for itself: where the axis lies inside
         // its rect and whether it offers a vertical surface beside it. Only a
         // leaf whose picture is not "the rect minus its chrome" overrides the
-        // generic body — a roll's grid, with its strips stacked under it.
+        // generic body -- a roll's grid, with its strips stacked under it.
         kind => kind.axis_body(p.rect, indent, metrics).unwrap_or((
             super::super::frame::timeline_body(p.rect, kind.editor()?, false, indent, metrics),
             kind.editor()?.ruler_y != super::super::widget::RulerY::Off,
@@ -243,7 +243,7 @@ fn time_axis(
 }
 
 /// The navigation window a placed timeline view is seen through: its group's,
-/// or — while it is in none — the fallback its own contents imply, so a gesture
+/// or -- while it is in none -- the fallback its own contents imply, so a gesture
 /// on an ungrouped view still measures against something the renderer agrees
 /// with.
 fn view_of(host: &Host, _def_id: i32, p: &layout::Placed, body: Rect) -> View {

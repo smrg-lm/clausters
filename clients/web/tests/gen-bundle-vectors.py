@@ -19,8 +19,8 @@ The JSON is committed; regenerate with:
 
     python3 gen-bundle-vectors.py
 
-(from clients/web/tests/, with the Python client importable — the repo's .venv
-has it installed editable — and libclausters_ffi built.)
+(from clients/web/tests/, with the Python client importable -- the repo's .venv
+has it installed editable -- and libclausters_ffi built.)
 """
 
 import json
@@ -38,7 +38,7 @@ from clausters.gui import knob, meter, view  # noqa: E402
 
 
 def voice() -> SynthDef:
-    """The bus reaches the def as a **control**, never baked in — the rule that
+    """The bus reaches the def as a **control**, never baked in -- the rule that
     lets two instances share the one def that was sent."""
     freq = control("freq", 220.0)
     env_bus = control("env_bus", 0.0)
@@ -67,7 +67,7 @@ def reference() -> Bundle:
 
 
 #: One mount each: the defaults, an attribute override, and a preset with an
-#: attribute over it — the whole resolution order, frozen.
+#: attribute over it -- the whole resolution order, frozen.
 MOUNTS = [
     ("defaults", {}, {}),
     ("attribute", {"freq": "440"}, {}),

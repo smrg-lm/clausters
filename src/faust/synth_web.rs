@@ -3,7 +3,7 @@
 //! The native backend holds an opaque libfaust instance pointer and calls
 //! `computeCDSPInstance` once per block. Here the instance is a struct **we**
 //! allocate inside the engine's own linear memory, and `compute` is a function
-//! of a second wasm module whose `env.memory` is that same memory — reached
+//! of a second wasm module whose `env.memory` is that same memory -- reached
 //! through the engine's `__indirect_function_table`, so the call is a plain
 //! `call_indirect` with no JavaScript frame on the audio path. See
 //! `docs/decisions.md`, "The page's Faust is a second wasm module linked into
@@ -35,7 +35,7 @@ use crate::node::{ControlMap, SynthNode};
 
 pub use crate::faust::ParamSpec;
 
-/// `void compute(dsp*, int count, float** inputs, float** outputs)` — the ABI
+/// `void compute(dsp*, int count, float** inputs, float** outputs)` -- the ABI
 /// the Faust wasm backend emits, and the one `computeCDSPInstance` has.
 type ComputeFn = extern "C" fn(*mut u8, i32, *mut *mut f32, *mut *mut f32);
 /// `void init(dsp*, int sampleRate)`.
@@ -242,7 +242,7 @@ impl SynthNode for FaustSynth {
         // Pull bus-mapped parameters into their zones before `compute` reads
         // them: a control bus, or one frame of an audio bus (control-rate,
         // `/node_mapAudio`). Zones are scalar, so audio mappings are always
-        // sampled — Faust has no audio-rate parameter.
+        // sampled -- Faust has no audio-rate parameter.
         for i in 0..self.maps.len() {
             let m = self.maps[i];
             if m.bus >= 0 {
@@ -271,7 +271,7 @@ impl SynthNode for FaustSynth {
         );
         for (i, buf) in self.out_bufs.iter().enumerate() {
             let bus = (self.out_bus + i).min(NUM_AUDIO_BUSES - 1);
-            // SAFETY: stage disjointness — no other thread touches this bus
+            // SAFETY: stage disjointness -- no other thread touches this bus
             // while we sum into it.
             for (d, s) in unsafe { ctx.buses.audio_mut(bus) }[offset..offset + frames]
                 .iter_mut()

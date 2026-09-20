@@ -3,8 +3,8 @@
 //!
 //! The schema around this module is a closed sum type
 //! ([`WidgetKind`](super::WidgetKind)) whose variants the whole renderer
-//! matches on, which is right for the containers —
-//! the layout pass has to know them — and wrong for the leaves: adding one
+//! matches on, which is right for the containers --
+//! the layout pass has to know them -- and wrong for the leaves: adding one
 //! edits every pass, and a program *linking* this crate cannot add one at all.
 //! This is the other door. A leaf implements [`Element`], registers a
 //! constructor under a wire name ([`register`]), and the passes that are a
@@ -30,9 +30,9 @@
 //!
 //! Not everything a pass asks is a question every element can be asked. A
 //! picture of **samples** owes nineteen answers nothing else in the catalog has
-//! — what shape they are, which buffer they came from, what a span of them is
+//! -- what shape they are, which buffer they came from, what a span of them is
 //! worth, how a write lands on them, what the view is asking for next. An
-//! element on a **shared time axis** owes eleven more — how far its content
+//! element on a **shared time axis** owes eleven more -- how far its content
 //! reaches, what it reserves beside the axis, how many rows it stacks, the
 //! navigation chrome it carries. One with a **measured axis of its own** owes
 //! four, and one whose picture is a **texture** five. As methods of [`Element`]
@@ -40,8 +40,8 @@
 //! families the other two applications grow would have added to everyone's
 //! interface.
 //!
-//! So they are traits of their own — [`Samples`], [`OnAxis`], [`Measured`],
-//! [`Slotted`] — reached through [`Element::samples`], [`Element::on_axis`],
+//! So they are traits of their own -- [`Samples`], [`OnAxis`], [`Measured`],
+//! [`Slotted`] -- reached through [`Element::samples`], [`Element::on_axis`],
 //! [`Element::measured`] and [`Element::slotted`], which answer `None` by
 //! default. A pass asks the node for the facet it needs
 //! ([`WidgetKind::as_samples`](super::WidgetKind::as_samples) and its kin) and
@@ -49,8 +49,8 @@
 //! before; what changed is that an element now implements the facets it **is**,
 //! and a new question about samples reaches the elements that have them.
 //!
-//! **What stayed on [`Element`] is what a control is.** The hand — press,
-//! drag, release, the keys, the focus — reads like a candidate and is not one:
+//! **What stayed on [`Element`] is what a control is.** The hand -- press,
+//! drag, release, the keys, the focus -- reads like a candidate and is not one:
 //! the median element in this catalog *is* a control, so a gesture facet would
 //! be a second impl block on thirteen of nineteen elements to spare four of
 //! them a few `None`s. A facet is worth its accessor where the capability is
@@ -63,7 +63,7 @@
 //! **Three things in, two things out**, and the boundary is narrow on purpose:
 //! most of what looks like "what a widget needs from the host" is the widget's
 //! own state coming back to it, and that stays home. What genuinely crosses is
-//! the roles ([`Draw`] — the one mesh, the theme, the size table), the
+//! the roles ([`Draw`] -- the one mesh, the theme, the size table), the
 //! [`World`] and the placement (both in [`Ctx`]); and back out, what the
 //! element *is and needs* ([`Needs`], [`Element::value`]) and what it asks the
 //! front to do ([`Claim`]). None of that grows per widget.
@@ -71,9 +71,9 @@
 //! **The registry is consulted only when no built-in name matched**, so a
 //! built-in never changes meaning and a third party can register an element
 //! today, against a host where every leaf is still an enum arm. A registry
-//! *miss* stays exactly what an unrecognized type has always been —
+//! *miss* stays exactly what an unrecognized type has always been --
 //! [`WidgetKind::Unknown`](super::WidgetKind::Unknown), laid out and not
-//! painted — which is what makes an element family compilable out of a build
+//! painted -- which is what makes an element family compilable out of a build
 //! without a new failure mode: a slim host degrades the way an old host does.
 //!
 //! **Two boundaries, stated rather than discovered.** A **container is not
@@ -86,8 +86,8 @@
 //! pick.
 //!
 //! **The registry is per thread.** The host core is single-threaded by design
-//! — nothing here is `Send`, which is exactly what makes `Box<dyn Element>`
-//! cheap — so registrations live in a `thread_local!` and an element must be
+//! -- nothing here is `Send`, which is exactly what makes `Box<dyn Element>`
+//! cheap -- so registrations live in a `thread_local!` and an element must be
 //! registered on the thread that builds the trees (natively the one running
 //! the event loop; in a page, the only one there is).
 
@@ -117,7 +117,7 @@ use super::size::Natural;
 pub struct Ctx<'a> {
     /// The read-only per-frame facts no widget owns.
     pub world: &'a World<'a>,
-    /// The size roles of this placement, resolved at its scale — the same table
+    /// The size roles of this placement, resolved at its scale -- the same table
     /// [`Draw`] carries, for the methods that get no `Draw`.
     pub metrics: &'a Metrics,
     /// The rect this element was placed in, in the window's pixels.
@@ -132,8 +132,8 @@ pub struct Ctx<'a> {
     /// beside it did not, and the same sample would sit at two different
     /// pixels.
     pub indent: f32,
-    /// The clip rectangle of the container this was placed in — what a scrolled
-    /// widget's drawing is cut to — or `None` outside one.
+    /// The clip rectangle of the container this was placed in -- what a scrolled
+    /// widget's drawing is cut to -- or `None` outside one.
     ///
     /// The frame has already applied it, so an element that draws plainly never
     /// reads it. It is here for the one that **narrows the clip itself** (a
@@ -141,19 +141,19 @@ pub struct Ctx<'a> {
     /// data the frame holds, and an element must not have to ask the mesh what
     /// state it was left in.
     pub clip: Option<Rect>,
-    /// The placement's zoom — 1.0 outside a `plane` workspace. The metrics
+    /// The placement's zoom -- 1.0 outside a `plane` workspace. The metrics
     /// already carry it, so it is needed for exactly one thing: the element's
     /// **own** `text_size` prop, which is a number the script sent and no table
     /// resolved (`self.text_size * scale`), matching what
     /// [`natural`](Element::natural) measured.
     pub scale: f32,
     /// The container's coordinate system, when this element was placed inside
-    /// one — a clip's own time axis. `None` for an element standing on its own
+    /// one -- a clip's own time axis. `None` for an element standing on its own
     /// rectangle, which is every element outside a `clip` today.
     pub time: Option<TimeSpace>,
     /// Whether this element holds the window's keyboard focus. The host draws
     /// the focus ring itself, in the theme's `focus` role, so an element reads
-    /// this only for what the ring cannot say — a field's caret and selection,
+    /// this only for what the ring cannot say -- a field's caret and selection,
     /// which exist while it is being typed into and not otherwise.
     pub focused: bool,
 }
@@ -163,7 +163,7 @@ pub struct Ctx<'a> {
 /// itself.
 ///
 /// A clip's body is drawn against the *clip's* axis and with the clip's id (a
-/// body carries none), so it cannot go through the ordinary slot path — the
+/// body carries none), so it cannot go through the ordinary slot path -- the
 /// frame has to route it to the texture pass itself. This is the whole of what
 /// it needs to know to do that, and an element that draws its body into the
 /// mesh instead answers `None` ([`Slotted::texture_body`]).
@@ -194,7 +194,7 @@ pub struct TextureBody {
 /// surface the axis answers to the pointer on, and the window it stands at.
 ///
 /// The one axis in the host that is neither the window's shared time nor a
-/// container's coordinate system — a spectrum's frequency. It is the element's
+/// container's coordinate system -- a spectrum's frequency. It is the element's
 /// alone ([`Measured::freq_axis`]), which is why the gesture machine asks for it
 /// instead of holding it: only the element knows where inside its rectangle the
 /// picture ended up, and what the analysis behind it can resolve.
@@ -209,7 +209,7 @@ pub struct FreqAxis {
     pub start: f64,
     pub len: f64,
     /// The rate the axis is placed by, so a hertz the gesture resolves is the
-    /// hertz the frame drew — and so a zoom knows the analysis' resolution.
+    /// hertz the frame drew -- and so a zoom knows the analysis' resolution.
     pub sample_rate: f64,
 }
 
@@ -240,7 +240,7 @@ pub struct SampleBlock {
 /// element knows the domain it drew through, how many rows it stacked and
 /// where inside its rectangle the picture ended up.
 ///
-/// It is the axis of a **trace** — amplitude, or whatever domain an element
+/// It is the axis of a **trace** -- amplitude, or whatever domain an element
 /// declared. A time-frequency picture has a second axis too and it is not this
 /// one: bins are the spectral selection's own field in the document's
 /// `Selection`, deliberately separate, because an operation that understands a
@@ -259,7 +259,7 @@ pub struct SampleBlock {
 /// should have to know which element kind it came from.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PendingEdit {
-    /// Which channel — the lane the press landed in.
+    /// Which channel -- the lane the press landed in.
     pub channel: usize,
     /// The first sample of the run.
     pub start: usize,
@@ -272,7 +272,7 @@ pub struct PendingEdit {
 }
 
 impl PendingEdit {
-    /// A run of one — the dragged sample.
+    /// A run of one -- the dragged sample.
     pub fn one(channel: usize, frame: usize, value: f32, previous: f32) -> Self {
         Self {
             channel,
@@ -301,11 +301,11 @@ pub struct ValueAxis {
     /// Where the picture maps: the rectangle the rows are cut from, exactly
     /// what the renderer drew through.
     pub body: Rect,
-    /// The value domain the geometry was mapped through — the element's
+    /// The value domain the geometry was mapped through -- the element's
     /// `min`/`max`, [`crate::waveform::DEFAULT_DOMAIN`] when it names neither.
     pub domain: (f32, f32),
     /// The visible vertical window, normalized `(start, len)` of the display
-    /// axis — `EditorProps::y_view`, the same pair the renderer used.
+    /// axis -- `EditorProps::y_view`, the same pair the renderer used.
     pub y: (f64, f64),
     /// How many rows the body is split into (1 when overlaid).
     pub rows: usize,
@@ -327,7 +327,7 @@ impl ValueAxis {
     }
 
     /// The value `cy` names **in a named row**, whatever row it is actually
-    /// over — clamped to that row's own ends.
+    /// over -- clamped to that row's own ends.
     ///
     /// This is what an edit reads, and the difference is not a detail: a drag
     /// belongs to the channel it started on, so a hand that slides up into the
@@ -349,7 +349,7 @@ impl ValueAxis {
         v.clamp(lo, hi)
     }
 
-    /// Whether this axis covers the whole domain — a selection restricted to
+    /// Whether this axis covers the whole domain -- a selection restricted to
     /// all of it is not restricted at all, and travels as the plain span the
     /// wire has always carried.
     pub fn is_whole(&self, min: f64, max: f64) -> bool {
@@ -361,7 +361,7 @@ impl ValueAxis {
     }
 }
 
-/// **What an element is fed, once per tick** — the third moment of the trait,
+/// **What an element is fed, once per tick** -- the third moment of the trait,
 /// beside drawing ([`Ctx`]) and being dragged ([`Input`]).
 ///
 /// A tick is where a live view *advances*: a rolling trace takes one sample, an
@@ -371,8 +371,8 @@ impl ValueAxis {
 /// window that repaints twice does not scroll twice, and one that repaints
 /// never still keeps its history.
 ///
-/// It carries only what a *reader of data* needs — the source, the rate, and
-/// the retained pasts — and none of what a draw needs (the timeline groups, the
+/// It carries only what a *reader of data* needs -- the source, the rate, and
+/// the retained pasts -- and none of what a draw needs (the timeline groups, the
 /// node trees, the pointer), because those borrow out of the host tree the tick
 /// is walking mutably.
 pub struct Live<'a> {
@@ -382,7 +382,7 @@ pub struct Live<'a> {
     /// The server's sample rate (`0.0` = unknown; a reader falls back to 48 kHz
     /// rather than dividing by zero).
     pub sample_rate: f64,
-    /// **Seconds since the previous tick** — wall time, measured by the front.
+    /// **Seconds since the previous tick** -- wall time, measured by the front.
     ///
     /// A tick runs once per animation frame and an animation frame is not a
     /// fixed period, so anything that advances *in time* (a meter's fall, a
@@ -399,7 +399,7 @@ pub struct Live<'a> {
 }
 
 impl Live<'_> {
-    /// The current value of control bus `bus` — the same rule [`World`] states
+    /// The current value of control bus `bus` -- the same rule [`World`] states
     /// for a draw, so a tick and a repaint never read one differently.
     pub fn control(&self, bus: i32) -> f32 {
         if bus < 0 {
@@ -408,7 +408,7 @@ impl Live<'_> {
         self.bus.map_or(0.0, |s| s.control(bus as usize))
     }
 
-    /// What a level reader advances against for `bus` at `rate` — the same
+    /// What a level reader advances against for `bus` at `rate` -- the same
     /// rule [`World`] states for a draw, so a tick and a repaint never read one
     /// differently.
     pub fn level(&self, bus: i32, rate: super::Rate) -> f32 {
@@ -446,8 +446,8 @@ impl Live<'_> {
 /// element that draws only from its own props needs nothing.
 ///
 /// **This is the whole declaration the tree collectors read.** Each field used
-/// to be a walk of its own matching on a kind — which buses to stream, which
-/// rings to record, which groups to query, whether the window animates — and
+/// to be a walk of its own matching on a kind -- which buses to stream, which
+/// rings to record, which groups to query, whether the window animates -- and
 /// each of those walks now asks every widget one question instead. A collector
 /// therefore learns nothing about a new element, which is what makes the
 /// element addable by writing a file.
@@ -458,7 +458,7 @@ impl Live<'_> {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Needs {
     /// Control buses read once per frame (the shm segment natively,
-    /// `/bus_stream` in a page) — what a control-rate meter or a live trace
+    /// `/bus_stream` in a page) -- what a control-rate meter or a live trace
     /// contributes.
     pub buses: Vec<i32>,
     /// Audio buses whose **published block level** is read: one number per
@@ -468,7 +468,7 @@ pub struct Needs {
     /// into a ring first (`/bus_tap`, `/bus_tapStream` in a page).
     pub taps: Vec<i32>,
     /// How many **seconds** of each tapped bus this element wants kept
-    /// addressable — the `retention` span, `0.0` (the default) for a view that
+    /// addressable -- the `retention` span, `0.0` (the default) for a view that
     /// only ever reads the present.
     ///
     /// The span is declared here rather than resolved to samples, because the
@@ -481,9 +481,9 @@ pub struct Needs {
     /// knows which trees to keep queried.
     pub node_groups: Vec<i32>,
     /// Whether this element must be redrawn every tick even with no data
-    /// arriving — a picture driven by the clock rather than by a value.
+    /// arriving -- a picture driven by the clock rather than by a value.
     pub animated: bool,
-    /// Whether this element reads the **engine sample clock** — a cursor that
+    /// Whether this element reads the **engine sample clock** -- a cursor that
     /// sweeps on its own from an anchor, rather than being told where to go.
     ///
     /// It is a need and not a flavour of [`animated`](Self::animated) because
@@ -507,22 +507,22 @@ pub struct Needs {
     /// [`Samples::ask_takes`], which answers each take once.
     pub takes: Vec<i32>,
     /// The GPU slot this element claims, for a view that cannot draw into the
-    /// shared mesh. `None` — the default — is an element that draws.
+    /// shared mesh. `None` -- the default -- is an element that draws.
     pub slot: Option<SlotKind>,
     /// Whether this element **reads live MIDI input**: a note played on a
     /// keyboard reaches it ([`Element::midi`]) rather than only a script's
     /// `/gui_set`.
     ///
     /// It is a need like the others because it is a *device* the front has to
-    /// open — a virtual input port, native-only — and one nothing in the window
+    /// open -- a virtual input port, native-only -- and one nothing in the window
     /// asked for is one nothing opens. What arrives is the platform-neutral
     /// [`MidiNote`], the same posture [`Key`] takes: the front translates, and
     /// the element answers identically wherever it is compiled.
     pub midi: bool,
     /// The **bulk resource** this element wants resolved, and in which form.
     ///
-    /// Bulk is the data too big for the wire — a minutes-long take, a peaks
-    /// cache, a server buffer — and it moves through local shared resources
+    /// Bulk is the data too big for the wire -- a minutes-long take, a peaks
+    /// cache, a server buffer -- and it moves through local shared resources
     /// (a mapped file natively, a `fetch` in a page), never re-encoded over
     /// OSC. This is the *declaration*; where the answer goes is not the
     /// loader's decision either: an element that claimed a [`slot`](Self::slot)
@@ -531,7 +531,7 @@ pub struct Needs {
     pub bulk: Option<Bulk>,
 }
 
-/// **What an element wants loaded, and in which form** — the two halves of one
+/// **What an element wants loaded, and in which form** -- the two halves of one
 /// question, because the same file is a pyramid to one view and a run of
 /// samples to another.
 ///
@@ -564,14 +564,14 @@ pub enum Bulk {
         sample_rate: f64,
     },
     /// A **server buffer**, pulled over the host's client leg rather than off
-    /// the local filesystem — the one resource the host does not own and has to
+    /// the local filesystem -- the one resource the host does not own and has to
     /// ask for.
     Buffer(i32),
     /// A server buffer that is **being recorded into**: its shape, and not its
     /// samples.
     ///
-    /// A take allocated to record into holds nothing worth fetching — it is
-    /// silence — and what fills the picture is the overview the server streams
+    /// A take allocated to record into holds nothing worth fetching -- it is
+    /// silence -- and what fills the picture is the overview the server streams
     /// (`fills`, `/buffer_stream`). So the leg asks what shape it is and
     /// builds an empty summary of that length, instead of pulling ten minutes
     /// of zeros through the client leg to draw over them.
@@ -580,7 +580,7 @@ pub enum Bulk {
 
 impl Bulk {
     /// The local resource this wants, when it names one (a `Buffer` names
-    /// none) — what a loader maps or fetches.
+    /// none) -- what a loader maps or fetches.
     pub fn resource(&self) -> Option<&Path> {
         match self {
             Bulk::PeakCache(p) | Bulk::StftCache(p) => Some(p),
@@ -597,20 +597,20 @@ impl Bulk {
 /// place it.
 pub enum Loaded {
     /// **Raw interleaved samples**, for the element to make what it draws from
-    /// — a pyramid, or the samples themselves. It is the one form a loader can
+    /// -- a pyramid, or the samples themselves. It is the one form a loader can
     /// hand over without knowing the drawing, which is what the server's own
     /// buffers arrive as.
     Raw { samples: Vec<f32>, channels: usize },
     /// A peak pyramid, from a cache or summarized from raw samples. It is
     /// **shared**: the element keeps it as the samples it may be asked to read
-    /// back, and the slot it claimed draws the same one — a pyramid is a picture
+    /// back, and the slot it claimed draws the same one -- a pyramid is a picture
     /// *and* a body, and copying it would have made those two things.
     Peaks(std::sync::Arc<crate::waveform::WaveformData>),
     /// One STFT per channel.
     Stfts(Vec<crate::spectrogram::Stft>),
     /// Interleaved samples, kept whole.
     Samples(std::sync::Arc<[f32]>),
-    /// **Samples the host reads where they live** — a view over a mapped
+    /// **Samples the host reads where they live** -- a view over a mapped
     /// region, its pyramid already built over the mapping.
     ///
     /// It is `Peaks`' sibling and not a duplicate of it: a pyramid *is* the
@@ -626,14 +626,14 @@ pub enum Loaded {
 ///
 /// A slot is addressed by the pair `(widget id, key)`: the widget says *whose*
 /// picture, the key says *which of its own*. Almost every element has one and
-/// answers [`SELF`](SlotKey::SELF); a view that holds several — a multitrack's
-/// boxes over several takes — keys them by its own word for each, which for a
+/// answers [`SELF`](SlotKey::SELF); a view that holds several -- a multitrack's
+/// boxes over several takes -- keys them by its own word for each, which for a
 /// take is the server buffer it is a window onto.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SlotKey(pub i64);
 
 impl SlotKey {
-    /// The element's own one picture — what a view with a single slot answers.
+    /// The element's own one picture -- what a view with a single slot answers.
     pub const SELF: SlotKey = SlotKey(-1);
 }
 
@@ -641,7 +641,7 @@ impl SlotKey {
 /// mesh: it needs a texture, a vertex buffer or a shader of its own.
 ///
 /// **The set is closed and belongs to the frame**, which owns the device, the
-/// pipelines and the one-batch-per-window rule — an element *chooses* among
+/// pipelines and the one-batch-per-window rule -- an element *chooses* among
 /// these and cannot invent one. Widening it is adding a pipeline to the frame,
 /// which the cost rule already prices at once per window and only in the builds
 /// that compiled it in. That is the same boundary as "a container is not
@@ -657,7 +657,7 @@ pub enum SlotKind {
         source: String,
     },
     /// A **vertex-buffer** slot: geometry rebuilt per frame, bounded by the
-    /// render width in physical pixels — the resolution rule the whole crate
+    /// render width in physical pixels -- the resolution rule the whole crate
     /// draws signals by (never finer than the screen). What the columns are
     /// decimated *from* is a peak pyramid, which is why the bucket is the
     /// slot's parameter: it is what a load has to be summarized at before the
@@ -678,12 +678,12 @@ pub enum SlotKind {
     },
 }
 
-/// The role an element fills as one of a **container's bodies** — the layered
+/// The role an element fills as one of a **container's bodies** -- the layered
 /// contents of a `clip`: the samples, the events over it, the automation over
 /// both.
 ///
 /// **The set is closed and belongs to the container**, which owns the layering,
-/// the axis the bodies are drawn against and the props they are built from — an
+/// the axis the bodies are drawn against and the props they are built from -- an
 /// element *chooses* among these and cannot invent one, exactly as it chooses a
 /// [`SlotKind`] and cannot invent a pipeline. What the element says is only
 /// which role it fills; where that role sits and what it is drawn through stays
@@ -695,11 +695,11 @@ pub enum SlotKind {
 /// envelope over its samples one clip rather than two.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BodyRole {
-    /// The samples themselves — a clip's sound, drawn as a signal.
+    /// The samples themselves -- a clip's sound, drawn as a signal.
     Take,
-    /// The events over it — the notes of a roll.
+    /// The events over it -- the notes of a roll.
     Notes,
-    /// The automation over both — a break-point curve.
+    /// The automation over both -- a break-point curve.
     Curve,
 }
 
@@ -713,14 +713,14 @@ pub enum BodyRole {
 /// draws its own chrome and spans its own domain.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TimeSpace {
-    /// The visible window of the container's axis, in its own units — the
+    /// The visible window of the container's axis, in its own units -- the
     /// slice of `0..span` the element's rectangle spans.
     pub view: crate::viewport::View,
     /// The full span of that axis (a clip's `dur`): the domain a time is
     /// clamped into, whatever part of it is on screen.
     pub span: f64,
     /// The axis' **shared time selection**, or `None` when nothing is selected
-    /// — the band every linked view draws, which is the axis' state and not
+    /// -- the band every linked view draws, which is the axis' state and not
     /// any one member's. An element that draws it reads it here; an element
     /// that *moves* it asks ([`Events::and_select`]).
     pub sel: Option<(f64, f64)>,
@@ -736,25 +736,25 @@ pub struct TimeSpace {
     /// where nothing has placed one.
     ///
     /// The other line, and the one that is *placed*: a click that landed on
-    /// nothing puts it there — the ruler, the slack — and nothing else moves it,
+    /// nothing puts it there -- the ruler, the slack -- and nothing else moves it,
     /// not the content it is drawn over, not playing.
     /// [`head`](Self::head) is where the music is; this is where the reader is,
     /// which is where a playback starts and where a paste lands.
     pub cursor: Option<f64>,
-    /// Whether this element is the container's **active edit layer** — the one
+    /// Whether this element is the container's **active edit layer** -- the one
     /// layer that acts and offers affordances
     /// ([`crate::host::layers`]).
     ///
     /// It rides here because it is exactly the same kind of fact as the axis:
     /// something the container decided and the element is told, rather than
-    /// something the element can work out. An inactive layer still **draws** —
-    /// it is part of the picture — it simply draws no affordance and takes no
+    /// something the element can work out. An inactive layer still **draws** --
+    /// it is part of the picture -- it simply draws no affordance and takes no
     /// press, so what is lit is always what a press would take.
     ///
     /// `true` for an element standing on its own (a `None` [`TimeSpace`] never
     /// reaches this field): outside a container an element is its own layer.
     pub active: bool,
-    /// **What of its samples the container is showing** — where its time zero
+    /// **What of its samples the container is showing** -- where its time zero
     /// reads in the source, whether the window loops
     /// ([`SourceWindow`](super::SourceWindow)).
     ///
@@ -769,7 +769,7 @@ pub struct TimeSpace {
 
 impl TimeSpace {
     /// A bare axis: a window over a span, with no selection and no transport on
-    /// it — what a container hands a body, and what a test draws against.
+    /// it -- what a container hands a body, and what a test draws against.
     ///
     /// **Active**, because that is what a caller with nothing to say about
     /// layers means: the one-body case, and every test that draws a body to see
@@ -798,7 +798,7 @@ impl TimeSpace {
     }
 }
 
-/// What a claimed slot is fed **this frame** — the live counterpart of
+/// What a claimed slot is fed **this frame** -- the live counterpart of
 /// [`SlotKind`], produced with the world in hand so a value read from a bus is
 /// resolved where every other per-frame read is.
 #[derive(Debug, Clone, PartialEq)]
@@ -810,14 +810,14 @@ pub enum SlotFrame {
         source: String,
         params: [f32; crate::canvas::PARAM_COUNT],
     },
-    /// The signal slot: **the layers a signal view draws on its one body** —
+    /// The signal slot: **the layers a signal view draws on its one body** --
     /// traces decimated per frame out of the peak pyramid the slot holds, the
     /// time-frequency texture sampled a texel per pixel, or both over each
-    /// other — into `body` at the element's vertical window.
+    /// other -- into `body` at the element's vertical window.
     ///
     /// What is *not* here is as deliberate as what is: the horizontal window is
     /// the **navigation group's** and the row count is the **slot's**, so an
-    /// element states neither — it would have to know its own id for the first
+    /// element states neither -- it would have to know its own id for the first
     /// and what reached the card for the second. `overlay` is the one thing
     /// about the rows that is the element's: whether they stack or share one.
     Signal {
@@ -828,7 +828,7 @@ pub enum SlotFrame {
         /// domain does: the frame draws what the element *stated*, so the
         /// picture and the chrome around it agree.
         layers: crate::host::graphics::signal::layers::Stack,
-        /// The **value domain** the traces are mapped through — the element's
+        /// The **value domain** the traces are mapped through -- the element's
         /// `min`/`max`, [`crate::waveform::DEFAULT_DOMAIN`] when it names
         /// neither. It is the element's because the same pair decides what the
         /// mesh renderers draw, and a prop that means something in four of an
@@ -836,15 +836,15 @@ pub enum SlotFrame {
         /// this closed.
         domain: (f32, f32),
         /// **What the body's vertical measures**, resolved: the domain of the
-        /// layer that claimed the axis, and — where every drawn layer sits in
-        /// a box of its own — the presentation's own, since the axis is still
+        /// layer that claimed the axis, and -- where every drawn layer sits in
+        /// a box of its own -- the presentation's own, since the axis is still
         /// there to be zoomed and still has to be ruled in some unit.
         ///
         /// Resolved by the element rather than re-derived by the frame,
         /// because the element is what the gestures, the headroom and the y
         /// strip's unit already ask.
         axis: crate::host::graphics::signal::layers::Domain,
-        /// The vertical window, as a normalized `(start, len)` — of whichever
+        /// The vertical window, as a normalized `(start, len)` -- of whichever
         /// quantity the stack put on the axis (amplitude, or the frequency a
         /// texture measures).
         y: (f64, f64),
@@ -859,7 +859,7 @@ pub enum SlotFrame {
 }
 
 /// **What an element hands its claimed slot to upload**, when it has something
-/// new for it — the other half of [`SlotFrame`], which says what that slot
+/// new for it -- the other half of [`SlotFrame`], which says what that slot
 /// *draws* once it is filled.
 ///
 /// The two are separate because they run on different rhythms and in different
@@ -882,7 +882,7 @@ pub enum SlotFill {
     Texture(Vec<crate::spectrogram::Stft>),
     /// A [`SlotKind::Texture`] slot's **new columns**, frame-major and oldest
     /// first: a retained time-frequency picture grows forward, so the upload is
-    /// what landed since the last fill and costs one texel write per bin —
+    /// what landed since the last fill and costs one texel write per bin --
     /// where rebuilding the transform each tick made the cost follow the whole
     /// retained span.
     ///
@@ -934,7 +934,7 @@ impl fmt::Debug for SlotFill {
     }
 }
 
-/// Where an element is and what the pointer is doing to it — the context of a
+/// Where an element is and what the pointer is doing to it -- the context of a
 /// **gesture**, as [`Ctx`] is the context of a draw.
 ///
 /// It carries no [`World`], and that is a boundary rather than an omission: a
@@ -944,13 +944,13 @@ impl fmt::Debug for SlotFill {
 /// dragged.
 #[derive(Clone, Copy)]
 pub struct Input<'a> {
-    /// The size roles of this placement, resolved at its scale — the same table
+    /// The size roles of this placement, resolved at its scale -- the same table
     /// the renderer drew the element with, so a grab lands on the groove that
     /// was painted.
     pub metrics: &'a Metrics,
     /// The rect the element was placed in when the press landed.
     pub rect: Rect,
-    /// Where this element's **shared axis** begins inside its rect — the same
+    /// Where this element's **shared axis** begins inside its rect -- the same
     /// group answer [`Ctx::indent`] carries, so a press lands on the pixels
     /// that were painted. `0.0` for an element on no shared axis.
     pub indent: f32,
@@ -958,7 +958,7 @@ pub struct Input<'a> {
     pub scale: f32,
     /// The modifier keys held for this event.
     pub mods: Mods,
-    /// The window in device pixels — what a popup that must stay on screen
+    /// The window in device pixels -- what a popup that must stay on screen
     /// clamps itself against.
     pub viewport: (f32, f32),
     /// The container's coordinate system (see [`Ctx::time`]), so a grab lands
@@ -971,7 +971,7 @@ pub struct Input<'a> {
     /// The machine counts it, from the clock the front hands it
     /// ([`GestureCtx::now_ms`](crate::host::gestures::GestureCtx::now_ms)), so
     /// there is one answer to "how close is close" and not one per platform. It
-    /// is `1` outside a press — a drag and a key are not clicks — so an element
+    /// is `1` outside a press -- a drag and a key are not clicks -- so an element
     /// that opens something on a double click tests for `>= 2` and needs no
     /// state of its own.
     pub clicks: u32,
@@ -989,8 +989,8 @@ pub struct Mods {
 /// in a page) translate their key events into, so a keyboard behaves identically
 /// on a desktop and in a tab.
 ///
-/// It is the editing alphabet and nothing more — a printable character and the
-/// motions every field answers to — because a shortcut over a *view* (`q`
+/// It is the editing alphabet and nothing more -- a printable character and the
+/// motions every field answers to -- because a shortcut over a *view* (`q`
 /// quantize, `r` reset) is not addressed to a focused element at all: it belongs
 /// to whatever is under the cursor, and the front runs it when nothing consumed
 /// the key.
@@ -1022,7 +1022,7 @@ pub enum Key {
 /// translates its channel-voice messages into, so an element paints the same
 /// note wherever it runs.
 ///
-/// Note-on with velocity 0 is a note-off before it gets here — the parse is the
+/// Note-on with velocity 0 is a note-off before it gets here -- the parse is the
 /// front's, exactly as resolving a keyboard layout into a [`Key::Char`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MidiNote {
@@ -1044,16 +1044,16 @@ pub struct MidiNote {
 /// It is a [`Clip`](crate::host::clipboard::Clip) rather than a `String`
 /// because an editor's clipboard has to carry a range of audio, and the only
 /// way to keep that a string is to re-encode it. An element that deals in text
-/// still reads and writes text through it — that is one of the kinds.
+/// still reads and writes text through it -- that is one of the kinds.
 pub struct KeyInput<'a> {
     pub mods: Mods,
     pub clipboard: &'a mut crate::host::clipboard::Clip,
     /// **The window's cursor**, in the axis units of the group this element is
     /// on, or `None` where it is on none (or none has been placed yet).
     ///
-    /// A key gesture has no pointer to read a position out of — which is what
+    /// A key gesture has no pointer to read a position out of -- which is what
     /// left a roll's paste and cut landing on a step position only step entry
-    /// ever moved — so what a block operation is anchored to is the one cursor
+    /// ever moved -- so what a block operation is anchored to is the one cursor
     /// the window has: placed by a click, and the same one the transport plays
     /// from. It is read once, where it is known, rather than looked up by every
     /// element that has an anchored key.
@@ -1141,7 +1141,7 @@ pub fn refusal(verb: &str, why: &str) -> Vec<OscType> {
 }
 
 impl Events {
-    /// Nothing to report — the default.
+    /// Nothing to report -- the default.
     pub fn none() -> Self {
         Self::default()
     }
@@ -1193,7 +1193,7 @@ impl Events {
     /// The second thing an element cannot do for itself, and the same shape as
     /// [`Voice`]: a marquee swept over a roll sets the selection *every linked
     /// view follows*, which is the navigation group's state and not the roll's
-    /// — so the element names the span and the machine writes it, repaints the
+    /// -- so the element names the span and the machine writes it, repaints the
     /// linked windows and reports the `"selection"` the group already emits.
     pub fn and_select(self, start: f64, end: f64) -> Self {
         self.and_select_in(start, end, None)
@@ -1211,11 +1211,11 @@ impl Events {
         self
     }
 
-    /// **What the hand did**, reported beside — or instead of — what the widget
+    /// **What the hand did**, reported beside -- or instead of -- what the widget
     /// is worth: `"press"`, `"release"`, `"click"`.
     ///
     /// A widget's value is a *control signal*, and `/gui_bind` exists to send it
-    /// somewhere that is not the script — the audio server, another widget — so
+    /// somewhere that is not the script -- the audio server, another widget -- so
     /// a bound widget's value never reaches the script at all. An interface
     /// event is the other thing entirely: a command button firing, which the
     /// script must hear whether or not the same widget is also driving a synth.
@@ -1231,7 +1231,7 @@ impl Events {
         self
     }
 
-    /// Everything of `other`, after this — a gesture that both ends one thing
+    /// Everything of `other`, after this -- a gesture that both ends one thing
     /// and starts another (a glissando: a note off, then a note on).
     pub fn chain(mut self, other: Events) -> Self {
         self.msgs.extend(other.msgs);
@@ -1274,8 +1274,8 @@ impl Events {
 ///
 /// A placement is always a rectangle, and for most elements that *is* the
 /// shape: a field, a plot, a lane fill their cell. The exceptions are the ones
-/// drawn smaller or rounder than what the layout gave them — a knob's dial, a
-/// slider's groove, a checkbox with a word beside it in a stretched row — and
+/// drawn smaller or rounder than what the layout gave them -- a knob's dial, a
+/// slider's groove, a checkbox with a word beside it in a stretched row -- and
 /// each of those was acting on presses landing on blank space the layout had
 /// left around them, because the routing tested containment in the cell.
 ///
@@ -1287,13 +1287,13 @@ impl Events {
 /// each element deciding how much air it deserves.
 ///
 /// **Slop grows a target, never a region.** The shapes below are things to
-/// *hit* — a dial, a box, a groove — and a few pixels of air around one is a
+/// *hit* -- a dial, a box, a groove -- and a few pixels of air around one is a
 /// kindness. [`HitArea::Region`] is the other kind: an area whose edge is a
 /// **boundary between two owners**, where the same air makes the two overlap
 /// and a gesture change meaning a few pixels before the drawing says it does.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HitArea {
-    /// The rectangle itself — the default, and what anything filling its cell
+    /// The rectangle itself -- the default, and what anything filling its cell
     /// answers.
     Rect(Rect),
     /// A disc: a knob's dial.
@@ -1302,13 +1302,13 @@ pub enum HitArea {
     Ellipse(Rect),
     /// A rectangle taken **exactly**, with no slop: an area big enough that
     /// nobody hunts for its edge, and whose edge is where one owner stops and
-    /// another begins — a patcher's drawn panel, with the workspace's paper
+    /// another begins -- a patcher's drawn panel, with the workspace's paper
     /// around it.
     Region(Rect),
 }
 
 impl HitArea {
-    /// Whether `(x, y)` is on the shape, with `slop` of air around it — except
+    /// Whether `(x, y)` is on the shape, with `slop` of air around it -- except
     /// for a [`HitArea::Region`], which is taken at its edge.
     pub fn hit(&self, x: f64, y: f64, slop: f32) -> bool {
         match *self {
@@ -1329,7 +1329,7 @@ pub struct Swept {
     /// window has anything new to draw.
     pub changed: bool,
     /// The band the rectangle covered on the element's **own second axis**, in
-    /// that axis' unit — a roll's semitones — or `None` where it has none, or
+    /// that axis' unit -- a roll's semitones -- or `None` where it has none, or
     /// where the sweep crossed none of it.
     ///
     /// The container writes it as `sel_min`/`sel_max`, so a roll's marquee
@@ -1355,10 +1355,10 @@ pub enum Claim {
 /// A taken press: what to report for it, and the one thing the element cannot
 /// do for itself.
 ///
-/// It is deliberately not a taxonomy of drags. The *kind* of drag — absolute
+/// It is deliberately not a taxonomy of drags. The *kind* of drag -- absolute
 /// (a position in a rect becomes a fraction), offset from the press (a travel
 /// against the value the press found) or snapshotted (a press-time origin plus
-/// an axis) — is the element's own business, because the element holds the
+/// an axis) -- is the element's own business, because the element holds the
 /// state. What is left is what only the front and the machine can do.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Take {
@@ -1366,14 +1366,14 @@ pub struct Take {
     pub events: Events,
     /// Ask the machine to keep **ticking** this drag while the cursor is held
     /// past the edge of the axis the element sits on, panning that axis under
-    /// it — what a note dragged off the right of a lane needs, since a held
+    /// it -- what a note dragged off the right of a lane needs, since a held
     /// cursor produces no motion events and the view has to keep moving anyway.
     ///
     /// It is the machine's rather than the element's because the axis is the
     /// *group's*: panning it repaints every linked window and re-reports the
     /// view, none of which an element can reach. What the element gets back is
     /// an ordinary [`drag`](Element::drag) per tick, against a window that has
-    /// moved — which is why the drag must read its axis from
+    /// moved -- which is why the drag must read its axis from
     /// [`Input::time`] each step rather than snapshotting it.
     pub edge_scroll: bool,
     /// Ask the machine to run a **marquee** from this press: the rectangle is
@@ -1382,7 +1382,7 @@ pub struct Take {
     ///
     /// It is what an element on a **plane** says instead of sweeping for
     /// itself, and the reason it is a claim rather than a plan step is that
-    /// only the element knows where its bare canvas is — the paper beside a
+    /// only the element knows where its bare canvas is -- the paper beside a
     /// patcher's graph belongs to the workspace, and a container-level step
     /// there would sweep over nothing. On a **timeline** the container says it
     /// instead ([`GestureStep::Select`](super::GestureStep::Select)), because
@@ -1445,18 +1445,18 @@ impl Claim {
 /// `clone_box` has a default, so the smallest element is three methods.
 pub trait Element: fmt::Debug {
     /// Applies one `/gui_set` key/value, returning whether the key was this
-    /// element's. A key it does not know must return `false` — the host logs
+    /// element's. A key it does not know must return `false` -- the host logs
     /// the unknown prop rather than silently dropping it.
     fn set(&mut self, key: &str, v: &Value) -> bool;
 
     /// Draws into the window's one mesh, inside `ctx.rect`. `d` carries the
     /// resolved theme and the size table of the placement, so an element names
     /// roles and never literals, the way every built-in does; `ctx` carries the
-    /// placement and the [`World`] — the bus values, the sample clock, the
-    /// pointer — that the frame reads and no widget owns.
+    /// placement and the [`World`] -- the bus values, the sample clock, the
+    /// pointer -- that the frame reads and no widget owns.
     fn draw(&self, d: &mut Draw, ctx: &Ctx);
 
-    /// How big this element wants to be, per axis — `None` meaning elastic.
+    /// How big this element wants to be, per axis -- `None` meaning elastic.
     /// Pure over the metrics, the element's own *presentation* props and the
     /// placement's `scale`, never over its data: a size that reads the data
     /// turns a `/gui_set` into a relayout. Elastic on both axes by default.
@@ -1465,7 +1465,7 @@ pub trait Element: fmt::Debug {
     }
 
     /// How big this element wants to be **when a container is being fitted to
-    /// its content** — a container carrying `hug`, which is the only caller.
+    /// its content** -- a container carrying `hug`, which is the only caller.
     ///
     /// The one place a size may read what the element draws, and the reason the
     /// method is separate from [`natural`](Element::natural): the ordinary pass
@@ -1473,8 +1473,8 @@ pub trait Element: fmt::Debug {
     /// message, while a container that hugs has asked for exactly that. What
     /// may be read is fixed by *where it is resolved*, not by what it is
     /// called: a prop that settles at a mutation point (a label's text, a
-    /// menu's options) may size; a **value** — a number being turned, a field
-    /// being typed into, a scope's samples — may not, or the widget would
+    /// menu's options) may size; a **value** -- a number being turned, a field
+    /// being typed into, a scope's samples -- may not, or the widget would
     /// resize under the gesture writing it.
     ///
     /// Defaults to the natural size, which is the right answer for every
@@ -1483,7 +1483,7 @@ pub trait Element: fmt::Debug {
         self.natural(m, scale)
     }
 
-    /// The smallest extent at which this element still says what it is — what
+    /// The smallest extent at which this element still says what it is -- what
     /// it keeps when the strip holding it cannot give everyone what they want.
     ///
     /// [`natural`](Element::natural) is the wanted size and this is its floor,
@@ -1491,7 +1491,7 @@ pub trait Element: fmt::Debug {
     /// a range instead of a single number. A strip short of room takes the
     /// difference back ([`super::super::layout`]), proportionally to what each
     /// child offered, and an element that offers nothing keeps what it asked
-    /// for — being squeezed is a thing a widget **consents** to, one part at a
+    /// for -- being squeezed is a thing a widget **consents** to, one part at a
     /// time, not something the container does to it.
     ///
     /// What is given up is the element's own answer and the reason the door
@@ -1501,7 +1501,7 @@ pub trait Element: fmt::Debug {
     /// control with nothing to drop floors at its natural size and says so by
     /// returning it.
     ///
-    /// Pure over the metrics and the scale, exactly like `natural` — a floor
+    /// Pure over the metrics and the scale, exactly like `natural` -- a floor
     /// that read the data would relayout on a `/gui_set` just as surely.
     /// Elastic on both axes by default: an element that never declared a
     /// wanted size has nothing to floor.
@@ -1514,7 +1514,7 @@ pub trait Element: fmt::Debug {
         None
     }
 
-    /// Extra `/gui_query` fields, beside the value — an element's own state a
+    /// Extra `/gui_query` fields, beside the value -- an element's own state a
     /// script may want to read back.
     fn info(&self) -> Vec<(String, Value)> {
         Vec::new()
@@ -1525,7 +1525,7 @@ pub trait Element: fmt::Debug {
         Needs::default()
     }
 
-    /// Whether this element draws an overlay that **follows the pointer** — a
+    /// Whether this element draws an overlay that **follows the pointer** -- a
     /// cursor readout over stored data. `false` by default.
     ///
     /// The window asks because it decides what a mouse move costs: a picture
@@ -1548,7 +1548,7 @@ pub trait Element: fmt::Debug {
     }
 
     /// **The concrete element behind the trait object**, for the few callers
-    /// that own it — `None` by default, which is every element that has no
+    /// that own it -- `None` by default, which is every element that has no
     /// reason to be reached concretely.
     ///
     /// It exists for the built-ins whose *tests* assert on their own model, and
@@ -1559,7 +1559,7 @@ pub trait Element: fmt::Debug {
         None
     }
 
-    /// The run this element is holding for the hand, if any — what the frame
+    /// The run this element is holding for the hand, if any -- what the frame
     /// draws **over** the picture while an edit is in flight.
     fn pending_edit(&self) -> Option<&PendingEdit> {
         None
@@ -1572,13 +1572,13 @@ pub trait Element: fmt::Debug {
     /// The value it holds is deliberately **not** written into the samples:
     /// the host owns no data, and a pending value that entered the summary
     /// would make the overview disagree with the samples until the edit landed
-    /// — besides costing a re-summarize per motion event.
+    /// -- besides costing a re-summarize per motion event.
     fn set_pending_edit(&mut self, _pending: Option<PendingEdit>) -> bool {
         false
     }
 
     /// **The drag table this element wants** when the wire declares none, or
-    /// `None` (the default) to take the generic one — the press goes to the
+    /// `None` (the default) to take the generic one -- the press goes to the
     /// element and every modifier with it.
     ///
     /// An element that is placed on a **container's axis** usually wants
@@ -1595,20 +1595,20 @@ pub trait Element: fmt::Debug {
     /// The whole of what "a clip is a container" comes to: the element says what it
     /// is, the container says where it is, and neither knows about the lane,
     /// the group's window or the clip's offset on it. It is a separate draw
-    /// from [`draw`](Element::draw) because a body carries **no chrome** — no
-    /// ruler, no gutter, no navigation of its own — so the two are different
+    /// from [`draw`](Element::draw) because a body carries **no chrome** -- no
+    /// ruler, no gutter, no navigation of its own -- so the two are different
     /// pictures of the same data. The default draws nothing.
     fn draw_body(&self, _d: &mut Draw, _rect: Rect, _time: &TimeSpace) {}
 
     /// **The content extent this element drives**, in the plane's own units, or
-    /// `None` for the element that drives none — which is every one but a
+    /// `None` for the element that drives none -- which is every one but a
     /// patcher, whose graph the host lays out.
     ///
     /// It is the two-dimensional twin of [`content_span`](OnAxis::content_span)
     /// and the deliberate opposite of [`natural`](Element::natural): a natural
     /// size is pure over the metrics and the presentation props and must never
     /// follow the data, because it resolves on the layout's main axis; this
-    /// *is* the data, and it sizes the workspace a plane scrolls over — where a
+    /// *is* the data, and it sizes the workspace a plane scrolls over -- where a
     /// content extent is the one thing a container cannot compute for a child
     /// it does not interpret.
     fn content_size(&self) -> Option<(f32, f32)> {
@@ -1622,7 +1622,7 @@ pub trait Element: fmt::Debug {
     /// It is how a container **recognizes** one of its bodies, which used to be
     /// a match on the leaf's variant in every pass that layered, routed a
     /// `/gui_set`, drew or hit-tested one. The container asks the element what
-    /// role it fills and learns nothing else about it — so an element family
+    /// role it fills and learns nothing else about it -- so an element family
     /// can fill a clip's curve without the clip knowing what a curve is.
     fn body_role(&self) -> Option<BodyRole> {
         None
@@ -1631,8 +1631,8 @@ pub trait Element: fmt::Debug {
     /// Whether the wheel **falls through** this element to whatever is behind
     /// it. True for something that only puts marks on its rect and has no
     /// navigation of its own (a label): in a window with one navigation group,
-    /// its pixels are that axis with something written on them. False — the
-    /// default — for anything drawing a picture it owns,
+    /// its pixels are that axis with something written on them. False -- the
+    /// default -- for anything drawing a picture it owns,
     /// since turning the wheel over a goniometer must not zoom the waterfall
     /// underneath it.
     fn is_bare_surface(&self) -> bool {
@@ -1640,7 +1640,7 @@ pub trait Element: fmt::Debug {
     }
 
     /// **The shape this element answers the pointer on**, inside its
-    /// placement — the rectangle by default, which is what anything filling
+    /// placement -- the rectangle by default, which is what anything filling
     /// its cell wants.
     ///
     /// It is declared rather than tested here because the machine applies it
@@ -1648,13 +1648,13 @@ pub trait Element: fmt::Debug {
     /// drawn smaller or rounder than its cell gets the filter for free and a
     /// press outside its shape falls back to the chain, exactly as a decline
     /// does. What this is *not* is the finer question of which part of itself
-    /// was hit — that stays in [`press`](Element::press), where the element has
+    /// was hit -- that stays in [`press`](Element::press), where the element has
     /// its own geometry.
     fn hit_area(&self, input: &Input) -> HitArea {
         HitArea::Rect(input.rect)
     }
 
-    /// Whether the pointer at `at` is on this element's **own samples** — the
+    /// Whether the pointer at `at` is on this element's **own samples** -- the
     /// things it holds and can be asked to change (a curve's break-points and
     /// the segments between them, a note's rectangle), and never the rectangle
     /// it shares with the container that layered it.
@@ -1682,7 +1682,7 @@ pub trait Element: fmt::Debug {
     /// Declining hands it back to the chain.
     ///
     /// **Which part of itself was hit is the element's own business**, here,
-    /// where it has both the point and its own geometry — a caret, a
+    /// where it has both the point and its own geometry -- a caret, a
     /// break-point, a patcher's port. The host's hit-test answers *which
     /// widget*, which is rect containment over the placements and is generic;
     /// putting a part on this trait would make the host route by a type it
@@ -1694,7 +1694,7 @@ pub trait Element: fmt::Debug {
         Claim::Decline
     }
 
-    /// **What a rectangle swept over this element caught** — the marquee's one
+    /// **What a rectangle swept over this element caught** -- the marquee's one
     /// question, asked of whatever holds contents.
     ///
     /// `from`/`to` are the two corners in **window pixels**, the coordinates a
@@ -1718,14 +1718,14 @@ pub trait Element: fmt::Debug {
     }
 
     /// The cursor moved while this element held the press. It mutates *itself*
-    /// — the drag's state is the element's, because the element is the only
-    /// thing that knows what its drag means — and reports what changed.
+    /// -- the drag's state is the element's, because the element is the only
+    /// thing that knows what its drag means -- and reports what changed.
     fn drag(&mut self, _at: (f64, f64), _input: &Input) -> Events {
         Events::none()
     }
 
-    /// The button came up. What the drag *delivers* — the edit-back an owner
-    /// applies, a momentary control's zero — as against what it showed along
+    /// The button came up. What the drag *delivers* -- the edit-back an owner
+    /// applies, a momentary control's zero -- as against what it showed along
     /// the way.
     ///
     /// `inside` is whether the pointer was still **on this element** when it
@@ -1733,14 +1733,14 @@ pub trait Element: fmt::Debug {
     /// through ([`hit_area`](Element::hit_area)). It is the machine's answer
     /// rather than the element's because it is the machine that owns the hit
     /// test, and it is the whole of what separates a **click** from a press the
-    /// hand slid off and abandoned — the cancellation every desktop convention
+    /// hand slid off and abandoned -- the cancellation every desktop convention
     /// gives a command button. An element with nothing composed over its
     /// release ignores it, which is most of them.
     fn release(&mut self, _at: (f64, f64), _inside: bool, _input: &Input) -> Events {
         Events::none()
     }
 
-    /// Whether this element takes the **keyboard focus** — whether it is a stop
+    /// Whether this element takes the **keyboard focus** -- whether it is a stop
     /// on the window's tab ring, and whether a press on it moves the focus
     /// there. `false` by default: an element that answers no key has no reason
     /// to be a stop, and a ring full of them is a ring nobody can use.
@@ -1748,7 +1748,7 @@ pub trait Element: fmt::Debug {
         false
     }
 
-    /// Whether this element, while focused, is **taking typed text** — as
+    /// Whether this element, while focused, is **taking typed text** -- as
     /// against reading keys as commands (a roll's arrows, a list's letters).
     ///
     /// It is the one thing a *shell* has to know about the focus, and only the
@@ -1756,7 +1756,7 @@ pub trait Element: fmt::Debug {
     /// or an IME reaches it as `"Dead"` and the composed character never
     /// exists. The shell answers that by giving the keyboard to a hidden
     /// editable element while this is true, which is the only place composition
-    /// can happen — and by handing it back when it is false, so every gesture,
+    /// can happen -- and by handing it back when it is false, so every gesture,
     /// shortcut and ring walk stays exactly where it was.
     ///
     /// `false` by default, and true for an element whose keys are *characters
@@ -1767,8 +1767,8 @@ pub trait Element: fmt::Debug {
     }
 
     /// A key while this element holds the focus, with the modifiers and the
-    /// host-wide clipboard in [`KeyInput`]. `Some` is **consumed** — the window
-    /// repaints and whatever came back is reported — and `None` hands the key
+    /// host-wide clipboard in [`KeyInput`]. `Some` is **consumed** -- the window
+    /// repaints and whatever came back is reported -- and `None` hands the key
     /// on to the front's own shortcuts, which is what a key an element has no
     /// arm for must do.
     ///
@@ -1782,7 +1782,7 @@ pub trait Element: fmt::Debug {
     /// A **live MIDI note** for an element that declared [`Needs::midi`].
     ///
     /// `playhead` is where the axis' transport stands, in the element's own
-    /// units, or `None` when it is stopped — the one fact the element cannot
+    /// units, or `None` when it is stopped -- the one fact the element cannot
     /// read for itself (the engine clock is the front's) and the whole
     /// difference between *recording* a note at the playhead and *entering* one
     /// on a step cursor the element keeps itself.
@@ -1793,7 +1793,7 @@ pub trait Element: fmt::Debug {
         None
     }
 
-    /// **One tick**: advance whatever this element keeps of the outside — a
+    /// **One tick**: advance whatever this element keeps of the outside -- a
     /// rolling history, a triggered window, an analysis state.
     ///
     /// It runs at the front's steady tick rate and **not** per repaint, which
@@ -1805,14 +1805,14 @@ pub trait Element: fmt::Debug {
 
     /// The wheel turned over this element: `delta` in the front's scroll units,
     /// `None` to let it fall through to whatever is behind. Only reached when
-    /// [`is_bare_surface`](Element::is_bare_surface) is false — a bare surface
+    /// [`is_bare_surface`](Element::is_bare_surface) is false -- a bare surface
     /// never sees the wheel, because its pixels belong to the axis under them.
     fn wheel(&mut self, _at: (f64, f64), _delta: (f64, f64), _input: &Input) -> Option<Events> {
         None
     }
 
     /// The area this element occupies **outside its own rect**, in window
-    /// pixels — an open list, a popup — or `None` (the default) for an element
+    /// pixels -- an open list, a popup -- or `None` (the default) for an element
     /// that stays inside its placement.
     ///
     /// Declaring it is what makes an overlay work, and it is declared rather
@@ -1820,14 +1820,14 @@ pub trait Element: fmt::Debug {
     /// frame draws [`overlay`](Element::overlay) over everything else, and the
     /// press routes to this element **first**, before the tree, however the
     /// layout places what happens to be under the point. An element with an
-    /// overlay open swallows the press either way — on its own area it acts,
-    /// anywhere else it closes — which is what a menu everywhere else does.
+    /// overlay open swallows the press either way -- on its own area it acts,
+    /// anywhere else it closes -- which is what a menu everywhere else does.
     fn overlay_rect(&self) -> Option<Rect> {
         None
     }
 
     /// Draws the [`overlay_rect`](Element::overlay_rect) area, into the
-    /// window's **overlay** mesh — the second pass, over the heavy views and
+    /// window's **overlay** mesh -- the second pass, over the heavy views and
     /// over every other widget. A list that opens covers what it opens over.
     fn overlay(&self, _d: &mut Draw, _ctx: &Ctx) {}
 
@@ -1835,12 +1835,12 @@ pub trait Element: fmt::Debug {
     fn clone_box(&self) -> Box<dyn Element>;
 
     /// **What this element holds as samples**, or `None` (the default) for one
-    /// that holds none — which is most of them.
+    /// that holds none -- which is most of them.
     ///
     /// The first **facet**, and the reason there are facets at all: the
-    /// questions a picture of samples answers — what shape they are, which
+    /// questions a picture of samples answers -- what shape they are, which
     /// buffer they came from, what a span of them is worth, how a write lands
-    /// on them, what the view is asking for next — are eighteen, and they mean
+    /// on them, what the view is asking for next -- are eighteen, and they mean
     /// nothing to a knob. Asked through a door, an element implements what it
     /// *is* instead of declining eighteen times, and the family the audio
     /// editor grows adds to [`Samples`] rather than to everyone's interface.
@@ -1852,7 +1852,7 @@ pub trait Element: fmt::Debug {
         None
     }
 
-    /// [`samples`](Element::samples), mutably — the half a write, a reload and
+    /// [`samples`](Element::samples), mutably -- the half a write, a reload and
     /// a view's own request go through.
     fn samples_mut(&mut self) -> Option<&mut dyn Samples> {
         None
@@ -1863,7 +1863,7 @@ pub trait Element: fmt::Debug {
     /// The second facet: an axis in hertz needs no history behind it (every bin
     /// is there every frame) and no navigation group (nothing else in a window
     /// measures in hertz along x), so it is one normalized window the element
-    /// carries alone — and four questions nothing else in the catalog answers.
+    /// carries alone -- and four questions nothing else in the catalog answers.
     fn measured(&self) -> Option<&dyn Measured> {
         None
     }
@@ -1874,7 +1874,7 @@ pub trait Element: fmt::Debug {
     }
 
     /// **What this element is on a shared time axis**, or `None` (the default)
-    /// for one that is on none — a knob, a label, a menu, every control there
+    /// for one that is on none -- a knob, a label, a menu, every control there
     /// is.
     ///
     /// The third facet, and the one the editor views are made of: how far the
@@ -1886,7 +1886,7 @@ pub trait Element: fmt::Debug {
         None
     }
 
-    /// [`on_axis`](Element::on_axis), mutably — a navigation gesture pans the
+    /// [`on_axis`](Element::on_axis), mutably -- a navigation gesture pans the
     /// group and writes the member's window through here.
     fn on_axis_mut(&mut self) -> Option<&mut dyn OnAxis> {
         None
@@ -1903,7 +1903,7 @@ pub trait Element: fmt::Debug {
         None
     }
 
-    /// [`slotted`](Element::slotted), mutably — handing over a fill and being
+    /// [`slotted`](Element::slotted), mutably -- handing over a fill and being
     /// told a slot was dropped are both writes.
     fn slotted_mut(&mut self) -> Option<&mut dyn Slotted> {
         None
@@ -1915,7 +1915,7 @@ pub trait Element: fmt::Debug {
 /// A facet of [`Element`], reached through [`Element::on_axis`]. The editor
 /// views are made of these: a waveform, a piano roll, a curve and a multitrack
 /// are all *members of a navigation group*, and what a group has to ask of a
-/// member is the same list whichever of them it is — how far its content
+/// member is the same list whichever of them it is -- how far its content
 /// reaches, what it reserves beside the axis, how many rows it stacks, where
 /// the axis lies inside its rectangle, and the chrome it carries (the window,
 /// the selection, the playhead) which a gesture writes back through.
@@ -1927,8 +1927,8 @@ pub trait OnAxis {
     /// one that carries none.
     ///
     /// [`EditorProps`](super::EditorProps) is what a member of a navigation
-    /// group is made of — its ruler units, its own vertical window, its link,
-    /// its offset on the shared axis — and it is read *and written* from
+    /// group is made of -- its ruler units, its own vertical window, its link,
+    /// its offset on the shared axis -- and it is read *and written* from
     /// outside: a gesture pans the group and writes the member's window, a
     /// `/gui_set` of `view_y` lands here. So the door is a borrow of the props
     /// rather than a copy of them.
@@ -1936,7 +1936,7 @@ pub trait OnAxis {
         None
     }
 
-    /// [`editor`](OnAxis::editor), mutably — the door a navigation gesture and
+    /// [`editor`](OnAxis::editor), mutably -- the door a navigation gesture and
     /// a `/gui_set` of the chrome write through.
     fn editor_mut(&mut self) -> Option<&mut super::EditorProps> {
         None
@@ -1955,7 +1955,7 @@ pub trait OnAxis {
     /// the element's own, and a marquee that restricts a selection in value has
     /// to read the axis the picture was drawn through. `rows` is what the
     /// front found in the element's slot, resolved by
-    /// [`OnAxis::rows`] as everywhere else — the element states the domain and
+    /// [`OnAxis::rows`] as everywhere else -- the element states the domain and
     /// the window, never how many channels reached the card. `indent` is where
     /// the shared axis starts inside the rect, as everywhere else.
     fn value_axis(
@@ -1969,7 +1969,7 @@ pub trait OnAxis {
     }
 
     /// **Where the shared time axis lies inside this element's rect**, and
-    /// whether it offers a vertical gesture surface beside it — or `None` (the
+    /// whether it offers a vertical gesture surface beside it -- or `None` (the
     /// default) to take the generic timeline body, which is what every
     /// element on that axis but one wants.
     ///
@@ -1984,26 +1984,26 @@ pub trait OnAxis {
     }
 
     /// **The axis length this element's own content occupies**, or `None` (the
-    /// default) for an element whose extent is registered from outside — a
+    /// default) for an element whose extent is registered from outside -- a
     /// loaded take, a streamed history.
     ///
     /// A navigation group's timeline is the longest of its members' extents, so
-    /// a surface that is *authored* rather than loaded — a roll being written
-    /// note by note — has to say how far its content now reaches, or the axis
+    /// a surface that is *authored* rather than loaded -- a roll being written
+    /// note by note -- has to say how far its content now reaches, or the axis
     /// stays the length it was defined with and everything painted past it
     /// lands outside the window.
     fn content_span(&self) -> Option<f64> {
         None
     }
 
-    /// Whether this element's time axis is **not bounded by what it holds** —
+    /// Whether this element's time axis is **not bounded by what it holds** --
     /// `false` by default, and `true` for the one view whose empty time is
     /// ordinary time.
     ///
     /// A view of a signal stops at its last sample because there is nothing
     /// after it to select, play or cut. A multitrack's extent is only where its
-    /// clips happen to end: the empty bars after them are addressable time — a
-    /// span to paste into, a region to loop over while writing — so a rectangle
+    /// clips happen to end: the empty bars after them are addressable time -- a
+    /// span to paste into, a region to loop over while writing -- so a rectangle
     /// drawn across them is a rectangle, and stopping it at the last clip would
     /// be the axis answering a question about its contents. It is also what
     /// gives such a view its authoring headroom, since a window that could not
@@ -2012,8 +2012,8 @@ pub trait OnAxis {
         false
     }
 
-    /// **What this element reserves left of its body** for chrome of its own —
-    /// a value ruler — when it sits on a shared time axis. `0.0` by default.
+    /// **What this element reserves left of its body** for chrome of its own --
+    /// a value ruler -- when it sits on a shared time axis. `0.0` by default.
     ///
     /// It is a *wish*, not a placement: the indent every member of a navigation
     /// group draws at is the widest wish on that axis, because the axis is
@@ -2032,7 +2032,7 @@ pub trait OnAxis {
     /// where the same axis unzoomed formats `-1.0`, and the step it labels at
     /// depends on how tall the element ended up. That is one pass later than
     /// [`gutter`](OnAxis::gutter), so it is a second question and not the same
-    /// one — and an element answers `None` unless the measure would actually
+    /// one -- and an element answers `None` unless the measure would actually
     /// widen the band, since a second layout pass is only taken when one is
     /// owed.
     fn measured_gutter(&self, _rect: Rect, _m: &Metrics) -> Option<f32> {
@@ -2040,7 +2040,7 @@ pub trait OnAxis {
     }
 
     /// **How many rows this element stacks on screen**, given the `uploaded`
-    /// count the front found in its GPU slot — the divisor for every
+    /// count the front found in its GPU slot -- the divisor for every
     /// row-relative y gesture.
     ///
     /// The front knows how many channels are actually on the card and nothing
@@ -2057,8 +2057,8 @@ pub trait OnAxis {
     /// a reader expects a zoom to hold still.
     ///
     /// It is a property of what the axis *measures*, because one vertical
-    /// window is shared by every row. An axis of **values** — frequency,
-    /// pitch — says the same thing in each of them, so the value under the
+    /// window is shared by every row. An axis of **values** -- frequency,
+    /// pitch -- says the same thing in each of them, so the value under the
     /// cursor is meaningful and holding it still is what the reader wants. An
     /// **amplitude** axis does not: zero sits at the centre of every row, an
     /// anchor taken from the pointer's height means nothing in the other rows,
@@ -2072,8 +2072,8 @@ pub trait OnAxis {
 ///
 /// A facet of [`Element`], reached through [`Element::slotted`]. Most elements
 /// draw triangles into the one mesh and answer none of this; the few whose
-/// picture is *sampled* — a spectrogram, a canvas, a multitrack's spectral
-/// boxes — declare what they want, hand over what they have, and are told when
+/// picture is *sampled* -- a spectrogram, a canvas, a multitrack's spectral
+/// boxes -- declare what they want, hand over what they have, and are told when
 /// the card let go of it.
 pub trait Slotted {
     /// **The look of a body whose picture is a texture**, or `None` (the
@@ -2082,19 +2082,19 @@ pub trait Slotted {
     ///
     /// The one body the frame cannot let draw itself: a time-frequency picture
     /// samples an uploaded texture, so it goes to the GPU pass with the clip's
-    /// own axis and the clip's id — the key its slot was filled under.
+    /// own axis and the clip's id -- the key its slot was filled under.
     fn texture_body(&self) -> Option<TextureLook> {
         None
     }
 
     /// **The time-frequency pictures this element wants drawn inside itself**,
-    /// each in its own rectangle and against its own local axis — empty for
+    /// each in its own rectangle and against its own local axis -- empty for
     /// every element but the one that holds boxes.
     ///
     /// A spectral picture samples a texture, so it is drawn in the GPU pass and
     /// not into the shared mesh: an element that draws one of its own says so
     /// through [`slots`](Slotted::slots), and an element that holds *several*
-    /// — a multitrack's boxes over several takes — says so here, because each
+    /// -- a multitrack's boxes over several takes -- says so here, because each
     /// is a window onto a different texture at a different place.
     ///
     /// The key names which of this element's slots the picture comes from, so
@@ -2106,13 +2106,13 @@ pub trait Slotted {
     /// What the GPU slots this element claimed draw this frame, each under the
     /// [`SlotKey`] that addresses it **within the element**. Empty for an
     /// element that claimed none, which is the default. An element that claims
-    /// one usually still [`draw`](Element::draw)s — a label, a frame — into the
+    /// one usually still [`draw`](Element::draw)s -- a label, a frame -- into the
     /// shared mesh around it.
     ///
     /// **Plural because a view may hold several pictures.** A signal is one
     /// picture and answers with one entry under [`SlotKey::SELF`]; a multitrack
     /// is a stack of boxes over several takes, and a time-frequency box samples
-    /// a texture of its own — so the key is what tells them apart, and it is the
+    /// a texture of its own -- so the key is what tells them apart, and it is the
     /// element's own word for the picture (a server buffer number, there)
     /// rather than anything the front invents.
     fn slots(&self, _ctx: &Ctx) -> Vec<(SlotKey, SlotFrame)> {
@@ -2120,7 +2120,7 @@ pub trait Slotted {
     }
 
     /// **What the claimed slots are fed**, empty (the default) when the element
-    /// has nothing new for them — which is every element that claimed none, and
+    /// has nothing new for them -- which is every element that claimed none, and
     /// every frame of one whose picture did not move.
     ///
     /// It is a *taking*: the element hands the content over and marks itself
@@ -2129,8 +2129,8 @@ pub trait Slotted {
     /// describes a draw and borrows.
     ///
     /// Only the element knows when its picture moved and what shape the upload
-    /// has — a pyramid at its own bucket, an analysis at its own window and
-    /// hop, the columns a rolling transform just produced — so the front's walk
+    /// has -- a pyramid at its own bucket, an analysis at its own window and
+    /// hop, the columns a rolling transform just produced -- so the front's walk
     /// asks every widget the same question and learns nothing about any of
     /// them.
     fn fills(&mut self) -> Vec<(SlotKey, SlotFill)> {
@@ -2142,8 +2142,8 @@ pub trait Slotted {
     /// element handed over is no longer on the card and the next
     /// [`fills`](Slotted::fills) has to hand it over again.
     ///
-    /// It is the one thing a filling element cannot work out for itself — the
-    /// device is the front's — and it is why a fill can be a taking at all: an
+    /// It is the one thing a filling element cannot work out for itself -- the
+    /// device is the front's -- and it is why a fill can be a taking at all: an
     /// element marks itself clean because the frame kept what it gave, and this
     /// is how it is told that it did not.
     fn slot_dropped(&mut self) {}
@@ -2153,7 +2153,7 @@ pub trait Slotted {
 ///
 /// A facet of [`Element`], reached through [`Element::samples`]: an element
 /// that has samples behind it says so by handing one back, and every element
-/// that does not — a knob, a label, a menu, a score — says nothing at all.
+/// that does not -- a knob, a label, a menu, a score -- says nothing at all.
 /// That is the difference from the eighteen defaulted methods this was: a
 /// capability is now *stated* rather than declined one question at a time, and
 /// a new question about samples reaches the elements that have them instead of
@@ -2167,7 +2167,7 @@ pub trait Slotted {
 /// asking for, and the bulk it already holds.
 pub trait Samples {
     /// **Keep the bulk this element already holds**, rather than the (empty)
-    /// bulk the def just built it with. `false` by default — an element that
+    /// bulk the def just built it with. `false` by default -- an element that
     /// carries no bulk has nothing to keep, and says so.
     ///
     /// A def that redraws a lane has to name every clip in it, and a clip's
@@ -2175,21 +2175,21 @@ pub trait Samples {
     /// because a neighbouring clip moved is the same failure as freeing a zoom
     /// because a neighbouring clip moved, one order of magnitude up. So the
     /// wire has a word for *the samples you already have* (`"data": "keep"`),
-    /// and this is what honours it — called by the reconcile, on a widget that
+    /// and this is what honours it -- called by the reconcile, on a widget that
     /// survived, with the element that widget was.
     ///
     /// It is a door and not a downcast because the caller is a pass: the
     /// reconcile knows a widget kept its identity and knows the def said keep,
     /// and neither of those is a question about which element this is. What is
     /// kept is the element's own business, and an element that cannot make
-    /// sense of `from` answers `false` — a keep that could not be honoured is
+    /// sense of `from` answers `false` -- a keep that could not be honoured is
     /// reported rather than drawn as silence.
     fn keep_bulk(&mut self, _from: &dyn Element) -> bool {
         false
     }
 
     /// **The samples this element holds over a span of its own frames**, as
-    /// interleaved samples with the rate they were taken at — what a copy puts
+    /// interleaved samples with the rate they were taken at -- what a copy puts
     /// on the clipboard.
     ///
     /// `None` where the element has nothing it could honestly hand over: a
@@ -2204,7 +2204,7 @@ pub trait Samples {
         None
     }
 
-    /// The value of one sample of this element's samples, in its own domain —
+    /// The value of one sample of this element's samples, in its own domain --
     /// what a grab reads so the intent it later emits can carry the value it
     /// started from.
     fn sample_value(&self, _channel: usize, _frame: usize) -> Option<f32> {
@@ -2218,8 +2218,8 @@ pub trait Samples {
     /// It is a length and not a set: *which* buses are read is
     /// [`Needs::taps`], and the page's one `/bus_tapStream` subscription serves
     /// every consumer at the widest window any of them asks for. So an element
-    /// answers for itself and never for the window — a scope's display window
-    /// plus its trigger slack, a goniometer's window, a spectrum's FFT size —
+    /// answers for itself and never for the window -- a scope's display window
+    /// plus its trigger slack, a goniometer's window, a spectrum's FFT size --
     /// and a subscription that is too narrow is not a slow drawing but a blank
     /// one, since a source refuses a read it cannot fill.
     ///
@@ -2232,7 +2232,7 @@ pub trait Samples {
     /// **A bulk resource this element asked for has arrived.** Returns whether
     /// it was taken, so a loader can log what it resolved for nobody.
     ///
-    /// The element places the data itself, in whatever shape it draws from —
+    /// The element places the data itself, in whatever shape it draws from --
     /// which is the half of the bulk seam that cannot be a declaration: what
     /// comes back is a pyramid, a set of analyses or a run of samples, and only
     /// the element knows what it is for.
@@ -2240,7 +2240,7 @@ pub trait Samples {
     ///
     /// The plural door: an element drawing several server buffers is handed
     /// each one labelled, because "the samples" is not an answer when there are
-    /// six of them. `false` — the default — is an element that asked for none.
+    /// six of them. `false` -- the default -- is an element that asked for none.
     fn bulk_of(&mut self, _bufnum: i32, _data: Loaded) -> bool {
         false
     }
@@ -2249,7 +2249,7 @@ pub trait Samples {
     ///
     /// `all` is a window being built or redefined, which asks for every one;
     /// otherwise it is a front's per-repaint walk, which gets only the takes
-    /// not asked for yet — a box that just appeared over a new buffer — and an
+    /// not asked for yet -- a box that just appeared over a new buffer -- and an
     /// empty list on every other frame. Empty by default: an element that
     /// declares no takes has none to ask for.
     fn ask_takes(&mut self, _all: bool) -> Vec<i32> {
@@ -2273,7 +2273,7 @@ pub trait Samples {
     }
 
     /// **How much of this element's samples exists**, in frames, or `None` when
-    /// all of it does — what a picture of the samples is cut to.
+    /// all of it does -- what a picture of the samples is cut to.
     ///
     /// It is the drawing's half of [`set_written`](Samples::set_written): the
     /// frontier goes in as a fact, and what comes back out is the element's own
@@ -2283,7 +2283,7 @@ pub trait Samples {
         None
     }
 
-    /// **How far the samples have been written**, in frames — a buffer's write
+    /// **How far the samples have been written**, in frames -- a buffer's write
     /// frontier, pushed in by the host that reads it from the shared segment.
     /// Returns whether anything changed, which is what asks for a redraw.
     ///
@@ -2301,8 +2301,8 @@ pub trait Samples {
         false
     }
 
-    /// **The shape of the samples this element holds** — `(channels, frames)`
-    /// per channel — or `None` when it draws no samples.
+    /// **The shape of the samples this element holds** -- `(channels, frames)`
+    /// per channel -- or `None` when it draws no samples.
     ///
     /// The measuring half of [`Samples::bulk`], and it exists for one caller: a
     /// destructive edit has to know what it may address before it addresses it.
@@ -2315,7 +2315,7 @@ pub trait Samples {
     /// **The server buffer the samples are *in***, when the element named one.
     ///
     /// Not [`Needs::bulk`]: that is a *request*, and it goes quiet the moment
-    /// the samples land — which is exactly when a destructive edit becomes
+    /// the samples land -- which is exactly when a destructive edit becomes
     /// possible. What the write needs is the buffer number the source keeps,
     /// which outlives the load.
     fn source_buffer(&self) -> Option<i32> {
@@ -2326,7 +2326,7 @@ pub trait Samples {
     /// channel `ch`; returns whether it landed.
     ///
     /// The element writes rather than the host because only it knows which form
-    /// its samples are in — a pyramid, inline samples, or both — and a host
+    /// its samples are in -- a pyramid, inline samples, or both -- and a host
     /// that patched one form left every view holding the other showing the
     /// samples as it was before the stroke. What is written stays the
     /// element's own picture; the *samples* is the server's buffer, and the
@@ -2336,7 +2336,7 @@ pub trait Samples {
     /// element holding its own samples has nothing to re-read.
     ///
     /// It is [`Self::write_samples`]' sibling for a write this host did not
-    /// make — another peer's, announced as a span and nothing more, or a
+    /// make -- another peer's, announced as a span and nothing more, or a
     /// recording's, which announces only how far it has got.
     ///
     /// `ch` is `None` for **every channel**, which is what a recording wants:
@@ -2356,7 +2356,7 @@ pub trait Samples {
     /// The sibling of [`Self::resummarize`] for the picture that cannot
     /// re-read anything: its samples are a copy, and the samples themselves are
     /// being written somewhere it has no access to (a page and a server
-    /// buffer). So the *overview* of what was written arrives instead —
+    /// buffer). So the *overview* of what was written arrives instead --
     /// `stats` is `/buffer_stream.reply`'s payload, bucket-major and
     /// channel-minor, `start_frame` on the buffer's own sample axis.
     fn write_buckets(&mut self, _start_frame: u64, _bucket: usize, _stats: &[f32]) -> bool {
@@ -2364,7 +2364,7 @@ pub trait Samples {
     }
 
     /// **The finest bucket this element's summary holds**, or `None` when it
-    /// holds no summary — what a span read back has to be aligned to before
+    /// holds no summary -- what a span read back has to be aligned to before
     /// it can replace what the summary says.
     fn summary_bucket(&self) -> Option<usize> {
         None
@@ -2399,20 +2399,20 @@ pub trait Samples {
     ///
     /// The host collects the wants of everything it draws and keeps one
     /// subscription for all of them, so an element says what it needs without
-    /// knowing that a wire exists — the same shape as [`Needs`], one message
+    /// knowing that a wire exists -- the same shape as [`Needs`], one message
     /// later.
     fn stream_want(&self) -> Option<(i32, usize)> {
         None
     }
 
     /// **This element was told its resource moved**, and this is what it wants
-    /// loaded again — `None` for the overwhelming majority, which were told
+    /// loaded again -- `None` for the overwhelming majority, which were told
     /// nothing.
     ///
     /// The mutable twin of [`needs`](Element::needs)`.bulk`, and mutable for
     /// the reason [`fills`](Slotted::fills) is: **asking clears the ask**, so one
     /// `reload` produces one load. A front's per-repaint walk can call it every
-    /// frame and it answers once, which is what a fetch in flight needs — an
+    /// frame and it answers once, which is what a fetch in flight needs -- an
     /// element with no body yet is indistinguishable from one that has not
     /// asked, and a front deriving the ask from that would send a query per
     /// frame for as long as the answer took.
@@ -2439,8 +2439,8 @@ pub trait Samples {
 /// time, so it joins no navigation group, and it needs no history behind it
 /// because every bin is there every frame.
 pub trait Measured {
-    /// Whether this element navigates a **measured x axis of its own** — a
-    /// frequency axis — instead of joining the window's shared time. `false`
+    /// Whether this element navigates a **measured x axis of its own** -- a
+    /// frequency axis -- instead of joining the window's shared time. `false`
     /// by default.
     ///
     /// Such an axis needs no history behind it (every bin is there every
@@ -2455,8 +2455,8 @@ pub trait Measured {
     /// for one that navigates no axis of its own.
     ///
     /// The gesture machine cannot work it out: where the picture sits inside
-    /// the rectangle is the element's own region split — a label above it, a
-    /// ruler strip below, a value strip beside — and it must be the *same* one
+    /// the rectangle is the element's own region split -- a label above it, a
+    /// ruler strip below, a value strip beside -- and it must be the *same* one
     /// the renderer drew through, or a zoom anchors at a hertz the reader is
     /// not pointing at.
     fn freq_axis(&self, _rect: Rect, _m: &Metrics, _sample_rate: f64) -> Option<FreqAxis> {
@@ -2470,8 +2470,8 @@ pub trait Measured {
     ///
     /// Request and display are deliberately kept apart, which is why this is a
     /// question and not a stored value: the floor is a function of *where* the
-    /// window sits — on a log axis a window narrow enough at 12 kHz cannot
-    /// exist at 100 Hz — so writing the opening back would spend the reader's
+    /// window sits -- on a log axis a window narrow enough at 12 kHz cannot
+    /// exist at 100 Hz -- so writing the opening back would spend the reader's
     /// zoom on the way down the axis and never give it back.
     fn freq_window_of(&self, _sample_rate: f64, _want: Option<(f64, f64)>) -> Option<(f64, f64)> {
         None
@@ -2496,7 +2496,7 @@ impl Clone for Box<dyn Element> {
 }
 
 /// Builds one element from the wire's props and the `/gui_def` message's
-/// trailing blobs — the registered counterpart of a [`build`](super::build)
+/// trailing blobs -- the registered counterpart of a [`build`](super::build)
 /// arm. An `Err` is a malformed node and is reported the way a built-in's is.
 pub type Constructor = fn(&Map<String, Value>, &[Vec<u8>]) -> Result<Box<dyn Element>, String>;
 
@@ -2520,7 +2520,7 @@ pub fn unregister(name: &str) -> bool {
     REGISTRY.with(|r| r.borrow_mut().remove(name).is_some())
 }
 
-/// Builds the element registered under `name`, or `None` when nothing is —
+/// Builds the element registered under `name`, or `None` when nothing is --
 /// a registry miss, which the caller turns into
 /// [`WidgetKind::Unknown`](super::WidgetKind::Unknown).
 pub(super) fn build_registered(
@@ -2536,7 +2536,7 @@ pub(super) fn build_registered(
 mod tests {
     //! The seam's own suite, driven the way a third party reaches it: register
     //! a constructor, then parse a `/gui_def` document that names it and put
-    //! the result through the passes — because that round trip *is* what the
+    //! the result through the passes -- because that round trip *is* what the
     //! trait promises.
     //!
     //! The registry is per thread and the harness is parallel, so every test
@@ -2676,7 +2676,7 @@ mod tests {
     /// What the facets replaced: nineteen defaulted methods about samples and
     /// four about a measured axis, inherited and declined by every leaf in the
     /// catalog. A label has no samples and says so in one answer; a signal view
-    /// has both and says so in two. The test is the boundary itself — if a
+    /// has both and says so in two. The test is the boundary itself -- if a
     /// question about samples is ever put back on `Element`, a label will start
     /// answering it again and this stops meaning anything.
     #[test]
@@ -2798,7 +2798,7 @@ mod tests {
     }
 
     /// The built-ins are matched first, so a registration under a name one
-    /// already answers to is inert — it cannot change what a shipped def means.
+    /// already answers to is inert -- it cannot change what a shipped def means.
     #[test]
     fn a_registration_never_shadows_a_built_in() {
         register("label", counter);

@@ -1,21 +1,21 @@
-// Rendering — the *change of state* from the arrangement to sound (mirrors
+// Rendering -- the *change of state* from the arrangement to sound (mirrors
 // `clausters/form/render.py`).
 //
 // A concrete `Aggregate` is rendered by **flattening** it: a tree-walk that
 // accumulates the nested placement offsets into absolute beats, producing a flat
 // `seq.Timeline` of items that each know how to `play(destination)`. That
-// timeline then plays itself — RT (timetagged bundles) or NRT (a score for an
+// timeline then plays itself -- RT (timetagged bundles) or NRT (a score for an
 // offline render) purely by which destination it holds and how its clock is
 // driven, sample-identical, with no scheduling path of its own: the arrangement
 // reuses the sequencing layer rather than duplicating it.
 //
 // Scope of the concrete path:
 //
-// - `Aggregate{concrete}` — flattened recursively; each member's `offset` (and
+// - `Aggregate{concrete}` -- flattened recursively; each member's `offset` (and
 //   any nested aggregate's) accumulates into the child's absolute beat.
-// - `Track` — its `Timeline`'s items are shifted by the placement beat.
-// - `Clang` — placed as a single item at its beat.
-// - `Sequence`/`Generator` wrapping an **event pattern** (a `Pbind`) — *bounced*
+// - `Track` -- its `Timeline`'s items are shifted by the placement beat.
+// - `Clang` -- placed as a single item at its beat.
+// - `Sequence`/`Generator` wrapping an **event pattern** (a `Pbind`) -- *bounced*
 //   in the same pass (its change of state); a `Sequence` of elements is laid out
 //   successively by their durations.
 // - An **abstract** element (no onset/duration, no content) contributes context,
@@ -26,12 +26,12 @@
 // branch contributes nothing, one soloed element anywhere silences every branch
 // that is not on a soloed path, and a level multiplies into the `amp` of the
 // events below it. They travel in the document, so an aggregate reopens mixed the way
-// it was left — unlike a lane's *height*, which says nothing about what the
+// it was left -- unlike a lane's *height*, which says nothing about what the
 // aggregate is and is carried by no document.
 //
 // A `Vector` is *data*: it sounds through the **instrument** that plays it (a
 // def whose `buf` control takes the buffer number), so a `Vector` with an
-// `instrument` emits one event playing it — the audio clip — and one without
+// `instrument` emits one event playing it -- the audio clip -- and one without
 // contributes structure only. A `Segments` is the same rule over several
 // windows: one event per segment, at its own offset inside the element, so what
 // sounds assembled from aggregates of different buffers sounds continuous on one
@@ -79,8 +79,8 @@ export interface RenderOptions {
 
 /**
  * What {@link render} gives back: the `Timeline` a concrete element was
- * flattened into and is playing, or — for a logical `Aggregate`, whose def has
- * to reach the server first — a promise of the instance group. The seam is the
+ * flattened into and is playing, or -- for a logical `Aggregate`, whose def has
+ * to reach the server first -- a promise of the instance group. The seam is the
  * destination, not the element, and this is the one place the two paths show
  * through the same name.
  */
@@ -93,12 +93,12 @@ export type RenderResult = Timeline | Promise<Group>;
  *
  * `tempo` (beats per second) is where the tree's two units meet. An onset is in
  * beats and a length is in the unit of its own data ({@link Element.durationUnit}:
- * a take's is seconds), and a timeline is ordered by **one** number — so the
+ * a take's is seconds), and a timeline is ordered by **one** number -- so the
  * conversion belongs to the flattening and never to the structure. At the
  * default tempo of one beat a second the two coincide, which is what a script
  * that never set a tempo has always been running under.
  *
- * `mixed` is whether the tree's mixing is in force — mute, solo and
+ * `mixed` is whether the tree's mixing is in force -- mute, solo and
  * level, all inherited down the tree. It is on for what sounds and off for what
  * is **drawn**: a muted lane keeps its clips, its notes and its length, and a
  * picture that emptied when the toggle was pressed would be reporting silence as
@@ -121,7 +121,7 @@ export function flatten(
 }
 
 /**
- * Flattens `element` into a flat `seq.Timeline` in absolute beats — the
+ * Flattens `element` into a flat `seq.Timeline` in absolute beats -- the
  * structure a `Playhead` plays and a transport seeks. `tempo` is the clock's,
  * in beats per second (see {@link flatten}).
  */
@@ -143,7 +143,7 @@ export function toTimeline(
  * Renders `element` onto `destination`.
  *
  * A **concrete** element (an `Aggregate`, `Track`, `Clang`, …) is flattened to a
- * timeline and played through a `Playhead` over `clock` — RT or NRT,
+ * timeline and played through a `Playhead` over `clock` -- RT or NRT,
  * sample-identical; returns the `Playhead`.
  *
  * A **logical** `Aggregate` is translated to a `GraphDef`, sent (`/def_send
@@ -186,7 +186,7 @@ export function render(
 
 /**
  * Sends a logical aggregate's `GraphDef` ({@link Aggregate.toGraphdef}) and
- * instances it on `server`. Resolves to the instance group — a node-tree group,
+ * instances it on `server`. Resolves to the instance group -- a node-tree group,
  * the handle `Group.graph` gives back.
  *
  * Asynchronous where the Python client's is not, and for the reason every def
@@ -207,13 +207,13 @@ export async function renderLogical(
 
 /**
  * Flattens `element` at `base`, honouring the **placement length** its aggregate
- * gave it: a placement `dur` *trims* what the element plays (the DAW rule — a
+ * gave it: a placement `dur` *trims* what the element plays (the DAW rule -- a
  * clip's length is what you hear of it), so events past the placement's end are
  * dropped and a single-event element sounds for exactly that long. A placement
  * with no length lets the element be its own.
  *
- * The placement's length is in the placed element's own unit — a clip of audio
- * is trimmed in seconds — so it crosses to beats here, once, against the element
+ * The placement's length is in the placed element's own unit -- a clip of audio
+ * is trimmed in seconds -- so it crosses to beats here, once, against the element
  * it was written for.
  */
 /**
@@ -224,7 +224,7 @@ export async function renderLogical(
  * three are **inherited**: muting an aggregate silences its members, a lane's
  * level multiplies its clips', and one soloed lane anywhere silences every
  * branch that is not on a soloed path. A mute is the one that does not need
- * threading — it drops the branch where it is met.
+ * threading -- it drops the branch where it is met.
  */
 class Mix {
     readonly soloing: boolean;
@@ -246,8 +246,8 @@ class Mix {
     }
 
     /**
-     * The mix a whole aggregate starts under. Solo is tree-wide by definition — it
-     * says *only these* — so whether anything is soloed is a question about the
+     * The mix a whole aggregate starts under. Solo is tree-wide by definition -- it
+     * says *only these* -- so whether anything is soloed is a question about the
      * tree and not about the element being walked.
      */
     static over(element: Element, mixed: boolean): Mix {
@@ -271,7 +271,7 @@ class Mix {
     /**
      * `item` as it sounds under this mix, or `null` when it does not.
      *
-     * The gain is written onto the event's `amp` — a **copy**, since the
+     * The gain is written onto the event's `amp` -- a **copy**, since the
      * element's own event is shared and a mix must not rewrite it (the same rule
      * {@link sized} follows). Anything that is not an event carries no gain and
      * passes through: an automation curve is a control signal, and scaling one
@@ -320,7 +320,7 @@ function emit(
     mix: Mix,
 ): void {
     if (mix.silences(element)) {
-        // A muted branch contributes nothing — not its own events and not its
+        // A muted branch contributes nothing -- not its own events and not its
         // members'. It is the one part of the mix that needs no threading: it is
         // answered where it is met.
         return;
@@ -342,7 +342,7 @@ function emit(
 }
 
 /**
- * An event resized to the placement's remaining length — a *copy*, since the
+ * An event resized to the placement's remaining length -- a *copy*, since the
  * element's own event is shared and must not be rewritten by a placement.
  * Anything that is not an event (an automation, a raw OSC item) is untouched.
  */
@@ -385,7 +385,7 @@ function emitElement(
         // own offset inside the element and each carrying its own window, so
         // what sounds is continuous even though the source is not one buffer.
         // Without an instrument a run of *samples* is structure, exactly as a
-        // `Vector` is — a run of windows onto timelines needs none, because what
+        // `Vector` is -- a run of windows onto timelines needs none, because what
         // it holds are events that carry their own.
         if (element.instrument !== null || element.durationUnit === BEATS) {
             for (const [offset, event] of element.toEvents(tempoMap, base)) {
@@ -394,7 +394,7 @@ function emitElement(
         }
     } else if (element instanceof Vector) {
         // A buffer is data; the instrument is what makes it sound (a def whose
-        // `buf` control plays it). Without one it is structure only — it draws
+        // `buf` control plays it). Without one it is structure only -- it draws
         // in the editor and contributes its extent, but emits no event.
         if (element.instrument !== null) {
             heard(out, base, element.toEvent(tempoMap, base), mix);
@@ -444,7 +444,7 @@ function reaches(element: Element, tempoMap: TempoMap): number {
 
 /**
  * A List/Function backed by an event pattern is bounced; a list of elements is
- * laid out successively — each by its own duration, or by what it lays down
+ * laid out successively -- each by its own duration, or by what it lays down
  * when it states none.
  */
 function emitSequence(
@@ -457,8 +457,8 @@ function emitSequence(
     if (wrapped === null || wrapped === undefined || typeof wrapped === "string") {
         // A **frozen** generator: the document named an algorithm and nothing in
         // this process supplied one, so what came back is the reference itself
-        // (or nothing at all). It is structure — it draws, it contributes its
-        // extent — and it emits no event, exactly as a buffer with no instrument
+        // (or nothing at all). It is structure -- it draws, it contributes its
+        // extent -- and it emits no event, exactly as a buffer with no instrument
         // does. Throwing here instead would make a reopened session unplayable
         // because one lane in it was written by a script that is not running.
         return;
@@ -470,7 +470,7 @@ function emitSequence(
     } else if (wrapped instanceof Timeline) {
         for (const [beat, item] of wrapped) heard(out, base + beat, item, mix);
     } else if (typeof (wrapped as { play?: unknown }).play === "function") {
-        // Something that plays itself — an automation curve, and whatever else a
+        // Something that plays itself -- an automation curve, and whatever else a
         // script hands over. The conversion writes every element it has no body
         // for as a *generator* leaf, so resolving one back on open gives a
         // `Generator` where the author wrote a bare `Element`; the two must play
@@ -479,8 +479,8 @@ function emitSequence(
         heard(out, base, wrapped, mix);
     } else if (!Array.isArray(wrapped)) {
         // **A def is not a list of elements.** A generator wrapping a `SynthDef`
-        // is a *resident* one — the server produces its audio, and there is
-        // nothing here to lay out — so this says so rather than failing inside
+        // is a *resident* one -- the server produces its audio, and there is
+        // nothing here to lay out -- so this says so rather than failing inside
         // an iteration the def never meant to offer.
         throw new Error(
             `cannot flatten a generator wrapping ${(wrapped as object).constructor.name}`,
@@ -496,7 +496,7 @@ function emitSequence(
             emit(item, cursor, out, null, tempoMap, mix);
             // Laid out successively on the beat axis, so each length crosses
             // from whatever unit its own data is in. An item that states no
-            // length is as long as **what it lays down** — a `Sequence` of
+            // length is as long as **what it lays down** -- a `Sequence` of
             // `Sequence`s says nothing about its members' lengths, and reading a
             // missing one as zero stacked every one of them on the first beat.
             cursor = item.duration === null || item.duration === undefined
@@ -507,7 +507,7 @@ function emitSequence(
 }
 
 // `element.render()` / `element.toTimeline()` are these two functions, reached
-// through the registry rather than through an import back into `element.ts` —
+// through the registry rather than through an import back into `element.ts` --
 // see `registerRendering` there for why the dependency stays one-way.
 registerRendering({ toTimeline, render });
 

@@ -2,7 +2,7 @@
 //!
 //! Every helper in `tests/common/signal.rs` is driven here with a signal whose
 //! answer is known in closed form, so a broken *measurement* fails in this
-//! suite rather than silently passing — or failing — a UGen elsewhere.
+//! suite rather than silently passing -- or failing -- a UGen elsewhere.
 
 #[path = "common/signal.rs"]
 mod signal;
@@ -164,7 +164,7 @@ fn group_delay_recovers_an_integer_and_a_fractional_shift() {
     assert!((d - frac).abs() < 0.15, "fractional delay measured {d}");
 }
 
-/// Not an assert — a printed record of what the harness actually measures, so
+/// Not an assert -- a printed record of what the harness actually measures, so
 /// the numbers the U-track docs quote come from a run rather than from memory.
 /// Read it with `cargo test --test signal -- --nocapture report`.
 #[test]
@@ -201,7 +201,7 @@ fn zero_crossing_freq_does_not_lose_the_partial_period() {
     // function is the bias the obvious version has: counting crossings and
     // dividing by the buffer length throws away the fraction of a period at
     // each end, which reads low by up to one whole period.
-    let n = 9600; // 0.2 s — the window the faust suites actually use
+    let n = 9600; // 0.2 s -- the window the faust suites actually use
     for freq in [110.0f32, 330.0, 997.0] {
         // Every starting phase, including the ones that put a crossing just
         // outside the buffer at one end or the other.

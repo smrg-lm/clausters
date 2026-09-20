@@ -22,9 +22,9 @@
       <div id="note">The web port of the Python client's
 <code>graph_maths.py</code>: <b>the whole operator set, not just the four</b>.
 
-Every math method beyond add/sub/mul/div — <code>.mod()</code>,
+Every math method beyond add/sub/mul/div -- <code>.mod()</code>,
 <code>.min()</code>/<code>.max()</code>, the comparisons,
-<code>.midicps()</code>, <code>.distort()</code>, <code>.clip2()</code> … —
+<code>.midicps()</code>, <code>.distort()</code>, <code>.clip2()</code> … --
 composes the server's generic <code>BinaryOpUGen</code>/<code>UnaryOpUGen</code>,
 computed by the same shared core the client uses off the audio thread. So a
 value computed ahead of time and the UGen on the audio thread agree
@@ -33,8 +33,8 @@ bit for bit. Nothing here needs Faust: the def does real per-sample maths.
 The <b>range maps</b> are part of that surface and are shown here too:
 <code>.linexp()</code> and its five siblings map a signal off one range onto
 another through the very function the page's own <code>linexp</code> computes
-with. The vibrato below is the case worth reading — a vibrato is a
-<i>ratio</i>, not an offset — and its bounds are themselves signals, which a
+with. The vibrato below is the case worth reading -- a vibrato is a
+<i>ratio</i>, not an offset -- and its bounds are themselves signals, which a
 map allows.
 
 This is the port where the <b>method form</b> is the point. Where the Python

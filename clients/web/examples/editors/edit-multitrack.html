@@ -23,7 +23,7 @@
 edited and played.
 
 The fourth structure, and the one that holds the other three: a
-<code>Multitrack</code> — the document the three applications share — opened with
+<code>Multitrack</code> -- the document the three applications share -- opened with
 <code>gui.edit</code> like a buffer or a timeline. <b>One verb, and the editor is
 the application</b>: the picture, the gestures, the history, the readers on the
 server and the transport are all its, so this page writes a multitrack and hands it
@@ -33,21 +33,21 @@ over.
 block and move it as one. <b>Click</b> a box to select it, <b>e</b> to split it
 at the position cursor, <b>j</b> to join a touching run, <b>q</b> to quantize.
 A <b>run</b> is two boxes or more on one lane that touch <i>and read on from
-each other</i>, so two halves put back in the other order do not join — and the
+each other</i>, so two halves put back in the other order do not join -- and the
 <b>status bar</b> along the bottom says which of those it was, for every verb
 that finds nothing to do.
 
-<b>Click the ruler</b> — or the slack between boxes — to place the <b>position
+<b>Click the ruler</b> -- or the slack between boxes -- to place the <b>position
 cursor</b>, which is where the next play starts. The playhead is never placed:
 stopped, it stands on the mark.
 
 <b>Reach a tall multitrack</b>: <b>Shift</b>+wheel <b>scrolls the stack</b>, so a
 track that fell off the bottom comes back; <b>Ctrl</b>+wheel <b>zooms the row
-under the pointer</b> — a track or one of the automation rows, each on its own.
+under the pointer</b> -- a track or one of the automation rows, each on its own.
 A track is also zoomed by dragging its header's <b>bottom edge</b>; a curve row
 has no edge to pull, which is what the wheel is for. A plain wheel is still the
 time axis'. <b>A</b> in a track's header shows and hides that track's
-<b>automation rows</b> — and on a track that has none, the first press
+<b>automation rows</b> -- and on a track that has none, the first press
 <b>makes</b> one: a <code>gain</code> curve, flat at unity across the multitrack,
 heard like any other. Try it on <b>bass</b>, which this page gives no
 automation. <b>rewind</b>, <b>play/pause</b> and
@@ -55,13 +55,13 @@ automation. <b>rewind</b>, <b>play/pause</b> and
 puts the mark itself back at the top.
 
 <b>Double click a box</b> to enter it: what a box holds is a structure like any
-other, so entering one opens the take in the sample editor — on the multitrack's own
+other, so entering one opens the take in the sample editor -- on the multitrack's own
 undo order, so <b>Ctrl+Z</b> walks a stroke drawn inside a box and a box dragged
 on the stack as one history.
 
 <b>Watch the meters</b> while it plays: the strip in each track's header is one
 column per channel, in decibels, over what that track produces <i>after</i> its
-clips, its curves and its fader — with the peak it reached held beside it.
+clips, its curves and its fader -- with the peak it reached held beside it.
 
 <b>The last box is loud on purpose</b>, so the meter has something to fill: it
 reaches full scale and the top of the column is red, where the boxes before it
@@ -69,8 +69,8 @@ sit in the green and the amber.
 
 <b>The curves are heard.</b> The row under the first track is a track automation
 and the line inside the first box is a clip envelope; each names the
-<code>gain</code> port of the node it sits on — the same port the header's knob
-writes — so a point dragged while the multitrack plays is heard where it is drawn.
+<code>gain</code> port of the node it sits on -- the same port the header's knob
+writes -- so a point dragged while the multitrack plays is heard where it is drawn.
 
 <b>The last box is a join</b>: one buffer whose samples are spans of two takes,
 crossfaded at the seam, which is what a comping pass cut by hand is. It plays as
@@ -168,8 +168,8 @@ there.</div>
         // The **join**: half of the glide and the second half of the saw, read
         // as one buffer with a ten-millisecond crossfade at the seam. Two spans
         // that do not continue each other make a step, and a step is a click
-        // however well the frames are read. A join owns no samples — it is
-        // spans of the buffers above — so it refuses every write, and
+        // however well the frames are read. A join owns no samples -- it is
+        // spans of the buffers above -- so it refuses every write, and
         // `Buffer.parts` is how a program asks what one is made of before it
         // offers to draw it.
         bufs.comp = await Buffer.stitch(
@@ -179,8 +179,8 @@ there.</div>
         await server.sync();
 
         // ---- the multitrack ----
-        // A **source id** is what the document names — never a path and never a
-        // buffer number — because a multitrack must open in a program that has no
+        // A **source id** is what the document names -- never a path and never a
+        // buffer number -- because a multitrack must open in a program that has no
         // JavaScript in it. Which buffer each source was read into is the one
         // thing about a multitrack that is not in it, and it travels beside it
         // in `Sources`.
@@ -220,7 +220,7 @@ there.</div>
         ];
 
         // ---- one verb ----
-        // A `Multitrack` opens as a `MultitrackEditor` — one `multitrack` widget
+        // A `Multitrack` opens as a `MultitrackEditor` -- one `multitrack` widget
         // with its own ruler and its own transport row, the crate's picture and
         // the crate's reading of every gesture. Given a **server** it also
         // sounds: one resident reader per box, in a group the server's transport

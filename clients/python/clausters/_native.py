@@ -7,7 +7,7 @@ the very same ``clausters-core``, these results match the server by
 construction for the operators it computes natively.
 
 Boundary rule (project-wide, same as `clausters.ipc`): only flat
-data crosses — Python floats/ints in, `array.array` ``'f'`` (or a plain
+data crosses -- Python floats/ints in, `array.array` ``'f'`` (or a plain
 float for scalar calls) out. Nothing heavy is imported; a numpy user can wrap
 the returned ``array`` without copying.
 
@@ -33,7 +33,7 @@ _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dl
 class ShmShape(ctypes.Structure):
     """Where everything is in a mapped segment, as the shared core reports it.
 
-    Mirrors ``clausters_core::shm::Shape`` — and mirroring *this* one struct is
+    Mirrors ``clausters_core::shm::Shape`` -- and mirroring *this* one struct is
     the whole point: every other number a reader needs is derived from it, so a
     binding carries one declaration instead of a transcription of the layout.
     """
@@ -389,7 +389,7 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_double, ctypes.c_double, ctypes.c_int64, ctypes.c_double,
     ]
     # Seam-audit surface (ABI v5): quantization, NTP timetag packing, pitch
-    # math, the seeded value stream, the beat queue and the clock-sync model —
+    # math, the seeded value stream, the beat queue and the clock-sync model --
     # the value/time logic every client shares instead of reimplementing.
     lib.clausters_core_quant_delay.restype = ctypes.c_double
     lib.clausters_core_quant_delay.argtypes = [ctypes.c_double, ctypes.c_double]
@@ -413,7 +413,7 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     ]
     # The shared-memory segment (ABI v21): a peer maps the file itself and asks
     # here for every offset, for the directory's seqlock and for the ring
-    # framing — the numbers this binding used to transcribe.
+    # framing -- the numbers this binding used to transcribe.
     u64p = ctypes.POINTER(ctypes.c_uint64)
     u8p = ctypes.POINTER(ctypes.c_uint8)
     lib.clausters_core_shm_abi_version.restype = ctypes.c_uint32
@@ -687,7 +687,7 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_history_clear.restype = None
     lib.clausters_history_clear.argtypes = [ctypes.c_void_p]
     # The component bundle (ABI v13): what an instance needs allocated, one
-    # instance resolved, and the writers' pre-flight — the same three the
+    # instance resolved, and the writers' pre-flight -- the same three the
     # browser gets over wasm, on the same JSON-in/JSON-out shape.
     for _bundle_fn in (
         "clausters_core_bundle_requirements",
@@ -696,8 +696,8 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     ):
         getattr(lib, _bundle_fn).restype = ctypes.c_size_t
         getattr(lib, _bundle_fn).argtypes = [u8p, ctypes.c_size_t, u8p, ctypes.c_size_t]
-    # Finite-resource registry (ABI v10): the one id-allocator model — node
-    # ids, buses, buffers — shared with the server's reserved ranges.
+    # Finite-resource registry (ABI v10): the one id-allocator model -- node
+    # ids, buses, buffers -- shared with the server's reserved ranges.
     lib.clausters_registry_new.restype = ctypes.c_void_p
     lib.clausters_registry_new.argtypes = [ctypes.c_int64, ctypes.c_uint64]
     lib.clausters_registry_free.restype = None
@@ -952,7 +952,7 @@ def bundle_requirements(manifest: dict, template: dict | None = None) -> dict:
     "buses", "buffers"}``, through the shared `clausters_core::bundle` pass.
 
     Pass ``template`` for a bundle written before the manifest carried a widget
-    count — its id block is then measured from the ids the tree actually uses.
+    count -- its id block is then measured from the ids the tree actually uses.
     """
     payload: dict = {"manifest": manifest}
     if template is not None:
@@ -971,7 +971,7 @@ def bundle_resolve(
 ) -> dict:
     """One mounted instance: the template's widget ids offset by
     ``allocation["widget_base"]``, its ``@symbol`` and ``$param`` holes filled,
-    its ``boot`` list lifted out — ``{"def_id", "tree", "boot", "params"}``.
+    its ``boot`` list lifted out -- ``{"def_id", "tree", "boot", "params"}``.
 
     The caller allocates (``allocation`` is ``{"widget_base", "nodes", "buses",
     "buffers"}``), which is what keeps the pass pure. Raises `ValueError` on an
@@ -992,7 +992,7 @@ def bundle_resolve(
 
 def bundle_validate(manifest: dict, template: dict, defs: list | None = None) -> None:
     """The writers' pre-flight: the mount dry-run over the declared defaults,
-    plus the no-holes check on every def payload — so a bundle that would fail
+    plus the no-holes check on every def payload -- so a bundle that would fail
     to mount fails to be written. Raises `ValueError` with the reason."""
     _json_call(
         lib().clausters_core_bundle_validate,
@@ -1003,7 +1003,7 @@ def bundle_validate(manifest: dict, template: dict, defs: list | None = None) ->
 
 def compile_patch(patch: dict) -> dict:
     """Compile a **directed patch** into its GraphDef bus wiring via the shared
-    `clausters_core::patch` pass — the one door every client's patcher uses, so a
+    `clausters_core::patch` pass -- the one door every client's patcher uses, so a
     patch translates identically everywhere.
 
     ``patch`` is ``{"boxes": [...], "cords": [...]}``: each box a
@@ -1011,7 +1011,7 @@ def compile_patch(patch: dict) -> dict:
     "audio"|"control"}, ...]}``, each cord a ``{"from_box", "from_port",
     "to_box", "to_port"}``. Returns ``{"buses": [{"name", "rate"}, ...],
     "members": [{"box_index", "def", "controls": [{"control", "bus"}, ...]}, ...]}``
-    — one private bus per connected net (writers summing), named ``b0``, ``b1``, …
+    -- one private bus per connected net (writers summing), named ``b0``, ``b1``, …
     A signal reaches hardware through a terminal def (a ``dac``), never a drawn bus.
 
     Raises `ValueError` on a malformed cord (reversed, rate-mismatched, out of
@@ -1047,7 +1047,7 @@ def _why_refused(document) -> str:
     """Why the crate would not open ``document``, in the one case worth naming.
 
     The C ABI's ``clausters_document_open`` answers with a null handle and no
-    message — it has no channel for one, unlike the wasm face, which raises the
+    message -- it has no channel for one, unlike the wasm face, which raises the
     crate's own string. So the reason a caller sees is generic, and the reason
     that is *worth* seeing is the one a client can produce by accident: a node
     id on two different nodes, which the crate refuses because an intent
@@ -1069,7 +1069,7 @@ def _why_refused(document) -> str:
             if first is not node and first != node:
                 return (
                     f"{generic}: node id {node_id} names two different nodes, "
-                    f"a {first.get('kind')} and a {node.get('kind')} — ids are "
+                    f"a {first.get('kind')} and a {node.get('kind')} -- ids are "
                     "unique within a document"
                 )
         for member in node.get("members") or ():
@@ -1080,7 +1080,7 @@ def _why_refused(document) -> str:
 
 
 class Document:
-    """One document, held by the shared crate — the **only** implementation
+    """One document, held by the shared crate -- the **only** implementation
     of what an edit means.
 
     A client does not apply an edit and then report it: it hands an intent over
@@ -1090,8 +1090,8 @@ class Document:
     **The tree stays in Rust.** It used to cross on every call, and the cost was
     linear in the whole document rather than in the edit: 205 ms for one
     placement on a 10240-event multitrack, the same for a stroke touching fifty
-    samples. This is not an accessor handle — there is no call per field of the
-    tree, just the same three verbs — and `snapshot` is how the JSON leaves,
+    samples. This is not an accessor handle -- there is no call per field of the
+    tree, just the same three verbs -- and `snapshot` is how the JSON leaves,
     asked for rather than paid per edit.
 
     Args:
@@ -1139,7 +1139,7 @@ class Document:
         return int(lib().clausters_document_version(self._handle))
 
     def snapshot(self) -> dict:
-        """The whole tree as JSON — to save it, or to rebuild the client's own
+        """The whole tree as JSON -- to save it, or to rebuild the client's own
         objects from it.
 
         The one call still the size of the document. It is a pure read, so
@@ -1157,10 +1157,10 @@ class Document:
         """Apply one edit.
 
         Args:
-            intent: the edit — ``{"intent": "place"|"configure"|"setmembers"|
+            intent: the edit -- ``{"intent": "place"|"configure"|"setmembers"|
                 "writesamples", "node": id, …}``. Absolute: it states the
                 *resulting* value, never an increment.
-            against: the state the edit was made against — ``{"version": N}``,
+            against: the state the edit was made against -- ``{"version": N}``,
                 or ``None`` for unstated, which applies unchecked. An edit made
                 against a superseded version comes back refused and marked
                 ``stale``, with the value that now holds.
@@ -1190,7 +1190,7 @@ class Document:
     @staticmethod
     def coalesce_key(intent: dict) -> str:
         """What makes two edits over the arrangement *the same thing done the
-        same way* — the key a `History` coalesces on, or ``""`` when the intent
+        same way* -- the key a `History` coalesces on, or ``""`` when the intent
         will not parse. The method form of `document_coalesce_key`, and the one
         the web client spells `Document.coalesceKey`."""
         return document_coalesce_key(intent)
@@ -1206,12 +1206,12 @@ class Document:
         """Resolve a selection to the spans of samples underneath it.
 
         Args:
-            selection: ``{"start", "len", …}`` — see the crate's ``Selection``.
+            selection: ``{"start", "len", …}`` -- see the crate's ``Selection``.
             frames_per_beat: the bridge between the arrangement's beats and the
                 samples' frames. Supplied rather than derived: tempo is the
                 caller's, the arithmetic is the crate's.
             frames_per_second: the same bridge for a length already measured in
-                seconds — a take's, which no tempo moves. Both are needed
+                seconds -- a take's, which no tempo moves. Both are needed
                 because the document measures a placement in beats and what it
                 places in the unit of that element's own data.
             in_beats: whether the selection's numbers are beats rather than
@@ -1221,7 +1221,7 @@ class Document:
             ``[{"node", "source", "generation", "range", "at"}, …]`` in tree
             order, with the placement's base, the element's trim and the clamp
             at both ends already applied. Empty when nothing with samples was
-            underneath — a group and a generator are in the way of a selection,
+            underneath -- a group and a generator are in the way of a selection,
             not under it.
         """
         sel_ptr, sel_len = _bytes(selection)
@@ -1239,14 +1239,14 @@ class Document:
 def document_apply(document: dict, intent: dict, *, against=None, quant: float = 0.0) -> dict:
     """Apply one edit to a document given and returned **by value**.
 
-    The convenience form, built out of `Document` — open, apply, snapshot, free
-    — for a script that has a document in hand and wants the edited one back.
+    The convenience form, built out of `Document` -- open, apply, snapshot, free
+    -- for a script that has a document in hand and wants the edited one back.
     It costs a serialization of the whole document either way, which is why
     it is a wrapper here rather than the binding: an editor applying a gesture
     per drag holds a `Document` instead and pays nothing per edit.
 
     Returns:
-        ``{"document": …, "outcome": {…}}`` — the shape this call has always
+        ``{"document": …, "outcome": {…}}`` -- the shape this call has always
         had, so a caller written against it does not change.
     """
     with Document(document) as doc:
@@ -1255,13 +1255,13 @@ def document_apply(document: dict, intent: dict, *, against=None, quant: float =
 
 
 def document_inverse(document: "Document", intent: dict) -> "dict | None":
-    """The edit that would put this node back the way it is — the inverse of
+    """The edit that would put this node back the way it is -- the inverse of
     ``intent``, read out of ``document`` **before** anything is applied, or
     ``None`` when the document cannot describe it (the node is gone, or its body
     holds nothing of that shape).
 
     `Log.apply` does this for you and is what an ordinary edit wants. This is
-    for the caller that records its **own** entry — a leg of a transaction
+    for the caller that records its **own** entry -- a leg of a transaction
     spanning several structures, which nothing but the caller can apply, since
     the crate reaches one document and no curve.
 
@@ -1281,7 +1281,7 @@ def document_inverse(document: "Document", intent: dict) -> "dict | None":
 
 def document_coalesce_key(intent: dict) -> str:
     """What makes two edits over the arrangement *the same thing done the same
-    way* — the key a `History` coalesces on, or ``""`` when the intent will not
+    way* -- the key a `History` coalesces on, or ``""`` when the intent will not
     parse.
 
     It belongs to the document and not to the history because it is a sentence
@@ -1302,12 +1302,12 @@ def document_coalesce_key(intent: dict) -> str:
     return ctypes.string_at(out, n).decode("utf-8")
 
 
-#: Every vocabulary the document crate speaks — what a structure is registered
+#: Every vocabulary the document crate speaks -- what a structure is registered
 #: under, and what `domain_coalesce_key` dispatches on. Named here rather than
 #: spelled at each call site so a typo cannot quietly mint a structure in a
 #: domain nobody reads.
 TREE = "tree"
-#: The **multitrack's** vocabulary — what a multitrack editor does. A domain of its
+#: The **multitrack's** vocabulary -- what a multitrack editor does. A domain of its
 #: own rather than more of the tree's: the multitrack and the tree are two
 #: descriptions, and one history holds both without either knowing the other's
 #: words.
@@ -1320,8 +1320,8 @@ EVENTS = "events"
 def curve_axis(values, kept=None) -> tuple:
     """The axis a break-point curve is **drawn** against, as ``(lo, hi)``.
 
-    The values' own range with a tenth of headroom — a flat curve still gets a
-    band to be dragged in — and, given the axis a view already has as ``kept``,
+    The values' own range with a tenth of headroom -- a flat curve still gets a
+    band to be dragged in -- and, given the axis a view already has as ``kept``,
     that axis widened only where the data stopped fitting inside it.
 
     **A view asks rather than computing the range itself**, and that is the
@@ -1367,7 +1367,7 @@ def multitrack_props(multitrack: dict, rate: float, sources: dict) -> dict:
     """A multitrack as **the props the multitrack widget is drawn with**.
 
     The rows, the boxes, the automations over both, their break-points, which
-    of them are hidden and which boxes loop — everything a multitrack has from the
+    of them are hidden and which boxes loop -- everything a multitrack has from the
     document alone, in the flat shapes the wire carries
     (`clausters_editing_multitrack_props`). What a caller adds is what is a
     function of something *else*: the position cursor, the meter buses, the
@@ -1390,15 +1390,15 @@ def editing_intake(domain: str, tag: str, **request) -> dict:
 
     A host reports a gesture as a tag and a flat list of values, and this is
     what turns one into the payloads `domain_edit` will apply
-    (`clausters_editing_intake`). One door over all four domains — ``points``,
-    ``samples``, ``events``, ``multitrack`` — because a host reports every
+    (`clausters_editing_intake`). One door over all four domains -- ``points``,
+    ``samples``, ``events``, ``multitrack`` -- because a host reports every
     gesture the same way, and because a fifth vocabulary then has nowhere to
     grow.
 
     Args:
         domain: which vocabulary the answer comes back in.
         tag: the ``/gui_event`` tag the report arrived under.
-        request: what that domain reads — ``values`` always; ``state`` for the
+        request: what that domain reads -- ``values`` always; ``state`` for the
             two that need the structure (the multitrack, the timeline);
             ``unitsPerBeat`` and ``editable`` for a roll; ``rate`` and
             ``sources`` for a multitrack.
@@ -1407,7 +1407,7 @@ def editing_intake(domain: str, tag: str, **request) -> dict:
         ``{"payloads": [...], "label": str}``, with ``inverse`` where the
         gesture carried one and ``refusal`` where the gesture *is* this
         domain's and cannot be written. No payloads and no refusal is "nothing
-        to say" — a tag this domain does not answer for — which is the ordinary
+        to say" -- a tag this domain does not answer for -- which is the ordinary
         case rather than a failure.
     """
     _lib = lib()
@@ -1420,7 +1420,7 @@ def editing_intake(domain: str, tag: str, **request) -> dict:
 
 
 def editing_stitch(source: dict, held: dict) -> "dict | None":
-    """**What a source made of spans comes to** — the buffer a join is,
+    """**What a source made of spans comes to** -- the buffer a join is,
     resolved against the caller's table (`clausters_editing_stitch`).
 
     One reading for every endpoint that realizes a minted join, so the width,
@@ -1445,7 +1445,7 @@ def editing_stitch(source: dict, held: dict) -> "dict | None":
 
 
 def editing_load(session: dict, beside: str, buffers: list) -> dict:
-    """**A session's sources, loaded** — the steps that read every take and
+    """**A session's sources, loaded** -- the steps that read every take and
     stitch every join into the buffers set aside (`clausters_editing_load`).
 
     Args:
@@ -1627,8 +1627,8 @@ class Instance:
     itself from the transport, so the nodes have to **stay**, and what this
     answers is the **difference**.
 
-    An operation names what it acts on by a **handle** — a string the crate
-    mints from the document's own ids — and never by a node id, a bus index or
+    An operation names what it acts on by a **handle** -- a string the crate
+    mints from the document's own ids -- and never by a node id, a bus index or
     a buffer number: the crate allocates none of those, and the caller keeps
     the one table from handle to whatever it made.
     """
@@ -1682,7 +1682,7 @@ class Instance:
         return json.loads(raw) if raw else []
 
     def meters(self) -> list:
-        """Which control bus run each track's meters write, by track —
+        """Which control bus run each track's meters write, by track --
         ``[{"track": id, "bus": handle, "channels": n}]``.
 
         A run of ``2 * channels``: the level first and the mark that waits
@@ -1696,14 +1696,14 @@ class Instance:
 
 
 def conversation_read(state: dict, message: dict) -> dict:
-    """**What one message from the host is** — the conversation's first
+    """**What one message from the host is** -- the conversation's first
     decision (`clausters_editing_conversation_read`).
 
     A close, a history step, an edit made against a picture that is gone, or an
     edit to route. ``state`` is the conversation's two integers (``floor`` and
     ``applied``) and ``message`` the event's **envelope**: the address, the
     stamp, the version it was made against, the tag, and whether this editor
-    owns the widget and the window. The payload is deliberately not in it —
+    owns the widget and the window. The payload is deliberately not in it --
     what a report means is `editing_intake`'s and already crosses once, so a
     drag reporting a thousand boxes costs this nothing.
 
@@ -1720,13 +1720,13 @@ def conversation_read(state: dict, message: dict) -> dict:
 
 def conversation_answer(seq: int, doc_version: int, reason: "str | None",
                         corrections: list) -> dict:
-    """**What to answer the host with** — the conversation's second decision
+    """**What to answer the host with** -- the conversation's second decision
     (`clausters_editing_conversation_answer`).
 
     ``silent``, ``ack`` or ``push``. It runs after the routing because what an
     answer carries is collected while routing: the corrections the gesture did
     not survive intact, and the reason when one is owed. There is no success
-    flag in it — applied, transformed and refused are **one message**, and a
+    flag in it -- applied, transformed and refused are **one message**, and a
     refusal is simply the previous value among the corrections.
     """
     _lib = lib()
@@ -1815,12 +1815,12 @@ def domain_edit(domain: str, state, payload: dict) -> "dict | None":
     The other half of what a domain brings: an edit and its inverse are one
     vocabulary's rule, so a client computing the inverse itself would be
     spelling that rule again per language.  Both directions come back in one
-    answer because the inverse has to be read *before* the edit lands — a
+    answer because the inverse has to be read *before* the edit lands -- a
     surface that let you apply first and read second would let you record the
     wrong thing.
 
     Args:
-        domain: the vocabulary — `MULTITRACK`, `POINTS` or `EVENTS`.
+        domain: the vocabulary -- `MULTITRACK`, `POINTS` or `EVENTS`.
         state: the structure in that vocabulary (a multitrack, a curve's points, a
             timeline's events), as plain JSON-able data.
         payload: the edit.
@@ -1830,12 +1830,12 @@ def domain_edit(domain: str, state, payload: dict) -> "dict | None":
         ``None`` for a vocabulary whose state is not a value a caller can hand
         over: `TREE` (what it edits is a handle that lives across the seam, not
         a value) and `SAMPLES` (a borrowed view whose frames are in a server
-        buffer, never in a string — reading a span back is what its inverse
+        buffer, never in a string -- reading a span back is what its inverse
         costs).
 
         A **multitrack** is served, and it is the case that shows what the `TREE`
         entry is really about: its whole state is one JSON value the caller
-        holds, version included, so the door works — it applies against whatever
+        holds, version included, so the door works -- it applies against whatever
         that state says and snaps to nothing, which is what a client that just
         read the multitrack wants.
     """
@@ -1861,7 +1861,7 @@ def domain_edit(domain: str, state, payload: dict) -> "dict | None":
 
 
 def session_format() -> int:
-    """**The session format this build writes** — the crate's
+    """**The session format this build writes** -- the crate's
     ``session::FORMAT``, carried rather than known.
 
     It is asked of the library rather than written down here because it was
@@ -1887,11 +1887,11 @@ def view_not_an_edit() -> tuple:
     """**The `/gui_event` tags that are not edits** of the structure: what a
     view is looking at, and where the hand is.
 
-    An editor routes an event by its tag — screen state is answered generically
+    An editor routes an event by its tag -- screen state is answered generically
     and never reaches a domain, and everything else is the domain's to read.
     Which tags those are is the crate's list (`clausters_document::view`), not
     each client's: it was a literal tuple here and a literal array in the web
-    client, and a table that small drifts unread — a tag missing from one makes
+    client, and a table that small drifts unread -- a tag missing from one makes
     that client *edit* with a gesture the other one merely looks at.
 
     What a client does with them is still the client's: screen state is each
@@ -1913,9 +1913,9 @@ def view_props(kind: str, facts) -> dict:
     """**One catalogue view's props**: the widget a waveform, a curve or a roll
     *is*, and what is on it.
 
-    Which widget draws which structure is a rule and not a convention — a
+    Which widget draws which structure is a rule and not a convention -- a
     waveform is a ``signal`` shown as a ``trace``, a curve is a ``curve``, a
-    roll is ``notes`` — and so are the two that travel with them: the sample
+    roll is ``notes`` -- and so are the two that travel with them: the sample
     editor's three-gesture plan, and the pitch window a roll fits to its notes.
     Each was assembled once here, once in the web client and once more in the
     standalone host, and the three agreed only because they were written to.
@@ -1923,7 +1923,7 @@ def view_props(kind: str, facts) -> dict:
     The answer carries no ``id``: which number a widget gets is the caller's.
 
     Args:
-        kind: the view's name — ``"waveform"``, ``"bpf"`` or ``"pianoroll"``.
+        kind: the view's name -- ``"waveform"``, ``"bpf"`` or ``"pianoroll"``.
         facts: what that kind is written from, as plain JSON-able data.
 
     Returns:
@@ -1982,7 +1982,7 @@ def _read_json(fn, *values):
     """The size-then-fill call a read-only JSON door makes: every argument
     goes in as bytes and a length, and the answer comes back parsed.
 
-    Named apart from `_json_call`, which is the *checked* form — it takes one
+    Named apart from `_json_call`, which is the *checked* form -- it takes one
     payload and raises with the reason a validating door refused it. This one
     answers `None` and lets the caller say what that means, which is what a
     door with nothing to refuse wants.
@@ -2012,14 +2012,14 @@ def _read_json(fn, *values):
 
 def domain_coalesce_key(domain: str, payload: dict) -> str:
     """What makes two of ``domain``'s edits *the same thing done the same way*
-    — the key a caller recording its own entry passes to `History.record`, or
+    -- the key a caller recording its own entry passes to `History.record`, or
     ``""`` when the payload is not written in that vocabulary (or the domain is
     one the crate does not speak).
 
     A free function rather than a method because a caller here holds no
     structure to ask: a curve, a span of samples and a timeline live in this
     process's own memory, and only their *vocabulary* is the crate's.
-    `document_coalesce_key` stays as it is — the arrangement's own door — and
+    `document_coalesce_key` stays as it is -- the arrangement's own door -- and
     this is the same rule for the domains that have no handle.
     """
     _lib = lib()
@@ -2042,7 +2042,7 @@ def domain_coalesce_key(domain: str, payload: dict) -> str:
 
 def document_resolve(document: dict, selection: dict, *, frames_per_beat: float,
                      frames_per_second: float, in_beats: bool = False) -> list:
-    """Resolve a selection against a document given **by value** — the
+    """Resolve a selection against a document given **by value** -- the
     convenience form of `Document.resolve`, for a caller that has one in hand.
     """
     with Document(document) as doc:
@@ -2058,8 +2058,8 @@ class History:
     over them, so what you decide by choosing a history is *what shares an undo
     order*:
 
-    - a structure you built with no multitrack behind it — a curve, a buffer, a
-      roll — is a history with one structure in it, and has a working undo with
+    - a structure you built with no multitrack behind it -- a curve, a buffer, a
+      roll -- is a history with one structure in it, and has a working undo with
       no document anywhere;
     - an application composing several editable views registers them all in one,
       and the interleaved order its undo walks **is** the pile;
@@ -2073,7 +2073,7 @@ class History:
 
     It is a handle for its own reason, beyond the one `Document` has: the spill
     store. A bulk payload *leaves* the pile on purpose, so passing one by value
-    would carry every spilled span on every call — which is the cost spilling
+    would carry every spilled span on every call -- which is the cost spilling
     exists to avoid.
 
     Args:
@@ -2106,8 +2106,8 @@ class History:
     def register(self, domain: str) -> int:
         """Take a structure into this history and get its identity.
 
-        `domain` names the vocabulary its payloads are written in — ``"tree"``
-        for the arrangement, ``"points"`` for a break-point curve — and the
+        `domain` names the vocabulary its payloads are written in -- ``"tree"``
+        for the arrangement, ``"points"`` for a break-point curve -- and the
         history carries it so a caller routing what comes back knows which
         reader a leg belongs to. Nothing in the crate reads it.
 
@@ -2126,8 +2126,8 @@ class History:
         One call rather than two because the inverse has to be read out of the
         document *before* the edit lands: a surface that let you apply first and
         record second would let you record the wrong thing. Nothing is recorded
-        unless the document actually changed, so a refusal — stale or otherwise
-        — leaves no entry, and neither does a resend.
+        unless the document actually changed, so a refusal -- stale or otherwise
+        -- leaves no entry, and neither does a resend.
 
         The arrangement's door alone, because the document is the one state this
         surface can reach; for anything else you apply the edit yourself and
@@ -2148,18 +2148,18 @@ class History:
         )
 
     def record(self, legs: list, *, label: str = "edit", coalesce: bool = False):
-        """Record one entry — one gesture, and what it takes to reverse it.
+        """Record one entry -- one gesture, and what it takes to reverse it.
 
         The door for everything `apply` cannot do: a destructive write, whose
         overwritten samples are not in the tree, and every domain that is not
         the arrangement, whose state the crate cannot reach. This **applies
-        nothing** — you have already made the edits; what is recorded is how to
+        nothing** -- you have already made the edits; what is recorded is how to
         put them back.
 
         **Several legs are one transaction**: applied in the order given,
         inverted in reverse, and undone in one step. That is what a gesture
-        touching more than one structure needs — a drag that moves a clip and
-        rewrites the curve it carries — and it is why the whole entry goes in
+        touching more than one structure needs -- a drag that moves a clip and
+        rewrites the curve it carries -- and it is why the whole entry goes in
         one call: half a transaction is worse than none. It is not coalescing,
         which merges *successive* entries over one structure; the two are kept
         apart so a merge cannot silently join two structures.
@@ -2169,12 +2169,12 @@ class History:
                 were applied, each carrying
 
                 - ``structure``: the identity `register` handed back;
-                - ``forward``: a step — ``{"edit": <payload>}``, or
+                - ``forward``: a step -- ``{"edit": <payload>}``, or
                   ``{"recompute": <params>}`` for a deterministic operation the
                   owner re-runs rather than replays, which is what makes a redo
                   of a million-sample operation cost a few bytes;
                 - ``backward``: the inverse, a payload in that structure's own
-                  vocabulary — for the arrangement, `document_inverse` read
+                  vocabulary -- for the arrangement, `document_inverse` read
                   before the edit landed;
                 - ``key`` (optional): what makes two edits *the same thing done
                   the same way*, ``"place:7"`` for the arrangement
@@ -2182,7 +2182,7 @@ class History:
                   Absent never coalesces.
             label: what an undo menu calls this.
             coalesce: merge into the entry before it when every leg's structure
-                and key match — a run of small adjustments becoming one undo.
+                and key match -- a run of small adjustments becoming one undo.
                 You decide, because only you know where the hand stopped.
 
         Raises:
@@ -2198,12 +2198,12 @@ class History:
                 "or it names a structure this history did not mint")
 
     def walk(self, direction: str) -> "dict | None":
-        """**One step of the pile, routed** — or ``None`` when there was
+        """**One step of the pile, routed** -- or ``None`` when there was
         nothing to walk.
 
         ``direction`` is ``"undo"`` or ``"redo"``. Returns ``{"label": …,
         "legs": [...], "remaining": [...], "skipped": [...]}``, where each leg
-        is ``{"structure": <id>, "payloads": [...]}`` — **one entry per
+        is ``{"structure": <id>, "payloads": [...]}`` -- **one entry per
         structure**, not one per leg, each structure's payloads in the order it
         must apply them.
 
@@ -2212,12 +2212,12 @@ class History:
         every caller was writing both for itself.
 
         ``remaining`` holds the steps from the first one the crate cannot
-        describe as an edit onward — a deterministic operation kept as its
+        describe as an edit onward -- a deterministic operation kept as its
         parameters, which you re-run, because the crate holds no algorithms. It
         stops at the first rather than skipping it, so a later edit is never
         applied over a state the operation before it was meant to produce. Going
         back it is always empty: an inverse is always an edit. ``skipped`` names
-        the entries the walk had to pass over because nothing can invert them —
+        the entries the walk had to pass over because nothing can invert them --
         a hole in the history that announces itself is what lets a person
         understand why an undo did not go where they expected.
 
@@ -2235,12 +2235,12 @@ class History:
         say whether its memory may go now.
 
         ``True`` when nothing in the pile names it any more, ``False`` when you
-        must wait for `released` — because undoing a deletion has to be able to
+        must wait for `released` -- because undoing a deletion has to be able to
         give the data back, so a structure that is out of the tree stays alive
         while an entry can still restore what referred to it.
 
         It also **invalidates the entries that name it**: they cannot be applied
-        to data that is gone, so they become non-invertible — kept, marked, and
+        to data that is gone, so they become non-invertible -- kept, marked, and
         walked past with the walk saying so. Undoing a deletion returns the
         data, not its history.
         """
@@ -2248,7 +2248,7 @@ class History:
             self._handle, ctypes.c_uint64(structure)))
 
     def released(self) -> list:
-        """The forgotten structures no entry names any more — you may free
+        """The forgotten structures no entry names any more -- you may free
         their data now. Drains: each is reported once."""
         return self._sized(self._lib.clausters_history_released, (),
                            "the history handle is not usable")
@@ -2266,7 +2266,7 @@ class History:
     def dirty(self) -> bool:
         """Whether the work differs from what was last saved.
 
-        Crossing the mark backwards is allowed, and this is the announcement —
+        Crossing the mark backwards is allowed, and this is the announcement --
         which has to be accurate: nothing on disk changed, and the file still
         holds those edits until the next save. Crossing forward again returns to
         clean.
@@ -2278,7 +2278,7 @@ class History:
         """Whether the saved state can still be reached by walking this history.
 
         ``False`` after the case the warning earns its place for: undo past the
-        mark and then edit, and the redo is truncated — so the saved state stops
+        mark and then edit, and the redo is truncated -- so the saved state stops
         being reachable, and `dirty` will never go quiet again on its own.
         """
         return bool(self._lib.clausters_history_saved_reachable(self._handle))
@@ -2295,7 +2295,7 @@ class History:
 
     @property
     def undo_label(self) -> "str | None":
-        """What an undo would be called, for a menu item — and what a person
+        """What an undo would be called, for a menu item -- and what a person
         needs when one pile holds several structures, since the label is the
         only thing saying which one a keystroke is about to move."""
         return self._label(self._lib.clausters_history_undo_label)
@@ -2306,7 +2306,7 @@ class History:
         return self._label(self._lib.clausters_history_redo_label)
 
     def clear(self):
-        """Forget every entry, releasing what was spilled — what closing an
+        """Forget every entry, releasing what was spilled -- what closing an
         editing context leaves behind. The structures stay registered: it is the
         order that is gone, not the identities you still hold."""
         self._lib.clausters_history_clear(self._handle)
@@ -2361,7 +2361,7 @@ class Log:
 
     Undo belongs with the document and not with a view: a view's log sees only
     the gestures *it* made, so a script editing the arrangement, a second editor
-    or a re-render leaves it describing a document that has moved on — and undo
+    or a re-render leaves it describing a document that has moved on -- and undo
     then writes a state nobody was ever in. This is that history read in the
     arrangement's own terms, so there is one order however many surfaces edit.
 
@@ -2404,7 +2404,7 @@ class Log:
 
     @property
     def history(self) -> "History":
-        """The pile this log is a face of — what a caller composing several
+        """The pile this log is a face of -- what a caller composing several
         editable structures in one context reaches for."""
         return self._history
 
@@ -2420,8 +2420,8 @@ class Log:
         One call rather than two because the inverse has to be read out of the
         document *before* the edit lands: a surface that let you apply first and
         record second would let you record the wrong thing. Nothing is recorded
-        unless the document actually changed, so a refusal — stale or otherwise
-        — leaves no entry, and neither does a resend.
+        unless the document actually changed, so a refusal -- stale or otherwise
+        -- leaves no entry, and neither does a resend.
 
         Arguments are `Document.apply`'s, plus the document and ``label``: what
         an undo menu calls this. Returns the same outcome object; the document
@@ -2436,18 +2436,18 @@ class Log:
 
         The destructive case: a write's overwritten samples are not in the tree,
         so the caller reads the span it is about to write and hands the pair
-        over. This **applies nothing** — the write has already happened; what is
+        over. This **applies nothing** -- the write has already happened; what is
         recorded is how to put it back.
 
         Args:
-            forward: a step — ``{"edit": <intent>}``, or
+            forward: a step -- ``{"edit": <intent>}``, or
                 ``{"recompute": <params>}`` for a deterministic operation the
                 owner re-runs rather than replays. The second is what makes a
                 redo of a million-sample operation cost a few bytes.
             backward: the inverse, an ordinary intent.
             label: what an undo menu calls this.
             coalesce: merge into the entry before it when both touch the same
-                node the same way — a run of small adjustments becoming one
+                node the same way -- a run of small adjustments becoming one
                 undo. You decide, because only you know where the hand stopped.
         """
         # The key is the arrangement's own sentence, so it is asked of the
@@ -2467,7 +2467,7 @@ class Log:
         "others": […], "remaining": []}``, or ``None`` when there was nothing to
         undo; the document changed behind its handle. ``skipped`` names the
         entries the walk passed over because nothing can invert them. A leg that
-        belongs to another structure is left alone and reported in ``others`` —
+        belongs to another structure is left alone and reported in ``others`` --
         which a `Log` never sees unless somebody else registered a structure in
         the same history. ``remaining`` is `redo`'s and is always empty here: an
         inverse is always an edit, and the two directions answer the same shape
@@ -2483,7 +2483,7 @@ class Log:
         when there was nothing to redo. The ordinary edits are applied
         to the document and reported, so a redo is the same shape as an undo;
         ``remaining`` holds the steps from the first one the crate **cannot
-        perform** onward — a deterministic operation kept as its parameters,
+        perform** onward -- a deterministic operation kept as its parameters,
         which you re-run, because the crate holds no algorithms.
         """
         return self._step("redo", document, "redone")
@@ -2555,7 +2555,7 @@ class Log:
         return self._history.saved_reachable
 
     def clear(self):
-        """Forget everything, releasing what was spilled — what closing a
+        """Forget everything, releasing what was spilled -- what closing a
         document or loading another one leaves behind."""
         self._history.clear()
 
@@ -2656,7 +2656,7 @@ def white_noise(seed: int, n: int) -> array:
 
 def window(wintype: int, n: int) -> array:
     """`n` samples of smoothing window `wintype` (a `Window` value), **identical**
-    to the window the server's `FFT`/`IFFT` applies — so a client that pre-windows
+    to the window the server's `FFT`/`IFFT` applies -- so a client that pre-windows
     audio agrees with the server bit for bit. Periodic (DFT-even)."""
     out = array("f", bytes(4 * n))
     lib().clausters_core_window(int(wintype), _ptr(out), n)
@@ -2685,14 +2685,14 @@ def unix_to_sample(unix_secs: float, anchor_unix: float, anchor_sample: int, sam
 
 def quant_delay(pos: float, quant: float) -> float:
     """Beats to wait so a routine starts on the next ``quant`` boundary of a
-    grid currently at ``pos`` beats (``quant <= 0`` -> now) — the shared
+    grid currently at ``pos`` beats (``quant <= 0`` -> now) -- the shared
     quantization rule every client applies."""
     return lib().clausters_core_quant_delay(float(pos), float(quant))
 
 
 def bar(beats: float, quant: float) -> float:
     """The bar index ``beats`` falls in on a grid of ``quant`` beats per bar
-    (0-based; ``quant <= 0`` -> 0, no bar grid) — the display complement of
+    (0-based; ``quant <= 0`` -> 0, no bar grid) -- the display complement of
     `quant_delay` for reading a position off the grid."""
     return lib().clausters_core_bar(float(beats), float(quant))
 
@@ -2727,7 +2727,7 @@ def bark_to_hz(bark: float) -> float:
 
 def ntp_timetag(ntp_secs: float) -> int:
     """Raw NTP-scale seconds (any epoch) packed into the 64 timetag bits
-    (``seconds << 32 | fractional``, fraction **rounded**) — the one packing
+    (``seconds << 32 | fractional``, fraction **rounded**) -- the one packing
     rule shared with the core, so identical instants give identical bytes."""
     return lib().clausters_core_ntp_timetag(float(ntp_secs))
 
@@ -2741,7 +2741,7 @@ def unix_to_ntp(unix_secs: float) -> int:
 def degree_to_midinote(degree: float, octave: float, root: float, scale) -> float:
     """Scale-degree -> MIDI note number in the ``octave``/``root`` pitch space,
     wrapping degrees past the scale length with octave carry (floored division,
-    sclang semantics) — computed in the shared core so every client's `Event`
+    sclang semantics) -- computed in the shared core so every client's `Event`
     resolves pitch identically."""
     a, _ = _as_array(scale)
     return lib().clausters_core_degree_to_midinote(
@@ -2753,7 +2753,7 @@ def degree_to_midinote(degree: float, octave: float, root: float, scale) -> floa
 
 
 def rng_seed(seed: int) -> int:
-    """The initial state word for ``seed`` (splitmix64-mixed, never zero) —
+    """The initial state word for ``seed`` (splitmix64-mixed, never zero) --
     the same seeding as the server's ``WhiteNoise``. Hold the returned state
     and pass it to `rng_next_f64` / `rng_next_below`."""
     return lib().clausters_rng_seed(ctypes.c_uint64(seed).value)
@@ -2762,11 +2762,11 @@ def rng_seed(seed: int) -> int:
 class Rng:
     """A resumable seeded value stream over the core generator: uniform
     ``f64`` in [0, 1) and bounded integers. The state is one ``u64`` word (flat
-    data), so the same seed replays the same values in every client language —
+    data), so the same seed replays the same values in every client language --
     what the random patterns and the context RNG run on.
 
     Draws are serialized by a lock (ctypes releases the GIL during the call, so
-    a stream shared across threads — e.g. the ``main.rng`` fallback — must not
+    a stream shared across threads -- e.g. the ``main.rng`` fallback -- must not
     interleave state updates). `spawn` derives a child stream deterministically,
     the sclang-style inheritance a routine's generator is built from."""
 
@@ -2802,7 +2802,7 @@ class Rng:
         return items[self.next_below(len(items))]
 
     def spawn(self) -> "Rng":
-        """A child stream seeded from this one's next word — deterministic
+        """A child stream seeded from this one's next word -- deterministic
         derivation, so seeding a root context reproduces every stream created
         under it, in creation order."""
         return Rng(self._next_u64())
@@ -2813,7 +2813,7 @@ class Rng:
 
 class Scheduler:
     """The core's beat-ordered event queue (min time first, insertion order for
-    ties) behind a `TempoClock`. Only flat data crosses: beats and ``u64`` ids —
+    ties) behind a `TempoClock`. Only flat data crosses: beats and ``u64`` ids --
     the clock maps ids back to its routines. Free with `close` (``__del__`` is
     the backstop)."""
 
@@ -2867,7 +2867,7 @@ class Scheduler:
 # ---- the multitrack's time map ----
 
 
-#: The canonical value for a length measured on the **beat** axis — what
+#: The canonical value for a length measured on the **beat** axis -- what
 #: ``duration_unit`` answers, not something a caller has to import: an option
 #: that takes a unit takes the plain string (see `_unit`).
 BEATS = "beats"
@@ -2876,7 +2876,7 @@ SECONDS = "seconds"
 
 #: The spellings an option accepts for a unit. A stretch of beats and a stretch
 #: of seconds are different stretches under any tempo but a constant one, so
-#: which one a number is has to be *said* — and saying it is a string, the way
+#: which one a number is has to be *said* -- and saying it is a string, the way
 #: a shape or a ruler is, rather than a constant whose home has to be found.
 _UNITS = {"beats": BEATS, "seconds": SECONDS, "secs": SECONDS}
 
@@ -2970,7 +2970,7 @@ class TempoMap:
         return cls(_handle=handle)
 
     def copy(self) -> "TempoMap":
-        """An independent copy — a **fork**, for when two tempi should stop
+        """An independent copy -- a **fork**, for when two tempi should stop
         being one. Handing a map to a clock does not copy: a clock adopts what
         it is given, which is what lets two clocks read one multitrack."""
         return TempoMap(_handle=self._lib.clausters_tempomap_clone(self._handle))
@@ -2981,7 +2981,7 @@ class TempoMap:
 
         What a holder of a **shared** map compares to learn that something
         moved. Every reader re-evaluates from the map itself, so this is the
-        whole of what a second clock on one map needs — there is nothing to
+        whole of what a second clock on one map needs -- there is nothing to
         invalidate, only a wait to recompute.
         """
         return self._lib.clausters_tempomap_version(self._handle)
@@ -2989,7 +2989,7 @@ class TempoMap:
     def dump(self) -> str:
         """The map as JSON: its breakpoints, without the derived seconds.
 
-        A second is ``M(beats)``, the integral evaluated there — a cache, never
+        A second is ``M(beats)``, the integral evaluated there -- a cache, never
         authored. Writing it out would let a file assert a second its own
         tempi do not produce, so a stored map is its breakpoints and `load`
         replays them.
@@ -3008,7 +3008,7 @@ class TempoMap:
         to write: a ramp reaches the *next* entry, the default is prepended when
         the first entry is past beat 0, and no entries at all is the default
         alone. Each entry is ``{"beats", "tempo", "ramp"}`` with the tempo in
-        beats **per second** — a document writing beats per minute divides once,
+        beats **per second** -- a document writing beats per minute divides once,
         where it reads its own field.
 
         Raises `ValueError` for entries the crate will not take (out of order,
@@ -3042,7 +3042,7 @@ class TempoMap:
         return self._lib.clausters_tempomap_secs_at(self._handle, float(beats))
 
     def beats_at(self, secs: float) -> float:
-        """The beat falling on second ``secs`` — the inverse."""
+        """The beat falling on second ``secs`` -- the inverse."""
         return self._lib.clausters_tempomap_beats_at(self._handle, float(secs))
 
     def tempo_at(self, beats: float) -> float:
@@ -3075,7 +3075,7 @@ class TempoMap:
 
     def ramp(self, from_beats: float, to_beats: float, from_tempo: float, to_tempo: float):
         """Writes a tempo ramp over ``[from_beats, to_beats]``, and holds
-        ``to_tempo`` after it — an accelerando or a ritardando.
+        ``to_tempo`` after it -- an accelerando or a ritardando.
 
         Its length in seconds is a logarithm, not the average of the two tempos:
         that is what `span_secs` computes and what a hand-rolled division gets
@@ -3094,7 +3094,7 @@ class TempoMap:
 
     def shaped(self, from_beats: float, to_beats: float, from_tempo: float,
                to_tempo: float, curve="linear"):
-        """`ramp` in an explicit shape — ``"linear"`` (``"lin"``),
+        """`ramp` in an explicit shape -- ``"linear"`` (``"lin"``),
         ``"exponential"`` (``"exp"``) or a numeric curvature (0 is linear,
         positive starts slow, negative starts fast)."""
         number, curvature = _shape(curve)
@@ -3110,7 +3110,7 @@ class TempoMap:
         return self
 
     def env(self, at: float, tempos, extents, curves="linear", unit="beats"):
-        """**Writes a whole tempo envelope from beat ``at``** — one more tempo
+        """**Writes a whole tempo envelope from beat ``at``** -- one more tempo
         than extents, one shape per segment (one shape for all of them, or a
         list).
 
@@ -3118,7 +3118,7 @@ class TempoMap:
         tempo it reached holds. There is no sustain and no loop, which are a
         gate's ideas and a multitrack's tempo has no gate.
 
-        ``unit`` says what the extents measure — `BEATS` or `SECONDS`. In
+        ``unit`` says what the extents measure -- `BEATS` or `SECONDS`. In
         seconds each segment's width in beats is solved exactly rather than
         searched for, so an accelerando can be asked for by how long it lasts.
 
@@ -3151,7 +3151,7 @@ class TempoMap:
         return self
 
     def truncate_from(self, beats: float):
-        """Drops every breakpoint at or after ``beats`` (never the first) — what
+        """Drops every breakpoint at or after ``beats`` (never the first) -- what
         rewriting a stretch of the tempo takes."""
         self._lib.clausters_tempomap_truncate_from(self._handle, float(beats))
         return self
@@ -3179,7 +3179,7 @@ class TempoMap:
 
     def last(self):
         """The last segment's affine triple ``(base_beats, base_seconds,
-        tempo)`` — what a clock caches so reading *now* stays three float
+        tempo)`` -- what a clock caches so reading *now* stays three float
         operations with no search."""
         out = (ctypes.c_double * 3)()
         self._lib.clausters_tempomap_last(self._handle, out)
@@ -3202,8 +3202,8 @@ class TempoMap:
 
 
 class IdSpaces:
-    """**A client's id spaces** — node ids, audio buses, control buses,
-    buffers — sized from the server and sliced by a share
+    """**A client's id spaces** -- node ids, audio buses, control buses,
+    buffers -- sized from the server and sliced by a share
     (`clausters_ids_new`).
 
     The policy is the core's: the node table's client range, the audio buses
@@ -3270,7 +3270,7 @@ class IdSpaces:
 
 def ids_share_of(base: int, span: int, index: int, of: int) -> "tuple[int, int]":
     """The ``(base, span)`` of share ``index`` of ``of`` within ``span`` ids at
-    ``base`` — the core's slicing (`clausters_ids_share_of`)."""
+    ``base`` -- the core's slicing (`clausters_ids_share_of`)."""
     out = (ctypes.c_int64 * 2)()
     if lib().clausters_ids_share_of(int(base), max(0, int(span)), int(index), int(of), out) != 0:
         raise ValueError(f"id share {index} is outside a split of {of}")
@@ -3313,7 +3313,7 @@ class Registry:
             self._handle, int(first), max(1, int(width)))
 
     def contains(self, id_: int) -> bool:
-        """Whether ``id_`` falls in this registry's space — the filter for
+        """Whether ``id_`` falls in this registry's space -- the filter for
         foreign ``/node_end`` ids."""
         return bool(self._lib.clausters_registry_contains(self._handle, int(id_)))
 
@@ -3359,7 +3359,7 @@ class WidgetIds:
     A GUI namespace with two doors over one occupancy map. `alloc` is the
     anonymous lease a hand-built tree takes; `id_for` is asked for by naming the
     structure, the role and which one it is, and gives back the **same** number
-    for as long as that name keeps being drawn — which is what keeps an
+    for as long as that name keeps being drawn -- which is what keeps an
     edit-back in flight across a redraw from landing on the wrong widget.
 
     `begin` and `retire` are the draw cycle: what the draw did not ask for is
@@ -3376,7 +3376,7 @@ class WidgetIds:
         """A fresh drawer: the owner a `begin`/`retire` cycle names.
 
         One table serves a whole host, so a drawer is a value the table hands
-        out rather than one a caller invents — two clients inventing their own
+        out rather than one a caller invents -- two clients inventing their own
         would eventually pick the same number, and each would then retire the
         other's widgets by redrawing."""
         return self._lib.clausters_widgetids_owner(self._handle)
@@ -3405,7 +3405,7 @@ class WidgetIds:
 
     def id_of(self, structure: int, role: str, key: str) -> "int | None":
         """The id that draws ``(structure, role, key)`` **if it already has
-        one** — no minting, and no effect on the draw cycle."""
+        one** -- no minting, and no effect on the draw cycle."""
         role_p, role_n, _r = _u8(role)
         key_p, key_n, _k = _u8(key)
         wid = self._lib.clausters_widgetids_id_of(
@@ -3429,7 +3429,7 @@ class WidgetIds:
         """End ``owner``'s draw and take back every keyed id of that owner's it
         did not ask for, ascending.
 
-        The buffer is sized by `named`, which bounds what can be released — the
+        The buffer is sized by `named`, which bounds what can be released -- the
         C call refuses an under-sized one rather than losing ids, since retiring
         is destructive."""
         cap = int(self._lib.clausters_widgetids_named(self._handle))
@@ -3474,7 +3474,7 @@ class WidgetIds:
 
 def node_id_partition(max_nodes: int) -> dict:
     """The boot-derived partition of the node-id space for a node table of
-    ``max_nodes`` slots — the same formula the server applies, so the two
+    ``max_nodes`` slots -- the same formula the server applies, so the two
     agree by construction. Returns the keys ``client_base``,
     ``client_capacity``, ``auto_base``, ``auto_capacity``, ``midi_base``,
     ``midi_capacity``."""
@@ -3567,7 +3567,7 @@ def peaks_cache(samples, base_bucket: int = 256, channels: int = 1) -> bytes:
     OSC. `base_bucket` is the level-0 bucket size (default 256).
 
     With ``channels > 1`` the samples are interleaved frames and the result is
-    the **multichannel** cache — one resource holding a pyramid per channel, the
+    the **multichannel** cache -- one resource holding a pyramid per channel, the
     format the editor-grade waveform draws as stacked lanes."""
     a, _ = _as_array(samples)
     n = len(a)
@@ -3596,7 +3596,7 @@ def peaks_cache(samples, base_bucket: int = 256, channels: int = 1) -> bytes:
 
 def peaks_cache_update(cache: bytes, samples, start: int, frames: int) -> bytes:
     """Rewrites the part of a peak cache a **frame span** touches, returning the
-    new bytes — what keeps an editor's overview true after an edit without
+    new bytes -- what keeps an editor's overview true after an edit without
     re-summarizing the whole take.
 
     ``samples`` is the **whole** buffer as it now stands (interleaved), not the
@@ -3604,7 +3604,7 @@ def peaks_cache_update(cache: bytes, samples, start: int, frames: int) -> bytes:
     is identical to rebuilding the cache from the edited samples, so an
     updated overview and a fresh one cannot drift apart over a session.
 
-    Raises `ValueError` when the buffer is not the one the cache describes — an
+    Raises `ValueError` when the buffer is not the one the cache describes -- an
     edit that changed the *length* is a rebuild (`peaks_cache`), not an update.
     """
     a, _ = _as_array(samples)
@@ -3623,7 +3623,7 @@ def peaks_cache_empty(frames: int, channels: int = 1, base_bucket: int = 256) ->
     zero, ready to be filled by `peaks_cache_write_buckets` as the reports
     arrive.
 
-    It is `peaks_cache` with no samples to read, which is the point — building
+    It is `peaks_cache` with no samples to read, which is the point -- building
     one from a buffer of silence would allocate the take (230 MB for ten
     minutes of stereo) to summarize what nobody wrote."""
     size = lib().clausters_core_peaks_multi_cache_size(frames, channels, base_bucket)
@@ -3640,12 +3640,12 @@ def peaks_cache_empty(frames: int, channels: int = 1, base_bucket: int = 256) ->
 
 def peaks_cache_write_buckets(cache: bytes, start_frame: int, bucket: int, stats) -> bytes:
     """Folds a run of **already-summarized buckets** into a peak cache,
-    returning the new bytes — the receiving half of ``/buffer_stream``, which
+    returning the new bytes -- the receiving half of ``/buffer_stream``, which
     sends the overview of samples as it is written instead of the samples.
 
     ``stats`` is the reply's blob read as floats, **bucket-major and
     channel-minor**: for each bucket of ``bucket`` frames in order, for each
-    channel, ``min``, ``max`` and mean square — the pyramid's own three
+    channel, ``min``, ``max`` and mean square -- the pyramid's own three
     statistics in its own energy form, so nothing is converted here.
     ``start_frame`` is where the report begins on the buffer's own sample axis.
 
@@ -3653,7 +3653,7 @@ def peaks_cache_write_buckets(cache: bytes, start_frame: int, bucket: int, stats
     they belong and rebuilds the levels above them. So a client that never sees
     the samples ends up with the cache the samples would have built.
 
-    Raises `ValueError` when the report is on another grid than the cache — a
+    Raises `ValueError` when the report is on another grid than the cache -- a
     different bucket size, a start off a bucket boundary, a run past the end,
     or a length that is not whole buckets across every channel. A refused
     report changes nothing.
@@ -3672,7 +3672,7 @@ def peaks_cache_write_buckets(cache: bytes, start_frame: int, bucket: int, stats
 def correlation(left, right) -> float | None:
     """The stereo **correlation** (Pearson's r) of two equal-length channels,
     in ``[-1, 1]``: ``+1`` mono/in-phase, ``0`` decorrelated, ``-1`` anti-phase
-    (the mix cancels in mono) — the same measurement the GUI phasescope shows,
+    (the mix cancels in mono) -- the same measurement the GUI phasescope shows,
     computed by the shared native core so a headless analysis reads the identical
     number. Returns ``None`` when it is undefined: the inputs are empty or a
     channel is constant (silence or pure DC)."""
@@ -3687,12 +3687,12 @@ def correlation(left, right) -> float | None:
 
 def true_peak(samples, channels: int = 1, channel: int = 0) -> float:
     """The **true peak** of one channel of an interleaved buffer, in linear
-    amplitude — the *reconstructed* peak rather than the largest sample.
+    amplitude -- the *reconstructed* peak rather than the largest sample.
 
     A signal whose samples all read below full scale can still reconstruct above
     it, by up to about 3 dB, and every converter sees that peak. The filter is
     the one ITU-R BS.1770-4 Annex 2 specifies, at 4×, which is what makes a
-    reading dBTP — so this is the number a delivery specification means when it
+    reading dBTP -- so this is the number a delivery specification means when it
     asks for one. It is never below the peak `clausters.ipc.channel_stats`
     reports, and the two together are the whole of "did this clip": one says
     what the samples reached, this says what the signal did between them."""
@@ -3730,7 +3730,7 @@ def loudness(samples, channels: int, rate: float,
 def lissajous(left, right) -> list[tuple[float, float]]:
     """The **Lissajous / goniometer** coordinates of stereo pairs ``(left,
     right)``: each pair maps to ``(x, y)`` where ``x`` is the side component
-    ``(L - R)/√2`` and ``y`` the mid ``(L + R)/√2`` — the 45°-rotated stereo
+    ``(L - R)/√2`` and ``y`` the mid ``(L + R)/√2`` -- the 45°-rotated stereo
     plane a goniometer draws (mono reads vertical, anti-phase horizontal). The
     geometry lives once in the shared core; useful for plotting or driving a
     stereo image in electroacoustic work, not only for the GUI phasescope.
@@ -3757,7 +3757,7 @@ def _ws_error(handle_lib) -> str:
 
 class WsClient:
     """A WebSocket client connection backed by the native core (clausters-ffi,
-    ``tungstenite``) — the **same** WebSocket implementation the server's
+    ``tungstenite``) -- the **same** WebSocket implementation the server's
     ``--ws`` listener uses, reached by ctypes like the shm/embed handles. OSC
     packets cross as whole binary messages; the handshake and framing live in
     Rust, not here, so there is no second implementation to maintain.
@@ -3802,7 +3802,7 @@ class WsClient:
 
 # ---- the shared-memory segment ----------------------------------------------
 #
-# A peer maps the file with `mmap` — that part is Python's — and asks the core
+# A peer maps the file with `mmap` -- that part is Python's -- and asks the core
 # for everything else: where each region is, the directory's seqlock, the ring
 # framing, the name a region file carries. What used to live here instead was a
 # transcription of the layout, which is how this binding came to declare 1024
@@ -3820,7 +3820,7 @@ def shm_shape(address: int, length: int) -> "ShmShape | None":
 
 def shm_segment_size(control_buses: int, audio_buses: int, taps: int,
                      tap_frames: int, buffers: int) -> int:
-    """How big a segment carrying these counts is — what a peer sizes a file to
+    """How big a segment carrying these counts is -- what a peer sizes a file to
     before creating one."""
     return lib().clausters_core_shm_segment_size(control_buses, audio_buses, taps,
                                                 tap_frames, buffers)
@@ -3841,8 +3841,8 @@ def shm_init(address: int, length: int, control_buses: int, audio_buses: int,
 
 def shm_buffer_info(address: int, length: int,
                     bufnum: int) -> "tuple[int, int, int, float] | None":
-    """What the directory says buffer `bufnum` is — ``(generation, frames,
-    channels, sample_rate)`` — read under the generation twice, so a row caught
+    """What the directory says buffer `bufnum` is -- ``(generation, frames,
+    channels, sample_rate)`` -- read under the generation twice, so a row caught
     mid-write is re-read rather than believed. ``None`` when the slot is empty.
     """
     generation = ctypes.c_uint64()
@@ -3870,7 +3870,7 @@ def shm_region_suffix(bufnum: int, generation: int) -> str:
 
 def shm_push(address: int, length: int, role: int, peer: int, packet: bytes) -> bool:
     """Pushes one OSC packet into the segment's outbound ring, tagged for
-    `peer`. ``False`` means the ring is momentarily full — backpressure, and the
+    `peer`. ``False`` means the ring is momentarily full -- backpressure, and the
     caller may retry, since nothing was dropped."""
     data = (ctypes.c_uint8 * len(packet)).from_buffer_copy(packet)
     rc = lib().clausters_core_shm_push(

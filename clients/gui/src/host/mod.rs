@@ -1,8 +1,8 @@
 //! The GUI host: an OSC front with a widget command interpreter.
 //!
 //! `clausters-gui` is **two roles in one process**: a *GUI host* for the
-//! language clients — it owns the windows, the widgets and the GPU, and speaks
-//! the `/gui_*` widget protocol — and a *client of the audio server* — it reads
+//! language clients -- it owns the windows, the widgets and the GPU, and speaks
+//! the `/gui_*` widget protocol -- and a *client of the audio server* -- it reads
 //! buffers/buses/the node tree and sends control, exactly as the Python client
 //! does. This module is the host proper: the widget [`Registry`], the typed tree
 //! it holds, and the transport-agnostic command loop that interprets
@@ -17,7 +17,7 @@
 //! (`src/osc/{server,tcp,ws}.rs`): that code is tangled with the audio
 //! `ServerState`, the engine wake and the IPC ring, so lifting it would drag
 //! server concerns into this crate for no gain. Instead the host **links
-//! `clausters-core`** — a path dependency that pulls only `rosc` — for the shared
+//! `clausters-core`** -- a path dependency that pulls only `rosc` -- for the shared
 //! OSC seam (the single [`clausters_core::osc::decode_packet`] door, plus
 //! encode/bundle/message), and owns a **thin transport front** of its own
 //! ([`transport`]). The default build links no server code; only the optional
@@ -25,14 +25,14 @@
 //! embedded server (`embed`).
 //!
 //! That front now carries UDP and TCP ([`tcp`]) together on one port, plus an
-//! opt-in WebSocket leg ([`ws`]) — all behind one [`ClientId`] and
+//! opt-in WebSocket leg ([`ws`]) -- all behind one [`ClientId`] and
 //! reply seam, which is the seam's whole point: each carrier was added without
 //! touching the protocol or this command loop, and the next one should be too.
 //! The client leg ([`client::ServerLeg`]) reuses that same encode door, so the
 //! gui talks to the audio server with one encoder, not a parallel one.
 
 // The platform-agnostic core: the widget/protocol logic, web-portable (it
-// compiles for `wasm32` unchanged). No sockets, no filesystem, no GPU bring-up —
+// compiles for `wasm32` unchanged). No sockets, no filesystem, no GPU bring-up --
 // every such coupling lives behind a trait whose impl is in the native shell
 // below.
 //
@@ -40,12 +40,12 @@
 // says after the platform seam: what the wire means, what draws, what a pass
 // does, and the vocabulary all three read. A module stays flat here when the
 // *whole host* reads it, and goes in a directory when only its own consumers
-// do — which is why `paint` and `metrics` are files while the models are a
+// do -- which is why `paint` and `metrics` are files while the models are a
 // tree.
 
 // The protocol and the tree it holds: the generic document, the ids, the typed
 // schema the renderer reads, the leaves behind the trait, and the two places a
-// widget's value can go instead of the script — plus the voices the host plays
+// widget's value can go instead of the script -- plus the voices the host plays
 // on an element's behalf, which are its own and not the element's.
 pub mod ack;
 pub mod bind;
@@ -55,13 +55,13 @@ pub mod bind;
 // other half, and it compiles out of a release below the warning level.
 pub mod diag;
 // The host-wide clipboard: one typed document plus the bulk it names. Here
-// rather than with the elements because it is nobody's — one clipboard serves
+// rather than with the elements because it is nobody's -- one clipboard serves
 // every field, roll and view of every window.
 pub mod clipboard;
 pub mod document;
 pub mod elements;
 pub mod guidef;
-// Which of a container's layered contents a hand is editing — the one rule
+// Which of a container's layered contents a hand is editing -- the one rule
 // that decides between claimants over the same pixels, read by the drawing,
 // the press and the wire alike.
 // The vertical axis: the stack of bands a timeline view places its boxes on --
@@ -120,7 +120,7 @@ pub mod world;
 pub mod fetch;
 pub mod live;
 
-// Booting a persisted bundle over the wire — the ordering/encoding half of the
+// Booting a persisted bundle over the wire -- the ordering/encoding half of the
 // browser standalone path, platform-agnostic and natively unit-tested (the
 // fetching half is page JS).
 pub mod bundle;
@@ -217,11 +217,11 @@ pub use widget::{Widget, WidgetKind};
 pub enum ClientId {
     /// A UDP datagram source (the native server front).
     Udp(SocketAddr),
-    /// A TCP connection on the native server front, by connection id —
+    /// A TCP connection on the native server front, by connection id --
     /// length-prefixed frames, replies routed back on the same connection.
     Tcp(u64),
     /// A WebSocket connection on the native server front (`--ws`), by
-    /// connection id — one OSC packet per binary message, replies routed back
+    /// connection id -- one OSC packet per binary message, replies routed back
     /// on the same connection. The browser's carrier into a native host.
     Ws(u64),
     /// The browser's in-page binding surface (the wasm front feeds OSC packets
@@ -241,7 +241,7 @@ impl std::fmt::Display for ClientId {
 }
 
 /// A source of live control-bus values for the meter/scope views (see
-/// [`BusSource`] below) — kept near the other platform seams.
+/// [`BusSource`] below) -- kept near the other platform seams.
 ///
 /// Where the host's client leg points: a UDP audio server (the normal case), an
 /// in-process embedded server (standalone, the `standalone` feature), or a
@@ -333,7 +333,7 @@ impl ServerLink {
         }
     }
 
-    /// The in-process session behind this link, if any — polled for replies
+    /// The in-process session behind this link, if any -- polled for replies
     /// exactly as the embedded server is.
     #[cfg(feature = "standalone")]
     pub fn session(&self) -> Option<&embed::EmbedSession> {
@@ -403,12 +403,12 @@ pub trait BulkLoader {
     ) -> Option<crate::waveform::WaveformData>;
 
     /// Resolves a plot's local `path` of raw `f32` to its samples, kept
-    /// interleaved (`channels` only trims a trailing partial frame — the plot
+    /// interleaved (`channels` only trims a trailing partial frame -- the plot
     /// draws every channel). `None` on an unsupported platform or an I/O error.
     fn plot_samples(&self, path: &Path, channels: usize) -> Option<std::sync::Arc<[f32]>>;
 
     /// Reads a local `path` of raw little-endian `f32` into its de-interleaved
-    /// channels (all of them) — the spectrogram's row source; each channel is
+    /// channels (all of them) -- the spectrogram's row source; each channel is
     /// analyzed separately. `None` on an unsupported platform or an I/O error.
     fn raw_channels(&self, path: &Path, channels: usize) -> Option<Vec<Vec<f32>>>;
 
@@ -418,12 +418,12 @@ pub trait BulkLoader {
     fn file_bytes(&self, path: &Path) -> Option<Vec<u8>>;
 }
 
-/// Where the host's **typeface** comes from — the fifth platform seam, and the
+/// Where the host's **typeface** comes from -- the fifth platform seam, and the
 /// one that only exists when the crate was built with a rasterizer (the
 /// `font-atlas` feature).
 ///
 /// A face is bytes, and every platform has its own way of reaching them: a
-/// native host maps a file (`fontfile::FontFile` — one the command line names,
+/// native host maps a file (`fontfile::FontFile` -- one the command line names,
 /// or one of the system's), a page fetches a URL and pushes what came back
 /// (`web::FetchedFace`). Above the seam neither is named: the host asks
 /// for bytes once ([`Host::load_face`]) and every window draws with them.
@@ -447,7 +447,7 @@ pub trait BusSource: Send + Sync {
     fn control(&self, index: usize) -> f32;
 
     /// Fills `out` with the newest raw samples of **audio bus** `bus` (newest
-    /// last), returning `false` when this source has none for it — the
+    /// last), returning `false` when this source has none for it -- the
     /// default. Where those samples physically live is this source's business:
     /// the shared-memory segment looks the bus up in the server's directory
     /// and reads that ring lock-free, the browser reads its `/bus_tapStream.reply` store.
@@ -457,12 +457,12 @@ pub trait BusSource: Send + Sync {
     }
 
     /// [`read_bus`](Self::read_bus), plus **where the window ends in the bus's
-    /// own stream** — the count of samples the engine has ever written to it.
+    /// own stream** -- the count of samples the engine has ever written to it.
     ///
     /// The newest window alone cannot be retained: two ticks read overlapping
     /// windows, and how much they overlap depends on the frame rate, so
     /// appending them would stretch or compress the history. The position is
-    /// what makes the append exact — a retainer keeps the last one it saw and
+    /// what makes the append exact -- a retainer keeps the last one it saw and
     /// takes only the samples past it. `None` where the source has no window
     /// for the bus, or carries no position (nothing is retained then, rather
     /// than something wrong being retained).
@@ -472,14 +472,14 @@ pub trait BusSource: Send + Sync {
 
     /// The largest window this source can serve in **one** read (0 = it does
     /// not say). A reader asking for more than this gets nothing back, which is
-    /// silence that looks exactly like a bus nobody is writing — so a retaining
+    /// silence that looks exactly like a bus nobody is writing -- so a retaining
     /// read sizes itself by this rather than by a duration it picked.
     fn window_limit(&self) -> usize {
         0
     }
 
-    /// Audio bus `bus`'s published level — the peak of the engine's last
-    /// block, held with a decay — or `0.0` where this source has none. What a
+    /// Audio bus `bus`'s published level -- the peak of the engine's last
+    /// block, held with a decay -- or `0.0` where this source has none. What a
     /// meter draws; it needs no recording, so it costs no tap.
     fn level(&self, _bus: i32) -> f32 {
         0.0
@@ -523,7 +523,7 @@ pub trait BusSource: Send + Sync {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum HeadClock {
     /// The device clock: samples processed since boot, never stopping. What a
-    /// host attached to a live server wants — its meters, scopes and taps are
+    /// host attached to a live server wants -- its meters, scopes and taps are
     /// all on that axis.
     #[default]
     Device,
@@ -538,7 +538,7 @@ pub const GUI_DEF: &str = "/gui_def";
 pub const GUI_SET: &str = "/gui_set";
 pub const GUI_FREE: &str = "/gui_free";
 pub const GUI_QUERY: &str = "/gui_query";
-/// `/gui_ack <seq> <docVersion> [<source> <generation>…] [<reason>]` — the
+/// `/gui_ack <seq> <docVersion> [<source> <generation>…] [<reason>]` -- the
 /// owner's answer to the edits this host emitted.
 ///
 /// The reply `/gui_event` never had. Everything else the host asks has one
@@ -547,8 +547,8 @@ pub const GUI_QUERY: &str = "/gui_query";
 /// what the hand did, forever.
 ///
 /// It is a verb rather than a property because it is scoped to the
-/// **conversation** and not to the tree — `seq` is per client, so two clients
-/// driving one window would collide on a single prop — and because it does not
+/// **conversation** and not to the tree -- `seq` is per client, so two clients
+/// driving one window would collide on a single prop -- and because it does not
 /// round-trip, which is what a property has to do here. It rides in the same
 /// bundle as the value pushes it accompanies, after them, and it is sent
 /// **always**, including when nothing changed: that is exactly what a refusal
@@ -556,33 +556,33 @@ pub const GUI_QUERY: &str = "/gui_query";
 pub const GUI_ACK: &str = "/gui_ack";
 pub const GUI_BIND: &str = "/gui_bind";
 pub const GUI_LOAD: &str = "/gui_load";
-/// `/gui_font <blob>` — the typeface every window draws text with, handed over
+/// `/gui_font <blob>` -- the typeface every window draws text with, handed over
 /// after launch.
 ///
-/// A face is bytes on both fronts — a native host maps a file, a page fetches a
-/// URL — so *reaching* them is the platform's and *when they may be handed
+/// A face is bytes on both fronts -- a native host maps a file, a page fetches a
+/// URL -- so *reaching* them is the platform's and *when they may be handed
 /// over* is not. Without this verb the browser could change its face at runtime
 /// through the raw binding and a window could only take one at launch
 /// (`--font`), which is a wasm export growing surface the protocol never had.
 ///
 /// It carries no id: a face is a property of the **host**, not of a window (the
 /// size table never followed the typeface), which is also what makes a late
-/// hand-over safe — nothing relayouts, every open window simply redraws.
+/// hand-over safe -- nothing relayouts, every open window simply redraws.
 pub const GUI_FONT: &str = "/gui_font";
-/// `/gui_theme <json>` — the colors this **host** draws its chrome from, handed
+/// `/gui_theme <json>` -- the colors this **host** draws its chrome from, handed
 /// over after launch.
 ///
 /// The same partial `{"role": "#rrggbb[aa]"}` table a container's `theme` prop
 /// takes, scoped to the host instead of to a subtree: the base every theme
-/// group is resolved over. It carries no id for that reason — a look is a
+/// group is resolved over. It carries no id for that reason -- a look is a
 /// property of the host, exactly as a typeface is.
 ///
 /// Without it the browser front could re-theme at runtime through the raw
 /// binding while a native one could only take a table at launch (`--theme
 /// file.toml`, `[gui.theme]`), which is a wasm export growing surface the
-/// protocol never had — the case `/gui_font` already answered once.
+/// protocol never had -- the case `/gui_font` already answered once.
 pub const GUI_THEME: &str = "/gui_theme";
-/// `/gui_metrics <json>` — the sizes this **host** lays out with, handed over
+/// `/gui_metrics <json>` -- the sizes this **host** lays out with, handed over
 /// after launch.
 ///
 /// The theme's counterpart for lengths: a partial `{"role": number}` table over
@@ -590,7 +590,7 @@ pub const GUI_THEME: &str = "/gui_theme";
 /// the reserved `scale` key regenerating the whole set at a density. Same
 /// reasoning, same shape, same absence before this verb.
 pub const GUI_METRICS: &str = "/gui_metrics";
-/// `/gui_headClock <"device"|"transport">` — which of the engine's counters every
+/// `/gui_headClock <"device"|"transport">` -- which of the engine's counters every
 /// playhead in this **host** is drawn from.
 ///
 /// The third of the host-wide verbs, and here for the reason the other two
@@ -598,7 +598,7 @@ pub const GUI_METRICS: &str = "/gui_metrics";
 /// say it at all, so a script driving a multitrack had no way to ask for the
 /// only counter that means anything to an editor.
 ///
-/// `device` is the sample clock, which never stops — what a host watching a
+/// `device` is the sample clock, which never stops -- what a host watching a
 /// live server wants, since its meters, scopes and taps are all on that axis.
 /// `transport` is the transport's **position**: it holds while it is
 /// stopped, jumps wherever `/transport_locate` puts it and wraps at a loop's
@@ -620,7 +620,7 @@ pub const GUI_CLOSED: &str = "/gui_closed";
 pub enum HostEffect {
     /// Send this message back to the requesting client.
     Reply(OscMessage),
-    /// Open the window for the GuiDef rooted at this id — **or bring the one it
+    /// Open the window for the GuiDef rooted at this id -- **or bring the one it
     /// already has up to this tree**, which is what most of these are: a
     /// redefine is how a structural edit reaches a window, and destroying the
     /// window to answer one is not a redraw. A front rebuilds the def's own
@@ -637,7 +637,7 @@ pub enum HostEffect {
 /// [`handle_packet`](Self::handle_packet) and [`HostEffect`].
 pub struct Host {
     registry: Registry,
-    /// Typed widget trees for window-rooted defs, by def id — the renderable
+    /// Typed widget trees for window-rooted defs, by def id -- the renderable
     /// documents the windowed front builds windows from. Non-window roots live
     /// only in the generic registry.
     window_defs: HashMap<i32, Widget>,
@@ -648,7 +648,7 @@ pub struct Host {
     /// widget -- ever names a recording ring.
     watched_buses: Vec<i32>,
     /// The `/buffer_stream` subscription this host currently holds, as
-    /// `(buffers, bucket)` — empty for none.
+    /// `(buffers, bucket)` -- empty for none.
     ///
     /// One subscription covers every view of every window (the server keeps one
     /// per client and replaces it on each call), so what is kept here is the
@@ -675,7 +675,7 @@ pub struct Host {
     /// a shared segment, mapped read/write.
     ///
     /// Present when the host was pointed at a segment whose samples it may
-    /// touch — its own session's, or an external server's `--shm` path. With
+    /// touch -- its own session's, or an external server's `--shm` path. With
     /// it a take is drawn from memory rather than fetched, and a stroke is a
     /// store rather than a `/buffer_setRangeChannel`; without it both go over
     /// the wire exactly as they always have, which is what every remote client
@@ -686,7 +686,7 @@ pub struct Host {
     /// (`/gui_bind`). A bound widget bypasses the script: its value goes
     /// straight to the audio server instead of emitting a `/gui_event`.
     bindings: HashMap<i32, Binding>,
-    /// The verbatim `/gui_def` JSON per def id — the source of truth for
+    /// The verbatim `/gui_def` JSON per def id -- the source of truth for
     /// persistence (a GuiDef with a `name` is saved as-is) and for replaying a
     /// `/gui_load`.
     def_json: HashMap<i32, Vec<u8>>,
@@ -703,7 +703,7 @@ pub struct Host {
     /// `/synth_new`, the release the `gate 0`; the def frees the node itself,
     /// and its id comes back on the `/node_end` that says so.
     voices: HashMap<i32, Vec<(i32, i32)>>,
-    /// **The ids this host allocates on the server it plays through** — every
+    /// **The ids this host allocates on the server it plays through** -- every
     /// node, control bus and buffer it makes, by the one policy every client
     /// allocates by ([`ids`]).
     ids: clausters_core::ids::IdSpaces,
@@ -714,11 +714,11 @@ pub struct Host {
     /// The take the **monitor** is loaded with (see [`play`]). One take at a
     /// time, so this is one entry and not a list.
     playing: Option<play::Monitor>,
-    /// **What the multitrack is playing through** — the instance, the handle tables
+    /// **What the multitrack is playing through** -- the instance, the handle tables
     /// and the allocators a standalone host keeps as any other endpoint does
     /// ([`instance`]).
     instance: instance::Playing,
-    /// Whether this host **drives the server's transport** — whether it is the
+    /// Whether this host **drives the server's transport** -- whether it is the
     /// one that bound the governed group (`play::take_group_messages`).
     ///
     /// It is what separates a host that owns its playback from one that is a
@@ -729,21 +729,21 @@ pub struct Host {
     owns_transport: bool,
     /// **What the host has emitted and not heard back about**, plus the stamps
     /// it issues (see [`ack`]). Behind a `RefCell` because stamping happens
-    /// where an edit is *produced* — deep inside the gesture machine, which
-    /// holds the tree immutably at that point — and a second implementation at
+    /// where an edit is *produced* -- deep inside the gesture machine, which
+    /// holds the tree immutably at that point -- and a second implementation at
     /// the two fronts is exactly what the one-gesture-machine rule forbids.
     pub outbox: std::cell::RefCell<ack::Outbox>,
     /// **What each window has said**: the status bar's lines, per def id (see
     /// [`status`]). Behind a `RefCell` for the reason
-    /// [`outbox`](Self::outbox) is — a line is written where an edit is
-    /// *produced*, with the tree borrowed immutably — and beside it because
+    /// [`outbox`](Self::outbox) is -- a line is written where an edit is
+    /// *produced*, with the tree borrowed immutably -- and beside it because
     /// they are fed by the same two events: an edit going out, and the
     /// acknowledgement coming back.
     status: std::cell::RefCell<HashMap<i32, status::Status>>,
     /// The document this host owns, when it is its own owner.
     ///
     /// `None` is every host driven by a script: a gesture emits and waits, and
-    /// the script answers. `Some` is the **third writer** — a standalone
+    /// the script answers. `Some` is the **third writer** -- a standalone
     /// editor, which has no script to wait for and must apply its own intents
     /// (`document::Owner`).
     pub owner: Option<document::Owner>,
@@ -754,10 +754,10 @@ pub struct Host {
     /// that replay a client's recorded exchange against it.
     #[cfg(test)]
     pub(crate) exchange: instance::Exchange,
-    /// The host's color roles — one look per host, every paint site reads it
+    /// The host's color roles -- one look per host, every paint site reads it
     /// (see [`theme`]).
     pub theme: theme::Theme,
-    /// The host's size roles in **logical** pixels — one density per host, the
+    /// The host's size roles in **logical** pixels -- one density per host, the
     /// table the config declares (see [`metrics`]). A window paints with its
     /// own resolution of it, from [`metrics_for`](Self::metrics_for), so
     /// changing this table once windows exist means calling
@@ -766,35 +766,35 @@ pub struct Host {
     /// The antialiasing every window this host opens is drawn with: the MSAA
     /// sample count of its render pass (`1` = none, the default). Like
     /// [`theme`](Self::theme) and [`metrics`](Self::metrics) it is one setting
-    /// per host that the *shell* consumes — a window reads it when its GPU
+    /// per host that the *shell* consumes -- a window reads it when its GPU
     /// comes up, and a window already open keeps the pass it was built with,
     /// since every pipeline in a pass agrees on the count.
     pub msaa: u32,
     /// **How much recorded audio a picture waits for** before it re-reads
-    /// its summary, in seconds (`--follow-block`, default `0` — every frame).
+    /// its summary, in seconds (`--follow-block`, default `0` -- every frame).
     ///
     /// A recording announces nothing: the host reads the buffer's write
     /// frontier and re-summarizes what appeared. That work is the **block's**,
-    /// not the take's — the summary of a span touches the buckets over it and
-    /// their parents — so following at the frame is what the picture should
+    /// not the take's -- the summary of a span touches the buckets over it and
+    /// their parents -- so following at the frame is what the picture should
     /// do, and does. The number is here for the case where it should not: a
     /// bigger block is cheaper and choppier, and neither the sound nor a
     /// playhead over it reads this.
     ///
     /// It was one second, and the second was paying for a **copy**. A slot
     /// holds the pyramid it draws, so a refresh could not write in place and
-    /// copied the whole take first — a cost that does not shrink with the
+    /// copied the whole take first -- a cost that does not shrink with the
     /// block, which is why the block had to grow instead. The slot gives the
     /// samples back before the write now
     /// ([`crate::waveform::WaveformView::release_data`]), so what a step costs
     /// is the step.
     pub follow_block: f64,
-    /// The resolved (physical) metrics of each window, by def id — this table
+    /// The resolved (physical) metrics of each window, by def id -- this table
     /// at that window's `ui_scale`. Written when a shell reports a scale
     /// ([`set_ui_scale`](Self::set_ui_scale)), which is the only side that may
     /// know one: the core never reads a platform API. Absent = scale 1.
     resolved_metrics: HashMap<i32, metrics::Metrics>,
-    /// The widget currently receiving keystrokes, as `(def_id, widget_id)` —
+    /// The widget currently receiving keystrokes, as `(def_id, widget_id)` --
     /// **one focus per host**, not one per window, because there is one
     /// keyboard.
     ///
@@ -872,7 +872,7 @@ impl Host {
     /// One question, asked by one caller: the browser shell, which must move
     /// the keyboard to a hidden editable element while a field is being typed
     /// into and give it back to the canvas otherwise. The native front needs
-    /// none of this — winit composes for it — so the answer lives here rather
+    /// none of this -- winit composes for it -- so the answer lives here rather
     /// than in either shell.
     pub fn focus_takes_text(&self, def_id: i32) -> bool {
         self.focused
@@ -909,7 +909,7 @@ impl Host {
         self
     }
 
-    /// Attaches (or replaces) the server link in place — for a front that learns
+    /// Attaches (or replaces) the server link in place -- for a front that learns
     /// its audio server after construction (the browser connecting a WebSocket
     /// leg on demand).
     pub fn set_server_link(&mut self, link: ServerLink) {
@@ -953,7 +953,7 @@ impl Host {
     /// the owner of the document those takes belong to (its own session's
     /// samples, or a server it was explicitly pointed at). A host that is a
     /// guest on somebody else's document keeps sending intents and waiting for
-    /// the acknowledgement — that machinery answers *may I*, and this changes
+    /// the acknowledgement -- that machinery answers *may I*, and this changes
     /// only how the samples get there.
     #[cfg(unix)]
     pub fn set_shared_buffers(&mut self, samples: mapped::SharedBuffers) {
@@ -972,7 +972,7 @@ impl Host {
         self.player = Some(link);
     }
 
-    /// The player, only when one was attached apart from the server leg — the
+    /// The player, only when one was attached apart from the server leg -- the
     /// link whose replies a front reads on its own.
     pub fn player_link(&self) -> Option<&ServerLink> {
         self.player.as_ref()
@@ -992,13 +992,13 @@ impl Host {
     }
 
     /// Loads the typeface `source` offers, if it offers one and the rasterizer
-    /// reads it — returning whether text now draws through the glyph atlas.
+    /// reads it -- returning whether text now draws through the glyph atlas.
     ///
     /// It is the host that asks, and it asks **once**: a face is a property of
     /// the build (one `--font`, one fetched URL), not of a window, so every
     /// window that opens afterwards draws with it and no size table changes.
-    /// A refusal is silent to the drawing code — the bitmap face keeps
-    /// drawing — and the caller logs it.
+    /// A refusal is silent to the drawing code -- the bitmap face keeps
+    /// drawing -- and the caller logs it.
     #[cfg(feature = "font-atlas")]
     pub fn load_face(&mut self, source: &dyn FontSource) -> bool {
         source
@@ -1011,7 +1011,7 @@ impl Host {
         self.store.as_deref()
     }
 
-    /// The ids of the currently-defined window GuiDefs — for the standalone
+    /// The ids of the currently-defined window GuiDefs -- for the standalone
     /// front to open a pre-loaded def on resume, and for a pass that has to
     /// visit every tree (a broadcast the host is a consumer of rather than the
     /// addressee of).
@@ -1061,7 +1061,7 @@ impl Host {
     /// reaches whoever *asked* for the stitch. When a **client** owns the multitrack
     /// it is the client that sends it, and the host hears about that buffer
     /// only as the write the server announces to everyone else
-    /// (`/buffer_touched`) — which is the same news under another name, and is
+    /// (`/buffer_touched`) -- which is the same news under another name, and is
     /// what makes a join drawn by a client's window fill in rather than stay
     /// the empty box the first ask answered with.
     pub fn forget_take(&mut self, bufnum: i32) -> Vec<i32> {
@@ -1077,7 +1077,7 @@ impl Host {
     /// The size table window `def_id` lays out and paints with: this host's
     /// logical [`metrics`](Self::metrics) resolved to that window's physical
     /// pixels. Every layout, paint and hit-test site of a window reads *this*
-    /// one, never the logical table — a document can sit on a HiDPI screen
+    /// one, never the logical table -- a document can sit on a HiDPI screen
     /// while another sits on an ordinary one.
     pub fn metrics_for(&self, def_id: i32) -> &metrics::Metrics {
         self.resolved_metrics.get(&def_id).unwrap_or(&self.metrics)
@@ -1089,7 +1089,7 @@ impl Host {
     ///
     /// The scale is the shell's to write and the core's to obey: natively it is
     /// winit's `scale_factor` (re-armed on `ScaleFactorChanged`), in the browser
-    /// the page's `devicePixelRatio` — a platform reading this core may not
+    /// the page's `devicePixelRatio` -- a platform reading this core may not
     /// make, which is exactly why it arrives through this door.
     pub fn set_ui_scale(&mut self, def_id: i32, ui_scale: f32) -> bool {
         let next = self.metrics.resolved(ui_scale);
@@ -1141,7 +1141,7 @@ impl Host {
     }
 
     /// The inner size window `id` asks its shell for, in **logical** pixels:
-    /// what its `w`/`h` declared, or — when it carries `hug` — what its content
+    /// what its `w`/`h` declared, or -- when it carries `hug` -- what its content
     /// wants ([`Widget::hug_size`]) on the axes where that composition is
     /// defined, keeping the declared number on the others.
     ///
@@ -1149,11 +1149,11 @@ impl Host {
     /// the space a window's size is declared in and resolving at scale 1 is the
     /// identity; the window's own `ui_scale` is the shell's business and only
     /// exists once the window does. Which is exactly why a hugging window is
-    /// asked **twice** — see [`window_size_px`](Self::window_size_px), the
+    /// asked **twice** -- see [`window_size_px`](Self::window_size_px), the
     /// exact answer once there is a scale to resolve against.
     ///
     /// A shell with a window of its own reads this when it creates one. In a
-    /// page there is none — the element owns its box and reports its pixels —
+    /// page there is none -- the element owns its box and reports its pixels --
     /// so the browser front lays the same tree out inside whatever box it is
     /// given, and only the *containers* inside it hug. That is a platform
     /// truth, not a fork: the composition is identical in both builds.
@@ -1162,13 +1162,13 @@ impl Host {
     }
 
     /// The inner size a **hugging** window wants in **physical** pixels, at its
-    /// own resolved size table — `None` for a window that declares its size, so
+    /// own resolved size table -- `None` for a window that declares its size, so
     /// a shell only resizes what asked to be fitted.
     ///
     /// The second half of one question. A window is created before anything
     /// knows what display it landed on, so the first answer is measured in the
     /// logical table; the resolved table then **snaps every role to a whole
-    /// pixel**, and on a fractional scale the two disagree by a pixel or two —
+    /// pixel**, and on a fractional scale the two disagree by a pixel or two --
     /// enough for a label measured one way and drawn the other to ellipsize
     /// inside the box that was supposed to fit it (found by eye at 1.25). So
     /// the shell asks again as soon as it has written the scale, and this
@@ -1215,7 +1215,7 @@ impl Host {
         self.window_defs.get_mut(&id)
     }
 
-    /// The typed kind of widget `widget_id` inside window `def_id` — the whole
+    /// The typed kind of widget `widget_id` inside window `def_id` -- the whole
     /// of what an interaction addresses, since a gesture reaches a widget by
     /// the pair of ids the wire gave it and then matches on what it is.
     ///
@@ -1226,13 +1226,13 @@ impl Host {
         Some(&self.window_def(def_id)?.find(widget_id)?.kind)
     }
 
-    /// [`widget_kind`](Self::widget_kind), mutably — the write half of an edit.
+    /// [`widget_kind`](Self::widget_kind), mutably -- the write half of an edit.
     pub fn widget_kind_mut(&mut self, def_id: i32, widget_id: i32) -> Option<&mut WidgetKind> {
         Some(&mut self.window_def_mut(def_id)?.find_mut(widget_id)?.kind)
     }
 
     /// Window `def_id`'s tree laid out over a `fb_w` x `fb_h` framebuffer, on
-    /// the **same** time axes the renderer drew it on — every timeline widget
+    /// the **same** time axes the renderer drew it on -- every timeline widget
     /// resolved against its navigation group.
     ///
     /// That agreement is the point: a clip is hit on the pixels it was drawn
@@ -1251,7 +1251,7 @@ impl Host {
         Some(layout::layout_on(area, tree, metrics))
     }
 
-    /// The framebuffer of window `def_id` **minus its status bar** — the area
+    /// The framebuffer of window `def_id` **minus its status bar** -- the area
     /// its tree is laid out in.
     ///
     /// One function because two passes read it: the renderer draws the tree in
@@ -1274,7 +1274,7 @@ impl Host {
     }
 
     /// The status bar's band in window `def_id`'s framebuffer, when it has one
-    /// — what a press is tested against before the tree is.
+    /// -- what a press is tested against before the tree is.
     pub(crate) fn status_bar_rect(
         &self,
         def_id: i32,
@@ -1294,7 +1294,7 @@ impl Host {
     /// Handles one decoded packet from `from`, returning the effects its front
     /// should carry out (replies plus window open/close). A bundle is unwrapped
     /// and its messages run in order (the timetag is treated as immediate at this
-    /// milestone — no scheduling yet).
+    /// milestone -- no scheduling yet).
     pub fn handle_packet(&mut self, packet: OscPacket, from: ClientId) -> Vec<HostEffect> {
         let mut effects = Vec::new();
         self.dispatch_packet(packet, from, &mut effects);
@@ -1334,7 +1334,7 @@ impl Host {
         }
     }
 
-    /// `/gui_def <id> <json> [blob…]` — build a whole widget tree from one JSON
+    /// `/gui_def <id> <json> [blob…]` -- build a whole widget tree from one JSON
     /// GuiDef (with any bulk data, e.g. waveform samples, as trailing blobs). A
     /// `window` root also opens (or rebuilds) a window.
     fn on_def(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
@@ -1358,8 +1358,8 @@ impl Host {
     /// [`crate::tree`]). A `window` root opens or rebuilds its window, so the
     /// returned effects are the ones [`Self::handle_packet`] returns.
     ///
-    /// The def is still recorded as the document it is — persisted by `name`,
-    /// reloadable, answerable by `/gui_query` — because the JSON is *derived*
+    /// The def is still recorded as the document it is -- persisted by `name`,
+    /// reloadable, answerable by `/gui_query` -- because the JSON is *derived*
     /// here rather than skipped: there is one definition path, and this is its
     /// other entrance.
     pub fn define(&mut self, root_id: i32, root: impl Into<GuiNode>) -> Vec<HostEffect> {
@@ -1367,7 +1367,7 @@ impl Host {
     }
 
     /// [`Self::define`] with the bulk payloads a `"blob": <index>` prop refers
-    /// to — the in-process equivalent of the blobs trailing a `/gui_def`
+    /// to -- the in-process equivalent of the blobs trailing a `/gui_def`
     /// message.
     pub fn define_with_blobs(
         &mut self,
@@ -1377,7 +1377,7 @@ impl Host {
     ) -> Vec<HostEffect> {
         let node = root.into();
         // The verbatim document, derived from the node before anything
-        // rewrites it — the same bytes the wire would have carried, which is
+        // rewrites it -- the same bytes the wire would have carried, which is
         // what persistence and reload are the source of truth over.
         let bytes = match serde_json::to_vec(&node) {
             Ok(bytes) => bytes,
@@ -1392,7 +1392,7 @@ impl Host {
     }
 
     /// The definition itself, from the point where the document has been
-    /// parsed — shared by the wire (`/gui_def`) and by [`Self::define`], so a
+    /// parsed -- shared by the wire (`/gui_def`) and by [`Self::define`], so a
     /// tree built in Rust is recorded, rendered, bound and persisted by
     /// exactly the same steps as one that arrived as JSON. `source` only names
     /// who asked, for the log.
@@ -1405,11 +1405,11 @@ impl Host {
         source: &dyn std::fmt::Display,
         effects: &mut Vec<HostEffect>,
     ) {
-        // The log names whoever asked — a client address on the wire, the
+        // The log names whoever asked -- a client address on the wire, the
         // process itself in a Rust program.
         let from = source;
         // The axis chrome lands flat before anything records it, so the
-        // registry — and the `/gui_info` a query answers with — carries the
+        // registry -- and the `/gui_info` a query answers with -- carries the
         // props the host itself reads, whichever spelling the tree used. The
         // node's *type* is kept as written: a query answers in the vocabulary
         // the script wrote.
@@ -1419,7 +1419,7 @@ impl Host {
         // A def states what this widget now is, reconciled or not, so an edit
         // still in flight against what it was has nothing left to resolve to:
         // its widget may be gone, or its id may name something else now. Drop
-        // the pending set here for the same reason `/gui_free` does — an
+        // the pending set here for the same reason `/gui_free` does -- an
         // acknowledgement that is never coming holds the outbox open forever,
         // and the new tree is authoritative by definition.
         self.outbox.borrow_mut().forget(id);
@@ -1455,13 +1455,13 @@ impl Host {
                     // **A def says what to look like, not what to destroy.**
                     // The window's old tree is walked beside the new one and
                     // everything the host itself put on a widget that survived
-                    // — its window on the axis, its selection, its layer — is
+                    // -- its window on the axis, its selection, its layer -- is
                     // carried across, which is why a clip appearing in one lane
                     // no longer takes the zoom of every other lane with it.
                     if let Some(held) = self.window_defs.get(&id) {
                         widget::reconcile::reconcile(held, &mut tree, &node, id, &was);
                     }
-                    // Theme groups and per-widget accents resolve here — at
+                    // Theme groups and per-widget accents resolve here -- at
                     // the mutation point, never per frame.
                     widget::resolve_style(&mut tree, &Arc::new(self.theme.clone()));
                     self.window_defs.insert(id, tree);
@@ -1476,8 +1476,8 @@ impl Host {
             }
         } else if let Some(root) = inside {
             // **A widget inside an open window is redefined in place.** The
-            // wire has always said a def names any id — "re-sending an existing
-            // id redefines it" — and until now only a `window` reached the
+            // wire has always said a def names any id -- "re-sending an existing
+            // id redefines it" -- and until now only a `window` reached the
             // typed tree the front draws, so a def of anything else was
             // recorded, logged, and invisible.
             //
@@ -1505,12 +1505,12 @@ impl Host {
                         // **The window is brought up to the tree, not merely
                         // repainted.** A `Redraw` asks the front for another
                         // frame of what it already measured, and a subtree that
-                        // changed shape has not been measured at all — its new
+                        // changed shape has not been measured at all -- its new
                         // widgets came out with no size, drew nothing and could
                         // not be hit, which reads as a window that stopped
                         // working. `OpenWindow` on an open window keeps the
                         // shell (the surface, the cursor, the gestures) and
-                        // rebuilds the def's state over the tree as it now is —
+                        // rebuilds the def's state over the tree as it now is --
                         // and the tree as it now is holds every widget outside
                         // this subtree, unchanged, with the zoom and the scroll
                         // it had.
@@ -1537,7 +1537,7 @@ impl Host {
         // bind without a separate `/gui_bind`.
         self.register_inline_bindings(&node);
         // A GuiDef with a `name` persists to the store the way a named SynthDef
-        // does on `/def_send synth` — no separate save command.
+        // does on `/def_send synth` -- no separate save command.
         if let Some(name) = node.props.get("name").and_then(Value::as_str)
             && let Some(store) = self.store.as_ref()
         {
@@ -1548,7 +1548,7 @@ impl Host {
         }
     }
 
-    /// `/gui_load <name>` — load a persisted GuiDef and instantiate it (build its
+    /// `/gui_load <name>` -- load a persisted GuiDef and instantiate it (build its
     /// tree and open its window), replaying it as a `/gui_def` under the id it was
     /// saved with.
     fn on_load(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
@@ -1573,7 +1573,7 @@ impl Host {
         );
     }
 
-    /// `/gui_font <blob>` — draw text with this typeface from now on.
+    /// `/gui_font <blob>` -- draw text with this typeface from now on.
     ///
     /// The bytes are a raw TrueType/OpenType file. Loading one relayouts
     /// nothing (the size table never followed the face), so every open window
@@ -1615,13 +1615,13 @@ impl Host {
         }
     }
 
-    /// `/gui_theme <json>` — draw the chrome from these colors from now on.
+    /// `/gui_theme <json>` -- draw the chrome from these colors from now on.
     ///
     /// The table is partial and overlays the host's own; unknown roles and
     /// unreadable colors are reported and skipped, exactly as the launch-time
     /// table's are. Every window then re-resolves its theme **groups** over the
-    /// new base — a group overlays what it inherits, so changing the base
-    /// changes what a group means — and redraws.
+    /// new base -- a group overlays what it inherits, so changing the base
+    /// changes what a group means -- and redraws.
     fn on_theme(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
         let Some(table) = json_table(args, 0) else {
             return diag::warn!("{from}: {GUI_THEME} needs a JSON object of role -> color");
@@ -1642,7 +1642,7 @@ impl Host {
         diag::info!("{from}: {GUI_THEME}: {} role(s) overlaid", table.len());
     }
 
-    /// `/gui_metrics <json>` — lay out with these sizes from now on.
+    /// `/gui_metrics <json>` -- lay out with these sizes from now on.
     ///
     /// The theme's counterpart, and the same rules: partial, warned about role
     /// by role, applied to the host's table. `scale` is the reserved key that
@@ -1667,7 +1667,7 @@ impl Host {
         diag::info!("{from}: {GUI_METRICS}: {} role(s) overlaid", table.len());
     }
 
-    /// `/gui_headClock <which>` — draw every playhead from this counter from now on.
+    /// `/gui_headClock <which>` -- draw every playhead from this counter from now on.
     ///
     /// Host-wide and idless, like the typeface and the theme, and for the same
     /// reason: it says what the numbers a window is handed *mean*, and one host
@@ -1696,7 +1696,7 @@ impl Host {
         diag::info!("{from}: {GUI_CLOCK}: playheads now read the {which}");
     }
 
-    /// `/gui_set <id> <k> <v> ...` — update one live widget's properties, in the
+    /// `/gui_set <id> <k> <v> ...` -- update one live widget's properties, in the
     /// generic registry (for `/gui_query`) and, if it is inside an open window,
     /// in the typed render tree (so the change shows live).
     fn on_set(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
@@ -1715,8 +1715,8 @@ impl Host {
     }
 
     /// Replaces an `axes` pair among `props` with the per-axis keys it names,
-    /// leaving every other pair where it is. A `/gui_set` that names no axes —
-    /// which is nearly all of them — allocates nothing.
+    /// leaving every other pair where it is. A `/gui_set` that names no axes --
+    /// which is nearly all of them -- allocates nothing.
     fn expand_axes(props: Vec<(String, Value)>) -> Vec<(String, Value)> {
         if !props.iter().any(|(k, _)| k == widget::AXES) {
             return props;
@@ -1728,7 +1728,7 @@ impl Host {
                 continue;
             }
             // The pair rides as an object or as its string carrier, the way
-            // `theme` and `points` do — OSC has no structural argument.
+            // `theme` and `points` do -- OSC has no structural argument.
             let carried;
             let axes = match &value {
                 Value::Object(map) => Some(map),
@@ -1751,8 +1751,8 @@ impl Host {
     }
 
     /// Splits a `focus` pair out of `props`, returning the rest and what it
-    /// asked for. A `/gui_set` that does not name it — which is nearly all of
-    /// them — keeps its vector.
+    /// asked for. A `/gui_set` that does not name it -- which is nearly all of
+    /// them -- keeps its vector.
     fn take_focus(props: Vec<(String, Value)>) -> (Vec<(String, Value)>, Option<bool>) {
         if !props.iter().any(|(k, _)| k == "focus") {
             return (props, None);
@@ -1773,7 +1773,7 @@ impl Host {
     }
 
     /// Points the keyboard at widget `id` (`focus 1`) or takes it away from it
-    /// (`focus 0`) — the script's half of what Tab and a press do.
+    /// (`focus 0`) -- the script's half of what Tab and a press do.
     ///
     /// A widget that is not a stop on the ring is refused rather than focused
     /// silently: focus that nothing can read is a script waiting for keystrokes
@@ -1809,7 +1809,7 @@ impl Host {
     /// window, in the typed render tree. Returns whether the widget exists.
     ///
     /// It is a method of its own because a **widget binding** performs exactly
-    /// this and nothing else — one apply, never another delivery — so the two
+    /// this and nothing else -- one apply, never another delivery -- so the two
     /// paths cannot drift and a binding cannot cascade
     /// ([`bind`]).
     pub fn set_props(
@@ -1824,7 +1824,7 @@ impl Host {
         let props = Self::expand_axes(props);
         // `focus` is the one key that is not a prop: it says where the keyboard
         // points, which is the host's state and not the widget's. So it is taken
-        // out before the document is written — a query must not report it, and a
+        // out before the document is written -- a query must not report it, and a
         // reloaded def must not restore a focus nobody asked for.
         let (props, focus) = Self::take_focus(props);
         let keys: Vec<&String> = props.iter().map(|(k, _)| k).collect();
@@ -1875,7 +1875,7 @@ impl Host {
                     }
                 }
             }
-            // A style change re-resolves the window's theme references — the
+            // A style change re-resolves the window's theme references -- the
             // mutation point where a theme group cascades to its subtree.
             if styled {
                 widget::resolve_style(tree, &Arc::new(self.theme.clone()));
@@ -1914,7 +1914,7 @@ impl Host {
         true
     }
 
-    /// `/gui_free <id>` — destroy a widget and its subtree (and its window, if
+    /// `/gui_free <id>` -- destroy a widget and its subtree (and its window, if
     /// `id` is a window-rooted def).
     fn on_free(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
         let Some(id) = int_arg(args, 0) else {
@@ -1949,14 +1949,14 @@ impl Host {
         }
     }
 
-    /// `/gui_query <id>` — reply `/gui_info <id> <type> <k> <v> ...`.
-    /// `/gui_ack <seq> <docVersion> [<source> <generation>…] [<reason>]` — the
+    /// `/gui_query <id>` -- reply `/gui_info <id> <type> <k> <v> ...`.
+    /// `/gui_ack <seq> <docVersion> [<source> <generation>…] [<reason>]` -- the
     /// owner reports how far it has processed and what state that left.
     ///
     /// One rule and no branch: retire every pending edit at or below `seq`. The
     /// values the owner pushed arrive as ordinary `/gui_set`s in the same
     /// bundle, so *applied*, *applied transformed* and *refused* need no
-    /// distinction here — the state is whatever was pushed, and a refusal is
+    /// distinction here -- the state is whatever was pushed, and a refusal is
     /// the previous value.
     ///
     /// Trailing pairs are source generations, which is the only thing that can
@@ -1983,7 +1983,7 @@ impl Host {
     }
 
     /// **Scrolls window `def_id`'s open status log** by `lines` (positive is
-    /// back through it), answering whether it moved — which is what tells a
+    /// back through it), answering whether it moved -- which is what tells a
     /// front whether to repaint.
     ///
     /// The band is measured here rather than passed in, so the clamp is
@@ -2019,7 +2019,7 @@ impl Host {
     }
 
     /// Retires everything an acknowledgement covers and lets go of what it was
-    /// drawing — the two halves of *drop every pending at or below the stamp,
+    /// drawing -- the two halves of *drop every pending at or below the stamp,
     /// and adopt what arrived*.
     ///
     /// It is a method rather than the body of `/gui_ack` because a host that
@@ -2065,12 +2065,12 @@ impl Host {
     ///
     /// Returns whether it did: `false` is every host driven by a script, and
     /// every payload that is not an edit, both of which go out on the wire as
-    /// they always have. There is deliberately no third outcome — a host that
+    /// they always have. There is deliberately no third outcome -- a host that
     /// owned the document but could not read the payload emits it, so a script
     /// attached alongside still sees what it always saw.
     ///
-    /// The window id is not for the binding — a widget id is unique across the
-    /// registry — but for **adopting the answer**: what an edit leaves has to
+    /// The window id is not for the binding -- a widget id is unique across the
+    /// registry -- but for **adopting the answer**: what an edit leaves has to
     /// be written back onto the picture, and a widget is reached through the
     /// tree it is in.
     pub fn answer_own(&mut self, def_id: i32, widget_id: i32, seq: i32, args: &[OscType]) -> bool {
@@ -2104,7 +2104,7 @@ impl Host {
     /// would have received ([`Host::event_message`]); answers whether it was
     /// taken, which is what tells a front not to send it on.
     ///
-    /// A gesture on the multitrack's own window is the **editor's turn** — the same
+    /// A gesture on the multitrack's own window is the **editor's turn** -- the same
     /// one a script and a page run, read out of the same message: stamped,
     /// versioned, applied with its inverse and answered. What is left is the
     /// tree's, for a document written before the turn, and the window's own
@@ -2261,7 +2261,7 @@ impl Host {
     /// back, a minted source made before the picture is redrawn (a box naming a
     /// source with no buffer draws empty and sounds through nothing), the picture
     /// and the readers brought in step, a placed cursor cued, and the stamp
-    /// settled with the reason the turn gave — so a refusal is said in the
+    /// settled with the reason the turn gave -- so a refusal is said in the
     /// window that asked.
     fn answer_multitrack(&mut self, def_id: i32, message: &OscMessage) -> bool {
         use clausters_apps::multitrack::editor::{Event, Kind, TransportVerb};
@@ -2492,9 +2492,9 @@ impl Host {
         else {
             return Err("this widget is not drawing any samples".into());
         };
-        // The span is **frames of one channel** on both sides of the seam — the
+        // The span is **frames of one channel** on both sides of the seam -- the
         // picture is drawn per channel and the server is written per channel
-        // (`/buffer_setRangeChannel`) — so this is the same check whatever the
+        // (`/buffer_setRangeChannel`) -- so this is the same check whatever the
         // buffer's shape, which is what it took to stop refusing stereo.
         if channel >= channels {
             return Err(format!(
@@ -2528,14 +2528,14 @@ impl Host {
     /// What a gesture clamps against: the right edge of a fully zoomed-out view
     /// maps to *one past* the last sample (a window of 8 samples is 8 wide),
     /// and a stroke that reaches it would carry a frame the buffer does not
-    /// have — which the owner refuses, taking the whole stroke with it.
+    /// have -- which the owner refuses, taking the whole stroke with it.
     pub(crate) fn buffer_frames(&self, def_id: i32, widget_id: i32) -> Option<u64> {
         element_with_samples(self.window_def(def_id)?.find(widget_id)?)?
             .sample_shape()
             .map(|(_, frames)| frames)
     }
 
-    /// How many channels of samples a widget draws, if it draws any — what the
+    /// How many channels of samples a widget draws, if it draws any -- what the
     /// monitor starts one reader per.
     pub(crate) fn buffer_channels(&self, def_id: i32, widget_id: i32) -> Option<usize> {
         element_with_samples(self.window_def(def_id)?.find(widget_id)?)?
@@ -2553,7 +2553,7 @@ impl Host {
     /// buffer, and every picture of it this host is holding.
     ///
     /// The server's copy first, because it is the one that sounds and the one a
-    /// save writes. Then the host's — and *every* view of that buffer in the
+    /// save writes. Then the host's -- and *every* view of that buffer in the
     /// window, not the one the hand was over: a session draws a take twice (the
     /// clip in its lane, the editor under the tracks), they are one buffer,
     /// and a stroke that reached only the view under the pointer leaves the
@@ -2575,12 +2575,12 @@ impl Host {
         let Some(bufnum) = self.buffer_of(def_id, widget_id) else {
             return;
         };
-        // **Channel-addressed, in frames** — the unit the picture, the gesture
+        // **Channel-addressed, in frames** -- the unit the picture, the gesture
         // and the document all speak. The flat `/buffer_setRange` cannot say
         // this: a channel of interleaved storage is a strided span, which is
         // why a stereo take used to be refused here.
         // **The mapped path: a store, and nothing sent.** The cells this
-        // writes are the cells the engine reads on its next block — this
+        // writes are the cells the engine reads on its next block -- this
         // process's engine or the RT server attached to the same segment, it
         // makes no difference to the write. What used to happen instead was a
         // blob out, a job on the server, a reply, and this host reconciling its
@@ -2620,7 +2620,7 @@ impl Host {
             return;
         };
         if write_buffer_views(tree, bufnum, channel, start, values) == 0 {
-            diag::warn!("the picture refused a write the samples accepted — they will disagree");
+            diag::warn!("the picture refused a write the samples accepted -- they will disagree");
         }
     }
 
@@ -2629,7 +2629,7 @@ impl Host {
     ///
     /// A replayed write is complete on its own: the log holds the samples,
     /// because the hand that drew over them supplied the inverse, and the
-    /// channel travels in the intent — which is what makes an undo over one
+    /// channel travels in the intent -- which is what makes an undo over one
     /// channel of a stereo take put back that channel and no other.
     fn replay_writes(&mut self, def_id: i32, applied: &[document::Applied]) {
         let Some(owner) = self.owner.as_ref() else {
@@ -2659,12 +2659,12 @@ impl Host {
         }
     }
 
-    /// Writes what an edit left back onto the picture — the *adopt* half of
+    /// Writes what an edit left back onto the picture -- the *adopt* half of
     /// "drop every pending at or below the stamp, **and adopt what arrived**".
     ///
     /// A drag needs nothing from this: the gesture already moved the clip on
     /// screen, and what came back agrees with it. An **undo** is what makes it
-    /// load-bearing — the document goes back and the widget does not, so
+    /// load-bearing -- the document goes back and the widget does not, so
     /// without this the picture keeps the position the hand left and the edit
     /// looks like it did nothing at all. That is exactly the shape of "the keys
     /// do nothing".
@@ -2775,7 +2775,7 @@ impl Host {
                 diag::info!("{from}: {GUI_QUERY} {id} -> {GUI_INFO} ({})", widget.kind);
             }
             None => {
-                // An empty type string means "no such widget" — the query still
+                // An empty type string means "no such widget" -- the query still
                 // gets an answer, the way the server replies even on a miss. A
                 // miss is *not* a warning: it is how a client pings a host that is
                 // still empty (the launcher's readiness check does exactly that).
@@ -2789,15 +2789,15 @@ impl Host {
         }));
     }
 
-    /// The props widget `id` currently holds that its **document does not** —
+    /// The props widget `id` currently holds that its **document does not** --
     /// what a gesture changed since the def was sent.
     ///
     /// Two surfaces answer "what is this widget", and only one of them a
     /// gesture writes. The registry holds the document: what the script sent,
     /// kept current by every `/gui_set`, and it is the base a query answers
     /// from because it carries props the render tree does not model. The render
-    /// tree holds the widget as the user has since left it — a slider dragged, a
-    /// clip moved, a curve edited — and that is the divergence this closes, in
+    /// tree holds the widget as the user has since left it -- a slider dragged, a
+    /// clip moved, a curve edited -- and that is the divergence this closes, in
     /// the props' **own vocabulary**: a key here is one a script could set, with
     /// the value it would have to set to reproduce what is on screen.
     ///
@@ -2813,7 +2813,7 @@ impl Host {
         live.into_iter().collect()
     }
 
-    /// `/gui_bind <id> "server" <addr> <prefix…>` — forward this widget's value
+    /// `/gui_bind <id> "server" <addr> <prefix…>` -- forward this widget's value
     /// straight to the audio server on every change, bypassing the script (the
     /// low-latency interactive path). With no target (`/gui_bind <id>`) the
     /// binding is removed and the `/gui_event` path restored.
@@ -2853,7 +2853,7 @@ impl Host {
 
     /// Forwards `widget_id`'s `value` to wherever it is bound, returning whether
     /// the binding handled it. When it returns `true` the caller must **not**
-    /// also emit a `/gui_event` — bypassing the script is the whole point. A
+    /// also emit a `/gui_event` -- bypassing the script is the whole point. A
     /// widget bound to an audio server that is not attached still returns
     /// `true` (the value is swallowed, not sent to the script); the missing
     /// `--server` was already warned about at bind time.
@@ -2866,7 +2866,7 @@ impl Host {
         self.forward_args(widget_id, vec![value], effects)
     }
 
-    /// [`forward`](Self::forward) for a **flat list** of values — the edit-back
+    /// [`forward`](Self::forward) for a **flat list** of values -- the edit-back
     /// payload of an editor widget (a `bpf`'s breakpoint list today, a drawn
     /// buffer region later): a bound editor sends `addr prefix… values…` to
     /// the audio server, or the payload's JSON carrier to another widget's
@@ -2975,7 +2975,7 @@ impl Host {
     }
 
     /// Releases a host-managed voice (`gate 0`; the def frees the node
-    /// itself). A no-op when no voice is sounding for the pitch — including
+    /// itself). A no-op when no voice is sounding for the pitch -- including
     /// when `voice` was unset mid-hold, so a recorded voice always gets its
     /// release.
     pub fn voice_off(&mut self, widget_id: i32, pitch: i32) {
@@ -3005,7 +3005,7 @@ impl Host {
     }
 
     /// Releases every live voice of widgets that no longer exist (after a
-    /// `/gui_free` or a redefining `/gui_def`) — a freed piano must not leave
+    /// `/gui_free` or a redefining `/gui_def`) -- a freed piano must not leave
     /// keys sounding.
     fn prune_voices(&mut self) {
         let stale: Vec<i32> = self
@@ -3054,7 +3054,7 @@ impl Host {
     /// A take being recorded grows with nothing announcing it: the writer
     /// publishes only how far it has got, into the shared segment. A host that
     /// **maps** that segment reads the number and re-summarizes the frames it
-    /// names, and needs nothing from the wire — but a page maps nothing, and
+    /// names, and needs nothing from the wire -- but a page maps nothing, and
     /// its samples are its own copy, so there is no frontier to read and
     /// nothing to re-summarize. For it the server sends the *overview* of what
     /// was written instead (`/buffer_stream`, min/max/energy per bucket, about
@@ -3064,7 +3064,7 @@ impl Host {
     /// So the subscription is exactly the views that asked
     /// (`Samples::stream_want`): the client
     /// said the buffer is being written into (`fills`) and the body is this
-    /// element's own copy. A mapped view is deliberately not in it — it would
+    /// element's own copy. A mapped view is deliberately not in it -- it would
     /// be paying twice for one picture.
     ///
     /// One subscription covers all of them, because the server keeps one per
@@ -3074,7 +3074,7 @@ impl Host {
     /// first bucket wins and the rest keep the picture they have, which is the
     /// honest half-answer rather than a subscription that flaps between them.
     ///
-    /// Called wherever what is drawn can change — a def, a set of `fills` or
+    /// Called wherever what is drawn can change -- a def, a set of `fills` or
     /// `buffer`, a free, and a placement that gave an element its body.
     pub(crate) fn sync_buffer_streams(&mut self) {
         let mut buffers: Vec<i32> = Vec::new();
@@ -3120,8 +3120,8 @@ impl Host {
 
     /// **Says what was written, since the samples said nothing.**
     ///
-    /// A stroke into mapped cells reaches no wire — that is what mapping is
-    /// for — so a second client holding a picture of the same take would never
+    /// A stroke into mapped cells reaches no wire -- that is what mapping is
+    /// for -- so a second client holding a picture of the same take would never
     /// find out. `/buffer_touch` is the span and not the samples: four
     /// integers, which the servers broadcast to their `/server_notify` clients
     /// as `/buffer_touched` for whoever cares to re-read. A page gets it too,
@@ -3188,7 +3188,7 @@ impl Host {
 /// Collects the trailing OSC blob arguments of a `/gui_def` (the bulk data, e.g.
 /// waveform samples) into a list a `Widget` can index by `"blob"`.
 /// `/bus_tap bus watch`: what the host sends the audio server to start or stop
-/// recording an audio bus. The bus is the whole address — the server picks and
+/// recording an audio bus. The bus is the whole address -- the server picks and
 /// publishes where the samples land.
 fn watch_msg(bus: i32, watch: bool) -> OscMessage {
     OscMessage {
@@ -3238,7 +3238,7 @@ fn string_arg(args: &[OscType], i: usize) -> Option<&str> {
 
 /// The i-th argument as JSON bytes: a string or a blob (both accepted, as
 /// `/def_send synth` accepts a SynthDef either way).
-/// One argument read as a JSON **object** — what the two host-wide tables
+/// One argument read as a JSON **object** -- what the two host-wide tables
 /// cross as, the way every other structured value on this wire does.
 fn json_table(args: &[OscType], i: usize) -> Option<serde_json::Map<String, serde_json::Value>> {
     let bytes = json_arg(args, i)?;
@@ -3272,14 +3272,14 @@ fn key_value_pairs(tail: &[OscType]) -> Vec<(String, Value)> {
     pairs
 }
 
-/// A **blob** in a value slot is bulk samples — the same raw little-endian
+/// A **blob** in a value slot is bulk samples -- the same raw little-endian
 /// `f32` a `/gui_def`'s trailing blobs carry, and the one payload a scalar wire
 /// cannot spell out.
 ///
 /// It expands to the array the inline `data` prop would have held, so nothing
 /// downstream learns a second shape: a live view's samples are replaced by the
 /// path that already replaces them. This is what lets a client past the inline
-/// ceiling change what a widget draws without redefining the window — a native
+/// ceiling change what a widget draws without redefining the window -- a native
 /// one rewrites the file it spilled to, and a page has no file.
 fn blob_to_samples(bytes: &[u8]) -> Option<Value> {
     if !bytes.len().is_multiple_of(4) {
@@ -3295,7 +3295,7 @@ fn blob_to_samples(bytes: &[u8]) -> Option<Value> {
     ))
 }
 
-/// One OSC primitive as a JSON value, keeping integers and floats apart — and
+/// One OSC primitive as a JSON value, keeping integers and floats apart -- and
 /// a blob as the sample array it carries (see [`blob_to_samples`]).
 fn osc_to_value(arg: &OscType) -> Option<Value> {
     match arg {
@@ -3321,7 +3321,7 @@ fn scalar_arg(v: &Value) -> Option<OscType> {
     }
 }
 
-/// The samples under `widget` — its own, or those of one of the bodies a
+/// The samples under `widget` -- its own, or those of one of the bodies a
 /// container built from its own props (a clip's take carries no id of its own,
 /// so it is only ever reached through the widget that does).
 ///
@@ -3382,7 +3382,7 @@ fn forget_take_views(widget: &mut widget::Widget, bufnum: i32) -> usize {
 ///
 /// [`refresh_buffer_views`]' sibling for a host that cannot re-read the
 /// samples: it holds its own copy, so the span had to be read back off the
-/// wire, and what arrives is the buffer's own samples — which is why this
+/// wire, and what arrives is the buffer's own samples -- which is why this
 /// names no widget. Whoever draws that buffer is entitled to them.
 pub(crate) fn patch_buffer_views(
     widget: &mut widget::Widget,
@@ -3430,7 +3430,7 @@ pub(crate) fn span_to_read_back(widget: &widget::Widget, bufnum: i32) -> Option<
 /// `(buffer, start_frame, bucket, stats)`, or `None` when it is not one.
 ///
 /// The blob is little-endian `f32`s at whatever offset the packet left them,
-/// which is why they are read out rather than viewed in place — the same
+/// which is why they are read out rather than viewed in place -- the same
 /// reason every other client reads this payload the same way.
 pub(crate) fn stream_report(args: &[OscType]) -> Option<(i32, u64, usize, Vec<f32>)> {
     let [
@@ -3445,7 +3445,7 @@ pub(crate) fn stream_report(args: &[OscType]) -> Option<(i32, u64, usize, Vec<f3
     // `startFrame` rides as a **long**: a buffer's sample axis outgrows an
     // `i32` at about twelve hours, and the server says so on the wire. Both
     // spellings are read, because a reader that insisted on `Int` dropped
-    // every report and said nothing — which is exactly what it did.
+    // every report and said nothing -- which is exactly what it did.
     let start = match start {
         OscType::Long(frames) => *frames,
         OscType::Int(frames) => *frames as i64,
@@ -3487,7 +3487,7 @@ fn collect_stream_wants(widget: &widget::Widget, buffers: &mut Vec<i32>, bucket:
 /// The buffer is the identity here for the same reason it is for a write: two
 /// widgets are two pictures of one buffer exactly when they name the same
 /// buffer. What arrives is the overview of frames the writer added, so every
-/// picture of that buffer is told at once and each one answers for itself —
+/// picture of that buffer is told at once and each one answers for itself --
 /// a mapped view says no, since it reads the samples where they lie.
 pub(crate) fn stream_buffer_views(
     widget: &mut widget::Widget,
@@ -3523,7 +3523,7 @@ pub(crate) fn stream_buffer_views(
 ///
 /// The buffer is the identity: two widgets are two pictures of one buffer
 /// exactly when they name the same buffer, and nothing else in the tree relates
-/// them — a clip and an editor of the same take are not parent and child.
+/// them -- a clip and an editor of the same take are not parent and child.
 fn write_buffer_views(
     widget: &mut widget::Widget,
     bufnum: i32,
@@ -3673,7 +3673,7 @@ mod tests {
     }
 
     /// **The report's start frame rides as a long**, and a reader that took
-    /// only `Int` dropped every report without a word — which is how a whole
+    /// only `Int` dropped every report without a word -- which is how a whole
     /// wire looked like a drawing bug for an afternoon.
     #[test]
     fn a_stream_report_reads_the_start_frame_in_either_width() {
@@ -3728,7 +3728,7 @@ mod tests {
     ]}"#;
 
     /// A def names **any** widget, not only a window, and until now only a
-    /// window reached the typed tree the front draws — so a def of anything
+    /// window reached the typed tree the front draws -- so a def of anything
     /// else was recorded, logged and invisible.
     ///
     /// It is the one channel a widget that was not there can arrive by. Sending
@@ -3793,7 +3793,7 @@ mod tests {
     }
 
     /// The two host-wide tables are verbs, not launch flags: a client hands one
-    /// over after the windows are up, and every window redraws — which is the
+    /// over after the windows are up, and every window redraws -- which is the
     /// half `--theme` could never do and the browser could only do by reaching
     /// under its client to the binding.
     #[test]
@@ -3818,7 +3818,7 @@ mod tests {
     }
 
     /// A role the host does not know is reported and skipped, exactly as the
-    /// launch-time table's is — the verb refuses nothing and never leaves a
+    /// launch-time table's is -- the verb refuses nothing and never leaves a
     /// window unpainted over a typo.
     #[test]
     fn an_unknown_role_is_skipped_rather_than_refused() {
@@ -3842,7 +3842,7 @@ mod tests {
         assert!(host.handle_packet(bad, from()).is_empty());
     }
 
-    /// The metrics table is the same verb for lengths, `scale` included — the
+    /// The metrics table is the same verb for lengths, `scale` included -- the
     /// reserved key that regenerates the whole set at a density.
     #[test]
     fn metrics_arrive_the_same_way_and_scale_regenerates_the_set() {
@@ -3862,7 +3862,7 @@ mod tests {
     /// client past the inline ceiling needs: a native one rewrites the file it
     /// spilled to, and a page has no file. The bytes expand to exactly the
     /// array the inline `data` prop would have held, so nothing downstream
-    /// learns a second shape — what a live view then does with them is the
+    /// learns a second shape -- what a live view then does with them is the
     /// `data` path that already existed.
     #[test]
     fn a_set_carries_bulk_samples_as_a_blob() {
@@ -3925,7 +3925,7 @@ mod tests {
         );
     }
 
-    /// A window asks for what it declared — and, with `hug`, for what it holds
+    /// A window asks for what it declared -- and, with `hug`, for what it holds
     /// on the axes its content settles, keeping the declared number on the
     /// others. This is the workaround it retires: a single control in a window
     /// used to need `weight` to stop being a strip under an empty pane, and now
@@ -3963,7 +3963,7 @@ mod tests {
 
         // The second half of the question: once the shell has written a scale,
         // the answer is measured with the table the layout will actually use.
-        // Only a hugging window has one — a window that declared its size is
+        // Only a hugging window has one -- a window that declared its size is
         // not to be resized under it.
         assert_eq!(host.window_size_px(1), None, "nothing to fit");
         host.set_ui_scale(2, 1.25);
@@ -4017,7 +4017,7 @@ mod tests {
 
     /// **A query answers what the widget is, not what it was defined as.** A
     /// gesture writes the render tree and never the document, so a dragged
-    /// control used to report its def-time value forever — which is the one
+    /// control used to report its def-time value forever -- which is the one
     /// answer a script cannot check any other way.
     #[test]
     fn a_query_reports_what_a_gesture_left_behind() {
@@ -4102,7 +4102,7 @@ mod tests {
         assert_eq!(out[0].args[1], OscType::String(String::new()));
     }
 
-    /// One host, one logical table, one resolved table per window — and the
+    /// One host, one logical table, one resolved table per window -- and the
     /// shell is the only side that says what a window's scale is.
     #[test]
     fn each_window_resolves_the_table_at_its_own_scale() {
@@ -4432,7 +4432,7 @@ mod tests {
     }
 
     /// The other destination: a widget bound to a widget. A toggle drives a
-    /// `stack`'s page with no script and no server in the process — the whole
+    /// `stack`'s page with no script and no server in the process -- the whole
     /// of tabs, and what makes a persisted GuiDef an autonomous application.
     #[test]
     fn a_widget_binding_applies_to_the_other_widget_and_never_cascades() {
@@ -4501,7 +4501,7 @@ mod tests {
     /// A hidden page is still on the axis: a `stack` skips a page's *layout*,
     /// not its membership, so a scroll bound to one view moves the one behind
     /// it too and a switch shows it already there. Same property as the GPU
-    /// slot it keeps — both are read from the tree, not from the placements.
+    /// slot it keeps -- both are read from the tree, not from the placements.
     #[test]
     fn a_hidden_stack_page_still_belongs_to_its_navigation_group() {
         const PAGES: &str = r#"{"type":"window","children":[
@@ -4544,8 +4544,8 @@ mod tests {
         assert!(host.window_def(1).unwrap().find(22).unwrap().is_timeline());
     }
 
-    /// A def written in the model's vocabulary is recorded — and answered to a
-    /// query — with its chrome flat: the type stays as the script wrote it, so
+    /// A def written in the model's vocabulary is recorded -- and answered to a
+    /// query -- with its chrome flat: the type stays as the script wrote it, so
     /// a reply is in the vocabulary it asked in, while the axis pair (a
     /// structural prop, which `/gui_info` cannot carry) lands where the host
     /// itself reads it.
@@ -4599,7 +4599,7 @@ mod tests {
             from(),
         );
         assert!(host.is_bound(10));
-        // Freeing the window (root 1) takes knob 10 — and its binding — with it.
+        // Freeing the window (root 1) takes knob 10 -- and its binding -- with it.
         host.handle_packet(
             OscPacket::Message(OscMessage {
                 addr: GUI_FREE.into(),
@@ -4639,7 +4639,7 @@ mod tests {
 
     /// **Parity is the whole promise of the Rust door**: a tree built with the
     /// typed builder and the same tree sent as a `/gui_def` document must
-    /// leave the host in the same state — the same typed widget tree, the same
+    /// leave the host in the same state -- the same typed widget tree, the same
     /// recorded document. They meet at `GuiNode`, so this is what proves the
     /// two entrances share one definition path rather than resembling it.
     #[test]
@@ -4692,7 +4692,7 @@ mod tests {
     }
 
     /// A registered element reaches the host through the Rust door with nothing
-    /// added to the builder — the K1 seam and the K2 builder meeting, which is
+    /// added to the builder -- the K1 seam and the K2 builder meeting, which is
     /// the case a program embedding the crate actually has.
     #[test]
     fn a_registered_element_defines_through_the_rust_door() {
@@ -4743,7 +4743,7 @@ mod tests {
 /// samples reaches the server's buffer and the picture of it at once, and the
 /// log takes it back.
 ///
-/// What is exercised here is the seam the milestone added — [`Host::can_write`]
+/// What is exercised here is the seam the milestone added -- [`Host::can_write`]
 /// refusing what the wire cannot carry, [`Host::write_buffer_samples`] sending and
 /// patching, and the inverse the hand supplies coming back through an undo. The
 /// hand itself (the drag that builds the payload) is tested in `gestures`, and
@@ -4759,8 +4759,8 @@ mod write_tests {
     use std::net::{SocketAddr, UdpSocket};
     use std::time::Duration;
 
-    /// The session's own picture, in miniature: a take drawn **twice** — as a
-    /// clip in a lane, and as the navigable editor under it — both naming the
+    /// The session's own picture, in miniature: a take drawn **twice** -- as a
+    /// clip in a lane, and as the navigable editor under it -- both naming the
     /// one buffer.
     const TREE: &str = r#"{"type":"window","children":[
         {"id":50,"type":"signal","view":"trace","buffer":0,"navigable":1}
@@ -4845,7 +4845,7 @@ mod write_tests {
         }
     }
 
-    /// What the widget's own picture holds at frame `i` — read back through the
+    /// What the widget's own picture holds at frame `i` -- read back through the
     /// same door the drawing gesture reads it through, so the test sees what the
     /// hand would.
     fn sample(host: &Host, i: usize) -> f32 {
@@ -4907,7 +4907,7 @@ mod write_tests {
         assert_eq!(sample(&host, 4), 0.0, "the picture went back with it");
     }
 
-    /// **The monitor plays the samples the window is drawing** — the same
+    /// **The monitor plays the samples the window is drawing** -- the same
     /// buffer, reached by the same widget lookup an edit takes, so what sounds
     /// is what would be written.
     #[test]
@@ -4961,7 +4961,7 @@ mod write_tests {
     }
 
     /// **The seek and the loop are the transport's, and they go out before a
-    /// reader exists** — so the readers are created standing where the multitrack
+    /// reader exists** -- so the readers are created standing where the multitrack
     /// is rather than sliding into place from wherever the last take left it.
     #[test]
     fn playing_a_span_locates_and_loops_before_the_readers_are_made() {
@@ -4991,7 +4991,7 @@ mod write_tests {
 
     /// **Pausing is not stopping**: the readers stay, so resuming continues the
     /// sound rather than starting a second copy of it. The freeze is the
-    /// server's — this host sends one command and remembers nothing about where
+    /// server's -- this host sends one command and remembers nothing about where
     /// the multitrack was.
     #[test]
     fn pausing_keeps_the_readers_and_resuming_continues() {
@@ -5034,7 +5034,7 @@ mod write_tests {
     }
 
     /// **A reader per channel**, which is the server's own convention: the
-    /// buffer readers are mono, so a stereo take is two nodes — one per
+    /// buffer readers are mono, so a stereo take is two nodes -- one per
     /// channel, each to the bus of the same number. A fixed stereo def would
     /// leave a mono take silent on the right and a wider one half unheard.
     #[test]

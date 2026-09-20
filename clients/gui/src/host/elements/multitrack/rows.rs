@@ -19,7 +19,7 @@ impl Multitrack {
         }
     }
 
-    /// The lane a clip sits on, by index — `None` for a clip naming a lane that
+    /// The lane a clip sits on, by index -- `None` for a clip naming a lane that
     /// is not here.
     ///
     /// **A clip is kept rather than dropped**, because what cannot be placed can
@@ -29,7 +29,7 @@ impl Multitrack {
         self.lanes.iter().position(|l| l.name == clip.lane)
     }
 
-    /// The lane a pointer is **on**, or `None` off the stack — the *press*'
+    /// The lane a pointer is **on**, or `None` off the stack -- the *press*'
     /// question, over the same bands the drawing used.
     pub(super) fn lane_at(&self, rect: Rect, y: f64) -> Option<usize> {
         self.stack().lane_at(rect, self.scroll, y)
@@ -49,7 +49,7 @@ impl Multitrack {
         self.stack().lane_rects(rect, self.scroll, self.lanes.len())
     }
 
-    /// The lane a hand **is heading for**, always — the *drag*'s question, and
+    /// The lane a hand **is heading for**, always -- the *drag*'s question, and
     /// the sweep's. It answers for the gaps between lanes and clamps past
     /// either end, which is the whole of why a dragged clip neither jumps nor
     /// oscillates.
@@ -101,8 +101,8 @@ impl Multitrack {
     /// **Lays the hand's own row heights back over what a payload says.**
     ///
     /// How tall a track is drawn is this window's and the wire carries none of
-    /// it — but a `lanes` payload states a height on every row, because the
-    /// prop has always had one — so a fader moved or a track added would
+    /// it -- but a `lanes` payload states a height on every row, because the
+    /// prop has always had one -- so a fader moved or a track added would
     /// otherwise take a reader's vertical zoom away with it. The same rule the
     /// scroll and the box selection follow, applied where the payload lands.
     pub(super) fn zoom_rows(&mut self) {
@@ -136,7 +136,7 @@ impl Multitrack {
         want.clamp(0.0, over)
     }
 
-    /// **What kind of row a y is on** — a lane, an automation row, or nothing
+    /// **What kind of row a y is on** -- a lane, an automation row, or nothing
     /// at all past either end of the stack.
     pub(super) fn row_kind(&self, input: &Input, y: f64) -> Option<stack::Row> {
         let stack = self.stack();
@@ -160,8 +160,8 @@ impl Multitrack {
     /// A snap to **content**, which is what makes two boxes meetable at the
     /// sample: with no quantization a hand never lands one box exactly where
     /// another ends, so `j` never had two boxes to join. It stands beside
-    /// `snap` rather than replacing it — a grid says where a beat is, this says
-    /// where the music already is — and a hand that keeps pulling past the
+    /// `snap` rather than replacing it -- a grid says where a beat is, this says
+    /// where the music already is -- and a hand that keeps pulling past the
     /// tolerance goes on through and overlaps them, which is a crossfade and
     /// legal.
     ///

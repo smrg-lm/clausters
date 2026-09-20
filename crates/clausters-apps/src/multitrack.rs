@@ -21,7 +21,7 @@
 //! hand does on them has to come back to the editor that drew them. The
 //! transport row's widgets are addressed by **name** ([`REWIND`], [`PLAY`],
 //! [`STOP`], [`CLOCK`]), so a caller that numbers id-less widgets on the way out
-//! — both clients do — leaves them unnumbered ([`Transport::Unnumbered`]), and
+//! -- both clients do -- leaves them unnumbered ([`Transport::Unnumbered`]), and
 //! a host composing a window for itself numbers them here
 //! ([`Transport::Numbered`]).
 
@@ -71,7 +71,7 @@ pub enum Transport {
     /// A multitrack nobody can play: it still edits, and it has nothing to play
     /// with.
     Absent,
-    /// The row, with its widgets named and unnumbered — for a caller that
+    /// The row, with its widgets named and unnumbered -- for a caller that
     /// numbers id-less widgets when it sends the window.
     Unnumbered,
     /// The row, numbered here.
@@ -106,7 +106,7 @@ pub struct Window<'a> {
     /// The navigation group the multitrack and its ruler share, when the caller names
     /// one.
     pub link: Option<i64>,
-    /// The position cursor, in seconds — `None` until a hand places one.
+    /// The position cursor, in seconds -- `None` until a hand places one.
     pub cursor: Option<f64>,
     /// Where each track's meters are read from; empty for a multitrack nobody plays.
     pub meters: &'a [Meter],
@@ -122,7 +122,7 @@ impl Window<'_> {
     /// **The navigation group the multitrack and its ruler share.**
     ///
     /// A ruler rules by being on the same axis as what it is beside, and an
-    /// unlinked widget is a group of one keyed by itself — so the two would pan
+    /// unlinked widget is a group of one keyed by itself -- so the two would pan
     /// and zoom apart. The multitrack's own widget id names the group when the caller
     /// did not name one, which is the id nothing else can collide with.
     pub fn group(&self) -> i64 {
@@ -150,8 +150,8 @@ impl Window<'_> {
 /// root carries no id: a GuiDef's id is the one its `/gui_def` names.
 ///
 /// **A script's own widgets are not composed here.** A client may append some
-/// after the picture, and they are its objects — a widget built over a live
-/// source keeps a binding no JSON carries — so it appends them to the children
+/// after the picture, and they are its objects -- a widget built over a live
+/// source keeps a binding no JSON carries -- so it appends them to the children
 /// this answers.
 pub fn window(w: &Window<'_>) -> Value {
     let mut multitrack = Map::new();
@@ -252,8 +252,8 @@ fn ruler(w: &Window<'_>) -> Value {
 
 /// **The transport row**: rewind, play/pause, stop, and where the multitrack is.
 ///
-/// **Rewind is not stop.** Stop goes back to the *mark* — which is what tells
-/// it from pause — and the mark is wherever a hand last put it, so with nothing
+/// **Rewind is not stop.** Stop goes back to the *mark* -- which is what tells
+/// it from pause -- and the mark is wherever a hand last put it, so with nothing
 /// else the way back to the top is finding beat zero on screen and clicking it.
 /// Rewind puts the mark there, which is a statement about the cursor and not
 /// about the transport.

@@ -23,7 +23,7 @@
 its own.
 
 The smallest of the three structures <code>edit</code> opens, and the one that
-shows what the verb is for. There is <b>no multitrack here</b> — no
+shows what the verb is for. There is <b>no multitrack here</b> -- no
 arrangement, no document, no track. The page builds an <code>Automation</code>,
 hands it to <code>edit</code>, and reads the edited curve back out of the object
 it already holds.
@@ -35,7 +35,7 @@ window walks the one order both of them made.
 
 <b>How an edit inverts is the shared crate's.</b> The payload goes in with the
 curve as it stands and comes back as the curve it now is <i>plus</i> the payload
-that puts it back — one call, because the inverse has to be read before the edit
+that puts it back -- one call, because the inverse has to be read before the edit
 lands.</div>
 
       <button id="run">open the editor</button>
@@ -95,13 +95,13 @@ lands.</div>
         $("run").disabled = true;
         // No `session.gui()`: `edit` resolves the ambient host and opens one if
         // it has to, which is why the script names no host either. The session
-        // is here for the same reason it is there — a curve is data, and this
+        // is here for the same reason it is there -- a curve is data, and this
         // example never plays it. The script boots no server; a page's session
         // always has its in-page engine, and nothing is sent to it here.
         const session = await Session.embed();
 
         // One verb. `edit` dispatches on **what the structure is**: an
-        // `Automation` opens as a PointsEditor — one `bpf` widget, the `points`
+        // `Automation` opens as a PointsEditor -- one `bpf` widget, the `points`
         // vocabulary, and the curve's own editing context.
         const editor = await gui.edit(curve, {
           sampleRate: 48_000, title: "cutoff", stage: $("stage"),

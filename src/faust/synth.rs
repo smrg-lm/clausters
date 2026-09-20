@@ -11,7 +11,7 @@
 //!
 //! Control indices `0..params.len()` are the def's UI parameters in
 //! declaration order; `/node_set` writes the value through the instance's
-//! `FAUSTFLOAT*` zone — a plain aligned store, RT-safe (Faust reads zones at
+//! `FAUSTFLOAT*` zone -- a plain aligned store, RT-safe (Faust reads zones at
 //! block boundaries). Two reserved names follow the Faust parameters:
 //! `"out"` (index `params.len()`) and `"in"` (one past it), the first audio
 //! bus the synth's outputs/inputs map to. Parameter names are the bare UI
@@ -141,7 +141,7 @@ impl FaustSynth {
         };
         unsafe { ffi::initCDSPInstance(dsp.as_ptr(), sample_rate as i32) };
         // `soundfile` zones, if any, are filled here from the server buffer the
-        // def's `soundfile("<bufnum>", n)` names — before any `compute`.
+        // def's `soundfile("<bufnum>", n)` names -- before any `compute`.
         let ui = collect_ui(dsp.as_ptr(), Some(buffers));
         debug_assert_eq!(
             ui.zones.len(),
@@ -174,7 +174,7 @@ impl SynthNode for FaustSynth {
         // Pull bus-mapped parameters into their zones before `compute`
         // reads them: a control bus, or one frame of an audio bus
         // (control-rate, `/node_mapAudio`). Zones are scalar, so audio mappings are
-        // always sampled — Faust has no audio-rate parameter.
+        // always sampled -- Faust has no audio-rate parameter.
         for i in 0..self.maps.len() {
             let m = self.maps[i];
             if m.bus >= 0 {
@@ -205,7 +205,7 @@ impl SynthNode for FaustSynth {
         }
         for (i, buf) in self.out_bufs.iter().enumerate() {
             let bus = (self.out_bus + i).min(NUM_AUDIO_BUSES - 1);
-            // SAFETY: stage disjointness — no other thread touches
+            // SAFETY: stage disjointness -- no other thread touches
             // this bus while we sum into it.
             for (d, s) in unsafe { ctx.buses.audio_mut(bus) }[offset..offset + frames]
                 .iter_mut()

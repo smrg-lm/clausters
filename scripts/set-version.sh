@@ -4,9 +4,9 @@
 #
 # The number lives in six files and only one of them is a decision: the root
 # `[workspace.package].version`, which the eight Cargo crates inherit. The other
-# five cannot inherit it — `clients/gui` is its own workspace, `pyproject.toml`
+# five cannot inherit it -- `clients/gui` is its own workspace, `pyproject.toml`
 # and `package.json` are not Cargo's, and the two lockfiles record what their
-# manifest said — so this writes them, and `tests/versions.rs` fails when any of
+# manifest said -- so this writes them, and `tests/versions.rs` fails when any of
 # them disagrees. (`clients/web/package-lock.json` had been two minors behind
 # for exactly that reason.)
 #

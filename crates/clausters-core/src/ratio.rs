@@ -7,12 +7,12 @@
 //! (a triplet eighth is `1/12`) nor on any fixed grid of ticks (the same `1/12`
 //! is not an integer count of 32nds). So the type lives here beside
 //! [`crate::measure`], [`crate::scale`] and [`crate::tempoclock`] rather than
-//! inside the module that needed it first — a function that outlives its first
+//! inside the module that needed it first -- a function that outlives its first
 //! caller goes where its subject is.
 //!
 //! **Ticks are a boundary, not a foundation.** A protocol counts in whatever it
-//! counts in — MIDI in its own ticks, OSC in seconds or beats, MEI in `@dur`
-//! values and dots — and each conversion happens at that protocol's edge, with
+//! counts in -- MIDI in its own ticks, OSC in seconds or beats, MEI in `@dur`
+//! values and dots -- and each conversion happens at that protocol's edge, with
 //! [`Ratio::as_ticks`] and [`Ratio::from_ticks`] as the door. Nothing above the
 //! edge is expressed in ticks, which is what keeps a tuplet exact all the way
 //! to the moment it is written down.
@@ -36,7 +36,7 @@ use serde::{Deserialize, Serialize, Serializer};
 /// parts back with [`Ratio::numer`] / [`Ratio::denom`]. Arithmetic is the usual
 /// operators; every result is normalized.
 ///
-/// As JSON a ratio is the two-element array `[numer, denom]` — short enough to
+/// As JSON a ratio is the two-element array `[numer, denom]` -- short enough to
 /// read in a payload, and unambiguous in every language a client is written in
 /// (an object would invite a float, and a float is what this type exists to
 /// avoid).
@@ -49,7 +49,7 @@ pub struct Ratio {
 impl Ratio {
     /// Zero.
     pub const ZERO: Ratio = Ratio { numer: 0, denom: 1 };
-    /// One — a whole note, when the ratio is a duration.
+    /// One -- a whole note, when the ratio is a duration.
     pub const ONE: Ratio = Ratio { numer: 1, denom: 1 };
 
     /// `numer / denom`, normalized. A zero denominator is **not** an error the
@@ -79,7 +79,7 @@ impl Ratio {
         self.denom
     }
 
-    /// Whether this is zero — the length of nothing, and the position of the
+    /// Whether this is zero -- the length of nothing, and the position of the
     /// start.
     pub fn is_zero(&self) -> bool {
         self.numer == 0
@@ -91,7 +91,7 @@ impl Ratio {
         self.numer > 0
     }
 
-    /// The nearest `f64`, for a boundary that genuinely is inexact — seconds,
+    /// The nearest `f64`, for a boundary that genuinely is inexact -- seconds,
     /// milliseconds, a pixel. Never used to compare or accumulate: that is what
     /// the exact type is for.
     pub fn to_f64(&self) -> f64 {
@@ -99,14 +99,14 @@ impl Ratio {
     }
 
     /// This length as an integer count of `per_whole`ths, if it is exactly one.
-    /// `None` when it is not — a triplet against a grid of 32nds, which is
+    /// `None` when it is not -- a triplet against a grid of 32nds, which is
     /// precisely the case a tick count cannot express and must not round away.
     pub fn as_ticks(&self, per_whole: i64) -> Option<i64> {
         let scaled = self.numer.checked_mul(per_whole)?;
         (scaled % self.denom == 0).then_some(scaled / self.denom)
     }
 
-    /// A count of `per_whole`ths as an exact ratio — the other side of the same
+    /// A count of `per_whole`ths as an exact ratio -- the other side of the same
     /// boundary, and how a v1 payload counted in ticks reaches the model.
     ///
     /// # Panics
@@ -115,7 +115,7 @@ impl Ratio {
         Ratio::new(ticks, per_whole)
     }
 
-    /// The largest integer not greater than this ratio, and what is left over —
+    /// The largest integer not greater than this ratio, and what is left over --
     /// `(floor, self - floor)`, with the remainder always in `[0, 1)`. How a
     /// position on the time axis resolves into a whole count and an offset.
     pub fn floor_rem(&self) -> (i64, Ratio) {

@@ -4,8 +4,8 @@
 //! publishes one stage at a time; the workers and the conductor race
 //! through it with an atomic cursor (work stealing), then the conductor
 //! waits for completion and moves on. Stages never overlap, so a stage's
-//! raw pointers are only dereferenced while the conductor's stack frame —
-//! the owner of tree, buses and buffers — is pinned in `run_stage`.
+//! raw pointers are only dereferenced while the conductor's stack frame --
+//! the owner of tree, buses and buffers -- is pinned in `run_stage`.
 //! Publishing is seqlock-style (odd epoch = job being rewritten) and a
 //! worker validates the epoch *after* registering in `active`, so a
 //! late-waking worker can never read a job mid-rewrite.
@@ -18,7 +18,7 @@
 //! Correctness of concurrent access relies on the stage scheduler
 //! (`node::NodeTree::process_parallel`): stage members are disjoint
 //! subtrees touching pairwise disjoint buses, so any interleaving produces
-//! the same samples as sequential execution — parallel rendering is
+//! the same samples as sequential execution -- parallel rendering is
 //! **bit-identical** to single-threaded rendering.
 
 use std::cell::{Cell, UnsafeCell};
@@ -102,7 +102,7 @@ unsafe impl Send for Shared {}
 unsafe impl Sync for Shared {}
 
 /// The pool. `WorkerPool::new(0, …)` is a no-op pool: every stage runs
-/// inline, sequentially — the default for `engine_pair` and the whole test
+/// inline, sequentially -- the default for `engine_pair` and the whole test
 /// suite.
 pub struct WorkerPool {
     shared: Option<Arc<Shared>>,
@@ -112,7 +112,7 @@ pub struct WorkerPool {
 impl WorkerPool {
     /// `meters` gets one `Role::Dsp` slot per worker: what a worker took off
     /// the conductor, bracketed per stage. The conductor's own share of a
-    /// stage is not counted here — it is already inside the block the audio
+    /// stage is not counted here -- it is already inside the block the audio
     /// slot measures.
     pub fn new(workers: usize, meters: &Arc<Meters>) -> Self {
         if workers == 0 {
@@ -154,11 +154,11 @@ impl WorkerPool {
     /// workers; otherwise fork-join with the conductor participating.
     ///
     /// RT-safe on the conductor: atomics, bounded spinning and (at worst)
-    /// `unpark` — no allocation, no locks.
+    /// `unpark` -- no allocation, no locks.
     pub(crate) fn run_stage(&self, tree: &NodeTree, stage: &[usize], ctx: &ProcessCtx) {
         let Some(shared) = &self.shared else {
             for &idx in stage {
-                // SAFETY: sequential fallback — single visitor by trivially
+                // SAFETY: sequential fallback -- single visitor by trivially
                 // running one subtree at a time.
                 unsafe { tree.process_index(idx, ctx, self) };
             }
@@ -208,7 +208,7 @@ impl WorkerPool {
             unsafe { tree.process_index_seq(stage[k], ctx) };
             shared.remaining.fetch_sub(1, Ordering::Release);
         }
-        // Wait for the stage, then for stragglers to leave the grab loop —
+        // Wait for the stage, then for stragglers to leave the grab loop --
         // only then may `cursor`/`job` be reused.
         while shared.remaining.load(Ordering::Acquire) != 0 {
             std::hint::spin_loop();
@@ -276,7 +276,7 @@ fn worker_main(shared: &Shared, meters: &Meters, me: usize) {
         // Register, then re-validate. The conductor rewrites `job` only
         // behind an odd epoch after draining `active`, so an epoch still
         // unchanged *after* registering pins the job until we deregister;
-        // a changed one means a republish slipped in — back off and
+        // a changed one means a republish slipped in -- back off and
         // retry. SeqCst: Dekker pair with the conductor's publish.
         shared.active.fetch_add(1, Ordering::SeqCst);
         if shared.epoch.load(Ordering::SeqCst) != epoch {

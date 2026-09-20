@@ -3,7 +3,7 @@
 //! One more **carrier of the same OSC encoding** beside UDP, TCP and the
 //! shared-memory ring. The point is reach: a browser cannot open a raw UDP
 //! socket or map shared memory, but it speaks WebSocket natively, so this is
-//! the transport that lets the server run in (or be driven from) a browser —
+//! the transport that lets the server run in (or be driven from) a browser --
 //! and, conversely, lets a browser-hosted GUI peer reach the server.
 //!
 //! It mirrors [`super::tcp`] exactly: an acceptor thread plus one thread per
@@ -15,16 +15,16 @@
 //! write are not split like a `TcpStream`), so instead of the loop owning a
 //! write half, each connection thread also drains a per-connection reply channel
 //! and writes the bytes itself. To interleave reads with those queued replies
-//! the thread polls with a short read timeout (`POLL_TIMEOUT`) — the same
+//! the thread polls with a short read timeout (`POLL_TIMEOUT`) -- the same
 //! bounded-latency trade-off the IPC ring documents, here for the reply leg.
 //!
 //! Wire framing: each WebSocket **binary** message carries exactly one OSC
-//! packet (a message or a bundle). WebSocket already frames messages, so —
-//! unlike raw TCP — there is no length prefix; the frame boundary *is* the
+//! packet (a message or a bundle). WebSocket already frames messages, so --
+//! unlike raw TCP -- there is no length prefix; the frame boundary *is* the
 //! packet boundary, and replies go back as binary messages the same way. Every
 //! inbound packet decodes through the single [`super::decode_packet`] door, so
 //! WebSocket bytes are validated exactly like UDP/TCP/ring bytes. `tungstenite`
-//! enforces the maximum message size — the same configurable ceiling the TCP
+//! enforces the maximum message size -- the same configurable ceiling the TCP
 //! transport applies to its length prefix (see [`super::DEFAULT_MAX_FRAME`]).
 
 use std::collections::HashMap;
@@ -47,14 +47,14 @@ const POLL_TIMEOUT: Duration = Duration::from_millis(5);
 
 /// Capacity, in packets, of the bounded channel from the connection threads to
 /// the command loop. A flooding client blocks its own thread here and TCP flow
-/// control pushes back to the sender — bounding server memory instead of
+/// control pushes back to the sender -- bounding server memory instead of
 /// growing an unbounded queue (mirrors the TCP front's `INBOUND_QUEUE`).
 const INBOUND_QUEUE: usize = 256;
 
 /// Capacity, in replies, of each connection's outbound queue. The connection
 /// thread drains it every poll tick; a backlog this deep means the client has
 /// stopped reading (its socket is full), so the overflowing `reply` drops the
-/// connection rather than queue without bound — the WebSocket counterpart of
+/// connection rather than queue without bound -- the WebSocket counterpart of
 /// the TCP front's reply write timeout.
 const REPLY_QUEUE: usize = 256;
 
@@ -125,7 +125,7 @@ impl WsHub {
 
     /// The next complete packet `(connection id, bytes)`, or `None` when the
     /// queue is drained. Registers and forgets connections as their
-    /// `Connected`/`Disconnected` events go by — both bracket that connection's
+    /// `Connected`/`Disconnected` events go by -- both bracket that connection's
     /// frames in the channel, so the reply channel is always present before a
     /// frame is returned for handling.
     pub fn next_frame(&mut self) -> Option<(u64, Vec<u8>)> {
@@ -152,7 +152,7 @@ impl WsHub {
     }
 
     /// Queues a reply to connection `id` (silently dropped if the connection is
-    /// gone — the `Disconnected` event prunes it). The owning connection thread
+    /// gone -- the `Disconnected` event prunes it). The owning connection thread
     /// writes it as a binary frame on its next poll. A full queue means the
     /// client has stopped reading, so the connection is dropped rather than
     /// queueing without bound; its thread sees the shutdown and the

@@ -1,5 +1,5 @@
 //! `LocalIn`/`LocalOut`: synth-private feedback buses with one control block
-//! (64 samples) of delay — the UGen-graph counterpart of SuperCollider's
+//! (64 samples) of delay -- the UGen-graph counterpart of SuperCollider's
 //! `LocalIn`/`LocalOut`.
 //!
 //! The graph is a DAG, so a feedback loop cannot be wired directly. `LocalIn`
@@ -7,7 +7,7 @@
 //! not connect by a wire but through a **per-synth buffer that persists across
 //! blocks**, living in [`crate::synthdef::instance::UGenSynth`]. Within a
 //! block, `LocalIn` reads the buffer (still holding what `LocalOut` wrote the
-//! previous block) before `LocalOut` overwrites it — the one-block delay falls
+//! previous block) before `LocalOut` overwrites it -- the one-block delay falls
 //! out of the read-before-write order, with no double buffering.
 //!
 //! Because that buffer is synth-private state the [`UGen`] trait and

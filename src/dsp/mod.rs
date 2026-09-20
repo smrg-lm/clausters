@@ -16,7 +16,7 @@ pub mod region;
 pub mod stitch;
 pub mod wavetable;
 
-// The UGen library — the SynthDef family (`synth` feature). A Faust-only or
+// The UGen library -- the SynthDef family (`synth` feature). A Faust-only or
 // core-only build carries none of it; Faust synths implement `node::SynthNode`
 // directly and only touch the core types above.
 #[cfg(feature = "synth")]
@@ -34,7 +34,7 @@ pub mod demand;
 // Streaming disk I/O, in two implementations of one surface. Natively each
 // UGen owns a background file thread and races the audio thread through a
 // lock-free ring. In a page there is neither a thread nor a filesystem the
-// engine can reach, so the ring stays and the **host** fills it — same UGens,
+// engine can reach, so the ring stays and the **host** fills it -- same UGens,
 // same underrun behaviour, a different reader.
 #[cfg(all(feature = "synth", not(target_arch = "wasm32")))]
 pub mod disk;
@@ -174,7 +174,7 @@ impl Limits {
 
 /// Control buses are single floats shared between threads: the network
 /// thread serves `/bus_set`/`/bus_get` directly, the audio thread reads them via
-/// the `InCtl` UGen. Plain atomic bit-cast stores — lock-free on both sides.
+/// the `InCtl` UGen. Plain atomic bit-cast stores -- lock-free on both sides.
 ///
 /// The backing storage is abstract: a heap array by default, or
 /// the control-bus region of a shared-memory segment (`server::ipc`), where
@@ -497,12 +497,12 @@ impl Buses {
 /// The struct is `Copy` so every worker carries its own.
 #[derive(Clone, Copy)]
 pub struct ProcessCtx<'a> {
-    /// **The rate of the UGen currently running**, in samples per second — not
+    /// **The rate of the UGen currently running**, in samples per second -- not
     /// necessarily the engine's. An [`Rate::Ar`] UGen sees the engine rate; a
     /// [`Rate::Kr`] one sees its own, `full_sample_rate / frames`, because one
     /// of its samples covers the whole slice. Anything that turns seconds into
-    /// samples — a phase increment, a filter coefficient, an envelope segment,
-    /// a delay time — divides by *this*, and is then correct at either rate
+    /// samples -- a phase increment, a filter coefficient, an envelope segment,
+    /// a delay time -- divides by *this*, and is then correct at either rate
     /// with no branch. For the engine's own rate as a **fact** (`SampleRate`,
     /// an FFT's Hz-per-bin), read [`full_sample_rate`](Self::full_sample_rate).
     pub sample_rate: f32,
@@ -526,8 +526,8 @@ pub struct ProcessCtx<'a> {
 /// moving.
 ///
 /// One struct rather than two fields of [`ProcessCtx`] because they are only
-/// ever read together — a position means something different depending on
-/// whether it is advancing — and because it keeps the cost of the next
+/// ever read together -- a position means something different depending on
+/// whether it is advancing -- and because it keeps the cost of the next
 /// transport fact one line at each construction site instead of one per fact.
 /// `Default` is a stopped transport at its start, which is what
 /// every non-engine caller (an offline render of a graph, a UGen test) wants.
@@ -536,14 +536,14 @@ pub struct TransportCtx {
     /// Where the transport stands at this slice's first frame, in samples of
     /// its own axis (`server::clock_axis::TransportPosition`).
     ///
-    /// It advances by one per sample across the whole slice — the engine cuts
+    /// It advances by one per sample across the whole slice -- the engine cuts
     /// its block at a loop's wrap, so no slice ever straddles one. A UGen
     /// following it therefore ramps and nothing more; the loop points, the
     /// locate and the freeze are all the engine's.
     ///
     /// Not a clock: it jumps where a locate puts it, so nothing schedules on
-    /// it. While the transport is stopped it is still *correct* — it is where
-    /// the transport is standing — it simply does not advance, which is what
+    /// it. While the transport is stopped it is still *correct* -- it is where
+    /// the transport is standing -- it simply does not advance, which is what
     /// [`rolling`](Self::rolling) says.
     pub position: u64,
     /// Whether the transport is rolling.
@@ -555,7 +555,7 @@ pub struct TransportCtx {
     pub rolling: bool,
 }
 
-/// What a UGen (via [`UGen::done`]) asks the engine to do when it finishes —
+/// What a UGen (via [`UGen::done`]) asks the engine to do when it finishes --
 /// scsynth's full done-action set (`Done.schelp`, values 0–15). `None`/
 /// `PauseSelf` are applied inline on the audio thread; every other action frees
 /// this node (and possibly a sibling or the group) and is queued for the drain
@@ -637,18 +637,18 @@ impl DoneAction {
     }
 }
 
-/// Calculation rate of a UGen output — scsynth's four rates, made an
+/// Calculation rate of a UGen output -- scsynth's four rates, made an
 /// explicit, validated property of every UGen. It decides how much of the
 /// UGen's output wire is meaningful and when the UGen runs:
-/// - [`Ar`](Rate::Ar): one value per sample — a full [`Block`] wire, run every
+/// - [`Ar`](Rate::Ar): one value per sample -- a full [`Block`] wire, run every
 ///   block. The default for signal UGens, and the only shape there was
 ///   before the rate became an explicit property.
-/// - [`Kr`](Rate::Kr): one value per block — a length-1 wire computed once per
+/// - [`Kr`](Rate::Kr): one value per block -- a length-1 wire computed once per
 ///   block (read back through [`at`] as a constant across the block).
 /// - [`Ir`](Rate::Ir): one value computed at synth init and held for the
-///   node's life — also a length-1 wire, but written once (`SampleRate.ir`,
+///   node's life -- also a length-1 wire, but written once (`SampleRate.ir`,
 ///   `BufFrames.ir`, `Rand.ir`).
-/// - [`Dr`](Rate::Dr): demand rate — values *pulled* by a driver (`Demand`),
+/// - [`Dr`](Rate::Dr): demand rate -- values *pulled* by a driver (`Demand`),
 ///   not run in block order at all (see [`UGen::demand`]/[`UGen::drive`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Rate {
@@ -698,13 +698,13 @@ impl Rate {
     }
 }
 
-/// A demand UGen's view of its own inputs — the whole `dr` protocol from
+/// A demand UGen's view of its own inputs -- the whole `dr` protocol from
 /// the UGen's side.
 ///
 /// A demand input is not a buffer of samples: it is a *stream*, and reading it
 /// means asking the UGen behind it for one more value. Since that UGen may in
 /// turn read streams of its own, the recursion has to happen where the graph
-/// is — in `crate::synthdef::instance` — which is why a source is handed this
+/// is -- in `crate::synthdef::instance` -- which is why a source is handed this
 /// trait object instead of `&[&[f32]]`. From inside a source, a plain constant
 /// and a nested `Dseq` differ only in what [`is_demand`](Self::is_demand)
 /// answers.
@@ -721,14 +721,14 @@ pub trait DemandInputs {
         self.len() == 0
     }
 
-    /// Whether input `k` is a demand-rate stream — scsynth's `ISDEMANDINPUT`.
+    /// Whether input `k` is a demand-rate stream -- scsynth's `ISDEMANDINPUT`.
     /// The list sources branch on this: a stream is drained until it yields
     /// `NaN`, a value is taken once.
     fn is_demand(&self, k: usize) -> bool;
 
     /// The next value of input `k`: pulled if it is a stream, read at the
     /// current frame if it is not. `NaN` means an exhausted stream (and an
-    /// out-of-range `k` reads as `NaN` too — nothing to yield).
+    /// out-of-range `k` reads as `NaN` too -- nothing to yield).
     fn pull(&mut self, k: usize) -> f32;
 
     /// Restarts input `k`'s stream from its beginning. A no-op for an input
@@ -736,7 +736,7 @@ pub trait DemandInputs {
     fn reset(&mut self, k: usize);
 
     /// Input `k` read as an ordinary value at the current frame, *without*
-    /// pulling — what a driver reads for its own `trig`/`reset`/`done_action`.
+    /// pulling -- what a driver reads for its own `trig`/`reset`/`done_action`.
     /// A demand input has no samples and reads `0`.
     fn at(&self, k: usize) -> f32;
 
@@ -758,14 +758,14 @@ pub trait UGen: Send {
         DoneAction::None
     }
 
-    /// Whether this UGen has **finished** — scsynth's per-unit *done flag*,
+    /// Whether this UGen has **finished** -- scsynth's per-unit *done flag*,
     /// which is what `Done` and `FreeSelfWhenDone` read.
     ///
     /// Deliberately separate from [`done`](Self::done): that one says what
     /// should happen to the *node* and is `None` for an envelope whose
     /// `doneAction` is 0, while this one is raised by any envelope that has
     /// played out, whatever it asked the node to do. Reading the action would
-    /// therefore make `Done` silent exactly where it is most used — watching a
+    /// therefore make `Done` silent exactly where it is most used -- watching a
     /// ramp that is not meant to free anything.
     fn is_done(&self) -> bool {
         false
@@ -780,7 +780,7 @@ pub trait UGen: Send {
     /// Intrinsic latency in samples: how far this UGen's output lags its
     /// input by construction (the partitioned convolver reports its
     /// partition length; almost everything else is 0, the default). Reported
-    /// through `SynthNode::latency` for a future delay-compensation pass —
+    /// through `SynthNode::latency` for a future delay-compensation pass --
     /// today it is informational only (see `docs/model-vs-daw.md`).
     fn latency(&self) -> usize {
         0
@@ -808,14 +808,14 @@ pub trait UGen: Send {
 
     /// Tells the UGen which node it lives in, once, when the node enters the
     /// tree. The only consumer today is `FFT`'s hop-phase stagger, which
-    /// derives a deterministic per-instance offset from the id — same id, same
+    /// derives a deterministic per-instance offset from the id -- same id, same
     /// offset, so RT and NRT renders of the same score stay sample-identical.
-    /// Runs on the audio thread — must stay allocation-free (arithmetic only).
+    /// Runs on the audio thread -- must stay allocation-free (arithmetic only).
     fn set_node_id(&mut self, _id: i32) {}
 
     /// Demand-rate pull: a demand *source* (the `D*` family) returns its
     /// next value when it is pulled, or `NaN` once its stream is exhausted.
-    /// Non-demand UGens never see this. Runs on the audio thread —
+    /// Non-demand UGens never see this. Runs on the audio thread --
     /// allocation-free, like `process`.
     ///
     /// `inputs` is a [`DemandInputs`] rather than a slice of buffers because a
@@ -829,7 +829,7 @@ pub trait UGen: Send {
     /// Restarts a demand source's stream (a driver's `reset` edge, or a parent
     /// source coming back around to this one). A kind that owns nested streams
     /// propagates the reset through `inputs`; whether it does is part of its
-    /// definition, not a blanket rule — see `src/dsp/demand.rs`.
+    /// definition, not a blanket rule -- see `src/dsp/demand.rs`.
     fn reset_demand(&mut self, _inputs: &mut dyn DemandInputs) {}
 
     /// Demand *driver* (`Demand`, `Duty`, `TDuty`): fills `output` for one
@@ -842,12 +842,12 @@ pub trait UGen: Send {
     /// Receives a typed out-of-band command addressed to this instance
     /// (`/node_ugenCmd`). The mechanism the future FFT/streaming UGens use to take
     /// parameters that are neither audio nor control inputs. Runs on the audio
-    /// thread — the payload is inline, so this must stay allocation-free. The
+    /// thread -- the payload is inline, so this must stay allocation-free. The
     /// default ignores every command (an unknown selector is a no-op).
     fn command(&mut self, _cmd: &UGenCmd) {}
 
     /// Runs a spectral-chain UGen (`FFT`/`PV_*`/`IFFT`) with access to its
-    /// synth-private [`SpectralChain`](spectral::SpectralChain) — state the plain
+    /// synth-private [`SpectralChain`](spectral::SpectralChain) -- state the plain
     /// `process` path cannot reach, since the chain is shared across UGens. The
     /// synth calls this (instead of `process`) for
     /// [`ExecMode::Spectral`](registry::ExecMode::Spectral) UGens, resolving the
@@ -890,14 +890,14 @@ pub trait UGen: Send {
 
     /// Drains the side-effect messages this UGen buffered during the block into
     /// `sink`, each stamped with `node_id`. Called after the block on the audio
-    /// thread — allocation-free (the buffer is a fixed inline array). Default:
+    /// thread -- allocation-free (the buffer is a fixed inline array). Default:
     /// nothing to drain.
     fn drain_replies(&mut self, _node_id: i32, _sink: &mut dyn FnMut(ReplyMsg)) {}
 }
 
 /// Max side-effect messages a reply UGen (`SendReply`/`SendTrig`/`Poll`)
 /// buffers within one block before the synth drains it. Extra triggers in the
-/// same block are dropped — best-effort, like the node-event FIFO. Inline and
+/// same block are dropped -- best-effort, like the node-event FIFO. Inline and
 /// `Copy`, so buffering a trigger on the audio thread never allocates.
 pub const REPLY_BUFFER_LEN: usize = 8;
 
@@ -908,22 +908,22 @@ pub const REPLY_MAX_VALUES: usize = 16;
 /// stored inline so the message stays `Copy` and heap-free.
 pub const REPLY_NAME_MAX: usize = 31;
 
-/// Which side-effect UGen produced a [`ReplyMsg`] — decides how the network
+/// Which side-effect UGen produced a [`ReplyMsg`] -- decides how the network
 /// thread turns it into an OSC reply or console line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReplyKind {
-    /// `SendTrig` — a `/node_trigger nodeID trigID value` message.
+    /// `SendTrig` -- a `/node_trigger nodeID trigID value` message.
     Trig,
-    /// `SendReply` — a `cmdName nodeID replyID value…` message.
+    /// `SendReply` -- a `cmdName nodeID replyID value…` message.
     Reply,
-    /// `Poll` — a console line `label: value`, plus a `/node_trigger` when its trigid ≥ 0.
+    /// `Poll` -- a console line `label: value`, plus a `/node_trigger` when its trigid ≥ 0.
     Poll,
 }
 
 /// A side-effect message a UGen emits on a trigger (`SendReply`/`SendTrig`/
 /// `Poll`): the payload that leaves the audio thread through the reply FIFO
 /// and becomes an OSC reply (or a console post) on the network thread. Fully
-/// inline and `Copy` — buffering and draining one allocates nothing.
+/// inline and `Copy` -- buffering and draining one allocates nothing.
 #[derive(Clone, Copy, Debug)]
 pub struct ReplyMsg {
     /// Emitting node; stamped by the synth when it drains the UGen.
@@ -989,7 +989,7 @@ impl Default for ReplyMsg {
 /// heap-free, so applying a `/node_ugenCmd` on the audio thread allocates nothing.
 pub const MAX_UGEN_CMD_ARGS: usize = 8;
 
-/// A typed command addressed to one UGen instance (`/node_ugenCmd`) — the discoverable
+/// A typed command addressed to one UGen instance (`/node_ugenCmd`) -- the discoverable
 /// replacement for scsynth's untyped `/node_ugenCmd` blob. The command name is hashed
 /// to a stable `selector` on the network thread (so both sides agree without a
 /// shared table); `args` are inline floats. Consumers are future UGens; today

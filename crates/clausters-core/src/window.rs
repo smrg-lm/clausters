@@ -3,7 +3,7 @@
 //! An analysis/synthesis window is applied before a forward FFT (and again on
 //! overlap-add resynthesis). Because both the server's `FFT`/`IFFT` UGens and a
 //! client that pre-analyses audio off-line must agree **bit for bit** on the
-//! window shape, the coefficients live here in the shared core — the same rule
+//! window shape, the coefficients live here in the shared core -- the same rule
 //! that keeps the [`fft`](crate::fft) algorithm single-sourced. `no_std`-friendly
 //! and allocation-free: [`Window::fill`] writes into a caller-provided slice, so
 //! a real-time caller fills a window once at synth init and never again.
@@ -17,7 +17,7 @@ use std::f32::consts::PI;
 /// Smoothing window shapes, selected on the wire by the integer `wintype` an
 /// `FFT`/`IFFT` carries. The values match scsynth's convention where it has one
 /// (`-1` rectangular, `0` the default), and extend it with the other classic
-/// windows. [`Hann`](Window::Hann) is the default — a good general analysis
+/// windows. [`Hann`](Window::Hann) is the default -- a good general analysis
 /// window with well-behaved overlap-add at 50% hop.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[repr(i32)]
@@ -28,7 +28,7 @@ pub enum Window {
     /// Hann (raised cosine). The default.
     #[default]
     Hann = 0,
-    /// Sine (cosine) window — the square root of Hann; power-complementary at
+    /// Sine (cosine) window -- the square root of Hann; power-complementary at
     /// 50% overlap.
     Sine = 1,
     /// Welch (parabolic) window.

@@ -55,7 +55,7 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         SpectralRole::Filter,
         |_, _| Box::new(PvBrickWall),
     ),
-    // the curated PV set — parameterized implementations under the
+    // the curated PV set -- parameterized implementations under the
     // scsynth-compatible names, deliberately not a one-UGen-per-op catalog
     // (see docs/decisions.md). PvMag gains a clip mode; PvCombine is ONE
     // binary implementation behind six names; the stateful pair and the bin
@@ -159,7 +159,7 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         SpectralRole::Filter,
         |c, _| Box::new(PvBinShift::new(c, true)),
     ),
-    // the general per-frame mechanism — one UGen interpreting a
+    // the general per-frame mechanism -- one UGen interpreting a
     // compile-validated bin-expression program (`mag_expr`/`phase_expr`) over
     // every bin of each fresh frame. Inputs: `[chain, p0, p1, …]` (variadic
     // parameters, sampled at the hop). An op outside the curated set is a

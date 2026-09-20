@@ -32,7 +32,7 @@ pub struct WsServerLink {
 }
 
 impl WsServerLink {
-    /// Opens a WebSocket to `url` (e.g. `ws://127.0.0.1:57120`) for `host` —
+    /// Opens a WebSocket to `url` (e.g. `ws://127.0.0.1:57120`) for `host` --
     /// the instance whose leg this is, since a page may hold several and each
     /// reaches its own server.
     pub(crate) fn connect(url: &str, host: HostId) -> Result<Self, String> {
@@ -97,7 +97,7 @@ impl WsServerLink {
 /// backend): outbound OSC packets are handed to a page-registered JS callback
 /// (which forwards them to the worklet's MessagePort); inbound replies arrive
 /// through [`GuiBridge::server_reply`]. The whole audio server lives in the
-/// same tab — no process, no socket, no headers.
+/// same tab -- no process, no socket, no headers.
 pub struct PageServerLink {
     pub(super) callback: js_sys::Function,
 }
@@ -277,7 +277,7 @@ impl WebApp {
                 self.apply_fetch_step(step);
             }
             // **Another peer wrote a span of samples this page is drawing.**
-            // A page holds its **own copy** — it cannot map anything — so the
+            // A page holds its **own copy** -- it cannot map anything -- so the
             // announcement names a span whose samples are not in it, and no
             // summary over what it holds can find the edit. So the span is
             // read back off the wire and put where the picture keeps it, which
@@ -377,7 +377,7 @@ impl WebApp {
                 if let Some(OscType::Double(rate)) = msg.args.get(1) {
                     self.server_rate = *rate;
                     // Window sizes may change with the real rate known, so the
-                    // tap windows are re-derived — through the same queue the
+                    // tap windows are re-derived -- through the same queue the
                     // trees use, which is the only door that talks to the
                     // server about subscriptions.
                     self.schedule_stream_sync();
@@ -432,7 +432,7 @@ impl WebApp {
     }
 
     /// Carries out one fetch-machine step: send the next request over the WS
-    /// leg, or turn a finished buffer into view data for its widgets —
+    /// leg, or turn a finished buffer into view data for its widgets --
     /// looking each widget up in the tree, like the native front, to decide
     /// between a multichannel waveform and one STFT per channel.
     fn apply_fetch_step(&mut self, step: FetchStep) {
@@ -456,7 +456,7 @@ impl WebApp {
                         continue;
                     }
                     // The fetch was keyed by a widget id, and for a clip that
-                    // is the *clip's* — a body carries none — so the reply
+                    // is the *clip's* -- a body carries none -- so the reply
                     // resolves to the element that wanted the samples. What is
                     // read out is the **declaration**: a slot says where the
                     // data goes and what has to be made of it first.
@@ -506,7 +506,7 @@ impl WebApp {
                         }
                         // Mesh-drawn: the samples go home to the element, which
                         // makes of them whatever it draws from. It falls
-                        // through to the shared tail — a body carries no editor
+                        // through to the shared tail -- a body carries no editor
                         // props, so the sample-rate fill is a no-op for it, but
                         // the **repaint** is not.
                         _ => {
@@ -691,7 +691,7 @@ impl WebApp {
         }
     }
 
-    /// The widgets of `def_id` drawing server buffer `bufnum` — whose GPU slots
+    /// The widgets of `def_id` drawing server buffer `bufnum` -- whose GPU slots
     /// a write to that buffer has to release before the element rewrites the
     /// pyramid they share.
     fn widgets_drawing(&self, def_id: i32, bufnum: i32) -> Vec<i32> {
@@ -747,7 +747,7 @@ impl WebApp {
                 .and_then(|tree| crate::host::span_to_read_back(tree, bufnum))
         }) else {
             // **The announcement is the second ask.** Nothing here has a
-            // picture of this buffer with a shape to put a span into — which is
+            // picture of this buffer with a shape to put a span into -- which is
             // what a join looks like a moment after the edit that minted it:
             // its box named the buffer in the turn the stitch was sent, the
             // first ask answered with no frames at all, and a take remembered
@@ -781,7 +781,7 @@ impl WebApp {
     /// its slot, and this turns that note into a `/buffer_getRange`.
     ///
     /// One download per buffer is in flight at a time (the fetch machine's own
-    /// bound), and nothing is asked while the zoom stays above the bucket —
+    /// bound), and nothing is asked while the zoom stays above the bucket --
     /// where the summary is the right answer and already on screen.
     ///
     /// The summary walks are ticked here too, for the same reason and against

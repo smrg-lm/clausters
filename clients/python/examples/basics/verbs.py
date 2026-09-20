@@ -2,9 +2,9 @@
 """The ambient verbs, end to end: one ``play`` and one ``render`` for
 everything.
 
-``play`` sounds whatever you hand it against the ambient context — an event or
+``play`` sounds whatever you hand it against the ambient context -- an event or
 a plain dict, a generator, a bare signal expression (a UGen graph or a Faust
-box), a named def, a timeline, a buffer, an automation — and ``render``
+box), a named def, a timeline, a buffer, an automation -- and ``render``
 performs the change of state offline: an expression or a pattern in, samples
 (and here a WAV) out. This tour visits every playable kind audibly, and closes
 the circle by rendering a phrase to a file, loading it back as a buffer and
@@ -16,7 +16,7 @@ The visual sibling has its own tour (``views/plotting.py``); the arrangement, be
 
 A `clausters.Session` bundles a server, a clock and (if you ask for one) a GUI
 host into the handle a session is written against. `activate` makes it the
-ambient session — server, clock and random root — which is what lets every verb
+ambient session -- server, clock and random root -- which is what lets every verb
 below run with nothing wired.
 
 Run it as a script (``python verbs.py``) or cell by cell (``# %%``). Needs an
@@ -51,14 +51,14 @@ session.start()
 PAUSE = 1.2
 
 
-# %% An Event — and a plain dict, which coerces to one.
+# %% An Event -- and a plain dict, which coerces to one.
 print("an Event, then the same note as a bare dict")
 play(Event(degree=0, dur=0.5))
 time.sleep(PAUSE)
 play({"degree": 4, "dur": 0.5, "amp": 0.15})
 time.sleep(PAUSE)
 
-# %% A generator — coerced to a Routine on the default clock. Each yield is
+# %% A generator -- coerced to a Routine on the default clock. Each yield is
 # the gap in beats to the next wake.
 print("a generator, three notes up the scale")
 
@@ -74,7 +74,7 @@ time.sleep(PAUSE + 1.0)
 
 # %% A bare expression: the verb wraps it in an ephemeral def (adding the
 # `out`), sends it and instances it. Everything play returns knows how to end
-# what it started — a Synth handle frees itself.
+# what it started -- a Synth handle frees itself.
 print("a bare UGen expression, sounding until freed")
 node = play(sine(330.0) * 0.15)
 time.sleep(PAUSE)
@@ -100,7 +100,7 @@ time.sleep(PAUSE)
 long_note.free()                              # ...cut now
 
 # %% An automation coupled to a sounding node: the curve is written to a
-# control bus and /node_map'd onto the control — the node follows it, then keeps
+# control bus and /node_map'd onto the control -- the node follows it, then keeps
 # the last value. Outside a clock there is nothing to convert; the
 # returned automation stops the sweep early (the control holds where it was).
 # The curve's segment times are seconds -- an `Env`'s are -- so three of them
@@ -124,8 +124,8 @@ tl.add(0.5, Event(degree=7, dur=0.5))
 play(tl)
 time.sleep(PAUSE + 1.0)
 
-# %% render: the change of state. A pattern bounces offline to samples — and
-# with path=, to a WAV — with no server involved (an ephemeral one renders).
+# %% render: the change of state. A pattern bounces offline to samples -- and
+# with path=, to a WAV -- with no server involved (an ephemeral one renders).
 print("rendering a phrase to a WAV (offline, no audio device)")
 wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
 render(Pbind(instrument="default", degree=Pseq([0, 4, 7, 12]), dur=0.25),
@@ -133,7 +133,7 @@ render(Pbind(instrument="default", degree=Pseq([0, 4, 7, 12]), dur=0.25),
 
 # %% A session can be offline, too. The `render` above bounces *one* playable
 # through a server nobody holds; `Session.nrt()` is the same change of state as
-# an **environment** — several things played into one score and rendered
+# an **environment** -- several things played into one score and rendered
 # together, with no audio device anywhere. The verbs inside it are the verbs
 # above, which is the whole point: only the carrier differs.
 print("a session that never sounds: the same verbs, rendered")

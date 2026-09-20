@@ -1,4 +1,4 @@
-//! S12: the destructive edit verbs on the wire — `/buffer_gain` and
+//! S12: the destructive edit verbs on the wire -- `/buffer_gain` and
 //! `/buffer_reverse`.
 //!
 //! The arithmetic itself is `clausters_core::edit`'s and is unit-tested there;
@@ -121,7 +121,7 @@ fn fails(s: &mut NrtSession) -> Vec<String> {
 fn gain_scales_a_span_in_frames_not_in_flat_samples() {
     let mut s = session();
     let ramp = loaded(&mut s);
-    // Frames 1..3 — samples 2..6 flat, which is the whole point of the unit.
+    // Frames 1..3 -- samples 2..6 flat, which is the whole point of the unit.
     send(
         &mut s,
         "/buffer_gain",
@@ -199,7 +199,7 @@ fn reverse_turns_the_span_around() {
 /// The subtle one: a batch of edits is submitted before any of them completes,
 /// so each must build on what the *queue* last produced. Without the chain
 /// every edit would start from the pre-batch contents and the last installed
-/// would erase the rest — the defect `/buffer_setRange` already had to fix, and
+/// would erase the rest -- the defect `/buffer_setRange` already had to fix, and
 /// the reason these jobs join the same chain.
 #[test]
 fn a_batch_of_edits_builds_on_each_other() {

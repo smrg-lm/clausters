@@ -3,7 +3,7 @@
 
 The two heavy views at audio-editor depth. A stereo phrase is rendered
 **offline** (no audio device needed for the render), written as one interleaved
-``f32`` file, and shown twice from that single mapped resource (the bulk path —
+``f32`` file, and shown twice from that single mapped resource (the bulk path --
 the samples never ride OSC):
 
 - a ``waveform`` with ``channels=2`` draws **both** channels as stacked lanes
@@ -13,13 +13,13 @@ the samples never ride OSC):
 
 Both views navigate identically: **wheel** zooms toward the cursor (the peak
 pyramid cross-fades, so zooming never pops), **Shift+drag** pans, **plain drag
-selects** — the host emits ``/gui_event <id> "selection" <start> <len>`` (in
+selects** -- the host emits ``/gui_event <id> "selection" <start> <len>`` (in
 samples) as you drag; ``r`` resets.
 
 **Ctrl+drag** asks for the other selection: the span restricted to the band of
 values the sweep covered, drawn as the rectangle it is and reported as two
 further arguments. Both views carry the same plan (``"select_box select"``), and
-the step declines where the picture has one measured axis — so today the
+the step declines where the picture has one measured axis -- so today the
 rectangle appears on the waveform, whose y is amplitude, while the spectrogram
 falls through to the plain span, because its y is frequency and a selection of
 frequencies is a range of *bins*: a different field of a selection, and a
@@ -27,7 +27,7 @@ gesture this host does not have yet. A plain drag stays a time span on both, on
 purpose.
 
 The two views are deliberately **not linked** here, so each one's selection is
-its own (see ``linked.py`` for the shared-axis case) — which is what makes
+its own (see ``linked.py`` for the shared-axis case) -- which is what makes
 the clipboard's addressee visible: a block operation goes to the view under the
 pointer, and to whichever view holds the window's most recent selection when the
 pointer is over neither (a sweep out to the first or last sample leaves it in
@@ -36,15 +36,15 @@ the window's margin).
 **Ctrl+C then Ctrl+V** is the clipboard, and it shows where the host's authority
 stops. The copy is a *read*, so the host makes it alone: the selected span
 leaves the samples it has mapped and lands on its clipboard, typed and carrying
-its sample rate — nothing reaches this script. The paste *changes data*, which
+its sample rate -- nothing reaches this script. The paste *changes data*, which
 the host does not own, so it arrives here as a request with the clipboard beside
 it, and what this script does is the smallest honest thing: the block goes into
-a buffer of its own (`Buffer.set_samples`, which chunks it as blobs — a
+a buffer of its own (`Buffer.set_samples`, which chunks it as blobs -- a
 half-second of stereo is 200 kB and would not fit one datagram as arguments) and
-plays once. Copy a range, paste it, hear that range — with nothing written over
+plays once. Copy a range, paste it, hear that range -- with nothing written over
 the take, because a destructive edit belongs to whoever owns those samples. The
 **playhead** tracks what you hear: `play_pass` starts one pass of the render
-through a ``PlayBuf`` voice (``loop`` is off — the take plays once and the sound
+through a ``PlayBuf`` voice (``loop`` is off -- the take plays once and the sound
 never repeats under whatever else you are checking) and anchors the line with
 the server's sample clock, which the host reads from shared memory with zero
 per-frame messages.
@@ -55,7 +55,7 @@ by name and never matches a widget id.
 Unlike the old three-terminal recipe, this script **launches its own server and
 GUI**: `Session.live` starts an audio server if none is already running (picking
 a shared-memory segment automatically) and `Session.gui` starts ``clausters-gui``
-wired to it — no ``--shm`` path to spell out, and everything the session starts
+wired to it -- no ``--shm`` path to spell out, and everything the session starts
 is torn down when it is closed or the interpreter exits.
 
 This file is organized as ``# %%`` cells (the VS Code / Jupyter convention).
@@ -66,13 +66,13 @@ Install once, from the repo root::
 
 Then run it either way:
 
-- **Interactively** — open the file in VS Code (Python + Jupyter extensions) or a
+- **Interactively** -- open the file in VS Code (Python + Jupyter extensions) or a
   Jupyter notebook and run each ``# %%`` cell (Shift+Enter), inspecting between
   cells and driving the open window from the live ``session``/``gui``/``win``
   handles: ``win["wave"].set(...)``, ``play_pass()``. The kernel stays alive
   with the window open, and the host's event loop keeps delivering to it
   between cells.
-- **As a script** — ``python clients/python/examples/views/editor.py`` runs the
+- **As a script** -- ``python clients/python/examples/views/editor.py`` runs the
   whole file: one playback pass with the playhead following it, then the window
   stays open until you close it (``play_pass()`` from a cell replays it). The
   sound does not repeat on its own, so what you hear after that pass is what you
@@ -100,7 +100,7 @@ SR = 48_000.0
 
 # %% [markdown]
 # ## Render the stereo phrase offline
-# Two bars of an arpeggio with amplitude jitter — enough spectral motion for the
+# Two bars of an arpeggio with amplitude jitter -- enough spectral motion for the
 # spectrogram to be worth looking at. Rendered through an NRT session (no audio
 # device), then written as one interleaved f32 file the views map directly.
 
@@ -137,7 +137,7 @@ seconds = frames / SR
 samples_to_file(inter, raw_path)
 # Not strictly needed (the host builds a sibling cache when it maps the raw
 # file), but shows the multichannel cache built client-side through the shared
-# core — byte-identical to the host's own.
+# core -- byte-identical to the host's own.
 _cache = peaks_cache_file(inter, os.path.join(_tmp, "phrase.peaks"), channels=2)
 print(f"wrote {os.path.getsize(raw_path)} B raw, "
       f"{os.path.getsize(_cache)} B multichannel peak cache")
@@ -147,7 +147,7 @@ print(f"wrote {os.path.getsize(raw_path)} B raw, "
 # `Session.live` connects to a running audio server or starts one if none is up
 # (choosing a shared-memory segment for us); `session.gui()` starts
 # ``clausters-gui`` with its client leg pointed at that server and mapping the
-# same segment. Whatever the session started is owned by it — closing it (or
+# same segment. Whatever the session started is owned by it -- closing it (or
 # leaving the interpreter) stops those.
 
 # %%
@@ -213,7 +213,7 @@ def scene(path: str) -> dict:
 
 win = scene(raw_path).open()
 win["wave"].set(sel_start=float(frames // 2), sel_len=float(frames // 4))
-print(f"opened window {win} — drag to select, Shift+drag to pan, wheel to zoom, r to reset")
+print(f"opened window {win} -- drag to select, Shift+drag to pan, wheel to zoom, r to reset")
 
 # %% [markdown]
 # ## Follow the playhead and read events
@@ -244,7 +244,7 @@ def on_clipboard(tag, *vals):
     """Ctrl+C on the waveform, then Ctrl+V: hear exactly what was copied.
 
     The split this shows is the host's whole posture. **Copy is a read**, so the
-    host does it alone and nothing arrives here — the block is on its clipboard,
+    host does it alone and nothing arrives here -- the block is on its clipboard,
     typed, carrying the rate it was taken at. **Paste changes data**, which the
     host does not own, so it arrives as a request with the clipboard travelling
     beside it: the kind, the document, and the samples as one little-endian
@@ -252,8 +252,8 @@ def on_clipboard(tag, *vals):
 
     What this script does with it is the smallest honest thing: it puts the
     block in a server buffer of its own and plays it once. Nothing is written
-    back over the take — a destructive edit belongs to whoever owns that
-    samples — so the round trip is *copy a range and hear that range*, which is
+    back over the take -- a destructive edit belongs to whoever owns that
+    samples -- so the round trip is *copy a range and hear that range*, which is
     the whole of what the clipboard promises.
     """
     if tag == "refused":
@@ -271,12 +271,12 @@ def on_clipboard(tag, *vals):
     channels = int(block["channels"])
     block_frames = int(block["frames"])
     print(f"pasted {block_frames} frames x {channels} ch at {block['sample_rate']:.0f} Hz "
-          f"({block_frames / block['sample_rate']:.3f} s) — auditioning it")
+          f"({block_frames / block['sample_rate']:.3f} s) -- auditioning it")
     # A buffer of its own, sized to what came over and filled with it. The rate
     # travels with the block and nothing here resamples it: that would be an
     # edit, and an edit is the owner's. `set_samples` is why this is one line:
     # it sends the block as little-endian ``f32`` blobs, chunked to the
-    # transport's bound — half a second of stereo is 200 kB, which as OSC
+    # transport's bound -- half a second of stereo is 200 kB, which as OSC
     # arguments would not fit a datagram at all.
     global _clip_voice, _clip_buf
     # The previous audition stops first -- one voice at a time -- but its buffer
@@ -341,7 +341,7 @@ win["wave"].set(sel_start=0.0, sel_len=float(frames))  # select the whole phrase
 # ## Close
 # `gui.close(win)` closes the window; `session.close()` stops the GUI and server
 # processes. (Leaving the interpreter would tear them down too, via the launcher's
-# exit hooks — nothing is left running.)
+# exit hooks -- nothing is left running.)
 
 # %%
 def teardown():
@@ -361,7 +361,7 @@ def teardown():
 # ## Plain-script run
 # Run cell by cell in Jupyter / VS Code to keep the window open and drive the
 # handles between cells (``play_pass()``, ``win["wave"].set(...)``,
-# ``gui.close(win)``). Run as a plain script instead — ``python editor.py`` —
+# ``gui.close(win)``). Run as a plain script instead -- ``python editor.py`` --
 # and this block holds the window open until it is closed, then tears
 # everything down.
 

@@ -1,9 +1,9 @@
-//! `button` — a push whose **press is the event**, in the two shapes a control
+//! `button` -- a push whose **press is the event**, in the two shapes a control
 //! signal comes in: a gate that is held, or one message and nothing after it.
 //!
 //! The smallest thing that has to know it is **being pressed**. Its held state
-//! used to travel the other way round the world — into the gesture machine as a
-//! `Drag::Button`, and back down into the frame as a `FrameInputs` field — for
+//! used to travel the other way round the world -- into the gesture machine as a
+//! `Drag::Button`, and back down into the frame as a `FrameInputs` field -- for
 //! no reason but that a `WidgetKind` arm is data the host matches on and cannot
 //! own anything. Here it is a `bool` on the thing that is held.
 //!
@@ -11,14 +11,14 @@
 //! to a button is composed from them: a click is a press and a release that
 //! landed inside, a double click is two of those inside a window. Those are
 //! *gestures*, they belong to the gesture machine, and none of them is a mode
-//! here — what a mode says is only which of the two primitives reaches the
+//! here -- what a mode says is only which of the two primitives reaches the
 //! server.
 //!
 //! **A button says two things at once, to two audiences.** Its **value** is a
-//! control signal — `on`/`off`, which `/gui_bind` forwards to the audio server
+//! control signal -- `on`/`off`, which `/gui_bind` forwards to the audio server
 //! without the script ever seeing it. Its **interface events** are what the
-//! hand did — `"press"`, `"release"`, and `"click"` when the release landed on
-//! the button rather than off it — which go to the script whether the widget is
+//! hand did -- `"press"`, `"release"`, and `"click"` when the release landed on
+//! the button rather than off it -- which go to the script whether the widget is
 //! bound or not ([`Events::and_interface`]). That is why one element serves
 //! both an instrument's gate and a panel's command: the two readings are two
 //! vocabularies, not two widgets.
@@ -36,7 +36,7 @@ use crate::host::widget::size::{Natural, control_box, text_box};
 
 use super::switch_value;
 
-/// **When a button emits** — the whole of what separates the two control
+/// **When a button emits** -- the whole of what separates the two control
 /// signals one element serves.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Mode {
@@ -80,7 +80,7 @@ pub struct Button {
     /// `1`/`0` unless the def named another pair.
     pub on: f32,
     pub off: f32,
-    /// Whether it is being held right now — drawn pressed.
+    /// Whether it is being held right now -- drawn pressed.
     held: bool,
 }
 
@@ -152,8 +152,8 @@ impl Element for Button {
         )
     }
 
-    /// The mode changes one line of this — a gate closes, a press already said
-    /// everything it had to say — and the rest is the interface half, which no
+    /// The mode changes one line of this -- a gate closes, a press already said
+    /// everything it had to say -- and the rest is the interface half, which no
     /// mode touches: the release happened either way, and it was a **click** if
     /// the pointer was still on the button when it came up.
     fn release(&mut self, _at: (f64, f64), inside: bool, _input: &Input) -> Events {
@@ -219,7 +219,7 @@ mod tests {
         }
     }
 
-    /// One press, two values, and in between the button knows it is held —
+    /// One press, two values, and in between the button knows it is held --
     /// which is the whole of what used to be a drag variant and a frame input.
     #[test]
     fn it_holds_itself_down_between_the_one_and_the_zero() {
@@ -276,7 +276,7 @@ mod tests {
     }
 
     /// The interface half: what the hand did, reported whatever the value was
-    /// worth — a click is the release that landed on the button.
+    /// worth -- a click is the release that landed on the button.
     #[test]
     fn a_release_on_the_button_is_a_click() {
         let m = Metrics::default();

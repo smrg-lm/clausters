@@ -9,7 +9,7 @@ use crate::faust::ffi;
 ///
 /// Refcounting: the factory lives inside an `Arc<FaustDef>` (see
 /// `faust::synth`); every `FaustSynth` instance keeps a clone of that Arc,
-/// so the factory cannot be deleted while instances live —
+/// so the factory cannot be deleted while instances live --
 /// `deleteCDSPFactory` with live instances is UB.
 pub struct FaustFactory {
     ptr: NonNull<ffi::llvm_dsp_factory>,

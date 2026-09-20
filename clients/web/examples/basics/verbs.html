@@ -22,14 +22,14 @@
       <div id="note">A <b>Session</b> bundles a server, a clock and (if you ask
 for one) a GUI host into the handle a session is written against. Adopt one as
 the page's default and the <b>ambient verbs</b> work with nothing wired:
-<code>play</code> sounds whatever you hand it — an event, a plain object of
-event keys, a generator, a pattern, a def, a timeline, a buffer — and a bare
+<code>play</code> sounds whatever you hand it -- an event, a plain object of
+event keys, a generator, a pattern, a def, a timeline, a buffer -- and a bare
 <code>new Synth(…)</code> reaches the session's server without naming it.
 
 The carrier is the one line that knows about one. This page opens the session
 on the in-page engine; <code>Session.live(url)</code> would open the same
 session on a <code>clausters --ws</code> server and
-<code>Session.nrt()</code> one that never sounds — and nothing below would
+<code>Session.nrt()</code> one that never sounds -- and nothing below would
 change. The tour ends on all three.
 
 One line here is the platform's and the script has no counterpart for it: an
@@ -52,7 +52,7 @@ it refuses an unprepared one by name instead.</div>
       The web sibling of clients/python/examples/basics/verbs.py, and it mirrors that
       example's shape: open an environment once, then visit every playable kind
       audibly, and finish by rendering one of them offline instead of playing
-      it — the same samples, evaluated rather than sounded.
+      it -- the same samples, evaluated rather than sounded.
     -->
     <script type="module">
       import {
@@ -77,7 +77,7 @@ it refuses an unprepared one by name instead.</div>
         session.start();
         log(`session open: tempo ${session.clock.tempo}, `
           + `${session.server.sizing.audioBuses} audio buses`);
-        log("adopted as the page's default — nothing below names a server");
+        log("adopted as the page's default -- nothing below names a server");
         $("tour").disabled = false;
         $("close").disabled = false;
         $("open").disabled = true;

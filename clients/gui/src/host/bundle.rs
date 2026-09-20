@@ -4,22 +4,22 @@
 //! server, which loads its own defs and boot preset (`attach_store` in the
 //! server crate). A browser has no data directory and no embedded server: the
 //! page fetches the same persisted files as URLs and replays them to the
-//! in-page engine as ordinary OSC. This module owns that replay — the
+//! in-page engine as ordinary OSC. This module owns that replay -- the
 //! **ordering and encoding** of the boot, platform-agnostic and natively
 //! unit-tested; the fetching (a page concern) stays in JS.
 //!
 //! [`boot_packets`] mirrors the server's own boot order (defs → graphdefs →
 //! boot preset → the GuiDef's `boot` messages) and brackets it with two
 //! `/server_sync`s: the first marks the defs in (the barrier the native flow gets
-//! implicitly by loading in-process), the second — arriving after everything,
-//! since the engine serves strictly in order — is the page's "bundle is up"
+//! implicitly by loading in-process), the second -- arriving after everything,
+//! since the engine serves strictly in order -- is the page's "bundle is up"
 //! signal (`/server_sync.reply sync_id+1`).
 //!
 //! The second half is the **mount** ([`mount`], [`MountAllocator`]): a bundle
 //! whose manifest declares the component contract is a *template*, and mounting
 //! it means allocating its symbols and resolving its holes
 //! ([`clausters_core::bundle`]). That is the same pass the browser runs, so one
-//! directory behaves identically on all three legs — and a bundle written
+//! directory behaves identically on all three legs -- and a bundle written
 //! before the contract existed (or with no manifest at all) mounts verbatim,
 //! which is what keeps today's bundles running.
 
@@ -41,10 +41,10 @@ use serde_json::Value;
 /// - `boot_json`: `boot.json` (the boot preset of standalone graphs), absent
 ///   when the bundle has none;
 /// - `guidef_tree`: the GuiDef tree JSON (the `"gui"` field of the saved
-///   record) — its root `boot` messages run last, as the native standalone
+///   record) -- its root `boot` messages run last, as the native standalone
 ///   host runs them.
 ///
-/// MIDI bindings — the one other thing the native data-dir boot restores — are
+/// MIDI bindings -- the one other thing the native data-dir boot restores -- are
 /// deliberately absent: the browser has no MIDI leg.
 pub fn boot_packets(
     synthdefs: &[Vec<u8>],
@@ -85,7 +85,7 @@ fn sync(id: i32) -> OscMessage {
     }
 }
 
-/// The `/graph_new` messages of a `boot.json` preset — one per entry, exactly
+/// The `/graph_new` messages of a `boot.json` preset -- one per entry, exactly
 /// as the server's own boot builds them: `[{"graph": <name>, "ports":
 /// {<port>: <value>, …}}, …]`, instantiated with id `-1` (server-allocated)
 /// at the tail of the root group. Malformed entries are skipped, matching the
@@ -156,7 +156,7 @@ pub fn boot_messages(tree_json: &[u8]) -> Vec<OscMessage> {
 /// The standalone front is the **only** client of its embedded server, so a
 /// bump allocator is the whole story: nothing else is handing out these ids and
 /// a mount never gives one back. The bases keep out of the way of what a
-/// hand-written def already uses — node ids follow the client range's `1000`
+/// hand-written def already uses -- node ids follow the client range's `1000`
 /// (scsynth convention), buses start above the low ones instruments write to
 /// out of habit, buffers above the first few a `boot.json` may name.
 const WIDGET_BASE: i32 = 1000;
@@ -169,7 +169,7 @@ const BUFFER_BASE: i32 = 32;
 /// It is deliberately not a [`Registry`](clausters_core::registry::Registry):
 /// nothing here is ever released, because a mounted component lives as long as
 /// the process. The browser leg allocates from the page's real allocators
-/// instead — the resolver takes an allocation either way, which is exactly why
+/// instead -- the resolver takes an allocation either way, which is exactly why
 /// it takes one rather than making it.
 pub struct MountAllocator {
     widget: i32,
@@ -191,7 +191,7 @@ impl Default for MountAllocator {
 
 impl MountAllocator {
     /// Allocates one instance's worth of ids. Two calls with the same
-    /// requirements never overlap — which is what lets one bundle mount twice.
+    /// requirements never overlap -- which is what lets one bundle mount twice.
     pub fn allocate(&mut self, req: &Requirements) -> Allocation {
         let mut allocation = Allocation {
             widget_base: self.widget,
@@ -228,7 +228,7 @@ pub struct Mount {
 
 /// Whether a manifest carries the component contract at all.
 ///
-/// A manifest written before it — or a directory with none — declares no
+/// A manifest written before it -- or a directory with none -- declares no
 /// widgets, no symbols and no parameters, and mounts **verbatim**: its saved
 /// widget ids are used as they are and nothing is substituted. That is the
 /// compatibility hinge of the whole format.
@@ -372,7 +372,7 @@ mod tests {
         assert_eq!(msgs[5].args, vec![OscType::Int(701)]);
     }
 
-    /// A minimal bundle: no graphdefs, no boot.json, no GuiDef boot — just the
+    /// A minimal bundle: no graphdefs, no boot.json, no GuiDef boot -- just the
     /// def and the two syncs.
     #[test]
     fn empty_parts_are_skipped() {
@@ -448,7 +448,7 @@ mod tests {
     }
 
     /// A bundle written before the contract existed declares nothing, so it
-    /// mounts verbatim — the compatibility hinge, asserted rather than assumed.
+    /// mounts verbatim -- the compatibility hinge, asserted rather than assumed.
     #[test]
     fn a_pre_contract_bundle_is_not_symbolic() {
         let old: Manifest = serde_json::from_value(serde_json::json!({

@@ -1,8 +1,8 @@
 //! Drawing **the multitrack** as a multitrack, and reading a hand's answer back.
 //!
 //! The twin of [`super::tree`] over the other description. A session written
-//! today carries [`Multitrack`] — tracks, lanes, regions, and the timeline they
-//! sit on — and leaves the general tree empty, so a host that read only the
+//! today carries [`Multitrack`] -- tracks, lanes, regions, and the timeline they
+//! sit on -- and leaves the general tree empty, so a host that read only the
 //! tree opened a real session as an empty window. This is the leg the crate's
 //! plan calls the destination and the tree the thing being walked off.
 //!
@@ -42,7 +42,7 @@ use super::tree::{ClipRow, LaneRow, Picture};
 /// How the picture is scaled.
 #[derive(Debug, Clone)]
 pub struct Look<'a> {
-    /// Frames a second — where the multitrack's seconds meet the timeline.
+    /// Frames a second -- where the multitrack's seconds meet the timeline.
     pub rate: f64,
     /// The session's samples, once somebody resolved them to server buffers.
     pub takes: Option<&'a Takes>,
@@ -71,8 +71,8 @@ impl Look<'_> {
 
     /// This same look, as the shared projection asks for it.
     ///
-    /// The two are the same two facts — a rate, and which server buffer a
-    /// source was read into — and the only difference is that the projection
+    /// The two are the same two facts -- a rate, and which server buffer a
+    /// source was read into -- and the only difference is that the projection
     /// asks the second as a question ([`projection::Buffers`]) rather than as a
     /// table, because its three callers hold it three ways.
     pub fn projection(&self) -> projection::Look<'_> {
@@ -147,7 +147,7 @@ impl projection::Buffers for Look<'_> {
         self.takes?.source_of(i32::try_from(bufnum).ok()?)
     }
 
-    /// The spans a join is made of, out of the session's own table — the
+    /// The spans a join is made of, out of the session's own table -- the
     /// same statement a client's editor answers from the joins it minted.
     fn parts(&self, source: SourceId) -> Option<Vec<clausters_document::session::Part>> {
         match &self.sources?.get(&source)?.location {
@@ -163,8 +163,8 @@ impl projection::Buffers for Look<'_> {
 
 /// **What a report of the multitrack means**, in the multitrack's own vocabulary.
 ///
-/// One reading for every tag a multitrack widget reports under — the boxes, the
-/// rows, the break-points — because a host reports every gesture the same way
+/// One reading for every tag a multitrack widget reports under -- the boxes, the
+/// rows, the break-points -- because a host reports every gesture the same way
 /// and the difference between them is the *multitrack's*, not the host's. It is
 /// [`clausters_editing::multitrack::intake`]'s, which is the same reading both
 /// clients go through: this crate held its own copy of it until the projections
@@ -189,7 +189,7 @@ pub fn read(
 /// An OSC atom as the JSON a reading, or an editor's turn, takes.
 ///
 /// The wire's framing is the host's and the reading is the crate's, so this is
-/// where the one becomes the other — the same line each client draws for its own
+/// where the one becomes the other -- the same line each client draws for its own
 /// transport.
 pub(crate) fn atom(value: &clausters_core::osc::OscType) -> serde_json::Value {
     use clausters_core::osc::OscType;
@@ -204,7 +204,7 @@ pub(crate) fn atom(value: &clausters_core::osc::OscType) -> serde_json::Value {
     }
 }
 
-/// [`read`] over a report of the boxes — every placement gesture's payload.
+/// [`read`] over a report of the boxes -- every placement gesture's payload.
 pub fn read_clips(
     multitrack: &Multitrack,
     args: &[clausters_core::osc::OscType],
@@ -213,7 +213,7 @@ pub fn read_clips(
     read(multitrack, "clips", args, look)
 }
 
-/// [`read`] over a report of the rows — the mixer's payload.
+/// [`read`] over a report of the rows -- the mixer's payload.
 ///
 /// Mute, solo and the fader are one [`MultitrackIntent::SetTracks`] because the
 /// multitrack's only verb over a track is the whole list, which is what makes adding,
@@ -306,7 +306,7 @@ mod tests {
     }
 
     /// **A row is a track, showing the lane it plays**, and every name on the
-    /// wire is an id — which is what lets an edit-back be read with no map.
+    /// wire is an id -- which is what lets an edit-back be read with no map.
     #[test]
     fn a_multitrack_draws_a_row_per_track_naming_ids() {
         let shown = shown(&multitrack(), &look());
@@ -355,7 +355,7 @@ mod tests {
 
     /// **A move is a `PlaceRegion` and never changes what the region reads**;
     /// a resize is the trim, which is the other verb. The payload says neither
-    /// — it says where the boxes are — so this is where the two are told apart.
+    /// -- it says where the boxes are -- so this is where the two are told apart.
     #[test]
     fn a_move_a_cross_and_a_trim_are_each_their_own_verb() {
         let multitrack = multitrack();
@@ -438,7 +438,7 @@ mod tests {
     }
 
     /// **A box the payload leaves out was deleted**, and that is the lane's own
-    /// whole-list verb — the multitrack has no "remove one region", for the same
+    /// whole-list verb -- the multitrack has no "remove one region", for the same
     /// reason it has no "add one".
     #[test]
     fn a_clip_the_payload_does_not_name_is_removed_from_its_lane() {
@@ -462,12 +462,12 @@ mod tests {
     /// **A box the multitrack has no region for becomes one.** A split's tail, a
     /// paste, anything a hand made: the payload says which lane it landed on,
     /// which buffer it is a window onto and where in that buffer it opens,
-    /// which is everything a region needs — so it is *built* rather than
+    /// which is everything a region needs -- so it is *built* rather than
     /// inferred, and the same rule serves whatever gesture produced it.
     ///
     /// The defect this closes: a split names its halves `"12 2"`, which is no
     /// node id, so the reader dropped the tail and kept the `TrimRegion` that
-    /// shortened the original — a cut that silently truncated a region and lost
+    /// shortened the original -- a cut that silently truncated a region and lost
     /// the rest of it.
     #[test]
     fn a_box_the_multitrack_does_not_know_becomes_a_region_on_its_lane() {

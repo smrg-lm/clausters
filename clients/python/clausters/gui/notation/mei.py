@@ -1,8 +1,8 @@
 """The two directions between the client's sequencing data and a score.
 
 The third way into the engraver, beside typed score text and the SVG adapter:
-turn the client's own `clausters.seq` data (Event, Timeline) into MEI — the
-format `clausters.gui.notation.engrave` already reads — so a melody or a
+turn the client's own `clausters.seq` data (Event, Timeline) into MEI -- the
+format `clausters.gui.notation.engrave` already reads -- so a melody or a
 bounced timeline is *seen* and edited as notation, the inverse of the
 score->sound flow.
 
@@ -10,7 +10,7 @@ score->sound flow.
 sounds (`clausters.gui.notation.to_notes`, which is where the symbols are
 honoured) and placed on a `clausters.seq.timeline.Timeline` of `Event`s. It is
 here rather than beside the model because it is the same seam in the other
-direction — building `Event`s reads Python-native types and stays in this
+direction -- building `Event`s reads Python-native types and stays in this
 client, while what a staccato *means* is one implementation in Rust.
 
 The **seam this module is** is worth naming, because it is where the
@@ -63,7 +63,7 @@ def from_notes(notes, *, meter: str = "4/4", clef: str = "G2", key: str = "C",
     that overruns a barline is split and tied across it. Off-grid durations
     (finer than a 32nd, e.g. a triplet) snap to the grid here, on the way in:
     the model itself holds an exact rational, so a tuplet is representable the
-    moment a caller can express one — writing it is the emission milestone.
+    moment a caller can express one -- writing it is the emission milestone.
     """
     return sheet.to_mei(sheet_from_notes(notes, meter=meter, clef=clef,
                                          key=key, beat_unit=beat_unit))
@@ -80,7 +80,7 @@ def from_timeline(timeline, *, meter: str = "4/4", clef: str = "G2",
     skipped, as are rest events (they read as silence, i.e. a gap).
 
     Each group is written for its **shortest** ``dur`` (one layer, so it is
-    clamped never to overrun the next onset — the model holds several voices
+    clamped never to overrun the next onset -- the model holds several voices
     already, and writing them is the emission milestone). Options and the tie/barline behaviour are
     as `from_notes`; returns the MEI for `engrave`/`Score`/`Score.from_timeline`.
     """
@@ -100,8 +100,8 @@ def sheet_from_notes(notes, *, meter: str = "4/4", clef: str = "G2",
 
     The sheet is what `clausters.gui.notation.to_mei` writes and what
     `clausters.gui.notation.to_notes` reads back, so a caller that wants to
-    operate on the score — or hear it as the page says rather than as the events
-    said — starts here.
+    operate on the score -- or hear it as the page says rather than as the events
+    said -- starts here.
     """
     return sheet.from_voice(_voice_from_notes(notes, beat_unit),
                             meter=meter, clef=clef, key=key)
@@ -121,7 +121,7 @@ def to_timeline(score, *, instruments=None, interp: dict | None = None,
     The return trip, and the one `clausters.gui.notation.to_notes` does the
     thinking for: each sounding note becomes an `clausters.seq.event.Event` at
     its onset, carrying the **written** value as ``dur`` and the **heard** one as
-    ``sustain`` — which is the pair the page keeps apart and the reason a
+    ``sustain`` -- which is the pair the page keeps apart and the reason a
     staccato quarter is still a quarter.
 
     ``instruments`` binds a staff to what plays it, since the notation does not
@@ -180,7 +180,7 @@ def _instrument(instruments, staff: int):
 
 def _dur_ticks(beats: float, beat_unit: int) -> int:
     """A *duration* in beats -> 32nd-note ticks (a whole note is ``beat_unit``
-    beats). At least one tick — a sounding note never has zero length."""
+    beats). At least one tick -- a sounding note never has zero length."""
     return max(1, round(float(beats) * _TPW / beat_unit))
 
 

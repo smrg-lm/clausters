@@ -2,7 +2,7 @@
 //! kept current with the samples it describes.
 //!
 //! A buffer this server shares is a region file
-//! ([`crate::dsp::region`]) — its samples, mapped, named from the segment, the
+//! ([`crate::dsp::region`]) -- its samples, mapped, named from the segment, the
 //! buffer number and the generation. This is the file beside it,
 //! `<segment>.buf<N>.<gen>.peaks`, holding the peak pyramid over those samples
 //! in the same CLPK format every client already reads
@@ -22,7 +22,7 @@
 //!   else. A peer maps it read-only; a peer that edits announces the span
 //!   (`/buffer_touch`) and the owner refreshes it.
 //! - **Refreshed by the span, never rebuilt.** A write of a millisecond costs
-//!   the buckets it touched and their parents, not the take —
+//!   the buckets it touched and their parents, not the take --
 //!   [`clausters_core::peaks::overview`] over exactly those buckets, the same
 //!   function `/buffer_stream` and `/buffer_peaks` answer with, so there is one
 //!   arithmetic and not three.
@@ -31,7 +31,7 @@
 //!   [`WRITE_PERIOD`], so a hand drawing a stroke does not rewrite a
 //!   multi-megabyte file per announcement.
 //! - **It can be stale, and only in one direction.** A writer the owner never
-//!   hears about — a peer storing into the mapping without announcing it — is
+//!   hears about -- a peer storing into the mapping without announcing it -- is
 //!   the one case the summary cannot follow, exactly as the *pictures* of that
 //!   take cannot. Announcing is the contract, and this is one more reader of
 //!   it.
@@ -51,12 +51,12 @@ use crate::dsp::buffer::Buffer;
 /// its spans far faster than this; what a reader needs is a file that
 /// converges, not one rewritten per millisecond of audio edited.
 ///
-/// The clock is [`crate::osc::server::OscServer::mono_secs`] — wall time
-/// natively and the sample axis in a headless server — so this paces the same
+/// The clock is [`crate::osc::server::OscServer::mono_secs`] -- wall time
+/// natively and the sample axis in a headless server -- so this paces the same
 /// way every other periodic thing here does, and a render stays deterministic.
 const WRITE_PERIOD: f64 = 0.25;
 
-/// The bucket every overview is built at — the default a picture's pyramid uses
+/// The bucket every overview is built at -- the default a picture's pyramid uses
 /// (`DEFAULT_BASE_BUCKET` in the GUI host, 256 in both clients), so a client
 /// that maps this file has the grid it already draws on.
 pub(in crate::osc::server) const BASE_BUCKET: usize = 256;
@@ -87,7 +87,7 @@ impl Overviews {
     /// generation that names one names the other.
     ///
     /// Only a Unix build has regions to put one beside, which is why this and
-    /// [`Self::retire`] read as dead code anywhere else — the same reason the
+    /// [`Self::retire`] read as dead code anywhere else -- the same reason the
     /// server's region list does.
     #[cfg_attr(not(unix), allow(dead_code))]
     pub(in crate::osc::server) fn publish(&mut self, index: usize, region: &Path, buffer: &Buffer) {
@@ -127,7 +127,7 @@ impl Overviews {
     /// buckets, since a bucket summarized from part of itself would report a
     /// peak the samples do not have.
     ///
-    /// The file is not written here — the pyramid is patched and marked, and
+    /// The file is not written here -- the pyramid is patched and marked, and
     /// [`Self::flush`] writes it at a bounded rate.
     pub(in crate::osc::server) fn wrote(
         &mut self,
@@ -155,7 +155,7 @@ impl Overviews {
         }
     }
 
-    /// **The overview of a span, out of the summary rather than the samples** —
+    /// **The overview of a span, out of the summary rather than the samples** --
     /// what lets `/buffer_peaks` answer a long take without reading it.
     ///
     /// `None` when this buffer has no overview or the caller asked at another

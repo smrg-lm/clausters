@@ -4,10 +4,10 @@ A `TempoClock`'s logical beat advances only by the routines' ``yield``s;
 the *timebase* is the monotonic-ish source the clock paces its sleeps against
 (and, in real time, anchors its OSC timetags to). Two choices:
 
-- `MonotonicTimebase` (default) — the OS monotonic clock. Events are sent
+- `MonotonicTimebase` (default) -- the OS monotonic clock. Events are sent
   as NTP-timetagged bundles; simple, drift between the client and server clocks
   is small but real.
-- `SampleClockTimebase` — seconds derived from the **server's sample
+- `SampleClockTimebase` -- seconds derived from the **server's sample
   counter** (``sample() / sample_rate``). The client paces against the server's
   own clock, and the Server emits via ``/sched_at <absolute_sample>`` instead of a
   wall-clock timetag, so there is no inter-clock drift and timing is exact at

@@ -4,12 +4,12 @@
 //! implemented**, never against a recorded buffer and never against scsynth's
 //! output: the pan law is `sin`/`cos` of a quarter turn, the matrix rows are
 //! two-by-two products, and both are known exactly. So the asserts are
-//! measurements with published tolerances — the gain pair holds unit power to
-//! `1e-5`, the polynomial tracks `f64::sin` to `2.6e-7` — plus the handful of
+//! measurements with published tolerances -- the gain pair holds unit power to
+//! `1e-5`, the polynomial tracks `f64::sin` to `2.6e-7` -- plus the handful of
 //! values that must be *exact* rather than close: a hard pan, an identity, a
 //! quarter turn, a round trip through mid/side.
 //!
-//! **Every kind here is stateless** — a gain pair, a matrix row or an index,
+//! **Every kind here is stateless** -- a gain pair, a matrix row or an index,
 //! computed from this sample's inputs and nothing carried over. So the two
 //! tests the `audio-testing` rules ask of a stateful UGen do not apply the way
 //! they do to a filter: there is no long run for numerical state to drift
@@ -23,7 +23,7 @@
 //! laws are worth asserting on the struct, where a gain pair is one call and
 //! reads as arithmetic. But a two-channel row is emitted as *two UGens* whose
 //! only difference is a trailing `chan`, and that index is wiring rather than
-//! arithmetic — every test built on `stereo` and `matrix` below hands the
+//! arithmetic -- every test built on `stereo` and `matrix` below hands the
 //! channel numbers in itself, so none of them can tell whether the index
 //! survives a def. Verified rather than assumed: with the channel index
 //! deliberately broken, the two tests in that section fail and the other forty
@@ -31,7 +31,7 @@
 //!
 //! Its limit is worth stating too, because a contrast test is easy to over-read:
 //! it compares the def path against the struct path, so it catches the def path
-//! *diverging* — an index that does not arrive, a variadic tail the compiler
+//! *diverging* -- an index that does not arrive, a variadic tail the compiler
 //! sizes wrongly, a channel written to the wrong bus. It cannot catch a law
 //! that is wrong in the struct, since both sides would be wrong together. That
 //! is what the rest of the file, against the closed forms, is for.
@@ -54,7 +54,7 @@ fn run(ugen: &mut dyn UGen, inputs: &[&[f32]]) -> Vec<f32> {
     run_len(ugen, inputs, BLOCK_SIZE)
 }
 
-/// Renders `n` samples — `n < BLOCK_SIZE` is the run a scheduled bundle leaves
+/// Renders `n` samples -- `n < BLOCK_SIZE` is the run a scheduled bundle leaves
 /// when it splits a block.
 fn run_len(ugen: &mut dyn UGen, inputs: &[&[f32]], n: usize) -> Vec<f32> {
     let buses = Buses::new(ControlBuses::new(16), 8);
@@ -72,13 +72,13 @@ fn run_len(ugen: &mut dyn UGen, inputs: &[&[f32]], n: usize) -> Vec<f32> {
     out
 }
 
-/// The first sample of a block — the whole answer when every wire is scalar.
+/// The first sample of a block -- the whole answer when every wire is scalar.
 fn run1(ugen: &mut dyn UGen, inputs: &[&[f32]]) -> f32 {
     run(ugen, inputs)[0]
 }
 
 /// Both channels of a two-channel row, by building it twice with the two
-/// channel indices — which is what a def does.
+/// channel indices -- which is what a def does.
 fn stereo(kind: PanKind, inputs: &[&[f32]]) -> (f32, f32) {
     let mut left: Vec<&[f32]> = inputs.to_vec();
     let mut right: Vec<&[f32]> = inputs.to_vec();
@@ -122,13 +122,13 @@ fn close(a: f32, b: f32, tol: f32, what: &str) {
 // ---- the law itself ----
 
 /// The polynomial is the module's one approximation; this is its published
-/// figure. scsynth's rounded 2049-entry table is off by up to 3.8e-4 — this is
+/// figure. scsynth's rounded 2049-entry table is off by up to 3.8e-4 -- this is
 /// three orders of magnitude closer, for no table and about ten flops.
 ///
 /// The bound is well inside what the fifth Taylor term alone would give
 /// (`3.5e-6`): forcing the coefficients to sum to one, which is what makes
 /// `quarter_sin(1)` exact, also cancels most of the truncation error across
-/// the range. The centre is not exact — it lands 5e-9 low — but nothing
+/// the range. The centre is not exact -- it lands 5e-9 low -- but nothing
 /// depends on it being so, unlike the two ends.
 #[test]
 fn quarter_sine_tracks_the_real_one() {
@@ -218,7 +218,7 @@ fn pan2_hard_pans_exactly_and_centres_at_minus_three_db() {
     close(r, std::f32::consts::FRAC_1_SQRT_2, 1e-6, "centre right");
 }
 
-/// Out of range the position clamps rather than wrapping — a modulator that
+/// Out of range the position clamps rather than wrapping -- a modulator that
 /// overshoots stays hard panned instead of jumping to the other side.
 #[test]
 fn pan2_clamps_out_of_range() {
@@ -238,7 +238,7 @@ fn pan2_level_scales_both_channels() {
 }
 
 /// The other law: the two gains sum to the level at every position, which is
-/// what keeps a mono fold-down at one amplitude — at the price of a 3 dB dip
+/// what keeps a mono fold-down at one amplitude -- at the price of a 3 dB dip
 /// in the middle for anything summing by power.
 #[test]
 fn lin_pan2_holds_constant_amplitude() {
@@ -268,7 +268,7 @@ fn balance2_attenuates_by_three_db_at_the_centre() {
 
 #[test]
 fn balance2_keeps_the_channels_apart() {
-    // Hard left: the left input passes untouched, the right one is gone —
+    // Hard left: the left input passes untouched, the right one is gone --
     // and it is the *right input* that is gone, not the right channel of a
     // mono source.
     assert_eq!(
@@ -338,7 +338,7 @@ fn rotate2_at_rest_is_the_identity() {
     );
 }
 
-/// A quarter turn *is* the mid/side basis change — the fact the whole
+/// A quarter turn *is* the mid/side basis change -- the fact the whole
 /// `MidSide` row exists to name.
 #[test]
 fn rotate2_at_a_quarter_turn_is_mid_side() {
@@ -449,7 +449,7 @@ fn ring(pos: f32, chans: usize, width: f32, orientation: f32) -> Vec<f32> {
 }
 
 /// The default width of two makes neighbouring lobes a sine and a cosine of
-/// the same angle, so the ring holds unit power wherever the source is —
+/// the same angle, so the ring holds unit power wherever the source is --
 /// including across the seam where the position wraps.
 #[test]
 fn pan_az_holds_unit_power_around_the_ring() {
@@ -548,7 +548,7 @@ fn select_clamps_off_both_ends() {
     }
 }
 
-/// An audio-rate index switches per sample, not per block — the difference
+/// An audio-rate index switches per sample, not per block -- the difference
 /// between a selector and a block-rate gate.
 #[test]
 fn select_switches_within_a_block() {
@@ -591,7 +591,7 @@ fn select_x_crossfades_with_unit_power() {
     assert!(worst < 1e-5, "worst deviation {worst}");
 }
 
-/// A whole index lands on its source exactly — no residue of the neighbour.
+/// A whole index lands on its source exactly -- no residue of the neighbour.
 #[test]
 fn select_x_is_exact_on_whole_indices() {
     let sources: [&[f32]; 3] = [&[10.0], &[20.0], &[30.0]];
@@ -604,7 +604,7 @@ fn select_x_is_exact_on_whole_indices() {
     }
 }
 
-/// Halfway between two sources both arrive at 0.707 — the same 3 dB rise for
+/// Halfway between two sources both arrive at 0.707 -- the same 3 dB rise for
 /// correlated samples that `XFade2` has, because it is the same law.
 #[test]
 fn select_x_midpoint_is_the_equal_power_pair() {
@@ -621,7 +621,7 @@ fn select_x_midpoint_is_the_equal_power_pair() {
 
 /// The one place this track's block-rate rule is deliberately not applied: an
 /// audio-rate position is evaluated **per sample**. Interpolating the two gains
-/// across the block instead would put 0.5 where the law wants 0.707 — a 3 dB
+/// across the block instead would put 0.5 where the law wants 0.707 -- a 3 dB
 /// hole in the middle of every block a fast pan sweeps.
 #[test]
 fn an_audio_rate_position_is_evaluated_per_sample() {
@@ -670,7 +670,7 @@ fn the_block_path_and_the_per_sample_path_agree() {
 
 /// sclang builds `SelectX` out of two `Select`s and an `XFade2`, over an index
 /// ping-pong (`which.round(2)`, `which.trunc(2) + 1`) and a folded pan. This
-/// row is one state-free computation instead — so the equivalence is asserted
+/// row is one state-free computation instead -- so the equivalence is asserted
 /// point by point rather than assumed from having copied the construction.
 #[test]
 fn select_x_agrees_with_the_sclang_construction() {
@@ -699,7 +699,7 @@ fn select_x_agrees_with_the_sclang_construction() {
 /// Off the ends the two part company, on purpose. sclang's construction folds
 /// the crossfade position while clipping the two picks, so a negative index
 /// comes out as a **mix of the first two** sources and an index past the end as
-/// the last source at 1.414 — 3 dB of gain from crossfading it with itself.
+/// the last source at 1.414 -- 3 dB of gain from crossfading it with itself.
 /// Here the index simply clamps, like `Select`'s.
 #[test]
 fn select_x_clamps_off_the_ends_rather_than_folding() {
@@ -723,9 +723,9 @@ fn select_x_clamps_off_the_ends_rather_than_folding() {
 // ---- the two structural checks ----
 
 /// Rendering a block whole and rendering it in two runs must give the same
-/// samples. A synth's wires are sliced **run-relative** — every input and the
+/// samples. A synth's wires are sliced **run-relative** -- every input and the
 /// output start at index 0 of the current run, only bus reads carry the block
-/// offset — so a UGen that indexes its inputs per sample is correct under a
+/// offset -- so a UGen that indexes its inputs per sample is correct under a
 /// split exactly when it holds no state across calls. This is what says so.
 #[test]
 fn a_split_block_renders_the_same_samples() {
@@ -767,7 +767,7 @@ fn a_split_block_renders_the_same_samples() {
 
 /// Every row, driven with inputs no musician would write: positions far out of
 /// range, a ring with a zero and a negative width, an index past both ends, an
-/// angle of a thousand turns. Nothing here may produce a NaN or an infinity —
+/// angle of a thousand turns. Nothing here may produce a NaN or an infinity --
 /// one non-finite sample poisons every node downstream of it on the bus, and
 /// the wrap in `PanAz` and the reciprocal behind its width are exactly where
 /// one would come from.
@@ -853,7 +853,7 @@ fn no_input_produces_a_non_finite_sample() {
 //
 // What everything above cannot see. A panner has two outputs and a UGen has
 // one, so the family is two catalog rows sharing their inputs and differing in
-// a trailing `chan` — and the tests above supply that index themselves. Swap
+// a trailing `chan` -- and the tests above supply that index themselves. Swap
 // the two rows' `chan` in `registry.rs`, or drop the input, and every one of
 // them still passes. These build the def, compile it and run a real synth, so
 // the wiring is what is under test: input order, the channel index, and a
@@ -892,7 +892,7 @@ fn def_chans(kind: &str, inputs: &[f32], channels: usize) -> Vec<f32> {
 #[test]
 fn every_two_channel_row_is_wired_to_the_channel_it_names() {
     // The contrast: the same inputs through the def and through the struct.
-    // Positions are chosen so the two channels differ — at the centre a swapped
+    // Positions are chosen so the two channels differ -- at the centre a swapped
     // `chan` would be invisible, which is exactly the trap.
     for pos in [-1.0f32, -0.3, 0.4, 1.0] {
         for (kind, pankind) in [("Pan2", PanKind::Pan2), ("LinPan2", PanKind::LinPan2)] {
@@ -963,7 +963,7 @@ fn pan_az_is_wired_around_the_ring_through_the_def() {
 #[test]
 fn the_single_output_rows_are_wired_in_the_order_the_registry_names() {
     // No channel index on these, so what the def path adds is the input order
-    // — and for the two variadic rows, an arity the compiler resolves rather
+    // -- and for the two variadic rows, an arity the compiler resolves rather
     // than the descriptor fixing.
     for pan in [-1.0f32, -0.25, 0.5, 1.0] {
         let want = run1(

@@ -2,7 +2,7 @@
 // keeps them apart.
 //
 // The server partitions node ids into a client range, its own auto range and
-// its MIDI range, and every client allocates from that one client range —
+// its MIDI range, and every client allocates from that one client range --
 // exact while a server has one client, a fiction the moment it has two: two
 // processes driving one server, or a script authoring beside a page that holds
 // a session on the very same in-page engine.
@@ -11,7 +11,7 @@
 // negotiate: equal slices in a fixed order, so `{index: 0, of: 2}` and
 // `{index: 1, of: 2}` are disjoint by construction. This suite pins that, and
 // pins that it reaches every space a client allocates from rather than the
-// node ids alone — a page that cannot collide on nodes and does collide on
+// node ids alone -- a page that cannot collide on nodes and does collide on
 // buffers is no better off.
 
 import assert from "node:assert/strict";
@@ -98,7 +98,7 @@ test("two clients of one server allocate ids that cannot collide", async () => {
 
 test("a shared client keeps the reservations its whole-space peer keeps", async () => {
     // The output buses are the server's, not a client's, so neither share may
-    // hand them out — a split must not open a hole below itself.
+    // hand them out -- a split must not open a hole below itself.
     const page = await openShared(1, 2);
     const whole = new Server({ connection: recorder(), sizing: SIZING });
     assert.ok(page.audioBuses.alloc(2).index >= SIZING.channels);

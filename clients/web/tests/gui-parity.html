@@ -29,7 +29,7 @@
     <!--
       The scripted parity pass: connects to the audio server
       (?server=ws://host:port, default ws://127.0.0.1:57120) and opens the
-      panel, meters and bulk demos in sequence — the same GuiDef JSONs the
+      panel, meters and bulk demos in sequence -- the same GuiDef JSONs the
       Python examples build. The evidence is the host's own console log:
 
         /gui_def 1: window opened from the page      (each demo)
@@ -99,7 +99,7 @@
         });
         setTimeout(() => {
           console.log("parity: pass complete (check the log lines above)");
-          note.textContent = "parity pass complete — see the console";
+          note.textContent = "parity pass complete -- see the console";
         }, 500 + steps.length * 2500);
       });
     </script>

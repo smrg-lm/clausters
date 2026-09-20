@@ -93,8 +93,8 @@ TEMPO = 1.0
 def scene(engraved, sample_rate: float) -> dict:
     """A transport bar over a scrollable, zoomable view of the engraved score.
 
-    Every widget is *named* — the seven transport buttons and the ``score`` page
-    — so the script drives each by name and never picks an id. The bar is chrome:
+    Every widget is *named* -- the seven transport buttons and the ``score`` page
+    -- so the script drives each by name and never picks an id. The bar is chrome:
     a fixed height, so the page takes all the rest however the window is
     resized.
 
@@ -233,9 +233,9 @@ def redo():
 
 def on_score(tag, *payload):
     """The page's two edit-backs, wired to the ``score`` handle. A click
-    reports the MEI id under the cursor (``"element"``) — this side
+    reports the MEI id under the cursor (``"element"``) -- this side
     selects it and sounds it; a drag reports a ``"transpose"`` naming the
-    staff position reached — this side makes it true, re-engraves and sends the
+    staff position reached -- this side makes it true, re-engraves and sends the
     page back. The handlers read `dl`/`by_id` when they run, so an edit
     made meanwhile is simply played. An event handler runs on the client's
     reply thread, and the ambient session is per-thread, so every `play`

@@ -1,8 +1,8 @@
 // The ambient layer: the default session, an explicit one, and what resolves
 // against them.
 //
-// The rule this exercises is one line — everything that does not run in an
-// explicit `Session` runs in the default session — and it is worth a suite
+// The rule this exercises is one line -- everything that does not run in an
+// explicit `Session` runs in the default session -- and it is worth a suite
 // because the failures it prevents are silent: a synth created on the wrong
 // server, a routine played on a clock nobody started, two sessions sharing one
 // random root.
@@ -44,10 +44,10 @@ function recorder(): Connection & { packets: Uint8Array[] } {
 
 // `adoptDefault: false`: opening a carrier claims the default slot when it is
 // free (the reference client's `adopt_default`), and what this file is about is
-// what a **session** does with that slot — so the fakes stay out of it and each
+// what a **session** does with that slot -- so the fakes stay out of it and each
 // test claims it explicitly.
 // A bare handle: nothing to boot behind a recorder and nothing to attach to,
-// which is exactly the constructor's case — it reaches nothing and sizes the
+// which is exactly the constructor's case -- it reaches nothing and sizes the
 // allocators from what it is told. It also keeps these fakes out of the default
 // slot, and what this file is about is what a **session** does with that slot.
 const openServer = (connection: Connection) =>
@@ -381,7 +381,7 @@ test("a session's clock names it, which is how a routine finds its server", () =
         a.session.activate();
 
         // The routine runs on b's clock, so what it creates goes to b's
-        // server — even though a is the page's default and b is not active.
+        // server -- even though a is the page's default and b is not active.
         const routine = new Routine(function* () {
             new Synth("beep");
             yield 1.0;

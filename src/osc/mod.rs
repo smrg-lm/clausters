@@ -8,7 +8,7 @@ pub mod tcp;
 pub mod translate;
 pub mod wake;
 // The WebSocket hub rides tungstenite, which cannot build for wasm32 (and an
-// in-page engine has no use for a socket server front) — native only.
+// in-page engine has no use for a socket server front) -- native only.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod ws;
 
@@ -28,8 +28,8 @@ pub enum ClientId {
     /// A connected WebSocket client (the per-connection id from `ws`).
     Ws(u64),
     /// A client on the shared-memory / in-process ring, by the peer tag its
-    /// frames carry (`server::ipc`). One segment serves several — a script and
-    /// a GUI host in one page — so this is what keeps their `/bus_stream`
+    /// frames carry (`server::ipc`). One segment serves several -- a script and
+    /// a GUI host in one page -- so this is what keeps their `/bus_stream`
     /// subscriptions and their replies apart; an embedder that never asks for a
     /// tag is `ipc::DEFAULT_PEER`.
     Ring(u32),
@@ -57,7 +57,7 @@ pub use clausters_core::osc::DEFAULT_MAX_STREAM_BUSES;
 
 /// Default ceiling for concurrent stream clients (TCP + WebSocket combined,
 /// `--max-clients`). Each connection costs a thread and queue slots, so the
-/// count is bounded like every other boot-time pool — a DoS guard in the
+/// count is bounded like every other boot-time pool -- a DoS guard in the
 /// spirit of scsynth's `maxLogins`, sized generously for the target
 /// deployments (a session rarely holds more than a handful of clients). UDP
 /// is connectionless and unaffected.
@@ -105,7 +105,7 @@ impl Drop for SlotGuard {
     }
 }
 
-/// Decodes one OSC packet — the single decode entry point every transport
+/// Decodes one OSC packet -- the single decode entry point every transport
 /// funnels through (UDP datagrams and IPC ring contents alike), so decoding and
 /// any future hardening live in one place. Delegates to
 /// [`clausters_core::osc::decode_packet`], the door shared with every client
@@ -119,7 +119,7 @@ mod tests {
     use super::*;
     use rosc::{OscBundle, OscMessage, OscTime, OscType, encoder};
 
-    /// A blob whose length is a multiple of 4 round-trips — at the top level
+    /// A blob whose length is a multiple of 4 round-trips -- at the top level
     /// and as an element inside a bundle.
     #[test]
     fn multiple_of_four_blob_round_trips() {

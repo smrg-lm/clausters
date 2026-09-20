@@ -26,10 +26,10 @@ A <code>plot</code> is the lightweight counterpart of the heavy
 <code>waveform</code>: it draws a signal once (a line, or a min/max envelope
 when there are more samples than pixels) with no zoom or pan. Here the signal is
 produced <b>offline</b>, by the renderer, with no server and no audio device,
-then handed to the GUI host as a <b>bulk payload</b> — the samples never ride
+then handed to the GUI host as a <b>bulk payload</b> -- the samples never ride
 OSC argument by argument.
 
-So no audio server is involved — the audio was already rendered offline — and
+So no audio server is involved -- the audio was already rendered offline -- and
 this brings up only the GUI host.</div>
 
       <button id="run">render and plot</button>
@@ -43,7 +43,7 @@ this brings up only the GUI host.</div>
 
       The one difference is the platform's and the plan already records it for
       every heavy view: the script writes the samples to a `.f32` file and the
-      host **maps** it, and a page has no filesystem — so the same samples go as
+      host **maps** it, and a page has no filesystem -- so the same samples go as
       the bulk payload a `source` carries, which is the browser's half of that
       same door.
 
@@ -90,7 +90,7 @@ this brings up only the GUI host.</div>
             label: "offline render (mono)",
           }),
         ).open($("stage"));
-        log("the window plots the rendered signal — it is static, so there is "
+        log("the window plots the rendered signal -- it is static, so there is "
           + "nothing to drive");
       }
 

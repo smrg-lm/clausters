@@ -20,13 +20,13 @@
     <main>
       <div id="note">The web port of the Python client's
 <code>tempo_canon.py</code>: <b>ten clocks accelerating to ten different tempos,
-and arriving together</b> — the same canon, voice for voice.
+and arriving together</b> -- the same canon, voice for voice.
 
 A <b>tempo canon</b>: one line, played by ten voices at once, each on a tempo of
-its own. Every voice starts slow — a beat every one to four seconds — and rushes
+its own. Every voice starts slow -- a beat every one to four seconds -- and rushes
 to somewhere between 8 and 10 beats a second, both drawn afresh every run. They
 begin as ten unrelated drips, thicken over half a minute into a single band of
-sound, and every voice reaches its final tempo at the <i>same instant</i> —
+sound, and every voice reaches its final tempo at the <i>same instant</i> --
 which is the whole point, and the thing that is awkward to arrange any other
 way.
 
@@ -37,7 +37,7 @@ own, and the gesture is one call:
 <code>unit: "seconds"</code> is what makes the ten ramps the same length: a
 stretch of <b>wall clock</b>, not of beats. The same request in beats would not
 do it. A beat is a logical coordinate, so thirty beats of a voice rushing to 10
-is a far shorter <i>time</i> than thirty beats of one rising to 2 — the ten
+is a far shorter <i>time</i> than thirty beats of one rising to 2 -- the ten
 would finish accelerating at ten different moments, and the canon would dissolve
 instead of landing. With ten different starting tempos as well, the beat each
 voice reaches is nowhere near the others; the <b>seconds</b> are the only thing
@@ -47,8 +47,8 @@ closed form, so a ramp ends on the second it was asked for.
 
 <b>Ten clocks, one server.</b> A <code>Session</code> owns a server and as many
 clocks as the music has tempos, so this page makes ten. Each is made while the
-session is active, so it is made on <b>the session's timebase</b> — the engine's
-own sample counter — and kept in the session: they are in
+session is active, so it is made on <b>the session's timebase</b> -- the engine's
+own sample counter -- and kept in the session: they are in
 <code>session.clocks</code>, <code>session.start()</code> starts them together,
 and <code>session.close()</code> closes them.
 
@@ -60,7 +60,7 @@ code is already in the process), writing an envelope on a map is
 is a generated wasm class that cannot grow a method, the engine is the tab's own
 (<code>Session.embed</code> is this client's <code>live</code>), the calls that
 reach it are awaited, and the watching loop is a timer rather than a sleeping
-main thread — a page has no thread to block.
+main thread -- a page has no thread to block.
 Every other line is the call the script makes, in the order it makes it.
 
 Build first (<code>./build.sh</code> from <code>clients/web</code>), then serve
@@ -76,7 +76,7 @@ this directory and open the page.</div>
       } from "../../dist/index.js";
 
       // **The one line the script has no counterpart for.** The numeric core is
-      // wasm here, and it has to be fetched before anything calls into it —
+      // wasm here, and it has to be fetched before anything calls into it --
       // `uniform` and `TempoMap` below are both core functions, so this comes
       // first or they throw. In Python the same code is already in the process.
       await loadCore();
@@ -109,7 +109,7 @@ this directory and open the page.</div>
       // nobody is playing. So the choice of unit can be *read* rather than
       // argued about. Asked for over 30 seconds, every voice takes 30 seconds
       // and arrives at a different beat; asked for over 30 beats, every voice
-      // takes a different time — which is ten voices landing at ten different
+      // takes a different time -- which is ten voices landing at ten different
       // moments.
       const pad = (x, n, d = 2) => x.toFixed(d).padStart(n);
 
@@ -137,7 +137,7 @@ this directory and open the page.</div>
       // ---- one voice's line ----
       // A note a beat, and nothing about the tempo. Each `yield 1.0` is one
       // beat, always; what changes is how long that beat lasts, and this
-      // generator never finds out. It is the only function that makes sound —
+      // generator never finds out. It is the only function that makes sound --
       // a routine *is* one.
       function* line(pitch) {
         for (let i = 0; i < 400; i++) {
@@ -154,7 +154,7 @@ this directory and open the page.</div>
         el("start").disabled = true;
         compare();
 
-        // The session. `embed` is this client's `live` — the engine is the
+        // The session. `embed` is this client's `live` -- the engine is the
         // tab's own rather than a process this line started. Activating it
         // makes it ambient, so a note played from inside a routine finds this
         // server without being handed it, and every clock built below is made
@@ -164,7 +164,7 @@ this directory and open the page.</div>
 
         // The ten clocks: a clock, its ramp, its routine. Each is made on the
         // ambient session's timebase and kept in it, so by the end of this loop
-        // `session.clocks` holds all eleven — the session's own default clock,
+        // `session.clocks` holds all eleven -- the session's own default clock,
         // which this canon does not use, and these ten.
         const clocks = [];
         for (const [i, start] of STARTS.entries()) {
@@ -178,7 +178,7 @@ this directory and open the page.</div>
         // Ten slow pulses, none of them agreeing with another. From there each
         // pulls away at its own rate, and at SPREAD seconds they all stop
         // accelerating at once and hold what they reached. `session.start`
-        // starts them together — a loop over ten `start` calls staggers them by
+        // starts them together -- a loop over ten `start` calls staggers them by
         // whatever the loop costs.
         session.start();
 

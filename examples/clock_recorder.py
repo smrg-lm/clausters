@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Shared-memory sample clock, made audible and *checkable*.
 
-This demo turns the server's sample clock — read straight out of shared
-memory, with no round trip — into something you can verify with your ears
+This demo turns the server's sample clock -- read straight out of shared
+memory, with no round trip -- into something you can verify with your ears
 and a recording: it schedules a **pristine one-sample impulse exactly every
 N samples** and records the real audio output while it plays. Afterwards it
 scans the recording and measures how evenly the impulses actually landed.
@@ -17,13 +17,13 @@ The point it proves: `ShmClient.clock` mirrors the engine's processed-sample
 counter every block, so the client always knows *which sample the engine is
 on* without asking. Picking a target sample and firing `/sched_at <target>`
 ahead of time then makes every impulse land sample-accurately. Two impulses
-N samples apart in the schedule come out N samples apart in the recording —
+N samples apart in the schedule come out N samples apart in the recording --
 the spacing never goes through this machine's wall clock, only the audio
 clock. (Contrast `examples/sample_clock.py`, which has to *model* the clock
 from `/clock_query` round trips because it talks UDP; here the clock is just a
 field in mapped memory.)
 
-Run (real audio hardware required — the sandbox has no output device):
+Run (real audio hardware required -- the sandbox has no output device):
 
     cargo run --release -- --shm /dev/shm/clausters     # terminal 1
     python3 examples/clock_recorder.py --seconds 20      # terminal 2
@@ -42,7 +42,7 @@ via `wpctl`/`pactl`). Override the source with `--target <node-name>`, the
 whole command with `--record-cmd` (for ALSA/PulseAudio/CoreAudio), or use
 `--no-record` to only schedule (and analyze a separately captured file later
 with `--analyze file.wav`). The sample rate you see is the device's real
-rate (e.g. 44100 Hz), read from the segment — recording matches it.
+rate (e.g. 44100 Hz), read from the segment -- recording matches it.
 """
 
 import argparse
@@ -80,7 +80,7 @@ def define_impulse(c: ShmClient, amp: float):
     """`Impulse.ar(0) · amp` out to both channels: a single 1.0·amp on the
     synth's first sample, silence after. Started with `/synth_new` at the target
     sample (the engine splits the block there), that one impulse marks the
-    exact frame — no envelope, no onset ramp."""
+    exact frame -- no envelope, no onset ramp."""
     d = osc.SynthDefBuilder(DEF_NAME)
     sig = d.add("Mul", d.add("Impulse", 0.0), amp)
     d.add("Out", 0, sig)
@@ -93,7 +93,7 @@ def define_impulse(c: ShmClient, amp: float):
     reason = args[-1] if args else ""
     raise RuntimeError(
         f"/def_send synth failed: {reason}\n"
-        "the running server rejected the Impulse UGen — it is probably a stale "
+        "the running server rejected the Impulse UGen -- it is probably a stale "
         "process from before the rebuild. Restart it with the freshly built "
         "binary (e.g. `cargo run --release -- --shm /dev/shm/clausters`) and "
         "run this again.")
@@ -102,7 +102,7 @@ def define_impulse(c: ShmClient, amp: float):
 def send_blocking(c: ShmClient, packet: bytes, drain: bool):
     """Push one packet, retrying on ring backpressure. Drain any server
     replies meanwhile so the reply ring never fills (a `/sched_at` only replies
-    on error — a `/fail` here means a malformed packet, worth surfacing)."""
+    on error -- a `/fail` here means a malformed packet, worth surfacing)."""
     while not c.send(packet):
         if drain:
             _drain(c)
@@ -168,7 +168,7 @@ def schedule_impulses(c: ShmClient, *, seconds: float, period: int, hold: int,
 def find_server_node() -> str | None:
     """The clausters playback stream's PipeWire `node.name`, via `pw-dump`.
     pw-record taps a stream's output ports when `--target` names it, so this
-    records exactly what the server emits — independent of routing, and
+    records exactly what the server emits -- independent of routing, and
     immune to the server not being mixed into the default sink."""
     try:
         data = json.loads(subprocess.check_output(["pw-dump"], stderr=subprocess.DEVNULL))
@@ -190,7 +190,7 @@ def find_server_node() -> str | None:
 
 def default_sink_node() -> str | None:
     """The default sink's PipeWire `node.name`. pw-record captures a sink's
-    **monitor** when `--target` names the sink node (no `.monitor` suffix —
+    **monitor** when `--target` names the sink node (no `.monitor` suffix --
     that is the PulseAudio/`parec` convention, not pw-record's). Tries the
     PipeWire-native `wpctl` first, then `pactl` (PulseAudio/pipewire-pulse)."""
     try:
@@ -367,7 +367,7 @@ def analyze(path: str, *, period: int, server_rate: float, expected: int | None,
                   "status`), or record its output node directly.")
 
     if len(onsets) < 2:
-        print("FAIL: need at least two impulses to measure spacing — was the "
+        print("FAIL: need at least two impulses to measure spacing -- was the "
               "right node captured? (try --target, or --record-cmd)")
         return False
 
@@ -395,10 +395,10 @@ def analyze(path: str, *, period: int, server_rate: float, expected: int | None,
               "(threshold? clipped recording? overlapping impulses?)")
         ok = False
     if jitter * to_ms > 2.0:
-        print("  note: jitter above 2 ms — onset detection is noisy or the "
+        print("  note: jitter above 2 ms -- onset detection is noisy or the "
               "audio path is loose; inspect the WAV.")
         ok = False
-    print("PASS: impulses are evenly spaced — the shared-memory clock drove "
+    print("PASS: impulses are evenly spaced -- the shared-memory clock drove "
           "sample-accurate scheduling." if ok else
           "see notes above; open the WAV to inspect.")
     return ok
@@ -440,7 +440,7 @@ def parse_args(argv):
 def main(argv):
     args = parse_args(argv)
 
-    # Analyze-only: no server, no recording — re-check a captured file.
+    # Analyze-only: no server, no recording -- re-check a captured file.
     if args.analyze:
         ok = analyze(args.analyze, period=args.period, server_rate=args.server_rate,
                      expected=None, threshold_frac=args.threshold)

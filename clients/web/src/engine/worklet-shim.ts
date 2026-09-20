@@ -2,13 +2,13 @@
 //
 // The wasm-bindgen glue (clausters_web.js) instantiates both at
 // module-evaluation time, and the AudioWorkletGlobalScope ships neither.
-// worklet.ts imports this module *before* the glue — ES modules evaluate
-// dependencies in import order — so the shims are in place when the glue's top
+// worklet.ts imports this module *before* the glue -- ES modules evaluate
+// dependencies in import order -- so the shims are in place when the glue's top
 // level runs.
 //
 // **The encoder was added when the surface first needed it, and its absence
 // was invisible until then.** This file used to carry the decoder alone, on
-// the grounds that the `WebServer` surface passed no strings *into* wasm —
+// the grounds that the `WebServer` surface passed no strings *into* wasm --
 // true at the time, and a note saying so sat right here. The delegation door
 // (`finishDelegated`, which carries the host's error message) made it false,
 // and the failure is not a message about a missing encoder: the glue's top

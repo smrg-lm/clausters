@@ -5,7 +5,7 @@
 // core-backed TS codec must reproduce every packet byte for byte, and read
 // its own bytes back to the same values. Run: `npm test` (node --test strips
 // the types natively). The core wasm is loaded from the staged `core/`
-// bundle as raw bytes — node's `fetch` cannot read `file://` URLs.
+// bundle as raw bytes -- node's `fetch` cannot read `file://` URLs.
 
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -93,7 +93,7 @@ test("decode reads the reference bytes back", () => {
 test("decode parity for values the Python encoder cannot build", () => {
     // The timetag argument, which encode parity never reaches: it is what
     // `/clock_query.reply` carries its anchor in, and it crosses to JS as
-    // **Unix** seconds — the value the Python decoder yields for the same
+    // **Unix** seconds -- the value the Python decoder yields for the same
     // bytes, not the raw NTP epoch.
     for (const vector of decodeVectors) {
         const messages = decodePacket(fromHex(vector.hex));

@@ -4,14 +4,14 @@
 //! about **distributions and spectra**, per the rules in the `audio-testing`
 //! skill: the measured slope in dB/octave (the whole reason `PinkNoise` and
 //! `BrownNoise` are separate kinds), the mean and variance, the mean density of
-//! an impulse source, and — for every generator — bit-exact reproducibility
+//! an impulse source, and -- for every generator -- bit-exact reproducibility
 //! from a seed, which is what lets a noisy patch have a golden file at all.
 //!
 //! **Rule 5 lives here rather than in the shared table**, which is the one
 //! place these rows differ from every other family. Splitting a block means
 //! comparing two renders, and through the def path that means two instances,
-//! each of which draws its own seed on purpose — correlated noise summed with
-//! itself is a comb filter — while the wire has no seed input to pin. So the
+//! each of which draws its own seed on purpose -- correlated noise summed with
+//! itself is a comb filter -- while the wire has no seed input to pin. So the
 //! table refuses these, and `every_generator_is_unmoved_by_a_block_split`
 //! below discharges the rule one level down, against `with_seed` constructors,
 //! where the comparison is exact.
@@ -38,7 +38,7 @@ use signal::*;
 
 const SR: f32 = 48_000.0;
 
-/// Renders `n` samples straight from a UGen, with no graph around it — the
+/// Renders `n` samples straight from a UGen, with no graph around it -- the
 /// form the seeded constructors need, since a def has no way to name a seed.
 fn run(ugen: &mut dyn UGen, inputs: &[&[f32]], n: usize) -> Vec<f32> {
     let buses = Buses::new(ControlBuses::new(16), 8);
@@ -58,7 +58,7 @@ fn run(ugen: &mut dyn UGen, inputs: &[&[f32]], n: usize) -> Vec<f32> {
     out
 }
 
-/// Renders `n` samples of a one-UGen def written to bus 0 — the path a real
+/// Renders `n` samples of a one-UGen def written to bus 0 -- the path a real
 /// def takes, seeds and all.
 fn render(ugen: &str, n: usize) -> Vec<f32> {
     let json = format!(
@@ -87,7 +87,7 @@ fn render(ugen: &str, n: usize) -> Vec<f32> {
     out
 }
 
-const N: usize = 1 << 17; // ~2.7 s — enough frames for a stable Welch average
+const N: usize = 1 << 17; // ~2.7 s -- enough frames for a stable Welch average
 
 // ---- the spectral shapes ----
 
@@ -133,7 +133,7 @@ fn pink_noise_is_quiet_and_centred_like_the_one_a_def_was_written_against() {
 
 #[test]
 fn brown_noise_reflects_instead_of_resting_against_a_rail() {
-    // Clamping would let the walk sit at ±1 — a constant, audible as silence
+    // Clamping would let the walk sit at ±1 -- a constant, audible as silence
     // with a click at each end. Reflection keeps it moving: no run of equal
     // samples anywhere near the rails, and the distribution stays flat rather
     // than piling up there.
@@ -177,7 +177,7 @@ fn clip_noise_is_only_ever_plus_or_minus_one_and_fair() {
 #[test]
 fn gray_noise_moves_by_one_bit_at_a_time() {
     // One bit of the *integer* word flips per sample, so the step is exactly a
-    // power of two — in the integer. It is not recoverable from the output,
+    // power of two -- in the integer. It is not recoverable from the output,
     // because the output is `word / 2^31` in `f32` and an `f32` significand is
     // 24 bits against the word's 31: the conversion rounds, by an amount that
     // depends on the word's magnitude, which the flip itself changes. Flipping
@@ -248,7 +248,7 @@ fn lf_clip_noise_holds_but_only_ever_at_the_rails() {
     assert!(x.iter().all(|v| v.abs() == 1.0), "±1 only");
     let steps = x.windows(2).filter(|w| w[0] != w[1]).count();
     // Half the draws repeat the previous side, so the visible steps are about
-    // half the segments — which is itself the check that it is *drawing* each
+    // half the segments -- which is itself the check that it is *drawing* each
     // segment rather than alternating.
     println!("LFClipNoise: {steps} visible steps in 100 segments");
     assert!((30..=70).contains(&steps), "{steps} steps");
@@ -292,7 +292,7 @@ fn lf_noise1_is_piecewise_linear_and_lf_noise2_has_no_corners() {
     // The quadratic **overshoots** its draws, because it aims at the midpoints
     // between them and carries its slope across the boundary. scsynth's does
     // too, and it is worth pinning rather than discovering: measured 1.67 here,
-    // and stable — the peak is the same over one second and over ten, at 5 Hz,
+    // and stable -- the peak is the same over one second and over ten, at 5 Hz,
     // 100 Hz and 2 kHz, so the carried slope does not accumulate.
     println!("LFNoise2 peak {:.3}", peak(&two));
     assert!(peak(&two) < 1.8, "bounded, if not by 1: {:.3}", peak(&two));
@@ -344,7 +344,7 @@ fn dust_fires_at_its_mean_density_with_random_amplitudes() {
 fn dust2_fires_both_ways_at_the_same_mean_density() {
     // The bipolar sibling had been checked only for having some negative
     // samples, riding on `Dust`'s density measurement. It is the same Poisson
-    // process, so it owes the same figure — and the sign has to be a fair coin
+    // process, so it owes the same figure -- and the sign has to be a fair coin
     // on top of it, which is the part that "some are negative" does not say.
     for density in [10.0f32, 200.0] {
         let x = run(
@@ -424,7 +424,7 @@ fn crackle_is_deterministic_bounded_and_carries_dc() {
     });
     assert_eq!(period, None, "found a short period: {period:?}");
 
-    // `chaos` materially changes the signal, and **not monotonically** — the
+    // `chaos` materially changes the signal, and **not monotonically** -- the
     // measured spread runs 0.56, 0.20, 0.08, 0.05, 0.19, 0.05, 0.06 across
     // chaos 0.3 to 1.9. It is a map, not a level control: reach for it by ear.
     let spread = |x: &[f32]| {
@@ -507,8 +507,8 @@ fn every_generator_replays_exactly_from_its_seed() {
 /// two `process` calls over the two halves of the output slice, which is what
 /// the synth does when a scheduled bundle splits a block.
 ///
-/// Only valid for constant inputs — a signal input would need its own slice
-/// per call — and every generator here takes constants.
+/// Only valid for constant inputs -- a signal input would need its own slice
+/// per call -- and every generator here takes constants.
 fn run_split(ugen: &mut dyn UGen, inputs: &[&[f32]], n: usize, at: usize) -> Vec<f32> {
     let buses = Buses::new(ControlBuses::new(16), 8);
     let mut out = vec![0.0f32; n];

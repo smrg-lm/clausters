@@ -24,9 +24,9 @@
       <div id="note">A scripted instrument panel: controls that round-trip
 values and events.
 
-It builds a view of standard controls — knobs, sliders, a number, a toggle, a
+It builds a view of standard controls -- knobs, sliders, a number, a toggle, a
 button and a menu, two of them non-linear (a curved knob and a stepped number)
-— opens it <b>twice</b>, then both <i>drives</i> a widget live with
+-- opens it <b>twice</b>, then both <i>drives</i> a widget live with
 <code>set</code> and <i>listens</i> for the events your interactions emit. No
 audio server is involved.
 
@@ -36,7 +36,7 @@ stream and reports its value on the press and on the release, plus the interface
 events beside them (<code>press</code>, <code>release</code>, and
 <code>click</code> only when the release landed on the button), while
 <code>onClick</code> fires on the completed press alone. So a cancelled press
-does not report less — press the button, slide the pointer off it and let go,
+does not report less -- press the button, slide the pointer off it and let go,
 and you still see <code>press</code> and <code>release</code>; what is missing
 is the <code>clicked</code> line, and that absence <i>is</i> the cancellation.
 

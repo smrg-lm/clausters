@@ -5,7 +5,7 @@
 // A handle built by a constructor (`new Synth`, `new Group`, `Bus.audio`,
 // `Buffer.alloc`) carries the server it was created on; one built from a
 // reported id (a responder, the GUI, a tree query) may carry none, and falls
-// back to the ambient server — the same rule the free `play` follows.
+// back to the ambient server -- the same rule the free `play` follows.
 
 import { main } from "../base/main.ts";
 import type { Server } from "./server/index.ts";

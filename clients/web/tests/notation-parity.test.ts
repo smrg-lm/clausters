@@ -1,13 +1,13 @@
 // The engraved page against the Python client's, on the shared vectors.
 //
 // This is the check the notation layer exists for. A window and a page engrave
-// with **one verovio** — the same pinned sources and the same importer options,
-// one built natively and one by Emscripten — configure it through one shared
+// with **one verovio** -- the same pinned sources and the same importer options,
+// one built natively and one by Emscripten -- configure it through one shared
 // `engraveOptions`, walk the SVG with one shared core, and edit through one
 // shared state machine. So the drawing has to come out identical, and this says
 // whether it does: `gen-notation-vectors.py` freezes what the Python client
 // engraves, and each case here engraves the same MEI through the browser stack
-// and asserts the same page — before an edit and after one.
+// and asserts the same page -- before an edit and after one.
 //
 // Ids are normalized away on both sides: verovio mints fresh `xml:id`s per load,
 // so each is replaced by the index of its first appearance, which still checks
@@ -43,7 +43,7 @@ const vectors = JSON.parse(
 
 /**
  * The page with every engraver-minted id replaced by the order it first appears
- * in — the same normalization the generator applies.
+ * in -- the same normalization the generator applies.
  *
  * `elements` is a list of those same ids rather than objects carrying one, so
  * it is normalized by name: leaving it raw would compare two engravings' minted

@@ -3,15 +3,15 @@
 This is the client-side rendering step: an engraver lays a digital score (MEI,
 MusicXML, ABC or Plaine & Easie) out into SVG, and that SVG is walked into the
 flat, resolution-independent display list the GUI host's ``score`` widget
-consumes — a SMuFL glyph-outline table plus placed primitives (glyphs, staff
+consumes -- a SMuFL glyph-outline table plus placed primitives (glyphs, staff
 lines, stems, beams, slurs) in page units, each carrying the MEI ``xml:id`` it
 was engraved from. The host tessellates it; **the engraver lives on the client,
 never in the host**, so any language client reuses the same host renderer by
 sending the same display list.
 
 The whole layer is **native and shared**: the engraver is libverovio, bound in
-Rust (``clausters-notation``), and the format-agnostic parts — the SVG-to-display
--list walk, the MEI writer, the timemap-to-cursor fold — live in
+Rust (``clausters-notation``), and the format-agnostic parts -- the SVG-to-display
+-list walk, the MEI writer, the timemap-to-cursor fold -- live in
 ``clausters-core``, reached here through the C ABI (`clausters._native`). This
 module is the Python shell over that: idiomatic names, dicts and a handle whose
 lifetime Python owns. A second client in another language rebinds the same ABI
@@ -38,8 +38,8 @@ a package split by what each part knows: `engraver` holds the engraver and its
 output (`Score`, `engrave`, `svg_to_display_list`, `page_json`), `mei` is the
 pair of reductions between the client's own sequencing data and a score, in
 both directions (`from_timeline`, `to_timeline`), `sheet` is
-the **score model** — notation as data, operations as data over it, and the
-reading that turns it back into sound (`to_notes`, `interpretation`) — and
+the **score model** -- notation as data, operations as data over it, and the
+reading that turns it back into sound (`to_notes`, `interpretation`) -- and
 `view` is the pair of helpers that put a page on screen and play it
 (`score_view`, `playhead_sync`). Every name is re-exported here, so
 ``clausters.gui.notation.Score`` keeps meaning what it always did.

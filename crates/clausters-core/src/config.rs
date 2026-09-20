@@ -2,20 +2,20 @@
 //! client.
 //!
 //! Configuration is **read-only** to the programs (the user edits the files;
-//! machine-written state lives elsewhere — the def store, `boot.json`,
+//! machine-written state lives elsewhere -- the def store, `boot.json`,
 //! `midi.json`). It comes from two layers, the lower overridden by the higher:
 //!
-//! 1. **user** — `$CLAUSTERS_CONFIG`, else `$XDG_CONFIG_HOME/clausters/config.toml`,
+//! 1. **user** -- `$CLAUSTERS_CONFIG`, else `$XDG_CONFIG_HOME/clausters/config.toml`,
 //!    else (Windows) `%APPDATA%\clausters\config.toml`, else
 //!    `~/.config/clausters/config.toml`.
-//! 2. **project** — the nearest `clausters.toml` walking up from the working
+//! 2. **project** -- the nearest `clausters.toml` walking up from the working
 //!    directory (like Cargo finding `Cargo.toml`).
 //!
 //! A program then applies its own CLI flags on top, so the full precedence is
 //! **CLI flag > project file > user file > compiled default**. Every field is an
 //! [`Option`]: `None` means "not set at this layer", so [`Config::merge`] is a
 //! plain field-by-field "higher layer wins if present". The compiled defaults
-//! are not encoded here — each program keeps its own, applied last when a field
+//! are not encoded here -- each program keeps its own, applied last when a field
 //! is still `None`.
 //!
 //! The structs are platform-agnostic and compile on `wasm32`; only the path
@@ -41,12 +41,12 @@ pub struct Config {
     pub standalone: StandaloneConfig,
 }
 
-/// `[server]` — defaults for the audio server's CLI options.
+/// `[server]` -- defaults for the audio server's CLI options.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct ServerConfig {
     /// The base OSC port (`--port`), default 57110: UDP binds it and TCP
-    /// follows it. Moving UDP alone is a CLI matter (`--udp`) — in a config
+    /// follows it. Moving UDP alone is a CLI matter (`--udp`) -- in a config
     /// file, write the base here and give `tcp` a number of its own.
     pub port: Option<u16>,
     /// DSP worker threads (`--workers`); 0 lets the server choose.
@@ -66,7 +66,7 @@ pub struct ServerConfig {
     /// Hardware input channels (`--inputs`); unset/0 opens no input device.
     pub inputs: Option<usize>,
     /// The audio host to use (`--host`): `jack`, `alsa`, `pipewire`,
-    /// `coreaudio`, `wasapi` — whatever this build has. Unset takes the
+    /// `coreaudio`, `wasapi` -- whatever this build has. Unset takes the
     /// platform default.
     pub host: Option<String>,
     /// The output device by name (`--device`); unset takes the default.
@@ -113,7 +113,7 @@ pub struct ServerConfig {
     pub midi: Option<MidiSetting>,
 }
 
-/// `[client]` — connection defaults for the Python (and future) client.
+/// `[client]` -- connection defaults for the Python (and future) client.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct ClientConfig {
@@ -127,7 +127,7 @@ pub struct ClientConfig {
     /// boot-or-attach probe always rides UDP.
     pub transport: Option<String>,
     /// The clock timebase a real-time session anchors to: `"sample"` (the
-    /// default — the server's own sample clock, sample-accurate and drift-free)
+    /// default -- the server's own sample clock, sample-accurate and drift-free)
     /// or `"monotonic"` (wall-clock OSC timetags). Read by the client only; a
     /// `"sample"` session falls back to wall-clock gracefully if no master
     /// answers. Both `Session.live()` (UDP tracker) and `Session.embed()`
@@ -136,7 +136,7 @@ pub struct ClientConfig {
     pub clock: Option<String>,
 }
 
-/// `[gui]` — defaults for the GUI host's CLI options.
+/// `[gui]` -- defaults for the GUI host's CLI options.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct GuiConfig {
@@ -172,7 +172,7 @@ pub struct GuiConfig {
     /// the surface format falls back to `1` with a warning.
     pub msaa: Option<u32>,
     /// How much recorded audio a picture waits for before it re-reads its
-    /// summary, in **seconds** (`--follow-block`, default 0 — every frame).
+    /// summary, in **seconds** (`--follow-block`, default 0 -- every frame).
     ///
     /// A take being recorded grows continuously and nothing announces it: the
     /// host reads the buffer's write frontier and re-summarizes what appeared.
@@ -180,13 +180,13 @@ pub struct GuiConfig {
     /// follow every frame; a larger block is cheaper and choppier, and neither
     /// the sound nor any playhead over it reads this.
     pub follow_block: Option<f64>,
-    /// `[gui.theme]` — color-role overrides for the host's look, each entry
+    /// `[gui.theme]` -- color-role overrides for the host's look, each entry
     /// `role = "#rrggbb[aa]"`. A partial table: unlisted roles keep the
     /// default theme. The role names are the GUI host's `Theme` fields
     /// (`accent`, `text`, `field`, ...); unknown names are warned about and
     /// skipped by the host, never fatal.
     pub theme: Option<BTreeMap<String, String>>,
-    /// `[gui.metrics]` — size-role overrides for the host's sizing, each entry
+    /// `[gui.metrics]` -- size-role overrides for the host's sizing, each entry
     /// `role = <number>` in device pixels (glyph scales for the text roles).
     /// A partial table, like `[gui.theme]`: unlisted roles keep their generated
     /// default, and the role names are the GUI host's `Metrics` fields (`pad`,
@@ -197,7 +197,7 @@ pub struct GuiConfig {
     pub metrics: Option<BTreeMap<String, Number>>,
 }
 
-/// `[standalone]` — the self-contained app launch (GUI + embedded server).
+/// `[standalone]` -- the self-contained app launch (GUI + embedded server).
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct StandaloneConfig {
@@ -211,7 +211,7 @@ pub struct StandaloneConfig {
 
 /// A transport toggle that may also carry a bind: `tcp = true` (default port
 /// on the default interface), `tcp = false` (off), `tcp = 57110` (a port), or
-/// `tcp = "0.0.0.0:57110"` (an address, a port, or both — the spelling the
+/// `tcp = "0.0.0.0:57110"` (an address, a port, or both -- the spelling the
 /// command-line flags take, see [`PortChoice::parse`]).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
@@ -229,8 +229,8 @@ pub enum PortSetting {
 ///
 /// Choosing a carrier is not consenting to the network. A `--tcp` or a `--ws`
 /// asked for on behalf of a client on this machine used to open the port to
-/// the LAN, so the widening is now something written down — `--ws
-/// 0.0.0.0:57120` — rather than a side effect of picking a transport.
+/// the LAN, so the widening is now something written down -- `--ws
+/// 0.0.0.0:57120` -- rather than a side effect of picking a transport.
 pub const DEFAULT_BIND: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 
 /// How far a WebSocket front sits from its program's base port when it is given
@@ -242,9 +242,9 @@ pub const WS_PORT_OFFSET: u16 = 10;
 /// What a transport was asked to do with its bind, before the base port is
 /// known.
 ///
-/// Both programs here bind several fronts around one **base** port — UDP or the
+/// Both programs here bind several fronts around one **base** port -- UDP or the
 /// script-facing front binds it, TCP follows it, WebSocket sits
-/// [`WS_PORT_OFFSET`] above — and both accept the same answers per transport:
+/// [`WS_PORT_OFFSET`] above -- and both accept the same answers per transport:
 /// follow the base, sit at a number, stay off, on whichever interface was named
 /// or on [`DEFAULT_BIND`] when none was. The answer cannot be turned into an
 /// address as it is read, because `--tcp` may come before the `--port` it
@@ -281,7 +281,7 @@ impl PortChoice {
     /// Reads the one spelling every carrier's flag and config value takes,
     /// `[addr:]port`: a bare port (`57110`), an address and a port
     /// (`0.0.0.0:57110`, `[::1]:57110`), or an address alone (`0.0.0.0`), which
-    /// leaves the port following the base. Addresses are literals — a hostname
+    /// leaves the port following the base. Addresses are literals -- a hostname
     /// is not resolved here, since a name can answer with several.
     pub fn parse(token: &str) -> Result<Self, String> {
         if let Ok(port) = token.parse::<u16>() {
@@ -300,8 +300,8 @@ impl PortChoice {
     }
 
     /// The address to bind, or `None` when this transport stays off. `base` is
-    /// what [`PortChoice::Follow`] means for *this* transport — the program's
-    /// base port, already offset for a WebSocket front — and an unnamed
+    /// what [`PortChoice::Follow`] means for *this* transport -- the program's
+    /// base port, already offset for a WebSocket front -- and an unnamed
     /// interface is [`DEFAULT_BIND`].
     pub fn resolve(self, base: u16) -> Option<SocketAddr> {
         match self {
@@ -329,7 +329,7 @@ impl PortChoice {
     }
 }
 
-/// A configured number that may be written as an integer or a float — TOML
+/// A configured number that may be written as an integer or a float -- TOML
 /// keeps the two apart, while a size role reads either (`pad = 6` and
 /// `pad = 6.0` mean the same thing).
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -389,7 +389,7 @@ impl MidiSetting {
     }
 }
 
-/// Picks `b` over `a` whenever `b` is set — the per-field merge rule.
+/// Picks `b` over `a` whenever `b` is set -- the per-field merge rule.
 fn pick<T>(a: Option<T>, b: Option<T>) -> Option<T> {
     b.or(a)
 }

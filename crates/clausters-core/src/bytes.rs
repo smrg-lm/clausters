@@ -2,12 +2,12 @@
 //!
 //! An analysis cache (a [`peaks::Pyramid`](crate::peaks::Pyramid), and the
 //! GUI's spectrogram STFT) is a flat sequence of small headers and `f32`
-//! arrays, so a build can **memory-map** it instead of reading it into RAM —
+//! arrays, so a build can **memory-map** it instead of reading it into RAM --
 //! which is exactly what a local shared-resource cache wants. Integers are
 //! written little-endian; `f32` arrays are written native-endian and read back
 //! with `from_ne_bytes` over 4-byte chunks, which is alignment-independent (the
 //! bytes come from a `Vec<u8>`/mmap with no `f32` alignment guarantee). The
-//! format is therefore machine-local — fine for a same-machine cache.
+//! format is therefore machine-local -- fine for a same-machine cache.
 //!
 //! Kept here in the shared core (rather than re-implemented per client) so the
 //! cache a client writes and the host reads use one layout, byte for byte.

@@ -3,7 +3,7 @@
 
 Drawing a long recording is a problem of **bandwidth**, not of arithmetic. A
 ten-minute stereo take is 230 MB of samples, and a client that cannot map the
-server's memory — a browser above all — has to get a picture of it from
+server's memory -- a browser above all -- has to get a picture of it from
 somewhere. There are three answers and this script measures two of them
 against each other:
 
@@ -20,7 +20,7 @@ half: a buffer being *recorded into* has its overview pushed as it is written,
 because nothing can ask for what is not there yet. Same blob, same folding.)
 
 What the script does: builds a take of four sections with different levels,
-asks for both, prints what each cost, and draws the overview as text — then
+asks for both, prints what each cost, and draws the overview as text -- then
 draws the same picture out of the downloaded samples and asserts the two are
 the same. That is the point worth checking by eye: the cheap route is not an
 approximation of the expensive one, it is the same summary computed where the
@@ -54,7 +54,7 @@ LEVELS = [0.9, 0.25, 0.0, 0.6]
 
 def samples():
     """A tone whose level steps through `LEVELS`, interleaved stereo with the
-    right channel at half the left — so a wrong channel order shows as a
+    right channel at half the left -- so a wrong channel order shows as a
     picture that is symmetric when it should not be."""
     out = []
     section = (SECONDS * SR) // len(LEVELS)
@@ -70,7 +70,7 @@ def trace(stats, channels, columns=64):
     """The overview as text: one column per `columns`, the peak of the buckets
     that fall in it, on the left channel.
 
-    This is the drawing a waveform view does, minus the pixels — a column is a
+    This is the drawing a waveform view does, minus the pixels -- a column is a
     range of buckets and what it shows is their extreme, which is why a
     summary can be drawn at any zoom without touching the samples.
     """
@@ -91,7 +91,7 @@ def trace(stats, channels, columns=64):
 
 def local_overview(audio, channels, bucket):
     """The same summary computed from the downloaded samples, in the same
-    layout the server answers in — so the two can be compared value by value.
+    layout the server answers in -- so the two can be compared value by value.
     """
     buckets = (len(audio) // channels) // bucket
     stats = []

@@ -46,7 +46,7 @@ class FakeServer:
 
 def _widget(tree: dict, view: str) -> dict:
     """The window's one child, which every scope window is: a `signal` element
-    at the presentation `view` names — the wire says the point of the product
+    at the presentation `view` names -- the wire says the point of the product
     now, not one of six names for points of it."""
     assert tree["type"] == "window"
     (widget,) = tree["children"]

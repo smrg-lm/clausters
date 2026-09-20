@@ -2,7 +2,7 @@
 //!
 //! The claim under test is the one the mode is defined by, and it is not a
 //! claim about time: **determinism here is of process**. An interactive session
-//! cannot be deterministic in time — it answers a document, not a timeline —
+//! cannot be deterministic in time -- it answers a document, not a timeline --
 //! so what has to hold is that the *same operation over the same samples*
 //! yields the samples it would yield expressed in a score and rendered in
 //! batch. Everything below is that sentence, checked.
@@ -138,7 +138,7 @@ fn the_seed_travels_so_a_stochastic_operation_repeats_too() {
     assert!(a.iter().any(|&x| x != 0.0), "the noise has to sound");
 }
 
-/// Drains replies, returning the first one whose address matches — and, for a
+/// Drains replies, returning the first one whose address matches -- and, for a
 /// `/done`, whose first argument names `for_cmd`, since every async command
 /// answers at that same address and an earlier one may still be queued.
 fn wait_reply(s: &mut NrtSession, addr: &str, for_cmd: Option<&str>) -> Option<OscMessage> {
@@ -271,7 +271,7 @@ fn a_quit_is_reported_to_the_driver() {
 
 /// What "no clock" does **not** mean, pinned because the milestone's own
 /// acceptance said it carelessly ("no scheduling surface") and that is wrong.
-/// A timetag is meaningful here — an operation *is* a score, and a bundle
+/// A timetag is meaningful here -- an operation *is* a score, and a bundle
 /// inside its span lands at its exact sample, exactly as the batch renderer
 /// places one. What the mode lacks is a clock that moves on its own: a bundle
 /// past the operation's end does not fire, and waits for the next operation,
@@ -339,7 +339,7 @@ fn a_timetag_lands_at_its_sample_and_waits_for_the_next_operation() {
 
 /// The mode's defining property, checked directly rather than inferred: time
 /// moves only inside `run`. Serving between two runs must leave the signal
-/// exactly where it was — if a `settle` advanced the engine, the two halves
+/// exactly where it was -- if a `settle` advanced the engine, the two halves
 /// would not join.
 #[test]
 fn settling_between_operations_does_not_advance_time() {
@@ -367,8 +367,8 @@ fn settling_between_operations_does_not_advance_time() {
 
 /// **A session with no audio device can still own the samples a peer edits.**
 ///
-/// The on-demand server is what an editor talks to — it renders, it applies the
-/// edit verbs, and it has no clock of its own — so it is the one that most
+/// The on-demand server is what an editor talks to -- it renders, it applies the
+/// edit verbs, and it has no clock of its own -- so it is the one that most
 /// wants its buffers mapped rather than fetched. Given a path, its segment is a
 /// file and every buffer it installs lives in a region beside it, which is the
 /// whole difference between a session nobody else can see and one an editor

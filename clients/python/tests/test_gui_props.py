@@ -9,14 +9,14 @@ side and forgotten on the other is silent in every build.
 
 This reads all three and compares them against ``docs/gui-props.md``, which is
 the same instrument ``docs/bindings.md`` is for the core's two bindings: it does
-not forbid divergence — a client is idiomatic in its own language and a prop may
-legitimately reach only one — it forbids **undeclared** divergence. A difference
+not forbid divergence -- a client is idiomatic in its own language and a prop may
+legitimately reach only one -- it forbids **undeclared** divergence. A difference
 the manifest does not name fails here, and so does a manifest row that names a
 difference no longer there.
 
 The three readers are deliberately different, because the three sources are:
 
-* Python is read by **calling it** — `inspect.signature` over the builders, which
+* Python is read by **calling it** -- `inspect.signature` over the builders, which
   is exact and cannot drift from what a script can type;
 * TypeScript is read **statically**, from the option type of each builder (the
   named interfaces it extends plus its inline literal), which is what a reader
@@ -24,12 +24,12 @@ The three readers are deliberately different, because the three sources are:
 * the host is read **statically** from the widget schema's two wire passes,
   ``build`` (construction) and ``apply`` (`/gui_set`), resolving the shared
   prop-reading helpers so a bundle like ``Flow`` or ``EditorProps`` contributes
-  its own keys to every widget that embeds it — **and** from the leaves that
+  its own keys to every widget that embeds it -- **and** from the leaves that
   have moved behind the ``Element`` trait, which are not arms of those passes
   at all: one file per widget under ``host/elements/``, its constructor and its
   ``set`` reading the same shared helpers, named on the wire by the
   ``elements::builtin`` table. A leaf that moves out of the schema must not
-  read here as a leaf that lost its props — which is exactly the failure this
+  read here as a leaf that lost its props -- which is exactly the failure this
   reader has had twice, so the two places a leaf can hide are named rather than
   guessed: an element written across a **module directory** (``host/elements/signal/``)
   and the one leaf the **schema** builds instead of the table, because its wire
@@ -51,8 +51,8 @@ ELEMENT_DIR = ROOT / "clients/gui/src/host/elements"
 #: An element whose file is a **module directory** elsewhere in the host, named
 #: here because the table's own path is all that says so: the signal element is
 #: `host/elements/signal/` (six presentations behind one wire name), and a leaf built by
-#: the schema rather than by the table — the patcher, whose wire type `plane`
-#: means two constructions — is found through `build.rs` below.
+#: the schema rather than by the table -- the patcher, whose wire type `plane`
+#: means two constructions -- is found through `build.rs` below.
 ELEMENT_DIRS = {"signal": ROOT / "clients/gui/src/host/elements/signal"}
 #: Where the axis pair's key is declared.
 AXES_MOD = ROOT / "clients/gui/src/host/widget/axes.rs"
@@ -64,7 +64,7 @@ BUILDER_SECTION = "## The divergences between the two builders"
 sys.path.insert(0, str(ROOT / "clients/python"))
 
 # Never a widget prop: the client-side identity keys, the child list, and the
-# def control a control widget is built *from* — that one is a source of props
+# def control a control widget is built *from* -- that one is a source of props
 # (`name`, `value`, `min`, `max`), not one itself, so it is a parameter every
 # client grows in its own spelling rather than a key on the wire.
 NOT_A_PROP = {"id", "name", "children", "control"}
@@ -110,8 +110,8 @@ def python_builders() -> dict:
 def python_props() -> dict:
     """``{model kind: {prop}}``, unioned over every builder that emits it.
 
-    Several builders share one model type — `waveform`, `plot` and `scope` all
-    build a `signal` — so a kind's vocabulary is the union of what its builders
+    Several builders share one model type -- `waveform`, `plot` and `scope` all
+    build a `signal` -- so a kind's vocabulary is the union of what its builders
     offer, not whichever one was read last. That union is what the manifest's
     main table compares; the per-builder reading further down is the one it
     hides.
@@ -186,7 +186,7 @@ def web_builders() -> dict:
         props -= set(ifaces) | {"readonly", "options", "rest", "GuiNode", "Record",
                                 "string", "number", "boolean"}
         # A leading positional parameter is a prop too (`label(text)`,
-        # `meter(bus)`, `menu(options)`) — but not the option bag itself, and
+        # `meter(bus)`, `menu(options)`) -- but not the option bag itself, and
         # not a child list (`track(clips)`, `panel(…, ...children)`), which is
         # the tree, not a prop.
         for line in params.split("\n"):
@@ -242,7 +242,7 @@ def _literal_keys(text: str) -> set:
                     break
         keys |= set(re.findall(r'"([a-z_][a-z_0-9]*)"', text[call.end():end]))
     # A local reader closure over the same map: `let f = |k| props.get(k)…`,
-    # then `f("margin")` — or `f("navigable", default)`, since a reader may
+    # then `f("margin")` -- or `f("navigable", default)`, since a reader may
     # take the fallback beside the key.
     for name in re.findall(r"let (\w+) = \|k(?:ey)?: &str[^|]*\| props", text):
         keys |= set(re.findall(rf'\b{name}\("([a-z_][a-z_0-9]*)"[,)]', text))
@@ -250,7 +250,7 @@ def _literal_keys(text: str) -> set:
 
 
 def _helper_bodies() -> dict:
-    """``{function name: source}`` for every function in the widget schema —
+    """``{function name: source}`` for every function in the widget schema --
     what an arm that delegates has to be read through."""
     src = _rust_sources()
     lines, out = src.split("\n"), {}
@@ -302,7 +302,7 @@ def _helper_keys() -> dict:
         bodies[f"{impl_type}::{name}" if impl_type and indent else name] = body
 
     direct = {n: _literal_keys(b) for n, b in bodies.items()}
-    # `apply` implementations declare their keys as match arms, not as reads —
+    # `apply` implementations declare their keys as match arms, not as reads --
     # `WidgetKind::apply` itself and the per-family helpers it delegates to
     # (`apply_signal`).
     for name, body in bodies.items():
@@ -358,8 +358,8 @@ def generic_props() -> set:
     """The props the host reads for **every** widget, whatever its kind.
 
     `Widget::build` parses them off the node before the kind is even
-    considered — the place props the container's layout applies, the two style
-    props, and the `axes` pair and `flow` the vocabulary rewrites — so they are
+    considered -- the place props the container's layout applies, the two style
+    props, and the `axes` pair and `flow` the vocabulary rewrites -- so they are
     not part of any widget's own vocabulary and are left out of the comparison
     below (see `docs/gui-props.md`).
     """
@@ -378,7 +378,7 @@ def generic_props() -> set:
 #: Widgets whose props are read **outside** their own schema arm, and where.
 #:
 #: The scanner is told rather than made to guess: the alternative is an arm
-#: pretending to read props it does not touch. Empty since `G34` — a `clip`'s
+#: pretending to read props it does not touch. Empty since `G34` -- a `clip`'s
 #: bodies were the one case, and a clip is no longer a widget.
 OUTBOARD: dict = {}
 
@@ -388,7 +388,7 @@ OUTBOARD: dict = {}
 def _strip_tests(text: str) -> str:
     """Everything before the file's own test module: a fixture there names props
     the wire never carries, and counting them would widen the host's vocabulary
-    — the one direction that hides a divergence instead of reporting one."""
+    -- the one direction that hides a divergence instead of reporting one."""
     return text.split("#[cfg(test)]")[0]
 
 
@@ -397,9 +397,9 @@ def element_props() -> dict:
 
     Read **per file**, never concatenated: every element has a ``build``, a
     ``from_props`` and a ``set``, so one namespace over all of them would let
-    one leaf's keys leak into another's. A leaf that delegates — to a shared
+    one leaf's keys leak into another's. A leaf that delegates -- to a shared
     parse helper (``Range::parse``) or to a sibling element module
-    (``control::set``, ``curve::body``) — is read through the callee.
+    (``control::set``, ``curve::body``) -- is read through the callee.
     """
     shared = _helper_keys()
     # The table names the module by path (`super::signal::build`), so the last
@@ -584,9 +584,9 @@ def divergences() -> dict:
 # for "do the two clients offer the same thing", which is what a reader
 # comparing the two modules is actually asking.
 #
-# This reading answers the second question. It leaves the host out — the host
+# This reading answers the second question. It leaves the host out -- the host
 # has no builders, and a client offering a prop the host parses on that type is
-# what the table above is for — and compares the two clients builder by
+# what the table above is for -- and compares the two clients builder by
 # builder, over the props each one names for itself.
 
 
@@ -662,7 +662,7 @@ def test_the_manifest_records_where_each_divergence_lives():
 
 def test_every_divergence_carries_a_verdict():
     declared = manifest_rows()
-    assert declared, "docs/gui-props.md declares nothing — is the table still there?"
+    assert declared, "docs/gui-props.md declares nothing -- is the table still there?"
     blank = sorted(k for k, (_, verdict) in declared.items() if not verdict)
     assert not blank, f"a row with no verdict: {blank}"
 
@@ -671,8 +671,8 @@ def test_the_two_clients_build_the_same_widgets():
     """A builder one client has and the other does not, aliases included."""
     py, web = set(python_builders()), set(web_builders())
     # The model's second names (`notes` for `pianoroll`, `window` for `view`)
-    # are `export const` aliases in TypeScript, which the reader — which reads
-    # `export function` — does not see. They are the same function under two
+    # are `export const` aliases in TypeScript, which the reader -- which reads
+    # `export function` -- does not see. They are the same function under two
     # names in both clients, so an alias missing from the web module is a
     # missing line rather than a missing builder, and `gui-parity.test.ts`
     # calls each of them by name.

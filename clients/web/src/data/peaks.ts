@@ -1,8 +1,8 @@
 // The peak pyramid: a summary that costs a window, not a buffer.
 //
 // A waveform view is never drawn sample by sample. The samples are reduced
-// once into a min/max pyramid — level 0 summarizes every `baseBucket` samples,
-// each level above halves the resolution — and a drawing reads the level whose
+// once into a min/max pyramid -- level 0 summarizes every `baseBucket` samples,
+// each level above halves the resolution -- and a drawing reads the level whose
 // buckets match its zoom, so a picture costs about a bucket per pixel column
 // and the work is proportional to the width of the view rather than to the
 // length of the buffer.
@@ -13,16 +13,16 @@
 // mapped over there are the same bytes.
 //
 // **The cache is data; the picture is the host's.** Everything a drawing does
-// with a pyramid — which level a magnification calls for, a column per pixel,
-// the join that inks one column out to the next, and reading a cell at all —
+// with a pyramid -- which level a magnification calls for, a column per pixel,
+// the join that inks one column out to the next, and reading a cell at all --
 // happens where the drawing does, and the drawing is never here (a `waveform`
 // widget over a `buffer`, a `cache` file or a `path`). What this object
-// answers is **what it is** — how long, how many channels, at what bucket,
-// how many levels — never what it says. That is the same split the Python
+// answers is **what it is** -- how long, how many channels, at what bucket,
+// how many levels -- never what it says. That is the same split the Python
 // client has, where a cache is a `bytes` its owner hands on.
 //
-// The samples come from wherever a buffer comes from — `Server.getSamples`
-// over the wire, `fetchAudio` over HTTP — and after `build` they are not
+// The samples come from wherever a buffer comes from -- `Server.getSamples`
+// over the wire, `fetchAudio` over HTTP -- and after `build` they are not
 // needed again.
 
 import { Pyramid } from "../core/clausters_core_web.js";
@@ -49,7 +49,7 @@ export class Peaks {
 
     /**
      * Reduces `samples` (interleaved, `channels` of them). `baseBucket` is the
-     * finest bucket: 256 — the default every client uses — costs ~0.8% of the
+     * finest bucket: 256 -- the default every client uses -- costs ~0.8% of the
      * source in cache and resolves down to 256 samples per column, below which
      * a view should read the raw samples instead.
      */
@@ -63,7 +63,7 @@ export class Peaks {
     }
 
     /**
-     * An **empty** pyramid over `frames` frames — the picture of a take that
+     * An **empty** pyramid over `frames` frames -- the picture of a take that
      * has been allocated and not yet recorded into, ready to be filled by
      * `writeBuckets` as the reports arrive.
      *
@@ -78,7 +78,7 @@ export class Peaks {
     }
 
     /**
-     * Reads back a serialized cache — one written here, or the file the GUI
+     * Reads back a serialized cache -- one written here, or the file the GUI
      * host maps and the Python client writes. `undefined` when the bytes are
      * not a cache.
      */
@@ -88,7 +88,7 @@ export class Peaks {
     }
 
     /**
-     * Folds a `/buffer_stream.reply` report into this pyramid — how a page
+     * Folds a `/buffer_stream.reply` report into this pyramid -- how a page
      * follows a recording it cannot map.
      *
      * The server sends the *overview* of what was written rather than the
@@ -97,7 +97,7 @@ export class Peaks {
      * where they belong and rebuilds the levels above them, so the picture
      * grows into the one the samples would have built.
      *
-     * `stats` is the reply's blob — pass it as it arrived, or as `f32`s if you
+     * `stats` is the reply's blob -- pass it as it arrived, or as `f32`s if you
      * already read them. Either way it is **bucket-major and channel-minor**:
      * for each bucket of `bucket` frames in order, for each channel, `min`,
      * `max` and mean square. `startFrame` is where the report begins on the
@@ -126,7 +126,7 @@ export class Peaks {
         let flat: Float32Array;
         if (stats instanceof Uint8Array) {
             // The blob as the wire carries it: little-endian `f32`s, at
-            // whatever offset the datagram left them — which is why this is a
+            // whatever offset the datagram left them -- which is why this is a
             // `DataView` read and not a `Float32Array` over the same buffer.
             const view = new DataView(stats.buffer, stats.byteOffset, stats.byteLength);
             flat = new Float32Array(Math.floor(stats.byteLength / 4));
@@ -142,7 +142,7 @@ export class Peaks {
         return this.inner.toBytes();
     }
 
-    /** Samples per channel — the span a view of this cache covers. */
+    /** Samples per channel -- the span a view of this cache covers. */
     get frames(): number {
         return this.inner.frames;
     }

@@ -1,5 +1,5 @@
 // The three verbs a server handle comes up with: the constructor, `boot` and
-// `attach` — and what each of them does when there is nothing behind the
+// `attach` -- and what each of them does when there is nothing behind the
 // carrier.
 //
 // A browser carrier can be open and empty: a WebSocket endpoint that accepts
@@ -70,7 +70,7 @@ test("attach refuses a carrier nobody answers on", async () => {
 });
 
 test("attach probes even when the sizing was given", async () => {
-    // What is being verified is the *server*, not the numbers — an explicit
+    // What is being verified is the *server*, not the numbers -- an explicit
     // sizing is exactly the case where nothing else would have asked.
     const carrier = silent();
     const server = new Server({ connection: carrier, sizing: { maxNodes: 64 }, timeout: 0.2 });
@@ -120,7 +120,7 @@ test("a bulk chunk reads the carrier's capability, not its type", async () => {
     (server as unknown as { maxFrame: number }).maxFrame = 1024 * 1024;
     assert.equal(await server.bulkChunk(0.2), Math.floor((1024 * 1024 - 256) / 4));
 
-    // Bounded by one delivery — a datagram, the page's 64 KiB ring, which
+    // Bounded by one delivery -- a datagram, the page's 64 KiB ring, which
     // drops a reply it cannot hold instead of splitting it. The ceiling is
     // cached all the same and is simply not what the chunk comes from.
     const bounded = new Server({ connection: silent(), timeout: 0.2 });

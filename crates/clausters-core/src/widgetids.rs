@@ -7,7 +7,7 @@
 //! subtree and asks for it again. That makes an id a **lease** rather than an
 //! identity, and the consequences are not subtle:
 //!
-//! - anything in flight across a redraw lands on the wrong widget — an
+//! - anything in flight across a redraw lands on the wrong widget -- an
 //!   edit-back the owner has not answered yet, a pending gesture, a correction
 //!   travelling the other way;
 //! - screen state cannot survive a redraw, because the widget it belonged to no
@@ -16,8 +16,8 @@
 //!   order the tree happened to be built in.
 //!
 //! So this table adds the other door. A **keyed** id is asked for by naming what
-//! it draws — the structure's identity in the history, the role the widget plays
-//! in its view, and which one it is within that role — and the same name gets
+//! it draws -- the structure's identity in the history, the role the widget plays
+//! in its view, and which one it is within that role -- and the same name gets
 //! the same number for as long as it keeps being drawn. Both doors share one
 //! occupancy map, which is what makes them impossible to collide: a keyed id and
 //! an anonymous one are the same resource taken two ways, not two spaces that
@@ -27,7 +27,7 @@
 //!
 //! Keyed ids are held across draws, so something has to say when a widget has
 //! stopped being drawn. That is [`WidgetIds::begin`] and [`WidgetIds::retire`],
-//! and both name an **owner** — because one table serves a whole host, and a
+//! and both name an **owner** -- because one table serves a whole host, and a
 //! host carries more than one drawer. Two editors opened on the ambient host
 //! are two owners of one namespace, and a cycle that did not say whose it was
 //! would let either one retire the other's widgets simply by redrawing.
@@ -56,7 +56,7 @@
 //!
 //! **Nothing here hashes an id out of a name.** A 31-bit space and a thousand
 //! live widgets is a collision every few thousand sessions, and a collision is
-//! two widgets answering to one number — silent, and indistinguishable from the
+//! two widgets answering to one number -- silent, and indistinguishable from the
 //! bug this table exists to remove. A map costs a lookup and cannot do that.
 
 use std::collections::{HashMap, HashSet};
@@ -70,9 +70,9 @@ const SEP: char = '\u{1}';
 /// One client's widget-id space: the occupancy map, plus the names the keyed
 /// ids in it answer to.
 ///
-/// Both doors take from the same map — [`alloc`](Self::alloc) for a widget
+/// Both doors take from the same map -- [`alloc`](Self::alloc) for a widget
 /// nothing names (a hand-built tree, a decoration) and
-/// [`id_for`](Self::id_for) for one that draws something — so an id is unique
+/// [`id_for`](Self::id_for) for one that draws something -- so an id is unique
 /// across everything this client has named, whichever way it was asked for.
 pub struct WidgetIds {
     ids: Registry,
@@ -108,7 +108,7 @@ impl WidgetIds {
         }
     }
 
-    /// A table whose space never runs out — the offline counterpart, matching
+    /// A table whose space never runs out -- the offline counterpart, matching
     /// [`Registry::unbounded`](crate::registry::Registry::unbounded).
     pub fn unbounded(base: i64) -> Self {
         Self {
@@ -124,7 +124,7 @@ impl WidgetIds {
     /// which one it is.
     ///
     /// Composed **here** rather than by each caller, so two clients naming the
-    /// same widget cannot spell it differently — which is the whole reason the
+    /// same widget cannot spell it differently -- which is the whole reason the
     /// table is in the shared core rather than written once per language.
     pub fn key(structure: i64, role: &str, key: &str) -> String {
         let mut composed = String::with_capacity(role.len() + key.len() + 24);
@@ -182,7 +182,7 @@ impl WidgetIds {
         Some(id)
     }
 
-    /// The id that draws this name **if it already has one** — no minting, and
+    /// The id that draws this name **if it already has one** -- no minting, and
     /// no effect on the draw cycle.
     ///
     /// The inverse a view needs in order to ask "what id is drawing this?"
@@ -207,13 +207,13 @@ impl WidgetIds {
     }
 
     /// Return an **anonymous** id to the space. Ids this table never handed
-    /// out, and ids outside its window, are ignored — so freeing is always
+    /// out, and ids outside its window, are ignored -- so freeing is always
     /// safe.
     ///
     /// An id that answers to a name is ignored too, and that is the load-bearing
     /// half: a host frees a redefined subtree widget by widget, and a keyed id
     /// is still held by its name at that moment. Letting an anonymous free take
-    /// one back would hand the same number out twice — the exact failure keyed
+    /// one back would hand the same number out twice -- the exact failure keyed
     /// ids exist to remove. A named id leaves only through
     /// [`retire`](Self::retire) or [`forget`](Self::forget).
     pub fn free(&mut self, id: i64) {
@@ -232,7 +232,7 @@ impl WidgetIds {
         self.drawn.insert(owner, HashSet::new());
     }
 
-    /// How many keyed ids `owner`'s current draw would take back — nothing when
+    /// How many keyed ids `owner`'s current draw would take back -- nothing when
     /// that owner is not drawing.
     ///
     /// It exists so a caller that has to size a buffer before
@@ -288,7 +288,7 @@ impl WidgetIds {
         self.by_key.len()
     }
 
-    /// Whether `id` falls in this table's space — the filter for a foreign id.
+    /// Whether `id` falls in this table's space -- the filter for a foreign id.
     pub fn contains(&self, id: i64) -> bool {
         self.ids.contains(id)
     }

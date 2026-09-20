@@ -123,7 +123,7 @@ def test_a_removed_source_stops_being_drained(loop):
 
 def test_a_source_whose_peer_is_gone_leaves_the_loop(loop):
     """A stream socket at end-of-file stays readable for ever, so a source
-    nobody drops is one the loop wakes on every turn and reads nothing from — a
+    nobody drops is one the loop wakes on every turn and reads nothing from -- a
     whole core, for as long as the process lives. It cost exactly that when a
     GUI host was killed under a client that was still running.
 

@@ -5,7 +5,7 @@ The host draws every chrome color from one **theme** -- a table of named roles
 (``background``, ``panel``, ``text``, ``accent``, ...) -- and the customization
 is the same partial table at every level, each overlaying the previous:
 
-1. **The host's own table** — `clausters.gui.GuiHost.theme`, the ``/gui_theme``
+1. **The host's own table** -- `clausters.gui.GuiHost.theme`, the ``/gui_theme``
    verb: one look for the whole host, handed over after launch. This example
    warms the accent with it. (The launch-time spelling of the same table is
    ``--theme file.toml`` or ``[gui.theme]`` in the shared config, for a look

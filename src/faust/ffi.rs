@@ -1,12 +1,12 @@
 //! Raw FFI over the libfaust C API. Hand-written against the headers of the
 //! libfaust build we link (faust 2.85.5):
 //!
-//! - `faust/dsp/libfaust-signal-c.h` — lib context + Signal API (`Csig*`).
-//! - `faust/dsp/libfaust-box-c.h` — Box API (`Cbox*`).
-//! - `faust/dsp/llvm-dsp-c.h` — LLVM JIT factory/instance.
+//! - `faust/dsp/libfaust-signal-c.h` -- lib context + Signal API (`Csig*`).
+//! - `faust/dsp/libfaust-box-c.h` -- Box API (`Cbox*`).
+//! - `faust/dsp/llvm-dsp-c.h` -- LLVM JIT factory/instance.
 //!
 //! Only the surface needed so far. Naming follows the C symbols verbatim
-//! (hence the lint allowances). `FAUSTFLOAT` is `float` (f32) — libfaust's
+//! (hence the lint allowances). `FAUSTFLOAT` is `float` (f32) -- libfaust's
 //! default and required to match our buses; factories must be created
 //! without `-double`.
 //!
@@ -62,7 +62,7 @@ pub const ERROR_MSG_SIZE: usize = 4096;
 //
 // `buildUserInterfaceCDSPInstance` walks the instance's UI tree calling these
 // callbacks; the zone pointers it hands out are `FAUSTFLOAT*` (f32, we always
-// compile `-single`) into the instance's own memory — writing them is a plain
+// compile `-single`) into the instance's own memory -- writing them is a plain
 // aligned store, the RT-safe way to set parameters.
 
 pub type OpenBoxFun = unsafe extern "C" fn(ui: *mut c_void, label: *const c_char);
@@ -100,7 +100,7 @@ pub const FAUST_MAX_SOUNDFILE_PARTS: usize = 256;
 pub const FAUST_SOUNDFILE_EMPTY_FRAMES: i32 = 1024;
 pub const FAUST_SOUNDFILE_EMPTY_SR: i32 = 44100;
 
-/// Faust's `Soundfile` struct. **Packed** — the LLVM backend accesses it with
+/// Faust's `Soundfile` struct. **Packed** -- the LLVM backend accesses it with
 /// no padding (the header is `__attribute__((packed))`). We build and own one
 /// per `soundfile` zone; Faust never frees it.
 #[repr(C, packed)]
@@ -119,7 +119,7 @@ pub struct Soundfile {
     pub fParts: c_int,
     /// Sample format: always 0 (we compile `-single`, f32).
     ///
-    /// An `i32` and not a `bool`, because that is what Faust declares it as —
+    /// An `i32` and not a `bool`, because that is what Faust declares it as --
     /// `genInt32Typed()` in the compiler's own `Soundfile` type, on every
     /// backend. The header spells it `bool`, so a one-byte field read as a word
     /// left three bytes of the read past the end of the struct we allocate.
@@ -253,7 +253,7 @@ unsafe extern "C" {
     pub fn CboxWriteReadTable() -> FaustBox;
 
     /// Compiles Faust *source* into a box usable inside the current lib
-    /// context — the schema's escape hatch to the Faust stdlib. On error
+    /// context -- the schema's escape hatch to the Faust stdlib. On error
     /// returns NULL and fills `error_msg`.
     pub fn CDSPToBoxes(
         name_app: *const c_char,
@@ -300,7 +300,7 @@ unsafe extern "C" {
     // `CsigLRightShift` is deliberately not bound: the signal type checker
     // has no case for the `kLRsh` opcode (faust#1264, fixed in PR
     // faust#1272), so factory creation fails with an `ASSERT : unrecognized
-    // opcode : 7` — and in 2.81.x aborted the host process. The schema's
+    // opcode : 7` -- and in 2.81.x aborted the host process. The schema's
     // `rsh` is the arithmetic shift below; the canary in
     // `tests/faust_signal.rs` flags when the bug is gone and `lrsh` can be
     // exposed.

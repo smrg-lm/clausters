@@ -1,5 +1,5 @@
 //! **What a multitrack is made of**: a lane, a box on it, and a curve over
-//! either — and the payloads each list is reported as.
+//! either -- and the payloads each list is reported as.
 //!
 //! A box here is a [`boxes::Placement`](super::boxes::Placement) plus the two
 //! things a placement cannot say: **where its contents come from** (a server
@@ -41,7 +41,7 @@ pub struct Lane {
     pub height: f32,
     /// Silenced. Carried, never interpreted.
     pub mute: bool,
-    /// Soloed. Carried, never interpreted — what a solo does to *other* lanes
+    /// Soloed. Carried, never interpreted -- what a solo does to *other* lanes
     /// is the mixer's rule and the client's.
     pub solo: bool,
     /// The fader, over `[0, 1]`.
@@ -50,7 +50,7 @@ pub struct Lane {
     ///
     /// Carried, never interpreted: which rows there are is the `curves` prop's
     /// and what a hidden one means is the `hidden` set's. This is the one
-    /// statement a *track* makes about them — the header's toggle — and it is a
+    /// statement a *track* makes about them -- the header's toggle -- and it is a
     /// field of the lane because that is the row the toggle is drawn on.
     pub curves: bool,
 }
@@ -84,7 +84,7 @@ impl Lane {
 
 /// One placed box: which lane it is on, and where it sits there.
 ///
-/// The placement is [`Placement`] — the same `offset`/`dur`/`start` triple every
+/// The placement is [`Placement`] -- the same `offset`/`dur`/`start` triple every
 /// box in this crate is measured by, so a clip and a note are placed by one
 /// type and a drag over either is the same arithmetic.
 #[derive(Debug, Clone, PartialEq)]
@@ -98,7 +98,7 @@ pub struct Clip {
     /// What is drawn on it. Empty draws the name.
     pub label: String,
     /// **The server buffer this box is a window onto**, or a **negative** number
-    /// for a box with no contents — a placeholder, a region of something the
+    /// for a box with no contents -- a placeholder, a region of something the
     /// host cannot draw.
     ///
     /// Negative and not zero, because **buffer 0 is a buffer**: it is the first
@@ -143,14 +143,14 @@ impl Clip {
 
 /// Where the multitrack ends: the furthest clip end, `0` when there are none.
 ///
-/// The **end**, not the last onset — a clip dragged past everything else
+/// The **end**, not the last onset -- a clip dragged past everything else
 /// lengthens the multitrack by its whole length, which is the number a ruler and a
 /// scroll have to size themselves against.
 pub fn extent(clips: &[Clip]) -> f64 {
     clips.iter().map(Clip::end).fold(0.0, f64::max)
 }
 
-/// The clips on `lane`, in the order they are held — which is the order they
+/// The clips on `lane`, in the order they are held -- which is the order they
 /// draw in, so two that overlap stack predictably.
 pub fn clips_on<'a>(clips: &'a [Clip], lane: &'a str) -> impl Iterator<Item = &'a Clip> + 'a {
     clips.iter().filter(move |c| c.lane == lane)
@@ -159,18 +159,18 @@ pub fn clips_on<'a>(clips: &'a [Clip], lane: &'a str) -> impl Iterator<Item = &'
 /// A break-point automation, and **the same element in two places**.
 ///
 /// A curve that names a **lane** is a track automation: a row of its own under
-/// that lane, as tall as it asks and as long as the timeline — a track's gain
+/// that lane, as tall as it asks and as long as the timeline -- a track's gain
 /// does not begin and end with a box. A curve that names a **box** is a clip
 /// envelope: a layer drawn inside that box's rectangle, over whatever the box
 /// draws, and lasting exactly as long as the box does.
 ///
 /// The distinction is where it hangs and nothing else. Both are drawn by the
 /// `curve` element in its body form, both take the same break-points, and both
-/// report through the same `"points"` payload — which is why they are one type
+/// report through the same `"points"` payload -- which is why they are one type
 /// with two lists rather than two types.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Curve {
-    /// Its identity, the client's own name — what a point names to say which
+    /// Its identity, the client's own name -- what a point names to say which
     /// curve it is on, and what a report names it back with.
     pub name: String,
     /// The lane this is a row under, or the box this is a layer on.
@@ -180,7 +180,7 @@ pub struct Curve {
     /// The value domain the points are read and drawn over.
     pub min: f32,
     pub max: f32,
-    /// How tall its row is — a **row's** only; a layer is as tall as the box
+    /// How tall its row is -- a **row's** only; a layer is as tall as the box
     /// it is drawn on.
     pub height: f32,
 }
@@ -211,7 +211,7 @@ pub fn curves_json(curves: &[Curve]) -> Value {
     Value::Array(out)
 }
 
-/// The `layers` wire form: the flat `name box label min max` quintuple array —
+/// The `layers` wire form: the flat `name box label min max` quintuple array --
 /// a layer has no height of its own, since it is as tall as the box it is on.
 pub fn layers_json(layers: &[Curve]) -> Value {
     let mut out = Vec::with_capacity(layers.len() * 5);
@@ -229,7 +229,7 @@ pub fn layers_json(layers: &[Curve]) -> Value {
 /// array.
 ///
 /// The inverse of the prop's parse, so what a `/gui_query` reports is what a
-/// `/gui_set` would take — the contract every non-scalar on this wire keeps.
+/// `/gui_set` would take -- the contract every non-scalar on this wire keeps.
 pub fn lanes_json(lanes: &[Lane]) -> Value {
     let mut out = Vec::with_capacity(lanes.len() * 7);
     for l in lanes {
@@ -282,7 +282,7 @@ mod tests {
 
     /// **A clip names its lane, it is not nested inside one.** That is what
     /// makes a lane change one field of one clip rather than a removal and an
-    /// insertion — the edit that had no way to report itself before.
+    /// insertion -- the edit that had no way to report itself before.
     #[test]
     fn a_clip_changes_lane_by_naming_another_one() {
         let mut clips = clips();

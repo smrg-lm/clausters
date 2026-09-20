@@ -96,8 +96,8 @@ class Source:
         """Whether the other end of this source is gone, so the loop should
         drop it.
 
-        ``False`` here, which is what a source with no notion of a peer — a
-        queue, a callback — honestly says. It matters for a **stream**: a
+        ``False`` here, which is what a source with no notion of a peer -- a
+        queue, a callback -- honestly says. It matters for a **stream**: a
         socket at end-of-file stays readable for ever, so a source nobody drops
         is one the loop wakes on every turn and reads nothing from.
         """
@@ -397,7 +397,7 @@ class EventLoop:
 
         A stream socket at end-of-file stays readable for ever, so a source
         nobody drops is one the loop wakes on every turn and reads nothing
-        from — a whole core, for as long as the process lives. It cost exactly
+        from -- a whole core, for as long as the process lives. It cost exactly
         that when a GUI host was killed under a client that was still running.
 
         Optional, so a source with no notion of a peer (a queue, a callback)

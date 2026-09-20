@@ -1,5 +1,5 @@
 //! O2's acceptance: the vocabulary is absolute, applying is idempotent, and
-//! every outcome names an effective value — including a refusal, which is the
+//! every outcome names an effective value -- including a refusal, which is the
 //! previous value handed back rather than an error.
 
 use super::*;
@@ -580,7 +580,7 @@ fn an_unstated_claim_skips_the_check() {
 }
 
 /// A write says **which channel** it covers, and the field is optional on the
-/// wire: a document written before it — and every mono edit — means channel 0.
+/// wire: a document written before it -- and every mono edit -- means channel 0.
 #[test]
 fn a_write_names_its_channel_and_an_absent_one_is_the_first() {
     let mut d = samples(2);

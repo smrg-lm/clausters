@@ -22,8 +22,8 @@
       <div id="note">A live node-tree view: the GUI mirroring the audio
 server's node graph.
 
-A <code>nodetree</code> widget shows the server's tree — its groups, synths, def
-names and control values — and keeps it current: the GUI host mirrors the tree
+A <code>nodetree</code> widget shows the server's tree -- its groups, synths, def
+names and control values -- and keeps it current: the GUI host mirrors the tree
 over its <b>client leg</b> (<code>/group_queryTree</code>), refreshing the
 moment a node is created or freed
 (<code>/node_start</code>/<code>/node_end</code>) and on a low-rate poll that
@@ -109,7 +109,7 @@ server itself, which is what <code>session.gui()</code> wires up.</div>
       $("stop").onclick = () => {
         clearInterval(driving);
         $("stop").disabled = true;
-        log("the tree holds what the server holds — nothing here draws it");
+        log("the tree holds what the server holds -- nothing here draws it");
       };
     </script>
   </body>

@@ -218,7 +218,7 @@ def test_buffer_allocator():
 
 class _FakeInterface:
     """A Server communication interface that records sent messages and replays
-    queued replies — the Server's comms surface, no socket."""
+    queued replies -- the Server's comms surface, no socket."""
 
     time_mode = "unix"
 
@@ -566,7 +566,7 @@ if __name__ == "__main__":
             try:
                 fn()
                 print(f"ok   {name}")
-            except BaseException as e:  # noqa: BLE001 — smoke harness
+            except BaseException as e:  # noqa: BLE001 -- smoke harness
                 kind = type(e).__name__
                 skip = kind in ("Skipped", "OutcomeException")
                 print(f"{'skip' if skip else 'FAIL'} {name}: {e}")

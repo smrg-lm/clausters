@@ -1,13 +1,13 @@
 //! The OSC server: the network thread, and everything that answers a client.
 //!
-//! Allocating and doing I/O here is fine — this is the side of the seam the
+//! Allocating and doing I/O here is fine -- this is the side of the seam the
 //! audio thread is protected from. It owns the [`EngineHandle`] and the def
 //! store: defs are compiled and stored here, node commands are built here in
 //! full (boxed synth included) and pushed to the engine's command FIFO, and the
 //! garbage coming back from the audio thread is dropped here. Replies follow
 //! scsynth semantics (see the `scsynth-osc` skill).
 //!
-//! The command set itself is not listed here — `docs/schemas.md` is its
+//! The command set itself is not listed here -- `docs/schemas.md` is its
 //! reference, and a copy of the list in a doc comment is a copy that goes
 //! stale. What this module holds is [`OscServer`]: the struct, its shared
 //! helpers (`OscServer::reply`, `OscServer::fail`, the two clocks behind
@@ -15,15 +15,15 @@
 //!
 //! # Where things live
 //!
-//! - `lifecycle` — construction, the run loop, and its housekeeping.
-//! - `transports` — binding and draining UDP, TCP, WebSocket, MIDI and the
+//! - `lifecycle` -- construction, the run loop, and its housekeeping.
+//! - `transports` -- binding and draining UDP, TCP, WebSocket, MIDI and the
 //!   shared-memory ring, all of them into one handler.
-//! - `dispatch` — address to handler, plus the two ways a message arrives
+//! - `dispatch` -- address to handler, plus the two ways a message arrives
 //!   early (a timetagged bundle, the `/sched_at` family).
-//! - `commands` — the handlers, one module per resource family.
-//! - `streams` — the subscriptions the server pushes without being asked
+//! - `commands` -- the handlers, one module per resource family.
+//! - `streams` -- the subscriptions the server pushes without being asked
 //!   again.
-//! - `async_pipes` — the NRT and Faust pipelines, and the `/server_sync`
+//! - `async_pipes` -- the NRT and Faust pipelines, and the `/server_sync`
 //!   barrier over both.
 
 use std::io;
@@ -87,7 +87,7 @@ const MIN_STREAM_PERIOD: Duration = Duration::from_millis(10);
 /// command loop looks: the tick while any client has `/server_notify` on.
 ///
 /// `/node_start`/`/node_end` are posted by the **audio thread**, which may not
-/// send, lock or allocate — so it cannot poke the loop's waker the way an NRT
+/// send, lock or allocate -- so it cannot poke the loop's waker the way an NRT
 /// worker does (`crate::osc::wake`). Promptness on this queue is therefore
 /// bought with a poll rate, and the number is the one this file already chose
 /// for "how often a subscribed client may be served": `MIN_STREAM_PERIOD`. A
@@ -101,23 +101,23 @@ const NOTIFY_INTERVAL: Duration = MIN_STREAM_PERIOD;
 /// subtracts before dividing by this.
 const STREAM_BUS_BYTES: usize = 10;
 
-/// Most tap indices one `/bus_tapStream` subscription may list — one `/bus_tapStream.reply`
+/// Most tap indices one `/bus_tapStream` subscription may list -- one `/bus_tapStream.reply`
 /// blob goes out per tap per period, so this bounds the reply traffic.
 const MAX_STREAM_TAPS: usize = 8;
 
-/// Ceiling on buffers per `/buffer_stream` subscription — a session draws a
+/// Ceiling on buffers per `/buffer_stream` subscription -- a session draws a
 /// handful of takes at once, and a client that wants more takes two.
 const MAX_STREAM_BUFFERS: usize = 32;
 
 /// Ceiling on the **bytes** of one overview reply (`/buffer_stream.reply`,
-/// `/buffer_peaks.reply`), so a subscription that stalled — or a request for a
-/// long take — does not answer in one message.
+/// `/buffer_peaks.reply`), so a subscription that stalled -- or a request for a
+/// long take -- does not answer in one message.
 ///
 /// It is a byte count and not a bucket count because a bucket is not a size: a
 /// bucket costs `channels * 3` floats, so 4096 of them are 96 kB of a stereo
 /// take and 400 kB of an eight-channel one. The carriers have real limits and
 /// the smallest of them is the shared ring's **64 KiB**, which drops what does
-/// not fit *silently* — a page that asked for a summary and got nothing back,
+/// not fit *silently* -- a page that asked for a summary and got nothing back,
 /// forever, is exactly what this ceiling exists to prevent. An eighth of the
 /// ring leaves room for the several replies in the air while a session draws,
 /// which is the same reasoning that sizes a client's `/buffer_getRange` chunk.
@@ -156,8 +156,8 @@ enum Flow {
 /// the result in buffer `index`.
 ///
 /// It exists because the two halves of that command live in different places
-/// and must stay there. The **server** owns the wire — it parses the message,
-/// validates the buffer and answers `/done` or `/fail` — and the **driver**
+/// and must stay there. The **server** owns the wire -- it parses the message,
+/// validates the buffer and answers `/done` or `/fail` -- and the **driver**
 /// owns the engine, because only whoever calls `process_block` can run one.
 /// That is the same split the NRT queue already has, with the driver in the
 /// worker's seat, and it is why the command is a request rather than a call.
@@ -223,7 +223,7 @@ pub struct OscServer {
     /// of it and has no ring at all, so the two cannot be one field.
     segment: Option<std::sync::Arc<crate::server::ipc::Segment>>,
     /// Where the segment's file is, when it has one: what a buffer's region is
-    /// named from — on both sides, the server that writes the regions and the
+    /// named from -- on both sides, the server that writes the regions and the
     /// one that maps them.
     shm_path: Option<std::path::PathBuf>,
     /// Whether this server **owns** the samples: publishes a directory row
@@ -231,7 +231,7 @@ pub struct OscServer {
     /// it follows the control-plane claim; a server that attached without it
     /// maps what the owner published and keeps its own allocations private.
     owns_samples: bool,
-    /// Per buffer, the region file backing it — kept so freeing one can unlink
+    /// Per buffer, the region file backing it -- kept so freeing one can unlink
     /// its name. Sized with the pool. Off Unix there are no regions and the
     /// list stays empty, which is why it is written and never read there.
     #[cfg_attr(not(unix), allow(dead_code))]
@@ -307,7 +307,7 @@ pub struct OscServer {
     /// Queued `/buffer_render` operations, when an offline driver has said it
     /// will perform them ([`Self::enable_offline_renders`]). `None` is every
     /// other server, and the command fails there rather than queueing work
-    /// nobody will do — see [`OfflineRender`].
+    /// nobody will do -- see [`OfflineRender`].
     offline: Option<Vec<OfflineRender>>,
 }
 
@@ -318,8 +318,8 @@ pub struct OscServer {
 /// it. See [`OscServer::handle_transport`].
 ///
 /// **It always exists**, which is why this is not an `Option` on the server.
-/// Rolling, stopping and saying where the transport is need no beats — an audio
-/// editor addresses frames and has no tempo to declare — so the thing that is
+/// Rolling, stopping and saying where the transport is need no beats -- an audio
+/// editor addresses frames and has no tempo to declare -- so the thing that is
 /// optional is the **grid**, not the transport. `defined` is what says whether
 /// `origin_sample` and `tempo` mean anything, and it is the wire field of the
 /// same name.
@@ -334,7 +334,7 @@ struct Transport {
     origin_sample: i64,
     tempo: f64,
     playing: bool,
-    /// The song position in **beats** — the grid's spelling of the transport's
+    /// The song position in **beats** -- the grid's spelling of the transport's
     /// position, which the engine keeps in samples. 0 while no grid is defined,
     /// where the sample spelling is still live.
     position: f64,
@@ -394,7 +394,7 @@ struct BufferStream {
     client: ClientId,
     period: Duration,
     /// The buffers this subscription watches, each with the frame its last
-    /// report ended at — so a report carries what is new and nothing else.
+    /// report ended at -- so a report carries what is new and nothing else.
     buffers: Vec<(i32, u64)>,
     /// Samples per bucket, the pyramid's own level-0 granularity.
     bucket: usize,
@@ -413,7 +413,7 @@ struct PendingSync {
 /// Where the server reads time from. `Wall` is the native default: streams
 /// pace on the monotonic clock and NTP timetags convert through the system
 /// wall clock, as always. `Sample` is the headless/pulled mode: both
-/// derive from the **engine sample clock** — the only clock a wasm build has,
+/// derive from the **engine sample clock** -- the only clock a wasm build has,
 /// and the natural one for a host that drives `process_block` itself (an
 /// offline host makes streams and timetags follow render time, not wall
 /// time). `unix_epoch` anchors sample 0 on the Unix axis so wall-clocked
@@ -428,7 +428,7 @@ enum TimeSource {
 impl OscServer {
     /// Monotonic seconds for stream pacing: wall time natively, engine sample
     /// time in the headless mode (so an offline drive paces streams in render
-    /// time — deterministic, and the only clock wasm has).
+    /// time -- deterministic, and the only clock wasm has).
     fn mono_secs(&self) -> f64 {
         match &self.clock {
             TimeSource::Wall { epoch } => epoch.elapsed().as_secs_f64(),
@@ -455,7 +455,7 @@ impl OscServer {
     }
 
     /// Sets the stream-transport frame ceiling (`--max-frame`), the largest
-    /// OSC frame accepted from — and sent to — a TCP or WebSocket client.
+    /// OSC frame accepted from -- and sent to -- a TCP or WebSocket client.
     /// Clamped to at least the UDP receive buffer, so no transport ever
     /// carries less than a datagram. Call before [`Self::listen_tcp`] /
     /// [`Self::listen_ws`]: the hubs capture the ceiling when they bind.
@@ -484,8 +484,8 @@ impl OscServer {
     /// client**: the configured ceiling, clamped by what its carrier can
     /// deliver in one packet.
     ///
-    /// A snapshot is never split across replies — it is one message per period
-    /// by construction — so a subscription the carrier cannot carry would have
+    /// A snapshot is never split across replies -- it is one message per period
+    /// by construction -- so a subscription the carrier cannot carry would have
     /// every one of its replies dropped, silently on the ring. A stream client
     /// (TCP/WebSocket) is bounded by the frame ceiling it negotiated; a
     /// datagram-bounded one (UDP, the shared ring) by the same
@@ -624,7 +624,7 @@ impl OscServer {
 /// for persisting it verbatim. Mirrors the argument parsing in
 /// [`CmdTranslator::d_recv`].
 /// The `/ugen_query.reply` argument vectors for a `/ugen_query`: the whole catalog
-/// when `names` is empty, otherwise one per requested kind — an unknown one
+/// when `names` is empty, otherwise one per requested kind -- an unknown one
 /// coming back with an empty rate set and no inputs, so a batch never fails
 /// wholesale (the `/buffer_query` convention).
 #[cfg(feature = "synth")]
@@ -731,7 +731,7 @@ fn synthdef_spec_bytes(args: &[OscType]) -> Option<&[u8]> {
 const NTP_UNIX_OFFSET: f64 = 2_208_988_800.0;
 
 /// The current wall-clock instant as an OSC/NTP timetag (seconds since 1900 in
-/// a 32-bit count, plus a 32-bit binary fraction) — the inverse of the NTP→Unix
+/// a 32-bit count, plus a 32-bit binary fraction) -- the inverse of the NTP→Unix
 /// math in `timetag_delta_secs`. Published alongside the sample counter in
 /// `/clock_query.reply` so a client gets the anchor `(osc_time, sample)` it needs to
 /// place its logical OSC time on this server's sample axis.
@@ -752,7 +752,7 @@ impl OscServer {
     }
 
     /// Seconds from now until the timetag fires. `None` is the OSC
-    /// "immediately" tag (seconds 0, fractional 1 — rosc keeps it verbatim).
+    /// "immediately" tag (seconds 0, fractional 1 -- rosc keeps it verbatim).
     fn timetag_delta_secs(&self, t: OscTime) -> Option<f64> {
         timetag_unix(t).map(|target| target - self.unix_secs())
     }
@@ -784,7 +784,7 @@ fn timetag_unix(t: OscTime) -> Option<f64> {
     Some(t.seconds as f64 - NTP_UNIX_OFFSET + t.fractional as f64 / 2f64.powi(32))
 }
 
-/// How much work one pulled serving turn may do — the ceiling
+/// How much work one pulled serving turn may do -- the ceiling
 /// [`OscServer::step`] applies before handing the thread back to the audio
 /// callback.
 ///
@@ -802,7 +802,7 @@ pub struct ServeBudget {
     /// Buffer jobs (`/buffer_*`) started per turn when the runner is inline.
     pub nrt_jobs: usize,
     /// Frames a host should copy per staged-load chunk
-    /// (`ClaustersHeadless::buffer_load_chunk`). Not enforced here — the host
+    /// (`ClaustersHeadless::buffer_load_chunk`). Not enforced here -- the host
     /// owns the loop and this is the number to size it from; it lives with the
     /// others so a caller reads one budget rather than three conventions.
     pub install_frames: usize,
@@ -820,7 +820,7 @@ impl ServeBudget {
 
 impl Default for ServeBudget {
     /// The pulled server's default. Both numbers are provisional and meant to
-    /// be replaced by measurement — they are deliberately generous, since a
+    /// be replaced by measurement -- they are deliberately generous, since a
     /// ceiling that never binds costs nothing and one set too low turns a
     /// burst into latency.
     fn default() -> Self {

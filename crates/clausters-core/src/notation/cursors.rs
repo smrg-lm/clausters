@@ -7,7 +7,7 @@
 //! page-x and the vertical span of the system that note sits on.
 //!
 //! This is pure geometry over data the engraver already produced, so it lives
-//! here rather than beside the binding — a wasm client driving verovio-wasm gets
+//! here rather than beside the binding -- a wasm client driving verovio-wasm gets
 //! the identical track from the identical fold.
 
 use std::collections::BTreeMap;
@@ -18,7 +18,7 @@ use super::svg::{DisplayList, Prim, r, staff_line_ys};
 
 /// One timemap entry as the engraver emits it: the onset in milliseconds and
 /// the ids that start sounding there. The other fields verovio writes (`qstamp`,
-/// `off`, `tempo`, ...) are ignored — only onsets place a cursor.
+/// `off`, `tempo`, ...) are ignored -- only onsets place a cursor.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct TimemapEntry {
     /// Onset in milliseconds. Absent on entries that only stop notes.
@@ -69,8 +69,8 @@ pub fn cursor_track(dl: &DisplayList, timemap: &[TimemapEntry]) -> Vec<Cursor> {
     track
 }
 
-/// Each MEI id's page position, preferring the glyph (notehead) placement — its
-/// transform origin — and falling back to a line's first point. First primitive
+/// Each MEI id's page position, preferring the glyph (notehead) placement -- its
+/// transform origin -- and falling back to a line's first point. First primitive
 /// per id wins, which is the notehead in verovio's draw order.
 fn id_positions(prims: &[Prim]) -> BTreeMap<&str, (f64, f64)> {
     let mut out = BTreeMap::new();
@@ -99,7 +99,7 @@ fn id_positions(prims: &[Prim]) -> BTreeMap<&str, (f64, f64)> {
 /// vertical line running from the top staff's top line to the bottom staff's
 /// bottom line exists only where the two are barred together, which is exactly
 /// what makes them one system. So the lines are grouped into staves by their own
-/// even spacing — five lines, one gap, no guessing — and staves are joined into
+/// even spacing -- five lines, one gap, no guessing -- and staves are joined into
 /// a system when a line is drawn through them.
 pub(super) fn staff_systems(prims: &[Prim]) -> Vec<(f64, f64)> {
     let ys = staff_line_ys(prims);
@@ -135,7 +135,7 @@ pub(super) fn staff_systems(prims: &[Prim]) -> Vec<(f64, f64)> {
     systems
 }
 
-/// Whether a vertical line runs the whole way from `top` to `bottom` — the
+/// Whether a vertical line runs the whole way from `top` to `bottom` -- the
 /// barline of a braced system, and the only thing on the page that says two
 /// staves are read together.
 fn barred_through(prims: &[Prim], top: f64, bottom: f64, tol: f64) -> bool {
@@ -293,7 +293,7 @@ mod tests {
         assert!(map[1].on.is_empty(), "an off-only entry carries no onsets");
     }
 
-    /// A vertical barline from `top` to `bottom` — what a brace bars through.
+    /// A vertical barline from `top` to `bottom` -- what a brace bars through.
     fn barline(x: f64, top: f64, bottom: f64) -> Prim {
         Prim::Line {
             pts: vec![[x, top], [x, bottom]],

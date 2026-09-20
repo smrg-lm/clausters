@@ -1001,7 +1001,7 @@ def _table_rows(section: str) -> list[list[str]]:
 
 def _cell_name(cell: str) -> str | None:
     cell = cell.strip()
-    if cell in ("", "—", "-", "--"):
+    if cell in ("", "--", "-", "--"):
         return None
     m = re.search(r"`([^`]+)`", cell)
     text = m.group(1) if m else cell

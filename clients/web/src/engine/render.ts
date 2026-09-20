@@ -1,7 +1,7 @@
 // The offline renderer: the engine's wasm, running as fast as it can.
 //
 // The same `clausters-web` module the AudioWorklet runs, reached through its
-// other door — `render(score, rate, channels, seed)`, which is the server's
+// other door -- `render(score, rate, channels, seed)`, which is the server's
 // own `--nrt` path compiled to wasm. No `AudioContext`, no worklet and no
 // audio device: a score in, samples out, at whatever speed the machine
 // manages.
@@ -22,14 +22,14 @@ import type { EngineExports } from "./faust-link.ts";
 export interface RenderResult {
     /** Interleaved samples. */
     samples: Float32Array;
-    /** The seed this take started from — hand it back to replay it. */
+    /** The seed this take started from -- hand it back to replay it. */
     seed: bigint;
 }
 
 /**
  * The engine wasm's own surface, as `loadRenderer` resolves it: the
  * wasm-bindgen glue's init pair plus the render entry points. Exported because
- * it is what a public signature returns — a reference that names a type the
+ * it is what a public signature returns -- a reference that names a type the
  * reader cannot reach is a broken page.
  */
 export type EngineModule = {
@@ -42,7 +42,7 @@ export type EngineModule = {
         seed?: bigint | null,
     ) => Float32Array;
     last_render_seed: () => bigint;
-    /** The Faust defs a score sends, as JSON — see `prepareFaust`. */
+    /** The Faust defs a score sends, as JSON -- see `prepareFaust`. */
     faustJobs: (score: Uint8Array) => string;
     /** Adopts a def this side has compiled and linked, under its score name. */
     linkFaust: (name: string, compute: number, init: number, json: string) => void;
@@ -56,7 +56,7 @@ const linked: WebAssembly.Instance[] = [];
 
 /**
  * Loads the engine wasm once. `source` overrides the URL-relative lookup with
- * raw module bytes — the node path, where there is no page to resolve a URL
+ * raw module bytes -- the node path, where there is no page to resolve a URL
  * against (the same shape `loadCore` takes for the core).
  */
 export function loadRenderer(source?: BufferSource): Promise<EngineModule> {
@@ -75,16 +75,16 @@ export function loadRenderer(source?: BufferSource): Promise<EngineModule> {
  * Compiles and links every Faust def the score sends, before it is rendered.
  *
  * This is the one thing an offline render in a page has to do that a native one
- * never does. `server::render` loads a def **where it stands** — time does not
- * advance until it has — and a page's Faust compiler is another scope that
+ * never does. `server::render` loads a def **where it stands** -- time does not
+ * advance until it has -- and a page's Faust compiler is another scope that
  * answers later, so there is no turn in which a compiled def could arrive
  * mid-render. Doing the work in the other order is what makes the two renders
  * the same render: the score is read by the engine's own reader (`faustJobs`,
  * not a second one written here), each def is compiled by the same Worker the
  * live engine compiles with, linked into **this** instance's memory and table,
  * and handed back through `linkFaust`. The renderer's `/def_send faust` is then
- * a lookup, and everything after it — `/node_set` by name, bus summing, done
- * actions — is the code a native render runs.
+ * a lookup, and everything after it -- `/node_set` by name, bus summing, done
+ * actions -- is the code a native render runs.
  *
  * A score with no Faust def in it does none of this and loads no compiler.
  */
@@ -108,7 +108,7 @@ async function prepareFaust(engine: EngineModule, score: Uint8Array): Promise<vo
  * Synchronous once the module is in **and the score's Faust defs are compiled**
  * (see `prepareFaust`; a score without one waits for nothing): the render then
  * occupies this thread until it finishes, which is what "faster than real time"
- * costs. A page rendering minutes of audio should say so in its UI — nothing
+ * costs. A page rendering minutes of audio should say so in its UI -- nothing
  * else runs meanwhile.
  */
 export async function renderScoreBytes(
@@ -131,7 +131,7 @@ export async function renderScoreBytes(
 /**
  * A fresh 64-bit seed, drawn here rather than by the renderer.
  *
- * The engine's own entropy source is `SystemTime`, which wasm does not have —
+ * The engine's own entropy source is `SystemTime`, which wasm does not have --
  * so a render given no seed would take a **fixed** one there and every take of
  * a noisy take would be the same take. The platform that does have entropy is
  * this one, so the shell forwards a word from it and the rule the reference

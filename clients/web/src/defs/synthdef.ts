@@ -63,7 +63,7 @@ export interface SynthDefSpec {
 }
 
 /**
- * A named UGen graph. Pass the graph's **root** UGens — normally the outputs
+ * A named UGen graph. Pass the graph's **root** UGens -- normally the outputs
  * (`out(...)`/`replaceOut(...)`, and any `localOut(...)` to keep feedback
  * writes in the graph), but a root can equally be a side-effect UGen with no
  * audio output (`sendTrig(...)`/`sendReply(...)`/`poll(...)`): a def may
@@ -196,7 +196,7 @@ export class SynthDef {
     }
 
     /**
-     * The def serialized to text — the `/def_send synth` wire payload. Useful to
+     * The def serialized to text -- the `/def_send synth` wire payload. Useful to
      * inspect the built graph before sending it.
      */
     dumpDef(): string {
@@ -205,12 +205,12 @@ export class SynthDef {
 
     /**
      * Open this def's **structure** as a directed `patch` view in its own
-     * window on the ambient GUI host — the level-2 patcher drawn from the def's internal UGen graph (every UGen a box, every input a cord),
+     * window on the ambient GUI host -- the level-2 patcher drawn from the def's internal UGen graph (every UGen a box, every input a cord),
      * the host laying the boxes out as an inverted tree. One window per call,
      * the `plot` posture; this shows the def's *structure*, where `plot(this)`
      * renders its *sound*.
      *
-     * `label` captions the patch panel (defaults to `"synthdef"` — the panel
+     * `label` captions the patch panel (defaults to `"synthdef"` -- the panel
      * names *what* is drawn, not the def's name); `host` is an explicit
      * `GuiHost`, absent resolves the ambient one. Resolves with a
      * `PatchWindow` (`close()`).
@@ -231,7 +231,7 @@ export class SynthDef {
     }
 
     /**
-     * This def's control surface as `ControlInfo` entries, in spec order — the
+     * This def's control surface as `ControlInfo` entries, in spec order -- the
      * shape all three def families answer with, so a GUI reads one of them the
      * same way:
      *
@@ -247,7 +247,7 @@ export class SynthDef {
     }
 
     /**
-     * One control by name, as a `ControlInfo` — `sd.control("freq")`, what a
+     * One control by name, as a `ControlInfo` -- `sd.control("freq")`, what a
      * GUI control is handed when the graph's own `Control` object is not in
      * reach. (Python spells this `sd["freq"]`; a class here cannot take a
      * bracket without an index signature over everything else on it.)
@@ -263,7 +263,7 @@ export class SynthDef {
     }
 
     /**
-     * The `Control` objects the graph references, in first-seen order — the
+     * The `Control` objects the graph references, in first-seen order -- the
      * same walk `spec` does, kept here so the range never has to survive a
      * round trip through the wire, which does not carry it.
      */
@@ -287,7 +287,7 @@ export class SynthDef {
 }
 
 /**
- * A graph's `Control` as the `ControlInfo` every def family answers with — one
+ * A graph's `Control` as the `ControlInfo` every def family answers with -- one
  * shape for the GUI to read, whichever family declared it.
  */
 export function controlInfo(c: Control): ControlInfo {

@@ -4,11 +4,11 @@
 # against a real `clausters --ws` server and a real `clausters-gui --ws`
 # host), and the page-carrier acceptances (client.html, defs.html, gui.html
 # and seq.html under headless Chrome, verdict beaconed through the HTTP access
-# log — the real-time posture of every web smoke; see docs/decisions.md).
+# log -- the real-time posture of every web smoke; see docs/decisions.md).
 #
 # Prerequisites: ./build.sh (stages engine/ gui-host/ core/), npm install, and
 # `cargo build` at the workspace root (the WS server) and in clients/gui (the
-# WS GUI host) for the WS suites — those skip themselves if the binary is
+# WS GUI host) for the WS suites -- those skip themselves if the binary is
 # missing.
 #
 # From clients/web/:  ./test.sh
@@ -28,7 +28,7 @@ CHROME_PID=""
 CHROME_PGID=""
 
 # Tear the browser down by its **process group**, not by the one pid bash is
-# holding. A browser is a tree — zygote, GPU process, renderers — and the
+# holding. A browser is a tree -- zygote, GPU process, renderers -- and the
 # children do not all carry the flags a `pkill -f` could match, so killing the
 # parent alone can leave a page running with its audio engine, its wasm host
 # and its frame tick, forever and unattended. One of those per page is how a
@@ -36,7 +36,7 @@ CHROME_PGID=""
 #
 # Every step of it ends in `|| true`, and that is not decoration: the browser
 # is being killed on purpose, so `wait` reports it terminated by a signal, and
-# under `set -e` that status aborts the suite after the first page — with the
+# under `set -e` that status aborts the suite after the first page -- with the
 # EXIT trap dying at the same line before it can take the HTTP server down.
 reap_chrome() {
     [ -n "$CHROME_PGID" ] && { kill -TERM -- "-$CHROME_PGID" 2>/dev/null || true; }
@@ -55,7 +55,7 @@ reap_chrome() {
 # On the signals too, not only on a clean exit: bash does not run an EXIT trap
 # when it is terminated by an untrapped signal, so a `kill` of this script (or
 # a Ctrl-C at the wrong moment) used to leave the HTTP server and a whole
-# browser behind — the exact leak above, with nobody watching for it.
+# browser behind -- the exact leak above, with nobody watching for it.
 cleanup() {
     reap_chrome
     kill "$SERVER" 2>/dev/null || true
@@ -80,28 +80,28 @@ fi
 # browser and profile, so one engine per tab and no shared state between them.
 # A headless Chrome is not cheap: one page brings up about ten processes and
 # some 480 MB of PSS (the RSS *sum* reads over a gigabyte, but Chrome shares
-# most of it between processes — measure with smaps_rollup, not with `ps`).
+# most of it between processes -- measure with smaps_rollup, not with `ps`).
 # That is affordable exactly once at a time, which is what this function
 # guarantees: it takes the browser's whole **process group** down and waits for
 # it to be gone before returning, so two never overlap. Without the wait a slow
 # teardown left one browser resident while the next started; without the group,
-# a child that outlived its parent kept a page — its audio engine, its wasm
-# host, its frame tick — running unattended.
+# a child that outlived its parent kept a page -- its audio engine, its wasm
+# host, its frame tick -- running unattended.
 run_page() {   # $1 = page under tests/, $2 = optional WxH viewport
     local page="$1" size="${2:-1280,1600}" mark verdict decoded profile
     mark=$(wc -c <"$LOG")
     PAGE="$page"
     profile=$(mktemp -d)
     # --enable-unsafe-swiftshader: the GUI host needs a WebGL2 adapter, and
-    # headless has no GPU — SwiftShader is the software one. Harmless for the
+    # headless has no GPU -- SwiftShader is the software one. Harmless for the
     # pages that only make sound.
     # --window-size: the viewport every page is written against. It is not a
-    # knob to tune down — the pages that synthesize gestures address widgets in
+    # knob to tune down -- the pages that synthesize gestures address widgets in
     # canvas coordinates, so a smaller window moves the target out from under
     # them (gui.html fails outright at 800x600). It costs little anyway: the
     # framebuffers are a few MB against Chrome's own half a gigabyte.
-    # The rest is containment — no crash reporting, no background networking, a
-    # bounded renderer count, a JS heap ceiling — none of which any page here
+    # The rest is containment -- no crash reporting, no background networking, a
+    # bounded renderer count, a JS heap ceiling -- none of which any page here
     # has reason to exceed.
     # `setsid`: the browser leads a session of its own, so every process it
     # forks lands in one group that `reap_chrome` can take down whole.
@@ -137,7 +137,7 @@ run_page() {   # $1 = page under tests/, $2 = optional WxH viewport
     done
     # Terminate and **wait**: `kill` only asks, and the next page must not
     # start while this browser is still winding down. The profile goes with it
-    # — a directory per page, left behind, was the other half of the mess.
+    # -- a directory per page, left behind, was the other half of the mess.
     reap_chrome
     rm -rf "$profile"
     # What this page asked the server for, for the assertions below: a page is
@@ -163,8 +163,8 @@ run_page() {   # $1 = page under tests/, $2 = optional WxH viewport
 # The Faust compiler is megabytes of Emscripten and is imported on the *first*
 # `/def_send faust`, so a page that mounts a prebuilt SynthDef-only bundle must
 # never ask for it. That is a property of the request stream, not of anything a
-# page can see about itself — the import happens in the NRT worker, whose
-# fetches are in no window's resource timeline — so it is read where the server
+# page can see about itself -- the import happens in the NRT worker, whose
+# fetches are in no window's resource timeline -- so it is read where the server
 # logs it.
 #
 # The two go together on purpose: a negative on its own would pass just as well
@@ -219,7 +219,7 @@ fetched 'vendor/faust/libfaust-wasm' "Faust compiler"   # the positive half of n
 
 # The components and lifecycle acceptances mount the example bundles, which are
 # build products: git-ignored, written into examples/out/ by the examples' own
-# node scripts. Generate them here so a fresh checkout runs the page — no skip
+# node scripts. Generate them here so a fresh checkout runs the page -- no skip
 # branch any more, because nothing outside this package is needed to write them
 # (they were Python until the TypeScript writer landed, and these two pages
 # quietly skipped themselves on a checkout that could perfectly well run them).

@@ -93,7 +93,7 @@ def test_boot_workers_becomes_the_cli_flag(monkeypatch):
     class FakeProcess:
         # Only the host is a class attribute, as the real launcher's is: a boot
         # starts a process on this machine, and `boot` reads it off the class to
-        # refuse a handle pointing at another one. The port is per instance —
+        # refuse a handle pointing at another one. The port is per instance --
         # it is passed through to `--port`.
         host = "127.0.0.1"
 
@@ -152,7 +152,7 @@ def test_embed_session_drives_in_process_server():
 
 
 def test_embed_session_anchors_to_the_sample_clock_by_default():
-    # Like live, an embed session is on the sample clock out of the box — but
+    # Like live, an embed session is on the sample clock out of the box -- but
     # through a direct in-process read of the shared counter (EmbedSampleClock),
     # with no UDP tracker: no socket, no round trips, no timeout to burn.
     from clausters.base.timebase import SampleClockTimebase
@@ -198,7 +198,7 @@ def test_two_sessions_are_independent():
     # each session kept its own score (2 notes vs 3, each = /synth_new + /node_free)
     assert len(a.server.interface.score.bundles) == 2 * 2
     assert len(b.server.interface.score.bundles) == 3 * 2
-    # and they are genuinely separate objects — no shared global
+    # and they are genuinely separate objects -- no shared global
     assert a.server is not b.server
     assert a.clock is not b.clock
 
@@ -331,7 +331,7 @@ if __name__ == "__main__":
 
 # The kinds whose Python signature does not line up with the wire order, so the
 # positional contrast below cannot apply to them. They are split by *why*,
-# because the two halves have very different standing — and the test asserts the
+# because the two halves have very different standing -- and the test asserts the
 # union is exact, so a new divergence has to be declared here on purpose rather
 # than silently dropping a kind from the check.
 
@@ -359,7 +359,7 @@ _WIRE_ORDER_STATIC_FIELDS_POSITIONAL: dict[str, str] = {}
 # Not a divergence in the same sense: these rows end in a `chan` index the
 # *builder* fills, once per channel, because a UGen has one output and a panner
 # has two. The caller never passes it, so the Python signature is the wire's
-# minus its last input — by construction, for every row of the family.
+# minus its last input -- by construction, for every row of the family.
 _WIRE_CHANNEL_IS_THE_BUILDERS = {
     "Pan2": "built twice, one row per output channel",
     "LinPan2": "built twice, one row per output channel",
@@ -497,7 +497,7 @@ def test_ugen_catalog_matches_the_python_callables():
 
 
 def _run_script(body: str) -> str:
-    """Runs `body` in a fresh interpreter and answers its stderr — the exit
+    """Runs `body` in a fresh interpreter and answers its stderr -- the exit
     warning below only exists at the end of a program, so it cannot be observed
     from inside this one."""
     import subprocess
@@ -513,7 +513,7 @@ def test_a_score_left_on_a_clock_nobody_drove_says_so():
     # `Routine(f).play(session.clock)` only *schedules*: the clock's driver is
     # started by session.start()/run(), and offline by session.render(). A
     # program that never does either ends with its routines still queued, and
-    # the failure looks exactly like silence — no exception, nothing logged.
+    # the failure looks exactly like silence -- no exception, nothing logged.
     queued = """
 from clausters import Session
 from clausters.base import Routine
@@ -524,6 +524,6 @@ Routine(f).play(s.clock)
 """
     assert "never started" in _run_script(queued)
 
-    # Driven, so there is nothing to say — and a queue built before the drive
+    # Driven, so there is nothing to say -- and a queue built before the drive
     # is the normal shape, which is why the warning waits for the exit.
     assert "never started" not in _run_script(queued + "s.clock.render()\n")

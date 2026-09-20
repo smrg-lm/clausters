@@ -5,9 +5,9 @@
 //! The split across the box suites: `faust_smoke.rs` is the F0 latency probe
 //! (one sine through the Box API), `faust_json.rs` covers the JSON → Box
 //! interpreter, and this file covers Box API *semantics* built directly with
-//! FFI calls — `rec` feedback, `CDSPToBoxes` fragment arity, the CSE
+//! FFI calls -- `rec` feedback, `CDSPToBoxes` fragment arity, the CSE
 //! guarantee that duplicated subtrees share their computation (the design
-//! bet behind the Python client's box sugar) — plus the upstream copy-paste
+//! bet behind the Python client's box sugar) -- plus the upstream copy-paste
 //! bugs and their workaround:
 //!
 //! - **Canary**: libfaust's `boxCos()`/`boxFmod()` both return the `abs`
@@ -32,7 +32,7 @@ const SR: f32 = 48_000.0;
 const BLOCK: usize = 64;
 
 /// Holds the process-wide FFI lock with the libfaust context open, dropping
-/// the context before the lock — the same bracket `faust::compiler` uses.
+/// the context before the lock -- the same bracket `faust::compiler` uses.
 /// Boxes are arena pointers that die with the context; only the factory
 /// survives it.
 struct LibCtx {
@@ -122,7 +122,7 @@ fn render(factory: *mut llvm_dsp_factory, input: &[f32], samples: usize) -> Vec<
 }
 
 /// `rec` feedback at the FFI level: `*(1-a) : (+ ~ *(a))` is the one-pole
-/// `y[n] = (1-a)·x[n] + a·y[n-1]` — `~` carries one implicit sample of
+/// `y[n] = (1-a)·x[n] + a·y[n-1]` -- `~` carries one implicit sample of
 /// delay, exactly like the Signal API's `recursion`/`self` pair (the same
 /// filter and assertions as `faust_signal.rs`, so the two feedback forms are
 /// pinned to identical semantics).
@@ -153,7 +153,7 @@ fn box_rec_feedback_makes_a_one_pole_filter() {
 }
 
 /// Canary for the upstream copy-paste bug: `CboxCosAux(0.5)` must still
-/// compute `abs(0.5) = 0.5` — NOT the cosine. If this test ever fails with a
+/// compute `abs(0.5) = 0.5` -- NOT the cosine. If this test ever fails with a
 /// cosine coming out, the linked libfaust has fixed `boxCos()`/`boxFmod()`
 /// (both return the abs primitive in `box_signal_api.cpp`) and the fragment
 /// workaround in `faust::boxes` (plus this canary and the unbound
@@ -166,14 +166,14 @@ fn upstream_boxcos_still_computes_abs() {
     let v = out[0];
     assert!(
         (v - 0.5).abs() < 1e-6,
-        "CboxCosAux(0.5) = {v}: upstream fixed boxCos() — \
+        "CboxCosAux(0.5) = {v}: upstream fixed boxCos() -- \
          retire the fragment workaround in faust::boxes"
     );
 }
 
 /// Regression for the `fmod` workaround (the twin of `faust_json.rs`'s `cos`
 /// one): through the JSON schema, `fmod(5.25, 2.0)` must be the genuine
-/// primitive, 1.25 — not `abs` (5.25) nor a compile error, the two faces of
+/// primitive, 1.25 -- not `abs` (5.25) nor a compile error, the two faces of
 /// the upstream bug.
 #[test]
 fn box_fmod_computes_fmod_not_abs() {
@@ -243,13 +243,13 @@ fn cdsp_to_boxes_reports_arity_and_composes() {
 /// Parity: a graph mixing `faust` fragments with schema ops (the exact JSON
 /// shape the Python box builder emits: `__call__` = seq(par(args), fragment),
 /// arithmetic as binary ops) must render as the same DSP as the same program
-/// written as one pure Faust source — they are the same signal normal form.
+/// written as one pure Faust source -- they are the same signal normal form.
 ///
 /// The comparison is a tight tolerance rather than bit-exactness: the two
 /// programs reach the LLVM backend by different routes (in the box graph the
 /// cutoff arrives through a `par` branch instead of as a source literal), so
 /// constant folding and instruction selection may differ by an ULP or two.
-/// That is a codegen detail, not a difference in the signal — and it varies
+/// That is a codegen detail, not a difference in the signal -- and it varies
 /// with the JIT host, which made the exact-equality form pass locally and
 /// fail on CI. `TOL` is still ~100x below any real structural divergence.
 #[test]
@@ -293,14 +293,14 @@ fn mixed_fragments_and_ops_match_pure_source() {
 // ---- CSE: duplicated subtrees share their computation ----
 //
 // A box client that exposes fragments as reusable values (`x = fragment;
-// use x twice`) emits the *same JSON subtree in two positions* — there is no
+// use x twice`) emits the *same JSON subtree in two positions* -- there is no
 // reference node in the schema. That is only acceptable because Faust is
 // referentially transparent and hash-conses the signal stage: identical
 // subtrees become one computation (and identical widgets become one zone).
 // These tests pin that guarantee; if they ever fail, value-style reuse on
 // the client must be redesigned (explicit `split` routing instead).
 
-/// A stateful library fragment with a named control — exactly the shape the
+/// A stateful library fragment with a named control -- exactly the shape the
 /// client's `faust` escape hatch emits.
 fn osc_fragment() -> serde_json::Value {
     json!({
@@ -311,7 +311,7 @@ fn osc_fragment() -> serde_json::Value {
 }
 
 /// Writes the factory's LLVM bitcode to a throwaway file and returns its
-/// size — a structural proxy for "how much code was generated" that cannot
+/// size -- a structural proxy for "how much code was generated" that cannot
 /// be fooled by determinism (duplicated oscillators *sound* identical to a
 /// shared one; they do not *measure* identical).
 fn bitcode_size(factory: *mut llvm_dsp_factory, tag: &str) -> u64 {

@@ -7,8 +7,8 @@
 //!
 //! - **Mel** (O'Shaughnessy): `m = 2595 · log10(1 + f/700)`.
 //! - **Bark** (Traunmüller): `z = 26.81 · f / (1960 + f) − 0.53`, chosen over
-//!   Zwicker's arctan fit precisely because it inverts analytically —
-//!   `f = 1960 · (z + 0.53) / (26.28 − z)` — so a display mapping and its
+//!   Zwicker's arctan fit precisely because it inverts analytically --
+//!   `f = 1960 · (z + 0.53) / (26.28 − z)` -- so a display mapping and its
 //!   ruler can round-trip without a numeric solve. The raw closed form is
 //!   kept (no low/high-end corrections, no clamp to 0): it is exactly
 //!   invertible on the whole axis, and `hz_to_bark(0) = −0.53` is simply the
@@ -18,7 +18,7 @@
 //! notation, `C4` = middle C = note 60), the pitch-axis analogue of the
 //! frequency scales: the piano-roll's pitch ruler and keyboard labels read it,
 //! and a client authoring notes can reuse the same names. Kept here so the
-//! musical spelling lives once alongside the perceptual scales — as is the
+//! musical spelling lives once alongside the perceptual scales -- as is the
 //! **MIDI note ↔ hertz** equal-temperament pair ([`midi_to_hz`]/[`hz_to_midi`],
 //! A440), which the GUI host's piano voices and any client converting pitches
 //! share.
@@ -36,7 +36,7 @@ pub fn mel_to_hz(mel: f64) -> f64 {
 }
 
 /// Hertz → bark (Traunmüller). Negative input is treated as 0; the value at
-/// 0 Hz is −0.53 (the formula's own floor — normalize a display axis against
+/// 0 Hz is −0.53 (the formula's own floor -- normalize a display axis against
 /// it rather than clamping, so the inverse stays exact).
 #[inline]
 pub fn hz_to_bark(hz: f64) -> f64 {
@@ -62,7 +62,7 @@ pub fn midi_to_hz(midi: f64) -> f64 {
 
 /// Hertz → (fractional) MIDI note number, the exact inverse of
 /// [`midi_to_hz`]. Non-positive input maps to `f64::NEG_INFINITY`'s clamp at
-/// note 0 rather than a NaN — a display floor, like the bark form's.
+/// note 0 rather than a NaN -- a display floor, like the bark form's.
 #[inline]
 pub fn hz_to_midi(hz: f64) -> f64 {
     if hz <= 0.0 {
@@ -84,7 +84,7 @@ pub fn pitch_class(midi: i32) -> usize {
     midi.rem_euclid(12) as usize
 }
 
-/// `true` if the MIDI note is a black key (a sharp/flat) — the accidental
+/// `true` if the MIDI note is a black key (a sharp/flat) -- the accidental
 /// pitch classes C#, D#, F#, G#, A#. The piano-roll keyboard and its row
 /// shading read this.
 #[inline]

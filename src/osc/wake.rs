@@ -1,8 +1,8 @@
 //! Waking the command loop from a thread that is not it.
 //!
 //! [`OscServer::run`](super::server::OscServer::run) blocks in `recv_from`
-//! under a read timeout, so anything produced *off* the network thread — a TCP
-//! frame, a MIDI message, a finished NRT job, a compiled Faust def — is only
+//! under a read timeout, so anything produced *off* the network thread -- a TCP
+//! frame, a MIDI message, a finished NRT job, a compiled Faust def -- is only
 //! seen when that recv returns. A **zero-length UDP datagram** to the server's
 //! own address ends the blocking recv immediately: the loop's own idle tick
 //! stays a housekeeping interval instead of doubling as the latency of every
@@ -10,7 +10,7 @@
 //!
 //! The transports build the datagram by hand (they carry only the target
 //! address across a thread boundary); a [`Waker`] is the same trick packaged
-//! for the producers that live inside the server process — it owns the
+//! for the producers that live inside the server process -- it owns the
 //! throwaway socket it sends from, so a worker thread needs nothing but a
 //! clone of it.
 

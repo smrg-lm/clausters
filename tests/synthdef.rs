@@ -16,7 +16,7 @@ use clausters::synthdef::{SynthDefSpec, compile, default_spec};
 
 const SR: f32 = 48_000.0;
 
-/// Renders `blocks` blocks into fresh buses and returns audio bus 0 — defs
+/// Renders `blocks` blocks into fresh buses and returns audio bus 0 -- defs
 /// under test write there through an `Out` UGen.
 fn render(synth: &mut UGenSynth, blocks: usize) -> Vec<f32> {
     render_with(std::slice::from_mut(synth), blocks, |_| {})
@@ -329,7 +329,7 @@ fn a_short_def_is_filled_from_the_declared_optional_tail() {
     );
 }
 
-/// The cheap version of the feature — "fill whatever is missing" — is the
+/// The cheap version of the feature -- "fill whatever is missing" -- is the
 /// dangerous one: a `Mul` truncated to one input would compile, fill `b=0` and
 /// silence the chain with no `/fail` and no name. A kind with no declared tail
 /// still needs its inputs exactly.

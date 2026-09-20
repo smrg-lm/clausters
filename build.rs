@@ -1,6 +1,6 @@
 //! Linker configuration for the `faust` feature (on by default) on native
-//! targets. Without the feature — or on wasm32, where the family's backend is
-//! a module the page links itself — this script does nothing and the core
+//! targets. Without the feature -- or on wasm32, where the family's backend is
+//! a module the page links itself -- this script does nothing and the core
 //! builds with no libfaust on the system
 //! (`--no-default-features`, plus the other features you want).
 //!
@@ -58,12 +58,12 @@ fn main() {
     println!("cargo:rustc-link-arg=-Wl,-rpath,{prefix}/lib");
 }
 
-/// Whether libfaust is installed under `<prefix>/lib` — telling cargo, on the
+/// Whether libfaust is installed under `<prefix>/lib` -- telling cargo, on the
 /// way, to re-run this script when that directory changes.
 ///
 /// The `rerun-if-changed` is what keeps the answer from going stale. Emitting
 /// any `rerun-if-*` turns off cargo's default "re-run when a file in the package
-/// changes", so `FAUST_PREFIX` would otherwise be the *only* trigger — and a
+/// changes", so `FAUST_PREFIX` would otherwise be the *only* trigger -- and a
 /// cached "not found" then survives the very install that fixes it: you build
 /// libfaust into the prefix, cargo replays a resolution made before it existed,
 /// and the link fails against a prefix that has none. The library appearing in

@@ -1,17 +1,17 @@
 // The responders: `OscFunc` matching, its lifecycle, and the receiving door
 // under it.
 //
-// Everything here runs over a fake carrier — a `Connection` with no server
-// behind it that a test pushes packets into — because what is being asserted
+// Everything here runs over a fake carrier -- a `Connection` with no server
+// behind it that a test pushes packets into -- because what is being asserted
 // is the matching and the dispatch, not a server's behaviour. The end-to-end
 // half (real notifications, both carriers) is `responders-ws` in
 // `tests/seq-ws.test.ts` and the page acceptance `tests/responders.html`.
 //
 // The reference is `clausters/responders.py`: the same constructor arguments,
 // the same `(msg, time, src)` callback, the same `enable`/`disable`/`free`/
-// `oneShot` lifecycle. Where a difference is deliberate — `src` naming a
+// `oneShot` lifecycle. Where a difference is deliberate -- `src` naming a
 // carrier rather than a `(host, port)`, the default receiver being the ambient
-// server's — the test says so in its name.
+// server's -- the test says so in its name.
 
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -59,7 +59,7 @@ class FakeConnection implements Connection {
         const packet = encodeBundle(unixSecs, [{ addr, args: args as never }]);
         for (const listener of [...this.listeners]) listener(packet);
     }
-    /** Pushes raw bytes — what an undecodable packet is made of. */
+    /** Pushes raw bytes -- what an undecodable packet is made of. */
     pushRaw(bytes: Uint8Array): void {
         for (const listener of [...this.listeners]) listener(bytes);
     }
@@ -96,7 +96,7 @@ test("the argument template matches by position: literal, predicate, and a hole"
     const carrier = new FakeConnection();
     const recv = new OscReceiver(carrier);
     const seen: number[] = [];
-    // /tr nodeId triggerId value — only trigger 7, and only above 0.5.
+    // /tr nodeId triggerId value -- only trigger 7, and only above 0.5.
     const resp = new OscFunc(
         (msg) => seen.push(Number(msg[3])),
         "/tr",

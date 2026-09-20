@@ -14,7 +14,7 @@
  *
  * The two are not interchangeable. A canvas' backing store is device pixels, so
  * the surface takes `width`/`height`; the sizes a GuiDef declares are logical,
- * so resolving them takes `scale` — and the product alone cannot be
+ * so resolving them takes `scale` -- and the product alone cannot be
  * un-multiplied. Reporting both is what lets the host draw a 28-pixel strip as
  * 28 *apparent* pixels on any display, while never reading the DOM itself.
  */
@@ -33,7 +33,7 @@ export interface CanvasBox {
  *
  * A `ResizeObserver` is not enough, and that is the whole reason this exists: it
  * observes the **CSS** box, so browser zoom or a drag onto a monitor of another
- * density changes the ratio while the box stays exactly as it was — no callback,
+ * density changes the ratio while the box stays exactly as it was -- no callback,
  * and the host keeps resolving its sizes against a scale that is no longer true.
  * This is the browser's answer to the desktop's `ScaleFactorChanged`.
  *

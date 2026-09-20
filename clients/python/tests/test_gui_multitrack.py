@@ -1,8 +1,8 @@
-"""`clausters.gui.Multitrack` — the multitrack a `multitrack` widget draws, held here.
+"""`clausters.gui.Multitrack` -- the multitrack a `multitrack` widget draws, held here.
 
 No host and no window: a fake widget records what is set on it and hands back
 the event a hand's gesture would have sent. What is checked is that the object
-is the multitrack — that a report replaces it whole, and that a script never has to
+is the multitrack -- that a report replaces it whole, and that a script never has to
 parse a payload or carry an id.
 """
 
@@ -50,7 +50,7 @@ def test_the_tuples_a_script_types_become_the_objects_it_reads():
 
 def test_one_subscription_carries_the_whole_multitrack():
     """**The object is the multitrack.** A gesture reports what the widget now holds,
-    so this replaces the lists — there is nothing per clip to register, and a
+    so this replaces the lists -- there is nothing per clip to register, and a
     script never sees a widget id or parses a payload."""
     mt = multitrack()
     w = FakeWidget()

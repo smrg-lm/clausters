@@ -144,7 +144,7 @@ fn signal_sine_compiles_and_plays_at_440() {
 
 #[test]
 fn explicit_recursion_makes_a_one_pole_filter() {
-    // y[n] = (1-a)·x[n] + a·y[n-1] — the Signal API's whole point: feedback
+    // y[n] = (1-a)·x[n] + a·y[n-1] -- the Signal API's whole point: feedback
     // fused into one node, sample-accurate. Impulse response is geometric
     // with ratio a, which a block-rate LocalIn/LocalOut loop could not do.
     let a = 0.5f64;
@@ -343,7 +343,7 @@ fn kitchen_sink_graph_exercises_every_op() {
 
 /// The Signal API twins of the broken box wrappers: upstream's `boxCos()`/
 /// `boxFmod()` return the `abs` primitive (the copy-paste bug guarded in
-/// `faust_box.rs`), while `sigCos()`/`sigFmod()` are correct — this is why
+/// `faust_box.rs`), while `sigCos()`/`sigFmod()` are correct -- this is why
 /// `faust::boxes` needs a fragment workaround and `faust::signals` does not.
 /// Pin the actual values here: the kitchen sink scales everything by 0, so
 /// without this a future libfaust could break the signal path silently too.
@@ -371,7 +371,7 @@ fn signal_cos_and_fmod_are_not_hit_by_the_box_bug() {
 /// from `CsigLRightShift` must fail with `ASSERT : unrecognized opcode : 7`
 /// (2.81.x aborted the whole host process; 2.86.0 returns a null factory
 /// with the assert in the error string). The symbol is deliberately not
-/// bound in `ffi.rs` — it is declared locally here — and the schema's `rsh`
+/// bound in `ffi.rs` -- it is declared locally here -- and the schema's `rsh`
 /// is the arithmetic shift. When this canary fails, the linked libfaust
 /// carries the fix (PR faust#1272): bind the symbol and expose `lrsh`.
 #[test]
@@ -408,7 +408,7 @@ fn upstream_lrsh_still_fails_the_type_checker() {
     if !factory.is_null() {
         unsafe { ffi::deleteCDSPFactory(factory) };
         panic!(
-            "CsigLRightShift now compiles: upstream fixed kLRsh (faust#1264) — \
+            "CsigLRightShift now compiles: upstream fixed kLRsh (faust#1264) -- \
              bind it in ffi.rs and expose `lrsh` in the signal schema"
         );
     }

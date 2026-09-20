@@ -1,4 +1,4 @@
-"""The editing context of one structure — **whose history it is**.
+"""The editing context of one structure -- **whose history it is**.
 
 An undo stack belongs to the data, not to the view. Two windows over one
 structure share a history, and an undo in either updates both; a stack minted
@@ -9,22 +9,22 @@ same argument one level up: an editor asks the *data* for its editing context
 instead of building one of its own.
 
 **The context is the shared crate's** (`clausters._native.EditingCore`): the
-history, the version, and its **members** — the multitrack and samples editors
+history, the version, and its **members** -- the multitrack and samples editors
 opened in it, whose turns and steps it takes, and the structures the crate does
 not apply (a curve, a timeline, a score), which join as external members and
 get their legs back. No application holds a history of its own: one opened
 alone is a context of one, and two opened in the same one walk one order. What
-is here is what a language owns — the objects each member edits, what puts a
+is here is what a language owns -- the objects each member edits, what puts a
 step back onto them, and the windows to tell.
 
-What stays a view's is what a view can see — its selection, its zoom, which
+What stays a view's is what a view can see -- its selection, its zoom, which
 layer the hand is on. Those never enter a history either, which is the same line
 drawn twice.
 
 The context is reached through `Editing.of`, which caches it **on the
 structure**: what is being edited is loose Python objects, so the object itself
 is the only thing two editors are guaranteed to have in common. It lives as long
-as the data does and dies with it, which is what the crate's own rule asks for —
+as the data does and dies with it, which is what the crate's own rule asks for --
 a history is session state, never serialized, and it goes when the data goes.
 """
 
@@ -38,7 +38,7 @@ ATTR = "_clausters_editing"
 
 #: The version an unedited context is at. One rather than zero, because zero is
 #: what an edit means by *unstated* when it names the state it was made
-#: against — the same reservation the GUI host's sequence numbers make.
+#: against -- the same reservation the GUI host's sequence numbers make.
 #:
 #: It is the same number as `clausters.document.FIRST_VERSION` and
 #: deliberately not the same symbol: that one is what a **file** says its
@@ -58,16 +58,16 @@ class Editing:
     def __init__(self):
         #: The context itself, in the shared crate.
         self.core = _native.EditingCore()
-        #: The version — the counter a view reports to its host and the host
+        #: The version -- the counter a view reports to its host and the host
         #: names back on its next gesture. The crate's: it is read back from
         #: every turn, step and record, and never moved here.
         self.version = FIRST_VERSION
-        #: ``id(structure) -> (structure, member, identity)`` — the member a
+        #: ``id(structure) -> (structure, member, identity)`` -- the member a
         #: structure first joined as, and the identity the crate named it by.
         #: The object is held beside the number so its ``id`` cannot be reused
         #: by something else while the context is alive.
         self._structures: dict = {}
-        #: ``member -> (structure, handler)`` — what carries a step out for each
+        #: ``member -> (structure, handler)`` -- what carries a step out for each
         #: member. An editor hands its `clausters.gui.editing.Domain`, and a
         #: `clausters.gui.notation.Score` hands itself. It is kept **here**
         #: rather than on a window, because the order is the context's: a step
@@ -75,8 +75,8 @@ class Editing:
         self._handlers: dict = {}
         self._views: list = []
         #: How deep the current turn is, and whether anything moved in it. One
-        #: gesture can reach here twice — an editor routing an ``"undo"`` calls
-        #: its own `undo`, which changes the data on its own — and the other
+        #: gesture can reach here twice -- an editor routing an ``"undo"`` calls
+        #: its own `undo`, which changes the data on its own -- and the other
         #: windows want *one* redraw, not two.
         self._depth = 0
         self._changed = False
@@ -85,7 +85,7 @@ class Editing:
     def of(cls, structure) -> "Editing":
         """The context of this structure, made on first ask.
 
-        Cached on the object, so every editor over it gets the same one — the
+        Cached on the object, so every editor over it gets the same one -- the
         whole point, and the reason this is a classmethod rather than a
         constructor.
         """
@@ -99,8 +99,8 @@ class Editing:
 
     def open(self, verb: str, key: str, request: dict, structure,
              handler) -> tuple:
-        """**Open an editor in this context** — ``verb`` is ``"openMultitrack"``
-        or ``"openSamples"`` — as the structure ``key`` names, and answer its
+        """**Open an editor in this context** -- ``verb`` is ``"openMultitrack"``
+        or ``"openSamples"`` -- as the structure ``key`` names, and answer its
         ``(member, identity)``.
 
         ``handler`` is what carries a step out for it: the editor's domain.
@@ -123,7 +123,7 @@ class Editing:
         **Once per structure, not once per view.** Two windows over one thing
         are one structure in the undo order, so a second identity for the
         second window would leave its undo walking legs that name somebody
-        else — which looks exactly like a dead button.
+        else -- which looks exactly like a dead button.
 
         ``applier`` is anything answering ``project(structure, payload)``. A
         structure an editor opened in the crate already has its identity, and
@@ -162,7 +162,7 @@ class Editing:
         Answers whether the history took it; the version moves when it did.
 
         Raises:
-            ValueError: the legs name more than one structure — an entry over
+            ValueError: the legs name more than one structure -- an entry over
                 several is a turn of an application, which records its own.
         """
         if self.core is None or not legs:
@@ -181,7 +181,7 @@ class Editing:
         return bool(answer.get("recorded"))
 
     def moved(self) -> int:
-        """An edit that leaves no entry — one with no inverse to record — still
+        """An edit that leaves no entry -- one with no inverse to record -- still
         moves the version. Answers it."""
         if self.core is not None:
             self.version = int(self.core.call("moved").get("version", self.version))
@@ -277,7 +277,7 @@ class Editing:
         """One gesture, from whichever view made it.
 
         On the way out, every **other** view of this data is told what it is
-        drawing has moved — which nothing else would do: an acknowledgement goes
+        drawing has moved -- which nothing else would do: an acknowledgement goes
         to the window whose gesture it answered, so a second window would go on
         drawing something that had changed under it. Nested turns collapse into
         one, because a gesture that reaches here twice is still one gesture.

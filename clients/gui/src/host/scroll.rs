@@ -1,4 +1,4 @@
-//! The 2D workspace's navigation math — pure, window-free.
+//! The 2D workspace's navigation math -- pure, window-free.
 //!
 //! A `scroll` container shows its virtual content area through a 2D window:
 //! per axis a pan offset in content units ([`ScrollView::view_x`]/`view_y`,
@@ -6,7 +6,7 @@
 //! scale** ([`ScrollView::zoom`], physical pixels per content unit, defaulting
 //! to the window's UI scale) shared
 //! by both axes so the plane never distorts. The zoom keeps the content point
-//! under the cursor fixed — the same pivot math as [`View::zoom`], expressed
+//! under the cursor fixed -- the same pivot math as [`View::zoom`], expressed
 //! on the scale factor because the two axes share it (a per-axis [`View`]
 //! window would let the clamp de-couple the scales). Pan clamps each axis to
 //! `[0, content - visible]`; when the window shows more than the content
@@ -21,7 +21,7 @@
 
 use super::layout::Rect;
 
-/// The zoom bounds: 1/8 of natural size out to 8x in — generous for a patch
+/// The zoom bounds: 1/8 of natural size out to 8x in -- generous for a patch
 /// canvas or an arrangement plane while keeping the mesh geometry sane.
 pub const MIN_ZOOM: f64 = 0.125;
 pub const MAX_ZOOM: f64 = 8.0;
@@ -31,7 +31,7 @@ pub const MAX_ZOOM: f64 = 8.0;
 pub const WHEEL_PAN_PX: f64 = 48.0;
 
 /// How far past its content edges the **free plane** may pan, as a fraction of
-/// the visible size — see [`clamp_pan`]. Half a viewport all around: enough
+/// the visible size -- see [`clamp_pan`]. Half a viewport all around: enough
 /// that every drag direction does something wherever you are (a plane pinned
 /// exactly at its content corner reads as broken), and little enough that the
 /// content can never be lost off-screen.
@@ -51,8 +51,8 @@ pub fn clamp_zoom(zoom: f64) -> f64 {
 /// `[-slack, content - visible + slack]`.
 ///
 /// **The two `scroll` shapes want different bounds, and that is the point.** A
-/// *scroll view* is a bounded document — you cannot scroll above its first row
-/// — so the constrained axes pass `slack = 0` and get the strict
+/// *scroll view* is a bounded document -- you cannot scroll above its first row
+/// -- so the constrained axes pass `slack = 0` and get the strict
 /// `[0, content - visible]`. The *free plane* is conceptually unbounded and
 /// `content_w`/`content_h` merely say where its contents happen to sit, so it
 /// passes [`SLACK`] and can always be dragged in any direction. That split is
@@ -123,7 +123,7 @@ mod tests {
     #[test]
     fn a_bounded_axis_clamps_hard_to_the_content() {
         // A scroll view (slack 0): 400 px at zoom 2 shows 200 content units of
-        // 1000, so the start lives in [0, 800] — no scrolling above the first
+        // 1000, so the start lives in [0, 800] -- no scrolling above the first
         // row, none past the last.
         assert_eq!(clamp_pan(1e6, 400.0, 2.0, 1000.0, 0.0), 800.0);
         assert_eq!(clamp_pan(-5.0, 400.0, 2.0, 1000.0, 0.0), 0.0);
@@ -135,7 +135,7 @@ mod tests {
     fn the_free_plane_may_overscroll_by_its_slack() {
         // The plane: 400 px at zoom 1 = 400 visible of 1000, slack half a
         // viewport, so the window lives in [-200, 800]. The point is that at
-        // the content's origin the plane still moves *every* way — pinning it
+        // the content's origin the plane still moves *every* way -- pinning it
         // exactly at the corner is what reads as a broken drag.
         assert_eq!(clamp_pan(-1e6, 400.0, 1.0, 1000.0, SLACK), -200.0);
         assert_eq!(clamp_pan(1e6, 400.0, 1.0, 1000.0, SLACK), 800.0);

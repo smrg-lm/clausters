@@ -10,7 +10,7 @@
 //! ```
 //!
 //! `--json` swaps the human table for one machine-readable record per measured
-//! row — `{name, x_real_time, peak_block, gated}` — which is what
+//! row -- `{name, x_real_time, peak_block, gated}` -- which is what
 //! `scripts/bench-gate.py` diffs between two builds. The table is the default
 //! and stays exactly as it was; nothing is measured differently in either mode.
 //! A row carries `gated: false` when its number is not stable enough to fail a
@@ -19,14 +19,14 @@
 //!
 //! With `--features faust` it also runs two **apples-to-apples** UGen-vs-Faust
 //! sections, both using `tests/faust_parity.rs` pairs the two engines compute
-//! sample for sample, so the timing isolates per-synth audio-loop overhead —
+//! sample for sample, so the timing isolates per-synth audio-loop overhead --
 //! the Rust UGen graph (boxed `dyn` dispatch per UGen, intermediate wire
 //! buffers) against one Faust LLVM `compute` call. Only `process` is timed;
 //! instantiation and JIT happen before the loop.
 //!
 //! - **sine** (`sin(2π·phasor)·0.2`): realistic, but our `Sine` works in f64
 //!   while Faust `-single` is f32, so part of the gap is precision.
-//! - **gain** (`·0.5` on a shared bus): bit-exact, no transcendental — the
+//! - **gain** (`·0.5` on a shared bus): bit-exact, no transcendental -- the
 //!   cleanest read of pure engine overhead.
 //!
 //! The **spectral** section measures the frequency-domain family, where the
@@ -47,7 +47,7 @@ use clausters::synthdef::{compile, default_spec};
 
 /// One measured row, for `--json`. Both metrics are optional because a row
 /// reports one or the other: throughput for most sections, and, for the
-/// spectral chain, the worst single block — the number an average hides.
+/// spectral chain, the worst single block -- the number an average hides.
 struct Record {
     name: String,
     x_real_time: Option<f64>,
@@ -113,7 +113,7 @@ const VOICE_COUNTS: &[usize] = &[1, 32, 128, 512, 1000];
 
 fn main() {
     say!(
-        "graph benchmark — {SAMPLE_RATE} Hz, blocks of {BLOCK_SIZE} frames, release-mode wall clock"
+        "graph benchmark -- {SAMPLE_RATE} Hz, blocks of {BLOCK_SIZE} frames, release-mode wall clock"
     );
     say!("\ndefault def (Sine · amp → 2× Out):");
     for &n in VOICE_COUNTS {
@@ -163,7 +163,7 @@ fn main() {
 
 /// `Sine` (f64 phase accumulation + `sin()` per sample) against the table
 /// readers `Osc` (linear interpolation) and `OscN` (no interpolation) on a
-/// sine wavetable of scsynth's size (8192 samples = 4096 points) — the
+/// sine wavetable of scsynth's size (8192 samples = 4096 points) -- the
 /// measurement behind keeping `Sine` transcendental: if the table were much
 /// faster at high voice counts, a table-based sine would earn a place.
 /// Same graph shape for all three (osc · 0.001 → Out 0, freq at control 0).
@@ -265,14 +265,14 @@ fn bench_sine_vs_wavetable() {
 /// What the pan family's one deliberate deviation costs (U7). Every equal-power
 /// row computes its gain pair from a polynomial rather than a table, **once per
 /// block** when the position is a scalar and **per sample** when it is audio
-/// rate — because interpolating the two gains across the block, the way a
+/// rate -- because interpolating the two gains across the block, the way a
 /// filter coefficient is interpolated here, would leave a 3 dB hole in the
 /// middle of every block a fast sweep crosses.
 ///
 /// The two rows are the same graph (`Sine → Pan2 → 2× Out`) with the position
 /// wired to a constant and to an `LFTri`, so the difference between them is
 /// exactly the per-sample path: 64 polynomial evaluations a block instead of
-/// one. The claim being measured is that the second is affordable at all —
+/// one. The claim being measured is that the second is affordable at all --
 /// which is most of the reason the law is ten flops and not a `sin()` call.
 fn bench_pan() {
     let def = |name: &str, moving: bool| -> Arc<clausters::synthdef::SynthDef> {
@@ -343,7 +343,7 @@ fn bench_pan() {
 }
 
 /// The fused arithmetic rows (`MulAdd`, `Sum3`, `Sum4`) against the unfused
-/// graphs they replace — the measurement behind offering them at all, since a
+/// graphs they replace -- the measurement behind offering them at all, since a
 /// client can always write the operators out longhand.
 ///
 /// Fusing saves two things at once and the columns cannot separate them: the
@@ -357,7 +357,7 @@ fn bench_pan() {
 /// and the `Sum4` row sums four signals with no constant at all.
 ///
 /// Read the ratio in the **middle** of the sweep. By 1000 voices the graph is
-/// near real time and the ratio swings from 0.90x to 1.09x between rounds — the
+/// near real time and the ratio swings from 0.90x to 1.09x between rounds -- the
 /// measurement is competing with the scheduler, not reporting the fold.
 fn bench_fused() {
     let def = |name: &str, ugens: serde_json::Value| -> Arc<clausters::synthdef::SynthDef> {
@@ -453,18 +453,18 @@ fn bench_fused() {
 
 /// The spectral (`fr`) family, in three views:
 ///
-/// 1. **Raw transforms** — one `rfft`/`irfft` call per supported size against
+/// 1. **Raw transforms** -- one `rfft`/`irfft` call per supported size against
 ///    the 64-frame block budget. This is the whole per-hop cost of an
 ///    `FFT`/`IFFT` bookend pair (the `PV_*` in between are linear scans).
-/// 2. **Partitioned-convolution MAC** — the frequency-domain delay-line inner
+/// 2. **Partitioned-convolution MAC** -- the frequency-domain delay-line inner
 ///    loop a future partitioned convolver runs per hop (`P` complex bin-wise
 ///    multiply–accumulates). Uniformly partitioned, all of it lands on the hop
 ///    block unless the implementation spreads the partitions across the hop's
-///    blocks — this row is the spike that spreading would flatten.
-/// 3. **A full chain through the engine** — `Sine → FFT → PV_MagAbove → IFFT
+///    blocks -- this row is the spike that spreading would flatten.
+/// 3. **A full chain through the engine** -- `Sine → FFT → PV_MagAbove → IFFT
 ///    → Out` per voice. The xRT column is the average story; the peak-block
 ///    column is the real-time one: every voice is added on the same block, so
-///    all hops land on the same block — the aligned worst case (hop-phase
+///    all hops land on the same block -- the aligned worst case (hop-phase
 ///    staggering at instantiation is the lever that would spread it).
 fn bench_spectral() {
     use clausters_core::fft;
@@ -522,7 +522,7 @@ fn bench_spectral() {
     // Node ids drive the S11 hop-phase stagger, so the id spacing selects the
     // scenario: consecutive ids spread their hops (the default behavior),
     // while ids congruent modulo blocks-per-hop (512-sample hop / 64 = 8) all
-    // hop on the same block — the pre-S11 aligned worst case, kept measurable
+    // hop on the same block -- the pre-S11 aligned worst case, kept measurable
     // on purpose.
     let run = |n: usize, id_step: i32| {
         let (mut engine, mut handle) = engine_pair(SAMPLE_RATE as f32, 2);
@@ -569,7 +569,7 @@ fn bench_spectral() {
         // transform: it is the deliberate worst arrangement (every chain hops
         // on the same block), so the number is a property of the code. At one
         // voice two runs of the same build differ by 250%, and the *staggered*
-        // peak is by construction a measure of scheduling luck — which is what
+        // peak is by construction a measure of scheduling luck -- which is what
         // makes it worth printing and useless as a gate. See
         // `scripts/bench-gate.py` for the spreads these thresholds come from.
         record(
@@ -591,7 +591,7 @@ fn bench_spectral() {
     say!(
         "  (peak = the worst single block; aligned, every chain transforms on the same\n\
          \x20  hop block, staggered (S11, id-derived) the spikes spread. The budget is\n\
-         \x20  {budget_us:.0} us per block — and the hard deadline is the audio callback,\n\
+         \x20  {budget_us:.0} us per block -- and the hard deadline is the audio callback,\n\
          \x20  which further amortizes when it covers more than one block.)"
     );
 
@@ -601,7 +601,7 @@ fn bench_spectral() {
 /// The M28 partitioned convolver: one voice convolving white noise with a
 /// 2 s impulse response (94 partitions of 1024 at fft 2048). The point is the
 /// peak-vs-average gap: the FDL MACs are spread across the hop's blocks, so
-/// the hop block only adds the input FFT/IFFT pair — without the spreading,
+/// the hop block only adds the input FFT/IFFT pair -- without the spreading,
 /// all ~94 MACs (hundreds of us, see the MAC row above) would land on it.
 fn bench_conv(budget_us: f64) {
     use clausters::dsp::buffer::Buffer;
@@ -670,7 +670,7 @@ fn bench_conv(budget_us: f64) {
 
     // Per-phase profile of the hop period, min-filtered: the minimum over
     // many periods strips OS scheduling noise from each block phase, leaving
-    // the deterministic per-block cost — flat spread share everywhere, plus
+    // the deterministic per-block cost -- flat spread share everywhere, plus
     // the FFT/IFFT pair on the hop phase. A raw single max would mostly
     // measure preemption blips.
     let phases = part / BLOCK_SIZE;
@@ -706,7 +706,7 @@ fn bench_conv(budget_us: f64) {
     say!(
         "  (per-phase minima over {periods} hop periods, so OS noise is filtered out:\n\
          \x20  the spread MAC share is the steady phase, and the hop phase adds only the\n\
-         \x20  input FFT/IFFT pair — compare the un-spread MAC row above.)"
+         \x20  input FFT/IFFT pair -- compare the un-spread MAC row above.)"
     );
 }
 
@@ -801,12 +801,12 @@ fn make_default_synth() -> Box<dyn SynthNode> {
 }
 
 /// Head-to-head: the **same** DSP run by the two engines, so the only thing
-/// the timing reflects is per-synth audio-loop overhead — UGen graph vs Faust
+/// the timing reflects is per-synth audio-loop overhead -- UGen graph vs Faust
 /// LLVM. The graph is `sin(2π·phasor(freq)) · 0.2 → one bus`, which is exactly
 /// the parity pair from `tests/faust_parity.rs` (proven to agree sample for
 /// sample): identical math, one output each, same frequency control (index 0,
 /// swept by the harness), same `out` bus (0). Setup and JIT happen before the
-/// timed loop, so only `process` is measured — what runs in the callback.
+/// timed loop, so only `process` is measured -- what runs in the callback.
 #[cfg(feature = "faust")]
 fn bench_ugen_vs_faust() {
     use clausters::faust::compiler::{CompilePayload, compile as faust_compile};
@@ -841,7 +841,7 @@ fn bench_ugen_vs_faust() {
             .expect("faust sine compiles"),
     );
 
-    say!("\nUGen vs Faust — identical DSP (sin(2π·phasor(freq)) · 0.2 → 1 bus), JIT excluded:");
+    say!("\nUGen vs Faust -- identical DSP (sin(2π·phasor(freq)) · 0.2 → 1 bus), JIT excluded:");
     say!(
         "  {:>6}  {:>13}  {:>13}  {:>14}",
         "synths",
@@ -889,8 +889,8 @@ fn bench_ugen_vs_faust() {
 
 /// Isolates **pure engine overhead**: a `· 0.5` gain stage on a shared input
 /// bus, computed both ways. The two are bit-exact
-/// (`tests/faust_parity.rs::gain_stages_are_bit_exact`) — one f32 multiply on
-/// the same samples, no transcendental and no f64/f32 asymmetry — so the only
+/// (`tests/faust_parity.rs::gain_stages_are_bit_exact`) -- one f32 multiply on
+/// the same samples, no transcendental and no f64/f32 asymmetry -- so the only
 /// difference timed is how each engine moves a block through one synth: three
 /// boxed `dyn` UGens with two intermediate wire buffers (`In · 0.5 → Out`)
 /// against one Faust `compute` call (an in-copy, the multiply, an out-sum).
@@ -937,7 +937,7 @@ fn bench_gain_overhead() {
     let in_idx = faust_gain.control_index("in").expect("in control");
     let out_idx = faust_gain.control_index("out").expect("out control");
 
-    say!("\nUGen vs Faust — pure engine overhead (bit-exact · 0.5 gain, bus 4 → bus 0):");
+    say!("\nUGen vs Faust -- pure engine overhead (bit-exact · 0.5 gain, bus 4 → bus 0):");
     say!(
         "  {:>6}  {:>13}  {:>13}  {:>14}",
         "synths",
@@ -1032,7 +1032,7 @@ fn bench_chain(
 }
 
 /// One parallel group with `chains` subgroups, each holding `voices` sines
-/// summing into that chain's private bus — the layout where /group_parallel
+/// summing into that chain's private bus -- the layout where /group_parallel
 /// shines: every subgroup is an independent unit of one big stage.
 fn bench_parallel(workers: usize, chains: usize, voices: usize) -> f64 {
     use clausters::dsp::StageMask;
@@ -1179,7 +1179,7 @@ fn bench_with(
     measure(&mut engine, &mut out)
 }
 
-/// Warmup, then time block throughput (blocks/s) — only `process_block`, the
+/// Warmup, then time block throughput (blocks/s) -- only `process_block`, the
 /// work that runs in the audio callback. Shared by every benchmark.
 fn measure(engine: &mut Engine, out: &mut [f32]) -> f64 {
     for _ in 0..100 {

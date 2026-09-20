@@ -105,7 +105,7 @@ server.sync()
 
 # %% [markdown]
 # ## The window: the take, and the bus
-# Both lanes measure the same two things — the samples (`peak`) and the
+# Both lanes measure the same two things -- the samples (`peak`) and the
 # loudness over them (`momentary`). The stored lane draws the curve over the
 # whole take; the live one draws the readings as they arrive.
 

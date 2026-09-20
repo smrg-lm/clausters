@@ -3,16 +3,16 @@
 //
 // Three layers are asserted here:
 //
-// - **Parity** — the peak cache's bytes and the stereo-field measurements
+// - **Parity** -- the peak cache's bytes and the stereo-field measurements
 //   against `data-vectors.json`, frozen from the Python client over
 //   `clausters-ffi`. Both clients reach one `clausters-core`, so the cache is
 //   byte-identical and the measurements exact; a divergence is a failing test
 //   rather than a rumour.
-// - **Behaviour** — what the pyramid answers about a cache: a cell covers the
+// - **Behaviour** -- what the pyramid answers about a cache: a cell covers the
 //   samples under it, a coarser level is coarser, a span that is not a span
 //   answers nothing. The reduction has a Python door and is compared above;
 //   what these add is the reading, which does not.
-// - **Decoding** — the `/bus_set` and `/bus_tapStream.reply` snapshots and the bulk
+// - **Decoding** -- the `/bus_set` and `/bus_tapStream.reply` snapshots and the bulk
 //   chunking, driven over a fake carrier so they run with no server at all.
 
 import assert from "node:assert/strict";
@@ -385,7 +385,7 @@ test("a tap blob decodes as little-endian floats whatever its alignment", () => 
 
 /**
  * A carrier with no server behind it: it records what was sent and lets a
- * test push replies back. Enough to drive the whole reply path — the streams
+ * test push replies back. Enough to drive the whole reply path -- the streams
  * decode exactly what a real server's bytes decode to.
  */
 class FakeConnection implements Connection {
@@ -398,7 +398,7 @@ class FakeConnection implements Connection {
      * A framed carrier, like the `--ws` server these suites stand in for: a
      * packet here is free of the ceiling one delivery imposes, so a bulk round
      * trip is sized from the server's own frame ceiling. Saying so is not
-     * decoration — `Server.bulkChunk` reads the capability and keeps the
+     * decoration -- `Server.bulkChunk` reads the capability and keeps the
      * classic 1024 for a carrier that does not claim it.
      */
     readonly stream = true;

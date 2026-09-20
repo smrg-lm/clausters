@@ -5,7 +5,7 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 # Declares that this package is the one linking the native libverovio, and lets
 # `build.rs` publish where it found it (`DEP_VEROVIO_PREFIX`) so a dependent that
-# produces a shipped artifact — clausters-ffi's cdylib — can emit the same rpath
+# produces a shipped artifact -- clausters-ffi's cdylib -- can emit the same rpath
 # without re-deriving the prefix.
 links = "verovio"
 description = "libverovio binding for Clausters: engrave a score into resolution-independent geometry (verovio SVG), the native half of the notation layer, behind the optional `verovio` feature."

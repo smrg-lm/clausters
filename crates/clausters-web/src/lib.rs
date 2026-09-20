@@ -14,7 +14,7 @@
 //!
 //! Parity caveat (recorded in `docs/decisions.md`): wasm has no flush-to-zero
 //! mode, so native↔wasm bit-identity holds where the render stays out of the
-//! denormal range — the parity harness asserts on denormal-free scores.
+//! denormal range -- the parity harness asserts on denormal-free scores.
 
 use clausters::server::render::{RenderConfig, Score, render_to_vec};
 
@@ -22,7 +22,7 @@ use clausters::server::render::{RenderConfig, Score, render_to_vec};
 use wasm_bindgen::prelude::*;
 
 /// The libm a linked Faust module imports from us. Declared for its exports
-/// alone — nothing in this crate calls it.
+/// alone -- nothing in this crate calls it.
 #[cfg(target_arch = "wasm32")]
 mod faust_math;
 
@@ -40,7 +40,7 @@ pub fn abi_version() -> u32 {
 /// picks. **On wasm that is a fixed value**: `entropy_seed` has no source
 /// here, since `SystemTime` is not implemented on this target. The browser
 /// *does* have one, so a caller that wants a fresh take each time passes a
-/// word from `crypto.getRandomValues` — the shell forwards entropy from the
+/// word from `crypto.getRandomValues` -- the shell forwards entropy from the
 /// edge that has it rather than inventing any, which is the same reason it
 /// owns no other logic.
 fn render_score(
@@ -98,7 +98,7 @@ thread_local! {
 }
 
 /// The Faust defs a score sends, as a JSON array of
-/// `{"name", "kind", "def"}` — the same three fields a live compile job
+/// `{"name", "kind", "def"}` -- the same three fields a live compile job
 /// carries, so the host compiles them with the code it already has.
 ///
 /// The offline renderer cannot wait: it loads a def where it stands and time
@@ -147,7 +147,7 @@ pub fn link_faust(name: &str, compute: u32, init: u32, json: &str) -> Result<(),
         .map_err(|e| JsError::new(&e))
 }
 
-/// The seed the last [`render`] on this thread used — how a caller gets back
+/// The seed the last [`render`] on this thread used -- how a caller gets back
 /// to a take it liked. Separate from `render`'s return because the JS face
 /// returns a bare `Float32Array`; a stats object is the shape to grow into if
 /// the web client ever needs the frame, event and level counts too.
@@ -185,7 +185,7 @@ impl WebServer {
     }
 
     /// Sets the ceiling on the bus indices one `/bus_stream` subscription may
-    /// list — the page's half of the native `--max-stream-buses`, so an
+    /// list -- the page's half of the native `--max-stream-buses`, so an
     /// in-page engine is configured on the same axis as a server process
     /// (default 4096). A page whose document holds hundreds of live canvases
     /// subscribes a bus per meter, and the number it may ask for should be its
@@ -200,8 +200,8 @@ impl WebServer {
     /// Pushes one complete OSC packet into the command ring, authored by
     /// `peer`. `false` = momentarily full (backpressure): retry next quantum.
     ///
-    /// A page holds **several** independent clients over this one engine — the
-    /// script and the GUI host, at least — and the server has to tell them
+    /// A page holds **several** independent clients over this one engine -- the
+    /// script and the GUI host, at least -- and the server has to tell them
     /// apart or their `/bus_stream` subscriptions overwrite each other. The tag
     /// is the page's to assign; there is no handshake.
     pub fn send(&self, peer: u32, packet: &[u8]) -> bool {
@@ -238,7 +238,7 @@ impl WebServer {
     }
 
     /// The engine's sample counter (block-accurate; exact in an f64 for the
-    /// first 2^53 samples — thousands of years of audio).
+    /// first 2^53 samples -- thousands of years of audio).
     pub fn clock(&self) -> f64 {
         self.inner.clock() as f64
     }
@@ -276,7 +276,7 @@ impl WebServer {
     /// allocated, no samples are copied.
     ///
     /// [`buffer_load`](Self::buffer_load) copies the whole take in one call,
-    /// on this thread — which is the AudioWorklet's, the one that owes the next
+    /// on this thread -- which is the AudioWorklet's, the one that owes the next
     /// quantum. Measured natively, a five-minute stereo take is some fourteen
     /// times the quantum's budget (`examples/measure_turn.rs`), so a long take
     /// is loaded in runs instead: `begin`, `chunk` as often as the caller
@@ -330,14 +330,14 @@ impl WebServer {
     }
 
     /// How many frames one [`buffer_load_chunk`](Self::buffer_load_chunk)
-    /// should carry — the serving budget's number, read from the engine rather
+    /// should carry -- the serving budget's number, read from the engine rather
     /// than repeated in JavaScript.
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = installFrames))]
     pub fn install_frames(&self) -> u32 {
         clausters::osc::server::ServeBudget::default().install_frames as u32
     }
 
-    /// Hands the jobs the host does better over to it — reading a soundfile,
+    /// Hands the jobs the host does better over to it -- reading a soundfile,
     /// whose filesystem is the page's (OPFS, reachable only from a Worker) and
     /// not the engine's. Call it once, at boot, if the page has a Worker to do
     /// them; without it every job runs here, as before.
@@ -407,7 +407,7 @@ impl WebServer {
     /// the host has walked past its end.
     ///
     /// The payload leaves in runs because the thread handing it over owes the
-    /// next block — the same reason a long *load* arrives in runs. Size the run
+    /// next block -- the same reason a long *load* arrives in runs. Size the run
     /// from [`install_frames`](Self::install_frames).
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = writeChunk))]
     pub fn write_chunk(&self, at: usize, frames: usize) -> Vec<f32> {
@@ -419,7 +419,7 @@ impl WebServer {
     /// Natively the UGen opens the file and knows on the spot; here reading is
     /// asynchronous and belongs to another thread, so a stream is born
     /// shapeless, reports `channels: 0` in [`disk_poll`](Self::disk_poll), and
-    /// plays silence until this arrives. Nothing is declared up front — a
+    /// plays silence until this arrives. Nothing is declared up front -- a
     /// declaration would be a call the other client has no counterpart for.
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = diskShape))]
     pub fn disk_shape(&mut self, id: u32, channels: u32) {
@@ -512,7 +512,7 @@ impl WebServer {
 
     /// The Faust compilations waiting for this page's compiler, as a JSON
     /// array (empty when there are none): `[{ticket, name, kind, def}]`, where
-    /// `kind` is `"source"`, `"boxes"` or `"signals"` — which of the three def
+    /// `kind` is `"source"`, `"boxes"` or `"signals"` -- which of the three def
     /// formats `def` is in.
     ///
     /// A page's Faust compiler is not a thread but the host: it compiles with

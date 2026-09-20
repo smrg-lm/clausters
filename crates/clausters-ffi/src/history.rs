@@ -6,7 +6,7 @@
 //! The document's binding round-trips the format, and that is right for it: a
 //! document is what the caller is editing, and the alternative was dozens of
 //! accessors. A history is the opposite shape. It is bookkeeping the caller
-//! never reads field by field, and — the deciding term — **a bulk payload
+//! never reads field by field, and -- the deciding term -- **a bulk payload
 //! leaves the pile on purpose**. Sending it by value would carry every spilled
 //! span back and forth on each call, which is precisely the cost spilling
 //! exists to avoid: a history at its default budget holding sample inverses is
@@ -37,7 +37,7 @@
 //! **Undo and redo apply nothing**, and that is the shape a history with
 //! several structures forces. The crate can reach one document handle and no
 //! curve, no buffer and no roll, so applying "what it can" would apply one
-//! structure's legs and leave the rest to the caller — out of order, which is
+//! structure's legs and leave the rest to the caller -- out of order, which is
 //! how a transaction half-happens. So both directions hand back the payloads
 //! with the structure each belongs to, in the order they must be applied, and
 //! the caller applies them through whatever door each domain has. What stays
@@ -85,7 +85,7 @@ fn with_history<T>(h: *mut FfiHistory, default: T, f: impl FnOnce(&mut History) 
 /// the payload's.
 ///
 /// The store is **memory**. A file-backed one is a caller's to supply in Rust
-/// (the `Spill` trait) and is not reachable from here yet — see the document
+/// (the `Spill` trait) and is not reachable from here yet -- see the document
 /// crate's `PLAN.md`, where it waits on a caller that actually needs it. Free
 /// with [`clausters_history_free`].
 #[unsafe(no_mangle)]
@@ -115,8 +115,8 @@ pub unsafe extern "C" fn clausters_history_free(h: *mut FfiHistory) {
 /// Takes a structure into this history and returns its identity, or `0` when
 /// the handle is null.
 ///
-/// `domain` names the vocabulary its payloads are written in — `"tree"` for the
-/// arrangement, `"points"` for a break-point curve — and the history carries it
+/// `domain` names the vocabulary its payloads are written in -- `"tree"` for the
+/// arrangement, `"points"` for a break-point curve -- and the history carries it
 /// so a caller routing what comes back knows which reader a leg's payload
 /// belongs to. Nothing in the crate reads it.
 ///
@@ -139,18 +139,18 @@ pub unsafe extern "C" fn clausters_history_register(
     with_history(h, 0, |history| history.register(domain.as_ref()).0)
 }
 
-/// Apply an edit to `doc` and record it against `structure`, in one call — the
+/// Apply an edit to `doc` and record it against `structure`, in one call -- the
 /// arrangement's only door for an ordinary entry.
 ///
 /// Arguments are [`crate::clausters_document_apply`]'s, plus the history
 /// handle, the structure the document is registered as, and a `label` (what an
 /// undo menu calls this). Writes the same outcome object and returns the byte
 /// count it needs, or `0` when a handle is null or the intent will not parse.
-/// The document is **not** in the reply — it stays in its handle, and a caller
+/// The document is **not** in the reply -- it stays in its handle, and a caller
 /// that wants it asks [`crate::clausters_document_snapshot`].
 ///
-/// Nothing is recorded unless the document actually changed, so a refusal —
-/// stale or otherwise — leaves no entry, and neither does a resend. An entry
+/// Nothing is recorded unless the document actually changed, so a refusal --
+/// stale or otherwise -- leaves no entry, and neither does a resend. An entry
 /// naming a structure this history did not mint is refused: the edit still
 /// applies, because the caller asked for it against a document it holds, and
 /// the history says so by recording nothing.
@@ -250,7 +250,7 @@ pub unsafe extern "C" fn clausters_history_apply(
     })
 }
 
-/// The outcome object every applying call answers with — small, and the reason
+/// The outcome object every applying call answers with -- small, and the reason
 /// a second size-then-fill pass over one costs nothing.
 fn outcome_bytes(outcome: &clausters_document::Outcome) -> Vec<u8> {
     serde_json::to_vec(&serde_json::json!({
@@ -262,7 +262,7 @@ fn outcome_bytes(outcome: &clausters_document::Outcome) -> Vec<u8> {
     .unwrap_or_default()
 }
 
-/// Record one entry — the door for everything [`clausters_history_apply`]
+/// Record one entry -- the door for everything [`clausters_history_apply`]
 /// cannot do: a destructive write, whose overwritten samples are not in the
 /// tree, and every domain that is not the arrangement, whose state this surface
 /// cannot reach.
@@ -278,8 +278,8 @@ fn outcome_bytes(outcome: &clausters_document::Outcome) -> Vec<u8> {
 ///
 /// **Several legs are one transaction**: applied in the order given, inverted
 /// in reverse, and undone in one step. That is what a gesture touching more
-/// than one structure needs — a drag that moves a clip and rewrites the curve
-/// it carries — and it is why the whole entry crosses in one call rather than
+/// than one structure needs -- a drag that moves a clip and rewrites the curve
+/// it carries -- and it is why the whole entry crosses in one call rather than
 /// a leg at a time: half a transaction is worse than none. It is not
 /// coalescing, which merges *successive* entries over one structure; the two
 /// are kept apart so a merge cannot silently join two structures.
@@ -287,16 +287,16 @@ fn outcome_bytes(outcome: &clausters_document::Outcome) -> Vec<u8> {
 /// A leg's `forward` is a step (`{"edit": <payload>}` or
 /// `{"recompute": <params>}`), its `backward` a payload in that structure's own
 /// vocabulary, and its `key` what makes two edits *the same thing done the same
-/// way* — the arrangement spells it `"place:7"`
+/// way* -- the arrangement spells it `"place:7"`
 /// ([`clausters_document_coalesce_key`](crate::clausters_document_coalesce_key)),
-/// a curve has one verb and one key — with an absent or empty key never
+/// a curve has one verb and one key -- with an absent or empty key never
 /// coalescing. `coalesce` merges this entry into the one before it when every
 /// leg's structure and key match, which is what makes a run of small
 /// adjustments one undo; the caller decides, because only the caller knows
 /// where the hand stopped.
 ///
 /// Returns 0 on success, -1 when the request will not parse, holds no leg, or
-/// names a structure this history did not mint. **This applies nothing** — the
+/// names a structure this history did not mint. **This applies nothing** -- the
 /// caller has already made the edits; what is recorded is how to put them back.
 /// The inverse of an arrangement leg comes from
 /// [`clausters_document_inverse`](crate::clausters_document_inverse), read
@@ -340,7 +340,7 @@ struct Request {
 struct Leg {
     structure: u64,
     forward: Step,
-    /// How to put this leg back, or absent when nothing can — an act whose
+    /// How to put this leg back, or absent when nothing can -- an act whose
     /// inverse the owner cannot write. The entry is still recorded, marked, and
     /// walked past in both directions.
     #[serde(default)]
@@ -354,7 +354,7 @@ fn edit_label() -> String {
 }
 
 impl Request {
-    /// The entry, or `None` when it holds no leg — an empty transaction is not
+    /// The entry, or `None` when it holds no leg -- an empty transaction is not
     /// a gesture.
     fn entry(self) -> Option<Entry> {
         let mut legs = self.legs.into_iter();
@@ -387,7 +387,7 @@ impl Request {
     }
 }
 
-/// **One step of the pile, routed** — the legs each structure has to apply, in
+/// **One step of the pile, routed** -- the legs each structure has to apply, in
 /// order, and what only its owner can re-run.
 ///
 /// `direction` is `"undo"` or `"redo"`. Writes
@@ -396,14 +396,14 @@ impl Request {
 /// "skipped": [<label>, …]}`.
 ///
 /// It is one door and not two because picking the side a direction reads, and
-/// keeping the legs one structure owns, are rules and not plumbing — and every
+/// keeping the legs one structure owns, are rules and not plumbing -- and every
 /// caller was writing both for itself. `remaining` holds the steps from the
 /// first one the crate cannot describe as an edit onward, which the **owner**
 /// re-runs because the crate holds no algorithms; it stops at the first rather
 /// than skipping it, so a later edit is never applied over a state the
 /// operation before it was meant to produce. Going back it is always empty: an
 /// inverse is always an edit. `skipped` names the entries the walk had to pass
-/// over because nothing can invert them — a hole in the history that announces
+/// over because nothing can invert them -- a hole in the history that announces
 /// itself, which is what lets a person understand why an undo did not go where
 /// they expected.
 ///
@@ -485,12 +485,12 @@ pub unsafe extern "C" fn clausters_history_walk(
 ///
 /// Returns 1 when nothing in the pile names it any more and the caller may free
 /// at once, and 0 when it must wait for
-/// [`clausters_history_released`] — because undoing a deletion has to be able to
+/// [`clausters_history_released`] -- because undoing a deletion has to be able to
 /// give the data back, so a structure that is out of the tree stays alive while
 /// an entry can still restore what referred to it.
 ///
 /// It also **invalidates the entries that name it**: they cannot be applied to
-/// data that is gone, so they become non-invertible — kept, marked, and walked
+/// data that is gone, so they become non-invertible -- kept, marked, and walked
 /// past with the walk saying so. Undoing a deletion returns the data, not its
 /// history.
 ///
@@ -503,7 +503,7 @@ pub unsafe extern "C" fn clausters_history_forget(h: *mut FfiHistory, structure:
     })
 }
 
-/// The forgotten structures no entry names any more, as a JSON array of ids —
+/// The forgotten structures no entry names any more, as a JSON array of ids --
 /// the caller may free their data now. Drains: each is reported once.
 ///
 /// Returns the byte count it needs, or `0` when the handle is null. The drain
@@ -556,7 +556,7 @@ pub unsafe extern "C" fn clausters_history_mark_saved(h: *mut FfiHistory) {
 
 /// Whether the work differs from what was last saved (1) or not (0).
 ///
-/// Crossing the mark backwards is allowed, and this is the announcement — which
+/// Crossing the mark backwards is allowed, and this is the announcement -- which
 /// has to be accurate: nothing on disk changed, and the file still holds those
 /// edits until the next save. Crossing forward again returns to clean.
 ///
@@ -571,7 +571,7 @@ pub unsafe extern "C" fn clausters_history_dirty(h: *mut FfiHistory) -> i32 {
 /// not (0).
 ///
 /// `0` after the case the warning earns its place for: undo past the mark and
-/// then edit, and the redo is truncated — so the saved state stops being
+/// then edit, and the redo is truncated -- so the saved state stops being
 /// reachable, and [`clausters_history_dirty`] will never go quiet again on its
 /// own.
 ///
@@ -602,7 +602,7 @@ pub unsafe extern "C" fn clausters_history_can_redo(h: *mut FfiHistory) -> i32 {
 }
 
 /// What an undo would be called, written to `out`; the byte count it needs, or
-/// `0` when there is nothing to undo. What a menu item reads — and what a
+/// `0` when there is nothing to undo. What a menu item reads -- and what a
 /// person needs when one pile holds several structures, since the label is the
 /// only thing saying which one a keystroke is about to move.
 ///
@@ -643,7 +643,7 @@ pub unsafe extern "C" fn clausters_history_len(h: *mut FfiHistory) -> usize {
     with_history(h, 0, |history| history.len())
 }
 
-/// Forgets every entry, releasing what was spilled — what closing an editing
+/// Forgets every entry, releasing what was spilled -- what closing an editing
 /// context leaves behind. The structures stay registered: it is the order that
 /// is gone, not the identities the caller still holds.
 ///
@@ -654,7 +654,7 @@ pub unsafe extern "C" fn clausters_history_clear(h: *mut FfiHistory) {
     with_history(h, (), |history| history.clear())
 }
 
-/// What makes two of a **domain's** edits *the same thing done the same way* —
+/// What makes two of a **domain's** edits *the same thing done the same way* --
 /// the key a caller recording its own entry passes to
 /// [`clausters_history_record`], or nothing when the payload is not written in
 /// that vocabulary (or the domain is one the crate does not speak).
@@ -663,8 +663,8 @@ pub unsafe extern "C" fn clausters_history_clear(h: *mut FfiHistory) {
 /// surface holds no structure to ask: a curve, a span of samples and a timeline
 /// live in the caller's own memory, and only their *vocabulary* is the crate's.
 /// [`clausters_document_coalesce_key`](crate::clausters_document_coalesce_key)
-/// stays as it is — the arrangement's own door, on the surface its sentence
-/// belongs to — and this is the same rule for the domains that have no handle
+/// stays as it is -- the arrangement's own door, on the surface its sentence
+/// belongs to -- and this is the same rule for the domains that have no handle
 /// here.
 ///
 /// Sizes with a null `out` and fills with a second call, like the rest of the
@@ -706,12 +706,12 @@ pub unsafe extern "C" fn clausters_domain_coalesce_key(
 /// The other half of what a domain brings, across the same seam
 /// [`clausters_domain_coalesce_key`] crosses: an edit and its inverse are one
 /// vocabulary's rule, so a client that computed the inverse itself would be
-/// spelling that rule again per language — the divergence this surface exists
+/// spelling that rule again per language -- the divergence this surface exists
 /// to end. Both directions come back in one answer because the inverse has to
 /// be read *before* the edit lands.
 ///
-/// `state` is the structure in its own vocabulary — a curve's points, a
-/// timeline's events — and the answer is
+/// `state` is the structure in its own vocabulary -- a curve's points, a
+/// timeline's events -- and the answer is
 /// `{"state": …, "applied": bool, "reason"?: …, "current"?: …}`. Nothing for a
 /// vocabulary whose state is not a value a caller can hand over: the
 /// arrangement's tree (which needs a version to check against and a grid to

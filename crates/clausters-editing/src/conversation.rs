@@ -4,7 +4,7 @@
 //! structure at all: it is the *protocol* every editor speaks, whatever it
 //! edits. A host draws what a hand did and reports it; the owner reads the
 //! report, checks it against the version it was made on, applies it, and
-//! answers — with an acknowledgement, with corrections, or with a reason. The
+//! answers -- with an acknowledgement, with corrections, or with a reason. The
 //! whole of that was written twice, and it is an algorithm rather than glue:
 //! the largest single duplicated block in either client.
 //!
@@ -12,13 +12,13 @@
 //!
 //! **The envelope, never the payload.** What a report *means* is the edit
 //! ingestion's ([`crate::intake`]) and already crosses once; what this reads is
-//! the stamp, the version, the tag and whether this editor drew the widget —
+//! the stamp, the version, the tag and whether this editor drew the widget --
 //! nine small fields. So a drag reporting a thousand boxes costs this nothing,
 //! which is the whole reason the decision and the reading are separate calls.
 //!
 //! # The two decisions, and why they are two
 //!
-//! [`Conversation::read`] says **what kind of turn this is** — a close, a
+//! [`Conversation::read`] says **what kind of turn this is** -- a close, a
 //! history step, an edit made against a picture that is gone, or an edit to
 //! route. [`answer`] says **what to send back**, and it runs afterwards because
 //! what an answer carries is collected while routing: the corrections the
@@ -27,13 +27,13 @@
 //! # The floor is the whole of the staleness rule
 //!
 //! A host stamps every event with the version it was last told, and it is told
-//! only when an acknowledgement reaches it — a round trip a hand outruns. So an
+//! only when an acknowledgement reaches it -- a round trip a hand outruns. So an
 //! edit naming a version the owner has already moved past is **the ordinary
 //! case**, not a collision: a drag reporting as it goes, or a second gesture
 //! begun inside one round trip. Refusing those refuses the hand.
 //!
-//! What is not ordinary is the data moving by a route the host never saw — a
-//! script's edit, a second editor's, an undo — and the floor is what records
+//! What is not ordinary is the data moving by a route the host never saw -- a
+//! script's edit, a second editor's, an undo -- and the floor is what records
 //! that: it rises when the version moved without an event moving it, and
 //! nothing else moves it. That makes [`Conversation::stale`] a monotone test
 //! rather than a race, and it is a verb rather than an assignment because the
@@ -50,7 +50,7 @@ use serde_json::Value;
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Message {
-    /// The OSC address — `"/gui_event"` or `"/gui_closed"`.
+    /// The OSC address -- `"/gui_event"` or `"/gui_closed"`.
     pub addr: String,
     /// How many arguments came with it, which is what tells a malformed event
     /// from one that simply carries no payload.
@@ -63,7 +63,7 @@ pub struct Message {
     #[serde(default)]
     pub seq: i64,
     /// The version the gesture was made against. **Zero is unstated** rather
-    /// than a version — an older host, or one no owner has reported to — and
+    /// than a version -- an older host, or one no owner has reported to -- and
     /// unstated applies unchecked, which is the behaviour there was before
     /// there were versions at all.
     #[serde(default)]
@@ -79,15 +79,15 @@ pub struct Message {
     /// The client's to answer, because it is the one holding the window: a
     /// close with no argument is this editor's if it has a window at all, and a
     /// close naming another window is somebody else's. One host carries several
-    /// editors, and an editor with no window of its own — a multitrack that
-    /// opened only a composed view — would otherwise read every close as its
+    /// editors, and an editor with no window of its own -- a multitrack that
+    /// opened only a composed view -- would otherwise read every close as its
     /// own and take itself out of the context that is still drawing.
     #[serde(default)]
     pub is_window: bool,
     /// Whether this editor drew the widget the event names.
     ///
     /// Also the client's: a view's widget table is the client's. Only what this
-    /// editor draws is this editor's to answer — a poll loop may be shared with
+    /// editor draws is this editor's to answer -- a poll loop may be shared with
     /// a second editor, and answering for its window would retire a pending
     /// edit nobody applied.
     #[serde(default)]
@@ -145,7 +145,7 @@ const OVERTAKEN: &str = "the data changed since this edit";
 /// answered event left behind.
 ///
 /// Two integers, which is the whole of the state this protocol has. It is a
-/// value and not a handle for exactly that reason — a client keeps the pair and
+/// value and not a handle for exactly that reason -- a client keeps the pair and
 /// hands it back, and a pure function is cheaper to reason about than a
 /// lifetime.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
@@ -156,7 +156,7 @@ pub struct Conversation {
     #[serde(default)]
     pub floor: i64,
     /// The version at the last event this answered. When it differs from the
-    /// version now, something moved that was not an event — which is what
+    /// version now, something moved that was not an event -- which is what
     /// raises the floor.
     #[serde(default)]
     pub applied: i64,
@@ -265,7 +265,7 @@ pub enum Answer {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
     },
-    /// The same, with what the host should be drawing instead — in one bundle,
+    /// The same, with what the host should be drawing instead -- in one bundle,
     /// which is what lets it adopt the correction without a redefine.
     #[serde(rename_all = "camelCase")]
     Push {
@@ -284,7 +284,7 @@ pub enum Answer {
 /// **What to answer the host with**, given what the turn came to.
 ///
 /// An editor snaps a placement to the musical grid and refuses an edit to a
-/// generator, and without an answer the host could learn neither — so a note
+/// generator, and without an answer the host could learn neither -- so a note
 /// dragged onto read-only samples stayed drawn where the hand put it, and a
 /// clip landed half a grid step from where it was released. The stamp closes
 /// both, because it lets the host retire what it drew and adopt what actually
@@ -416,7 +416,7 @@ mod tests {
     }
 
     /// Zero is **unstated** rather than a version, and unstated applies
-    /// unchecked — an older host, or one no owner has reported to.
+    /// unchecked -- an older host, or one no owner has reported to.
     #[test]
     fn an_unstated_version_applies_unchecked() {
         let mut talk = Conversation::new(9);

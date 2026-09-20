@@ -1,7 +1,7 @@
 //! The `bpf` widget: a drawable break-point function (envelope editor).
 //!
 //! The model is a sorted breakpoint list `(time, value)` plus a per-segment
-//! **shape** using the server's own envelope shape numbers — the segment
+//! **shape** using the server's own envelope shape numbers -- the segment
 //! leaving point `i` interpolates to point `i + 1` through
 //! [`clausters_core::envshape::shape_value`], the very function the server's
 //! `EnvGen` plays, so what the editor draws is exactly what the server plays.
@@ -11,7 +11,7 @@
 //! `[min, max]` range (unipolar, bipolar, or any parameter span), an on/off
 //! lane is the **hold** shape over `{0, 1}` (each point's value held until the
 //! next; SC's *step* instead jumps to the target at segment start, so a step
-//! segment draws — and plays — the *next* point's value), every standard
+//! segment draws -- and plays -- the *next* point's value), every standard
 //! transition curve is a shape/curve pair, and frequency-like parameters get
 //! an exponential display scale (`exp`, requiring a positive range). Times are in the
 //! envelope's own units (seconds for an `EnvGen`) over a `[0, duration]`
@@ -20,8 +20,8 @@
 //! Everything here is pure display/model logic (parse, evaluate-per-column,
 //! hit-test, edit ops, the flat wire form) shared by both fronts and
 //! unit-tested without a window; only the shape evaluation lives in the core
-//! (the placement rule). The wire form — props, `/gui_set` and the edit-back
-//! event alike — is the flat quad list `t0 v0 shape0 curve0 t1 v1 …` (the last
+//! (the placement rule). The wire form -- props, `/gui_set` and the edit-back
+//! event alike -- is the flat quad list `t0 v0 shape0 curve0 t1 v1 …` (the last
 //! point's shape/curve are carried but unused), keeping ints int and floats
 //! float.
 
@@ -60,7 +60,7 @@ pub struct Axes {
 }
 
 impl Axes {
-    /// The whole domain across `body` — a curve standing on its own.
+    /// The whole domain across `body` -- a curve standing on its own.
     pub fn spanning(body: Rect, dom: f64, lo: f32, hi: f32, exp: bool) -> Self {
         Self {
             body,
@@ -81,7 +81,7 @@ impl Axes {
             as f32
     }
 
-    /// The time x pixel `x` falls on — the inverse of [`Self::x`].
+    /// The time x pixel `x` falls on -- the inverse of [`Self::x`].
     pub fn t(&self, x: f64) -> f64 {
         self.view.start + self.view.len * (x - self.body.x as f64) / self.body.w.max(1.0) as f64
     }
@@ -91,7 +91,7 @@ impl Axes {
         self.body.y + self.body.h * (1.0 - value_fraction(value, self.lo, self.hi, self.exp))
     }
 
-    /// The value y pixel `y` falls on, clamped into the field — the inverse of
+    /// The value y pixel `y` falls on, clamped into the field -- the inverse of
     /// [`Self::y`].
     pub fn value(&self, y: f64) -> f32 {
         let frac = 1.0 - ((y - self.body.y as f64) / self.body.h.max(1.0) as f64).clamp(0.0, 1.0);
@@ -104,8 +104,8 @@ impl Axes {
         // The grab radius: the drawn point plus its slop, so a small target
         // stays clickable.
         let radius = (m.point_radius + m.hit_slop).max(6.0) as f64;
-        // Squared throughout: the distance is only ever compared — against the
-        // radius, and against the best so far — and both comparisons order the
+        // Squared throughout: the distance is only ever compared -- against the
+        // radius, and against the best so far -- and both comparisons order the
         // same squared (see `shape`).
         let r2 = radius * radius;
         let mut best: Option<(usize, f64)> = None;
@@ -118,14 +118,14 @@ impl Axes {
         best.map(|(i, _)| i)
     }
 
-    /// Whether `(cx, cy)` is **on the drawn line** — within the grab slop of
+    /// Whether `(cx, cy)` is **on the drawn line** -- within the grab slop of
     /// the curve's own y at that x, rather than anywhere in its column.
     ///
     /// The distinction is what makes a curve one **layer** among several over
     /// the same rectangle: [`hit_segment`](Self::hit_segment) answers the
     /// column, which is right for a bend already in hand (a vertical drag has
     /// no y to be near), and wrong for deciding whether the hand is pointing at
-    /// this curve at all — a column claim would leave the container underneath
+    /// this curve at all -- a column claim would leave the container underneath
     /// no pixels of its own anywhere along the curve.
     pub fn on_line(&self, points: &[BpfPoint], cx: f64, cy: f64, m: &Metrics) -> bool {
         if points.is_empty() {
@@ -164,7 +164,7 @@ impl Axes {
 /// Draws the curve into `ax`: evaluated **once per pixel column** through the
 /// shared shape math (never finer than the screen), an exact vertical connector
 /// at every discontinuity (the per-column polyline alone would render a jump as
-/// a one-pixel slant — or hide it entirely when two points share a time), and a
+/// a one-pixel slant -- or hide it entirely when two points share a time), and a
 /// disc per breakpoint.
 ///
 /// Only the curve: the field it sits in and whatever names it are the *view's*,
@@ -177,7 +177,7 @@ pub fn draw(d: &mut Draw, ax: &Axes, points: &[BpfPoint]) {
 ///
 /// A curve is one trace of one weight end to end, so nothing distinguished *a
 /// place you can bend* from a place a Ctrl-click adds a point to, or from the
-/// container underneath — the gesture worked and the picture said nothing. The
+/// container underneath -- the gesture worked and the picture said nothing. The
 /// vocabulary is the clip grip's, applied here: the affordance belongs to what
 /// is **held** rather than to where the pointer is, so a bend in flight keeps
 /// its segment lit even when the pointer has drifted off it.
@@ -265,7 +265,7 @@ mod tests {
     }
 
     /// The same points read through a **window** of the domain rather than all
-    /// of it — a container's body — land on the same breakpoints, which is the
+    /// of it -- a container's body -- land on the same breakpoints, which is the
     /// property that lets one element be the view and the body both.
     #[test]
     fn a_windowed_axis_hits_the_same_points_where_they_are_drawn() {

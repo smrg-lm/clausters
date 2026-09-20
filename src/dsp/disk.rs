@@ -9,7 +9,7 @@
 //!
 //! - **Build** (`/synth_new`, on the network thread): open the file and spawn the
 //!   I/O thread. Allocating here is fine.
-//! - **`process`** (audio thread): only pop/push the ring — no allocation,
+//! - **`process`** (audio thread): only pop/push the ring -- no allocation,
 //!   no locking, no I/O. A ring underrun (disk too slow) plays silence;
 //!   an overrun (DiskOut) drops samples. Both are rare with the ring sized for
 //!   ~1 s of audio.
@@ -20,7 +20,7 @@
 //! Both are **mono per UGen**, like our other buffer UGens: `DiskIn` extracts
 //! one channel of the file (`chan` input); a stereo file needs two `DiskIn`s.
 //! `DiskOut` writes a mono WAV; record stereo with two `DiskOut`s to two paths.
-//! `DiskIn` streams one file frame per server sample (no resampling — pitch
+//! `DiskIn` streams one file frame per server sample (no resampling -- pitch
 //! follows the sample-rate ratio, as in scsynth's `DiskIn`).
 
 use std::sync::Arc;

@@ -3,11 +3,11 @@
 The GUI host is a *sibling OSC front* of the audio server: it speaks the same
 OSC encoding over the same transports, only the vocabulary is ``/gui_*`` instead
 of the audio commands. So `GuiHost` reuses the existing OSC interfaces
-(`clausters.base.OscTcpInterface` by default — the host listens on TCP at the
-same port, so a ``/gui_def`` tree is not bounded by a UDP datagram —
+(`clausters.base.OscTcpInterface` by default -- the host listens on TCP at the
+same port, so a ``/gui_def`` tree is not bounded by a UDP datagram --
 `clausters.base.OscUdpInterface` with ``transport="udp"``) pointed at the
 host's port rather than the server's, and builds messages with the existing
-encoder — there is no parallel wire code here. Keep the split: building the
+encoder -- there is no parallel wire code here. Keep the split: building the
 GuiDef tree (see `clausters.gui.guidef`) is host-agnostic; only this object
 talks to the host.
 
@@ -94,7 +94,7 @@ class WidgetInfo:
 DEFAULT_PORT = 57210
 
 #: How long a `GuiHost.wait` sleeps between looks at what it is waiting for.
-#: It is not a poll of the socket — the loop delivers on its own thread — only
+#: It is not a poll of the socket -- the loop delivers on its own thread -- only
 #: how sharply a script notices that the last window went away.
 _WAIT_STEP = 0.05
 
@@ -102,18 +102,18 @@ _WAIT_STEP = 0.05
 class GuiHost:
     """A connection to a running ``clausters-gui`` host.
 
-    ``transport`` picks the carrier: ``"tcp"`` (default — reliable, and a
+    ``transport`` picks the carrier: ``"tcp"`` (default -- reliable, and a
     ``/gui_def`` tree with its blobs can be as large as the host's frame
     ceiling) or ``"udp"`` (each message must fit a datagram; for constrained
     setups or a host started with ``--no-tcp``).
 
     ``share`` takes one slice of the widget-id space instead of all of it, for
-    a host with more than one client naming widgets on it — the same
+    a host with more than one client naming widgets on it -- the same
     arrangement, and the same arithmetic, as the audio
     `clausters.defs.Server`'s (`clausters.base.IdShare`).
 
     ``interface`` supplies an already-built `clausters.base.OscInterface`
-    instead, and then ``transport`` is not consulted — the same seam
+    instead, and then ``transport`` is not consulted -- the same seam
     `clausters.defs.Server` has, for a carrier this module does not know
     about (a host reached over a carrier of the caller's own, a test double). The
     interface only has to speak the `clausters.base.OscInterface` protocol;
@@ -124,7 +124,7 @@ class GuiHost:
     def __init__(self, host: str = "127.0.0.1", port: int = DEFAULT_PORT,
                  transport: str = "tcp", interface=None, share=None):
         self.target = (host, port)
-        #: whether this handle built its own carrier — a supplied ``interface``
+        #: whether this handle built its own carrier -- a supplied ``interface``
         #: may reach a host over something that does not answer a UDP probe, so
         #: `attach` does not verify one (the audio `clausters.defs.Server` draws
         #: the same line).
@@ -139,11 +139,11 @@ class GuiHost:
             raise ValueError(f"unknown transport {transport!r} (tcp or udp)")
         #: window ids opened through `open` and not yet `close`d.
         self._open: set[int] = set()
-        #: the one widget-id namespace for this host client — recycling, so a
+        #: the one widget-id namespace for this host client -- recycling, so a
         #: freed subtree's ids return to the pool (the GUI sibling of the audio
         #: server's `NodeIdAllocator`). Windows and widgets share it.
         self._alloc = GuiIdAllocator(share=share)
-        #: id -> its child ids, for every widget this client defined — the
+        #: id -> its child ids, for every widget this client defined -- the
         #: subtree `free` walks to return the whole branch's ids to the pool.
         self._children: dict[int, list[int]] = {}
         #: id -> the `clausters.gui.guidef.Source` objects that widget draws, so
@@ -203,8 +203,8 @@ class GuiHost:
 
         A `GuiHost` is a handle: constructing one runs nothing, and this is the
         verb that brings up what it points at. Unlike the audio server's, this
-        handle's address does not move — the port is the one given to the
-        constructor (57210 by default) and the process is told to use it — so
+        handle's address does not move -- the port is the one given to the
+        constructor (57210 by default) and the process is told to use it -- so
         booting only launches, waits, and starts the connection.
 
         Pair it with `stop`, which closes the connection and stops a process
@@ -246,7 +246,7 @@ class GuiHost:
         return self
 
     def _adopt_ambient(self):
-        """Register as the ambient host when none is, first-wins — the mirror of
+        """Register as the ambient host when none is, first-wins -- the mirror of
         `clausters.defs.Server.boot`'s ``adopt_default``."""
         from . import ambient_host, set_ambient_host
 
@@ -259,7 +259,7 @@ class GuiHost:
 
         The other half of `boot`, for the host nobody here started: one left
         behind by a script that ended, one launched from a terminal, one another
-        process owns. Ownership is the difference and it runs through the pair —
+        process owns. Ownership is the difference and it runs through the pair --
         this handle did not start the process, so `stop` closes the connection
         and leaves the host standing, windows and all.
 
@@ -269,7 +269,7 @@ class GuiHost:
 
         The probe goes over UDP whatever carrier this handle then talks over
         (`clausters.launch.gui_is_up`), so it says the host's front is bound,
-        not that its TCP leg is up — a host started with ``--no-tcp`` answers the
+        not that its TCP leg is up -- a host started with ``--no-tcp`` answers the
         probe and then refuses a ``transport="tcp"`` connection.
 
         Args:
@@ -285,7 +285,7 @@ class GuiHost:
 
         if self._own_carrier and not gui_is_up(*self.target, timeout=timeout):
             raise ServerError(
-                f"no GUI host answers at {self.target[0]}:{self.target[1]} — "
+                f"no GUI host answers at {self.target[0]}:{self.target[1]} -- "
                 "`boot()` one there, or point this handle where one is running")
         self.start()
         if adopt_ambient:
@@ -299,7 +299,7 @@ class GuiHost:
     def stop(self):
         """Close the connection and, if this host `boot`-ed a ``clausters-gui``
         process, stop it too. A host that was the ambient one stops being it,
-        and its `loop` — and the `clock` over it — end with it: the loop exists
+        and its `loop` -- and the `clock` over it -- end with it: the loop exists
         to drain this carrier, so it has nothing to do once the carrier is
         closed."""
         from . import ambient_host, set_ambient_host
@@ -321,7 +321,7 @@ class GuiHost:
     # ---- windows: open / close (the tree is a `window`-rooted GuiDef) ----
 
     def alloc_id(self) -> int:
-        """A fresh id, unique across everything this host client names —
+        """A fresh id, unique across everything this host client names --
         windows and widgets share the host's one recycling id namespace, so a
         widget id must not repeat across windows (`open` draws its window ids
         from the same pool). A freed subtree's ids return to the pool."""
@@ -356,7 +356,7 @@ class GuiHost:
         A thin, id-managing wrapper over `define`: with ``id=None`` an id is
         assigned for you (and remembered so `close` / `close_all` can free it);
         pass an explicit ``id`` to name the root yourself. Id-less **widgets**
-        inside ``tree`` are assigned too, in the copy that is sent — the tree
+        inside ``tree`` are assigned too, in the copy that is sent -- the tree
         itself is untouched, so it can be opened again (see `define`). The returned
         `clausters.gui.handle.WindowHandle` **is** the window id (an ``int``) and
         also resolves the tree's ``name``d widgets: ``win["cutoff"].set(…)``.
@@ -364,18 +364,18 @@ class GuiHost:
         ``blobs`` ride along exactly as in `define`.
 
         **Any root opens.** A view with no parent is a window, so a root that is
-        not one — a `clausters.gui.guidef.layout`, a lone `clausters.gui.guidef.knob`
-        — is framed here in a window that **hugs** it: the frame is the client's,
+        not one -- a `clausters.gui.guidef.layout`, a lone `clausters.gui.guidef.knob`
+        -- is framed here in a window that **hugs** it: the frame is the client's,
         adds nothing but the OS window the wire needs (only a ``window``-rooted
         def becomes one), and is invisible to the handle, which goes on resolving
         the tree's names. Reach for `clausters.gui.guidef.view` when the window's
-        own properties matter — a title, a size, a theme — since those are
+        own properties matter -- a title, a size, a theme -- since those are
         properties of a root nobody frames.
 
         **An open window is delivered to.** Opening starts this host's `loop`,
         so a `clausters.gui.handle.WidgetHandle.on_event` or an
         `clausters.gui.handle.WindowHandle.on_closed` fires from the moment it
-        is registered, with nothing driving it — the window is the thing that
+        is registered, with nothing driving it -- the window is the thing that
         has events, so having one is what makes the loop necessary. `pump` and
         `poll` stand down from here on (see their notes), and a script that
         would rather drain the socket by hand builds its window with `define`,
@@ -410,7 +410,7 @@ class GuiHost:
         self.stop()
 
     def define(self, id: int, tree: dict, *blobs: bytes) -> WindowHandle:
-        """``/gui_def <id> <json> [blob…]`` — build a whole widget tree in one
+        """``/gui_def <id> <json> [blob…]`` -- build a whole widget tree in one
         message, returning its `clausters.gui.handle.WindowHandle`. Any trailing
         ``blobs`` (e.g. waveform samples from
         `clausters.gui.guidef.samples_to_blob`) ride alongside the JSON and are
@@ -418,13 +418,13 @@ class GuiHost:
 
         Widgets built **without an id** (`clausters.gui.guidef` builders take
         ``id=None``) get a fresh host-unique one here, in the **copy that is
-        sent** — the caller's tree is left as it was written. So one tree opens
+        sent** -- the caller's tree is left as it was written. So one tree opens
         as many times as you like, each instance with its own ids, and the way
         to a widget is its name through the returned handle rather than an id
         read back out of the document. Ids you did pick are kept verbatim; they
         share one recycling namespace across every window on this host
         (allocation starts at 1000, so hand ids below 1000 never collide with
-        assigned ones) — and a hand-picked id on a subtree used **twice** in one
+        assigned ones) -- and a hand-picked id on a subtree used **twice** in one
         tree is used twice, which the host answers by skipping the second.
 
         Any widget given a ``name`` is bound in the returned handle:
@@ -495,8 +495,8 @@ class GuiHost:
         """``/gui_def <id> <json>`` on a widget **inside** an open window: build
         that subtree again and leave the rest of the window exactly as it is.
 
-        `define` redefines a widget too — the host frees the old subtree either
-        way — but it is written for a **window**: it replaces the handle's whole
+        `define` redefines a widget too -- the host frees the old subtree either
+        way -- but it is written for a **window**: it replaces the handle's whole
         name map with the names of the tree it was handed, which for a subtree
         would leave the window resolving only that subtree's names. So this is
         the same message with the bookkeeping a part needs: the names under the
@@ -505,7 +505,7 @@ class GuiHost:
 
         Why it exists at all: a widget that appeared or went can only arrive by
         a definition, and doing that to the **window** rebuilds every widget in
-        it — so a clip dropped on one lane took the zoom, the scroll and the
+        it -- so a clip dropped on one lane took the zoom, the scroll and the
         selection of every other lane with it. `/gui_def` names any widget, so
         the answer is to name the smallest one that changed.
         """
@@ -550,7 +550,7 @@ class GuiHost:
             held._controls.update(controls)
 
     def _subtree_ids(self, id: int) -> set:
-        """Every widget id under ``id``, itself included — what a redefine is
+        """Every widget id under ``id``, itself included -- what a redefine is
         about to replace, read before it is replaced."""
         found = {int(id)}
         for cid in self._children.get(int(id), ()):
@@ -558,24 +558,24 @@ class GuiHost:
         return found
 
     def load(self, name: str):
-        """``/gui_load <name>`` — instantiate a **persisted** GuiDef by name, the
+        """``/gui_load <name>`` -- instantiate a **persisted** GuiDef by name, the
         host replaying it as its saved ``/gui_def`` (it must have been started
         with a ``--data-dir``).
 
         The tree is the host's, not this client's: it carries the ids it was
         saved with, so nothing is allocated here and no `clausters.gui.handle.
-        WindowHandle` comes back — address its widgets with `set` / `free` by
+        WindowHandle` comes back -- address its widgets with `set` / `free` by
         the ids the def declares.
         """
         self._send("/gui_load", name)
 
     def font(self, face: bytes):
-        """``/gui_font <blob>`` — draw text with this typeface from now on.
+        """``/gui_font <blob>`` -- draw text with this typeface from now on.
 
         ``face`` is a raw TrueType/OpenType file (the host's rasterizer does not
         decompress WOFF2). A face is a property of the **host**, not of a
-        window, so the call carries no id and every window it has open — and
-        every one it opens later — draws with it.
+        window, so the call carries no id and every window it has open -- and
+        every one it opens later -- draws with it.
 
         Loading one **relayouts nothing**: the size table never followed the
         typeface, so the same tree comes up the same size before and after and a
@@ -584,7 +584,7 @@ class GuiHost:
         which a bitmap glyph's own pixels require.
 
         A host built without a rasterizer logs and keeps drawing with its
-        embedded bitmap face — which is what it also does with bytes it cannot
+        embedded bitmap face -- which is what it also does with bytes it cannot
         read. Neither is an error here: the bitmap face is the floor every build
         draws on. The launch-time spelling is `clausters.launch.GuiProcess`'s
         ``font=`` (the host's ``--font``), for a face that should be in place
@@ -593,12 +593,12 @@ class GuiHost:
         self._send("/gui_font", bytes(face))
 
     def theme(self, table: dict):
-        """``/gui_theme <json>`` — draw the chrome from these colors from now on.
+        """``/gui_theme <json>`` -- draw the chrome from these colors from now on.
 
         ``table`` is a partial ``{"role": "#rrggbb[aa]"}`` mapping: the same one
         a container's ``theme`` prop takes, scoped to the **host** rather than to
-        a subtree. It carries no id for that reason — a look is a property of the
-        host, exactly as a typeface is — and it is the base every theme group is
+        a subtree. It carries no id for that reason -- a look is a property of the
+        host, exactly as a typeface is -- and it is the base every theme group is
         resolved over, so handing one over re-resolves the groups in every open
         window and redraws them. A group overlays what it *inherits*, so moving
         the base moves what a group means.
@@ -611,7 +611,7 @@ class GuiHost:
         self._send("/gui_theme", json.dumps(dict(table)))
 
     def metrics(self, table: dict):
-        """``/gui_metrics <json>`` — lay out with these sizes from now on.
+        """``/gui_metrics <json>`` -- lay out with these sizes from now on.
 
         `theme`'s counterpart for lengths: a partial ``{"role": number}`` mapping
         over the metrics every widget reads its paddings, strips and hit slop
@@ -625,12 +625,12 @@ class GuiHost:
         self._send("/gui_metrics", json.dumps(dict(table)))
 
     def head_clock(self, which: str):
-        """``/gui_headClock <which>`` — which counter every playhead is drawn from.
+        """``/gui_headClock <which>`` -- which counter every playhead is drawn from.
 
         ``"device"`` (the default) is the engine's sample clock, which never
         stops: what a host watching a live server wants, since its meters,
         scopes and taps are all on that axis. ``"transport"`` is the
-        **transport's position** — it holds while the transport is stopped, jumps wherever
+        **transport's position** -- it holds while the transport is stopped, jumps wherever
         ``/transport_locate`` puts it and wraps at a loop's end, all inside the
         engine.
 
@@ -644,8 +644,8 @@ class GuiHost:
         A word the host does not know is logged and ignored, so the line keeps
         drawing what it was drawing. The launch-time spelling is the host's own
         ``--clock <device|transport>``; ``--session`` implies ``transport``. It is
-        ``head_clock`` and not ``clock`` because a host already has one — its
-        `clausters.base.appclock.AppClock` — and this names a counter, not a
+        ``head_clock`` and not ``clock`` because a host already has one -- its
+        `clausters.base.appclock.AppClock` -- and this names a counter, not a
         scheduler.
         """
         self._send("/gui_headClock", str(which))
@@ -665,7 +665,7 @@ class GuiHost:
         ``"widget id already in use"``). Ids identify a live widget, so they
         belong to what `open` hands back, not to the document.
 
-        The root carries no id in the tree — it is the ``/gui_def`` argument —
+        The root carries no id in the tree -- it is the ``/gui_def`` argument --
         so its id is passed in. A **duplicate name is refused** here, as it is
         when a `clausters.gui.guidef.View` is built: the name is how the handle
         addresses a widget, and a silent last-wins would leave the shadowed one
@@ -675,7 +675,7 @@ class GuiHost:
         if isinstance(name, str) and name:
             if name in names:
                 raise ValueError(
-                    f"duplicate widget name {name!r} in one tree — the handle "
+                    f"duplicate widget name {name!r} in one tree -- the handle "
                     "addresses a widget by name, so two widgets cannot share "
                     "one (the second would shadow the first, which would still "
                     "draw and be unreachable)")
@@ -719,11 +719,11 @@ class GuiHost:
         self._alloc.free(id)
 
     def set(self, id: int, **props):
-        """``/gui_set <id> <k> <v> ...`` — update one live widget.
+        """``/gui_set <id> <k> <v> ...`` -- update one live widget.
 
         Property types are preserved: a Python ``int`` rides as an OSC int, a
-        ``float`` as an OSC float. A **structural** value — an ``axes`` pair, a
-        ``theme`` table, a list of ``points`` or ``notes`` — has no OSC type at
+        ``float`` as an OSC float. A **structural** value -- an ``axes`` pair, a
+        ``theme`` table, a list of ``points`` or ``notes`` -- has no OSC type at
         all, so it rides as its JSON string; pass the object and it is
         serialized here, or pass the string yourself and it goes through
         untouched.
@@ -737,7 +737,7 @@ class GuiHost:
         self._send("/gui_set", id, *_prop_args(props))
 
     def ack(self, seq: int, doc_version: int = 0, generations=(), reason=None):
-        """``/gui_ack <seq> <docVersion> [<source> <generation>…] [<reason>]`` —
+        """``/gui_ack <seq> <docVersion> [<source> <generation>…] [<reason>]`` --
         answer the edits this host emitted, up to ``seq``.
 
         The reply ``/gui_event`` never had. Without it the host cannot tell an
@@ -795,7 +795,7 @@ class GuiHost:
         self._osc.send_bundle(self.target, 0.0, *messages)
 
     def focus(self, id: int, on: bool = True):
-        """``/gui_set <id> focus 1`` — point the keyboard at this widget
+        """``/gui_set <id> focus 1`` -- point the keyboard at this widget
         (``on=False`` gives the focus up).
 
         The focused widget is the only one keys reach, and there is one focus
@@ -808,18 +808,18 @@ class GuiHost:
         self.set(id, focus=int(bool(on)))
 
     def free(self, id: int):
-        """``/gui_free <id>`` — free a widget and its subtree, returning its ids
+        """``/gui_free <id>`` -- free a widget and its subtree, returning its ids
         to the pool (the client-side mirror of the host freeing the subtree)."""
         self._send("/gui_free", id)
         self._recycle_subtree(int(id), keep_root=False)
 
     def bind(self, id: int, address: str, *prefix):
-        """``/gui_bind <id> "server" <address> <prefix…>`` — forward this widget's
+        """``/gui_bind <id> "server" <address> <prefix…>`` -- forward this widget's
         value **straight to the audio server**, bypassing this script.
 
         On every change the host sends ``address`` (an OSC path like ``/node_set``
         or ``/bus_set``) with the fixed ``prefix`` arguments followed by the
-        widget's value — e.g. ``bind(10, "/node_set", node_id, "freq")`` makes knob
+        widget's value -- e.g. ``bind(10, "/node_set", node_id, "freq")`` makes knob
         10 send ``/node_set <node_id> freq <value>`` to the server itself, so the
         control responds with no round-trip through Python (the low-latency
         path). A bound widget stops emitting ``/gui_event``; `unbind` restores it.
@@ -829,11 +829,11 @@ class GuiHost:
         self._send("/gui_bind", id, "server", address, *prefix)
 
     def bind_widget(self, id: int, target: int, prop: str):
-        """``/gui_bind <id> "widget" <target> <prop>`` — apply this widget's value
+        """``/gui_bind <id> "widget" <target> <prop>`` -- apply this widget's value
         to **another widget's property**, with no round-trip through this script.
 
         On every change the host sets ``prop`` on widget ``target`` exactly as a
-        `set` would — ``bind_widget(picker, pages, "index")`` makes a menu flip a
+        `set` would -- ``bind_widget(picker, pages, "index")`` makes a menu flip a
         ``stack``'s page, a slider drive a plot's ``max``, a curve write another
         curve's ``points`` (an edit-back payload rides as the JSON string the
         prop already takes). A bound widget stops emitting ``/gui_event``;
@@ -847,7 +847,7 @@ class GuiHost:
         self._send("/gui_bind", id, "widget", int(target), prop)
 
     def unbind(self, id: int):
-        """``/gui_bind <id>`` (no target) — remove a widget's binding, so its value
+        """``/gui_bind <id>`` (no target) -- remove a widget's binding, so its value
         flows back to this script as ``/gui_event`` again."""
         self._send("/gui_bind", id)
 
@@ -855,7 +855,7 @@ class GuiHost:
         """``/gui_query <id>`` -> the ``/gui_info`` reply as a `WidgetInfo`.
 
         What the widget **is now**: the props it was defined with, with every
-        edit the user has made since laid over them — a dragged control's value,
+        edit the user has made since laid over them -- a dragged control's value,
         a moved clip's ``offset``/``dur``, an edited curve's ``points``. So this
         is how a script reads back what a gesture did without listening for the
         event that announced it.
@@ -866,7 +866,7 @@ class GuiHost:
         could write.
 
         Raises `clausters.errors.ReplyTimeout` when the host does not answer,
-        as every other query here does — a host that is up answers off its own
+        as every other query here does -- a host that is up answers off its own
         event loop. An empty ``type`` (``""``) means the host has no such
         widget: it still answers, the way the server replies even on a miss.
         """
@@ -978,13 +978,13 @@ class GuiHost:
         ran out first; with no window open it returns at once.
 
         **A notebook calls nothing.** The loop runs whether or not anyone waits,
-        so a ``# %%`` cell that opens a window is finished when it returns — the
+        so a ``# %%`` cell that opens a window is finished when it returns -- the
         next cell edits the window that is already there. Waiting is what a
         script does *instead of* exiting, and a cell has nothing to exit from.
 
-        Waiting from the loop's own thread — inside an `on_event`, a
+        Waiting from the loop's own thread -- inside an `on_event`, a
         `WindowHandle.on_closed`, an `clausters.base.appclock.AppClock` routine
-        — would wait for a close the waiting thread is the one that has to
+        -- would wait for a close the waiting thread is the one that has to
         deliver, so it raises `RuntimeError` rather than hang."""
         return self._wait_while(lambda: bool(self._open), timeout)
 
@@ -998,7 +998,7 @@ class GuiHost:
         if self._loop is not None and self._loop.is_current():
             raise RuntimeError(
                 "wait() from the event loop's own thread would wait for what "
-                "this thread is the one to deliver — call it from the script")
+                "this thread is the one to deliver -- call it from the script")
         deadline = None if timeout is None else time.monotonic() + timeout
         while pred():
             step = _WAIT_STEP
@@ -1017,7 +1017,7 @@ class GuiHost:
         """Hand every inbound ``(addr, args)`` to ``func`` before the handle
         callbacks, and return it.
 
-        This is the seam an owner of data plugs into — an editor applies an edit
+        This is the seam an owner of data plugs into -- an editor applies an edit
         here, ahead of the callbacks a script registered on the same window. The
         registration is **strong** and is dropped by `unsubscribe`, which is
         what an editor does when its window closes; see `_listeners`.
@@ -1027,7 +1027,7 @@ class GuiHost:
 
     def unsubscribe(self, func):
         """Remove a `subscribe` registration. A ``func`` that is not registered
-        is not an error — an owner may unsubscribe on a close it already
+        is not an error -- an owner may unsubscribe on a close it already
         answered."""
         for entry in list(self._listeners):
             if entry == func:
@@ -1094,7 +1094,7 @@ class GuiHost:
         callbacks registered with `clausters.gui.handle.WidgetHandle.on_event` /
         `WindowHandle.on_closed`. Returns how many were dispatched. The
         event-driven counterpart to `poll` (the raw primitive): call it from the
-        script's loop — **never** the clock thread, which a routine must not
+        script's loop -- **never** the clock thread, which a routine must not
         block.
 
         **With this host's `loop` running there is nothing here to do**: the
@@ -1118,12 +1118,12 @@ class GuiHost:
         was interacted with) and ``/gui_closed`` (a window was closed) back to the
         script that built the window. Drive an interactive panel by polling this
         in a loop, wrap it with a `clausters.responders.OscFunc`-style dispatch,
-        or — for the handle callbacks — `pump` it.
+        or -- for the handle callbacks -- `pump` it.
 
         **With this host's `loop` running this answers ``None``** and waits out
         ``timeout``: the socket is the loop's, and a second reader would take
         messages the loop is there to deliver. A script written around this call
-        therefore keeps working beside a loop — it simply stops being the one
+        therefore keeps working beside a loop -- it simply stops being the one
         that drains.
         """
         if self.looping:
@@ -1155,7 +1155,7 @@ class _HostSource:
 
     Three methods and no policy: the descriptor to wait on, one message when
     there is one, and what to do with it. What separates a **reply** from an
-    **event** lives here because it is the loop's own question — a reply is
+    **event** lives here because it is the loop's own question -- a reply is
     somebody's answer and goes to the slot they are waiting at, an event is news
     and goes to the subscribers and the callbacks.
     """
@@ -1171,7 +1171,7 @@ class _HostSource:
         return self.host._osc.fileno()
 
     def gone(self) -> bool:
-        """Whether the host process closed the connection — what makes this
+        """Whether the host process closed the connection -- what makes this
         source leave the loop instead of being woken on for ever."""
         gone = getattr(self.host._osc, "gone", None)
         return bool(gone()) if gone is not None else False

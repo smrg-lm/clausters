@@ -1,10 +1,10 @@
 //! The multitrack: what a multitrack editor edits, written down.
 //!
-//! Source, **region**, **lane**, **track**, **automation** — the field's own
+//! Source, **region**, **lane**, **track**, **automation** -- the field's own
 //! vocabulary, not this project's invention, and the layer that was missing.
 //! Until now a multitrack was a *projection* out of a general tree: a lane was
-//! what a view made of an aggregate, and the state a multitrack actually has —
-//! which track a thing is on, its order, its layer, its identity — had nowhere
+//! what a view made of an aggregate, and the state a multitrack actually has --
+//! which track a thing is on, its order, its layer, its identity -- had nowhere
 //! to live but the widget tree, which is drawn, and drawing frees.
 //!
 //! # A region is one object
@@ -19,7 +19,7 @@
 //!
 //! So a region carries both halves as **fields on one object**: [`Region`] is
 //! the span on the timeline, and [`Content`] is what fills it. The distinction
-//! REAPER draws is kept — as types rather than as a nesting, which is where
+//! REAPER draws is kept -- as types rather than as a nesting, which is where
 //! [`crate::timebase`] does its work, since the two halves are measured on two
 //! different axes and nothing used to say so.
 //!
@@ -37,8 +37,8 @@
 //! # Identity, and what an id identifies
 //!
 //! Every region has its own [`NodeId`], separate from the source's. That is the
-//! answer to the oldest open decision in `PLAN.md` — *may one element be placed
-//! twice* — and it is what makes a source referenced from six places
+//! answer to the oldest open decision in `PLAN.md` -- *may one element be placed
+//! twice* -- and it is what makes a source referenced from six places
 //! *referenced* rather than copied. Six regions, one source, six identities: an
 //! intent naming one names one appearance.
 
@@ -100,7 +100,7 @@ impl Fade {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "fill", rename_all = "lowercase")]
 pub enum Content {
-    /// A **window** onto a source — samples, or a node this document holds.
+    /// A **window** onto a source -- samples, or a node this document holds.
     ///
     /// [`SegmentRef`] already says which source, where the window opens and how
     /// long it lasts, in the units that source is addressed and measured in. A
@@ -126,9 +126,9 @@ pub enum Content {
         ///
         /// A property of this placement rather than of the source, for the
         /// reason `playrate` is: two regions over one recording may loop and
-        /// not loop. It is what a box longer than what it reads *means* — the
+        /// not loop. It is what a box longer than what it reads *means* -- the
         /// alternative being that the box simply stops, which is what a box
-        /// that does not loop does — so it is here rather than in a view: it
+        /// that does not loop does -- so it is here rather than in a view: it
         /// changes what sounds, and what sounds is the multitrack's.
         #[serde(rename = "loop", default, skip_serializing_if = "std::ops::Not::not")]
         looping: bool,
@@ -137,7 +137,7 @@ pub enum Content {
     ///
     /// A section, a nested multitrack, anything the five primitives can build.
     /// It carries a [`Node`] unchanged, which is what keeps everything the
-    /// document already models reachable from a session without restating it —
+    /// document already models reachable from a session without restating it --
     /// and what makes "an arrangement of arrangements" cost nothing.
     Composite {
         /// The tree this region places.
@@ -196,16 +196,16 @@ impl Content {
 
 /// One placed thing on a lane: a span of the timeline, and what fills it.
 ///
-/// The span is the region's own — position, length, fades, layer — and it is
+/// The span is the region's own -- position, length, fades, layer -- and it is
 /// measured in **seconds**, the multitrack's axis: where a thing sits is
 /// physical time, and no tempo change moves it. What fills it is measured in
-/// its own source's units — seconds of a recording, beats of a node of notes —
+/// its own source's units -- seconds of a recording, beats of a node of notes --
 /// which is why the two halves cannot be added and why they are two types.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Region {
     /// Its identity, and not its source's.
     pub id: NodeId,
-    /// A referenceable label — the same rule as [`Node::name`]: a second way to
+    /// A referenceable label -- the same rule as [`Node::name`]: a second way to
     /// refer to the region, never a second identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -217,7 +217,7 @@ pub struct Region {
     pub length: Second,
     /// Which of the overlapping regions on this lane draws and plays on top.
     ///
-    /// Overlap is legal and ordinary — a crossfade *is* an overlap — so the
+    /// Overlap is legal and ordinary -- a crossfade *is* an overlap -- so the
     /// stack needs an order that survives a save. Higher is nearer the front.
     #[serde(default, skip_serializing_if = "is_zero_u32")]
     pub layer: u32,
@@ -230,14 +230,14 @@ pub struct Region {
     /// Silenced without being removed. The region's own, not its track's.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub muted: bool,
-    /// The curves that act on **this placement alone** — its own gain, its pan,
+    /// The curves that act on **this placement alone** -- its own gain, its pan,
     /// the parameters of whatever fills it.
     ///
     /// The same [`Automation`] a track carries, in the other place it belongs,
     /// and the difference is only *where it hangs*: a track's curve runs the
     /// length of the track and is drawn in a lane beside it, a region's runs the
     /// length of the region and is drawn **inside** it. Both exist and neither
-    /// stands in for the other — a clip that has curves is a small track acting
+    /// stands in for the other -- a clip that has curves is a small track acting
     /// on itself alone.
     ///
     /// One type in two places rather than two types, because what a curve *is*
@@ -288,7 +288,7 @@ impl Region {
     }
 
     /// Whether the two occupy any of the same time. Half-open, so a region
-    /// ending exactly where the next begins does not overlap it — which is what
+    /// ending exactly where the next begins does not overlap it -- which is what
     /// makes a cut into two regions not a crossfade.
     pub fn overlaps(&self, other: &Region) -> bool {
         self.position < other.end() && other.position < self.end()
@@ -297,7 +297,7 @@ impl Region {
 
 /// One of a track's several contents: an ordered list of regions.
 ///
-/// Ardour's structure and our name — its `Playlist` is this, and *playlist* is
+/// Ardour's structure and our name -- its `Playlist` is this, and *playlist* is
 /// a word every other program spends on something else. A track holds several
 /// and plays one, which is what comping is: record six passes into six lanes,
 /// then take from each.
@@ -309,7 +309,7 @@ impl Region {
 pub struct Lane {
     /// Its identity.
     pub id: NodeId,
-    /// A label — "take 3", "comp", "verse".
+    /// A label -- "take 3", "comp", "verse".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     /// The regions on it, in position order.
@@ -364,7 +364,7 @@ impl Lane {
 /// The points are [`crate::Point`]s and this crate reads nothing about their
 /// shape, for the reason that module states. What is *here* rather than there
 /// is the placement: which parameter, whose track, and whether the lane is
-/// showing — because a curve with no arrangement around it has no parameter to
+/// showing -- because a curve with no arrangement around it has no parameter to
 /// be about.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Automation {
@@ -375,7 +375,7 @@ pub struct Automation {
     pub name: Option<String>,
     /// **What this automates**, in the client's terms and never read here: a
     /// control name, a bus, a plugin's parameter index. The same door a leaf's
-    /// configuration is, and for the same reason — the parameters of a def
+    /// configuration is, and for the same reason -- the parameters of a def
     /// belong to whoever wrote the def.
     #[serde(default, skip_serializing_if = "Opaque::is_empty")]
     pub target: Opaque,
@@ -422,7 +422,7 @@ impl Automation {
 /// A row of the multitrack: several lanes, one of them playing, plus the
 /// curves over it and whatever the client says it is.
 ///
-/// **What a track *is* — an instrument, a bus, a folder — is not here.** That
+/// **What a track *is* -- an instrument, a bus, a folder -- is not here.** That
 /// is `config`, carried and never interpreted, for the reason a leaf is opaque:
 /// a def is code in the language of whoever wrote it. What the document owns is
 /// the structure: which lanes, which one plays, what is placed on them.
@@ -525,7 +525,7 @@ impl Track {
         self.lanes.get_mut(self.active)
     }
 
-    /// Where the track's last region ends, across **every** lane — what it
+    /// Where the track's last region ends, across **every** lane -- what it
     /// spans, not what it plays, since an alternate take is still part of the
     /// multitrack.
     pub fn end(&self) -> Second {
@@ -544,14 +544,14 @@ impl Track {
 /// places things on. Regions, fades, curves and markers are in seconds, and an
 /// edit of the tempo moves none of them; what reads the map is a ruler drawing
 /// beats and bars over that time, and a snap to them. So an entry is stated
-/// where a map states it — at a beat — and in the unit every tempo in this
+/// where a map states it -- at a beat -- and in the unit every tempo in this
 /// project is in: beats per **second**.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Tempo {
     /// Where the change happens.
     pub at: Beat,
-    /// Beats per second from here on. Beats per minute is presentation — a
-    /// ruler's label, a text field — and never what is stored.
+    /// Beats per second from here on. Beats per minute is presentation -- a
+    /// ruler's label, a text field -- and never what is stored.
     pub tempo: f64,
     /// Whether the tempo **ramps** from here to the next entry rather than
     /// stepping. A ritardando is a ramp; a section change is a step.
@@ -591,7 +591,7 @@ pub struct Meter {
     pub at: Beat,
     /// Beats per bar.
     pub beats: u32,
-    /// Which note value gets the beat — 4 for a quarter, 8 for an eighth.
+    /// Which note value gets the beat -- 4 for a quarter, 8 for an eighth.
     pub unit: u32,
     /// Fields a newer writer wrote. See [`Extra`].
     #[serde(flatten, default, skip_serializing_if = "Map::is_empty")]
@@ -690,14 +690,14 @@ pub struct Multitrack {
     /// When the tree comes off, this is the counter that stays.
     ///
     /// It stays out of the file while it is the first version, so an unedited
-    /// multitrack still writes an empty object — the counter defaults back to the
+    /// multitrack still writes an empty object -- the counter defaults back to the
     /// same number on the way in, so nothing is lost by leaving it out.
     #[serde(default = "first_version", skip_serializing_if = "is_first_version")]
     pub version: u64,
     /// The tracks, in the order they are shown.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tracks: Vec<Track>,
-    /// **How wide the multitrack is**, in channels — the master's own width, and
+    /// **How wide the multitrack is**, in channels -- the master's own width, and
     /// what a track's output is mixed into. Here for the reason
     /// [`Track::channels`] is: it decides the mix, so it has to survive a save
     /// and it has to mean the same thing to both clients.
@@ -782,7 +782,7 @@ impl Multitrack {
             .find_map(|t| t.lanes.iter().find_map(|l| l.region(id).map(|r| (t, l, r))))
     }
 
-    /// Every automation curve in the multitrack — a track's, and the ones a region
+    /// Every automation curve in the multitrack -- a track's, and the ones a region
     /// carries for itself.
     ///
     /// One walk, because a curve is a curve: what tells the two apart is how
@@ -827,7 +827,7 @@ impl Multitrack {
         self.tracks.iter_mut().find(|t| t.id == id)
     }
 
-    /// Where the last region ends, across every track and every lane — how long
+    /// Where the last region ends, across every track and every lane -- how long
     /// the multitrack is.
     pub fn end(&self) -> Second {
         self.tracks
@@ -851,7 +851,7 @@ impl Multitrack {
     }
 
     /// Adds a tempo entry, keeping the map in position order and replacing any
-    /// entry already at that beat — two tempos at one position is a state the
+    /// entry already at that beat -- two tempos at one position is a state the
     /// map should not be able to hold.
     pub fn set_tempo(&mut self, tempo: Tempo) {
         self.tempo.retain(|t| t.at != tempo.at);
@@ -867,7 +867,7 @@ impl Multitrack {
     }
 
     /// Every region in the multitrack, in track then lane then position
-    /// order — **every** lane, not only the ones that play, because an
+    /// order -- **every** lane, not only the ones that play, because an
     /// alternate take still names the source it plays and a save that forgot
     /// it would reopen missing the take nobody chose yet.
     pub fn regions(&self) -> impl Iterator<Item = &Region> {

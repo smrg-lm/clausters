@@ -19,7 +19,7 @@
   </head>
   <body>
     <main>
-      <div id="note">The application shell: menu bar, working area, status bar —
+      <div id="note">The application shell: menu bar, working area, status bar --
 layout props.
 
 Every widget takes the <b>generic place props</b> and every container the flow
@@ -27,7 +27,7 @@ props, so a GuiDef composes a real application face from the same light elements
 a control panel uses:
 
 <code>w</code>/<code>h</code> fix a child's main-axis size in a
-<code>row</code>/<code>col</code> — the menu bar and the status bar here are
+<code>row</code>/<code>col</code> -- the menu bar and the status bar here are
 <code>h</code>-fixed rows; <code>weight</code> shares the leftover among the
 flexible children (default 1), so the working area takes everything between the
 two bars and inside it the sidebar is <code>w</code>-fixed while the scope
@@ -99,7 +99,7 @@ screen.</div>
           gui.menu(["sine"], { w: 120 }),
           gui.button({ name: "play", label: "play", w: 80 }),
           gui.button({ name: "stop", label: "stop", w: 80 }),
-          gui.label("shell — the application shell", { weight: 1.0 }),
+          gui.label("shell -- the application shell", { weight: 1.0 }),
         );
         const sidebar = gui.panel(
           { layout: "col", w: 190 },

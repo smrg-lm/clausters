@@ -3,7 +3,7 @@
 //!
 //! A leaf used to be an arm in each of eight passes. Here it is one type
 //! implementing one trait, in its own file, with its constructor named in the
-//! table below — which is the whole of what the schema needs to know about it.
+//! table below -- which is the whole of what the schema needs to know about it.
 //! The enum keeps the **containers** (`window`, `layout`, `plane`, `field` and
 //! the clip), because the layout pass has to know every coordinate system it
 //! places into.
@@ -17,7 +17,7 @@
 //!
 //! It is also the seam the crate's features hang on: a family compiled out
 //! drops its rows from this table, the lookup falls through to the registry and
-//! then to `Unknown` — laid out, not painted — which is exactly how a host
+//! then to `Unknown` -- laid out, not painted -- which is exactly how a host
 //! older than the def already behaves. No new failure mode, and nothing for a
 //! script to learn. `notation` (the `score` row) and `patcher` are the two that
 //! use it today; both are on by default, since a feature is here so a build can
@@ -30,8 +30,8 @@ use super::widget::element::Constructor;
 ///
 /// `button` and `toggle` sent `1`/`0` before either could carry another pair,
 /// because OSC has no bool and an int is what every reader of a
-/// `/gui_event` already parses. A def that names its own two values —
-/// a bypass at `0.0`/`0.7`, a mode at `1`/`2` — must not turn those readers'
+/// `/gui_event` already parses. A def that names its own two values --
+/// a bypass at `0.0`/`0.7`, a mode at `1`/`2` -- must not turn those readers'
 /// ints into floats behind them, so the type follows the number rather than
 /// the fact that a pair was named.
 pub(crate) fn switch_value(v: f32) -> clausters_core::osc::OscType {
@@ -66,7 +66,7 @@ mod text;
 mod toggle;
 
 /// The constructor for a built-in element name, or `None` when no built-in
-/// answers to it — in which case the caller consults the registry, and then
+/// answers to it -- in which case the caller consults the registry, and then
 /// gives up on `Unknown`.
 pub(crate) fn builtin(name: &str) -> Option<Constructor> {
     Some(match name {
@@ -91,7 +91,7 @@ pub(crate) fn builtin(name: &str) -> Option<Constructor> {
         "text" => text::build,
         "toggle" => toggle::build,
         // Note what is **not** here: the patcher, whose wire type is `plane`
-        // — the same name the scroll workspace answers to, told apart by the
+        // -- the same name the scroll workspace answers to, told apart by the
         // props (`boxes`/`cords`). A name that means two constructions is the
         // schema's business, so `build_kind` resolves it and calls
         // [`patch::build`] directly, exactly as it does for a `field`.

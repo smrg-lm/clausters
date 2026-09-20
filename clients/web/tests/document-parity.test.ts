@@ -8,7 +8,7 @@
 //
 // Nothing else would notice a divergence. Cargo checks each binding against the
 // crate and never against the other, and no build reaches either client's call
-// sites — so a snap implemented twice, a version bumped on the wrong side or a
+// sites -- so a snap implemented twice, a version bumped on the wrong side or a
 // staleness rule read differently would ship green.
 //
 // Needs the core wasm staged (`./build.sh`); run with `npm test`.

@@ -2,7 +2,7 @@
 //! everything the compiler and engine need (name, arity, rates, bus role,
 //! execution mode, constructor). There is no central `match kind { … }`: the
 //! compiler and the bus analysis read descriptor fields, so they stay generic
-//! and **adding a UGen is a single entry in `UGENS`** — the catalog grows
+//! and **adding a UGen is a single entry in `UGENS`** -- the catalog grows
 //! without touching general logic.
 //!
 //! The small closed sets that *are* general logic stay as enums: [`Rate`]
@@ -56,7 +56,7 @@ use crate::dsp::unop::UnaryOp;
 use crate::dsp::{DoneAction, Rate, UGen};
 
 /// Line length a delay row allocates when the def omits `max_delay`, in
-/// seconds. A default rather than a hard error, like `fft_size`'s — but a def
+/// seconds. A default rather than a hard error, like `fft_size`'s -- but a def
 /// that wants a long echo must say so, because the field sizes memory and
 /// cannot be widened later.
 const DEFAULT_MAX_DELAY: f32 = 0.2;
@@ -74,11 +74,11 @@ pub struct UGenConfig {
     /// `DiskOut` WAV sample format (`int16` | `int24` | `float`).
     pub format: Option<String>,
     /// Special-index operator for `BinaryOpUGen`/`UnaryOpUGen`/`RangeMapUGen`
-    /// — a `clausters_core::builtins` (or `warp::MapOp`) opcode discriminant,
+    /// -- a `clausters_core::builtins` (or `warp::MapOp`) opcode discriminant,
     /// validated at compile time and read by their `build`.
     pub op: Option<u32>,
     /// `RangeMapUGen`: what an out-of-range input is trimmed to before it is
-    /// mapped — a `clausters_core::warp::Clip` discriminant, resolved from the
+    /// mapped -- a `clausters_core::warp::Clip` discriminant, resolved from the
     /// spec's name at compile time. `None` is the default (`minmax`, sclang's
     /// and the value functions'). Ignored by every other kind.
     pub clip: Option<u32>,
@@ -98,13 +98,13 @@ pub struct UGenConfig {
     /// [`Window`](clausters_core::window::Window) `wintype` integer, default `0`
     /// (Hann). Also settable live via `/node_ugenCmd`. Ignored by every other kind.
     pub wintype: Option<i32>,
-    /// `Conv`: FDL capacity in partitions — the longest prepared kernel
+    /// `Conv`: FDL capacity in partitions -- the longest prepared kernel
     /// this instance accepts, sizing its pre-allocated state. Ignored by
     /// every other kind.
     pub partitions: Option<usize>,
     /// `PV_Kernel`: the compiled magnitude / phase bin-expression programs
     /// (validated at def compile time from the spec's `mag_expr`/`phase_expr`
-    /// token lists — see `clausters_core::pvprog`). `None` means the identity.
+    /// token lists -- see `clausters_core::pvprog`). `None` means the identity.
     /// Ignored by every other kind.
     pub mag_prog: Option<clausters_core::pvprog::PvProgram>,
     pub phase_prog: Option<clausters_core::pvprog::PvProgram>,
@@ -118,8 +118,8 @@ pub struct UGenConfig {
 /// What the engine knows at **build** time, handed to every
 /// [`UGenDescriptor::build`].
 ///
-/// A UGen whose *allocation* depends on the sample rate — a delay line is
-/// `max_delay × sample_rate` samples — cannot compute its size from
+/// A UGen whose *allocation* depends on the sample rate -- a delay line is
+/// `max_delay × sample_rate` samples -- cannot compute its size from
 /// [`UGenConfig`] alone, and it must allocate here, on the network thread,
 /// never in `process`. This is the same information `FaustSynth::new` already
 /// takes for the same reason.
@@ -129,7 +129,7 @@ pub struct BuildCtx {
     pub sample_rate: f32,
     /// The full control block length in samples. A scheduled bundle may split a
     /// block into shorter runs, so this is a **capacity**, not the length any
-    /// single `process` call sees — size buffers by it, never loop over it.
+    /// single `process` call sees -- size buffers by it, never loop over it.
     pub block_size: usize,
     /// The next seed for a stochastic UGen in this instance, handed out by
     /// [`BuildCtx::next_seed`]. It is a `Cell` because `build` takes `&self`
@@ -169,18 +169,18 @@ pub enum Arity {
     Variadic,
 }
 
-/// One named input slot of a UGen, in **wire order** — the position it occupies
+/// One named input slot of a UGen, in **wire order** -- the position it occupies
 /// in the def's `inputs` array.
 ///
 /// The wire itself stays positional (a def names a `kind` and lists values; no
 /// input is ever addressed by name), so the *name* is descriptive metadata: it
 /// exists so `/ugen_query` can report a UGen's signature and a client palette
 /// can label an inlet instead of copying the names into its own table. The
-/// `optional` flag is not — see below.
+/// `optional` flag is not -- see below.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct UGenInput {
     pub name: &'static str,
-    /// The value a client should offer when the user leaves the slot alone —
+    /// The value a client should offer when the user leaves the slot alone --
     /// and, for an [`optional`](Self::optional) slot, the value the compiler
     /// fills in when a def stops before it.
     pub default: f32,
@@ -191,20 +191,20 @@ pub struct UGenInput {
     /// required" is one number and a short def is never ambiguous.
     ///
     /// **What this is for.** Arity is exact, so a UGen that grows an input
-    /// breaks every def ever written against it — including the ones persisted
+    /// breaks every def ever written against it -- including the ones persisted
     /// on disk and the ones inside a saved bundle. `PlayBuf` going from four
     /// inputs to seven made every stored def that used it unloadable. A
     /// declared tail makes growth **by the tail** non-breaking; it does nothing
     /// for an input inserted in the middle, which stays breaking.
     ///
     /// **Why not simply fill whatever is missing.** That would make a short def
-    /// legal in every slot of the catalog, and `BinaryOpUGen` is `a=0, b=0` — a
+    /// legal in every slot of the catalog, and `BinaryOpUGen` is `a=0, b=0` -- a
     /// `Mul` truncated to one input would compile, fill `b=0` and silence the
     /// chain with no `/fail` and no name. So a slot is optional only when
     /// **its default is inert**: the value that makes the UGen behave as if the
     /// slot were not there (0 for a trigger, an offset, a phase, a channel, a
     /// done action; 1 for a level or a rate scale). A slot whose default is a
-    /// *choice* — `freq=440`, `delaytime=0.2`, `width=0.5`, `max=7` — stays
+    /// *choice* -- `freq=440`, `delaytime=0.2`, `width=0.5`, `max=7` -- stays
     /// required, because omitting it would not be "leave it alone" but "pick a
     /// number for me". Neither is a slot the UGen reads its **signal, source,
     /// position or chain** from, whatever its default: silence and frame 0 are
@@ -236,7 +236,7 @@ const fn inp_opt(name: &'static str, default: f32) -> UGenInput {
 }
 
 /// How the synth runs a UGen that needs coordination the plain `process` path
-/// cannot express — state shared across the whole ugen vector. Everything else
+/// cannot express -- state shared across the whole ugen vector. Everything else
 /// is [`ExecMode::Normal`] and runs through [`UGen::process`]. This is
 /// the *only* per-UGen behavior the engine special-cases, and it is a small
 /// closed set (not a per-kind switch): see `synthdef::instance`.
@@ -253,7 +253,7 @@ pub enum ExecMode {
     /// Reads the **done flag** of the UGen its first input names, before
     /// running (`Done`, `FreeSelfWhenDone`). Like [`DemandDriver`](Self::
     /// DemandDriver) this needs the input's *identity*, not its value, so the
-    /// synth resolves the wire index and the compiler requires a wire there —
+    /// synth resolves the wire index and the compiler requires a wire there --
     /// a kind whose descriptor sets `has_done_flag`.
     DoneQuery,
     /// Runs through [`UGen::process_spectral`] with its synth-private
@@ -505,14 +505,14 @@ use Rate::{Ar, Dr, Ir, Kr};
 
 // Input signatures shared by several rows. Named in **wire order** and in
 // `snake_case`, the one style the whole surface uses (the Python callables, the
-// catalog table in `docs/schemas.md` and these rows must agree — a client test
+// catalog table in `docs/schemas.md` and these rows must agree -- a client test
 // contrasts them, see the note in docs/decisions.md).
 const I_NONE: &[UGenInput] = &[];
 const I_A: &[UGenInput] = &[inp("a", 0.0)];
 const I_AB: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0)];
 const I_ABC: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0), inp("c", 0.0)];
-/// `RangeMapUGen`'s six slots. The four bounds are required — a map with a
-/// range it was not given is not "leave it alone" but "pick a number for me" —
+/// `RangeMapUGen`'s six slots. The four bounds are required -- a map with a
+/// range it was not given is not "leave it alone" but "pick a number for me" --
 /// while `curve` is the declared tail: 0 is *no bend*, which is the inert value
 /// the rule asks for, and the four maps that do not read it ignore whatever
 /// arrives. (A client's `lincurve` still passes sclang's −4 rather than
@@ -533,7 +533,7 @@ const I_LF: &[UGenInput] = &[inp("freq", 440.0), inp_opt("iphase", 0.0)];
 const I_LF_WIDTH: &[UGenInput] = &[inp("freq", 440.0), inp("iphase", 0.0), inp("width", 0.5)];
 /// The one-segment ramps. `start`, `end` and `dur` are read once, on the
 /// first sample, as scsynth reads them: the ramp's geometry is fixed at birth
-/// and modulating these does nothing. `done_action` is the exception — an
+/// and modulating these does nothing. `done_action` is the exception -- an
 /// input rather than static config, read every block, because it says what
 /// happens to the *node* and a def may re-aim that mid-flight.
 const I_LINE: &[UGenInput] = &[
@@ -560,7 +560,7 @@ const I_CHAOS: &[UGenInput] = &[inp("chaos", 1.5)];
 /// index of the one *this* instance carries: the engine gives a UGen one
 /// output, so a stereo panner is two rows sharing their inputs, and the Python
 /// builder returns the pair as a channel list. It sits last because it is the
-/// builder's business, not the reader's — the inputs before it are scsynth's,
+/// builder's business, not the reader's -- the inputs before it are scsynth's,
 /// in scsynth's order.
 const I_PAN2: &[UGenInput] = &[
     inp("signal", 0.0),
@@ -605,7 +605,7 @@ const I_PAN_AZ: &[UGenInput] = &[
 ];
 /// `Select`/`SelectX`: the index, then an unbounded run of sources.
 const I_WHICH: &[UGenInput] = &[inp("which", 0.0)];
-// The demand family. `repeats` leads every source that has one — for a
+// The demand family. `repeats` leads every source that has one -- for a
 // list it counts passes, for a random pick it counts items (scsynth's own
 // asymmetry, kept). The two stochastic shapes differ by the walk's `step`
 // alone. Both drivers put their clock first; `gap_first` is `TDuty`'s only.
@@ -631,7 +631,7 @@ const I_TDUTY: &[UGenInput] = &[
     inp_opt("gap_first", 0.0),
 ];
 /// The trigger family. A kind that takes only triggers has no signal
-/// input at all — but it still defaults to `ar`, because a `kr` consumer
+/// input at all -- but it still defaults to `ar`, because a `kr` consumer
 /// samples an `ar` wire once per block and would drop most of a trigger train.
 const I_TRIG_DUR: &[UGenInput] = &[inp("signal", 0.0), inp("dur", 0.1)];
 const I_HOLD: &[UGenInput] = &[inp("signal", 0.0), inp("trig", 0.0)];
@@ -663,7 +663,7 @@ const I_SILENCE: &[UGenInput] = &[
 ];
 /// The node-control rows: `FreeSelf`/`PauseSelf` watch a signal,
 /// `Done`/`FreeSelfWhenDone` watch the UGen wired into `source`. The names
-/// differ because what they read differs — one is a value, the other an
+/// differ because what they read differs -- one is a value, the other an
 /// identity.
 const I_SIGNAL: &[UGenInput] = &[inp("signal", 0.0)];
 const I_SOURCE: &[UGenInput] = &[inp("source", 0.0)];
@@ -675,7 +675,7 @@ const I_FILT_RQ: &[UGenInput] = &[inp("signal", 0.0), inp("freq", 440.0), inp("r
 /// the allocation, so it belongs where `fft_size` and `partitions` are.
 const I_DELAY: &[UGenInput] = &[inp("signal", 0.0), inp("delaytime", 0.2)];
 /// The `Buf*` delays prepend the buffer and the channel, as every other buffer
-/// UGen names them — so a line can be moved between buffers with a `/node_set`.
+/// UGen names them -- so a line can be moved between buffers with a `/node_set`.
 const I_BUF_DELAY: &[UGenInput] = &[
     inp("bufnum", 0.0),
     inp("chan", 0.0),
@@ -735,13 +735,13 @@ mod spectral;
 mod trig;
 
 /// The UGen catalog, one table per family. **To add a UGen, add one row to
-/// the family it belongs to** (plus its `dsp` module) — the compiler and bus
+/// the family it belongs to** (plus its `dsp` module) -- the compiler and bus
 /// analysis pick it up with no other change.
 ///
 /// A slice of slices, because an array literal cannot be assembled from
 /// pieces at compile time. The families are listed in the order the one
-/// table had them, so the catalog [`all`] walks — and `/ugen_query`
-/// reports — is the same sequence it always was. It stays entirely static:
+/// table had them, so the catalog [`all`] walks -- and `/ugen_query`
+/// reports -- is the same sequence it always was. It stays entirely static:
 /// no allocation, no lazy initialization.
 static FAMILIES: &[&[UGenDescriptor]] = &[
     osc::UGENS,
@@ -767,7 +767,7 @@ pub fn lookup(name: &str) -> Option<&'static UGenDescriptor> {
     all().find(|d| d.name == name)
 }
 
-/// The whole catalog, in table order — what `/ugen_query` reports. The
+/// The whole catalog, in table order -- what `/ugen_query` reports. The
 /// contents depend on the build (`DiskIn`/`DiskOut` are native-only), which is
 /// exactly why a client asks the server instead of carrying its own copy.
 pub fn all() -> impl Iterator<Item = &'static UGenDescriptor> {
@@ -780,7 +780,7 @@ mod tests {
 
     /// The catalog is data, and `/ugen_query` publishes it: a row whose names do
     /// not line up with its arity would ship a wrong signature to every client
-    /// palette. Not feature-gated — the table exists in every build.
+    /// palette. Not feature-gated -- the table exists in every build.
     #[test]
     fn every_descriptor_names_its_inputs() {
         for d in all() {

@@ -4,17 +4,17 @@
 //! UGens between [`Fft`] (window an audio input and transform it to a complex
 //! frame) and [`Ifft`] (inverse-transform and overlap-add back to audio). The
 //! chain is **not block-rate**: `FFT` emits one spectral frame per **hop**, and
-//! the `PV_*` UGens only touch the frame on the blocks a fresh one is ready —
+//! the `PV_*` UGens only touch the frame on the blocks a fresh one is ready --
 //! the frame-rate (`fr`) substrate, kin to the demand (`dr`) rate.
 //!
 //! ## Where the spectral frame lives (a deliberate deviation from scsynth)
 //!
 //! scsynth threads the frame through a client-allocated buffer whose bin data
-//! the audio thread mutates in place — which would break Clausters' invariant
+//! the audio thread mutates in place -- which would break Clausters' invariant
 //! that a pool [`Buffer`](super::buffer::Buffer) is immutable once built. So the
 //! frame lives **not** in the sample-buffer pool but in a [`SpectralChain`]:
 //! synth-private scratch, allocated when the synth is instantiated (on the
-//! network thread, where allocation is legal) and freed with the synth — exactly
+//! network thread, where allocation is legal) and freed with the synth -- exactly
 //! like the `LocalIn`/`LocalOut` feedback `locals`, and the moral equivalent of
 //! SuperCollider's `LocalBuf`. No `/buffer_alloc` is required and the sample pool
 //! stays fully immutable. The chain is shared by the chain's UGens through a
@@ -23,7 +23,7 @@
 //!
 //! The [`SpectralChain::advance`] field carries how many input samples the last
 //! hop covered, so `Ifft` overlap-adds and emits exactly that many samples per
-//! frame — keeping analysis and resynthesis in lockstep regardless of how the
+//! frame -- keeping analysis and resynthesis in lockstep regardless of how the
 //! hop size relates to the block size (the hop is effectively quantized up to
 //! the processing slice, as scsynth computes its FFT at block granularity).
 //!
@@ -39,8 +39,8 @@
 //! their transform spikes. So each [`Fft`] delays its *first* frame by a
 //! deterministic sub-hop offset derived from its node id
 //! ([`UGen::set_node_id`], delivered by the engine when the node enters the
-//! tree). Only the initial fire shifts — the cadence, the analysis discipline
-//! and a chain's own latency-to-content are unchanged — and the same score
+//! tree). Only the initial fire shifts -- the cadence, the analysis discipline
+//! and a chain's own latency-to-content are unchanged -- and the same score
 //! yields the same ids, so RT and NRT renders stay sample-identical.
 
 use clausters_core::fft;
@@ -101,7 +101,7 @@ impl SpectralChain {
 
 /// Windows an audio input and transforms it to a spectral frame once per hop.
 ///
-/// Inputs: `[in, active]` — the audio signal and a control that gates the
+/// Inputs: `[in, active]` -- the audio signal and a control that gates the
 /// transform (`> 0` on, `<= 0` off, holding the last frame). The window size,
 /// hop and window type are static per-UGen config, not signal inputs, because
 /// they size the pre-allocated scratch. The window type is also settable live
@@ -112,7 +112,7 @@ pub struct Fft {
     hop_size: usize,
     window_kind: Window,
     /// Analysis window coefficients (`winsize`); rebuilt when `/node_ugenCmd` changes
-    /// the window type — off any hop, so still allocation-free per block.
+    /// the window type -- off any hop, so still allocation-free per block.
     window: Vec<f32>,
     /// Sliding input, a circular buffer of the last `winsize` samples.
     inbuf: Vec<f32>,
@@ -123,7 +123,7 @@ pub struct Fft {
     since_hop: usize,
     /// Hop-phase stagger: samples still to elapse before this instance
     /// may emit its *first* frame. Set once from the node id in
-    /// [`UGen::set_node_id`] — a deterministic sub-hop offset (a block
+    /// [`UGen::set_node_id`] -- a deterministic sub-hop offset (a block
     /// multiple) so chains instantiated on the same block spread their
     /// transform spikes across blocks instead of stacking them on one. Only
     /// the first fire shifts; the per-hop cadence and the analysis discipline
@@ -209,7 +209,7 @@ impl UGen for Fft {
     }
 
     fn set_node_id(&mut self, id: i32) {
-        // derive the deterministic hop-phase stagger — the node id modulo
+        // derive the deterministic hop-phase stagger -- the node id modulo
         // the hop's block count, in whole blocks. A hop no longer than one
         // block cannot stack (at most one frame per slice already), so it
         // keeps offset 0.
@@ -232,7 +232,7 @@ impl UGen for Fft {
 }
 
 /// Inverse-transforms each fresh spectral frame and overlap-adds it back to
-/// audio. Input: `[chain]` — the chain wire, which only carries ordering (the
+/// audio. Input: `[chain]` -- the chain wire, which only carries ordering (the
 /// live frame is the synth-private [`SpectralChain`] the synth passes in). The
 /// window size and type are static config; the synthesis window matches the
 /// analysis window for correct overlap-add.
@@ -247,7 +247,7 @@ pub struct Ifft {
     /// phase: `norm[r] = Σ_i window[r + i·hop]²` over the frames that overlap
     /// output phase `r`. Precomputed at build (constant per render), so dividing
     /// by it never over-amplifies the under-overlapped edges of the startup or a
-    /// spectrally modified frame — unlike a running per-sample window sum.
+    /// spectrally modified frame -- unlike a running per-sample window sum.
     norm: Vec<f32>,
     /// Time-domain scratch for the inverse transform.
     time: Vec<f32>,
@@ -256,7 +256,7 @@ pub struct Ifft {
     fifo_head: usize,
     fifo_tail: usize,
     fifo_len: usize,
-    /// Absolute output position of `olabuf[0]`, modulo the hop — the phase into
+    /// Absolute output position of `olabuf[0]`, modulo the hop -- the phase into
     /// [`norm`](Self::norm), tracked so the COLA denominator stays aligned even
     /// if a frame's `advance` is not a multiple of the hop.
     phase: usize,
@@ -377,7 +377,7 @@ impl UGen for Ifft {
 }
 
 /// The kind of magnitude threshold a [`PvMag`] filter applies to each bin.
-/// One implementation, three registered names — the mode is a parameter, not
+/// One implementation, three registered names -- the mode is a parameter, not
 /// a UGen (the stance: no one-UGen-per-op catalog).
 #[derive(Clone, Copy)]
 pub enum MagMode {
@@ -501,7 +501,7 @@ impl UGen for PvMag {
     }
 }
 
-/// The operator of a [`PvCombine`] two-chain combiner — a parameter of one
+/// The operator of a [`PvCombine`] two-chain combiner -- a parameter of one
 /// implementation, registered under the scsynth-compatible names (the
 /// stance: the operator set is data, not a UGen catalog).
 #[derive(Clone, Copy)]
@@ -514,7 +514,7 @@ pub enum CombineOp {
     Min,
     /// Per bin, keep whichever input has the **larger** magnitude (`PV_Max`).
     Max,
-    /// A's bin scaled by B's magnitude — A's phases kept (`PV_MagMul`).
+    /// A's bin scaled by B's magnitude -- A's phases kept (`PV_MagMul`).
     MagMul,
     /// A's magnitudes with B's phases (`PV_CopyPhase`).
     CopyPhase,
@@ -524,7 +524,7 @@ pub enum CombineOp {
 /// `[chain_a, chain_b]`, the result written into chain A bin by bin. It acts
 /// on the slices where **A** has a fresh frame, reading B's *latest* frame
 /// (the frame is persistent chain state; two same-config `FFT`s in one synth
-/// hop on the same blocks anyway, it staggering included — the offset is
+/// hop on the same blocks anyway, it staggering included -- the offset is
 /// per-node, not per-UGen).
 pub struct PvCombine {
     op: CombineOp,
@@ -591,7 +591,7 @@ impl UGen for PvCombine {
 /// Freezes the frame's magnitudes (`PV_MagFreeze`). Input: `[chain, freeze]`.
 /// While `freeze <= 0` it stores each fresh frame's magnitudes and passes the
 /// chain through; while `freeze > 0` every bin is rescaled to the stored
-/// magnitude, phases left running — the spectral envelope holds while the
+/// magnitude, phases left running -- the spectral envelope holds while the
 /// texture keeps moving.
 pub struct PvMagFreeze {
     /// Stored magnitudes, one per bin (`half + 1`), captured un-frozen.
@@ -641,7 +641,7 @@ impl UGen for PvMagFreeze {
 }
 
 /// Averages each bin's magnitude over its neighbors (`PV_MagSmear`). Input:
-/// `[chain, bins]` — `bins` neighbors on each side (0 = pass through), phases
+/// `[chain, bins]` -- `bins` neighbors on each side (0 = pass through), phases
 /// untouched. O(bins²)-free: a prefix sum over the magnitudes makes every
 /// window average O(1).
 pub struct PvMagSmear {
@@ -702,7 +702,7 @@ impl UGen for PvMagSmear {
 /// Remaps bin positions (`PV_BinShift` / `PV_MagShift`): destination bin
 /// `round(b·stretch + shift)`, colliding bins summed, out-of-range bins
 /// dropped. Inputs: `[chain, stretch, shift]`. One implementation, two
-/// registered names — `PV_BinShift` moves the full complex bins (phases
+/// registered names -- `PV_BinShift` moves the full complex bins (phases
 /// travel with their magnitudes), `PV_MagShift` (`mags_only`) remaps only the
 /// magnitude envelope onto the frame's original phases.
 pub struct PvBinShift {
@@ -775,9 +775,9 @@ impl UGen for PvBinShift {
 
 /// The general per-frame mechanism (`PV_Kernel`): interprets a pair of
 /// compile-validated bin-expression programs (`clausters_core::pvprog`) over
-/// every bin of each fresh frame — magnitude and phase each get one program
+/// every bin of each fresh frame -- magnitude and phase each get one program
 /// mapping `(mag, phase, bin, nbins, binfreq, p0…)` to the bin's new value.
-/// Inputs: `[chain, p0, p1, …]` — the parameters are ordinary signal inputs
+/// Inputs: `[chain, p0, p1, …]` -- the parameters are ordinary signal inputs
 /// sampled at the hop, so they can be controls, LFOs, anything.
 ///
 /// An omitted program is the identity, and the identity *phase* program takes
@@ -786,7 +786,7 @@ impl UGen for PvBinShift {
 /// bit-identical to a hand-written `PV_*` filter computing the same formula.
 /// The polar phase is only computed when some program actually reads it.
 ///
-/// The programs are a **per-bin map** — no state across bins or frames, no
+/// The programs are a **per-bin map** -- no state across bins or frames, no
 /// bin remapping. Those stay curated implementations (`PV_MagFreeze`,
 /// `PV_BinShift`, …) per the stance; see `docs/decisions.md`.
 pub struct PvKernel {
@@ -835,7 +835,7 @@ impl UGen for PvKernel {
             // spectrum it edits is of an audio-rate signal.
             let hz_per_bin = ctx.full_sample_rate / chain.winsize as f32;
             // The identity phase program keeps each bin's phase by *scaling*
-            // the complex pair — exact, and no polar conversion unless a
+            // the complex pair -- exact, and no polar conversion unless a
             // program reads `phase`.
             let keep_phase = self.phase.is_identity(PvOp::Phase);
             let need_phase = !keep_phase || self.mag.uses_phase();

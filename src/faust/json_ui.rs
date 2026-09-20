@@ -10,7 +10,7 @@
 //! `buildUserInterface` (`faust::synth`'s `collect_ui`): group structure
 //! flattened, bare labels, first declaration wins, passive widgets ignored. One
 //! rule with two implementations is how the same def comes to have different
-//! control indices in a tab and in a window, and nothing would report it —
+//! control indices in a tab and in a window, and nothing would report it --
 //! `/node_set "freq"` would simply set something else.
 //!
 //! Compiled on every target: the wasm backend is its only caller today, and it
@@ -71,7 +71,7 @@ pub struct UiNode {
     #[serde(default)]
     pub step: f32,
     /// A soundfile's `url`, the fallback for its buffer number when the label
-    /// is not one — the same two places the libfaust walk looks.
+    /// is not one -- the same two places the libfaust walk looks.
     #[serde(default)]
     pub url: String,
 }
@@ -90,11 +90,11 @@ impl FaustJson {
     /// The whole reading of the UI tree: parameters in declaration order, and
     /// the `soundfile`s beside them.
     ///
-    /// A soundfile is **not** a control — it takes no index in `params` and
-    /// `/node_set` cannot reach it — so it is collected apart. Its buffer
+    /// A soundfile is **not** a control -- it takes no index in `params` and
+    /// `/node_set` cannot reach it -- so it is collected apart. Its buffer
     /// number comes from the label (`soundfile("3", 1)`) and falls back to the
     /// url, which is the order the libfaust walk's `add_soundfile` reads them
-    /// in — and both are read the same plain way it reads them, so Faust's own
+    /// in -- and both are read the same plain way it reads them, so Faust's own
     /// `{'…'}` url spelling is not a number here any more than it is there. A
     /// name that is not a number binds nothing and the field gets a silent
     /// placeholder, on both backends.
@@ -250,7 +250,7 @@ mod tests {
         assert_eq!(slots, [(Some(3), 0), (Some(12), 4)]);
     }
 
-    /// A name that is not a buffer number binds nothing — and that includes
+    /// A name that is not a buffer number binds nothing -- and that includes
     /// Faust's own `url` spelling, `{'kick.wav'}`, which is not a number
     /// either. The libfaust walk parses both the same plain way
     /// (`faust::synth`'s `add_soundfile`), and a page must not resolve a name a

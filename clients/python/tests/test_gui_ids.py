@@ -3,7 +3,7 @@
 The client owns the GUI's id namespace the way it owns node ids: a recycling
 allocator (`GuiIdAllocator`), ids filled in place for id-less widgets, freed
 subtrees returned to the pool, and a name -> handle map so a script never writes
-or matches an integer. Pure-unit — a stub OSC interface captures the wire; no
+or matches an integer. Pure-unit -- a stub OSC interface captures the wire; no
 live host.
 """
 

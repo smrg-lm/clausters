@@ -15,7 +15,7 @@
 use super::*;
 use crate::host::widget::element::{Bulk, SlotKey};
 
-/// Every element's **declared** bulk resource, as fetches to start — and the
+/// Every element's **declared** bulk resource, as fetches to start -- and the
 /// server buffers to pull over the client leg, which are the one resource a
 /// page cannot fetch for itself.
 ///
@@ -186,7 +186,7 @@ async fn fetch_bytes(url: &str) -> Result<Vec<u8>, String> {
     Ok(js_sys::Uint8Array::new(&buffer).to_vec())
 }
 
-/// Decodes raw little-endian `f32` bytes flat (interleaved as sent) — the
+/// Decodes raw little-endian `f32` bytes flat (interleaved as sent) -- the
 /// multichannel views de-interleave downstream.
 fn decode_f32(bytes: &[u8]) -> Vec<f32> {
     bytes
@@ -205,7 +205,7 @@ impl WebApp {
         self.bulk_pass(def, false);
     }
 
-    /// **Serves whatever this def's elements were told to read again** — a take
+    /// **Serves whatever this def's elements were told to read again** -- a take
     /// whose owner answered an edit with `reload`, which is what an undo over a
     /// server buffer is. The page's half of the pass the `reload` prop always
     /// promised; it runs before every draw and costs a walk on a tree where
@@ -282,7 +282,7 @@ impl WebApp {
     /// A fetched bulk resource arrived: an element that claimed a **GPU slot**
     /// is fed through it, and every other one takes the data home itself.
     ///
-    /// The fork is the *declaration*, not the presentation — the loader knows
+    /// The fork is the *declaration*, not the presentation -- the loader knows
     /// nothing about what a signal is, exactly as the native one does not.
     pub(super) fn on_bulk_ready(&mut self, def: i32, widget_id: i32, data: Loaded) {
         let wants_slot = self
@@ -312,7 +312,7 @@ impl WebApp {
     }
 }
 
-/// The widget a slot is keyed by, when this one (or a body of it) claimed one —
+/// The widget a slot is keyed by, when this one (or a body of it) claimed one --
 /// a clip's body carries no id, so the slot is the container's.
 fn slot_target(widget: &Widget) -> Option<&Widget> {
     if widget.kind.needs().slot.is_some() {

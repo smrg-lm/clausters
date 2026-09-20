@@ -2,8 +2,8 @@
 //! view over it, built on the reusable `viewport::View` and `peaks::Pyramid`.
 //!
 //! What is *not* here is the drawing. A signal against time is drawn in exactly
-//! one place — `host::graphics::signal::trace::draw_channel`, into the window's
-//! triangle mesh — and this module is what that renderer reads: per channel, the
+//! one place -- `host::graphics::signal::trace::draw_channel`, into the window's
+//! triangle mesh -- and this module is what that renderer reads: per channel, the
 //! raw samples (shared, for the zoomed-in regime) plus a peak pyramid (for the
 //! zoomed-out one), all sharing the time axis, so an editor-grade view draws
 //! stacked channels or overlaid traces from one [`WaveformData`].
@@ -14,7 +14,7 @@
 //! base bucket; the pyramid's whole buckets *folded* for everything inside a
 //! wider column, which costs the logarithm of the span rather than its
 //! buckets; and the samples again for the two partial edges while they are
-//! worth reading. There is no level to switch and so nothing to cross-fade —
+//! worth reading. There is no level to switch and so nothing to cross-fade --
 //! what the fade used to hide was a level read whole-bucket-wise, which drew a
 //! transient that was outside the column.
 //!
@@ -36,7 +36,7 @@ use crate::peaks::{self, MultiPyramid, Pyramid};
 use crate::view::TimelineView;
 use crate::viewport::{Axis, Unit, View};
 
-/// Where a channel's raw samples are — **owned here, or read where they live**.
+/// Where a channel's raw samples are -- **owned here, or read where they live**.
 ///
 /// The distinction is the whole of H7: a take the host has mapped is the
 /// server's own memory, and a picture of it has no business holding a second
@@ -60,7 +60,7 @@ pub enum Samples {
     /// goes past its summary: the span on screen is fetched and answers
     /// exactly, everything outside it is the pyramid's as before. So the same
     /// view is sample-exact where the eye is and an overview everywhere else,
-    /// which is what a mapping gives for free — the difference is the route
+    /// which is what a mapping gives for free -- the difference is the route
     /// and not the picture.
     Window {
         start: usize,
@@ -70,7 +70,7 @@ pub enum Samples {
 }
 
 impl Samples {
-    /// How many samples the channel holds — the **channel's** length, which
+    /// How many samples the channel holds -- the **channel's** length, which
     /// a window states rather than measures (it holds a run of it).
     pub fn len(&self) -> usize {
         match self {
@@ -80,7 +80,7 @@ impl Samples {
         }
     }
 
-    /// **Whether these samples can answer for `[a, b)`** — the question every
+    /// **Whether these samples can answer for `[a, b)`** -- the question every
     /// regime decision comes down to, and the one a window makes interesting:
     /// an owned or shared channel answers wherever the samples reaches, a
     /// window only inside the run it holds, and an empty channel nowhere.
@@ -95,7 +95,7 @@ impl Samples {
         }
     }
 
-    /// Whether there are no samples — a cache-only view, which renders every
+    /// Whether there are no samples -- a cache-only view, which renders every
     /// regime from its pyramid.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
@@ -121,7 +121,7 @@ impl Samples {
         }
     }
 
-    /// Min, max and mean square over `[a, b)` — the three statistics a column
+    /// Min, max and mean square over `[a, b)` -- the three statistics a column
     /// of the fine regime needs, measured in one pass so a shared source is
     /// read once rather than three times.
     ///
@@ -241,14 +241,14 @@ struct Channel {
 /// beside the whole.
 ///
 /// A view holds one pyramid at one base bucket, and a report at another bucket
-/// cannot be folded into it — the grids do not line up, and
+/// cannot be folded into it -- the grids do not line up, and
 /// [`Pyramid::write_buckets`] refuses it, correctly. So the finer answer lives
 /// beside it: `pyramid` covers `start .. start + pyramid.total_samples()` of
 /// the channel and nothing else, at a bucket finer than the view's own.
 ///
 /// What it is for is the client that cannot map the samples. Zoomed past its
-/// summary, such a view used to fetch the **samples** over the span it shows —
-/// a few hundred kilobytes through a 64 KiB carrier, a chunk a frame — to
+/// summary, such a view used to fetch the **samples** over the span it shows --
+/// a few hundred kilobytes through a 64 KiB carrier, a chunk a frame -- to
 /// compute one min/max pair per pixel column, which is a few kilobytes and
 /// which `/buffer_peaks` answers directly. The samples are still what the
 /// deepest zoom reads: below a handful of samples a column there is no summary
@@ -261,7 +261,7 @@ struct Detail {
 }
 
 impl Detail {
-    /// Whether this grid answers for `[a, b)` at `samples_per_px` — inside the
+    /// Whether this grid answers for `[a, b)` at `samples_per_px` -- inside the
     /// span it covers, and no finer than its own bucket.
     fn answers(&self, a: usize, b: usize, samples_per_px: f64) -> bool {
         b > a
@@ -293,7 +293,7 @@ impl std::fmt::Debug for WaveformData {
 }
 
 impl WaveformData {
-    /// **Nothing to draw** — no channels, no summary, no allocation.
+    /// **Nothing to draw** -- no channels, no summary, no allocation.
     ///
     /// It exists so a view can *give the samples back* without becoming an
     /// `Option` everywhere it is read: a slot holds this between the frame it
@@ -320,7 +320,7 @@ impl WaveformData {
     /// A multichannel view over samples the host **maps**: one
     /// [`peaks::Source`] per channel, each summarized where it lies.
     ///
-    /// This is the editor's own case since H7 — the take is the server's
+    /// This is the editor's own case since H7 -- the take is the server's
     /// memory, the picture reads it, and the only thing allocated here is the
     /// summary. Building it streams through a bounded window, so opening a
     /// ten-minute take costs its pyramid and a kilobyte.
@@ -343,13 +343,13 @@ impl WaveformData {
         Self { channels }
     }
 
-    /// The same, with the summary **already built** — read out of the
+    /// The same, with the summary **already built** -- read out of the
     /// overview file the server keeps beside a take's region.
     ///
     /// It is the pass [`Self::from_sources`] pays that this saves, and it is
     /// the only difference between them: the samples are still mapped, so a
     /// zoom past the summary still reads the cells themselves. `None` when the
-    /// summary does not describe these sources — a different channel count or
+    /// summary does not describe these sources -- a different channel count or
     /// length, which is a file from another take or another generation, and
     /// drawing one over the other would be a picture of the wrong audio.
     pub fn from_sources_summarized(
@@ -396,7 +396,7 @@ impl WaveformData {
     }
 
     /// Build from samples and an already-computed pyramid (e.g. read back from a
-    /// cache file with `Pyramid::read_cache`). The samples may be **empty** — a
+    /// cache file with `Pyramid::read_cache`). The samples may be **empty** -- a
     /// cache-only view (the bulk path where the host maps just the compact
     /// pyramid, never the raw buffer): it renders the resolution-matched overview
     /// from the pyramid, and the zoomed-in raw-sample regimes simply have nothing
@@ -469,7 +469,7 @@ impl WaveformData {
     }
 
     /// **The loudness of this take over its own time axis**, measured once at
-    /// `rate` — the curve a loudness layer draws and the numbers a span answers
+    /// `rate` -- the curve a loudness layer draws and the numbers a span answers
     /// with ([`loudness::Profile`]).
     ///
     /// `None` where there is nothing to measure: no channels, no samples (a
@@ -497,7 +497,7 @@ impl WaveformData {
     }
 
     /// **The true peak of the span `[start, start + len)`**, in linear
-    /// amplitude, over every channel — the loudest reconstructed value in it,
+    /// amplitude, over every channel -- the loudest reconstructed value in it,
     /// which is the other half of what a delivery specification asks for.
     ///
     /// Read through the same sources the profile is measured from, so a mapped
@@ -561,7 +561,7 @@ impl WaveformData {
         match &mut channel.samples {
             // **Shared samples are already written**: the store went into the
             // cells before anything asked the picture to follow, so there is
-            // no copy to make and nothing to write here — only the summary of
+            // no copy to make and nothing to write here -- only the summary of
             // the span, read back out of the samples themselves.
             Samples::Shared(_) => self.resummarize(ch, start, values.len()),
             // An owned buffer is this widget's own, so the write lands here
@@ -584,7 +584,7 @@ impl WaveformData {
         }
     }
 
-    /// **Re-reads the summary of a span out of shared samples** — what a
+    /// **Re-reads the summary of a span out of shared samples** -- what a
     /// picture does when the samples changed underneath it and nobody handed
     /// it any: this host's own store, or a span another writer announced.
     ///
@@ -601,20 +601,20 @@ impl WaveformData {
         channel.pyramid.update_range_from(&**source, start, len)
     }
 
-    /// **Folds a run of buckets somebody else measured** into the summary —
+    /// **Folds a run of buckets somebody else measured** into the summary --
     /// what a view does when it is *told* about samples it cannot read.
     ///
     /// The mirror of [`Self::resummarize`], and it exists for the picture that
     /// has no samples to re-read: a page holds its own copy of the samples
     /// and maps nothing, so a recording growing in the server's memory reaches
     /// it as the overview of what was written (`/buffer_stream.reply`) rather
-    /// than as samples. `stats` is that reply's payload — **bucket-major,
+    /// than as samples. `stats` is that reply's payload -- **bucket-major,
     /// channel-minor**: for each bucket of `bucket` frames in order, for each
     /// channel, `min`, `max` and mean square.
     ///
     /// Only the summary moves. The samples this view owns are whatever it was
     /// built with, so a zoom past the base bucket still shows them (silence,
-    /// for a take allocated empty) — the overview is the resolution the wire
+    /// for a take allocated empty) -- the overview is the resolution the wire
     /// carries, and pretending otherwise would mean inventing samples from
     /// their statistics.
     ///
@@ -641,7 +641,7 @@ impl WaveformData {
         let first = start_frame / bucket;
         let n = stats.len() / stride;
         // Checked before anything is written: every channel of one view shares
-        // the samples' length, so a run that fits one fits all — and a
+        // the samples' length, so a run that fits one fits all -- and a
         // refusal halfway would leave the channels of one picture describing
         // different samples.
         let buckets = self.total_samples().div_ceil(bucket);
@@ -670,7 +670,7 @@ impl WaveformData {
     /// frame index and `samples` is interleaved, every channel of that run.
     ///
     /// It is what a picture that cannot map the samples does when a zoom goes
-    /// past its overview — the span on screen is read back and answers
+    /// past its overview -- the span on screen is read back and answers
     /// exactly, everything outside it stays the pyramid's. One window at a
     /// time per view: it is replaced when the eye moves, because what it is
     /// for is *where the eye is* and a cache with a policy is a different
@@ -678,7 +678,7 @@ impl WaveformData {
     ///
     /// Refuses, changing nothing, when the samples already answers for
     /// itself (mapped or wholly owned), when the run does not fit the
-    /// samples, or when the shape does not match — the summary is what says
+    /// samples, or when the shape does not match -- the summary is what says
     /// how long the buffer runs, and a window that disagreed would draw two
     /// different things in one picture.
     pub fn set_window(&mut self, start: usize, channels: usize, samples: &[f32]) -> bool {
@@ -709,12 +709,12 @@ impl WaveformData {
     }
 
     /// **Puts a finer summary over the span being looked at**, beside the
-    /// view's own — the summary counterpart of [`Self::set_window`], and what
+    /// view's own -- the summary counterpart of [`Self::set_window`], and what
     /// a zoom past the base bucket should be asking for when the samples
     /// cannot be mapped.
     ///
     /// `start` is a frame index, `bucket` the grid the report was measured at,
-    /// and `stats` the wire's own bucket-major, channel-minor blob — the same
+    /// and `stats` the wire's own bucket-major, channel-minor blob -- the same
     /// one [`Self::write_buckets`] folds, unconverted. The span it covers is
     /// whatever the blob holds, and it **replaces** any detail already here:
     /// one grid at a time per view, for the same reason there is one window at
@@ -754,7 +754,7 @@ impl WaveformData {
         true
     }
 
-    /// **Whether a finer grid is in hand for `[a, b)` at this zoom** — the
+    /// **Whether a finer grid is in hand for `[a, b)` at this zoom** -- the
     /// second half of the question [`Self::covers`] asks about samples, and
     /// what says a view has stopped owing anything for what it is showing.
     pub fn detail_covers(&self, a: usize, b: usize, samples_per_px: f64) -> bool {
@@ -764,7 +764,7 @@ impl WaveformData {
             .is_some_and(|d| d.answers(a, b, samples_per_px))
     }
 
-    /// The bucket of the detail grid in hand, if any — what says whether a
+    /// The bucket of the detail grid in hand, if any -- what says whether a
     /// finer one is worth asking for.
     pub fn detail_bucket(&self) -> Option<usize> {
         self.channels
@@ -773,7 +773,7 @@ impl WaveformData {
             .map(|d| d.pyramid.base_bucket())
     }
 
-    /// The summary's finest bucket — the zoom below which only samples can
+    /// The summary's finest bucket -- the zoom below which only samples can
     /// answer.
     pub fn base_bucket(&self) -> usize {
         self.channels
@@ -781,7 +781,7 @@ impl WaveformData {
             .map_or(1, |c| c.pyramid.base_bucket().max(1))
     }
 
-    /// **Whether this view can answer for `[a, b)` out of samples** — false
+    /// **Whether this view can answer for `[a, b)` out of samples** -- false
     /// where it would have to draw the span out of its summary instead.
     ///
     /// The question the front asks after laying a column row out: a zoom finer
@@ -794,15 +794,15 @@ impl WaveformData {
     }
 
     /// Whether raw samples are present. A cache-only view (`with_pyramid` with an
-    /// empty buffer) has only the peak pyramid, so every regime — including the
-    /// zoomed-in ones — must render from it; reading the empty raw buffer would
+    /// empty buffer) has only the peak pyramid, so every regime -- including the
+    /// zoomed-in ones -- must render from it; reading the empty raw buffer would
     /// instead collapse the wave to a flat line (it "disappears" on zoom-in).
     pub fn has_raw(&self) -> bool {
         self.channels.first().is_some_and(|c| !c.samples.is_empty())
     }
 
     /// Whether this view reads its samples where it lives rather than owning
-    /// a copy of it — what a mapped take gives and a page never can.
+    /// a copy of it -- what a mapped take gives and a page never can.
     pub fn is_shared(&self) -> bool {
         matches!(
             self.channels.first().map(|c| &c.samples),
@@ -818,7 +818,7 @@ impl WaveformData {
     /// whole buckets folded ([`Pyramid::aligned_stats`]) for everything
     /// inside; and the samples again for the two partial edges, while they are
     /// worth reading. Nothing is cross-faded, because nothing is approximated
-    /// — the picture is the same function of the span at every zoom, so there
+    /// -- the picture is the same function of the span at every zoom, so there
     /// is no level to switch and no step to hide.
     pub fn column(&self, ch: usize, samples_per_px: f64, s0: f64, s1: f64) -> (f32, f32) {
         self.measure(ch, samples_per_px, s0, s1)
@@ -829,7 +829,7 @@ impl WaveformData {
     /// `[s0, s1)`, from the same three sources [`Self::column`] takes its
     /// min/max from and in one pass with them.
     ///
-    /// `None` when the source cannot answer — a cache written before the
+    /// `None` when the source cannot answer -- a cache written before the
     /// pyramid carried the statistic. That absence is the whole reason this
     /// returns an option: zeros would be a measurement (silence), and a body
     /// drawn from them would be a flat line across samples that is not flat.
@@ -838,7 +838,7 @@ impl WaveformData {
             .and_then(|(_, _, ms)| ms)
     }
 
-    /// Min, max and mean square of one column, measured once — the one place
+    /// Min, max and mean square of one column, measured once -- the one place
     /// the regimes are decided, so the envelope and the body it holds can
     /// never disagree about which samples they are about.
     fn measure(
@@ -858,7 +858,7 @@ impl WaveformData {
         let base = channel.pyramid.base_bucket();
         // **Not "are there samples" but "do they answer here"**: a window
         // covers the run it holds and no more, and a view that owns the whole
-        // samples covers all of it — one question, both forms.
+        // samples covers all of it -- one question, both forms.
         let raw = channel.samples.covers(a, b);
         // Finer than a bucket: the samples are the only thing that can answer,
         // and they answer exactly.
@@ -868,8 +868,8 @@ impl WaveformData {
         }
         // **The rung between the summary and the samples**: a finer grid over
         // the span being looked at, for a view that cannot map the samples and
-        // has not fetched them. It is read exactly as the summary below is —
-        // whole buckets folded, tiling the same way — on its own axis, which
+        // has not fetched them. It is read exactly as the summary below is --
+        // whole buckets folded, tiling the same way -- on its own axis, which
         // starts where the grid does.
         if samples_per_px < base as f64
             && let Some(detail) = &channel.detail
@@ -881,14 +881,14 @@ impl WaveformData {
         // **Which buckets belong to this column**, and it is a *tiling*: the
         // span is rounded down at both ends, so consecutive columns cover
         // every bucket exactly once. A bucket straddling a boundary lands in
-        // one of them rather than in both (which duplicates and widens — the
+        // one of them rather than in both (which duplicates and widens -- the
         // defect this replaced) or in neither (which loses a transient
         // outright). What is left is a **position error of under a bucket**,
         // one pixel at the zoom where a column *is* a bucket and shrinking
         // from there, which is the resolution the summary has.
         //
         // Reading the two partial edges out of the samples instead would make
-        // it exact, and that is what this did first — measured at 700 µs per
+        // it exact, and that is what this did first -- measured at 700 µs per
         // frame of 900 columns against 10 µs for the fold, because a column of
         // two buckets is 500 samples of edge. Exactness that costs a read of
         // the samples at every zoom is not exactness a picture can afford; the
@@ -918,7 +918,7 @@ impl WaveformData {
         self.channels.get(ch).map_or(0.0, |c| c.samples.at(i))
     }
 
-    /// `frames` frames from `start`, **interleaved** — the shape a block of
+    /// `frames` frames from `start`, **interleaved** -- the shape a block of
     /// audio travels in everywhere else in this project, and what a copy puts
     /// on the clipboard.
     ///
@@ -959,8 +959,8 @@ pub const DEFAULT_DOMAIN: (f32, f32) = (-1.0, 1.0);
 ///
 /// It is a line and nothing more. A column is **never** extended to reach it:
 /// the GPU pipeline used to clamp every column to zero and the mesh renderers
-/// did not, and closing that divergence the other way — by clamping everywhere
-/// — was the wrong half to keep. Filling to the baseline **inks a band the
+/// did not, and closing that divergence the other way -- by clamping everywhere
+/// -- was the wrong half to keep. Filling to the baseline **inks a band the
 /// signal was never in**: a column covering three samples that all sit at +0.6
 /// is drawn from 0 to 0.6, which is a lie at any zoom where cycles are legible,
 /// and it needs a threshold nobody can name to decide where that zoom begins.
@@ -968,18 +968,18 @@ pub const DEFAULT_DOMAIN: (f32, f32) = (-1.0, 1.0);
 /// The solid body of an overview needs no rule, because at that zoom the data
 /// already fills it: a column summarizing hundreds of samples of audio crosses
 /// zero by itself. So the envelope is drawn as it is measured, everywhere, and
-/// what changes with the zoom is the signal — not the drawing's mind about it.
+/// what changes with the zoom is the signal -- not the drawing's mind about it.
 ///
 /// **And the zoom could not have been the criterion anyway.** A subsonic
-/// signal — a 1 Hz LFO, a control curve, a long envelope — has far more samples
+/// signal -- a 1 Hz LFO, a control curve, a long envelope -- has far more samples
 /// than the screen has pixels at any zoom where a whole cycle is visible, so
 /// every "fill once the samples no longer fit" rule fills it; and a cycle a
 /// second is a *curve*, which is exactly what a filled body destroys. What
 /// separates a body from a curve is whether the signal crosses the span inside
-/// one column, and the min/max already answers that — measured, per column, at
+/// one column, and the min/max already answers that -- measured, per column, at
 /// no cost.
 /// **Whole buckets of one pyramid, folded for a column spanning `[a, b)`** on
-/// that pyramid's own axis — the read both grids share, so a detail summary and
+/// that pyramid's own axis -- the read both grids share, so a detail summary and
 /// the view's own answer the same function of the span.
 ///
 /// `None` when no whole bucket fits, which leaves the decision to the caller:
@@ -1008,14 +1008,14 @@ pub fn value_to_display(v: f32, min: f32, max: f32) -> f64 {
     ((v - centre) as f64 / half as f64 * AMP_MARGIN as f64) * 0.5 + 0.5
 }
 
-/// The inverse of [`value_to_display`] — what the cursor's height names.
+/// The inverse of [`value_to_display`] -- what the cursor's height names.
 pub fn display_to_value(d: f64, min: f32, max: f32) -> f32 {
     let (centre, half) = domain_centre_half(min, max);
     centre + ((d - 0.5) * 2.0 / AMP_MARGIN as f64) as f32 * half
 }
 
 /// How much of one channel's row a unit of value covers, before the vertical window is
-/// applied — the resolution the cursor readout rounds to.
+/// applied -- the resolution the cursor readout rounds to.
 pub fn value_per_display(min: f32, max: f32) -> f64 {
     let (_, half) = domain_centre_half(min, max);
     2.0 * half as f64 / AMP_MARGIN as f64
@@ -1032,7 +1032,7 @@ fn domain_centre_half(min: f32, max: f32) -> (f32, f32) {
 
 /// A `WaveformData` paired with **what a navigable view keeps between frames**:
 /// the vertical (amplitude) display window, the value domain the trace is
-/// mapped through, and the drag anchor. Nothing here is GPU state — the picture
+/// mapped through, and the drag anchor. Nothing here is GPU state -- the picture
 /// is drawn into the window's mesh by
 /// `host::graphics::signal::trace::draw_channel`, like every other signal.
 ///
@@ -1046,7 +1046,7 @@ pub struct WaveformView {
     /// The vertical display axis: the visible slice of the value domain,
     /// normalized (`0, 1` = no zoom).
     amp: Axis,
-    /// The **value domain** the trace is mapped through — the element's
+    /// The **value domain** the trace is mapped through -- the element's
     /// `min`/`max`, [`DEFAULT_DOMAIN`] when it names none.
     domain: (f32, f32),
     /// The amplitude window's start, snapshotted for absolute drag panning.
@@ -1063,7 +1063,7 @@ impl WaveformView {
         }
     }
 
-    /// The samples and pyramids behind this view — what the renderer reads.
+    /// The samples and pyramids behind this view -- what the renderer reads.
     pub fn data(&self) -> &WaveformData {
         &self.data
     }
@@ -1073,7 +1073,7 @@ impl WaveformView {
     ///
     /// An edit replaces the pyramid rather than mutating it (the element and
     /// the view share one `Arc`, so nothing may be patched under the other's
-    /// feet), and the view is not the picture's owner — it is where the eye
+    /// feet), and the view is not the picture's owner -- it is where the eye
     /// currently is. Rebuilding it whole would snap the amplitude window back
     /// to full scale mid-stroke, which reads as the view jumping every time a
     /// sample is drawn.
@@ -1085,7 +1085,7 @@ impl WaveformView {
     ///
     /// A slot draws the element's pyramid through a shared `Arc`, and while it
     /// holds one the element cannot write into the pyramid without copying it
-    /// first — a copy proportional to the whole take, paid once per step by
+    /// first -- a copy proportional to the whole take, paid once per step by
     /// anything following a recording. So the holder lets go before the write
     /// and is refilled before the next draw (`Element::fill`, which the repaint
     /// runs first), and in between the element is the only owner and writes in
@@ -1097,7 +1097,7 @@ impl WaveformView {
         self.data = Arc::new(WaveformData::nothing());
     }
 
-    /// Sets the **value domain** the trace maps through — the element's
+    /// Sets the **value domain** the trace maps through -- the element's
     /// `min`/`max`. Left alone it is [`DEFAULT_DOMAIN`], full-scale amplitude,
     /// which is what every view that names no bounds draws at.
     pub fn set_domain(&mut self, min: f32, max: f32) {
@@ -1120,7 +1120,7 @@ impl WaveformView {
         self.data.total_samples()
     }
 
-    /// Sets the visible vertical display window (normalized; clamped) — the
+    /// Sets the visible vertical display window (normalized; clamped) -- the
     /// live `y_start`/`y_len` props of the editor-grade widget.
     pub fn set_amp_window(&mut self, start: f64, len: f64) {
         self.amp.set_span(start, len);
@@ -1135,7 +1135,7 @@ impl WaveformView {
 /// The y **pixel** a value lands on inside `channel`, through the value `domain`
 /// and the visible vertical window `amp` (`(0.0, 1.0)` = the whole axis).
 ///
-/// Display coordinate 0 is the row's *bottom* — the convention the vertical
+/// Display coordinate 0 is the row's *bottom* -- the convention the vertical
 /// ruler reads too, so a vertical zoom moves the trace and the ticks by exactly
 /// the same amount. A value outside the window lands outside the row, and the
 /// mesh's clip rectangle cuts it there.
@@ -1145,7 +1145,7 @@ pub fn value_to_y(v: f32, domain: (f32, f32), amp: (f64, f64), channel: Rect) ->
     channel.y + channel.h * (1.0 - ((d - y0) / y_len) as f32)
 }
 
-/// **Draws one channel of a navigable waveform** — the whole of what a `waveform`
+/// **Draws one channel of a navigable waveform** -- the whole of what a `waveform`
 /// element's picture is, and the same call the demo harness makes.
 ///
 /// It is three coordinate maps handed to the one signal renderer
@@ -1153,7 +1153,7 @@ pub fn value_to_y(v: f32, domain: (f32, f32), amp: (f64, f64), channel: Rect) ->
 /// the vertical window `amp` place the values. Nothing else distinguishes a
 /// navigable view from a clip's take or a plot's series.
 // The row, the source, the channel and the two axes it is placed on: distinct
-// inputs to one drawing pass, clearer flat than bundled — as in `draw_channel`,
+// inputs to one drawing pass, clearer flat than bundled -- as in `draw_channel`,
 // which this hands them to.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_channel(
@@ -1249,7 +1249,7 @@ mod tests {
         let data = WaveformData::with_pyramid(Arc::from([] as [f32; 0]), pyramid);
         assert!(!data.has_raw());
         // Zoomed in past the base bucket (spp < 256): the raw regime would read
-        // the empty buffer and collapse to (0, 0) — the disappearing wave. The
+        // the empty buffer and collapse to (0, 0) -- the disappearing wave. The
         // fallback reads the pyramid's finest level, so the envelope survives.
         let (lo, hi) = data.column(0, 8.0, 0.0, 8.0);
         assert!(
@@ -1313,7 +1313,7 @@ mod tests {
 
     #[test]
     fn amp_window_maps_the_trace_through_the_visible_slice() {
-        // Full axis: the classic margin map — full scale stops AMP_MARGIN of
+        // Full axis: the classic margin map -- full scale stops AMP_MARGIN of
         // the way to the top, and silence sits on the middle line.
         let top = value_to_y(1.0, DEFAULT_DOMAIN, (0.0, 1.0), LANE);
         assert!(
@@ -1381,7 +1381,7 @@ mod tests {
     }
 
     /// **A transient lands in exactly one column, within a bucket of where it
-    /// is.** What this replaced drew it in *two* — a column read every bucket
+    /// is.** What this replaced drew it in *two* -- a column read every bucket
     /// overlapping it, so a spike a hundred samples outside was drawn inside,
     /// and the picture stepped as the zoom crossed a bucket. The buckets are
     /// tiled now: no duplication, no loss, and a position good to the
@@ -1415,7 +1415,7 @@ mod tests {
     }
 
     /// Below a bucket there is nothing to summarize with, so the column is the
-    /// samples in it and the answer is exact — envelope and body alike, since
+    /// samples in it and the answer is exact -- envelope and body alike, since
     /// two pictures of one column must be about the same samples.
     #[test]
     fn a_column_finer_than_a_bucket_is_exact() {
@@ -1544,7 +1544,7 @@ mod shared_tests {
     }
 
     /// A view over a source draws exactly what a view over the same samples
-    /// draws — at every regime, so the mapped path is not a second picture.
+    /// draws -- at every regime, so the mapped path is not a second picture.
     #[test]
     fn a_shared_view_draws_what_an_owned_one_draws() {
         let samples = samples(20_000);
@@ -1684,7 +1684,7 @@ mod stream_tests {
 
     /// What it does **not** claim: the samples. A page holds its own copy and
     /// the wire carries no audio, so zoomed past the base bucket the picture is
-    /// still the silence the take was allocated as — the resolution the report
+    /// still the silence the take was allocated as -- the resolution the report
     /// has, rather than samples invented from their statistics.
     #[test]
     fn the_samples_are_not_invented_from_the_summary() {
@@ -1744,7 +1744,7 @@ mod window_tests {
 
     /// **The claim the whole path exists for**: a view that holds only a
     /// summary, given the run the eye is on, draws that run exactly as a view
-    /// that holds the samples does — and goes on drawing the summary
+    /// that holds the samples does -- and goes on drawing the summary
     /// everywhere else, at the same columns.
     #[test]
     fn a_window_draws_the_samples_where_it_covers_and_the_summary_elsewhere() {
@@ -1782,7 +1782,7 @@ mod window_tests {
                 );
             }
         }
-        // Outside it, the summary answers as it did — and agrees with the
+        // Outside it, the summary answers as it did -- and agrees with the
         // the take's own summary, since it is the same summary.
         for x in 0..8 {
             let (a, b) = (x as f64 * 4_000.0, x as f64 * 4_000.0 + 4_000.0);
@@ -1840,7 +1840,7 @@ mod window_tests {
     ///
     /// A cache-only view is what a client that cannot map the samples holds:
     /// a summary at 256 and nothing else. Zoomed to 32 samples a pixel every
-    /// column falls inside one bucket, so the picture stops resolving — every
+    /// column falls inside one bucket, so the picture stops resolving -- every
     /// column of a bucket reads the same pair. A detail grid at 16 is a few
     /// kilobytes over the span and puts the shape back.
     #[test]

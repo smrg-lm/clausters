@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Refresh the Python package's bundled native binaries, then (optionally) run
-# an example — the one command to type before any manual/visual test.
+# an example -- the one command to type before any manual/visual test.
 #
 # A source checkout resolves the *bundled* binaries (clausters/_bin/, _libs/)
 # before the workspace target/, so they go stale the moment a crate is rebuilt

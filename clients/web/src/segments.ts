@@ -3,16 +3,16 @@
 //
 // A **segment** is a window: which source, from where, for how long. A **run**
 // of them is what a **join** assembles and what a **split** takes apart, read
-// back to back as a single thing. Neither idea belongs to the arrangement — a
+// back to back as a single thing. Neither idea belongs to the arrangement -- a
 // window is about the *contents*, not about where they sit in time
-// — so they live here, beside the structures, and `form` reads them like any
+// -- so they live here, beside the structures, and `form` reads them like any
 // other reader.
 //
 // What is general and what is the source's: the order of the windows, where
 // each starts inside the run, how long the run is, where a cut falls and what
 // two runs make when joined is arithmetic over lengths, written once in
 // `SegmentRun`. What only the source knows is the two hooks a subclass fills
-// in — how a position advances by a length (`advanced`), because a window's
+// in -- how a position advances by a length (`advanced`), because a window's
 // `start` is in the unit the source is *addressed* in while a length is in the
 // unit it *measures*, and what one window is played as.
 //
@@ -35,7 +35,7 @@ export interface SourceLike {
      * The shape a *held* buffer knows and a frozen reference does not: what a
      * view draws with, and what an element with no stated duration is as long
      * as. Optional because a document names a source by number and says nothing
-     * about its shape — a session reopened without its sources resolved has the
+     * about its shape -- a session reopened without its sources resolved has the
      * number and nothing else.
      */
     readonly frames?: number;
@@ -119,8 +119,8 @@ export class Segment<S = SourceLike> {
  * Several windows read as one: the general run, and the arithmetic that is the
  * same whatever the windows are onto.
  *
- * Subclasses say what the contents are — {@link BufferSegments} over samples,
- * {@link NoteSegments} over a timeline of events — by answering `unit`,
+ * Subclasses say what the contents are -- {@link BufferSegments} over samples,
+ * {@link NoteSegments} over a timeline of events -- by answering `unit`,
  * `advanced` and what a window is played as. Everything else here is length
  * arithmetic and holds for both.
  */
@@ -138,7 +138,7 @@ export class SegmentRun<S = SourceLike> {
 
     /**
      * `start` moved forward by the length `by`, in the source's own addressing
-     * unit — the one bridge between the two units a window carries. The default
+     * unit -- the one bridge between the two units a window carries. The default
      * is the case where there is nothing to bridge, which is every source
      * addressed in what it measures.
      */
@@ -152,7 +152,7 @@ export class SegmentRun<S = SourceLike> {
     }
 
     /**
-     * `[offset, segment]` pairs — where each window starts *inside* the run,
+     * `[offset, segment]` pairs -- where each window starts *inside* the run,
      * which is what both rendering and drawing lay out from. In {@link unit}
      * throughout, like the lengths they accumulate.
      */
@@ -170,8 +170,8 @@ export class SegmentRun<S = SourceLike> {
      * The run split at `at` (in {@link unit}, from the run's own start): two
      * runs of the same kind, over the same sources.
      *
-     * The window the cut falls inside becomes two windows — the first ends
-     * early, the second opens where the first stopped — so nothing is copied
+     * The window the cut falls inside becomes two windows -- the first ends
+     * early, the second opens where the first stopped -- so nothing is copied
      * and nothing is lost: joining them back gives this run, and lengthening
      * either half brings out again what it hides. A cut at or past either
      * end gives one empty run and one whole one, which is the honest answer to
@@ -205,7 +205,7 @@ export class SegmentRun<S = SourceLike> {
      * Whether these windows are **one run of one source**: each opening exactly
      * where the one before it stopped.
      *
-     * What makes a join the inverse of a split rather than a pile of wrappers —
+     * What makes a join the inverse of a split rather than a pile of wrappers --
      * a run like this *is* the single window it was cut from, and says so, so
      * cutting and rejoining leaves the samples it started with. A run of one
      * is trivially one run. The tolerance is half a unit of whatever the
@@ -261,8 +261,8 @@ export interface SegmentRunOptions {
  * A run of windows onto **samples**: which buffer, from which frame, for how
  * long.
  *
- * Lengths are in seconds — a recording's seconds were fixed when it was
- * recorded and no tempo change moves them — while a window's `start` is the
+ * Lengths are in seconds -- a recording's seconds were fixed when it was
+ * recorded and no tempo change moves them -- while a window's `start` is the
  * frame it opens at, which is the coordinate the samples are already in and the
  * one a def's `start` control reads. {@link advanced} is where the two meet, and
  * it is the only place in this file that knows what a sample rate is.
@@ -316,7 +316,7 @@ export class BufferSegments extends SegmentRun<SourceLike> {
  * beat, for how many beats.
  *
  * The same structure {@link BufferSegments} is, over the contents whose lengths
- * are musical — so both units are beats and {@link advanced} has nothing to
+ * are musical -- so both units are beats and {@link advanced} has nothing to
  * bridge. A cut here hides notes rather than deleting them, which is what makes
  * dragging the edge back out bring them back, exactly as it does for samples.
  */
@@ -347,7 +347,7 @@ export class NoteSegments extends SegmentRun<TimelineLike> {
     /**
      * `[beat, item]` pairs of everything inside the windows, placed on the
      * **run's** own axis: each window's items shifted to where that window sits
-     * in the run. What falls outside a window is not here and is not gone — it
+     * in the run. What falls outside a window is not here and is not gone -- it
      * is in the timeline, waiting for the window to open again.
      */
     items(): [number, unknown][] {

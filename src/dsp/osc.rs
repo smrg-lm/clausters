@@ -1,17 +1,17 @@
 //! Table-reading oscillators and the waveshaper: the first consumers of
 //! the wavetable format built by `/buffer_gen` (see [`crate::dsp::wavetable`]).
 //!
-//! - [`Osc`] — interpolating wavetable oscillator (needs a `wavetable`-format
+//! - [`Osc`] -- interpolating wavetable oscillator (needs a `wavetable`-format
 //!   buffer).
-//! - [`OscN`] — non-interpolating oscillator over a plain (non-wavetable)
+//! - [`OscN`] -- non-interpolating oscillator over a plain (non-wavetable)
 //!   buffer.
-//! - [`VOsc`] — like [`Osc`] but the buffer number is a signal, crossfading
+//! - [`VOsc`] -- like [`Osc`] but the buffer number is a signal, crossfading
 //!   between adjacent wavetables for morphing timbres.
-//! - [`Shaper`] — waveshaper: maps its input signal through a `cheby`-style
+//! - [`Shaper`] -- waveshaper: maps its input signal through a `cheby`-style
 //!   transfer table (wavetable format).
 //!
 //! All are mono, single-output, and read the immutable buffer pool through the
-//! context — no allocation, like every other UGen.
+//! context -- no allocation, like every other UGen.
 
 use crate::dsp::buffer::Buffer;
 use crate::dsp::wavetable::wt_interp;

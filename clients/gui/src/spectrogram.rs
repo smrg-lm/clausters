@@ -21,12 +21,12 @@ const VERSION: u32 = 2;
 /// range, so it can change live without recomputing the STFT.
 const REF_FLOOR: f32 = -120.0;
 
-/// The widest magnitude texture the renderer uploads — the WebGL2/WebGPU
+/// The widest magnitude texture the renderer uploads -- the WebGL2/WebGPU
 /// baseline `max_texture_dimension_2d`. [`hop_capped`] raises the hop so a
 /// long buffer's frame count stays within it.
 pub const MAX_FRAMES: usize = 8192;
 
-/// The most columns a **rolling** transform ([`Stft::rolling`]) retains — half
+/// The most columns a **rolling** transform ([`Stft::rolling`]) retains -- half
 /// [`MAX_FRAMES`], because a ring is stored twice in one texture (see
 /// [`Stft::tex_width`]) and the pair still has to fit the same dimension.
 pub const MAX_ROLLING_FRAMES: usize = MAX_FRAMES / 2;
@@ -46,7 +46,7 @@ pub fn hop_capped(total_samples: usize, window_size: usize, hop: usize) -> usize
 /// Frequency axis mapping for the spectrogram's vertical axis. Beyond the
 /// classic linear/log pair, the two perceptual scales (mel and bark) map the
 /// display coordinate through the shared closed forms in
-/// `clausters_core::scale` — the shader carries the identical formulas.
+/// `clausters_core::scale` -- the shader carries the identical formulas.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FreqScale {
     Linear,
@@ -127,7 +127,7 @@ pub fn column_into(
 /// A transform is **stored** or **rolling**. A stored one is analyzed once and
 /// its columns are exactly the ones it holds. A rolling one ([`Stft::rolling`])
 /// is a fixed-capacity ring a live view pushes into, one column per hop, the
-/// oldest falling off the front — the same magnitudes in the same order, read
+/// oldest falling off the front -- the same magnitudes in the same order, read
 /// through [`Stft::column`] instead of straight off `mags`.
 pub struct Stft {
     total_samples: usize,
@@ -201,7 +201,7 @@ impl Stft {
     /// What needs it is that a live picture is not analyzed at a moment: a
     /// retained view adds one column per hop, and recomputing the whole
     /// transform each tick would redo hundreds of FFTs to learn what one of them
-    /// says — and, worse, re-upload the whole texture to show it. The ring is
+    /// says -- and, worse, re-upload the whole texture to show it. The ring is
     /// what makes both costs follow the *hop* instead of the span: a landing
     /// column is one FFT and one texel write.
     ///
@@ -261,7 +261,7 @@ impl Stft {
     pub fn is_rolling(&self) -> bool {
         self.capacity > 0
     }
-    /// The magnitudes as they sit in memory — frame-major for a stored
+    /// The magnitudes as they sit in memory -- frame-major for a stored
     /// transform, and in *ring* order (rotated by `head`) for a rolling one, so
     /// a caller that wants columns in time order asks [`Stft::column`] instead.
     pub fn magnitudes(&self) -> &[f32] {
@@ -288,7 +288,7 @@ impl Stft {
     /// A rolling ring is stored **twice**, back to back, which is what keeps the
     /// visible window one contiguous run of texels however far the write cursor
     /// has wrapped. The alternative is wrapping in the shader, and a linear
-    /// sample across the seam blends the newest column into the oldest — a
+    /// sample across the seam blends the newest column into the oldest -- a
     /// visible stripe travelling through the picture. The doubled width is why
     /// [`MAX_ROLLING_FRAMES`] is half [`MAX_FRAMES`].
     pub fn tex_width(&self) -> usize {
@@ -322,7 +322,7 @@ impl Stft {
 
     /// Resizes the ring to `capacity` columns, keeping the newest ones. The ring
     /// comes back unrotated (`head` 0), so the caller reallocates the texture and
-    /// re-uploads — this is the live `retention` change, not a per-tick cost.
+    /// re-uploads -- this is the live `retention` change, not a per-tick cost.
     pub fn set_capacity(&mut self, capacity: usize) {
         let capacity = capacity.clamp(1, MAX_ROLLING_FRAMES);
         if self.capacity == 0 || capacity == self.capacity {
@@ -345,7 +345,7 @@ impl Stft {
     /// The visible sample range as a normalized horizontal `[start, start+len]`
     /// across the texture's frame axis, for the renderer's uniform. A rolling
     /// ring measures from its `head` over the doubled width, which is the whole
-    /// difference between the two forms as far as the shader is concerned — a
+    /// difference between the two forms as far as the shader is concerned -- a
     /// stored transform has `head` 0 and a width of its own frame count, so this
     /// is the plain fraction it always was.
     fn time_fraction(&self, view: &View) -> (f32, f32) {
@@ -419,7 +419,7 @@ struct Uniforms {
     /// own alpha.
     db: [f32; 4],
     /// xy = scale, zw = offset of the [`Framing`] that places the picture
-    /// inside its viewport — the identity for a view the window shows whole.
+    /// inside its viewport -- the identity for a view the window shows whole.
     rect: [f32; 4],
 }
 
@@ -427,7 +427,7 @@ struct Uniforms {
 /// over a full-screen quad, plus the bind-group layout its textures are built
 /// against.
 ///
-/// **One of these serves a whole window** — see [`Renderers`]. It carries
+/// **One of these serves a whole window** -- see [`Renderers`]. It carries
 /// nothing about any particular analysis; a spectrogram element's own state is
 /// a [`SpectrogramTexture`]. The split matters most here, because a
 /// spectrogram builds one view *per channel*: an eight-channel analysis used to
@@ -566,7 +566,7 @@ impl SpectrogramTexture {
     /// its mirror `capacity` texels to the right when the transform is rolling.
     ///
     /// This is the whole point of the ring: a landing column costs `n_bins`
-    /// bytes twice, where rebuilding the picture costs the span — 384 KB a tick
+    /// bytes twice, where rebuilding the picture costs the span -- 384 KB a tick
     /// for an eight-second waterfall, and eight times that for a minute of it.
     fn write_column(&self, queue: &wgpu::Queue, texel: usize, capacity: usize, col: &[u8]) {
         let size = wgpu::Extent3d {
@@ -711,7 +711,7 @@ pub struct SpectrogramView {
     drag_freq_start: f64,
     /// Where this view's picture sits inside the viewport it is drawn with.
     framing: Framing,
-    /// The quantized column a rolling push uploads through — held so a landing
+    /// The quantized column a rolling push uploads through -- held so a landing
     /// column allocates nothing.
     scratch: Vec<u8>,
 }
@@ -776,7 +776,7 @@ impl SpectrogramView {
     }
 
     /// Follows a live change of the retained span. The ring keeps its newest
-    /// columns and the texture is rebuilt around them — one full upload per
+    /// columns and the texture is rebuilt around them -- one full upload per
     /// `retention` change, against one per tick before the ring existed.
     pub fn set_retention(
         &mut self,
@@ -800,10 +800,10 @@ impl SpectrogramView {
 
     /// Sets the display state from widget props: the dB window (contrast), the
     /// frequency-axis scale and the colormap (0 = viridis, 1 = magma, 2 =
-    /// grayscale). Cheap — everything lands in the shader uniforms, so a live
+    /// grayscale). Cheap -- everything lands in the shader uniforms, so a live
     /// `/gui_set` retunes the view with zero recompute.
     /// **The weight this texture is drawn at** as one layer of a stack, in
-    /// `[0, 1]` — a uniform write, like every other display control here.
+    /// `[0, 1]` -- a uniform write, like every other display control here.
     pub fn set_alpha(&mut self, alpha: f32) {
         self.alpha = alpha.clamp(0.0, 1.0);
     }
@@ -815,7 +815,7 @@ impl SpectrogramView {
         self.colormap = colormap % 3;
     }
 
-    /// The normalized bottom of the log frequency axis (~20 Hz / Nyquist) — the
+    /// The normalized bottom of the log frequency axis (~20 Hz / Nyquist) -- the
     /// same `f_lo` the shader's display→bin mapping uses, exposed so a ruler
     /// places its ticks with the identical geometry.
     pub fn log_floor(&self) -> f32 {
@@ -823,7 +823,7 @@ impl SpectrogramView {
     }
 
     /// Sets the visible frequency window from normalized display coordinates
-    /// (`start, len` with `0, 1` = the full axis; clamped) — the live
+    /// (`start, len` with `0, 1` = the full axis; clamped) -- the live
     /// `y_start`/`y_len` props of the editor-grade widget. The internal view
     /// keeps the display-coordinate convention (scaled by `n_bins`), so the
     /// shader's display→bin mapping is untouched.
@@ -832,7 +832,7 @@ impl SpectrogramView {
     }
 
     /// Sets where the picture sits inside the viewport it is drawn with (see
-    /// [`Framing`]) — a shader uniform, so a view cut by the window edge costs
+    /// [`Framing`]) -- a shader uniform, so a view cut by the window edge costs
     /// nothing extra to draw.
     pub fn set_framing(&mut self, framing: Framing) {
         self.framing = framing;

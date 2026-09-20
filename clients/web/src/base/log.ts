@@ -1,12 +1,12 @@
 /**
- * What the client did, said out loud — the debugging door for the whole
+ * What the client did, said out loud -- the debugging door for the whole
  * package.
  *
  * A client session fails in ways nothing else can see. The library is one half
  * of a conversation: it sends OSC to an audio server and to a GUI host, both of
  * which answer on their own schedule and neither of which is inside the page. So
- * when something does not happen — a note that never sounds, a widget that stays
- * where the hand left it, a def the server never got — the only question worth
+ * when something does not happen -- a note that never sounds, a widget that stays
+ * where the hand left it, a def the server never got -- the only question worth
  * asking is *what actually went out and what came back*, and nothing in a stack
  * trace says.
  *
@@ -21,11 +21,11 @@
  *
  * **Silent unless asked**, and that is not politeness: these are hot paths. A
  * library that formatted every line would make every importer pay for it, so
- * nothing is formatted until somebody asks — {@link Area.debug} takes its values
+ * nothing is formatted until somebody asks -- {@link Area.debug} takes its values
  * as arguments rather than a built string, so a silent area costs one boolean.
  *
  * Two doors, and they mean different things. {@link watch} is the one a page
- * calls; the **environment** is for the case this exists for — a person running
+ * calls; the **environment** is for the case this exists for -- a person running
  * an example, watching a window, about to do the thing that breaks. It is read
  * from `process.env.CLAUSTERS_LOG` under node and, in a browser, from
  * `globalThis.CLAUSTERS_LOG` or a `?clausters-log=` in the page's own URL. All
@@ -57,7 +57,7 @@ const armed = new Map<string, LogSink>();
  *
  * An ancestor answers for its children the way a record propagates up a Python
  * logger: arming `gui` prints `gui.editing` too, and arming both must not print
- * a line twice — a doubled log is one a reader stops trusting.
+ * a line twice -- a doubled log is one a reader stops trusting.
  */
 function sinkFor(area: string): LogSink | null {
     let walking = area;
@@ -83,7 +83,7 @@ export class Area {
         this.name = name;
     }
 
-    /** Whether anything would be printed — for a caller whose *values* cost
+    /** Whether anything would be printed -- for a caller whose *values* cost
      * something to work out. An ordinary call needs no guard. */
     get watched(): boolean {
         return sinkFor(this.name) !== null;
@@ -97,7 +97,7 @@ export class Area {
         sinkFor(this.name)?.warn(`clausters.${this.name}: ${message}`, ...values);
     }
 
-    /** A child area — `area("gui").child("editing")` is `clausters.gui.editing`. */
+    /** A child area -- `area("gui").child("editing")` is `clausters.gui.editing`. */
     child(name: string): Area {
         return new Area(`${this.name}.${name}`);
     }
@@ -112,7 +112,7 @@ export function area(name = ""): Area {
  * Print one area of the client's log to `sink` (the console by default), and
  * answer the area it armed.
  *
- * `name` is relative to `clausters` — `""` for everything, `"gui"`, `"server"`,
+ * `name` is relative to `clausters` -- `""` for everything, `"gui"`, `"server"`,
  * `"gui.editing"`. Idempotent per area.
  */
 export function watch(name = "", sink: LogSink = console): Area {

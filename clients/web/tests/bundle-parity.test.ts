@@ -1,8 +1,8 @@
 // The two writers of one format, and the mount that reads what they write.
 //
 // `gen-bundle-vectors.py` writes a reference bundle with the Python authoring
-// API and freezes it — every file, byte for byte, plus the manifest and the
-// GuiDef template — together with what the shared resolver makes of it for
+// API and freezes it -- every file, byte for byte, plus the manifest and the
+// GuiDef template -- together with what the shared resolver makes of it for
 // three mounts: the declared defaults, an attribute override, and a preset
 // with an attribute over it. Two things are asserted from here:
 //
@@ -16,7 +16,7 @@
 // What is being held is the cross-language contract of the *format*: a bundle
 // authored in either language is one directory, and it mounts in a tab to what
 // its author saw. Both sides call the one pass (`clausters_core::bundle`), so
-// what can drift is a binding or a writer — which is what this catches.
+// what can drift is a binding or a writer -- which is what this catches.
 //
 // Needs the core wasm staged (`./build.sh`); run with `npm test`.
 
@@ -59,7 +59,7 @@ interface Vectors {
 const here = new URL(".", import.meta.url);
 
 // The resolver is a core export, so the wasm has to be in before it is called.
-// Under node the bytes are passed explicitly — node's `fetch` cannot read a
+// Under node the bytes are passed explicitly -- node's `fetch` cannot read a
 // `file://` URL.
 await loadCore();
 
@@ -71,11 +71,11 @@ const vectors = JSON.parse(
  * The reference bundle, written the way `gen-bundle-vectors.py` writes it:
  * the same material, the same names, the same calls to the same API in the
  * same order. Where a spelling differs it is this language's spelling of the
- * one call — options before children in `view`, an options object where
+ * one call -- options before children in `view`, an options object where
  * Python takes keywords.
  */
 function reference(): Bundle {
-    // The bus reaches the def as a **control**, never baked in — the rule that
+    // The bus reaches the def as a **control**, never baked in -- the rule that
     // lets two instances share the one def that was sent.
     const voice = () => {
         const freq = control("freq", 220.0);
@@ -187,7 +187,7 @@ for (const testCase of vectors.cases) {
 test("the three mounts share no widget id, node or bus", () => {
     const ids = vectors.cases.map((c) => c.resolved.def_id);
     assert.equal(new Set(ids).size, ids.length, "each mount opened its own def id");
-    // The knob's bind carries the node id, the meter's bus the bus — both
+    // The knob's bind carries the node id, the meter's bus the bus -- both
     // allocated per instance, which is what makes two of one bundle possible.
     const nodeOf = (c: (typeof vectors.cases)[number]) =>
         JSON.stringify((c.resolved.tree as any).children[0].bind);

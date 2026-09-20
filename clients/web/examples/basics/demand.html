@@ -24,7 +24,7 @@
       <div id="note"><b>The demand family</b>: a sequence that lives inside the
 def, pulled by the server rather than sent by the page.
 
-A demand UGen is a <b>stream</b> — it has no samples, only a next value, and it
+A demand UGen is a <b>stream</b> -- it has no samples, only a next value, and it
 yields one each time a driver asks. <code>duty(dur, reset, level)</code> is such
 a driver with a clock of its own, and <i>both</i> of its inputs are streams: a
 <code>dseq</code> of durations against a <code>dseq</code> of pitches, the two
@@ -32,7 +32,7 @@ free to be different lengths, which is what makes the pattern take longer to
 repeat than either of them.
 
 Nesting is the whole idea: an item of a <code>dseq</code> may itself be a
-stream, and then it is <b>drained</b> rather than taken once — the
+stream, and then it is <b>drained</b> rather than taken once -- the
 <code>dgeom</code> below contributes four rising pitches every time the
 sequence comes round to it. <code>dxrand</code> picks without ever repeating
 itself immediately, and <code>dbrown</code> walks the detune by small steps,
@@ -85,7 +85,7 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
 
         // **A stream is pulled, so it cannot be shared.** Two drivers reading
         // one `dseq` node would take alternate items from it and each would
-        // hear half the pattern — so every driver gets a fresh one, which is
+        // hear half the pattern -- so every driver gets a fresh one, which is
         // what makes this a factory rather than a value.
         const durs = () => dseq([step, step, step.mul(2.0)], 0.0);
 
@@ -101,7 +101,7 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
 
         // One driver for the note, another for its accent: `tduty` emits each
         // level on a single sample, which is a trigger stream whose amplitudes
-        // are the levels — here it opens the envelope.
+        // are the levels -- here it opens the envelope.
         const freq = duty(durs(), 0.0, pitches, DoneAction.NONE);
         const trig = tduty(durs(), 0.0, 1.0, DoneAction.NONE);
         const env = envGen(Env.perc(0.005, 0.25), { gate: trig });
@@ -123,7 +123,7 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
         server = await new Server().boot();   // or WsConnection
 
         await sequenceDef().send(server);
-        log("def sent — the whole sequence is inside it");
+        log("def sent -- the whole sequence is inside it");
 
         el("start").disabled = true;
         el("play").disabled = false;
@@ -138,7 +138,7 @@ socket. Swapping to a <code>--ws</code> server is the one line marked below.</di
         }, { server });
         el("stop").disabled = false;
         el("play").disabled = true;
-        log(`sequence on node ${voice.id} — nothing more is sent until you `
+        log(`sequence on node ${voice.id} -- nothing more is sent until you `
           + "move the step or stop it");
       };
 

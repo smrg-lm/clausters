@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // Author, with the TypeScript client, a bundle whose GuiDef controls a
-// GraphDef — then mount it as a web component, twice on one page if you like.
+// GraphDef -- then mount it as a web component, twice on one page if you like.
 //
 // The point of this example is the **whole chain with no intermediary client
 // at run time**: the client only *authors* the files (it talks to nothing);
-// what runs afterwards is the persisted bundle — the same one everywhere —
+// what runs afterwards is the persisted bundle -- the same one everywhere --
 // with each control knob wired **straight to the synthesis** through the
 // GraphDef's named surface:
 //
@@ -18,7 +18,7 @@
 //
 // and the `GraphDef` exposes the musically meaningful **surface ports**
 // (`freq`, `ratio`, `bright`, `rate`, `depth`, `amp`) rather than the raw
-// member controls — `bright` shows a scaled port: the 0..1 knob maps to FM
+// member controls -- `bright` shows a scaled port: the 0..1 knob maps to FM
 // index 0..8.
 //
 // **What makes it a component.** Two things the mount allocates per instance,
@@ -49,19 +49,19 @@
 //
 //     node make_bundle.mjs
 //
-// It writes into `examples/out/graph-controls/` — the ignored directory every
+// It writes into `examples/out/graph-controls/` -- the ignored directory every
 // generator in this tree writes to, so a run leaves nothing to clean up by
 // hand. Then the **same** bundle runs on every leg, no script attached to any
 // of them:
 //
 // - **Browser, as a web component** (the wasm engine in an AudioWorklet):
-//   serve **from `clients/web` — the package root, never this folder** (the
+//   serve **from `clients/web` -- the package root, never this folder** (the
 //   page imports `../../../dist/...`, which must stay inside the served root;
 //   serving `graph-controls/` itself turns those imports into 404s):
 //
 //       cd clients/web && python3 -m http.server
 //
-//   and open `http://localhost:8000/examples/panels/graph-controls/` —
+//   and open `http://localhost:8000/examples/panels/graph-controls/` --
 //   `index.html` here is just `<clausters-bundle src="…">`; its power button
 //   boots the whole instrument in the tab.
 // - **Desktop, self-contained** (the embedded server; from `clients/gui`):
@@ -78,7 +78,7 @@
 //     defs/synthdefs/fm-trem.trem.json      the /def_send synth payloads)
 //     defs/graphdefs/fm-trem.graph.json    the GraphDef (the /def_send graph
 //                                           payload: buses, members, surface)
-//     defs/guidefs/fm-trem.json            the GuiDef record — a template
+//     defs/guidefs/fm-trem.json            the GuiDef record -- a template
 //     presets/bright.json                  a named parameter bundle
 //     bundle.json                          the manifest
 //     index.js                             the generated ES module
@@ -90,7 +90,7 @@ import { GraphDef, SynthDef, control, in_, out, outCtl, sine, sub } from "../../
 import { knob, label, meter, panel, scope, toggle, view } from "../../../dist/gui/index.js";
 
 /**
- * The bundle's name — the tag `index.js` registers, and the prefix its def
+ * The bundle's name -- the tag `index.js` registers, and the prefix its def
  * names carry (`fm-trem.voice`, `fm-trem.graph`).
  */
 const BUNDLE = "fm-trem";
@@ -110,7 +110,7 @@ function fmVoice() {
 
 /**
  * A tremolo reading the voice bus (the `in` control the graph wires) to the
- * hardware outputs, and publishing its LFO on `lfo_bus` — **a control**, so
+ * hardware outputs, and publishing its LFO on `lfo_bus` -- **a control**, so
  * each mounted instance watches the bus it was allocated instead of every
  * instance writing the same one.
  */
@@ -123,7 +123,7 @@ function tremolo() {
 }
 
 /**
- * The composition: voice -> bus -> tremolo, and the **surface** — the named
+ * The composition: voice -> bus -> tremolo, and the **surface** -- the named
  * ports the outside world sets. `bright` maps a 0..1 knob to FM index 0..8
  * (`.scaled`); the rest pass through 1:1.
  *
@@ -149,7 +149,7 @@ function graph(voiceName, tremName) {
  * The bundle: two declared symbols (the graph's node, the LFO bus), two
  * declared parameters, the three defs, and the GuiDef that drives them.
  *
- * Widget ids are **local** — the root is 1, so the children start at 2 — and
+ * Widget ids are **local** -- the root is 1, so the children start at 2 -- and
  * the mount offsets the whole block per instance.
  */
 function build() {
@@ -171,7 +171,7 @@ function build() {
         { title: "FM + tremolo (a GraphDef's surface)", w: 680, h: 400, layout: "col" },
         // The header row: the note, and this instance's own play/stop. A page
         // holding several instruments has them all sounding at once otherwise,
-        // and each needs to be silenced on its own — which is what the toggle
+        // and each needs to be silenced on its own -- which is what the toggle
         // is for, bound to `/node_run` on *this* instance's graph node. Pausing
         // a group skips its whole subtree on the audio thread, so a stopped
         // instrument costs nothing rather than merely going quiet. `weight`
@@ -202,7 +202,7 @@ function build() {
     // its tag's parameters, as initial port values.
     //
     // The bus rides *in* the `/graph_new` rather than in an `/node_set` after
-    // it, because a def latches its output bus when the synth starts — a later
+    // it, because a def latches its output bus when the synth starts -- a later
     // value would arrive after the member had already chosen where to write.
     b.boot([
         "/graph_new", graphName, node, 0, 0,
@@ -216,7 +216,7 @@ await loadCore();
 const dataDir = fileURLToPath(new URL("../../out/graph-controls", import.meta.url));
 await build().write(dataDir);
 console.log(`bundle written to ${dataDir}`);
-console.log("\nserve the PACKAGE ROOT (clients/web) — not this folder — and " +
+console.log("\nserve the PACKAGE ROOT (clients/web) -- not this folder -- and " +
             "open the component page:\n");
 console.log("    cd ../../..   # clients/web");
 console.log("    ./build.sh && python3 -m http.server");

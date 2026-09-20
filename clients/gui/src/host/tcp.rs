@@ -1,10 +1,10 @@
 //! TCP server front for the `/gui_*` protocol.
 //!
 //! The variant the [`super::ClientId`] seam anticipated: the audio server's
-//! `osc::tcp` pattern reused — an acceptor thread plus one reader thread per
+//! `osc::tcp` pattern reused -- an acceptor thread plus one reader thread per
 //! connection turn each byte stream into whole, length-prefixed OSC frames
 //! (a 4-byte big-endian length prefix, the same framing scsynth and the audio
-//! server use) — with one generalization: the readers hand events to a
+//! server use) -- with one generalization: the readers hand events to a
 //! caller-supplied **sink** instead of a fixed channel, because the host has
 //! two fronts with different inboxes. The headless front wraps an
 //! [`mpsc`](std::sync::mpsc) channel plus the zero-length-UDP wake (the
@@ -12,7 +12,7 @@
 //! `EventLoopProxy`, which needs no wake at all.
 //!
 //! Frames above the configurable ceiling (`--max-frame`, default
-//! [`clausters_core::osc::DEFAULT_MAX_FRAME`]) — or a zero prefix — close the
+//! [`clausters_core::osc::DEFAULT_MAX_FRAME`]) -- or a zero prefix -- close the
 //! connection instead of allocating on an untrusted length.
 
 use crate::host::diag;
@@ -50,7 +50,7 @@ pub fn bind_with_sink(
 }
 
 /// The headless front's consumer: the event stream the serve loop drains and
-/// the connection write halves it replies through — the audio server's
+/// the connection write halves it replies through -- the audio server's
 /// `TcpHub` shape. Reader threads wake the loop with a zero-length datagram to
 /// `wake_target` (the host's own UDP address) after queuing an event.
 pub struct TcpHub {
@@ -89,7 +89,7 @@ impl TcpHub {
 
     /// The next complete frame `(connection id, bytes)`, or `None` when the
     /// queue is drained. Registers and forgets connections as their
-    /// `Connected`/`Disconnected` events go by — both bracket that
+    /// `Connected`/`Disconnected` events go by -- both bracket that
     /// connection's frames in the channel, so the write half is always present
     /// before a frame is returned for handling.
     pub fn next_frame(&mut self) -> Option<(u64, Vec<u8>)> {
@@ -108,7 +108,7 @@ impl TcpHub {
     }
 
     /// Writes a length-prefixed reply to connection `id` (silently dropped if
-    /// the connection is gone — the `Disconnected` event prunes it).
+    /// the connection is gone -- the `Disconnected` event prunes it).
     pub fn reply(&self, id: u64, bytes: &[u8]) {
         if let Some(stream) = self.conns.get(&id)
             && let Err(e) = write_frame(stream, bytes)
@@ -194,7 +194,7 @@ mod tests {
     use super::*;
     use clausters_core::osc::{OscMessage, OscPacket, OscType, encode};
 
-    /// A length-prefixed frame round-trips through the hub — in, decoded, and
+    /// A length-prefixed frame round-trips through the hub -- in, decoded, and
     /// a reply routed back framed on the same connection. In-process, like the
     /// audio server's ws test.
     #[test]

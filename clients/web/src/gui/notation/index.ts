@@ -4,7 +4,7 @@
 // This is the client-side rendering step: an engraver lays a digital score (MEI,
 // MusicXML, ABC or Plaine & Easie) out into SVG, and that SVG is walked into the
 // flat, resolution-independent display list the GUI host's `score` widget
-// consumes — a SMuFL glyph-outline table plus placed primitives in page units,
+// consumes -- a SMuFL glyph-outline table plus placed primitives in page units,
 // each carrying the MEI `xml:id` it was engraved from. The host tessellates it;
 // **the engraver lives on the client, never in the host**, so any language
 // client reuses the same host renderer by sending the same display list.
@@ -14,7 +14,7 @@
 // door, and the engraver is the pinned verovio compiled to wasm with the same
 // options and the same importers the native library is built with. This module
 // is the TypeScript shell over that, as `clausters.gui.notation` is the Python
-// one — a second client rebinds the same core rather than reimplementing any of
+// one -- a second client rebinds the same core rather than reimplementing any of
 // it.
 //
 // The engraver is staged beside the wasm bundles (`dist/vendor/verovio/`) and
@@ -29,7 +29,7 @@
 // `sheet` is the **score model** underneath all of that: notation as data,
 // operations as data over it, and the reading that turns it back into sound
 // (`toNotes`, `interpretation`, and `toTimeline` beside it). A sheet is a plain object a caller holds, an
-// operation is a payload it sends, and the whole vocabulary lives in Rust —
+// operation is a payload it sends, and the whole vocabulary lives in Rust --
 // which is what lets a standalone host with no client language edit the same
 // score through the same one door.
 

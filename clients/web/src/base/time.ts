@@ -2,7 +2,7 @@
  * Time: the beat↔second map, and the questions it answers.
  *
  * A **beat is not a unit of time**. It is a logical coordinate, and what turns
- * one into a second is the tempo — which can change as it goes. So the two
+ * one into a second is the tempo -- which can change as it goes. So the two
  * things the word "tempo" covers are kept apart here:
  *
  * - the **tempo function**, what a user writes: the tempo at a beat, and how it
@@ -19,7 +19,7 @@
  * count and a tempo.
  *
  * A {@link TempoClock} holds a map and reads it to pace and to stamp; this
- * module is the other half — the same map read as a **question about the
+ * module is the other half -- the same map read as a **question about the
  * music**, with no clock running and nothing playing:
  *
  * ```ts
@@ -41,8 +41,8 @@
  * | `"exponential"` | `T0 * (T1/T0)**u` |
  * | a curvature `c` | `A + B*exp(c*u)`, with `B = -(T1-T0)/(1-exp(c))` and `A = T0 + (T1-T0)/(1-exp(c))` |
  *
- * A curvature of 0 **is** linear — the knob is continuous through its middle
- * rather than a shape apart — positive starts slow and negative starts fast.
+ * A curvature of 0 **is** linear -- the knob is continuous through its middle
+ * rather than a shape apart -- positive starts slow and negative starts fast.
  * That is `Env`'s own convention, and these are `Env`'s own shape numbers, so
  * one vocabulary spells a tempo curve and an amplitude curve. A shape is named
  * by the plain string a caller writes (`"lin"` and `"exp"` are accepted too),
@@ -62,28 +62,28 @@
  * so a stretch `db` beats wide lasts `db * K` seconds. **This is where an
  * average of the two tempos goes wrong**: over eight beats from 1 to 2 beats a
  * second the true length is `log(2)/0.125 = 5.545` s and the average says
- * `8/1.5 = 5.333` s — a fifth of a second, audible and, drawn, visible.
+ * `8/1.5 = 5.333` s -- a fifth of a second, audible and, drawn, visible.
  *
  * **The extent in seconds** follows from the same `K`, and it is why the shapes
  * are written over `u` rather than over beats: `K` does not depend on how wide
  * the segment is, so asking for a change that lasts `dt` seconds is one
- * division — `db = dt / K` — exact for every shape and never a search. For a
+ * division -- `db = dt / K` -- exact for every shape and never a search. For a
  * straight ramp that makes `db` the logarithmic mean of the two tempos times
  * the seconds.
  *
- * **The inverse** — the beat falling on a second, which a running clock reads
- * on every `TempoClock.beats` — is closed for `"linear"`
+ * **The inverse** -- the beat falling on a second, which a running clock reads
+ * on every `TempoClock.beats` -- is closed for `"linear"`
  * (`u = T0*(exp(k*s) - 1)/k`, `k = T1 - T0`) and for `"exponential"`
  * (`u = -log(1 - s*T0*log(T1/T0))/log(T1/T0)`). A curvature mixes `u` and
  * `exp(c*u)` and has **no** closed inverse, so the core solves it with a
- * safeguarded Newton iteration — one implementation, so every client inverts to
+ * safeguarded Newton iteration -- one implementation, so every client inverts to
  * the same place. It is also why `Env`'s `sin` and `wel` are **not** tempo
  * shapes: they integrate in closed form but invert transcendentally, and
  * inverting is the operation a clock cannot pay for on every read.
  *
  * The free conversions beside it are the rest of the time seam every client
- * shares — the beat grid (`bar`, `beatInBar`, `quantDelay`) and the sample axis
- * (`secsToSamples`, `samplesToSecs`) — re-exported here so the whole of "what
+ * shares -- the beat grid (`bar`, `beatInBar`, `quantDelay`) and the sample axis
+ * (`secsToSamples`, `samplesToSecs`) -- re-exported here so the whole of "what
  * time is it, in which unit" reads from one import.
  */
 
@@ -102,7 +102,7 @@ import {
  *
  * The core's own class, behind a guard: constructing one before `loadCore` has
  * resolved says so, rather than failing as an unreadable read of an
- * uninitialised binding — or, at a module's top level, taking the whole module
+ * uninitialised binding -- or, at a module's top level, taking the whole module
  * down with no message at all.
  */
 /**
@@ -142,7 +142,7 @@ export class TempoMap extends CoreTempoMap {
      * The bridge a reader of a document would otherwise take three decisions to
      * write: a ramp reaches the *next* entry, the default is prepended when the
      * first entry is past beat 0, and no entries at all is the default alone.
-     * `undefined` for entries the crate will not take — out of order, or a
+     * `undefined` for entries the crate will not take -- out of order, or a
      * tempo that is not finite and positive.
      *
      * The entries go in as a list, the way the Python client takes them; the
@@ -173,7 +173,7 @@ export class TempoMap extends CoreTempoMap {
     }
 
     /**
-     * An independent copy — a **fork**, for when two tempi should stop being
+     * An independent copy -- a **fork**, for when two tempi should stop being
      * one. Handing a map to a clock does not copy: a clock adopts what it is
      * given, which is what lets two clocks read one map.
      */
@@ -193,7 +193,7 @@ export const SECONDS = "seconds";
  * shape or a ruler is, rather than a constant to import from somewhere.
  * `"secs"` is `"seconds"` said shorter. A stretch of beats and a stretch of
  * seconds are different stretches under any tempo but a constant one, so which
- * one a number is has to be said — and an unknown spelling is refused rather
+ * one a number is has to be said -- and an unknown spelling is refused rather
  * than quietly taken for beats.
  */
 export type TimeUnit = "beats" | "seconds" | "secs";
@@ -218,7 +218,7 @@ export function timeUnit(spec: TimeUnit): string {
 export const STEP = "step";
 /** A segment's tempo ramps linearly (in beats) to the next breakpoint. */
 export const LINEAR = "linear";
-/** A segment's tempo ramps geometrically — equal *ratios* over equal stretches
+/** A segment's tempo ramps geometrically -- equal *ratios* over equal stretches
  * of beat, so 60→120 and 120→240 are the same move. */
 export const EXPONENTIAL = "exponential";
 
@@ -228,7 +228,7 @@ export const EXPONENTIAL = "exponential";
  */
 export type CurveSpec = string | number;
 
-/** An envelope of tempos, of finite duration — `Env`'s shape, without a gate. */
+/** An envelope of tempos, of finite duration -- `Env`'s shape, without a gate. */
 export interface TempoEnvelope {
     /** The tempos, one more than `times`. */
     levels: number[];
@@ -268,7 +268,7 @@ export function tempoShape(spec: CurveSpec): [number, number] {
 }
 
 /**
- * **Writes a whole tempo envelope on `map` from beat `at`** — one more tempo
+ * **Writes a whole tempo envelope on `map` from beat `at`** -- one more tempo
  * than extents, one shape per segment (one shape for all of them, or a list).
  *
  * The Python client spells this `TempoMap.env(...)`; the map is a generated
@@ -276,7 +276,7 @@ export function tempoShape(spec: CurveSpec): [number, number] {
  * taking the map. Same arguments, same order, same result.
  *
  * The envelope is of **finite duration**: after its last segment the tempo it
- * reached holds. `unit` says what the extents measure — in `"seconds"` each
+ * reached holds. `unit` says what the extents measure -- in `"seconds"` each
  * segment's width in beats is solved exactly rather than searched for.
  */
 export function tempoEnv(
@@ -311,12 +311,12 @@ export function tempoEnv(
 }
 
 /**
- * **Every segment of `map`**, in order — the whole tempo function as the
+ * **Every segment of `map`**, in order -- the whole tempo function as the
  * `[beat, second, tempo, shape, curve]` rows the map holds.
  *
  * The Python client spells this `TempoMap.segments()`; the map is a generated
  * wasm class here, which cannot grow a method, so the wrapper is a function
- * taking the map — the same shape {@link tempoEnv} takes, for the same reason.
+ * taking the map -- the same shape {@link tempoEnv} takes, for the same reason.
  */
 export function tempoSegments(map: TempoMap): number[][] {
     const out: number[][] = [];
@@ -371,7 +371,7 @@ export function secsToSamples(secs: number, sampleRate: number): number {
 }
 
 /**
- * A sample count → seconds at `sampleRate` — the inverse of
+ * A sample count → seconds at `sampleRate` -- the inverse of
  * {@link secsToSamples}.
  */
 export function samplesToSecs(samples: number, sampleRate: number): number {

@@ -3,7 +3,7 @@
 A stream is the network counterpart of reading the shared-memory segment: one
 subscription per client, replaced on each call, cancelled by a period of zero.
 The snapshots arrive on their own reply address, so they are received with an
-`OscFunc` rather than returned from here — what these calls block on is only
+`OscFunc` rather than returned from here -- what these calls block on is only
 the ``/done`` ack.
 """
 

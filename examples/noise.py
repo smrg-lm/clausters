@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """The noise sources, and the two things about them that surprise people.
 
-Three shapes with the same name in every synthesis textbook — white, pink,
-brown — plus the ones that are noise in a different sense: a random value held
+Three shapes with the same name in every synthesis textbook -- white, pink,
+brown -- plus the ones that are noise in a different sense: a random value held
 at a rate you choose, impulses that arrive at a *mean* density rather than on a
 clock, and a chaotic map with no randomness in it at all.
 
 The surprises are about level, and the report at the end measures them on what
 was just rendered rather than asking you to take them on faith: **pink noise is
 four times quieter than white** at the same nominal range, while **brown is just
-as loud** — it only *sounds* darker, because its energy is all at the bottom.
+as loud** -- it only *sounds* darker, because its energy is all at the bottom.
 And **`crackle` carries DC**, because its map takes an absolute value.
 
 It renders **offline**, so it needs no audio hardware and no running server:
@@ -43,7 +43,7 @@ SECTION = 1.2  # seconds per shape
 #
 # Same UGen shape, three spectra: white is flat, pink falls 3 dB per octave,
 # brown 6. Played back to back at the *same* nominal amplitude, which is the
-# point — and the measured levels separate two things that are easy to conflate.
+# point -- and the measured levels separate two things that are easy to conflate.
 # Pink really is quieter (a sum of seventeen uniforms spends its time near the
 # middle of its range); brown is not quieter at all, it just puts everything it
 # has below a few hundred hertz. "Darker" and "softer" are different claims.
@@ -62,8 +62,8 @@ def shape(name, sig) -> SynthDef:
 
 # ---- 2. noise as an instrument -------------------------------------------------
 #
-# A hi-hat is `clip_noise` — the loudest noise there is, every sample at full
-# scale — through a highpass and a very short `decay2`. No envelope generator
+# A hi-hat is `clip_noise` -- the loudest noise there is, every sample at full
+# scale -- through a highpass and a very short `decay2`. No envelope generator
 # and no note: the impulse *is* the note, and `decay2` gives it a shape.
 #
 # The wind underneath is `brown_noise` through a resonant lowpass whose cutoff
@@ -83,7 +83,7 @@ def kit() -> SynthDef:
 #
 # `dust` fires at a *mean* density: ten per second means ten on average, with
 # clusters and gaps, because every sample is an independent trial. Use `impulse`
-# when you want them evenly spaced — that difference is audible here.
+# when you want them evenly spaced -- that difference is audible here.
 #
 # `crackle` has no RNG at all. The same `chaos` gives the same signal every
 # time, so it needs no seed to be reproducible. Its output is one-sided, so it
@@ -113,8 +113,8 @@ def render(path=None):
     # like any other key, so a `Pseq` of def names plays them in turn.
     #
     # Note that this is *not* `Synth(server=server)` in a loop. That call is an
-    # **immediate** send, which offline means the start of the score — where
-    # the setup goes — so five of them would all begin at once whatever the
+    # **immediate** send, which offline means the start of the score -- where
+    # the setup goes -- so five of them would all begin at once whatever the
     # yields in between said. Placing something in time is what a pattern (or
     # `send_bundle`) is for.
     clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
@@ -129,7 +129,7 @@ def render(path=None):
     peak = max(stats.peak)
     print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f}")
     if peak == 0.0:
-        sys.exit("the render is silent — something is wrong")
+        sys.exit("the render is silent -- something is wrong")
     if peak > 1.5:
         sys.exit(f"the render clips hard (peak {peak:.2f})")
 
@@ -147,7 +147,7 @@ def render(path=None):
         print(f"  {name:6} rms {rms:.3f}")
 
     if path:
-        print(f"wrote {path} — listen with: pw-play {path}")
+        print(f"wrote {path} -- listen with: pw-play {path}")
 
 
 if __name__ == "__main__":

@@ -25,7 +25,7 @@
 
       <fm-trem id="keep"></fm-trem>
 
-      <p>And the slot the churn happens in — a component is appended here,
+      <p>And the slot the churn happens in -- a component is appended here,
       brought up, and removed again, a hundred times over:</p>
 
       <div id="slot"></div>
@@ -37,18 +37,18 @@
 
         - a hundred mount/remove cycles leave the id pools (widgets, nodes,
           buses, buffers) and the server's node tree exactly where they were;
-        - a removed component stops sounding — read off the engine's output
+        - a removed component stops sounding -- read off the engine's output
           with the rest of the page paused, and confirmed by its node leaving
-          /group_queryTree — and stops streaming (its bus leaves the
+          /group_queryTree -- and stops streaming (its bus leaves the
           /bus_stream set);
-        - a /gui_closed reaches the element that mounted the def — the window
+        - a /gui_closed reaches the element that mounted the def -- the window
           closing on the host's side rather than the page's, which is what a
           native --ws host sends;
         - the component that stayed is untouched throughout.
 
       No TypeScript client is loaded: the bundle's generated module imports
       dist/runtime.js and this page adds only the asserts. The verdict is
-      beaconed as a fetch — the standard web-smoke posture (docs/decisions.md).
+      beaconed as a fetch -- the standard web-smoke posture (docs/decisions.md).
     -->
     <script type="module">
       import "/examples/out/graph-controls/index.js";  // <fm-trem>
@@ -90,11 +90,11 @@
       }
 
       /**
-       * The page's id spaces, read once the core wasm is up — the pools are
+       * The page's id spaces, read once the core wasm is up -- the pools are
        * built on its `Registry`, so this cannot be asked for before a mount.
        */
       let pools;
-      /** What the page's id spaces hold right now — the leak meter. */
+      /** What the page's id spaces hold right now -- the leak meter. */
       const occupancy = () => ({
         widgets: pools.widgets.inUse,
         nodes: pools.nodes.inUse,
@@ -105,7 +105,7 @@
       const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
       /**
-       * Every node id the server holds (`/group_queryTree 0`) — its own
+       * Every node id the server holds (`/group_queryTree 0`) -- its own
        * account of what is instantiated, which is where each instance's
        * `/graph_new` group lands. A `detail 0` entry is `id, childCount,
        * name`, with a synth's child count −1 and a group's children inline
@@ -174,7 +174,7 @@
             return peak;
         };
 
-        // Every bus value the engine streams, by bus — how "still sounding"
+        // Every bus value the engine streams, by bus -- how "still sounding"
         // and "stopped streaming" are read below.
         const seen = new Map();
         let failed = null;
@@ -222,14 +222,14 @@
             throw new Error(`the node tree grew: ${treeNow.size} nodes against ${baseTree.size}`);
         }
 
-        // A removed component stops sounding and stops streaming — the first
+        // A removed component stops sounding and stops streaming -- the first
         // read off the engine's own output, the second off the bus it was
         // publishing on. This one is the last mounted, so its bus is not
         // handed to anybody else.
         const last = await mount(slot);
         await last.start();
         // A component the page built with `createElement` sizes its canvas from
-        // its element box like any other — the generated tags do not touch
+        // its element box like any other -- the generated tags do not touch
         // their attributes in the constructor, which is what a document adding
         // instruments as the reader goes rests on.
         const surface = last.shadowRoot.querySelector("canvas");
@@ -270,7 +270,7 @@
         }
 
         // The other direction: a window closed by the host reaches the element
-        // that mounted the def — the packet a native --ws host sends when the
+        // that mounted the def -- the packet a native --ws host sends when the
         // user closes the window, delivered on the page's event stream.
         const closing = await mount(slot);
         await closing.start();

@@ -1,6 +1,6 @@
 """C13 client: OscFunc / MidiFunc dispatch.
 
-The OSC side runs end to end over a loopback UDP socket — a real `OscReceiver`
+The OSC side runs end to end over a loopback UDP socket -- a real `OscReceiver`
 binds a port, an `OscFunc` registers, and a datagram (message and bundle) is
 sent in; the callback records what it saw. The MIDI side tests `parse_midi` and
 the `MidiFunc` matching against injected messages (a real ALSA virtual port

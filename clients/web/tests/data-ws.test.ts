@@ -172,7 +172,7 @@ test("a generated buffer reads back in chunks, and reduces", { skip: !hasServer 
         const tail = await buffer.getSamples({ start: frames - 10, count: 100 });
         assert.equal(tail.length, 10);
 
-        // And it reduces to the cache a waveform view is drawn from — the
+        // And it reduces to the cache a waveform view is drawn from -- the
         // whole of what a client does with a pyramid, since the picture over
         // it is the host's.
         const peaks = Peaks.build(read, { baseBucket: 256 });

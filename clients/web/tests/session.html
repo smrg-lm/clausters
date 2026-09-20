@@ -23,7 +23,7 @@
     <!--
       The session acceptance (clients/web/test.sh, headless Chrome). What it
       has to show is what a unit test cannot: that the ambient resolution is
-      not bookkeeping but reaches two *different* engines — a note played with
+      not bookkeeping but reaches two *different* engines -- a note played with
       no server named sounds on the default session's analyser and not on the
       other's, and one played inside `b.use(...)` the other way round. ?smoke=1
       auto-runs; the verdict is beaconed as a fetch and read from the access log.
@@ -76,7 +76,7 @@
 
       async function run() {
         // Two engines this page owns, so each session's output can be
-        // measured on its own — they mix in the browser, not in one engine.
+        // measured on its own -- they mix in the browser, not in one engine.
         const audioA = await engine({ channels: 2 });
         const audioB = await engine({ channels: 2 });
         const a = await Session.embed({ engine: audioA });
@@ -125,7 +125,7 @@
         log(`ambient pattern on the default clock: a=${patternPeak.toFixed(3)}`);
 
         // Every kind `play` dispatches, each asserted to have made ink on the
-        // default session's engine — the paths examples/basics/verbs.html walks.
+        // default session's engine -- the paths examples/basics/verbs.html walks.
         const kinds = {};
         const heard = async (name, start) => {
           const stop = await start();
@@ -156,7 +156,7 @@
           return () => node.free();
         });
         await heard("expression", () => {
-          // A bare expression: no def, no name — `play` wraps it in an
+          // A bare expression: no def, no name -- `play` wraps it in an
           // ephemeral one and sounds that.
           const node = play(sine(240.0).mul(0.2));
           return () => node.free();
@@ -170,7 +170,7 @@
         });
         await heard("Automation", async () => {
           // A curve sweeping a drone's freq: prepared first (that half waits),
-          // then triggered — the one kind `play` refuses unprepared.
+          // then triggered -- the one kind `play` refuses unprepared.
           const sig = sine(control("freq", 200.0)).mul(0.2);
           const node = play(new SynthDef("session_swept", out(0.0, sig), out(1.0, sig)));
           const sweep = new seq.Automation(
@@ -194,7 +194,7 @@
         const ok = onA > 0.05 && quietB < 0.01 && onB > 0.05 && quietA < 0.01
           && patternPeak > 0.05 && silent.length === 0;
         verdict(ok
-          ? `PASS: two sessions on two engines — the ambient note sounded on `
+          ? `PASS: two sessions on two engines -- the ambient note sounded on `
             + `a (${onA.toFixed(3)}) and not on b (${quietB.toFixed(3)}), the `
             + `scoped one on b (${onB.toFixed(3)}) and not on a `
             + `(${quietA.toFixed(3)}), and a bare play() drove the default `

@@ -118,7 +118,7 @@ fn an_automation_curve_keeps_the_shapes_neither_side_reads() {
 fn a_region_carries_curves_of_its_own_and_they_are_not_its_tracks() {
     // The two places a curve belongs: a track's runs the length of the track
     // and is drawn in a lane beside it, a region's runs the length of the
-    // region and is drawn inside it. One type, so one reader — which is what
+    // region and is drawn inside it. One type, so one reader -- which is what
     // this asserts, since the Python client wrote both through one class.
     let multitrack = vector();
     let region = &multitrack.track(NodeId(30)).unwrap().lanes[0].regions[0];

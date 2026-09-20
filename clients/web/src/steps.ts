@@ -1,8 +1,8 @@
 /**
  * Steps carried out against a server, through the crate's runner.
  *
- * A verb of the shared crate answers **steps** — a message to send, a `/done`
- * the rest waits for, a barrier — and {@link runSteps} is the one walk of them
+ * A verb of the shared crate answers **steps** -- a message to send, a `/done`
+ * the rest waits for, a barrier -- and {@link runSteps} is the one walk of them
  * in this client: a multitrack's playback and a session's load go through it. Which
  * reply releases what is the runner's (`StepRunner`), as it is the script's and
  * the GUI host's; what is left here is a socket and waiting on it.
@@ -27,8 +27,8 @@ export type Step =
  * Carry `steps` out on `server` through `runner`.
  *
  * What may go out is sent; where something is awaited, the runner puts the
- * message it waits on last, and that one is sent as a request — so the reply
- * cannot arrive before anyone is listening for it — and its reply is handed
+ * message it waits on last, and that one is sent as a request -- so the reply
+ * cannot arrive before anyone is listening for it -- and its reply is handed
  * back, which releases the rest. `to` is which server the runner addresses them
  * to, `"sound"` or `"samples"`; a client's is one server either way. Rejects
  * when the server refuses a step or answers one with something it does not
@@ -97,7 +97,7 @@ export function stepArg(arg: StepArg): MsgArg {
 }
 
 /**
- * One reply argument in the tagged shape the runner reads — the other direction
+ * One reply argument in the tagged shape the runner reads -- the other direction
  * of `stepArg`. A reply carries ints, floats and strings; a JS number is tagged
  * by whether it is integral, which is what those replies hold.
  */

@@ -2,7 +2,7 @@
 //! a waveform, and the two envelope followers that go with them.
 //!
 //! Everything here is built on [`Edge`], the one definition of what a trigger
-//! *is* — a signal crossing from `<= 0` up to `> 0`. That definition was
+//! *is* -- a signal crossing from `<= 0` up to `> 0`. That definition was
 //! already duplicated in three places (`SendTrig`, `SendReply`/`Poll`, the
 //! `Demand` driver) before this module existed; they now share this one, so
 //! "trigger" means exactly the same thing everywhere in the server, including
@@ -12,14 +12,14 @@
 //! names: one counter serves `Trig`/`Trig1`/`TDelay`, one held value serves
 //! `Latch`/`Gate`, one accumulator serves `Timer`/`Sweep`, one leaky
 //! integrator serves `Decay`/`Decay2`. Where two scsynth names are genuinely
-//! different machines (`Stepper` against `PulseCount`) they stay apart —
+//! different machines (`Stepper` against `PulseCount`) they stay apart --
 //! grouping by affinity is not grouping by force.
 //!
 //! **Every row here defaults to `ar`**, including the counters, whose output
 //! can only move when a trigger does. That looks wasteful and is deliberate: a
 //! `kr` UGen reads **one sample per block** from an `ar` input, so a `kr`
 //! counter driven by an `ar` impulse train silently misses every trigger that
-//! does not land on a block boundary — 63 out of 64. Defaulting to `ar` makes
+//! does not land on a block boundary -- 63 out of 64. Defaulting to `ar` makes
 //! the cheap-and-wrong pairing something you have to ask for. `kr` is
 //! available on every row and is the right choice *when its trigger is also
 //! `kr`*; the saving is then real and the arithmetic is unchanged, since a
@@ -39,14 +39,14 @@ use crate::dsp::{DoneAction, ProcessCtx, UGen, at};
 /// the server (`lag.rs`, the comb's feedback gain). Kept in `f64` here because
 /// [`Decay`]'s pole sits at `exp(ln(0.001) / (t·sr))`, which for a long decay
 /// is close enough to 1 that an `f32` coefficient quantizes the decay time
-/// visibly — the U-track precision policy, applied to the one place in this
+/// visibly -- the U-track precision policy, applied to the one place in this
 /// module that has a pole at all.
 const LOG001: f64 = -6.907_755_278_982_137;
 
 /// A **rising edge**: the signal crossing from `<= 0` up to `> 0`.
 ///
 /// One definition, shared by every UGen that takes a trigger. It holds the
-/// previous sample, so an instance belongs to one input of one UGen — a kind
+/// previous sample, so an instance belongs to one input of one UGen -- a kind
 /// with `trig` and `reset` carries two.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Edge {
@@ -151,7 +151,7 @@ impl UGen for TrigPulse {
                 // The delay does not: `n` samples later is the sample at
                 // `t+n`. Advancing the pending pulse **before** looking at the
                 // trigger is what makes that exact, and it also decides the
-                // boundary case — a trigger landing on the very sample the
+                // boundary case -- a trigger landing on the very sample the
                 // pending pulse fires re-arms rather than being swallowed, so
                 // a regular stream of triggers comes out regular instead of
                 // limping.
@@ -225,7 +225,7 @@ impl UGen for Hold {
     }
 }
 
-/// `Schmidt(signal, lo, hi)`: a comparator with hysteresis — 1 once the input
+/// `Schmidt(signal, lo, hi)`: a comparator with hysteresis -- 1 once the input
 /// rises above `hi`, 0 once it falls below `lo`, and *unchanged* in between.
 ///
 /// The gap is the point. A plain `signal > threshold` chatters when a noisy
@@ -263,7 +263,7 @@ pub enum FlipFlopMode {
 
 /// `ToggleFF(trig)` and `SetResetFF(trig, reset)`: one bit of state.
 ///
-/// A `SetResetFF` that sees both edges on the same sample ends at 0 — reset is
+/// A `SetResetFF` that sees both edges on the same sample ends at 0 -- reset is
 /// applied second, so the safe outcome wins. `ToggleFF` is not a divider by
 /// two of the *signal*, it is a divider by two of the *triggers*: what it halves
 /// is the rate at which the triggers arrive.
@@ -314,7 +314,7 @@ pub enum CounterMode {
 /// `PulseCount` and `PulseDivider`: one count of triggers, reported or divided.
 ///
 /// `PulseDivider`'s counter starts at `start` and is read **once**, on the
-/// first block — it is an initial condition, not a signal, and re-reading it
+/// first block -- it is an initial condition, not a signal, and re-reading it
 /// would make the divider jump whenever the value moved. Counting up and
 /// firing on reaching `div` (rather than on zero) is what makes `start = div-1`
 /// fire on the very first trigger, which is how a divider is phased.
@@ -391,7 +391,7 @@ fn wrap_i64(x: i64, lo: i64, hi: i64) -> i64 {
 /// range and wraps, one step per trigger.
 ///
 /// It sits at `resetval` before the first trigger, so the first trigger lands
-/// on `resetval + step` — a stepper is defined by its *transitions*, and the
+/// on `resetval + step` -- a stepper is defined by its *transitions*, and the
 /// alternative (the first trigger producing the value it already shows) makes
 /// the first step invisible. A negative `step` walks backwards through the same
 /// wrap.
@@ -495,7 +495,7 @@ impl UGen for Elapsed {
 
 /// `Changed(signal, threshold)`: 1 on any sample where the input moved.
 ///
-/// It reports `|(x[n] - x[n-1]) / 2| > threshold` — the halved difference,
+/// It reports `|(x[n] - x[n-1]) / 2| > threshold` -- the halved difference,
 /// because sclang builds this from `HPZ1`, whose gain is 0.5, and a def ported
 /// from there must not change value. Worth knowing when picking a threshold:
 /// a step of 0.2 registers against a threshold of 0.09, not of 0.19.
@@ -590,7 +590,7 @@ impl UGen for Decay {
 ///
 /// The counter resets on the first sample that exceeds `amp`, so what it
 /// measures is *uninterrupted* silence. Like the envelope family it raises a
-/// **done flag**, so `Done`/`FreeSelfWhenDone` can watch it — which is the
+/// **done flag**, so `Done`/`FreeSelfWhenDone` can watch it -- which is the
 /// point: it exists to notice that a voice has nothing left to say and let
 /// something else decide what to do about that.
 pub struct DetectSilence {

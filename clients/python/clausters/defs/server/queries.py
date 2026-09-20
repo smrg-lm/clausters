@@ -2,8 +2,8 @@
 
 Every method here is a blocking round trip: it sends and waits for the reply,
 so none of it may be called from a routine (that would freeze the clock
-thread). They report the **server's** state, not this handle's — the def store
-survives restarts, and another client's nodes are in the same tree — which is
+thread). They report the **server's** state, not this handle's -- the def store
+survives restarts, and another client's nodes are in the same tree -- which is
 why asking beats assuming.
 """
 
@@ -35,12 +35,12 @@ class ServerQueries:
 
     def query_defs(self, *names, timeout: "float | None" = None) -> "list[DefInfo]":
         """The defs the server holds, each with its control surface
-        (``/def_query``). With `names`, details exactly those — an unknown one
+        (``/def_query``). With `names`, details exactly those -- an unknown one
         comes back with an empty ``family`` (see `DefInfo.exists`) rather than
         raising; with no argument, every loaded def of every family.
 
         The def store persists across restarts, so a server may well hold defs
-        this client never sent: this is how you find out. Blocking, RT only —
+        this client never sent: this is how you find out. Blocking, RT only --
         never call it from a routine."""
         rows = self._request_batch("/def_query", *[str(n) for n in names],
                                    reply="/def_query.reply", timeout=timeout)
@@ -104,7 +104,7 @@ class ServerQueries:
         """The node tree from `group` down (``/group_queryTree``) as a `Tree`:
         every entry is the same `NodeInfo` that `clausters.defs.Node.info`
         returns, so reading a subtree needs no follow-up query. This is the
-        **structured** way to read the tree — never scrape the server's logs.
+        **structured** way to read the tree -- never scrape the server's logs.
 
         ``print(tree)`` draws it indented. Blocking, RT only."""
         gid = group.id if hasattr(group, "id") else group
@@ -116,7 +116,7 @@ class ServerQueries:
 
     def group_at(self, path: str, timeout: "float | None" = None):
         """The group a path names (``/group_query``), as a
-        `clausters.defs.Group` handle — or ``None`` when nothing answers to it.
+        `clausters.defs.Group` handle -- or ``None`` when nothing answers to it.
 
         A path is the group names from the root down, ``/mixer/drums``; a group
         with no name contributes its id instead (``/1000/drums``), so every

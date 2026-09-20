@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Naming groups: a mixer whose channels are addressed by path, not by id.
 
-A group is the closest thing the node tree has to a DAW channel — a handle for
-many nodes, a place in the order, a lifetime — but a bare group is called
+A group is the closest thing the node tree has to a DAW channel -- a handle for
+many nodes, a place in the order, a lifetime -- but a bare group is called
 ``1002``, and nothing in a client's code says which channel that is. A group
 **name** fixes exactly that: a referenceable label on top of the node id. The id
 stays the identity (every command still addresses the group by id, and every
@@ -16,7 +16,7 @@ This builds a small console:
     /mixer/bass   (voice -> bus 17)  /
                                                   -> /master  (18 -> hardware)
 
-and then drives it entirely by path — ``server.group_at("/mixer/drums")`` —
+and then drives it entirely by path -- ``server.group_at("/mixer/drums")`` --
 without a single node id written down. It also shows the two other places a name
 comes back: ``print(tree)``, which draws the label next to the id, and
 ``dump_graph``, which quotes it. The ``/node_start`` and ``/node_end``
@@ -24,12 +24,12 @@ notifications carry it too, so a client watching the tree sees *which* channel
 came up or went away.
 
 The rules a name obeys, all enforced by the server: unique among siblings (the
-same name under two different parents is the point — ``/mixer/drums`` and
+same name under two different parents is the point -- ``/mixer/drums`` and
 ``/master/drums`` are different channels), never all digits (an unnamed group
 answers to its id in a path, so a numeric name would be ambiguous), and no
 ``/`` (the server composes the path; the client names one group at a time). A
 name carried by ``/group_new`` is judged before the group exists, so a refused
-label refuses the creation — you never end up with an anonymous group.
+label refuses the creation -- you never end up with an anonymous group.
 
 No Faust needed; a plain server build works.
 
@@ -118,7 +118,7 @@ def main():
 
         # The label comes back in every node record, so the tree reads as the
         # console it is instead of as a list of numbers.
-        print("query_tree() — the names are part of the record:")
+        print("query_tree() -- the names are part of the record:")
         print(server.query_tree())
 
         # And it resolves: a path in, a group handle out. From here on the
@@ -135,7 +135,7 @@ def main():
         # A name is a label, not an identity: renaming changes nothing about
         # the node, and re-paths its whole subtree at once.
         mixer.rename("board")
-        print(f"renamed /mixer to /board — same node {mixer.id}, new path:")
+        print(f"renamed /mixer to /board -- same node {mixer.id}, new path:")
         print(f"  /board/drums -> {server.group_at('/board/drums').id}"
               f"   /mixer/drums -> {server.group_at('/mixer/drums')}")
 

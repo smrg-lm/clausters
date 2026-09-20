@@ -19,21 +19,21 @@
   </head>
   <body>
     <main>
-      <div id="note">Drive the server from a MIDI keyboard — a
+      <div id="note">Drive the server from a MIDI keyboard -- a
 <code>MidiFunc</code> turning notes into synths.
 
 The web port of the Python client's <code>examples/io/midi_responder.py</code>,
 and the MIDI counterpart of <code>responders.html</code>: a
 <code>MidiFunc</code> listens on a MIDI <b>input</b> port and dispatches each
 message to a callback. Here a note-on starts a synth and the matching note-off
-frees it — the client-side mirror of the server's own direct MIDI path (a server
+frees it -- the client-side mirror of the server's own direct MIDI path (a server
 can be played by MIDI it receives itself, or by a client that listens to MIDI
 and forwards <code>/synth_new</code>).
 
 <b>The one difference from the script</b>, and it is the platform's: the Python
 client <i>opens</i> a virtual input port named <code>clausters-in</code> that
-you then wire a keyboard into. Web MIDI creates no ports — it hands a page the
-ones that already exist, after asking your permission — so this picks one from
+you then wire a keyboard into. Web MIDI creates no ports -- it hands a page the
+ones that already exist, after asking your permission -- so this picks one from
 that list instead. Plug the keyboard in first, press <b>connect</b>, allow MIDI,
 choose the port, and play.
 
@@ -100,7 +100,7 @@ Everything below runs on the <b>in-page engine</b>: no server process.
       async function listen(ports, id) {
         recv?.stop();
         recv = await new MidiReceiver({ port: id, access: ports }).start();
-        log(`listening on "${recv.port}" — play your keyboard...`);
+        log(`listening on "${recv.port}" -- play your keyboard...`);
       }
 
       // ---- the responders ----

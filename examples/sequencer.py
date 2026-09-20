@@ -5,7 +5,7 @@ Every other example here drives the server from the client: a pattern computes
 an event, the clock sends it, the server plays it. This one sends **one synth,
 once**, and never speaks again. The clock, the pitches, the accents, the timbre
 changes and the note envelopes are all UGens, so the sequence keeps running with
-nothing on the other end of the socket — which is what triggers are for.
+nothing on the other end of the socket -- which is what triggers are for.
 
 It renders **offline**, so it needs no audio hardware and no running server:
 
@@ -33,7 +33,7 @@ SR = 48000.0
 # ---- the patch --------------------------------------------------------------
 #
 # One `impulse` is the clock, and everything downstream reads it as a
-# **trigger** — a signal crossing from at-or-below zero up to above it. That one
+# **trigger** -- a signal crossing from at-or-below zero up to above it. That one
 # definition is shared by every UGen here, so "on each step" means exactly the
 # same thing to the pitch sequence, the accent divider and the sample-and-hold.
 #
@@ -62,7 +62,7 @@ def sequencer() -> SynthDef:
     env = decay2(clock + accent, 0.004, 0.22)
 
     # Timbre: `toggle_ff` flips on every step, and `latch` samples noise once
-    # per step and holds it — the classic sample-and-hold filter sweep, which
+    # per step and holds it -- the classic sample-and-hold filter sweep, which
     # is a *stepped* random rather than a smooth one because the value only
     # moves when a trigger says so.
     bright = toggle_ff(clock)
@@ -113,11 +113,11 @@ def render(path=None):
     rms = max(stats.rms, default=0.0)
     print(f"rendered {stats.frames} frames ({stats.duration:.2f} s) | peak {peak:.3f} rms {rms:.4f}")
     if peak == 0.0:
-        sys.exit("the render is silent — something is wrong")
+        sys.exit("the render is silent -- something is wrong")
     if peak > 1.5:
         sys.exit(f"the render clips hard (peak {peak:.2f})")
 
-        print(f"wrote {path} — listen with: pw-play {path}")
+        print(f"wrote {path} -- listen with: pw-play {path}")
 
 
 if __name__ == "__main__":

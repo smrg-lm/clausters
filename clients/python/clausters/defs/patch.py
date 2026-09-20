@@ -1,12 +1,12 @@
 """The directed patcher model: boxes with typed inlets/outlets and cords.
 
-This is the **programmatic** patcher — the `patch` GUI widget is only a visual
+This is the **programmatic** patcher -- the `patch` GUI widget is only a visual
 view of it (`to_widget` renders the model the widget draws). There are two
 levels, one directed-cord grammar apart by what a box *is* and what the patch is
 *of*:
 
 - **`GraphPatch`** (level 1): a box is a **whole def** (a SynthDef/FaustDef the
-  server has) — itself a graph — and the patch compiles to a **`GraphDef`**,
+  server has) -- itself a graph -- and the patch compiles to a **`GraphDef`**,
   whole nodes wired by server buses. A cord *is* a bus, but you never number one:
   `compile` runs the shared cord->bus pass (`clausters_core::patch`, via
   `clausters._native`) that names one bus per connected net (its writers
@@ -14,10 +14,10 @@ levels, one directed-cord grammar apart by what a box *is* and what the patch is
 - **`DefPatch`** (level 2): a box is a single **UGen** (or a Faust signal op) and
   the patch is the **internal graph of one `SynthDef`/`FaustDef`**. A cord is an
   **internal wire**, never an allocated server bus, so a third cord type joins
-  audio/control: **init** (`ir`). Built as a **read-only view** —
+  audio/control: **init** (`ir`). Built as a **read-only view** --
   `DefPatch.from_synthdef` / `from_faustdef` decode a def's in-memory graph so it
   draws as its UGen boxes; `to_synthdef` reconstructs the SynthDef (the decode is
-  faithful — the round trip reproduces the spec).
+  faithful -- the round trip reproduces the spec).
 
 A box has typed **inlets** and **outlets**; a **cord** runs an outlet to an
 inlet, and cords of different rates never connect.
@@ -32,13 +32,13 @@ inlet, and cords of different rates never connect.
     Group.graph("chain", server=server)  # sounds
 
 Pass a `clausters.defs.SynthDef` to `add` and its typed ports are read off the
-def itself — a control feeding an ``In`` is an inlet, one feeding an ``Out`` an
+def itself -- a control feeding an ``In`` is an inlet, one feeding an ``Out`` an
 outlet (the same structural fact the server uses to order a graph). Or pass a def
 **name** and list the ports yourself.
 
 The buses are never drawn or named by you, so **the hardware output is not one
-either**: a signal reaches the speakers through a **terminal def** — a ``dac``
-with an inlet and no outlet, its ``Out.ar(0, …)`` baked in — a box like any other,
+either**: a signal reaches the speakers through a **terminal def** -- a ``dac``
+with an inlet and no outlet, its ``Out.ar(0, …)`` baked in -- a box like any other,
 not a special ``OUT`` node.
 
 The **rate** of a port is its cord type: an audio port is a plain name, a control
@@ -61,7 +61,7 @@ _WRITERS = {"Out": "audio", "ReplaceOut": "audio", "OutCtl": "control"}
 
 def synthdef_ports(sdef: SynthDef) -> tuple[list, list]:
     """Derive a `SynthDef`'s patcher ports ``(inlets, outlets)`` from its graph,
-    the way the directed patcher wants them — **structural, not a guess**: a
+    the way the directed patcher wants them -- **structural, not a guess**: a
     control that feeds an ``In``/``InCtl`` is an inlet, one that feeds an
     ``Out``/``OutCtl``/``ReplaceOut`` is an outlet, and the reading/writing UGen's
     family fixes the rate (audio for ``In``/``Out``, control for the ``Ctl``
@@ -100,7 +100,7 @@ def _walk(roots):
 
 
 def _port(spec, direction: str) -> dict:
-    """Normalize a port spec — a bare name (audio) or ``(name, "control")`` — into
+    """Normalize a port spec -- a bare name (audio) or ``(name, "control")`` -- into
     the flat ``{name, dir, rate}`` the cord->bus pass consumes."""
     name, rate = spec if isinstance(spec, tuple) else (spec, "audio")
     if rate not in ("audio", "control"):
@@ -109,11 +109,11 @@ def _port(spec, direction: str) -> dict:
 
 
 class GraphPatch:
-    """A directed level-1 patch — whole defs wired by buses — that compiles to a
+    """A directed level-1 patch -- whole defs wired by buses -- that compiles to a
     `GraphDef`. Its boxes and the cords between their ports."""
 
     def __init__(self):
-        #: Each box a flat ``{def, ports: [{name, dir, rate}, ...]}`` — the schema
+        #: Each box a flat ``{def, ports: [{name, dir, rate}, ...]}`` -- the schema
         #: the cord->bus pass reads.
         self.boxes: list[dict] = []
         #: Each cord a ``{from_box, from_port, to_box, to_port}`` (ports are flat
@@ -124,9 +124,9 @@ class GraphPatch:
 
     def add(self, defname, inlets=(), outlets=()) -> int:
         """Add a box for a def and return its index. ``defname`` is either a
-        `clausters.defs.SynthDef` — whose typed ports are then **derived from its
+        `clausters.defs.SynthDef` -- whose typed ports are then **derived from its
         graph** (a control feeding an ``In`` is an inlet, one feeding an ``Out`` an
-        outlet; see `synthdef_ports`) — or a def **name** (a string), for which you
+        outlet; see `synthdef_ports`) -- or a def **name** (a string), for which you
         list the ``inlets``/``outlets`` yourself (each a name, or ``(name,
         "control")``). Passing explicit ports with a `SynthDef` overrides the
         derived ones. A **terminal** def (a sink that reaches hardware itself) is
@@ -170,7 +170,7 @@ class GraphPatch:
 
     @classmethod
     def from_graphdef(cls, gdef: GraphDef, defs: dict | None = None) -> "GraphPatch":
-        """Decode a `GraphDef` into a directed patch — the inverse of
+        """Decode a `GraphDef` into a directed patch -- the inverse of
         `to_graphdef`. Each member becomes a box; a member control valued an
         internal-bus **name** (a string other than the hardware sentinel ``"OUT"``)
         becomes a cord from the writing outlet to every reading inlet on that bus.
@@ -179,7 +179,7 @@ class GraphPatch:
         def, so ``defs`` maps a member's def name to the `SynthDef` it was built
         from (a control feeding an ``In`` is an inlet, one feeding an ``Out`` an
         outlet; see `synthdef_ports`). A member whose def is not resolvable through
-        ``defs`` draws **port-less** — its wiring cannot be typed, so it grows no
+        ``defs`` draws **port-less** -- its wiring cannot be typed, so it grows no
         cords. The box order is the member order, so a caller maps a box index
         straight back to the member it came from."""
         defs = defs or {}
@@ -217,7 +217,7 @@ class GraphPatch:
         return {"boxes": self.boxes, "cords": self.cords}
 
     def compile(self) -> dict:
-        """Run the shared cord->bus pass. Returns ``{buses, members}`` — one
+        """Run the shared cord->bus pass. Returns ``{buses, members}`` -- one
         private bus per connected net (writers summing), each member its def and
         its wired controls. Raises `ValueError` on a bad cord (reversed,
         rate-mismatched, out of range)."""
@@ -241,7 +241,7 @@ class GraphPatch:
         inlets/outlets and cords as ``[from_box, outlet, to_box, inlet]``
         quadruples (the indices are within each box's inlet/outlet lists). Pass
         ``geometry`` (``{box_index: (x, y)}``) to place boxes; the rest auto-stack.
-        The GUI edits the same model — a ``"wire"`` event names its ports, which
+        The GUI edits the same model -- a ``"wire"`` event names its ports, which
         `connect` resolves, so the round trip needs no index bookkeeping."""
         return _patch_to_widget(self.boxes, self.cords, geometry)
 
@@ -274,7 +274,7 @@ def _split_index(boxes: list, box: int, flat: int, direction: str) -> int:
 
 def _patch_to_widget(boxes: list, cords: list, geometry: dict | None = None) -> dict:
     """Render the shared ``{boxes, cords}`` model into the `patch` widget schema
-    — boxes with split inlet/outlet lists and cords as flat ``[from_box, outlet,
+    -- boxes with split inlet/outlet lists and cords as flat ``[from_box, outlet,
     to_box, inlet]`` quadruples. Both patch levels draw through this."""
     geometry = geometry or {}
     drawn = []
@@ -302,14 +302,14 @@ def _patch_to_widget(boxes: list, cords: list, geometry: dict | None = None) -> 
 
 
 # ===================================================================
-# Level 2: the Def-view — a SynthDef/FaustDef as its internal graph.
+# Level 2: the Def-view -- a SynthDef/FaustDef as its internal graph.
 # ===================================================================
 
 #: A UGen calculation rate -> the cord type the widget draws. ``ir`` (init /
 #: scalar) is the level-2 third weight (dashed); ``dr`` (demand) has no bus
 #: weight of its own, so it reads as control. An **unset** UGen rate defaults to
 #: audio: most UGens are audio-rate, and the exact per-kind default is the
-#: server's, not the client's — an honest headless heuristic for a view.
+#: server's, not the client's -- an honest headless heuristic for a view.
 _UGEN_RATE = {"ar": "audio", "kr": "control", "ir": "init", "dr": "control"}
 #: A control **type** -> the cord type. A scalar (``ir``) control is an init cord.
 _CONTROL_RATE = {"kr": "control", "control": "control", "tr": "control",
@@ -321,8 +321,8 @@ _FAUST_CONTROL_OPS = frozenset(
 
 
 def _rate_of(node) -> str:
-    """The cord type of ``node``'s output — ``"audio"``/``"control"``/``"init"``
-    — for drawing and typing a cord. A `Ugen` maps its calc rate (unset ->
+    """The cord type of ``node``'s output -- ``"audio"``/``"control"``/``"init"``
+    -- for drawing and typing a cord. A `Ugen` maps its calc rate (unset ->
     audio); a `Control` maps its type (unset -> control); a bare number is a
     constant (init)."""
     if isinstance(node, Ugen):
@@ -351,14 +351,14 @@ def _fmt_const(value) -> str:
 
 
 def _outlet_flat(box: dict) -> int:
-    """The flat index of a box's single outlet in its ``ports`` — the inlets come
+    """The flat index of a box's single outlet in its ``ports`` -- the inlets come
     first, so it is the inlet count."""
     return sum(1 for p in box["ports"] if p["dir"] == "in")
 
 
 def _topo_ugens(outputs) -> list:
     """Every `Ugen` reachable from ``outputs`` in the def's topological order
-    (a UGen after its inputs), each once — the same post-order `SynthDef.spec`
+    (a UGen after its inputs), each once -- the same post-order `SynthDef.spec`
     walks, so in the decode a box's input boxes always precede it."""
     ordered: list = []
     seen: set[int] = set()
@@ -377,14 +377,14 @@ def _topo_ugens(outputs) -> list:
 
 
 class DefPatch:
-    """A level-2 patch — the internal graph of a single `SynthDef`/`FaustDef`,
+    """A level-2 patch -- the internal graph of a single `SynthDef`/`FaustDef`,
     its UGen (or Faust op) boxes wired by internal cords. Built as a **read-only
     view**: `from_synthdef` / `from_faustdef` decode a def's in-memory graph so
     it draws as its boxes; `to_widget` renders it for the `patch` widget exactly
     as level 1, plus the init (`ir`) cord type; `to_synthdef` reconstructs the
-    SynthDef (the decode is faithful — the round trip reproduces the spec).
+    SynthDef (the decode is faithful -- the round trip reproduces the spec).
 
-    A cord here is an **internal wire**, never an allocated server bus — that is
+    A cord here is an **internal wire**, never an allocated server bus -- that is
     the whole difference from `GraphPatch`."""
 
     def __init__(self):
@@ -395,11 +395,11 @@ class DefPatch:
         #: ``{def, kind:"const", role:"const", const: value, ports:[outlet]}``. A
         #: **faust** box mirrors ugen without the rebuild fields.
         self.boxes: list[dict] = []
-        #: Each cord ``{from_box, from_port, to_box, to_port}`` — flat port
+        #: Each cord ``{from_box, from_port, to_box, to_port}`` -- flat port
         #: indices into each box's ``ports`` (an outlet -> an inlet).
         self.cords: list[dict] = []
         #: Box indices of the def's output roots (its ``Out``/side-effect UGens
-        #: or the Faust output signals), in order — what `to_synthdef` rebuilds.
+        #: or the Faust output signals), in order -- what `to_synthdef` rebuilds.
         self.roots: list[int] = []
 
     # ---- decoding a SynthDef's UGen graph ----
@@ -409,11 +409,11 @@ class DefPatch:
         """Decode a `SynthDef`'s in-memory UGen graph into a level-2 patch: every
         UGen a box, every referenced control a **source** box, every constant a
         **value** box, and every input a cord. Each box carries a layout role, so
-        the host draws it as an inverted tree — controls pinned to the top row,
+        the host draws it as an inverted tree -- controls pinned to the top row,
         value boxes tucked above the box they feed, sinks at the bottom."""
         patch = cls()
         ordered = _topo_ugens(sdef.roots)
-        # Controls first (one box per unique name — the pinned source row), then
+        # Controls first (one box per unique name -- the pinned source row), then
         # the UGens in the def's own order (each after the inputs that feed it).
         controls: dict[str, int] = {}
         for u in ordered:
@@ -466,7 +466,7 @@ class DefPatch:
         })
 
     def _add_const(self, value) -> int:
-        """Add a **value** box for a literal input and return its index — a source
+        """Add a **value** box for a literal input and return its index -- a source
         with a single init-rate outlet, captioned with the number."""
         self.boxes.append({
             "def": _fmt_const(value),
@@ -486,7 +486,7 @@ class DefPatch:
     @classmethod
     def from_faustdef(cls, fdef) -> "DefPatch":
         """Decode a `FaustDef` into a level-2 patch. A **signal-tree** def
-        (`FaustDef.from_signals`) decodes node for node — every signal op a box,
+        (`FaustDef.from_signals`) decodes node for node -- every signal op a box,
         every control (slider/button) a source box, every operand a cord. A
         **box-tree** or **source** def is opaque (its internals are the Faust
         compiler's, not reconstructable client-side), so it draws as a single
@@ -539,13 +539,13 @@ class DefPatch:
     # ---- the GUI view + the SynthDef round trip ----
 
     def to_widget(self, geometry: dict | None = None) -> dict:
-        """The patch as the `patch` widget draws it — boxes with split
+        """The patch as the `patch` widget draws it -- boxes with split
         inlets/outlets and flat cord quadruples (see `_patch_to_widget`), the
         same schema level 1 uses, with init cords dashed."""
         return _patch_to_widget(self.boxes, self.cords, geometry)
 
     def to_synthdef(self, name: str) -> SynthDef:
-        """Reconstruct the `SynthDef` this patch represents — the inverse of
+        """Reconstruct the `SynthDef` this patch represents -- the inverse of
         `from_synthdef`. Each box is rebuilt from its cords (following them back to
         the sources, so a shared box rebuilds once and value boxes resolve to their
         numbers). Only a UGen-graph patch rebuilds; a Faust patch has no

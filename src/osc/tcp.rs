@@ -11,7 +11,7 @@
 //! request is served without waiting for the periodic GC tick.
 //!
 //! Wire framing (same as scsynth's TCP): a 4-byte big-endian length prefix
-//! followed by exactly that many OSC bytes — a message or a bundle, decoded
+//! followed by exactly that many OSC bytes -- a message or a bundle, decoded
 //! through the single [`super::decode_packet`] door like every other transport.
 //! Replies use the same framing.
 
@@ -28,7 +28,7 @@ use super::ClientSlots;
 /// Capacity, in frames, of the bounded channel from the reader threads to the
 /// command loop. When a client floods frames faster than the loop drains
 /// them, its reader blocks here and TCP flow control pushes back to the
-/// sender — bounding server memory instead of growing an unbounded queue.
+/// sender -- bounding server memory instead of growing an unbounded queue.
 /// Sized in frames (not bytes): plenty for dense small-message control, while
 /// the worst case stays `INBOUND_QUEUE × max_frame`.
 const INBOUND_QUEUE: usize = 256;
@@ -36,7 +36,7 @@ const INBOUND_QUEUE: usize = 256;
 /// How long a reply write may block before the connection is dropped. Replies
 /// are written by the command loop itself, so a client that stops reading
 /// (with a full socket buffer) would otherwise stall the whole server; the
-/// timeout bounds that stall and evicts the slow consumer. Generous — it
+/// timeout bounds that stall and evicts the slow consumer. Generous -- it
 /// fires only when the client makes no progress at all for this long.
 const REPLY_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -71,7 +71,7 @@ impl TcpHub {
     /// Binds a TCP listener on `addr` and starts accepting. `wake_target` is the
     /// server's own UDP address; reader threads send a zero-length datagram
     /// there to wake the command loop when a frame or disconnect is queued.
-    /// `max_frame` is the largest OSC frame accepted on a connection — a
+    /// `max_frame` is the largest OSC frame accepted on a connection -- a
     /// prefix above it (or a zero prefix) closes the connection instead of
     /// allocating on an untrusted length (see
     /// [`super::DEFAULT_MAX_FRAME`]). `slots` is the live-client ceiling
@@ -106,7 +106,7 @@ impl TcpHub {
 
     /// The next complete frame `(connection id, bytes)`, or `None` when the
     /// queue is drained. Registers and forgets connections as their
-    /// `Connected`/`Disconnected` events go by — both precede / follow that
+    /// `Connected`/`Disconnected` events go by -- both precede / follow that
     /// connection's frames in the channel, so the write half is always present
     /// before a frame is returned for handling.
     pub fn next_frame(&mut self) -> Option<(u64, Vec<u8>)> {
@@ -133,9 +133,9 @@ impl TcpHub {
     }
 
     /// Writes a length-prefixed reply to connection `id` (silently dropped if
-    /// the connection is gone — the `Disconnected` event prunes it). A write
-    /// that fails — including one that stalls past `REPLY_WRITE_TIMEOUT`
-    /// because the client stopped reading — drops the connection: its reader
+    /// the connection is gone -- the `Disconnected` event prunes it). A write
+    /// that fails -- including one that stalls past `REPLY_WRITE_TIMEOUT`
+    /// because the client stopped reading -- drops the connection: its reader
     /// sees the shutdown and the `Disconnected` event prunes the state.
     pub fn reply(&self, id: u64, bytes: &[u8]) {
         if let Some(stream) = self.conns.get(&id)

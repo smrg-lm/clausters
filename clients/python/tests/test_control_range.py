@@ -9,7 +9,7 @@ takes any float for, so `min`/`max` are spelled on the widget.
 The one control that arrives with a range is a **Faust** parameter, because
 `hslider(label, init, min, max, step)` cannot be written without one and the
 compiled DSP reports it back. That is Faust's syntax showing through, not a range
-this client declares — which is why `ControlInfo` has carried `min`/`max`/`step`
+this client declares -- which is why `ControlInfo` has carried `min`/`max`/`step`
 all along and only that family fills them.
 """
 
@@ -331,7 +331,7 @@ def test_a_window_with_no_control_widget_says_so():
 
 def test_a_redraw_keeps_the_window_bindable():
     """The handle is refreshed in place on a redefine, and its controls with it
-    — a rebound window must not be wiring ids that recycled."""
+    -- a rebound window must not be wiring ids that recycled."""
     from clausters.gui import view
 
     _, freq, _ = _voice()

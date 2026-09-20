@@ -1,7 +1,7 @@
 """The bundle writer (`clausters.bundle.Bundle`) and the core pass it validates
 through.
 
-The writer's job is that a written bundle *mounts* — so most of these assert
+The writer's job is that a written bundle *mounts* -- so most of these assert
 what it refuses, not just what it emits: a hole baked into a def payload, a
 default that does not type-check, a symbol declared twice. The mount itself is
 tested in Rust (`clausters_core::bundle`) and in the browser
@@ -20,7 +20,7 @@ from clausters.gui import knob, meter, window
 
 
 def voice(name="voice") -> SynthDef:
-    """A gated voice that publishes its envelope on a bus it is *given* — the
+    """A gated voice that publishes its envelope on a bus it is *given* -- the
     authoring rule the format rests on: a bus reaches a def as a control."""
     freq = control("freq", 220.0)
     env_bus = control("env_bus", 0.0)
@@ -62,7 +62,7 @@ def test_the_manifest_declares_what_a_mount_allocates():
     assert m["symbols"]["buses"] == [{"name": "lfo", "rate": "control", "channels": 1}]
     assert m["params"]["freq"] == {"type": "float", "default": 220.0, "min": 60.0, "max": 700.0}
     assert m["presets"] == ["bright"]
-    # The id block is the highest widget id, root included — a width, not a
+    # The id block is the highest widget id, root included -- a width, not a
     # count: two instances are offset by it and must not overlap.
     assert m["widgets"] == 3
 
@@ -174,7 +174,7 @@ def test_the_emitted_bytes_are_canonical():
 
 def test_the_baked_form_is_what_the_rule_prevents(tmp_path):
     """`baked()` compiles bus 0 into the def, so both instances would write it.
-    The writer cannot see that (0 is a number, not a hole) — the rule is an
+    The writer cannot see that (0 is a number, not a hole) -- the rule is an
     authoring one, and this test records what it is about."""
     b = Bundle("legacy-voice")
     b.synthdef(baked())

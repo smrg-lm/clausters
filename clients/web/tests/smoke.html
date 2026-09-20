@@ -67,7 +67,7 @@ try {
     //    **Bounded by the clock and not by a count.** A count is a race against
     //    a quantum: 512 frames is under 11 ms at 48 kHz, and a few thousand
     //    MessagePort round trips can finish inside that on a context that has
-    //    only just started rendering — which is what "clock stuck at 512"
+    //    only just started rendering -- which is what "clock stuck at 512"
     //    meant, and why this failed under the runner and passed whenever a
     //    debugger's own warm-up had already paid the wait.
     const c0 = await server.clock();

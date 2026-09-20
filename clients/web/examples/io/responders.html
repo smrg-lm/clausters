@@ -20,7 +20,7 @@
   <body>
     <main>
       <div id="note">The web port of the Python client's
-<code>osc_responder.py</code>: <b>the client as a hub</b> — what arrives drives
+<code>osc_responder.py</code>: <b>the client as a hub</b> -- what arrives drives
 what is sent.
 
 An <code>OscFunc</code> registers a callback that fires when a matching message
@@ -29,12 +29,12 @@ An <code>OscFunc</code> registers a callback that fires when a matching message
 conductor changes the shared transport grid.
 
 Where the reference client binds a UDP port any application can target, a page
-has no socket to bind: its receiver is the carrier it already has — this
-engine's connection — so <code>src</code> reads <code>page</code> rather than a
+has no socket to bind: its receiver is the carrier it already has -- this
+engine's connection -- so <code>src</code> reads <code>page</code> rather than a
 host and a port. And nothing outside can send into it, so the sender is the
 engine itself: a def whose only job is to report its own onsets with
 <code>sendReply</code> stands in for the script's second socket. The transport
-half is the same call on both sides, because the push comes from the server —
+half is the same call on both sides, because the push comes from the server --
 but one carrier means the responder also sees the reply to the query its own
 re-align sends, so this one asks whether the grid is new before joining it.
 

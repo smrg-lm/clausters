@@ -7,7 +7,7 @@ out so it is testable on a captured SVG and shared with every other client.
 `page_json` is how a re-engraved page replaces the one on screen.
 
 The engraver is libverovio bound in Rust (``clausters-notation``) and the walk
-itself is `clausters_core::notation`, both reached through the C ABI — so this
+itself is `clausters_core::notation`, both reached through the C ABI -- so this
 module is a shell of names, dicts and one handle whose lifetime Python owns,
 and a client in another language rebinds the same ABI instead of
 reimplementing any of it.
@@ -34,14 +34,14 @@ from .sheet import _unwrap
 if os.path.isdir(os.path.join(_libpath.LIBS_DIR, "verovio")):
     os.environ.setdefault("CLAUSTERS_VEROVIO", _libpath.LIBS_DIR)
 
-# The display-list keys the host draws from — everything but `notes`, which is
+# The display-list keys the host draws from -- everything but `notes`, which is
 # the client's own layer. `page_json` and `guidef.score` send exactly these.
 _PAGE_LAYERS = ("vb", "glyphs", "prims", "cursors", "step", "elements")
 
 class Score:
     """A loaded score, kept alive so it can be **edited** and re-engraved.
 
-    `engrave` is the one-shot form — load, draw, discard. This is the stateful
+    `engrave` is the one-shot form -- load, draw, discard. This is the stateful
     one: it holds the engraver's document open, so an edit can be applied to the
     same one the display list was drawn from and the page re-engraved against it.
     The MEI ``xml:id``s survive editing, which is what lets the host keep its
@@ -57,14 +57,14 @@ class Score:
     **The undo order is the editing context's**, like every other editable
     structure's. A score registers in `clausters.gui.editing.Editing.of(score)`
     under the ``"score"`` vocabulary and records each edit as the MEI it
-    produced, with the previous one as its inverse — an absolute payload, so a
+    produced, with the previous one as its inverse -- an absolute payload, so a
     step is idempotent and carries no direction. That is what makes a window
     holding a lane and a page walk **one** order: before this, an engraved page
     had a real history of its own and Ctrl+Z meant one of two different things
     depending on what the pointer was over.
 
     The shared layer's own snapshot stack is still there and is what a caller
-    with no such context uses — a standalone host holding a page and nothing
+    with no such context uses -- a standalone host holding a page and nothing
     else. From here it is not read: `undo` and `redo` walk the context's pile
     and put a state back through the crate's `load`.
     """
@@ -86,14 +86,14 @@ class Score:
             _native.lib().clausters_score_free(handle)
 
     def display_list(self, page: int = 1) -> dict:
-        """This score engraved into a ``score`` display list — the same layers
+        """This score engraved into a ``score`` display list -- the same layers
         `engrave` returns, but from the live document, so it reflects every edit
         applied so far."""
         return json.loads(_text(_native.lib().clausters_score_display_list,
                                 self._h, page))
 
     def mei(self) -> str:
-        """The score as MEI, ids and all — the format to persist, and what the
+        """The score as MEI, ids and all -- the format to persist, and what the
         undo stack is made of."""
         return _text(_native.lib().clausters_score_mei, self._h)
 
@@ -115,7 +115,7 @@ class Score:
 
     @property
     def _structure(self) -> int:
-        """This score's identity in the pile — minted once, per score.
+        """This score's identity in the pile -- minted once, per score.
 
         It registers **itself** as what puts an edit back: a page is a state
         rather than a payload in some vocabulary, so what applies one is `load`
@@ -128,7 +128,7 @@ class Score:
 
         **A state, not a step.** The page a score is at describes it whole, the
         way a curve's points and a timeline's events do, so an entry is
-        idempotent and reads the same in both directions — which is the only
+        idempotent and reads the same in both directions -- which is the only
         shape a pile shared with other structures can carry.
         """
         after = self.mei()
@@ -150,7 +150,7 @@ class Score:
         """Put one payload of a history step back onto this score.
 
         What `clausters.gui.editing.Editing.carry` asks of whatever was
-        registered for a structure — a `clausters.gui.editing.Domain` for an
+        registered for a structure -- a `clausters.gui.editing.Domain` for an
         editor, and this for a page, which is a **state** rather than a payload
         in a vocabulary.
         """
@@ -159,10 +159,10 @@ class Score:
 
     def adopt(self) -> None:
         """Another window in this context edited. Nothing here: a score is data
-        and draws nothing of its own — whoever engraved the page redraws it."""
+        and draws nothing of its own -- whoever engraved the page redraws it."""
 
     def load(self, mei: str) -> bool:
-        """Replace the document with ``mei`` — **a state, not a step**.
+        """Replace the document with ``mei`` -- **a state, not a step**.
 
         The door the pile puts a previous page back through. It clears the
         shared layer's own stack, so one score has one history.
@@ -173,7 +173,7 @@ class Score:
 
     @property
     def can_undo(self) -> bool:
-        """Whether the **context's** pile has an edit to step back over — which
+        """Whether the **context's** pile has an edit to step back over -- which
         may be an edit to something else entirely, since the order is one."""
         return self._editing.can_undo
 
@@ -211,7 +211,7 @@ class Score:
         this reads that, so a phrase in ABC is as editable as one made by
         operating on a motif.
 
-        Raises ``ValueError`` when the document could not be read into a model —
+        Raises ``ValueError`` when the document could not be read into a model --
         a state and not a failure, since the page still draws and still plays
         and only the model's verbs are unavailable on it.
         """
@@ -223,7 +223,7 @@ class Score:
         This is the edit path. ``op`` is the payload the sheet verbs build
         (``clausters.gui.notation.sheet.transpose`` and the rest), so an edit to
         an open score and an edit to a sheet in hand are the same operation
-        through the same code — which is what lets a standalone host with no
+        through the same code -- which is what lets a standalone host with no
         client language perform it too.
 
         Returns False when the document has no model behind it or the operation
@@ -238,12 +238,12 @@ class Score:
         return True
 
     def transpose(self, element_id: str, steps: int) -> bool:
-        """Move a note by ``steps`` **diatonic** steps along the staff — up when
-        positive — as one undo step.
+        """Move a note by ``steps`` **diatonic** steps along the staff -- up when
+        positive -- as one undo step.
 
-        It is the **model's** move where the page named a model item — the note
+        It is the **model's** move where the page named a model item -- the note
         takes the key signature's alteration for the letter it lands on, which
-        is what reading in a key means — and falls back to the engraver's editor
+        is what reading in a key means -- and falls back to the engraver's editor
         only for an element this layer did not write.
 
         It is in steps rather than in a position because the engraver's
@@ -251,7 +251,7 @@ class Score:
         (passing a note its own drawn y moves it six steps), so a caller would
         have to carry an unexplained offset. Steps are exact.
 
-        It is **not** the shape an edit travels in — a displacement made against
+        It is **not** the shape an edit travels in -- a displacement made against
         a page since re-engraved would have to be rebased. `transpose_to` is
         what applies what a host sends; reach for this one only when the delta
         is what you actually have.
@@ -266,7 +266,7 @@ class Score:
 
     def transpose_to(self, element_id: str, position: int, page: int = 1) -> bool:
         """Move a note **to** the diatonic staff position ``position`` on
-        ``page`` — whole steps from its staff's top line, positive upward — as
+        ``page`` -- whole steps from its staff's top line, positive upward -- as
         one undo step.
 
         The absolute form, and what a ``"transpose"`` edit-back from the GUI
@@ -274,12 +274,12 @@ class Score:
         re-engraved under the gesture needs no rebasing. The relative call
         underneath is the engraver's requirement, and the delta is computed
         against the engraving rather than carried from wherever the gesture
-        happened — which is the point, since the two can differ.
+        happened -- which is the point, since the two can differ.
 
         Host and engraver read the position off the same drawing, so a position
         named by one and resolved by the other cannot mean two things.
 
-        Returns whether the note is now at ``position`` — **True when it was
+        Returns whether the note is now at ``position`` -- **True when it was
         already there**, since the requested state holds and a resend must be
         harmless. False when the element is not on that page, the page has no
         staff to measure against, or the engraver refused the move.
@@ -298,7 +298,7 @@ class Score:
 
     def edit(self, action: str, **param) -> bool:
         """Apply one raw editor action (``set``, ``insert``, ``delete``, ...) as
-        a single undo step — the escape hatch for what `transpose` does not
+        a single undo step -- the escape hatch for what `transpose` does not
         cover. Returns whether the engraver accepted it; a rejected action leaves
         the score untouched."""
         act = action.encode("utf-8")
@@ -314,7 +314,7 @@ class Score:
     @classmethod
     def from_notes(cls, notes, *, meter: str = "4/4", clef: str = "G2",
                    key: str = "C", beat_unit: int = 4, **kw) -> "Score":
-        """An editable `Score` built from a **monophonic** run of events — the
+        """An editable `Score` built from a **monophonic** run of events -- the
         `from_notes` encoder handed straight to the constructor. ``kw`` passes
         ``scale``/``page_width`` through. See `from_notes` for the mapping."""
         return cls(from_notes(notes, meter=meter, clef=clef, key=key,
@@ -324,7 +324,7 @@ class Score:
     def from_timeline(cls, timeline, *, meter: str = "4/4", clef: str = "G2",
                       key: str = "C", beat_unit: int = 4, **kw) -> "Score":
         """An editable `Score` built from a `Timeline` (chords from simultaneous
-        events, rests from gaps) — the `from_timeline` encoder handed to the
+        events, rests from gaps) -- the `from_timeline` encoder handed to the
         constructor. ``kw`` passes ``scale``/``page_width`` through."""
         return cls(from_timeline(timeline, meter=meter, clef=clef, key=key,
                                  beat_unit=beat_unit), **kw)
@@ -340,18 +340,18 @@ def engrave(data: str, *, page: int = 1, scale: int = 40,
 
     The result holds one engraving, in three layers:
 
-    - what the host **draws** — ``vb`` (the ``[w, h]`` page-unit viewBox),
+    - what the host **draws** -- ``vb`` (the ``[w, h]`` page-unit viewBox),
       ``glyphs`` (a SMuFL codepoint-to-outline table), ``prims`` (the placed
       glyphs, lines, fills and texts) and ``step`` (page units per diatonic
       step, the quantum a pitch drag on the page counts in);
-    - where the **cursor** goes — ``cursors``, the timemap folded into geometry
+    - where the **cursor** goes -- ``cursors``, the timemap folded into geometry
       (``{"t", "x", "y0", "y1"}`` per onset, ``t`` in ms);
-    - what **sounds** — ``notes``, one ``{"t", "dur", "pitch", "id"}`` per note
+    - what **sounds** -- ``notes``, one ``{"t", "dur", "pitch", "id"}`` per note
       (ms and MIDI pitch). This layer stays on the client: it is what a driver
       plays, and playing it while anchoring the widget's ``playhead_at`` to the
       sample clock of that instant puts the cursor on the sounding note. The
       engraver mints fresh ids per load, so all three layers must come from one
-      engraving — which is why one call produces them all.
+      engraving -- which is why one call produces them all.
 
     Pass the result to `clausters.gui.guidef.score` as its ``display_list``, or
     to `score_view` to get a scrollable page; the builder sends only the drawing
@@ -367,7 +367,7 @@ def engrave(data: str, *, page: int = 1, scale: int = 40,
 
 def page_json(display_list: dict) -> str:
     """The **drawing** layers of ``display_list`` as the JSON string a live
-    ``GuiHost.set(score_id, display_list=…)`` takes — how a re-engraved page
+    ``GuiHost.set(score_id, display_list=…)`` takes -- how a re-engraved page
     replaces the one on screen after an edit, without redefining the window.
 
     The same layers `clausters.gui.guidef.score` sends when it builds the
@@ -383,7 +383,7 @@ def page_json(display_list: dict) -> str:
 def svg_to_display_list(svg: str) -> dict:
     """Walk an engraver SVG string into a ``score`` display list. Split out of
     `engrave` so it is testable on a captured SVG, and shared with every other
-    client — the walk itself is `clausters_core::notation`, reached through the
+    client -- the walk itself is `clausters_core::notation`, reached through the
     ABI, so a wasm client feeding a wasm engraver's SVG gets the identical list.
 
     Each primitive carries the id of the element it belongs to, and a **sounding

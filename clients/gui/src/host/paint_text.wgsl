@@ -1,7 +1,7 @@
 // The `font-atlas` feature's second pipeline: the same 2D geometry as
 // `paint.wgsl`, with a coverage sample from the window's glyph atlas.
 //
-// One texture and one bind group per window, never per widget — which is what
+// One texture and one bind group per window, never per widget -- which is what
 // keeps a document's text one draw call, the property the flat batch was built
 // for. The atlas is a single-channel coverage sheet: the red channel is the
 // glyph's alpha, the vertex color is the ink.

@@ -9,7 +9,7 @@ ring it talks through.
 **The segments here are built by the shared core**, not by this test. That is
 the whole change these tests were rewritten for: the layout used to be
 transcribed into this client and asserted against a number transcribed into the
-test, which is a mirror checked against itself — and it passed happily while
+test, which is a mirror checked against itself -- and it passed happily while
 this binding declared 1024 control buses against a server that had had 16 384
 for months. `clausters_core::shm` writes the header now, through
 `_native.shm_init`, so a segment a test builds is a segment a server would.
@@ -28,11 +28,11 @@ from clausters.ipc import ShmClient
 def test_the_segment_size_is_the_one_the_server_builds():
     """Pinned on both sides: `tests/ipc.rs` asserts the same number in Rust.
 
-    It is the default-count instance of the layout — 16384 control buses, an
+    It is the default-count instance of the layout -- 16384 control buses, an
     audio-bus region of 1024 buses (two words each; a parameter since ABI v11,
     where it had been fixed at 128), 8 taps of 16384 samples, and 4096
     directory rows of 32 bytes (24 until ABI v10 gave each buffer a write
-    frontier) — and it comes from the core rather than from arithmetic repeated
+    frontier) -- and it comes from the core rather than from arithmetic repeated
     here.
     """
     assert _native.shm_segment_size(16384, 1024, 8, 16384, 4096) == 729_792 + 4096 * 32
@@ -97,7 +97,7 @@ def test_a_published_buffer_is_read_and_mapped(tmp_path):
     assert client.buffer_info(0) == (3, 8, 2, 48_000.0)
 
     # ...and the region beside it, named from the segment, the buffer and the
-    # generation — a name the core builds, so three processes agree on it.
+    # generation -- a name the core builds, so three processes agree on it.
     region = tmp_path / ("seg" + _native.shm_region_suffix(0, 3))
     region.write_bytes(struct.pack("<16f", *([0.0] * 16)))
 
@@ -113,7 +113,7 @@ def test_a_published_buffer_is_read_and_mapped(tmp_path):
 def test_a_retired_slot_stops_answering_even_with_the_file_there(tmp_path):
     """Freeing a buffer is the generation going **even**. The region is unlinked
     rather than deleted, so a peer that still holds a mapping keeps valid
-    memory — what tells it the samples are history is the directory."""
+    memory -- what tells it the samples are history is the directory."""
     path = _segment(tmp_path)
     client = ShmClient(str(path))
     at = client.shape.buffers_offset

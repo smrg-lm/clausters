@@ -8,12 +8,12 @@ Runs from the *installed* package, offline, like ``chain.py``::
     python clients/python/examples/spectral/kernel.py out.wav
 
 The curated ``pv_*`` set covers the common spectral operations; everything
-that is a **pure per-bin map** — a rule deciding each bin from that bin's own
-magnitude, phase, index or frequency — needs no server UGen at all: you write
+that is a **pure per-bin map** -- a rule deciding each bin from that bin's own
+magnitude, phase, index or frequency -- needs no server UGen at all: you write
 it as an *expression* and `pv_kernel` interprets it on every bin of each
 fresh frame. The symbolic terms (``mag``, ``phase``, ``bin_index``, ``nbins``,
-``binfreq``, ``param(i)``) compose with ordinary Python operators — the same
-maths vocabulary the rest of the client uses — and serialize to a tiny
+``binfreq``, ``param(i)``) compose with ordinary Python operators -- the same
+maths vocabulary the rest of the client uses -- and serialize to a tiny
 postfix program the server validates at ``/def_send synth`` and runs allocation-free.
 
 This example renders a **tilted spectral gate**, an operation in no catalog:
@@ -21,10 +21,10 @@ the gate threshold rises with frequency, so the noise floor is swept away
 progressively harder toward the highs, leaving a dark, sparse residue. The
 left channel is the raw source; the right is the gated one. The threshold is
 an ordinary control (``param(0)``), so a running server could sweep it live
-with ``/node_set`` — a kernel stays fully modulatable.
+with ``/node_set`` -- a kernel stays fully modulatable.
 
-What an expression can NOT do — state across frames (freeze), moving energy
-between bins (shift), reading another chain (combiners) — stays with the
+What an expression can NOT do -- state across frames (freeze), moving energy
+between bins (shift), reading another chain (combiners) -- stays with the
 dedicated ``pv_*`` filters; see the defs chapter of the book ("Writing your own
 spectral operation").
 
@@ -45,7 +45,7 @@ from clausters.defs.pv_expr import bin_index, mag, nbins, param
 from clausters.defs import Synth
 
 #: Where a run leaves its file when no path is given: ``examples/out/``, the
-#: git-ignored directory every generator in this tree writes to — beside the
+#: git-ignored directory every generator in this tree writes to -- beside the
 #: examples rather than in whatever directory you ran from. Made here so that
 #: rendering is one call and not two.
 OUT = pathlib.Path(__file__).resolve().parents[1] / "out"
@@ -63,7 +63,7 @@ def fade():
     """A short attack and release, opened at birth and closed by the gate.
 
     Noise switched on at full amplitude starts the take on a step, which is a
-    click — audible on the first sample of a file meant to be listened to. Two
+    click -- audible on the first sample of a file meant to be listened to. Two
     hundredths of a second of ramp costs nothing and is not the subject here;
     the same envelope closes the take when the routine drops the gate."""
     gate = control("gate", 1.0)
@@ -86,16 +86,16 @@ def tilted_gate(name: str = "tiltgate") -> SynthDef:
     """Noise -> FFT -> a user-written tilted gate -> IFFT, on the right.
 
     The expression reads like the rule it implements: keep a bin only when its
-    magnitude clears a threshold that grows with the bin index — `thresh` at
+    magnitude clears a threshold that grows with the bin index -- `thresh` at
     DC, `5 * thresh` at Nyquist. `mag >= t` evaluates to 1 or 0 per bin, so
     multiplying by it *is* the gate; the phase is untouched (identity), which
     keeps the kernel on the exact, cheap magnitude-scaling path.
 
     **Calibrating the threshold**: bin magnitudes are on the FFT's scale, not
-    0..1 — for this source (noise at amplitude 0.25, 1024-point Hann) they
+    0..1 -- for this source (noise at amplitude 0.25, 1024-point Hann) they
     spread over roughly 0.5..5 with a median near 2.3. The default `thresh`
     of 2.0 puts the gate right at that median at DC and far above the loudest
-    bins up high, so the lows survive sparsely and the highs are wiped — the
+    bins up high, so the lows survive sparsely and the highs are wiped -- the
     audible result is a dark, crackly residue, unmistakable next to the raw
     noise. A threshold well below the magnitude spread would gate almost
     nothing (the output then only *sounds* like decorrelated noise, because
@@ -130,7 +130,7 @@ def stop():
     yield 0.25
     # The score's closing event, after the release: a render ends at its last
     # event, so without this one the file would stop where the gate closed and
-    # the tail would be cut off — the click again, at the other end.
+    # the tail would be cut off -- the click again, at the other end.
     session.server.send_bundle(("/node_free", 0))
 
 Routine(stop).play()

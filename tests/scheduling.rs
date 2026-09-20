@@ -203,7 +203,7 @@ fn earlier_times_fire_first_regardless_of_send_order() {
 #[test]
 fn scheduled_impulse_lands_on_its_exact_sample() {
     // The example's mechanism: a `/sched_at`'d Impulse(0) splits the block at
-    // the target and fires its single impulse on that exact frame — unlike
+    // the target and fires its single impulse on that exact frame -- unlike
     // Sine (which starts at sin(0) = 0), the marked sample itself is 1.0.
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
     let target = 100u64; // mid-block: block 1, offset 36
@@ -442,7 +442,7 @@ mod osc {
 
         // Scheduled 0.25 s ahead while the published clock reads 0: the
         // target lands near sample 12000. We tick much faster than wall
-        // time, so the sound must start in that neighborhood — well after
+        // time, so the sound must start in that neighborhood -- well after
         // the first blocks, well before the 24000 mark.
         send_bundle(ntp_in(0.25), vec![s_new.clone()]);
         std::thread::sleep(Duration::from_millis(200)); // let the server parse it
@@ -617,7 +617,7 @@ mod osc {
     }
 
     /// M8: `/sched_at` carries an *absolute* sample target, so unlike the NTP
-    /// test above there is no wall-clock neighborhood to allow for — the
+    /// test above there is no wall-clock neighborhood to allow for -- the
     /// note must start on that exact frame. This precision is the point of
     /// scheduling on the sample clock.
     #[test]

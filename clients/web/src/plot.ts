@@ -1,4 +1,4 @@
-// The free-standing `plot` — one verb for looking at a signal (mirrors
+// The free-standing `plot` -- one verb for looking at a signal (mirrors
 // `clausters/plot.py`).
 //
 // `plot` is the visual sibling of `play`: it plots whatever you hand it,
@@ -7,24 +7,24 @@
 //
 // - a **def** (`SynthDef` / `FaustDef` / `GraphDef`) is **rendered offline**
 //   (an ephemeral NRT session: sent, instanced with `controls`, freed at
-//   `dur`) and its output plotted, every channel in its own lane — the way to
+//   `dur`) and its output plotted, every channel in its own lane -- the way to
 //   eyeball what a def actually produces with no server and no audio device;
 // - a bare **expression** takes the same offline path through the
 //   ephemeral-def coercion `play` uses, so `plot(sine(440).mul(0.5))` shows
 //   the signal directly. It plots as wide as it writes;
 // - an `Env` is rendered through the engine's own `envGen`, so the drawn curve
-//   is exactly what the engine plays — not a second evaluation of the same
+//   is exactly what the engine plays -- not a second evaluation of the same
 //   break points. An `Automation` plots the same way (its curve *is* an
 //   `Env`), labelled with the automation's control name;
 // - a `Buffer` (or a buffer number) is fetched from the ambient **live**
-//   server with its shape and rate — the way to check a buffer's contents;
-// - any other **iterable of numbers** — an array, a `Float32Array`, a
-//   `Pattern` — is read (up to `n` values for the endless ones) and
+//   server with its shape and rate -- the way to check a buffer's contents;
+// - any other **iterable of numbers** -- an array, a `Float32Array`, a
+//   `Pattern` -- is read (up to `n` values for the endless ones) and
 //   plotted as a sequence: index counts on the x axis, the value axis fitted
 //   to the data.
 //
 // `view: "spectrum"` plots the averaged magnitude spectrum instead. Either way
-// the window is static — no zoom, pan or editing — but measured: the rulers
+// the window is static -- no zoom, pan or editing -- but measured: the rulers
 // fit the data and hovering reads out the sample or bin under the cursor.
 //
 // **Asynchronous, where the reference verb is not.** Opening a host, fetching
@@ -82,8 +82,8 @@ export class PlotWindow {
     }
 
     /**
-     * Live-sets plot props (`view`, `min`/`max` — a number, or `"auto"` to
-     * refit — `freqScale`, `dbFloor`/`dbCeil`, `ruler`/`rulerY`, `label`…)
+     * Live-sets plot props (`view`, `min`/`max` -- a number, or `"auto"` to
+     * refit -- `freqScale`, `dbFloor`/`dbCeil`, `ruler`/`rulerY`, `label`…)
      * through `/gui_set`.
      */
     set(props: Record<string, PropValue>): this {
@@ -100,13 +100,13 @@ export class PlotWindow {
         return this;
     }
 
-    /** Whether this window is gone — closed by a hand or by `close`. */
+    /** Whether this window is gone -- closed by a hand or by `close`. */
     get closed(): boolean {
         return !this.host.isOpen(this.id);
     }
 
     /**
-     * Resolves when this window is closed, or on `timeout` seconds — `true` for
+     * Resolves when this window is closed, or on `timeout` seconds -- `true` for
      * the first, `false` for the second. The same verb
      * {@link GuiHost.wait} and `WindowHandle.wait` carry.
      */
@@ -121,7 +121,7 @@ export class PlotWindow {
 }
 
 /**
- * One open patcher window — a def's **structure** (not its sound): its GUI
+ * One open patcher window -- a def's **structure** (not its sound): its GUI
  * `host`, the window `id` and the `patch` widget's id.
  *
  * ```ts
@@ -155,13 +155,13 @@ export class PatchWindow {
         return this;
     }
 
-    /** Whether this window is gone — closed by a hand or by `close`. */
+    /** Whether this window is gone -- closed by a hand or by `close`. */
     get closed(): boolean {
         return !this.host.isOpen(this.id);
     }
 
     /**
-     * Resolves when this window is closed, or on `timeout` seconds — `true` for
+     * Resolves when this window is closed, or on `timeout` seconds -- `true` for
      * the first, `false` for the second. The same verb
      * {@link GuiHost.wait} and `WindowHandle.wait` carry.
      */
@@ -189,7 +189,7 @@ export interface PatchViewOptions {
     host?: GuiHost;
     /**
      * Where a page draws it: the view takes this element's box and the canvas
-     * inside it is made for you. Web-only — a script has an OS window, so the
+     * inside it is made for you. Web-only -- a script has an OS window, so the
      * Python client's counterpart of this verb takes no such argument (and a
      * host reached over a socket refuses one).
      */
@@ -198,14 +198,14 @@ export interface PatchViewOptions {
 
 /**
  * Open a {@link GraphPatch} or {@link DefPatch} as a directed `patch` view in
- * its own window on the ambient GUI host — the structure opener behind the
+ * its own window on the ambient GUI host -- the structure opener behind the
  * `plotDef` methods. One window per call, the `plot` posture: the patch sits in
  * a `scroll` workspace (pan/zoom), no audio server involved. The **host lays
  * the boxes out** and sizes the scrollable canvas from the graph's own extent
  * (never below the window), so the model carries no geometry: a small graph
  * centres in the window, a large one fills the content and pans.
  *
- * @internal — exported for the def classes' `plotDef`, which is the surface.
+ * @internal -- exported for the def classes' `plotDef`, which is the surface.
  */
 export async function openPatchView(
     model: { toWidget(): { boxes: Record<string, unknown>[]; cords: number[] } },
@@ -241,14 +241,14 @@ export interface PlotOptions {
     dur?: number;
     /** Controls (ports, for a `GraphDef`) the instance is started with. */
     controls?: Controls;
-    /** Extra defs the render needs first — a `GraphDef`'s member defs. */
+    /** Extra defs the render needs first -- a `GraphDef`'s member defs. */
     defs?: readonly (SynthDef | FaustDef | GraphDef)[];
     /** How many values to take from an endless sequence. */
     n?: number;
     /** The offline render's rate; also places a fetched buffer's time axis. */
     sampleRate?: number;
     /**
-     * How many channels to show. Absent it is derived — a bare expression is
+     * How many channels to show. Absent it is derived -- a bare expression is
      * as wide as it writes, an already-built def defaults to 2. Ignored by the
      * other kinds (a buffer brings its own; a sequence infers it).
      */
@@ -283,7 +283,7 @@ export interface PlotOptions {
     host?: GuiHost;
     /**
      * Where a page draws it: the view takes this element's box and the canvas
-     * inside it is made for you. Web-only — a script has an OS window, so the
+     * inside it is made for you. Web-only -- a script has an OS window, so the
      * Python client's counterpart of this verb takes no such argument (and a
      * host reached over a socket refuses one).
      */
@@ -292,7 +292,7 @@ export interface PlotOptions {
 
 /**
  * Plots `obj` in its own window on the ambient GUI host, and resolves with the
- * `PlotWindow` — `set(...)` retunes the display live, `close()` closes it.
+ * `PlotWindow` -- `set(...)` retunes the display live, `close()` closes it.
  */
 export async function plot(
     obj: Plottable,
@@ -311,7 +311,7 @@ export async function plot(
     const host = explicitHost ?? await resolveHost();
 
     // Widget ids live in the host's one namespace (every window, every script
-    // on it), so each plot's widget takes a fresh one — a repeated id would be
+    // on it), so each plot's widget takes a fresh one -- a repeated id would be
     // skipped at define time and `set` would reach whichever widget claimed it
     // first.
     const widgetId = host.allocId();
@@ -339,7 +339,7 @@ export async function plot(
         widget = guidef.plot({ ...props, data: [...drawn.samples] });
     } else {
         // A page shares no filesystem with its host, so the samples travel
-        // with the message — beside the JSON, not inside it.
+        // with the message -- beside the JSON, not inside it.
         blobs.push(guidef.samplesToBlob(drawn.samples));
         widget = guidef.plot({ ...props, blob: 0 });
     }
@@ -401,13 +401,13 @@ async function resolve(
 }
 
 /**
- * Renders an `Env` through the engine's own `envGen` — what you plot is what
+ * Renders an `Env` through the engine's own `envGen` -- what you plot is what
  * an `envGen` plays, rather than a second evaluation of the same break points.
  * A sustained envelope (one with a `releaseNode`) has its gate closed at the
  * sustain point, so the release segments show too.
  */
 /**
- * The samples `plot(Env)` draws — the envelope rendered through the engine's
+ * The samples `plot(Env)` draws -- the envelope rendered through the engine's
  * own `envGen`, without the window around it. Exposed because it is the thing
  * worth comparing against the reference client: both render an envelope the
  * same way, so the drawn curve is comparable across clients rather than only
@@ -449,7 +449,7 @@ async function renderEnv(
 
 /**
  * Fetches a buffer's interleaved samples and shape from the ambient **live**
- * server — the buffer-contents check.
+ * server -- the buffer-contents check.
  */
 async function fetchBuffer(
     target: Buffer | number,
@@ -498,7 +498,7 @@ function sequence(obj: Iterable<number>, n: number): Drawn {
     };
 }
 
-/** The first `n` items of anything iterable — a `Pattern` included. */
+/** The first `n` items of anything iterable -- a `Pattern` included. */
 function take(obj: Iterable<unknown>, n: number): unknown[] {
     const out: unknown[] = [];
     for (const value of obj) {
@@ -524,7 +524,7 @@ function isRow(value: unknown): boolean {
  * A registered host wins outright: it is a front this module could not have
  * opened itself, which is the whole reason it was registered.
  *
- * @internal — exported for `./scope.ts`, the other ambient visual verb, which
+ * @internal -- exported for `./scope.ts`, the other ambient visual verb, which
  * resolves through the same ladder and shares this module's own host. The
  * Python client shares it the same way, as `plot._ambient_host`.
  */

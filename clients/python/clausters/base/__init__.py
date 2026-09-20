@@ -2,31 +2,31 @@
 
 The base layer:
 
-- `builtins` — numeric ops on scalars/lists, dispatched to
+- `builtins` -- numeric ops on scalars/lists, dispatched to
   the native core (f32, server-equivalent).
-- `absobject` — `AbstractObject`, the operator
+- `absobject` -- `AbstractObject`, the operator
   overloading base.
-- `stream` — `Stream`/`Routine` (the
+- `stream` -- `Stream`/`Routine` (the
   ``yield`` coroutine layer).
-- `clock` — `TempoClock` (native-backed, RT + NRT
+- `clock` -- `TempoClock` (native-backed, RT + NRT
   drives).
-- `time` — the beat<->second map (`TempoMap`) and the beat-grid and
+- `time` -- the beat<->second map (`TempoMap`) and the beat-grid and
   sample-axis conversions: the questions about time a clock is not needed to
   answer.
-- `environment` — `Environment`, an isolated place to make sound (server +
+- `environment` -- `Environment`, an isolated place to make sound (server +
   random context); the base of both the default session and `Session`.
-- `main` — the default session (`main`), the ambient `Environment` and the
+- `main` -- the default session (`main`), the ambient `Environment` and the
   process-wide execution registry.
-- `rand` — the random context: one seedable source (``main.seed`` +
+- `rand` -- the random context: one seedable source (``main.seed`` +
   per-routine derived generators) behind every random value in the library.
-- `netaddr` — `NetAddr`, a target's host and port.
-- `moment` — `Moment`, when something is happening (a clock and an exact
+- `netaddr` -- `NetAddr`, a target's host and port.
+- `moment` -- `Moment`, when something is happening (a clock and an exact
   beat on it).
-- `destination` — `Destination` and `OscDestination`: where OSC goes, and how
+- `destination` -- `Destination` and `OscDestination`: where OSC goes, and how
   a `Moment` becomes wire time.
 - `_oscinterface` / `_midiinterface`
-  — the RT/NRT destination interfaces.
-- `_osclib` — minimal OSC wire encoding.
+  -- the RT/NRT destination interfaces.
+- `_osclib` -- minimal OSC wire encoding.
 """
 
 from .absobject import AbstractObject

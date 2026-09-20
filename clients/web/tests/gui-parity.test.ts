@@ -4,7 +4,7 @@
 // a set of trees; each case here rebuilds the same tree with the TS builders
 // and asserts the emitted document is identical. The two surfaces are written
 // independently (TypeScript takes camelCase options where Python takes
-// snake_case keywords) — what has to match is only the wire, which is the
+// snake_case keywords) -- what has to match is only the wire, which is the
 // whole point of a shared GuiDef format.
 //
 // The comparison is on the **parsed** document, not the JSON text: JavaScript
@@ -13,7 +13,7 @@
 // the two documents mean the same thing to it.
 //
 // (Not to be confused with `gui-parity.html`, which is the *host's* rendering
-// parity pass over the raw binding surface — a B-track page, no client in it.)
+// parity pass over the raw binding surface -- a B-track page, no client in it.)
 //
 // Needs the core wasm staged (`./build.sh`); run with `npm test`.
 
@@ -83,7 +83,7 @@ const vectors: Vector[] = JSON.parse(
 
 const find = (name: string): unknown => {
     const row = vectors.find((v) => v.name === name);
-    assert.ok(row, `no vector named '${name}' — regenerate gui-vectors.json`);
+    assert.ok(row, `no vector named '${name}' -- regenerate gui-vectors.json`);
     return row.tree;
 };
 
@@ -310,8 +310,8 @@ for (const [name, build] of Object.entries(trees)) {
 //
 // The trees above are a sample of what a script writes, and a sample cannot
 // see the prop nobody put in one. `gen-gui-vectors.py` also freezes the
-// exhaustive reading — each builder crossed with each option its Python
-// signature declares — and this rebuilds every one of them here.
+// exhaustive reading -- each builder crossed with each option its Python
+// signature declares -- and this rebuilds every one of them here.
 //
 // It is the reading `docs/gui-props.md` cannot make: that manifest compares
 // the two surfaces by **wire type**, unioning every builder of a type
@@ -325,7 +325,7 @@ const camel = (name: string): string =>
 
 /**
  * The builders whose first argument is the widget's subject rather than its
- * option bag — the value the sentence is about (`label(text)`, `meter(bus)`),
+ * option bag -- the value the sentence is about (`label(text)`, `meter(bus)`),
  * which Python takes as its first keyword. The rest of the options follow in
  * the bag, so a sweep of one of these passes the subject and an empty bag, or
  * the subject itself when that is what is being swept.
@@ -340,7 +340,7 @@ const SUBJECT: Record<string, { option: string; blank: unknown }> = {
     canvas: { option: "shader", blank: undefined },
 };
 
-/** What a builder needs before it builds anything — `gen-gui-vectors.py`'s. */
+/** What a builder needs before it builds anything -- `gen-gui-vectors.py`'s. */
 const REQUIRED: Record<string, Record<string, unknown>> = {
     clip: { dur: 4.0 },
 };

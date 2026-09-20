@@ -18,7 +18,7 @@ What to look for:
   under the curves and the texture over them are the same layers in two orders;
 - **the vertical belongs to one layer, and here it is the top one**. A
   spectrogram measures hertz and a wave measures amplitude, and two quantities
-  cannot share a ruler — so whichever layer is on top takes ``y="axis"`` (the
+  cannot share a ruler -- so whichever layer is on top takes ``y="axis"`` (the
   left ruler and the cursor read-out are its) and the rest take ``y="box"``,
   which normalizes each into the body it is drawn on. Raise the wave over the
   texture and the ruler goes from hertz to amplitude. That the *top* layer
@@ -26,7 +26,7 @@ What to look for:
   exactly one layer claim the axis, and refuses a stack where two claim it for
   different quantities;
 - **alpha is per layer**. A fader fades one picture over the ones under it and
-  leaves the rulers, the caption and the selection alone — which the widget's
+  leaves the rulers, the caption and the selection alone -- which the widget's
   own ``opacity`` would not;
 - **a hidden layer keeps its place**. Uncheck one and check it again: it comes
   back where it was in the order, not on top;
@@ -186,7 +186,7 @@ win = view(
 
 # %% [markdown]
 # ## The stack is re-stated, not patched
-# Every control sends the whole list again — one prop, one message. That is
+# Every control sends the whole list again -- one prop, one message. That is
 # what makes the order, the weights and the claim one statement instead of
 # three, and it is why raising a layer also moves the ruler.
 
@@ -233,8 +233,8 @@ print("raise the wave over the texture and the left ruler goes from hertz to "
 # %% [markdown]
 # ## What the host refuses
 # The wave measures amplitude and the texture measures hertz. Asking for both
-# on the vertical axis is refused rather than resolved — whichever lost would be
-# drawn on a scale that is not its own — so exactly one layer claims it, which
+# on the vertical axis is refused rather than resolved -- whichever lost would be
+# drawn on a scale that is not its own -- so exactly one layer claims it, which
 # is what the panel above is doing for you.
 
 # %%

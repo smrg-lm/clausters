@@ -1,7 +1,7 @@
 """Panning, the stereo field and selection.
 
 A UGen has one output, so every function here that produces two channels
-returns a `ChannelList` built from single-output nodes — the package's
+returns a `ChannelList` built from single-output nodes -- the package's
 multichannel rule, applied to the stereo primitives.
 """
 
@@ -9,7 +9,7 @@ from .graph import ChannelList, Ugen, chans, mix
 
 # ---- panning, the stereo field and selection --------------------------------
 # A UGen has one output, so every row that produces two channels is built
-# twice, once per channel index, and returned as a `ChannelList` — the same
+# twice, once per channel index, and returned as a `ChannelList` -- the same
 # container `dup` builds and `out` lays on consecutive buses. The index is the
 # builder's business: it is always the last input, and never an argument here.
 
@@ -18,7 +18,7 @@ def pan2(signal, pos=0.0, level=1.0) -> ChannelList:
     """Places a mono ``signal`` between two channels at ``pos`` (−1 left, 0
     centre, 1 right), at **equal power**: the two gains hold ``l² + r² = 1``, so
     a source keeps one loudness as it crosses the field. The price is that the
-    centre is 0.707 in each channel, not 1 — use `lin_pan2` when it is the
+    centre is 0.707 in each channel, not 1 -- use `lin_pan2` when it is the
     summed amplitude that has to stay put.
 
     Out of range the position clamps rather than wrapping. Returns the two
@@ -48,7 +48,7 @@ def balance2(left, right, pos=0.0, level=1.0) -> ChannelList:
 def rotate2(x, y, pos=0.0) -> ChannelList:
     """Rotates the plane the two signals span by ``pos`` **half turns** (0.25 is
     45°, 1 is a half turn). On a stereo pair it turns the image without
-    changing its size or its level — the rotation is equal power at every angle.
+    changing its size or its level -- the rotation is equal power at every angle.
 
     At a quarter turn the rotation *is* the change of basis between left/right
     and mid/side, which is what `mid_side` names directly. To move an image
@@ -60,7 +60,7 @@ def mid_side(a, b) -> ChannelList:
     """The mid/side matrix, normalized so it is **its own inverse**: the same
     call encodes ``(left, right)`` into ``(mid, side)`` and decodes it back.
 
-    Its point is what you can do in between — treat the centre and the sides of
+    Its point is what you can do in between -- treat the centre and the sides of
     a mix as separate signals::
 
         m, s = mid_side(left, right)
@@ -82,7 +82,7 @@ def stereo_width(left, right, width=1.0) -> ChannelList:
     The same thing `mid_side` does in two steps, in one row. Note what widening
     does **not** do: it leaves the mono sum exactly where it was, because only
     the side component is scaled and the mid is what survives a fold-down. So
-    every dB it adds to a channel is a dB a mono listener never hears — which is
+    every dB it adds to a channel is a dB a mono listener never hears -- which is
     the real cost of pushing it past 1, and the reason to check a fold-down
     afterwards."""
     return chans(*(Ugen("StereoWidth", [left, right, width, c]) for c in (0.0, 1.0)))
@@ -97,7 +97,7 @@ def pan_az(numchans, signal, pos=0.0, level=1.0, width=2.0,
     source: at the default width of two, neighbouring channels hold equal power
     between them and a source parked on a channel is exactly unity there.
     Narrower leaves gaps, wider spreads into more channels at once.
-    ``orientation`` turns the ring itself — 0.5, the default, puts the origin
+    ``orientation`` turns the ring itself -- 0.5, the default, puts the origin
     between two channels, which is what an even ring wants; use 0 to put a
     channel at the front.
 
@@ -113,7 +113,7 @@ def pan_az(numchans, signal, pos=0.0, level=1.0, width=2.0,
 
 def xfade2(a, b, pan=0.0, level=1.0) -> Ugen:
     """Equal-power crossfade between two signals: −1 is all ``a``, 1 is all
-    ``b``, and the two gains hold unit power in between — which keeps
+    ``b``, and the two gains hold unit power in between -- which keeps
     *uncorrelated* signals at one loudness across the fade, and lifts
     correlated ones by 3 dB in the middle. Use `lin_xfade2` when the two
     sides are the same signal."""
@@ -121,7 +121,7 @@ def xfade2(a, b, pan=0.0, level=1.0) -> Ugen:
 
 
 def lin_xfade2(a, b, pan=0.0, level=1.0) -> Ugen:
-    """Crossfade with the constant-amplitude law — a plain interpolation, half
+    """Crossfade with the constant-amplitude law -- a plain interpolation, half
     of each at the centre. The right one for correlated sources."""
     return Ugen("LinXFade2", [a, b, pan, level])
 
@@ -131,8 +131,8 @@ def select(which, *sources) -> Ugen:
     and clamped to the ends rather than wrapping). At audio rate the choice is
     made per sample.
 
-    Every source runs whether or not it is selected — they are UGens in the
-    graph, not branches — so this picks what is *heard*, never what is
+    Every source runs whether or not it is selected -- they are UGens in the
+    graph, not branches -- so this picks what is *heard*, never what is
     computed. Accepts the sources as arguments or as one list."""
     return Ugen("Select", [which, *_sources(sources)])
 
@@ -145,7 +145,7 @@ def select_x(which, *sources) -> Ugen:
     Off the ends the index clamps, like `select`'s. sclang's pseudo-UGen instead
     folds the crossfade while clipping its two picks, so there a negative index
     gives a *mix of the first two* sources and an index past the end gives the
-    last one at 1.414 — worth knowing when porting a def that lets the index
+    last one at 1.414 -- worth knowing when porting a def that lets the index
     run out of range."""
     return Ugen("SelectX", [which, *_sources(sources)])
 
@@ -161,7 +161,7 @@ def _sources(sources):
 
 def splay(signals, spread=1.0, level=1.0, center=0.0) -> ChannelList:
     """Spreads ``signals`` evenly across the stereo field and mixes them down to
-    two channels — one `pan2` per signal, summed.
+    two channels -- one `pan2` per signal, summed.
 
     A client-side convenience, not a UGen: the first signal lands at
     ``center - spread``, the last at ``center + spread``, and a single signal

@@ -1,6 +1,6 @@
 //! The processing threads run in flush-to-zero mode (see `dsp::denormals`):
 //! subnormal floats from decaying DSP state would otherwise be resolved in
-//! microcode, 10-100x slower — enough to blow the audio callback budget.
+//! microcode, 10-100x slower -- enough to blow the audio callback budget.
 //!
 //! Each `#[test]` runs on its own thread, so arming the FPU here does not
 //! leak into other tests.
@@ -59,7 +59,7 @@ fn normal_precision_brackets_the_armed_mode() {
 /// The regression that motivated `normal_precision`: the NRT renderer
 /// compiles scored defs on its flush-to-zero render thread, and libfaust's
 /// interval typing does double math that aborts the process under FTZ/DAZ
-/// (`intervalPow.cpp: x.lo() > 0`) — `fi.lowpass` fed through box
+/// (`intervalPow.cpp: x.lo() > 0`) -- `fi.lowpass` fed through box
 /// composition is a minimal trigger. The compile must succeed from an armed
 /// thread and leave the thread armed.
 #[cfg(feature = "faust")]

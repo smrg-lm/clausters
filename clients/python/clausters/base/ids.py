@@ -5,7 +5,7 @@ The server partitions node ids into a **client range**, its own auto range
 ``--max-nodes``, and every client allocates from that one client range. That is
 exact while a server has one client, and a fiction the moment it has two: both
 registries start at the same base, hand out the same first id, and the second
-``/synth_new`` of the pair is refused as a duplicate — or, worse, accepted
+``/synth_new`` of the pair is refused as a duplicate -- or, worse, accepted
 against the other client's node. The same holds for buses, buffers and, on the
 GUI host, widget ids.
 
@@ -63,7 +63,7 @@ def share_of(base: int, span: int, share: "IdShare | None" = None):
     The **last share takes the remainder**, so the slices tile the range
     exactly rather than leaving a few ids nobody may allocate. A share of a
     range too small to split yields an empty span, and an empty registry
-    reports exhaustion from its first call — a client that cannot allocate says
+    reports exhaustion from its first call -- a client that cannot allocate says
     so, which is the failure this whole mechanism exists to make loud.
     """
     share = WHOLE if share is None else share

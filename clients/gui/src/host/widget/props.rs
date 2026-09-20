@@ -12,7 +12,7 @@
 //!
 //! They live here rather than beside [`WidgetKind`] for the same reason the
 //! enum is worth reading on its own: a bundle is *not* part of the model's
-//! shape — it is a detail of a variant's payload — and a reader looking for the
+//! shape -- it is a detail of a variant's payload -- and a reader looking for the
 //! model should not walk 800 lines of them to reach it. Each one owns its own
 //! `apply`/`parse` where it has one, so a new prop on a bundle is one edit.
 
@@ -104,7 +104,7 @@ impl Ruler {
         Self::parse_with(props, Ruler::Time)
     }
 
-    /// The `ruler` prop over a presentation's own default — absent keeps the
+    /// The `ruler` prop over a presentation's own default -- absent keeps the
     /// default, and a **boolean** switches the strip off or back on, which is
     /// how the live views have always spelled it (their x unit is not
     /// selectable, so only on/off was ever meaningful there).
@@ -141,7 +141,7 @@ impl Ruler {
     }
 }
 
-/// **Which side of a ruler strip its marks sit on** — the side the content it
+/// **Which side of a ruler strip its marks sit on** -- the side the content it
 /// rules is on, which is the only thing that decides it.
 ///
 /// A tick and the pixel it names have to be adjacent, so a ruler above a stack
@@ -182,14 +182,14 @@ impl RulerDir {
 /// The vertical (y) ruler of an editor-grade view: the unit its side strip
 /// labels, or `Off` for no strip at all. The waveform reads the amplitude
 /// units (`Norm`/`Db`/`Bits`/`Percent`, default `Norm`); the spectrogram uses
-/// `Hz` (default) or `Off` — its tick *positions* follow the widget's
+/// `Hz` (default) or `Off` -- its tick *positions* follow the widget's
 /// `freq_scale`, the labels stay in hertz.
 ///
 /// **The unit labels the axis; it never maps it.** The geometry is linear in
 /// amplitude on every one of these, and `Db` is a ladder of rungs placed at the
 /// amplitudes those decibels are (`ruler::amp_ticks`), not a logarithmic body.
 /// So the value under a height is the same whichever unit is printed beside it,
-/// and editing is in linear amplitude and only there — a decision, recorded at
+/// and editing is in linear amplitude and only there -- a decision, recorded at
 /// "A take is drawn in amplitude and heard in decibels" in the GUI plan and
 /// held by `signal::tests::the_amplitude_unit_labels_the_axis_and_never_maps_it`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -207,11 +207,11 @@ pub enum RulerY {
     /// Frequency in hertz (the spectrogram default).
     Hz,
     /// **The element's own value range** (`min`/`max`), on the plain 1-2-5
-    /// ladder — beats per minute, a cutoff, a pan position, a controller.
+    /// ladder -- beats per minute, a cutoff, a pan position, a controller.
     ///
     /// The other units are all *amplitude* or *frequency*, and they are units
     /// of full scale: a rung at -6 dB or at 2^15 says nothing over `[30, 90]`.
-    /// This one names no unit at all, which is the point — a break-point
+    /// This one names no unit at all, which is the point -- a break-point
     /// function's values are its parameter's, and only the element knows what
     /// they mean.
     Value,
@@ -223,7 +223,7 @@ impl RulerY {
             None => default,
             Some(v) => match v.as_str() {
                 Some(s) => Self::from_str(s).unwrap_or(default),
-                // A boolean switches the strip off or back on — the live
+                // A boolean switches the strip off or back on -- the live
                 // views' spelling, where the unit is the presentation's.
                 None => match truthy(v) {
                     Some(false) => RulerY::Off,
@@ -268,17 +268,17 @@ fn normalized_window(start: f64, len: f64, headroom: f64) -> (f64, f64) {
 }
 
 /// The editor chrome both heavy views share: the time-ruler (x) mode and the
-/// vertical (y) ruler unit — each independently switchable off, each drawn in
-/// its own strip beside the body — the sample rate placing the time labels
+/// vertical (y) ruler unit -- each independently switchable off, each drawn in
+/// its own strip beside the body -- the sample rate placing the time labels
 /// (0 = unknown), the beat grid of the `beats` ruler (`tempo` in beats per
-/// second — the client `Clock` convention — `beat_at` the beat position of
+/// second -- the client `Clock` convention -- `beat_at` the beat position of
 /// buffer sample 0, `quant` the beats per bar), the `bit_depth` the `bits`
 /// amplitude unit quantizes to, a `[sel_start, sel_len)` selection in sample
 /// units (`sel_len <= 0` = none; drawn as an overlay, dragged with the
 /// pointer, round-tripped as a `"selection"` event / `/gui_set`), and the
-/// playhead origin `playhead_at` — the engine sample-clock value that maps to
+/// playhead origin `playhead_at` -- the engine sample-clock value that maps to
 /// buffer sample 0 (negative = no playhead; the line then tracks
-/// `sample_clock - playhead_at` with zero messages natively) — and the
+/// `sample_clock - playhead_at` with zero messages natively) -- and the
 /// **vertical view window** `y_start`/`y_len` in normalized display units
 /// (`0, 1` = the full axis, the default): the visible slice of the amplitude
 /// axis (waveform) or of the frequency display axis (spectrogram), zoomed and
@@ -287,15 +287,15 @@ fn normalized_window(start: f64, len: f64, headroom: f64) -> (f64, f64) {
 /// full axis).
 ///
 /// `x_start`/`x_len` are the **horizontal** window of an element that owns its
-/// own x axis — a navigable spectrum, whose x measures frequency rather than
-/// the window's time — in the same normalized display units and with the same
+/// own x axis -- a navigable spectrum, whose x measures frequency rather than
+/// the window's time -- in the same normalized display units and with the same
 /// rule (`0, 1` = the whole axis, a non-positive length resets to it), reported
 /// as a `"view_x"` event. They arrive on the wire as the x axis' own
 /// `view_start`/`view_len` (`axes.x.start`/`len`), which is the same *question*
 /// a timeline member's window answers and the reason it is not a second pair of
 /// names; what differs is who owns the answer. On a member of a navigation
-/// group those keys never reach here — the group model takes them, in samples
-/// (see `host::timeline`) — so exactly one of the two readings is ever live for
+/// group those keys never reach here -- the group model takes them, in samples
+/// (see `host::timeline`) -- so exactly one of the two readings is ever live for
 /// a given widget. Over a frequency axis this pair is the window that was
 /// **asked** for and not necessarily the one on the screen: the analysis has a
 /// resolution, and
@@ -304,7 +304,7 @@ fn normalized_window(start: f64, len: f64, headroom: f64) -> (f64, f64) {
 ///
 /// `link` is the widget's **navigation group** (see `host::timeline`): every
 /// timeline view declaring the same link id shares one horizontal view,
-/// selection and playhead — a gesture or `/gui_set` on any member applies to
+/// selection and playhead -- a gesture or `/gui_set` on any member applies to
 /// all of them. Without a `link` the widget navigates alone. The selection and
 /// playhead fields here are the **def-time seed** of that group and nothing
 /// more: once the group exists it holds those values, every reader takes them
@@ -317,18 +317,18 @@ fn normalized_window(start: f64, len: f64, headroom: f64) -> (f64, f64) {
 /// group-wide `link`/`sel_*`/`view_*`), but a change still re-clamps the group
 /// window and repaints every member, so it routes through the group model too.
 /// All members are at `offset = 0` until a multitrack layout places them.
-/// **A labelled point on the time axis** — a cue, a section, a rehearsal
+/// **A labelled point on the time axis** -- a cue, a section, a rehearsal
 /// letter: three fields and nothing else, because that is what a marker is.
 ///
 /// It is the ruler's, not a view's: a marker names a moment in the *multitrack*, so
 /// every view of that axis shows the same ones and none of them owns them. It
 /// draws no line down the picture (that is what a playhead and a selection band
-/// are for) — an arrow into the ruler's ticks, and a click on it puts the
+/// are for) -- an arrow into the ruler's ticks, and a click on it puts the
 /// transport at exactly the `time` it was placed at, not at the pixel the hand
 /// landed on.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Marker {
-    /// Where it is, in timeline sample units — the *exact* position, kept
+    /// Where it is, in timeline sample units -- the *exact* position, kept
     /// whatever the zoom.
     pub time: f64,
     /// What it says. A marker added by hand is **numbered** (`"1"`, `"2"`, …)
@@ -383,7 +383,7 @@ pub(crate) fn parse_markers(v: &Value) -> Option<Vec<Marker>> {
     )
 }
 
-/// The markers as the flat list they arrived in — what `/gui_query` reports and
+/// The markers as the flat list they arrived in -- what `/gui_query` reports and
 /// what an edit-back carries, so what comes out is what a `/gui_set` takes.
 pub fn markers_json(markers: &[Marker]) -> Value {
     let mut out = Vec::with_capacity(markers.len() * 3);
@@ -428,13 +428,13 @@ pub struct EditorProps {
     pub playhead_at: f64,
     /// A **static** playhead: the timeline position of the transport's cursor
     /// when nothing is playing (`< 0` = none). `playhead_at` anchors the line to
-    /// the engine clock and *sweeps*; this one stands still — a located, stopped
+    /// the engine clock and *sweeps*; this one stands still -- a located, stopped
     /// transport has a cursor, and it must not drift with the clock.
     pub playhead: f64,
     /// **The position cursor** (`< 0` = none): where a playback starts and
     /// where a paste lands, in the same timeline samples as the playhead.
     ///
-    /// The other line, and the one a hand *places* — by a click on the time
+    /// The other line, and the one a hand *places* -- by a click on the time
     /// ruler and by nothing else. Neither of the playhead props is it: those
     /// two are one line in two states (swept from the clock, or parked where
     /// the transport stopped), and both say where the **music** is. This says
@@ -475,16 +475,16 @@ pub struct EditorProps {
     pub x_len: f64,
     pub link: Option<i32>,
     pub offset: f64,
-    /// **Whether this view's window follows its content.** `true` — the
-    /// default, and what every view did before there was a switch — refits a
+    /// **Whether this view's window follows its content.** `true` -- the
+    /// default, and what every view did before there was a switch -- refits a
     /// window that was showing the whole timeline when the content changes, so
     /// a lane that grows goes on showing all of it.
     ///
     /// `false` says the window is the **reader's**: the extent is still
     /// registered (the axis knows how far it can go) and nothing moves it. That
     /// is what an editor wants, and the reason is that a content change is
-    /// mostly the reader's *own* edit — undoing a trim, splitting a clip,
-    /// dragging one onto another lane — and an edit that re-frames the view is
+    /// mostly the reader's *own* edit -- undoing a trim, splitting a clip,
+    /// dragging one onto another lane -- and an edit that re-frames the view is
     /// the window starting over under the hand that made it.
     pub autofit: bool,
     /// **The labelled points on this axis** ([`Marker`]). They are the ruler's,
@@ -550,7 +550,7 @@ impl EditorProps {
 
     /// The chrome of a **clip body**: none of it. A body is drawn against the
     /// axes of the clip holding it, so it owns no ruler, no selection, no
-    /// playhead and no navigation group — everything a container answers for.
+    /// playhead and no navigation group -- everything a container answers for.
     pub(crate) fn body() -> EditorProps {
         EditorProps {
             ruler: Ruler::Off,
@@ -562,7 +562,7 @@ impl EditorProps {
     /// The vertical view window as a valid display-axis slice: a non-positive
     /// length resets to the full axis, anything else clamps into `[0, 1]`
     /// (with the shared zoom floor). The raw `y_start`/`y_len` props are kept
-    /// as set and validated only here, at read time — clamping inside
+    /// as set and validated only here, at read time -- clamping inside
     /// `apply` would make one `/gui_set` carrying both keys order-dependent
     /// (`y_start` would clamp against the *old* `y_len` before the new one
     /// lands).
@@ -571,7 +571,7 @@ impl EditorProps {
     }
 
     /// The selection's value range, or `None` where it is not restricted on
-    /// that axis — the pair read the way [`Self::y_view`] reads the window,
+    /// that axis -- the pair read the way [`Self::y_view`] reads the window,
     /// with the ordering done here rather than in `apply`, so one `/gui_set`
     /// carrying both keys does not depend on their order.
     ///
@@ -584,7 +584,7 @@ impl EditorProps {
     }
 
     /// The horizontal view window of an element that owns its x axis, read the
-    /// same way [`Self::y_view`] reads the vertical one — validated here rather
+    /// same way [`Self::y_view`] reads the vertical one -- validated here rather
     /// than in `apply`, for the same reason: one `/gui_set` carrying both keys
     /// must not depend on their order.
     pub fn x_view(&self) -> (f64, f64) {
@@ -686,7 +686,7 @@ impl Flow {
 
 /// Which axes a `scroll` workspace pans along. The default is the full 2D
 /// workspace (`Both`); the constrained scroll views degrade from it by
-/// configuration — `axis: "y"` is a plain vertical scroll view, `axis: "x"` a
+/// configuration -- `axis: "y"` is a plain vertical scroll view, `axis: "x"` a
 /// horizontal strip. One widget, one gesture path; the axis only gates the
 /// *panning* gestures, never the layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -733,13 +733,13 @@ impl Axis {
 /// the element: panning is panning whether the axis carries a waveform, a lane
 /// of clips or a piano-roll, and a container that owns an axis owns them all.
 /// [`GestureStep::Element`] is where the element under the cursor gets its
-/// turn — a note dragged, a clip grabbed, a knob turned — which is why a plan
+/// turn -- a note dragged, a clip grabbed, a knob turned -- which is why a plan
 /// is an *order* rather than a single action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GestureStep {
     /// Hand the press to whatever is under the cursor: the widget the hit
-    /// found, or — inside a container that draws its contents rather than
-    /// laying them out — the clip, note or box it placed there. It may decline
+    /// found, or -- inside a container that draws its contents rather than
+    /// laying them out -- the clip, note or box it placed there. It may decline
     /// (empty space), and then the plan goes on.
     Element,
     /// Pan the container's axis: time on a timeline, the plane on a workspace.
@@ -749,7 +749,7 @@ pub enum GestureStep {
     ///
     /// It is *not* the same gesture as [`Marquee`](GestureStep::Marquee), and
     /// the difference is what the sweep is a selection **of**. This one selects
-    /// a stretch of the axis — what a drag over a waveform has always meant —
+    /// a stretch of the axis -- what a drag over a waveform has always meant --
     /// and it is a state that outlives the gesture, because the span itself is
     /// the thing selected. The other selects the objects a rectangle covered
     /// and leaves nothing drawn behind it.
@@ -758,8 +758,8 @@ pub enum GestureStep {
     /// (a roll's notes, in the band of semitones it reports), because there the
     /// span and the notes under it are one hand's one meaning.
     Select,
-    /// Sweep a **marquee**: the objects a rectangle covered — a lane's clips, a
-    /// patcher's boxes — and nothing else. The rectangle is the gesture's own
+    /// Sweep a **marquee**: the objects a rectangle covered -- a lane's clips, a
+    /// patcher's boxes -- and nothing else. The rectangle is the gesture's own
     /// picture and is gone when the hand lets go; what stays is what is
     /// selected, drawn as selected.
     ///
@@ -768,22 +768,22 @@ pub enum GestureStep {
     /// way a hand sweeping a patcher's canvas covers boxes. A time range over
     /// the same lanes is a real and separate selection, and it is `select`.
     Marquee,
-    /// Sweep a selection **restricted on the container's second axis** — a
+    /// Sweep a selection **restricted on the container's second axis** -- a
     /// rectangle rather than a stripe, over a view that measures a value.
     ///
     /// A step of its own rather than a widening of [`GestureStep::Select`],
     /// because a plain drag over a waveform means *this stretch of time* in
     /// every editor there has ever been, and a marquee that also cut a band of
     /// amplitudes out of it would be answering a question nobody asked. What is
-    /// a band of values good for is a script's business — gate this range,
-    /// copy only these peaks — so the script asks for it, which is the track's
+    /// a band of values good for is a script's business -- gate this range,
+    /// copy only these peaks -- so the script asks for it, which is the track's
     /// own rule: a mode is a plan, not a state the host decides.
     ///
     /// It **declines** where the view under it measures no value, so
     /// `"select_box select"` is the honest plan for a mixed stack: a rectangle
     /// where the picture has two axes, the plain span where it has one.
     SelectBox,
-    /// Grab the **sample** under the pointer and drag it vertically — the
+    /// Grab the **sample** under the pointer and drag it vertically -- the
     /// smallest destructive edit there is, and the one that proves the whole
     /// route (gesture to intent to owner to redraw).
     ///
@@ -799,12 +799,12 @@ pub enum GestureStep {
     /// Stricter than [`GestureStep::Sample`]: it is refused where a pixel is
     /// more than one sample, because a stroke there would write values the
     /// reader cannot see. The refusal is **visible** (`"refused" "draw" …`)
-    /// rather than a silent decline — a pencil that sometimes does nothing
+    /// rather than a silent decline -- a pencil that sometimes does nothing
     /// teaches that it sometimes does not work.
     Draw,
     /// Put the transport's cursor under the pointer (a timeline locate).
     Locate,
-    /// **Add a marker under the pointer, or remove the one already there** —
+    /// **Add a marker under the pointer, or remove the one already there** --
     /// the ruler's edit, and the only one it has. A new marker is *numbered*
     /// (`"1"`, `"2"`, …), which is what makes the gesture usable with no text
     /// entry in front of it; renaming and recolouring are the owner's, through
@@ -835,7 +835,7 @@ impl GestureStep {
 /// What one modifier does on a container: an ordered plan of up to three
 /// steps, each of which may decline, the first that consumes the press winning.
 ///
-/// The order is the whole point. `[Element, Locate]` is a multitrack lane —
+/// The order is the whole point. `[Element, Locate]` is a multitrack lane --
 /// grab the clip under the cursor, and if there is none, locate the transport;
 /// `[Select]` is a waveform, which has nothing under the cursor to grab. A plan
 /// that consumes nothing falls **outward** to the enclosing container's plan,
@@ -882,7 +882,7 @@ impl GesturePlan {
 /// and overridable from the wire (the `gestures` prop), so a timeline can be
 /// made to pan on a plain drag without touching any element's code. The
 /// modifiers
-/// are read in order — `ctrl`, `alt`, `shift`, then plain — so a press with
+/// are read in order -- `ctrl`, `alt`, `shift`, then plain -- so a press with
 /// several modifiers held resolves to exactly one plan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct GestureMap {
@@ -907,7 +907,7 @@ impl GestureMap {
         }
     }
 
-    /// A table from its four plans, one per modifier — how an element declares
+    /// A table from its four plans, one per modifier -- how an element declares
     /// the drag it wants when the wire says nothing
     /// ([`Element::gesture_map`](super::Element::gesture_map)).
     pub fn of_plans(
@@ -929,8 +929,8 @@ impl GestureMap {
     /// The timeline views differ only in what a plain drag is for: a waveform
     /// has nothing placed on its axis, so it selects; a multitrack and a roll
     /// hand the press to the box or note first; a free-standing ruler is a
-    /// scrub strip. Shift pans on all of them — that is the convention the
-    /// whole track shares — and a workspace pans with whatever is left over.
+    /// scrub strip. Shift pans on all of them -- that is the convention the
+    /// whole track shares -- and a workspace pans with whatever is left over.
     /// The heavy views answer for themselves through
     /// `Element::gesture_map`;
     /// the arms below are what is left, which is the containers.
@@ -1021,7 +1021,7 @@ impl GestureMap {
 /// A `scroll` container's 2D window onto its virtual content area: the pan
 /// offsets and the scale (all view state, settable via `/gui_set` and emitted
 /// as the `"view"` payload when a gesture moves them), plus the configuration
-/// that constrains the workspace — the pannable [`Axis`], whether wheel zoom
+/// that constrains the workspace -- the pannable [`Axis`], whether wheel zoom
 /// is enabled (`zoom: 0` disables it), and an explicit content size (absent,
 /// the content area sizes from the children's free-placement extents, or the
 /// widget's own area).
@@ -1037,7 +1037,7 @@ pub struct ScrollView {
     pub view_x: f64,
     /// The content coordinate at the widget's top edge.
     pub view_y: f64,
-    /// Physical pixels per content unit (uniform on both axes), > 0 —
+    /// Physical pixels per content unit (uniform on both axes), > 0 --
     /// `None` until something names one, which is not the same as `1.0`; see
     /// [`zoom`](Self::zoom). A `/gui_set view_zoom` of `0` (or of any
     /// non-number) puts it back to `None`.
@@ -1045,7 +1045,7 @@ pub struct ScrollView {
 }
 
 impl ScrollView {
-    /// The navigation a gesture wrote — where the plane is and how far in it is
+    /// The navigation a gesture wrote -- where the plane is and how far in it is
     /// zoomed, under the keys that set them.
     ///
     /// `view_zoom` is reported only when something named one: `None` is "the
@@ -1069,12 +1069,12 @@ impl ScrollView {
     /// content unit is a *display* unit: a patcher's box is 96 units wide
     /// because that is how wide a box should look, so one content unit is one
     /// **logical** pixel and the plane starts at the density it is drawn on.
-    /// (The alternative — fitting the zoom to the content — was rejected: it
+    /// (The alternative -- fitting the zoom to the content -- was rejected: it
     /// would make a box's apparent size follow *how many boxes there are*, and
     /// re-zoom the plane on every edit. Zoom-to-fit is a command, not a
     /// default.)
     ///
-    /// Naming one — in the wire, or by turning the wheel — makes it literal
+    /// Naming one -- in the wire, or by turning the wheel -- makes it literal
     /// from then on: this number is physical pixels, the unit the pan and the
     /// hit math are written in.
     pub fn zoom(&self, m: &super::super::metrics::Metrics) -> f64 {
@@ -1119,8 +1119,8 @@ impl ScrollView {
             }
             "view_x" => set_f64(&mut self.view_x, v),
             "view_y" => set_f64(&mut self.view_y, v),
-            // A positive number names the scale; **anything else clears it** —
-            // `0`, an empty string, a null — and the plane goes back to its
+            // A positive number names the scale; **anything else clears it** --
+            // `0`, an empty string, a null -- and the plane goes back to its
             // default (the window's density). The wire has no other way to ask
             // for a default it cannot name, the same shape `theme` uses for
             // dropping an overlay.
@@ -1180,7 +1180,7 @@ impl Place {
         true
     }
 }
-/// The rate a data view reads its bus at. A bus is a bus — the rate says how
+/// The rate a data view reads its bus at. A bus is a bus -- the rate says how
 /// its values are obtained, not what kind of thing it is: audio-rate buses are
 /// recorded into the segment by the server on demand, control-rate buses live
 /// in the segment permanently.
@@ -1195,7 +1195,7 @@ pub enum Rate {
 
 impl Rate {
     /// Parses the wire's `rate` prop. Absent or unrecognized reads as the
-    /// default, audio rate — so a typo shows the common case rather than
+    /// default, audio rate -- so a typo shows the common case rather than
     /// nothing.
     pub fn parse(value: Option<&str>) -> Self {
         match value {
@@ -1210,7 +1210,7 @@ impl Rate {
 }
 
 /// The shared payload of the continuous controls (`slider`/`knob`/`number`): a
-/// value clamped to a range, with an optional label — plus the two rules that
+/// value clamped to a range, with an optional label -- plus the two rules that
 /// say *how* the handle's travel becomes that value, the **curve** it is read
 /// along and the **step** it lands on.
 #[derive(Debug, Clone)]
@@ -1220,16 +1220,16 @@ pub struct Range {
     pub max: f32,
     /// The bend of the axis between `min` and `max`: `0` is linear, negative
     /// spends most of the range on the first half of the travel, positive on
-    /// the last half — which is the fine-at-the-bottom feel a frequency or an
+    /// the last half -- which is the fine-at-the-bottom feel a frequency or an
     /// amplitude control wants. It is
-    /// [`clausters_core::warp`]'s curve — the same one an envelope segment and
-    /// a client's `lincurve` run — so a control does not feel one way here and
+    /// [`clausters_core::warp`]'s curve -- the same one an envelope segment and
+    /// a client's `lincurve` run -- so a control does not feel one way here and
     /// another where the value was computed.
     pub curve: f32,
     /// The grid a **drag** lands on, in the value's own units: `0` is
     /// continuous, `1` over `0..127` is the integers `\midinote` wants, and a
     /// Faust parameter arrives with the one its `hslider` declared. A value the
-    /// script *sends* is drawn as sent — the step is a rule about the hand, not
+    /// script *sends* is drawn as sent -- the step is a rule about the hand, not
     /// a constraint on the document.
     pub step: f32,
     pub label: Option<String>,
@@ -1257,7 +1257,7 @@ impl Range {
     /// handle sits along the bend the drag reads.
     ///
     /// The **exact inverse** of [`set_fraction`](Self::set_fraction), curve and
-    /// all, so the handle is drawn where a drag would have to leave it — which
+    /// all, so the handle is drawn where a drag would have to leave it -- which
     /// a reversed range (`min > max`, a legitimate control) did not use to get:
     /// this read the value off a normalized axis while the write read it off
     /// the declared ends, and the handle came out mirrored.
@@ -1272,7 +1272,7 @@ impl Range {
         self.value = self.snap(v);
     }
 
-    /// `v` on the step's grid, counted from `min` and never past `max` — the
+    /// `v` on the step's grid, counted from `min` and never past `max` -- the
     /// clamp is a step count rather than a clamp on the value, so a grid that
     /// does not divide the range (`0..10` by `3`) ends on `9` instead of an
     /// off-grid `10`. Unstepped, `v` unchanged.
@@ -1293,7 +1293,7 @@ impl Range {
 ///
 /// This is what makes a clip *a view of the data* rather than a rectangle the
 /// samples are stretched into. A clip is a window onto a segment of a
-/// buffer — the memory-view idea, and the reason trimming one hides samples
+/// buffer -- the memory-view idea, and the reason trimming one hides samples
 /// instead of squeezing them: shortening the window leaves the samples
 /// exactly as it is and shows less of it, and lengthening it again brings the
 /// hidden samples back. Splitting a clip in two is the same statement twice,
@@ -1312,12 +1312,12 @@ pub struct SourceWindow {
     pub start: f64,
     /// Whether the window **wraps** around the samples: past the end it
     /// begins again, and before the beginning it shows the samples' own tail
-    /// — which is what stretching an edge past the source means when a loop is
+    /// -- which is what stretching an edge past the source means when a loop is
     /// what the placement is. Off, the window shows the samples where it has
     /// any and nothing where it has none.
     pub looping: bool,
     /// Whether the samples are **fitted** to the placement's span instead of
-    /// read frame for sample — the picture a time stretch would produce,
+    /// read frame for sample -- the picture a time stretch would produce,
     /// which nothing here produces yet. Off by default: an edge drag is a trim.
     pub fit: bool,
 }
@@ -1334,7 +1334,7 @@ impl Default for SourceWindow {
 
 impl SourceWindow {
     /// The window a placement's props declare, or `None` when they declare
-    /// none — which is what "the container's window, or the identity" means and
+    /// none -- which is what "the container's window, or the identity" means and
     /// the difference between a body that reads its own segment and one that is
     /// drawn through the clip's.
     pub(crate) fn declared(props: &serde_json::Map<String, Value>) -> Option<Self> {
@@ -1356,7 +1356,7 @@ impl SourceWindow {
     /// The source frame a placement-local time `t` reads, over `total` frames
     /// of samples and a placement spanning `dur`.
     ///
-    /// `None` where the window is off the samples — which only a window that
+    /// `None` where the window is off the samples -- which only a window that
     /// neither loops nor fits can be, and which is the honest answer there:
     /// nothing was recorded at that time, so nothing is drawn and nothing is
     /// read.
@@ -1374,7 +1374,7 @@ impl SourceWindow {
         (s >= 0.0 && s <= total).then_some(s)
     }
 
-    /// The placement-local time a source frame is drawn at — the inverse of
+    /// The placement-local time a source frame is drawn at -- the inverse of
     /// [`source_at`](Self::source_at) **within one pass over the samples**,
     /// which is what a looping window is drawn as (see [`runs`](Self::runs)).
     pub fn time_at(&self, source: f64, dur: f64, total: f64) -> f64 {
@@ -1441,7 +1441,7 @@ mod window_tests {
 
     /// **A clip is a window onto a segment of data.** Trimming it shows less of
     /// the samples and moves nothing; the frames it hides are still there and
-    /// come back when the window is opened again — which is the property split
+    /// come back when the window is opened again -- which is the property split
     /// and join are built on.
     #[test]
     fn a_window_reads_the_samples_frame_for_sample() {
@@ -1452,7 +1452,7 @@ mod window_tests {
         assert_eq!(w.source_at(0.0, 300.0, 1000.0), Some(200.0));
         assert_eq!(w.source_at(300.0, 300.0, 1000.0), Some(500.0));
         // Off the samples: nothing was recorded there, so there is no frame to
-        // name — not the last one over and over.
+        // name -- not the last one over and over.
         assert_eq!(w.source_at(900.0, 300.0, 1000.0), None);
         // A **fitted** window is the other statement: the samples scaled into
         // the span, which is the picture a time stretch would make.
@@ -1464,7 +1464,7 @@ mod window_tests {
     }
 
     /// A **looping** window wraps both ways: past the end is the beginning
-    /// again, and before frame zero is the samples' own tail — the samples of
+    /// again, and before frame zero is the samples' own tail -- the samples of
     /// the iteration before this one.
     #[test]
     fn a_looping_window_wraps_at_both_ends() {

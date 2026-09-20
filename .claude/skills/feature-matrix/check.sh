@@ -20,10 +20,10 @@
 # that says whether the code is committable, and a gate that edits the thing it
 # is judging cannot be trusted to report on it. `cargo clippy --fix` exists and
 # is worth running, but deliberately, by hand, on one configuration at a time,
-# with the diff read afterwards — not five times over five different views of
+# with the diff read afterwards -- not five times over five different views of
 # the code inside a script whose output you skim.
 #
-# Every configuration runs even if an earlier one fails — a matrix that stops at
+# Every configuration runs even if an earlier one fails -- a matrix that stops at
 # the first error hides how many of the others were also broken.
 #
 # Usage:
@@ -167,7 +167,7 @@ fi
 # script, run from its own directory, and reported as one row here so a single
 # command still answers "is the tree committable?". It runs *there* rather than
 # through `--manifest-path` because cargo reads `.cargo/config.toml` from the
-# current directory upward, not from the manifest's — and it subsumes the two
+# current directory upward, not from the manifest's -- and it subsumes the two
 # rows this script used to spend on that crate (its clippy and its rustdoc are
 # two of its own configurations, over more of them).
 #

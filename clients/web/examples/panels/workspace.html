@@ -22,8 +22,8 @@
     <main>
       <div id="note"><code>scroll</code> shows its children through a window
 onto a <b>virtual content area</b> larger than the widget. It is deliberately
-<i>general first</i>: the default is the full 2D plane — drag the empty
-background to pan both axes, wheel to zoom anchored at the cursor — and the
+<i>general first</i>: the default is the full 2D plane -- drag the empty
+background to pan both axes, wheel to zoom anchored at the cursor -- and the
 familiar constrained scroll views are that same widget configured down, not
 separate widgets:
 
@@ -128,7 +128,7 @@ than pinning it to 1.</div>
           { layout: "col", weight: 3 },
           gui.panel(
             { layout: "row", h: 26.0, margin: 0 },
-            gui.label("free plane — drag to pan, wheel to zoom"),
+            gui.label("free plane -- drag to pan, wheel to zoom"),
             gui.button({ name: "reset", label: "reset view", w: 120.0 }),
           ),
           plane(),
@@ -146,7 +146,7 @@ than pinning it to 1.</div>
       );
 
       /**
-       * A pane's `"view"` edit-back, wired by name — the same three keys the
+       * A pane's `"view"` edit-back, wired by name -- the same three keys the
        * reset button sets back.
        */
       const onView = (name) => (tag, ...vals) => {

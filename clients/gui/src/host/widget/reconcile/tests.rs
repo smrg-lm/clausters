@@ -22,7 +22,7 @@ fn define(host: &mut Host, json: &str) {
     );
 }
 
-/// A window of two multitracks — the view whose axis a hand moves, and the one
+/// A window of two multitracks -- the view whose axis a hand moves, and the one
 /// a reconcile has to keep. `boxes` is the second one's `clips` prop.
 fn window(boxes: &str) -> String {
     format!(
@@ -48,7 +48,7 @@ fn selection(host: &Host, id: i32) -> (f64, f64) {
     (editor.sel_start, editor.sel_len)
 }
 
-/// Moves the window and the selection of a view the way a hand does — through
+/// Moves the window and the selection of a view the way a hand does -- through
 /// the host's own state, reporting nothing, which is the whole reason a def
 /// cannot be trusted to carry them back.
 fn scroll_and_select(host: &mut Host, id: i32) {
@@ -148,7 +148,7 @@ fn an_id_that_now_names_a_different_kind_carries_nothing() {
 
 #[test]
 fn a_view_that_moved_to_another_parent_keeps_its_own_state() {
-    // Identity by id, wherever it moved to — which is the reason a reconcile
+    // Identity by id, wherever it moved to -- which is the reason a reconcile
     // matches by id and not by path: a path goes stale the moment a window is
     // rearranged, and a widget's screen state must not go with it.
     let mut host = Host::new();

@@ -3,8 +3,8 @@
 //!
 //! A [`SynthDefSpec`] arrives in `/def_send synth` as a JSON blob, is compiled into a
 //! [`SynthDef`] (resolved input references, gathered constants) and stored on
-//! the network thread. `/synth_new` builds a [`instance::UGenSynth`] from it —
-//! fully allocated on the network thread — and ships it to the audio thread.
+//! the network thread. `/synth_new` builds a [`instance::UGenSynth`] from it --
+//! fully allocated on the network thread -- and ships it to the audio thread.
 //!
 //! Output happens exclusively through `Out`/`ReplaceOut` UGens writing to
 //! buses; a def without them is silent. Example of the wire format:
@@ -121,7 +121,7 @@ pub struct UGenSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub op: Option<String>,
     /// `RangeMapUGen`: what an out-of-range input is trimmed to before it is
-    /// mapped — `"minmax"` (the default), `"min"`, `"max"` or `"none"`.
+    /// mapped -- `"minmax"` (the default), `"min"`, `"max"` or `"none"`.
     /// Ignored by every other kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clip: Option<String>,
@@ -143,7 +143,7 @@ pub struct UGenSpec {
     /// Ignored by every other kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wintype: Option<i32>,
-    /// `Conv`: maximum partition count (FDL capacity — the longest
+    /// `Conv`: maximum partition count (FDL capacity -- the longest
     /// prepared kernel the instance accepts). Ignored by every other kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub partitions: Option<usize>,
@@ -152,7 +152,7 @@ pub struct UGenSpec {
     /// signal input. Ignored by every other kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_delay: Option<f32>,
-    /// `PV_Kernel`: the magnitude bin-expression as a **postfix token list** —
+    /// `PV_Kernel`: the magnitude bin-expression as a **postfix token list** --
     /// a number pushes a constant, a word is a per-bin load (`"mag"`,
     /// `"phase"`, `"bin"`, `"nbins"`, `"binfreq"`, `"p0"`…) or an operator wire
     /// name from the shared `clausters_core::builtins` tables (`"mul"`,
@@ -168,7 +168,7 @@ pub struct UGenSpec {
 }
 
 /// One wire token of a `PV_Kernel` bin expression: a literal number (pushes a
-/// constant) or a word (a load or an operator name — see
+/// constant) or a word (a load or an operator name -- see
 /// [`clausters_core::pvprog::parse_word`]).
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(untagged)]
@@ -222,7 +222,7 @@ pub enum InputRef {
 
 pub struct UGenDef {
     /// The catalog descriptor for this UGen's kind (its name, arity, rates,
-    /// bus role, execution mode and constructor) — the compiler and engine
+    /// bus role, execution mode and constructor) -- the compiler and engine
     /// read it instead of matching on a kind enum.
     pub desc: &'static UGenDescriptor,
     pub inputs: Vec<InputRef>,
@@ -233,7 +233,7 @@ pub struct UGenDef {
     pub config: UGenConfig,
     /// Spectral-chain slot: which synth-private
     /// [`SpectralChain`](crate::dsp::spectral::SpectralChain) this UGen shares.
-    /// Assigned by the compiler — a fresh slot for each `FFT`, inherited by the
+    /// Assigned by the compiler -- a fresh slot for each `FFT`, inherited by the
     /// `PV_*`/`IFFT` downstream. `None` for every non-spectral UGen.
     pub chain_slot: Option<usize>,
     /// Second chain slot of a two-chain combiner (`SpectralRole::Filter2`,
@@ -296,8 +296,8 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
     /// How deep demand streams may nest. A pull descends one Rust stack
     /// frame per level *on the audio thread*, so this is a hard ceiling the
     /// compiler enforces, not a runtime check the callback would pay for.
-    /// Sixteen is well past any musical use — sclang's own patterns rarely go
-    /// past three — and far short of anything a callback stack would notice.
+    /// Sixteen is well past any musical use -- sclang's own patterns rarely go
+    /// past three -- and far short of anything a callback stack would notice.
     const MAX_DEMAND_DEPTH: u32 = 16;
     // Demand nesting depth per UGen, parallel to `ugens`.
     let mut demand_depth: Vec<u32> = Vec::with_capacity(spec.ugens.len());
@@ -345,8 +345,8 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             lookup(&u.kind).ok_or_else(|| format!("ugens[{i}]: unknown kind '{}'", u.kind))?;
         // Arity, and the one way a def may be short: the kind's **declared
         // optional tail** (`UGenInput::optional`), which the fill below
-        // completes from the descriptor's defaults. A kind with no tail —
-        // which is most of them, and every operator — still needs its inputs
+        // completes from the descriptor's defaults. A kind with no tail --
+        // which is most of them, and every operator -- still needs its inputs
         // exactly, so a truncated `Mul` fails here rather than compiling to
         // silence.
         let mut fill_from = None;
@@ -526,7 +526,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
         // Spectral chain. A `Source` (`FFT`) opens a new chain: validate
         // its window size and record its slot. A `Filter`/`Sink` (`PV_*`/
         // `IFFT`) must take a spectral wire as input 0 and inherits that chain's
-        // slot, window size and (if unset) window type — so the client only
+        // slot, window size and (if unset) window type -- so the client only
         // specifies the size once, on the `FFT`.
         let mut chain_slot: Option<usize> = None;
         let mut chain_slot_b: Option<usize> = None;
@@ -624,7 +624,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
 
         // Rate coercion. Lower rates widen into higher-rate inputs for
         // free, so the only illegal narrowings are:
-        //  - an `ir` UGen with a non-`ir` input (it is computed once at init —
+        //  - an `ir` UGen with a non-`ir` input (it is computed once at init --
         //    a varying source cannot be frozen);
         //  - demand rate crossing the block boundary: a `dr` wire may only
         //    feed a demand driver's source slot, and that slot must be `dr`.
@@ -668,7 +668,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
                 Some(InputRef::Wire(w)) if ugens[*w].desc.has_done_flag => {}
                 Some(InputRef::Wire(w)) => {
                     return Err(format!(
-                        "ugens[{i}] ({}).inputs[0]: {} has no done flag — only a UGen that \
+                        "ugens[{i}] ({}).inputs[0]: {} has no done flag -- only a UGen that \
                          finishes (an envelope) can be watched",
                         u.kind, ugens[*w].desc.name
                     ));

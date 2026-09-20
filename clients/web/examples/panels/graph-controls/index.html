@@ -21,7 +21,7 @@
       <div id="note">a GraphDef's control surface as one web component: the
 bundle below (authored by make_bundle.mjs) boots an FM
 voice -> tremolo graph on the wasm engine in this tab, and every knob sets a
-named surface port of the running graph — no server process, no script in
+named surface port of the running graph -- no server process, no script in
 between. The power button is the autoplay gesture.</div>
       <fm-trem></fm-trem>
     </main>
@@ -39,19 +39,19 @@ between. The power button is the autoplay gesture.</div>
       and how to boot the same files on the desktop.
 
       The bundle ships its own ES module: importing it registers the <fm-trem>
-      tag and **nothing of the TypeScript client is loaded** — the run time is
+      tag and **nothing of the TypeScript client is loaded** -- the run time is
       the engine, the host and the mount (dist/runtime.js).
 
-      Serve from clients/web — the PACKAGE ROOT, never this folder: the
+      Serve from clients/web -- the PACKAGE ROOT, never this folder: the
       imports below reach ../../../dist/, which must stay inside the served
       root (serving graph-controls/ itself turns them into 404s/MIME
       errors). From clients/web:  python3 -m http.server  and open
       /examples/panels/graph-controls/.
 
-      ?smoke=1 asserts the chain end to end — the graph's LFO streaming on
+      ?smoke=1 asserts the chain end to end -- the graph's LFO streaming on
       **this instance's own** control bus (the /graph_new instantiated and
       sounding) and an /node_set of a named surface port on its own node id,
-      accepted without /fail — beaconing the verdict as a fetch, the standard
+      accepted without /fail -- beaconing the verdict as a fetch, the standard
       web-smoke posture under headless Chrome (scripts/smoke-web.sh
       graph-controls).
     -->
@@ -83,7 +83,7 @@ between. The power button is the autoplay gesture.</div>
       async function smokeAsserts(id) {
         await loadCore();
         const engine = await server();
-        // The bus and the node this instance was allocated — not fixed
+        // The bus and the node this instance was allocated -- not fixed
         // numbers: that is the difference between a bundle and a component.
         const { lfo, graph } = element.symbols;
         const seen = new Set();
@@ -101,7 +101,7 @@ between. The power button is the autoplay gesture.</div>
             }
           }
         }, ANY_PEER);
-        // A named surface port over the raw singleton — the same message the
+        // A named surface port over the raw singleton -- the same message the
         // knobs' bind sends host-side, to this instance's own graph node.
         engine.send(encodeMessage("/node_set",
           [["i", graph], ["s", "rate"], ["f", 9.0]]));

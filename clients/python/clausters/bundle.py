@@ -1,7 +1,7 @@
 """Authoring a **component bundle**: the directory a page mounts.
 
-A bundle is the persisted form of an instrument — its defs, its GuiDef, its
-presets, its samples — plus the manifest that says what mounting it needs. The
+A bundle is the persisted form of an instrument -- its defs, its GuiDef, its
+presets, its samples -- plus the manifest that says what mounting it needs. The
 same directory runs on three legs: a browser tab (as a custom element), the
 desktop (``clausters-gui --standalone``), and a loopback host against a running
 server. Nothing of this module runs at mount time; it only *writes*.
@@ -12,8 +12,8 @@ The two kinds of hole
 Mounting the same bundle twice on one page must not collide, so the GuiDef
 record on disk is a **template** with placeholders, told apart by sigil:
 
-- ``@name`` — a **symbol**: an id the page allocates (a node, a bus, a buffer).
-- ``$name`` — a **parameter**: a value the tag supplies, or a preset's, or the
+- ``@name`` -- a **symbol**: an id the page allocates (a node, a bus, a buffer).
+- ``$name`` -- a **parameter**: a value the tag supplies, or a preset's, or the
   declared default.
 
 `Bundle` holds the symbol table, so the author names things instead of
@@ -24,7 +24,7 @@ which reads naturally where an index goes::
     meter(bus=lfo, label="lfo")
 
 **Holes live only in the GuiDef record.** The def payloads carry none, which is
-what lets two mounted instances share the one def that was sent — and it forces
+what lets two mounted instances share the one def that was sent -- and it forces
 one authoring rule, which is the right rule anyway:
 
     A bus, a node or a buffer reaches a def **as a control**, never as a baked
@@ -33,7 +33,7 @@ one authoring rule, which is the right rule anyway:
 So a voice that publishes its envelope writes ``out_ctl(control("env_bus"),
 env)``, not ``out_ctl(0.0, env)``, and the mount passes the allocated bus in.
 `write` checks this through the core and refuses to emit a bundle that breaks
-it — an unmountable bundle is unwritable.
+it -- an unmountable bundle is unwritable.
 
 Writing one
 ===========
@@ -62,19 +62,19 @@ The format itself is documented in ``docs/clients.md``.
 The bytes are canonical
 =======================
 
-There are two writers of this format — this one and the web client's
-``Bundle`` — and the same bundle authored in either language must be the *same
+There are two writers of this format -- this one and the web client's
+``Bundle`` -- and the same bundle authored in either language must be the *same
 directory*, not merely an equivalent one. That is only checkable if the bytes
 are, so both emit **canonical JSON**: keys sorted, no space between tokens
 (two spaces of indent for the two files a person reads, ``bundle.json`` and a
-preset), and numbers written the shortest way that reads back — which means an
+preset), and numbers written the shortest way that reads back -- which means an
 integral float is ``220``, not ``220.0``.
 
 The number rule is the one that costs something, and it is not a preference:
 JavaScript has a single number type, so a writer there cannot tell ``220.0``
 from ``220`` and could never emit Python's spelling. Dropping the trailing
 zero is what both languages *can* agree on. Nothing downstream reads a type
-out of the spelling — a declared ``"type": "float"`` says what a value is, and
+out of the spelling -- a declared ``"type": "float"`` says what a value is, and
 every leg parses these files with a schema in hand.
 """
 
@@ -87,7 +87,7 @@ from typing import Any
 from . import _native
 
 #: Where a page serves the component run time from. Not the bundle's business
-#: — an argument of `Bundle.write`, defaulting to the package's own layout.
+#: -- an argument of `Bundle.write`, defaulting to the package's own layout.
 DEFAULT_RUNTIME = "/dist/runtime.js"
 
 _TYPE_NAMES = {float: "float", int: "int", str: "string", bool: "bool"}
@@ -112,7 +112,7 @@ def _minimal(value):
 
 
 def _json(value, *, indent: int | None = None) -> str:
-    """`value` as canonical JSON — what both writers of this format emit."""
+    """`value` as canonical JSON -- what both writers of this format emit."""
     separators = (",", ": ") if indent is not None else (",", ":")
     return json.dumps(_minimal(value), sort_keys=True, ensure_ascii=False,
                       indent=indent, separators=separators)
@@ -125,7 +125,7 @@ class Bundle:
     ``name`` names the bundle and **prefixes its def names** (a def name is a
     global namespace on the server, so two bundles defining ``voice``
     differently must not collide). It is also the custom element's tag by
-    default — HTML wants a hyphen in one, so a one-word name needs an explicit
+    default -- HTML wants a hyphen in one, so a one-word name needs an explicit
     `write(tag=...)`.
     """
 
@@ -168,7 +168,7 @@ class Bundle:
         return f"${name}"
 
     def node(self, name: str) -> str:
-        """Declares a node symbol and returns its placeholder (``"@name"``) —
+        """Declares a node symbol and returns its placeholder (``"@name"``) --
         the id the page allocates for a synth or graph this bundle boots."""
         self._declare(name)
         self._nodes.append(str(name))
@@ -200,7 +200,7 @@ class Bundle:
         return f"@{name}"
 
     def _declare(self, name: str) -> None:
-        """Refuses one name in two namespaces — ``@name`` would not say which."""
+        """Refuses one name in two namespaces -- ``@name`` would not say which."""
         taken = set(self._nodes) | {b["name"] for b in self._buses} | set(self._buffers)
         if str(name) in taken:
             raise ValueError(f"symbol {name!r} is already declared in this bundle")
@@ -209,7 +209,7 @@ class Bundle:
 
     def synthdef(self, sdef) -> str:
         """Adds a SynthDef (or a FaustDef), prefixing its name with the
-        bundle's, and returns the prefixed name — what an ``/synth_new`` in the
+        bundle's, and returns the prefixed name -- what an ``/synth_new`` in the
         boot list spawns."""
         return self._add_def(sdef, self._synthdefs)
 
@@ -225,13 +225,13 @@ class Bundle:
         return prefixed
 
     def gui(self, tree: dict) -> None:
-        """Sets the GuiDef tree — the template. Its widgets should be numbered
+        """Sets the GuiDef tree -- the template. Its widgets should be numbered
         ``1..N``; the mount offsets them by an allocated base, so the numbers
         are local to the bundle and never collide between instances."""
         self._gui = tree
 
     def boot(self, *messages: list) -> None:
-        """Adds boot messages — ``[addr, *args]`` each, with placeholders where
+        """Adds boot messages -- ``[addr, *args]`` each, with placeholders where
         ids and values go::
 
             b.boot(["/graph_new", "fm-voice.graph", graph, 0, 0],
@@ -244,7 +244,7 @@ class Bundle:
         self._boot.extend(list(m) for m in messages)
 
     def preset(self, name: str, **values) -> None:
-        """Declares a named preset — a bundle of parameter values a tag selects
+        """Declares a named preset -- a bundle of parameter values a tag selects
         with ``preset="<name>"``. An attribute overrides it; it overrides the
         declared defaults."""
         unknown = set(values) - set(self._params)
@@ -293,7 +293,7 @@ class Bundle:
     def validate(self) -> None:
         """Runs the core's pre-flight: the mount dry-run over the declared
         defaults, plus the no-holes check on every def payload. Raises
-        `ValueError` with the reason — an unknown symbol, a parameter whose
+        `ValueError` with the reason -- an unknown symbol, a parameter whose
         default does not type-check, a hole baked into a def.
 
         `write` calls this first, so a bundle that would fail to mount fails to
@@ -309,7 +309,7 @@ class Bundle:
         Validates first, then builds every file `write` would write: the def
         payloads (each its own ``/def_send`` spec), the GuiDef record, the
         presets, the manifest, and the five-line ES module that registers the
-        tag. Samples are not here — the audio files are the author's to place
+        tag. Samples are not here -- the audio files are the author's to place
         in the directory, and the manifest only names them.
 
         This is the writer without the disk, which is what a caller mounting
@@ -323,7 +323,7 @@ class Bundle:
         if "-" not in tag or tag != tag.lower() or tag[0].isdigit():
             raise ValueError(
                 f"{tag!r} is not a valid custom element name (lowercase, with a "
-                f"hyphen, not starting with a digit) — pass write(tag=...)"
+                f"hyphen, not starting with a digit) -- pass write(tag=...)"
             )
         out = {"bundle.json": _json(self.manifest(), indent=2) + "\n",
                f"defs/guidefs/{self.gui_name}.json": _json(self.record()),
@@ -345,8 +345,8 @@ class Bundle:
 
         ``tag`` is the custom element's name, defaulting to the bundle's.
         HTML requires a hyphen in it (that is how a custom element is told from
-        a built-in one), so a one-word bundle name — perfectly good on the
-        desktop, where the name is a GuiDef's — needs an explicit ``tag``.
+        a built-in one), so a one-word bundle name -- perfectly good on the
+        desktop, where the name is a GuiDef's -- needs an explicit ``tag``.
         ``runtime`` is where the page serves the component run time from: the
         page's business, not the bundle's.
         """

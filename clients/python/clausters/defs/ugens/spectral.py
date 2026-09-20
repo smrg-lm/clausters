@@ -20,7 +20,7 @@ def fft(source, active=1.0, *, fft_size=1024, hop=0.5, wintype=0) -> Ugen:
     transform, ``<= 0`` holds. ``fft_size`` is the window size (a power of two:
     256/512/1024/2048/4096), ``hop`` the fraction of the window between frames,
     ``wintype`` the window (a `clausters._native.Window`: 0 Hann, 1 sine, …).
-    These size the transform, so they are static fields given **only here** — the
+    These size the transform, so they are static fields given **only here** -- the
     server propagates them to the rest of the chain. The window is also settable
     live with `Server.u_cmd`. Feed the result to a ``pv_*`` filter or `ifft`."""
     return Ugen(
@@ -86,7 +86,7 @@ def pv_max(chain_a, chain_b) -> Ugen:
 
 
 def pv_mag_mul(chain_a, chain_b) -> Ugen:
-    """Two-chain combiner: A's bins scaled by B's magnitudes — A's phases kept
+    """Two-chain combiner: A's bins scaled by B's magnitudes -- A's phases kept
     (a spectral envelope transfer, the classic "vocoder" cross-synthesis)."""
     return Ugen("PV_MagMul", [chain_a, chain_b])
 
@@ -99,14 +99,14 @@ def pv_copy_phase(chain_a, chain_b) -> Ugen:
 
 def pv_mag_freeze(chain, freeze=0.0) -> Ugen:
     """While ``freeze <= 0`` stores each frame's magnitudes and passes through;
-    while ``> 0`` rescales every bin to the stored magnitudes — the spectral
+    while ``> 0`` rescales every bin to the stored magnitudes -- the spectral
     envelope holds while the phases keep running."""
     return Ugen("PV_MagFreeze", [chain, freeze])
 
 
 def pv_mag_smear(chain, bins=0.0) -> Ugen:
     """Averages each bin's magnitude over ``bins`` neighbors on each side
-    (``0`` is transparent), phases untouched — a spectral blur."""
+    (``0`` is transparent), phases untouched -- a spectral blur."""
     return Ugen("PV_MagSmear", [chain, bins])
 
 
@@ -126,18 +126,18 @@ def pv_mag_shift(chain, stretch=1.0, shift=0.0) -> Ugen:
 def pv_kernel(chain, *, mag=None, phase=None, params=()) -> Ugen:
     """The general per-frame mechanism: applies user-written **bin
     expressions** to every bin of each fresh frame. ``mag``, ``phase`` and
-    ``params`` are keyword-only — the expressions are **static** fields and
-    ``params`` is the variadic run the wire puts after the chain — so the one
+    ``params`` are keyword-only -- the expressions are **static** fields and
+    ``params`` is the variadic run the wire puts after the chain -- so the one
     positional parameter is the one input the wire names. ``mag`` and ``phase`` are
     symbolic per-bin expressions built from `clausters.defs.pv_expr`'s terms
     (its ``mag``/``phase``/``bin_index``/``nbins``/``binfreq``/``param``)
     with ordinary Python operators; each maps one bin's values to that bin's
-    new magnitude / phase. An omitted expression is the identity — and an
+    new magnitude / phase. An omitted expression is the identity -- and an
     identity ``phase`` keeps each bin's phase *exactly* (the cheap path: pure
     magnitude maps skip the polar conversion).
 
     ``params`` are extra signal inputs (controls, LFOs, constants) the
-    expressions read as ``param(0)``, ``param(1)``, … — sampled once per hop.
+    expressions read as ``param(0)``, ``param(1)``, … -- sampled once per hop.
 
     An expression is a **pure per-bin map**: no state across bins or frames,
     no reading other bins. Gates, tilts, masks and magnitude algebra belong
@@ -146,8 +146,8 @@ def pv_kernel(chain, *, mag=None, phase=None, params=()) -> Ugen:
     ``/def_send synth`` (stack discipline, parameter arity, unknown words) and
     rejects a bad def with ``/fail``.
 
-    Note that ``mag`` is a raw transform magnitude — it scales with the input
-    level, the window and the ``fft_size``, it is **not** normalized to 0..1 —
+    Note that ``mag`` is a raw transform magnitude -- it scales with the input
+    level, the window and the ``fft_size``, it is **not** normalized to 0..1 --
     so thresholds and constants must be calibrated to the signal (probe a
     render, or ``poll`` a reference).
 
@@ -169,13 +169,13 @@ def pv_kernel(chain, *, mag=None, phase=None, params=()) -> Ugen:
 
 def conv(source, kernel, *, fft_size=1024, partitions=16) -> Ugen:
     """Partitioned convolution: convolves ``source`` with a **prepared**
-    kernel — a buffer written by ``dest.gen("prepare_partconv", fft_size,
+    kernel -- a buffer written by ``dest.gen("prepare_partconv", fft_size,
     ir_bufnum)`` (size ``dest`` with `partconv_frames`). The IR's
     spectra are computed once, off the audio thread; the UGen's steady per-
     block cost is flat (the partition products are spread across the hop).
 
     ``fft_size`` is the transform size (a supported power of two); the
-    partition length — and the intrinsic latency — is ``fft_size / 2``
+    partition length -- and the intrinsic latency -- is ``fft_size / 2``
     samples. ``partitions`` caps the kernel length this instance accepts
     (its pre-allocated state). Moving ``kernel`` to a *different* prepared
     buffer crossfades over one partition; regenerating the same buffer
@@ -189,7 +189,7 @@ def conv(source, kernel, *, fft_size=1024, partitions=16) -> Ugen:
 def partconv_frames(ir_frames: int, fft_size: int = 1024) -> int:
     """Frames a kernel buffer needs to hold ``ir_frames`` of impulse response
     prepared at ``fft_size`` (partitions of ``fft_size / 2``, plus the two-
-    sample header) — the size to `clausters.defs.Buffer.alloc` before
+    sample header) -- the size to `clausters.defs.Buffer.alloc` before
     ``buf.gen("prepare_partconv", fft_size, ir_bufnum)``."""
     part = fft_size // 2
     parts = -(-int(ir_frames) // part)

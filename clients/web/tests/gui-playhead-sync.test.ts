@@ -1,10 +1,10 @@
-// The shared playhead sync (`gui/playhead-sync.ts`) — play/pause/stop/locate
+// The shared playhead sync (`gui/playhead-sync.ts`) -- play/pause/stop/locate
 // and the views' playhead line.
 //
 // No host and no server: a fake host records the sets, a fake server answers the
 // clock query, and the pass is a stub whose end is reached by hand (what a real
 // so the end of a pass is reached deterministically. What is checked is the line
-// — which of the two numbers is written, in which unit — and the state machine
+// -- which of the two numbers is written, in which unit -- and the state machine
 // around it, not what the widgets do with it.
 //
 // The same cases the Python client's `test_gui_playhead_sync.py` checks, because
@@ -77,7 +77,7 @@ const arp = () =>
     );
 
 /**
- * A clock whose beat is set by hand instead of by a ticker — a *rolling* clock
+ * A clock whose beat is set by hand instead of by a ticker -- a *rolling* clock
  * (its beat is the wall's, so a transport may sweep the last item's tail over
  * it) that a test can move deterministically.
  */
@@ -99,12 +99,12 @@ class RollingClock extends TempoClock {
 
 /**
  * What a `source` hands back: the timeline it is playing, as `PlayheadSync`
- * reads it — its map, its position, whether it is playing, and whether it ran
+ * reads it -- its map, its position, whether it is playing, and whether it ran
  * out. A stub, so a test decides when the plan runs out; what a real timeline
  * does with its own clock is `timeline-play.test.ts`'s.
  */
 class Pass {
-    /** The beats its items sit on — the last is where a drained plan stops. */
+    /** The beats its items sit on -- the last is where a drained plan stops. */
     static readonly items = [0.0, 1.0, 2.0];
     readonly map = TIMELINE.map;
     playing = true;

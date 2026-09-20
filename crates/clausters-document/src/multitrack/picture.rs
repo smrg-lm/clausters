@@ -2,8 +2,8 @@
 //! answer read back.
 //!
 //! The mapping between the model and the picture, in one place because there is
-//! one of it. A multitrack view — the standalone host's, the Python client's,
-//! the web client's — draws a **row** per track and a **box** per region, and
+//! one of it. A multitrack view -- the standalone host's, the Python client's,
+//! the web client's -- draws a **row** per track and a **box** per region, and
 //! reports the whole list after any gesture. Which verb that list stands for is
 //! not obvious (a move and a trim are different edits; a box the multitrack has no
 //! region for is a new one), and a reader written per client is a reader that
@@ -29,7 +29,7 @@
 //! A row is named by its track's id and a box by its region's, so a payload is
 //! read with no map on the side. The one exception is the reason this module
 //! has a `read` at all: **a box may come back under a name that is no id**,
-//! because a split names its halves after the box they came from — and that is
+//! because a split names its halves after the box they came from -- and that is
 //! exactly how a new box is told from a moved one.
 
 use serde::{Deserialize, Serialize};
@@ -45,7 +45,7 @@ use crate::{
 /// One row of the view: a track, and the strip that is drawn beside it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Row {
-    /// The track it draws — its identity, and its name on the wire.
+    /// The track it draws -- its identity, and its name on the wire.
     pub track: NodeId,
     /// The lane of that track whose regions it shows: what a box joins when it
     /// lands here.
@@ -56,7 +56,7 @@ pub struct Row {
     pub mute: bool,
     /// Soloed.
     pub solo: bool,
-    /// The fader, read out of the track's own table — the document holds no
+    /// The fader, read out of the track's own table -- the document holds no
     /// mixer, so a level is a key a client wrote and this only carries it.
     pub gain: f64,
     /// **Whether this track's automation rows are shown**: true when any of its
@@ -67,7 +67,7 @@ pub struct Row {
 /// One box: a region, where it sits and what it is a window onto.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Box {
-    /// The region it draws — its identity, and its name on the wire.
+    /// The region it draws -- its identity, and its name on the wire.
     pub region: NodeId,
     /// The row it sits on ([`Row::track`]).
     pub row: NodeId,
@@ -75,7 +75,7 @@ pub struct Box {
     pub position: Second,
     /// How long it occupies, in seconds.
     pub length: Second,
-    /// The frame of the source its own zero reads, **in seconds** — a
+    /// The frame of the source its own zero reads, **in seconds** -- a
     /// recording's units, which no tempo scales.
     pub start: f64,
     /// How long the window lasts, in seconds. A region may be placed for longer
@@ -90,7 +90,7 @@ pub struct Box {
     pub muted: bool,
     /// Whether the window **wraps**: past the end of the source it begins
     /// again. What a box longer than what it reads means, and the only one of
-    /// the three answers to that question which changes what *sounds* — so it
+    /// the three answers to that question which changes what *sounds* -- so it
     /// is the multitrack's and travels with the box.
     pub looping: bool,
 }
@@ -166,13 +166,13 @@ pub fn boxes(multitrack: &Multitrack) -> Vec<Box> {
 /// The same shape for both places a curve lives, because it is the same curve:
 /// a track's automation is drawn as a **row of its own** under that track and
 /// runs the whole timeline, a region's is drawn as a **layer inside that box**
-/// and runs as long as the box does. `owner` says which — a track's id for a
-/// row, a region's for a layer — and the two are handed out by two calls
+/// and runs as long as the box does. `owner` says which -- a track's id for a
+/// row, a region's for a layer -- and the two are handed out by two calls
 /// ([`curves`] and [`layers`]) rather than one with a flag, since a caller
 /// draws them in two different places and never mixes them.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Curve {
-    /// The automation it draws — its identity, and its name on the wire.
+    /// The automation it draws -- its identity, and its name on the wire.
     pub automation: NodeId,
     /// What it hangs from: a track (a row) or a region (a layer).
     pub owner: NodeId,
@@ -188,7 +188,7 @@ pub struct Curve {
     /// The break-points. `at` is in seconds, like every placement here.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub points: Vec<Point>,
-    /// Whether the row or layer is shown — the view's own state, kept in the
+    /// Whether the row or layer is shown -- the view's own state, kept in the
     /// multitrack because which curves a person had open is part of reopening it as
     /// they left it.
     pub visible: bool,
@@ -207,7 +207,7 @@ pub fn curves(multitrack: &Multitrack) -> Vec<Curve> {
 
 /// The **region automations**: one layer inside each box that has one.
 ///
-/// Only the boxes that are drawn — the active lane's — because a layer with no
+/// Only the boxes that are drawn -- the active lane's -- because a layer with no
 /// box under it has nowhere to be.
 pub fn layers(multitrack: &Multitrack) -> Vec<Curve> {
     multitrack
@@ -234,7 +234,7 @@ fn curve(automation: &Automation, owner: NodeId) -> Curve {
     }
 }
 
-/// A curve as a hand left it — what [`read_points`] is given.
+/// A curve as a hand left it -- what [`read_points`] is given.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Curved {
     /// The name it came back under, which is its automation's id.
@@ -248,7 +248,7 @@ pub struct Curved {
 ///
 /// The report is every curve there is, rows and layers alike, for the same
 /// reason a box report is every box: applying what came back is the identity.
-/// So what comes out is the difference — a
+/// So what comes out is the difference -- a
 /// [`MultitrackIntent::SetAutomation`] per curve whose points actually moved,
 /// and nothing at all for a hand that looked without editing.
 ///
@@ -274,7 +274,7 @@ pub fn read_points(multitrack: &Multitrack, reported: &[Curved]) -> Vec<Multitra
 /// **A JSON number compares by value and not by spelling**, which derived
 /// equality on [`Opaque`] cannot do. A point's `data` is opaque and travels
 /// through whichever serializer the endpoint has, and JavaScript writes `0.0`
-/// as `0` — so a curve reported back exactly as it was drawn came out as an
+/// as `0` -- so a curve reported back exactly as it was drawn came out as an
 /// *edit* in the page and as nothing in a script, which is one report meaning
 /// two things. Everything else compares as it always did.
 fn same_points(held: &[Point], reported: &[Point]) -> bool {
@@ -301,14 +301,14 @@ fn same_json(a: &Value, b: &Value) -> bool {
     }
 }
 
-/// A row as a hand left it — what [`read_rows`] is given, and the same shape
+/// A row as a hand left it -- what [`read_rows`] is given, and the same shape
 /// [`rows`] hands out with the two fields a picture answers for itself dropped.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Strip {
     /// The name it came back under. **An id where the row is one the view was
     /// given, and anything at all where a hand made one**: a track added by a
     /// gesture is named by whoever added it, which is how a new row is told
-    /// from a moved one — the same rule a box's name follows.
+    /// from a moved one -- the same rule a box's name follows.
     pub name: String,
     /// Silenced.
     #[serde(default)]
@@ -338,7 +338,7 @@ fn unity() -> f64 {
 
 /// **What a `"rows"` report means**, as edits in the multitrack's own vocabulary.
 ///
-/// The report is the *multitrack* — every row, in the order they are shown — for the
+/// The report is the *multitrack* -- every row, in the order they are shown -- for the
 /// same reason a box report is every box: applying what came back is the
 /// identity, and there is no gesture to ask about. What comes out is the
 /// difference, and it is **one** [`MultitrackIntent::SetTracks`] whatever
@@ -350,13 +350,13 @@ fn unity() -> f64 {
 /// - a name that is no track's id is a **new track**, minted here with one
 ///   empty lane, since a track that could hold nothing is not one;
 /// - a track the report does not name is **gone**, and its lanes and regions
-///   with it — which is what makes deleting a track one edit rather than a
+///   with it -- which is what makes deleting a track one edit rather than a
 ///   removal per box on it;
 /// - the order is the report's, so the rows are the tracks and moving one moves
 ///   the other.
 ///
 /// The minting walks up from [`fresh_id`], two at a time: a track and its lane.
-/// Unlike [`read`] this asks the multitrack for that itself — a row report carries
+/// Unlike [`read`] this asks the multitrack for that itself -- a row report carries
 /// no ids a caller had to reserve, so there is nothing for one to say.
 ///
 /// **The label is not read.** A row's label is the track's name where it has
@@ -437,12 +437,12 @@ pub fn read_rows(multitrack: &Multitrack, reported: &[Strip]) -> Vec<MultitrackI
         // carries** *(found 2026-09-12 by use: a window that had just opened
         // recorded an edit per track before a hand touched it)*. A fader is an
         // `f32` on the way out and an `f64` in the document, so a level of
-        // `0.7` comes back as `0.699999988` — which is a different number by
+        // `0.7` comes back as `0.699999988` -- which is a different number by
         // `f64::EPSILON` and the same number to everything that will ever read
         // it. Compared at `f64` the report of an untouched header was an edit,
         // the answer rewrote the level, and the next report differed again.
         // A track that never named a level sits at unity, so writing one
-        // unconditionally would make a multitrack that changed nothing look edited —
+        // unconditionally would make a multitrack that changed nothing look edited --
         // which is the same rule, at the precision it has to be read at.
         let gain = strip.gain.max(0.0);
         if gain as f32 != level_of(&track) as f32 {
@@ -461,7 +461,7 @@ pub fn read_rows(multitrack: &Multitrack, reported: &[Strip]) -> Vec<MultitrackI
     vec![MultitrackIntent::SetTracks { tracks }]
 }
 
-/// A box as a hand left it — what [`read`] is given, and the same shape
+/// A box as a hand left it -- what [`read`] is given, and the same shape
 /// [`boxes`] hands out with the two fields a picture cannot answer for dropped.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Placed {
@@ -488,15 +488,15 @@ pub struct Placed {
 
 /// **What a `"boxes"` report means**, as edits in the multitrack's own vocabulary.
 ///
-/// The report is the *multitrack*, not the gesture — a move, a block drag, a trim, a
-/// split, a delete and a paste all arrive as one list — so nothing here asks
+/// The report is the *multitrack*, not the gesture -- a move, a block drag, a trim, a
+/// split, a delete and a paste all arrive as one list -- so nothing here asks
 /// which gesture ran. What comes out is the difference:
 ///
 /// - a box that stayed on its row and changed length is a
 ///   [`MultitrackIntent::TrimRegion`], which is the verb that changes what a
 ///   region reads;
 /// - a box that moved, or changed row, is a
-///   [`MultitrackIntent::PlaceRegion`] — one verb for both, which is why a
+///   [`MultitrackIntent::PlaceRegion`] -- one verb for both, which is why a
 ///   crossing is not a second mechanism;
 /// - a row that gained a box the multitrack has no region for, or lost one the
 ///   report no longer names, is stated **whole**
@@ -577,7 +577,7 @@ pub fn read(
     out
 }
 
-/// An id past everything the multitrack already names — its tracks, its lanes, its
+/// An id past everything the multitrack already names -- its tracks, its lanes, its
 /// regions **and its automations**, which share one id space.
 ///
 /// The curves are in the count because they are in the space: a multitrack looks an
@@ -610,12 +610,12 @@ pub fn fresh_id(multitrack: &Multitrack) -> u64 {
 /// would make the same edit sound different, which is the whole reason the
 /// arithmetic lives in this crate.
 ///
-/// Only at a seam that is one — two parts that *do* read on from each other are
+/// Only at a seam that is one -- two parts that *do* read on from each other are
 /// left alone, where a fade would be audible damage to material that was
 /// continuous.
 pub const SEAM: f64 = 0.010;
 
-/// A source id nothing is using — neither this multitrack **nor whoever holds the
+/// A source id nothing is using -- neither this multitrack **nor whoever holds the
 /// samples**.
 ///
 /// Minted the way a region's id is: from what is there, so the same multitrack
@@ -623,8 +623,8 @@ pub const SEAM: f64 = 0.010;
 ///
 /// **`taken` is not an optimization and leaving it out was a defect** *(found
 /// 2026-09-12 by the user: a second join left an empty box)*. A source stops
-/// being named by the multitrack the moment nothing windows it — an undo, a box
-/// deleted — while the client still holds the buffer it made for it. Minted off
+/// being named by the multitrack the moment nothing windows it -- an undo, a box
+/// deleted -- while the client still holds the buffer it made for it. Minted off
 /// the multitrack alone, the next join hands back an id that already has samples
 /// behind it, and the box is then a window onto **the previous join**: the
 /// client sees an id it knows, makes nothing, and the box draws and plays
@@ -646,8 +646,8 @@ pub fn fresh_source(multitrack: &Multitrack, taken: &[SourceId]) -> SourceId {
 /// **What a `"join"` report means**: these boxes become one.
 ///
 /// The one verb of the multitrack that cannot be read out of the picture it
-/// leaves. A move, a trim, a split and a delete are all differences — the
-/// report is the multitrack and [`read`] says what changed — but a join and a
+/// leaves. A move, a trim, a split and a delete are all differences -- the
+/// report is the multitrack and [`read`] says what changed -- but a join and a
 /// "delete one, lengthen the other" leave a lane holding exactly the same
 /// thing, and a box in the report names **one** source and one start. So a join
 /// is stated, and this is the statement.
@@ -655,8 +655,8 @@ pub fn fresh_source(multitrack: &Multitrack, taken: &[SourceId]) -> SourceId {
 /// Two answers, and which one it is depends on the material rather than on the
 /// gesture:
 ///
-/// - The boxes read **one run of one source, in order** — the halves of a cut
-///   put back — so the join is a plain window over the whole of it, which is
+/// - The boxes read **one run of one source, in order** -- the halves of a cut
+///   put back -- so the join is a plain window over the whole of it, which is
 ///   what it always was. Nothing is minted: a source made of one span of one
 ///   take is a pseudobuffer that says nothing the take does not.
 /// - They do not, which is the case a region **cannot state**: a region is one
@@ -970,7 +970,7 @@ fn lane_lists(
         // **A kept region is kept as the report left it**, not as the multitrack
         // still holds it. A lane stated whole is stated *last*, so a clone of
         // what the multitrack says would undo the trim and the move the same report
-        // asked for a moment earlier — which is what made a split leave its
+        // asked for a moment earlier -- which is what made a split leave its
         // first half at full length, playing over the second.
         let mut regions: Vec<Region> = lane
             .regions
@@ -1049,7 +1049,7 @@ pub fn level_of(track: &Track) -> f64 {
         .unwrap_or(1.0)
 }
 
-/// **The same content, over the part of the source the report names** — the
+/// **The same content, over the part of the source the report names** -- the
 /// window slid to the reported `start`, looping as the report says, and every
 /// other field of it untouched.
 ///
@@ -1126,7 +1126,7 @@ mod tests {
         a
     }
 
-    /// **The same curve in two places, handed out by two calls** — a track's is
+    /// **The same curve in two places, handed out by two calls** -- a track's is
     /// a row of its own, a region's a layer inside its box, and a caller draws
     /// them somewhere different, so it never has to tell them apart.
     #[test]
@@ -1181,7 +1181,7 @@ mod tests {
     /// curve is declared by whoever holds the multitrack.
     /// **A trim of the left edge slides the window over the source.** That is
     /// what makes an edge drag a trim and not a squeeze, so a report whose
-    /// `start` moved is saying the box reads from somewhere else now — and
+    /// `start` moved is saying the box reads from somewhere else now -- and
     /// dropping it left the picture and the document disagreeing about which
     /// samples a box is over, which is heard as both halves of a split playing
     /// the beginning.
@@ -1276,7 +1276,7 @@ mod tests {
     /// A lane's whole list is the *last* intent a report produces, so a clone
     /// of what the multitrack says undoes the trim and the move the same report
     /// asked for a moment earlier. That is what made a split leave its first
-    /// half at full length, playing over the second — the picture was right and
+    /// half at full length, playing over the second -- the picture was right and
     /// the document was not.
     ///
     /// Found by use 2026-09-10.
@@ -1346,7 +1346,7 @@ mod tests {
 
     /// **A curve holds an id like anything else does.** `fresh_id` answers
     /// with an id past everything the multitrack names, and a multitrack looks one up by
-    /// number without asking what kind of thing it expected — so a count that
+    /// number without asking what kind of thing it expected -- so a count that
     /// skipped the automations would hand out an id a curve already had.
     ///
     /// Found 2026-09-09 while adding a track from the header: the new track was
@@ -1420,8 +1420,8 @@ mod tests {
         assert!(tracks[0].muted);
         assert_eq!(level_of(&tracks[0]), 0.5);
 
-        // A name that is no track's id is a track a hand added — with a lane,
-        // since a track that could hold nothing is not one — and the ids come
+        // A name that is no track's id is a track a hand added -- with a lane,
+        // since a track that could hold nothing is not one -- and the ids come
         // from the multitrack's own counter.
         let out = read_rows(
             &multitrack,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The web page's window, natively — and **nothing about the audio crosses the
+"""The web page's window, natively -- and **nothing about the audio crosses the
 wire**.
 
 `clients/web/examples/recording.html` draws four takes as they record, a
@@ -11,14 +11,14 @@ page can map nothing, so each of those three pictures is something it has to
 (``/buffer_getRange``).
 
 This is the same window with the same three things happening, on a host that
-**maps the segment** — and every one of them is a local read:
+**maps the segment** -- and every one of them is a local read:
 
 - **A recording** is followed by the buffer's *write frontier*, one number the
   engine publishes in the directory row, with the samples already being the
   cells the host draws.
 - **The finished take** is drawn from the **overview file beside its region**
   (``<segment>.buf<n>.<gen>.peaks``), which the server writes when it publishes
-  the buffer and keeps current span by span. So a minute of stereo — 23 MB —
+  the buffer and keeps current span by span. So a minute of stereo -- 23 MB --
   opens with a few hundred kilobytes mapped and no pass over the samples at
   all. The lane prints both numbers when it opens.
 - **A peer's edit** arrives as the span and nothing else (``/buffer_touch``):
@@ -38,7 +38,7 @@ eight times longer than those. Zoom (wheel) and pan (drag) work on whichever
 ruler or lane the pointer is over.
 
 Needs an audio device, a display and a GPU adapter. The buttons drive it, so
-nothing has to be run cell by cell — though it is organized as ``# %%`` cells
+nothing has to be run cell by cell -- though it is organized as ``# %%`` cells
 too, so it steps under Shift+Enter with the window staying up between them.
 With the client importable (``pip install -e ./clients/python``)::
 
@@ -67,7 +67,7 @@ LANES, LONG = 1, 2
 # %% [markdown]
 # ## The server, the host and the segment
 # One server owning a segment and one host mapping it. Every buffer lives in a
-# region beside that segment, and — since the server writes one — a summary
+# region beside that segment, and -- since the server writes one -- a summary
 # beside the region.
 
 # %%
@@ -85,7 +85,7 @@ long_take = Buffer.alloc(int(LONG_SECONDS * RATE), 2, server=server)
 # them, so a square wave across 23 MB is a dozen numbers on the wire. The runs
 # land on whole buckets of the summary (256 frames): a boundary falling inside
 # a bucket gives that bucket both values, and the picture a full-height column
-# at every step — true, and a distraction here.
+# at every step -- true, and a distraction here.
 
 # %%
 STEPS = 12
@@ -102,7 +102,7 @@ def overview_bytes(buf: Buffer) -> "tuple[int, int]":
     """``(samples, overview)`` in bytes for `buf`, read off the filesystem.
 
     The region is the samples and its sibling is the summary the host maps
-    instead of computing one — the whole point of the lane below, in two
+    instead of computing one -- the whole point of the lane below, in two
     numbers.
     """
     shm = ShmClient(server.shm)
@@ -120,7 +120,7 @@ def overview_bytes(buf: Buffer) -> "tuple[int, int]":
 
 _samples, _peaks = overview_bytes(long_take)
 print(f"the finished take: {_samples / 1e6:.1f} MB of samples, "
-      f"summarized beside it in {_peaks / 1e3:.0f} kB — "
+      f"summarized beside it in {_peaks / 1e3:.0f} kB -- "
       f"which is what the lane opens from")
 
 # %% [markdown]
@@ -128,7 +128,7 @@ print(f"the finished take: {_samples / 1e6:.1f} MB of samples, "
 # The page's, lane for lane, plus the buttons that drive it. `fills` is the one
 # thing the host cannot work out for itself: it says *these samples are being
 # written*, so a lane stops at the frontier and leaves the axis past it empty
-# rather than inking the buffer's own zeros. The finished take carries none —
+# rather than inking the buffer's own zeros. The finished take carries none --
 # it is written everywhere, and that is a different picture.
 
 # %%
@@ -151,11 +151,11 @@ win = view(
 # ## What the buttons do
 # **Record** plays four glissandi and records them at once; `record_buf` passes
 # its input through, so the same signal reaches the buffers and the speakers,
-# and `done_action=2` frees each node at the end of its take — which is what
+# and `done_action=2` frees each node at the end of its take -- which is what
 # stops the pictures growing. **Silence** is the edit: the server writes the
 # span in place, and this script announces it with
-# `clausters.Buffer.touch`, which the server broadcasts to every other client —
-# the host among them — as the span and never the samples.
+# `clausters.Buffer.touch`, which the server broadcasts to every other client --
+# the host among them -- as the span and never the samples.
 
 # %%
 SynthDef(
@@ -194,7 +194,7 @@ def peer_edit() -> None:
     frames = takes[0].frames // 3
     takes[0].silence(start, frames)
     takes[0].touch(0, start, frames)
-    say(f"another peer silenced frames {start}..{start + frames} of take 1 — "
+    say(f"another peer silenced frames {start}..{start + frames} of take 1 -- "
         "the lane re-summarizes that span and nothing else")
 
 
@@ -208,7 +208,7 @@ print("press the buttons in the window; zoom with the wheel over any lane or rul
 # ## Clear `fills` when a take is finished
 # A recorder frees itself at the end of its buffer, so the frontier stops
 # moving and what was written is all there is. `fills` comes off then, and the
-# lane goes back to drawing the whole of its samples — the same lane, a
+# lane goes back to drawing the whole of its samples -- the same lane, a
 # different claim about what it holds.
 
 # %%
@@ -232,5 +232,5 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
     finally:
         session.close()
 else:
-    print("up — press the buttons, or call record(), peer_edit(), finished(); "
+    print("up -- press the buttons, or call record(), peer_edit(), finished(); "
           "win.wait(10) to hold for ten seconds, session.close() to end")

@@ -1,6 +1,6 @@
 //! winit-side input adapters: translate pointer/wheel/keyboard events into
 //! calls on the shared gesture machine ([`crate::host::gestures`]) and carry
-//! out its effects over this front's sinks — the OSC transports (`/gui_event`)
+//! out its effects over this front's sinks -- the OSC transports (`/gui_event`)
 //! and winit redraw requests. All gesture *logic* lives in the machine; this file only snapshots the per-call context (frame
 //! buffer size, modifiers, the GPU slots' lane counts) and applies effects.
 
@@ -108,7 +108,7 @@ impl App {
                 // A desktop window is not inside a document: there is nothing
                 // to hand the focus back to, so the ring simply runs out and
                 // the next Tab enters it again. (In a page this is what keeps a
-                // mounted GuiDef from trapping the keyboard — `web::input`.)
+                // mounted GuiDef from trapping the keyboard -- `web::input`.)
                 GestureEffect::FocusOut(_) => {}
             }
         }
@@ -165,7 +165,7 @@ impl App {
 
     // ---- keyboard operations (dispatched from `window_event`) ----
 
-    /// Routes a key to the window's focus — the ring for Tab, the focused
+    /// Routes a key to the window's focus -- the ring for Tab, the focused
     /// element for everything else. Returns whether it was consumed (so the
     /// caller skips the global editor shortcuts).
     pub(super) fn key_input(&mut self, def_id: i32, key: HostKey) -> bool {
@@ -185,7 +185,7 @@ impl App {
     }
 
     /// Routes a key the focus did not answer to the element **under the
-    /// cursor** — the block operations of a view, addressed where the pointer
+    /// cursor** -- the block operations of a view, addressed where the pointer
     /// already is. Returns whether it was consumed.
     pub(super) fn key_at_cursor(&mut self, def_id: i32, key: HostKey) -> bool {
         let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) else {
@@ -210,7 +210,7 @@ impl App {
         true
     }
 
-    /// Copy, cut or paste over the view under the cursor — the window's own
+    /// Copy, cut or paste over the view under the cursor -- the window's own
     /// shortcut, reached only by a key the focus and the element under the
     /// cursor both declined. Returns whether it was consumed.
     pub(super) fn clipboard_key(&mut self, def_id: i32, verb: ClipVerb) -> bool {
@@ -237,7 +237,7 @@ impl App {
     }
 
     /// The space bar: play the take the cursor is over and stop what is
-    /// playing, or — over nothing a take answers for — the window's own
+    /// playing, or -- over nothing a take answers for -- the window's own
     /// `play`, which a multitrack editor reads as play/pause. Returns whether it
     /// was consumed.
     pub(super) fn play_key(&mut self, def_id: i32) -> bool {
@@ -274,7 +274,7 @@ impl App {
     }
 
     /// A verb addressed to the **window** rather than to anything under the
-    /// cursor — the shape undo and redo already take, and for the same reason:
+    /// cursor -- the shape undo and redo already take, and for the same reason:
     /// what a save saves is the document behind the window. A host that **owns**
     /// that document answers it here; every other one emits it, and a script
     /// may answer.
@@ -300,7 +300,7 @@ impl App {
         self.windows.get(&def_id).is_some_and(|ws| ws.shift)
     }
 
-    /// As [`Self::ctrl`], for Alt — the other modifier that makes a letter a
+    /// As [`Self::ctrl`], for Alt -- the other modifier that makes a letter a
     /// command rather than a character (`key_pressed` reads the pair).
     pub(super) fn alt(&self, def_id: i32) -> bool {
         self.windows.get(&def_id).is_some_and(|ws| ws.alt)

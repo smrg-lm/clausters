@@ -6,7 +6,7 @@
 //! summarizes every `base_bucket` samples into a `(min, max)` pair **and a mean
 //! square**, and each higher level halves the resolution. At draw time the level
 //! whose bucket size matches the current `samples_per_px` is selected, so each
-//! rendered pixel column reads only ~one bucket — work proportional to the
+//! rendered pixel column reads only ~one bucket -- work proportional to the
 //! window width, not to the buffer length.
 //!
 //! The third statistic is stored as **energy (mean square), never as RMS**, and
@@ -24,10 +24,10 @@
 //!
 //! Computing peaks for a long buffer is the expensive part, so the result is a
 //! cache: it lives in memory and can be serialized to a file (the way audio
-//! editors keep an overview/peak file beside the audio) and read back —
+//! editors keep an overview/peak file beside the audio) and read back --
 //! `to_bytes`/`from_bytes` and `write_cache`/`read_cache`. The layout (see
 //! [`crate::bytes`]) is a flat sequence of `f32` arrays, so a build can
-//! memory-map it instead of reading it into RAM — the local shared-resource
+//! memory-map it instead of reading it into RAM -- the local shared-resource
 //! path the GUI host uses to render a multi-megabyte buffer with no per-frame or
 //! over-the-wire re-send. The format is machine-local (native float byte order).
 
@@ -42,14 +42,14 @@ const MAGIC: &[u8; 4] = b"CLPK";
 /// and carried one level sequence per channel; **version 3 is the current
 /// one**, the v2 shape with a mean-square array beside each level's min/max.
 /// Both writers emit v3 (a mono cache is one channel), and readers accept all
-/// three — a v1 or v2 cache carries no mean square, which
+/// three -- a v1 or v2 cache carries no mean square, which
 /// [`Pyramid::has_mean_square`] reports rather than faking with zeros.
 const VERSION: u32 = 1;
 const VERSION_MULTI: u32 = 2;
 const VERSION_MEASURE: u32 = 3;
 
 /// A read-only sequence of samples a pyramid can summarize **without owning
-/// it** — the door that lets a summary be taken over samples that lives
+/// it** -- the door that lets a summary be taken over samples that lives
 /// somewhere else.
 ///
 /// The pyramid used to be a function of a `&[f32]`, which quietly required
@@ -57,8 +57,8 @@ const VERSION_MEASURE: u32 = 3;
 /// mapped region read it out first, a client rewriting one span of a cache
 /// handed over the entire buffer to do it, and a renderer could not summarize
 /// what it was streaming because the samples were gone by the end. A source
-/// asks for two things instead — how long it is, and a span copied into a
-/// caller-sized window — and a bounded scratch buffer is all a build needs.
+/// asks for two things instead -- how long it is, and a span copied into a
+/// caller-sized window -- and a bounded scratch buffer is all a build needs.
 ///
 /// It is **mono**: one source is one channel, because that is what a pyramid
 /// summarizes. Interleaved samples are read through [`Interleaved`], which is
@@ -68,7 +68,7 @@ pub trait Source {
     fn len(&self) -> usize;
 
     /// Copies `out.len()` samples starting at `start` into `out`. A read past
-    /// the end fills the remainder with zeros rather than panicking — the
+    /// the end fills the remainder with zeros rather than panicking -- the
     /// callers here never ask for one, and a summary of silence is a better
     /// failure than a crash in a draw path.
     fn read_into(&self, start: usize, out: &mut [f32]);
@@ -159,7 +159,7 @@ pub fn min_max(samples: &[f32]) -> Option<(f32, f32)> {
 }
 
 /// **What a column is inked over: what it measured, extended to meet the column
-/// before it** — the rule that makes a picture drawn as columns show the same
+/// before it** -- the rule that makes a picture drawn as columns show the same
 /// curve a picture drawn as a polyline does.
 ///
 /// The two regimes are one picture. Zoomed in, a trace is the polyline through
@@ -172,19 +172,19 @@ pub fn min_max(samples: &[f32]) -> Option<(f32, f32)> {
 ///
 /// On ordinary audio nothing shows, because a column holding a hundred samples
 /// of a wave already spans nearly the excursion its neighbour does and the two
-/// overlap by themselves. On the picture this is *for* — a digital square wave,
-/// a gate, a step, an edge of any kind — it is the whole of the feature: the
+/// overlap by themselves. On the picture this is *for* -- a digital square wave,
+/// a gate, a step, an edge of any kind -- it is the whole of the feature: the
 /// one-sample jump falls between two columns, and the vertical stroke that *is*
 /// the edge is not drawn at all, leaving a flat run at the top and a flat run
 /// at the bottom with nothing between them. And it comes and goes as the view
 /// moves, since whether a jump lands inside a column or on its boundary is a
-/// fact about the magnification and the scroll, not about the signal — which is
+/// fact about the magnification and the scroll, not about the signal -- which is
 /// what makes it read as the picture losing its grip on the samples rather than
 /// as a defect at one zoom.
 ///
 /// Reaching to the neighbour's nearest edge inks exactly the values the curve
-/// takes while it crosses the boundary — the segment the polyline draws a zoom
-/// later, no more — so it is silent everywhere it is not needed: columns that
+/// takes while it crosses the boundary -- the segment the polyline draws a zoom
+/// later, no more -- so it is silent everywhere it is not needed: columns that
 /// already overlap are returned exactly as they were measured. What a caller
 /// remembers for the next column is the **measurement**, never the extension, so
 /// a run of them cannot ratchet the trace outwards.
@@ -206,8 +206,8 @@ pub fn join(lo: f32, hi: f32, prev: Option<(f32, f32)>) -> (f32, f32) {
 }
 
 /// [`join`] over a whole pixel row: `pairs` is the measured `[min, max]` of each
-/// column in order, flat and interleaved — the layout the pyramid answers a row
-/// in — and the result is the row to ink, the same length.
+/// column in order, flat and interleaved -- the layout the pyramid answers a row
+/// in -- and the result is the row to ink, the same length.
 ///
 /// This is the one call a client that draws its own columns makes, between
 /// measuring the row and stroking it. It joins pairwise and reads every pair as
@@ -232,7 +232,7 @@ pub fn join_columns(pairs: &[f32]) -> Vec<f32> {
     out
 }
 
-/// Mean square (energy) over a slice, or `None` if empty — the pyramid's third
+/// Mean square (energy) over a slice, or `None` if empty -- the pyramid's third
 /// statistic computed directly, and what a renderer zoomed in past `base_bucket`
 /// reads instead of a bucket. Accumulated in `f64`, since a long window of small
 /// squares loses the tail of the sum in `f32`.
@@ -245,14 +245,14 @@ pub fn mean_square(samples: &[f32]) -> Option<f32> {
 }
 
 /// **The overview of a span, in the layout the wire carries it in**:
-/// bucket-major and channel-minor — for each bucket in order, for each channel,
+/// bucket-major and channel-minor -- for each bucket in order, for each channel,
 /// `min`, `max` and mean square, as a flat run of `f32`.
 ///
 /// One function because there is one layout, and every end of it is somebody
 /// else's: the server's `/buffer_stream` reports it as a recording grows and
 /// `/buffer_peaks` answers it for a buffer that stands still, while a client
 /// folds it straight into the pyramid a picture already holds
-/// ([`Pyramid::write_buckets`], [`MultiPyramid::write_buckets`]) — the same
+/// ([`Pyramid::write_buckets`], [`MultiPyramid::write_buckets`]) -- the same
 /// three statistics in the same energy form, so nothing is converted anywhere.
 ///
 /// `channels` is one [`Source`] per channel, read a bucket at a time through a
@@ -284,7 +284,7 @@ pub fn overview<S: Source + ?Sized>(
 
 /// One resolution level: `min[i]`/`max[i]`/`ms[i]` summarize `bucket` source
 /// samples. `ms` is `None` for a pyramid parsed from a v1/v2 cache, which
-/// predates the statistic — an absent measure, not a zero one.
+/// predates the statistic -- an absent measure, not a zero one.
 ///
 /// `Clone` because an edit copies the pyramid it is about to patch: the picture
 /// on screen and the copy being written have to be two objects for the frame in
@@ -326,13 +326,13 @@ pub struct BucketStats {
     pub start: usize,
     /// One past the last sample they cover.
     pub end: usize,
-    /// Whether every bucket carried the mean square — false for a cache
+    /// Whether every bucket carried the mean square -- false for a cache
     /// written before the statistic existed, which is an absent measure and
     /// not a zero one.
     pub measured: bool,
 }
 
-/// One level-0 bucket **somebody else measured** — min, max and mean square
+/// One level-0 bucket **somebody else measured** -- min, max and mean square
 /// over `base_bucket` samples, the pyramid's own three statistics in its own
 /// energy form.
 ///
@@ -346,7 +346,7 @@ pub struct BucketStats {
 pub struct Bucket {
     pub min: f32,
     pub max: f32,
-    /// Mean square (energy) over the bucket's samples, never RMS — see the
+    /// Mean square (energy) over the bucket's samples, never RMS -- see the
     /// module note: means combine and roots do not.
     pub ms: f32,
 }
@@ -366,7 +366,7 @@ impl Pyramid {
         Self::build_from(samples, base_bucket)
     }
 
-    /// [`Self::build`] over any [`Source`] — the general form, which the slice
+    /// [`Self::build`] over any [`Source`] -- the general form, which the slice
     /// one calls.
     ///
     /// Level 0 is filled a bucket at a time through **one scratch window**, so
@@ -443,13 +443,13 @@ impl Pyramid {
         }
     }
 
-    /// **An empty summary of a given length** — every bucket a measured zero,
+    /// **An empty summary of a given length** -- every bucket a measured zero,
     /// the levels sized as a build over `total_samples` would size them, and
     /// no samples read or held anywhere.
     ///
     /// It is what a take **allocated to be recorded into** is: the picture is
     /// the whole of the box it will fill, so the axis does not move while it
-    /// fills, and the only thing missing is the samples — which is exactly
+    /// fills, and the only thing missing is the samples -- which is exactly
     /// what has not happened yet. A client that cannot map the memory being
     /// written builds one of these and fills it from
     /// [`Self::write_buckets`] as the reports arrive; building it out of a
@@ -458,8 +458,8 @@ impl Pyramid {
     ///
     /// The zeros are honest here, unlike a cache with no measure at all: an
     /// unwritten frame *is* silence in the buffer. Whether a view draws that
-    /// stretch or leaves it empty is the view's own question — the host's
-    /// `fills` prop — and not the summary's.
+    /// stretch or leaves it empty is the view's own question -- the host's
+    /// `fills` prop -- and not the summary's.
     pub fn empty(total_samples: usize, base_bucket: usize) -> Self {
         assert!(base_bucket >= 1);
         let mut levels = Vec::new();
@@ -485,7 +485,7 @@ impl Pyramid {
         }
     }
 
-    /// Rebuilds only the part of the pyramid a sample span touches — the
+    /// Rebuilds only the part of the pyramid a sample span touches -- the
     /// summary's answer to an edit, so a redraw costs the span rather than the
     /// take.
     ///
@@ -493,7 +493,7 @@ impl Pyramid {
     /// bucket at either edge of the span holds untouched samples too, and
     /// summarizing it needs them. `start` and `len` are sample positions, and
     /// what is rebuilt is every level-0 bucket the span overlaps and every
-    /// bucket above them — `span/base_bucket + levels` work instead of the
+    /// bucket above them -- `span/base_bucket + levels` work instead of the
     /// buffer's.
     ///
     /// The result is **identical to a full rebuild**, which the tests assert
@@ -502,7 +502,7 @@ impl Pyramid {
     /// drift apart over a session of edits.
     ///
     /// Returns `false`, changing nothing, when `samples` is not the buffer this
-    /// pyramid describes — an edit that changed the *length* is a rebuild and
+    /// pyramid describes -- an edit that changed the *length* is a rebuild and
     /// not an update, and quietly summarizing the wrong samples would be worse
     /// than refusing. A cache written before the mean square joined (v1/v2)
     /// keeps its min/max updated and stays without a measure rather than
@@ -511,7 +511,7 @@ impl Pyramid {
         self.update_range_from(&samples, start, len)
     }
 
-    /// [`Self::update_range`] over any [`Source`] — the general form, and the
+    /// [`Self::update_range`] over any [`Source`] -- the general form, and the
     /// one an editor wants: the samples are already where they belong (a
     /// server buffer, a mapped region), and what is left is the summary of the
     /// span that moved.
@@ -560,7 +560,7 @@ impl Pyramid {
     }
 
     /// Writes level-0 buckets **already summarized elsewhere** at `first` and
-    /// recombines the levels above them — the pyramid's door for a summary
+    /// recombines the levels above them -- the pyramid's door for a summary
     /// that arrives instead of being taken.
     ///
     /// This is [`Self::update_range_from`] with the measuring skipped, and the
@@ -573,7 +573,7 @@ impl Pyramid {
     /// built from the samples would.
     ///
     /// `first` is a **bucket index**, not a sample position, because that is
-    /// the only unit in which this is well defined — a bucket that started
+    /// the only unit in which this is well defined -- a bucket that started
     /// somewhere else is a different bucket.
     ///
     /// Returns `false`, changing nothing, when the run does not fit: level 0
@@ -605,7 +605,7 @@ impl Pyramid {
         true
     }
 
-    /// Rebuilds every level above 0 whose children moved, from the one below —
+    /// Rebuilds every level above 0 whose children moved, from the one below --
     /// the builder's own combination, applied to the buckets `lo..=hi` of level
     /// 0 and to their parents upward.
     fn recombine_above(&mut self, mut lo: usize, mut hi: usize) {
@@ -642,7 +642,7 @@ impl Pyramid {
     /// with a stride instead of being de-interleaved first.
     ///
     /// That is the whole reason it exists: a take is interleaved, and copying
-    /// every channel out of it to update one span would cost the buffer —
+    /// every channel out of it to update one span would cost the buffer --
     /// exactly what updating a range is for avoiding. `start` and `len` are in
     /// **frames**, since that is what the caller's span is.
     pub(crate) fn update_interleaved(
@@ -658,7 +658,7 @@ impl Pyramid {
 
     /// Min, max, energy and sample count over the level-0 buckets **fully
     /// contained** in `[a, b)`, folded through the pyramid rather than read at
-    /// one level — and the sample bounds of what it covers, so a caller with
+    /// one level -- and the sample bounds of what it covers, so a caller with
     /// the samples can close the two partial edges itself.
     ///
     /// **Why this exists rather than [`Self::column`].** Reading a column at
@@ -666,7 +666,7 @@ impl Pyramid {
     /// one bucket wide reads two: a transient a hundred samples outside the
     /// column is drawn inside it, and it appears the moment a zoom crosses
     /// into the pyramid's regime. Folding instead of reading makes the answer
-    /// independent of the level it came from, which is what removes the step —
+    /// independent of the level it came from, which is what removes the step --
     /// the walk takes the largest aligned block at each position, a segment
     /// tree's own walk, so it costs the logarithm of the span rather than its
     /// buckets.
@@ -779,7 +779,7 @@ impl Pyramid {
         Some((lo, hi))
     }
 
-    /// Whether this pyramid carries the mean-square statistic — true of anything
+    /// Whether this pyramid carries the mean-square statistic -- true of anything
     /// [`Pyramid::build`] produced, false of a cache parsed from the v1/v2
     /// layouts, which predate it. A view asks before drawing a measured layer:
     /// the honest answer to an old cache is to draw no layer, never a layer of
@@ -789,7 +789,7 @@ impl Pyramid {
     }
 
     /// The mean square of the buckets overlapping `[s0, s1)` at `level`, each
-    /// weighted by the samples it holds — the energy sibling of [`column`], and
+    /// weighted by the samples it holds -- the energy sibling of [`column`], and
     /// `None` when the level is empty or the cache carries no measure. The span
     /// is taken bucket-wise exactly as `column` takes it, so the two answer over
     /// the same samples; below `base_bucket` a caller reads the samples through
@@ -817,14 +817,14 @@ impl Pyramid {
         (count > 0).then(|| (sum / count as f64) as f32)
     }
 
-    /// Serialize to a flat byte buffer (the on-disk/cache layout) — the v3
+    /// Serialize to a flat byte buffer (the on-disk/cache layout) -- the v3
     /// layout, as one channel, so a mono and a multichannel cache differ only in
     /// their channel count and one reader serves both.
     pub fn to_bytes(&self) -> Vec<u8> {
         MultiPyramid::write(std::slice::from_ref(self))
     }
 
-    /// Parse a buffer produced by `to_bytes`, or `None` if malformed — the v3
+    /// Parse a buffer produced by `to_bytes`, or `None` if malformed -- the v3
     /// and v2 layouts when they hold exactly one channel (a multichannel cache
     /// is [`MultiPyramid::from_bytes`]'s to read, never silently narrowed to its
     /// first channel here), and the v1 mono layout that predates both.
@@ -896,7 +896,7 @@ pub struct MultiPyramid {
 impl MultiPyramid {
     /// Builds one pyramid per channel from `samples` holding `channels`
     /// interleaved channels (`channels >= 1`; a trailing partial frame is
-    /// ignored). The de-interleave lives here — core-side — so every client
+    /// ignored). The de-interleave lives here -- core-side -- so every client
     /// builds the identical multichannel cache from the same flat buffer, and
     /// it is a **stride** rather than a copy ([`Interleaved`]): a channel is
     /// read where it lies.
@@ -908,7 +908,7 @@ impl MultiPyramid {
         Self { channels: pyramids }
     }
 
-    /// **An empty multichannel summary**: [`Pyramid::empty`] per channel — the
+    /// **An empty multichannel summary**: [`Pyramid::empty`] per channel -- the
     /// picture of a take that has been allocated and not yet recorded into.
     pub fn empty(frames: usize, channels: usize, base_bucket: usize) -> Self {
         let channels = channels.max(1);
@@ -925,7 +925,7 @@ impl MultiPyramid {
     /// buffer as it now stands. `start` and `len` are **frames**.
     ///
     /// Each channel is read with a stride rather than de-interleaved, so the
-    /// cost is the span and not the take — which is the point of the whole
+    /// cost is the span and not the take -- which is the point of the whole
     /// function, and would be lost by copying the channels out first.
     ///
     /// Returns `false`, changing nothing, when the buffer is not the one this
@@ -944,7 +944,7 @@ impl MultiPyramid {
     }
 
     /// [`Pyramid::write_buckets`] across every channel, from one run of
-    /// buckets in the layout the wire uses: **bucket-major, channel-minor** —
+    /// buckets in the layout the wire uses: **bucket-major, channel-minor** --
     /// for each bucket in order, for each channel, `min`, `max` and `ms`.
     ///
     /// That is `/buffer_stream.reply`'s payload read as `f32`s, so a client
@@ -958,7 +958,7 @@ impl MultiPyramid {
     ///
     /// - `bucket` differs from this cache's `base_bucket`. A coarser report
     ///   would have to be spread over buckets it never measured separately,
-    ///   and a finer one folded in groups that straddle report boundaries —
+    ///   and a finer one folded in groups that straddle report boundaries --
     ///   both are answers this cannot give honestly, and the caller chooses
     ///   the bucket when it subscribes, so agreeing is free.
     /// - `start_frame` is not on a bucket boundary, for the same reason.
@@ -979,7 +979,7 @@ impl MultiPyramid {
         let first = start_frame / bucket;
         let n = stats.len() / stride;
         // Checked once, before anything is written: every channel shares this
-        // cache's length and grid, so a run that fits one fits all — and a
+        // cache's length and grid, so a run that fits one fits all -- and a
         // refusal halfway would leave the channels describing different
         // samples, which is the one state this format promises cannot happen.
         if first + n > self.frames().div_ceil(bucket) {
@@ -1031,7 +1031,7 @@ impl MultiPyramid {
         self.channels[0].base_bucket()
     }
 
-    /// Serialize to the version-3 flat byte layout (see [`crate::bytes`]) — the
+    /// Serialize to the version-3 flat byte layout (see [`crate::bytes`]) -- the
     /// v2 shape with each level's mean square after its min and max.
     pub fn to_bytes(&self) -> Vec<u8> {
         Self::write(&self.channels)
@@ -1131,7 +1131,7 @@ impl MultiPyramid {
 }
 
 /// The exact [`MultiPyramid::to_bytes`] length for `frames` samples per channel
-/// across `channels` channels at `base_bucket`, computed without building —
+/// across `channels` channels at `base_bucket`, computed without building --
 /// the multichannel sibling of [`cache_size`], pinned to `to_bytes` by the
 /// `multi_cache_size_matches_to_bytes_len` test.
 pub fn multi_cache_size(frames: usize, channels: usize, base_bucket: usize) -> usize {
@@ -1160,7 +1160,7 @@ mod tests {
         (0..n).map(|i| (i as f32 * 0.01).sin()).collect()
     }
 
-    /// **The overview is the pyramid's level 0, said on the wire** — one
+    /// **The overview is the pyramid's level 0, said on the wire** -- one
     /// function serves both ends of `/buffer_stream` and `/buffer_peaks`, so
     /// what it produces has to be exactly what `write_buckets` folds back.
     #[test]
@@ -1382,7 +1382,7 @@ mod tests {
         }
     }
 
-    /// The v1 and v2 layouts, written by hand — the caches an older build left
+    /// The v1 and v2 layouts, written by hand -- the caches an older build left
     /// on disk. Rewriting the old writers here (rather than keeping them in the
     /// module) is what keeps "v1/v2 still load" a claim about the *reader*.
     fn legacy_bytes(p: &Pyramid, channels: usize) -> Vec<u8> {
@@ -1466,7 +1466,7 @@ mod tests {
 mod source_tests {
     use super::*;
 
-    /// A source that owns nothing the caller can see — the shape a mapped
+    /// A source that owns nothing the caller can see -- the shape a mapped
     /// region has, so the test proves the door works for something that is not
     /// a slice in disguise.
     struct Generated {
@@ -1624,7 +1624,7 @@ mod update_tests {
         }
     }
 
-    /// Several edits in a row, each updated, still equal one rebuild — the
+    /// Several edits in a row, each updated, still equal one rebuild -- the
     /// actual editing session, where drift would accumulate if it existed.
     #[test]
     fn edits_compose_without_drifting() {
@@ -1739,7 +1739,7 @@ mod multi_update_tests {
         }
     }
 
-    /// An edit to one channel leaves the others untouched — which is what
+    /// An edit to one channel leaves the others untouched -- which is what
     /// reading with a stride has to get right and de-interleaving would hide.
     #[test]
     fn editing_one_channel_moves_only_that_one() {
@@ -1795,7 +1795,7 @@ mod stream_tests {
     /// The report a server sends for `[start, start + n * bucket)`: whole
     /// buckets only, bucket-major and channel-minor, exactly the layout of
     /// `/buffer_stream.reply`'s blob. Measured here from the samples the way
-    /// the writer measures them, which is the point of the test below — the
+    /// the writer measures them, which is the point of the test below -- the
     /// receiver never sees these samples.
     fn report(data: &[f32], channels: usize, bucket: usize, start: usize, n: usize) -> Vec<f32> {
         let mut out = Vec::with_capacity(n * channels * 3);
@@ -1814,8 +1814,8 @@ mod stream_tests {
         out
     }
 
-    /// The claim the door exists for: a picture filled **only** from reports —
-    /// no samples on this side at all — is the picture the samples would have
+    /// The claim the door exists for: a picture filled **only** from reports --
+    /// no samples on this side at all -- is the picture the samples would have
     /// built. That is what makes a page's recording view agree with the host's
     /// rather than merely look similar.
     #[test]
@@ -1856,7 +1856,7 @@ mod stream_tests {
     }
 
     /// A recording is drawn while it is short of its buffer, so the levels
-    /// above a partial report have to be right at every step — not only once
+    /// above a partial report have to be right at every step -- not only once
     /// the take is complete.
     #[test]
     fn every_level_is_true_while_the_take_is_still_filling() {
@@ -1939,8 +1939,8 @@ mod stream_tests {
 mod empty_tests {
     use super::*;
 
-    /// An empty summary is the summary of silence — the same levels, the same
-    /// buckets, the same answers — without the silence being anywhere.
+    /// An empty summary is the summary of silence -- the same levels, the same
+    /// buckets, the same answers -- without the silence being anywhere.
     #[test]
     fn an_empty_pyramid_equals_one_built_over_silence() {
         for (frames, base) in [(4_096usize, 256usize), (1_000, 64), (1, 256), (0, 256)] {

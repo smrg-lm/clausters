@@ -3,20 +3,20 @@
 //! module answers.
 //!
 //! Nothing new is decided here. Each method is one line of routing to the file
-//! that owns the answer — [`bulk`](super::bulk) for what to load and where it
+//! that owns the answer -- [`bulk`](super::bulk) for what to load and where it
 //! lands, [`slot`](super::slot) for what an uploaded picture is fed,
 //! [`live`](super::live) for what a tick accumulates and how wide a read has to
 //! be, [`chrome`](super::chrome) for the band left of a shared axis,
 //! [`freq`](super::freq) for the one axis this element measures itself,
-//! [`body`](super::body) for what it is inside a clip — which is what makes
+//! [`body`](super::body) for what it is inside a clip -- which is what makes
 //! this file the *shape* of the seam rather than a place logic hides in.
 //!
 //! **What is drawn here and what is not.** The four presentations that go into
 //! the window's one mesh draw in [`Element::draw`]; the two that cannot claim a
 //! slot and describe their frame in [`Slotted::slots`], because a trace
 //! decimated per pixel and a texture sampled per texel are pipelines the window
-//! owns. The chrome *around* a heavy view — the rulers, the playhead, the
-//! selection, the readout — stays the frame's: it is shared with the lane, the
+//! owns. The chrome *around* a heavy view -- the rulers, the playhead, the
+//! selection, the readout -- stays the frame's: it is shared with the lane, the
 //! roll and the free-standing ruler, and belongs to the **axis** rather than to
 //! whatever is drawn on it.
 
@@ -37,7 +37,7 @@ use crate::host::widget::element::{
 };
 use crate::host::widget::{EditorProps, GestureMap};
 
-/// Builds the element from a `signal` node's props — every view of a signal,
+/// Builds the element from a `signal` node's props -- every view of a signal,
 /// in one constructor, because there is one element: the props say which point
 /// of the product ([`super::point`]) and the rest are read over that base.
 pub(crate) fn build(
@@ -53,7 +53,7 @@ impl Element for SignalElement {
     }
 
     /// The four presentations the shared mesh can carry. The two navigable
-    /// heavy ones draw nothing here — their picture is the slot's — and a
+    /// heavy ones draw nothing here -- their picture is the slot's -- and a
     /// stored view of a live source has nothing to draw until it has data.
     fn draw(&self, d: &mut Draw, ctx: &Ctx) {
         let rect = ctx.rect;
@@ -135,7 +135,7 @@ impl Element for SignalElement {
 
     /// The hover readout of a **stored** view: a hairline and the value under
     /// the pointer. It rides the overlay mesh for the same reason a timeline
-    /// view's chrome does — it reads over the picture, not into it.
+    /// view's chrome does -- it reads over the picture, not into it.
     fn overlay(&self, d: &mut Draw, ctx: &Ctx) {
         if self.caps.navigable || !matches!(self.source, Source::Data(_)) {
             return;
@@ -151,7 +151,7 @@ impl Element for SignalElement {
     }
 
     /// **What a stack answers a query with**: the layers, in the form they were
-    /// written in — the word list where every layer is at its defaults, the
+    /// written in -- the word list where every layer is at its defaults, the
     /// array where any of them is not. A script reads back what it set, and a
     /// script that set nothing reads what the presentation drew.
     fn info(&self) -> Vec<(String, Value)> {
@@ -200,15 +200,15 @@ impl Element for SignalElement {
         Some(BodyRole::Take)
     }
 
-    /// **A take's samples are the whole of the box it fills** — samples run
-    /// edge to edge, so there is no empty space inside one — and it is claimed
+    /// **A take's samples are the whole of the box it fills** -- samples run
+    /// edge to edge, so there is no empty space inside one -- and it is claimed
     /// only when the take can actually be edited (`editable`).
     ///
     /// That gate is what keeps a clip draggable: a clip's take is built with
     /// every capability off, so it never takes the press and the background
     /// stays the clip's. A take a script *did* make editable is a different
-    /// statement — the samples are what the hand is there for, the way it is in
-    /// an editor's own view — and the clip is then moved from its grips or by
+    /// statement -- the samples are what the hand is there for, the way it is in
+    /// an editor's own view -- and the clip is then moved from its grips or by
     /// naming its layer.
     fn layer_hit(&self, at: (f64, f64), input: &Input) -> bool {
         self.caps.editable && input.rect.contains(at.0, at.1)
@@ -496,7 +496,7 @@ impl Measured for SignalElement {
 }
 
 impl SignalElement {
-    /// The look a texture slot is sampled with — shared by the view and by the
+    /// The look a texture slot is sampled with -- shared by the view and by the
     /// clip body, which differ only in the axis they are drawn against.
     pub(crate) fn look(&self) -> TextureLook {
         TextureLook {
@@ -507,7 +507,7 @@ impl SignalElement {
         }
     }
 
-    /// The mesh plot's parameters, borrowed out of the element — the drawing
+    /// The mesh plot's parameters, borrowed out of the element -- the drawing
     /// and its hover readout read the same ones, so a hairline lands on the
     /// curve under it. A plot over a bus has no samples: it is the case that
     /// draws nothing at all.
@@ -614,9 +614,9 @@ mod tests {
     use crate::viewport::View;
 
     /// **A group's axis is not a container's.** `Ctx::time` carries two
-    /// different facts: the axis a *body* is drawn against, and — since a leaf
+    /// different facts: the axis a *body* is drawn against, and -- since a leaf
     /// placed on its own reads its navigation group's window through the same
-    /// field — the axis a standalone view shares. This element once read the
+    /// field -- the axis a standalone view shares. This element once read the
     /// second as the first and drew itself as a chromeless body: a still plot
     /// that had a group space drew two points against an axis that was not its
     /// own instead of its own picture over its own samples.
@@ -700,8 +700,8 @@ mod tests {
     }
 
     /// **The axis is ruled even when no layer claims it.** A stack whose
-    /// layers are all in boxes of their own still has a vertical — it is what
-    /// a zoom acts on — so the element answers with its presentation's own
+    /// layers are all in boxes of their own still has a vertical -- it is what
+    /// a zoom acts on -- so the element answers with its presentation's own
     /// quantity rather than with nothing, which is what a hidden claimant used
     /// to leave behind.
     #[test]

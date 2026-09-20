@@ -1,7 +1,7 @@
 //! The outbox: what the host emitted, and what the owner said about it.
 //!
 //! The host owns no data, so every edit it produces is a proposal it hands to
-//! whoever does — and between the gesture and the answer there is a gap the
+//! whoever does -- and between the gesture and the answer there is a gap the
 //! host has to draw across. This module is the bookkeeping that makes that gap
 //! resolvable rather than a guess.
 //!
@@ -10,16 +10,16 @@
 //! Two halves, and only the first is here. **This** half is the sequence
 //! number stamped on every emitted `/gui_event`, the set of edits still in
 //! flight, and the one rule that retires them: *drop every pending at or below
-//! the stamp, and adopt what arrived*. The other half — what a pending edit
-//! **looks like** while it is in flight — belongs to whichever widget drew it,
+//! the stamp, and adopt what arrived*. The other half -- what a pending edit
+//! **looks like** while it is in flight -- belongs to whichever widget drew it,
 //! because a pending sample and a pending clip do not look alike.
 //!
 //! # Why a sequence number and not a version
 //!
 //! They answer different questions and the design carries both. The sequence
 //! says *which of my gestures is this an answer to*, which is what a host with
-//! two edits in flight needs and what nothing else can supply. The versions —
-//! the document's, and each source's generation — say *are we talking about the
+//! two edits in flight needs and what nothing else can supply. The versions --
+//! the document's, and each source's generation -- say *are we talking about the
 //! same state*, which is what catches the document moving by a route that was
 //! not a gesture at all: a script editing the arrangement, a second editor, a
 //! re-render.
@@ -30,7 +30,7 @@
 //! the last sequence it processed. Applied verbatim, applied transformed and
 //! refused are the same message: the value is what the document says, and a
 //! refusal is simply the previous value. So nothing here asks whether an edit
-//! succeeded — it retires what the stamp covers and lets the pushed state be
+//! succeeded -- it retires what the stamp covers and lets the pushed state be
 //! the truth. The optional reason exists for the *interface*, not for the
 //! mechanism: an edit that springs back with no explanation teaches "sometimes
 //! it does not work" rather than "not here".
@@ -52,7 +52,7 @@ pub struct Pending {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Acked {
     /// The last stamp the owner processed. Monotonic, so one number retires
-    /// everything at or below it — which is what makes a dropped or reordered
+    /// everything at or below it -- which is what makes a dropped or reordered
     /// acknowledgement harmless.
     pub seq: i32,
     /// The document's version after it.
@@ -95,7 +95,7 @@ impl Outbox {
     /// stamp and returns them, newest last.
     ///
     /// Returning them rather than swallowing them is what lets a front drop the
-    /// right overlays — the host core knows *which* edits are settled, and only
+    /// right overlays -- the host core knows *which* edits are settled, and only
     /// the front knows what they were drawn as.
     pub fn ack(&mut self, acked: Acked) -> Vec<Pending> {
         let (settled, still_open): (Vec<_>, Vec<_>) =
@@ -110,7 +110,7 @@ impl Outbox {
         &self.pending
     }
 
-    /// Whether this widget has an edit in flight — what a front asks before it
+    /// Whether this widget has an edit in flight -- what a front asks before it
     /// decides whether it is drawing a pending value or the owner's.
     pub fn is_pending(&self, def_id: i32, widget_id: i32) -> bool {
         self.pending
@@ -123,7 +123,7 @@ impl Outbox {
         self.last.as_ref()
     }
 
-    /// The document version this host is drawing — what an outgoing edit names
+    /// The document version this host is drawing -- what an outgoing edit names
     /// as the state it was made against.
     ///
     /// Zero until an owner has said otherwise, and zero is *unstated* rather
@@ -138,7 +138,7 @@ impl Outbox {
         self.last.as_ref()?.generations.get(&source).copied()
     }
 
-    /// Forgets everything about a window — what a `/gui_free` leaves behind.
+    /// Forgets everything about a window -- what a `/gui_free` leaves behind.
     ///
     /// An edit naming a widget that no longer exists has nothing to resolve to,
     /// and keeping it would hold the pending set open forever against an

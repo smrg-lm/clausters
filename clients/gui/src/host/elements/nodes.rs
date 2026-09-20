@@ -1,10 +1,10 @@
-//! `nodes` — the audio server's node tree, mirrored.
+//! `nodes` -- the audio server's node tree, mirrored.
 //!
 //! The second thing the world carries, and a different shape from a meter's:
 //! not a number this frame but a **document somebody else queried**, plus the
 //! one fact that tells an empty tree from an unreachable one. The host holds no
-//! node tree of its own — the client leg queries the groups the trees declare
-//! and files the replies in the world — so this element reads and never owns,
+//! node tree of its own -- the client leg queries the groups the trees declare
+//! and files the replies in the world -- so this element reads and never owns,
 //! exactly as it does for a score or a set of samples.
 
 use serde_json::{Map, Value};
@@ -30,7 +30,7 @@ pub(super) fn build(
     Ok(Box::new(from_props(props)))
 }
 
-/// The props a `nodes` node carries, read once — shared by the constructor and
+/// The props a `nodes` node carries, read once -- shared by the constructor and
 /// by the tests beside it.
 fn from_props(props: &Map<String, Value>) -> Nodes {
     Nodes {

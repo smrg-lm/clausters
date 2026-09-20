@@ -3,15 +3,15 @@
 The same RT/NRT seam as the OSC side, for MIDI. A `MidiServer` is
 the double-dispatch counterpart of the OSC ``Server``: a clock + routine plays
 the *same* ``Pbind`` through it, and which **interface** it holds decides the
-rendering — `MidiNrtInterface` accumulates a `MidiScore` (in
+rendering -- `MidiNrtInterface` accumulates a `MidiScore` (in
 beats) that writes a `.mid`/clip file offline, `MidiRtInterface` sends
 the notes out a virtual OS port live, through the ``clausters-midi`` crate.
 
 A *MIDI message* is raw status/data bytes (``bytes`` or an iterable of ints).
 MIDI carries no timetags: timing comes from the clock at emit time.
 
-The **input** side — a virtual port other apps/devices route into, decoded into
-message dicts and demuxed to `clausters.responders.MidiFunc` responders — lives
+The **input** side -- a virtual port other apps/devices route into, decoded into
+message dicts and demuxed to `clausters.responders.MidiFunc` responders -- lives
 in `MidiReceiver` at the bottom, the MIDI counterpart of
 `clausters.base._oscinterface.OscReceiver`.
 """
@@ -85,8 +85,8 @@ class MidiScore:
         return _midi.write_smf(self._ticked(ppq), ppq)
 
     def to_clip(self, ppq: int) -> bytes:
-        """MIDI 2.0 Clip File (SMF2CLIP) bytes — note velocities at 16-bit
-        resolution — via the `clausters-midi` crate."""
+        """MIDI 2.0 Clip File (SMF2CLIP) bytes -- note velocities at 16-bit
+        resolution -- via the `clausters-midi` crate."""
         from .. import _midi
 
         return _midi.write_clip(self._ticked(ppq), ppq)
@@ -111,8 +111,8 @@ class MidiNrtInterface:
 class MidiRtInterface:
     """Real-time MIDI output: a virtual OS MIDI port via the
     `clausters-midi` crate's `live` feature (midir / ALSA seq on Linux). Each
-    message is sent at its beat — the current one now, future ones (the note
-    off) scheduled on the clock — best-effort, no timetags."""
+    message is sent at its beat -- the current one now, future ones (the note
+    off) scheduled on the clock -- best-effort, no timetags."""
 
     is_realtime = True
 
@@ -148,7 +148,7 @@ class MidiRtInterface:
 
 
 class MidiServer:
-    """A MIDI destination for event patterns — the double-dispatch
+    """A MIDI destination for event patterns -- the double-dispatch
     counterpart of the OSC `Server`. A
     `Pbind` played on a clock with this as the
     destination renders each `Event` as a note
@@ -178,7 +178,7 @@ class MidiServer:
         return None
 
     def send_message(self, message):
-        """Emit a raw MIDI message at the running routine's logical beat — the
+        """Emit a raw MIDI message at the running routine's logical beat -- the
         MIDI counterpart of ``Server.send_bundle`` for a raw OSC message, used by
         `clausters.seq.timeline.MidiItem`."""
         beat = Moment.current().beat
@@ -202,7 +202,7 @@ class MidiServer:
 
 
 class MidiReceiver:
-    """A virtual MIDI **input** port that demuxes to registered handlers — the
+    """A virtual MIDI **input** port that demuxes to registered handlers -- the
     MIDI counterpart of `clausters.base._oscinterface.OscReceiver`, and the
     transport under `clausters.responders.MidiFunc`.
 
@@ -210,10 +210,10 @@ class MidiReceiver:
     feature (midir / ALSA seq on Linux) that other apps and devices route into,
     runs a background thread that polls the crate for raw messages, decodes each
     with `parse_midi`, and calls every registered handler with ``(message,
-    src)`` — ``message`` a dict (``{'type', 'channel', …}``), ``src`` the port
+    src)`` -- ``message`` a dict (``{'type', 'channel', …}``), ``src`` the port
     name. Same dispatch threading as `OscReceiver`: inline on the poll thread by
     default, or via ``clock.sched`` when a ``clock`` is given. The golden rule
-    holds — a handler must not block its thread.
+    holds -- a handler must not block its thread.
     """
 
     def __init__(self, port: str = "clausters-in", clock=None, poll_interval: float = 0.002):

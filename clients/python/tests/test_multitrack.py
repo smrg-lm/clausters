@@ -167,7 +167,7 @@ def test_a_whole_multitrack_round_trips():
 def test_a_region_carries_curves_of_its_own_and_they_are_not_its_tracks():
     """The two places a curve belongs: a track's runs the length of the track
     and is drawn in a lane beside it, a region's runs the length of the region
-    and is drawn inside it. One type, so one reader — which is what a round trip
+    and is drawn inside it. One type, so one reader -- which is what a round trip
     checks."""
     r = region(3, 0.0, 20.0)
     r.automation.append(Automation(

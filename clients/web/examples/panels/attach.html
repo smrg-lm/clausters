@@ -24,9 +24,9 @@
       <div id="note">A <code>GuiHost</code> is a handle on a host, and there are
 two verbs that reach one:
 
-<b><code>boot</code></b>, for a host that is <b>not there yet</b> — in a tab
+<b><code>boot</code></b>, for a host that is <b>not there yet</b> -- in a tab
 that is the wasm host in this document, and the handle that booted it owns it.
-<b><code>attach</code></b>, for a host <b>already running</b> — one another
+<b><code>attach</code></b>, for a host <b>already running</b> -- one another
 handle brought up. It verifies that someone answers there and takes no
 ownership: <code>stop</code> lets the client go and leaves the host standing,
 windows and all.
@@ -119,7 +119,7 @@ same ids and the second would silently take the first's widgets.</div>
           { title: "guest", w: 420, h: 120 },
           gui.label("opened by the attached handle", { name: "caption" }),
         ).open($("b"), { host: attached });
-        log(`window ids: owner ${first.id}, guest ${second.id} — `
+        log(`window ids: owner ${first.id}, guest ${second.id} -- `
           + "two windows, one host");
 
         $("stop-attached").disabled = false;
@@ -130,13 +130,13 @@ same ids and the second would silently take the first's widgets.</div>
       $("stop-attached").onclick = () => {
         attached.stop();
         $("stop-attached").disabled = true;
-        log("the attached handle let go — both windows are still drawing, "
+        log("the attached handle let go -- both windows are still drawing, "
           + "because it never owned the host");
       };
       $("stop-owner").onclick = () => {
         owner.stop();
         $("stop-owner").disabled = true;
-        log("the owner let go too — in a tab that is where the parallel ends: "
+        log("the owner let go too -- in a tab that is where the parallel ends: "
           + "the script's `stop` would end the host process, and a page's host "
           + "lives as long as the document");
       };

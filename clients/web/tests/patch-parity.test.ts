@@ -3,7 +3,7 @@
 // `gen-patch-vectors.py` decodes a handful of defs with the Python surface and
 // freezes what leaves the model: the `{boxes, cords}` a def reads as, and the
 // widget schema the host is handed. Each case here decodes the same def through
-// the TypeScript surface and asserts the same two results — a Def view is a
+// the TypeScript surface and asserts the same two results -- a Def view is a
 // *reading* of a def, so a difference is one client seeing a graph the other
 // does not have.
 //
@@ -53,7 +53,7 @@ const vectors: { cases: Record<string, Case> } = JSON.parse(
 );
 
 /**
- * Inlet labels the two clients spell differently on purpose — the resonant
+ * Inlet labels the two clients spell differently on purpose -- the resonant
  * filters take the wire's `rq` as `res` here and as `rq` there, which
  * `ugen-catalog.test.ts` already declares against the server's own catalog.
  * Nothing in the vectors uses one yet; the table is here so that when one does,
@@ -82,7 +82,7 @@ function frozen(model: DefPatch | GraphPatch): Case {
     };
 }
 
-/** The def every cord weight is drawn from — `examples/editors/patch2.html`'s own. */
+/** The def every cord weight is drawn from -- `examples/editors/patch2.html`'s own. */
 function tremoloSine(): SynthDef {
     const freq = control("freq", 220.0);
     const amp = control("amp", 0.2);

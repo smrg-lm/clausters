@@ -1,7 +1,7 @@
 //! The native bulk loader: resolves a waveform/spectrogram/plot's local
 //! resource by mapping it read-only.
 //!
-//! This is the native fill of the [`BulkLoader`] seam — the
+//! This is the native fill of the [`BulkLoader`] seam -- the
 //! bulk-data principle made concrete on the desktop: a multi-megabyte buffer
 //! named by `path`/`cache` is `mmap`-ed once (through [`super::mapfile`]) and
 //! read zero-copy, never re-encoded over OSC. The browser cannot map files, so
@@ -138,7 +138,7 @@ fn mapped_waveform(
 }
 
 /// Reads `path` as raw little-endian `f32`, **kept interleaved** (the plot
-/// draws every channel; a trailing partial frame is dropped) — the same
+/// draws every channel; a trailing partial frame is dropped) -- the same
 /// read-only `mmap` the waveform bulk path uses. Unix-only; returns `None`
 /// (with a warning) elsewhere or on an I/O error.
 #[cfg(unix)]

@@ -1,6 +1,6 @@
 """The console script's client half: the verbs that act on a running server.
 
-Nothing here spawns a binary — the point of these commands is what they do to a
+Nothing here spawns a binary -- the point of these commands is what they do to a
 server that is *already* there, and their failure path (nobody home) is the one
 that must stay legible, since it is what a stray-server hunt runs into first.
 """

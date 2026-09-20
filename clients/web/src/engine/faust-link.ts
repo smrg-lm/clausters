@@ -4,14 +4,14 @@
 // "The page's Faust is a second wasm module linked into the engine's own
 // memory"): the module the compiler emitted is instantiated against the
 // engine's **own** linear memory, with every import it declares resolved from
-// the engine's own exports — the memory itself and the transcendentals — so
+// the engine's own exports -- the memory itself and the transcendentals -- so
 // nothing is copied and no JavaScript runs on the audio path. Its `compute` and
 // `init` are appended to the engine's indirect function table, and the two slot
 // numbers are what the engine calls through.
 //
 // It lives here rather than in the worklet because there are **two** engine
-// instances in a page that does both things — the worklet's, instantiated
-// synchronously on the audio thread, and the offline renderer's — and the def
+// instances in a page that does both things -- the worklet's, instantiated
+// synchronously on the audio thread, and the offline renderer's -- and the def
 // has to be linked into whichever one is going to run it. Two copies of this
 // would be two answers to "what does the engine export", which is exactly the
 // kind of divergence nothing finds.
@@ -23,7 +23,7 @@
  * and its `compute` is appended to this `__indirect_function_table`, so the
  * engine calls it as a plain indirect call with no JavaScript frame in the way.
  * The math functions are the rest of what such a module imports (`env._sinf`
- * and its neighbours) — bound to these, so Faust and our own UGens go through
+ * and its neighbours) -- bound to these, so Faust and our own UGens go through
  * one libm.
  */
 export type EngineExports = {

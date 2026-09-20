@@ -1,14 +1,14 @@
 //! The voice -> MEI encoder: lay a monophonic-per-slot voice out into barred,
 //! tied measures and wrap it in a minimal MEI document.
 //!
-//! A **voice** is one monophonic line — a note or chord at a time, back to back
-//! — which is exactly one MEI `<layer>`. It is deliberately a **composable
+//! A **voice** is one monophonic line -- a note or chord at a time, back to back
+//! -- which is exactly one MEI `<layer>`. It is deliberately a **composable
 //! primitive**, not a ceiling: full polyphony is *several* voices (and staves),
 //! so the refinement pass composes voices above this encoder rather than
 //! redefining the voice. This function is the single-voice case of that; a
 //! polyphonic entry point would sit over it, not replace it.
 //!
-//! MEI is the target because it is explicit — every note spells its pitch
+//! MEI is the target because it is explicit -- every note spells its pitch
 //! (pname/oct/accid) and value (dur/dots), with none of ABC's contextual traps
 //! (accidentals persisting through a bar, spacing-driven beaming). No `xml:id`s
 //! are emitted: verovio mints them on load, so id stability across editing is
@@ -72,10 +72,10 @@ fn key_signature(key: &str) -> (&'static str, bool) {
 /// pitches) or a rest, lasting `ticks` 32nd-notes. This is the flat, agnostic
 /// stream a client reduces its own sequencing data to; [`voice_to_mei`] lays it
 /// out into barred, tied measures. A voice (a `&[Slot]`) is the composable
-/// per-layer primitive — polyphony stacks several, it never widens the slot.
+/// per-layer primitive -- polyphony stacks several, it never widens the slot.
 ///
 /// As JSON (what a binding sends) a slot is an object: `{"midis": [60, 64],
-/// "ticks": 8}` is a chord, `{"ticks": 8}` a rest — **a slot with no pitches
+/// "ticks": 8}` is a chord, `{"ticks": 8}` a rest -- **a slot with no pitches
 /// *is* a rest**, which keeps the wire form total without a discriminator. The
 /// model says the same thing with two variants, because a model is not a wire
 /// and can be exact; here totality is worth more, and unknown keys are refused
@@ -84,13 +84,13 @@ fn key_signature(key: &str) -> (&'static str, bool) {
 /// # What a slot may carry beyond a pitch and a value
 ///
 /// Every field below is optional and every one is **a musical fact, not an
-/// instruction to the encoder** — the same rule [`Marks`] states, and the
+/// instruction to the encoder** -- the same rule [`Marks`] states, and the
 /// reason these can be read back by the interpreter rather than only written.
 /// A slot carrying none of them produces exactly the item it always did.
 ///
 /// | field | what it says |
 /// |---|---|
-/// | `articulations` | `["stacc"]`, `["ten", "acc"]` — MEI's own names |
+/// | `articulations` | `["stacc"]`, `["ten", "acc"]` -- MEI's own names |
 /// | `dynamic` | a dynamic written at this note, governing the ones after it |
 /// | `ornament` | `trill`, `mordent`, `turn`, `fermata` |
 /// | `grace` | that this is a grace note: `acc`, `unacc` |
@@ -105,7 +105,7 @@ fn key_signature(key: &str) -> (&'static str, bool) {
 ///
 /// What a slot deliberately cannot say is anything that is not one note's:
 /// a slur, a hairpin, a meter change, a barline or a title span notes or the
-/// document, and they are written *beside* the voice — with the model's own
+/// document, and they are written *beside* the voice -- with the model's own
 /// verbs, on the sheet this builds. The **nth slot becomes the item with id
 /// `n + 1`**, which is what makes that addressable from the client's own
 /// indices.
@@ -137,15 +137,15 @@ pub struct Slot {
     /// value and no articulation already says so.
     #[serde(default)]
     pub sounding: Option<i32>,
-    /// Which enharmonic spelling to give the altered pitches — `"sharp"` or
-    /// `"flat"` — against the world the key implies. A bare MIDI number
+    /// Which enharmonic spelling to give the altered pitches -- `"sharp"` or
+    /// `"flat"` -- against the world the key implies. A bare MIDI number
     /// cannot say it, and this is the only thing about it a *number* can:
     /// a caller who knows the letter writes the pitch itself, with
     /// [`Op::SetPitches`](super::Op::SetPitches) on the sheet.
     #[serde(default)]
     pub spelling: Option<String>,
     /// `"written"` where the accidental is to be printed even though the key
-    /// or the measure already implies it — a courtesy sign. `"sounding"`, or
+    /// or the measure already implies it -- a courtesy sign. `"sounding"`, or
     /// left out, leaves the decision to the engraver.
     #[serde(default)]
     pub accidental: Option<String>,
@@ -172,7 +172,7 @@ impl Slot {
         }
     }
 
-    /// The marks this slot puts on its note, in the model's own terms — ticks
+    /// The marks this slot puts on its note, in the model's own terms -- ticks
     /// become an exact [`Ratio`], and everything else is carried verbatim.
     fn marks(&self) -> Marks {
         Marks {
@@ -200,7 +200,7 @@ impl Slot {
 ///
 /// It is now a thin front door on [`voice_to_sheet`] + [`sheet_to_mei`]: the
 /// slots become a one-staff, one-voice [`Sheet`] and the model is what is
-/// written out. That is deliberate rather than tidy — it is the standing proof
+/// written out. That is deliberate rather than tidy -- it is the standing proof
 /// that the model can represent everything the wire form could, since any
 /// divergence shows up as a difference in these bytes.
 pub fn voice_to_mei(voice: &[Slot], meter: &str, clef: &str, key: &str) -> String {
@@ -213,8 +213,8 @@ pub fn voice_to_mei(voice: &[Slot], meter: &str, clef: &str, key: &str) -> Strin
 /// Lift a v1 voice into the score model: the bridge between the wire form a
 /// client already reduces to and the model everything above now speaks.
 ///
-/// The [`Slot`] stays what it always was — a total, discriminator-free form
-/// where a slot with no pitches *is* a rest — and this is where it stops being
+/// The [`Slot`] stays what it always was -- a total, discriminator-free form
+/// where a slot with no pitches *is* a rest -- and this is where it stops being
 /// the ceiling: ticks become exact durations, MIDI numbers become spelled
 /// pitches (in the accidental world `key` implies, which is the only choice a
 /// bare number leaves), and the `meter`/`clef`/`key` a caller used to pass at
@@ -278,7 +278,7 @@ pub fn voice_to_sheet(voice: &[Slot], meter: &str, clef: &str, key: &str) -> She
 /// projected onto the same measures and the measures are assembled from the
 /// projections.
 ///
-/// **Every element carries the id of the item it was written from** — the
+/// **Every element carries the id of the item it was written from** -- the
 /// model's own, not one the engraver minted. That is what lets a gesture on the
 /// page name a note in the model, and what keeps a selection across a
 /// re-engraving: an item split across a barline writes `n7`, `n7-2`, and the
@@ -374,13 +374,13 @@ pub fn sheet_to_mei(sheet: &Sheet) -> Result<String, String> {
 /// It runs **after** the projection rather than inside it because a beam is a
 /// fact about items and the projection is about measures, and the two do not
 /// line up: an item can be split across a barline, and a beam cannot cross one
-/// — a beam is a visual group within a bar, so a run that spans a barline is
+/// -- a beam is a visual group within a bar, so a run that spans a barline is
 /// beamed on each side of it rather than refused. Matching is by the `xml:id`
 /// each element already carries, which is exactly what those ids were put there
 /// for.
 ///
 /// # Errors
-/// When a beam names an item that is not in this score — the same refusal every
+/// When a beam names an item that is not in this score -- the same refusal every
 /// other spanner makes.
 fn beam(cells: &mut [Vec<String>], voice: &Voice, sheet: &Sheet) -> Result<(), String> {
     for spanner in sheet.spanners.iter().filter(|s| s.kind == "beam") {
@@ -427,7 +427,7 @@ fn index_of(voice: &Voice, id: u64) -> Option<usize> {
     voice.items.iter().position(|i| i.id() == id)
 }
 
-/// Whether this rendered element is `id`'s — its own `xml:id`, or one of the
+/// Whether this rendered element is `id`'s -- its own `xml:id`, or one of the
 /// suffixed ids a split part of it carries.
 fn cell_is(cell: &str, id: u64) -> bool {
     let stem = format!("xml:id=\"n{id}");
@@ -506,7 +506,7 @@ fn measure_count(sheet: &Sheet) -> Result<usize, String> {
 /// may not.
 enum Unit<'a> {
     Plain(&'a Item),
-    /// `num` in the time of `numbase` — MEI's own way of putting it.
+    /// `num` in the time of `numbase` -- MEI's own way of putting it.
     Tuplet {
         num: i64,
         numbase: i64,
@@ -518,7 +518,7 @@ enum Unit<'a> {
 ///
 /// A written value is always a power-of-two fraction of a whole note, possibly
 /// dotted, so a duration whose denominator carries any **odd** factor is inside
-/// a tuplet — and that odd factor is how many notes are in the time of the
+/// a tuplet -- and that odd factor is how many notes are in the time of the
 /// nearest power of two below it. A triplet eighth is `1/12`: the odd part of
 /// 12 is 3, so it is 3 in the time of 2, and its *written* value is
 /// `1/12 × 3/2 = 1/8`, an eighth. This is what having exact rationals is for:
@@ -645,8 +645,8 @@ fn project(
             // the bar*, which is where a reader looks for it; a decomposed whole
             // rest hangs at the start and reads as a rest on the downbeat with
             // something after it. A rest longer than a measure is the ordinary
-            // case, not the exception — an empty staff under a written one is
-            // one long rest — so every full measure it covers is written this
+            // case, not the exception -- an empty staff under a written one is
+            // one long rest -- so every full measure it covers is written this
             // way and only its ragged ends are decomposed.
             Unit::Plain(item) if !item.sounds() => {
                 let mut remaining = ticks(item.dur())?;
@@ -869,7 +869,7 @@ fn single_value(ticks: i32) -> Option<(i32, i32)> {
 }
 
 /// What hangs off a measure rather than off a note: a dynamic, an ornament, and
-/// the two-ended things — a slur, a hairpin.
+/// the two-ended things -- a slur, a hairpin.
 ///
 /// MEI writes these as children of `<measure>` pointing at notes with
 /// `@startid`, not as children of the note, which is why they are gathered here
@@ -985,8 +985,8 @@ fn key_alterations(keysig: &str) -> [i32; 7] {
 ///
 /// **Verovio infers nothing here**, which was worth measuring rather than
 /// assuming: engraving one phrase both ways says that `<accid>` is always drawn
-/// — including where the key signature already implies it and where the same
-/// note was altered earlier in the bar — while `@accid.ges` is never drawn at
+/// -- including where the key signature already implies it and where the same
+/// note was altered earlier in the bar -- while `@accid.ges` is never drawn at
 /// all. So an F sharp in C major written as the sounding form comes out as a
 /// plain F: a wrong score that looks right, which is the one failure this layer
 /// must never produce.
@@ -994,7 +994,7 @@ fn key_alterations(keysig: &str) -> [i32; 7] {
 /// The decision is therefore ours, and it needs both halves: the **key
 /// signature**, and a **per-measure memory** of what has already been printed.
 /// An accidental holds for the rest of its measure at its own step and octave,
-/// and a new measure starts again from the armature — the ordinary convention,
+/// and a new measure starts again from the armature -- the ordinary convention,
 /// and the one a reader is reading with.
 ///
 /// Three things print: an alteration the armature does not already give, a
@@ -1077,8 +1077,8 @@ fn accid_of(alter: i32) -> Result<&'static str, i32> {
 /// `n7` is item 7; `n7-2` is the second part of an item split across a
 /// barline; `n7-p1` is the first pitch of a chord. Every one of them maps back
 /// to exactly one item, which is what a gesture on the page needs and what a
-/// re-engraving has to preserve. Item `0` is the emitter's own filler — a rest
-/// written to keep a short voice in step — and carries no id at all, since
+/// re-engraving has to preserve. Item `0` is the emitter's own filler -- a rest
+/// written to keep a short voice in step -- and carries no id at all, since
 /// nothing in the model answers for it.
 fn element_id(id: u64, suffix: Option<usize>) -> String {
     match (id, suffix) {
@@ -1105,7 +1105,7 @@ fn element(
     // way to say "written a quarter, sounds an eighth", and it is not: an
     // engraver reads it as the note's real duration and advances its own clock
     // by it, so a staccato quarter written that way does not merely sound short
-    // — every attack after it moves a quarter-beat earlier and the measure comes
+    // -- every attack after it moves a quarter-beat earlier and the measure comes
     // out short. Shortening a staccato is a *performance* decision and belongs
     // to whoever plays the page. The model keeps the fact
     // ([`super::model::Marks::sounding`]); the interpreter is what honours it.
@@ -1431,7 +1431,7 @@ mod tests {
 
     /// The six cases below are the **byte-for-byte** record of what this encoder
     /// writes. It began as what the encoder wrote before the score model
-    /// existed — the model's own acceptance was that not one byte moved — and
+    /// existed -- the model's own acceptance was that not one byte moved -- and
     /// it was **re-recorded once**, deliberately, when the emission milestone
     /// changed three things about every page:
     ///
@@ -1445,7 +1445,7 @@ mod tests {
     ///   sharpens C used to be written with no sign at all, and read as C
     ///   sharp;
     /// - a rest that fills a measure is `<mRest/>`, which an engraver draws
-    ///   **centred in the bar**, where a reader looks for it — a run of values
+    ///   **centred in the bar**, where a reader looks for it -- a run of values
     ///   adding up to a measure hangs at its start instead.
     ///
     /// A diff here is either another deliberate change to the engraving, which

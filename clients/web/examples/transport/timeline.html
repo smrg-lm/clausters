@@ -22,11 +22,11 @@
       <div id="note">DAW-style transport over a timeline: play, locate, loop,
 pause, position.
 
-A <code>Pbind</code> is a forward-only generator — you cannot seek it. A
+A <code>Pbind</code> is a forward-only generator -- you cannot seek it. A
 <code>Timeline</code> is the opposite: an editable plan of timed items with
-random access by beat, and it plays itself — <code>play({ at })</code>,
+random access by beat, and it plays itself -- <code>play({ at })</code>,
 <code>locate(beat)</code>, <code>loop(start, end)</code>,
-<code>pause()</code>, <code>stop()</code> — reporting a song
+<code>pause()</code>, <code>stop()</code> -- reporting a song
 <code>position()</code>. No clock and no playhead are handled: the timeline
 plays on a clock of its own, with its own tempo map.
 

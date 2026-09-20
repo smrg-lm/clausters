@@ -1,7 +1,7 @@
 """The ABI plumbing the package's two native callers share.
 
-Both halves of the layer reach the same C ABI — the engraver on one side, the
-MEI encoder on the other — and both need the same two shapes to get there: a
+Both halves of the layer reach the same C ABI -- the engraver on one side, the
+MEI encoder on the other -- and both need the same two shapes to get there: a
 size-then-fill call whose payload is text, and a UTF-8 byte view of a Python
 string. They live here so neither half has to import the other for them.
 """
@@ -20,7 +20,7 @@ _MISSING = (
 def _engraver():
     """The loaded ABI, once it is known to carry the engraver.
 
-    Raises ``RuntimeError`` — never an ``AttributeError`` out of ctypes — when
+    Raises ``RuntimeError`` -- never an ``AttributeError`` out of ctypes -- when
     the library was built without the ``verovio`` feature, which is the case a
     source checkout hits before staging.
     """

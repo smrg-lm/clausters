@@ -1,4 +1,4 @@
-//! C0: the server's native operators must agree with `clausters_core` — the
+//! C0: the server's native operators must agree with `clausters_core` -- the
 //! shared crate is the single source of truth, so a client computing with the
 //! core matches the server by construction. These tests drive the real
 //! `UGen::process` path and compare it to direct core calls.
@@ -31,7 +31,7 @@ fn ctx<'a>(buses: &'a Buses, buffers: &'a [Option<Arc<Buffer>>]) -> ProcessCtx<'
 }
 
 /// Bit-pattern view of a block, so "bit-identical" comparisons treat two equal
-/// NaNs (e.g. `asin` out of domain) as equal — `NaN != NaN` would otherwise
+/// NaNs (e.g. `asin` out of domain) as equal -- `NaN != NaN` would otherwise
 /// spuriously fail an exact-match test.
 fn bits(xs: &[f32]) -> Vec<u32> {
     xs.iter().map(|x| x.to_bits()).collect()

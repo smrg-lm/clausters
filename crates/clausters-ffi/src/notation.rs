@@ -1,10 +1,10 @@
-//! The notation layer's C surface: the pure logic every client shares, and —
-//! behind the `verovio` feature — the engraver and the editable score.
+//! The notation layer's C surface: the pure logic every client shares, and --
+//! behind the `verovio` feature -- the engraver and the editable score.
 //!
 //! Two shapes, both already used elsewhere in this crate. Everything that
 //! returns text or JSON is **size-then-fill**: the call returns the byte count
 //! the result needs and writes it only if it fit, so a caller sizes with a null
-//! (or short) `out` and fills with a second call — the
+//! (or short) `out` and fills with a second call -- the
 //! [`clausters_core_patch_compile`](crate::clausters_core_patch_compile)
 //! pattern. Everything stateful carries an opaque handle, as the scheduler and
 //! the sample-clock model do.
@@ -55,8 +55,8 @@ unsafe fn fill(payload: &[u8], out: *mut u8, out_cap: usize) -> usize {
 /// JSON to `out` (capacity `out_cap`). Returns the byte count the JSON needs, or
 /// `0` when `svg` is null.
 ///
-/// The producer of the SVG is interchangeable — native libverovio here, a wasm
-/// verovio in a browser — which is what makes one host renderer serve every
+/// The producer of the SVG is interchangeable -- native libverovio here, a wasm
+/// verovio in a browser -- which is what makes one host renderer serve every
 /// client. A malformed SVG yields an empty display list, not an error.
 ///
 /// # Safety
@@ -78,14 +78,14 @@ pub unsafe extern "C" fn clausters_core_svg_to_display_list(
     unsafe { fill(&json, out, out_cap) }
 }
 
-/// Lay a **voice** — a JSON array of slots, `{"midis": [60], "ticks": 8}` per
-/// note or chord and `{"ticks": 8}` per rest — out into barred, tied MEI,
+/// Lay a **voice** -- a JSON array of slots, `{"midis": [60], "ticks": 8}` per
+/// note or chord and `{"ticks": 8}` per rest -- out into barred, tied MEI,
 /// written to `out` (capacity `out_cap`). Returns the byte count the MEI needs,
 /// or `0` when the voice is not readable JSON.
 ///
 /// `meter` is `"num/den"`, `clef` a shape+line like `"G2"`, and `key` selects the
 /// key signature and the sharp-vs-flat spelling. Reducing a client's own
-/// sequencing data to the voice stays in that client — it reads client-native
+/// sequencing data to the voice stays in that client -- it reads client-native
 /// types; this is the language-agnostic step below it.
 ///
 /// # Safety
@@ -124,7 +124,7 @@ pub unsafe extern "C" fn clausters_core_voice_to_mei(
     unsafe { fill(mei.as_bytes(), out, out_cap) }
 }
 
-/// Lift a **voice** — the v1 wire form, a JSON array of slots — into the score
+/// Lift a **voice** -- the v1 wire form, a JSON array of slots -- into the score
 /// model, written to `out` as the same envelope the other sheet calls answer
 /// in. Returns the byte count it needs, or `0` when a pointer is null.
 ///
@@ -179,13 +179,13 @@ pub unsafe extern "C" fn clausters_core_voice_to_sheet(
 /// **One symbol for every operation there will ever be.** The verb and its
 /// parameters are inside `op` (`{"op": "transpose", "semitones": 2}`), so a new
 /// operation is a new entry in `clausters_core_sheet_ops` and nothing here
-/// changes — no row of `docs/bindings.md`, no `CORE_ABI_VERSION` round. What
+/// changes -- no row of `docs/bindings.md`, no `CORE_ABI_VERSION` round. What
 /// that costs is that this table cannot see the verbs, which is exactly what
 /// the catalog is contrasted against.
 ///
 /// The result is an **envelope**, so a refusal keeps its reason: `{"ok": …}`
 /// carries the new sheet, `{"error": "…"}` a sentence saying what was refused.
-/// A refused operation changes nothing — the caller still holds the sheet it
+/// A refused operation changes nothing -- the caller still holds the sheet it
 /// sent, because the model crossed by value and was never handed over.
 ///
 /// # Safety
@@ -253,7 +253,7 @@ pub unsafe extern "C" fn clausters_core_sheet_to_mei(
     unsafe { fill(json.as_bytes(), out, out_cap) }
 }
 
-/// Every operation this core knows, as JSON — each entry naming the verb and
+/// Every operation this core knows, as JSON -- each entry naming the verb and
 /// the parameters it takes.
 ///
 /// **This is the parity surface the ABI cannot provide.** Operations cross as
@@ -276,7 +276,7 @@ pub unsafe extern "C" fn clausters_core_sheet_ops(out: *mut u8, out_cap: usize) 
 ///
 /// **The other return path**, and not the one `clausters_core_sheet_perform` is:
 /// that one turns a model into sound, this turns a *document* into a model. A
-/// score opened from typed text — ABC, MusicXML, a hand-written MEI — is a
+/// score opened from typed text -- ABC, MusicXML, a hand-written MEI -- is a
 /// document and nothing else until this reads one, which is why every verb in
 /// none of the model's verbs is available on it until then.
 ///
@@ -305,15 +305,15 @@ pub unsafe extern "C" fn clausters_core_mei_to_sheet(
     unsafe { fill(json.as_bytes(), out, out_cap) }
 }
 
-/// Read a score model into the notes it **sounds**, under `interp` — the
-/// reading, as JSON — and write them to `out` (capacity `out_cap`). Returns the
+/// Read a score model into the notes it **sounds**, under `interp` -- the
+/// reading, as JSON -- and write them to `out` (capacity `out_cap`). Returns the
 /// byte count the result needs, or `0` when `sheet` is null.
 ///
 /// The answer is the same envelope the other sheet calls use: `{"ok": [ … ]}`
 /// with one entry per sounding note, or `{"error": "…"}`.
 ///
-/// Each note carries **two lengths** — `dur`, what is written, and `sustain`,
-/// what is heard — because they are different numbers whenever an articulation
+/// Each note carries **two lengths** -- `dur`, what is written, and `sustain`,
+/// what is heard -- because they are different numbers whenever an articulation
 /// is honoured, and a caller that collapsed them into one would move every
 /// attack after a staccato. It also carries the `staff` and `voice` it was
 /// written on, which is what a caller binds an instrument to: the notation does
@@ -321,7 +321,7 @@ pub unsafe extern "C" fn clausters_core_mei_to_sheet(
 ///
 /// `interp` may be null or `{}` for the default reading; any field left out of
 /// it keeps its default, so overriding one is a one-key object. What the
-/// default *is* — every number in it — comes back from
+/// default *is* -- every number in it -- comes back from
 /// [`clausters_core_interpretation`], so no client writes those numbers down.
 ///
 /// # Safety
@@ -358,7 +358,7 @@ pub unsafe extern "C" fn clausters_core_sheet_perform(
     unsafe { fill(json.as_bytes(), out, out_cap) }
 }
 
-/// The default interpretation, as JSON — every number the reading depends on.
+/// The default interpretation, as JSON -- every number the reading depends on.
 ///
 /// **The parity surface for the reading**, and the value an override starts
 /// from. The interpretation crosses inside a payload, so the binding table sees
@@ -404,7 +404,7 @@ fn options(scale: i32, page_width: i32, extra: Option<String>) -> EngraveOptions
 /// The page names elements the way the emitter wrote them: `n7` is the item,
 /// `n7-2` a part of it split across a barline, `n7-p1` one pitch of a chord.
 /// All three are the same item, which is what lets a gesture anywhere on a note
-/// reach the note — and it is the step every client takes between a page's
+/// reach the note -- and it is the step every client takes between a page's
 /// selection and a model verb, which is why it is answered here rather than
 /// spelled out again in each of them.
 ///
@@ -425,7 +425,7 @@ pub unsafe extern "C" fn clausters_core_item_id(id: *const u8, id_len: usize) ->
 /// [`clausters_score_free`].
 ///
 /// `options` is a JSON object of extra engraver options (`{"unit": 6}`) merged
-/// over the defaults, or null for none — the seam a caller reaches the engraver's
+/// over the defaults, or null for none -- the seam a caller reaches the engraver's
 /// own vocabulary through without this ABI growing a parameter per knob.
 ///
 /// # Safety
@@ -466,8 +466,8 @@ pub unsafe extern "C" fn clausters_score_free(h: *mut Score) {
     }
 }
 
-/// This score engraved into one page as JSON — the drawing layers plus
-/// `cursors` and `notes` — from the live document, so it reflects every edit
+/// This score engraved into one page as JSON -- the drawing layers plus
+/// `cursors` and `notes` -- from the live document, so it reflects every edit
 /// applied so far. Returns the byte count the JSON needs, or `0` on a null
 /// handle.
 ///
@@ -492,7 +492,7 @@ pub unsafe extern "C" fn clausters_score_display_list(
     unsafe { fill(&json, out, out_cap) }
 }
 
-/// The score as MEI, ids and all — the format to persist. Returns the byte
+/// The score as MEI, ids and all -- the format to persist. Returns the byte
 /// count it needs, or `0` on a null handle.
 ///
 /// # Safety
@@ -510,8 +510,8 @@ pub unsafe extern "C" fn clausters_score_mei(h: *mut Score, out: *mut u8, out_ca
     unsafe { fill(mei.as_bytes(), out, out_cap) }
 }
 
-/// Move the note `element_id` by `steps` **diatonic** steps along the staff —
-/// up when positive — as one undo step. Returns `1` when the edit was
+/// Move the note `element_id` by `steps` **diatonic** steps along the staff --
+/// up when positive -- as one undo step. Returns `1` when the edit was
 /// applied, `0` when it was rejected (and rolled back) or the handle is null.
 ///
 /// # Safety
@@ -533,8 +533,8 @@ pub unsafe extern "C" fn clausters_score_transpose(
     unsafe { &mut *h }.transpose(&id, steps) as i32
 }
 
-/// Move a note **to** the diatonic staff position `position` on `page` — whole
-/// steps from its staff's top line, positive upward — as one undo step.
+/// Move a note **to** the diatonic staff position `position` on `page` -- whole
+/// steps from its staff's top line, positive upward -- as one undo step.
 ///
 /// The absolute form, and the one an edit travels in: applying it twice leaves
 /// the note where it is, and a page re-engraved under the gesture needs no
@@ -595,7 +595,7 @@ pub unsafe extern "C" fn clausters_score_apply(h: *mut Score, op: *const u8, op_
 
 /// The open score as the **model**, written to `out` in the usual envelope:
 /// `{"ok": …}` with the sheet, or `{"error": "…"}` when the document could not
-/// be read into one — which is a state and not a failure, since the page still
+/// be read into one -- which is a state and not a failure, since the page still
 /// draws and still plays and only the model's verbs are unavailable.
 ///
 /// # Safety
@@ -624,7 +624,7 @@ pub unsafe extern "C" fn clausters_score_sheet(
 }
 
 /// Apply one raw editor action (`set`, `insert`, `delete`, ...) as a single
-/// undo step — the escape hatch for what [`clausters_score_transpose`] does
+/// undo step -- the escape hatch for what [`clausters_score_transpose`] does
 /// not cover. `param` is the action's parameter object as JSON. Returns `1`
 /// when the edit was applied, `0` when it was rejected or a pointer is null.
 ///
@@ -652,7 +652,7 @@ pub unsafe extern "C" fn clausters_score_edit(
     unsafe { &mut *h }.edit(&action, param.as_deref().unwrap_or("{}")) as i32
 }
 
-/// Replace the document with `mei` — **a state, not a step**. Returns `1` on
+/// Replace the document with `mei` -- **a state, not a step**. Returns `1` on
 /// success, `0` when the engraver could not read it.
 ///
 /// The door for a client whose editing context holds one history over several

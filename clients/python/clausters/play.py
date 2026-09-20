@@ -1,14 +1,14 @@
-"""The free-standing ``play`` — one verb for everything playable.
+"""The free-standing ``play`` -- one verb for everything playable.
 
 `play` is the interactive front door: it plays whatever you hand it against the
 ambient context, so you never spell out a server or a clock for a quick take.
 Like SuperCollider's ``play`` (and sc3's), it dispatches by kind:
 
-- an `clausters.seq.event.Event` — or a plain **dict** of event keys — -> a
+- an `clausters.seq.event.Event` -- or a plain **dict** of event keys -- -> a
   note (immediate outside a clock, timetagged inside one);
 - an event `clausters.seq.pattern.Pattern` (a ``Pbind``) -> an
   `clausters.seq.eventstream.EventStreamPlayer` on a clock;
-- a `clausters.base.stream.Routine` / `clausters.base.stream.Stream` — or a
+- a `clausters.base.stream.Routine` / `clausters.base.stream.Stream` -- or a
   bare **generator** (object or function) -> scheduled on a clock;
 - a bare **expression** (a `clausters.defs.Ugen` graph, a
   `clausters.defs.ChannelList` of them, a Faust `clausters.defs.Signal` or
@@ -18,20 +18,20 @@ Like SuperCollider's ``play`` (and sc3's), it dispatches by kind:
   expression is first wrapped in an ephemeral def
   (`clausters.defs.asdef.as_def` adds the ``out`` when it lacks one), so
   ``play(sine(440))`` just sounds and ``play(sine(440).dup())`` sounds in
-  stereo. Returns the node handle — it plays until you free it;
+  stereo. Returns the node handle -- it plays until you free it;
 - a `clausters.seq.timeline.Timeline` -> played on its own clock
   (`Timeline.play`), on the ambient server;
 - a `clausters.defs.Buffer` -> sounded through the stock playbuf instrument
   (a buffer sounds through an instrument; here the verb provides the default
-  one — ``rate``/``amp`` controls, freed when the take ends);
+  one -- ``rate``/``amp`` controls, freed when the take ends);
 - an `clausters.seq.automation.Automation` -> prepared if needed and
-  triggered on the ambient server — the interactive "apply this curve to
+  triggered on the ambient server -- the interactive "apply this curve to
   that node's control, now" (outside a clock its beats read as seconds);
 - anything else following the **timeline-item protocol**
-  (``play(destination)`` — an `OscItem`, a `MidiItem`, ...) -> dispatched
+  (``play(destination)`` -- an `OscItem`, a `MidiItem`, ...) -> dispatched
   to it with the ambient server.
 
-An arrangement `Element` is **not** playable — its change of state to sound
+An arrangement `Element` is **not** playable -- its change of state to sound
 is `clausters.form.render`.
 
 Everything resolves against the ambient environment (the running session, else
@@ -76,7 +76,7 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
             or anything with a ``play(destination)`` (the timeline-item
             protocol).
         server: the destination server; ``None`` resolves the ambient one (the
-            running session's, else the booted default — see
+            running session's, else the booted default -- see
             `clausters.base.main.Main.resolve_server`).
         clock: the clock to schedule on (patterns and routines); ``None``
             resolves the running routine's clock, else the default session's
@@ -95,8 +95,8 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         Something that knows how to end what just started: the completed
         event for an event or dict (``.free()`` / ``.release()``), the
         `clausters.seq.eventstream.EventStreamPlayer` for a pattern
-        (``.stop()``), the routine for a routine, the node handle — a
-        `clausters.defs.Synth` or instance `clausters.defs.Group` — for a
+        (``.stop()``), the routine for a routine, the node handle -- a
+        `clausters.defs.Synth` or instance `clausters.defs.Group` -- for a
         def, expression or buffer (``.free()``), the
         timeline itself (``.stop()``), and
         the `clausters.seq.automation.Automation` itself (``.stop()``).
@@ -149,7 +149,7 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         # An Element carries a timeline-item play() (the hook flattening
         # uses), but the verb keeps the state split: rendering is its door.
         raise TypeError(
-            "an arrangement Element is rendered, not played — see "
+            "an arrangement Element is rendered, not played -- see "
             "clausters.render / clausters.form.render"
         )
     if callable(getattr(playable, "play", None)):
@@ -162,7 +162,7 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         "generator, a def or bare expression (Ugen/ChannelList/Signal/Box), "
         "a Timeline, "
         "a Buffer, an Automation, or anything with play(destination). An "
-        "arrangement Element is rendered, not played — see "
+        "arrangement Element is rendered, not played -- see "
         "clausters.form.render."
     )
 
@@ -170,7 +170,7 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
 def _as_routine(playable):
     """A `Routine` over a generator: a genfunc is wrapped directly; an
     already-created generator object is played through once (a `reset`
-    cannot restart it — pass the function to keep it re-runnable)."""
+    cannot restart it -- pass the function to keep it re-runnable)."""
     from .base.stream import Routine
 
     if inspect.isgeneratorfunction(playable):
@@ -191,8 +191,8 @@ def _play_def(d, server, controls):
 
 def _play_buffer(buffer, server, controls):
     """A buffer sounds through an instrument (see docs/decisions.md); here
-    the verb provides the stock one — one `play_buf` lane per channel, with
-    ``rate`` and ``amp`` controls — and frees it when the take ends (the
+    the verb provides the stock one -- one `play_buf` lane per channel, with
+    ``rate`` and ``amp`` controls -- and frees it when the take ends (the
     buffer's frames over its rate). Returns the `Synth`."""
     from .defs import (
         SynthDef, buf_sample_rate, control, out, play_buf, sample_rate,

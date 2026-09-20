@@ -10,7 +10,7 @@
 //! sometimes does not work" instead of "not here".
 //!
 //! This is where it lands instead. It is a **band along the bottom of the
-//! window**, drawn by the host as chrome — not a widget, not a prop a script
+//! window**, drawn by the host as chrome -- not a widget, not a prop a script
 //! writes, and nothing on the wire carries a line of it. That is the whole
 //! design decision: the host already knows what it just did and what it
 //! refused, so making the client re-send it would be asking the wire to carry
@@ -26,7 +26,7 @@
 //! **hand's own history**: what the last gesture asked for, and what came back.
 //!
 //! And, in a debug build only, the host's notes about its own working
-//! ([`super::diag::note!`]) — a third [`Kind`], colored apart, because a bar
+//! ([`super::diag::note!`]) -- a third [`Kind`], colored apart, because a bar
 //! that shows what the hand did is where somebody debugging is already looking.
 //! Nothing of that survives a release build, arguments included; the two kinds
 //! above are product and do.
@@ -38,7 +38,7 @@
 //! # Closed, open, hidden
 //!
 //! Closed it is one line: the newest. Clicking it **opens** it into the app's
-//! log area — the last several lines, newest at the bottom — and clicking
+//! log area -- the last several lines, newest at the bottom -- and clicking
 //! again closes it. A window that wants neither says `status: false`, and the
 //! band is not carved at all: the content gets the pixels back.
 //!
@@ -56,7 +56,7 @@ use super::metrics::Metrics;
 use super::widget::{Widget, WidgetKind};
 
 /// How many lines one window keeps. Past it the oldest is dropped: this is a
-/// window's recent history, not a transcript — a session's transcript is the
+/// window's recent history, not a transcript -- a session's transcript is the
 /// log the host already writes.
 pub const KEEP: usize = 128;
 
@@ -75,8 +75,8 @@ pub enum Kind {
     /// nobody asked for and which is there only in a debug build.
     ///
     /// A third kind rather than a quieter `Did` because it reports on a
-    /// different subject: the two above are the *hand's* history — what it
-    /// asked for, what came back — and this one is the machine's. Colored
+    /// different subject: the two above are the *hand's* history -- what it
+    /// asked for, what came back -- and this one is the machine's. Colored
     /// apart for the same reason, so a reader can tell at a glance which lines
     /// are the work and which are the instrumentation.
     Note,
@@ -107,7 +107,7 @@ impl Line {
     pub fn of_event(widget: i32, args: &[OscType]) -> Line {
         let verb = match args.first() {
             Some(OscType::String(s)) => s.clone(),
-            // A bare value — a knob's, a slider's. It has no tag on the wire
+            // A bare value -- a knob's, a slider's. It has no tag on the wire
             // because there is nothing to disambiguate; here it needs a word.
             _ => "value".to_string(),
         };
@@ -142,7 +142,7 @@ impl Line {
         }
     }
 
-    /// A line for the reason an **owner** gave when it answered an edit — the
+    /// A line for the reason an **owner** gave when it answered an edit -- the
     /// `/gui_ack` string the mechanism deliberately does not read.
     pub fn of_reason(widget: Option<i32>, reason: &str) -> Line {
         Line {
@@ -154,7 +154,7 @@ impl Line {
     }
 
     /// A line for a value that left by the **binding** road rather than as a
-    /// `/gui_event` — a knob wired straight to the audio server or to another
+    /// `/gui_event` -- a knob wired straight to the audio server or to another
     /// widget's prop.
     ///
     /// The same `Did` a reported value is, said apart only in its text: what
@@ -170,7 +170,7 @@ impl Line {
         }
     }
 
-    /// A line for a **note about the host's own working** — what
+    /// A line for a **note about the host's own working** -- what
     /// [`super::diag::note!`] writes, and the only kind of line that reports on
     /// the machine rather than on the work.
     ///
@@ -201,7 +201,7 @@ fn arg_str(arg: Option<&OscType>) -> Option<&str> {
 ///
 /// It is a **sketch and says so**, because the alternative is a bar that
 /// scrolls a piano-roll's whole note list past the reader one flat number at a
-/// time. What the line is for is *which verb, on what, and did it land* — the
+/// time. What the line is for is *which verb, on what, and did it land* -- the
 /// payload itself is on the wire for whoever owns the data.
 fn summarize(args: &[OscType]) -> String {
     const SHOWN_ARGS: usize = 4;
@@ -337,7 +337,7 @@ impl Status {
         moved
     }
 
-    /// How many of this log's lines fit in `band` — what the scroll clamps
+    /// How many of this log's lines fit in `band` -- what the scroll clamps
     /// against, and what the drawing stops at. One function so the two agree:
     /// a clamp that allowed one line more than the band draws would scroll to
     /// a position that looks like the end of the log and is not.
@@ -346,14 +346,14 @@ impl Status {
         (((band.h - m.pad) / advance).floor().max(1.0)) as usize
     }
 
-    /// Forgets every line. The bar stays where it is — clearing a log is not
+    /// Forgets every line. The bar stays where it is -- clearing a log is not
     /// closing it.
     pub fn clear(&mut self) {
         self.lines.clear();
     }
 }
 
-/// Whether window `tree` carries a status bar at all — its `status` prop,
+/// Whether window `tree` carries a status bar at all -- its `status` prop,
 /// which is on by default.
 ///
 /// Default **on** because the bar is the host's own voice, and a voice nobody
@@ -392,7 +392,7 @@ pub fn bar(tree: &Widget, status: Option<&Status>, area: Rect, m: &Metrics) -> O
 }
 
 /// The height a **closed** status bar costs a window that is being fitted to
-/// its content — zero when it has none.
+/// its content -- zero when it has none.
 ///
 /// Only the closed height, and deliberately: a window is sized when it opens,
 /// and opening the log is a thing a hand does afterwards to a window that
@@ -406,7 +406,7 @@ pub fn bar_h(tree: &Widget, m: &Metrics) -> f32 {
     }
 }
 
-/// `area` with the status band taken off — where the window's tree is laid out.
+/// `area` with the status band taken off -- where the window's tree is laid out.
 pub fn content(tree: &Widget, status: Option<&Status>, area: Rect, m: &Metrics) -> Rect {
     match bar(tree, status, area, m) {
         Some(band) => Rect::new(area.x, area.y, area.w, (area.h - band.h).max(0.0)),

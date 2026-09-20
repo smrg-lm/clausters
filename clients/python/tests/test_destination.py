@@ -1,7 +1,7 @@
 """`Moment` and `OscDestination`: sending OSC to applications that are not ours.
 
 Two things under test. `Moment` is the one answer to "what time is it *for this
-event*" — the running routine's exact beat, a foreign clock's own now, or the
+event*" -- the running routine's exact beat, a foreign clock's own now, or the
 clockless wall clock outside any routine. `OscDestination` is what carries that
 onto the wire for an application we do not control: standard OSC, no latency
 and no server-only commands, verified end to end against a real `OscReceiver`

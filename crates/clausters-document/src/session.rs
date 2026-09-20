@@ -9,8 +9,8 @@
 //!
 //! # Why the format is here and not in a client
 //!
-//! It has two writers in two languages — a language client, and a `standalone`
-//! host with no language attached — and a format with two writers in two
+//! It has two writers in two languages -- a language client, and a `standalone`
+//! host with no language attached -- and a format with two writers in two
 //! languages is a format that drifts. So the shape lives once, beside the tree
 //! it carries.
 //!
@@ -21,11 +21,11 @@
 //! and its shape. Two fields are the ones a naive format leaves out and then
 //! cannot add:
 //!
-//! - **Provenance** — a reference to whatever produced it, carried opaquely.
+//! - **Provenance** -- a reference to whatever produced it, carried opaquely.
 //!   It is what makes re-generating possible *without the document knowing
 //!   how*: the recipe is in the language that wrote it, and the session only
 //!   has to not lose it.
-//! - **An open edit** ([`OpenEdit`]) — a destructive edit session over this
+//! - **An open edit** ([`OpenEdit`]) -- a destructive edit session over this
 //!   samples that has not been confirmed. A save never blocks on a
 //!   confirmation, so a saved session can and must be able to say *this is a
 //!   working copy of that, and the person has not decided yet*. Without the
@@ -54,13 +54,13 @@ use crate::{Document, Lifetime, Opaque, SourceId, SourceRef};
 /// The format this file was written in.
 ///
 /// It moves when a reader that does not know the new shape would read the file
-/// *wrongly* — never for an added field, which an older reader ignores and a
+/// *wrongly* -- never for an added field, which an older reader ignores and a
 /// newer one defaults. So far there have been three.
 ///
 /// **2** added [`Location::Segments`]: a source whose samples are spans of
 /// other sources. [`Location`] is tagged and has no untagged arm, so a reader
 /// that does not know the variant *fails* rather than reading it as something
-/// else — which is the case the counter exists for, and the reason an added
+/// else -- which is the case the counter exists for, and the reason an added
 /// `Location` moves it where an added field would not.
 ///
 /// **3** measures the multitrack in **seconds**: a region's position, length
@@ -68,7 +68,7 @@ use crate::{Document, Lifetime, Opaque, SourceId, SourceRef};
 /// a view's visible span and selection, which format 2 wrote in beats; and a
 /// tempo entry states `tempo` in beats per second where it stated `bpm`. The
 /// numbers keep their fields, so an older reader would read every one of them
-/// wrongly — the counter's case exactly. [`migrate`] reads a format-2 file into
+/// wrongly -- the counter's case exactly. [`migrate`] reads a format-2 file into
 /// this one.
 pub const FORMAT: u32 = 3;
 
@@ -80,8 +80,8 @@ pub const FORMAT_2_TEMPO: f64 = 1.0;
 
 /// **A session written in an older format, as this one writes it.**
 ///
-/// Applied to the JSON before it is read, so every reader — the crate's own,
-/// the GUI host's, each client's — opens an old file the same way. A session
+/// Applied to the JSON before it is read, so every reader -- the crate's own,
+/// the GUI host's, each client's -- opens an old file the same way. A session
 /// already at [`FORMAT`] (or newer, which [`Session::is_readable`] refuses) is
 /// handed back untouched, so calling this on every read is safe.
 ///
@@ -90,8 +90,8 @@ pub const FORMAT_2_TEMPO: f64 = 1.0;
 /// none. A **length** is the difference of two positions, since how long four
 /// beats last depends on where they start; a region's own curve is measured
 /// from the region's start, and so is its fade in, while its fade out is
-/// measured back from its end. The contents of a region — a window's seconds of
-/// a recording, a node's beats — are not the multitrack's axis and are left as
+/// measured back from its end. The contents of a region -- a window's seconds of
+/// a recording, a node's beats -- are not the multitrack's axis and are left as
 /// they were.
 pub fn migrate(mut written: Value) -> Value {
     let format = written.get("format").and_then(Value::as_u64).unwrap_or(1);
@@ -251,7 +251,7 @@ pub enum Location {
         /// The path as written.
         path: String,
     },
-    /// **Spans of other sources, read back to back as one thing** — what a
+    /// **Spans of other sources, read back to back as one thing** -- what a
     /// join over fragments makes, and what the user named a *pseudobuffer*
     /// when the segments were designed: something a reader reads like a
     /// recording, which owns no samples.
@@ -261,24 +261,24 @@ pub enum Location {
     /// where a source's samples are, since inside a running system a source is
     /// a server buffer, a mapped file or a rendered result. A source whose
     /// samples *are* spans of other sources is that same sentence one level
-    /// in — and it keeps every reader downstream reading one shape, since a
+    /// in -- and it keeps every reader downstream reading one shape, since a
     /// region over a join is a plain window onto a plain source.
     ///
     /// **The parts are arbitrary**: the same source or several, any valid
     /// range of each, in any order. Order is the reading order, which is the
-    /// whole point — fragments put back in an order their source does not have
+    /// whole point -- fragments put back in an order their source does not have
     /// is exactly what cannot be said as a window.
     ///
     /// A realized join is [`crate::multitrack::picture`]'s source like any
     /// other; what realizes it is the caller's (`/buffer_stitch` over pool
-    /// buffers today, a prebuffered stream once a part may name a file — root
+    /// buffers today, a prebuffered stream once a part may name a file -- root
     /// `PLAN.md`). **This statement does not change when that does**, which is
     /// why the recipe is here and not in a call a client remembers making.
     Segments {
         /// The spans, in reading order.
         parts: Vec<Part>,
     },
-    /// Samples that exist only in the running system — a server buffer never
+    /// Samples that exist only in the running system -- a server buffer never
     /// exported, a result never written down.
     ///
     /// A session may hold one, because saving must not be blocked by it, but a
@@ -292,7 +292,7 @@ pub enum Location {
 /// the fade at each end.
 ///
 /// **Frames, not seconds**, unlike [`crate::SegmentRef`]: a part of a join is a
-/// statement about samples — the unit `/buffer_stitch` takes it in and the unit
+/// statement about samples -- the unit `/buffer_stitch` takes it in and the unit
 /// [`crate::SourceRef::range`] already speaks. A `SegmentRef` measures a
 /// *window a multitrack places*, which is the musical side of the same fact and is
 /// where seconds belong.
@@ -312,7 +312,7 @@ pub struct Part {
     #[serde(default, skip_serializing_if = "is_zero")]
     pub fade_out: u64,
     /// Which channel of the source each channel of the join reads, or the
-    /// identity mapping when absent — which is the ordinary case and the reason
+    /// identity mapping when absent -- which is the ordinary case and the reason
     /// it is an option rather than a list every part spells.
     ///
     /// A negative entry is silence, as on the wire. Stated when the parts are
@@ -332,8 +332,8 @@ fn is_zero(n: &u64) -> bool {
 /// blocking or deciding for the person.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OpenEdit {
-    /// The samples this working copy was made from. Untouched — the original
-    /// is never written — so discarding is dropping the copy.
+    /// The samples this working copy was made from. Untouched -- the original
+    /// is never written -- so discarding is dropping the copy.
     pub from: SourceId,
     /// Whether the person has confirmed the edit. `false` in a saved session
     /// means the edit is still open and reopens that way.
@@ -348,7 +348,7 @@ pub struct Source {
     pub location: Location,
     /// Whether it outlives the session.
     pub lifetime: Lifetime,
-    /// Which generation of its content this is — the source half of the two
+    /// Which generation of its content this is -- the source half of the two
     /// counters, so a reader holding an older copy knows to re-read.
     #[serde(default)]
     pub generation: u64,
@@ -359,7 +359,7 @@ pub struct Source {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frames: Option<u64>,
     /// The rate it was recorded or rendered at, when known. Carried, never
-    /// acted on — resampling is an edit.
+    /// acted on -- resampling is an edit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sample_rate: Option<f64>,
     /// What produced it, carried opaquely and never interpreted. Absent for
@@ -446,7 +446,7 @@ pub struct Session {
     pub multitrack: Multitrack,
     /// The general tree, for what is not an multitrack.
     ///
-    /// **Absent means empty, not invalid** — a session that is only an
+    /// **Absent means empty, not invalid** -- a session that is only an
     /// arrangement is the shape this milestone is walking towards, and it has
     /// to be writable before the leg comes off rather than after.
     ///
@@ -467,8 +467,8 @@ pub struct Session {
     ///
     /// Presentation, parallel to the model and never inside it
     /// ([`crate::view`]). A session carries it for the reason every program in
-    /// the field does — reopening a multitrack into the window it was left in is
-    /// what a person expects — and a reader that ignores the field opens the
+    /// the field does -- reopening a multitrack into the window it was left in is
+    /// what a person expects -- and a reader that ignores the field opens the
     /// same multitrack, since nothing here can change what plays.
     ///
     /// A **list** because a multitrack drawn in two windows has two views, and they
@@ -481,7 +481,7 @@ pub struct Session {
     /// iteration order.
     #[serde(default)]
     pub sources: BTreeMap<SourceId, Source>,
-    /// What produced the session as a whole — the scripts behind it — carried
+    /// What produced the session as a whole -- the scripts behind it -- carried
     /// opaquely. The document never knows how to re-run them; it only has to
     /// not lose the reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -540,7 +540,7 @@ impl Session {
         self.sources.get(&id)
     }
 
-    /// Sources whose samples are not written down anywhere — what a save
+    /// Sources whose samples are not written down anywhere -- what a save
     /// consults before promising the file is complete.
     pub fn volatile(&self) -> Vec<SourceId> {
         self.sources
@@ -559,7 +559,7 @@ impl Session {
             .collect()
     }
 
-    /// Sources the multitrack names but the table does not hold — what an opening
+    /// Sources the multitrack names but the table does not hold -- what an opening
     /// reader reports rather than discovering one element at a time.
     ///
     /// Both halves are walked: the arrangement's regions and the general tree.
@@ -645,7 +645,7 @@ impl Session {
     ///
     /// A newer *format* is refused rather than half-read; a newer field inside
     /// a format this build knows is not a version change, and is ignored on
-    /// the way through — the same rule [`crate::Body::Unknown`] follows.
+    /// the way through -- the same rule [`crate::Body::Unknown`] follows.
     pub fn is_readable(&self) -> bool {
         self.format <= FORMAT
     }

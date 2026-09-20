@@ -1,8 +1,8 @@
 // The shared core's wasm module: one load, one latch.
 //
-// Everything the client borrows from `clausters-core` — the OSC codec
+// Everything the client borrows from `clausters-core` -- the OSC codec
 // (`base/osc.ts`), the id registry the allocators are built on, and the clock
-// arithmetic a later milestone adds — comes out of the same wasm instance, so
+// arithmetic a later milestone adds -- comes out of the same wasm instance, so
 // the load belongs here rather than in whichever module happens to need it
 // first. `await loadCore()` is idempotent; every core-backed call needs one
 // prior await.
@@ -12,7 +12,7 @@
 // `file://` URL), which is what makes the client a **node target** and not
 // only a page's: a script gets the core by awaiting `loadCore()`, the way a
 // page does. Passing the bytes explicitly still works and is what a caller
-// with its own copy — a bundler's asset, a test — does.
+// with its own copy -- a bundler's asset, a test -- does.
 
 import initCore, {
     IdSpaces,
@@ -37,7 +37,7 @@ let loaded: Promise<void> | null = null;
 let ready = false;
 
 /**
- * Whether the core wasm is in memory — `false` until a {@link loadCore} has
+ * Whether the core wasm is in memory -- `false` until a {@link loadCore} has
  * resolved.
  */
 export function coreLoaded(): boolean {
@@ -51,7 +51,7 @@ export function coreLoaded(): boolean {
  * generated glue reads an uninitialised binding, so an unloaded core surfaces
  * as `Cannot read properties of undefined (reading 'rng_new')`, and a call at
  * a module's top level takes the whole module down with **no message at all**
- * — a page that renders nothing and logs nothing. That failure shipped a
+ * -- a page that renders nothing and logs nothing. That failure shipped a
  * broken example once; this is what it says instead.
  */
 export function requireCore(what: string): void {
@@ -92,7 +92,7 @@ function underNode(): boolean {
  * a browser, the file itself under node.
  *
  * The two candidate paths are the two layouts a node script imports this
- * module through — the emitted package (`dist/base/core.js`, the wasm beside
+ * module through -- the emitted package (`dist/base/core.js`, the wasm beside
  * it under `dist/core/`) and the sources it was emitted from
  * (`src/base/core.ts`, where the wasm is still only in `dist/`, since
  * `build.sh` stages the glue into `src/` and not the module). Neither is a
@@ -114,14 +114,14 @@ async function initHere(): Promise<unknown> {
         }
     }
     throw new Error(
-        "loadCore: the core wasm is not staged — run clients/web/build.sh " +
+        "loadCore: the core wasm is not staged -- run clients/web/build.sh " +
             `(looked in ${candidates.map((u) => u.pathname).join(", ")})`,
     );
 }
 
 /**
  * The boot-derived partition of the node-id space, scaled from the engine's
- * node-table capacity — the same formula the server applies, so a client's
+ * node-table capacity -- the same formula the server applies, so a client's
  * registry and the server's table agree by construction.
  */
 export interface NodeIdPartition {

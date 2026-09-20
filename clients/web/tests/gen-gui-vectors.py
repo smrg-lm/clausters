@@ -4,17 +4,17 @@
 The Python client is the reference GUI client; this script freezes the JSON
 its builders emit for a set of trees, so the TS builders can assert they emit
 the same in `tests/gui-parity.test.ts`. Each case names the TS expression that
-must reproduce it — the two surfaces are written independently (the TS one
+must reproduce it -- the two surfaces are written independently (the TS one
 takes camelCase options where Python takes snake_case keywords) and only the
 emitted document is compared, which is exactly the contract: the wire is
 shared, the language surface is not.
 
-Every tree is stored as it goes on the wire — through `to_json`, so the
+Every tree is stored as it goes on the wire -- through `to_json`, so the
 client-only `name` key is stripped there too, and the comparison covers that.
 
 It also writes gui-sweep-vectors.json, the **exhaustive** half: every builder
 crossed with every option it declares, one option at a time. The hand-written
-trees above are a sample — they show the shapes a script actually writes — and
+trees above are a sample -- they show the shapes a script actually writes -- and
 a sample is blind to the prop nobody thought to put in one. `docs/gui-props.md`
 compares the two clients' surfaces by **wire type**, folding every builder of a
 type into one union (`waveform`, `plot` and `scope` all build a `signal`), so a
@@ -27,7 +27,7 @@ Both files are committed; regenerate with:
 
     python3 gen-gui-vectors.py
 
-(from clients/web/tests/, with the Python client importable — the repo's
+(from clients/web/tests/, with the Python client importable -- the repo's
 .venv has it installed editable).
 """
 
@@ -266,7 +266,7 @@ def cases():
 
 
 #: Never swept: the client-side identity keys, the child lists, and the def
-#: control a widget is built *from* — a source of props, not a prop, and the
+#: control a widget is built *from* -- a source of props, not a prop, and the
 #: one parameter each client spells in its own object model.
 NOT_SWEPT = {"id", "name", "children", "clips", "control"}
 
@@ -310,7 +310,7 @@ SHAPES = {
 }
 
 #: A value for an option whose Python annotation names its type. The value only
-#: has to survive the round trip, so one per type is enough — except for the
+#: has to survive the round trip, so one per type is enough -- except for the
 #: string options that are enums, which take a member the host would accept.
 BY_TYPE = {"float": 3.5, "int": 7, "bool": True, "str": "q", "dict": {"a": "b"}}
 
@@ -327,8 +327,8 @@ ENUMS = {
 def sweep():
     """(builder, option, value, tree) for every option of every builder.
 
-    The builders are read the way a script reaches them — off the module, by
-    signature — so an option that exists only in a docstring is not swept and
+    The builders are read the way a script reaches them -- off the module, by
+    signature -- so an option that exists only in a docstring is not swept and
     one added without a test is swept the day it lands.
     """
     out = []

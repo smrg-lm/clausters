@@ -24,13 +24,13 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = ["midi", "notation", "patcher"]
 # Live MIDI input painting piano-roll notes (a `midi_in` roll opens a virtual
-# input port other apps/devices route into). On by default — the host must
-# paint notes when it runs standalone, with no language client to do it — and
+# input port other apps/devices route into). On by default -- the host must
+# paint notes when it runs standalone, with no language client to do it -- and
 # native-only (the dependency below is target-gated off wasm).
 midi = ["dep:clausters-midi"]
 # Standalone mode: boot a saved GuiDef bundle against an in-process embedded
 # server. Off by default because it links the `clausters` server crate (engine +
-# audio backend), which is heavy — keeping it opt-in is the size/packaging reason
+# audio backend), which is heavy -- keeping it opt-in is the size/packaging reason
 # the gui is a separate crate. Build with `cargo build --features standalone`.
 #
 # It pulls the server's `synth` family, because the server is linked with
@@ -55,14 +55,14 @@ standalone-faust = ["standalone", "clausters/faust"]
 # a shipped host carries no instrumentation.
 diagnostics = []
 # The `score` element: music notation, and the fill tessellation (`lyon`) that
-# turns SMuFL glyph outlines and engraving fills into the mesh. On by default —
+# turns SMuFL glyph outlines and engraving fills into the mesh. On by default --
 # it is shipped behaviour, and a feature exists so a build can *drop* it, never
 # so it has to be asked for. A build with it out drops the `score` row from
 # `elements::builtin`, and a def naming one is `Unknown`: laid out, not painted,
 # exactly as a host older than that def already behaves.
 notation = ["dep:lyon"]
 # The `plane`-with-boxes patcher: the graph view and its cord editing. Same
-# shape as `notation` — on by default, and a build without it reads a patcher
+# shape as `notation` -- on by default, and a build without it reads a patcher
 # node as the ordinary scroll workspace the `plane` name otherwise means.
 patcher = []
 # A real (outline) typeface behind a glyph atlas, instead of the embedded 5x7
@@ -70,7 +70,7 @@ patcher = []
 # build points at are hundreds of kilobytes in a wasm bundle, and a page holding
 # forty canvases is the profile this crate optimizes for. With the feature on
 # but no face loaded (`--font <path>` natively, `GuiBridge::font` in the page)
-# the host draws exactly as it does without it — the bitmap face is the floor,
+# the host draws exactly as it does without it -- the bitmap face is the floor,
 # never a fallback that has to be reasoned about.
 font-atlas = ["dep:fontdue"]
 
@@ -115,7 +115,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 bytemuck = { version = "1.25.0", features = ["derive"] }
 # Fill tessellation for the `score` widget: turns SMuFL glyph outlines and
-# engraving fills (beams, slurs, ties) — bezier paths — into the triangle mesh
+# engraving fills (beams, slurs, ties) -- bezier paths -- into the triangle mesh
 # the existing painter already draws. Pure Rust, wasm-safe (no compute/storage),
 # so the score renderer runs natively and in the browser through one pipeline.
 lyon = { version = "1.0", optional = true }
@@ -124,19 +124,19 @@ wgpu = "29.0.3"
 winit = "0.30.13"
 # The glyph rasterizer of the `font-atlas` feature: pure Rust, `no_std` by
 # default (hashbrown + simd, no `parallel`), so it compiles for wasm32 with no
-# system dependency and no C toolchain — which is the whole reason it is this
+# system dependency and no C toolchain -- which is the whole reason it is this
 # crate rather than a FreeType binding.
 fontdue = { version = "0.9", optional = true }
 
 # Read-only mmap of the audio server's shared-memory segment, for zero-message
-# meters/scopes (`host::shm`). Unix-only — the same raw-mmap path the server's
+# meters/scopes (`host::shm`). Unix-only -- the same raw-mmap path the server's
 # IPC uses, and the server's segment is itself Unix-only.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 # Live MIDI input (the `midi` feature): the shared MIDI crate's virtual input
 # port (midir/ALSA seq), consumed in-process through its safe Rust face.
-# Target-gated off wasm — the browser host keeps display parity only.
+# Target-gated off wasm -- the browser host keeps display parity only.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 clausters-midi = { path = "../../crates/clausters-midi", features = ["live"], optional = true }
 # The WebSocket leg of the script front (`--ws`): the browser's carrier into a

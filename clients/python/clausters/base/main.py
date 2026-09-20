@@ -7,8 +7,8 @@ one line:
 > Everything that does not run in an explicit `clausters.Session` runs in the
 > default session, `main`.
 
-`main` is an `clausters.base.environment.Environment` — the same base a
-`clausters.Session` extends — so it *is* a session, the default one. It owns what
+`main` is an `clausters.base.environment.Environment` -- the same base a
+`clausters.Session` extends -- so it *is* a session, the default one. It owns what
 used to be scattered "globals": the default `server` (set first-wins by a
 free-standing `Server().boot()`), an opt-in `default_clock`, and the random
 context (`rng`). It is exported as ``clausters.default_session`` too; ``main`` is
@@ -43,7 +43,7 @@ class Main(Environment):
     An `Environment` like any `clausters.Session` (server + random context), plus
     the two roles only the *default* one plays: it holds the process-wide
     thread-local execution registry (`current_routine` / `current_session`) and it is
-    the resolution authority — `resolve_server` / `resolve_clock` implement the
+    the resolution authority -- `resolve_server` / `resolve_clock` implement the
     single rule shared with the free `clausters.play` and every playable's
     ambient ``.play()``. It also keeps an opt-in `default_clock`. The default
     `server` is adopted first-wins by a free-standing ``Server().boot()``.
@@ -74,7 +74,7 @@ class Main(Environment):
         (thread-local), set by a session while it plays/renders or as a context
         manager, so anything played outside a routine still resolves to that
         session's server/clock/rng. ``None`` means the default session (`main`)
-        itself — the fallback when no session was named."""
+        itself -- the fallback when no session was named."""
         return getattr(self._local, "current_session", None)
 
     @current_session.setter
@@ -188,5 +188,5 @@ class Main(Environment):
 # The process-wide default session (its `current_routine` is per-thread).
 main = Main()
 
-#: Public alias — the same object, named for what it is.
+#: Public alias -- the same object, named for what it is.
 default_session = main

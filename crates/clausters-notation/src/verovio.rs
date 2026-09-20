@@ -38,7 +38,7 @@ unsafe extern "C" {
 /// Serializes every call into libverovio for the process.
 ///
 /// verovio loads its SMuFL resources into global state on toolkit construction,
-/// so concurrent construction is a data race — the Python client was shielded by
+/// so concurrent construction is a data race -- the Python client was shielded by
 /// the GIL, the Rust harness runs tests in parallel and is not. A `Toolkit`'s
 /// own methods do **not** lock; the caller brackets a whole sequence with this
 /// guard (as `engrave_svg` does), the way `faust::ffi_lock` brackets libfaust.
@@ -109,11 +109,11 @@ impl Default for EngraveOptions {
 ///
 /// Resolution, in precedence: the `CLAUSTERS_VEROVIO` run-time override (a
 /// library file or a prefix, resolved as the Python client's `_resources_for`
-/// does — a prefix carries the data under `share/verovio`, the staged wheel
+/// does -- a prefix carries the data under `share/verovio`, the staged wheel
 /// layout under `<dir>/verovio`); then the build prefix's `share/verovio`, baked
 /// in by `build.rs` as a dev-checkout convenience. verovio's own baked path is
-/// unreliable — it points at the configure-time prefix, which need not be where
-/// the library ends up — so an explicit path is what the Python client has always
+/// unreliable -- it points at the configure-time prefix, which need not be where
+/// the library ends up -- so an explicit path is what the Python client has always
 /// passed.
 pub fn default_resource_path() -> Option<String> {
     if let Some(root) = std::env::var_os("CLAUSTERS_VEROVIO")
@@ -206,7 +206,7 @@ impl Toolkit {
         Ok(unsafe { cstr_to_string(vrvToolkit_renderToTimemap(self.ptr, c.as_ptr())) })
     }
 
-    /// The loaded document as MEI, ids and all — the format to persist, and what
+    /// The loaded document as MEI, ids and all -- the format to persist, and what
     /// an undo snapshot is made of. `options` is a JSON object string.
     pub fn mei(&self, options: &str) -> Result<String, EngraveError> {
         let c = CString::new(options).map_err(|_| EngraveError::NulByte)?;
@@ -225,8 +225,8 @@ impl Toolkit {
     /// Apply one editor action, given as a JSON object string
     /// (`{"action": …, "param": {…}}`); returns whether verovio accepted it.
     ///
-    /// Editing a document that has been loaded but never rendered **segfaults** —
-    /// the editor reaches through drawing state the load does not build — so a
+    /// Editing a document that has been loaded but never rendered **segfaults** --
+    /// the editor reaches through drawing state the load does not build -- so a
     /// page must be drawn first (see [`Score`](crate::Score), which owns that
     /// discipline).
     pub fn edit(&self, action: &str) -> Result<bool, EngraveError> {
@@ -273,7 +273,7 @@ unsafe fn cstr_to_string(ptr: *const c_char) -> String {
 }
 
 /// Engrave `data` (a score in any format verovio auto-detects) into an SVG
-/// string — load, draw, discard, all under one [`ffi_lock`].
+/// string -- load, draw, discard, all under one [`ffi_lock`].
 ///
 /// The options mirror the Python client's `engrave` so the geometry is
 /// identical: `adjustPageHeight`, `svgViewBox` and `breaks: "auto"` on top of the

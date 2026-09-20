@@ -20,7 +20,7 @@ use super::nav::group_view;
 /// The stamp is issued here rather than at either front because a gesture is
 /// implemented once: two fronts numbering their own edits would be two
 /// sequences, and an acknowledgement would not know which it answered. The
-/// counter is behind a `RefCell` for the same reason it is here at all — this
+/// counter is behind a `RefCell` for the same reason it is here at all -- this
 /// is where an edit is produced, and the tree is borrowed immutably at that
 /// point.
 pub(super) fn emit(
@@ -50,13 +50,13 @@ pub(super) fn emit(
 ///
 /// The other half of the plan's fall-through rule. `GestureMap::plan` resolves
 /// `ctrl -> alt -> shift -> plain`, and an arm that returns `false` is saying
-/// *this press was not mine* — the press walks on down the chain and the plain
+/// *this press was not mine* -- the press walks on down the chain and the plain
 /// arm sweeps a selection. That is right for a press outside the surface an arm
 /// acts on, and wrong for every other way an arm gives up: a pencil that
 /// resolved and then could not act would become a selection tool, silently.
 ///
 /// So the rule this expresses is **the press is mine once the plan named my
-/// gesture and the pointer is inside the surface I act on** — after that, every
+/// gesture and the pointer is inside the surface I act on** -- after that, every
 /// failure is mine, is said, and is consumed. `docs/gui-protocol.md` has
 /// specified it since the pencil's zoom gate was written; this is the door that
 /// makes it cheap enough to hold everywhere rather than in the one arm that
@@ -119,7 +119,7 @@ pub(super) fn redraws(out: &mut Vec<GestureEffect>, effects: Vec<HostEffect>) {
     }
 }
 
-/// Delivers an edited flat structure — the edit-back pattern: a **bound**
+/// Delivers an edited flat structure -- the edit-back pattern: a **bound**
 /// widget forwards `args[1..]` (without the leading tag, which names the event
 /// payload, not a server argument) straight to the audio server; an unbound one
 /// emits the whole tagged list as a `/gui_event`.
@@ -149,7 +149,7 @@ pub(super) fn redraw_all(out: &mut Vec<GestureEffect>, roots: &[i32]) {
 }
 
 /// Emits a timeline view's visible range as a `/gui_event id "view" start len`
-/// — once per gesture step, carrying the interacted member's id (linked
+/// -- once per gesture step, carrying the interacted member's id (linked
 /// members repaint but do not re-emit).
 pub(super) fn emit_view(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, id: i32) {
     if let Some((start, len, _)) = group_view(host, id) {

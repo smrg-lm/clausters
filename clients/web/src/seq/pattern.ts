@@ -1,11 +1,11 @@
 // Patterns (mirrors `clausters/seq/pattern.py`).
 //
-// A `Pattern` is a reusable, lazy description of a value sequence — the
+// A `Pattern` is a reusable, lazy description of a value sequence -- the
 // definition of a generator: iterating it yields the values (a fresh walk each
 // time), and it does not play. Value patterns (`Pseq`, `Pwhite`, …) feed
 // `Pbind`, which combines per-key value patterns into a stream of `Event`s. An
-// `EventPattern` — `Pbind`, and a list pattern whose every element is an event
-// pattern — is what plays, on a clock, with `EventPattern.play` (see
+// `EventPattern` -- `Pbind`, and a list pattern whose every element is an event
+// pattern -- is what plays, on a clock, with `EventPattern.play` (see
 // `EventStreamPlayer`).
 //
 // Patterns are plain generators underneath, so nesting and composition are
@@ -35,13 +35,13 @@ export const asPattern = <T>(value: T | Pattern<T>): Pattern<T> =>
 
 /**
  * The definition of a generator: walking it yields its values. It has no
- * `play` — what plays is an {@link EventPattern}. `render` of a value pattern
+ * `play` -- what plays is an {@link EventPattern}. `render` of a value pattern
  * generates its values.
  */
 export abstract class Pattern<T = unknown> {
     abstract [Symbol.iterator](): Generator<T, void, undefined>;
 
-    /** A `Stream` over this pattern — the form the clock can resume. */
+    /** A `Stream` over this pattern -- the form the clock can resume. */
     stream(): Stream {
         const it = this[Symbol.iterator]();
         return new FunctionStream(() => {
@@ -86,7 +86,7 @@ export abstract class EventPattern<T = Event> extends Pattern<T> {
      * Both are optional and resolve against the ambient context (the running
      * session, else the active one, else the default session): an omitted
      * `destination` takes that environment's server, and an omitted `clock`
-     * the running routine's or, outside one, the default session's — created
+     * the running routine's or, outside one, the default session's -- created
      * and started on first use. So `new Pbind(…).play()` sounds with a
      * `Session` opened somewhere and nothing else wired.
      */
@@ -162,9 +162,9 @@ export class Pser<T> extends Pattern<T> {
 
 /**
  * Random items, `length` values, drawn from the **random context** (the
- * running routine's stream, or the root outside one — see `base/rand.ts`):
+ * running routine's stream, or the root outside one -- see `base/rand.ts`):
  * `seed(n)` reproduces the choices along with everything else in the script.
- * There is no per-pattern seed — independent seeds would break whole-script
+ * There is no per-pattern seed -- independent seeds would break whole-script
  * consistency. Over event patterns only, it is an {@link EventPattern}.
  */
 export class Prand<T> extends Pattern<T> {

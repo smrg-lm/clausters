@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate document-vectors.json: the same document, the same edits.
 
-The document lives in a Rust crate and every client binds *that one* — this
+The document lives in a Rust crate and every client binds *that one* -- this
 client over wasm, the Python client over the C ABI, a `standalone` host by
 linking it. That is the design, and this is what proves it rather than assuming
 it: the Python client builds a document, applies a run of edits through the
@@ -9,7 +9,7 @@ crate, and freezes the document after each one. `document-parity.test.ts` runs
 the identical edits through the wasm door and compares.
 
 If the two ever disagree, one of the bindings is doing arithmetic the crate is
-not — which is exactly the failure the single-implementation rule exists to make
+not -- which is exactly the failure the single-implementation rule exists to make
 impossible, and the one nothing else in CI would notice.
 
 The JSON is committed; regenerate with:
@@ -61,7 +61,7 @@ def starting_document() -> dict:
     """The document the edits are applied to, written out directly.
 
     It used to be built with `clausters.form` and converted; that door is gone,
-    and building it by hand is the honest shape anyway — what this vector is
+    and building it by hand is the honest shape anyway -- what this vector is
     about is the **edits**, so the document it starts from should be a fixed
     multitrack of JSON both sides read rather than the output of a conversion that
     could itself drift.
@@ -185,7 +185,7 @@ LOGGED = [
 ]
 
 #: Selections resolved against the **starting** document, as
-#: `(start, len, in_beats)` — the mapping is what is under test, not the edit
+#: `(start, len, in_beats)` -- the mapping is what is under test, not the edit
 #: history, and a stable document keeps the cases readable. The buffer sits at
 #: beat 2 for four beats, so these are: inside it, over the whole multitrack, a frame
 #: span landing in its second beat, and one that misses everything.

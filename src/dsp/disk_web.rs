@@ -3,21 +3,21 @@
 //! The native module ([`crate::dsp::disk`]'s other half) gives each UGen a
 //! background thread that opens a file and races the audio thread through a
 //! lock-free ring. A page has neither half of that: no `std::thread`, and no
-//! filesystem the engine can reach — the private one it does have (OPFS) is a
+//! filesystem the engine can reach -- the private one it does have (OPFS) is a
 //! JS API, and a synchronous handle on it exists only in a dedicated Worker.
 //!
 //! So the ring stays and the thread goes. **The host is the reader.** A stream
 //! registers itself when the synth is built, the host asks what each open
 //! stream wants ([`poll`]) and fills or drains it ([`push`], [`pull`]); the
-//! `process` half is unchanged, and so is what it does when the host is late —
+//! `process` half is unchanged, and so is what it does when the host is late --
 //! an underrun plays silence, an overrun drops samples, exactly as a slow disk
 //! would. That is the honest shape of it: without shared memory the two threads
 //! cannot share a ring, so the chunks are *moved* across and **how far ahead
 //! the host reads is the design**, not a tuning constant.
 //!
 //! **A file's shape arrives late, and that is fine.** Natively `DiskIn::open`
-//! opens the file and learns its channel count on the spot. Here it cannot —
-//! reading is asynchronous and belongs to another thread — so a stream is born
+//! opens the file and learns its channel count on the spot. Here it cannot --
+//! reading is asynchronous and belongs to another thread -- so a stream is born
 //! not knowing, plays silence while it does not, and is told ([`set_shape`])
 //! when the host has looked. Nothing declares anything up front, which matters
 //! for more than convenience: a declaration would be a call the other client
@@ -25,7 +25,7 @@
 //! the same one in both.
 //!
 //! The registry is a `thread_local`, and that is not a shortcut: everything
-//! that touches it — building a synth, dropping one, and the host's own calls —
+//! that touches it -- building a synth, dropping one, and the host's own calls --
 //! happens on the one thread a page's engine has.
 
 use std::cell::RefCell;
@@ -53,14 +53,14 @@ pub struct StreamRequest {
     pub id: u32,
     pub direction: Direction,
     pub path: String,
-    /// `DiskIn`: the file's channel count, as declared. `DiskOut`: 1 — it
+    /// `DiskIn`: the file's channel count, as declared. `DiskOut`: 1 -- it
     /// writes a mono file, as it does natively.
     pub channels: usize,
     /// `DiskIn`: restart from the top at end of stream.
     pub looping: bool,
     /// `DiskOut`: the WAV sample format (`int16` | `int24` | `float`).
     pub format: String,
-    /// `DiskIn`: room in the ring, in samples — how much the host may push.
+    /// `DiskIn`: room in the ring, in samples -- how much the host may push.
     /// `DiskOut`: samples waiting to be pulled.
     pub samples: usize,
 }
@@ -89,7 +89,7 @@ thread_local! {
 ///
 /// A `DiskIn` reports `channels: 0` until this arrives and plays silence
 /// meanwhile; the host sees the zero in [`poll`] and knows the one thing it
-/// still owes. `0` here is ignored — a file with no channels is a file that
+/// still owes. `0` here is ignored -- a file with no channels is a file that
 /// could not be read, and the stream stays silent rather than dividing by it.
 pub fn set_shape(id: u32, channels: usize) {
     if channels == 0 {

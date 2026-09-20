@@ -87,8 +87,8 @@ def run(seconds: float | None = None) -> None:
 
     Script-run there is no bound and the window is what ends it; the
     ``seconds`` argument is for a cell run, where a notebook wants the loop to
-    give the prompt back. Nothing here drains the host — the close arrives on
-    its own event loop — so this only writes the two values.
+    give the prompt back. Nothing here drains the host -- the close arrives on
+    its own event loop -- so this only writes the two values.
     """
     start = time.monotonic()
     while not win.closed and (seconds is None or time.monotonic() - start < seconds):

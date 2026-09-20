@@ -1,9 +1,9 @@
 // The responders end to end against a real `clausters --ws` server.
 //
 // The WS half of the acceptance: `OscFunc` handlers fire on the server's own
-// notifications — `/node_start` and `/node_end` as a synth comes and goes,
+// notifications -- `/node_start` and `/node_end` as a synth comes and goes,
 // `/done` as an asynchronous command completes, `/node_trigger` from a def's
-// `SendTrig`, and a custom address from a `SendReply` — and stop firing once
+// `SendTrig`, and a custom address from a `SendReply` -- and stop firing once
 // freed. The in-page half of the same acceptance is `tests/responders.html`;
 // nothing here names a carrier beyond opening one.
 //

@@ -1,5 +1,5 @@
 """Per-session random context: each `Session` owns its RNG root, so two
-sessions reproduce independently — ``seed(n)`` on one never perturbs another,
+sessions reproduce independently -- ``seed(n)`` on one never perturbs another,
 and the sound is independent of the order sessions were built in. The default
 session (`main`) is just the fallback context when none is named.
 """

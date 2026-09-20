@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Authoring a bundle in the page — clausters components</title>
+    <title>Authoring a bundle in the page -- clausters components</title>
     <link rel="icon" href="data:," />
     <style>
       :root { color-scheme: dark; }
@@ -28,8 +28,8 @@
     <main>
       <h1>A bundle written here, mounted here</h1>
 
-      <p>The writer emits a whole bundle — the def payloads, the GuiDef
-      template, the manifest, the generated module — and on a page it emits
+      <p>The writer emits a whole bundle -- the def payloads, the GuiDef
+      template, the manifest, the generated module -- and on a page it emits
       them as <em>text</em> rather than to a directory. The mount takes that
       text: nothing is served, nothing is fetched, and what draws below is the
       same instrument a saved directory would have produced.</p>
@@ -48,17 +48,17 @@
 
       <canvas id="surface"></canvas>
 
-      <p>What the writer emitted — the directory that was never written:</p>
+      <p>What the writer emitted -- the directory that was never written:</p>
       <div id="listing">…</div>
     </main>
 
     <!--
-      examples/authored — writing a bundle and mounting it without a disk.
+      examples/authored -- writing a bundle and mounting it without a disk.
 
       What it shows: the authoring API (`Bundle`: the symbol table, the
       declared parameters, the def, the GuiDef template, the boot list),
       `files()` as the bundle in memory, and `openBundle({ files })` mounting
-      it — the page's half of the writer. `write(directory)` is the other
+      it -- the page's half of the writer. `write(directory)` is the other
       half and belongs to node: a bundle is an *input*, produced ahead of time
       and saved, so that a static page can boot it with no interpreter at all.
 
@@ -69,9 +69,9 @@
       is what `examples/panels/*/make_bundle.py` does.
 
       What it needs: a browser with a WebGL2 or WebGPU adapter. Nothing is
-      generated beforehand — that is the point.
+      generated beforehand -- that is the point.
 
-      How to run it: serve the PACKAGE ROOT (clients/web — never this folder;
+      How to run it: serve the PACKAGE ROOT (clients/web -- never this folder;
       the modules are imported from /dist/):
 
           cd clients/web && ./build.sh && python3 -m http.server
@@ -87,7 +87,7 @@
        * The instrument: a tone whose amplitude follows an LFO, with the LFO
        * published on a control bus so a meter can draw it.
        *
-       * The bus reaches the def **as a control**, never baked in — the one
+       * The bus reaches the def **as a control**, never baked in -- the one
        * authoring rule the format asks for, and what lets two instances of a
        * bundle share the single def that was sent.
        */
@@ -103,8 +103,8 @@
       }
 
       /**
-       * The bundle. `param`, `bus` and `node` hand back placeholders — `$freq`
-       * for a value the tag supplies, `@lfo` for an id the page allocates —
+       * The bundle. `param`, `bus` and `node` hand back placeholders -- `$freq`
+       * for a value the tag supplies, `@lfo` for an id the page allocates --
        * so the template is written with names and the mount fills in numbers.
        */
       function authored() {
@@ -131,10 +131,10 @@
       const listing = document.getElementById("listing");
       let mounted = null;
 
-      /** Phase 1: allocate, resolve and draw — no audio, no gesture. */
+      /** Phase 1: allocate, resolve and draw -- no audio, no gesture. */
       async function mount() {
         if (mounted) return;
-        // The core validates what is written, so it goes in first — the same
+        // The core validates what is written, so it goes in first -- the same
         // `await loadCore()` a node script authoring a bundle would run.
         await loadCore();
         const files = authored().files({ tag: "page-voice" });

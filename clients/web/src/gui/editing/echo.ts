@@ -2,7 +2,7 @@
  * The acknowledgement protocol: what a view is told about the edit it made.
  *
  * A host draws what the hand did and then waits to be told what actually
- * happened — the edit as applied, snapped, or refused — and every editor owes it
+ * happened -- the edit as applied, snapped, or refused -- and every editor owes it
  * the same three things: the **version** the data is at, the
  * **corrections** its own gesture did not survive intact, and the **reason**
  * when one is owed. That triple is the whole of this module, and it knows
@@ -11,7 +11,7 @@
  * **The rules are the shared crate's** (`conversationRead`,
  * `conversationAnswer`): what makes an edit stale, what moves the floor, and
  * whether an answer is an ack, a push or nothing at all. What is here is the
- * half a language owns — holding the two integers between messages and putting
+ * half a language owns -- holding the two integers between messages and putting
  * the answer on this page's socket.
  *
  * It is separate because it is the one part of an editor with no data behind it.
@@ -29,7 +29,7 @@ import { log } from "./trace.ts";
 export type Correction = [number, Record<string, PropValue>];
 
 /**
- * One message from the host, as much of it as the decision needs — the
+ * One message from the host, as much of it as the decision needs -- the
  * *envelope*, never the payload.
  *
  * What a report means is the domain's and crosses once, there; this is what
@@ -59,7 +59,7 @@ export interface Turn {
 /** One view's end of the acknowledgement protocol. */
 export class Echo {
     /**
-     * The host to answer, or `null` for an editor with no window — which
+     * The host to answer, or `null` for an editor with no window -- which
      * answers by doing nothing, since there is nobody to tell.
      */
     host: GuiHost | null = null;
@@ -78,7 +78,7 @@ export class Echo {
     /**
      * Why the last routed event did not do what it asked, if it did not. It
      * rides with the acknowledgement, because a refusal with no reason teaches
-     * "sometimes it does not work" — the one answer worse than no.
+     * "sometimes it does not work" -- the one answer worse than no.
      */
     reason: string | undefined = undefined;
 
@@ -100,7 +100,7 @@ export class Echo {
     /**
      * The **oldest version an incoming edit may name**, raised whenever the
      * data moves by a route that is not a host event and by nothing
-     * else — which is what makes staleness a monotone test rather than a race.
+     * else -- which is what makes staleness a monotone test rather than a race.
      */
     get floor(): number {
         return this.state.floor;
@@ -122,7 +122,7 @@ export class Echo {
         return answered.turn ?? { turn: "nothing" };
     }
 
-    /** The version an acknowledgement carries — the context's, read now. */
+    /** The version an acknowledgement carries -- the context's, read now. */
     get version(): number {
         return this.#version();
     }
@@ -130,7 +130,7 @@ export class Echo {
     /**
      * Tell the host which version it is drawing, before any edit.
      *
-     * A stamp of zero retires nothing — the host's own numbering starts at one —
+     * A stamp of zero retires nothing -- the host's own numbering starts at one --
      * so this is purely the version, and it is what keeps the *first* gesture
      * checked like every later one. Without it the host would name zero until
      * the first acknowledgement came back, and the opening edit would be the one
@@ -143,7 +143,7 @@ export class Echo {
     /**
      * What the host should be drawing instead of what it drew.
      *
-     * Called while routing, when the editor did not do what the gesture asked —
+     * Called while routing, when the editor did not do what the gesture asked --
      * snapped it to the grid, or refused it outright. The value travels with the
      * acknowledgement in one bundle, which is what lets the host adopt it
      * without a redefine.
@@ -164,7 +164,7 @@ export class Echo {
      * generator, and without this the host could learn neither. The stamp closes
      * both, because it lets the host retire what it drew and adopt what actually
      * happened. Every acknowledgement carries the data's version, which
-     * is what the host names back on its next gesture — that round trip is the
+     * is what the host names back on its next gesture -- that round trip is the
      * whole of the staleness check, and it costs one integer.
      */
     acknowledge(seq: number, reason?: string): void {

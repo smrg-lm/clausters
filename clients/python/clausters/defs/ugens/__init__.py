@@ -6,11 +6,11 @@ is a small **lowercase** callable that returns a `Ugen` node (one
 output); composing nodes with Python operators or these functions builds the
 graph a `SynthDef` serializes into the JSON
 ``SynthDefSpec`` the server's ``/def_send synth`` consumes (``{"controls": […],
-"ugens": […]}`` — see the server's ``synthdef`` module).
+"ugens": […]}`` -- see the server's ``synthdef`` module).
 
-**Instance-based, no global build context.** Unlike sclang — where ``SynthDef``
+**Instance-based, no global build context.** Unlike sclang -- where ``SynthDef``
 build relies on a thread-global "current graph" that every ``UGen.new`` mutates
-(``UGen.buildSynthDef``) — the graph here *is* the tree of composed objects: a
+(``UGen.buildSynthDef``) -- the graph here *is* the tree of composed objects: a
 ``Ugen``'s inputs hold its operands directly, and the `SynthDef` walks
 that tree to emit the spec. Nothing is global, so several defs can be built
 concurrently.
@@ -26,7 +26,7 @@ feedback (``local_in``/``local_out``), the ``env_gen`` envelope, the ``lag``/
 ``Add``/``Sub``/``Mul``/``Div`` kinds and every other operator or method
 (``%``, ``min``/``max``, comparisons, ``.sin()``, ``.midicps()``,
 ``.distort()`` …) composes a generic ``BinaryOpUGen``/``UnaryOpUGen`` carrying
-the operator name — the same op the value side computes, so the two agree
+the operator name -- the same op the value side computes, so the two agree
 bit-for-bit. Reach for a Faust def (`clausters.defs.signals`) only for genuinely
 custom per-sample DSP (recursion, tables, sample-accurate feedback).
 
@@ -36,12 +36,12 @@ a callable), operators broadcast/zip over it (wrapping the shorter side
 modulo, the value side's rule), ``out(bus, chans)`` lays the channels on
 consecutive buses, and `mix` folds a list back to one channel through the
 fused sums. sclang-style per-argument expansion (``sine([440, 443])``) is
-deliberately **not** implemented — a channel list reaching a single-channel
+deliberately **not** implemented -- a channel list reaching a single-channel
 input is a `TypeError` at serialization.
 
 Each UGen output carries a **rate** (``ir``/``kr``/``ar``/``dr``); it defaults
 per kind and can be set with `Ugen.at_rate`. Controls carry a **type** and an
-optional **lag** — see `control`/`Control`.
+optional **lag** -- see `control`/`Control`.
 
 Envelopes are the `Env` breakpoint builder plus the `env_gen` callable, which
 serialize to the ``EnvGen`` UGen's flat input list.
@@ -53,8 +53,8 @@ Reserved controls ``in`` and ``out`` (the input/output buses, set with
 `graph` (the node, control and channel-list types, plus the fused arithmetic),
 `osc`, `filter` (filters, delays, smoothers), `pan`, `io` (buses, replies, disk,
 feedback), `buf`, `spectral`, `trig`, `demand` and `env`. Every name is
-re-exported here, so `from clausters.defs.ugens import sine` — and the `defs`
-package's own re-export — is what it always was: the split is navigational.
+re-exported here, so `from clausters.defs.ugens import sine` -- and the `defs`
+package's own re-export -- is what it always was: the split is navigational.
 
 `ugen_input_names` stays in this file rather than in a family module because it
 reads the **package's** namespace: it maps each server kind to the parameter
@@ -268,14 +268,14 @@ from .env import (
 # it here means the patcher and the builder never disagree on an input's name.
 
 #: Kinds whose builder's positional parameters do **not** line up with the wire
-#: input order (variadic runs, static fields sitting between inputs) — the
+#: input order (variadic runs, static fields sitting between inputs) -- the
 #: divergences the /ugen_query contrast test declares. For these the names would
 #: mislabel the inlets, so the Def-view falls back to positional labels.
 _INPUT_NAMES_MISALIGNED = frozenset(
     {"EnvGen", "SendReply", "Dseq", "Poll", "DiskIn", "DiskOut", "PV_Kernel"}
 )
 
-#: Lazily built {kind: [param name, ...]} — see `ugen_input_names`.
+#: Lazily built {kind: [param name, ...]} -- see `ugen_input_names`.
 _INPUT_NAMES: "dict[str, list[str]] | None" = None
 
 
@@ -313,7 +313,7 @@ def _build_input_names() -> dict:
 
 def ugen_input_names(kind: str) -> "list[str] | None":
     """The positional input names of the callable that builds UGen ``kind``, or
-    ``None`` when no single callable maps to it cleanly — the generic op UGens
+    ``None`` when no single callable maps to it cleanly -- the generic op UGens
     (``BinaryOpUGen``/``UnaryOpUGen``, built inline) and the kinds whose builder
     parameters do not line up with the wire order (`_INPUT_NAMES_MISALIGNED`).
     A ``None`` result means the caller labels the inlets positionally."""

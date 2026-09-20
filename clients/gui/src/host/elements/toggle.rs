@@ -1,11 +1,11 @@
-//! `toggle` — a boolean that flips where you click it.
+//! `toggle` -- a boolean that flips where you click it.
 //!
 //! The click with no drag behind it: a press flips the state and reports it,
 //! and everything after the press is nothing. Which is why it is two lines and
 //! not a `Drag` variant.
 //!
 //! **The state is a boolean; the two values it sends need not be.** What is
-//! drawn is a box that is filled or empty, and what is sent is `on` or `off` —
+//! drawn is a box that is filled or empty, and what is sent is `on` or `off` --
 //! `1`/`0` unless the def named another pair, since a bypass lives at
 //! `0.0`/`0.7` and a mode at `1`/`2` and neither is a span a widget could be
 //! drawn over.
@@ -89,7 +89,7 @@ impl Element for Toggle {
         )
     }
 
-    /// The box, and the label beside it when there is one — the row the drawing
+    /// The box, and the label beside it when there is one -- the row the drawing
     /// lays out, measured.
     fn hug(&self, m: &Metrics, scale: f32) -> Natural {
         let size = self.text_size * scale;
@@ -111,7 +111,7 @@ impl Element for Toggle {
 
     /// **The box and its label, not the row they were placed in.** A toggle is
     /// a small square with a word beside it, and a layout that stretches the
-    /// cell across a panel leaves the rest as air — air that was flipping the
+    /// cell across a panel leaves the rest as air -- air that was flipping the
     /// value when it was clicked.
     fn hit_area(&self, input: &Input) -> HitArea {
         HitArea::Rect(controls::toggle_hit(

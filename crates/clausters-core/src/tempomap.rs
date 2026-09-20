@@ -6,9 +6,9 @@
 //! is itself a function of the coordinate. So the two things the domain calls
 //! "tempo" are distinct, and this module keeps them apart:
 //!
-//! - the **tempo function** `T(b)` — beats per second at beat `b`; the
+//! - the **tempo function** `T(b)` -- beats per second at beat `b`; the
 //!   derivative side, and what a user edits (a tempo track);
-//! - the **time map** `M(b) = ∫₀ᵇ db'/T(b')` — the second beat `b` falls on;
+//! - the **time map** `M(b) = ∫₀ᵇ db'/T(b')` -- the second beat `b` falls on;
 //!   the integral, and what everything queries.
 //!
 //! Storing the integral rather than integrating on each query is Jaffe's 1985
@@ -30,7 +30,7 @@
 //! form for a single [`Curve::Step`]. A map with one segment answers the
 //! identical expression, term for term, which is what lets a clock adopt one
 //! without changing a single result. A clock reading its own *now* always
-//! lands in the last segment — [`TempoMap::last`] hands back that segment's
+//! lands in the last segment -- [`TempoMap::last`] hands back that segment's
 //! affine triple so the hot path stays three float operations with no search.
 
 use std::fmt;
@@ -40,7 +40,7 @@ use serde::{Deserialize, Serialize};
 /// The shape a segment's tempo takes on its way to the next breakpoint.
 ///
 /// The numbers are the envelope shape numbers the clients already use for
-/// `Env`, so one vocabulary spells a tempo curve and an amplitude curve — a
+/// `Env`, so one vocabulary spells a tempo curve and an amplitude curve -- a
 /// tempo envelope is written with the same words as any other.
 ///
 /// **Every shape here has a closed integral and a closed inverse**, which is
@@ -48,7 +48,7 @@ use serde::{Deserialize, Serialize};
 /// but invert transcendentally, and `beats_at` is what a running clock calls on
 /// every read. The knob that survives is [`Shape::Curvature`], which is
 /// continuous through linear at `c = 0` and covers "starts slow" and "starts
-/// fast" — the family the excluded shapes belong to.
+/// fast" -- the family the excluded shapes belong to.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Shape {
@@ -56,7 +56,7 @@ pub enum Shape {
     /// accelerando, and the shape a plain ramp writes.
     Linear,
     /// Tempo geometric in beats: `T(u) = T₀·(T₁/T₀)^u`. Equal *ratios* of
-    /// tempo over equal stretches of beat — the musician's accelerando, where
+    /// tempo over equal stretches of beat -- the musician's accelerando, where
     /// 60→120 and 120→240 feel like the same move.
     Exponential,
     /// `Env`'s curvature knob: `T(u) = A + B·e^{cu}`, linear at `c = 0`,
@@ -75,7 +75,7 @@ impl Shape {
         }
     }
 
-    /// The curvature carried by [`Shape::Curvature`], and zero for the rest —
+    /// The curvature carried by [`Shape::Curvature`], and zero for the rest --
     /// the seventh number a segment crosses a binding as.
     pub fn curvature(self) -> f64 {
         match self {
@@ -103,7 +103,7 @@ impl Shape {
     /// The tempo at normalised position `u` in `[0, 1]` between `t0` and `t1`.
     ///
     /// Every shape is written over `u` rather than over beats, which is what
-    /// makes [`Shape::unit_secs`] independent of how wide the segment is — and
+    /// makes [`Shape::unit_secs`] independent of how wide the segment is -- and
     /// that is what lets an extent be given in seconds (see
     /// [`Shape::beats_for_secs`]).
     fn tempo_at(self, t0: f64, t1: f64, u: f64) -> f64 {
@@ -131,7 +131,7 @@ impl Shape {
         }
     }
 
-    /// `∫₀^u du'/T(u')` — the seconds a segment one beat wide would take to
+    /// `∫₀^u du'/T(u')` -- the seconds a segment one beat wide would take to
     /// reach `u`. The real segment's seconds are this times its width.
     fn secs_at(self, t0: f64, t1: f64, u: f64) -> f64 {
         match self {
@@ -162,7 +162,7 @@ impl Shape {
     ///
     /// Closed for the two ramps. [`Shape::Curvature`] mixes `u` and `e^{cu}`
     /// and has no closed inverse, so it is solved by a safeguarded Newton
-    /// iteration — which is exact to the last bit in practice, deterministic,
+    /// iteration -- which is exact to the last bit in practice, deterministic,
     /// and lives here **once**, so every client inverts identically.
     fn u_at_secs(self, t0: f64, t1: f64, s: f64) -> f64 {
         match self {
@@ -226,7 +226,7 @@ impl Shape {
     ///
     /// The whole reason the shapes are written over `u`: `K` does not depend on
     /// how wide the segment is, so a stretch `Δb` beats wide lasts `Δb·K`
-    /// seconds — and an extent given in *seconds* inverts by a single division.
+    /// seconds -- and an extent given in *seconds* inverts by a single division.
     pub fn unit_secs(self, t0: f64, t1: f64) -> f64 {
         self.secs_at(t0, t1, 1.0)
     }
@@ -249,7 +249,7 @@ impl Shape {
 /// `T(u) = A + B·e^{cu}` for a curvature `c`, as the two constants.
 ///
 /// The algebra is `warp`'s and is written once there
-/// ([`crate::warp::curve_terms_f64`]) — a bend is a bend whether it is a
+/// ([`crate::warp::curve_terms_f64`]) -- a bend is a bend whether it is a
 /// filter sweep or an accelerando, and this used to be a second copy of it,
 /// with a second copy of sclang's flatness threshold beside it.
 ///
@@ -269,7 +269,7 @@ pub enum Curve {
     /// the only shape a clock creates on its own.
     Step,
     /// The tempo moves in [`Shape`] from this segment's `tempo` to `end_tempo`,
-    /// reached at `end_beats`. The real accelerando — its integral is a
+    /// reached at `end_beats`. The real accelerando -- its integral is a
     /// logarithm, not an average of the two tempos.
     ///
     /// The segment carries its own end rather than reading the next
@@ -284,21 +284,21 @@ pub enum Curve {
 }
 
 impl Curve {
-    /// Whether this is the constant-tempo curve — the one a stored breakpoint
+    /// Whether this is the constant-tempo curve -- the one a stored breakpoint
     /// leaves out.
     pub fn is_step(&self) -> bool {
         matches!(self, Self::Step)
     }
 }
 
-/// One breakpoint as a map is **written and read back** — the segment without
+/// One breakpoint as a map is **written and read back** -- the segment without
 /// its `secs`.
 ///
 /// `secs` is `M(beats)`, the integral evaluated there: derived, never authored.
 /// Writing it out would be writing a cache, and reading one back would let a
 /// file assert a second that its own tempi do not produce. So a stored map is
 /// its breakpoints, and loading replays them through the same writers a live
-/// gesture uses — which is what makes a loaded map one the client could have
+/// gesture uses -- which is what makes a loaded map one the client could have
 /// built, and refuses at the door anything it could not.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Breakpoint {
@@ -322,7 +322,7 @@ fn step_curve() -> Curve {
 /// The other spelling of a [`Breakpoint`], and the one an *authored* map has.
 /// The two differ on where a ramp's far end lives: a `Breakpoint` carries it
 /// ([`Curve::Shaped`] holds its own `end_beats`/`end_tempo`, so a segment
-/// answers without looking forward), and an entry a person edits cannot —
+/// answers without looking forward), and an entry a person edits cannot --
 /// moving one tempo would mean rewriting the one before it. So an authored
 /// entry says only *ramp*, and turning a run of them into a map is
 /// [`TempoMap::from_changes`].
@@ -331,7 +331,7 @@ pub struct TempoChange {
     /// The beat it takes effect at.
     pub beats: f64,
     /// Beats per second from here on. **Per second**, like every tempo in this
-    /// module and unlike the beats-per-minute a score is written in — the
+    /// module and unlike the beats-per-minute a score is written in -- the
     /// caller divides, once, where it reads its own field.
     pub tempo: f64,
     /// Whether the tempo **ramps** from here to the next entry rather than
@@ -346,7 +346,7 @@ pub struct TempoChange {
 pub struct Segment {
     /// The beat this segment starts at.
     pub beats: f64,
-    /// The second that beat falls on — `M(beats)`, cached so no query sums.
+    /// The second that beat falls on -- `M(beats)`, cached so no query sums.
     pub secs: f64,
     /// Beats per second at `beats`.
     pub tempo: f64,
@@ -356,7 +356,7 @@ pub struct Segment {
 
 impl Segment {
     /// The shape and the end this segment curves to, or `None` for a constant
-    /// tempo — and also for a degenerate curve with no width or no tempo
+    /// tempo -- and also for a degenerate curve with no width or no tempo
     /// change, which is what makes the constant-tempo formula the correct
     /// fallback in every branch below.
     fn curving(&self) -> Option<(Shape, f64, f64, f64)> {
@@ -375,7 +375,7 @@ impl Segment {
 
     /// The tempo slope `k` of a straight ramp, in beats per second per beat.
     /// Zero for everything else, which sends [`Self::secs_into`] and
-    /// [`Self::beats_into`] down the affine branch — the one a clock's own
+    /// [`Self::beats_into`] down the affine branch -- the one a clock's own
     /// segment always takes.
     fn slope(&self) -> f64 {
         match self.curving() {
@@ -400,7 +400,7 @@ impl Segment {
     /// Seconds elapsed from this segment's start to beat `b` within it.
     ///
     /// `∫ db/T(b)`: `Δb/T` at a constant tempo, and the shape's closed form
-    /// across a curve — so a long accelerando costs what a short one does. Past
+    /// across a curve -- so a long accelerando costs what a short one does. Past
     /// the curve's end the tempo holds, so the tail is affine again.
     fn secs_into(&self, b: f64) -> f64 {
         let Some((shape, end_beats, end_tempo, width)) = self.curving() else {
@@ -467,7 +467,7 @@ pub enum Extent {
 /// What a map refuses to be built out of.
 ///
 /// Every one of these breaks invertibility or ordering, which every query and
-/// the binary search itself rely on — so they are rejected at the edit rather
+/// the binary search itself rely on -- so they are rejected at the edit rather
 /// than producing a map that answers nonsense.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TempoError {
@@ -539,7 +539,7 @@ impl TryFrom<Vec<Breakpoint>> for TempoMap {
 }
 
 impl TempoMap {
-    /// A map of one constant-tempo segment with beat 0 at second 0 — the
+    /// A map of one constant-tempo segment with beat 0 at second 0 -- the
     /// affine clock every map starts as.
     ///
     /// A non-positive or non-finite tempo falls back to 1.0 rather than
@@ -591,7 +591,7 @@ impl TempoMap {
         &self.segments
     }
 
-    /// The breakpoints, in order — the map without its derived seconds, which
+    /// The breakpoints, in order -- the map without its derived seconds, which
     /// is what a save writes and what [`Self::from_breakpoints`] reads back.
     pub fn breakpoints(&self) -> Vec<Breakpoint> {
         self.segments
@@ -624,8 +624,8 @@ impl TempoMap {
     ///   ramps; where to is the entry after it, and the last one has nowhere to
     ///   go and holds.
     /// - **The default comes first.** A map whose first entry is not at beat 0
-    ///   would leave everything before it unsaid — and a map anchored at that
-    ///   entry would put beat 0 at a negative second — so the default is
+    ///   would leave everything before it unsaid -- and a map anchored at that
+    ///   entry would put beat 0 at a negative second -- so the default is
     ///   prepended as a step.
     /// - **No entries at all is the default alone**, which is a one-segment map
     ///   and the affine ratio every caller used before there was a map.
@@ -674,7 +674,7 @@ impl TempoMap {
     }
 
     /// The edit count. A holder that cached anything derived from this map
-    /// compares this and re-reads when it moved — which is the whole of what a
+    /// compares this and re-reads when it moved -- which is the whole of what a
     /// shared map needs, since every reader re-evaluates from the map itself.
     pub fn version(&self) -> u64 {
         self.version
@@ -685,7 +685,7 @@ impl TempoMap {
         self.segments.len()
     }
 
-    /// Always false — a map holds at least one segment by construction. Present
+    /// Always false -- a map holds at least one segment by construction. Present
     /// because [`Self::len`] exists.
     pub fn is_empty(&self) -> bool {
         false
@@ -709,7 +709,7 @@ impl TempoMap {
 
     /// Appends a constant-tempo change at beat `b`: the tempo before `b` is
     /// untouched, `T(b)` becomes `tempo`, and **no discontinuity in seconds**
-    /// is introduced — the breakpoint's second is what the map already said.
+    /// is introduced -- the breakpoint's second is what the map already said.
     ///
     /// This is what a clock's tempo change becomes: it used to overwrite the
     /// one anchor it had, and now it records it. A `b` that lands exactly on
@@ -720,7 +720,7 @@ impl TempoMap {
     }
 
     /// Appends a segment with an explicit [`Curve`]. The curve governs from `b`
-    /// until the next breakpoint (or forever, for the last segment — where a
+    /// until the next breakpoint (or forever, for the last segment -- where a
     /// [`Curve::Shaped`] has no end and behaves as a step).
     pub fn push_curve(&mut self, b: f64, tempo: f64, curve: Curve) -> Result<(), TempoError> {
         check_tempo(tempo)?;
@@ -732,7 +732,7 @@ impl TempoMap {
         if b == last.beats {
             // A breakpoint already sits here: restate it rather than refuse.
             // Its second is already the map's answer for `b` and must not move
-            // — that is what keeps the change free of a discontinuity.
+            // -- that is what keeps the change free of a discontinuity.
             let seg = self.segments.last_mut().expect("a map holds a segment");
             seg.tempo = tempo;
             seg.curve = curve;
@@ -793,7 +793,7 @@ impl TempoMap {
     /// **Writes a whole tempo envelope from beat `at`**: `tempos` (one more
     /// than the rest), one `extent` and one `shape` per segment.
     ///
-    /// The envelope is of **finite duration** — it has as many segments as it
+    /// The envelope is of **finite duration** -- it has as many segments as it
     /// has extents, and after the last one the tempo it reached simply holds.
     /// There is no sustain and no loop: those make sense for a gate, and a
     /// document's tempo has no gate to hold.
@@ -801,7 +801,7 @@ impl TempoMap {
     /// `unit` says what the extents measure. In [`Extent::Beats`] each one is a
     /// stretch of the beat axis; in [`Extent::Seconds`] it is a stretch of wall
     /// clock, and each segment's width in beats is solved exactly by
-    /// [`Shape::beats_for_secs`] — no iteration, no approximation, and no
+    /// [`Shape::beats_for_secs`] -- no iteration, no approximation, and no
     /// per-shape special case.
     ///
     /// One call rather than a chain of them, and that is not only convenience:
@@ -855,7 +855,7 @@ impl TempoMap {
     }
 
     /// Drops every breakpoint at or after beat `b`, so the segment covering `b`
-    /// governs from there on. The first segment is never dropped — a map always
+    /// governs from there on. The first segment is never dropped -- a map always
     /// maps.
     ///
     /// What an edit to a tempo track needs before rewriting a stretch of it.
@@ -916,7 +916,7 @@ impl TempoMap {
         self.secs_at(b1) - self.secs_at(b0)
     }
 
-    /// How many beats fit in `secs` seconds starting at beat `b0` — the same
+    /// How many beats fit in `secs` seconds starting at beat `b0` -- the same
     /// question from the other side, and equally position-dependent.
     pub fn span_beats(&self, b0: f64, secs: f64) -> f64 {
         self.beats_at(self.secs_at(b0) + secs) - b0
@@ -958,7 +958,7 @@ mod change_tests {
     }
 
     /// **No entries is the default alone**, which is the affine ratio every
-    /// caller used before there was a map — so a document that never said a tempo
+    /// caller used before there was a map -- so a document that never said a tempo
     /// behaves exactly as it did.
     #[test]
     fn a_document_with_no_tempo_is_one_segment_at_the_default() {
@@ -994,7 +994,7 @@ mod change_tests {
     }
 
     /// **A ramp reaches the next entry.** An authored entry says only that it
-    /// ramps — where to is the entry after it, which is what this function is
+    /// ramps -- where to is the entry after it, which is what this function is
     /// for and what every reader of a document would otherwise write again.
     #[test]
     fn a_ramp_reaches_the_next_entry_and_the_last_one_holds() {
@@ -1019,7 +1019,7 @@ mod change_tests {
     }
 
     /// The map answers in **seconds**, which is what a placement crosses to the
-    /// timeline through — and a ramp's seconds are its integral, not an average
+    /// timeline through -- and a ramp's seconds are its integral, not an average
     /// of the two tempos.
     #[test]
     fn a_ramp_is_integrated_rather_than_averaged() {

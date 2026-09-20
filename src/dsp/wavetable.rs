@@ -3,7 +3,7 @@
 //! Two things live here, both pure and off the audio thread:
 //!
 //! 1. **The wavetable format.** [`signal_to_wavetable`] turns one period of a
-//!    signal into scsynth's interleaved layout — for each point a pair
+//!    signal into scsynth's interleaved layout -- for each point a pair
 //!    `[2*a[i] - a[i+1], a[i+1] - a[i]]`. An interpolating oscillator then
 //!    reads a sample with a single fused multiply-add ([`wt_interp`]): with the
 //!    fractional phase `frac` in `[0, 1)`,
@@ -15,7 +15,7 @@
 //!    (`sine1`/`sine2`/`sine3` additive spectra, `cheby` waveshaping transfer
 //!    functions, `copy` between buffers), with the [`GenFlags`] (normalize /
 //!    wavetable / clear). [`GenCommand::apply`] runs it against the current
-//!    buffer contents and returns a fresh immutable [`Buffer`] — the network
+//!    buffer contents and returns a fresh immutable [`Buffer`] -- the network
 //!    thread swaps it in through the same build-and-swap path as `/buffer_read`, so
 //!    the audio thread only ever sees a finished buffer.
 
@@ -53,7 +53,7 @@ impl GenFlags {
 /// One parsed `/buffer_gen` command, fully resolved (source buffers already pulled
 /// from the mirror) so it can run on the NRT thread with no further lookups.
 pub enum GenCommand {
-    /// `sine1 flags amp...`: additive sine partials — `amp[k]` is the amplitude
+    /// `sine1 flags amp...`: additive sine partials -- `amp[k]` is the amplitude
     /// of harmonic `k + 1`.
     Sine1 { flags: GenFlags, amps: Vec<f32> },
     /// `sine2 flags (freq amp)...`: partials at arbitrary (possibly fractional)
@@ -84,7 +84,7 @@ pub enum GenCommand {
     /// `prepare_partconv fftSize srcBuf`: partition `src`'s samples into the
     /// prepared-kernel layout the `Conv` UGen reads: partitions of
     /// `L = fftSize/2` samples, each zero-padded to `fftSize` and
-    /// forward-transformed **here, off the audio thread** — the RT side only
+    /// forward-transformed **here, off the audio thread** -- the RT side only
     /// ever multiplies against the ready spectra. Layout in
     /// `dsp::conv::layout`; the partition count is capped by the target
     /// buffer's capacity. A multichannel source contributes channel 0.
@@ -94,8 +94,8 @@ pub enum GenCommand {
     },
     /// `env level0 [level time shape curve]...`: discretize a break-point
     /// envelope across the whole buffer, evaluating each segment through
-    /// `clausters_core::envshape` — the same curve math the `EnvGen` UGen plays
-    /// — so a client's drawn/edited automation curve becomes a control buffer
+    /// `clausters_core::envshape` -- the same curve math the `EnvGen` UGen plays
+    /// -- so a client's drawn/edited automation curve becomes a control buffer
     /// that reads back identically. Segment times are relative (only their
     /// proportions matter); the mono curve is written to every channel. No flags.
     Env {
@@ -241,7 +241,7 @@ fn add_sine(signal: &mut [f32], freq: f32, amp: f32, phase: f32) {
     }
 }
 
-/// `sum_k coeffs[k] * T_{k+1}(x)` — Chebyshev polynomials by the recurrence
+/// `sum_k coeffs[k] * T_{k+1}(x)` -- Chebyshev polynomials by the recurrence
 /// `T_0 = 1`, `T_1 = x`, `T_{m+1} = 2x·T_m - T_{m-1}`. `coeffs[0]` weights
 /// `T_1` (a linear transfer, i.e. passthrough).
 fn cheby_sum(coeffs: &[f32], x: f32) -> f32 {
@@ -295,7 +295,7 @@ fn copy_samples(
 
 /// The `env` command: discretize a break-point envelope across `frames`
 /// samples (replicated across `channels`), sampling each segment's shape through
-/// [`shape_value`]. `segments` times are relative — only their proportions
+/// [`shape_value`]. `segments` times are relative -- only their proportions
 /// matter, since the buffer holds the curve *shape* and playback rate maps it
 /// onto real time. Matches `EnvGen`: `frac` within a segment is
 /// `elapsed / duration` and the endpoints land on the segment levels.
@@ -372,7 +372,7 @@ pub fn signal_to_wavetable(signal: &[f32], wrap: bool) -> Vec<f32> {
 /// Over the buffer's own cells rather than a slice of them: a table is a
 /// buffer's contents, and those are written while they are read (see
 /// [`crate::dsp::buffer`]). The reads are relaxed loads, which measured free in
-/// this shape — a table hot in cache is not what the optimizer was vectorizing.
+/// this shape -- a table hot in cache is not what the optimizer was vectorizing.
 #[inline(always)]
 pub fn wt_interp(table: &[AtomicU32], k: usize, frac: f32) -> f32 {
     let x0 = Buffer::load(&table[2 * k]);

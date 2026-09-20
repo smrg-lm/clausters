@@ -35,7 +35,7 @@ from .ugens import ChannelList, Control, Ugen
 
 def _control_info(c) -> ControlInfo:
     """A graph's `clausters.defs.Control` as the `ControlInfo` every def family
-    answers with — one shape for the GUI to read, whichever family declared it."""
+    answers with -- one shape for the GUI to read, whichever family declared it."""
     return ControlInfo(name=c.name, default=c.default, rate=c.rate or "kr")
 
 
@@ -46,8 +46,8 @@ class SynthDef:
     that write that recipe, and it is a **peer** of `FaustDef`, not the default
     one: a synth of either is the same node in the same tree, driven by the
     same `Node.set`. What differs is who computes the sound. A `SynthDef` names
-    the DSP units the server already ships — `clausters.defs.ugens`, the
-    lowercase callables — and the server wires them at run time, so there is
+    the DSP units the server already ships -- `clausters.defs.ugens`, the
+    lowercase callables -- and the server wires them at run time, so there is
     nothing to compile and the vocabulary is the server's. A `FaustDef` ships a
     program instead, and gets the Faust language in exchange for a JIT compile.
 
@@ -71,8 +71,8 @@ class SynthDef:
     ```
 
     **The arguments are the graph's roots**, not its output. Usually those are
-    the outputs — ``out``, ``replace_out``, and any ``local_out`` that closes a
-    feedback path inside the graph — but a root can equally be a UGen with no
+    the outputs -- ``out``, ``replace_out``, and any ``local_out`` that closes a
+    feedback path inside the graph -- but a root can equally be a UGen with no
     audio output at all: ``send_trig``, ``send_reply`` and ``poll`` are roots
     because nothing reads them. A def may be nothing but those, which is how
     you write an analyzer that reports and makes no sound. What a def cannot be
@@ -81,7 +81,7 @@ class SynthDef:
     Everything reachable from a root is walked in post-order, so the wire's
     UGen list is topologically sorted and a sub-graph used twice is emitted
     once. Nothing global is touched during the build, so defs can be built
-    concurrently — the graph is only the expression you passed.
+    concurrently -- the graph is only the expression you passed.
 
     Sending is asynchronous on the server, and `send` waits for the ``/done``
     by default; offline it is scored at time 0 instead. Either way the def is
@@ -89,10 +89,10 @@ class SynthDef:
     next line safe.
 
     Attributes:
-        name: the def's name on the server — what `Synth` looks up.
+        name: the def's name on the server -- what `Synth` looks up.
         roots: the graph's root UGens, one per channel of a multichannel root.
             Named for what they are and not ``outputs``, which a ``send_trig``
-            root is not — the same attribute, under the same name, in the web
+            root is not -- the same attribute, under the same name, in the web
             client.
     """
 
@@ -101,7 +101,7 @@ class SynthDef:
 
         Args:
             name: the name the server files it under, and `Synth` names.
-            *roots: the graph's root UGens — the outputs, plus any
+            *roots: the graph's root UGens -- the outputs, plus any
                 side-effect UGen nothing reads. A multichannel root (an
                 ``out`` over a `clausters.defs.ChannelList`) counts as one
                 root per channel.
@@ -234,7 +234,7 @@ class SynthDef:
     @property
     def controls(self) -> list:
         """This def's control surface as `clausters.defs.info.ControlInfo`
-        entries, in spec order — the shape all three def families answer with,
+        entries, in spec order -- the shape all three def families answer with,
         so a GUI reads one of them the same way::
 
             view(*[knob(c) for c in sd.controls]).open()
@@ -244,7 +244,7 @@ class SynthDef:
         return [_control_info(c) for c in self._controls()]
 
     def __getitem__(self, name: str):
-        """One control by name, as a `clausters.defs.info.ControlInfo` —
+        """One control by name, as a `clausters.defs.info.ControlInfo` --
         ``sd["freq"]``, what a GUI control is handed when the graph's own
         `clausters.defs.Control` object is not in reach."""
         for c in self._controls():
@@ -255,7 +255,7 @@ class SynthDef:
             f"(it has: {', '.join(self.control_names()) or 'none'})")
 
     def _controls(self) -> list:
-        """The `Control` objects the graph references, in first-seen order —
+        """The `Control` objects the graph references, in first-seen order --
         the same walk `spec` does, kept here so the range never has to survive a
         round trip through the wire (which does not carry it)."""
         seen: dict = {}
@@ -273,13 +273,13 @@ class SynthDef:
     def plot_def(self, *, label: str | None = None, w: int = 1000, h: int = 700,
                  title: str | None = None, host=None):
         """Open this SynthDef's **structure** as a directed `patch` view in its
-        own window on the ambient GUI host — the level-2 patcher drawn from the
+        own window on the ambient GUI host -- the level-2 patcher drawn from the
         def's internal UGen graph (every UGen a box, every input a cord, the host
         laying them out as an inverted tree). One window per call, the
         `clausters.plot` posture; this shows the def's *structure*, where
         `clausters.plot(self)` renders its *sound*.
 
-        ``label`` captions the patch panel (defaults to ``"synthdef"`` — the
+        ``label`` captions the patch panel (defaults to ``"synthdef"`` -- the
         panel names *what* is drawn, not the def's name); ``host`` is an explicit
         `clausters.gui.GuiHost`, ``None`` resolves the ambient one. Returns a
         `clausters.plot.PatchWindow` (``.close()``)."""

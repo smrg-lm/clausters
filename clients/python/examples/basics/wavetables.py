@@ -19,7 +19,7 @@ The point of interest is the buffer-backed oscillators:
   reader pinned to one table; ``oscn`` is the cheap non-interpolating one for
   *plain* buffers.)
 - Buffer 2 holds a ``cheby`` transfer curve, and ``shaper(2, sine * drive)``
-  waveshapes a pure sine through it: sweeping ``drive`` fades harmonics in —
+  waveshapes a pure sine through it: sweeping ``drive`` fades harmonics in --
   distortion with an exact, band-limited recipe instead of a clipped edge.
 
 The morph plays first (two bars), the waveshaped note answers (one bar).
@@ -50,7 +50,7 @@ from clausters.defs import (
 )
 
 #: Where a run leaves its file when no path is given: ``examples/out/``, the
-#: git-ignored directory every generator in this tree writes to — beside the
+#: git-ignored directory every generator in this tree writes to -- beside the
 #: examples rather than in whatever directory you ran from. Made here so that
 #: rendering is one call and not two.
 OUT = pathlib.Path(__file__).resolve().parents[1] / "out"
@@ -131,7 +131,7 @@ def sequence():
     server.send_bundle(("/node_set", answer.id, "gate", 0.0))
     # The score's closing event, a release after the last gate: a render ends
     # at its last event, so without this one the file would stop where that
-    # gate closed and the release would be cut — a click at the end.
+    # gate closed and the release would be cut -- a click at the end.
     yield 1.5
     server.send_bundle(("/node_free", 0))
 

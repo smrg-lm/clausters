@@ -1,4 +1,4 @@
-//! `patch` — the directed, typed patcher: boxes with inlets on their top edge
+//! `patch` -- the directed, typed patcher: boxes with inlets on their top edge
 //! and outlets on their bottom, and a cord per `outlet → inlet` connection.
 //!
 //! **The leaf that proves the drag shape is general rather than control-shaped**,
@@ -11,14 +11,14 @@
 //!
 //! Its plane is its own: a box's `x`/`y` are **canvas units** relative to the
 //! widget origin, seen through the enclosing workspace's zoom, so the element
-//! needs no container's axis — the one leaf of the group-aware three that asks
+//! needs no container's axis -- the one leaf of the group-aware three that asks
 //! for nothing at all. What it does drive is the workspace's **content extent**
 //! ([`Element::content_size`]): the graph is laid out by the host, so how far it
 //! reaches is a fact only the element holds.
 //!
 //! The edit is expressed in the owner's terms, twice over: a cord leaves as the
 //! flat directed `"wire" src_box outlet dst_box inlet` with the port *names*,
-//! and a move leaves as one `"move" index x y` per box in canvas units — the
+//! and a move leaves as one `"move" index x y` per box in canvas units -- the
 //! driver adds the cord or the position and sends back a fresh drawing.
 
 use clausters_core::osc::OscType;
@@ -30,7 +30,7 @@ use crate::host::paint::Draw;
 use crate::host::widget::element::{Claim, Ctx, Element, Events, HitArea, Input, Swept};
 use crate::host::widget::parse::{label, set_label};
 
-/// A patcher over its own canvas. `selected` and `drag` are native view state —
+/// A patcher over its own canvas. `selected` and `drag` are native view state --
 /// the gestures build them and no `/gui_set` writes them.
 #[derive(Debug, Clone)]
 pub struct Patch {
@@ -47,7 +47,7 @@ pub struct Patch {
 #[derive(Debug, Clone)]
 enum Drag {
     /// A cord being pulled from a port: the grabbed `(box, side, index)` and the
-    /// cursor it is drawn to. It acts only on release — over a compatible port
+    /// cursor it is drawn to. It acts only on release -- over a compatible port
     /// (an outlet↔inlet of matching rate) it draws a cord, anywhere else it
     /// cancels.
     Wire {
@@ -71,7 +71,7 @@ pub(crate) fn build(
     Ok(Box::new(from_props(props)))
 }
 
-/// The props a patcher node carries, read once — shared by the constructor and
+/// The props a patcher node carries, read once -- shared by the constructor and
 /// by the tests beside it.
 fn from_props(props: &Map<String, Value>) -> Patch {
     Patch {
@@ -84,7 +84,7 @@ fn from_props(props: &Map<String, Value>) -> Patch {
 
 impl Patch {
     #[cfg(test)]
-    /// The graph as it stands, for the crate's own gesture suite — which drives
+    /// The graph as it stands, for the crate's own gesture suite -- which drives
     /// a real host and has no other way to see what a drag wrote.
     pub(crate) fn draw_state(&self) -> &PatchDraw {
         &self.patch
@@ -97,7 +97,7 @@ impl Patch {
         &self.selected
     }
 
-    /// The boxes the rectangle between `a` and `b` (device pixels) touches —
+    /// The boxes the rectangle between `a` and `b` (device pixels) touches --
     /// the marquee's write, recomputed on every step because the set *is* the
     /// rectangle rather than a thing accumulated along it.
     fn boxes_in(&self, rect: Rect, a: (f64, f64), b: (f64, f64), scale: f32) -> Vec<usize> {
@@ -115,7 +115,7 @@ impl Element for Patch {
     fn set(&mut self, key: &str, v: &Value) -> bool {
         match key {
             // The whole patch at once (its parts are arrays, and a `/gui_set`
-            // value is a scalar — so they ride as their JSON, like `points`).
+            // value is a scalar -- so they ride as their JSON, like `points`).
             "boxes" | "cords" => {
                 let value = match v {
                     Value::String(s) => match serde_json::from_str::<Value>(s) {
@@ -176,14 +176,14 @@ impl Element for Patch {
 
     /// **The canvas is the panel, and the paper around it is the workspace's.**
     /// The frame the renderer draws hugs the laid-out boxes, while the widget's
-    /// rect is whatever the scroll view gave it — never smaller than the window.
+    /// rect is whatever the scroll view gave it -- never smaller than the window.
     /// Claiming that whole rect made a drag on the empty paper *beside* the
     /// graph sweep a marquee, where nothing is drawn and the workspace should
     /// simply pan. The two now agree, the same way a knob's disc and a
     /// checkbox's box do: what can be grabbed is exactly what is drawn.
     ///
     /// A [`HitArea::Region`] and not a rect, so the machine adds no slop: this
-    /// edge is a **boundary** — canvas on one side, workspace on the other —
+    /// edge is a **boundary** -- canvas on one side, workspace on the other --
     /// and a few pixels of air around it start a selection outside the frame
     /// the reader is looking at.
     fn hit_area(&self, input: &Input) -> HitArea {
@@ -194,8 +194,8 @@ impl Element for Patch {
         let (rect, scale) = (input.rect, input.scale);
         // A port wins: the cord drag. Then a box: select it and start a move (a
         // press on an already-selected box keeps the set, so the drag moves the
-        // whole selection). The bare canvas sweeps the marquee — the element's
-        // own, since what it selects is the element's — and leaves the modifier
+        // whole selection). The bare canvas sweeps the marquee -- the element's
+        // own, since what it selects is the element's -- and leaves the modifier
         // that is the *container's*: Shift+drag pans the workspace under it.
         if let Some(port) = patch::port_hit(rect, &self.patch, at.0, at.1, scale) {
             self.drag = Some(Drag::Wire { port, cursor: at });
@@ -323,7 +323,7 @@ impl Element for Patch {
                 ])
             }
             // The boxes moved live along the drag; the release emits the round
-            // trip — one `"move" index x y` per box, so the driver owns the
+            // trip -- one `"move" index x y` per box, so the driver owns the
             // geometry (the clip pattern).
             Some(Drag::Move {
                 origin,
@@ -493,7 +493,7 @@ mod tests {
 
     /// A press on an outlet pulls a cord that means nothing until it is let go;
     /// released on a compatible inlet it adds the cord and reports the edit in
-    /// the owner's terms — the port *names*, not the pixels it was drawn over.
+    /// the owner's terms -- the port *names*, not the pixels it was drawn over.
     #[test]
     fn a_cord_is_drawn_by_grabbing_a_port_and_dropping_it_on_another() {
         let (m, r) = (Metrics::default(), rect());
@@ -543,7 +543,7 @@ mod tests {
     }
 
     /// A box drag moves the whole selection and reports one `"move"` per box, in
-    /// canvas units — the driver owns the geometry.
+    /// canvas units -- the driver owns the geometry.
     #[test]
     fn a_box_drag_moves_the_selection_and_reports_one_move_each() {
         let (m, r) = (Metrics::default(), rect());
@@ -625,7 +625,7 @@ mod tests {
     /// **The paper beside the graph is the workspace's.** The frame the renderer
     /// draws hugs the boxes; the widget's rect is whatever the scroll view gave
     /// it, never smaller than the window. Claiming the whole rect made a drag on
-    /// the empty paper at the sides sweep a marquee over nothing — the same
+    /// the empty paper at the sides sweep a marquee over nothing -- the same
     /// defect a knob's cell corners and a checkbox's air had, and the same fix:
     /// the hit area is what is drawn.
     #[test]

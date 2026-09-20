@@ -1,16 +1,16 @@
 //! The phase family (U1): `Saw`, `Pulse`, the `LF*` shapes and `Phasor`.
 //!
 //! The asserts are measurements, per the rules in the `audio-testing` skill:
-//! frequency from the rendered signal, amplitude from its extremes, and — for
-//! the two band-limited kinds — an **alias SNR** compared against the naive
+//! frequency from the rendered signal, amplitude from its extremes, and -- for
+//! the two band-limited kinds -- an **alias SNR** compared against the naive
 //! (non-band-limited) waveform of the same shape at the same fundamental. The
 //! baseline is regenerated inside the test rather than hardcoded, so the claim
 //! is "PolyBLEP beats naive by this much here", not "this number was true once".
 //!
 //! Which kinds those are is the one thing to keep straight while reading: only
 //! `Saw` and `Pulse` are band-limited. `LFSaw`, `LFPulse`, `LFTri` **and
-//! `VarSaw`** are all one `Lf` core and are naive on purpose — modulation
-//! sources with exact corners — so an alias figure is reported for them and
+//! `VarSaw`** are all one `Lf` core and are naive on purpose -- modulation
+//! sources with exact corners -- so an alias figure is reported for them and
 //! never asserted. What they are held to is their shape and their frequency.
 //!
 //! Rule 5, the block split, is not here: it is the same test for every row and
@@ -60,7 +60,7 @@ fn lf(kind: &str, freq: f32, iphase: f32, width: f32, n: usize) -> Vec<f32> {
     )
 }
 
-/// The same waveform without band limiting — the baseline each PolyBLEP claim
+/// The same waveform without band limiting -- the baseline each PolyBLEP claim
 /// is measured against, generated here so the comparison is like for like.
 fn naive_saw(freq: f32, n: usize) -> Vec<f32> {
     let dt = freq as f64 / SR as f64;
@@ -93,7 +93,7 @@ fn naive_pulse(freq: f32, width: f64, n: usize) -> Vec<f32> {
 }
 
 /// Fundamental frequency from the rendered signal, by locating the strongest
-/// harmonic of the analysis grid — independent of whatever we asked for.
+/// harmonic of the analysis grid -- independent of whatever we asked for.
 fn measured_f0(x: &[f32]) -> f32 {
     let n = x.len();
     let mut mags = vec![0.0f32; n / 2];
@@ -144,7 +144,7 @@ fn saw_starts_at_zero_rather_than_at_the_bottom_of_its_range() {
 #[test]
 fn saw_aliases_far_less_than_the_naive_ramp() {
     // Both an absolute floor and the gain over the naive ramp, each set a few
-    // dB below what `report_the_measured_alias_figures` prints — so the test
+    // dB below what `report_the_measured_alias_figures` prints -- so the test
     // catches a regression without pretending to a precision it cannot hold
     // across libm versions. The floor falls with the fundamental because a
     // fourth-order PolyBLEP is still quasi-band-limited: its residual grows
@@ -250,7 +250,7 @@ fn lf_shapes_have_their_documented_ranges_and_starting_points() {
     assert!(peak(&t) <= 1.0 + 1e-6);
     assert!(dc(&t).abs() < 1e-3, "LFTri dc {}", dc(&t));
 
-    // LFPulse is scsynth's gate range, [0, 1] — not bipolar like Pulse.
+    // LFPulse is scsynth's gate range, [0, 1] -- not bipolar like Pulse.
     let p = lf("LFPulse", f, 0.0, 0.25, n);
     assert!(p.iter().all(|&v| (0.0..=1.0).contains(&v)));
     assert!((dc(&p) - 0.25).abs() < 0.01, "LFPulse duty {}", dc(&p));
@@ -264,7 +264,7 @@ fn lf_shapes_have_their_documented_ranges_and_starting_points() {
 #[test]
 fn var_saw_sweeps_from_a_falling_ramp_through_a_triangle_to_a_rising_one() {
     // The whole point of the row, and what distinguishes it from `LFTri`: the
-    // duty cycle moves the peak. Asserted against the shape's closed form —
+    // duty cycle moves the peak. Asserted against the shape's closed form --
     // rising over the first `width` of the cycle, falling over the rest, so
     // the peak sits at exactly `width` and the value at any phase is known.
     let n = 4800;
@@ -460,7 +460,7 @@ fn a_read_position_high_in_a_long_file_still_advances() {
     );
 }
 
-/// Not an assert — the measurement behind the claim above, kept because it
+/// Not an assert -- the measurement behind the claim above, kept because it
 /// corrects an intuition the module doc used to state.
 /// `cargo test --test oscillators -- --nocapture f64_is_for`
 #[test]
@@ -510,7 +510,7 @@ fn f64_is_for_the_position_not_the_phase() {
     );
 }
 
-/// Not an assert — the measured figures the docs quote.
+/// Not an assert -- the measured figures the docs quote.
 /// `cargo test --test oscillators -- --nocapture report`
 #[test]
 fn report_the_measured_alias_figures() {
@@ -527,7 +527,7 @@ fn report_the_measured_alias_figures() {
     }
     // The `Lf` core, for contrast: these are naive by design, and the number
     // is what "do not listen to a modulation source" costs. `LFTri` and
-    // `VarSaw` are continuous — only their slope jumps — so they alias far
+    // `VarSaw` are continuous -- only their slope jumps -- so they alias far
     // less than the two with a step in them, which is why a triangle is the
     // one LF shape that is sometimes audible.
     println!("\n        the Lf core (not band-limited, on purpose)");

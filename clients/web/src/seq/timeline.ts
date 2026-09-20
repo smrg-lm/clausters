@@ -3,14 +3,14 @@
 //
 // The counterpart to the generative layer (`Routine`, `Pbind`). A routine is a
 // forward-only generator: its musical state lives in the generator's locals,
-// so it cannot be *seeked*. A `Timeline` is the opposite — an **editable list
+// so it cannot be *seeked*. A `Timeline` is the opposite -- an **editable list
 // of timed items kept sorted by beat**, with its own tempo map and random
 // access by time (`indexAt`, `range`). That is what makes DAW-style transport
 // controls possible, and they are the timeline's own: play / pause / stop /
 // locate / loop, on a clock of its own or on a server's transport
 // (`Timeline.transport`).
 //
-// An *item* is anything that can render itself on a destination — it has a
+// An *item* is anything that can render itself on a destination -- it has a
 // `play(destination)` method. `Event` already is one, so a timeline of events
 // renders to whatever destination the timeline plays on, exactly like the rest
 // of the client. `OscItem` wraps a raw OSC message, so a timeline can also be a
@@ -113,7 +113,7 @@ export class MidiItem {
 
 /**
  * The key that names a raw OSC message in an item's data, and the one that names
- * raw MIDI bytes. An `Event` carries neither — it is its own parameters — so
+ * raw MIDI bytes. An `Event` carries neither -- it is its own parameters -- so
  * what an item *is* is told apart by which of the two keys is there, and by
  * neither being there.
  */
@@ -122,13 +122,13 @@ export const OSC_KEY = "osc";
 export const MIDI_KEY = "midi";
 
 /**
- * One timeline item as plain, JSON-able data — or `null` for an item this has no
+ * One timeline item as plain, JSON-able data -- or `null` for an item this has no
  * description of.
  *
  * **One description, because two seams need it.** A document writes a timeline's
  * items as the configuration of a placed clang, and the editing domain hands
  * them across the crate's `events` vocabulary as an event's opaque `data`; the
- * two are the same question — *what is this item, written down* — and answering
+ * two are the same question -- *what is this item, written down* -- and answering
  * it twice is how a marker comes back from one of them as a note.
  *
  * An `Event` travels as its parameters. An {@link OscItem} and a
@@ -178,7 +178,7 @@ export function itemFromData(data: Record<string, unknown> | null | undefined): 
  * timeline beat.
  *
  * **An item is anything playable**: an `Event`, an `OscItem`/`MidiItem`, an
- * `Automation`, an event pattern, a `Routine` — and **another timeline**, which its
+ * `Automation`, an event pattern, a `Routine` -- and **another timeline**, which its
  * parent plays when it reaches it. Each timeline keeps its own units: a
  * child's beats go to seconds through its own map, so siblings at different
  * tempi start together by construction. One tree plays on one engine, the
@@ -199,7 +199,7 @@ export class Timeline {
     private transportHeld: Server | null = null;
     /**
      * **Where this timeline's beat 0 falls on the transport**, in seconds of
-     * the transport's position — the transport's axis is physical, so the
+     * the transport's position -- the transport's axis is physical, so the
      * offset is too. Only read in transport mode.
      */
     transportAt = 0;
@@ -217,7 +217,7 @@ export class Timeline {
     }
 
     /**
-     * The timeline's tempo map: how its beats fall on seconds. Editable data —
+     * The timeline's tempo map: how its beats fall on seconds. Editable data --
      * write a tempo change on it (`push`, `ramp`, `env`) and what plays follows
      * it.
      */
@@ -239,7 +239,7 @@ export class Timeline {
      * A timeline as `item` becomes this one's child: refused if it already has
      * a parent (its `copy` has none) or if it is this timeline or one of its
      * ancestors. A value pattern is refused: it is the definition of a
-     * generator and does not play — an `EventPattern` does.
+     * generator and does not play -- an `EventPattern` does.
      */
     add(beat: number, item: unknown): Entry {
         if (item instanceof Pattern && !(item instanceof EventPattern)) {
@@ -287,7 +287,7 @@ export class Timeline {
      * step**.
      *
      * The step is what this is for. Clearing and re-adding leaves the timeline
-     * empty in between, which nothing here can observe — a page has one thread —
+     * empty in between, which nothing here can observe -- a page has one thread --
      * and which the Python client's event loop very much can: a rebuild that
      * outlasts CPython's switch interval was read half-done in 87.7% of reads at
      * 4000 notes. The verb is the same in both clients because the surfaces are
@@ -313,7 +313,7 @@ export class Timeline {
         if (item.parent !== null && !(replacing && item.parent === this)) {
             throw new Error(
                 "this timeline already has a parent; a timeline is stateful and " +
-                    "plays in one place — add item.copy() instead",
+                    "plays in one place -- add item.copy() instead",
             );
         }
         for (let node: Timeline | null = this; node !== null; node = node.parent) {
@@ -325,7 +325,7 @@ export class Timeline {
 
     /**
      * An independent timeline with the same plan: its own tempo map, its
-     * children copied (recursively), and the other items shared — an event or a
+     * children copied (recursively), and the other items shared -- an event or a
      * message is a value, and a routine item is played fresh on every pass
      * anyway. It is stopped at beat 0 and has no parent.
      */
@@ -368,7 +368,7 @@ export class Timeline {
     }
 
     /**
-     * The cursor (index) of the first item at or after `beat` — the seek
+     * The cursor (index) of the first item at or after `beat` -- the seek
      * primitive `play({ at })` and `locate` start from.
      */
     indexAt(beat: number): number {
@@ -445,15 +445,15 @@ export class Timeline {
     // ---- playing ----
 
     /**
-     * The server whose **transport** plays this timeline, or `null` — the
-     * ordinary case — for its own clock.
+     * The server whose **transport** plays this timeline, or `null` -- the
+     * ordinary case -- for its own clock.
      *
      * One mode per root, and the same verbs in both: `play`, `pause`, `stop`
      * and `locate` are the transport's own commands here, exactly as the
      * multitrack's playback uses them, and the timeline's items are planned
      * onto the transport's clock (`/sched_atTransport`) from the position it is
      * at. Setting it needs a **governed group** bound (`Server.transportGroup`),
-     * since that is what makes a transport own the nodes it plays — and what
+     * since that is what makes a transport own the nodes it plays -- and what
      * the timeline's synths are placed under, so a pause freezes them with the
      * transport.
      *
@@ -598,8 +598,8 @@ export class Timeline {
  * A timeline's clock as what it plays sees it, while the root's clock wakes the
  * tree.
  *
- * An item of a child measures in the **child's** beats — an event's sustain, an
- * automation's length, a routine's yields, a pattern's durations — but only the
+ * An item of a child measures in the **child's** beats -- an event's sustain, an
+ * automation's length, a routine's yields, a pattern's durations -- but only the
  * root's clock runs. So the node hands each item this view: its beats and
  * conversions are the child's, placed on the root's time by the node's origin,
  * and what it schedules goes onto the root's clock at the beat that
@@ -690,7 +690,7 @@ class ClockView {
         this.root!.schedAbs(this.rootBeat(beat), wrapper);
     }
 
-    // What a Server and a session read, from the root clock — `null` where
+    // What a Server and a session read, from the root clock -- `null` where
     // there is no clock behind the view: a timeline on a server transport has
     // none, and what it needs instead is the axis above.
     get timebase() { return this.root?.timebase ?? null; }
@@ -861,8 +861,8 @@ class TimelineNode {
  * the transport's own commands, and the tree planned onto the transport's clock
  * instead of woken on a clock of its own.
  *
- * The transport is state in physical time — frozen nodes, a locate and a loop
- * exact in the engine — and a timeline is a plan of discrete events in logical
+ * The transport is state in physical time -- frozen nodes, a locate and a loop
+ * exact in the engine -- and a timeline is a plan of discrete events in logical
  * time. So nothing here drives time: `play`, `pause`, `stop` and `locate` are
  * `/transport_play`, `/transport_stop` and `/transport_locateSample`, and what
  * this adds is the **plan**: every item from a position, stamped on the
@@ -888,7 +888,7 @@ export class TransportPlayer implements TreeDriver {
     readonly wrappers = new Map<Schedulable, Routine>();
     readonly clock = null;
     /**
-     * The transport as this client last heard it — from a verb it sent, a
+     * The transport as this client last heard it -- from a verb it sent, a
      * broadcast, or `refresh`. Read rather than asked for, the way
      * `PlayheadSync` reads the transport: asking is a round trip and reading a
      * position is not.
@@ -955,7 +955,7 @@ export class TransportPlayer implements TreeDriver {
 
     /**
      * Where the transport is, in this timeline's beats, as this client last heard
-     * it — a wrap inside the transport's loop and a locate some other client
+     * it -- a wrap inside the transport's loop and a locate some other client
      * sent are both where it says, since both are broadcast. `refresh` asks
      * again.
      */
@@ -982,8 +982,8 @@ export class TransportPlayer implements TreeDriver {
         this.chain = this.chain.then(work);
         // A step nobody is waiting for must not become an **unhandled
         // rejection**: most of these are queued by a verb whose caller will
-        // `refresh`, but a re-cue is queued by a *broadcast* — a responder
-        // callback with no caller at all — and the one that lands while the
+        // `refresh`, but a re-cue is queued by a *broadcast* -- a responder
+        // callback with no caller at all -- and the one that lands while the
         // server is closing fails with every request it had in flight. The
         // chain keeps the failure for the next `refresh`, which is where a
         // refusal is meant to reach the caller; this handler only says it was
@@ -1002,7 +1002,7 @@ export class TransportPlayer implements TreeDriver {
         this.queue(async () => {
             // Nothing is re-planned: a pause froze the transport's queue with
             // the transport, so what was queued is still queued in its exact
-            // relative place — the whole difference between a resume and a play.
+            // relative place -- the whole difference between a resume and a play.
             await this.server.transportPlay();
         });
     }
@@ -1074,8 +1074,8 @@ export class TransportPlayer implements TreeDriver {
     /**
      * Writes the whole tree from `at` onto the transport's clock.
      *
-     * The walk is the clock player's — the same nodes, the same entry rule, the
-     * same units — with the waiting taken out: there is no time to pass here,
+     * The walk is the clock player's -- the same nodes, the same entry rule, the
+     * same units -- with the waiting taken out: there is no time to pass here,
      * since every item names a sample of a clock the engine is running.
      */
     private async plan(at: number): Promise<void> {
@@ -1104,8 +1104,8 @@ export class TransportPlayer implements TreeDriver {
 
     /**
      * Listens to the transport's broadcasts, so a **conductor** drives this
-     * timeline too: whoever calls the transport's verbs — this client, a second
-     * one, the multitrack editor next door — makes it roll, freeze and re-plan.
+     * timeline too: whoever calls the transport's verbs -- this client, a second
+     * one, the multitrack editor next door -- makes it roll, freeze and re-plan.
      *
      * That is the whole of following now: the plan rides the transport's own
      * clock, so a roll and a freeze need nothing from here; what a locate needs
@@ -1128,7 +1128,7 @@ export class TransportPlayer implements TreeDriver {
         if (state.group === null) {
             throw new Error(
                 "a timeline on a transport needs a governed group: bind one with "
-                    + "server.transportGroup(group) — the transport owns the nodes it plays",
+                    + "server.transportGroup(group) -- the transport owns the nodes it plays",
             );
         }
         await this.server.notify(true);
@@ -1159,7 +1159,7 @@ export class TransportPlayer implements TreeDriver {
         // too, and re-planning on the echo would write the plan twice.
         if (this.cued !== null && Math.abs(position - this.cued) < 0.05 * rate) return;
         this.cued = position;
-        // Somebody else drove it — a conductor's play or locate, a loop's wrap.
+        // Somebody else drove it -- a conductor's play or locate, a loop's wrap.
         // The engine does not clear the queue on a locate (a client's own does),
         // so the re-cue is the pair: clear what was queued for where we were,
         // and plan again from where it says.
@@ -1233,7 +1233,7 @@ export class TimelinePlayer implements TreeDriver {
 
     /**
      * The hidden clock, which belongs to the session the timeline sounds in:
-     * made there, on that session's timebase, the first time it plays in it —
+     * made there, on that session's timebase, the first time it plays in it --
      * and made again, at the position it stopped at, when it plays in another.
      * A timeline sounding in one session is refused in another.
      */

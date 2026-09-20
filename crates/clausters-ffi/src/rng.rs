@@ -8,7 +8,7 @@ use super::*;
 // passes it by pointer, so the stream is resumable from any language with no
 // handle to free.
 
-/// The initial state word for `seed` (splitmix64-mixed, never zero) — the same
+/// The initial state word for `seed` (splitmix64-mixed, never zero) -- the same
 /// seeding as the server's `WhiteNoise`.
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_rng_seed(seed: u64) -> u64 {
@@ -50,7 +50,7 @@ pub unsafe extern "C" fn clausters_rng_next_below(state: *mut u64, n: u64) -> u6
 }
 
 /// Advances `*state` one step and returns the full-width random word (0 when
-/// `state` is null). Used to derive a child stream's seed from a parent's —
+/// `state` is null). Used to derive a child stream's seed from a parent's --
 /// the sclang-style inheritance where a routine's generator is seeded from the
 /// context that creates it, so one root seed reproduces a whole script.
 ///

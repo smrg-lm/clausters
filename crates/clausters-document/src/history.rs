@@ -1,4 +1,4 @@
-//! A history, and the data it belongs to — **the pile, with no document in it**.
+//! A history, and the data it belongs to -- **the pile, with no document in it**.
 //!
 //! [`log`](crate::log) placed the arrangement's undo beside the multitrack,
 //! and gave the reason: a history that sees only one editor's gestures
@@ -13,11 +13,11 @@
 //! however many structures were registered in it. That single sentence is what
 //! the three shapes this has to serve come out of:
 //!
-//! - an **independent structure** — a curve, a buffer, a roll the caller built
-//!   with no multitrack behind it — is a history with one structure in it, and
+//! - an **independent structure** -- a curve, a buffer, a roll the caller built
+//!   with no multitrack behind it -- is a history with one structure in it, and
 //!   has a working undo without a [`Document`](crate::Document) existing
 //!   anywhere;
-//! - a **combination** — an application composing several editable views — is
+//! - a **combination** -- an application composing several editable views -- is
 //!   one history with several structures in it, and the interleaved order its
 //!   undo walks *is* the pile, with no second mechanism to produce it;
 //! - **two views of one structure** are two views of one history, which is the
@@ -29,8 +29,8 @@
 //! [`History::register`] mints the identity, and [`History::record`] refuses an
 //! entry naming an identity this history did not mint.
 //!
-//! The alternative — a pile per structure, and a view filtering one shared
-//! order down to the structures it shows — is *selective undo*: inverting an
+//! The alternative -- a pile per structure, and a view filtering one shared
+//! order down to the structures it shows -- is *selective undo*: inverting an
 //! entry that touched A and B while a later entry over B stands, which writes a
 //! state nobody was in. A history is one order or it is not a history.
 //!
@@ -42,8 +42,8 @@
 //! it belongs to, so a caller routes what comes back to whatever reads that
 //! vocabulary.
 //!
-//! It has a price worth stating: an edit whose payload is bulk — a span of
-//! samples — is held as JSON rather than as its own bytes. The boundary already
+//! It has a price worth stating: an edit whose payload is bulk -- a span of
+//! samples -- is held as JSON rather than as its own bytes. The boundary already
 //! pays that (an intent crosses the C ABI and the wasm seam as JSON), so what
 //! is new is only the in-process case, and it buys the property the whole
 //! module is for. What keeps it from being paid twice is [`Spill`]: above a
@@ -54,7 +54,7 @@
 //!
 //! It never applies anything. [`History::undo`] hands back the inverses and
 //! [`History::redo`] the steps, and the caller applies them through whatever
-//! door its domain has — which for the arrangement is
+//! door its domain has -- which for the arrangement is
 //! [`intent::apply`](crate::intent::apply), the one door. Two things that edit
 //! is exactly what this crate exists to prevent, and a history that edited
 //! would be the second.
@@ -71,14 +71,14 @@ use crate::Opaque;
 /// **Minted by the history**, not carried by the data: the arrangement has node
 /// ids only because whoever wrote the document stamped them, and a curve or a buffer a caller
 /// built has none and is not going to be given a stable one for this. So the
-/// caller registers what it is about to edit and keeps the handle — which is
+/// caller registers what it is about to edit and keeps the handle -- which is
 /// also the read-back path, since the identity that opened an editable view is
 /// the one its edited state is read out through.
 ///
 /// **Unique across histories**, not only within one, and that is not a nicety:
 /// "a structure belongs to exactly one history" is enforced by a history
 /// refusing an identity it did not mint, and a per-history counter would hand
-/// the second history's first structure the same number as the first's — so
+/// the second history's first structure the same number as the first's -- so
 /// the check would pass on exactly the arrangement it exists to refuse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -95,8 +95,8 @@ pub struct SpillId(pub u64);
 /// Somewhere to put an inverse whose content is data rather than parameters.
 ///
 /// Content-addressed: [`Spill::put`] of the same bytes twice returns the same
-/// id and holds one copy, which is what keeps an undo/redo pair — the same span
-/// named from both sides — from doubling. Each `put` takes a reference and each
+/// id and holds one copy, which is what keeps an undo/redo pair -- the same span
+/// named from both sides -- from doubling. Each `put` takes a reference and each
 /// [`Spill::release`] drops one, so a store is free to discard a blob once the
 /// history has forgotten it.
 pub trait Spill {
@@ -111,7 +111,7 @@ pub trait Spill {
 /// The store the crate ships: blobs in memory, refcounted.
 ///
 /// What a page uses, and what a test uses. A native deployment that wants a
-/// temporary directory implements [`Spill`] over one — the trait exists so that
+/// temporary directory implements [`Spill`] over one -- the trait exists so that
 /// choice is not the crate's, which has no business picking a directory policy.
 #[derive(Debug, Default)]
 pub struct MemorySpill {
@@ -169,14 +169,14 @@ impl Spill for MemorySpill {
 
 /// One move in the forward direction.
 ///
-/// Only the forward direction has two shapes: going **back** is always data —
+/// Only the forward direction has two shapes: going **back** is always data --
 /// undoing a normalize means writing the old samples, and no algorithm
-/// reconstructs them — while going forward need not be, since a deterministic
+/// reconstructs them -- while going forward need not be, since a deterministic
 /// operation can store its *parameters* and be re-run. That is what makes a
 /// redo of an edit over a million samples cost a few bytes.
 ///
-/// On the wire it is externally tagged — `{"edit": <payload>}`,
-/// `{"recompute": <params>}` — rather than internally, because a domain's own
+/// On the wire it is externally tagged -- `{"edit": <payload>}`,
+/// `{"recompute": <params>}` -- rather than internally, because a domain's own
 /// payload is already tagged however that domain tags it, and two tags in one
 /// object is how a format grows a bug nobody can read.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -208,7 +208,7 @@ impl Step {
 /// because only a history cares whether there is something to invert.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Applied {
-    /// The edit describing the structure as it now stands — the payload as
+    /// The edit describing the structure as it now stands -- the payload as
     /// given when it applied verbatim, the transformed one when the owner
     /// snapped or clamped it, and the **previous** value when it was refused.
     pub effective: Opaque,
@@ -238,7 +238,7 @@ impl Applied {
 /// The whole of what a domain has to bring, and the seam the pile is generic
 /// across. The two methods are one rule read in two directions: `current` is
 /// the inverse of `payload`, read **before** anything is applied, which is what
-/// makes an absolute vocabulary invertible for nothing — an edit states the
+/// makes an absolute vocabulary invertible for nothing -- an edit states the
 /// resulting value, so the edit stating the *previous* value is its inverse and
 /// the owner already knows it.
 ///
@@ -251,13 +251,13 @@ pub trait Editable {
     /// Applies a payload written in this structure's vocabulary.
     fn apply(&mut self, payload: &Opaque) -> Applied;
 
-    /// The payload that would put this structure back the way it is — read
+    /// The payload that would put this structure back the way it is -- read
     /// before `payload` is applied. `None` when the structure cannot describe
     /// it, which is what makes an edit unloggable rather than uninvertible.
     fn current(&self, payload: &Opaque) -> Option<Opaque>;
 
     /// What makes two of this domain's edits *the same thing done the same
-    /// way* — see [`Entry::keyed`]. `None`, the default, never coalesces, which
+    /// way* -- see [`Entry::keyed`]. `None`, the default, never coalesces, which
     /// is right for a domain whose edits are not comparable.
     fn coalesce_key(&self, payload: &Opaque) -> Option<String> {
         let _ = payload;
@@ -279,7 +279,7 @@ struct Change {
     structure: StructureId,
     key: Option<String>,
     forward: Half,
-    /// How to put this leg back, or `None` when nothing can — a normalize whose
+    /// How to put this leg back, or `None` when nothing can -- a normalize whose
     /// old samples nobody kept, an edit to data that has since been deleted.
     /// The entry is still recorded; see [`Entry::invertible`].
     backward: Option<Half>,
@@ -289,7 +289,7 @@ struct Change {
 ///
 /// The unit is the **gesture**, not the edit, because that is what a person
 /// means by "the last thing I did". A gesture may touch more than one structure
-/// — a drag that moves a clip and rewrites the curve it carries — so an entry
+/// -- a drag that moves a clip and rewrites the curve it carries -- so an entry
 /// is a list of legs, each naming its structure, applied in order forward and
 /// inverted in reverse.
 #[derive(Debug, Clone, PartialEq)]
@@ -301,7 +301,7 @@ pub struct Entry {
     /// keystroke is about to move.
     pub label: String,
     /// Whether this may merge into the entry before it when they touch the same
-    /// thing the same way — a run of small adjustments becoming one undo
+    /// thing the same way -- a run of small adjustments becoming one undo
     /// instead of two hundred. The caller decides when a run is continuous,
     /// because only the caller knows where the hand stopped.
     pub coalesce: bool,
@@ -323,7 +323,7 @@ impl Entry {
         }
     }
 
-    /// Adds a leg over another structure — or the same one — to the same
+    /// Adds a leg over another structure -- or the same one -- to the same
     /// transaction. Applied in order forward, in reverse order backward.
     pub fn and(mut self, structure: StructureId, forward: Step, backward: Opaque) -> Self {
         self.changes
@@ -336,7 +336,7 @@ impl Entry {
     /// Not every act has one the owner can write, and recording it beats
     /// dropping it: a hole in the history that announces itself is what lets a
     /// person understand why an undo did not go where they expected. An entry
-    /// like this is kept, marked, and **skipped in both directions** — skipped
+    /// like this is kept, marked, and **skipped in both directions** -- skipped
     /// going back because nothing can revert it, and going forward for the same
     /// reason, since a state that was never reverted must not be applied twice.
     pub fn uninvertible(label: impl Into<String>, structure: StructureId, forward: Step) -> Self {
@@ -367,7 +367,7 @@ impl Entry {
         self
     }
 
-    /// What makes the last leg *the same thing done the same way* as another —
+    /// What makes the last leg *the same thing done the same way* as another --
     /// the test a merge is decided by.
     ///
     /// The history cannot compute this: "the same thing" is a statement in the
@@ -431,7 +431,7 @@ pub struct Undone {
     /// nothing to invert and only passed things over.
     pub label: String,
     /// The inverses, each with the structure it belongs to, **in the order they
-    /// must be applied** — a transaction unwinds the way it was laid down.
+    /// must be applied** -- a transaction unwinds the way it was laid down.
     pub legs: Vec<(StructureId, Opaque)>,
     /// The labels of the entries the walk passed over because nothing can
     /// invert them, oldest last. A hole in a history that announces itself is
@@ -452,7 +452,7 @@ pub struct Redone {
     /// caller to apply **in order**.
     pub edits: Vec<(StructureId, Opaque)>,
     /// The steps from the first one the crate cannot describe as an edit
-    /// onward — a deterministic operation kept as its parameters, which the
+    /// onward -- a deterministic operation kept as its parameters, which the
     /// **owner** re-runs, because the crate holds no algorithms. It stops at
     /// the first rather than skipping it, so a later edit is never applied over
     /// a state the operation before it was meant to produce.
@@ -494,8 +494,8 @@ impl Direction {
 /// two of them said once, with the legs already gathered per structure. That
 /// grouping is the whole of it, and it is here because it was the multitrack every
 /// caller wrote for itself: pick the side the direction reads, then keep the
-/// legs whose structure is mine. Four callers wrote those two lines — two
-/// editing clients and both document logs — and neither line is a caller's
+/// legs whose structure is mine. Four callers wrote those two lines -- two
+/// editing clients and both document logs -- and neither line is a caller's
 /// business.
 ///
 /// **The order that is kept is the order within a structure.** A caller applies
@@ -510,7 +510,7 @@ pub struct Walked {
     pub label: String,
     /// What each structure has to apply, in order, first-named first.
     pub legs: Vec<(StructureId, Vec<Opaque>)>,
-    /// What each structure's **owner** has to re-run, in order — a
+    /// What each structure's **owner** has to re-run, in order -- a
     /// deterministic operation kept as its parameters, which the crate holds no
     /// algorithm for. Always empty going back: an inverse is always an edit.
     pub remaining: Vec<(StructureId, Vec<Step>)>,
@@ -620,8 +620,8 @@ impl History {
 
     /// Takes a structure into this history and hands back its identity.
     ///
-    /// `domain` names the vocabulary its payloads are written in — `"tree"` for
-    /// the arrangement — and the history carries it so a caller routing what
+    /// `domain` names the vocabulary its payloads are written in -- `"tree"` for
+    /// the arrangement -- and the history carries it so a caller routing what
     /// comes back knows which reader an entry's payload belongs to. Nothing
     /// here reads it.
     pub fn register(&mut self, domain: impl Into<String>) -> StructureId {
@@ -664,7 +664,7 @@ impl History {
     ///
     /// It also **invalidates the entries that name it**: they cannot be applied
     /// to data that is gone, so they become non-invertible by the rule
-    /// [`Entry::uninvertible`] states — kept, marked, and walked past with the
+    /// [`Entry::uninvertible`] states -- kept, marked, and walked past with the
     /// walk saying so. And it is written down as a rule a person will meet:
     /// *undoing a deletion returns the data, not its history*. A history is
     /// transient and history is not data.
@@ -693,7 +693,7 @@ impl History {
         true
     }
 
-    /// The forgotten structures no entry names any more, without draining —
+    /// The forgotten structures no entry names any more, without draining --
     /// what a binding whose protocol sizes a buffer before filling it needs, so
     /// the sizing pass does not consume the answer.
     pub fn pending_release(&self) -> Vec<StructureId> {
@@ -704,7 +704,7 @@ impl History {
             .collect()
     }
 
-    /// The forgotten structures no entry names any more — the caller may free
+    /// The forgotten structures no entry names any more -- the caller may free
     /// their data now. Drains: each is reported once.
     ///
     /// What the budget decides is *when* an entry stops existing; this is the
@@ -736,7 +736,7 @@ impl History {
     /// Whether the work differs from what was last saved.
     ///
     /// Crossing the mark **backwards** is allowed, and this is the
-    /// announcement — which has to be accurate: nothing on disk changed, and
+    /// announcement -- which has to be accurate: nothing on disk changed, and
     /// the file still holds those edits until the next save. Crossing forward
     /// again returns to clean.
     pub fn dirty(&self) -> bool {
@@ -746,7 +746,7 @@ impl History {
     /// Whether the saved state can still be reached by walking this history.
     ///
     /// `false` after the case the warning earns its place for: undo past the
-    /// mark and then edit, and the redo is truncated — so the saved state stops
+    /// mark and then edit, and the redo is truncated -- so the saved state stops
     /// being reachable, and [`History::dirty`] will never go quiet again on its
     /// own.
     pub fn saved_reachable(&self) -> bool {
@@ -755,7 +755,7 @@ impl History {
 
     /// Records a transaction, dropping anything waiting to be redone.
     ///
-    /// `false` when a leg names a structure this history did not mint — which
+    /// `false` when a leg names a structure this history did not mint -- which
     /// is the rule "a structure belongs to exactly one history", enforced where
     /// it can be rather than asked for. Nothing is recorded in that case: an
     /// entry is one transaction, and half of one is worse than none.
@@ -782,7 +782,7 @@ impl History {
         true
     }
 
-    /// Applies an edit to `state` and records it, in one call — the only way an
+    /// Applies an edit to `state` and records it, in one call -- the only way an
     /// entry gets into a history by itself.
     ///
     /// That is what makes the rule mechanical rather than a habit: the inverse
@@ -791,7 +791,7 @@ impl History {
     /// entry, for the same reason it does not move a version.
     ///
     /// An edit whose inverse the structure cannot describe is applied and
-    /// **not** recorded — a destructive write, whose overwritten data is not in
+    /// **not** recorded -- a destructive write, whose overwritten data is not in
     /// the structure to be read. A caller doing those reads what it is about to
     /// overwrite, applies, and records the pair itself with [`History::record`].
     pub fn apply(
@@ -824,22 +824,22 @@ impl History {
         applied
     }
 
-    /// Applies several edits as **one** entry — a gesture that touches more
+    /// Applies several edits as **one** entry -- a gesture that touches more
     /// than one structure, undone in one step.
     ///
     /// Each leg is `(structure, state, payload)`, applied in the order given
     /// and inverted in reverse. It is atomic in both directions: if any leg
     /// refuses, or names a structure this history did not mint, or cannot state
     /// its own inverse, the legs already applied are put back and **nothing is
-    /// recorded**. Half a transaction is worse than none — it would undo one
+    /// recorded**. Half a transaction is worse than none -- it would undo one
     /// structure and leave the other where the gesture put it.
     ///
     /// This is not coalescing, which merges *successive* entries over one
     /// structure. It is a single entry with several legs, and the two are kept
     /// apart so a merge cannot silently join two structures.
     ///
-    /// Returns what each leg did, in the order given — the outcome the caller
-    /// adopts — with `applied` false on every one of them when the transaction
+    /// Returns what each leg did, in the order given -- the outcome the caller
+    /// adopts -- with `applied` false on every one of them when the transaction
     /// was rolled back.
     pub fn transact(
         &mut self,
@@ -905,11 +905,11 @@ impl History {
     }
 
     /// What an undo *would* hand back, without moving the cursor: each leg's
-    /// inverse, **in reverse order** — a transaction unwinds the way it was
+    /// inverse, **in reverse order** -- a transaction unwinds the way it was
     /// laid down.
     ///
     /// The pair [`History::peek_undo`]/[`History::step_back`] exists for callers
-    /// that have to know the answer before committing to it — a binding whose
+    /// that have to know the answer before committing to it -- a binding whose
     /// protocol sizes a buffer and then fills it, where doing the work on the
     /// sizing call would undo twice and hand back the second answer. Inside
     /// Rust, [`History::undo`] is the two together and is what you want.
@@ -1003,7 +1003,7 @@ impl History {
     }
 
     /// What a step in `direction` *would* hand back, routed per structure and
-    /// without moving the cursor — [`History::peek_undo`] and
+    /// without moving the cursor -- [`History::peek_undo`] and
     /// [`History::peek_redo`] said once, with the two lines every caller was
     /// writing already done.
     ///
@@ -1028,7 +1028,7 @@ impl History {
         }
     }
 
-    /// Moves the cursor one step in `direction`, if it can — the commit half of
+    /// Moves the cursor one step in `direction`, if it can -- the commit half of
     /// [`History::peek_walk`].
     pub fn step(&mut self, direction: Direction) -> bool {
         match direction {
@@ -1091,7 +1091,7 @@ impl History {
         Some(out)
     }
 
-    /// What an undo would be called, for a menu — the entry the walk would
+    /// What an undo would be called, for a menu -- the entry the walk would
     /// actually land on, not the one next to the cursor, since a run of
     /// non-invertible entries is passed over.
     pub fn undo_label(&self) -> Option<String> {
@@ -1123,7 +1123,7 @@ impl History {
         self.entries.is_empty()
     }
 
-    /// Forgets every entry, releasing what was spilled — what closing an
+    /// Forgets every entry, releasing what was spilled -- what closing an
     /// editing context leaves behind. The structures stay registered: it is the
     /// order that is gone, not the identities the caller still holds.
     pub fn clear(&mut self) {

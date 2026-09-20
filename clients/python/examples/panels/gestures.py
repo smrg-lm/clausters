@@ -12,25 +12,25 @@ Each container declares that mapping in a ``gestures`` table, keyed by modifier
 chord (``drag`` for the plain drag, plus ``shift``, ``ctrl``, ``alt``), whose
 value is an ordered plan of steps:
 
-- ``element`` — hand the press to whatever is under the cursor (a clip, a note,
+- ``element`` -- hand the press to whatever is under the cursor (a clip, a note,
   a box, a control). It may decline, and the plan goes on;
-- ``pan`` — pan the container's own axis (time here, the plane in a ``scroll``);
-- ``select`` — sweep a **time range**: the shared selection, the span the
+- ``pan`` -- pan the container's own axis (time here, the plane in a ``scroll``);
+- ``select`` -- sweep a **time range**: the shared selection, the span the
   transport loops inside (a roll also picks the notes under it);
-- ``marquee`` — sweep a **selection of objects**: the clips a rectangle covered,
+- ``marquee`` -- sweep a **selection of objects**: the clips a rectangle covered,
   the boxes of a patcher. Two different selections, not one gesture;
-- ``locate`` — put the transport's cursor under the pointer;
-- ``none`` — nothing.
+- ``locate`` -- put the transport's cursor under the pointer;
+- ``none`` -- nothing.
 
 This window shows the same views twice. The **left** column keeps the defaults
 (``"element marquee"`` / ``"pan"`` on a multitrack, ``"select"`` / ``"pan"`` on
 a waveform); the **right** one is told to pan on a plain drag and select with
-Shift — the reversal, with no element's code involved. A menu switches the
+Shift -- the reversal, with no element's code involved. A menu switches the
 right column live through ``set(gestures=...)``, which starts again from the
 kind's defaults each time, so a table names only the chords it changes.
 
 **Two kinds of axis, and they do not share a navigation group.** A ``waveform``
-is bounded by its own content — its axis *is* the take — while a ``multitrack``
+is bounded by its own content -- its axis *is* the take -- while a ``multitrack``
 and a ``pianoroll`` are open-ended surfaces you place things on and zoom past
 the end of. So the multitracks, the rolls and the rulers share one group here,
 and each waveform navigates alone. Audio joins a multitrack the way it does in
@@ -91,7 +91,7 @@ LANE_PANS = {"drag": "element pan", "shift": "locate"}
 # %% [markdown]
 # ## The window: the same views, two tables
 # The two open axes join one navigation group (``link=1``), so whichever column
-# you drive, the other follows — which makes the difference between them exactly
+# you drive, the other follows -- which makes the difference between them exactly
 # the gesture and nothing else. The two waveforms navigate on their own, each
 # bounded by the take it holds.
 
@@ -146,7 +146,7 @@ print("right column: drag pans everywhere, Shift+drag selects")
 # ## Switching the table live
 # ``set(gestures=...)`` re-reads the kind's defaults and overlays the chords the
 # table names, so switching back is just an empty table. The views are the same
-# widgets throughout — nothing about the waveform, the lane or the roll changed.
+# widgets throughout -- nothing about the waveform, the lane or the roll changed.
 
 # %%
 def on_preset(index):
@@ -168,7 +168,7 @@ for side in ("default", "reversed"):
 
 # %% [markdown]
 # ## Plain-script run
-# Cell by cell the window stays live under your hands — the host's event loop
+# Cell by cell the window stays live under your hands -- the host's event loop
 # delivers to it between cells; as a script this block holds it open until you
 # close it, then tears everything down.
 

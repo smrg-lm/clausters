@@ -19,20 +19,20 @@
   </head>
   <body>
     <main>
-      <div id="note">Amplitude envelopes with <code>envGen</code> — a gated
+      <div id="note">Amplitude envelopes with <code>envGen</code> -- a gated
 ADSR that frees itself.
 
 The point of interest is the def: a sine shaped by an <code>envGen</code>
 playing an <code>Env.adsr</code>. The envelope's <code>gate</code> is a control
 and its <code>doneAction</code> is <code>FREE_SELF</code>, so the synth stays
-alive exactly as long as its sound and then frees itself — no
+alive exactly as long as its sound and then frees itself -- no
 <code>/node_free</code> bookkeeping from this side.
 
 <code>hasGate</code> is what closes the gate: for each note the player sends
 <code>gate 0</code> after the note's <code>sustain</code> instead of freeing the
 node outright, which starts the release segment. The built-in
 <code>default</code> instrument carries a gated envelope of exactly this shape
-and is gate-released for you; this page builds its <b>own</b> — a full ADSR with
+and is gate-released for you; this page builds its <b>own</b> -- a full ADSR with
 a chosen attack, decay, sustain and release.</div>
 
       <div class="row">
@@ -55,7 +55,7 @@ a chosen attack, decay, sustain and release.</div>
       `Buffer.fromSamples` and sounds there (`Buffer.from_samples` is the same
       call in the script's client, and it is what that one would use for a take
       that never becomes a file). The wav is still offered, as a blob a click
-      downloads — the browser's answer to a path.
+      downloads -- the browser's answer to a path.
 
       Offline does not mean run-once here either: change a segment of the
       envelope, reload, render again.
@@ -122,7 +122,7 @@ a chosen attack, decay, sustain and release.</div>
         session.play(phrase);
 
         // A render ends at the score's **last event**, and the last one the
-        // phrase writes is the gate closing on its final note — so without a
+        // phrase writes is the gate closing on its final note -- so without a
         // later event the take stops there and the 0.5 s release is cut off,
         // which is a click at the end. `/node_free 0` after the tail is that
         // closing event.
@@ -162,7 +162,7 @@ a chosen attack, decay, sustain and release.</div>
         play(buffer);
       }
 
-      // The blob a click downloads — a path is the one thing a tab has no
+      // The blob a click downloads -- a path is the one thing a tab has no
       // counterpart for.
       function save() {
         const blob = new Blob([wavBytes(take)], { type: "audio/wav" });

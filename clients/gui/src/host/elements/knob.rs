@@ -1,8 +1,8 @@
-//! `knob` — a value turned by how far you drag, not by where you point.
+//! `knob` -- a value turned by how far you drag, not by where you point.
 //!
 //! The drag **measured from the press**: a knob has no groove on screen to
 //! point at, so what turns it is how far the cursor has travelled since it went
-//! down — against the value the press found, never against the value as it
+//! down -- against the value the press found, never against the value as it
 //! stands. That is what keeps it in phase with the hand without capturing the
 //! pointer: leave the disc, cross the whole window, come back, and the value is
 //! what the cursor's distance says it is. A per-step delta would not be, which
@@ -75,12 +75,12 @@ impl Element for Knob {
     /// Asked to be fitted, it has a width after all, and it is the width of the
     /// **whole** control: a knob is a label strip over a disc over a read-out,
     /// all three drawn by one element into one cell, so fitting it to the disc
-    /// alone would ellipsize the name and clip the number — parts of the widget
+    /// alone would ellipsize the name and clip the number -- parts of the widget
     /// being cut to fit the widget. The three terms, and the widest wins.
     ///
     /// That the natural size says `None` here is not a contradiction: elastic
-    /// is the right answer to "how much of the row do you want" — a row of
-    /// knobs spreads — and the wrong one to "how big are you".
+    /// is the right answer to "how much of the row do you want" -- a row of
+    /// knobs spreads -- and the wrong one to "how big are you".
     fn hug(&self, m: &Metrics, scale: f32) -> Natural {
         let size = self.range.text_size * scale;
         let label = self
@@ -159,7 +159,7 @@ mod tests {
 
     /// The press takes the drag and reports nothing: turning has not started
     /// yet, and a knob that emitted on every click would send a value nobody
-    /// changed. It asks for no pointer capture — the travel since the press is
+    /// changed. It asks for no pointer capture -- the travel since the press is
     /// the gesture, and it is measured the same way on either front.
     #[test]
     fn the_press_takes_the_drag_and_reports_nothing() {

@@ -2,7 +2,7 @@
 // `clausters/defs/ugens/pan.py`).
 //
 // A UGen has one output, so every function here that produces two channels
-// returns a `ChannelList` built from single-output nodes — the package's
+// returns a `ChannelList` built from single-output nodes -- the package's
 // multichannel rule, applied to the stereo primitives.
 
 import { ChannelList, Ugen, chans, isList, mix } from "./graph.ts";
@@ -15,7 +15,7 @@ import type { Channel } from "./graph.ts";
  * Places a mono `signal` between two channels at `pos` (−1 left, 0 centre,
  * 1 right), at **equal power**: the two gains hold `l² + r² = 1`, so a
  * source keeps one loudness as it crosses the field. The price is that the
- * centre is 0.707 in each channel — use `linPan2` when it is the summed
+ * centre is 0.707 in each channel -- use `linPan2` when it is the summed
  * amplitude that has to stay put.
  */
 export const pan2 = (
@@ -52,7 +52,7 @@ export const balance2 = (
 /**
  * Rotates the plane the two signals span by `pos` **half turns** (0.25 is
  * 45°, 1 is a half turn). On a stereo pair it turns the image without
- * changing its size or its level — the rotation is equal power at every
+ * changing its size or its level -- the rotation is equal power at every
  * angle.
  *
  * At a quarter turn the rotation *is* the change of basis between left/right
@@ -69,7 +69,7 @@ export const rotate2 = (
  * The mid/side matrix, normalized so it is **its own inverse**: the same call
  * encodes `(left, right)` into `(mid, side)` and decodes it back.
  *
- * Its point is what you can do in between — treat the centre and the sides of
+ * Its point is what you can do in between -- treat the centre and the sides of
  * a mix as separate signals:
  *
  * ```ts
@@ -93,7 +93,7 @@ export const midSide = (a: Channel, b: Channel): ChannelList =>
  * The same thing `midSide` does in two steps, in one row. Note what widening
  * does **not** do: it leaves the mono sum exactly where it was, because only
  * the side component is scaled and the mid is what survives a fold-down. So
- * every dB it adds to a channel is a dB a mono listener never hears — which
+ * every dB it adds to a channel is a dB a mono listener never hears -- which
  * is the real cost of pushing it past 1, and the reason to check a fold-down
  * afterwards.
  */
@@ -112,7 +112,7 @@ export const stereoWidth = (
  * source: at the default width of two, neighbouring channels hold equal power
  * between them and a source parked on a channel is exactly unity there.
  * Narrower leaves gaps, wider spreads into more channels at once.
- * `orientation` turns the ring itself — 0.5, the default, puts the origin
+ * `orientation` turns the ring itself -- 0.5, the default, puts the origin
  * between two channels, which is what an even ring wants; use 0 to put a
  * channel at the front.
  *
@@ -151,7 +151,7 @@ export const xfade2 = (
 ): Ugen => new Ugen("XFade2", [a, b, pan, level]);
 
 /**
- * Crossfade with the constant-amplitude law — the right one for correlated
+ * Crossfade with the constant-amplitude law -- the right one for correlated
  * sources.
  */
 export const linXfade2 = (
@@ -162,7 +162,7 @@ export const linXfade2 = (
 ): Ugen => new Ugen("LinXFade2", [a, b, pan, level]);
 
 /**
- * @internal — the sources of a selector, given as arguments or as one list.
+ * @internal -- the sources of a selector, given as arguments or as one list.
  * Exported for `demand`'s `dswitch1`, which takes them the same way, as the
  * Python package shares its own underscored helper between the two families.
  */
@@ -179,7 +179,7 @@ export function sources(
 /**
  * Outputs one of `sources`, chosen by the `which` index (truncated, and
  * clamped to the ends rather than wrapping). Every source runs whether or
- * not it is selected — they are UGens in the graph, not branches — so this
+ * not it is selected -- they are UGens in the graph, not branches -- so this
  * picks what is *heard*, never what is computed.
  */
 export const select = (
@@ -198,7 +198,7 @@ export const selectX = (
 
 /**
  * Spreads `signals` evenly across the stereo field and mixes them down to
- * two channels — one `pan2` per signal, summed. A client-side convenience,
+ * two channels -- one `pan2` per signal, summed. A client-side convenience,
  * not a UGen; unlike sclang's, it does not normalize behind your back.
  */
 export function splay(

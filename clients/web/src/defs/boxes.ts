@@ -4,11 +4,11 @@
 // The box counterpart of `./signals.ts`, and a complete def-building API in
 // its own right: each function returns a `Box` and composing boxes builds the
 // JSON **box tree** the server's `/def_send faust` consumes (see the server's
-// `faust::boxes` for the schema). Boxes are Faust's point-free algebra —
+// `faust::boxes` for the schema). Boxes are Faust's point-free algebra --
 // `seq`/`par`/`split`/`merge`/`rec` compose whole **processors** by their
 // input/output arities. Where `signals` describes one output at a time
 // referentially (`input(n)`), boxes describe multi-channel blocks that plug
-// into each other — the natural shape for routing, chains, and anything
+// into each other -- the natural shape for routing, chains, and anything
 // conceived as units with inputs and outputs.
 //
 // On top of the algebra, `faust` compiles any Faust **expression** into a
@@ -20,8 +20,8 @@
 // Choosing a form: a fixed processing chain written top to bottom often reads
 // best as plain Faust (`FaustDef.fromSource`); graphs assembled one output at
 // a time from arithmetic and feedback suit `./signals.ts`. Regular banks ("N
-// copies with index-dependent parameters") are best written in Faust itself —
-// `par(i, N, …)`, widget labels with `%i`, `ba.take` — and parametrized from
+// copies with index-dependent parameters") are best written in Faust itself --
+// `par(i, N, …)`, widget labels with `%i`, `ba.take` -- and parametrized from
 // TypeScript by splicing `N` and lists through `faust`'s eval arguments. Boxes
 // shine when the graph is conceived as composed processors, when its structure
 // is decided by the page's own data, and whenever library DSP has to mix with
@@ -29,18 +29,18 @@
 //
 // Two stages of application, kept separate on purpose:
 //
-// - `faust("fi.lowpass", 3)` — arguments to `faust` are **evaluation-stage**:
+// - `faust("fi.lowpass", 3)` -- arguments to `faust` are **evaluation-stage**:
 //   spliced into the Faust source text (`fi.lowpass(3)`), where structural
 //   parameters like a filter order must live.
-// - `fiLp.call(cutoff, wire())` — arguments to a `Box`'s **call** are
+// - `fiLp.call(cutoff, wire())` -- arguments to a `Box`'s **call** are
 //   **composition-stage**: boxes wired as the box's signal inputs, sugar for
 //   `seq(par(cutoff, wire()), fiLp)`. The reference client spells this one
 //   `fi_lp(cutoff, wire())`, a Python `__call__`; a class instance is not
-//   callable in TypeScript, so the application has a name — and for the same
+//   callable in TypeScript, so the application has a name -- and for the same
 //   reason `st[0]` is `st.get(0)` here. Same calls, same order, same JSON.
 //
 // The wire rule (the big difference from `signals`): **each `wire` is a
-// distinct input**. There is no referential `input(n)` here — two wires in two
+// distinct input**. There is no referential `input(n)` here -- two wires in two
 // positions are two input channels. Reusing the *same* `wire()` (or `cut()`)
 // object in more than one position is almost always a mistake, and
 // `FaustDef.fromBox` rejects it; route explicitly with `split`, or write that
@@ -97,7 +97,7 @@ const nodeOf = (x: BoxInput): BoxNode => box(x).node;
  *
  * `numInputs`/`numOutputs` are the box's signal arity as computed on the
  * client from the composition rules; `null` when unknown (a `faust` fragment
- * with no `ins`/`outs`). The server does not read them — a real mismatch is
+ * with no `ins`/`outs`). The server does not read them -- a real mismatch is
  * reported by Faust itself when the def compiles.
  */
 export class Box extends FaustExpr<Box, BoxInput> {
@@ -120,7 +120,7 @@ export class Box extends FaustExpr<Box, BoxInput> {
 
     /**
      * Applies boxes to this box's inputs: `f.call(a, b)` is `seq(par(a, b),
-     * f)` (with one argument, `seq(a, f)`) — Faust's partial-application style,
+     * f)` (with one argument, `seq(a, f)`) -- Faust's partial-application style,
      * which the reference client writes as calling the box itself. The
      * arguments must cover *all* the box's inputs; use `wire` for the ones left
      * open.
@@ -203,13 +203,13 @@ export class Box extends FaustExpr<Box, BoxInput> {
  * Coerces a number or `Box` into a `Box` (numbers are constants).
  *
  * A constant reaches the server as a bare JSON number, and the server reads an
- * integral one as a Faust **int** and any other as a **real** — so `box(2)` is
+ * integral one as a Faust **int** and any other as a **real** -- so `box(2)` is
  * `int 2` in both clients and `box(0.5)` is `real 0.5` in both. The one case a
  * page cannot say is the reference client's `box(2.0)`, a *real* whose value is
  * integral: JavaScript has one number type and `2.0` is `2` by the time this
- * sees it. It costs nothing measurable — Faust promotes, and where a constant's
+ * sees it. It costs nothing measurable -- Faust promotes, and where a constant's
  * type does pick an operator (`%`, `min`, `max`, the comparisons, against an
- * *int* signal) the two spellings compute the same value — and where the type
+ * *int* signal) the two spellings compute the same value -- and where the type
  * is wanted anyway the verb is `asfloat`: `box(2).asfloat()` compiles
  * to the identical program as Python's `box(2.0)`. See `docs/decisions.md`.
  */
@@ -223,7 +223,7 @@ export function box(x: BoxInput): Box {
 
 /**
  * The identity box `_`: one open signal input. Every call is a **new,
- * distinct input** — reusing one wire object in two positions is an error (see
+ * distinct input** -- reusing one wire object in two positions is an error (see
  * the module docs for the rule and the escapes).
  */
 export const wire = (): Box => new Box({ op: "wire" }, 1, 1);
@@ -252,7 +252,7 @@ export function par(...items: BoxInput[]): Box {
 /** Split composition `a <: b` (needs at least 2). */
 export const split = (...items: BoxInput[]): Box => compose("split", items);
 
-/** Merge composition `a :> b` — excess outputs are summed (needs at least 2). */
+/** Merge composition `a :> b` -- excess outputs are summed (needs at least 2). */
 export const merge = (...items: BoxInput[]): Box => compose("merge", items);
 
 function atLeastTwo(op: string, items: readonly BoxInput[]): readonly BoxInput[] {
@@ -275,7 +275,7 @@ function compose(op: string, items: readonly BoxInput[]): Box {
 
 /**
  * Recursive composition `a ~ b`: `b` feeds `a`'s first inputs back from `a`'s
- * first outputs, with one implicit sample of delay. Point-free — for the
+ * first outputs, with one implicit sample of delay. Point-free -- for the
  * `rec((s) => …)` style, build the loop in a `faust` fragment or with
  * `./signals.ts` instead.
  */
@@ -295,23 +295,23 @@ export function rec(a: BoxInput, b: BoxInput): Box {
 /** An evaluation-stage argument: spliced into the generated Faust source. */
 export type EvalArg = number | string | readonly EvalArg[];
 
-/** `faust`'s trailing options — the reference client's keyword arguments. */
+/** `faust`'s trailing options -- the reference client's keyword arguments. */
 export interface FaustOptions {
     /** Auxiliary Faust definitions prepended to the generated program. */
     defs?: string;
     /** The fragment's declared signal input arity. */
     ins?: number | null;
-    /** The fragment's declared signal output arity — needed for `get`/`outs`. */
+    /** The fragment's declared signal output arity -- needed for `get`/`outs`. */
     outs?: number | null;
 }
 
 /**
- * A Faust **expression** compiled into a box — the door to the Faust libraries
+ * A Faust **expression** compiled into a box -- the door to the Faust libraries
  * (`stdfaust.lib` is imported for you). The resulting box is indistinguishable
  * from a primitive: compose it, apply it, do arithmetic on it.
  *
  * The arguments after `src` are **evaluation-stage**, spliced into the source
- * text as Faust application — `faust("fi.lowpass", 3)` compiles
+ * text as Faust application -- `faust("fi.lowpass", 3)` compiles
  * `fi.lowpass(3)`. That is where structural parameters (a filter order, a
  * table size, a list of coefficients) must go; they cannot travel as signals.
  * Formatting: a number as a literal (integral values keep their integer
@@ -327,7 +327,7 @@ export interface FaustOptions {
  * A trailing options object carries what the reference client passes as
  * keywords: `defs` prepends auxiliary Faust definitions (helper functions,
  * pattern matching) to the generated program, and `ins`/`outs` declare the
- * fragment's signal arity — only the Faust compiler knows it, so pass `outs`
+ * fragment's signal arity -- only the Faust compiler knows it, so pass `outs`
  * when you need channel selection (`st.get(0)` / `.outs()`); a wrong
  * declaration is caught by Faust when the def compiles.
  *
@@ -423,7 +423,7 @@ export function select3(sel: BoxInput, a: BoxInput, b: BoxInput, c: BoxInput): B
 /**
  * A foreign **constant**: a scalar the server resolves once, at def-compile
  * time, from its runtime. `ctype` is `"int"` or `"real"`. The building block
- * of `sr` — prefer that helper for sample rate.
+ * of `sr` -- prefer that helper for sample rate.
  */
 export const fconst = (ctype: "int" | "real", name: string, file = ""): Box =>
     new Box({ op: "fconst", ctype, name, file }, 0, 1);
@@ -434,7 +434,7 @@ export const fvar = (ctype: "int" | "real", name: string, file = ""): Box =>
 
 /**
  * The engine's sample rate as a `Box`, read from the server at def-compile
- * time — the port of Faust's `ma.SR`, with the stdlib's `[1, 192000]` clamp.
+ * time -- the port of Faust's `ma.SR`, with the stdlib's `[1, 192000]` clamp.
  *
  * Use this instead of baking a JS constant so the def is correct at whatever
  * rate the engine or NRT renderer runs.
@@ -541,13 +541,13 @@ export const waveform = (values: readonly number[]): Box =>
     new Box({ op: "waveform", values: values.map(Number) }, 0, 2);
 
 /**
- * `rdtable(size, init, ridx)` — or `rdtable(wf, ridx)` with a `waveform`
+ * `rdtable(size, init, ridx)` -- or `rdtable(wf, ridx)` with a `waveform`
  * standing in for (size, init).
  */
 export const rdtable = (...args: BoxInput[]): Box => table("rdtable", args, 2, 3);
 
 /**
- * `rwtable(size, init, widx, wsig, ridx)` — or the 4-argument form with a
+ * `rwtable(size, init, widx, wsig, ridx)` -- or the 4-argument form with a
  * `waveform` up front.
  */
 export const rwtable = (...args: BoxInput[]): Box => table("rwtable", args, 4, 5);
@@ -585,7 +585,7 @@ export function checkWires(node: unknown): void {
     if (reused.size > 0) {
         throw new TypeError(
             `a ${[...reused].sort().join("/")} box object was reused; each wire `
-                + "(and cut) is a distinct position — every input needs its own "
+                + "(and cut) is a distinct position -- every input needs its own "
                 + "wire(): route explicitly with split(), or write that stretch "
                 + 'inside a faust() fragment (e.g. "_ <: …")',
         );
@@ -593,7 +593,7 @@ export function checkWires(node: unknown): void {
 }
 
 /**
- * The wire/cut nodes under `node`, counting textual **positions** — a shared
+ * The wire/cut nodes under `node`, counting textual **positions** -- a shared
  * subtree multiplies whatever it holds, which is exactly the reuse this looks
  * for. `memo` keeps one result per visited node object.
  */

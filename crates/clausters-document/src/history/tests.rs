@@ -2,7 +2,7 @@ use super::*;
 use serde_json::json;
 
 /// A structure with no document behind it: the notes of a roll the caller
-/// built. Its whole vocabulary is one verb — *the notes are now these* — which
+/// built. Its whole vocabulary is one verb -- *the notes are now these* -- which
 /// is what a domain has to bring, and all it has to bring.
 #[derive(Debug, Default, PartialEq)]
 struct Notes(Vec<i64>);
@@ -31,7 +31,7 @@ impl Editable for Notes {
 }
 
 impl Notes {
-    /// Sets the notes and hands back the payload that would put them back —
+    /// Sets the notes and hands back the payload that would put them back --
     /// the inverse, read *before* the edit lands, which is the rule every
     /// domain follows.
     fn set(&mut self, notes: &[i64]) -> Opaque {
@@ -733,7 +733,7 @@ fn a_walk_routes_a_step_per_structure_and_keeps_each_ones_order() {
     assert_eq!(walked.label, "a gesture over both");
     assert_eq!(walked.legs.len(), 2, "two structures, not three legs");
     // An undo unwinds the way it was laid down, so the curve's own two legs
-    // come back newest first — and they stay together.
+    // come back newest first -- and they stay together.
     let (first, curve_legs) = &walked.legs[0];
     assert_eq!(*first, curve);
     assert_eq!(

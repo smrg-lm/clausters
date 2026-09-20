@@ -1,7 +1,7 @@
 /**
  * The application: what a window set owns, as against what one structure owns.
  *
- * An {@link Editor} edits **one structure** — a buffer's samples, a break-point
+ * An {@link Editor} edits **one structure** -- a buffer's samples, a break-point
  * curve, a timeline of events. Almost nothing an editor does is about that
  * structure, though: resolving a host, handing out widget ids, answering the
  * acknowledgement, publishing a picture, walking the undo order. All of it is
@@ -11,8 +11,8 @@
  *
  * So this is the other half of the split the subpackage already makes between
  * an editor and the {@link Editing} context. The context is what the **data**
- * owns — its history, its version, the views to tell. An application is what
- * the **screen** owns — the host and the id space. What is left in
+ * owns -- its history, its version, the views to tell. An application is what
+ * the **screen** owns -- the host and the id space. What is left in
  * between is what an editor genuinely is: a structure bound to a {@link Domain}
  * and a {@link View}.
  *
@@ -50,7 +50,7 @@ import { log } from "./trace.ts";
 export const BASE_ID = 10_000;
 
 /**
- * The drawer of a call that named none — `newId()` asked of the application
+ * The drawer of a call that named none -- `newId()` asked of the application
  * itself rather than by an editor.
  *
  * A real object rather than `null` so that it can be a weak key like every
@@ -81,7 +81,7 @@ export class Application {
     /** How this application answers a version, when it was given a way. */
     readonly #versionOf: (() => number) | null;
     /**
-     * Where a host-less draw takes its ids from — one table per drawer, built
+     * Where a host-less draw takes its ids from -- one table per drawer, built
      * on the first ask and never used again once there is a host.
      *
      * **Per drawer** and not per application, because an unopened draw's ids
@@ -101,7 +101,7 @@ export class Application {
 
     /**
      * `context` is the {@link Editing} this application's undo order runs in;
-     * `undefined` — the ordinary case — reads it off the editors registered
+     * `undefined` -- the ordinary case -- reads it off the editors registered
      * here. `baseId` is where the host-less id counter starts. `version`
      * answers the version to stamp an acknowledgement with, and is a callable
      * rather than a number for the reason {@link Echo} states: the version
@@ -132,7 +132,7 @@ export class Application {
         return this;
     }
 
-    /** Drop an editor — what `close` does, and what a composed view does when
+    /** Drop an editor -- what `close` does, and what a composed view does when
      * its window goes. */
     forget(editor: Drawing): this {
         this.#editors = this.#editors.filter((held) => held !== editor);
@@ -148,7 +148,7 @@ export class Application {
 
     /**
      * The editing context this application's undo order runs in: the one named
-     * at construction, or the first registered editor's — which is the ordinary
+     * at construction, or the first registered editor's -- which is the ordinary
      * case, and is what keeps an application over one structure from having to
      * be told what it is editing.
      */
@@ -193,7 +193,7 @@ export class Application {
      * **Only when it has none**, which is the rule the multitrack learned the
      * hard way: an application already open answers *its* host, and overwriting
      * that with the one a second window opened on sends every acknowledgement
-     * to the wrong place — silently, since in the ordinary case the two are the
+     * to the wrong place -- silently, since in the ordinary case the two are the
      * same object.
      *
      * Async where the Python client's is not, for the reason `View.open` is
@@ -212,13 +212,13 @@ export class Application {
     /**
      * The table `drawer` names widgets in.
      *
-     * The **host's** once there is one, so that two applications on one host —
-     * two editors opened on the ambient host, say — cannot hand out the same
+     * The **host's** once there is one, so that two applications on one host --
+     * two editors opened on the ambient host, say -- cannot hand out the same
      * number. Before that, one private table per drawer: an unopened draw's ids
      * reach nothing, so they need not be unique across drawers, and the privacy
      * is what lets such a draw restart its numbering.
      *
-     * Both doors come from whichever table it is — a leased id and a named one
+     * Both doors come from whichever table it is -- a leased id and a named one
      * are the same resource taken two ways, and splitting them across two
      * tables is how two widgets end up with one number.
      */
@@ -257,7 +257,7 @@ export class Application {
     }
 
     /**
-     * A **leased** widget id: one for a widget nothing names — a hand-built
+     * A **leased** widget id: one for a widget nothing names -- a hand-built
      * tree, a decoration. It changes across redraws, which is why a view that
      * draws a structure asks {@link Application.idFor} instead.
      */
@@ -266,7 +266,7 @@ export class Application {
     }
 
     /**
-     * The id that draws `(structure, role, key)` — the **same** number for as
+     * The id that draws `(structure, role, key)` -- the **same** number for as
      * long as `drawer` keeps drawing that name.
      *
      * The door a view takes, and the whole of what makes a redraw safe: an
@@ -283,7 +283,7 @@ export class Application {
      * Start `drawer`'s draw: from here, every name it asks for counts as drawn,
      * and {@link Application.retireIds} takes back the rest.
      *
-     * Every other drawer is untouched — the cycle names whose it is, so two
+     * Every other drawer is untouched -- the cycle names whose it is, so two
      * editors on one host redraw independently.
      */
     resetIds(drawer?: object): void {
@@ -292,7 +292,7 @@ export class Application {
             // **Nothing outside this draw holds one of these ids.** With no
             // host there is no window, no pending gesture and no second drawer
             // in this table, so it starts over and two draws of one picture
-            // come out identical — the property a test that inspects a tree
+            // come out identical -- the property a test that inspects a tree
             // twice rests on. On a host it would be wrong: the leases there
             // belong to every window the page has open, not to whoever is
             // drawing.
@@ -340,8 +340,8 @@ export class Application {
     }
 
     /**
-     * Carry out a step the context **already took** — by {@link Application.step},
-     * or inside a turn whose message was an undo — and say whether anything
+     * Carry out a step the context **already took** -- by {@link Application.step},
+     * or inside a turn whose message was an undo -- and say whether anything
      * moved. A step nothing could apply is not a step: the crate put the cursor
      * back, and {@link Application.refusal} is why.
      */
@@ -361,7 +361,7 @@ export class Application {
     // ---- publishing a picture ----
 
     /**
-     * Make the host draw `tree` for `widgetId` — **the whole tree, every
+     * Make the host draw `tree` for `widgetId` -- **the whole tree, every
      * time**.
      *
      * A `/gui_def` over a tree the host is already drawing says *what to look
@@ -369,7 +369,7 @@ export class Application {
      * widget to widget by the id that names what it draws and keeping what is
      * its own. So this client holds no picture of the host's: a difference is
      * only correct against a copy of what the host holds, and it cannot have
-     * one — the host mutates on its own (a drag writes an offset per frame, a
+     * one -- the host mutates on its own (a drag writes an offset per frame, a
      * wheel writes a window) and screen state is reported by nothing, correctly,
      * because screen state is the host's.
      *
@@ -401,7 +401,7 @@ export class Application {
     }
 
     /**
-     * Hold until `until()` is false — the drain the host's own `waitWhile` is,
+     * Hold until `until()` is false -- the drain the host's own `waitWhile` is,
      * so a page ends on one call. `true` when the condition cleared, `false`
      * when `timeout` ran out first. With no host there is nothing to wait for,
      * and the answer is whether the condition is already clear.
@@ -414,7 +414,7 @@ export class Application {
 }
 
 /**
- * How many widgets a published tree holds — the trace's measure of what a redraw
+ * How many widgets a published tree holds -- the trace's measure of what a redraw
  * cost, now that how much of it the host rebuilds is the host's.
  */
 function widgets(tree: GuiNode): number {

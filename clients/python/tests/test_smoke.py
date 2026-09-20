@@ -3,7 +3,7 @@ offline render works end to end.
 
 The native cdylibs are built by cargo (see ../README.md). Tests that need a
 library that has not been built are skipped rather than failed, so the suite is
-safe to run before building — but the C1 verification runs them all.
+safe to run before building -- but the C1 verification runs them all.
 """
 
 import pytest
@@ -88,7 +88,7 @@ def test_tempoclock_conversions():
 
 def test_bar_beat_reads_the_quant_grid():
     n = _native_or_skip()
-    # Beat 9.5 on a 4-beat bar: bar 2, beat 1.5 within it (0-based) — the
+    # Beat 9.5 on a 4-beat bar: bar 2, beat 1.5 within it (0-based) -- the
     # display complement of quant_delay, shared with the GUI's beats ruler.
     assert n.bar(9.5, 4.0) == pytest.approx(2.0)
     assert n.beat_in_bar(9.5, 4.0) == pytest.approx(1.5)
@@ -145,7 +145,7 @@ if __name__ == "__main__":
             try:
                 fn()
                 print(f"ok   {name}")
-            except BaseException as e:  # noqa: BLE001 — smoke harness
+            except BaseException as e:  # noqa: BLE001 -- smoke harness
                 kind = type(e).__name__
                 print(f"{'skip' if kind in ('Skipped', 'OutcomeException') else 'FAIL'} {name}: {e}")
                 if kind not in ("Skipped", "OutcomeException"):

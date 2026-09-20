@@ -1,7 +1,7 @@
 //! The filter core (U2).
 //!
 //! The two-pole rows are asserted against the **analytic transfer function of
-//! the structure they implement**, evaluated in `f64` — never against a stored
+//! the structure they implement**, evaluated in `f64` -- never against a stored
 //! buffer and never against scsynth's numbers. The trapezoidal state-variable
 //! filter is the bilinear transform of the analog two-pole prototype, so its
 //! magnitude at a frequency `f` is the prototype evaluated at the *pre-warped*
@@ -16,8 +16,8 @@
 //! That expression is the whole specification; if the filter matches it at
 //! twenty points across the band, it is the filter it claims to be.
 //!
-//! The one-pole family is asserted the same way, against its own closed form —
-//! an FIR for `OneZero`, a one-pole gain for `Integrator` — and additionally
+//! The one-pole family is asserted the same way, against its own closed form --
+//! an FIR for `OneZero`, a one-pole gain for `Integrator` -- and additionally
 //! sample by sample against its difference equation, which a frequency response
 //! cannot see a one-sample state error through.
 //!
@@ -49,7 +49,7 @@ use signal::*;
 const WIN: usize = 8192;
 const RENDER: usize = 32_768;
 
-/// Snaps a frequency so `WIN` samples hold a whole number of its periods —
+/// Snaps a frequency so `WIN` samples hold a whole number of its periods --
 /// *coherent sampling*, which is what makes the single-bin DFT in
 /// `response_at` exact rather than leaky. Without it a gain reads a tenth of a
 /// dB off and every tolerance below becomes a guess.
@@ -249,7 +249,7 @@ fn a_high_q_resonator_still_has_unity_peak_gain_after_ten_seconds() {
     // z = 1; a high-Q bandpass puts them near the unit circle at its centre
     // frequency, which is where a resonator's state is largest relative to
     // its input and where truncation would show first. Q = 50, driven at the
-    // centre, where the normalized bandpass is unity by construction — so the
+    // centre, where the normalized bandpass is unity by construction -- so the
     // expected value is 1 exactly, with nothing to fit.
     let n = (SR as usize) * 10;
     let fc = snap(1000.0);
@@ -387,7 +387,7 @@ fn svf_tap_gains_reproduce_every_classic_response() {
 
 #[test]
 fn svf_allpass_mix_is_flat() {
-    // (1, -rq, 1) is the allpass, and flatness *is* its definition — the
+    // (1, -rq, 1) is the allpass, and flatness *is* its definition -- the
     // strongest assert available for a mix, because it cannot be satisfied by
     // accident.
     let (fc, rq) = (snap(700.0), 0.5f32);

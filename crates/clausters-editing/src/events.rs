@@ -1,7 +1,7 @@
 //! **What a gesture over a timeline of events means.**
 //!
-//! A roll draws two lanes over one structure — the notes, and the OSC and MIDI
-//! markers beside them — and reports each as its own flat list. Both state the
+//! A roll draws two lanes over one structure -- the notes, and the OSC and MIDI
+//! markers beside them -- and reports each as its own flat list. Both state the
 //! *whole* lane, so what comes out is the timeline as it now stands, notes and
 //! markers together, in one `setevents`.
 //!
@@ -10,7 +10,7 @@
 //! The `events` vocabulary carries an event's `data` and never reads it: a
 //! note's instrument, an `OscItem`'s arguments, whatever else an author put on
 //! it, all travel whole and come back whole. So the ingestion never needs the
-//! client's objects — it needs the timeline *as the vocabulary already holds
+//! client's objects -- it needs the timeline *as the vocabulary already holds
 //! it*, which is what both clients were already computing to ask
 //! `domain::edit` for an inverse. The one thing it has to be able to tell apart
 //! is a note from a marker, and the data says which: a marker names itself with
@@ -21,7 +21,7 @@
 //!
 //! Which is why the lane a hand did *not* touch is carried through untouched
 //! rather than left out. A payload that stated only the notes would be an edit
-//! that deletes every marker, and its inverse would put them back — a pile of
+//! that deletes every marker, and its inverse would put them back -- a pile of
 //! entries that each undo a loss nobody made.
 
 use std::collections::HashSet;
@@ -79,7 +79,7 @@ fn event(beat: f64, params: Value) -> Value {
 }
 
 /// The items the gesture did **not** draw, in the order the timeline holds
-/// them — what keeps the lane nobody touched out of the edit that rebuilt the
+/// them -- what keeps the lane nobody touched out of the edit that rebuilt the
 /// other one, and out of the inverse that puts it back.
 fn kept(state: &[Value], drew_markers: bool) -> Vec<Value> {
     state
@@ -105,7 +105,7 @@ fn notes(state: &[Value], values: &[Value], units_per_beat: f64) -> Vec<Value> {
         let mut params = match held.get(i) {
             // **An edit updates the note it names; it does not rebuild it.**
             // Order is the only identity the payload carries, so the i-th
-            // note's own event is copied and the drawn fields written over it —
+            // note's own event is copied and the drawn fields written over it --
             // which keeps the instrument and everything else the author put
             // there.
             Some(was) => {
@@ -142,14 +142,14 @@ fn amp_of(velocity: i64) -> f64 {
     (velocity as f64 / 127.0).clamp(0.0, 1.0)
 }
 
-/// The whole timeline after an `osc` gesture — the notes untouched and the
-/// markers as the lane now holds them — or `None` when the gesture added one
+/// The whole timeline after an `osc` gesture -- the notes untouched and the
+/// markers as the lane now holds them -- or `None` when the gesture added one
 /// that has no message to send.
 ///
 /// **A marker is matched by its label**, which is its address, and only then by
 /// order among the ones that share it. The report carries the label the lane
-/// drew, so the message a marker sends survives being dragged and — unlike the
-/// notes one lane up, where order is the only identity there is — survives a
+/// drew, so the message a marker sends survives being dragged and -- unlike the
+/// notes one lane up, where order is the only identity there is -- survives a
 /// *neighbour* being removed as well.
 fn markers(state: &[Value], values: &[Value], units_per_beat: f64) -> Option<Vec<Value>> {
     let held: Vec<&Value> = state
@@ -171,7 +171,7 @@ fn markers(state: &[Value], values: &[Value], units_per_beat: f64) -> Option<Vec
 
 /// **What a gesture over a timeline means**, in the `events` vocabulary.
 ///
-/// `state` is the timeline as the vocabulary holds it — every item, notes and
+/// `state` is the timeline as the vocabulary holds it -- every item, notes and
 /// markers alike, since both are edited through it. `units_per_beat` is what a
 /// beat is worth on the view's axis, because a roll draws in timeline samples
 /// and a timeline is in beats.
@@ -204,12 +204,12 @@ pub fn intake(
                 "edit the markers",
             ),
             // A marker *is* the message it sends, and a roll has no way to type
-            // one — so a marker added there has nothing to become. Saying so is
+            // one -- so a marker added there has nothing to become. Saying so is
             // the point: a picture that springs back with nothing attached
             // teaches "sometimes it does not work" rather than "not here".
             // **The sentence names no language.** It is one string in the
-            // crate now, so a page showing Python's spelling of `add` — or a
-            // script showing the page's — would be this milestone putting a
+            // crate now, so a page showing Python's spelling of `add` -- or a
+            // script showing the page's -- would be this milestone putting a
             // divergence *into* both clients instead of taking one out.
             None => Intake::refused(
                 "a marker is the message it sends, and a roll cannot say which: \

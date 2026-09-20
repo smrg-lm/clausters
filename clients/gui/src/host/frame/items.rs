@@ -3,7 +3,7 @@
 //!
 //! A frame reads the host tree exactly once. Every data-driven widget is copied
 //! out of it into one of the item structs below, so the meshes and the GPU
-//! uploads that follow never hold the tree borrow — which is what lets a heavy
+//! uploads that follow never hold the tree borrow -- which is what lets a heavy
 //! view upload while the chrome is still being built. The flat widgets (labels,
 //! controls, panels, the patcher, the score, the piano) never become items:
 //! they draw straight into the mesh during the same walk, having nothing to
@@ -32,7 +32,7 @@ pub(super) struct RulerItem {
 
 pub(super) struct SpectralBodyItem {
     pub(super) id: i32,
-    /// Which of the widget's pictures this is — the pair `(id, key)` addresses
+    /// Which of the widget's pictures this is -- the pair `(id, key)` addresses
     /// a slot, so a view holding several boxes over several takes has one entry
     /// per take rather than one per widget.
     pub(super) key: SlotKey,
@@ -56,7 +56,7 @@ pub(super) struct TimelineLook {
     pub(super) layers: crate::host::graphics::signal::layers::Stack,
     /// What the body's vertical measures, as the element resolved it.
     pub(super) axis: crate::host::graphics::signal::layers::Domain,
-    /// The value domain the traces are mapped through —
+    /// The value domain the traces are mapped through --
     /// [`crate::waveform::DEFAULT_DOMAIN`] is the amplitude axis, and anything
     /// else is a plain value axis (dBFS, bits and percent are full-scale
     /// amplitude units).
@@ -74,9 +74,9 @@ pub(super) struct TimelineLook {
 
 /// A placed timeline view (waveform/spectrogram), copied out of the host tree.
 ///
-/// Half of it is the **element's** answer — the body its picture is drawn in
+/// Half of it is the **element's** answer -- the body its picture is drawn in
 /// and the vertical window, which arrived as a
-/// [`SlotFrame`] — and half is the
+/// [`SlotFrame`] -- and half is the
 /// **axis'**: the placement, the group gutter and the editor chrome, which the
 /// frame draws around every member of a navigation group alike, a lane and a
 /// roll included.
@@ -94,7 +94,7 @@ pub(super) struct TimelineItem {
     pub(super) theme: Option<Arc<Theme>>,
     pub(super) look: TimelineLook,
     pub(super) editor: EditorProps,
-    /// The sample the hand is holding on this view, copied out with the rest —
+    /// The sample the hand is holding on this view, copied out with the rest --
     /// the overlay pass draws it *over* the picture, since the samples under
     /// it has not changed and must not be re-summarized to show an edit that
     /// nobody has applied yet.
@@ -145,7 +145,7 @@ pub(super) fn collect_widgets(
         mesh.set_clip(p.clip);
         // ...and everything it paints carries its own opacity and corner
         // radius, set here for the whole run of triangles this widget is about
-        // to contribute — an element draws what it always drew.
+        // to contribute -- an element draws what it always drew.
         let ink = super::ink_of(p);
         mesh.set_ink(ink);
         // This widget's own size table: the host's, resolved at the scale it is
@@ -288,7 +288,7 @@ pub(super) fn collect_widgets(
             _ => {}
         }
         // The **focus ring**, drawn by the host over whatever the widget drew:
-        // one role, one look, and no element painting its own — the ring says
+        // one role, one look, and no element painting its own -- the ring says
         // where the keyboard points, which is a window's answer rather than a
         // widget's. What being focused means *inside* an element (a field's
         // caret) is the element's, and reaches it as `Ctx::focused`.

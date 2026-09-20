@@ -1,12 +1,12 @@
 //! The phasescope (goniometer): drawing a stereo pair as a Lissajous figure.
 //!
 //! A phasescope reads two audio taps (left and right) and plots their recent
-//! sample pairs in the 45°-rotated **mid/side** plane — the audio-engineering
+//! sample pairs in the 45°-rotated **mid/side** plane -- the audio-engineering
 //! goniometer, where a mono signal draws a vertical line, an anti-phase one a
 //! horizontal line, and a wide stereo field fills the lozenge. The coordinate
 //! transform itself is general audio geometry, so it lives once in
 //! `clausters_core::measure` (the [`lissajous_point`]); this module is only the
-//! **display** — persistence trail, the framed field, and a correlation readout
+//! **display** -- persistence trail, the framed field, and a correlation readout
 //! ([`correlation`]) as companion chrome. Pure (no GPU, no shm), so both fronts
 //! share it and it is unit-testable.
 //!

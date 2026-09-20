@@ -37,7 +37,7 @@ struct State {
     /// The triangle painter, for a view whose picture is geometry (the
     /// waveform): the harness gives it the same mesh a host window would.
     painter: Painter,
-    /// The sizes and colors that mesh is drawn with — the defaults, since a
+    /// The sizes and colors that mesh is drawn with -- the defaults, since a
     /// prototype window carries no theme of its own.
     metrics: Metrics,
     theme: Theme,

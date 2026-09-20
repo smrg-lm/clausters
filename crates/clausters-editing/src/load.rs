@@ -18,7 +18,7 @@
 //! It owns no buffer numbers and sends nothing: the numbers are the caller's
 //! (the host's one buffer space, a client's allocator), and the steps go out
 //! through whatever the caller talks to a server with. It writes nothing back
-//! either — the file is the user's, and a session must never rewrite it.
+//! either -- the file is the user's, and a session must never rewrite it.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -36,7 +36,7 @@ use crate::sources::{self as projection, Held, Stitch};
 pub struct Take {
     /// The server buffer its samples were read into.
     pub bufnum: i32,
-    /// Channels, when the table said. The file decides in the end — this is
+    /// Channels, when the table said. The file decides in the end -- this is
     /// what the session claimed, and it is only used to size a picture before
     /// the buffer answers for itself.
     pub channels: Option<u32>,
@@ -51,13 +51,13 @@ pub struct Takes {
 }
 
 impl Takes {
-    /// Records what a source resolved to — what [`plan`] fills, and what a test
+    /// Records what a source resolved to -- what [`plan`] fills, and what a test
     /// over anything downstream of it needs to be able to state.
     pub fn insert(&mut self, source: SourceId, take: Take) {
         self.map.insert(source, take);
     }
 
-    /// **The source a buffer number came from** — the lookup read the other
+    /// **The source a buffer number came from** -- the lookup read the other
     /// way, which is what a box built by a hand needs: a picture names a server
     /// buffer and the document names a source, and this table is the only thing
     /// that knows they are the same samples.
@@ -142,12 +142,12 @@ impl Load {
 /// Plans the load of every source the session actually names.
 ///
 /// `beside` is the session file's own folder, which is what a relative path is
-/// resolved against — the rule that makes a session directory movable, and the
+/// resolved against -- the rule that makes a session directory movable, and the
 /// format's own words rather than any endpoint's convention.
 ///
 /// `present` says whether a file is there. The one that can answer it is
-/// whoever shares the server's filesystem — the GUI host, whose server is in
-/// its own process — and a caller that cannot answers `true` and lets the
+/// whoever shares the server's filesystem -- the GUI host, whose server is in
+/// its own process -- and a caller that cannot answers `true` and lets the
 /// server's refusal of the read say it instead.
 ///
 /// `next_buffer` hands out a buffer number, or says why there is none. Numbers
@@ -240,8 +240,8 @@ fn locate(
 
 /// **Installs every join, once the sources it is over are there.**
 ///
-/// A [`Location::Segments`] source owns no samples — it is spans of other
-/// sources — so it cannot be read from a path and cannot be planned in the same
+/// A [`Location::Segments`] source owns no samples -- it is spans of other
+/// sources -- so it cannot be read from a path and cannot be planned in the same
 /// pass as the files. This is the second pass, and it repeats: a join's part
 /// may name a source that is itself a join (the server allows four levels), so
 /// a round that installs something makes the next round able to install more,
@@ -418,7 +418,7 @@ fn referenced(session: &Session) -> Vec<SourceId> {
 ///
 /// The request is `{"session", "beside", "buffers"}`: the session as the crate
 /// writes it, the folder its relative paths are read against, and the buffer
-/// numbers the caller has set aside — one per source in the table is always
+/// numbers the caller has set aside -- one per source in the table is always
 /// enough, and the ones the load did not take come back as `unused` for the
 /// caller to give back.
 ///
@@ -428,8 +428,8 @@ fn referenced(session: &Session) -> Vec<SourceId> {
 /// source that will not load, and the numbers left over. A request that is not
 /// a session answers `{"error"}`.
 ///
-/// A client cannot see the server's filesystem — a page never can, and a
-/// script's server need not be on its machine — so every file is taken to be
+/// A client cannot see the server's filesystem -- a page never can, and a
+/// script's server need not be on its machine -- so every file is taken to be
 /// there, and one that is not is the server's refusal of its read.
 pub fn plan_json(request: &str) -> String {
     let request: Value = serde_json::from_str(request).unwrap_or(Value::Null);

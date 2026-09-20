@@ -9,8 +9,8 @@
 //!
 //! **This is not a clip's idea.** A clip is the first container here that
 //! layers editable contents and it is deliberately not the last: an audio
-//! editor's view is the same picture — contents, a selection over it, an
-//! automation over both, later a spectral layer — and a container that grows
+//! editor's view is the same picture -- contents, a selection over it, an
+//! automation over both, later a spectral layer -- and a container that grows
 //! contents grows layers with them. So the active layer is a field of the
 //! [`Widget`] node, the stack is read off whatever children fill a role, and
 //! nothing in this module names a widget type.
@@ -27,7 +27,7 @@
 //! (back to front), never by a fixed list of kinds: [`stack`] reads the
 //! children that fill a [`BodyRole`], so a container that grows a fourth kind
 //! of content grows a fourth layer with no change here. What an element
-//! contributes is only two answers — the role it fills
+//! contributes is only two answers -- the role it fills
 //! ([`Element::body_role`](crate::host::widget::Element::body_role)) and
 //! whether the pointer is on its own contents
 //! ([`Element::layer_hit`](crate::host::widget::Element::layer_hit)).
@@ -46,7 +46,7 @@ use crate::host::widget::element::{BodyRole, Input, TimeSpace};
 
 /// The **active edit layer** of a container: what a press on it means.
 ///
-/// [`Placement`](Layer::Placement) is the container itself — the rectangle's
+/// [`Placement`](Layer::Placement) is the container itself -- the rectangle's
 /// move and its edges. [`Content`](Layer::Content) is the nth element layered
 /// inside it, counted in the container's own declaration order (the order they
 /// are drawn in, back to front), which is what keeps the address independent of
@@ -73,7 +73,7 @@ impl Layer {
     /// container itself (a `clip` also answers to `"clip"` on the way in),
     /// otherwise the role the element fills (`"take"`, `"notes"`, `"points"`),
     /// suffixed `":n"` when the container carries more than one layer of that
-    /// role — a clip with two automations names them `points` and `points:1`.
+    /// role -- a clip with two automations names them `points` and `points:1`.
     ///
     /// A stale address (a layer index the container no longer has) names the
     /// placement, which is what [`Selection::layer`] resolves it to as well.
@@ -93,7 +93,7 @@ impl Layer {
     }
 }
 
-/// The wire name of a body role — the same word the prop that fills it is
+/// The wire name of a body role -- the same word the prop that fills it is
 /// called by, so a script names the layer it already knows how to write.
 pub fn role_name(role: BodyRole) -> &'static str {
     match role {
@@ -107,7 +107,7 @@ pub fn role_name(role: BodyRole) -> &'static str {
 /// element, back to front, in the container's own declaration order.
 ///
 /// It is derived from the children rather than declared, so it is exactly what
-/// is drawn — a container that grew a body through a `/gui_set` has grown a
+/// is drawn -- a container that grew a body through a `/gui_set` has grown a
 /// layer, and one whose body was never built has not.
 pub fn stack(widget: &Widget) -> Vec<BodyRole> {
     content(widget)
@@ -115,7 +115,7 @@ pub fn stack(widget: &Widget) -> Vec<BodyRole> {
         .collect()
 }
 
-/// Selecting a layer, as an operation of its own — the door every caller goes
+/// Selecting a layer, as an operation of its own -- the door every caller goes
 /// through, whatever put it in motion (a press, a `/gui_set`, a shortcut).
 ///
 /// It is a thin type rather than three free functions because the two halves
@@ -127,7 +127,7 @@ pub struct Selection<'a> {
 }
 
 impl<'a> Selection<'a> {
-    /// The selection over `widget`, or `None` when it **layers nothing** — a
+    /// The selection over `widget`, or `None` when it **layers nothing** -- a
     /// leaf, or a container whose children are laid out beside each other
     /// rather than over each other. The test is the stack itself, so a
     /// container qualifies by holding layered contents and not by being of any
@@ -137,7 +137,7 @@ impl<'a> Selection<'a> {
     }
 
     /// The layer a **wire name** means on this container, or `None` when it
-    /// names none — an unknown word is refused rather than silently taken as
+    /// names none -- an unknown word is refused rather than silently taken as
     /// the placement, so a typo in a `/gui_set` fails the way every other bad
     /// value does.
     pub fn parse(&self, name: &str) -> Option<Layer> {
@@ -192,7 +192,7 @@ impl<'a> Selection<'a> {
         changed
     }
 
-    /// The hidden layers' names, space-separated — what a query answers and
+    /// The hidden layers' names, space-separated -- what a query answers and
     /// what [`set_hidden`](Self::set_hidden) would take back.
     pub fn hidden(&self) -> String {
         content(self.widget)
@@ -204,7 +204,7 @@ impl<'a> Selection<'a> {
     }
 
     /// Makes `layer` the active one, answering whether that **changed**
-    /// anything — the caller emits the `"layer"` payload on a change and stays
+    /// anything -- the caller emits the `"layer"` payload on a change and stays
     /// quiet otherwise, so pressing twice on the same curve says it once.
     pub fn set(&mut self, layer: Layer) -> bool {
         let changed = self.widget.layer != layer;
@@ -217,8 +217,8 @@ impl<'a> Selection<'a> {
 ///
 /// A layer that names no stretch fills the container, which is what a layered
 /// body has always been. One that names a stretch (`Widget::span`) is placed on
-/// it exactly as a clip is placed on its lane — the same mapping, one level
-/// down — and reads its own window onto its own contents, which is what lets a
+/// it exactly as a clip is placed on its lane -- the same mapping, one level
+/// down -- and reads its own window onto its own contents, which is what lets a
 /// clip hold three segments of three different files and still be one clip.
 ///
 /// The **one** derivation, so the layout, the drawing, the hit-test and the
@@ -261,7 +261,7 @@ pub fn layer_input<'a>(container: &Input<'a>, child: &Widget) -> Input<'a> {
 }
 
 /// The layer `widget` is being edited on, resolved against the stack as it
-/// stands — the read every pass makes, and the one a caller with no
+/// stands -- the read every pass makes, and the one a caller with no
 /// [`Selection`] in hand (a draw pass, a hit-test) uses.
 ///
 /// Two things resolve to the placement rather than to a layer nobody can act
@@ -279,7 +279,7 @@ pub fn active(widget: &Widget) -> Layer {
     }
 }
 
-/// The container's layered contents, in declaration order — the children that
+/// The container's layered contents, in declaration order -- the children that
 /// fill a role, each with its index among *all* the children. The one walk the
 /// stack, the addresses and the drawing gate are read through, so a layer's
 /// address never depends on which pass is asking.
@@ -292,7 +292,7 @@ fn content(widget: &Widget) -> impl DoubleEndedIterator<Item = (usize, &Widget)>
 }
 
 /// Whether the child at `index` in `widget`'s children is its **active** layer
-/// — what a body is told when it is drawn or handed a press, so an element
+/// -- what a body is told when it is drawn or handed a press, so an element
 /// knows whether the affordances it draws are promises it can keep.
 pub fn child_is_active(widget: &Widget, index: usize) -> bool {
     let Layer::Content(n) = active(widget) else {
@@ -307,8 +307,8 @@ pub fn child_is_active(widget: &Widget, index: usize) -> bool {
 /// own contents are under the pointer**, and the placement everywhere else.
 ///
 /// Topmost first, because that is the order they are drawn in and the reader
-/// aims at what they can see. A layer answers for its *contents* — a curve's
-/// points and segments, a note's rectangle — and never for the rectangle it
+/// aims at what they can see. A layer answers for its *contents* -- a curve's
+/// points and segments, a note's rectangle -- and never for the rectangle it
 /// shares with the container, which is what leaves the clip's background and
 /// its grips to the placement: "drag the background to move the clip" is a rule
 /// about what the background is *not* claimed by.
@@ -319,7 +319,7 @@ pub fn child_is_active(widget: &Widget, index: usize) -> bool {
 /// **A layer that cannot be edited is not selected by pointing at it.** An
 /// element whose contents are read-only answers `false` here (the same `false`
 /// as empty space), so a press on the notes of a pattern falls through to the
-/// placement and the clip moves — which is what the refusal that used to
+/// placement and the clip moves -- which is what the refusal that used to
 /// consume it was standing in the way of. A script that wants such a layer
 /// active anyway says so with `/gui_set layer`, and the element still refuses
 /// the edit itself.

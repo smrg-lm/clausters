@@ -1,4 +1,4 @@
-//! Pointer-interaction primitives over the widget tree — the value/hit logic
+//! Pointer-interaction primitives over the widget tree -- the value/hit logic
 //! shared by both fronts.
 //!
 //! Hit-testing a point, reading and writing a control's value, flipping a toggle,
@@ -6,7 +6,7 @@
 //! [`layout`] and [`controls`] math, with no platform dependency. The native
 //! windowed front ([`super::gui`]) and the browser front (`super::web`) both
 //! call these, so a turned knob updates the tree and decides bound-vs-event the
-//! same way on either platform — only the event *source* (winit vs browser
+//! same way on either platform -- only the event *source* (winit vs browser
 //! pointer events) and the event *sink* (a socket vs the binding surface) differ.
 //!
 //! **Module layout.** The file was flat, and what a reader wants from it is
@@ -14,18 +14,18 @@
 //! different moment of a gesture. So it is four children, and the question is
 //! the boundary:
 //!
-//! - [`coords`] — *in what system?* The container vocabulary ([`Coords`],
+//! - [`coords`] -- *in what system?* The container vocabulary ([`Coords`],
 //!   [`TimeAxis`](coords::TimeAxis), [`Frame`], [`Hit`]) and the arithmetic that
 //!   inverts the renderer's maps. It never mentions the [`Host`], which is what
 //!   keeps it the vocabulary rather than a fourth door.
-//! - [`hit`](mod@hit) — *what is under the point?* The one layout pass, and the
+//! - [`hit`](mod@hit) -- *what is under the point?* The one layout pass, and the
 //!   per-element hit-tests that read its answer finer.
-//! - [`edit`] — *write it.* One door per element, both fronts through it.
-//! - [`read`] — *what does it hold, and what does it report?* The live values a
+//! - [`edit`] -- *write it.* One door per element, both fronts through it.
+//! - [`read`] -- *what does it hold, and what does it report?* The live values a
 //!   drag starts from, and the edit-back payloads a finished edit sends.
 //!
 //! What the fronts use is re-exported here, so a caller still says
-//! `interact::clip_hit` and never names the child — the split is the
+//! `interact::clip_hit` and never names the child -- the split is the
 //! maintainer's map, not a new surface to learn. A name used only *within* the
 //! module is not re-exported, which is what keeps the list below an honest
 //! inventory of the door rather than of the file.

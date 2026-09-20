@@ -1,6 +1,6 @@
 //! M13: parallel processing of `/group_parallel` groups. The central claim
 //! under test: parallel execution is **bit-identical** to sequential
-//! execution — stages only batch children with pairwise disjoint bus
+//! execution -- stages only batch children with pairwise disjoint bus
 //! usage, so worker interleaving can never change a sample.
 
 #![cfg(feature = "synth")]
@@ -123,7 +123,7 @@ fn torture_graph() -> Vec<OscMessage> {
             OscType::Blob(mix2.to_string().into_bytes()),
         ],
     ));
-    // Dynamic: the In bus index is a signal — must run alone, untouched.
+    // Dynamic: the In bus index is a signal -- must run alone, untouched.
     let dynread = json!({
         "name": "dynread",
         "ugens": [
@@ -181,7 +181,7 @@ fn torture_graph() -> Vec<OscMessage> {
     // Stage 2: the two insert fx (disjoint buses 16 and 17).
     m.push(s_new("fx16", 1005, 100, &[]));
     m.push(s_new("fx17", 1006, 100, &[]));
-    // Stage 3: conflicting writers to out 0 — must serialize, in order.
+    // Stage 3: conflicting writers to out 0 -- must serialize, in order.
     m.push(s_new("mix", 1007, 100, &[]));
     m.push(s_new("mix2", 1008, 100, &[]));
     // Barrier: dynamic bus index.
@@ -245,7 +245,7 @@ fn parallel_output_is_bit_identical_to_sequential() {
     assert!(a == b, "parallel rendering must be bit-identical");
 
     // Retarget the control-driven source onto a contended bus: the engine
-    // masks update via Cmd::SetUsage and the partition adapts — still
+    // masks update via Cmd::SetUsage and the partition adapts -- still
     // bit-identical.
     let retune = vec![msg(
         "/node_set",
@@ -276,7 +276,7 @@ fn workers_survive_many_blocks_and_drop_cleanly() {
 }
 
 /// Each worker accounts the stages it took off the conductor in its own
-/// `Role::Dsp` slot, and the conductor's share stays in `Role::Audio` — one
+/// `Role::Dsp` slot, and the conductor's share stays in `Role::Audio` -- one
 /// slot per worker, never a row for a worker the server does not have.
 #[test]
 fn every_worker_accounts_the_stages_it_took() {

@@ -4,7 +4,7 @@
 // A *bundle* is a data directory that holds a named GuiDef beside the
 // SynthDefs/GraphDefs it needs. `clausters-gui --standalone <name>` boots such
 // a bundle against an **embedded** audio server (loaded in-process), runs the
-// GuiDef's `boot` messages to bring the instrument up, then opens its window —
+// GuiDef's `boot` messages to bring the instrument up, then opens its window --
 // a self-contained instrument with **no separate audio server and no language
 // client running**.
 //
@@ -20,16 +20,16 @@
 // Two GuiDef features make a saved tree self-driving, so it needs no live
 // script:
 //
-// - a root `boot` list — OSC messages the standalone host sends right after
+// - a root `boot` list -- OSC messages the standalone host sends right after
 //   the defs load, to instantiate the instrument (here one `/synth_new`
 //   creating node 1000 from the drone SynthDef);
-// - a widget `bind` prop — the declarative form of `/gui_bind`, wiring the
+// - a widget `bind` prop -- the declarative form of `/gui_bind`, wiring the
 //   knob's value **straight to the embedded server** (here `/node_set 1000
 //   freq`), so turning it changes the pitch with no round-trip through any
 //   script.
 //
 // **This is the node half of a pair**, and the page beside it is not the other
-// half of *this* — `standalone.html` is the counterpart of **running**
+// half of *this* -- `standalone.html` is the counterpart of **running**
 // `clausters-gui --standalone`, in a tab. The counterpart of this script is
 // `clients/python/examples/panels/standalone.py`: the same two files written
 // by the same calls in the other language. A page never writes a bundle,
@@ -38,19 +38,19 @@
 // It writes the files itself rather than through `Bundle`, and that is the
 // point of this example: the persisted format is plain JSON, and a host reads
 // a directory somebody could have typed. `Bundle` is the writer for the
-// component format on top of it (the manifest, the holes, the parameters) —
+// component format on top of it (the manifest, the holes, the parameters) --
 // `examples/panels/piano/make_bundle.mjs` is that one. One consequence worth
 // knowing before diffing the two halves of the pair: what they produce is the
 // same tree and not the same bytes, because writing by hand skips the
-// canonical form `Bundle` emits — the key order is each builder's, and
+// canonical form `Bundle` emits -- the key order is each builder's, and
 // JavaScript spells `160.0` as `160`.
 //
 // Run it (from this directory, after `../../build.sh`):
 //
 //     node standalone.mjs
 //
-// It writes into `examples/out/standalone/` — the ignored directory every
-// generator in this tree writes to — and prints the two ways to boot it.
+// It writes into `examples/out/standalone/` -- the ignored directory every
+// generator in this tree writes to -- and prints the two ways to boot it.
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -78,7 +78,7 @@ const DRONE_NODE = 1000;
 
 /**
  * A quiet stereo sine drone whose pitch is the `freq` control (default 160 Hz)
- * — the boot `/synth_new` instantiates it and the knob's binding drives its
+ * -- the boot `/synth_new` instantiates it and the knob's binding drives its
  * `freq`.
  */
 function drone() {
@@ -118,7 +118,7 @@ function scene() {
  *
  * A SynthDef file is exactly the `/def_send synth` spec JSON
  * (`SynthDef.dumpDef`); a GuiDef record wraps the tree with the id it is
- * defined under, `{"id": <int>, "gui": <tree>}` — the standalone host replays
+ * defined under, `{"id": <int>, "gui": <tree>}` -- the standalone host replays
  * it as `/gui_def <id> <tree>`.
  */
 async function writeBundle(dataDir) {
@@ -158,5 +158,5 @@ console.log(`    python3 tools/bundle-manifest.py ${dataDir}`);
 console.log("    python3 -m http.server  # then open");
 console.log("    http://localhost:8000/examples/panels/standalone.html" +
             "?bundle=/examples/out/standalone\n");
-console.log("the engine runs in an AudioWorklet, the GUI on a canvas — no server " +
+console.log("the engine runs in an AudioWorklet, the GUI on a canvas -- no server " +
             "process anywhere.");

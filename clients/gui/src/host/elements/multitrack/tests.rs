@@ -157,7 +157,7 @@ fn a_meter_takes_its_width_from_the_channels_and_not_from_the_level() {
 /// **A box's base view is what its contents are**, and it is drawn by the
 /// element that draws it anywhere else: samples through the signal
 /// element's body door, notes through the roll's. What the widget adds is
-/// the axis — a box is a window onto a picture, never a second
+/// the axis -- a box is a window onto a picture, never a second
 /// implementation of one.
 #[test]
 fn a_box_of_notes_is_a_roll_and_a_box_of_samples_is_a_take() {
@@ -259,7 +259,7 @@ fn the_lanes_and_the_clips_are_props_of_one_widget() {
 }
 
 /// A trailing partial group is dropped rather than half-read, and a lane
-/// with no name is not a lane — the one field that is the identity.
+/// with no name is not a lane -- the one field that is the identity.
 #[test]
 fn a_partial_group_is_dropped_rather_than_half_read() {
     let mt = from_props(&props(
@@ -274,7 +274,7 @@ fn a_partial_group_is_dropped_rather_than_half_read() {
 }
 
 /// **A `/gui_set` of a structure is the same parse**, so what a query
-/// reports is what a set would take — the round trip every non-scalar here
+/// reports is what a set would take -- the round trip every non-scalar here
 /// keeps.
 #[test]
 fn a_set_reads_what_a_query_reported() {
@@ -328,7 +328,7 @@ fn a_lane_added_never_changes_how_big_the_widget_wants_to_be() {
     assert_eq!(mt.content_span(), Some(144_000.0));
 }
 /// **The three tags are gone.** A move, a trim and a lane crossing each
-/// leave as one `"clips"` payload carrying the multitrack as it now stands — so
+/// leave as one `"clips"` payload carrying the multitrack as it now stands -- so
 /// there is nothing for a reader to choose between, and no state a gesture
 /// can put it in where the report changes shape.
 #[test]
@@ -424,7 +424,7 @@ fn a_press_on_bare_lane_declines_rather_than_swallowing_it() {
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
     let mut mt = multitrack();
-    // Past `a`'s end, on its lane — bare lane, and `b` is on the other one.
+    // Past `a`'s end, on its lane -- bare lane, and `b` is on the other one.
     let bare = xy(&mt, &m, rect, 800.0, len, 0);
     assert!(matches!(
         mt.press(bare, &input(&m, rect, len)),
@@ -497,7 +497,7 @@ fn hiding_a_layer_takes_it_out_of_the_picture_and_out_of_reach() {
 }
 
 /// **A press lands on a curve's own points, never on the rectangle it
-/// shares** — so an envelope drawn across a box leaves the box draggable,
+/// shares** -- so an envelope drawn across a box leaves the box draggable,
 /// and the press that misses the line moves the box instead.
 #[test]
 fn a_press_beside_the_line_still_moves_the_box() {
@@ -520,7 +520,7 @@ fn a_press_beside_the_line_still_moves_the_box() {
 }
 
 /// **A break-point is grabbed on the pixels it was drawn on**, and moving
-/// one reports every curve there is — the payload is the multitrack's, so a
+/// one reports every curve there is -- the payload is the multitrack's, so a
 /// `/gui_set points` of what came back is the identity.
 #[test]
 fn dragging_a_point_reports_every_curve() {
@@ -644,7 +644,7 @@ fn a_track_is_zoomed_by_its_bottom_edge_and_keeps_it() {
 /// wheel scrolls it and zooms one row.
 ///
 /// The plain wheel is left to the time axis, which is what it is over every
-/// timeline view here — so this element declines it, and the machine behind
+/// timeline view here -- so this element declines it, and the machine behind
 /// it goes on to the axis.
 #[test]
 fn the_wheel_scrolls_the_stack_and_zooms_one_row() {
@@ -733,7 +733,7 @@ fn the_wheel_scrolls_the_stack_and_zooms_one_row() {
 /// anterior")*.
 ///
 /// Every step of it passed on its own and the path did not, which is the
-/// third time this seam has done that — so this walks the whole thing: the
+/// third time this seam has done that -- so this walks the whole thing: the
 /// double click that makes the row, the correction that renames it from the
 /// word this minted to the id the multitrack gave it, the press on `A`, and the
 /// correction that carries the curve the owner made.
@@ -880,7 +880,7 @@ fn a_track_made_here_shows_the_automation_its_toggle_asked_for() {
 /// The stack reserved a band for every curve and the drawing skipped the
 /// hidden ones, which is a hole exactly where the row was: the picture did
 /// not change when a hand hid one and did not change when it showed one
-/// either — the same gap, with or without a line in it. The toggle was
+/// either -- the same gap, with or without a line in it. The toggle was
 /// working the whole way down and there was nothing to see at the end of
 /// it, which is the most expensive kind of correct.
 #[test]
@@ -919,7 +919,7 @@ fn a_hidden_curve_gives_its_row_back() {
 /// for by the user 2026-09-12, as a facility for trying the example)*.
 ///
 /// It rides the `lanes` report the mute and the solo beside it ride, and
-/// the owner answers by saying which curves are visible — a row a multitrack
+/// the owner answers by saying which curves are visible -- a row a multitrack
 /// shows is the multitrack's, and this is a control over that rather than a
 /// second place for it to be recorded.
 #[test]
@@ -981,7 +981,7 @@ fn the_headers_automation_toggle_reports_the_lanes() {
 /// The defect this pins (found 2026-09-12 by the user, on the multitrack
 /// example): the rows anchored at the earliest box *in time*, so which
 /// track a block landed on depended on the order its boxes happened to be
-/// recorded in — the same block pasted onto the same track went up or down
+/// recorded in -- the same block pasted onto the same track went up or down
 /// according to that, and part of it landed **above** the track the hand
 /// had pointed at. The user's own case: boxes from tracks 2, 4 and 1,
 /// pasted onto track 3, belong on 4, 6 and 3.
@@ -1042,7 +1042,7 @@ fn a_paste_starts_at_the_selected_track_and_never_above_it() {
 /// **A block that does not fit is refused, not flattened.**
 ///
 /// It used to clamp every row past the last track onto that track, which
-/// turned a block several tracks tall into a pile on one — the one thing a
+/// turned a block several tracks tall into a pile on one -- the one thing a
 /// paste promises not to do. The multitrack gains no track either: making one is
 /// a verb of its own, and a paste is not the place to grow the thing it is
 /// pasting into.
@@ -1398,7 +1398,7 @@ fn a_curve_that_survives_a_redeclaration_keeps_its_points() {
 }
 
 /// The report is the same list a `/gui_set clips` would take, so applying
-/// what came back is the identity — which is what makes the payload a
+/// what came back is the identity -- which is what makes the payload a
 /// *state* rather than a description of a gesture.
 #[test]
 fn what_comes_back_is_what_a_set_would_take() {
@@ -1419,7 +1419,7 @@ fn what_comes_back_is_what_a_set_would_take() {
     assert_eq!(echo.clips, mt.clips);
     assert_eq!(args.len(), 1 + 7 * 2, "the tag, then a septuple per clip");
 }
-/// **A marquee catches the clips it covered, of every lane it crossed** — a
+/// **A marquee catches the clips it covered, of every lane it crossed** -- a
 /// selection the stack's sweep made is not one lane's. And it writes no
 /// band: the second axis here is the stack, not a value.
 #[test]
@@ -1444,8 +1444,8 @@ fn a_sweep_catches_what_it_covered_across_the_stack() {
 }
 
 /// **A click selects the box it landed on, alone.** A press is not yet a
-/// gesture — the same movement is a click or a drag depending on what
-/// happens next — so it is decided on release: a press that moved nothing
+/// gesture -- the same movement is a click or a drag depending on what
+/// happens next -- so it is decided on release: a press that moved nothing
 /// meant *this one*, and a hand that can point at a box is a hand that can
 /// then place the cursor and split it.
 #[test]
@@ -1477,7 +1477,7 @@ fn a_click_on_a_box_selects_that_one_and_nothing_leaves() {
 }
 
 /// **A block travels rigidly, and grabbing an unselected clip lets go of
-/// it** — the hand that reached past its selection meant the box it reached
+/// it** -- the hand that reached past its selection meant the box it reached
 /// for.
 #[test]
 fn a_block_moves_as_one_and_an_unselected_grab_moves_alone() {
@@ -1508,7 +1508,7 @@ fn a_block_moves_as_one_and_an_unselected_grab_moves_alone() {
 }
 
 /// **The mixer is the second payload.** A fader and the two toggles report
-/// `"lanes"` — the lanes as they now stand — and never the clips, which is
+/// `"lanes"` -- the lanes as they now stand -- and never the clips, which is
 /// the whole reason the multitrack is written as two structures.
 #[test]
 fn the_header_reports_the_lanes_and_never_the_clips() {
@@ -1542,7 +1542,7 @@ fn the_header_reports_the_lanes_and_never_the_clips() {
 }
 
 /// `q` quantizes what the hand holds, across the stack, and Delete removes
-/// it — both reporting the clips as they now stand, which is the one
+/// it -- both reporting the clips as they now stand, which is the one
 /// payload every edit here has.
 #[test]
 fn the_key_verbs_act_on_the_held_set_and_report_the_multitrack() {
@@ -1582,7 +1582,7 @@ fn the_key_verbs_act_on_the_held_set_and_report_the_multitrack() {
 }
 /// **`e` cuts at the window's cursor and `j` asks for the two back.** The
 /// window over the contents moves with the cut, so the second half reads on
-/// from where the first stopped — which is what makes the pair joinable,
+/// from where the first stopped -- which is what makes the pair joinable,
 /// and a fact about the *material*, so what they become is the document's
 /// and this only names them.
 #[test]
@@ -1871,7 +1871,7 @@ fn a_block_is_cut_and_pasted_at_the_cursor_with_its_shape() {
 }
 /// **A drag over the gap between two lanes must not jump.** The pointer
 /// crosses pixels no lane is drawn on, and a hit test that answers
-/// "nowhere" there makes the block snap back to the row the press found —
+/// "nowhere" there makes the block snap back to the row the press found --
 /// for those frames only, so it flickers, and it jumps two rows at once
 /// when the gap is not the one it started beside. That is the glitch the
 /// window's own edges had, twice.
@@ -1932,7 +1932,7 @@ fn a_drag_past_the_last_lane_stops_at_it() {
 
 /// **A drag must never read an axis it is moving.** A widget on no
 /// navigation group rules itself by its own extent, and a drag *changes*
-/// the extent — so re-deriving the axis per frame stretches the
+/// the extent -- so re-deriving the axis per frame stretches the
 /// pixel-to-time map under the hand, the next step reads further out, and
 /// the box accelerates away from the pointer.
 ///
@@ -1961,7 +1961,7 @@ fn a_drag_off_a_group_reads_the_axis_the_press_found() {
         let want = first * step / first_step;
         assert!(
             (offset - want).abs() < 1.0,
-            "step {step}: {offset} against {want} — the axis moved"
+            "step {step}: {offset} against {want} -- the axis moved"
         );
     }
     assert!(
@@ -1970,7 +1970,7 @@ fn a_drag_off_a_group_reads_the_axis_the_press_found() {
     );
 }
 /// **A grip is hit on the pixels it is drawn on.** The press asks the same
-/// call the drawing made, so the handle and its hit area cannot disagree —
+/// call the drawing made, so the handle and its hit area cannot disagree --
 /// which is exactly the case nobody tests.
 #[test]
 fn an_edge_is_grabbed_by_the_grip_that_is_drawn_there() {
@@ -2045,7 +2045,7 @@ fn a_take_is_asked_for_once_and_again_when_forgotten() {
 
 /// **Buffer 0 is a buffer.** It is the first one an allocator hands out, so
 /// a zero sentinel would make the first take a script loads the one take it
-/// cannot draw — which is exactly how this was found, by eye, on the first
+/// cannot draw -- which is exactly how this was found, by eye, on the first
 /// clip of a multitrack.
 #[test]
 fn a_clip_over_buffer_zero_has_a_source() {
@@ -2091,7 +2091,7 @@ fn an_anchored_playhead_asks_the_window_for_frames() {
 }
 /// **A held grip is shown because it is held.** The edge moves under the
 /// hand, so asking where the pointer is each frame makes the mark blink as
-/// the box catches up with it — which is what a trim looked like.
+/// the box catches up with it -- which is what a trim looked like.
 #[test]
 fn the_grip_a_drag_is_holding_does_not_depend_on_the_pointer() {
     let m = Metrics::default();

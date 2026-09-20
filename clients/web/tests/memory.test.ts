@@ -5,7 +5,7 @@
 // the worklet's `process`, so a command that allocates allocates there. The
 // engine therefore reserves its memory at link time
 // (`crates/clausters-web/build.rs`) and the numbers are asserted here rather
-// than trusted, because nothing else would notice them going away — the flags
+// than trusted, because nothing else would notice them going away -- the flags
 // pass through `wasm-bindgen`, which rewrites the module.
 
 import assert from "node:assert/strict";
@@ -25,7 +25,7 @@ const wasm = engine.initSync({ module: bytes });
 
 /**
  * The declared limits of the module's one memory, read out of the binary's
- * own section — the instance can only report what it currently has, so a
+ * own section -- the instance can only report what it currently has, so a
  * missing ceiling is invisible from the JS side.
  */
 function limits(module: Uint8Array): { min: number; max: number | null } {

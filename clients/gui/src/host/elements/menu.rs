@@ -1,4 +1,4 @@
-//! `menu` — an option list that opens over everything.
+//! `menu` -- an option list that opens over everything.
 //!
 //! The leaf whose state **is not a value**. What a menu holds between clicks is
 //! its open list: where it was placed, and the fact that it is up at all. That
@@ -8,9 +8,9 @@
 //!
 //! Here it is one `Option<Rect>` on the menu, and both passes read it through
 //! the same declaration: the frame asks `overlay_rect` what to draw last, and
-//! the press asks it who to route to first. The list is modal — it swallows a
+//! the press asks it who to route to first. The list is modal -- it swallows a
 //! press either way, picking an option on its own rows and closing anywhere
-//! else — which is what a menu everywhere else does, and it needs no machine
+//! else -- which is what a menu everywhere else does, and it needs no machine
 //! state to be true.
 
 use serde_json::{Map, Value};
@@ -26,8 +26,8 @@ use crate::host::widget::element::{Claim, Ctx, Element, HitArea, Input};
 use crate::host::widget::parse;
 use crate::host::widget::size::{Natural, body_inset, control_box, field_w, label_strip, text_box};
 
-/// A one-of-several chooser: the options, which one is current, and — while it
-/// is up — the list it opened.
+/// A one-of-several chooser: the options, which one is current, and -- while it
+/// is up -- the list it opened.
 #[derive(Debug, Clone)]
 pub struct Menu {
     pub options: Vec<String>,
@@ -64,7 +64,7 @@ impl Menu {
         self.options.get(self.index).map_or("", String::as_str)
     }
 
-    /// The **body** the list hangs off — the field the chosen option is drawn
+    /// The **body** the list hangs off -- the field the chosen option is drawn
     /// in, not the whole cell, so the list lines up with what it replaces
     /// rather than with the label over it.
     fn body(&self, input: &Input) -> Rect {
@@ -109,7 +109,7 @@ impl Element for Menu {
     }
 
     /// Squeezed, a menu gives up its **label strip** and keeps the box with
-    /// the chosen option in it — the caption names the choice, the box *is* it.
+    /// the chosen option in it -- the caption names the choice, the box *is* it.
     fn floor(&self, m: &Metrics, scale: f32) -> Natural {
         let size = self.text_size * scale;
         (None, Some(body_inset(m) + control_box(size, m)))
@@ -140,7 +140,7 @@ impl Element for Menu {
     }
 
     /// **The field the chosen option is drawn in**, which is also what the list
-    /// hangs off — never the label strip over it or the cell around it.
+    /// hangs off -- never the label strip over it or the cell around it.
     ///
     /// The **open** list is the exception, and it is the same exception the
     /// press already makes: while a menu is up, a press anywhere at all is the
@@ -183,7 +183,7 @@ impl Element for Menu {
             return;
         };
         // The row under the cursor highlights, read straight off the frame's
-        // pointer — a hover is not a gesture.
+        // pointer -- a hover is not a gesture.
         let hover = ctx
             .world
             .cursor
@@ -260,7 +260,7 @@ mod tests {
         assert_eq!(menu.overlay_rect(), None, "picking closes it");
     }
 
-    /// A press anywhere else closes it and reports nothing — and is still
+    /// A press anywhere else closes it and reports nothing -- and is still
     /// taken, which is what keeps the click from also landing on whatever the
     /// list was covering.
     #[test]

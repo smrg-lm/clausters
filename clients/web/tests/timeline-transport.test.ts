@@ -115,7 +115,7 @@ const timeline = () =>
 test("a transport needs a governed group", async () => {
     const server = new TransportServer({ group: null });
     const tl = timeline();
-    // The check is the setter's, and it asks the server — so the throw arrives
+    // The check is the setter's, and it asks the server -- so the throw arrives
     // through the queued work, which `refresh` settles with.
     await assert.rejects(async () => {
         tl.transport = server;

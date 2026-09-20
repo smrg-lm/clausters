@@ -3,18 +3,18 @@
 Two ways in, both speaking ordinary OSC bytes (build them however you like;
 ``examples/json_client.py`` has stdlib helpers):
 
-- `Clausters` — the **embedded** server: loads the cdylib (build it
+- `Clausters` -- the **embedded** server: loads the cdylib (build it
   with ``cargo build --release --features embed,realtime``) and runs the
   whole server in-process. Commands are function calls, no network anywhere.
-- `ShmClient` — attaches to a **separate** server started with
+- `ShmClient` -- attaches to a **separate** server started with
   ``clausters --shm <path>``: commands/replies travel through a
   shared-memory ring, and the *data plane* (sample clock, control buses) is
   read and written directly in mapped memory.
 
-Plus `render` — the synchronous "scientific" call: hand it a binary
+Plus `render` -- the synchronous "scientific" call: hand it a binary
 score, get the interleaved float32 samples back, no server running at all.
 
-Boundary rule (project-wide): only flat data crosses — ``bytes`` in,
+Boundary rule (project-wide): only flat data crosses -- ``bytes`` in,
 ``array('f')``/floats/ints out. A numpy user can wrap the results without
 copying (``numpy.frombuffer``), but nothing here imports anything heavy.
 
@@ -23,12 +23,12 @@ The one exception to "standard library only" is the segment's **layout**:
 (`clausters-ffi`, through `clausters._native`) where everything in it is, for
 the directory's seqlock and for the ring's framing. Those used to be
 transcribed here, which is how this binding came to declare 1024 control buses
-against a server that had had 16 384 for months — wrong, unused, and caught by
+against a server that had had 16 384 for months -- wrong, unused, and caught by
 nothing. A layout mirrored by hand is a layout that drifts, so it is asked for
 rather than restated.
 
 Caveats of the shm path: Python has no atomics, so what it reads through the
-mapping relies on x86-TSO-style ordering of aligned accesses — fine on the
+mapping relies on x86-TSO-style ordering of aligned accesses -- fine on the
 supported platforms, documented in docs/ipc.md.
 """
 
@@ -54,7 +54,7 @@ from .errors import (
 
 ABI_VERSION = 11
 
-#: The stride between successive stochastic-UGen seeds within one render —
+#: The stride between successive stochastic-UGen seeds within one render --
 #: ``SEED_STRIDE`` in ``clausters_core::rng``. A client needs it to reproduce a
 #: server-side noise stream; it is **not** a starting seed (a render with no
 #: seed draws a fresh one, and reports it).
@@ -69,7 +69,7 @@ _EMBED_NAMES = ("libclausters.so", "libclausters.dylib", "clausters.dll")
 # definition of the segment's layout; this client maps the file and asks it for
 # every offset and count (`_native.shm_shape`), for the buffer directory's
 # seqlock and for the ring's framing. What used to sit here was a copy of the
-# arithmetic, kept honest by a version number — which cannot check a layout,
+# arithmetic, kept honest by a version number -- which cannot check a layout,
 # and did not.
 
 _MAGIC = 0x5541_4C43  # "CLAU", read only to say "this is not a segment" nicely
@@ -85,7 +85,7 @@ _ROLE_CLIENT = 1
 
 
 class MappedBuffer:
-    """One pool buffer's samples, mapped — the samples themselves, not a copy.
+    """One pool buffer's samples, mapped -- the samples themselves, not a copy.
 
     ``samples`` is a writable ``memoryview`` of ``f32`` in the buffer's own
     interleaved order, so reading is a memory read and writing is what the
@@ -93,7 +93,7 @@ class MappedBuffer:
     some old samples and some new, never half of one, which is the rule the
     whole buffer model states (`docs/ipc.md`).
 
-    Close it when done — or use it as a context manager. The mapping stays
+    Close it when done -- or use it as a context manager. The mapping stays
     valid even after the buffer is freed (the region is unlinked, not deleted),
     which is what makes freeing a take safe while somebody is drawing it; what
     tells you it is history is the directory, through `ShmClient.buffer_info`.
@@ -148,7 +148,7 @@ class ShmClient:
         if magic != _MAGIC:
             self._release()
             raise SegmentError(f"{path} is not a clausters segment")
-        #: Where everything in this segment is, as the shared core reports it —
+        #: Where everything in this segment is, as the shared core reports it --
         #: the one place the layout is known.
         self.shape = _native.shm_shape(self._addr, len(self.mm))
         if self.shape is None:
@@ -172,7 +172,7 @@ class ShmClient:
         self._path = path
 
     def _release(self):
-        """Drops the pinning view and then the mapping, in that order — a
+        """Drops the pinning view and then the mapping, in that order -- a
         `mmap` refuses to close while an exported buffer is outstanding, and
         the view is what exports it. Nothing may hold a *local* reference to it
         either, which is why this drops the attribute and never names it."""
@@ -230,7 +230,7 @@ class ShmClient:
 
     def level(self, bus: int) -> float:
         """Audio bus `bus`'s level: the peak magnitude of the engine's last
-        block. One number per block, published for every audio bus — what a
+        block. One number per block, published for every audio bus -- what a
         meter reads, and why metering a bus costs no tap ring.
         """
         if not 0 <= bus < self.audio_buses:
@@ -240,7 +240,7 @@ class ShmClient:
 
     def tap_of_bus(self, bus: int) -> "int | None":
         """Which tap ring is recording audio bus `bus`, or ``None``. The ring
-        index is the segment's own bookkeeping — a reader names the bus.
+        index is the segment's own bookkeeping -- a reader names the bus.
         """
         if not 0 <= bus < self.audio_buses:
             raise IndexError(f"audio bus {bus} out of range 0..{self.audio_buses}")
@@ -253,7 +253,7 @@ class ShmClient:
 
         The **generation** is the number that does three jobs: it is odd while
         the buffer is live and even when the slot is empty, it names the region
-        file, and it is the seqlock the read is taken under — a row caught
+        file, and it is the seqlock the read is taken under -- a row caught
         mid-write is re-read rather than believed. The retry is the shared
         core's, not a second implementation of it here.
         """
@@ -263,13 +263,13 @@ class ShmClient:
         """The file buffer `bufnum`'s **samples** live in, or ``None`` when the
         directory holds no live buffer under that number.
 
-        The segment's own path, the buffer number and the **generation** — so a
+        The segment's own path, the buffer number and the **generation** -- so a
         freed buffer's file and its replacement's can never share a name. Its
         sibling ``<path>.peaks`` is the summary the server keeps beside it,
         which is what a peer maps instead of reading the samples to build one.
 
         `map_buffer` is what opens it; this is here for the questions that are
-        about the file rather than about its contents — how big the samples
+        about the file rather than about its contents -- how big the samples
         are against their summary, whether either is there at all.
         """
         info = self.buffer_info(bufnum)
@@ -283,14 +283,14 @@ class ShmClient:
         between the two steps looks like).
 
         This is the data plane's other half: the samples are not messages. What
-        comes back is the server's own memory — writing a sample is what the
-        engine reads on the next block, exactly as a control-bus write is — so
+        comes back is the server's own memory -- writing a sample is what the
+        engine reads on the next block, exactly as a control-bus write is -- so
         `clausters.defs.Buffer.get_samples` is a *fetch* only for a client that
         cannot map the segment.
 
         **What may be written here is data, not computation**: samples a
         caller already holds (a drawn stroke, a pasted block). Every operation
-        over samples — a gain, a fade, a reverse, a render — stays a command,
+        over samples -- a gain, a fade, a reverse, a render -- stays a command,
         because one place performs audio processing and it is the server.
         """
         info = self.buffer_info(bufnum)
@@ -315,7 +315,7 @@ class ShmClient:
 
     def send(self, packet: bytes, peer: int = DEFAULT_PEER) -> bool:
         """Pushes one OSC packet, authored by `peer`. The tag is the caller's to
-        assign — the server only has to tell its clients apart, not name them —
+        assign -- the server only has to tell its clients apart, not name them --
         and a client that never picks one is the single client a segment used to
         have (`DEFAULT_PEER`)."""
         return _native.shm_push(self._addr, len(self.mm), _ROLE_CLIENT, peer, packet)
@@ -336,7 +336,7 @@ class ShmClient:
         return packet if to == peer else None
 
     def poll_any(self) -> "tuple[int, bytes] | None":
-        """The next reply as ``(peer, packet)``, whoever it is for — the door a
+        """The next reply as ``(peer, packet)``, whoever it is for -- the door a
         process holding several clients over one segment routes with."""
         return _native.shm_pop(self._addr, len(self.mm), _ROLE_CLIENT)
 
@@ -381,7 +381,7 @@ def _find_library() -> str:
 def _require(lib: ctypes.CDLL, name: str, feature: str):
     """Fetch an FFI symbol, turning a missing one into a concrete
     `LibraryFeatureError` that names the symbol and the Cargo feature to
-    rebuild with — instead of the bare ``AttributeError``/``undefined symbol``
+    rebuild with -- instead of the bare ``AttributeError``/``undefined symbol``
     ctypes raises when the library was built without that feature."""
     try:
         return getattr(lib, name)
@@ -466,7 +466,7 @@ def render(score: bytes, sample_rate: float = 48000.0, channels: int = 2,
            workers: int = 0, lib_path: str | None = None,
            seed: int | None = None) -> tuple[array, int, int, int]:
     """Synchronous offline render: binary score in, ``(samples, frames,
-    events, seed)`` out — the samples interleaved float32 in a stdlib
+    events, seed)`` out -- the samples interleaved float32 in a stdlib
     ``array('f')``. The whole call blocks the caller and nothing else; there is
     no server involved.
 
@@ -501,7 +501,7 @@ def read_soundfile(path, start: int = 0, frames: int = -1,
 
     WAV goes through hound, everything else (FLAC, OGG/Vorbis, MP3, MP4/AAC,
     ALAC, AIFF, ...) through symphonia; integer files are scaled to
-    ``[-1, 1]``. The rate is the file's own — nothing resamples.
+    ``[-1, 1]``. The rate is the file's own -- nothing resamples.
     """
     lib = _load(lib_path)
     n = ctypes.c_uint64(0)

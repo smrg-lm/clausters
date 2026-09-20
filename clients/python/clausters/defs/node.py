@@ -3,9 +3,9 @@
 The server's node tree (`node`): the root group is id 0; clients allocate
 positive ids. Add actions match the server: head/tail of a group, before/after
 a node, or replace. `Synth` and `Group` hold an id and the server it lives on,
-and own the commands addressed to it: **building one creates it** —
+and own the commands addressed to it: **building one creates it** --
 ``Synth("beep")`` allocates an id and sends ``/synth_new``, ``Group()`` sends
-``/group_new``, `Group.graph` instantiates a GraphDef — and `Node.set`,
+``/group_new``, `Group.graph` instantiates a GraphDef -- and `Node.set`,
 `Node.map`, `Node.run` and `Node.free` drive it, which is where `Node`, their
 base, documents what every node can do. To name a node that already exists,
 from an id a responder or a query reported, use `Synth.from_id` /
@@ -25,7 +25,7 @@ ROOT_NODE_ID = 0
 class AddAction(IntEnum):
     """Where a new node goes, relative to the ``target`` it is added against.
 
-    This is not bookkeeping — it is **signal order**. The server processes the
+    This is not bookkeeping -- it is **signal order**. The server processes the
     tree front to back within a block, so a node only hears what was written
     *earlier in the same pass*. Put an effect after its sources and it reads
     this block; put it before them and it reads last block's, one block late.
@@ -54,7 +54,7 @@ class AddAction(IntEnum):
     A ``target`` is any node, not only a group: `BEFORE`, `AFTER` and
     `REPLACE` take a `Synth` as readily as a `Group`. `HEAD` and `TAIL` are
     the two that need a group, and aiming one at a synth is **refused
-    silently** — the server drops the node and logs it, the client sees no
+    silently** -- the server drops the node and logs it, the client sees no
     error and gets back a handle to an id that was never created.
 
     `HEAD` and `TAIL` place a node *inside* a group; `BEFORE` and `AFTER` place
@@ -64,13 +64,13 @@ class AddAction(IntEnum):
     Attributes:
         HEAD: first inside ``target``, which must be a group. Before
             everything already in it.
-        TAIL: last inside ``target``, which must be a group — the default,
+        TAIL: last inside ``target``, which must be a group -- the default,
             because a new voice usually wants to be heard by whatever the
             group already feeds.
         BEFORE: immediately before ``target``, as its sibling. Runs first, so
             ``target`` can read what it writes this block.
         AFTER: immediately after ``target``, as its sibling. Reads what
-            ``target`` wrote this block — the usual placement for an effect.
+            ``target`` wrote this block -- the usual placement for an effect.
         REPLACE: takes ``target``'s exact place in the order, and frees it.
             The way to swap a running node without the gap a free-then-create
             would leave.
@@ -106,7 +106,7 @@ class Node:
 
     A node is an integer id on a particular server, and that is all a client
     holds: the sound, the state and the position in the tree live over there.
-    What this class adds is that the id knows where to go — `set`, `map`,
+    What this class adds is that the id knows where to go -- `set`, `map`,
     `run`, `free` and `info` each send one command to the right server without
     being told which.
 
@@ -120,7 +120,7 @@ class Node:
     reads what they wrote, the same reverb placed before them reads last
     block's silence. That is what the `AddAction` on every constructor controls.
 
-    The three structural pieces together — a def to play, a group to hold the
+    The three structural pieces together -- a def to play, a group to hold the
     voices, and the synths themselves:
 
     ```python
@@ -145,7 +145,7 @@ class Node:
             `Server`'s `NodeIdAllocator`), so it is known the moment the
             command is sent, with no reply to wait for.
         server: the `Server` this node lives on, or `None` for a handle built
-            from an id someone else reported — that one falls back to the
+            from an id someone else reported -- that one falls back to the
             ambient server, like `clausters.play`.
     """
 
@@ -159,7 +159,7 @@ class Node:
         self.server = server
 
     def _server(self):
-        """This node's server, or the ambient one — a handle built from a
+        """This node's server, or the ambient one -- a handle built from a
         reported id (a responder, the GUI, the arrangement) carries none."""
         return _resolve(self.server)
 
@@ -181,8 +181,8 @@ class Node:
         controls, its ``/node_map`` bindings and the buses it reads and writes.
 
         A photograph, not a state: a running envelope or a mapped control moves
-        under the record's feet, so nothing caches it. A node that is gone —
-        freed, or ended by a ``done_action`` — comes back with ``exists``
+        under the record's feet, so nothing caches it. A node that is gone --
+        freed, or ended by a ``done_action`` -- comes back with ``exists``
         false rather than raising. Blocking, RT only."""
         _, args = self._server().request("/node_query", self.id, timeout=timeout,
                                          expect=("/node_query.reply",))
@@ -200,18 +200,18 @@ class Node:
                                 *(float(a) for a in args))
 
     def free(self):
-        """Free this node now (``/node_free``) — the way to cut something whose
+        """Free this node now (``/node_free``) -- the way to cut something whose
         life is long (a `play`'d expression, a slow take). Frees a GraphDef
         instance too, private buses included.
 
         The id is **not** returned to the registry here: it stays tracked until
-        the server confirms the death with ``/node_end`` — releasing at send time
+        the server confirms the death with ``/node_end`` -- releasing at send time
         could re-hand an id whose node is still alive on the server."""
         self._server().send_msg("/node_free", self.id)
 
     def run(self, flag: bool = True):
-        """Pauses (``flag=False``) or resumes (``flag=True``) this node — a
-        synth or a whole group — with ``/node_run``. A paused node stays in the
+        """Pauses (``flag=False``) or resumes (``flag=True``) this node -- a
+        synth or a whole group -- with ``/node_run``. A paused node stays in the
         tree and keeps its state but is skipped (silent); this is what resumes
         a synth parked by ``DoneAction.PAUSE_SELF``."""
         self._server().send_msg("/node_run", self.id, 1 if flag else 0)
@@ -231,7 +231,7 @@ class Node:
         This is `AddAction.BEFORE` applied to a node that already exists: the
         constructor places a node when it is made, and this is how one is moved
         afterwards. Running earlier in the pass, it is now read by ``target``
-        rather than reading it — the same trade the placement always was.
+        rather than reading it -- the same trade the placement always was.
 
         The move is refused inside an auto-sorted group (see
         `Group.auto_order`), which computes the order itself and replies
@@ -266,7 +266,7 @@ class Node:
         mixer.order(drums, bass, action=AddAction.HEAD)
         ```
 
-        ``action`` takes the four placements a move admits — `AddAction.HEAD`
+        ``action`` takes the four placements a move admits -- `AddAction.HEAD`
         and `AddAction.TAIL` put them inside this node, which must then be a
         group, `AddAction.BEFORE` and `AddAction.AFTER` beside it.
         `AddAction.REPLACE` is not one of them: it frees what it replaces, and
@@ -286,25 +286,25 @@ class Node:
 
 
 class Synth(Node):
-    """One running instance of a def — a voice, sounding now.
+    """One running instance of a def -- a voice, sounding now.
 
     A def is a recipe and a synth is one performance of it: several synths of
     the same def run at once, each with its own controls and its own envelope.
     **Both def families instantiate the same way**, because the server names a
-    def rather than a kind — a `SynthDef` (a UGen graph) and a `FaustDef`
+    def rather than a kind -- a `SynthDef` (a UGen graph) and a `FaustDef`
     (JIT-compiled DSP) are peers, and a synth of either is the same node in the
     same tree, driven by the same `Node.set`. The def has to be installed
     first, so send it before naming it here.
 
     A synth's controls are its surface. Set them by name with `Node.set`, or
     hand one over to a `Bus` with `Node.map` so it follows whatever that bus
-    carries — that is how one modulator drives many voices with the client out
+    carries -- that is how one modulator drives many voices with the client out
     of the loop.
 
     How it ends is usually not your call. A def with an envelope frees its own
     synth when the envelope finishes (`clausters.defs.DoneAction.FREE_SELF`),
     which is what makes a note a note; `Node.free` is for the ones with no end
-    of their own — a drone, a live effect, a take being cut short.
+    of their own -- a drone, a live effect, a take being cut short.
 
     A note that ends itself, and a drone that does not:
 
@@ -353,7 +353,7 @@ class Synth(Node):
 
         An unknown def name raises nothing here: the command is fire-and-forget,
         the server answers ``/fail`` on its own channel, and the handle you get
-        back carries an id no node was ever created for — `Node.info` reports
+        back carries an id no node was ever created for -- `Node.info` reports
         ``exists`` false for it.
 
         Args:
@@ -361,11 +361,11 @@ class Synth(Node):
                 either family. Sending a def is asynchronous, but
                 ``d.send(s)`` waits for the server's ``/done`` by default, so
                 the def is there by the time you name it.
-            controls: the controls to override the def's defaults with — a
+            controls: the controls to override the def's defaults with -- a
                 dict of names to values, or a list of ``(name, value)`` pairs.
                 Pairs are how you reach the reserved ``in`` and ``out``
                 controls, which are Python keywords.
-            target: the node this one is placed relative to — a `Group`, a
+            target: the node this one is placed relative to -- a `Group`, a
                 `Node`, or a bare id. Defaults to the root group.
             action: where relative to ``target``, an `AddAction`. Defaults to
                 the tail, i.e. after everything already in the target group,
@@ -398,7 +398,7 @@ class Group(Node):
     script needs once it has more than one voice:
 
     - **A handle for many.** A group *is* a `Node`, so every command on `Node`
-      applies to everything inside it at once — `Node.set` reaches all the
+      applies to everything inside it at once -- `Node.set` reaches all the
       members that have that control, `Node.run` pauses them together, and
       `Node.free` frees the group and its contents in one command. That is one
       message instead of one per voice.
@@ -411,8 +411,8 @@ class Group(Node):
 
     The root group (id ``0``, `ROOT_NODE_ID`) is always there and is what a
     node with no ``target`` is added to. Two constructors build a group that is
-    *not* empty: `graph` instantiates a GraphDef — a named configuration of
-    several defs already wired to each other — and `voice` spawns one more
+    *not* empty: `graph` instantiates a GraphDef -- a named configuration of
+    several defs already wired to each other -- and `voice` spawns one more
     voice inside a running instance of one.
 
     Sources and an effect, ordered by their groups rather than by luck:
@@ -458,10 +458,10 @@ class Group(Node):
         ```
 
         Args:
-            name: the group's label, unique among its siblings — see `rename`
+            name: the group's label, unique among its siblings -- see `rename`
                 for what a name is and what it is not. ``None`` leaves the
                 group unnamed.
-            target: the node this group is placed relative to — a `Node` or a
+            target: the node this group is placed relative to -- a `Node` or a
                 bare id. Defaults to the root group.
             action: where relative to ``target``, an `AddAction`. Defaults to
                 the tail, so a new group runs after everything already there.
@@ -481,7 +481,7 @@ class Group(Node):
 
         A name does not replace the id: every command still addresses the group
         by id, and this one is no exception. What it adds is a way to *say*
-        which group you mean — the label comes back in every node report
+        which group you mean -- the label comes back in every node report
         (`Node.info`, `clausters.defs.Server.query_tree`), and it names one
         segment of the group's path, which `clausters.defs.Server.group_at`
         resolves. That is what makes a mixer's channels, its busses and its
@@ -544,7 +544,7 @@ class Group(Node):
         return self
 
     def head(self, *nodes) -> "Group":
-        """Moves each node to the **head** of this group (``/group_head``) —
+        """Moves each node to the **head** of this group (``/group_head``) --
         first in the order, before everything already there. Answers this group.
 
         `AddAction.HEAD` for nodes that already exist, and the way a node is
@@ -556,7 +556,7 @@ class Group(Node):
         return self._move_into("/group_head", nodes)
 
     def tail(self, *nodes) -> "Group":
-        """Moves each node to the **tail** of this group (``/group_tail``) —
+        """Moves each node to the **tail** of this group (``/group_tail``) --
         last in the order, after everything already there. Answers this group.
 
         `AddAction.TAIL` for nodes that already exist. Refused when this group
@@ -603,8 +603,8 @@ class Group(Node):
         running GraphDef instance (a group from `graph`), wired to its shared
         private buses.
 
-        A slot is a member there is a changing number of — a clip on a track, an
-        effect in a chain, a voice of an instrument — so this is how many of them
+        A slot is a member there is a changing number of -- a clip on a track, an
+        effect in a chain, a voice of an instrument -- so this is how many of them
         there are right now. ``ports`` overrides that slot's port defaults. The
         returned group is the one that was built: drive it through its surface
         with `set` and free it with `free`."""
@@ -616,7 +616,7 @@ class Group(Node):
 
     def move_slot(self, instance) -> "Group":
         """Moves this slot (a group from `add_slot`) into another running
-        instance (``/graph_moveSlot``) — a clip dragged to another track.
+        instance (``/graph_moveSlot``) -- a clip dragged to another track.
 
         The slot is not built again: the server re-wires it to the new
         instance's private buses, so its ports, whatever is mapped onto them and
@@ -628,7 +628,7 @@ class Group(Node):
 
     def voice(self, ports=None) -> "Group":
         """Spawns a per-voice sub-graph (``/graph_newVoice``) inside this running
-        GraphDef instance, wired to its shared private buses — the slot named
+        GraphDef instance, wired to its shared private buses -- the slot named
         ``"voice"``, spelled the way it was before slots had names, and what a
         MIDI note spawns. ``ports`` overrides the voice-port defaults."""
         srv = self._server()
@@ -643,7 +643,7 @@ class NodeIdAllocator:
     Node ids name slots of a finite boot-time resource (the server's node
     table), so the allocator is an occupancy map, not a counter: every id
     handed out stays tracked until the server reports the node's death
-    (``/node_end``, fed in through `free`), which makes it allocatable again —
+    (``/node_end``, fed in through `free`), which makes it allocatable again --
     the space never exhausts while nodes keep dying. A score's spaces are the
     unbounded variant (an offline score has no live ``/node_end`` stream to
     recycle from).
@@ -657,7 +657,7 @@ class NodeIdAllocator:
 
     def alloc(self) -> int:
         """A free node id. Raises `RuntimeError` when the whole range is in
-        flight — allocation never wraps into ids that may still be alive."""
+        flight -- allocation never wraps into ids that may still be alive."""
         node_id = self._spaces.alloc(_native.IdSpaces.NODES)
         if node_id is None:
             raise RuntimeError(
@@ -666,7 +666,7 @@ class NodeIdAllocator:
         return node_id
 
     def free(self, node_id: int):
-        """Returns ``node_id`` to the pool — called when its ``/node_end``
+        """Returns ``node_id`` to the pool -- called when its ``/node_end``
         arrives. Ids outside the client range (another owner's) and ids not
         currently allocated are ignored: every node death on the server is
         reported, not only those of nodes this client created."""

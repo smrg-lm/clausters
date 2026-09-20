@@ -2,7 +2,7 @@
 //! held for the node's life. They are the concrete proof of the `ir` init
 //! pass in [`crate::synthdef::instance`]: the synth runs each `ir` UGen on the
 //! very first block and then never again, so a value that would *differ* if
-//! recomputed (like [`Rand`]) stays frozen — that freeze is the whole point of
+//! recomputed (like [`Rand`]) stays frozen -- that freeze is the whole point of
 //! the rate.
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -33,7 +33,7 @@ static SEED: AtomicU64 = AtomicU64::new(0x2545_F491_4F6C_DD1D);
 /// time the synth runs (the `ir` init pass) and held forever after. Inputs
 /// 0 `lo`, 1 `hi`. Unlike [`SampleRate`], recomputing it would give a *new*
 /// number every block, so it only stays constant because the init pass runs it
-/// exactly once — making it the sharpest test of that pass.
+/// exactly once -- making it the sharpest test of that pass.
 pub struct Rand {
     noise: rng::WhiteNoise,
 }

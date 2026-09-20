@@ -1,7 +1,7 @@
 // Mounting a bundle: one persisted directory becoming N live components.
 //
-// A bundle's GuiDef record is a **template** — `@symbol` where an id goes,
-// `$param` where a value does — so mounting means allocating what its manifest
+// A bundle's GuiDef record is a **template** -- `@symbol` where an id goes,
+// `$param` where a value does -- so mounting means allocating what its manifest
 // declares and resolving the holes. That pass is `clausters_core::bundle`,
 // reached here through the core's wasm door, and it is the same one the native
 // `--standalone` leg runs: one directory, three legs, one behaviour. The
@@ -10,21 +10,21 @@
 // Mounting is **two phases**, because the host does not need audio and the
 // engine does:
 //
-// 1. `openBundle` — allocate, resolve, attach the canvas, open the GuiDef. The
+// 1. `openBundle` -- allocate, resolve, attach the canvas, open the GuiDef. The
 //    component draws as the reader scrolls to it, with no gesture and no
 //    AudioContext.
-// 2. `startBundle` — on the page's first gesture: the defs (sent once per def
+// 2. `startBundle` -- on the page's first gesture: the defs (sent once per def
 //    name per page, however many components want them), the samples, and the
 //    boot list.
 //
-// The def payloads carry no holes — that is the invariant the format rests on
-// — so two instances of one bundle share the one `/def_send synth` that was sent, and
+// The def payloads carry no holes -- that is the invariant the format rests on
+// -- so two instances of one bundle share the one `/def_send synth` that was sent, and
 // only their GuiDef and their boot differ.
 //
 // `freeBundle` is the way back out of both phases at once, since an instance
 // is removed as a whole: what it was allocated goes back to the pools, its
-// window and its nodes are freed, and what the page shares — the defs, the
-// sample buffers, the engine, the host — stays where it is.
+// window and its nodes are freed, and what the page shares -- the defs, the
+// sample buffers, the engine, the host -- stays where it is.
 
 import { loadCore } from "./base/core.ts";
 import { decodePacket, encodeMessage } from "./base/osc.ts";
@@ -51,7 +51,7 @@ export interface BundleManifest {
     synthdefs?: string[];
     graphdefs?: string[];
     /**
-     * How many widgets the template holds — the size of the id block a mount
+     * How many widgets the template holds -- the size of the id block a mount
      * allocates. Absent (or 0) in a bundle written before the contract, which
      * mounts verbatim.
      */
@@ -95,7 +95,7 @@ interface Resolved {
 
 /** One mounted instance, between its two phases and after them. */
 export interface Mounted {
-    /** The id its GuiDef opened under — unique per instance. */
+    /** The id its GuiDef opened under -- unique per instance. */
     defId: number;
     /** The resolved tree, holes filled. */
     tree: unknown;
@@ -105,7 +105,7 @@ export interface Mounted {
      * What this instance was allocated, by symbol name: its node ids, its
      * buses, its buffers. Flat because the names share one namespace (the
      * core refuses a name declared twice), and here because a page that wants
-     * to talk to *this* instance — an `/node_set`, a bus to watch — needs them.
+     * to talk to *this* instance -- an `/node_set`, a bus to watch -- needs them.
      */
     symbols: Record<string, number>;
     /** Whether the engine half has been sent (phase 2). */
@@ -120,7 +120,7 @@ let nextSync = 0xb40;
  * The def payloads already handed to the page's engine, by URL, each as the
  * promise of its send.
  *
- * A def payload holds no holes, so two instances of one bundle send it once —
+ * A def payload holds no holes, so two instances of one bundle send it once --
  * but a **promise**, not a flag: components start concurrently, and a second
  * instance that merely saw the first claim the def could boot before the
  * bytes were on their way. It waits for the send that is already in flight.
@@ -152,8 +152,8 @@ async function fetchJson<T>(url: string): Promise<T> {
  * Where one mount reads its files from: a served directory, or the bundle a
  * page has just authored and holds as text (`Bundle.files`).
  *
- * The two are the same bundle — the in-memory one is what the writer would
- * have put on disk — so this is a **source**, not a second format: everything
+ * The two are the same bundle -- the in-memory one is what the writer would
+ * have put on disk -- so this is a **source**, not a second format: everything
  * below asks it for a path and never for a URL. Only the samples still need
  * the network, since they are data the writer never emitted.
  */
@@ -181,7 +181,7 @@ class Source {
     }
 
     /**
-     * What names this file for the page's own caches — the URL when there is
+     * What names this file for the page's own caches -- the URL when there is
      * one, and the path under an in-memory bundle's name when there is not.
      * A def payload and a sample are shared page-wide by this key.
      */
@@ -201,7 +201,7 @@ class Source {
 }
 
 /**
- * What `openBundle` keeps for `startBundle` and `freeBundle` — the engine
+ * What `openBundle` keeps for `startBundle` and `freeBundle` -- the engine
  * half, held until a gesture makes an AudioContext legal, and the allocation
  * to give back when the instance goes.
  */
@@ -210,7 +210,7 @@ interface Pending {
     manifest: BundleManifest;
     resolved: Resolved;
     buffers: Record<string, number>;
-    /** The pools this instance drew from — the ones `freeBundle` returns to. */
+    /** The pools this instance drew from -- the ones `freeBundle` returns to. */
     pools: Pools;
     /**
      * Exactly what was taken, so exactly that is given back: the widget block
@@ -229,12 +229,12 @@ const pending = new WeakMap<Mounted, Pending>();
 export interface MountOptions {
     /**
      * The bundle's URL prefix. Optional only when `files` carries the whole
-     * bundle — a sample still comes off the network, so a bundle with buffers
+     * bundle -- a sample still comes off the network, so a bundle with buffers
      * needs one either way.
      */
     base?: string;
     /**
-     * A bundle held as text, by path relative to its directory — exactly what
+     * A bundle held as text, by path relative to its directory -- exactly what
      * `Bundle.files()` returns. A page that authored a bundle mounts it with
      * no round trip through disk; anything not held here is fetched under
      * `base`.
@@ -242,7 +242,7 @@ export interface MountOptions {
     files?: Record<string, string>;
     /**
      * The canvas this instance draws into. Omitted, the page's default one is
-     * used — which is right for a page showing a single bundle and wrong for
+     * used -- which is right for a page showing a single bundle and wrong for
      * a document showing several.
      */
     canvas?: HTMLCanvasElement;
@@ -262,7 +262,7 @@ export interface MountOptions {
 
 /**
  * Phase 1: allocate, resolve, and open this instance's GuiDef on the page's
- * host — no audio, no gesture. The component draws immediately.
+ * host -- no audio, no gesture. The component draws immediately.
  */
 export async function openBundle(options: MountOptions): Promise<Mounted> {
     const { base = null, files = null, canvas, name = null, attributes = {}, preset = null } = options;
@@ -290,7 +290,7 @@ export async function openBundle(options: MountOptions): Promise<Mounted> {
     }
 
     // What this instance needs, then what the page gave it. The resolver never
-    // allocates — that is what keeps it pure and the ids the page's.
+    // allocates -- that is what keeps it pure and the ids the page's.
     // The template goes along: a bundle written before the contract declares
     // no widget count, and its id block is measured from the ids it uses.
     const requirements = JSON.parse(bundle_requirements(JSON.stringify({ manifest, template }))) as {
@@ -367,7 +367,7 @@ export async function openBundle(options: MountOptions): Promise<Mounted> {
 }
 
 /**
- * Phase 2: the engine half — the defs, the samples and the boot list. Call it
+ * Phase 2: the engine half -- the defs, the samples and the boot list. Call it
  * from a user gesture (the AudioContext will not start without one); calling
  * it twice is a no-op.
  */
@@ -383,7 +383,7 @@ export async function startBundle(mounted: Mounted): Promise<void> {
 
     // The defs, once per payload for the whole page: a def payload holds no
     // holes, so two instances share the one that was sent. Every def this
-    // instance needs must be **on its way** before its boot goes out — the
+    // instance needs must be **on its way** before its boot goes out -- the
     // engine serves in order, so an issued send is enough.
     const wanted: [string, string][] = [
         ...(manifest.synthdefs ?? []).map(
@@ -408,7 +408,7 @@ export async function startBundle(mounted: Mounted): Promise<void> {
         }),
     );
 
-    // The samples, loaded before any boot message can play one — once per URL,
+    // The samples, loaded before any boot message can play one -- once per URL,
     // since phase 1 already pointed every instance at the same buffer.
     for (const [symbol, path] of Object.entries(manifest.buffers ?? {})) {
         const bufnum = buffers[symbol];
@@ -422,8 +422,8 @@ export async function startBundle(mounted: Mounted): Promise<void> {
 
     // The same bracket the native data-dir boot gets implicitly: the first
     // /server_sync marks the defs in (loading them is asynchronous on the server),
-    // the second — arriving after everything, since the engine serves strictly
-    // in order — is this instance's "up" signal.
+    // the second -- arriving after everything, since the engine serves strictly
+    // in order -- is this instance's "up" signal.
     const syncId = (nextSync += 2);
     let bootedResolve!: () => void;
     const booted = new Promise<void>((r) => {
@@ -457,15 +457,15 @@ export async function startBundle(mounted: Mounted): Promise<void> {
  * The unmount: give back everything this instance took, and nothing the page
  * shares.
  *
- * What one instance owns is what it was allocated — its widget block (the def
- * id is inside it), its node ids, its buses — plus the canvas the host holds
+ * What one instance owns is what it was allocated -- its widget block (the def
+ * id is inside it), its node ids, its buses -- plus the canvas the host holds
  * for it. Those go: `/gui_free` closes the window and takes its subtree, its
  * bindings and any voices it was holding down; `/node_free` takes the nodes
  * its boot instantiated; `detach` takes the GPU surface, which also drops the
  * def from the tick and from the `/bus_stream` set. The `<canvas>` element
  * itself belongs to the page, which keeps or removes it.
  *
- * What the *page* owns stays: the AudioContext, the host, and — deliberately —
+ * What the *page* owns stays: the AudioContext, the host, and -- deliberately --
  * the def payloads and the sample buffers. Both are shared by URL between
  * every instance of a bundle, and both are idempotent data the engine holds
  * once, so freeing them here would be freeing a sibling's; a component mounted
@@ -511,7 +511,7 @@ export async function freeBundle(
 
 /**
  * One resolved boot argument as a tagged OSC value, keeping the int/float
- * distinction JSON already carries — so a node id stays an integer.
+ * distinction JSON already carries -- so a node id stays an integer.
  */
 function oscValue(value: unknown): OscArg {
     if (typeof value === "string") return ["s", value];

@@ -1,7 +1,7 @@
 """The GUI node as an object: `clausters.gui.view.View`.
 
 A builder used to return a bare ``dict``; it now returns a `View`, which is a
-``dict`` — so the document is unchanged — that also carries the client-side name
+``dict`` -- so the document is unchanged -- that also carries the client-side name
 index and knows how to open itself.
 """
 

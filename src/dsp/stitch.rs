@@ -2,16 +2,16 @@
 //!
 //! A window onto one buffer is a reader with a start and a span, and that is
 //! all a clip needed for as long as a clip was one window. The moment several
-//! windows are joined into one — fragments of different files, or of one file
-//! in another order — the reader would have to change *which buffer it reads*
+//! windows are joined into one -- fragments of different files, or of one file
+//! in another order -- the reader would have to change *which buffer it reads*
 //! with sample accuracy, and `bufnum` is an initial-rate control: changing it
 //! is a new node. A new node per seam is a control message in the middle of
 //! playback, which is exactly what a multitrack that plays itself from the transport
 //! must not need.
 //!
 //! So the join moves out of the reader and into the buffer. A [`Stitch`] is a
-//! list of [`Part`]s — a span of some source buffer, with its own channel
-//! mapping and its own edit crossfades — and to every reader it is a buffer
+//! list of [`Part`]s -- a span of some source buffer, with its own channel
+//! mapping and its own edit crossfades -- and to every reader it is a buffer
 //! like any other: it has frames, channels and a sample rate, and it answers
 //! [`Buffer::sample`](crate::dsp::buffer::Buffer::sample). Which part a frame
 //! belongs to is resolved on the audio thread, and resolving it allocates
@@ -30,7 +30,7 @@
 //! knows it is advancing.
 //!
 //! The lookup it saves was two questions, and a run answers both once: *which
-//! part* holds this frame, and *where* that part's source keeps its samples —
+//! part* holds this frame, and *where* that part's source keeps its samples --
 //! so a read inside a run is the indexed load a plain buffer costs, not a
 //! resolution.
 //!
@@ -39,7 +39,7 @@
 //! second, which is what crossing a seam looks like. Only a real jump pays the
 //! binary search, over a list as long as the join has pieces. It is shared by
 //! every reader of the buffer and is a *hint*: two readers at two places make
-//! each other miss, and a miss is a binary search and not a wrong answer —
+//! each other miss, and a miss is a binary search and not a wrong answer --
 //! which also stopped being a contended write on every sample when the run
 //! arrived.
 //!
@@ -56,7 +56,7 @@
 //! every write path refuses a stitch by name.
 //!
 //! That takes nothing away, because **a stitch is replaced rather than
-//! edited** — the same rule the server already states for `/buffer_alloc`,
+//! edited** -- the same rule the server already states for `/buffer_alloc`,
 //! `/buffer_read` and `/buffer_gen`, which install a new buffer whole. Re-cutting
 //! a join costs the list of parts and not the samples, and the reader that was
 //! running keeps running.
@@ -85,7 +85,7 @@ pub struct Part {
     pub frames: usize,
     /// A linear fade over this many frames at the part's start, and at its end.
     /// Two spans that do not continue each other make a step, which is a click
-    /// however well the frames themselves are read — this is the few
+    /// however well the frames themselves are read -- this is the few
     /// milliseconds every editor puts on a cut, and it belongs here because
     /// here is where the seam is.
     pub fade_in: usize,
@@ -103,12 +103,12 @@ pub struct Part {
     /// law in the graph, because what is loud is the mixer's question and what
     /// is where is this one's.
     pub map: Box<[i32]>,
-    /// The first frame of this part **in the stitched buffer** — the cumulative
+    /// The first frame of this part **in the stitched buffer** -- the cumulative
     /// sum, computed once at build so a lookup is a comparison.
     start: usize,
 }
 
-/// **A part with its source's cells already taken** — what a reader holds while
+/// **A part with its source's cells already taken** -- what a reader holds while
 /// it stays inside one part.
 ///
 /// The lookup a join costs is two questions, not one: *which part* holds this
@@ -170,7 +170,7 @@ impl<'a> PartRun<'a> {
 }
 
 impl Part {
-    /// One sample of this part, `inner` frames into it — the one-off read, for
+    /// One sample of this part, `inner` frames into it -- the one-off read, for
     /// a caller that is not staying. A caller that is holds a [`PartRun`].
     #[inline]
     pub fn sample(&self, inner: usize, channel: usize) -> f32 {
@@ -201,7 +201,7 @@ impl std::fmt::Debug for Part {
     }
 }
 
-/// What a part is made of before its place in the stitch is known — the shape a
+/// What a part is made of before its place in the stitch is known -- the shape a
 /// command parses into, so [`Stitch::new`] is the one place that computes the
 /// cumulative starts.
 pub struct PartSpec {
@@ -230,7 +230,7 @@ impl Stitch {
     ///
     /// Rejects what cannot be read rather than reading it wrong: a part with no
     /// frames, a map of the wrong width, a source that is itself too deeply
-    /// stitched, or a source at another sample rate — a stitch is a join, not a
+    /// stitched, or a source at another sample rate -- a stitch is a join, not a
     /// resampler, and the caller that knows the rates converts first.
     pub fn new(specs: Vec<PartSpec>, channels: usize, sample_rate: f64) -> Result<Self, String> {
         if specs.is_empty() {
@@ -292,12 +292,12 @@ impl Stitch {
         self.frames
     }
 
-    /// How many parts it has — what a query reports and a test reads.
+    /// How many parts it has -- what a query reports and a test reads.
     pub fn len(&self) -> usize {
         self.parts.len()
     }
 
-    /// The parts in order — what `/buffer_parts` reports and what a join editor
+    /// The parts in order -- what `/buffer_parts` reports and what a join editor
     /// reads to draw the seams it would move.
     pub fn parts(&self) -> &[Part] {
         &self.parts
@@ -333,7 +333,7 @@ impl Stitch {
     }
 
     /// Which part holds `frame`. The cursor first, then the part after it, then
-    /// the search — see the module docs for why that order is the whole cost
+    /// the search -- see the module docs for why that order is the whole cost
     /// argument.
     #[inline]
     fn at(&self, frame: usize) -> usize {
@@ -443,7 +443,7 @@ mod tests {
 
     /// **A seam is read from both sides.** An interpolated reader asks for the
     /// frame before and the frame after; at a seam those are in two different
-    /// parts, and each has to resolve on its own — a reader that got silence
+    /// parts, and each has to resolve on its own -- a reader that got silence
     /// for the far side would click at every cut.
     #[test]
     fn the_two_frames_of_a_seam_come_from_two_parts() {

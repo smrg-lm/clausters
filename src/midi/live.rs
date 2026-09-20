@@ -1,7 +1,7 @@
 //! Live MIDI input over the OS's standard MIDI, via `midir` (transport).
 //!
-//! On Linux `midir` speaks the **ALSA sequencer** — the same system MIDI any
-//! controller or DAW uses — so [`MidiHub::open`] creates a **virtual input
+//! On Linux `midir` speaks the **ALSA sequencer** -- the same system MIDI any
+//! controller or DAW uses -- so [`MidiHub::open`] creates a **virtual input
 //! port** named for the server; anything routed into it (a keyboard through the
 //! kernel, `aconnect`, a DAW) drives the engine. (Network MIDI is a separate
 //! idea, deliberately out of scope here.)

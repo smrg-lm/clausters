@@ -3,12 +3,12 @@
 
 In scsynth, execution order is the client's burden: a node that reads an
 audio bus must be placed *after* the nodes writing it, or you get silence
-(buses clear every block). This demo builds a classic chain —
+(buses clear every block). This demo builds a classic chain --
 
     source (sine -> bus 16)  ->  fx (halves bus 16 in place)  ->  master
                                                    (bus 16 -> hardware out)
 
-— deliberately **backwards** (master first, source last) inside a normal
+-- deliberately **backwards** (master first, source last) inside a normal
 group: you hear nothing. Then a single `/group_sortMode 1` makes the group
 auto-sorted: the server infers source -> fx -> master from the buses each
 def reads/writes, reorders the nodes, and the chain becomes audible. The
@@ -65,7 +65,7 @@ def main():
     client.send("/group_new", GROUP, 0, 0)
 
     # Backwards on purpose: the reader first, the source last.
-    print("adding master, fx, source — in the WRONG order, manual group")
+    print("adding master, fx, source -- in the WRONG order, manual group")
     client.send("/synth_new", "master", 1001, 1, GROUP)
     client.send("/synth_new", "fx", 1002, 1, GROUP)
     client.send("/synth_new", "src", 1003, 1, GROUP)
@@ -89,11 +89,11 @@ def main():
 
     client.send("/group_freeAll", GROUP)
     client.send("/node_free", GROUP)
-    print("done — same commands, no /node_before juggling anywhere.")
+    print("done -- same commands, no /node_before juggling anywhere.")
 
 
 if __name__ == "__main__":
     try:
         main()
     except (TimeoutError, OSError):
-        sys.exit("no reply — is the server running? (cargo run --release)")
+        sys.exit("no reply -- is the server running? (cargo run --release)")

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Send OSC to another application, on the beat — the client as an OSC source.
+"""Send OSC to another application, on the beat -- the client as an OSC source.
 
 The counterpart of `osc_responder.py`. There the client *receives* OSC from any
-application; here it *sends* to one, and — the point of the example — with the
+application; here it *sends* to one, and -- the point of the example -- with the
 same logical timing the audio gets. A destination is where OSC goes:
 ``session.destination(host, port)`` opens one onto another application, and its
 ``send_bundle`` stamps the routine's exact beat, exactly as a note does.
 
 What travels is standard OSC: a message, or a bundle with an NTP timetag. A
-destination adds nothing of ours to it — not the server's ``latency`` (that is
+destination adds nothing of ours to it -- not the server's ``latency`` (that is
 our audio pipeline's property, not another program's), not ``/sched_at``, not
 ``/server_sync``. If another application needs to run ahead, ask for it as an explicit
 ``delay_beats``.

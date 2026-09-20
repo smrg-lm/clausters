@@ -3,7 +3,7 @@
 // A control bus carries one value per block; an oscilloscope, a phasescope and
 // a spectrum need the samples themselves. An audio bus does not sit in shared
 // memory the way a control bus does, so the server records the ones it is
-// asked for and a page reads them as `/bus_tapStream.reply` — the newest window of each
+// asked for and a page reads them as `/bus_tapStream.reply` -- the newest window of each
 // subscribed bus, every period. **A script names the bus**: the subscription
 // is itself the request to record it, and the ring behind it is the server's
 // bookkeeping.
@@ -11,12 +11,12 @@
 // What this module keeps that a raw subscription does not is **the sample
 // axis**: every window arrives with its `endPosition`, the total samples ever
 // recorded at the window's end, so consecutive snapshots can be placed on the
-// bus's own timeline — they overlap or gap by exactly the position delta,
+// bus's own timeline -- they overlap or gap by exactly the position delta,
 // never by a guess about the period.
 //
 // **What is not here: the trace.** Framing a display window and aligning it on
 // a trigger so a periodic signal stands still is what an oscilloscope *draws*,
-// and the drawing is the GUI host's — `scope(bus)`, or a `scope` widget in a
+// and the drawing is the GUI host's -- `scope(bus)`, or a `scope` widget in a
 // GuiDef, which asks the server for the same tap and stands the trace still.
 // What a script does with a window here is measure it.
 
@@ -47,9 +47,9 @@ export interface TapWindow {
  * ```
  *
  * Opening the stream is what starts the recording and stopping it is what ends
- * it — there is no separate routing step, and no ring index anywhere.
+ * it -- there is no separate routing step, and no ring index anywhere.
  *
- * At most 8 buses per subscription, and one subscription per client — a second
+ * At most 8 buses per subscription, and one subscription per client -- a second
  * `TapStream` on the same `Server` replaces the first (the server's rule), and
  * over the in-page carrier that client includes the GUI host, so a host
  * oscilloscope and this displace each other (see `BusStream`).
@@ -100,7 +100,7 @@ export class TapStream {
     }
 
     /**
-     * One bus's newest window, or `undefined` before its first snapshot — a
+     * One bus's newest window, or `undefined` before its first snapshot -- a
      * bus whose recording has not filled a window yet sends nothing at all.
      */
     window(bus: number): TapWindow | undefined {
@@ -109,7 +109,7 @@ export class TapStream {
 
     /**
      * The newest windows of `count` adjacent buses from `first`, interleaved
-     * frame-major (`L R L R …`) over the frames they share — the layout a
+     * frame-major (`L R L R …`) over the frames they share -- the layout a
      * stereo view reads, and the one `lissajous` and `correlation` take.
      * Empty until every one of those buses has a window.
      */
@@ -173,7 +173,7 @@ export class TapStream {
 }
 
 /**
- * A `/bus_tapStream.reply` blob — raw little-endian `f32` — as samples. Read through a
+ * A `/bus_tapStream.reply` blob -- raw little-endian `f32` -- as samples. Read through a
  * `DataView`, so the endianness is the wire's and not the machine's, and an
  * unaligned blob offset is a non-issue.
  */

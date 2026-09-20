@@ -290,7 +290,7 @@ mod harness {
 /// **A def that no longer loads is nameable, and there is one way to drop it.**
 /// Changing a UGen's arity makes every persisted def written against the old
 /// one unloadable, and the reload warned about it at every boot without saying
-/// which def or where — seven of them on the author's machine after `PlayBuf`
+/// which def or where -- seven of them on the author's machine after `PlayBuf`
 /// grew from four inputs to seven.
 #[test]
 fn a_def_that_no_longer_loads_is_named_and_dropped_only_on_request() {
@@ -299,7 +299,7 @@ fn a_def_that_no_longer_loads_is_named_and_dropped_only_on_request() {
     let dir = TempDir::new("stale");
     let store = DefStore::open(dir.path()).unwrap();
     // One def that compiles, and one written against a `Sine` of a shape the
-    // server does not have — an arity change, as a stored spec sees it.
+    // server does not have -- an arity change, as a stored spec sees it.
     let good = br#"{"name":"alive","ugens":[{"kind":"Sine","inputs":[{"const":440.0}]},{"kind":"Out","inputs":[{"const":0.0},{"ugen":0}]}]}"#;
     let stale = br#"{"name":"stale","ugens":[{"kind":"Sine","inputs":[]},{"kind":"Out","inputs":[{"const":0.0},{"ugen":0}]}]}"#;
     store.save_synthdef("alive", good).unwrap();

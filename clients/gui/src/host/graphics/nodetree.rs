@@ -5,13 +5,13 @@
 //! client leg ([`crate::host::client`]) and receives a `/group_queryTree.reply`; this
 //! module turns that flat reply into a small [`NodeTree`] model (pure and
 //! testable, no OSC and no GPU) and draws it as indented text through the
-//! flat-geometry painter ([`crate::host::paint`]) plus bitmap text — the same cheap
+//! flat-geometry painter ([`crate::host::paint`]) plus bitmap text -- the same cheap
 //! path the meters and scopes use, no dedicated pipeline.
 //!
 //! The reply is the server's depth-first encoding (`CmdTranslator::query_tree`):
 //! a **detail level**, the queried group id, its child count and its name, then
-//! per node its id, its child count (`-1` marks a synth) and a name — a group's
-//! own (empty when it has none) or a synth's def name — and, for a synth from
+//! per node its id, its child count (`-1` marks a synth) and a name -- a group's
+//! own (empty when it has none) or a synth's def name -- and, for a synth from
 //! detail 1, its control count followed by `(name|index, value)` pairs; a
 //! group's children follow inline. Every node reads `id, count, name`, one
 //! shape for both kinds, which is what keeps the walk in step. Detail 2 appends
@@ -309,7 +309,7 @@ mod tests {
 
     /// A reply for: group 0 (unnamed) holding group 1 "mixer", which holds synth
     /// 1000 "sine" (controls freq=440, amp=0.2). Built the way the server
-    /// encodes it — every node reads `id, count, name`, groups included.
+    /// encodes it -- every node reads `id, count, name`, groups included.
     fn sample_reply() -> Vec<OscType> {
         vec![
             OscType::Int(1),            // flag: controls included
@@ -337,7 +337,7 @@ mod tests {
         // The host asks for detail 1, but the reply at 2 carries two more
         // things this view does not draw: a synth's full-record tail, and a
         // group's two modes between its name and its children. Both are
-        // skipped, and the walk has to stay aligned — a group read as a synth
+        // skipped, and the walk has to stay aligned -- a group read as a synth
         // is how a missed field shows up.
         let reply = vec![
             OscType::Int(2),            // detail 2

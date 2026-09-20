@@ -1,12 +1,12 @@
 //! What a **press** does: the containers' plans over the hit chain, then the
 //! element under the cursor.
 //!
-//! The press is the phase that decides *which* gesture a pointer-down starts —
+//! The press is the phase that decides *which* gesture a pointer-down starts --
 //! every [`Drag`] in the machine is opened here, and nowhere else.
 //! It runs in two layers, and the split is the reason a widget's own behaviour
 //! stays small: the **containers** over the point declare what a modifier means
 //! on them ([`GestureStep`]), innermost first, and only when every step has
-//! declined does the press reach the **element** — which is the one arm per
+//! declined does the press reach the **element** -- which is the one arm per
 //! widget kind in [`Gestures::element_press`].
 //!
 //! Both layers are one match apiece rather than a function apiece, deliberately:
@@ -26,11 +26,11 @@ use super::{Drag, GestureCtx, GestureEffect, Gestures, element, focus};
 /// them and a reason spelled twice is a reason that will be spelled two ways.
 ///
 /// **What earns a reason, and what earns a decline.** A step that finds nothing
-/// to act on where the picture is perfectly good — the samples are not drawn one
-/// by one, the view starts before the take does — is not this gesture's press to
+/// to act on where the picture is perfectly good -- the samples are not drawn one
+/// by one, the view starts before the take does -- is not this gesture's press to
 /// take: it declines and the plan tries its next step, which is what
-/// `"sample select"` is composed of. A step that finds the *picture* wrong — a
-/// view holding no samples at all, one that cannot hold an edit in flight — has
+/// `"sample select"` is composed of. A step that finds the *picture* wrong -- a
+/// view holding no samples at all, one that cannot hold an edit in flight -- has
 /// hit a fault, and a fault is said out loud and consumed, because falling
 /// through there is how a pencil silently becomes a selection tool.
 ///
@@ -42,7 +42,7 @@ const NO_SAMPLES: &str = "these samples are not loaded yet: the view is drawing 
      frames themselves";
 const NO_PENDING: &str = "this view cannot hold an edit in flight";
 
-/// **Zoom in until the samples are dots** — the one refusal with something to
+/// **Zoom in until the samples are dots** -- the one refusal with something to
 /// aim at, in two readings of one fact, each in the unit that is legible in its
 /// own range: far out a pixel holds many samples, and close in a sample holds a
 /// fraction of a pixel.
@@ -67,9 +67,9 @@ impl Gestures {
     /// first, until one of their steps consumes it.
     ///
     /// The order is the containers', not the widget's. Each container over the
-    /// point declares what a modifier does on it ([`GestureMap`](super::super::widget::GestureMap)) — pan its axis,
+    /// point declares what a modifier does on it ([`GestureMap`](super::super::widget::GestureMap)) -- pan its axis,
     /// sweep a selection, locate the transport, or hand the press to the
-    /// element under the cursor — and a step that declines passes the press on,
+    /// element under the cursor -- and a step that declines passes the press on,
     /// outward through the chain. That is why Shift+drag pans the same way over
     /// a waveform, a lane and a piano-roll (their axis claims it before any of
     /// them sees it), and why Shift on a patcher's empty canvas still pans the
@@ -113,7 +113,7 @@ impl Gestures {
         self.click = None;
         // An element that **declared** an overlay is modal: it is over
         // everything, so it is tested before the tree and it swallows the press
-        // either way — on its own area it acts, anywhere else it closes, the
+        // either way -- on its own area it acts, anywhere else it closes, the
         // way a menu everywhere else behaves. It is asked for the point and
         // answers for both cases, since only it knows where its area is.
         if let Some((id, rect, scale)) = element::overlay_owner(host, ctx) {
@@ -125,7 +125,7 @@ impl Gestures {
             };
             // Not through `element::press`: that door filters the point against
             // the element's declared shape, and an overlay is offered the press
-            // **because it is outside** as often as because it is inside — a
+            // **because it is outside** as often as because it is inside -- a
             // click on the window closes the list. The shape filter answers
             // "is this widget's drawing under the pointer", which is the tree's
             // question, not a modal's.
@@ -189,20 +189,20 @@ impl Gestures {
             return out;
         }
         // **The click is the machine's, not a step's**, and what it places is
-        // the **position cursor** — so where the press landed on the axis is
+        // the **position cursor** -- so where the press landed on the axis is
         // read here, once, whatever the plans below do with it (see
         // [`Gestures::release`]).
         //
         // **A click places the mark where it landed on nothing.** The cursor
-        // says where the reader is — where a playback starts and where a paste
-        // lands — so it is never a side effect of pointing *at* something: a
+        // says where the reader is -- where a playback starts and where a paste
+        // lands -- so it is never a side effect of pointing *at* something: a
         // press that an element takes (a box, a note, a curve, a header
         // control) is that thing's, and the mark stays where it was. What is
-        // left is the ruler and the slack — the space between boxes, a lane's
-        // empty tail, a grid nothing is drawn on — and clicking there is the
+        // left is the ruler and the slack -- the space between boxes, a lane's
+        // empty tail, a grid nothing is drawn on -- and clicking there is the
         // ordinary way to say "here", without reaching for the strip at the top
         // of the window every time. The press below clears this again if an
-        // element claims it. Beside the axis — a lane's header — there is no
+        // element claims it. Beside the axis -- a lane's header -- there is no
         // position at all.
         self.click = hit.chain.iter().rev().find_map(|f| match (f.id, f.coords) {
             (Some(id), interact::Coords::Time(axis)) if axis.spans(cx) => Some(super::Click {
@@ -237,7 +237,7 @@ impl Gestures {
                     // click looking for a place, so the release adds none.
                     //
                     // And an **element** that took the press had something under
-                    // the pointer — a box, a note, a curve, a control — so the
+                    // the pointer -- a box, a note, a curve, a control -- so the
                     // click is that thing's and not a place. What is left for
                     // the mark is the ruler and the slack.
                     if matches!(
@@ -260,7 +260,7 @@ impl Gestures {
     }
 
     /// Shift+drag means "pan the axis" wherever it starts, so in a window with
-    /// **one** navigation group it means that off the lanes too — the gap
+    /// **one** navigation group it means that off the lanes too -- the gap
     /// between them, the slack under the last one, a container's margin, the
     /// window's own edge. Returns whether it grabbed.
     fn pan_sole_axis(&mut self, host: &Host, ctx: &GestureCtx, cx: f64) -> bool {
@@ -285,7 +285,7 @@ impl Gestures {
 
     /// One container-level step of a press: the gestures that belong to the
     /// coordinate system rather than to what is drawn in it. Each reads the
-    /// frame the chain resolved — the axis' own body, window and view state —
+    /// frame the chain resolved -- the axis' own body, window and view state --
     /// so a pan is one implementation for the five timeline views and a plane
     /// pan is one for every workspace. Returns whether the step consumed the
     /// press; a step that has nothing to act on (a locate outside the axis'
@@ -387,7 +387,7 @@ impl Gestures {
                 out.push(GestureEffect::Redraw(def_id));
                 true
             }
-            // **The marquee**: the objects the rectangle covers, and no span —
+            // **The marquee**: the objects the rectangle covers, and no span --
             // the patcher's gesture and the multitrack's, one `Drag::Marquee`,
             // while a *time range* over the same view is the other selection
             // and is `Select` above.
@@ -396,7 +396,7 @@ impl Gestures {
                     return false;
                 }
                 // The element under it is what answers: a rectangle asks
-                // whoever holds the contents — a roll's notes, a patcher's
+                // whoever holds the contents -- a roll's notes, a patcher's
                 // boxes, a multitrack's clips.
                 let element = element::At::widget(hit.id, hit.rect, hit.scale, hit.indent);
                 // A press is the rectangle at no size, so it covers nothing and
@@ -617,7 +617,7 @@ impl Gestures {
     /// drag *means* is the element's) or declines and the press walks on.
     ///
     /// One function, because a widget and a container's **body** differ only in
-    /// the address ([`element::At`]) — everything the machine does with the
+    /// the address ([`element::At`]) -- everything the machine does with the
     /// claim is the same, and a second copy of it is how the two would drift.
     fn element_at(
         &mut self,
@@ -654,7 +654,7 @@ impl Gestures {
     }
 
     /// The press the containers handed down: what the widget under the cursor
-    /// does with it — a control's value, a note, a break-point, a clip, a piano
+    /// does with it -- a control's value, a note, a break-point, a clip, a piano
     /// key, a cord. Returns whether it was consumed; declining (empty space in
     /// a lane, a patch's bare canvas) hands the press back to the chain.
     fn element_press(

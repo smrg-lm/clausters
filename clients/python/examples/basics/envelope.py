@@ -43,7 +43,7 @@ from clausters.defs import (
 from clausters.seq import Pbind, Pseq
 
 #: Where a run leaves its file when no path is given: ``examples/out/``, the
-#: git-ignored directory every generator in this tree writes to — beside the
+#: git-ignored directory every generator in this tree writes to -- beside the
 #: examples rather than in whatever directory you ran from. Made here so that
 #: rendering is one call and not two.
 OUT = pathlib.Path(__file__).resolve().parents[1] / "out"
@@ -96,7 +96,7 @@ session.play(phrase)
 # %% [markdown]
 # ## The closing event
 # A render ends at the score's **last event**, and the last one the phrase
-# writes is the gate closing on its final note — so without a later event the
+# writes is the gate closing on its final note -- so without a later event the
 # file stops there and the 0.5 s release is cut off, which is a click at the end
 # of the take. `/node_free 0` a release after the phrase is that event.
 

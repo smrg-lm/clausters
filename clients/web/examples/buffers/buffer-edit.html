@@ -23,13 +23,13 @@
       <div id="note">Editing a buffer from the client: read the samples, change
 them, write them back.
 
-A buffer is the one thing a session keeps with <b>random access</b> — so unlike a
+A buffer is the one thing a session keeps with <b>random access</b> -- so unlike a
 stream of events it can be read backwards, sliced and edited in place. The point
 of interest is that whole round trip, done three times on one buffer, each edit
 audible against the one before:
 
 <b>Read</b> a <code>sine1</code> table the server generated. <b>Edit, then
-write</b>: the samples are reversed here and written back — a symmetric waveform
+write</b>: the samples are reversed here and written back -- a symmetric waveform
 survives that unchanged, so the second edit is the one that speaks, a fade
 carved into the table which turns a steady tone into one that swells and dies
 inside every period. <b>A single sample</b> by flat index is the touch-up form.
@@ -37,8 +37,8 @@ inside every period. <b>A single sample</b> by flat index is the touch-up form.
 is: a short read hands back less and says so, a short write would drop samples
 you believe you stored.
 
-<b>The edits the server does for you</b> — <code>gain</code>,
-<code>fade</code>, <code>silence</code>, <code>reverse</code> — say what the
+<b>The edits the server does for you</b> -- <code>gain</code>,
+<code>fade</code>, <code>silence</code>, <code>reverse</code> -- say what the
 edit <i>is</i> and no samples cross the wire at all, which is the difference
 between editing a table and editing a five-minute take.</div>
 
@@ -134,7 +134,7 @@ between editing a table and editing a five-minute take.</div>
         const voice = new Synth("table_scan", { bufnum: buf.bufnum, freq: 440.0 }, { server });
         yield 1.5;                                   // whatever the table holds now
         // `wait: false` because a routine must never block the clock on a reply
-        // — and because these chain on the server, each building on the last.
+        // -- and because these chain on the server, each building on the last.
         log("fade in");
         buf.fade({ wait: false });
         yield 1.5;

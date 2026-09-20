@@ -1,9 +1,9 @@
 //! **What a turn of any application's editor is**: the message a host sends,
 //! what kind of turn it came to, and the entry a gesture leaves for the history.
 //!
-//! Every application answers a host the same way — a message read by the
+//! Every application answers a host the same way -- a message read by the
 //! conversation, a gesture read in the structure's own vocabulary, an entry for
-//! the history the caller keeps — so the words for those are here once rather
+//! the history the caller keeps -- so the words for those are here once rather
 //! than once per application.
 
 use serde::{Deserialize, Serialize};

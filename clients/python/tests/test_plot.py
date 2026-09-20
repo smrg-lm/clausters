@@ -47,7 +47,7 @@ class FakeHost:
 
 
 def _plot_widget(tree: dict) -> dict:
-    """The window's one child: the `signal` element a plot is — a trace (or a
+    """The window's one child: the `signal` element a plot is -- a trace (or a
     spectrum) that does not navigate, which is the capability the wire names
     rather than a widget of its own."""
     assert tree["type"] == "window"

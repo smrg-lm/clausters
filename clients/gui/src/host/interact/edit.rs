@@ -1,7 +1,7 @@
 //! **The write doors**: every mutation of the host tree a gesture, a keystroke
 //! or a `/gui_set` performs.
 //!
-//! Each element gets *one* door, and both fronts go through it — which is what
+//! Each element gets *one* door, and both fronts go through it -- which is what
 //! keeps a turned knob, a dragged break-point or a moved box meaning the same
 //! thing natively and in a page. Two shapes recur: a setter that writes the
 //! value ([`scroll_set_view`]) and a `…_edit` door that hands a closure the
@@ -18,7 +18,7 @@ use super::super::widget::WidgetKind;
 
 /// Sets a `scroll`'s view state (clamped against its content in `area`),
 /// returning the clamped `(view_x, view_y, view_zoom)` when something actually
-/// moved — the one door every scroll navigation goes through, so a gesture and
+/// moved -- the one door every scroll navigation goes through, so a gesture and
 /// a `/gui_set` clamp identically.
 pub(crate) fn scroll_set_view(
     host: &mut Host,

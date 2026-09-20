@@ -172,7 +172,7 @@ mod osc {
 
         // /server_status def count includes the Faust table. The baseline is the
         // built-in "default" SynthDef, which only exists when the `synth`
-        // feature is compiled in — a faust-only build starts from zero.
+        // feature is compiled in -- a faust-only build starts from zero.
         let builtin = if cfg!(feature = "synth") { 1 } else { 0 };
         server.send("/server_status", vec![]);
         let status = server.recv_until("/server_status.reply");

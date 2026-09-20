@@ -22,7 +22,7 @@ def in_ctl(bus=0.0) -> Ugen:
 
 
 def _out_channels(kind, bus, signal):
-    """One writer per channel on consecutive buses (``bus``, ``bus+1``, …) —
+    """One writer per channel on consecutive buses (``bus``, ``bus+1``, …) --
     the point where a channel list becomes buses. The base ``bus`` must be a
     number: a signal bus cannot be offset per channel client-side."""
     if isinstance(bus, bool) or not isinstance(bus, (int, float)):
@@ -37,7 +37,7 @@ def _out_channels(kind, bus, signal):
 
 
 def out_ctl(bus, signal) -> SynthExpr:
-    """Writes ``signal``'s latest per-block value to a **control** ``bus`` — the
+    """Writes ``signal``'s latest per-block value to a **control** ``bus`` -- the
     write side of `in_ctl`, so a node reading that bus (via ``/node_map`` or
     `in_ctl`) tracks it. Passes ``signal`` through as its output. A channel
     list writes its channels to consecutive buses."""
@@ -75,8 +75,8 @@ def meter(signal, decay=20.0, hold=0.0) -> Ugen:
     a fall of ``decay`` decibels per second, and a peak held ``hold`` seconds
     before it starts falling.
 
-    One block is one measurement — the block's own peak in, the whole block out
-    at what the meter now reads — which is what a meter is and what a control
+    One block is one measurement -- the block's own peak in, the whole block out
+    at what the meter now reads -- which is what a meter is and what a control
     bus carries, so a finer answer would be samples nothing can read. The rules
     are the shared crate's (`measure::Ballistics`), so every meter drawn
     anywhere falls at the same rate.
@@ -93,9 +93,9 @@ def clip_count(signal, ceiling=1.0, run=3) -> Ugen:
     began: a run of ``run`` consecutive samples at or over ``ceiling`` is one
     over, however long it goes on.
 
-    The count and not a flag, because the flag is a *reader's* state — a meter's
+    The count and not a flag, because the flag is a *reader's* state -- a meter's
     red lamp stays lit until a hand puts it out, and two windows watching one
-    bus each have their own — while the count is the signal's. Pair it with
+    bus each have their own -- while the count is the signal's. Pair it with
     ``out_ctl`` and hand the bus to a ``meter`` widget's ``clip``: the widget
     differences the count and lights up on an over it has not seen.
 
@@ -159,13 +159,13 @@ def poll(trig, signal, trig_id=-1, *, label="poll") -> Ugen:
 
 def disk_in(chan=0.0, *, path, loop=False) -> Ugen:
     """Streams a file from disk, one file frame per server sample (no
-    resampling — pitch follows the sample-rate ratio). Mono per UGen: ``chan``
+    resampling -- pitch follows the sample-rate ratio). Mono per UGen: ``chan``
     picks the channel, a stereo file is two `disk_in`\\ s. ``loop`` restarts at
     the end of the stream. For a handful of streams, not per-voice (each spawns
     its own I/O thread).
 
-    ``path`` and ``loop`` are **static** fields and are keyword-only —
-    ``disk_in(path="take.wav")`` — so the one positional parameter is the one
+    ``path`` and ``loop`` are **static** fields and are keyword-only --
+    ``disk_in(path="take.wav")`` -- so the one positional parameter is the one
     input the wire has."""
     return Ugen("DiskIn", [chan], static={"path": str(path), "loop": bool(loop)})
 
@@ -180,7 +180,7 @@ def disk_out(signal, *, path, format="int16") -> Ugen:
 
     It delivers audio out of the graph, so it is a valid def root on its own:
     ``play(disk_out(sig, path=path))`` records **without sounding**. To record
-    and hear the same take, route it yourself — ``out(0, disk_out(sig,
+    and hear the same take, route it yourself -- ``out(0, disk_out(sig,
     path=path))``, which is what the pass-through output is for."""
     return Ugen("DiskOut", [signal], static={"path": str(path), "format": str(format)})
 
@@ -188,7 +188,7 @@ def disk_out(signal, *, path, format="int16") -> Ugen:
 def local_in(channel=0.0) -> Ugen:
     """Reads synth-private feedback channel ``channel`` (a constant); pairs with
     `local_out` for one-block feedback. ``LocalIn`` must precede its
-    ``LocalOut`` — the `SynthDef`'s topological order does that as long
+    ``LocalOut`` -- the `SynthDef`'s topological order does that as long
     as the output graph reaches the ``local_in`` before the ``local_out``."""
     return Ugen("LocalIn", [channel])
 

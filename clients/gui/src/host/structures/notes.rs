@@ -37,7 +37,7 @@ pub struct Note {
 /// channel` quintuple array, as JSON.
 ///
 /// The inverse of the `notes` prop's parse, so what a `/gui_query` reports is
-/// what a `/gui_set` would take — which is the whole contract of reporting a
+/// what a `/gui_set` would take -- which is the whole contract of reporting a
 /// non-scalar as its own string carrier.
 pub fn notes_json(notes: &[Note]) -> Value {
     let mut out = Vec::with_capacity(notes.len() * 5);
@@ -52,7 +52,7 @@ pub fn notes_json(notes: &[Note]) -> Value {
 }
 
 /// The `osc` wire form of a marker list: the flat `time label` pair array, as
-/// JSON — the inverse of the `osc` prop's parse.
+/// JSON -- the inverse of the `osc` prop's parse.
 pub fn osc_json(marks: &[OscMark]) -> Value {
     let mut out = Vec::with_capacity(marks.len() * 2);
     for m in marks {
@@ -63,7 +63,7 @@ pub fn osc_json(marks: &[OscMark]) -> Value {
 }
 
 impl Note {
-    /// A note with the default velocity (100) on channel 0 — the plain
+    /// A note with the default velocity (100) on channel 0 -- the plain
     /// `(start, dur, pitch)` triple's reading.
     pub fn new(start: f64, dur: f64, pitch: f32) -> Self {
         Note {
@@ -183,7 +183,7 @@ pub fn move_note(
     notes.set_row(index, pitch.round().clamp(lo, hi));
 }
 
-/// Resize the note at `index` by dragging one edge to timeline-relative `t` —
+/// Resize the note at `index` by dragging one edge to timeline-relative `t` --
 /// the clip's edge drag, over a note.
 ///
 /// `Start` moves the onset (keeping the end fixed), `End` moves the end; a note
@@ -204,7 +204,7 @@ pub fn set_velocity(notes: &mut [Note], index: usize, velocity: i32) {
     }
 }
 
-/// Insert a note, returning its index (appended; the list is not kept sorted —
+/// Insert a note, returning its index (appended; the list is not kept sorted --
 /// draw order is insertion order, matching the clip's).
 pub fn insert_note(notes: &mut Vec<Note>, note: Note) -> usize {
     notes.push(note);
@@ -220,19 +220,19 @@ pub fn remove_note(notes: &mut Vec<Note>, index: usize) {
 
 // --- Multi-note selection and block edits (pure, mapping-free) -------------
 //
-// The selection is a set of note indices — view state, native-side. The
+// The selection is a set of note indices -- view state, native-side. The
 // marquee is the shared time selection restricted in pitch: dragging the empty
 // grid keeps setting the linked views' time selection, and the notes inside
 // the time × pitch rectangle become the selected set.
 
 /// The indices of the notes intersecting the time span `[t0, t1)` whose row
-/// touches the pitch band `[p_lo, p_hi]` — [`boxes::in_rect`] over the note
+/// touches the pitch band `[p_lo, p_hi]` -- [`boxes::in_rect`] over the note
 /// list, the same marquee a lane's clips answer.
 pub fn notes_in_rect(notes: &[Note], t0: f64, t1: f64, p_lo: f32, p_hi: f32) -> Vec<usize> {
     boxes::in_rect(notes, t0, t1, p_lo, p_hi)
 }
 
-/// Move a block of notes rigidly from a press-time snapshot — the shared
+/// Move a block of notes rigidly from a press-time snapshot -- the shared
 /// [`boxes::move_block`], with the pitch window as the row bounds.
 pub fn move_notes_from(
     notes: &mut [Note],
@@ -259,7 +259,7 @@ pub fn remove_notes(notes: &mut Vec<Note>, indices: &[usize]) {
 }
 
 /// Nudge a block of velocities relatively from a press-time snapshot: `orig`
-/// is `(index, velocity)` per selected note, `dv` the common delta — each note
+/// is `(index, velocity)` per selected note, `dv` the common delta -- each note
 /// clamps to `0..127` on its own (a saturated bar stays put, the rest keep
 /// moving, and reversing restores the original spread).
 pub fn nudge_velocities_from(notes: &mut [Note], orig: &[(usize, i32)], dv: i32) {
@@ -270,7 +270,7 @@ pub fn nudge_velocities_from(notes: &mut [Note], orig: &[(usize, i32)], dv: i32)
     }
 }
 
-/// Copy a selection of notes **as they stand** — the clipboard form
+/// Copy a selection of notes **as they stand** -- the clipboard form
 /// [`paste_notes`] re-places.
 ///
 /// Absolute, not normalized to the block's first onset, because *where a block
@@ -286,7 +286,7 @@ pub fn copy_notes(notes: &[Note], indices: &[usize]) -> Vec<Note> {
 }
 
 /// Paste a clipboard block with its first onset at `at`: the notes append
-/// (original pitches and spread kept), and the new indices come back — the
+/// (original pitches and spread kept), and the new indices come back -- the
 /// pasted block becomes the selection, ready to drag into place.
 ///
 /// Where each note lands is [`boxes::rebased`], which is the rule a pasted
@@ -310,8 +310,8 @@ pub fn paste_notes(notes: &mut Vec<Note>, clip: &[Note], at: f64) -> Vec<usize> 
 /// **Split notes at `at`** (a region-relative time): every named note the time
 /// falls strictly inside becomes two, the second carrying the same pitch,
 /// velocity and channel. `indices` picks the notes (the selection); empty
-/// splits them all. Returns the selection the cut leaves — both halves of every
-/// note that was cut — so the block stays in hand.
+/// splits them all. Returns the selection the cut leaves -- both halves of every
+/// note that was cut -- so the block stays in hand.
 ///
 /// The clip's `e` verb, over notes. A clip asks its owner to cut, because the
 /// owner holds the element; a roll holds its own notes and cuts them.
@@ -331,7 +331,7 @@ pub fn split_notes(notes: &mut Vec<Note>, indices: &[usize], at: f64) -> Vec<usi
 /// keeping the first note's velocity and channel. `indices` picks the notes;
 /// empty joins over the whole list. Returns the selection that is left.
 ///
-/// The clip's `j` verb, over notes — and the same reading of "juxtaposed": what
+/// The clip's `j` verb, over notes -- and the same reading of "juxtaposed": what
 /// joins is what touches, so no second selection model is needed to say which
 /// two. A pitch is what makes two notes the same voice, which is the roll's
 /// answer to the lane a clip's join is confined to.
@@ -380,11 +380,11 @@ pub fn join_notes(notes: &mut Vec<Note>, indices: &[usize]) -> Vec<usize> {
     kept
 }
 
-/// How near two notes' edges must be to count as touching — half a sample, the
+/// How near two notes' edges must be to count as touching -- half a sample, the
 /// same tolerance every other "did this actually move" question uses.
 const JOIN_TOL: f64 = 0.5;
 
-/// Quantize note onsets to the `grid` (timeline samples) — the shared
+/// Quantize note onsets to the `grid` (timeline samples) -- the shared
 /// [`boxes::quantize`], which a lane's clips run the same way.
 pub fn quantize_notes(notes: &mut [Note], indices: &[usize], grid: f64) -> bool {
     boxes::quantize(notes, indices, grid)
@@ -395,7 +395,7 @@ mod tests {
     use super::*;
     use crate::host::structures::boxes::Limit;
 
-    /// The bounds of an edit inside a domain that ends at `l` — a clip's body.
+    /// The bounds of an edit inside a domain that ends at `l` -- a clip's body.
     fn limited(l: f64) -> Bounds {
         Bounds {
             limit: Some(l),
@@ -467,7 +467,7 @@ mod tests {
     }
 
     /// A cut leaves two notes end to end, and joining them back leaves what
-    /// was there — the roll's `e` and `j`, which are the clip's own two verbs
+    /// was there -- the roll's `e` and `j`, which are the clip's own two verbs
     /// over a list the host holds itself.
     #[test]
     fn a_split_and_a_join_are_inverses() {

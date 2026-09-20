@@ -7,7 +7,7 @@
 //! There is one implementation of the pile, and this is not a second one.
 //!
 //! The placement is the whole of the design. A GUI host holding its own log
-//! knows only the gestures *it* made — so a script editing the multitrack, a
+//! knows only the gestures *it* made -- so a script editing the multitrack, a
 //! second editor, or a re-render would leave that log describing a document
 //! that had moved on, and undo would write a state nobody was ever in. Here the
 //! log sees every edit, because every edit comes through
@@ -17,19 +17,19 @@
 //!
 //! Undo needs no second code path: the inverse of an entry is an [`Intent`],
 //! handed back to `apply` like any other. That is what the absolute vocabulary
-//! is for — an edit states the resulting value, so the edit that states the
+//! is for -- an edit states the resulting value, so the edit that states the
 //! *previous* value is its inverse, and the document already knows how to
 //! compute it (the same reader O4's staleness check uses).
 //!
 //! # Forward and backward are not the same kind of thing
 //!
 //! Going **back** is always data: undoing a normalize means writing the old
-//! samples, and no algorithm reconstructs them. Going **forward** need not be —
+//! samples, and no algorithm reconstructs them. Going **forward** need not be --
 //! a deterministic operation can store its *parameters* and be re-run, which is
 //! how a redo of an edit over a million samples costs a few bytes instead of
 //! four megabytes. That asymmetry is only available because the log sits with
-//! the document: the owner has the algorithm, and the host — which was going to
-//! hold this log — never did. So [`Log::redo`] hands back [`Step`]s, one of
+//! the document: the owner has the algorithm, and the host -- which was going to
+//! hold this log -- never did. So [`Log::redo`] hands back [`Step`]s, one of
 //! which the caller must re-run itself, while [`Log::undo`] hands back plain
 //! intents.
 //!
@@ -37,7 +37,7 @@
 //!
 //! Only an edit that **changed the document** is recorded, and only when it
 //! goes in through [`apply_logged`]. What comes *back* from an owner after an
-//! edit — the state push that answers a gesture — is not an edit and is not
+//! edit -- the state push that answers a gesture -- is not an edit and is not
 //! recorded: it is the document describing itself, and logging it would make
 //! every undo two steps deep. A refused edit is not recorded either, for the
 //! same reason a refusal does not move the version.
@@ -46,7 +46,7 @@
 //!
 //! A sample write's inverse is the span it overwrote, which is the one thing
 //! here whose size follows the audio rather than the parameters. Above a
-//! threshold it goes to a [`Spill`] store — content-addressed, so an undo/redo
+//! threshold it goes to a [`Spill`] store -- content-addressed, so an undo/redo
 //! pair that names the same bytes holds one copy. See
 //! [`crate::history`] for the mechanism; what is arrangement-specific
 //! is only which edit gets big.
@@ -71,8 +71,8 @@ pub const TREE: &str = "tree";
 /// One move in the forward direction, in the tree's vocabulary.
 ///
 /// [`history::Step`] with an [`Intent`] in place of the opaque payload, and the
-/// same wire shape: externally tagged — `{"edit": <intent>}`,
-/// `{"recompute": <params>}` — because [`Intent`] is already internally tagged
+/// same wire shape: externally tagged -- `{"edit": <intent>}`,
+/// `{"recompute": <params>}` -- because [`Intent`] is already internally tagged
 /// on `"intent"` and two tags in one object is how a format grows a bug nobody
 /// can read.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -81,8 +81,8 @@ pub enum Step {
     /// An ordinary edit. Hand it to [`crate::intent::apply`].
     Edit(Intent),
     /// A deterministic operation to **re-run**, carried as the owner's own
-    /// parameters and never interpreted here. The crate cannot execute one —
-    /// it holds no algorithms — so a caller that stores these must be ready to
+    /// parameters and never interpreted here. The crate cannot execute one --
+    /// it holds no algorithms -- so a caller that stores these must be ready to
     /// perform them on redo. What it gives is a redo whose cost follows the
     /// parameters instead of the audio.
     Recompute(Opaque),
@@ -120,7 +120,7 @@ pub fn payload(intent: &Intent) -> Opaque {
     Opaque(serde_json::to_value(intent).unwrap_or(serde_json::Value::Null))
 }
 
-/// The intent a payload holds, or `None` if it will not read as one — which
+/// The intent a payload holds, or `None` if it will not read as one -- which
 /// only a payload some other domain wrote can be.
 ///
 /// Public for the same reason [`payload`] is: a binding reading a leg addressed
@@ -130,8 +130,8 @@ pub fn intent_of(payload: &Opaque) -> Option<Intent> {
 }
 
 /// What makes two edits *the same thing done the same way*: the kind of edit
-/// and the node it names. The pile cannot compute it — that is a sentence in
-/// this vocabulary — so an entry carries it.
+/// and the node it names. The pile cannot compute it -- that is a sentence in
+/// this vocabulary -- so an entry carries it.
 ///
 /// Public because a binding that records its own entries has to state the same
 /// thing, and a second spelling of it is how a run of adjustments comes to
@@ -149,7 +149,7 @@ pub fn coalesce_key(intent: &Intent) -> String {
 /// The arrangement as an [`Editable`]: a document, plus the two things an edit
 /// to *this* domain needs and no other does.
 ///
-/// It is built for one call, because that is the lifetime of what it carries —
+/// It is built for one call, because that is the lifetime of what it carries --
 /// `against` is the state the editor believed it was editing and `rules` the
 /// grid this gesture snaps to, and neither is a property of the document. That
 /// is why [`Editable`] has no room for them: a curve has no version to check
@@ -166,7 +166,7 @@ pub struct Tree<'a> {
 
 impl<'a> Tree<'a> {
     /// The document, edited against whatever it currently says and snapping to
-    /// nothing — what a script that just read it wants.
+    /// nothing -- what a script that just read it wants.
     pub fn new(document: &'a mut Document) -> Self {
         Self {
             document,
@@ -261,7 +261,7 @@ impl Redone {
 /// A single reversible edit: how to redo it, and how to undo it.
 ///
 /// The unit is the **gesture**, not the intent, because that is what a person
-/// means by "the last thing I did" — and because one gesture already produces
+/// means by "the last thing I did" -- and because one gesture already produces
 /// one intent by the vocabulary's own rule, an entry usually holds one change.
 /// It holds several when a script applies a batch it wants undone as a batch.
 #[derive(Debug, Clone, PartialEq)]
@@ -269,7 +269,7 @@ pub struct Entry {
     /// What to call this in a menu. The log never reads it.
     pub label: String,
     /// Whether this may merge into the entry before it when they touch the
-    /// same thing the same way — a run of small adjustments becoming one undo
+    /// same thing the same way -- a run of small adjustments becoming one undo
     /// instead of two hundred. The caller decides when a run is continuous,
     /// because only the caller knows where the hand stopped.
     pub coalesce: bool,
@@ -310,9 +310,9 @@ impl Entry {
         self.changes.is_empty()
     }
 
-    /// This entry as the pile holds it: every leg over `structure` — the one a
+    /// This entry as the pile holds it: every leg over `structure` -- the one a
     /// [`Log`] has, or the one a caller registered the document as in a history
-    /// of its own — each carrying the key that decides a merge.
+    /// of its own -- each carrying the key that decides a merge.
     pub fn generic(&self, structure: StructureId) -> history::Entry {
         let mut legs = self.changes.iter();
         // An empty entry is refused by `History::record`, so the fold below
@@ -400,7 +400,7 @@ impl Log {
     }
 
     /// The pile this log is a face of, and the structure the document is
-    /// registered as — what a caller composing several editable structures in
+    /// registered as -- what a caller composing several editable structures in
     /// one context reaches for.
     pub fn history(&self) -> &History {
         &self.history
@@ -427,7 +427,7 @@ impl Log {
     /// What an undo *would* hand back, without moving the cursor.
     ///
     /// The pair [`Log::peek_undo`]/[`Log::step_back`] exists for callers that
-    /// have to know the answer before committing to it — a binding whose
+    /// have to know the answer before committing to it -- a binding whose
     /// protocol sizes a buffer and then fills it, where doing the work on the
     /// sizing call would undo twice and hand back the second answer. Inside
     /// Rust, [`Log::undo`] is the two together and is what you want.
@@ -519,7 +519,7 @@ impl Log {
         self.history.is_empty()
     }
 
-    /// Forgets everything, releasing what was spilled — what closing a document
+    /// Forgets everything, releasing what was spilled -- what closing a document
     /// or loading another one leaves behind. A history of edits to a document
     /// that is no longer open inverts nothing.
     pub fn clear(&mut self) {
@@ -527,13 +527,13 @@ impl Log {
     }
 }
 
-/// The edit that would put this node back the way it is — the inverse of
+/// The edit that would put this node back the way it is -- the inverse of
 /// `intent`, read out of the document before anything is applied.
 ///
 /// The whole of what makes undo cheap here: an absolute intent states a value,
 /// so the edit stating the *previous* value is its inverse, and the document
-/// already knows it. `None` when the document cannot describe it — the node is
-/// gone, or its body holds nothing of that shape — and for
+/// already knows it. `None` when the document cannot describe it -- the node is
+/// gone, or its body holds nothing of that shape -- and for
 /// [`Intent::WriteSamples`], where the samples are not in the document, it is
 /// the empty write rather than the span, which is why a destructive caller
 /// reads its own span before writing.
@@ -550,7 +550,7 @@ pub fn inverse_of(document: &Document, intent: &Intent) -> Option<Intent> {
 /// The **only** way an entry gets into a log by itself, and that is what makes
 /// the rule mechanical rather than a habit: the inverse is read out of the
 /// document *before* the edit lands, and nothing is recorded unless the
-/// document actually changed. A refusal — stale or otherwise — leaves no entry,
+/// document actually changed. A refusal -- stale or otherwise -- leaves no entry,
 /// for the same reason it does not move the version.
 ///
 /// `WriteSamples` is the one edit this cannot log on its own: the samples it
@@ -578,7 +578,7 @@ pub fn apply_logged(
 }
 
 /// [`apply_logged`] over a history the caller holds, where the document is
-/// registered as `structure` — what an editing context that orders the document
+/// registered as `structure` -- what an editing context that orders the document
 /// with other structures records it through.
 pub fn apply_logged_in(
     document: &mut Document,

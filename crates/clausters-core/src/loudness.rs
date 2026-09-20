@@ -1,11 +1,11 @@
 //! **Loudness**: how loud a programme is, measured the way broadcast measures
-//! it — ITU-R BS.1770 for the number, EBU R 128 for the time scales around it,
+//! it -- ITU-R BS.1770 for the number, EBU R 128 for the time scales around it,
 //! EBU Tech 3342 for its range.
 //!
 //! A peak says how close a signal came to full scale; it says nothing about how
 //! loud it *sounds*, since a snare hit and a sustained pad can share one peak
-//! and differ by 20 dB to a listener. BS.1770's answer is deliberately simple —
-//! a frequency weighting, a mean square, a sum over channels — and it is the
+//! and differ by 20 dB to a listener. BS.1770's answer is deliberately simple --
+//! a frequency weighting, a mean square, a sum over channels -- and it is the
 //! number every delivery specification, streaming service and editor's loudness
 //! meter reports, which is the whole reason to compute it exactly rather than
 //! approximately.
@@ -21,7 +21,7 @@
 //! L = -0.691 + 10·log10(Σ Gᵢ·zᵢ)      LUFS
 //! ```
 //!
-//! with the channel weights `Gᵢ` of [`channel_weights`] — 1.0 for the front
+//! with the channel weights `Gᵢ` of [`channel_weights`] -- 1.0 for the front
 //! channels, 1.41 for the surrounds, 0 for the LFE, which BS.1770 excludes. The
 //! −0.691 cancels the K-weighting's gain at 997 Hz, so a full-scale 997 Hz sine
 //! in one front channel reads −3.01 LUFS, and a stereo one reads its peak level.
@@ -50,8 +50,8 @@
 //! BS.1770 publishes the two filters only at 48 kHz and asks an implementation
 //! at any other rate for coefficients that "provide the same frequency
 //! response". So the published coefficients are **inverted** back to the
-//! analogue section they are the bilinear transform of — a centre frequency, a
-//! Q and three numerator gains, recovered exactly — and that section is
+//! analogue section they are the bilinear transform of -- a centre frequency, a
+//! Q and three numerator gains, recovered exactly -- and that section is
 //! transformed again at the rate asked for ([`Biquad::redesign`]). At 48 kHz the
 //! round trip gives back the standard's own table; elsewhere it is the same
 //! response, warped only as any bilinear design is.
@@ -74,7 +74,7 @@
 //!   the minimum Tech 3342 has required since 2016 (V3). libebur128 still takes
 //!   one short-term value a second, which the 2011 text allowed.
 //! - **Readings before a window is full** see the silence before the meter was
-//!   reset — a live meter's view, and libebur128's. The integrated loudness and
+//!   reset -- a live meter's view, and libebur128's. The integrated loudness and
 //!   the range use only complete windows, as BS.1770 and Tech 3342 say.
 //! - **Storage without allocation.** Gating needs every block since the reset,
 //!   and a meter that grows a list cannot run on an audio thread. So blocks are
@@ -82,7 +82,7 @@
 //!   loudness, 0.01 LU wide from −70 to +30 LUFS ([`HISTOGRAM_BINS`]). Unlike a
 //!   plain histogram each bin holds the **exact sum of its blocks' energies**,
 //!   so every mean is exact and the only approximation left is which side of a
-//!   gate a bin falls on — decided by the bin's own mean, and exact for blocks
+//!   gate a bin falls on -- decided by the bin's own mean, and exact for blocks
 //!   that share a level.
 //! - **Nothing to measure** reads `f64::NEG_INFINITY` (no block passed the
 //!   gate) and a range of `0.0` (no spread), as libebur128 reports them.
@@ -208,7 +208,7 @@ impl Biquad {
         }
     }
 
-    /// The centre frequency of the analogue section, in Hz — about 1682 Hz for
+    /// The centre frequency of the analogue section, in Hz -- about 1682 Hz for
     /// the shelf and 38 Hz for the high-pass.
     pub fn centre_frequency(self, rate: f64) -> f64 {
         self.analogue(rate).f0
@@ -263,7 +263,7 @@ impl KWeighting {
 /// The count is read the way libebur128 reads it: 1 is mono, 2 is L R, 3 is
 /// L R C, 4 is L R Ls Rs, 5 is L R C Ls Rs, and 6 or more is the SMPTE order
 /// L R C LFE Ls Rs. Channels past the sixth are measured at 1.0 rather than
-/// dropped — a layout this table cannot name is the caller's to state, with
+/// dropped -- a layout this table cannot name is the caller's to state, with
 /// [`LoudnessMeter::with_weights`] (BS.1770-5 Annex 3 weights a channel by its
 /// position: 1.41 between 60° and 120° of azimuth, 1.0 elsewhere).
 pub fn channel_weight(channels: usize, channel: usize) -> f64 {
@@ -301,8 +301,8 @@ pub fn lufs_to_energy(lufs: f64) -> f64 {
 /// weighted energy of each frame out.
 ///
 /// It is a type rather than a pair of fields because both faces of this module
-/// run it — [`LoudnessMeter`] over a live bus and [`Profile`] over a whole take
-/// — and a second copy of "filter, square, weight, sum" is how a curve drawn
+/// run it -- [`LoudnessMeter`] over a live bus and [`Profile`] over a whole take
+/// -- and a second copy of "filter, square, weight, sum" is how a curve drawn
 /// from a file and a meter watching the same audio would come to disagree.
 #[derive(Clone)]
 pub struct Weighting {
@@ -404,7 +404,7 @@ impl Histogram {
     }
 
     /// The loudness of the mean energy of every bin at or over `gate` (by the
-    /// bin's own mean) — or of every bin, for `None`.
+    /// bin's own mean) -- or of every bin, for `None`.
     fn mean_over(&self, gate: Option<f64>) -> Option<f64> {
         let (mut n, mut e) = (0u64, 0.0f64);
         for (c, sum, lufs) in self.bins() {
@@ -464,14 +464,14 @@ impl Histogram {
 /// **A loudness meter**: momentary, short-term, integrated and range over
 /// interleaved blocks, as ITU-R BS.1770 and EBU R 128 define them.
 ///
-/// Everything it needs is allocated by the constructor — the filter state, 3 s
-/// of per-frame energy, and two histograms — so [`feed`](Self::feed) and every
+/// Everything it needs is allocated by the constructor -- the filter state, 3 s
+/// of per-frame energy, and two histograms -- so [`feed`](Self::feed) and every
 /// reading are allocation-free and the meter can run on an audio thread. At
 /// 48 kHz that is about 0.9 MB.
 #[derive(Clone)]
 pub struct LoudnessMeter {
     rate: f64,
-    /// The K-weighting and the channel weights — the stage [`Profile`] runs too.
+    /// The K-weighting and the channel weights -- the stage [`Profile`] runs too.
     weighting: Weighting,
     /// The channel-weighted, K-weighted energy of each of the last
     /// `short_len` frames, oldest at `head`.
@@ -636,7 +636,7 @@ impl LoudnessMeter {
         energy_to_lufs(self.short_term_energy())
     }
 
-    /// The loudest momentary reading since the reset, in LUFS — taken at every
+    /// The loudest momentary reading since the reset, in LUFS -- taken at every
     /// sample, so a 400 ms event is caught whole wherever it starts.
     pub fn momentary_max(&self) -> f64 {
         energy_to_lufs(self.momentary_max)
@@ -684,7 +684,7 @@ pub struct Loudness {
     pub short_term_max: f64,
 }
 
-/// **The loudness of an interleaved buffer** — the one-shot face, a loop over
+/// **The loudness of an interleaved buffer** -- the one-shot face, a loop over
 /// [`LoudnessMeter`] with the weights [`channel_weights`] reads off the count.
 /// `None` for no channels or a rate under 10 Hz.
 pub fn loudness(samples: &[f32], channels: usize, rate: f64) -> Option<Loudness> {
@@ -714,7 +714,7 @@ pub fn loudness_with_weights(samples: &[f32], weights: &[f64], rate: f64) -> Opt
 /// range (a short-term value every 100 ms) with room to spare, so it is finer
 /// than any reading taken off it. It is also what a drawing needs and no more:
 /// a curve of a 400 ms sliding window cannot move appreciably inside 10 ms, and
-/// a take an hour long costs 360 000 blocks — under six megabytes with its
+/// a take an hour long costs 360 000 blocks -- under six megabytes with its
 /// running sums, against the gigabyte its samples take.
 pub const PROFILE_HOP_SECONDS: f64 = 0.01;
 
@@ -722,7 +722,7 @@ pub const PROFILE_HOP_SECONDS: f64 = 0.01;
 /// many times: the curve a view draws, and the numbers a span answers with.
 ///
 /// A meter is fed forward and reports where it has got to; a *picture* of a
-/// take asks the opposite question — what was the loudness **there** — at a
+/// take asks the opposite question -- what was the loudness **there** -- at a
 /// thousand places per frame, and again at every zoom. So the pass over the
 /// samples happens once, into [`PROFILE_HOP_SECONDS`] blocks of weighted
 /// energy with their running sums, and every reading afterwards is two
@@ -731,8 +731,8 @@ pub const PROFILE_HOP_SECONDS: f64 = 0.01;
 /// ([`Profile::column`]), and the gated aggregates over any span
 /// ([`Profile::measure`]).
 ///
-/// It is the same arithmetic [`LoudnessMeter`] runs — the one [`Weighting`]
-/// stage, the same windows, the same gates — so a curve drawn from a file and
+/// It is the same arithmetic [`LoudnessMeter`] runs -- the one [`Weighting`]
+/// stage, the same windows, the same gates -- so a curve drawn from a file and
 /// a meter watching the same audio read the same numbers, and the tests here
 /// assert exactly that rather than trusting it.
 ///
@@ -870,7 +870,7 @@ impl Profile {
     }
 
     /// The loudness of the window of `seconds` **ending** at frame `frame`, in
-    /// LUFS — which is what a meter would have read there, and the value a
+    /// LUFS -- which is what a meter would have read there, and the value a
     /// curve is drawn from.
     ///
     /// The window is where the reading is *taken*, so it looks backwards: the
@@ -896,7 +896,7 @@ impl Profile {
         self.window_at(SHORT_TERM_SECONDS, frame)
     }
 
-    /// **The quietest and loudest readings over `[from, to)`**, in LUFS — one
+    /// **The quietest and loudest readings over `[from, to)`**, in LUFS -- one
     /// pixel column of a drawn curve, which covers many readings wherever the
     /// view is zoomed out.
     ///
@@ -921,7 +921,7 @@ impl Profile {
         Some((lo as f32, hi as f32))
     }
 
-    /// **The aggregates over a span** — the gated integrated loudness, the
+    /// **The aggregates over a span** -- the gated integrated loudness, the
     /// range, and the loudest momentary and short-term readings inside it.
     ///
     /// This is what a read-out names over a selection (or over the whole take,
@@ -970,7 +970,7 @@ impl Profile {
     }
 
     /// The **mean** weighted energy of the `window` blocks ending at block
-    /// `end`, over the window's whole duration — so a window reaching past the
+    /// `end`, over the window's whole duration -- so a window reaching past the
     /// start of the take averages in the silence before it, exactly as a meter
     /// reset there does.
     fn window_energy(&self, end: usize, window: usize) -> f64 {
@@ -1099,7 +1099,7 @@ mod tests {
     const FS: f64 = 48_000.0;
 
     /// An interleaved programme of segments, each `(seconds, per-channel peak
-    /// levels in dBFS)` of a 1 kHz sine — `None` for a silent channel. The
+    /// levels in dBFS)` of a 1 kHz sine -- `None` for a silent channel. The
     /// phase runs on across segments, as one synthesized file's would.
     fn programme(rate: f64, segments: &[(f64, &[Option<f64>])]) -> Vec<f32> {
         let channels = segments[0].1.len();
@@ -1249,7 +1249,7 @@ mod tests {
     // programme" recordings that exist only as the EBU's files, and 15-23 are
     // true peak, which `resample` answers.
 
-    /// **Case 1** — stereo 1 kHz at −23 dBFS for 20 s: M, S, I = −23.0 ±0.1.
+    /// **Case 1** -- stereo 1 kHz at −23 dBFS for 20 s: M, S, I = −23.0 ±0.1.
     #[test]
     fn tech3341_case_1_minus_23_tone() {
         let x = stereo_programme(FS, &[stereo(20.0, Some(-23.0))]);
@@ -1260,7 +1260,7 @@ mod tests {
         within(m.integrated(), -23.0, 0.1, "I");
     }
 
-    /// **Case 2** — as case 1 at −33 dBFS: M, S, I = −33.0 ±0.1.
+    /// **Case 2** -- as case 1 at −33 dBFS: M, S, I = −33.0 ±0.1.
     #[test]
     fn tech3341_case_2_minus_33_tone() {
         let x = stereo_programme(FS, &[stereo(20.0, Some(-33.0))]);
@@ -1271,7 +1271,7 @@ mod tests {
         within(m.integrated(), -33.0, 0.1, "I");
     }
 
-    /// **Case 3** — 10 s at −36, 60 s at −23, 10 s at −36: I = −23.0 ±0.1.
+    /// **Case 3** -- 10 s at −36, 60 s at −23, 10 s at −36: I = −23.0 ±0.1.
     /// The quiet tones sit under the relative gate.
     #[test]
     fn tech3341_case_3_the_relative_gate() {
@@ -1286,7 +1286,7 @@ mod tests {
         within(loudness(&x, 2, FS).unwrap().integrated, -23.0, 0.1, "I");
     }
 
-    /// **Case 4** — case 3 between two 10 s tones at −72 dBFS: I = −23.0 ±0.1.
+    /// **Case 4** -- case 3 between two 10 s tones at −72 dBFS: I = −23.0 ±0.1.
     /// The quietest tones sit under the absolute gate too.
     #[test]
     fn tech3341_case_4_the_absolute_gate() {
@@ -1303,7 +1303,7 @@ mod tests {
         within(loudness(&x, 2, FS).unwrap().integrated, -23.0, 0.1, "I");
     }
 
-    /// **Case 5** — 20 s at −26, 20.1 s at −20, 20 s at −26: I = −23.0 ±0.1.
+    /// **Case 5** -- 20 s at −26, 20.1 s at −20, 20 s at −26: I = −23.0 ±0.1.
     /// Nothing is gated out, so this is the energy mean itself.
     #[test]
     fn tech3341_case_5_nothing_gated() {
@@ -1318,7 +1318,7 @@ mod tests {
         within(loudness(&x, 2, FS).unwrap().integrated, -23.0, 0.1, "I");
     }
 
-    /// **Case 6** — 5.0 channels of 1 kHz for 20 s, at −28 dBFS in L and R,
+    /// **Case 6** -- 5.0 channels of 1 kHz for 20 s, at −28 dBFS in L and R,
     /// −24 in C and −30 in Ls and Rs: I = −23.0 ±0.1. The surrounds' 1.41 is
     /// what makes it add up.
     #[test]
@@ -1334,7 +1334,7 @@ mod tests {
         within(loudness(&x, 5, FS).unwrap().integrated, -23.0, 0.1, "I");
     }
 
-    /// **Case 9** — (1.34 s at −20, 1.66 s at −30) five times: S = −23.0 ±0.1,
+    /// **Case 9** -- (1.34 s at −20, 1.66 s at −30) five times: S = −23.0 ±0.1,
     /// constant after 3 s. Every 3 s window holds the same energy wherever it
     /// starts, so the reading must not move -- checked every 10 ms.
     #[test]
@@ -1352,7 +1352,7 @@ mod tests {
         within(m.short_term(), -23.0, 0.1, "S at the end");
     }
 
-    /// **Case 10**, for file-based meters — twenty files of (i·0.15 s of
+    /// **Case 10**, for file-based meters -- twenty files of (i·0.15 s of
     /// silence, 3 s at −23, 1 s of silence): max S = −23.0 ±0.1 for each.
     #[test]
     fn tech3341_case_10_short_term_max_per_file() {
@@ -1374,7 +1374,7 @@ mod tests {
         }
     }
 
-    /// **Case 11**, for live meters — one signal of twenty (i·0.15 s of
+    /// **Case 11**, for live meters -- one signal of twenty (i·0.15 s of
     /// silence, 3 s at −38+i, 3−i·0.15 s of silence): max S reads −38, −37,
     /// …, −19 ±0.1 in succession. Read after each segment of one live meter.
     #[test]
@@ -1399,7 +1399,7 @@ mod tests {
         }
     }
 
-    /// **Case 12** — (0.18 s at −20, 0.22 s at −30) 25 times: M = −23.0 ±0.1,
+    /// **Case 12** -- (0.18 s at −20, 0.22 s at −30) 25 times: M = −23.0 ±0.1,
     /// constant after 1 s. Checked every 5 ms.
     #[test]
     fn tech3341_case_12_momentary_is_constant() {
@@ -1415,7 +1415,7 @@ mod tests {
         }
     }
 
-    /// **Case 13**, for file-based meters — twenty files of (i·20 ms of
+    /// **Case 13**, for file-based meters -- twenty files of (i·20 ms of
     /// silence, 400 ms at −23, 1 s of silence): max M = −23.0 ±0.1 for each.
     /// A meter that reads its momentary window only every 100 ms misses up to
     /// 40 ms of the tone (−0.46 LU) and fails this case, which is what it is
@@ -1440,7 +1440,7 @@ mod tests {
         }
     }
 
-    /// **Case 14**, for live meters — twenty (i·20 ms of silence, 400 ms at
+    /// **Case 14**, for live meters -- twenty (i·20 ms of silence, 400 ms at
     /// −38+i, 400−i·20 ms of silence): max M reads −38, −37, …, −19 ±0.1.
     #[test]
     fn tech3341_case_14_momentary_max_live() {
@@ -1474,26 +1474,26 @@ mod tests {
         loudness(&x, 2, FS).unwrap().range
     }
 
-    /// **Case 1** — 20 s at −20 dBFS then 20 s at −30: LRA = 10 ±1 LU.
+    /// **Case 1** -- 20 s at −20 dBFS then 20 s at −30: LRA = 10 ±1 LU.
     #[test]
     fn tech3342_case_1_ten_lu_apart() {
         within(range_of(&[-20.0, -30.0]), 10.0, 1.0, "LRA");
     }
 
-    /// **Case 2** — −20 then −15: LRA = 5 ±1 LU.
+    /// **Case 2** -- −20 then −15: LRA = 5 ±1 LU.
     #[test]
     fn tech3342_case_2_five_lu_apart() {
         within(range_of(&[-20.0, -15.0]), 5.0, 1.0, "LRA");
     }
 
-    /// **Case 3** — −40 then −20: LRA = 20 ±1 LU. The quiet tone sits right on
+    /// **Case 3** -- −40 then −20: LRA = 20 ±1 LU. The quiet tone sits right on
     /// the relative gate, 20 LU under the mean.
     #[test]
     fn tech3342_case_3_twenty_lu_apart() {
         within(range_of(&[-40.0, -20.0]), 20.0, 1.0, "LRA");
     }
 
-    /// **Case 4** — −50, −35, −20, −35, −50, 20 s each: LRA = 15 ±1 LU. The
+    /// **Case 4** -- −50, −35, −20, −35, −50, 20 s each: LRA = 15 ±1 LU. The
     /// −50 tones fall under the relative gate.
     #[test]
     fn tech3342_case_4_five_segments() {
@@ -1657,7 +1657,7 @@ mod tests {
         }
     }
 
-    /// And the aggregates over the whole take are the meter's too — the gating
+    /// And the aggregates over the whole take are the meter's too -- the gating
     /// the profile runs over its blocks is the gating the meter runs over its
     /// histogram.
     #[test]
@@ -1726,7 +1726,7 @@ mod tests {
     }
 
     /// **An edit re-measures its own span**, and the result is the profile a
-    /// fresh pass would have built — the curve after a stroke is not an
+    /// fresh pass would have built -- the curve after a stroke is not an
     /// approximation of the curve, it is the curve.
     #[test]
     fn an_edited_span_is_re_measured_exactly() {

@@ -3,10 +3,10 @@
 Port of the value side of ``sc3/base/builtins.py``: the operations the client
 applies to concrete numbers. The arithmetic/comparison/transcendental
 primitives go through `clausters._native` (the shared ``clausters-core``)
-so they are computed in **f32**, matching the server by construction — Python's
+so they are computed in **f32**, matching the server by construction -- Python's
 own ``float`` is f64 and would diverge. The music-theory conversions
 (``midicps`` …) go through the core too, so they are bit-identical to the
-server's ``UnaryOpUGen`` (S3) — a value computed off the RT path and the same op
+server's ``UnaryOpUGen`` (S3) -- a value computed off the RT path and the same op
 on the audio thread agree exactly.
 
 Each function accepts a scalar or a list/tuple. With a list it returns a list,
@@ -28,8 +28,8 @@ def _is_seq(x):
     """Whether `x` is a sequence of numbers rather than one number.
 
     Anything iterable that is not a string counts, so the idiomatic Python
-    spellings all work — `midicps(range(0, 120))`, a generator, a `Buffer`'s
-    samples — rather than only the two types a first pass happened to name.
+    spellings all work -- `midicps(range(0, 120))`, a generator, a `Buffer`'s
+    samples -- rather than only the two types a first pass happened to name.
     """
     return not isinstance(x, (str, bytes)) and hasattr(x, "__iter__")
 
@@ -147,7 +147,7 @@ def distort(x): return _unop(UnaryOp.DISTORT, x)
 def softclip(x): return _unop(UnaryOp.SOFTCLIP, x)
 
 
-# ---- music-theory conversions (native, f32 — bit-identical to the server) ----
+# ---- music-theory conversions (native, f32 -- bit-identical to the server) ----
 
 def midicps(x): return _unop(UnaryOp.MIDICPS, x)
 def cpsmidi(x): return _unop(UnaryOp.CPSMIDI, x)
@@ -192,7 +192,7 @@ def barkcps(x):
     return _scale(_native.bark_to_hz, x)
 
 
-# ---- range maps (native, f32 — SuperCollider's warp family) ----
+# ---- range maps (native, f32 -- SuperCollider's warp family) ----
 #
 # Reading a value out of one range and writing it into another, which is what a
 # control's position, a spec and an envelope's curve all are. The formulas live
@@ -236,8 +236,8 @@ def expexp(x, in_lo, in_hi, out_lo, out_hi, clip="minmax"):
 
 def lincurve(x, in_lo, in_hi, out_lo, out_hi, curve=-4.0, clip="minmax"):
     """`x` off a linear range onto one **bent** by ``curve``: 0 is linear,
-    negative builds fast then slow — most of the output spent on the first half
-    of the input — and positive the reverse, which is the fine-at-the-bottom
+    negative builds fast then slow -- most of the output spent on the first half
+    of the input -- and positive the reverse, which is the fine-at-the-bottom
     feel a frequency or an amplitude control wants. Unlike `linexp` the bend
     spans zero freely."""
     return _map(MapOp.LINCURVE, x, in_lo, in_hi, out_lo, out_hi, curve, clip)

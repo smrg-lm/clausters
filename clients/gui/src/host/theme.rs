@@ -1,9 +1,9 @@
 //! The theme: every chrome color as a named **role**, in one table.
 //!
-//! No paint site names an RGBA literal — it names a role of this struct, so
+//! No paint site names an RGBA literal -- it names a role of this struct, so
 //! the host has exactly one look, replaceable as a whole. The default theme
 //! reproduces the colors the widgets always had; a partial overlay (the
-//! `[gui.theme]` config table, a `--theme` TOML file, or — later — a theme
+//! `[gui.theme]` config table, a `--theme` TOML file, or -- later -- a theme
 //! group on a container) renames only the roles it lists, in `"#rrggbb[aa]"`
 //! form. Roles are colors and only colors: a widget's parts are named by
 //! function here, never addressed individually, and anything particular to
@@ -12,12 +12,12 @@
 //!
 //! Where one rgb serves several alphas (a selection's fill vs. its edge), the
 //! role stores the opaque color and the paint site derives with
-//! [`with_alpha`] — multiplied, so a translucent themed role stays
+//! [`with_alpha`] -- multiplied, so a translucent themed role stays
 //! translucent.
 
 use super::paint::Color;
 
-/// `color` with its alpha multiplied by `a` — the one sanctioned derivation
+/// `color` with its alpha multiplied by `a` -- the one sanctioned derivation
 /// at a paint site (fills vs. edges of one role).
 pub fn with_alpha(color: Color, a: f32) -> Color {
     [color[0], color[1], color[2], color[3] * a]
@@ -156,7 +156,7 @@ theme_roles! {
     /// The ground a **text plate** lays under a caption drawn over a picture: a
     /// translucent dark box, so a name over a waveform, a spectrogram or a roll
     /// reads without hiding what it is written on. Its alpha is the whole role
-    /// — an opaque plate would be a label with a background, which is a
+    /// -- an opaque plate would be a label with a background, which is a
     /// different thing.
     plate = [0.04, 0.05, 0.07, 0.62];
 
@@ -168,7 +168,7 @@ theme_roles! {
     // -- Navigation chrome --
     /// The selection color; fills and edges derive by alpha.
     selection = [0.55, 0.75, 0.95, 1.0];
-    /// The playhead line — the one that **sweeps**, whose position is the
+    /// The playhead line -- the one that **sweeps**, whose position is the
     /// engine's.
     playhead = [0.95, 0.55, 0.30, 0.9];
     /// The **position cursor**: the line a click on the ruler places, where a
@@ -190,29 +190,29 @@ theme_roles! {
     /// A patch box's central band (the def-name band): **white**, so the name
     /// reads as black text on white ([`box_text`](Theme::box_text)) and the box
     /// stands out on the dark canvas. Distinct from
-    /// [`object_fill`](Theme::object_fill) (a clip's body) — a patch box
+    /// [`object_fill`](Theme::object_fill) (a clip's body) -- a patch box
     /// is its own thing.
     box_fill = [0.95, 0.96, 0.97, 1.0];
-    /// A patch box's central-band text (the def name) — near-black, for the
+    /// A patch box's central-band text (the def name) -- near-black, for the
     /// white [`box_fill`](Theme::box_fill) band.
     box_text = [0.09, 0.10, 0.12, 1.0];
     /// A patch **value** box's central band (a `const` literal / parameter box,
     /// set apart from the white UGen boxes so a data box reads as data): a pale
     /// cream, still black-text ([`box_text`](Theme::box_text)).
     value_fill = [0.98, 0.94, 0.80, 1.0];
-    /// A patch box's port strips (top inlets and bottom outlets, one color) —
+    /// A patch box's port strips (top inlets and bottom outlets, one color) --
     /// dark grey, framing the white middle band ([`box_fill`](Theme::box_fill)).
     port_strip = [0.15, 0.16, 0.18, 1.0];
     /// A patch box's wiring port (the cell a cord connects to: its edge and pin).
     port = [0.75, 0.82, 0.92, 1.0];
-    /// A patch **audio** (`ar`) cord — the signal path. The rate reads by
+    /// A patch **audio** (`ar`) cord -- the signal path. The rate reads by
     /// **colour** (all cords share one weight): the three are contrasting
-    /// primaries — audio **red**, control **blue**, init **yellow** — legible
+    /// primaries -- audio **red**, control **blue**, init **yellow** -- legible
     /// against each other and the dark field.
     cord = [0.95, 0.34, 0.32, 1.0];
     /// A patch **control** (`kr`) cord (blue).
     cord_control = [0.28, 0.56, 0.98, 1.0];
-    /// A patch **init** (`ir`) cord — a scalar wire, also drawn dashed (yellow).
+    /// A patch **init** (`ir`) cord -- a scalar wire, also drawn dashed (yellow).
     cord_init = [0.98, 0.78, 0.20, 1.0];
     /// The live/rendered marker (a sounding patch wire).
     live = [0.95, 0.72, 0.25, 1.0];
@@ -331,7 +331,7 @@ impl Theme {
 }
 
 impl Theme {
-    /// Overlays a JSON object of `role: "#rrggbb[aa]"` pairs — the `theme`
+    /// Overlays a JSON object of `role: "#rrggbb[aa]"` pairs -- the `theme`
     /// prop's shape, the same table the TOML file carries. Non-string values
     /// are reported like bad colors.
     pub fn overlay_json(
@@ -346,7 +346,7 @@ impl Theme {
     }
 
     /// The single `color` prop's theme: `base` with the roles that carry a
-    /// widget's function re-seeded from one color — the accent family
+    /// widget's function re-seeded from one color -- the accent family
     /// (`accent`, its dim and lit forms), the trace pair, the first series
     /// color (so a multichannel view's cycle starts at the given color) and
     /// the placed-object pair (a clip's body). The quiet/lit forms derive by
@@ -366,12 +366,12 @@ impl Theme {
     }
 }
 
-/// `color` with its rgb scaled by `k` (alpha kept) — the dim derivation.
+/// `color` with its rgb scaled by `k` (alpha kept) -- the dim derivation.
 fn scale_rgb(c: Color, k: f32) -> Color {
     [c[0] * k, c[1] * k, c[2] * k, c[3]]
 }
 
-/// `color` mixed `k` of the way toward white (alpha kept) — the lit derivation.
+/// `color` mixed `k` of the way toward white (alpha kept) -- the lit derivation.
 fn toward_white(c: Color, k: f32) -> Color {
     [
         c[0] + (1.0 - c[0]) * k,

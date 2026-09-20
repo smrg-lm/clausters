@@ -28,12 +28,12 @@ fn estimated_freq(buf: &[f32]) -> f32 {
     signal::zero_crossing_freq(buf, SR)
 }
 
-/// `wrap = _ <: _ - floor(_)` — one input, one output.
+/// `wrap = _ <: _ - floor(_)` -- one input, one output.
 unsafe fn wrap_box() -> FaustBox {
     unsafe { CboxSplit(CboxWire(), CboxSubAux(CboxWire(), CboxFloorAux(CboxWire()))) }
 }
 
-/// `phasor = (+(freq/SR) : wrap) ~ _` — zero inputs, one output.
+/// `phasor = (+(freq/SR) : wrap) ~ _` -- zero inputs, one output.
 unsafe fn phasor_box(freq: FaustBox) -> FaustBox {
     unsafe {
         let inc = CboxDivAux(freq, CboxReal(SR as f64));
@@ -163,7 +163,7 @@ fn factory_creation_reports_errors() {
         println!("expected failure message: {msg}");
     } else {
         // Some libfaust versions accept open boxes by auto-wiring inputs;
-        // if so the factory is valid — just clean it up.
+        // if so the factory is valid -- just clean it up.
         unsafe {
             deleteCDSPFactory(factory);
         }

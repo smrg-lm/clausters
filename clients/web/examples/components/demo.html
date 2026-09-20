@@ -19,7 +19,7 @@
     <main>
       <div id="note">the bundle below is one HTML element; its power button is
 the autoplay gesture. After it is up, the buttons drive the SAME engine
-through the raw singleton — the REPL surface a future TS client builds on.</div>
+through the raw singleton -- the REPL surface a future TS client builds on.</div>
       <clausters-bundle src="../out/demo"></clausters-bundle>
       <div>
         <button id="status" disabled>/server_status</button>
@@ -34,7 +34,7 @@ through the raw singleton — the REPL surface a future TS client builds on.</di
       (scripts/smoke-web.sh components, headless Chrome) auto-boots and
       asserts: the element came up with the canvas in its shadow DOM, the
       raw REPL surface sees the element's synth (/server_status counts it, /node_set
-      retunes it), the meter bus streams — one shared namespace. Verdict
+      retunes it), the meter bus streams -- one shared namespace. Verdict
       beaconed as a fetch, read from the HTTP access log.
     -->
     <script type="module">
@@ -98,7 +98,7 @@ through the raw singleton — the REPL surface a future TS client builds on.</di
         let synths = -1;
         const seen = new Set();
         // `ANY_PEER`: the meter's `/bus_stream` subscription is the **element's**
-        // GUI host, on its own leg, and the engine queues replies per client —
+        // GUI host, on its own leg, and the engine queues replies per client --
         // so a listener with no peer hears the default client and never the
         // host. Watching somebody else's subscription is what the observer door
         // is for. `/server_status.reply` answers this page's own question and
@@ -111,8 +111,8 @@ through the raw singleton — the REPL surface a future TS client builds on.</di
             }
           }
         }, ANY_PEER);
-        // Asked on every turn, not once: the component's engine half — the
-        // defs and the boot list that make the synth — goes out on the page's
+        // Asked on every turn, not once: the component's engine half -- the
+        // defs and the boot list that make the synth -- goes out on the page's
         // gesture, which is a phase later than this handler.
         const t0 = performance.now();
         for (;;) {

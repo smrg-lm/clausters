@@ -1,6 +1,6 @@
 """What the server reports about its resources: the records and their parsers.
 
-One rule holds for every resource the server owns — a node, a buffer, a def:
+One rule holds for every resource the server owns -- a node, a buffer, a def:
 
 * an **Info** is a frozen-in-time record of **one** instance, identified by
   itself (``id``, ``bufnum``, ``name``), carrying no server and no commands,
@@ -8,21 +8,21 @@ One rule holds for every resource the server owns — a node, a buffer, a def:
   exactly that record,
 * the **server** asks about every instance of a type (`Server.query_buffers`,
   `Server.query_defs`, `Server.query_tree`) and answers with a structure of
-  those same records — a list, or a `Tree`,
+  those same records -- a list, or a `Tree`,
 * and a resource that is **not there** is a state, not an error: the record
   comes back with ``exists = False`` rather than raising, so one dead id never
   aborts a query about the others.
 
 The records live here rather than next to one resource because both ends need
 them: `Server` builds them from the catalog replies, and `Node`/`Buffer` from
-their own. A bus has no record at all — the server does not model one (its
+their own. A bus has no record at all -- the server does not model one (its
 index and width are the client allocator's invention), which is why there is
 no ``BusInfo``.
 
 **Printing is two-faced**, as usual in Python, and every record here follows
 it: ``repr`` is the dataclass form, which names every field and is what an
 expression echoes; ``str`` is the readable line `print` shows. A record's
-``str`` is what its container prints too — a `Tree` draws a synth by printing
+``str`` is what its container prints too -- a `Tree` draws a synth by printing
 its `NodeInfo`, so the two can never disagree.
 """
 
@@ -40,7 +40,7 @@ class ControlInfo:
     """One entry of a def's control surface, as `Server.query_defs` reports it.
 
     ``rate`` is the control type the def declared: ``"kr"`` (a plain control),
-    ``"tr"`` (a one-block trigger) or ``"ir"`` (a scalar frozen at init) — a
+    ``"tr"`` (a one-block trigger) or ``"ir"`` (a scalar frozen at init) -- a
     different vocabulary from the calculation rates `UgenInfo` reports, which
     also include ``"ar"`` and ``"dr"``. Neither of those can be a control: an
     audio-rate value is mapped in from a bus, and a demand value is pulled by a
@@ -48,7 +48,7 @@ class ControlInfo:
     FaustDef's params also carry ``min``/``max``/``step``; they are ``None`` for
     the other families, which declare no range. On a GraphDef this describes a
     surface **port**, and ``targets`` lists the ``(member, control, mul, add)``
-    it drives inside — the scaling included, so a patch can draw the port's
+    it drives inside -- the scaling included, so a patch can draw the port's
     real connections."""
 
     name: str
@@ -82,7 +82,7 @@ class DefInfo:
     ``"faust"`` or ``"graph"``) and its control surface.
 
     A def the server does not hold comes back with ``exists`` false, an empty
-    family and no controls, rather than raising — one unknown name never fails
+    family and no controls, rather than raising -- one unknown name never fails
     a batch."""
 
     name: str
@@ -101,7 +101,7 @@ class DefInfo:
 class BufferInfo:
     """A buffer the server holds: its slot and its shape.
 
-    ``sample_rate`` is 0.0 while unknown — a buffer this client allocated but
+    ``sample_rate`` is 0.0 while unknown -- a buffer this client allocated but
     has not asked about carries the shape it dictated and not the server's
     rate. A slot with nothing in it comes back with ``exists`` false."""
 
@@ -123,7 +123,7 @@ class BufferInfo:
 class UgenInput:
     """One named input slot of a UGen, in **wire order**.
 
-    The wire is positional — a def lists input values, it never names them — so
+    The wire is positional -- a def lists input values, it never names them -- so
     this is what a palette labels an inlet with, and ``default`` is what to
     offer when the user leaves the slot alone."""
 
@@ -141,7 +141,7 @@ class UgenInfo:
 
     This is a **type**, not an instantiated resource: there is no handle for it
     and so no ``exists``. ``arity`` is the input count, or ``-1`` for a variadic
-    kind — whose ``inputs`` then name only the fixed head (``EnvGen``'s five
+    kind -- whose ``inputs`` then name only the fixed head (``EnvGen``'s five
     before the envelope array). ``rates`` are the rates the kind may be
     instantiated at and ``default_rate`` the one a def gets by omitting
     ``rate``. ``exec``, ``bus``, ``op_family`` and ``spectral`` expose the
@@ -192,7 +192,7 @@ class NodeMap:
 
 @dataclass
 class NodeInfo:
-    """A node the server holds — a synth or a group — at one moment.
+    """A node the server holds -- a synth or a group -- at one moment.
 
     Unlike a buffer's, this record goes stale on its own: an envelope runs, a
     mapped control follows its bus, a ``done_action`` frees the node. It is a
@@ -249,7 +249,7 @@ class NodeInfo:
 class Tree:
     """The node tree from one group down: a `NodeInfo` plus its children.
 
-    The structure is the only thing the tree adds — every entry is the same
+    The structure is the only thing the tree adds -- every entry is the same
     record `Node.info` returns, so reading a tree needs no follow-up query.
     The queried group is the root, and its own ``parent``/``prev``/``next`` are
     unknown (``-1``): the reply starts at it, so it has no siblings to report.
@@ -308,7 +308,7 @@ class Tree:
 
 def parse_def_info(args) -> DefInfo:
     """One ``/def_query.reply`` reply: ``name, family, numControls`` then per control
-    ``name, default, rate`` — plus ``min, max, step`` for a faust param, or
+    ``name, default, rate`` -- plus ``min, max, step`` for a faust param, or
     ``numTargets`` and the target tuples for a graph port."""
     name, family, count = str(args[0]), str(args[1]), int(args[2])
     controls, i = [], 3
@@ -424,7 +424,7 @@ def parse_n_info(args) -> NodeInfo:
 def _parse_tree_nodes(args, i, count, detail, parent):
     """Recursively parse `count` entries of a ``/group_queryTree.reply`` starting
     at index `i`; returns (subtrees, next_index). A synth has child-count -1.
-    Every entry is ``id, childCount, name`` — the group's `/group_name` or the
+    Every entry is ``id, childCount, name`` -- the group's `/group_name` or the
     synth's def name.
 
     The wire gives the nesting; the siblings and a group's head/tail follow

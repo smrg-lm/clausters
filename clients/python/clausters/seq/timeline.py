@@ -3,15 +3,15 @@
 The counterpart to the generative layer (`clausters.base.stream.Routine`,
 `clausters.seq.pattern.Pbind`). A `Routine` is a forward-only generator: its
 musical state lives in the generator's locals, so it cannot be *seeked*. A
-`Timeline` is the opposite — an **editable list of timed items kept sorted by
+`Timeline` is the opposite -- an **editable list of timed items kept sorted by
 beat**, with its own tempo map and random access by time (`index_at`, `range`).
 That is what makes DAW-style transport controls possible, and they are the
 timeline's own: **play / pause / stop / locate / loop**, on a clock of its own
 or on a server's transport (`Timeline.transport`).
 
-An *item* is anything that can render itself on a destination — it has a
+An *item* is anything that can render itself on a destination -- it has a
 `play(destination)` method. `clausters.seq.event.Event` already is one (it plays
-a note on a `Server` or a `MidiServer` — the same double dispatch the patterns
+a note on a `Server` or a `MidiServer` -- the same double dispatch the patterns
 use), so a timeline of `Event`s renders to OSC *or* MIDI by which destination
 the timeline plays on, exactly like the rest of the client. `OscItem` and
 `MidiItem` wrap a raw OSC message or MIDI bytes, so a timeline can also be a
@@ -75,14 +75,14 @@ MIDI_KEY = "midi"
 
 
 def item_data(item) -> "dict | None":
-    """One timeline item as plain, JSON-able data — or ``None`` for an item this
+    """One timeline item as plain, JSON-able data -- or ``None`` for an item this
     has no description of.
 
     **One description, because two seams need it.** A document writes a
     timeline's items as the configuration of a placed clang, and the editing
     domain hands them across the crate's ``events`` vocabulary as an event's
-    opaque ``data``; the two are the same question — *what is this item, written
-    down* — and answering it twice is how a marker comes back from one of them
+    opaque ``data``; the two are the same question -- *what is this item, written
+    down* -- and answering it twice is how a marker comes back from one of them
     as a note.
 
     An `Event` is a `dict` and travels as itself. An `OscItem` and a `MidiItem`
@@ -117,7 +117,7 @@ class Timeline:
 
     Items are kept in beat order (a stable insert preserves the order of items
     added at the same beat, e.g. a note-off before a re-trigger). Edit it
-    freely — `add`, `remove`, `move`, `clear` — and read ranges of it by time —
+    freely -- `add`, `remove`, `move`, `clear` -- and read ranges of it by time --
     `index_at`, `range`, `at`. `add` returns a handle (an opaque entry) you pass
     back to `remove`/`move`, so edits stay correct as other inserts shift
     indices.
@@ -155,7 +155,7 @@ class Timeline:
         self._player = None
         self._transport = None
         #: **Where this timeline's beat 0 falls on the transport**, in seconds
-        #: of the transport's position — the transport's axis is physical, so
+        #: of the transport's position -- the transport's axis is physical, so
         #: the offset is too. Only read in transport mode.
         self.transport_at = 0.0
         if items is not None:
@@ -231,7 +231,7 @@ class Timeline:
         a rebuild that outlasts CPython's switch interval was seen half-done in
         87.7% of reads at 4000 notes. Building the new order first and binding
         it in one assignment means a reader either sees the timeline before the
-        edit or after it — iteration binds the list once, so a read already in
+        edit or after it -- iteration binds the list once, so a read already in
         progress finishes on the order it started with.
         """
         entries = [_Entry(float(beat), item) for beat, item in items]
@@ -292,7 +292,7 @@ class Timeline:
     # ---- random access by time ----
 
     def index_at(self, beat) -> int:
-        """The cursor (index) of the first item at or after ``beat`` — the seek
+        """The cursor (index) of the first item at or after ``beat`` -- the seek
         primitive `play(at=…)` and `locate` start from."""
         return bisect.bisect_left(self._entries, float(beat), key=lambda e: e.beat)
 
@@ -344,8 +344,8 @@ class Timeline:
 
     @property
     def transport(self):
-        """The server whose **transport** plays this timeline, or ``None`` —
-        the ordinary case — for its own clock.
+        """The server whose **transport** plays this timeline, or ``None`` --
+        the ordinary case -- for its own clock.
 
         One mode per root, and the same verbs in both: `play`, `pause`, `stop`
         and `locate` are the transport's own commands here, exactly as the

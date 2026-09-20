@@ -4,7 +4,7 @@
 //! language client. The gui crate is part of the same ecosystem as the server
 //! and the other clients, so under the optional `standalone` feature it simply
 //! depends on the `clausters` crate (with `embed,realtime`) and constructs the
-//! same in-process server the C ABI exposes — [`clausters::embed::Clausters`] —
+//! same in-process server the C ABI exposes -- [`clausters::embed::Clausters`] --
 //! through its direct Rust API: [`Clausters::open`] starts a full server (audio
 //! device + engine + ring), [`Clausters::send`] delivers an OSC packet,
 //! [`Clausters::poll_into`] pops a reply, and dropping it shuts the server down.
@@ -39,7 +39,7 @@ impl EmbedServer {
 
     /// Starts an embedded server that also loads the persisted defs at
     /// `data_dir` (SynthDefs, Faust defs, GraphDefs, MIDI bindings and the
-    /// `boot.json` preset) before serving — how the standalone mode brings a
+    /// `boot.json` preset) before serving -- how the standalone mode brings a
     /// whole bundle up from disk. `None` starts the server empty.
     pub fn open_with_data_dir(data_dir: Option<&Path>) -> Result<EmbedServer, String> {
         // 0 workers: the embedded server picks a sensible default.
@@ -61,7 +61,7 @@ impl EmbedServer {
     }
 
     /// A [`BusSource`] reading this server's own IPC
-    /// segment — the in-process twin of mapping a `--shm` file.
+    /// segment -- the in-process twin of mapping a `--shm` file.
     ///
     /// The data plane is the same one an out-of-process peer reads, so the host
     /// gets the clocks, the control buses, the per-bus levels and the audio
@@ -70,7 +70,7 @@ impl EmbedServer {
     /// server reads the device clock.
     ///
     /// `None` when the segment does not validate, which would mean this build's
-    /// reader and the server it links disagree about the ABI — impossible in one
+    /// reader and the server it links disagree about the ABI -- impossible in one
     /// binary, and reported rather than assumed away.
     #[cfg(unix)]
     pub fn bus_source(&self) -> Option<Arc<dyn BusSource>> {
@@ -96,7 +96,7 @@ mod tests {
     use clausters_core::osc::{OscMessage, OscPacket, OscType, encode};
 
     /// The wire-up nothing else covers: an embedded server's own segment, read
-    /// as a `BusSource`, reports **the multitrack's position** — so a window drawing
+    /// as a `BusSource`, reports **the multitrack's position** -- so a window drawing
     /// a head from it draws where the multitrack is rather than how long the
     /// machine has been running.
     ///
@@ -130,7 +130,7 @@ mod tests {
         send("/transport_locateSample", vec![OscType::Long(12_345)]);
 
         // **Waited for, not slept through.** The engine publishes once a block,
-        // which is a fraction of a millisecond of work — but the first block
+        // which is a fraction of a millisecond of work -- but the first block
         // arrives when the *device* starts, and on a loaded machine that is
         // not within any fixed number of milliseconds. A single sleep made this
         // fail about one run in five, which is the worst kind of red: it says
@@ -176,7 +176,7 @@ mod tests {
 ///
 /// The peer of [`EmbedServer`], and the difference is what each one holds. That
 /// one holds the machine's input and output; this one holds nothing but
-/// computation and — given a segment path — the **samples**. An editor sends
+/// computation and -- given a segment path -- the **samples**. An editor sends
 /// it allocations, the editing verbs and renders, and lets a separate process
 /// hold the devices and play what it owns.
 ///
@@ -190,7 +190,7 @@ pub struct EmbedSession {
 
 impl EmbedSession {
     /// Opens a session whose samples live beside the segment at `shm`, at
-    /// `sample_rate` and `channels`. A peer — this host included — maps every
+    /// `sample_rate` and `channels`. A peer -- this host included -- maps every
     /// buffer it installs.
     pub fn open(shm: &Path, sample_rate: f64, channels: usize) -> Result<EmbedSession, String> {
         Ok(EmbedSession {
@@ -215,7 +215,7 @@ impl EmbedSession {
         self.inner.poll_into(buf)
     }
 
-    /// Where this session's segment is — what a player is pointed at and what
+    /// Where this session's segment is -- what a player is pointed at and what
     /// the host maps its samples from.
     pub fn shm_path(&self) -> Option<&Path> {
         self.inner.shm_path()

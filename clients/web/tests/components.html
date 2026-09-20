@@ -24,7 +24,7 @@
 
       <p>This is the milestone's shape: prose, then an instrument, then more
       prose. The two components below are <em>the same bundle</em>, mounted
-      twice — the def was sent to the engine once, and each instance holds its
+      twice -- the def was sent to the engine once, and each instance holds its
       own graph node and its own LFO bus.</p>
 
       <fm-trem id="a"></fm-trem>
@@ -41,7 +41,7 @@
       <piano-keys id="c" title="keys"></piano-keys>
 
       <p>And one that cannot resolve, to show a failure staying where it
-      happened — the rest of the page is up around it:</p>
+      happened -- the rest of the page is up around it:</p>
 
       <clausters-bundle id="broken" src="./no-such-bundle"></clausters-bundle>
 
@@ -66,7 +66,7 @@
 
       No TypeScript client is loaded: the bundles' generated modules import
       dist/runtime.js, and this page adds only the asserts. The verdict is
-      beaconed as a fetch — the standard web-smoke posture (docs/decisions.md).
+      beaconed as a fetch -- the standard web-smoke posture (docs/decisions.md).
     -->
     <script type="module">
       import "/examples/out/graph-controls/index.js";  // <fm-trem>
@@ -152,7 +152,7 @@
         // Both instances sound, each on its own bus, and the one with
         // freq="110" is a different signal than its sibling: the LFO rates are
         // equal, so what separates them is asserted on the audio path through
-        // the tremolo's own gain — here, that both buses stream independently.
+        // the tremolo's own gain -- here, that both buses stream independently.
         const seen = new Map([[a.lfo, new Set()], [b.lfo, new Set()],
                               [el("offscreen").symbols.lfo, new Set()]]);
         let failed = null;

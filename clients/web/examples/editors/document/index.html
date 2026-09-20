@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>An interactive text — clausters components</title>
+    <title>An interactive text -- clausters components</title>
     <link rel="icon" href="data:," />
     <style>
       :root { color-scheme: dark; }
@@ -20,7 +20,7 @@
 
       /*
         The whole point: the components are laid out by the same CSS as
-        everything else on the page. A canvas is an element in the flow — it
+        everything else on the page. A canvas is an element in the flow -- it
         takes the column's width, it sits between two paragraphs, and it
         reflows when the window narrows.
       */
@@ -40,13 +40,13 @@
       not beside it.</p>
 
       <p>Everything below runs in this tab. There is no server process and no
-      scripting client — each instrument is a <em>bundle</em>, a small
+      scripting client -- each instrument is a <em>bundle</em>, a small
       directory of persisted defs and one GuiDef, mounted as a custom element.
       The page loads the audio engine, the GUI host and the mount; the
       builders that wrote these files ran once, on a laptop, in Python.</p>
 
       <p>Press power on either instrument to start the audio for the whole
-      page — the browser wants one gesture, and one is all it takes. After
+      page -- the browser wants one gesture, and one is all it takes. After
       that each instrument has its own <strong>play</strong> switch in its
       header: they all sound at once otherwise, and stopping one pauses its
       whole graph rather than merely turning it down.</p>
@@ -55,9 +55,9 @@
 
       <p>The first instrument is two synths wired through a private bus: an FM
       voice into a tremolo. What the knobs touch is not the synths but the
-      <em>surface</em> the GraphDef declares — <code>freq</code>,
+      <em>surface</em> the GraphDef declares -- <code>freq</code>,
       <code>ratio</code>, <code>bright</code>, <code>rate</code>,
-      <code>depth</code>, <code>amp</code> — so the control panel is the
+      <code>depth</code>, <code>amp</code> -- so the control panel is the
       instrument's own vocabulary rather than a list of its parts.</p>
 
       <figure>
@@ -70,7 +70,7 @@
       <p>Here is the same bundle again. Nothing was written twice: the defs
       were sent to the engine once, and this second instance was allocated its
       own node and its own bus. The only thing that differs is an attribute in
-      the markup, <code>freq="110"</code>, an octave below its sibling — so
+      the markup, <code>freq="110"</code>, an octave below its sibling -- so
       the two sound together rather than in unison.</p>
 
       <figure>
@@ -84,7 +84,7 @@
 
       <figure>
         <fm-trem preset="bright" rate="0.3"></fm-trem>
-        <figcaption><code>preset="bright"</code> — the values in
+        <figcaption><code>preset="bright"</code> -- the values in
         <code>presets/bright.json</code>, with nothing overridden here.</figcaption>
       </figure>
 
@@ -93,7 +93,7 @@
       <p>The second instrument is a different bundle in the same page, sharing
       the same engine. Its keys are not events a script listens for: the host
       itself spawns one server voice per held key and gates it on release. The
-      meter under the keys reads the envelope the voice publishes — on a bus
+      meter under the keys reads the envelope the voice publishes -- on a bus
       that, again, belongs to this instance alone.</p>
 
       <figure>
@@ -113,12 +113,12 @@
       (<code>examples/panels/graph-controls/make_bundle.mjs</code> and
       <code>examples/panels/piano/make_bundle.mjs</code>), each ending in a generated
       <code>index.js</code> that registers its tag. This page imports those two
-      modules and writes no other JavaScript at all — the markup above is the
+      modules and writes no other JavaScript at all -- the markup above is the
       whole integration.</p>
     </article>
 
     <!--
-      examples/document — the milestone's shape: an interactive text with the
+      examples/document -- the milestone's shape: an interactive text with the
       instruments interleaved with the prose, which is also the form the
       mdBooks can embed.
 
@@ -128,7 +128,7 @@
           node ../../panels/graph-controls/make_bundle.mjs
           node ../../panels/piano/make_bundle.mjs
 
-      then serve the PACKAGE ROOT (clients/web — never this folder; the
+      then serve the PACKAGE ROOT (clients/web -- never this folder; the
       generated modules import /dist/runtime.js):
 
           cd clients/web && ./build.sh && python3 -m http.server

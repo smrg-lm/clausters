@@ -2,8 +2,8 @@
 //!
 //! A selection is the thing an algorithm is handed: *normalize this*, *copy
 //! this*, *erase this band here*. A pair of floats on a navigation group cannot
-//! be handed to anything — it says where a rectangle is drawn and not what it
-//! holds — so this is the type that closes the gap between a gesture and an
+//! be handed to anything -- it says where a rectangle is drawn and not what it
+//! holds -- so this is the type that closes the gap between a gesture and an
 //! operation.
 //!
 //! # It is a value, and it is not in the tree
@@ -17,15 +17,15 @@
 //!
 //! # One time span, and the axes that may restrict it
 //!
-//! Every selection is a span of time first — that is what makes an arrangement
+//! Every selection is a span of time first -- that is what makes an arrangement
 //! selection, a sample selection and a spectral selection the same kind of thing
-//! — and each further axis narrows it:
+//! -- and each further axis narrows it:
 //!
 //! - a **value range** on a container whose second axis measures something (a
 //!   waveform's amplitude, a curve's value),
 //! - a **bin range**, which is what makes the span a spectral region of frames ×
 //!   bins,
-//! - a **mask**, for a region no rectangle describes — the lasso.
+//! - a **mask**, for a region no rectangle describes -- the lasso.
 //!
 //! They are separate fields rather than one "second axis" because they mean
 //! different things and are read by different code: a value range is in the
@@ -34,7 +34,7 @@
 //!
 //! # The unit is whatever the selected thing is measured in
 //!
-//! Frames over samples, beats over an arrangement — and the crate does not
+//! Frames over samples, beats over an arrangement -- and the crate does not
 //! convert between them, because the beats↔samples bridge belongs to whoever
 //! renders. Both travel as `f64`, which holds a frame index exactly past any
 //! length a session will have, and which is what the wire already sends.
@@ -50,7 +50,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::NodeId;
 
-/// A range on an axis that measures something — amplitude, dB, a curve's value.
+/// A range on an axis that measures something -- amplitude, dB, a curve's value.
 ///
 /// In the signal's **own** units, never in pixels: a selection that meant
 /// screen coordinates could not be handed to an operation, which is the whole
@@ -78,7 +78,7 @@ impl ValueRange {
     }
 }
 
-/// A half-open range of spectral bins — the second axis of a spectral region.
+/// A half-open range of spectral bins -- the second axis of a spectral region.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BinRange {
     /// First bin, inclusive.
@@ -115,8 +115,8 @@ impl BinRange {
 /// re-rasterize an outline. It also means an intersection or a union of two
 /// regions needs no geometry.
 ///
-/// The grid is the selection's own — `cols` cells along time, `rows` across the
-/// other axis — so a mask means nothing without the selection that carries it.
+/// The grid is the selection's own -- `cols` cells along time, `rows` across the
+/// other axis -- so a mask means nothing without the selection that carries it.
 /// A mask large enough to matter travels **beside** its JSON as bytes, by the
 /// same bulk rule sample payloads follow; a selection is a value crossing a
 /// wire, so how it is framed is the caller's choice and not the crate's.
@@ -131,7 +131,7 @@ pub struct Mask {
 }
 
 impl Mask {
-    /// An empty mask of this size — nothing selected.
+    /// An empty mask of this size -- nothing selected.
     pub fn new(cols: u32, rows: u32) -> Self {
         let cells = cols as usize * rows as usize;
         Self {
@@ -180,7 +180,7 @@ impl Mask {
         self.count() == 0
     }
 
-    /// Whether the bit vector matches the declared size — what a reader checks
+    /// Whether the bit vector matches the declared size -- what a reader checks
     /// on something that arrived over a wire.
     pub fn is_well_formed(&self) -> bool {
         let cells = self.cols as usize * self.rows as usize;
@@ -209,7 +209,7 @@ pub struct Selection {
     /// selection, and reads as empty.
     pub len: f64,
     /// What it is a selection *of*, when it is of something in particular.
-    /// Empty means the shared time axis — the case a selection dragged across
+    /// Empty means the shared time axis -- the case a selection dragged across
     /// a multitrack's lanes is in, where the span is the whole of it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub nodes: Vec<NodeId>,
@@ -226,7 +226,7 @@ pub struct Selection {
 }
 
 impl Selection {
-    /// A plain time span — the two numbers the wire has always carried.
+    /// A plain time span -- the two numbers the wire has always carried.
     pub fn span(start: f64, len: f64) -> Self {
         Self {
             start,
@@ -269,7 +269,7 @@ impl Selection {
         self.start + self.len
     }
 
-    /// Whether it holds nothing — a cursor, or a span of no length.
+    /// Whether it holds nothing -- a cursor, or a span of no length.
     ///
     /// A mask of all zeros counts as empty too: a lasso that closed on nothing
     /// selected nothing, whatever rectangle bounds it.
@@ -281,7 +281,7 @@ impl Selection {
     }
 
     /// Whether a position on the time axis falls inside the span. The narrowing
-    /// axes are not consulted — they restrict *what* is selected, not *when*.
+    /// axes are not consulted -- they restrict *what* is selected, not *when*.
     pub fn contains(&self, position: f64) -> bool {
         position >= self.start && position < self.end()
     }
@@ -291,7 +291,7 @@ impl Selection {
         self.nodes.contains(&node)
     }
 
-    /// Whether it is the plain two-number form — no narrowing, no target.
+    /// Whether it is the plain two-number form -- no narrowing, no target.
     ///
     /// What a reader checks before taking the short path: a script that only
     /// understands spans should not silently treat a spectral region as if it

@@ -3,13 +3,13 @@
 // A meter, a control-rate scope, a number read-out: they all watch a handful
 // of control buses and repaint. Natively the GUI host reads those buses out of
 // the server's shared memory with no messages at all; a page cannot map that
-// segment, so the server offers the message-based counterpart — `/bus_stream`,
+// segment, so the server offers the message-based counterpart -- `/bus_stream`,
 // one subscription per client, a periodic `/bus_stream.reply` snapshot of the listed
 // buses. This is that subscription with its decoding attached.
 //
 // The whole object is a *latest value* store, not a history: a snapshot
 // replaces the previous one. A view that wants a rolling trace keeps its own
-// history from `onSnapshot` — how long a trace is, is the view's decision.
+// history from `onSnapshot` -- how long a trace is, is the view's decision.
 
 import type { Server } from "../defs/server/index.ts";
 import type { BusLike } from "../defs/bus.ts";
@@ -40,7 +40,7 @@ export const STREAM_PERIOD_MS = 33;
  * Over the **in-page carrier that client includes the GUI host**: script and
  * host share one shared-memory ring, which the server sees as a single client,
  * so a host `meter`/`scope` and a `BusStream` displace each other's
- * subscription — and the host, which only re-subscribes when its own widget
+ * subscription -- and the host, which only re-subscribes when its own widget
  * set changes, stays frozen afterwards. One live reader per page until ring
  * clients get identities (the gap is recorded in the server's roadmap). A
  * socket carrier has no such conflict.
@@ -51,7 +51,7 @@ export class BusStream {
     readonly buses: readonly number[];
     /** The newest snapshot, one entry per bus, in `buses` order. */
     readonly values: Float32Array;
-    /** Snapshots seen so far — a view can tell a repaint from a stall. */
+    /** Snapshots seen so far -- a view can tell a repaint from a stall. */
     snapshots = 0;
 
     private slot = new Map<number, number>();
@@ -100,7 +100,7 @@ export class BusStream {
     /**
      * Calls `handler` with each snapshot as it lands; returns the
      * unsubscribe. The handler runs from the reply dispatch, so keep it to
-     * storing and drawing — never a round trip.
+     * storing and drawing -- never a round trip.
      */
     onSnapshot(
         handler: (values: Float32Array, stream: BusStream) => void,
@@ -111,7 +111,7 @@ export class BusStream {
 
     /**
      * Cancels the subscription on the server and stops decoding. The buses
-     * themselves are untouched — a stream only ever reads.
+     * themselves are untouched -- a stream only ever reads.
      */
     async stop(timeout = 5.0): Promise<void> {
         this.detach();

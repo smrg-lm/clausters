@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Drive the server over OSC/TCP.
 
-The `Server` facade talking **length-prefixed OSC over a TCP connection** — a
+The `Server` facade talking **length-prefixed OSC over a TCP connection** -- a
 reliable, ordered, connection-oriented channel with no datagram-size limit.
 This is what `Server()` does by default; this example builds the
 interface explicitly (`Server(interface=OscTcpInterface().start())`) to show
@@ -13,7 +13,7 @@ listens on TCP by default (same port as UDP; `--no-tcp` disables it):
 
 Framing (handled inside `OscTcpInterface`, shown here only for reference): every
 OSC packet goes out as a 4-byte big-endian length followed by the bytes, and
-replies arrive framed the same way over the one connection — identical to
+replies arrive framed the same way over the one connection -- identical to
 scsynth's TCP. Timing still rides on bundle timetags / `/sched_at`, so using TCP
 changes nothing about *when* scheduled commands fire.
 """

@@ -72,7 +72,7 @@ class EventPattern(Pattern):
         Both are optional and resolve against the ambient context (the running
         session, else the default session): ``server=None`` takes the booted
         default server, and ``clock=None`` takes the running routine's clock or,
-        outside one, the default session's clock — created and started on first
+        outside one, the default session's clock -- created and started on first
         use. So ``Pbind(...).play()`` sounds with only a ``Server().boot()`` and no
         `Session`."""
         from ..base.main import main
@@ -135,9 +135,9 @@ class Pser(Pattern):
 
 class Prand(Pattern):
     """Random items, ``length`` values, drawn from the **random context** (the
-    running routine's generator, or the root outside one — see
+    running routine's generator, or the root outside one -- see
     `clausters.base.rand`): ``main.seed(n)`` reproduces the choices along with
-    everything else in the script. There is no per-pattern seed — independent
+    everything else in the script. There is no per-pattern seed -- independent
     seeds would break whole-script consistency. Over event patterns only, it is
     an `EventPattern`."""
 
@@ -160,9 +160,9 @@ class Prand(Pattern):
 class Pwhite(Pattern):
     """Uniform random numbers in ``[lo, hi)``, ``length`` values, drawn from
     the **random context** (the running routine's generator, or the root
-    outside one — see `clausters.base.rand`): ``main.seed(n)`` reproduces the
+    outside one -- see `clausters.base.rand`): ``main.seed(n)`` reproduces the
     sequence along with everything else in the script. There is no per-pattern
-    seed — independent seeds would break whole-script consistency."""
+    seed -- independent seeds would break whole-script consistency."""
 
     def __init__(self, lo=0.0, hi=1.0, length=INF):
         self.lo, self.hi, self.length = lo, hi, length

@@ -1,11 +1,11 @@
 //! The widget registry: a window/widget tree keyed by client-allocated ids.
 //!
-//! It reuses the audio server's node-tree shape verbatim — integer ids the
+//! It reuses the audio server's node-tree shape verbatim -- integer ids the
 //! client owns, a parent/children hierarchy, and **subtree freeing** (freeing a
 //! widget frees its descendants, the way freeing a group frees its nodes). A
 //! GuiDef is flattened into one record per widget on `/gui_def`; `/gui_set`
 //! mutates a record's props, `/gui_free` removes a subtree, `/gui_query` reads
-//! one back. It is bookkeeping only — no geometry, no GPU: the renderers read
+//! one back. It is bookkeeping only -- no geometry, no GPU: the renderers read
 //! the tree it holds, and every one of them hangs off it.
 
 use crate::host::diag;
@@ -94,7 +94,7 @@ impl Registry {
     /// Installs a GuiDef rooted at `root_id`. If that id already names a def it
     /// is freed first (redefinition, like re-sending a `SynthDef`). Descendants
     /// without an id, or whose id is already taken, are skipped with a warning
-    /// — the tree is otherwise installed.
+    /// -- the tree is otherwise installed.
     pub fn define(&mut self, root_id: i32, node: &GuiNode) -> DefineOutcome {
         let replaced = self.contains(root_id);
         if replaced {

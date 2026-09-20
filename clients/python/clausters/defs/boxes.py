@@ -4,10 +4,10 @@ The box counterpart of `clausters.defs.signals`, and a complete def-building
 API in its own right: each function returns a `Box` and composing boxes
 builds the JSON **box tree** the server's ``/def_send faust`` consumes (see the
 server's ``faust::boxes`` for the schema). Boxes are Faust's point-free
-algebra — ``seq``/``par``/``split``/``merge``/``rec`` compose whole
+algebra -- ``seq``/``par``/``split``/``merge``/``rec`` compose whole
 **processors** by their input/output arities. Where ``signals`` describes
 one output at a time referentially (``input(n)``), boxes describe
-multi-channel blocks that plug into each other — the natural shape for
+multi-channel blocks that plug into each other -- the natural shape for
 routing, chains, and anything conceived as units with inputs and outputs.
 
 On top of the algebra, `faust` compiles any Faust **expression** into a
@@ -20,23 +20,23 @@ Choosing a form: a fixed processing chain written top to bottom often reads
 best as plain Faust (``FaustDef.from_source``); graphs assembled one output
 at a time from arithmetic and feedback suit `clausters.defs.signals`.
 Regular banks ("N copies with index-dependent parameters") are best written
-in Faust itself — ``par(i, N, ...)``, widget labels with ``%i``, ``ba.take``
-— and parametrized from Python by splicing ``N`` and lists through `faust`'s
+in Faust itself -- ``par(i, N, ...)``, widget labels with ``%i``, ``ba.take``
+-- and parametrized from Python by splicing ``N`` and lists through `faust`'s
 eval arguments. Boxes shine when the graph is conceived as composed
 processors, when its structure is decided by Python data, and whenever
 library DSP has to mix with Python-built pieces.
 
 Two stages of application, kept separate on purpose:
 
-- ``faust("fi.lowpass", 3)`` — arguments to `faust` are **evaluation-stage**:
+- ``faust("fi.lowpass", 3)`` -- arguments to `faust` are **evaluation-stage**:
   spliced into the Faust source text (``fi.lowpass(3)``), where structural
   parameters like a filter order must live.
-- ``fi_lp(cutoff, wire())`` — arguments to a `Box` **call** are
+- ``fi_lp(cutoff, wire())`` -- arguments to a `Box` **call** are
   **composition-stage**: boxes wired as the box's signal inputs, sugar for
   ``seq(par(cutoff, wire()), fi_lp)``.
 
 The wire rule (the big difference from ``signals``): **each `wire` is a
-distinct input**. There is no referential ``input(n)`` here — two wires in
+distinct input**. There is no referential ``input(n)`` here -- two wires in
 two positions are two input channels. Reusing the *same* ``wire()`` (or
 ``cut()``) object in more than one position is almost always a mistake, and
 `FaustDef.from_box` rejects it; route explicitly with `split`, or write that
@@ -83,7 +83,7 @@ class Box(FaustExpr):
 
     `num_inputs`/`num_outputs` are the box's signal arity as computed on the
     client from the composition rules; ``None`` when unknown (a `faust`
-    fragment without ``ins=``/``outs=``). The server does not read them — a
+    fragment without ``ins=``/``outs=``). The server does not read them -- a
     real mismatch is reported by Faust itself when the def compiles.
     """
 
@@ -100,7 +100,7 @@ class Box(FaustExpr):
 
     def __call__(self, *args) -> "Box":
         """Applies boxes to this box's inputs: ``f(a, b)`` is
-        ``seq(par(a, b), f)`` (with one argument, ``seq(a, f)``) — Faust's
+        ``seq(par(a, b), f)`` (with one argument, ``seq(a, f)``) -- Faust's
         partial-application style written as a call. The arguments must cover
         *all* the box's inputs; use `wire` for the ones left open."""
         if not args:
@@ -187,7 +187,7 @@ def _n(x):
 
 def wire() -> Box:
     """The identity box ``_``: one open signal input. Every call is a **new,
-    distinct input** — reusing one wire object in two positions is an error
+    distinct input** -- reusing one wire object in two positions is an error
     (see the module docs for the rule and the escapes)."""
     return Box({"op": "wire"}, 1, 1)
 
@@ -221,7 +221,7 @@ def split(*items) -> Box:
 
 
 def merge(*items) -> Box:
-    """Merge composition ``a :> b`` — excess outputs are summed (needs at
+    """Merge composition ``a :> b`` -- excess outputs are summed (needs at
     least 2)."""
     return _compose("merge", items)
 
@@ -245,7 +245,7 @@ def _compose(op, items):
 
 def rec(a, b) -> Box:
     """Recursive composition ``a ~ b``: `b` feeds `a`'s first inputs back
-    from `a`'s first outputs, with one implicit sample of delay. Point-free —
+    from `a`'s first outputs, with one implicit sample of delay. Point-free --
     for the ``rec(lambda s: ...)`` style, build the loop in a `faust`
     fragment or with `clausters.defs.signals` instead."""
     a, b = box(a), box(b)
@@ -261,13 +261,13 @@ def rec(a, b) -> Box:
 
 def faust(src: str, *eval_args, defs: str = "", ins: int | None = None,
           outs: int | None = None) -> Box:
-    """A Faust **expression** compiled into a box — the door to the Faust
+    """A Faust **expression** compiled into a box -- the door to the Faust
     libraries (``stdfaust.lib`` is imported for you). The resulting box is
     indistinguishable from a primitive: compose it, call it, do arithmetic
     on it.
 
     ``eval_args`` are **evaluation-stage** arguments, spliced into the source
-    text as Faust application — ``faust("fi.lowpass", 3)`` compiles
+    text as Faust application -- ``faust("fi.lowpass", 3)`` compiles
     ``fi.lowpass(3)``. That is where structural parameters (a filter order,
     a table size, a list of coefficients) must go; they cannot travel as
     signals. Formatting: ``int``/``float`` as literals, a list/tuple as a
@@ -280,7 +280,7 @@ def faust(src: str, *eval_args, defs: str = "", ins: int | None = None,
 
     ``defs`` prepends auxiliary Faust definitions (helper functions, pattern
     matching) to the generated program. ``ins``/``outs`` declare the
-    fragment's signal arity — only the Faust compiler knows it, so pass
+    fragment's signal arity -- only the Faust compiler knows it, so pass
     ``outs=`` when you need channel selection (``st[0]`` / ``.outs()``); a
     wrong declaration is caught by Faust when the def compiles.
 
@@ -379,7 +379,7 @@ exp10 = _unary("exp10")
 log = _unary("log")
 log10 = _unary("log10")
 sqrt = _unary("sqrt")
-abs = _unary("abs")  # noqa: A001 — box schema name, by design
+abs = _unary("abs")  # noqa: A001 -- box schema name, by design
 floor = _unary("floor")
 ceil = _unary("ceil")
 rint = _unary("rint")
@@ -455,13 +455,13 @@ def waveform(values) -> Box:
 
 
 def rdtable(*args) -> Box:
-    """``rdtable(size, init, ridx)`` — or ``rdtable(wf, ridx)`` with a
+    """``rdtable(size, init, ridx)`` -- or ``rdtable(wf, ridx)`` with a
     `waveform` standing in for (size, init)."""
     return _table("rdtable", args, 2, 3)
 
 
 def rwtable(*args) -> Box:
-    """``rwtable(size, init, widx, wsig, ridx)`` — or the 4-argument form
+    """``rwtable(size, init, widx, wsig, ridx)`` -- or the 4-argument form
     with a `waveform` up front."""
     return _table("rwtable", args, 4, 5)
 
@@ -487,7 +487,7 @@ def check_wires(node):
         which = sorted({op for (op, n) in counts.values() if n > 1})
         raise ValueError(
             f"a {'/'.join(which)} box object was reused; each wire (and cut) "
-            "is a distinct position — every input needs its own wire(): "
+            "is a distinct position -- every input needs its own wire(): "
             "route explicitly with split(), or write that stretch inside a "
             "faust() fragment (e.g. \"_ <: ...\")"
         )

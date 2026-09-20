@@ -7,7 +7,7 @@ clock's job: an event emits at the running routine's exact logical beat (via
 ``server.send_bundle``), and the player advances by the event's `delta`.
 
 By default a note **frees** its synth after ``sustain`` (``/node_free``) rather
-than closing a gate — unless ``has_gate`` is set, in which case it sends
+than closing a gate -- unless ``has_gate`` is set, in which case it sends
 ``gate 0`` (for defs whose `env_gen` envelope has a release node and a
 ``doneAction`` that frees the synth once the release finishes). The built-in
 ``"default"`` instrument is the exception: it carries such an envelope and is
@@ -156,19 +156,19 @@ class Event(dict):
     def play(self, destination=None):
         """Play this event on ``destination`` (double dispatch): the OSC
         `Server` turns it into `/synth_new` + release,
-        a MIDI destination into note on/off — without the clock or routine
+        a MIDI destination into note on/off -- without the clock or routine
         knowing which.
 
         Returns **this event, with its keys completed**: the derived
         quantities are written in (``midinote``, ``freq``, ``delta``,
-        ``sustain`` — the values actually used) along with ``node`` (the
+        ``sustain`` -- the values actually used) along with ``node`` (the
         synth node id; ``None`` for a rest or MIDI) and ``server`` (the
-        destination), so the note stays actionable after the fact — `free`
+        destination), so the note stays actionable after the fact -- `free`
         cuts it, `release` closes it musically. The scheduled self-release
         still arrives regardless.
 
         ``destination`` is optional: omitted, it resolves to the ambient server
-        (the running session's, else the default session's — booted with
+        (the running session's, else the default session's -- booted with
         ``Server().boot()``), so ``Event().play()`` sounds a note with no `Session`
         wiring. Outside a clock the note plays immediately; inside a routine it
         emits at the routine's logical beat."""
@@ -185,7 +185,7 @@ class Event(dict):
 
     def free(self):
         """Cut the played note **now** (``/node_free``), without waiting for its
-        sustain — for interrupting an extreme duration. A no-op when the event
+        sustain -- for interrupting an extreme duration. A no-op when the event
         has not sounded (a rest, a MIDI play, or never played). The release
         already scheduled at play time still arrives and is harmless."""
         node, server = self.get("node"), self.get("server")
@@ -194,7 +194,7 @@ class Event(dict):
 
     def release(self):
         """End the played note **musically**, now: the event's own release
-        gesture — ``gate 0`` when it releases by gate (``has_gate``, or the
+        gesture -- ``gate 0`` when it releases by gate (``has_gate``, or the
         built-in ``"default"`` instrument's envelope), a plain ``/node_free``
         otherwise. Same no-op rule as `free`."""
         node, server = self.get("node"), self.get("server")

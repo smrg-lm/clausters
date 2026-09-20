@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Two clients phase-aligned on one server's shared transport.
 
-A server hosts a **transport** — a beat grid `(origin_sample, tempo)` it stores
+A server hosts a **transport** -- a beat grid `(origin_sample, tempo)` it stores
 under `/transport_set`. Several independent clients can *join* that grid, so a
 `quant`-ed routine on each starts on the **same** beat. When each client's clock
 is also made on the server's sample clock (`Server.sample_timebase`), that
@@ -9,7 +9,7 @@ alignment is sample-exact; on wall-clock time it is beat-accurate
 (drift-bounded).
 
 This runs in a single process for clarity, but the two `Server` / `TempoClock`
-pairs are completely independent — exactly the state two separate programs would
+pairs are completely independent -- exactly the state two separate programs would
 hold. It prints the next-bar sample each client computes (they match: that *is*
 the alignment) and plays one note on each at that bar, so the two sound together.
 
@@ -17,7 +17,7 @@ The transport's **second half is its rolling state**, and this shows that too:
 `clausters.defs.Server.transport_play`, `transport_stop` and
 `transport_locate_sample` move the one position the engine holds, and a
 `clausters.seq.Timeline` **on that transport** (``timeline.transport = server``)
-plans its items onto it — the conductor rolls, freezes and seeks every follower
+plans its items onto it -- the conductor rolls, freezes and seeks every follower
 at once. The server owns the time and plays no notes of its own.
 
 It **runs out of the box**: the conductor `boot`s the shared server (by hand
@@ -76,7 +76,7 @@ def make_client(share):
 
 # %%
 def next_bar_sample(server, clock, quant=4):
-    """The absolute sample the clock's next `quant`-beat bar falls on — computed
+    """The absolute sample the clock's next `quant`-beat bar falls on -- computed
     from public state only, so it is the *same* number for every client on the
     same transport."""
     origin, tempo = server.transport()
@@ -141,7 +141,7 @@ def run():
 # ## A timeline that obeys the conductor
 # The transport's other half: its rolling state. Client A's timeline is **on**
 # the shared transport, so it is the *conductor* that starts, seeks and halts it
-# — a follower has no buttons of its own. The figure is two bars of quarter
+# -- a follower has no buttons of its own. The figure is two bars of quarter
 # notes, so a locate is audible as a different place in the same figure.
 
 # %%

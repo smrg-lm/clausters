@@ -18,7 +18,7 @@ core through artifacts built by cargo, not pip:
 - the ``clausters-gui`` binary (from the **independent** ``clients/gui`` cargo
   workspace) -> the **visual server** the launcher runs (`clausters.launch` /
   `clausters.Session.gui`). Bundled here too, stripped, so the one package is
-  self-contained — server *and* GUI, no separate install.
+  self-contained -- server *and* GUI, no separate install.
 - ``libfaust``, copied out of the build machine's prefix (it is not ours to
   build) -> a `FaustDef` compiles on a machine without it installed. The `faust`
   feature is on by default, so this is what keeps the two def families *equally*
@@ -67,7 +67,7 @@ Environment knobs (also honoured by ``setup.py``):
                                  every ``/def_send faust`` fails.
 - ``CLAUSTERS_SKIP_SYNTH``       the peer knob, for a deliberately Faust-only
                                  build: no ``/def_send synth``, no UGen graphs. It has no
-                                 library to miss, so there is nothing to probe —
+                                 library to miss, so there is nothing to probe --
                                  it is a preference, not a fallback.
 - ``CLAUSTERS_SKIP_VEROVIO``     build without the notation layer; the `score`
                                  widget will not engrave.
@@ -77,7 +77,7 @@ Environment knobs (also honoured by ``setup.py``):
 
 Both vendored libraries behave the same way, which is deliberate: they are built
 the same way (a pinned source, a script under ``third_party/``, a prefix), they
-are missing for the same reason, and so they fail the same way — one line naming
+are missing for the same reason, and so they fail the same way -- one line naming
 the recipe, before anything is compiled, with an explicit opt-out for the
 developer who is working on something else today.
 """
@@ -109,7 +109,7 @@ _CRATES = {
 }
 
 # The server crate's default features, mirroring the `default` list in the root
-# Cargo.toml — so dropping one means re-adding the rest by hand, which is what
+# Cargo.toml -- so dropping one means re-adding the rest by hand, which is what
 # `--no-default-features` costs and why this list has to move when that one does.
 _DEFAULT_FEATURES = ["synth", "faust", "realtime", "midi", "pipewire", "rtprio"]
 
@@ -198,7 +198,7 @@ def _cargo_build(workspace: str, crate: str, features: str | None, profile: str,
 
 def _cargo_build_bin(workspace: str, profile: str, features: str = "",
                      no_default: bool = False):
-    """Build the standalone server binary — default features unless a def family
+    """Build the standalone server binary -- default features unless a def family
     was left out, in which case the survivors are named explicitly."""
     cmd = ["cargo", "build", "--bin", "clausters"]
     if profile == "release":
@@ -337,18 +337,18 @@ _SYSTEM_SONAME_PREFIXES = (
 
 
 def stage_faust_libs(profile: str) -> list[str]:
-    """Copy libfaust — and its transitive deps — beside the cdylibs in ``_libs/``.
+    """Copy libfaust -- and its transitive deps -- beside the cdylibs in ``_libs/``.
 
     The `faust` feature is on by default, so the built artifacts link libfaust
     dynamically. Bundling it is what makes an installed wheel able to compile a
-    FaustDef on a machine without it installed — the same self-contained
+    FaustDef on a machine without it installed -- the same self-contained
     packaging the ``clausters-gui`` binary gets. ``build.rs`` writes a `DT_RPATH`
     of ``$ORIGIN``/``$ORIGIN/../_libs``, inherited by transitive dependencies, so
     the loader finds these copies before (or without) any system ones.
 
     libfaust does not stop at itself: the LLVM it links statically still reaches
     libz and libzstd, neither of which is ours nor guaranteed on the target.
-    Worse, their sonames drift between distro generations — a wheel built where
+    Worse, their sonames drift between distro generations -- a wheel built where
     LLVM linked ``libxml2.so.2`` fails to load on a host that only ships
     ``libxml2.so.16`` (exactly the "cannot open shared object file" the
     standalone server dies with). So we vendor the **whole transitive closure**
@@ -400,18 +400,18 @@ def stage_faust_libs(profile: str) -> list[str]:
 
 # Set by CI and the release: this build must leave nothing out. Requiring every
 # piece is the default, so the only job left for this is to refuse a
-# CLAUSTERS_SKIP_* — and that job is the same for all three pieces, which is why
+# CLAUSTERS_SKIP_* -- and that job is the same for all three pieces, which is why
 # it is one variable and not one per piece.
 _REQUIRE_COMPLETE = "CLAUSTERS_REQUIRE_COMPLETE"
 
 
 def _skipping(skip: str, without: str) -> bool:
-    """Whether ``skip`` asks for a piece to be left out — refused outright when
+    """Whether ``skip`` asks for a piece to be left out -- refused outright when
     the build must be complete.
 
     One rule for the three pieces, because they fail the same way: a package
     missing one raises at *the user's* run time, and nothing downstream reports
-    it — the notation tests skip themselves, a FaustDef only fails when someone
+    it -- the notation tests skip themselves, a FaustDef only fails when someone
     sends one. So a build that must be complete refuses the request rather than
     honouring it quietly.
     """
@@ -431,8 +431,8 @@ def _links(lib: str, prefix: str | None, env: str, recipe: str, skip: str,
     """Whether this build links ``lib``, having probed for it and not found it.
 
     One answer for both vendored libraries, which is the point. libfaust and
-    libverovio are built the same way — a pinned source, a script under
-    ``third_party/``, a prefix that defaults to ``~/.local`` — and they are
+    libverovio are built the same way -- a pinned source, a script under
+    ``third_party/``, a prefix that defaults to ``~/.local`` -- and they are
     missing for the same reason: a checkout that has not run the script yet. So
     they behave the same way here. Present, we link them. Absent, the build stops
     on one line naming the recipe, rather than in the linker (``unable to find
@@ -443,7 +443,7 @@ def _links(lib: str, prefix: str | None, env: str, recipe: str, skip: str,
     The default is to require them because that is what a def family and an
     engraver are: parts of the product, not options. The opt-out exists for the
     developer who wants to work on something else today and can live `without`
-    — building a 13 MB C++ library to touch the sequencer is a bad trade.
+    -- building a 13 MB C++ library to touch the sequencer is a bad trade.
     """
     # The skip is read before the probe on purpose: it means "build without
     # this", not "I could not find it", so it holds whether or not the library
@@ -485,7 +485,7 @@ def _server_features(extra: str, dropped: set[str]) -> tuple[str, bool]:
     a server artifact built on top of ``extra``.
 
     Dropping a default feature means turning the defaults off and naming the
-    survivors, because cargo features only ever add — which is exactly the knob
+    survivors, because cargo features only ever add -- which is exactly the knob
     this file did not have, and why a Faust-only or SynthDef-only package could
     not be built through it at all.
 
@@ -509,13 +509,13 @@ def _links_verovio() -> bool:
 
 def _prefix(env: str, names: list[str]) -> str | None:
     """The prefix the *linker* will look in, or ``None`` if the library is not
-    there — the question this whole file needs answered before it runs cargo.
+    there -- the question this whole file needs answered before it runs cargo.
 
     Mirrors the resolution in ``build.rs`` (both of them), including the part
     that is easy to get wrong: an explicitly set ``*_PREFIX`` **wins outright**,
     with no fallback to the defaults. Walking the defaults anyway would let this
     report "found it in ~/.local" about a build that is going to link somewhere
-    else entirely and fail there — the two have to agree, or the check is worse
+    else entirely and fail there -- the two have to agree, or the check is worse
     than none.
     """
     prefix = os.environ.get(env)
@@ -531,7 +531,7 @@ def _has_lib(prefix: str, names: list[str]) -> bool:
 
 
 def _faust_prefix() -> str | None:
-    """Where ``build-faust.sh`` installed libfaust. Either library form counts —
+    """Where ``build-faust.sh`` installed libfaust. Either library form counts --
     build.rs accepts the shared object or the archive."""
     return _prefix("FAUST_PREFIX", _faust_names())
 
@@ -562,7 +562,7 @@ def _verovio_name() -> str:
 def stage_verovio() -> list[str]:
     """Copy libverovio and its SMuFL resource data into ``_libs/``.
 
-    Same arrangement as libfaust beside it — a third-party library we build from
+    Same arrangement as libfaust beside it -- a third-party library we build from
     a pinned source (``third_party/build-verovio.sh``) into a prefix, then bundle
     so an installed wheel needs nothing else on the machine. The client binds it
     with ctypes at runtime, so unlike libfaust nothing links it at build time;
@@ -572,12 +572,12 @@ def stage_verovio() -> list[str]:
     The resource data comes along because verovio bakes its resource path in at
     *configure* time, pointing at the prefix it was built for. Staged beside the
     library as ``_libs/verovio/``, it is found by `clausters.gui.notation`, which
-    passes it to each toolkit explicitly — a toolkit that cannot find its SMuFL
+    passes it to each toolkit explicitly -- a toolkit that cannot find its SMuFL
     data engraves nothing.
 
     Missing, there is nothing to decide here: `_links_verovio` already stopped
     the build, before anything was compiled, unless the engraver was skipped on
-    purpose. Which is the case this reaches — and it is worth being loud about,
+    purpose. Which is the case this reaches -- and it is worth being loud about,
     because a wheel without the engraver raises at *the user's* run time and the
     notation tests skip themselves rather than failing, so nothing downstream
     would report it.
@@ -618,7 +618,7 @@ def _set_origin_rpath(path: str):
     siblings in ``_libs/`` (Linux only).
 
     The vendored libraries and their transitive deps come from the build host,
-    not our build, so they carry the host's run paths — a prefix's
+    not our build, so they carry the host's run paths -- a prefix's
     ``$ORIGIN/../lib``, a directory that does not exist in the wheel. Worse, a
     host library typically uses ``DT_RUNPATH``, which (unlike the ``DT_RPATH``
     ``build.rs`` gives *our* artifacts) is **not** inherited down the dependency
@@ -627,7 +627,7 @@ def _set_origin_rpath(path: str):
     loader falls through to the system, whose soname may differ (the
     ``libxml2.so.2`` vs ``libxml2.so.16`` failure that first showed this, back
     when a shared libLLVM was bundled too). Pointing every vendored lib at
-    ``$ORIGIN`` — the same directory they all live in — makes each one resolve its
+    ``$ORIGIN`` -- the same directory they all live in -- makes each one resolve its
     direct deps locally, which covers the whole graph. This is what auditwheel
     does; here it must run in ``build_native`` because the release builds a plain
     wheel with no auditwheel/repair step."""

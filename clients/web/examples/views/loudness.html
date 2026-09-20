@@ -22,14 +22,14 @@
   <body>
     <main>
       <div id="note">The web port of the Python client's
-<code>views/loudness.py</code>: <b>loudness, drawn over the take it measures —
+<code>views/loudness.py</code>: <b>loudness, drawn over the take it measures --
 and over a bus, live</b>.
 
 A peak says how close a signal came to full scale; it says nothing about how
 loud it <b>sounds</b>. Loudness does, and it is the number a delivery
 specification asks for: EBU R 128 wants a programme at -23 LUFS.
 <code>measure: "peak momentary"</code> puts the loudness curve over the samples
-— what a meter would have read at each point of the take, over the 400 ms
+-- what a meter would have read at each point of the take, over the 400 ms
 window up to it. The curve is read against the <b>target line</b> (-23 LUFS) and
 the <b>LU ruler</b> on the right of the body, because a loudness is not an
 amplitude and has no business on the amplitude axis the samples are drawn
@@ -42,8 +42,8 @@ curve, at no extra API.
 The take is two halves, three seconds each: a stereo 1 kHz tone at <b>-30
 dBFS</b> then the same tone at <b>-17 dBFS</b>, built at 8 kHz (a take carries
 its own rate, and the example sends it over the wire every run). A stereo tone's peak level in
-dBFS is its loudness in LUFS — that is the calibration BS.1770's -0.691 exists
-for — so the curve sits on -30 and then on -17, and the integrated figure falls
+dBFS is its loudness in LUFS -- that is the calibration BS.1770's -0.691 exists
+for -- so the curve sits on -30 and then on -17, and the integrated figure falls
 between them, nearer the loud half because the quiet one is under the relative
 gate. The live half makes sound.
 

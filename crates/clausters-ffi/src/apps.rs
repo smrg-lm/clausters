@@ -1,8 +1,8 @@
 //! The applications over the document.
 //!
 //! The C half of [`clausters_apps`]. An editing context is a handle, because it
-//! keeps state between messages — the history, the version, the editors opened
-//! in it and each one's end of the conversation — and its verbs cross through
+//! keeps state between messages -- the history, the version, the editors opened
+//! in it and each one's end of the conversation -- and its verbs cross through
 //! one JSON door, sized with a null `out` and filled with a second call.
 
 use std::sync::Mutex;

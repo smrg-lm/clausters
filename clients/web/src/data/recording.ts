@@ -1,17 +1,17 @@
 // A recording, followed from the page: the overview arrives, the samples never do.
 //
-// Every other way samples reaches a picture announces itself — a client sends
+// Every other way samples reaches a picture announces itself -- a client sends
 // samples, a peer edits a span and says so. A recording does not: a `RecordBuf`
 // fills a buffer block by block from the audio thread, which is the one place
 // that must never send a message. What the writer publishes instead is how far
-// it has got, into the server's shared memory — and a page maps nothing, so
+// it has got, into the server's shared memory -- and a page maps nothing, so
 // that number is exactly what it cannot read.
 //
 // `/buffer_stream` is that reading, for whoever cannot map: the server sends
 // the *overview* of the frames that appeared (min, max and mean square per
-// bucket — the peak pyramid's own three statistics), at about a hundredth of
+// bucket -- the peak pyramid's own three statistics), at about a hundredth of
 // the audio's bandwidth. This class is the receiving end: one `Peaks` per
-// buffer, growing as the reports land — the same cache the samples would have
+// buffer, growing as the reports land -- the same cache the samples would have
 // built, in a page that never sees them.
 
 import type { Server } from "../defs/server/index.ts";
@@ -25,7 +25,7 @@ export const RECORDING_PERIOD_MS = 50;
 /** A take being recorded, as this stream needs to know it. */
 export interface TakeShape {
     bufnum: number;
-    /** Frames per channel — the buffer's full length, not what is written. */
+    /** Frames per channel -- the buffer's full length, not what is written. */
     frames: number;
     channels: number;
 }
@@ -50,7 +50,7 @@ function shapeOf(take: TakeLike): TakeShape {
  * Each take gets a pyramid **allocated at its full length** and empty: a take's
  * picture is the whole of the box it will fill, so the axis does not move while
  * it fills. Reports write the buckets that were measured and nothing else, so
- * what has not been recorded reads as the silence the buffer is — read only up
+ * what has not been recorded reads as the silence the buffer is -- read only up
  * to `written` to tell the two apart, which is what the GUI host's `fills` prop
  * does for the picture.
  *
@@ -59,7 +59,7 @@ function shapeOf(take: TakeLike): TakeShape {
  * silent: to edit or play what was recorded, read it back with
  * `Server.getSamples` once the take is finished.
  *
- * One subscription per client, and the server **replaces** it on every call —
+ * One subscription per client, and the server **replaces** it on every call --
  * so a page whose GUI host is also following a recording (a `waveform` with
  * `fills`) must not open one of these beside it: the two would cancel each
  * other. Watching a take is either the host's or the script's, and if what you
@@ -69,7 +69,7 @@ export class RecordingStream {
     readonly server: Server;
     /** The buckets each report is measured over, and the pyramids' own. */
     readonly bucket: number;
-    /** Reports applied so far — a view can tell a repaint from a stall. */
+    /** Reports applied so far -- a view can tell a repaint from a stall. */
     reports = 0;
 
     private takes = new Map<number, { peaks: Peaks; written: number }>();
@@ -127,7 +127,7 @@ export class RecordingStream {
     }
 
     /**
-     * How far one take has been reported, in frames — the end of the last
+     * How far one take has been reported, in frames -- the end of the last
      * whole bucket the writer had filled. Past it the pyramid is the silence
      * the buffer was allocated as, so this is where a trace should stop.
      */
@@ -138,7 +138,7 @@ export class RecordingStream {
     /**
      * Calls `handler` with each take that grew, as its report lands; returns
      * the unsubscribe. The handler runs from the reply dispatch, so keep it to
-     * storing and reading — never a round trip.
+     * storing and reading -- never a round trip.
      */
     onReport(handler: (bufnum: number, stream: RecordingStream) => void): () => void {
         this.listeners.add(handler);
@@ -147,7 +147,7 @@ export class RecordingStream {
 
     /**
      * Cancels the subscription on the server and stops decoding. The pyramids
-     * stay readable — a finished take is still a picture — until `free`.
+     * stay readable -- a finished take is still a picture -- until `free`.
      */
     async stop(timeout = 5.0): Promise<void> {
         this.responder?.free();
@@ -167,7 +167,7 @@ export class RecordingStream {
 
     /** One `/buffer_stream.reply bufnum startFrame bucket blob` into a pyramid. */
     private take(msg: ResponderMessage): void {
-        // The address is `msg[0]`, so the first argument is `msg[1]` — the
+        // The address is `msg[0]`, so the first argument is `msg[1]` -- the
         // reference client's shape, and what every responder here reads.
         const [, bufnum, startFrame, bucket, blob] = msg;
         const entry = this.takes.get(Number(bufnum));

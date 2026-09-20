@@ -2,7 +2,7 @@
 //! `FreeSelf`, `PauseSelf`, `FreeSelfWhenDone` and `Done`.
 //!
 //! All four pass their input straight through, so they drop into a chain
-//! without a `Mul` or a spare wire — the graph keeps working if you delete
+//! without a `Mul` or a spare wire -- the graph keeps working if you delete
 //! them. What they add is the other half of the done-action mechanism: an
 //! `EnvGen` decides *when* to free from the inside, and these decide it from a
 //! trigger or from another UGen's finishing.
@@ -75,7 +75,7 @@ pub enum WhenDoneMode {
 /// `Done(src)` and `FreeSelfWhenDone(src)`: watch the **done flag** of the
 /// UGen wired into input 0.
 ///
-/// The flag is not the input's value — an envelope that has played out sits at
+/// The flag is not the input's value -- an envelope that has played out sits at
 /// its final level, which may be any number, including the one it started at.
 /// It arrives through [`UGen::set_done_flag`], resolved by the synth from the
 /// wire's UGen index, so input 0 must be a wire to a kind that *has* a done
@@ -84,7 +84,7 @@ pub enum WhenDoneMode {
 ///
 /// **The flag has block resolution.** It is one bool per UGen, read once when
 /// the watcher runs, so a watcher reports it for the whole block in which it
-/// was raised — even at `ar`, where the source may have finished part-way
+/// was raised -- even at `ar`, where the source may have finished part-way
 /// through. That is inherent to a flag rather than a signal, and at `kr` (these
 /// two default there) it is exactly the resolution on offer anyway.
 pub struct WhenDone {

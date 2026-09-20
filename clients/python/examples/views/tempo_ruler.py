@@ -11,15 +11,15 @@ move the curve:
 - **bottom**, seconds: the axis itself, evenly spaced, because time is what the
   axis measures;
 - **top**, beats: *not* an axis. A beat is a **logical coordinate**, so those
-  marks say where the beats fall — they crowd where the music is fast and
+  marks say where the beats fall -- they crowd where the music is fast and
   spread where it is slow, over an axis that never stopped measuring samples.
   It counts in ones (``quant=1``), so every mark is a beat and its label reads
-  ``4:1`` — the fourth of them, on its first beat.
+  ``4:1`` -- the fourth of them, on its first beat.
 
 **Drag a break-point and the top ruler re-rules under your hand.** That is the
 whole example. The curve reports its new shape (``/gui_event id "points" …``),
-this script rebuilds the timeline's `TempoMap` from it — one `env` call, extents in
-seconds — and sets it back on the ruler, which redraws. Nothing else moves: the
+this script rebuilds the timeline's `TempoMap` from it -- one `env` call, extents in
+seconds -- and sets it back on the ruler, which redraws. Nothing else moves: the
 seconds do not change, because seconds are not what a tempo edit changes.
 
 Drag a corner **up** and watch the bars on top narrow; drag it **down** and they
@@ -29,19 +29,19 @@ work, which is what changing a tempo means, so the top ruler renumbers itself.
 
 The starting shape is the plainest one that shows the whole apparatus: two
 break-points over sixty seconds, the first at the bottom of the value axis and
-the last at the top — 30 BPM accelerating in a straight line to 90. Everything
+the last at the top -- 30 BPM accelerating in a straight line to 90. Everything
 is in reach from there: drag either corner, bend the segment between them, or
 Ctrl+click to add a third.
 
 One thing the picture only approximates: the curve interpolates each segment in
 **seconds**, the axis it is drawn on, and a `TempoMap` interpolates its segments
-in **beats**. They agree exactly at every corner and part between them — on this
-envelope by at most 1.2 BPM out of a 25 BPM excursion — so the corners, and the
+in **beats**. They agree exactly at every corner and part between them -- on this
+envelope by at most 1.2 BPM out of a 25 BPM excursion -- so the corners, and the
 ruler above them, are right, and the line between two corners is close.
 
 Two corners cannot be dragged onto one instant (an envelope needs every extent
 positive), and the first corner stays at zero: the map is written from there.
-Both are refused quietly — the ruler simply does not move.
+Both are refused quietly -- the ruler simply does not move.
 
 Run it like the other GUI examples (see ``editor.py`` for the install):
 interactively cell by cell, or as a plain script. Nothing sounds. Needs a
@@ -60,7 +60,7 @@ QUANT = 1.0                  # what the top ruler counts on: one mark, one beat
 
 # The envelope, in beats per minute against seconds: the corners and the
 # stretches between them, so there is one more tempo than extent. A finite
-# shape, which is what a tempo is — no sustain, no loop, a tempo has no
+# shape, which is what a tempo is -- no sustain, no loop, a tempo has no
 # gate.
 BPM = [30.0, 90.0]
 EXTENTS = [60.0]                                       # seconds
@@ -77,7 +77,7 @@ def tempo_of(corners, bpm, shapes) -> TempoMap:
     """The timeline's tempo, from an envelope written in **seconds**.
 
     ``env`` takes the tempos and the stretches between them, and
-    ``unit="seconds"`` reads those stretches as wall clock — so each segment's
+    ``unit="seconds"`` reads those stretches as wall clock -- so each segment's
     width in beats is solved exactly rather than searched for, which is what
     lets a shape drawn against seconds be a tempo at all.
     """
@@ -105,7 +105,7 @@ for beat in range(0, int(beats), 8):
 # ## The figure: one curve, three rulers
 # The curve and the ruler share a navigation group (`link`), so the group's
 # gutter is the value axis' width and the beat ticks start at the same pixel the
-# curve does. The curve is what gives the group its extent — without it the
+# curve does. The curve is what gives the group its extent -- without it the
 # ruler above would have nothing to rule. What the curve's values *are* is said
 # once, above the beat ruler, rather than inside the field it labels.
 
@@ -126,14 +126,14 @@ bpf(name="tempo", points=points, min=BPM_LO, max=BPM_HI, duration=SPAN,
           "y": {"unit": "value"}}),
 title="A tempo envelope, and the beat ruler it makes", w=1000, h=460,
 ).open()
-print(f"opened window {win} — drag a corner and watch the top ruler")
+print(f"opened window {win} -- drag a corner and watch the top ruler")
 
 
 # %% [markdown]
 # ## The edit, and what it re-rules
 # The curve owns nothing: it reports the whole break-point list in its own units
 # and this script decides what that means. Here it means the timeline's tempo, so
-# the map is rebuilt and handed back to the ruler — a `/gui_set` value is a
+# the map is rebuilt and handed back to the ruler -- a `/gui_set` value is a
 # scalar, hence the JSON the map writes with `dump`.
 
 # %%
@@ -176,4 +176,4 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
     except (OSError, RuntimeError, ConnectionError) as e:
         sys.exit(str(e))
 else:
-    print("up — drag the curve; session.close() to end")
+    print("up -- drag the curve; session.close() to end")

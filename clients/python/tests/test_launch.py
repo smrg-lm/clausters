@@ -82,7 +82,7 @@ def test_the_child_dies_with_a_killed_interpreter():
 
 def test_the_process_is_told_which_port_to_bind():
     # The handle's address is the one the process binds, which is what lets
-    # several servers share a machine. Argv only — nothing is spawned.
+    # several servers share a machine. Argv only -- nothing is spawned.
     from clausters.launch import ServerProcess
 
     argv = ServerProcess(port=57130)._argv()
@@ -92,7 +92,7 @@ def test_the_process_is_told_which_port_to_bind():
 
 def test_boot_refuses_a_handle_pointing_at_another_machine():
     # Booting starts a process *here*; a handle aimed elsewhere names a server
-    # no boot of ours can produce. The port half is no longer pinned — that was
+    # no boot of ours can produce. The port half is no longer pinned -- that was
     # a lock on a binary that took no port flag.
     from clausters.defs import Server
 

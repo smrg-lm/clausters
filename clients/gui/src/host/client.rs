@@ -1,7 +1,7 @@
 //! The host's client leg: `clausters-gui` as a client of the audio server.
 //!
 //! The third leg of the topology. The host reads buffers/buses/the node tree
-//! and sends control to `clausters-server` exactly as the Python client does —
+//! and sends control to `clausters-server` exactly as the Python client does --
 //! and, crucially, **through the same OSC encode door**
 //! ([`clausters_core::osc`]), so there is one encoder across the system, not a
 //! parallel one. The leg is bidirectional: the host **sends** queries/control
@@ -11,7 +11,7 @@
 //!
 //! Control buses are *not* read through this leg: a `meter`/`scope` reads them
 //! directly from the shared-memory segment ([`super::shm`]) with no messages at
-//! all. The leg carries only what shared memory cannot — the command plane.
+//! all. The leg carries only what shared memory cannot -- the command plane.
 
 use std::io;
 use std::net::{SocketAddr, UdpSocket};

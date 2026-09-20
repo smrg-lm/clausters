@@ -1,7 +1,7 @@
 //! Denormal (subnormal) float protection.
 //!
-//! Recursive DSP state decaying towards zero — filter tails, envelope ends,
-//! Faust recursions — lands in subnormal floats, which many CPUs resolve in
+//! Recursive DSP state decaying towards zero -- filter tails, envelope ends,
+//! Faust recursions -- lands in subnormal floats, which many CPUs resolve in
 //! microcode 10-100x slower than normal numbers: enough to blow the audio
 //! callback budget exactly when a sound fades out. Two complementary
 //! measures keep them out of the signal path:
@@ -9,7 +9,7 @@
 //! - [`flush_to_zero`] switches the **calling thread's** FPU to treat
 //!   subnormals as zero. The cpal callback re-arms it on every buffer
 //!   (`crate::server::backend`) and the offline renderer arms it once per
-//!   render ([`crate::server::render`]) — both modes, so an NRT render stays
+//!   render ([`crate::server::render`]) -- both modes, so an NRT render stays
 //!   sample-identical to a live take.
 //! - Faust factories are created with `-ftz 2`
 //!   (`FaustArgs::defaults` in `crate::faust::compiler`): the generated code itself
@@ -20,8 +20,8 @@
 //! in `tests/golden.rs` (`-ftz 2` end to end).
 
 /// Enables flush-to-zero (and treat-denormal-operands-as-zero where the
-/// architecture has it) for the calling thread. Idempotent and cheap — a
-/// couple of register accesses — so calling it once per audio callback is
+/// architecture has it) for the calling thread. Idempotent and cheap -- a
+/// couple of register accesses -- so calling it once per audio callback is
 /// fine. On architectures without an implementation it is a no-op:
 /// correctness never changes, only the worst-case speed of subnormal math.
 ///
@@ -49,7 +49,7 @@ pub fn flush_to_zero() {
 }
 
 /// Runs `f` with the thread's FPU in **normal** (IEEE, no flush-to-zero)
-/// mode, restoring the previous mode afterwards — even on unwind.
+/// mode, restoring the previous mode afterwards -- even on unwind.
 ///
 /// The one legitimate caller is the Faust *compiler* path: libfaust's
 /// front-end does real double math (the interval algebra behind its typing;

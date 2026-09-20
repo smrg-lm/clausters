@@ -2,18 +2,18 @@
 //!
 //! A stored spectrogram is analyzed once: the samples are all there, the
 //! transform is computed, the texture is uploaded. A live one has no such
-//! moment — the samples arrive a tick at a time, and the picture is the last
+//! moment -- the samples arrive a tick at a time, and the picture is the last
 //! `retention` seconds of them. Recomputing the whole transform each tick would
 //! redo hundreds of FFTs to learn what the newest one or two say, so the
 //! **columns are what is kept**: each whole hop that becomes available is
 //! analyzed once, pushed on the back, and the oldest falls off the front.
 //!
 //! The state is keyed by widget rather than by bus, because two views of one
-//! bus may analyze it differently (a different `fft_size`, a different `hop`) —
+//! bus may analyze it differently (a different `fft_size`, a different `hop`) --
 //! the history they read is shared, the transform of it is not.
 //!
 //! What this module deliberately does *not* do is own the picture. It analyzes,
-//! and hands the columns that landed to whoever holds the transform — the GPU
+//! and hands the columns that landed to whoever holds the transform -- the GPU
 //! view, whose [`Stft`] is the *same type* the stored path produces (a ring
 //! rather than a whole analysis, which the renderer, the frequency ruler and
 //! the cursor readout never have to know). A retained waterfall stays a
@@ -40,14 +40,14 @@ pub struct Waterfall {
     /// the history's start, so a column covers the same samples however much
     /// history happens to be retained around it.
     next: Option<u64>,
-    /// How many columns the retained span asks for — carried here because this
+    /// How many columns the retained span asks for -- carried here because this
     /// is where the span is read off the tree, and handed to the view, which
     /// sizes its ring by it.
     capacity: usize,
     /// Whether the picture moved since the last time the renderer asked: a
     /// column landed, or the span changed under it.
     dirty: bool,
-    /// The analysis window and its gain, plus the per-column scratch — held so
+    /// The analysis window and its gain, plus the per-column scratch -- held so
     /// a landing column allocates nothing.
     hann: Vec<f32>,
     gain: f32,
@@ -75,7 +75,7 @@ impl Waterfall {
         }
     }
 
-    /// Whether the analysis parameters still match — a `/gui_set` of any of
+    /// Whether the analysis parameters still match -- a `/gui_set` of any of
     /// them restarts the roll rather than splicing two transforms, since the
     /// columns of one are not the columns of the other.
     pub fn matches(&self, window_size: usize, hop: usize, sample_rate: f32) -> bool {
@@ -111,7 +111,7 @@ impl Waterfall {
     /// rather than merely late: when the retained span no longer reaches back
     /// to where the next column would start, the analysis skips forward to the
     /// oldest sample still held. That is a real discontinuity in the picture
-    /// and it is the honest one — the samples it would have covered are gone.
+    /// and it is the honest one -- the samples it would have covered are gone.
     pub fn advance(&mut self, history: &[f32], end: u64) -> usize {
         if history.len() < self.window_size {
             return 0;
@@ -136,7 +136,7 @@ impl Waterfall {
     }
 
     /// Analyzes one window into a column, through the very function the
-    /// stored transform uses — so a retained waterfall and an offline
+    /// stored transform uses -- so a retained waterfall and an offline
     /// spectrogram of the same audio are the same picture.
     fn push(&mut self, frame: &[f32]) {
         let at = self.pending.len();
@@ -167,7 +167,7 @@ impl Waterfall {
     }
 
     /// Whether a column landed (or the span moved) since the renderer last
-    /// took the transform — what keeps the texture upload to the ticks that
+    /// took the transform -- what keeps the texture upload to the ticks that
     /// changed something.
     pub fn is_dirty(&self) -> bool {
         self.dirty
@@ -251,7 +251,7 @@ mod tests {
     }
 
     /// A history shorter than one window analyzes nothing rather than
-    /// analyzing a partial one — a half-filled window is not a measurement.
+    /// analyzing a partial one -- a half-filled window is not a measurement.
     #[test]
     fn a_history_shorter_than_a_window_lands_nothing() {
         let mut w = Waterfall::new(256, 128, 48_000.0, 10);

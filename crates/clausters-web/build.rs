@@ -5,7 +5,7 @@
 //! rather than grown into. On native: an rpath for the test binary.
 //!
 //! This crate asks for `clausters` with `synth` + `faust` + `embed`, but
-//! `faust` there means the def family, not libfaust — the browser has no
+//! `faust` there means the def family, not libfaust -- the browser has no
 //! libfaust to link. In a workspace build (`cargo test --workspace`)
 //! cargo unifies features across members, so the shared `clausters` lib is the
 //! one built for the root package, i.e. with `faust` on, and this crate's test
@@ -16,7 +16,7 @@
 //! dependents. Without the rpath repeated here the test binary builds fine and
 //! then fails at startup with `libfaust.so.2: cannot open shared object file`.
 //!
-//! Only the rpath is repeated — the link-search and link-lib come from the root
+//! Only the rpath is repeated -- the link-search and link-lib come from the root
 //! script, through the dependency. Keep the prefix search in step with it.
 
 fn main() {
@@ -26,7 +26,7 @@ fn main() {
     // second wasm module instantiated against this engine's memory, and its
     // `compute` is reached by appending it to this module's
     // `__indirect_function_table` and calling through the slot. The table is
-    // internal by default and fixed-size, so both flags are load-bearing —
+    // internal by default and fixed-size, so both flags are load-bearing --
     // without the first the host cannot see it, without the second it cannot
     // grow it. See `clausters::faust::synth` (the wasm backend).
     if std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("wasm32") {

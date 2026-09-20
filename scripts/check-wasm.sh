@@ -8,7 +8,7 @@
 #
 # Checks `--lib` only (the binary is native by definition), four feature sets:
 # the bare engine core, the SynthDef family, the browser build as it was
-# (`synth,embed`) and the browser build proper (`synth,faust,embed` — what
+# (`synth,embed`) and the browser build proper (`synth,faust,embed` -- what
 # `crates/clausters-web` links, the FaustDef family without libfaust), plus the
 # three wasm shell crates the web package stages: the engine's, the shared
 # core's and the NRT worker's. Between them and `clients/gui/check-wasm.sh`

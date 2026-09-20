@@ -1,4 +1,4 @@
-"""The areas, and what arming one means for the others — `clausters.log`.
+"""The areas, and what arming one means for the others -- `clausters.log`.
 
 The web client's twin is `clients/web/tests/log.test.ts`. The module is the same
 one in two languages: same three areas, same `watch`/`unwatch`, same environment

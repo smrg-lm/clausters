@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Writes the demo bundle (clients/web/examples/out/demo/) in the native persisted
-# formats — the exact files `clausters-gui --standalone` reads, plus the
+# formats -- the exact files `clausters-gui --standalone` reads, plus the
 # generated bundle.json manifest: a SynthDef spec whose drone also writes a
 # 0.5 Hz LFO to control bus 0 (OutCtl), and a GuiDef whose meter and trace read
 # that bus and whose boot /synth_new brings the drone up. The trace is a

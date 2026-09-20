@@ -1,4 +1,4 @@
-"""C5 tests: patterns, events, and the event stream — including the headline
+"""C5 tests: patterns, events, and the event stream -- including the headline
 that a Pbind plays through the seam (NRT score -> render) with **yield-exact**
 timing."""
 
@@ -168,7 +168,7 @@ def test_pbind_timing_is_yield_exact_in_nrt():
 
     starts = sorted(when for when, raw in server.interface.score.bundles
                     if _inner_addr(raw) == "/synth_new")
-    # four notes, exactly 0.5 s apart — no wall-clock jitter
+    # four notes, exactly 0.5 s apart -- no wall-clock jitter
     assert starts == [0.0, 0.5, 1.0, 1.5]
 
 
@@ -196,7 +196,7 @@ if __name__ == "__main__":
             try:
                 fn()
                 print(f"ok   {name}")
-            except BaseException as e:  # noqa: BLE001 — smoke harness
+            except BaseException as e:  # noqa: BLE001 -- smoke harness
                 kind = type(e).__name__
                 skip = kind in ("Skipped", "OutcomeException")
                 print(f"{'skip' if skip else 'FAIL'} {name}: {e}")

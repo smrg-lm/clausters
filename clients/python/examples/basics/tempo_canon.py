@@ -4,7 +4,7 @@
 A **tempo canon**: one line, played by ten voices at once, each one speeding up
 towards a different tempo. They begin in unison, fan apart over half a minute
 into something that sounds like one instrument coming unglued, and every voice
-reaches its final tempo at the *same instant* — which is the whole point, and
+reaches its final tempo at the *same instant* -- which is the whole point, and
 the thing that is awkward to arrange any other way.
 
 **Why they arrive together.** Each voice is a `TempoClock` of its own, and the
@@ -15,7 +15,7 @@ gesture is one call::
 ``unit="seconds"`` is what makes the ten ramps the same length: a stretch of
 **wall clock**, not of beats. The same request in beats would not do it. A beat
 is a logical coordinate, so thirty beats of a voice rushing to 10 is a far
-shorter *time* than thirty beats of one rising to 2 — the ten would finish
+shorter *time* than thirty beats of one rising to 2 -- the ten would finish
 accelerating at ten different moments, and the canon would dissolve instead of
 landing. With ten different starting tempos as well, the beat each voice reaches
 is nowhere near the others; the **seconds** are the only thing they share, and
@@ -27,8 +27,8 @@ was asked for.
 
 **Ten clocks, one server.** A `Session` owns a server and as many clocks as the
 music has tempos, so this file makes ten. Each is made while the session is
-active, so it is made on **the session's timebase** — for a live session, the
-server's own sample counter — and kept in the session: ten clocks drifting
+active, so it is made on **the session's timebase** -- for a live session, the
+server's own sample counter -- and kept in the session: ten clocks drifting
 apart on ten OS timers would be a different and much less interesting canon.
 
 Being kept there is not bookkeeping either: they are in ``session.clocks``,
@@ -78,7 +78,7 @@ SECONDS_TO_PLAY = float(sys.argv[1]) if len(sys.argv) > 1 else SPREAD + 8.0
 # A `TempoMap` is a pure function of a beat: it answers about music nobody is
 # playing. So the choice of unit can be *read* rather than argued about. Asked
 # for over 30 seconds, every voice takes 30 seconds and arrives at a different
-# beat; asked for over 30 beats, every voice takes a different time — which is
+# beat; asked for over 30 beats, every voice takes a different time -- which is
 # ten voices landing at ten different moments.
 
 # %%
@@ -100,7 +100,7 @@ for start, target in zip(STARTS, TARGETS):
 # ## The session
 # `Session.live` boots a server if none answers and stops the one it started.
 # Activating it makes it ambient, so a note played from inside a routine finds
-# this server without being handed it — and so every clock built below is made
+# this server without being handed it -- and so every clock built below is made
 # on its timebase and kept in it.
 
 # %%
@@ -112,7 +112,7 @@ server = session.server
 # ## One voice's line
 # A note a beat, and nothing about the tempo. Each `yield 1.0` is one beat,
 # always; what changes is how long that beat lasts, and this generator never
-# finds out. It is the only function here — a routine *is* one — and everything
+# finds out. It is the only function here -- a routine *is* one -- and everything
 # that acts is written straight into the cells.
 
 # %%
@@ -131,7 +131,7 @@ def line(pitch: float):
 # ## The ten clocks
 # Built here, in the open: a clock, its ramp, its routine. Each one is made on
 # the ambient session's timebase and kept in it, so by the end of this cell
-# `session.clocks` holds all eleven — the session's own default clock, which
+# `session.clocks` holds all eleven -- the session's own default clock, which
 # this canon does not use, and these ten.
 
 # %%
@@ -150,7 +150,7 @@ print("clocks in the session:", len(session.clocks))
 # Ten slow pulses, none of them agreeing with another. From there each pulls
 # away at its own rate, and at `SPREAD` seconds they all stop
 # accelerating at once and hold what they reached. `session.start` starts them
-# together — a Python loop over ten `start` calls staggers them by whatever the
+# together -- a Python loop over ten `start` calls staggers them by whatever the
 # loop costs.
 
 # %%
@@ -174,7 +174,7 @@ print("tempos reached:", "  ".join(f"{clock.tempo:.2f}" for clock in clocks))
 # %% [markdown]
 # ## Stop
 # `stop` is a transport: the beats are held and a later `session.start()` picks
-# the canon up where it was. `close` ends it — every clock the session owns, the
+# the canon up where it was. `close` ends it -- every clock the session owns, the
 # server, and the process `live` launched.
 
 # %%

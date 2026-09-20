@@ -3,25 +3,25 @@
 //! A session carries several of them at once and they are not
 //! interchangeable:
 //!
-//! - [`Second`] — **physical** time, the multitrack's axis. Where a region
+//! - [`Second`] -- **physical** time, the multitrack's axis. Where a region
 //!   sits, how long a fade lasts, where an automation point or a marker is.
 //!   It is what the server and the clients measure in, and no tempo moves it.
-//! - [`Beat`] — a **logical** axis, owned by a structure organized by tempo
+//! - [`Beat`] -- a **logical** axis, owned by a structure organized by tempo
 //!   and meter: where a tempo or meter change is stated, where a note sits in
 //!   a node's own time. Moved to seconds by that structure's tempo map, never
 //!   by a sample rate.
-//! - [`TimelineFrame`] — the **timeline's own** sample frames: what the
+//! - [`TimelineFrame`] -- the **timeline's own** sample frames: what the
 //!   transport counts, what a view scrolls over, what a render writes. Related
 //!   to [`Second`] by the sample rate alone.
-//! - [`ContentFrame`] — a frame **inside one source**. Where a region's window
+//! - [`ContentFrame`] -- a frame **inside one source**. Where a region's window
 //!   opens into the samples it plays. It is a coordinate in somebody else's
 //!   recording, and the only reason it looks like a timeline frame is that both
 //!   are counted in samples.
 //!
 //! # Why these are types and not comments
 //!
-//! They were one type — `f64`, with a doc comment saying which axis a
-//! particular one was on — and the comment is not read by anything. It has
+//! They were one type -- `f64`, with a doc comment saying which axis a
+//! particular one was on -- and the comment is not read by anything. It has
 //! already cost a defect: a threshold computed on the wrong axis turned every
 //! clip move into a trim, because a number of timeline samples was compared
 //! against a number of beats and both are `f64`. A newtype makes that a
@@ -35,7 +35,7 @@
 //!
 //! **No conversions between axes.** Not `From`, not `Into`, not a method. A
 //! beat becomes a frame only through a tempo map and a sample rate, and both
-//! belong to whoever holds them — the client, or the host. An implicit
+//! belong to whoever holds them -- the client, or the host. An implicit
 //! conversion here would be this crate guessing a tempo, which is the one thing
 //! it refuses to do everywhere else ([`crate::Body`]'s opaque leaf, the
 //! `secs_to_beats` a caller has to supply). What they do have is the arithmetic
@@ -44,7 +44,7 @@
 //!
 //! **No unit inside the name of a length.** A position and a length are the
 //! same type on each axis, as they are in every DAW's format, because the
-//! difference is what a field *means* rather than what it holds — `position`
+//! difference is what a field *means* rather than what it holds -- `position`
 //! and `length` on a region say it, and a type that said it too would double
 //! every operator below for nothing.
 
@@ -64,7 +64,7 @@ macro_rules! axis {
             /// The origin of this axis.
             pub const ZERO: Self = Self(0 as $inner);
 
-            /// The number, for a caller that is leaving the axis on purpose —
+            /// The number, for a caller that is leaving the axis on purpose --
             /// writing a message, drawing a pixel, calling a converter that
             /// takes plain numbers.
             pub fn get(self) -> $inner {
@@ -158,7 +158,7 @@ axis! {
 }
 
 axis! {
-    /// A frame **inside one source** — where a region's window opens into the
+    /// A frame **inside one source** -- where a region's window opens into the
     /// samples it plays.
     ///
     /// Never a timeline position, however much it looks like one. Two regions
@@ -169,7 +169,7 @@ axis! {
 }
 
 axis! {
-    /// A position or a length **inside a source made of events** — the beats of
+    /// A position or a length **inside a source made of events** -- the beats of
     /// a node this document holds, rather than of the multitrack.
     ///
     /// The [`ContentFrame`] of material that has no frames. A window onto a

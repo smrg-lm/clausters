@@ -3,7 +3,7 @@
 // A score is laid out into SVG by verovio and that SVG is walked into the flat,
 // resolution-independent display list the host's `score` widget consumes. Both
 // steps are the shared core's: the walk is `clausters_core::notation`, and the
-// stateful, editable document is `clausters_core::notation::Score` — the order
+// stateful, editable document is `clausters_core::notation::Score` -- the order
 // an edit is made in, the reload that keeps the timemap honest, the undo stack.
 // What is here is the shell: idiomatic names, plain objects, and the handle's
 // lifetime.
@@ -27,7 +27,7 @@ import type { Event as SeqEvent } from "../../seq/event.ts";
 import type { Timeline } from "../../seq/timeline.ts";
 
 /**
- * The display-list keys the host draws from — everything but `notes`, which is
+ * The display-list keys the host draws from -- everything but `notes`, which is
  * the client's own layer. {@link pageJson} and the `score` builder send exactly
  * these.
  */
@@ -41,7 +41,7 @@ export interface Page {
     glyphs: Record<string, unknown>;
     /** The placed glyphs, lines, fills and texts. */
     prims: Record<string, unknown>[];
-    /** Page units per diatonic step — the quantum a pitch drag counts in. */
+    /** Page units per diatonic step -- the quantum a pitch drag counts in. */
     step: number;
     /** The timemap folded into geometry: `{t, x, y0, y1}` per onset, `t` in ms. */
     cursors: Record<string, number>[];
@@ -63,7 +63,7 @@ export interface EngraveOptions {
 /**
  * A loaded score, kept alive so it can be **edited** and re-engraved.
  *
- * {@link engrave} is the one-shot form — load, draw, discard. This is the
+ * {@link engrave} is the one-shot form -- load, draw, discard. This is the
  * stateful one: it holds the engraver's document open, so an edit can be applied
  * to the same one the display list was drawn from and the page re-engraved
  * against it. The MEI `xml:id`s survive editing, which is what lets the host keep
@@ -71,19 +71,19 @@ export interface EngraveOptions {
  * same note afterwards.
  *
  * The edit cycle is the shared layer's (`clausters_core::notation::Score`), not
- * this shell's — as it is in the Python client, which holds the same model over
+ * this shell's -- as it is in the Python client, which holds the same model over
  * the C ABI.
  *
  * **The undo order is the editing context's**, like every other editable
  * structure's. A score registers in `Editing.of(score)` under the `"score"`
  * vocabulary and records each edit as the MEI it produced, with the previous one
- * as its inverse — an absolute payload, so a step is idempotent and carries no
+ * as its inverse -- an absolute payload, so a step is idempotent and carries no
  * direction. That is what makes a window holding a lane and a page walk **one**
  * order: before this, an engraved page had a real history of its own and Ctrl+Z
  * meant one of two different things depending on what the pointer was over.
  *
  * The shared layer's own snapshot stack is still there and is what a caller with
- * no such context uses — a standalone host holding a page and nothing else. From
+ * no such context uses -- a standalone host holding a page and nothing else. From
  * here it is not read: {@link Score.undo} and {@link Score.redo} walk the
  * context's pile and put a state back through the crate's `load`.
  *
@@ -102,7 +102,7 @@ export class Score {
     }
 
     /**
-     * Load `data` — a score in any format the engraver auto-detects — and keep
+     * Load `data` -- a score in any format the engraver auto-detects -- and keep
      * the document open.
      */
     static async open(
@@ -122,7 +122,7 @@ export class Score {
     }
 
     /**
-     * An editable score built from a **monophonic** run of events — the
+     * An editable score built from a **monophonic** run of events -- the
      * {@link fromNotes} encoder handed straight to {@link Score.open}.
      */
     static fromNotes(
@@ -144,14 +144,14 @@ export class Score {
     }
 
     /**
-     * This score engraved into a page — from the live document, so it reflects
+     * This score engraved into a page -- from the live document, so it reflects
      * every edit applied so far.
      */
     displayList(page = 1): Page {
         return JSON.parse(this.inner.displayList(page)) as Page;
     }
 
-    /** The score as MEI, ids and all — the format to persist. */
+    /** The score as MEI, ids and all -- the format to persist. */
     mei(): string {
         return this.inner.mei();
     }
@@ -164,7 +164,7 @@ export class Score {
      * this reads that, so a phrase in ABC is as editable as one made by
      * operating on a motif.
      *
-     * Throws when the document could not be read into a model — a state and not
+     * Throws when the document could not be read into a model -- a state and not
      * a failure, since the page still draws and still plays and only the
      * model's verbs are unavailable on it.
      */
@@ -177,7 +177,7 @@ export class Score {
      *
      * This is the edit path. `op` is the payload the sheet verbs build, so an
      * edit to an open score and an edit to a sheet in hand are the same
-     * operation through the same code — which is what lets a standalone host
+     * operation through the same code -- which is what lets a standalone host
      * with no client language perform it too.
      *
      * `false` when the document has no model behind it or the operation was
@@ -206,7 +206,7 @@ export class Score {
     }
 
     /**
-     * This score's identity in the pile — minted once, per score.
+     * This score's identity in the pile -- minted once, per score.
      *
      * It registers **itself** as what puts an edit back: a page is a state
      * rather than a payload in some vocabulary, so what applies one is
@@ -221,7 +221,7 @@ export class Score {
      *
      * **A state, not a step.** The page a score is at describes it whole, the
      * way a curve's points and a timeline's events do, so an entry is idempotent
-     * and reads the same in both directions — which is the only shape a pile
+     * and reads the same in both directions -- which is the only shape a pile
      * shared with other structures can carry.
      */
     private record(before: string, label: string): void {
@@ -253,7 +253,7 @@ export class Score {
      * Put one payload of a history step back onto this score.
      *
      * What {@link Editing.carry} asks of whatever was registered for a
-     * structure — a `Domain` for an editor, and this for a page, which is a
+     * structure -- a `Domain` for an editor, and this for a page, which is a
      * **state** rather than a payload in a vocabulary.
      */
     project(_structure: object, payload: unknown): boolean {
@@ -263,14 +263,14 @@ export class Score {
 
     /**
      * Another window in this context edited. Nothing here: a score is data and
-     * draws nothing of its own — whoever engraved the page redraws it.
+     * draws nothing of its own -- whoever engraved the page redraws it.
      *
      * It takes no argument, the way no {@link Editor} reads one either.
      */
     adopt(): void {}
 
     /**
-     * Replace the document with `mei` — **a state, not a step**.
+     * Replace the document with `mei` -- **a state, not a step**.
      *
      * The door the pile puts a previous page back through. It clears the shared
      * layer's own stack, so one score has one history.
@@ -280,7 +280,7 @@ export class Score {
     }
 
     /**
-     * Whether the **context's** pile has an edit to step back over — which may
+     * Whether the **context's** pile has an edit to step back over -- which may
      * be an edit to something else entirely, since the order is one.
      */
     get canUndo(): boolean {
@@ -318,8 +318,8 @@ export class Score {
     }
 
     /**
-     * Move the note `elementId` by `steps` **diatonic** steps along the staff —
-     * up when positive — as one undo step.
+     * Move the note `elementId` by `steps` **diatonic** steps along the staff --
+     * up when positive -- as one undo step.
      *
      * It is the **model's** move where the page named a model item (the note
      * takes the key signature's alteration for the letter it lands on, which is
@@ -336,7 +336,7 @@ export class Score {
 
     /**
      * Move the note `elementId` **to** the diatonic staff position `position` on
-     * `page` — the shape an edit travels in, so a resend cannot move the note
+     * `page` -- the shape an edit travels in, so a resend cannot move the note
      * twice. True when the note is now there, including when it already was.
      */
     transposeTo(elementId: string, position: number, page = 1): boolean {
@@ -352,7 +352,7 @@ export class Score {
 
     /**
      * Apply one raw editor action (`set`, `insert`, `delete`, …) as a single undo
-     * step — the escape hatch for what {@link Score.transpose} does not cover.
+     * step -- the escape hatch for what {@link Score.transpose} does not cover.
      * A rejected action leaves the score untouched.
      */
     edit(action: string, param: Record<string, unknown> = {}): boolean {
@@ -362,7 +362,7 @@ export class Score {
         return true;
     }
 
-    /** The engraver's version — what both clients must agree on. */
+    /** The engraver's version -- what both clients must agree on. */
     engraverVersion(): string {
         return this.toolkit.version();
     }
@@ -384,11 +384,11 @@ export class Score {
  * One-shot: the score is loaded, drawn and discarded. Use {@link Score} instead
  * when the page has to be **edited** and redrawn.
  *
- * The result holds one engraving in three layers — what the host **draws**
+ * The result holds one engraving in three layers -- what the host **draws**
  * (`vb`, `glyphs`, `prims`, `step`), where the **cursor** goes (`cursors`, the
  * timemap folded into geometry) and what **sounds** (`notes`, which stays on the
  * client: it is what a driver plays). The engraver mints fresh ids per load, so
- * all three must come from one engraving — which is why one call produces them
+ * all three must come from one engraving -- which is why one call produces them
  * all.
  */
 export async function engrave(
@@ -405,7 +405,7 @@ export async function engrave(
 
 /**
  * The **drawing** layers of a display list, as the object a live
- * `host.set(scoreId, { displayList })` takes — how a re-engraved page replaces
+ * `host.set(scoreId, { displayList })` takes -- how a re-engraved page replaces
  * the one on screen after an edit, without redefining the window.
  *
  * The same layers the `score` builder sends when it builds the widget, so the
@@ -424,7 +424,7 @@ export function pageJson(displayList: Page): Record<string, unknown> {
 
 /**
  * Walk an engraver SVG into a display list. Split out of {@link engrave} so it
- * is testable on a captured SVG, and shared with every other client — the walk
+ * is testable on a captured SVG, and shared with every other client -- the walk
  * itself is `clausters_core::notation`, so a page feeding it the same SVG a
  * window feeds it gets the identical list.
  *

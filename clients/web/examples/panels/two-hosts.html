@@ -68,7 +68,7 @@
         neither can see the other.
       </p>
       <p>
-        A page normally wants one of each — its components belong to one mix,
+        A page normally wants one of each -- its components belong to one mix,
         and <code>guiHost()</code> / <code>server()</code> give exactly that.
         This is the other case: several clients that happen to live in one
         document (isolated demos side by side, an editor beside a player) and
@@ -81,18 +81,18 @@
 
       <div class="pair">
         <section>
-          <h2>host A — its own engine, playing 220 Hz</h2>
+          <h2>host A -- its own engine, playing 220 Hz</h2>
           <canvas id="a"></canvas>
         </section>
         <section>
-          <h2>host B — its own engine, playing 330 Hz</h2>
+          <h2>host B -- its own engine, playing 330 Hz</h2>
           <canvas id="b"></canvas>
         </section>
       </div>
 
       <p>
         Drag a knob and only its own tone follows. Close host A and B keeps
-        drawing and sounding — an instance owns its GPU surfaces, its animation
+        drawing and sounding -- an instance owns its GPU surfaces, its animation
         tick and its audio leg, and takes them with it. A closed host's canvas
         keeps the last frame it drew: the canvas is the <em>document's</em>, and
         nothing clears it. What tells you A is gone is that its knob stops
