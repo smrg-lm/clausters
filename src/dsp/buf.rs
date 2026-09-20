@@ -275,7 +275,7 @@ impl UGen for BufWr {
 /// loop flag, 8 `trigger`, 9 `done_action`.
 ///
 /// **`rec_level` and `pre_level` are what make it a looper rather than a tape
-/// head**: each frame becomes `in·rec_level + old·pre_level`, so `(1, 0)`
+/// head**: each frame becomes `in*rec_level + old*pre_level`, so `(1, 0)`
 /// overwrites, `(1, 1)` overdubs onto what is there, and `(1, 0.5)` overdubs
 /// with the older layers fading -- scsynth's own convention, and the reason
 /// they are inputs rather than a mode.

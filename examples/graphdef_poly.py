@@ -34,7 +34,7 @@ NOTES = (220.0, 277.0, 330.0, 440.0)  # an A-major arpeggio
 
 
 def member_defs():
-    """`vtone` (per voice): a sine at `freq`·`level` into the bus `out`.
+    """`vtone` (per voice): a sine at `freq`*`level` into the bus `out`.
     `vgain` (shared): reads the bus `in`, scales by `gain`, to the speakers."""
     freq, out_bus, level = control("freq", 440.0), control("out", 0.0), control("level", 0.2)
     vtone = SynthDef("vtone", out(out_bus, sine(freq) * level))

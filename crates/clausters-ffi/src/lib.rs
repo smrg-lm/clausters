@@ -442,7 +442,7 @@ pub use time::*;
 /// history they share. **Breaking** for a caller of the editor handles.
 /// **v65 true peak.** `clausters_core_true_peak` measures the *reconstructed*
 /// peak of one channel of an interleaved buffer -- the ITU-R BS.1770-4 Annex 2
-/// filter at 4×, which is what makes a reading dBTP -- where
+/// filter at 4*, which is what makes a reading dBTP -- where
 /// `clausters_core_stats` reports the largest sample. **Additive**, and the
 /// counter moves for v31's reason.
 /// **v66 loudness.** `clausters_core_loudness` measures an interleaved buffer

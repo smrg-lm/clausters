@@ -3,7 +3,7 @@
 //! `faust` feature: `cargo test --features faust --test faust_smoke`.
 //!
 //! The graph is the Sine equivalent, built from primitives (no Faust
-//! stdlib): `sin(2π · phasor(freq))` with `phasor(f) = (+(f/SR) : wrap) ~ _`
+//! stdlib): `sin(2pi * phasor(freq))` with `phasor(f) = (+(f/SR) : wrap) ~ _`
 //! and `wrap(x) = x - floor(x)`. `freq` is an hslider left at its default
 //! (440), so the parameter path is exercised without UIGlue (that's F3).
 
@@ -121,7 +121,7 @@ fn jit_compiled_box_sine_plays_at_440() {
     let expected_rms = 0.2 * std::f32::consts::FRAC_1_SQRT_2;
     assert!(
         (rms(&out) - expected_rms).abs() < 0.005,
-        "rms = {}, expected ≈ {expected_rms}",
+        "rms = {}, expected ~ {expected_rms}",
         rms(&out)
     );
 

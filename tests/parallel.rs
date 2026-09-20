@@ -34,7 +34,7 @@ fn s_new(name: &str, id: i32, target: i32, ctls: &[(&str, f32)]) -> OscMessage {
     msg("/synth_new", args)
 }
 
-/// A source summing `Sine(freq)·0.2` into a constant bus.
+/// A source summing `Sine(freq)*0.2` into a constant bus.
 fn src_def(name: &str, bus: f32, freq: f32) -> OscMessage {
     let def = json!({
         "name": name,

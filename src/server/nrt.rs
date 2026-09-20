@@ -1122,7 +1122,7 @@ fn read_symphonia_stream(
 }
 
 /// Reads a WAV slice into an interleaved buffer. Integer samples are scaled
-/// to ±1 by their bit depth; the buffer keeps the file's sample rate (the
+/// to +/-1 by their bit depth; the buffer keeps the file's sample rate (the
 /// engine does not resample -- clients compensate via `PlayBuf`'s rate).
 fn read_wav(path: &str, file_start: usize, num_frames: i64) -> Result<Buffer, String> {
     let reader = hound::WavReader::open(path).map_err(|e| format!("{path}: {e}"))?;

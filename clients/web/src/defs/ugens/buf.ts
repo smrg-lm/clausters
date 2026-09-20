@@ -129,7 +129,7 @@ export const vosc = (
 ): Ugen => new Ugen("VOsc", [bufpos, freq, phase]);
 
 /**
- * Waveshaper: maps `signal` (in ±1, clamped) through a transfer table in
+ * Waveshaper: maps `signal` (in +/-1, clamped) through a transfer table in
  * wavetable format (typically a `cheby` `/buffer_gen`).
  */
 export const shaper = (bufnum: Channel, signal: Channel): Ugen =>

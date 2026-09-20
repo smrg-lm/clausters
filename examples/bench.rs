@@ -24,9 +24,9 @@
 //! buffers) against one Faust LLVM `compute` call. Only `process` is timed;
 //! instantiation and JIT happen before the loop.
 //!
-//! - **sine** (`sin(2π·phasor)·0.2`): realistic, but our `Sine` works in f64
+//! - **sine** (`sin(2pi*phasor)*0.2`): realistic, but our `Sine` works in f64
 //!   while Faust `-single` is f32, so part of the gap is precision.
-//! - **gain** (`·0.5` on a shared bus): bit-exact, no transcendental -- the
+//! - **gain** (`*0.5` on a shared bus): bit-exact, no transcendental -- the
 //!   cleanest read of pure engine overhead.
 //!
 //! The **spectral** section measures the frequency-domain family, where the
@@ -115,7 +115,7 @@ fn main() {
     say!(
         "graph benchmark -- {SAMPLE_RATE} Hz, blocks of {BLOCK_SIZE} frames, release-mode wall clock"
     );
-    say!("\ndefault def (Sine · amp -> 2× Out):");
+    say!("\ndefault def (Sine * amp -> 2* Out):");
     for &n in VOICE_COUNTS {
         report(n, bench(n, |_| make_default_synth()));
     }
@@ -166,7 +166,7 @@ fn main() {
 /// sine wavetable of scsynth's size (8192 samples = 4096 points) -- the
 /// measurement behind keeping `Sine` transcendental: if the table were much
 /// faster at high voice counts, a table-based sine would earn a place.
-/// Same graph shape for all three (osc · 0.001 -> Out 0, freq at control 0).
+/// Same graph shape for all three (osc * 0.001 -> Out 0, freq at control 0).
 fn bench_sine_vs_wavetable() {
     use clausters::dsp::buffer::Buffer;
     use clausters::dsp::wavetable::{GenCommand, GenFlags};
@@ -269,7 +269,7 @@ fn bench_sine_vs_wavetable() {
 /// filter coefficient is interpolated here, would leave a 3 dB hole in the
 /// middle of every block a fast sweep crosses.
 ///
-/// The two rows are the same graph (`Sine -> Pan2 -> 2× Out`) with the position
+/// The two rows are the same graph (`Sine -> Pan2 -> 2* Out`) with the position
 /// wired to a constant and to an `LFTri`, so the difference between them is
 /// exactly the per-sample path: 64 polynomial evaluations a block instead of
 /// one. The claim being measured is that the second is affordable at all --
@@ -560,7 +560,7 @@ fn bench_spectral() {
         "peak staggered"
     );
     for &n in VOICE_COUNTS {
-        let (_, _, peak_aligned) = run(n, 8); // ids ≡ 0 (mod 8): one hop block
+        let (_, _, peak_aligned) = run(n, 8); // ids == 0 (mod 8): one hop block
         let (blocks_per_sec, avg_us, peak_stag) = run(n, 1); // consecutive ids
         let xrt = blocks_per_sec * BLOCK_SIZE as f64 / SAMPLE_RATE;
         record(format!("spectral/{n}"), Some(xrt), None, true);
@@ -802,7 +802,7 @@ fn make_default_synth() -> Box<dyn SynthNode> {
 
 /// Head-to-head: the **same** DSP run by the two engines, so the only thing
 /// the timing reflects is per-synth audio-loop overhead -- UGen graph vs Faust
-/// LLVM. The graph is `sin(2π·phasor(freq)) · 0.2 -> one bus`, which is exactly
+/// LLVM. The graph is `sin(2pi*phasor(freq)) * 0.2 -> one bus`, which is exactly
 /// the parity pair from `tests/faust_parity.rs` (proven to agree sample for
 /// sample): identical math, one output each, same frequency control (index 0,
 /// swept by the harness), same `out` bus (0). Setup and JIT happen before the
@@ -828,7 +828,7 @@ fn bench_ugen_vs_faust() {
         .expect("ugen sine compiles"),
     );
 
-    // Same recurrence as `Sine`: a wrapped phasor fed into `sin`, then ·0.2.
+    // Same recurrence as `Sine`: a wrapped phasor fed into `sin`, then *0.2.
     // No `import` (keeps the def minimal), one hslider `freq` at control 0.
     let faust_src = format!(
         "freq = hslider(\"freq\", 440, 20, 20000, 0.01);\n\
@@ -841,7 +841,7 @@ fn bench_ugen_vs_faust() {
             .expect("faust sine compiles"),
     );
 
-    say!("\nUGen vs Faust -- identical DSP (sin(2π·phasor(freq)) · 0.2 -> 1 bus), JIT excluded:");
+    say!("\nUGen vs Faust -- identical DSP (sin(2pi*phasor(freq)) * 0.2 -> 1 bus), JIT excluded:");
     say!(
         "  {:>6}  {:>13}  {:>13}  {:>14}",
         "synths",
@@ -887,12 +887,12 @@ fn bench_ugen_vs_faust() {
     );
 }
 
-/// Isolates **pure engine overhead**: a `· 0.5` gain stage on a shared input
+/// Isolates **pure engine overhead**: a `* 0.5` gain stage on a shared input
 /// bus, computed both ways. The two are bit-exact
 /// (`tests/faust_parity.rs::gain_stages_are_bit_exact`) -- one f32 multiply on
 /// the same samples, no transcendental and no f64/f32 asymmetry -- so the only
 /// difference timed is how each engine moves a block through one synth: three
-/// boxed `dyn` UGens with two intermediate wire buffers (`In · 0.5 -> Out`)
+/// boxed `dyn` UGens with two intermediate wire buffers (`In * 0.5 -> Out`)
 /// against one Faust `compute` call (an in-copy, the multiply, an out-sum).
 #[cfg(feature = "faust")]
 fn bench_gain_overhead() {
@@ -937,7 +937,7 @@ fn bench_gain_overhead() {
     let in_idx = faust_gain.control_index("in").expect("in control");
     let out_idx = faust_gain.control_index("out").expect("out control");
 
-    say!("\nUGen vs Faust -- pure engine overhead (bit-exact · 0.5 gain, bus 4 -> bus 0):");
+    say!("\nUGen vs Faust -- pure engine overhead (bit-exact * 0.5 gain, bus 4 -> bus 0):");
     say!(
         "  {:>6}  {:>13}  {:>13}  {:>14}",
         "synths",
@@ -1141,7 +1141,7 @@ fn report(n: usize, blocks_per_sec: f64) {
     let xrt = blocks_per_sec * BLOCK_SIZE as f64 / SAMPLE_RATE;
     record(format!("default/{n}"), Some(xrt), None, true);
     say!(
-        "  {n:5} synths: {blocks_per_sec:>12.0} blocks/s = {xrt:>8.1}x real time ({:>7.1} synth·xRT)",
+        "  {n:5} synths: {blocks_per_sec:>12.0} blocks/s = {xrt:>8.1}x real time ({:>7.1} synth*xRT)",
         xrt * n as f64
     );
 }

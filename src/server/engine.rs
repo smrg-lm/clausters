@@ -801,7 +801,7 @@ impl Engine {
 
     /// Creates the input ring, attaches its consumer to this engine, and hands
     /// back the producer to push interleaved frames -- the test-side counterpart
-    /// of the cpal input stream. `capacity` is in samples (channels × frames).
+    /// of the cpal input stream. `capacity` is in samples (channels * frames).
     pub fn input_ring(&mut self, channels: usize, capacity: usize) -> Producer<f32> {
         let (tx, rx) = RingBuffer::new(capacity.max(1));
         self.attach_input(channels, rx);

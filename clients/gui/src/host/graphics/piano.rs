@@ -9,8 +9,8 @@
 //! a black key [`BLACK_W`] units wide and [`BLACK_LEN`] of the white key's
 //! length, and the black keys are **not** centered on the white-key boundaries
 //! -- within the C-E group the rear (upper) segments of C, D and E are equal
-//! (`(3 − 2b)/3` each), within F-B those of F, G, A and B are equal
-//! (`(4 − 3b)/4`), which is how the physical keyboard distributes them. All
+//! (`(3 - 2b)/3` each), within F-B those of F, G, A and B are equal
+//! (`(4 - 3b)/4`), which is how the physical keyboard distributes them. All
 //! layout derives from the widget rect, so the drawing scales with it.
 //!
 //! Everything here is **display logic plus message shaping**; the one multitrack of
@@ -38,9 +38,9 @@ pub const MIDI_MAX: i32 = 127;
 pub const MIN_SPAN: i32 = 12;
 
 /// The rear (upper) segment width of the C-E group's white keys, so C#/D# and
-/// the three segments share the 3-unit span exactly: `3·cr + 2·b = 3`.
+/// the three segments share the 3-unit span exactly: `3*cr + 2*b = 3`.
 const C_REAR: f32 = (3.0 - 2.0 * BLACK_W) / 3.0;
-/// The rear segment width of the F-B group's white keys: `4·fr + 3·b = 4`.
+/// The rear segment width of the F-B group's white keys: `4*fr + 3*b = 4`.
 const F_REAR: f32 = (4.0 - 3.0 * BLACK_W) / 4.0;
 
 /// White keys below each pitch class within one octave (cumulative count).

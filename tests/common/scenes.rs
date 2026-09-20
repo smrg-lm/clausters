@@ -70,7 +70,7 @@ pub fn arpeggio() -> Score {
             )],
         ),
         (
-            // Mid-block (5000 = 78·64 + 8): the engine must split the block.
+            // Mid-block (5000 = 78*64 + 8): the engine must split the block.
             t(5000),
             vec![
                 msg(

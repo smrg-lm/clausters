@@ -1,7 +1,7 @@
 //! The phasescope (goniometer): drawing a stereo pair as a Lissajous figure.
 //!
 //! A phasescope reads two audio taps (left and right) and plots their recent
-//! sample pairs in the 45°-rotated **mid/side** plane -- the audio-engineering
+//! sample pairs in the 45-degree **mid/side** plane -- the audio-engineering
 //! goniometer, where a mono signal draws a vertical line, an anti-phase one a
 //! horizontal line, and a wide stereo field fills the lozenge. The coordinate
 //! transform itself is general audio geometry, so it lives once in
@@ -23,7 +23,7 @@ use crate::host::layout::Rect;
 use crate::host::paint::Draw;
 
 /// The furthest a sample reaches from the origin: a full-scale mono signal sits
-/// at mid `(1+1)/√2 = √2`. The field is scaled so that extent just fits, with a
+/// at mid `(1+1)/sqrt(2) = sqrt(2)`. The field is scaled so that extent just fits, with a
 /// little margin.
 const MAX_EXTENT: f32 = std::f32::consts::SQRT_2;
 /// Cap on drawn trail segments, so a long window stays a bounded mesh; a denser
@@ -93,7 +93,7 @@ pub fn draw_phasescope(d: &mut Draw, rect: Rect, interleaved: &[f32], label: Opt
 }
 
 /// Draws the correlation strip: a `[-1, +1]` bar filled from center toward the
-/// measured coefficient (green toward mono/+1, red toward anti-phase/−1), with a
+/// measured coefficient (green toward mono/+1, red toward anti-phase/-1), with a
 /// numeric readout. A silent/DC window (undefined correlation) shows a dash.
 fn draw_correlation(d: &mut Draw, strip: Rect, interleaved: &[f32]) {
     let (mesh, m, theme) = d.parts();

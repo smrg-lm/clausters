@@ -372,7 +372,7 @@ function parseMaps(args: ReplyArgs, i: number): [NodeMap[], number] {
 }
 
 /**
- * One `/node_query.reply` reply. `isGroup` −1 is how the server says the node is not
+ * One `/node_query.reply` reply. `isGroup` -1 is how the server says the node is not
  * there.
  */
 export function parseNodeInfo(args: ReplyArgs): NodeInfo {
@@ -405,7 +405,7 @@ export function parseNodeInfo(args: ReplyArgs): NodeInfo {
 
 /**
  * Recursively parses `count` entries of a `/group_queryTree.reply` starting at
- * `i`; returns the subtrees and the next index. A synth has child-count −1.
+ * `i`; returns the subtrees and the next index. A synth has child-count -1.
  * Every entry is `id, childCount, name` -- the group's `/group_name` or the
  * synth's def name.
  *
@@ -524,7 +524,7 @@ export function parseDefInfo(args: ReplyArgs): DefInfo {
 }
 
 /**
- * A `/buffer_query.reply` reply, four args per buffer. `frames` −1 marks a slot with
+ * A `/buffer_query.reply` reply, four args per buffer. `frames` -1 marks a slot with
  * nothing in it (the argument-less listing form never reports one).
  */
 export function parseBufferList(args: ReplyArgs): BufferInfo[] {

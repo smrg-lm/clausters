@@ -1,7 +1,7 @@
 //! **Drawing a signal**: the four pictures the signal element can be, and the
 //! one column source under all of them.
 //!
-//! The element itself -- which point of the presentation × source × capabilities
+//! The element itself -- which point of the presentation * source * capabilities
 //! product a widget is, what a `/gui_set` means to it, what it loads and what
 //! it accumulates between ticks -- is [`elements::signal`](super::super::elements::signal).
 //! What is here is only the picture, so each module is a set of functions over

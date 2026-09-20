@@ -641,13 +641,13 @@ export const sum4 = (
  */
 export const add = (a: OpOperand, b: OpOperand): Channel | ChannelList =>
     freeBinop("add", a, b);
-/** `a − b`; see `add`. */
+/** `a - b`; see `add`. */
 export const sub = (a: OpOperand, b: OpOperand): Channel | ChannelList =>
     freeBinop("sub", a, b);
-/** `a × b`; see `add`. */
+/** `a * b`; see `add`. */
 export const mul = (a: OpOperand, b: OpOperand): Channel | ChannelList =>
     freeBinop("mul", a, b);
-/** `a ÷ b`; see `add`. */
+/** `a / b`; see `add`. */
 export const div = (a: OpOperand, b: OpOperand): Channel | ChannelList =>
     freeBinop("div", a, b);
 

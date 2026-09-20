@@ -67,7 +67,7 @@ fn write_error(msg: &str, buf: *mut u8, cap: usize) {
 /// See [`crate::server::render::RenderConfig::seed`].
 ///
 /// On success returns a malloc'd interleaved `f32` buffer and writes the
-/// frame count to `out_frames` (total samples = frames × channels), the
+/// frame count to `out_frames` (total samples = frames * channels), the
 /// number of score events executed to `out_events` and the render's seed to
 /// `out_seed`; free the buffer with [`clausters_free_samples`]. On failure
 /// returns NULL and writes a human-readable message into (`err`, `err_cap`).
@@ -137,7 +137,7 @@ pub unsafe extern "C" fn clausters_render(
 }
 
 /// Frees a buffer returned by [`clausters_render`]. `samples` is
-/// frames × channels (the full length, not per channel).
+/// frames * channels (the full length, not per channel).
 ///
 /// # Safety
 /// Must be called exactly once with the pointer and total sample count of

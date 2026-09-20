@@ -1059,7 +1059,7 @@ fn body_merges(
     peak > 0.0 && level / peak >= BODY_MERGE_RATIO
 }
 
-/// The measured body: one column per pixel at `±sqrt(mean square)` about zero,
+/// The measured body: one column per pixel at `+/-sqrt(mean square)` about zero,
 /// which is what makes it a *body* rather than a second envelope -- level has no
 /// sign, so the picture is symmetric by construction and sits inside the
 /// envelope of the same span wherever both are drawn.
@@ -1842,7 +1842,7 @@ mod tests {
 
     /// **The body is symmetric about zero, and inside the envelope column by
     /// column.** Both are the measure's own definition rather than a drawing
-    /// choice: a level has no sign, so `±sqrt(mean square)` is symmetric by
+    /// choice: a level has no sign, so `+/-sqrt(mean square)` is symmetric by
     /// construction, and the root-mean-square of a span can never exceed the
     /// largest magnitude in it.
     ///

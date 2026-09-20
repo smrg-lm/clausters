@@ -122,7 +122,7 @@ fn render(factory: *mut llvm_dsp_factory, input: &[f32], samples: usize) -> Vec<
 }
 
 /// `rec` feedback at the FFI level: `*(1-a) : (+ ~ *(a))` is the one-pole
-/// `y[n] = (1-a)·x[n] + a·y[n-1]` -- `~` carries one implicit sample of
+/// `y[n] = (1-a)*x[n] + a*y[n-1]` -- `~` carries one implicit sample of
 /// delay, exactly like the Signal API's `recursion`/`self` pair (the same
 /// filter and assertions as `faust_signal.rs`, so the two feedback forms are
 /// pinned to identical semantics).

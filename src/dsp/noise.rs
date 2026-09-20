@@ -15,10 +15,10 @@
 //!
 //! The families:
 //!
-//! - **Spectral shapes** -- `WhiteNoise` (flat), `PinkNoise` (−3 dB/octave),
-//!   `BrownNoise` (−6). Each is measured, not asserted by construction.
+//! - **Spectral shapes** -- `WhiteNoise` (flat), `PinkNoise` (-3 dB/octave),
+//!   `BrownNoise` (-6). Each is measured, not asserted by construction.
 //! - **Bit and sign sources** -- `GrayNoise` (one random bit flipped per
-//!   sample), `ClipNoise` (±1 only).
+//!   sample), `ClipNoise` (+/-1 only).
 //! - **Held and interpolated** -- `LFNoise0`/`LFNoise1`/`LFNoise2` and
 //!   `LFClipNoise`: a new random value every `1/freq` seconds, held, ramped or
 //!   curved between. These are modulation sources, deliberately not band
@@ -56,7 +56,7 @@ impl UGen for WhiteNoise {
 /// audible band and then some at any sample rate we run at.
 const PINK_ROWS: usize = 16;
 
-/// `PinkNoise`: equal energy per octave, −3 dB/octave. No inputs.
+/// `PinkNoise`: equal energy per octave, -3 dB/octave. No inputs.
 ///
 /// **Voss-McCartney**, and deliberately not Trammell's stochastic variant. Both
 /// sum a set of white generators updated at halving rates; the difference is
@@ -69,7 +69,7 @@ const PINK_ROWS: usize = 16;
 /// schedule is worth more here than the average saving.
 ///
 /// The output is the sum of the rows plus one fresh white sample, mapped
-/// linearly onto [-1, 1). Its *peak* therefore reaches ±1 only when all
+/// linearly onto [-1, 1). Its *peak* therefore reaches +/-1 only when all
 /// seventeen agree, so like scsynth's it is a quiet signal -- around 0.13 RMS
 /// against white noise's 0.58. That is the level a ported def expects.
 pub struct PinkNoise {
@@ -120,9 +120,9 @@ impl UGen for PinkNoise {
 /// whole of the algorithm.
 const BROWN_STEP: f64 = 0.125;
 
-/// `BrownNoise`: a random walk, −6 dB/octave. No inputs.
+/// `BrownNoise`: a random walk, -6 dB/octave. No inputs.
 ///
-/// The walk **reflects** at ±1 rather than clamping. Clamping would let the
+/// The walk **reflects** at +/-1 rather than clamping. Clamping would let the
 /// signal rest against a rail -- a constant, which is a click on the way in and
 /// silence while it lasts; reflecting keeps it moving and keeps the
 /// distribution flat instead of piling probability up at the ends.
@@ -159,7 +159,7 @@ impl UGen for BrownNoise {
 ///
 /// Two things about it are easy to get wrong. Its **spectrum is not flat**: the
 /// high bits flip rarely -- one sample in 32 for the top one -- and the low bits
-/// carry almost no weight, so the energy leans low, measured at −2.9 dB/octave,
+/// carry almost no weight, so the energy leans low, measured at -2.9 dB/octave,
 /// near enough pink. And its **distribution** is what the kind is really for:
 /// consecutive samples differ by exactly one power of two, so the steps span
 /// every order of magnitude (the mean step is some four thousand times the
@@ -226,7 +226,7 @@ impl UGen for ClipNoise {
 pub enum LfNoiseShape {
     /// `LFNoise0`: hold the value for the whole segment (a step).
     Step,
-    /// `LFClipNoise`: hold, but the values are only ±1.
+    /// `LFClipNoise`: hold, but the values are only +/-1.
     Clip,
     /// `LFNoise1`: ramp linearly to the next value.
     Linear,
@@ -397,7 +397,7 @@ impl UGen for Dust {
     }
 }
 
-/// `Crackle(chaos)`: the chaotic map `y[n] = |chaos·y[n-1] − y[n-2] − 0.05|`.
+/// `Crackle(chaos)`: the chaotic map `y[n] = |chaos*y[n-1] - y[n-2] - 0.05|`.
 /// Input 0 `chaos`.
 ///
 /// **Not a random process.** It has no RNG at all: it is deterministic, and the

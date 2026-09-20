@@ -223,7 +223,7 @@ pub fn remove_note(notes: &mut Vec<Note>, index: usize) {
 // The selection is a set of note indices -- view state, native-side. The
 // marquee is the shared time selection restricted in pitch: dragging the empty
 // grid keeps setting the linked views' time selection, and the notes inside
-// the time × pitch rectangle become the selected set.
+// the time * pitch rectangle become the selected set.
 
 /// The indices of the notes intersecting the time span `[t0, t1)` whose row
 /// touches the pitch band `[p_lo, p_hi]` -- [`boxes::in_rect`] over the note

@@ -476,7 +476,7 @@ pub fn strip_def(inputs: usize, outputs: usize) -> Result<Value, String> {
         // what `Balance2` is not: that applies the equal-power pan law to a
         // stereo pair, so a centred strip comes out 3 dB down and three strips
         // in series -- clip, track, master -- take 9 dB off a mix for
-        // nothing. So the law is written here: `min(1, 1 ∓ pan)`, unity at the
+        // nothing. So the law is written here: `min(1, 1 -/+ pan)`, unity at the
         // centre and silence at the far end.
         (2, 2, Some(right_in)) => {
             let lg = push(

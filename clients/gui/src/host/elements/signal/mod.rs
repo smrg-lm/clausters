@@ -74,13 +74,13 @@ pub const DEFAULT_BASE_BUCKET: usize = 256;
 /// the same rule the track states for a measure's own parameters.
 ///
 /// The scale is EBU Tech 3341's, named by its top: the **`+9`** scale runs from
-/// 18 LU under the target to 9 over it (−41 to −14 LUFS at R 128's −23), the
+/// 18 LU under the target to 9 over it (-41 to -14 LUFS at R 128's -23), the
 /// **`+18`** one from 36 under to 18 over. The document makes `+9` the default
 /// and this does too.
 #[derive(Debug, Clone)]
 pub struct LoudnessLayer {
     /// The target loudness, in LUFS: the line the curve is read against, and
-    /// the zero of the LU scale. EBU R 128's −23 by default.
+    /// the zero of the LU scale. EBU R 128's -23 by default.
     pub target: f64,
     /// How far over the target the scale reaches, in LU -- 9 or 18, the two
     /// scales Tech 3341 specifies. The bottom is twice that under it.
@@ -127,8 +127,8 @@ impl LoudnessLayer {
         }
     }
 
-    /// The scale's bounds in LUFS, bottom first: the target, 2× the scale under
-    /// it and 1× over.
+    /// The scale's bounds in LUFS, bottom first: the target, 2* the scale under
+    /// it and 1* over.
     pub fn domain(&self) -> (f32, f32) {
         (
             (self.target - 2.0 * self.scale) as f32,
@@ -722,7 +722,7 @@ impl SignalElement {
     ///
     /// Every presentation reads it -- the take in a clip, the plot, the live
     /// scope and, since the divergence closed, the navigable GPU trace, which
-    /// used to be pinned to ±1 and drop a declared range on the floor.
+    /// used to be pinned to +/-1 and drop a declared range on the floor.
     pub fn domain(&self) -> (f32, f32) {
         let (lo, hi) = crate::waveform::DEFAULT_DOMAIN;
         self.value.resolved(lo, hi)

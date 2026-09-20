@@ -1299,7 +1299,7 @@ pub fn channel_stats(samples: &[f32], channels: usize, channel: usize) -> Vec<f3
 /// JS face: the **true peak** of one channel of an interleaved buffer, in
 /// linear amplitude -- the reconstructed peak rather than the largest sample.
 ///
-/// The ITU-R BS.1770-4 Annex 2 filter at 4×, which is what makes the reading
+/// The ITU-R BS.1770-4 Annex 2 filter at 4*, which is what makes the reading
 /// dBTP: a signal whose samples all read below full scale can still reconstruct
 /// above it, by up to about 3 dB, and every converter sees that peak. Always at
 /// or above [`channel_stats`]'s peak; `-1` for a channel the buffer does not

@@ -1,7 +1,7 @@
 // The clock's wake-up, off the page's thread.
 //
 // This is the whole worker: it holds no state a routine could touch, only
-// timers. It exists because the page's own `setTimeout` is clamped (≥4 ms once
+// timers. It exists because the page's own `setTimeout` is clamped (>=4 ms once
 // nested) and, in a background tab, throttled to about a second -- longer than
 // any usable scheduling headroom, so a sequence would stutter the moment the
 // user changed tabs. A worker's timers are not throttled that way.

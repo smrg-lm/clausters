@@ -606,7 +606,7 @@ fn a_ten_second_ramp_does_not_drift_from_its_closed_form() {
     // Rule 4 for the ramps. They accumulate -- one addition (or one
     // multiplication) per sample, which is what makes them cheap enough for
     // audio rate -- so the question a long ramp asks is whether the running sum
-    // stays on the closed form `start + t·(end − start)`. It does, because the
+    // stays on the closed form `start + t*(end - start)`. It does, because the
     // accumulator is `f64`: over 480 000 samples the drift is around 1e-13,
     // while the same loop in `f32` would be visibly short of its target by now.
     //

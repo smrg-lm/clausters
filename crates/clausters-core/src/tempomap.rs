@@ -8,7 +8,7 @@
 //!
 //! - the **tempo function** `T(b)` -- beats per second at beat `b`; the
 //!   derivative side, and what a user edits (a tempo track);
-//! - the **time map** `M(b) = ∫₀ᵇ db'/T(b')` -- the second beat `b` falls on;
+//! - the **time map** `M(b) = integral from 0 to b of db'/T(b')` -- the second beat `b` falls on;
 //!   the integral, and what everything queries.
 //!
 //! Storing the integral rather than integrating on each query is Jaffe's 1985
@@ -18,7 +18,7 @@
 //! binary search plus one closed-form evaluation, never a sum over segments.
 //!
 //! The consequence that governs every caller: a length in beats is **not** a
-//! duration. `Δbeats` has no length until it is told where it sits, so seconds
+//! duration. `delta_beats` has no length until it is told where it sits, so seconds
 //! are always `secs_at(b1) - secs_at(b0)` and never a function of `b1 - b0`.
 //! [`TempoMap::span_secs`] is the only correct spelling and exists so no
 //! caller has to remember.
@@ -52,14 +52,14 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Shape {
-    /// Tempo linear in beats: `T(u) = T₀ + (T₁ - T₀)·u`. The straight
+    /// Tempo linear in beats: `T(u) = T0 + (T1 - T0)*u`. The straight
     /// accelerando, and the shape a plain ramp writes.
     Linear,
-    /// Tempo geometric in beats: `T(u) = T₀·(T₁/T₀)^u`. Equal *ratios* of
+    /// Tempo geometric in beats: `T(u) = T0*(T1/T0)^u`. Equal *ratios* of
     /// tempo over equal stretches of beat -- the musician's accelerando, where
     /// 60->120 and 120->240 feel like the same move.
     Exponential,
-    /// `Env`'s curvature knob: `T(u) = A + B·e^{cu}`, linear at `c = 0`,
+    /// `Env`'s curvature knob: `T(u) = A + B*e^{cu}`, linear at `c = 0`,
     /// starting slow for `c > 0` and fast for `c < 0`.
     Curvature(f64),
 }
@@ -109,13 +109,13 @@ impl Shape {
     fn tempo_at(self, t0: f64, t1: f64, u: f64) -> f64 {
         match self {
             Self::Linear => t0 + (t1 - t0) * u,
-            // `exp(u·ln r)` rather than `powf(r, u)`: the two are the same
+            // `exp(u*ln r)` rather than `powf(r, u)`: the two are the same
             // function for `r > 0` (which `T > 0` guarantees), but `powf`'s
             // last bit differs between a native libm and wasm's, and these
             // numbers are compared for **equality** across the bindings.
             Self::Exponential => t0 * (u * (t1 / t0).ln()).exp(),
             Self::Curvature(c) => match u {
-                // The ends are given, not computed: `A + B·e^{cu}` reconstructs
+                // The ends are given, not computed: `A + B*e^{cu}` reconstructs
                 // them to within a rounding, and a gesture written at a
                 // breakpoint departs from the tempo *stated* there.
                 u if u <= 0.0 => t0,
@@ -131,7 +131,7 @@ impl Shape {
         }
     }
 
-    /// `∫₀^u du'/T(u')` -- the seconds a segment one beat wide would take to
+    /// `integral from 0 to u of du'/T(u')` -- the seconds a segment one beat wide would take to
     /// reach `u`. The real segment's seconds are this times its width.
     fn secs_at(self, t0: f64, t1: f64, u: f64) -> f64 {
         match self {
@@ -142,7 +142,7 @@ impl Shape {
             Self::Exponential => match t1 == t0 {
                 true => u / t0,
                 false => {
-                    // `exp(-u·ln r)`, for the reason `tempo_at` gives.
+                    // `exp(-u*ln r)`, for the reason `tempo_at` gives.
                     let ln_r = (t1 / t0).ln();
                     (1.0 - (-u * ln_r).exp()) / (t0 * ln_r)
                 }
@@ -222,22 +222,22 @@ impl Shape {
         u
     }
 
-    /// **The seconds one beat of this shape takes**, `K = ∫₀¹du/T(u)`.
+    /// **The seconds one beat of this shape takes**, `K = integral from 0 to 1 of du/T(u)`.
     ///
     /// The whole reason the shapes are written over `u`: `K` does not depend on
-    /// how wide the segment is, so a stretch `Δb` beats wide lasts `Δb·K`
+    /// how wide the segment is, so a stretch `delta_b` beats wide lasts `delta_b*K`
     /// seconds -- and an extent given in *seconds* inverts by a single division.
     pub fn unit_secs(self, t0: f64, t1: f64) -> f64 {
         self.secs_at(t0, t1, 1.0)
     }
 
     /// **How many beats wide a stretch must be to last `secs` seconds**, going
-    /// from `t0` to `t1` in this shape: `Δb = Δt/K`.
+    /// from `t0` to `t1` in this shape: `delta_b = delta_t/K`.
     ///
     /// This is what lets a tempo change be written with its extent in seconds
     /// rather than in beats, and it is exact for every shape rather than
     /// searched for. For a straight ramp `K` is the reciprocal of the
-    /// logarithmic mean of the two tempos, so `Δb` is that mean times the
+    /// logarithmic mean of the two tempos, so `delta_b` is that mean times the
     /// seconds.
     pub fn beats_for_secs(self, t0: f64, t1: f64, secs: f64) -> f64 {
         secs / self.unit_secs(t0, t1)
@@ -246,7 +246,7 @@ impl Shape {
 
 /// Below this a curvature is linear. `Env`'s own threshold, so the knob reads
 /// the same in a tempo curve and in an amplitude curve.
-/// `T(u) = A + B·e^{cu}` for a curvature `c`, as the two constants.
+/// `T(u) = A + B*e^{cu}` for a curvature `c`, as the two constants.
 ///
 /// The algebra is `warp`'s and is written once there
 /// ([`crate::warp::curve_terms_f64`]) -- a bend is a bend whether it is a
@@ -390,7 +390,7 @@ impl Segment {
         let (shape, end_beats, end_tempo, width) = self.curving()?;
         let secs = match shape {
             // The straight ramp keeps its own spelling, which is the clock's:
-            // `ln(T₁/T₀)/k` term for term, unchanged since before shapes.
+            // `ln(T1/T0)/k` term for term, unchanged since before shapes.
             Shape::Linear => (end_tempo / self.tempo).ln() / self.slope(),
             _ => width * shape.unit_secs(self.tempo, end_tempo),
         };
@@ -399,7 +399,7 @@ impl Segment {
 
     /// Seconds elapsed from this segment's start to beat `b` within it.
     ///
-    /// `∫ db/T(b)`: `Δb/T` at a constant tempo, and the shape's closed form
+    /// `integral of db/T(b)`: `delta_b/T` at a constant tempo, and the shape's closed form
     /// across a curve -- so a long accelerando costs what a short one does. Past
     /// the curve's end the tempo holds, so the tail is affine again.
     fn secs_into(&self, b: f64) -> f64 {

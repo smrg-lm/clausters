@@ -107,7 +107,7 @@ fn playbuf_matches_golden() {
     assert_eq!(stats.frames, 12000, "0.25 s at 48 kHz");
 
     // Silent before the synth starts and after /buffer_zero swaps in a zeroed
-    // buffer; in between, a 220 Hz sine at 0.5·0.4 then 0.5·0.15.
+    // buffer; in between, a 220 Hz sine at 0.5*0.4 then 0.5*0.15.
     assert!(rms(&out[0..2401]) < 1e-6, "silence before /synth_new");
     let estimated = freq(&out[2500..5900], scenes::SAMPLE_RATE);
     assert!(

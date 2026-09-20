@@ -200,8 +200,8 @@ class LiveMonitor(threading.Thread):
         gap = sum(recent) / len(recent) if recent else 0.0
         new = sum(1 for o in self.onsets if o >= reported_at)
         flag = "" if new else "  <-- no new clicks this interval!"
-        print(f"  [monitor t={secs:6.1f}s] clicks={n:5d}  recent gap≈{gap:9.1f} "
-              f"samples (≈{gap / rec_rate:.3f}s)  +{new} since last{flag}", flush=True)
+        print(f"  [monitor t={secs:6.1f}s] clicks={n:5d}  recent gap~{gap:9.1f} "
+              f"samples (~{gap / rec_rate:.3f}s)  +{new} since last{flag}", flush=True)
 
 
 # --------------------------------------------------------------------------

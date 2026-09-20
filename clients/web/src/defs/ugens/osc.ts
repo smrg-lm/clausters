@@ -16,19 +16,19 @@ export const sine = (freq: Channel = 440.0): Ugen => new Ugen("Sine", [freq]);
  */
 export const impulse = (freq: Channel = 1.0): Ugen => new Ugen("Impulse", [freq]);
 
-/** Uniform white noise in ±1. */
+/** Uniform white noise in +/-1. */
 export const whiteNoise = (): Ugen => new Ugen("WhiteNoise", []);
 
-/** Noise with equal power per octave (−3 dB/octave). */
+/** Noise with equal power per octave (-3 dB/octave). */
 export const pinkNoise = (): Ugen => new Ugen("PinkNoise", []);
 
-/** Brownian noise (−6 dB/octave): a bounded random walk. */
+/** Brownian noise (-6 dB/octave): a bounded random walk. */
 export const brownNoise = (): Ugen => new Ugen("BrownNoise", []);
 
 /** Noise whose spectrum is flat to the *ear* rather than to a meter. */
 export const grayNoise = (): Ugen => new Ugen("GrayNoise", []);
 
-/** Noise that is only ever −1 or +1: white noise hard-clipped. */
+/** Noise that is only ever -1 or +1: white noise hard-clipped. */
 export const clipNoise = (): Ugen => new Ugen("ClipNoise", []);
 
 /** Steps to a new random value `freq` times a second, holding it between. */
@@ -40,20 +40,20 @@ export const lfNoise1 = (freq: Channel = 500.0): Ugen => new Ugen("LFNoise1", [f
 /** Quadratically interpolated random values at `freq` per second. */
 export const lfNoise2 = (freq: Channel = 500.0): Ugen => new Ugen("LFNoise2", [freq]);
 
-/** `lfNoise0`, clipped: steps between −1 and +1 only. */
+/** `lfNoise0`, clipped: steps between -1 and +1 only. */
 export const lfClipNoise = (freq: Channel = 500.0): Ugen =>
     new Ugen("LFClipNoise", [freq]);
 
 /** Random impulses in 0..1 at an average `density` per second. */
 export const dust = (density: Channel = 1.0): Ugen => new Ugen("Dust", [density]);
 
-/** `dust` with bipolar impulses (−1..1). */
+/** `dust` with bipolar impulses (-1..1). */
 export const dust2 = (density: Channel = 1.0): Ugen => new Ugen("Dust2", [density]);
 
 /** A chaotic noise source (the logistic map); `chaos` in 0..2. */
 export const crackle = (chaos: Channel = 1.5): Ugen => new Ugen("Crackle", [chaos]);
 
-/** Band-limited sawtooth (PolyBLEP), falling from +1 to −1. */
+/** Band-limited sawtooth (PolyBLEP), falling from +1 to -1. */
 export const saw = (freq: Channel = 440.0): Ugen => new Ugen("Saw", [freq]);
 
 /** Band-limited pulse (PolyBLEP); `width` is the duty cycle in 0..1. */

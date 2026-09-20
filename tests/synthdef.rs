@@ -140,7 +140,7 @@ fn white_noise_is_loud_and_finite() {
     let mut synth = synth_from_json(json);
     let out = render(&mut synth, 200);
     assert!(out.iter().all(|x| x.is_finite()));
-    // uniform noise in [-0.5, 0.5]: RMS ≈ 0.5/√3 ≈ 0.289
+    // uniform noise in [-0.5, 0.5]: RMS ~ 0.5/sqrt3 ~ 0.289
     let r = rms(&out);
     assert!((0.2..0.4).contains(&r), "rms = {r}");
 }

@@ -521,7 +521,7 @@ enum Unit<'a> {
 /// a tuplet -- and that odd factor is how many notes are in the time of the
 /// nearest power of two below it. A triplet eighth is `1/12`: the odd part of
 /// 12 is 3, so it is 3 in the time of 2, and its *written* value is
-/// `1/12 × 3/2 = 1/8`, an eighth. This is what having exact rationals is for:
+/// `1/12 * 3/2 = 1/8`, an eighth. This is what having exact rationals is for:
 /// the fact is in the number, and nothing had to be guessed or snapped.
 fn tuplet_ratio(dur: Ratio) -> Option<(i64, i64)> {
     let mut odd = dur.denom();

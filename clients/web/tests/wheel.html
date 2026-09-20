@@ -135,7 +135,7 @@
               .join("");
           document.getElementById("verdict").textContent =
               events.length === 0 ? "no events yet"
-              : verdicts.length ? `${verdicts.join("   ·   ")}   (${events.length} events)`
+              : verdicts.length ? `${verdicts.join("   *   ")}   (${events.length} events)`
               : `${events.length} events, none in a mode the host reads`;
       }
 

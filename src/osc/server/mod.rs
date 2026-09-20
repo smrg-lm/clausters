@@ -134,7 +134,7 @@ fn max_stream_buckets(channels: usize) -> usize {
 }
 
 /// Largest `/bus_tapStream` window in samples for a **datagram-bounded** client
-/// (UDP, and the 64 KiB IPC reply ring): a 32 KB blob (8192 × `f32`) leaves
+/// (UDP, and the 64 KiB IPC reply ring): a 32 KB blob (8192 * `f32`) leaves
 /// room for the OSC envelope. A stream client (TCP/WebSocket) is bounded by
 /// the configurable frame ceiling instead. Every window is also clamped
 /// to half the tap ring, the `tap_read_latest` tear-free bound.
@@ -329,7 +329,7 @@ struct Transport {
     /// has, the two fields below are 0 and only the commands that speak beats
     /// refuse.
     defined: bool,
-    /// Beat `b` maps to sample `origin_sample + b·rate/tempo`. Meaningless
+    /// Beat `b` maps to sample `origin_sample + b*rate/tempo`. Meaningless
     /// while `defined` is false.
     origin_sample: i64,
     tempo: f64,
@@ -375,7 +375,7 @@ struct BusStream {
 struct TapStream {
     client: ClientId,
     period: Duration,
-    /// Snapshot window in samples (≤ [`MAX_TAP_WINDOW`], ≤ half the tap ring).
+    /// Snapshot window in samples (<= [`MAX_TAP_WINDOW`], <= half the tap ring).
     frames: usize,
     /// The audio buses this subscription watches. It holds a watch on each for
     /// its lifetime, so a streaming client never issues `/bus_tap` itself.

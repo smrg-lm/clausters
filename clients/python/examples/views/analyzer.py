@@ -5,7 +5,7 @@ Three of the GUI's analysis views, all reading **audio buses** straight from the
 shared-memory segment (the same path the oscilloscope uses, ``scope.py``):
 
 - a ``phasescope`` (goniometer) reads a **stereo pair** of buses and draws them
-  as the 45°-rotated Lissajous figure -- mono reads as a vertical line,
+  as the 45-degree Lissajous figure -- mono reads as a vertical line,
   anti-phase as horizontal, a wide field fills the lozenge -- with a running
   correlation read-out (Pearson's r) beneath;
 - a ``spectrum`` (spectroscope) reads one bus and draws one forward FFT per

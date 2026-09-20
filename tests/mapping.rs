@@ -97,7 +97,7 @@ fn assert_freq(engine: &mut Engine, expected: f32) {
     let freq = estimated_freq(&left);
     assert!(
         (freq - expected).abs() < 7.0,
-        "estimated freq = {freq}, expected ≈ {expected}"
+        "estimated freq = {freq}, expected ~ {expected}"
     );
 }
 

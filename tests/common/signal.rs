@@ -3,7 +3,7 @@
 //! These are the asserts of the U track: a UGen is judged by *measuring* what
 //! it produces and comparing against the analytic value the DSP claims, not by
 //! diffing it against a stored buffer. A golden file pins a regression; it
-//! cannot tell you the filter's −3 dB point is where it should be.
+//! cannot tell you the filter's -3 dB point is where it should be.
 //!
 //! Every function here documents the quantity it estimates and the conditions
 //! under which the estimate is exact rather than approximate, because a number
@@ -16,7 +16,7 @@
 //! rectangular window has no spectral leakage at all, so a component's energy
 //! sits in one bin and nothing bleeds into its neighbours. The alternative,
 //! windowing a non-coherent signal, buries anything below the window's sidelobe
-//! floor: the best window `clausters_core` offers is Blackman at about −58 dB,
+//! floor: the best window `clausters_core` offers is Blackman at about -58 dB,
 //! which is above the alias floor of a decent oscillator and would measure the
 //! window instead of the UGen. So the tests pick their frequencies with
 //! [`coherent_freq`] and use no window.
@@ -154,8 +154,8 @@ pub fn response_at(input: &[f32], output: &[f32], hz: f32, sr: f32) -> (f32, f32
 ///
 /// Both conditions matter for [`alias_snr_db`]. Whole periods make the analysis
 /// leak-free. An *odd* bin index `k` is coprime to the power-of-two `n`, which
-/// is what keeps aliased partials off the harmonic bins: a partial at `m·k`
-/// folds to `|m·k − j·n|` bins, a multiple of `gcd(k, n)` -- with `gcd = k` the
+/// is what keeps aliased partials off the harmonic bins: a partial at `m*k`
+/// folds to `|m*k - j*n|` bins, a multiple of `gcd(k, n)` -- with `gcd = k` the
 /// aliases would land exactly on top of the harmonics and be invisible.
 pub fn coherent_freq(target: f32, sr: f32, n: usize) -> f32 {
     let exact = target as f64 * n as f64 / sr as f64;
@@ -225,7 +225,7 @@ pub fn alias_snr_db(x: &[f32], f0: f32, sr: f32) -> f32 {
 /// Averaging is what makes a *noise* floor assertable -- a single frame's bins
 /// are themselves random with 100 % relative standard deviation, so a slope fit
 /// over one frame is meaningless. Returns `n / 2` bins, bin `b` centred at
-/// `b · sr / n`.
+/// `b * sr / n`.
 pub fn power_spectrum(x: &[f32], n: usize, win: Window) -> Vec<f32> {
     assert!(fft::supports(n), "unsupported analysis size {n}");
     assert!(x.len() >= n, "need at least {n} samples, got {}", x.len());
@@ -255,7 +255,7 @@ pub fn power_spectrum(x: &[f32], n: usize, win: Window) -> Vec<f32> {
 /// Banding before fitting is deliberate: a per-bin fit weights the spectrum by
 /// bin density, which is uniform in frequency and therefore heavily biased
 /// toward the top octave. Octave bands weight each octave once, which is what
-/// "dB per octave" means. White noise measures 0, pink noise −3.01.
+/// "dB per octave" means. White noise measures 0, pink noise -3.01.
 pub fn spectral_slope_db_per_octave(x: &[f32], sr: f32, lo_hz: f32, hi_hz: f32) -> f32 {
     const N: usize = 4096;
     let spec = power_spectrum(x, N, Window::Hann);

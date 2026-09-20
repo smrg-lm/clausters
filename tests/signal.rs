@@ -126,9 +126,9 @@ fn spectral_slope_reads_zero_for_white_and_minus_three_for_pink() {
     assert!((s + 3.01).abs() < 0.5, "pink noise slope {s} dB/oct");
 }
 
-/// A textbook −3 dB/octave shaper: three one-pole/one-zero sections spaced
+/// A textbook -3 dB/octave shaper: three one-pole/one-zero sections spaced
 /// a decade apart (Robert Bristow-Johnson's coefficients), accurate to
-/// about ±0.3 dB from 10 Hz to 20 kHz at 44.1-48 kHz.
+/// about +/-0.3 dB from 10 Hz to 20 kHz at 44.1-48 kHz.
 fn pinken(x: &[f32], _sr: f32) -> Vec<f32> {
     let (mut b0, mut b1, mut b2) = (0.0f64, 0.0f64, 0.0f64);
     x.iter()

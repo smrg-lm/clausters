@@ -264,7 +264,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stable = 0usize;
     let stop_reason;
     loop {
-        // One ramp step: /synth_new × step, frequencies spread deterministically.
+        // One ramp step: /synth_new * step, frequencies spread deterministically.
         // Throttled in small batches: hundreds of adds landing on one block
         // boundary make *that* block run late (250 tree inserts inside one
         // 1.33 ms budget) -- an artifact of the ramp, not steady-state load.

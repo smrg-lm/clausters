@@ -12,8 +12,8 @@ import type { Channel } from "./graph.ts";
 // the builder's business, and never an argument here.
 
 /**
- * Places a mono `signal` between two channels at `pos` (−1 left, 0 centre,
- * 1 right), at **equal power**: the two gains hold `l² + r² = 1`, so a
+ * Places a mono `signal` between two channels at `pos` (-1 left, 0 centre,
+ * 1 right), at **equal power**: the two gains hold `l^2 + r^2 = 1`, so a
  * source keeps one loudness as it crosses the field. The price is that the
  * centre is 0.707 in each channel -- use `linPan2` when it is the summed
  * amplitude that has to stay put.
@@ -51,7 +51,7 @@ export const balance2 = (
 
 /**
  * Rotates the plane the two signals span by `pos` **half turns** (0.25 is
- * 45°, 1 is a half turn). On a stereo pair it turns the image without
+ * 45 degrees, 1 is a half turn). On a stereo pair it turns the image without
  * changing its size or its level -- the rotation is equal power at every
  * angle.
  *
@@ -77,7 +77,7 @@ export const rotate2 = (
  * const [left2, right2] = midSide(lpf(m, 400), s.mul(1.5));
  * ```
  *
- * A mono pair has no side at all (exactly zero). The normalization is `1/√2`
+ * A mono pair has no side at all (exactly zero). The normalization is `1/sqrt(2)`
  * rather than the `1/2` a DAW meter shows, which is what makes the round trip
  * exact; it puts the mid 3 dB above the convention, a plain gain. For a width
  * knob and nothing in between, `stereoWidth` is one row instead of two.
@@ -106,7 +106,7 @@ export const stereoWidth = (
 
 /**
  * Places a mono `signal` on a **ring** of `numchans` channels. `pos` spans
- * the whole ring over `[-1, 1]`, so −1 and 1 are the same place.
+ * the whole ring over `[-1, 1]`, so -1 and 1 are the same place.
  *
  * Each channel gets a raised sine lobe `width` channels wide, centred on the
  * source: at the default width of two, neighbouring channels hold equal power
@@ -142,7 +142,7 @@ export function panAz(
     );
 }
 
-/** Equal-power crossfade between two signals: −1 is all `a`, 1 is all `b`. */
+/** Equal-power crossfade between two signals: -1 is all `a`, 1 is all `b`. */
 export const xfade2 = (
     a: Channel,
     b: Channel,

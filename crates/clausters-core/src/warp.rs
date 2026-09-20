@@ -273,7 +273,7 @@ pub fn exp_unit(x: f32, lo: f32, hi: f32) -> f32 {
     Read::exp(lo, hi).at(x)
 }
 
-/// `t` written back into `lo..hi` exponentially -- `lo·(hi/lo)^t`. The inverse
+/// `t` written back into `lo..hi` exponentially -- `lo*(hi/lo)^t`. The inverse
 /// of [`exp_unit`], and the same curve an exponential envelope segment and an
 /// `XLine` run.
 #[inline]
@@ -283,7 +283,7 @@ pub fn exp_value(t: f32, lo: f32, hi: f32) -> f32 {
 
 /// Where `x` sits in `lo..hi` on an axis **bent** by `curve`: 0 is linear,
 /// negative builds fast then slow -- most of the range spent on the first half
-/// of the input, sclang's −4 default -- and positive the reverse, which is the
+/// of the input, sclang's -4 default -- and positive the reverse, which is the
 /// fine-at-the-bottom feel a frequency or an amplitude control wants. Unlike
 /// [`exp_unit`] this one spans zero and changes sign freely, which is what
 /// makes it the general control curve.
@@ -403,18 +403,18 @@ pub fn curvelin(
     Map::new(MapOp::Curvelin, in_lo, in_hi, out_lo, out_hi, curve, clip).at(x)
 }
 
-/// A **bipolar** value (−1..1) into `lo..hi`, linearly -- sclang's `range`.
+/// A **bipolar** value (-1..1) into `lo..hi`, linearly -- sclang's `range`.
 ///
 /// Nothing is pruned, because nothing declares the input bipolar: a UGen knows
 /// its own `signalRange` and a bare number does not, so a value that overshoots
-/// −1..1 overshoots the output range by the same proportion rather than being
+/// -1..1 overshoots the output range by the same proportion rather than being
 /// silently trimmed to an assumption.
 #[inline]
 pub fn range(x: f32, lo: f32, hi: f32) -> f32 {
     Map::new(MapOp::Range, 0.0, 0.0, lo, hi, 0.0, Clip::None).at(x)
 }
 
-/// A **bipolar** value (−1..1) into `lo..hi`, exponentially -- sclang's
+/// A **bipolar** value (-1..1) into `lo..hi`, exponentially -- sclang's
 /// `exprange`. Unpruned for the reason [`range`] gives.
 #[inline]
 pub fn exprange(x: f32, lo: f32, hi: f32) -> f32 {
@@ -434,7 +434,7 @@ pub enum MapOp {
     Expexp = 3,
     Lincurve = 4,
     Curvelin = 5,
-    /// `range`: the input bounds are ignored, the map is −1..1 unpruned.
+    /// `range`: the input bounds are ignored, the map is -1..1 unpruned.
     Range = 6,
     /// `exprange`: as [`MapOp::Range`], exponentially.
     Exprange = 7,
@@ -512,7 +512,7 @@ impl Map {
     /// rest ignore them, so one signature serves the table.
     ///
     /// `range`/`exprange` ignore the input range **and** the clip: they are the
-    /// −1..1 map, unpruned, for the reason [`range`] gives.
+    /// -1..1 map, unpruned, for the reason [`range`] gives.
     #[allow(clippy::too_many_arguments)]
     #[inline]
     pub fn new(

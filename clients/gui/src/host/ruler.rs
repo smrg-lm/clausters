@@ -715,7 +715,7 @@ pub(crate) fn amp_ticks(
                 k += 1;
             }
             // The full-scale endpoints when the decimal step misses them (a
-            // 16-bit axis stepping 10000 still labels ±32768) and their label
+            // 16-bit axis stepping 10000 still labels +/-32768) and their label
             // clears the nearest stepped one by at least a line of text.
             let remainder = full - (full / step).floor() * step;
             if remainder > step * 1e-9 && remainder * px_per_value >= font::height(g.scale) as f64 {

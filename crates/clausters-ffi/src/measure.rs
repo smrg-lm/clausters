@@ -36,7 +36,7 @@ pub unsafe extern "C" fn clausters_core_stats(
 /// a negative value on a null pointer or an out-of-range channel.
 ///
 /// The reconstructed peak, not the largest sample: the ITU-R BS.1770-4 Annex 2
-/// interpolation filter at 4×, which is what makes the reading dBTP. It is
+/// interpolation filter at 4*, which is what makes the reading dBTP. It is
 /// always at or above [`clausters_core_stats`]'s peak, by up to about 3 dB.
 ///
 /// # Safety

@@ -55,7 +55,7 @@ from ..base.timebase import SampleClockTimebase
 
 
 class SampleClockModel:
-    """``sample(t) = a + b·t``, least-squares over a sliding anchor window.
+    """``sample(t) = a + b*t``, least-squares over a sliding anchor window.
 
     The fit itself lives in the native core (`clausters._native.ClockSyncModel`
     over ``clausters_core::clocksync``), so every client predicts the same

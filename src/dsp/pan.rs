@@ -35,7 +35,7 @@
 //! coefficients, not in how the two products are added.
 //!
 //! Combining in `f32` instead was measured rather than argued about. It is
-//! **2.30× faster on the mix loop alone** -- the `f64` version vectorizes two
+//! **2.30* faster on the mix loop alone** -- the `f64` version vectorizes two
 //! lanes wide (`mulpd`), the `f32` one four -- and it costs at most `5.96e-8`
 //! of absolute disagreement over a sweep of 2001 angles, which is half an ulp
 //! at full scale, or -144 dBFS. (The *relative* error over that sweep reads a
@@ -44,11 +44,11 @@
 //! artifact of dividing by nothing, not an audio number.)
 //!
 //! It stays `f64` anyway, because the engine cannot see the difference: on
-//! `Sine -> Pan2 -> 2× Out` the whole-graph throughput is unchanged. A row's
+//! `Sine -> Pan2 -> 2* Out` the whole-graph throughput is unchanged. A row's
 //! arithmetic is a small part of a block that spends most of its time in its
 //! sources, which is the same reason the fused rows kept their naive loops
 //! (`docs/decisions.md`). Anyone revisiting this should get an engine-level
-//! number first -- the isolated 2.30× is real and has never been worth anything.
+//! number first -- the isolated 2.30* is real and has never been worth anything.
 //!
 //! **Rotation and width are different operations, and only one of them is
 //! scsynth's.** `Rotate2` rotates the plane the two signals span: it moves the

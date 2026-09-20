@@ -149,7 +149,7 @@ impl OscServer {
     /// server's OSC/NTP time captured with the counter (timetag `t`). The
     /// `(osc_time, sample)` pair is the master-clock **anchor**: a client maps
     /// its logical OSC time `T` to this server's sample axis with
-    /// `S0 + (T − T0)·rate` and schedules with `/sched_at` ([`Self::handle_sched_at`])
+    /// `S0 + (T - T0)*rate` and schedules with `/sched_at` ([`Self::handle_sched_at`])
     /// directly in samples -- see `docs/sample-clock.md`. Clients that only want
     /// the older two-field form ignore the trailing timetag. The counter counts
     /// *processed* samples: it runs a device buffer ahead of the speakers and

@@ -268,7 +268,7 @@ pub enum UnaryOp {
     Octcps = 33,
     /// Frequency in Hz to decimal octave.
     Cpsoct = 34,
-    /// Soft distortion `x / (1 + |x|)` (range ±1).
+    /// Soft distortion `x / (1 + |x|)` (range +/-1).
     Distort = 35,
     /// Cubic softclip: linear for `|x| <= 0.5`, saturating beyond.
     Softclip = 36,
@@ -813,7 +813,7 @@ slice_dispatch! {
 
 /// Scale-degree -> MIDI note number: `degree` indexes `scale` (semitone offsets
 /// within one octave) in the pitch space `octave`/`root`, wrapping with octave
-/// carry -- degree −1 on a 7-note scale is the 7th one octave down (floored
+/// carry -- degree -1 on a 7-note scale is the 7th one octave down (floored
 /// division, sclang semantics). An empty `scale` yields middle C (60). The
 /// event-value math every client's `Event` shares.
 pub fn degree_to_midinote(degree: f64, octave: f64, root: f64, scale: &[f32]) -> f64 {

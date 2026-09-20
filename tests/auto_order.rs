@@ -144,7 +144,7 @@ fn rms(buf: &[f32]) -> f32 {
     (buf.iter().map(|x| x * x).sum::<f32>() / buf.len() as f32).sqrt()
 }
 
-/// Sine(330)·0.2 summed into bus 16.
+/// Sine(330)*0.2 summed into bus 16.
 fn src_def() -> serde_json::Value {
     json!({
         "name": "src",
@@ -207,11 +207,11 @@ fn auto_group_reorders_a_reversed_chain() {
     server.wait_for_order(100, &[1003, 1002, 1001]);
 
     let out = server.render(50);
-    // 0.2 · 0.5 sine: the chain is alive end to end in the same block.
+    // 0.2 * 0.5 sine: the chain is alive end to end in the same block.
     let expected = 0.1 * std::f32::consts::FRAC_1_SQRT_2;
     assert!(
         (rms(&out[BLOCK_SIZE..]) - expected).abs() < 0.005,
-        "rms = {}, expected ≈ {expected}",
+        "rms = {}, expected ~ {expected}",
         rms(&out[BLOCK_SIZE..])
     );
     server.quit();

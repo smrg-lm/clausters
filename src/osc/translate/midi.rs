@@ -372,7 +372,7 @@ impl CmdTranslator {
 }
 
 /// A MIDI channel argument: 0-based, the classic 16 plus the extended UMP
-/// group×channel space (0..=255).
+/// group*channel space (0..=255).
 fn midi_channel(channel: i32) -> Result<u8, String> {
     u8::try_from(channel).map_err(|_| "MIDI channel out of range (0-255)".to_string())
 }

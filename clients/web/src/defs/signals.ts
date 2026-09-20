@@ -202,7 +202,7 @@ export const rem = binary("rem");
 // compiler bakes in -- no server round-trip is involved. They become constant
 // signals as soon as they meet a Signal in an expression.
 export const PI = 3.141592653589793;
-/** 2·PI; Faust has no `ma.TAU`, this is just the literal. */
+/** 2*PI; Faust has no `ma.TAU`, this is just the literal. */
 export const TAU = 6.283185307179586;
 
 // ---- controls (labels become control names) ----

@@ -2715,7 +2715,7 @@ def mel_to_hz(mel: float) -> float:
 
 
 def hz_to_bark(hz: float) -> float:
-    """Hertz -> bark (Traunmüller closed form; -0.53 at 0 Hz, the axis
+    """Hertz -> bark (Traunmuller closed form; -0.53 at 0 Hz, the axis
     floor a display normalizes against)."""
     return lib().clausters_core_hz_to_bark(float(hz))
 
@@ -3691,7 +3691,7 @@ def true_peak(samples, channels: int = 1, channel: int = 0) -> float:
 
     A signal whose samples all read below full scale can still reconstruct above
     it, by up to about 3 dB, and every converter sees that peak. The filter is
-    the one ITU-R BS.1770-4 Annex 2 specifies, at 4×, which is what makes a
+    the one ITU-R BS.1770-4 Annex 2 specifies, at 4*, which is what makes a
     reading dBTP -- so this is the number a delivery specification means when it
     asks for one. It is never below the peak `clausters.ipc.channel_stats`
     reports, and the two together are the whole of "did this clip": one says
@@ -3730,7 +3730,7 @@ def loudness(samples, channels: int, rate: float,
 def lissajous(left, right) -> list[tuple[float, float]]:
     """The **Lissajous / goniometer** coordinates of stereo pairs ``(left,
     right)``: each pair maps to ``(x, y)`` where ``x`` is the side component
-    ``(L - R)/√2`` and ``y`` the mid ``(L + R)/√2`` -- the 45°-rotated stereo
+    ``(L - R)/sqrt(2)`` and ``y`` the mid ``(L + R)/sqrt(2)`` -- the 45-degree stereo
     plane a goniometer draws (mono reads vertical, anti-phase horizontal). The
     geometry lives once in the shared core; useful for plotting or driving a
     stereo image in electroacoustic work, not only for the GUI phasescope.

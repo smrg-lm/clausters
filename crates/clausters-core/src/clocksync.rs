@@ -1,4 +1,4 @@
-//! Sample-clock tracking model: `sample(t) = a + b·t` by least squares.
+//! Sample-clock tracking model: `sample(t) = a + b*t` by least squares.
 //!
 //! The value/time half of locking a client clock to a server's sample counter
 //! over a network transport (the Python client's `UdpSampleClock`, the future
@@ -8,7 +8,7 @@
 //! in the host language; this module owns only the model, so every client
 //! predicts the same sample from the same anchors.
 
-/// Least-squares line `sample(t) = a + b·t` over a sliding anchor window.
+/// Least-squares line `sample(t) = a + b*t` over a sliding anchor window.
 ///
 /// With fewer than two anchors the slope falls back to the nominal rate
 /// (anchored at the latest pair); from two on it is the fitted slope.

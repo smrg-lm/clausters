@@ -85,7 +85,7 @@ fn estimated_freq(buf: &[f32]) -> f32 {
     signal::zero_crossing_freq(buf, SR)
 }
 
-/// The F0 smoke graph, now as JSON: `sin(2π·phasor(freq)) * 0.2` with
+/// The F0 smoke graph, now as JSON: `sin(2pi*phasor(freq)) * 0.2` with
 /// `phasor = (+(freq/SR) : wrap) ~ _` and `wrap = _ <: _ - floor(_)`.
 fn sine_graph() -> Value {
     let freq = json!({
@@ -125,7 +125,7 @@ fn json_sine_graph_compiles_and_plays_at_440() {
     let expected_rms = 0.2 * std::f32::consts::FRAC_1_SQRT_2;
     assert!(
         (rms(&out) - expected_rms).abs() < 0.005,
-        "rms = {}, expected ≈ {expected_rms}",
+        "rms = {}, expected ~ {expected_rms}",
         rms(&out)
     );
 }
@@ -147,7 +147,7 @@ fn faust_op_embeds_stdlib_source_as_a_composable_box() {
     let expected_rms = 0.5 * std::f32::consts::FRAC_1_SQRT_2;
     assert!(
         (rms(&out) - expected_rms).abs() < 0.01,
-        "rms = {}, expected ≈ {expected_rms}",
+        "rms = {}, expected ~ {expected_rms}",
         rms(&out)
     );
 }
@@ -207,11 +207,11 @@ fn computed_wavetable_oscillator_plays_at_440() {
     let out = render_mono(&def, 1.0);
     let freq = estimated_freq(&out);
     assert!((freq - 440.0).abs() < 5.0, "estimated freq = {freq}");
-    // A full-period sine table has RMS 1/√2 regardless of the stair-stepping.
+    // A full-period sine table has RMS 1/sqrt(2) regardless of the stair-stepping.
     let expected_rms = std::f32::consts::FRAC_1_SQRT_2;
     assert!(
         (rms(&out) - expected_rms).abs() < 0.02,
-        "rms = {}, expected ≈ {expected_rms}",
+        "rms = {}, expected ~ {expected_rms}",
         rms(&out)
     );
 }
@@ -393,7 +393,7 @@ fn kitchen_sink_graph_exercises_every_op() {
 
 /// Regression: `boxCos()` is broken upstream (returns the `abs` primitive), so
 /// the `cos` op is built from a source fragment instead of `CboxCosAux`. A
-/// constant `cos(0.5)` must be cos(0.5) ≈ 0.8776, not abs(0.5) = 0.5.
+/// constant `cos(0.5)` must be cos(0.5) ~ 0.8776, not abs(0.5) = 0.5.
 #[test]
 fn box_cos_computes_cosine_not_abs() {
     let def = compile_json("bcos", &json!({"op": "cos", "in": [0.5]})).expect("compiles");
@@ -401,7 +401,7 @@ fn box_cos_computes_cosine_not_abs() {
     let v = out[0];
     assert!(
         (v - 0.5_f32.cos()).abs() < 1e-4,
-        "cos(0.5) = {v}, expected ≈ 0.8776"
+        "cos(0.5) = {v}, expected ~ 0.8776"
     );
     assert!(
         (v - 0.5).abs() > 0.1,

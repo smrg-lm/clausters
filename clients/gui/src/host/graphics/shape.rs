@@ -12,7 +12,7 @@
 //! near.
 //!
 //! **Squared, never rooted.** A distance is compared here and never reported,
-//! and `d <= r` is `d² <= r²` for non-negative numbers -- so the square root
+//! and `d <= r` is `d^2 <= r^2` for non-negative numbers -- so the square root
 //! that would make the number a length is work with no reader. The same holds
 //! for the ellipse, whose test is the normalized sum of two squares against 1.
 //! What a caller may still want is *which* of several round targets is nearest,
@@ -44,7 +44,7 @@ pub fn in_disc(px: f64, py: f64, cx: f64, cy: f64, r: f64) -> bool {
 /// a round glyph fills of the box measured around it.
 ///
 /// The normalized form of the disc: each axis is divided by its own radius
-/// before it is squared, so the test is `(dx/rx)² + (dy/ry)² <= 1` and stays
+/// before it is squared, so the test is `(dx/rx)^2 + (dy/ry)^2 <= 1` and stays
 /// root-free. A zero-width or zero-height rect holds nothing rather than
 /// dividing by zero.
 pub fn in_ellipse(px: f64, py: f64, rect: Rect) -> bool {

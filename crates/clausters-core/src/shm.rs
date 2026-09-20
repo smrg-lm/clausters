@@ -136,7 +136,7 @@ struct Header {
 #[repr(C)]
 struct Ring {
     /// Write cursor, owned by the producer. Monotonic, wraps at `u32::MAX`
-    /// (the capacity divides 2³², so the modulo arithmetic stays consistent).
+    /// (the capacity divides 2^32, so the modulo arithmetic stays consistent).
     head: AtomicU32,
     /// Read cursor, owned by the consumer.
     tail: AtomicU32,
@@ -655,9 +655,9 @@ impl View {
 
     /// Appends one block of samples to tap `i`'s ring. **Audio-thread safe**:
     /// one `memcpy` plus one Release store, no allocation, no lock. Single
-    /// writer only. The block never wraps: the ring capacity is a power of two
-    /// ≥ the block size and the cursor only advances by whole blocks, so every
-    /// write lands block-aligned inside the ring.
+    /// writer only. The block never wraps: the ring capacity is a power of
+    /// two >= the block size and the cursor only advances by whole blocks, so
+    /// every write lands block-aligned inside the ring.
     #[inline]
     pub fn tap_write(&self, i: usize, samples: &[f32]) {
         if i >= self.taps() {

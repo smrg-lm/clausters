@@ -301,7 +301,7 @@ export function envGen(
 }
 
 /**
- * 1 once `signal` has stayed within ±`amp` for `time` seconds, with the
+ * 1 once `signal` has stayed within +/-`amp` for `time` seconds, with the
  * `doneAction` taken then. The counter restarts on the first sample that
  * exceeds `amp`, so what it measures is *uninterrupted* silence.
  */

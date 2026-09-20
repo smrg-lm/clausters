@@ -2368,7 +2368,7 @@ export function scope(
 /**
  * A `phasescope` (goniometer) of the stereo pair `bus` (left) and `bus + 1`
  * (right) -- the adjacent-channel layout the whole family uses -- drawn as the
- * 45°-rotated Lissajous figure: vertical is the mid, horizontal the side, so
+ * 45-degree Lissajous figure: vertical is the mid, horizontal the side, so
  * mono reads as a vertical line and anti-phase as horizontal. An age-faded
  * trail spans the last `windowMs` and a correlation read-out sits under the
  * field. Audio rate only.

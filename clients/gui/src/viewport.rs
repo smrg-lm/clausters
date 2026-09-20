@@ -92,7 +92,7 @@ pub const MIN_SPAN: f64 = 1e-3;
 /// would be a picture of nothing. Amplitude is the exception, and the true-peak
 /// work is what made it one: the engine is floating point, a signal *can* sit
 /// above full scale, and a view clamped to the domain draws the part that
-/// matters flat against its own edge. Four is the ±1 domain seen at ±4, twelve
+/// matters flat against its own edge. Four is the +/-1 domain seen at +/-4, twelve
 /// decibels of air: enough to read an over, little enough that the waveform is
 /// still a waveform.
 pub const AMP_HEADROOM: f64 = 4.0;

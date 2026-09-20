@@ -166,12 +166,12 @@ export interface ScopeOptions {
     trigger?: number;
     /** Freeze the trace (signal/phase; also live through `set`). */
     hold?: boolean;
-    /** Vertical range of the signal view (default −1 / 1). */
+    /** Vertical range of the signal view (default -1 / 1). */
     min?: number;
     max?: number;
     /** Spectrum analysis size (a power of two, 256..4096, default 2048). */
     fftSize?: number;
-    /** Spectrum dB window (default −100 / 0). */
+    /** Spectrum dB window (default -100 / 0). */
     dbFloor?: number;
     dbCeil?: number;
     /** Spectrum frequency axis: `"log"` (default), `"linear"`, `"mel"`, `"bark"`. */

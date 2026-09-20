@@ -246,7 +246,7 @@ fn u_cmd_swaps_the_fft_window() {
 /// steady state -- the analysis grid shifts, the content timing does not.
 #[test]
 fn hop_stagger_shifts_only_the_first_frame() {
-    // FFT(512, 50% hop) at BLOCK_SIZE 64: 4 blocks per hop. Node id 4 ≡ 0
+    // FFT(512, 50% hop) at BLOCK_SIZE 64: 4 blocks per hop. Node id 4 == 0
     // (mod 4) keeps offset 0; node id 6 staggers by 2 blocks = 128 samples.
     let build = || {
         spec_synth(json!({
@@ -502,7 +502,7 @@ fn pv_magsmear_zero_is_transparent() {
 }
 
 /// `PV_BinShift`: identity parameters are exactly transparent, and a +10-bin
-/// shift moves a 440 Hz tone to ~440 + 10·(48000/512) ≈ 1377 Hz (measured by
+/// shift moves a 440 Hz tone to ~440 + 10*(48000/512) ~ 1377 Hz (measured by
 /// zero crossings in the steady state).
 #[test]
 fn pv_binshift_moves_the_tone() {

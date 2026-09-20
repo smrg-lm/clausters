@@ -16,7 +16,7 @@ pub extern "C" fn clausters_core_mel_to_hz(mel: f64) -> f64 {
     scale::mel_to_hz(mel)
 }
 
-/// Hertz -> bark (Traunmüller closed form; −0.53 at 0 Hz, the axis floor).
+/// Hertz -> bark (Traunmuller closed form; -0.53 at 0 Hz, the axis floor).
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_core_hz_to_bark(hz: f64) -> f64 {
     scale::hz_to_bark(hz)

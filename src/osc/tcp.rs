@@ -30,7 +30,7 @@ use super::ClientSlots;
 /// them, its reader blocks here and TCP flow control pushes back to the
 /// sender -- bounding server memory instead of growing an unbounded queue.
 /// Sized in frames (not bytes): plenty for dense small-message control, while
-/// the worst case stays `INBOUND_QUEUE × max_frame`.
+/// the worst case stays `INBOUND_QUEUE * max_frame`.
 const INBOUND_QUEUE: usize = 256;
 
 /// How long a reply write may block before the connection is dropped. Replies

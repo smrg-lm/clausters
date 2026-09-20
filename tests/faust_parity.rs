@@ -114,7 +114,7 @@ fn sine_spec(name: &str, bus: f32) -> String {
 }
 
 /// The same graph through the JSON->Box schema, phase-aligned with `Sine`:
-/// our oscillator emits `sin(2π·n·f/SR)` starting at 0, while the raw Faust
+/// our oscillator emits `sin(2pi*n*f/SR)` starting at 0, while the raw Faust
 /// phasor `(+(f/SR) : wrap) ~ _` starts at `f/SR` -- the 1-sample `delay`
 /// (init 0) realigns it.
 fn sine_box_json() -> String {
@@ -142,7 +142,7 @@ fn sine_box_json() -> String {
     .to_string()
 }
 
-/// The same `sin(2π·phasor)·0.2`, but via the **Signal API**: the phasor is
+/// The same `sin(2pi*phasor)*0.2`, but via the **Signal API**: the phasor is
 /// `recursion(sub(add(self, freq/SR), floor(add(self, freq/SR))))` -- explicit
 /// `self`/`recursion` feedback instead of the box `~`.
 fn sine_signal_json() -> String {
@@ -229,7 +229,7 @@ fn sine_graphs_agree_within_float_tolerance() {
     assert!(rms(&right) > 0.1, "Faust sine must actually play");
 
     // f64 vs f32 phase accumulation drifts ~6e-4 over this span; a one-sample
-    // phase offset would peak at 0.2·2π·440/48000 ≈ 0.0115, far above TOL.
+    // phase offset would peak at 0.2*2pi*440/48000 ~ 0.0115, far above TOL.
     const TOL: f32 = 4e-3;
     let diff = max_abs_diff(&left, &right);
     assert!(diff < TOL, "max sample difference {diff} exceeds {TOL}");
@@ -245,7 +245,7 @@ fn sine_graphs_agree_within_float_tolerance() {
 
 #[test]
 fn gain_stages_are_bit_exact_on_the_same_input() {
-    // One UGen sine feeds private bus 4; a UGen `In·0.5` chain and a Faust
+    // One UGen sine feeds private bus 4; a UGen `In*0.5` chain and a Faust
     // `_ * 0.5` chain read it in the same block and write channels 0 and 1.
     // Same f32 multiply on the same samples: the outputs must be identical
     // down to the bit.
@@ -325,12 +325,12 @@ fn ugen_and_faust_synths_share_a_group() {
         .ok()
         .unwrap();
 
-    // Same frequency, ≤ 1 sample of phase offset: amplitudes add.
+    // Same frequency, <= 1 sample of phase offset: amplitudes add.
     let (left, _) = render_stereo(&mut engine, 750);
     let expected_rms = 0.4 * std::f32::consts::FRAC_1_SQRT_2;
     assert!(
         (rms(&left) - expected_rms).abs() < 0.01,
-        "rms = {}, expected ≈ {expected_rms} (the two synths must mix)",
+        "rms = {}, expected ~ {expected_rms} (the two synths must mix)",
         rms(&left)
     );
 

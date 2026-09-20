@@ -45,7 +45,7 @@ export class GraphBusRef {
 
 /**
  * One inner target of a surface port: a member's control with optional
- * linear scaling (`mul`·v + `add`).
+ * linear scaling (`mul`*v + `add`).
  */
 export class PortTarget {
     readonly member: number;

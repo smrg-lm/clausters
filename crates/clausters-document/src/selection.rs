@@ -23,7 +23,7 @@
 //!
 //! - a **value range** on a container whose second axis measures something (a
 //!   waveform's amplitude, a curve's value),
-//! - a **bin range**, which is what makes the span a spectral region of frames ×
+//! - a **bin range**, which is what makes the span a spectral region of frames *
 //!   bins,
 //! - a **mask**, for a region no rectangle describes -- the lasso.
 //!
@@ -217,7 +217,7 @@ pub struct Selection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<ValueRange>,
     /// The second axis, where it is spectral. With this present the selection
-    /// is a region of frames × bins.
+    /// is a region of frames * bins.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bins: Option<BinRange>,
     /// A free-hand region inside the span, where a rectangle is not the shape.

@@ -17,7 +17,7 @@
 //! |---|---|---|
 //! | `int`, `real` | `value` | constant |
 //! | `wire`, `cut` | -- | `_`, `!` |
-//! | `seq`, `par`, `split`, `merge` | `in`: array of ≥ 2 boxes, folded left | `:` `,` `<:` `:>` |
+//! | `seq`, `par`, `split`, `merge` | `in`: array of >= 2 boxes, folded left | `:` `,` `<:` `:>` |
 //! | `rec` | `in`: exactly 2 boxes | `~` |
 //! | `add` `sub` `mul` `div` `fmod` `pow` `min` `max` `atan2` `gt` `lt` `ge` `le` `eq` `ne` `and` `or` `xor` | `in`: exactly 2 boxes | binary operators |
 //! | `sin` `cos` `tan` `asin` `acos` `atan` `exp` `exp10` `log` `log10` `sqrt` `abs` `floor` `ceil` `rint` `round` `intcast` `floatcast` | `in`: exactly 1 box | unary functions |
@@ -33,7 +33,7 @@
 //! | `rwtable` | `in`: size, init, widx, wsig, ridx -- or 4 boxes starting with a `waveform` | `rwtable` |
 //! | `faust` | `src` | escape hatch: a complete Faust program (`process = ...`) compiled with `CDSPToBoxes`, giving access to the stdlib (`os.osc`, `fi.lowpass`, ...) as a composable box |
 //!
-//! Example -- `sin(2π·phasor(freq)) * 0.2` with `freq` as a named control:
+//! Example -- `sin(2pi*phasor(freq)) * 0.2` with `freq` as a named control:
 //!
 //! ```json
 //! {"op": "mul", "in": [

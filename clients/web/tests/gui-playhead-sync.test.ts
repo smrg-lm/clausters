@@ -213,7 +213,7 @@ test("the anchor is the clock less what has been played", async () => {
     const host = new FakeHost();
     const tp = makeTransport(host);
     assert.equal(await tp.anchor(fakeServer(), { at: 2.0 }), true);
-    // now = clock + latency·sr; the origin is that, less two beats.
+    // now = clock + latency*sr; the origin is that, less two beats.
     assert.equal(host.last("playheadAt"), CLOCK + 0.25 * SR - 2 * BEAT);
 });
 

@@ -28,11 +28,11 @@ export interface Resonance {
     q?: Channel;
 }
 
-/** Second-order Butterworth lowpass: −3 dB at `freq`, −12 dB/octave. */
+/** Second-order Butterworth lowpass: -3 dB at `freq`, -12 dB/octave. */
 export const lpf = (signal: Channel, freq: Channel = 440.0): Ugen =>
     new Ugen("LPF", [signal, freq]);
 
-/** Second-order Butterworth highpass: −3 dB at `freq`, −12 dB/octave. */
+/** Second-order Butterworth highpass: -3 dB at `freq`, -12 dB/octave. */
 export const hpf = (signal: Channel, freq: Channel = 440.0): Ugen =>
     new Ugen("HPF", [signal, freq]);
 
@@ -139,7 +139,7 @@ export const oneZero = (signal: Channel, coef: Channel = 0.5): Ugen =>
 export const leakDc = (signal: Channel, coef: Channel = 0.995): Ugen =>
     new Ugen("LeakDC", [signal, coef]);
 
-/** A leaky integrator: `y[n] = x[n] + coef·y[n-1]`. */
+/** A leaky integrator: `y[n] = x[n] + coef*y[n-1]`. */
 export const integrator = (signal: Channel, coef: Channel = 0.999): Ugen =>
     new Ugen("Integrator", [signal, coef]);
 

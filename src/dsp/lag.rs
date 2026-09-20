@@ -4,7 +4,7 @@
 //! bespoke control path (see `synthdef::compile`), so client-authored `Lag`
 //! and control smoothing share exactly this DSP.
 //!
-//! The coefficient is scsynth's: `b1 = exp(ln(0.001) / (time · sampleRate))`,
+//! The coefficient is scsynth's: `b1 = exp(ln(0.001) / (time * sampleRate))`,
 //! so `time` is the -60 dB convergence time in seconds; `time <= 0` passes the
 //! input straight through. The state is primed to the first input sample, so a
 //! synth does not glide up from zero when it starts.

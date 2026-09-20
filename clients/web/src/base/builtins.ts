@@ -261,10 +261,10 @@ export const curvelin = (
 ): Num => mapOp("curvelin", x, inLo, inHi, outLo, outHi, curve, clip);
 
 /**
- * A **bipolar** value (−1..1) onto `lo`..`hi`, linearly.
+ * A **bipolar** value (-1..1) onto `lo`..`hi`, linearly.
  *
  * Nothing is trimmed: a UGen knows its own signal range and a bare value does
- * not, so an input past −1..1 overshoots the output by the same proportion
+ * not, so an input past -1..1 overshoots the output by the same proportion
  * instead of being clipped to an assumption.
  */
 export const range = (x: Num, lo = 0, hi = 1): Num =>

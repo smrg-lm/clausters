@@ -1790,8 +1790,8 @@ def phasescope(bus: int = 0, *, window_ms: float | None = None, hold: bool | Non
                id: int | None = None, **props) -> View:
     """A ``phasescope`` (goniometer) of the stereo pair ``bus`` (left) and
     ``bus + 1`` (right) -- the adjacent-channel layout the whole family uses --
-    drawn as the 45°-rotated Lissajous figure: vertical is the mid
-    ``(L + R)/√2``, horizontal the side ``(L - R)/√2``, the audio-engineering
+    drawn as the 45-degree Lissajous figure: vertical is the mid
+    ``(L + R)/sqrt(2)``, horizontal the side ``(L - R)/sqrt(2)``, the audio-engineering
     convention where mono reads as a vertical line, anti-phase as horizontal
     and a wide field fills the lozenge. An age-faded persistence trail spans
     the last ``window_ms`` of pairs (default 30 ms) and a **correlation**
@@ -2911,8 +2911,8 @@ def correlation(left, right) -> float | None:
 
 def lissajous(left, right) -> list:
     """The **Lissajous / goniometer** coordinates of stereo pairs ``(left,
-    right)``: each maps to ``(x, y)`` with ``x`` the side ``(L - R)/√2`` and
-    ``y`` the mid ``(L + R)/√2`` -- the rotated stereo plane a goniometer draws.
+    right)``: each maps to ``(x, y)`` with ``x`` the side ``(L - R)/sqrt(2)`` and
+    ``y`` the mid ``(L + R)/sqrt(2)`` -- the rotated stereo plane a goniometer draws.
     The geometry lives once in the shared native core (the phasescope draws the
     same points); useful for plotting or driving a stereo image in
     electroacoustic work. Returns a list of ``(x, y)`` tuples."""

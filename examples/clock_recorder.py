@@ -77,7 +77,7 @@ NODE_SPAN = 1024  # node ids cycle here; each synth is freed long before reuse
 
 
 def define_impulse(c: ShmClient, amp: float):
-    """`Impulse.ar(0) · amp` out to both channels: a single 1.0·amp on the
+    """`Impulse.ar(0) * amp` out to both channels: a single 1.0*amp on the
     synth's first sample, silence after. Started with `/synth_new` at the target
     sample (the engine splits the block there), that one impulse marks the
     exact frame -- no envelope, no onset ramp."""

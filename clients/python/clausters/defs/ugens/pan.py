@@ -15,8 +15,8 @@ from .graph import ChannelList, Ugen, chans, mix
 
 
 def pan2(signal, pos=0.0, level=1.0) -> ChannelList:
-    """Places a mono ``signal`` between two channels at ``pos`` (−1 left, 0
-    centre, 1 right), at **equal power**: the two gains hold ``l² + r² = 1``, so
+    """Places a mono ``signal`` between two channels at ``pos`` (-1 left, 0
+    centre, 1 right), at **equal power**: the two gains hold ``l^2 + r^2 = 1``, so
     a source keeps one loudness as it crosses the field. The price is that the
     centre is 0.707 in each channel, not 1 -- use `lin_pan2` when it is the
     summed amplitude that has to stay put.
@@ -47,7 +47,7 @@ def balance2(left, right, pos=0.0, level=1.0) -> ChannelList:
 
 def rotate2(x, y, pos=0.0) -> ChannelList:
     """Rotates the plane the two signals span by ``pos`` **half turns** (0.25 is
-    45°, 1 is a half turn). On a stereo pair it turns the image without
+    45 degrees, 1 is a half turn). On a stereo pair it turns the image without
     changing its size or its level -- the rotation is equal power at every angle.
 
     At a quarter turn the rotation *is* the change of basis between left/right
@@ -67,7 +67,7 @@ def mid_side(a, b) -> ChannelList:
         left2, right2 = mid_side(lpf(m, 400), s * 1.5)
 
     A mono pair has no side at all (exactly zero). The normalization is
-    ``1/√2`` rather than the ``1/2`` a DAW meter shows, which is what makes the
+    ``1/sqrt(2)`` rather than the ``1/2`` a DAW meter shows, which is what makes the
     round trip exact; it puts the mid 3 dB above the convention, a plain gain.
     For a width knob and nothing in between, `stereo_width` is one row instead
     of two."""
@@ -91,7 +91,7 @@ def stereo_width(left, right, width=1.0) -> ChannelList:
 def pan_az(numchans, signal, pos=0.0, level=1.0, width=2.0,
            orientation=0.5) -> ChannelList:
     """Places a mono ``signal`` on a **ring** of ``numchans`` channels. ``pos``
-    spans the whole ring over ``[-1, 1]``, so −1 and 1 are the same place.
+    spans the whole ring over ``[-1, 1]``, so -1 and 1 are the same place.
 
     Each channel gets a raised sine lobe ``width`` channels wide, centred on the
     source: at the default width of two, neighbouring channels hold equal power
@@ -112,7 +112,7 @@ def pan_az(numchans, signal, pos=0.0, level=1.0, width=2.0,
 
 
 def xfade2(a, b, pan=0.0, level=1.0) -> Ugen:
-    """Equal-power crossfade between two signals: −1 is all ``a``, 1 is all
+    """Equal-power crossfade between two signals: -1 is all ``a``, 1 is all
     ``b``, and the two gains hold unit power in between -- which keeps
     *uncorrelated* signals at one loudness across the fade, and lifts
     correlated ones by 3 dB in the middle. Use `lin_xfade2` when the two

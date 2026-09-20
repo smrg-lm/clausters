@@ -37,7 +37,7 @@ use crate::dsp::{DoneAction, ProcessCtx, UGen, at};
 
 /// `ln(0.001)`: a decay time is the time to fall 60 dB, as everywhere else in
 /// the server (`lag.rs`, the comb's feedback gain). Kept in `f64` here because
-/// [`Decay`]'s pole sits at `exp(ln(0.001) / (t·sr))`, which for a long decay
+/// [`Decay`]'s pole sits at `exp(ln(0.001) / (t*sr))`, which for a long decay
 /// is close enough to 1 that an `f32` coefficient quantizes the decay time
 /// visibly -- the U-track precision policy, applied to the one place in this
 /// module that has a pole at all.
@@ -534,7 +534,7 @@ fn decay_coeff(time: f32, sr: f32) -> f64 {
 /// `Decay(signal, decaytime)` and `Decay2(signal, attacktime, decaytime)`: an
 /// impulse turned into an envelope.
 ///
-/// `Decay` is the leaky integrator `y[n] = x[n] + b·y[n-1]`, so a single
+/// `Decay` is the leaky integrator `y[n] = x[n] + b*y[n-1]`, so a single
 /// impulse becomes an exponential falling 60 dB in `decaytime`. Its jump is
 /// instantaneous, which clicks; `Decay2` subtracts a second, faster decay from
 /// the first, giving a rounded attack. The two are one struct because the
@@ -586,7 +586,7 @@ impl UGen for Decay {
 }
 
 /// `DetectSilence(signal, amp, time, done_action)`: 1 once the input has stayed
-/// within `±amp` for `time` seconds, and the `done_action` with it.
+/// within `+/-amp` for `time` seconds, and the `done_action` with it.
 ///
 /// The counter resets on the first sample that exceeds `amp`, so what it
 /// measures is *uninterrupted* silence. Like the envelope family it raises a

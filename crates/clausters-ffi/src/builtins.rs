@@ -412,8 +412,8 @@ pub unsafe extern "C" fn clausters_core_correlation(
 
 /// Maps `n` stereo pairs (`left`, `right`) to their **Lissajous / goniometer**
 /// coordinates, writing `2 * n` interleaved `f32`s `[x0, y0, x1, y1, ...]` into
-/// `out`, where `x` is the side component `(L − R)/√2` and `y` the mid
-/// `(L + R)/√2` -- the 45°-rotated stereo plane a goniometer draws. Returns 0, or
+/// `out`, where `x` is the side component `(L - R)/sqrt(2)` and `y` the mid
+/// `(L + R)/sqrt(2)` -- the 45-degree stereo plane a goniometer draws. Returns 0, or
 /// -1 (leaving `out` untouched) on a null pointer.
 ///
 /// # Safety
@@ -685,7 +685,7 @@ mod tests {
             unsafe { clausters_core_lissajous(l.as_ptr(), r.as_ptr(), l.len(), out.as_mut_ptr()) },
             0
         );
-        // Mono pair (1,1): side 0, mid √2. Anti pair (0.7,-0.7): side √2·0.7, mid 0.
+        // Mono pair (1,1): side 0, mid sqrt(2). Anti pair (0.7,-0.7): side sqrt(2)*0.7, mid 0.
         assert!(out[0].abs() < 1e-6 && (out[1] - std::f32::consts::SQRT_2).abs() < 1e-6);
         assert!((out[2] - std::f32::consts::SQRT_2 * 0.7).abs() < 1e-6 && out[3].abs() < 1e-6);
     }

@@ -133,7 +133,7 @@ fn pink_noise_is_quiet_and_centred_like_the_one_a_def_was_written_against() {
 
 #[test]
 fn brown_noise_reflects_instead_of_resting_against_a_rail() {
-    // Clamping would let the walk sit at ±1 -- a constant, audible as silence
+    // Clamping would let the walk sit at +/-1 -- a constant, audible as silence
     // with a click at each end. Reflection keeps it moving: no run of equal
     // samples anywhere near the rails, and the distribution stays flat rather
     // than piling up there.
@@ -151,7 +151,7 @@ fn brown_noise_reflects_instead_of_resting_against_a_rail() {
     // Flat-ish: the extreme decile is not over-represented the way clamping
     // would make it.
     let extreme = x.iter().filter(|v| v.abs() > 0.9).count() as f32 / x.len() as f32;
-    println!("brown: fraction beyond ±0.9 = {extreme:.4}");
+    println!("brown: fraction beyond +/-0.9 = {extreme:.4}");
     assert!(extreme < 0.15, "piling up at the rails: {extreme:.4}");
 }
 
@@ -165,7 +165,7 @@ fn clip_noise_is_only_ever_plus_or_minus_one_and_fair() {
         "every sample must be at full scale"
     );
     let mean = dc(&x);
-    // A fair coin over 131072 flips: the standard error is 1/sqrt(N) ≈ 0.003,
+    // A fair coin over 131072 flips: the standard error is 1/sqrt(N) ~ 0.003,
     // so 0.02 is six sigma and still a real test of fairness.
     assert!(mean.abs() < 0.02, "biased coin, mean {mean:.4}");
     assert!(
@@ -245,7 +245,7 @@ fn lf_clip_noise_holds_but_only_ever_at_the_rails() {
         &[&[100.0]],
         48_000,
     );
-    assert!(x.iter().all(|v| v.abs() == 1.0), "±1 only");
+    assert!(x.iter().all(|v| v.abs() == 1.0), "+/-1 only");
     let steps = x.windows(2).filter(|w| w[0] != w[1]).count();
     // Half the draws repeat the previous side, so the visible steps are about
     // half the segments -- which is itself the check that it is *drawing* each
@@ -326,7 +326,7 @@ fn dust_fires_at_its_mean_density_with_random_amplitudes() {
         );
         let hits = x.iter().filter(|v| **v != 0.0).count() as f32 / 4.0;
         // A Poisson count over four seconds: the standard deviation is
-        // sqrt(4·density)/4, so this bound is about four sigma.
+        // sqrt(4*density)/4, so this bound is about four sigma.
         let sigma = (4.0 * density).sqrt() / 4.0;
         println!("Dust({density}): {hits:.1} impulses/second (sigma {sigma:.2})");
         assert!(

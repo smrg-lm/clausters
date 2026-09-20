@@ -115,7 +115,7 @@ fn bin(op: &str, a: Value, b: Value) -> Value {
     json!({"op": op, "in": [a, b]})
 }
 
-/// `sin(2π·phasor(freq))·0.2` where the phasor is the Signal API recursion
+/// `sin(2pi*phasor(freq))*0.2` where the phasor is the Signal API recursion
 /// `phasor = (self + freq/SR) wrapped`, with `self`/`recursion` the explicit
 /// feedback. The accumulator is written twice (no implicit wire); Faust's CSE
 /// merges the identical subtrees.
@@ -144,7 +144,7 @@ fn signal_sine_compiles_and_plays_at_440() {
 
 #[test]
 fn explicit_recursion_makes_a_one_pole_filter() {
-    // y[n] = (1-a)·x[n] + a·y[n-1] -- the Signal API's whole point: feedback
+    // y[n] = (1-a)*x[n] + a*y[n-1] -- the Signal API's whole point: feedback
     // fused into one node, sample-accurate. Impulse response is geometric
     // with ratio a, which a block-rate LocalIn/LocalOut loop could not do.
     let a = 0.5f64;
@@ -196,7 +196,7 @@ fn signal_def_loads_and_instantiates_over_the_synth_path() {
 fn kitchen_sink_graph_exercises_every_op() {
     // Touch every FFI symbol at least once (lazy linking). Exotic/int-typed
     // terms are scaled to 0 so they cannot blow up the output but the symbols
-    // are still called at build time; output stays `0.5·input`.
+    // are still called at build time; output stays `0.5*input`.
     let x = json!({"op": "input", "index": 0});
 
     // Unary math on safe-domain constants + the input.
@@ -325,7 +325,7 @@ fn kitchen_sink_graph_exercises_every_op() {
         "in": [json!(4), json!(0.0), json!(0), json!(0.25), json!(0)]}),
     );
 
-    // Keep the output bounded and deterministic: 0·(everything) + 0.5·input.
+    // Keep the output bounded and deterministic: 0*(everything) + 0.5*input.
     let out = bin(
         "add",
         bin("mul", sum, json!(0.0)),
@@ -354,7 +354,7 @@ fn signal_cos_and_fmod_are_not_hit_by_the_box_bug() {
     let v = render_mono(&cos, 0.01)[0];
     assert!(
         (v - 0.5f32.cos()).abs() < 1e-6,
-        "sigCos(0.5) = {v}, expected ≈ 0.8776 (abs(0.5) = 0.5 would be the box bug)"
+        "sigCos(0.5) = {v}, expected ~ 0.8776 (abs(0.5) = 0.5 would be the box bug)"
     );
 
     let fmod = compile_signal(

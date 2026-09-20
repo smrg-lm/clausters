@@ -186,11 +186,11 @@ impl GraphMember {
 
 /// One inner target of a surface port: a member's control -- or, for a member
 /// that is itself a graph, one of **its** ports -- with optional linear scaling
-/// applied to the incoming value (`mul`·x + `add`).
+/// applied to the incoming value (`mul`*x + `add`).
 ///
 /// Two scalings compose the way two functions do: the outer one runs first, so
-/// a port re-exported from a child ends up at `mul_inner·mul_outer·x +
-/// (mul_inner·add_outer + add_inner)`, resolved once at instantiation. Nothing
+/// a port re-exported from a child ends up at `mul_inner*mul_outer*x +
+/// (mul_inner*add_outer + add_inner)`, resolved once at instantiation. Nothing
 /// of the nesting survives into the running graph.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SurfaceTarget {

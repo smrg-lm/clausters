@@ -159,7 +159,7 @@ fn flatten(packet: OscPacket, out: &mut Vec<ScoreEvent>) {
 }
 
 /// In a score the timetag counts seconds **from the start of the render**;
-/// the OSC immediate tag (seconds 0, fractional ≤ 1) is time 0.
+/// the OSC immediate tag (seconds 0, fractional <= 1) is time 0.
 fn score_time(t: OscTime) -> f64 {
     if t.seconds == 0 && t.fractional <= 1 {
         0.0

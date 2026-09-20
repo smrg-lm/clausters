@@ -65,7 +65,7 @@ export const pvMagBelow = (chain: Channel, threshold: Channel): Ugen =>
 /**
  * Brick-wall band limit: `wipe > 0` zeroes the top fraction of bins (a low
  * pass), `wipe < 0` the bottom (a high pass), `0` passes everything (`wipe`
- * in −1..1).
+ * in -1..1).
  */
 export const pvBrickWall = (chain: Channel, wipe: Channel): Ugen =>
     new Ugen("PV_BrickWall", [chain, wipe]);

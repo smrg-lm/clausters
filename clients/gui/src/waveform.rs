@@ -888,8 +888,8 @@ impl WaveformData {
         // from there, which is the resolution the summary has.
         //
         // Reading the two partial edges out of the samples instead would make
-        // it exact, and that is what this did first -- measured at 700 µs per
-        // frame of 900 columns against 10 µs for the fold, because a column of
+        // it exact, and that is what this did first -- measured at 700 us per
+        // frame of 900 columns against 10 us for the fold, because a column of
         // two buckets is 500 samples of edge. Exactness that costs a read of
         // the samples at every zoom is not exactness a picture can afford; the
         // regime that *does* read every sample is the one below, where a

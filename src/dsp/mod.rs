@@ -916,7 +916,7 @@ pub enum ReplyKind {
     Trig,
     /// `SendReply` -- a `cmdName nodeID replyID value...` message.
     Reply,
-    /// `Poll` -- a console line `label: value`, plus a `/node_trigger` when its trigid ≥ 0.
+    /// `Poll` -- a console line `label: value`, plus a `/node_trigger` when its trigid >= 0.
     Poll,
 }
 

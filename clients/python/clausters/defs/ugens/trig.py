@@ -112,7 +112,7 @@ def changed(signal, threshold=0.0) -> Ugen:
 
 def decay(signal, decaytime=1.0) -> Ugen:
     """Turns each impulse into an exponential falling 60 dB in ``decaytime``
-    (``y[n] = x[n] + b·y[n-1]``). Its attack is instantaneous, which clicks --
+    (``y[n] = x[n] + b*y[n-1]``). Its attack is instantaneous, which clicks --
     see `decay2`."""
     return Ugen("Decay", [signal, decaytime])
 

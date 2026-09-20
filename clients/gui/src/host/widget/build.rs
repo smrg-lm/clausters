@@ -135,7 +135,7 @@ fn spectral_props(
 }
 
 /// Builds the signal element from the wire node: `view`, the source props and
-/// `navigable` name a [`point`](signal::point) of the presentation × source ×
+/// `navigable` name a [`point`](signal::point) of the presentation * source *
 /// capabilities product, and the rest of the props are read over its defaults.
 /// One constructor, because there is one element.
 pub(crate) fn signal_element(
@@ -263,7 +263,7 @@ pub(crate) fn signal_element(
     el.editor.ruler = Ruler::parse_with(props, p.ruler);
     // **Air above full scale, on the axis that measures amplitude.** A
     // time-frequency picture's vertical is hertz and stops at Nyquist; a
-    // trace's is a value, and a floating-point signal can leave the ±1 the
+    // trace's is a value, and a floating-point signal can leave the +/-1 the
     // domain names -- so that one axis can be opened past its domain.
     // It follows the **stack's axis**, not the presentation: a body ruled in
     // hertz is a body with a texture on its axis, whatever else is drawn over

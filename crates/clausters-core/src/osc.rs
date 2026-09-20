@@ -50,7 +50,7 @@ pub const IMMEDIATE: OscTime = OscTime {
 /// every client shares, so identical instants produce identical timetag bits.
 pub fn pack_timetag(ntp_secs: f64) -> OscTime {
     let seconds = ntp_secs.floor();
-    let fractional = ((ntp_secs - seconds) * 4_294_967_296.0).round(); // × 2^32
+    let fractional = ((ntp_secs - seconds) * 4_294_967_296.0).round(); // * 2^32
     OscTime {
         seconds: seconds as u32,
         fractional: fractional.min(4_294_967_295.0) as u32,

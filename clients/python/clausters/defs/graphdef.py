@@ -48,7 +48,7 @@ class GraphBusRef:
 
 class _Target:
     """One inner target of a surface port: a member's control with optional
-    linear scaling (``mul``·v + ``add``)."""
+    linear scaling (``mul``*v + ``add``)."""
 
     def __init__(self, member: int, control: str, mul: float = 1.0, add: float = 0.0,
                  port: str | None = None):

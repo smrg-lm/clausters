@@ -110,7 +110,7 @@ export const sweep = (
 
 /**
  * 1 on any sample where `signal` moved by more than `threshold`. It compares
- * the **halved** difference, `|(x[n] − x[n−1]) / 2|`, matching sclang's
+ * the **halved** difference, `|(x[n] - x[n-1]) / 2|`, matching sclang's
  * `HPZ1`-derived definition.
  */
 export const changed = (

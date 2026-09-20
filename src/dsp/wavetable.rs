@@ -231,7 +231,7 @@ impl GenCommand {
     }
 }
 
-/// Adds `amp * sin(2π · freq · j/N + phase)` over one period `signal[0..N]`.
+/// Adds `amp * sin(2pi * freq * j/N + phase)` over one period `signal[0..N]`.
 fn add_sine(signal: &mut [f32], freq: f32, amp: f32, phase: f32) {
     let n = signal.len();
     let w = TAU * freq as f64 / n as f64;
@@ -242,7 +242,7 @@ fn add_sine(signal: &mut [f32], freq: f32, amp: f32, phase: f32) {
 }
 
 /// `sum_k coeffs[k] * T_{k+1}(x)` -- Chebyshev polynomials by the recurrence
-/// `T_0 = 1`, `T_1 = x`, `T_{m+1} = 2x·T_m - T_{m-1}`. `coeffs[0]` weights
+/// `T_0 = 1`, `T_1 = x`, `T_{m+1} = 2x*T_m - T_{m-1}`. `coeffs[0]` weights
 /// `T_1` (a linear transfer, i.e. passthrough).
 fn cheby_sum(coeffs: &[f32], x: f32) -> f32 {
     if coeffs.is_empty() {
@@ -382,7 +382,7 @@ pub fn wt_interp(table: &[AtomicU32], k: usize, frac: f32) -> f32 {
 
 /// `prepare_partconv`: the impulse response in `src` (channel 0) partitioned
 /// and forward-transformed into the [`crate::dsp::conv::layout`] a `Conv`
-/// UGen reads: `[L, P, P × fft_size packed spectra]`, `L = fft_size / 2`.
+/// UGen reads: `[L, P, P * fft_size packed spectra]`, `L = fft_size / 2`.
 /// The partition count is what fits both the source and the target capacity
 /// (`len` samples); a target too small for even one partition yields an
 /// all-zero (invalid) kernel, which `Conv` plays as silence.

@@ -114,7 +114,7 @@ fn added_synth_produces_sine() {
     let expected_rms = 0.2 * std::f32::consts::FRAC_1_SQRT_2;
     assert!(
         (rms(&left) - expected_rms).abs() < 0.002,
-        "rms = {}, expected ≈ {expected_rms}",
+        "rms = {}, expected ~ {expected_rms}",
         rms(&left)
     );
     let freq = estimated_freq(&left);

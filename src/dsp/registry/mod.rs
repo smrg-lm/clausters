@@ -119,7 +119,7 @@ pub struct UGenConfig {
 /// [`UGenDescriptor::build`].
 ///
 /// A UGen whose *allocation* depends on the sample rate -- a delay line is
-/// `max_delay × sample_rate` samples -- cannot compute its size from
+/// `max_delay * sample_rate` samples -- cannot compute its size from
 /// [`UGenConfig`] alone, and it must allocate here, on the network thread,
 /// never in `process`. This is the same information `FaustSynth::new` already
 /// takes for the same reason.
@@ -515,7 +515,7 @@ const I_ABC: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0), inp("c", 0.0)];
 /// range it was not given is not "leave it alone" but "pick a number for me" --
 /// while `curve` is the declared tail: 0 is *no bend*, which is the inert value
 /// the rule asks for, and the four maps that do not read it ignore whatever
-/// arrives. (A client's `lincurve` still passes sclang's −4 rather than
+/// arrives. (A client's `lincurve` still passes sclang's -4 rather than
 /// leaning on this: the wire default is the inert one, the client's is the
 /// useful one.)
 const I_MAP: &[UGenInput] = &[

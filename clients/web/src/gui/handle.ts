@@ -3,7 +3,7 @@
 //
 // `GuiHost.open`/`define` hand back a `WindowHandle` -- the window's own widget
 // handle, which additionally resolves the tree's **named** widgets. A lookup
-// returns a `WidgetHandle`, a thin façade whose `set`/`bind`/`free`/`query`/
+// returns a `WidgetHandle`, a thin facade whose `set`/`bind`/`free`/`query`/
 // `onEvent` delegate to the host with the resolved id, the same way a `Node`
 // delegates to its `Server`. So a script holds the widget and acts on it
 // (`win.widget("cutoff").set({ value: 800.0 })`) instead of tracking integers

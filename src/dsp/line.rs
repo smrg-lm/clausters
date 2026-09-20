@@ -20,9 +20,9 @@ use crate::dsp::{DoneAction, ProcessCtx, UGen, at};
 /// Which of the two ramps a [`Line`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LineShape {
-    /// `Line`: equal steps, `start + t·(end − start)`.
+    /// `Line`: equal steps, `start + t*(end - start)`.
     Linear,
-    /// `XLine`: equal *ratios*, `start·(end/start)^t` -- the one that sounds
+    /// `XLine`: equal *ratios*, `start*(end/start)^t` -- the one that sounds
     /// like a straight line when what it drives is a frequency or a gain.
     Exponential,
 }

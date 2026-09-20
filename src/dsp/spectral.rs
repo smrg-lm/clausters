@@ -76,7 +76,7 @@ fn resolve_hop(winsize: usize, hop: Option<f32>) -> usize {
 /// buffer.
 pub struct SpectralChain {
     /// The packed complex frame, `winsize` floats in the
-    /// [`fft::rfft_into`] layout `[dc, nyquist, re₁, im₁, ...]`.
+    /// [`fft::rfft_into`] layout `[dc, nyquist, re1, im1, ...]`.
     pub frame: Vec<f32>,
     /// True on the processing slice where `FFT` wrote a fresh frame; the
     /// `PV_*`/`IFFT` UGens act only then. `FFT` clears it each slice.
@@ -244,7 +244,7 @@ pub struct Ifft {
     /// Overlap-add tail: `olabuf[k]` accumulates the windowed reconstruction.
     olabuf: Vec<f32>,
     /// The steady-state overlap-add normalization (COLA), one value per hop
-    /// phase: `norm[r] = Σ_i window[r + i·hop]²` over the frames that overlap
+    /// phase: `norm[r] = sum_i window[r + i*hop]^2` over the frames that overlap
     /// output phase `r`. Precomputed at build (constant per render), so dividing
     /// by it never over-amplifies the under-overlapped edges of the startup or a
     /// spectrally modified frame -- unlike a running per-sample window sum.
@@ -642,7 +642,7 @@ impl UGen for PvMagFreeze {
 
 /// Averages each bin's magnitude over its neighbors (`PV_MagSmear`). Input:
 /// `[chain, bins]` -- `bins` neighbors on each side (0 = pass through), phases
-/// untouched. O(bins²)-free: a prefix sum over the magnitudes makes every
+/// untouched. O(bins^2)-free: a prefix sum over the magnitudes makes every
 /// window average O(1).
 pub struct PvMagSmear {
     /// Prefix sums of the frame's magnitudes (`half + 2` entries).
@@ -674,7 +674,7 @@ impl UGen for PvMagSmear {
             let bins = (at(inputs[1], 0).max(0.0)) as usize;
             let half = chain.winsize / 2;
             if bins > 0 {
-                // prefix[b+1] = Σ mag[0..=b], so a clamped window average is
+                // prefix[b+1] = sum mag[0..=b], so a clamped window average is
                 // one subtraction and one divide per bin.
                 self.prefix[0] = 0.0;
                 for b in 0..=half {
@@ -700,7 +700,7 @@ impl UGen for PvMagSmear {
 }
 
 /// Remaps bin positions (`PV_BinShift` / `PV_MagShift`): destination bin
-/// `round(b·stretch + shift)`, colliding bins summed, out-of-range bins
+/// `round(b*stretch + shift)`, colliding bins summed, out-of-range bins
 /// dropped. Inputs: `[chain, stretch, shift]`. One implementation, two
 /// registered names -- `PV_BinShift` moves the full complex bins (phases
 /// travel with their magnitudes), `PV_MagShift` (`mags_only`) remaps only the

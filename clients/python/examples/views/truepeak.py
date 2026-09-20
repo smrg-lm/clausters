@@ -18,8 +18,8 @@ example shows both halves of it:
   and ``-1 dBTP`` is the ceiling those specifications name.
 
 Three takes, read against each other. The first is the standard's own worst
-case: a tone at a **quarter of the sample rate**, sampled at 45°, whose samples
-sit at exactly ±1 while the signal between them reaches √2. The second is that
+case: a tone at a **quarter of the sample rate**, sampled at 45 degrees, whose samples
+sit at exactly +/-1 while the signal between them reaches sqrt(2). The second is that
 tone six decibels down, where nothing leaves full scale. The third is an
 ordinary signal -- a band-limited **sawtooth at 440 Hz**, normalized to full
 scale on its samples -- which is there to show the size of the effect in music
@@ -59,8 +59,8 @@ gui = session.gui()
 
 # %% [markdown]
 # ## Three takes
-# A quarter of the sample rate, sampled at 45°: the samples land at ±1 and the
-# signal between them reaches √2. The second is the same tone six decibels
+# A quarter of the sample rate, sampled at 45 degrees: the samples land at +/-1 and the
+# signal between them reaches sqrt(2). The second is the same tone six decibels
 # down, where nothing leaves full scale. The third is an ordinary one, a
 # band-limited sawtooth at 440 Hz, for the size of the effect in music.
 
@@ -69,7 +69,7 @@ FRAMES = 240
 
 
 def quarter_rate(amp: float) -> array:
-    """A tone at fs/4 sampled at 45°: +a, +a, -a, -a, ..."""
+    """A tone at fs/4 sampled at 45 degrees: +a, +a, -a, -a, ..."""
     return array("f", [amp if (i // 2) % 2 == 0 else -amp for i in range(FRAMES)])
 
 

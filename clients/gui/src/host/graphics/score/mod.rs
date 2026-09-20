@@ -61,7 +61,7 @@ impl Affine {
         sy: 1.0,
     };
 
-    /// `self` applied after `inner` (i.e. `self ∘ inner`).
+    /// `self` applied after `inner` (i.e. `self` after `inner`).
     pub fn then(self, inner: Affine) -> Affine {
         Affine {
             tx: self.tx + self.sx * inner.tx,

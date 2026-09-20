@@ -15,16 +15,16 @@
 //! Each channel is **K-weighted** ([`KWeighting`]): a high shelf of about
 //! +4 dB above 2 kHz (the head, modelled as a rigid sphere) followed by a
 //! high-pass near 38 Hz (the "revised low-frequency B" curve). Its mean square
-//! over an interval is `zᵢ`, and the loudness of that interval is
+//! over an interval is `z_i`, and the loudness of that interval is
 //!
 //! ```text
-//! L = -0.691 + 10·log10(Σ Gᵢ·zᵢ)      LUFS
+//! L = -0.691 + 10*log10(sum G_i*z_i)      LUFS
 //! ```
 //!
-//! with the channel weights `Gᵢ` of [`channel_weights`] -- 1.0 for the front
+//! with the channel weights `G_i` of [`channel_weights`] -- 1.0 for the front
 //! channels, 1.41 for the surrounds, 0 for the LFE, which BS.1770 excludes. The
-//! −0.691 cancels the K-weighting's gain at 997 Hz, so a full-scale 997 Hz sine
-//! in one front channel reads −3.01 LUFS, and a stereo one reads its peak level.
+//! -0.691 cancels the K-weighting's gain at 997 Hz, so a full-scale 997 Hz sine
+//! in one front channel reads -3.01 LUFS, and a stereo one reads its peak level.
 //!
 //! What is built over that number, all of it in [`LoudnessMeter`]:
 //!
@@ -32,8 +32,8 @@
 //! |---|---|---|
 //! | **Momentary** | the last 400 ms, rectangular, ungated | EBU Tech 3341 |
 //! | **Short-term** | the last 3 s, rectangular, ungated | EBU Tech 3341 |
-//! | **Integrated** | the whole measurement, in 400 ms blocks every 100 ms, gated at −70 LUFS and then 10 LU below the result | ITU-R BS.1770, Annex 1 |
-//! | **Loudness range** | the spread of the short-term loudness, 10 per second, gated at −70 LUFS and 20 LU below their mean: the 95th percentile minus the 10th, in LU | EBU Tech 3342 |
+//! | **Integrated** | the whole measurement, in 400 ms blocks every 100 ms, gated at -70 LUFS and then 10 LU below the result | ITU-R BS.1770, Annex 1 |
+//! | **Loudness range** | the spread of the short-term loudness, 10 per second, gated at -70 LUFS and 20 LU below their mean: the 95th percentile minus the 10th, in LU | EBU Tech 3342 |
 //!
 //! plus the **maximum** momentary and short-term loudness since the last reset,
 //! which Tech 3341 requires an "EBU Mode" meter to display.
@@ -68,7 +68,7 @@
 //! settles it, and each call is named:
 //!
 //! - **The block grid.** A 400 ms gating block is "to the nearest sample", with
-//!   a 75 % overlap; blocks end at `round(0.4·rate) + j·round(0.1·rate)`
+//!   a 75 % overlap; blocks end at `round(0.4*rate) + j*round(0.1*rate)`
 //!   samples, which is exact at every rate divisible by ten.
 //! - **The loudness range samples the short-term loudness 10 times a second**,
 //!   the minimum Tech 3342 has required since 2016 (V3). libebur128 still takes
@@ -79,7 +79,7 @@
 //! - **Storage without allocation.** Gating needs every block since the reset,
 //!   and a meter that grows a list cannot run on an audio thread. So blocks are
 //!   kept the way libebur128's histogram mode keeps them: in fixed bins of
-//!   loudness, 0.01 LU wide from −70 to +30 LUFS ([`HISTOGRAM_BINS`]). Unlike a
+//!   loudness, 0.01 LU wide from -70 to +30 LUFS ([`HISTOGRAM_BINS`]). Unlike a
 //!   plain histogram each bin holds the **exact sum of its blocks' energies**,
 //!   so every mean is exact and the only approximation left is which side of a
 //!   gate a bin falls on -- decided by the bin's own mean, and exact for blocks
@@ -117,7 +117,7 @@ pub const HIGH_PASS_48K: Biquad = Biquad {
 pub const ABSOLUTE_GATE: f64 = -70.0;
 
 /// The integrated loudness's **relative gate**, in LU below the absolute-gated
-/// loudness (BS.1770; it was −8 LU before 2011).
+/// loudness (BS.1770; it was -8 LU before 2011).
 pub const RELATIVE_GATE: f64 = -10.0;
 
 /// The loudness range's relative gate, in LU below the absolute-gated mean of
@@ -155,8 +155,8 @@ pub struct Biquad {
 }
 
 /// The analogue second-order section a digital [`Biquad`] is the bilinear
-/// transform of, in frequency normalized to its centre: `(n2·S² + n1·S + n0) /
-/// (S² + S/q + 1)` with `S = s/ω0`.
+/// transform of, in frequency normalized to its centre: `(n2*S^2 + n1*S + n0) /
+/// (S^2 + S/q + 1)` with `S = s/omega0`.
 #[derive(Clone, Copy, Debug)]
 struct Analogue {
     /// The centre frequency, in Hz.
@@ -170,12 +170,12 @@ struct Analogue {
 impl Biquad {
     /// The analogue section this one came from at `rate`, recovered exactly.
     ///
-    /// With `K = tan(π·f0/rate)` the bilinear transform gives
-    /// `a0 = 1 + K/q + K²`, `a1 = 2(K²−1)/a0`, `a2 = (1 − K/q + K²)/a0`, and
-    /// the numerator `b·a0 = (n2 + n1·K + n0·K², 2(n0·K² − n2),
-    /// n2 − n1·K + n0·K²)`. Sums and differences of those undo it:
-    /// `K² = (1+a1+a2)/(1−a1+a2)`, `a0 = 4/(1−a1+a2)`, and the three gains out
-    /// of `b0+b1+b2`, `b0−b1+b2` and `b0−b2`.
+    /// With `K = tan(pi*f0/rate)` the bilinear transform gives
+    /// `a0 = 1 + K/q + K^2`, `a1 = 2(K^2-1)/a0`, `a2 = (1 - K/q + K^2)/a0`, and
+    /// the numerator `b*a0 = (n2 + n1*K + n0*K^2, 2(n0*K^2 - n2),
+    /// n2 - n1*K + n0*K^2)`. Sums and differences of those undo it:
+    /// `K^2 = (1+a1+a2)/(1-a1+a2)`, `a0 = 4/(1-a1+a2)`, and the three gains out
+    /// of `b0+b1+b2`, `b0-b1+b2` and `b0-b2`.
     fn analogue(self, rate: f64) -> Analogue {
         let a0 = 4.0 / (1.0 - self.a1 + self.a2);
         let k = ((1.0 + self.a1 + self.a2) / (1.0 - self.a1 + self.a2)).sqrt();
@@ -265,7 +265,7 @@ impl KWeighting {
 /// L R C LFE Ls Rs. Channels past the sixth are measured at 1.0 rather than
 /// dropped -- a layout this table cannot name is the caller's to state, with
 /// [`LoudnessMeter::with_weights`] (BS.1770-5 Annex 3 weights a channel by its
-/// position: 1.41 between 60° and 120° of azimuth, 1.0 elsewhere).
+/// position: 1.41 between 60 and 120 degrees of azimuth, 1.0 elsewhere).
 pub fn channel_weight(channels: usize, channel: usize) -> f64 {
     const SURROUND: f64 = 1.41;
     match (channels, channel) {
@@ -282,7 +282,7 @@ pub fn channel_weights(channels: usize) -> impl Iterator<Item = f64> {
     (0..channels).map(move |c| channel_weight(channels, c))
 }
 
-/// A mean square in loudness: `-0.691 + 10·log10(energy)`, in LUFS.
+/// A mean square in loudness: `-0.691 + 10*log10(energy)`, in LUFS.
 /// `f64::NEG_INFINITY` for silence.
 pub fn energy_to_lufs(energy: f64) -> f64 {
     if energy > 0.0 {
@@ -427,7 +427,7 @@ impl Histogram {
     }
 
     /// Tech 3342's spread: the gated values' high percentile minus their low
-    /// one, with the index rule of its MATLAB reference, `round((n−1)·p)`.
+    /// one, with the index rule of its MATLAB reference, `round((n-1)*p)`.
     fn range(&self) -> f64 {
         let Some(mean) = self.mean_over(None) else {
             return 0.0;
@@ -1135,7 +1135,7 @@ mod tests {
     fn within(got: f64, want: f64, tol: f64, what: &str) {
         assert!(
             (got - want).abs() <= tol,
-            "{what}: {got:.4} against {want} ±{tol}"
+            "{what}: {got:.4} against {want} +/-{tol}"
         );
     }
 
@@ -1207,13 +1207,13 @@ mod tests {
         }
     }
 
-    /// **The −0.691 is the weighting's gain at 997 Hz** (BS.1770, Note 1), so
-    /// a full-scale 997 Hz sine in one front channel reads −3.01 LUFS -- at
+    /// **The -0.691 is the weighting's gain at 997 Hz** (BS.1770, Note 1), so
+    /// a full-scale 997 Hz sine in one front channel reads -3.01 LUFS -- at
     /// every rate, which is the redesign seen through the whole measurement.
     ///
     /// Measured, the gain is 0.6910 dB at 48 kHz and moves with the bilinear
     /// warp elsewhere: 0.6838 at 32 kHz, 0.6900 at 44.1 kHz, 0.6964 at
-    /// 192 kHz. So the reading is −3.01 to within 0.008 LU at every rate, a
+    /// 192 kHz. So the reading is -3.01 to within 0.008 LU at every rate, a
     /// tenth of the tolerance Tech 3341 allows a meter.
     #[test]
     fn a_full_scale_997_hz_sine_reads_minus_3_01_at_every_rate() {
@@ -1249,7 +1249,7 @@ mod tests {
     // programme" recordings that exist only as the EBU's files, and 15-23 are
     // true peak, which `resample` answers.
 
-    /// **Case 1** -- stereo 1 kHz at −23 dBFS for 20 s: M, S, I = −23.0 ±0.1.
+    /// **Case 1** -- stereo 1 kHz at -23 dBFS for 20 s: M, S, I = -23.0 +/-0.1.
     #[test]
     fn tech3341_case_1_minus_23_tone() {
         let x = stereo_programme(FS, &[stereo(20.0, Some(-23.0))]);
@@ -1260,7 +1260,7 @@ mod tests {
         within(m.integrated(), -23.0, 0.1, "I");
     }
 
-    /// **Case 2** -- as case 1 at −33 dBFS: M, S, I = −33.0 ±0.1.
+    /// **Case 2** -- as case 1 at -33 dBFS: M, S, I = -33.0 +/-0.1.
     #[test]
     fn tech3341_case_2_minus_33_tone() {
         let x = stereo_programme(FS, &[stereo(20.0, Some(-33.0))]);
@@ -1271,7 +1271,7 @@ mod tests {
         within(m.integrated(), -33.0, 0.1, "I");
     }
 
-    /// **Case 3** -- 10 s at −36, 60 s at −23, 10 s at −36: I = −23.0 ±0.1.
+    /// **Case 3** -- 10 s at -36, 60 s at -23, 10 s at -36: I = -23.0 +/-0.1.
     /// The quiet tones sit under the relative gate.
     #[test]
     fn tech3341_case_3_the_relative_gate() {
@@ -1286,7 +1286,7 @@ mod tests {
         within(loudness(&x, 2, FS).unwrap().integrated, -23.0, 0.1, "I");
     }
 
-    /// **Case 4** -- case 3 between two 10 s tones at −72 dBFS: I = −23.0 ±0.1.
+    /// **Case 4** -- case 3 between two 10 s tones at -72 dBFS: I = -23.0 +/-0.1.
     /// The quietest tones sit under the absolute gate too.
     #[test]
     fn tech3341_case_4_the_absolute_gate() {
@@ -1303,7 +1303,7 @@ mod tests {
         within(loudness(&x, 2, FS).unwrap().integrated, -23.0, 0.1, "I");
     }
 
-    /// **Case 5** -- 20 s at −26, 20.1 s at −20, 20 s at −26: I = −23.0 ±0.1.
+    /// **Case 5** -- 20 s at -26, 20.1 s at -20, 20 s at -26: I = -23.0 +/-0.1.
     /// Nothing is gated out, so this is the energy mean itself.
     #[test]
     fn tech3341_case_5_nothing_gated() {
@@ -1318,8 +1318,8 @@ mod tests {
         within(loudness(&x, 2, FS).unwrap().integrated, -23.0, 0.1, "I");
     }
 
-    /// **Case 6** -- 5.0 channels of 1 kHz for 20 s, at −28 dBFS in L and R,
-    /// −24 in C and −30 in Ls and Rs: I = −23.0 ±0.1. The surrounds' 1.41 is
+    /// **Case 6** -- 5.0 channels of 1 kHz for 20 s, at -28 dBFS in L and R,
+    /// -24 in C and -30 in Ls and Rs: I = -23.0 +/-0.1. The surrounds' 1.41 is
     /// what makes it add up.
     #[test]
     fn tech3341_case_6_five_channels() {
@@ -1334,7 +1334,7 @@ mod tests {
         within(loudness(&x, 5, FS).unwrap().integrated, -23.0, 0.1, "I");
     }
 
-    /// **Case 9** -- (1.34 s at −20, 1.66 s at −30) five times: S = −23.0 ±0.1,
+    /// **Case 9** -- (1.34 s at -20, 1.66 s at -30) five times: S = -23.0 +/-0.1,
     /// constant after 3 s. Every 3 s window holds the same energy wherever it
     /// starts, so the reading must not move -- checked every 10 ms.
     #[test]
@@ -1352,8 +1352,8 @@ mod tests {
         within(m.short_term(), -23.0, 0.1, "S at the end");
     }
 
-    /// **Case 10**, for file-based meters -- twenty files of (i·0.15 s of
-    /// silence, 3 s at −23, 1 s of silence): max S = −23.0 ±0.1 for each.
+    /// **Case 10**, for file-based meters -- twenty files of (i*0.15 s of
+    /// silence, 3 s at -23, 1 s of silence): max S = -23.0 +/-0.1 for each.
     #[test]
     fn tech3341_case_10_short_term_max_per_file() {
         for i in 0..20 {
@@ -1374,9 +1374,9 @@ mod tests {
         }
     }
 
-    /// **Case 11**, for live meters -- one signal of twenty (i·0.15 s of
-    /// silence, 3 s at −38+i, 3−i·0.15 s of silence): max S reads −38, −37,
-    /// ..., −19 ±0.1 in succession. Read after each segment of one live meter.
+    /// **Case 11**, for live meters -- one signal of twenty (i*0.15 s of
+    /// silence, 3 s at -38+i, 3-i*0.15 s of silence): max S reads -38, -37,
+    /// ..., -19 +/-0.1 in succession. Read after each segment of one live meter.
     #[test]
     fn tech3341_case_11_short_term_max_live() {
         let mut m = LoudnessMeter::new(2, FS);
@@ -1399,7 +1399,7 @@ mod tests {
         }
     }
 
-    /// **Case 12** -- (0.18 s at −20, 0.22 s at −30) 25 times: M = −23.0 ±0.1,
+    /// **Case 12** -- (0.18 s at -20, 0.22 s at -30) 25 times: M = -23.0 +/-0.1,
     /// constant after 1 s. Checked every 5 ms.
     #[test]
     fn tech3341_case_12_momentary_is_constant() {
@@ -1415,10 +1415,10 @@ mod tests {
         }
     }
 
-    /// **Case 13**, for file-based meters -- twenty files of (i·20 ms of
-    /// silence, 400 ms at −23, 1 s of silence): max M = −23.0 ±0.1 for each.
+    /// **Case 13**, for file-based meters -- twenty files of (i*20 ms of
+    /// silence, 400 ms at -23, 1 s of silence): max M = -23.0 +/-0.1 for each.
     /// A meter that reads its momentary window only every 100 ms misses up to
-    /// 40 ms of the tone (−0.46 LU) and fails this case, which is what it is
+    /// 40 ms of the tone (-0.46 LU) and fails this case, which is what it is
     /// for.
     #[test]
     fn tech3341_case_13_momentary_max_per_file() {
@@ -1440,8 +1440,8 @@ mod tests {
         }
     }
 
-    /// **Case 14**, for live meters -- twenty (i·20 ms of silence, 400 ms at
-    /// −38+i, 400−i·20 ms of silence): max M reads −38, −37, ..., −19 ±0.1.
+    /// **Case 14**, for live meters -- twenty (i*20 ms of silence, 400 ms at
+    /// -38+i, 400-i*20 ms of silence): max M reads -38, -37, ..., -19 +/-0.1.
     #[test]
     fn tech3341_case_14_momentary_max_live() {
         let mut m = LoudnessMeter::new(2, FS);
@@ -1474,27 +1474,27 @@ mod tests {
         loudness(&x, 2, FS).unwrap().range
     }
 
-    /// **Case 1** -- 20 s at −20 dBFS then 20 s at −30: LRA = 10 ±1 LU.
+    /// **Case 1** -- 20 s at -20 dBFS then 20 s at -30: LRA = 10 +/-1 LU.
     #[test]
     fn tech3342_case_1_ten_lu_apart() {
         within(range_of(&[-20.0, -30.0]), 10.0, 1.0, "LRA");
     }
 
-    /// **Case 2** -- −20 then −15: LRA = 5 ±1 LU.
+    /// **Case 2** -- -20 then -15: LRA = 5 +/-1 LU.
     #[test]
     fn tech3342_case_2_five_lu_apart() {
         within(range_of(&[-20.0, -15.0]), 5.0, 1.0, "LRA");
     }
 
-    /// **Case 3** -- −40 then −20: LRA = 20 ±1 LU. The quiet tone sits right on
+    /// **Case 3** -- -40 then -20: LRA = 20 +/-1 LU. The quiet tone sits right on
     /// the relative gate, 20 LU under the mean.
     #[test]
     fn tech3342_case_3_twenty_lu_apart() {
         within(range_of(&[-40.0, -20.0]), 20.0, 1.0, "LRA");
     }
 
-    /// **Case 4** -- −50, −35, −20, −35, −50, 20 s each: LRA = 15 ±1 LU. The
-    /// −50 tones fall under the relative gate.
+    /// **Case 4** -- -50, -35, -20, -35, -50, 20 s each: LRA = 15 +/-1 LU. The
+    /// -50 tones fall under the relative gate.
     #[test]
     fn tech3342_case_4_five_segments() {
         within(

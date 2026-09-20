@@ -505,7 +505,7 @@ fn decay_is_the_analytic_one_pole_and_falls_60_db_on_time() {
         ),
         4800,
     );
-    // The impulse response of `y[n] = x[n] + b·y[n-1]` is exactly b^n.
+    // The impulse response of `y[n] = x[n] + b*y[n-1]` is exactly b^n.
     let b = decay_pole(time);
     for n in [0usize, 1, 100, 1000, 2399] {
         let want = b.powi(n as i32) as f32;

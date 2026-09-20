@@ -61,7 +61,7 @@ use crate::dsp::{ProcessCtx, UGen, at};
 /// waveform here).
 ///
 /// Derived rather than tabulated. A BLEP residual is
-/// `2·(∫K − H)`: the running integral of a smoothing kernel `K` minus the ideal
+/// `2*(integral of K - H)`: the running integral of a smoothing kernel `K` minus the ideal
 /// step `H`, scaled to the step's height. Taking `K` to be the **cubic B-spline**
 /// (support `[-2, 2]`, unit area) and integrating piecewise gives
 ///

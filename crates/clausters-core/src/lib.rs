@@ -27,7 +27,7 @@
 //! - [`tempoclock`] -- beat/second/sample arithmetic, quantization and a
 //!   beat-ordered event queue: the timing math a `TempoClock` is built on.
 //! - [`clocksync`] -- the least-squares sample-clock tracking model
-//!   (`sample = a + b·t` over a sliding anchor window) behind locking a client
+//!   (`sample = a + b*t` over a sliding anchor window) behind locking a client
 //!   clock to a server over a network transport.
 //! - [`osc`] -- the OSC seam shared by the server and every client: the single
 //!   `decode_packet` door, bundle/timetag assembly and timetag<->sample

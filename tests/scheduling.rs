@@ -451,7 +451,7 @@ mod osc {
         let first = first.expect("the scheduled synth must have started");
         assert!(
             (1000..13000).contains(&first),
-            "default synth started at sample {first}, expected ≈ 12000"
+            "default synth started at sample {first}, expected ~ 12000"
         );
 
         // An immediate-tag bundle plays right away.

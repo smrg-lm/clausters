@@ -40,7 +40,7 @@ FREQS = [262.0, 330.0, 392.0, 523.0, 392.0, 330.0, 262.0, 196.0]
 
 
 class SampleClock:
-    """sample(t_local) = a + b·t_local, fitted from /clock_query anchors."""
+    """sample(t_local) = a + b*t_local, fitted from /clock_query anchors."""
 
     def __init__(self, client: "osc.Client", window: int = 64):
         self.client = client
@@ -119,7 +119,7 @@ def main():
         uncertainty = max(uncertainty, clock.anchor())
         time.sleep(0.05)
     print(f"server sample rate: {clock.rate:.0f} Hz")
-    print(f"anchor uncertainty: ±{uncertainty * 1e3:.2f} ms "
+    print(f"anchor uncertainty: +/-{uncertainty * 1e3:.2f} ms "
           f"(constant grid shift, does not accumulate)")
 
     step = round(BEAT_SECONDS * clock.rate)  # beat spacing, exact in samples

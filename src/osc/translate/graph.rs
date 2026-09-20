@@ -215,7 +215,7 @@ impl CmdTranslator {
     ///
     /// A target on a **nested graph** resolves through that child's own
     /// resolved surface, and the two scalings compose: the outer runs first, so
-    /// the pair that lands is `(mul_in·mul_out, mul_in·add_out + add_in)`. What
+    /// the pair that lands is `(mul_in*mul_out, mul_in*add_out + add_in)`. What
     /// comes out is flat -- the port of a track that drives a control of a node
     /// three levels down is one `/node_set` like every other.
     fn resolve_ports(
@@ -886,7 +886,7 @@ impl CmdTranslator {
     }
 
     /// Writes a surface-port value to its resolved member controls, scaled per
-    /// target (`mul`·v + `add`), mirroring each write and re-sorting if a
+    /// target (`mul`*v + `add`), mirroring each write and re-sorting if a
     /// target turns out to be a bus-index control. `group` may be an instance
     /// (shared surface) or a voice sub-group (voice surface).
     /// `/graph_map instanceID port bus [audio]`: **drive a port from a bus**

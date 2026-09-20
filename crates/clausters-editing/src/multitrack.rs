@@ -1455,9 +1455,9 @@ mod tests {
 
     /// **A join over a joined box is flat** *(asked for by the user
     /// 2026-09-13, after a join of joins was refused as nested more than four
-    /// deep: "los segmentos no deberían anidarse como estructura de datos, son
-    /// punteros de dos dimensiones a un buffer o archivo... join une segmentos
-    /// creando un nuevo objeto segmentos")*. A box over a join reads through to
+    /// deep: segments are not to be nested as a data structure, being
+    /// two-dimensional pointers into a buffer or a file, and a join of segments
+    /// makes one new segments object)*. A box over a join reads through to
     /// the takes it is made of, so every part the new join states names a take.
     #[test]
     fn a_join_over_a_joined_box_names_only_takes() {

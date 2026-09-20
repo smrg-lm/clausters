@@ -11,7 +11,7 @@
 //! accumulates against the ready-made spectra, inverse-transforms, and emits
 //! the alias-free half -- `O(P)` complex MACs plus one FFT/IFFT pair.
 //!
-//! **Load spreading.** The `p ≥ 1` MAC terms of hop `n+1` only involve input
+//! **Load spreading.** The `p >= 1` MAC terms of hop `n+1` only involve input
 //! spectra that already exist after hop `n`, so they are accumulated across
 //! the blocks *between* hops (a fair share per
 //! [`UGen::process`](crate::dsp::UGen::process) call), and the hop block itself
@@ -48,7 +48,7 @@
 /// at 48 kHz. Reverb-length IRs need an explicit, larger `partitions`.
 pub const DEFAULT_PARTITIONS: usize = 16;
 /// Hard cap on `partitions` -- bounds the pre-allocated FDL like every other
-/// boot/build-time pool (256 × 4096 floats ≈ 4 MiB at the largest window).
+/// boot/build-time pool (256 * 4096 floats ~ 4 MiB at the largest window).
 pub const MAX_PARTITIONS: usize = 256;
 
 /// The prepared-kernel buffer layout written by `/buffer_gen prepare_partconv` and
@@ -56,7 +56,7 @@ pub const MAX_PARTITIONS: usize = 256;
 /// (partition count), then `P` frames of `N = 2L` floats -- each partition
 /// zero-padded to `N` and packed by
 /// [`fft::rfft_into`](clausters_core::fft::rfft_into)
-/// (`[dc, nyquist, re₁, im₁, ...]`).
+/// (`[dc, nyquist, re1, im1, ...]`).
 pub mod layout {
     /// Header length in samples (`[L, P]`).
     pub const HEADER: usize = 2;
@@ -105,7 +105,7 @@ mod ugen {
         /// sit at `(fdl_head + p) % max_parts`.
         fdl: Vec<f32>,
         fdl_head: usize,
-        /// Accumulator for the upcoming hop's `p ≥ 1` MAC terms (spread across
+        /// Accumulator for the upcoming hop's `p >= 1` MAC terms (spread across
         /// the blocks between hops).
         acc: Vec<f32>,
         /// Next partition index (1-based) to accumulate into `acc`.
@@ -176,7 +176,7 @@ mod ugen {
             v
         }
 
-        /// `acc += spectrum · kernel` over one packed frame (DC and Nyquist are
+        /// `acc += spectrum * kernel` over one packed frame (DC and Nyquist are
         /// real-only slots) -- the FDL inner loop.
         #[inline]
         /// The kernel comes straight out of the buffer's cells: measured, the

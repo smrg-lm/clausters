@@ -201,7 +201,7 @@ def env_gen(
 
 
 def detect_silence(signal, amp=0.0001, time=0.1, done_action=DoneAction.NONE) -> Ugen:
-    """1 once ``signal`` has stayed within ``±amp`` for ``time`` seconds, with
+    """1 once ``signal`` has stayed within ``+/-amp`` for ``time`` seconds, with
     the ``done_action`` taken then.
 
     The counter restarts on the first sample that exceeds ``amp``, so what it

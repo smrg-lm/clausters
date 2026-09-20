@@ -121,7 +121,7 @@ def svf_morph(pos):
 
 
 def one_pole(signal, coef=0.5) -> Ugen:
-    """``y[n] = (1-|coef|)·x[n] + coef·y[n-1]`` -- lowpass for a positive
+    """``y[n] = (1-|coef|)*x[n] + coef*y[n-1]`` -- lowpass for a positive
     coefficient, highpass for a negative one, unity in the passband.
 
     The parameter is the **pole**, not a cutoff, as in sclang. Use `lag` when
@@ -131,7 +131,7 @@ def one_pole(signal, coef=0.5) -> Ugen:
 
 
 def one_zero(signal, coef=0.5) -> Ugen:
-    """``y[n] = (1-|coef|)·x[n] + coef·x[n-1]`` -- the zero-only sibling of
+    """``y[n] = (1-|coef|)*x[n] + coef*x[n-1]`` -- the zero-only sibling of
     `one_pole`."""
     return Ugen("OneZero", [signal, coef])
 
@@ -143,7 +143,7 @@ def leak_dc(signal, coef=0.995) -> Ugen:
 
 
 def integrator(signal, coef=0.999) -> Ugen:
-    """Leaky accumulator, ``y[n] = x[n] + coef·y[n-1]``. The coefficient is
+    """Leaky accumulator, ``y[n] = x[n] + coef*y[n-1]``. The coefficient is
     clamped just inside 1 on the server, so it always forgets eventually
     instead of running away on a DC input."""
     return Ugen("Integrator", [signal, coef])

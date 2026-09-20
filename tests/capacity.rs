@@ -66,7 +66,7 @@ fn garbage_overflow_leaks_instead_of_blocking() {
         max_nodes: 512,
         ..Limits::default()
     });
-    // 6 rounds × 250 create+free pairs = 1500 dead synths, never collected:
+    // 6 rounds * 250 create+free pairs = 1500 dead synths, never collected:
     // well past 1024 (FIFO) + 64 (holding list).
     for round in 0..6 {
         for i in 0..250 {
@@ -104,7 +104,7 @@ fn garbage_overflow_leaks_instead_of_blocking() {
 #[test]
 fn event_overflow_drops_silently() {
     let (mut engine, mut handle) = engine_pair(SR, 2);
-    // 600 lifecycles × 2 events = 2400 > 2048, with nobody draining events.
+    // 600 lifecycles * 2 events = 2400 > 2048, with nobody draining events.
     for round in 0..3 {
         for i in 0..200 {
             let id = 1000 + round * 200 + i;

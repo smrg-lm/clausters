@@ -28,7 +28,7 @@ then run one or more demos (default: status):
          server fires each note sample-accurately on its own clock.
 `feedback` plays a resonant comb built with LocalIn/LocalOut: the graph's
          one-block feedback delay makes a one-channel loop ring at
-         sampleRate/64 (≈ 750 Hz at 48 kHz).
+         sampleRate/64 (~ 750 Hz at 48 kHz).
 `demand`  a demand-rate step sequencer: an Impulse-driven `Demand` pulls
          note frequencies from a `Dseq` (`"rate": "dr"`) into a Sine.
 `signal` builds Faust defs with the **Signal API** (`{"signals": [...]}`): a
@@ -188,7 +188,7 @@ class SynthDefBuilder:
 
 
 def demo_ugen(client: Client):
-    """Amplitude-modulated noise: WhiteNoise · (Sine(rate)·0.5 + 0.5) · amp."""
+    """Amplitude-modulated noise: WhiteNoise * (Sine(rate)*0.5 + 0.5) * amp."""
     d = SynthDefBuilder("amnoise")
     rate, amp = d.control("rate", 2.0), d.control("amp", 0.2)
     lfo = d.add("Mul", d.add("Add", d.add("Mul", d.add("Sine", rate), 0.5), 0.5), amp)
@@ -226,7 +226,7 @@ def faust(src: str) -> dict:
 
 
 def sine_def() -> str:
-    """sin(2π · phasor(freq)) · amp from primitives, no stdlib."""
+    """sin(2pi * phasor(freq)) * amp from primitives, no stdlib."""
     wrap = box("split", "_", box("sub", "_", box("floor", "_")))
     freq = hslider("freq", 440.0, 20.0, 20000.0, 0.01)
     phasor = box("rec", box("seq", box("add", "_", box("div", freq, 48000.0)), wrap), "_")
@@ -383,7 +383,7 @@ def demo_buffer(client: Client):
     print(f"  /synth_new bplayer 3003 (rate {pitch_true:.3f}: the file's pitch)")
     client.send("/synth_new", "bplayer", 3003, 1, 0, "rate", pitch_true)
     time.sleep(2.0)
-    print("  /node_set 3003 rate ×1.5 (a fifth up)")
+    print("  /node_set 3003 rate *1.5 (a fifth up)")
     client.send("/node_set", 3003, "rate", pitch_true * 1.5)
     time.sleep(2.0)
     client.send("/node_free", 3003)
@@ -509,7 +509,7 @@ def sig_slider(label: str, init: float, lo: float, hi: float, step: float) -> di
 
 
 def signal_sine_def() -> str:
-    """sin(2π·phasor(freq))·0.2 via the Signal API: the phasor is the explicit
+    """sin(2pi*phasor(freq))*0.2 via the Signal API: the phasor is the explicit
     recursion `phasor = wrap(self + freq/SR)` (no point-free wires here)."""
     freq = sig_slider("freq", 330.0, 20.0, 20000.0, 0.01)
     acc = sig("add", {"op": "self"}, sig("div", freq, 48000.0))
@@ -519,7 +519,7 @@ def signal_sine_def() -> str:
 
 
 def signal_lowpass_def() -> str:
-    """A one-pole lowpass `y = (1-a)·x + a·y'` reading audio input 0 -- the
+    """A one-pole lowpass `y = (1-a)*x + a*y'` reading audio input 0 -- the
     `self`/`recursion` feedback is one sample, sample-accurate (a UGen graph
     cannot do this across nodes; see the `feedback` demo's one-block limit)."""
     a = sig_slider("a", 0.9, 0.0, 0.999, 0.001)
@@ -566,7 +566,7 @@ def demo_feedback(client: Client):
     """A resonant comb from LocalIn/LocalOut feedback. The graph is a DAG, so
     the loop goes through a synth-private feedback bus with one control block
     (64 samples) of delay -- a one-channel loop therefore rings at
-    sampleRate/64 (≈ 750 Hz at 48 kHz). A quiet 3 Hz impulse train re-excites
+    sampleRate/64 (~ 750 Hz at 48 kHz). A quiet 3 Hz impulse train re-excites
     it; the 0.98 feedback gain sets the decay. (LocalIn must come before
     LocalOut -- the builder adds them in call order, so it does.)"""
     d = SynthDefBuilder("fbcomb")
@@ -580,7 +580,7 @@ def demo_feedback(client: Client):
     print("feedback demo: /def_send synth fbcomb (LocalIn/LocalOut resonant comb)")
     client.send("/def_send", "synth", d.blob())
     client.reply()
-    print("  /synth_new fbcomb 3005 -- rings at sampleRate/64 ≈ 750 Hz")
+    print("  /synth_new fbcomb 3005 -- rings at sampleRate/64 ~ 750 Hz")
     client.send("/synth_new", "fbcomb", 3005, 1, 0)
     time.sleep(3.0)
     client.send("/node_free", 3005)

@@ -13,7 +13,7 @@
 //! - [`channel_stats`] -- the **peak and RMS** of one channel of an interleaved
 //!   buffer, the pair a render reports back so no client writes the loop.
 //! - [`lissajous_point`] / [`lissajous_into`] -- the **Lissajous / goniometer**
-//!   transform: a stereo `(L, R)` pair mapped to the 45°-rotated mid/side plane
+//!   transform: a stereo `(L, R)` pair mapped to the 45-degree mid/side plane
 //!   the classic goniometer draws. It is the shape an audio engineer or
 //!   electroacoustic composer reads a stereo image from, so the geometry lives
 //!   here once rather than only inside the GUI's drawing code.
@@ -67,14 +67,14 @@ pub fn correlation(x: &[f32], y: &[f32]) -> Option<f32> {
 /// The Lissajous / goniometer coordinate of one stereo sample pair.
 ///
 /// The audio-engineering goniometer plots the stereo signal as a Lissajous
-/// figure rotated 45° into the **mid/side** plane, so a mono signal reads as a
+/// figure rotated 45 degrees into the **mid/side** plane, so a mono signal reads as a
 /// vertical line and an anti-phase one as horizontal:
 ///
-/// - `x` (horizontal) is the **side** component `(L − R) / √2` -- the stereo
+/// - `x` (horizontal) is the **side** component `(L - R) / sqrt(2)` -- the stereo
 ///   width;
-/// - `y` (vertical) is the **mid** component `(L + R) / √2` -- the mono sum.
+/// - `y` (vertical) is the **mid** component `(L + R) / sqrt(2)` -- the mono sum.
 ///
-/// The `1/√2` keeps the transform an isometry (a hard-panned channel reaches
+/// The `1/sqrt(2)` keeps the transform an isometry (a hard-panned channel reaches
 /// the same distance from the origin as a centered one of equal level), so the
 /// figure's shape is read directly. Returned as `[x, y]`.
 pub fn lissajous_point(left: f32, right: f32) -> [f32; 2] {
@@ -340,7 +340,7 @@ pub fn meter_fraction(amplitude: f32, floor_db: f32) -> f32 {
     if amplitude <= 0.0 {
         return 0.0;
     }
-    // 20·log10(a), which is `ln(a) / ln(10) · 20`.
+    // 20*log10(a), which is `ln(a) / ln(10) * 20`.
     meter_fraction_db(20.0 * amplitude.ln() / core::f32::consts::LN_10, floor_db)
 }
 
@@ -390,7 +390,7 @@ pub fn amplitude_of_db(db: f32) -> f32 {
     powf10(db / 20.0)
 }
 
-/// `10^x`, written as `exp(x · ln 10)` so the constant is visible rather than
+/// `10^x`, written as `exp(x * ln 10)` so the constant is visible rather than
 /// hidden inside a `powf` whose base nobody can see.
 #[inline]
 fn powf10(x: f32) -> f32 {
@@ -666,7 +666,7 @@ impl ClipLatch {
 /// **The dynamic range of a resolution**, in decibels below full scale -- where
 /// a meter's floor belongs when it is drawn for a particular format.
 ///
-/// Each bit is `20·log10(2)` = 6.02 dB, so 16 bits reach 96 dB down, 24 reach
+/// Each bit is `20*log10(2)` = 6.02 dB, so 16 bits reach 96 dB down, 24 reach
 /// 144 and a 32-bit integer 193. **A 32-bit float carries a 24-bit
 /// significand**, so its floor is 24's: pass 24 for it, not 32.
 ///

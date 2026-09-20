@@ -3,7 +3,7 @@
 `clausters.gui.host.GuiHost.open`/`define` hand back a `WindowHandle` -- the
 window's own id (it *is* an ``int``, so it drops into every place a window id
 went before) that additionally indexes the tree's **named** widgets. A lookup
-returns a `WidgetHandle`, a thin façade whose ``set``/``bind``/``free``/
+returns a `WidgetHandle`, a thin facade whose ``set``/``bind``/``free``/
 ``query``/``on_event`` delegate to the host with the resolved id -- the same way
 `clausters.defs.node.Node.free` delegates to its `Server`. So a script holds the
 widget and acts on it (``win["cutoff"].set(value=800.0)``) instead of tracking

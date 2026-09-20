@@ -101,7 +101,7 @@ impl OscServer {
     /// `/transport_set <origin_sample:int64> <tempo:double>` -- sets the shared
     /// beat grid for phase-aligning several clients on the master sample clock
     /// (last writer wins), stopped at position 0, and replies `/done`. The grid
-    /// is `beat b -> sample origin_sample + b·rate/tempo`; a client joins by
+    /// is `beat b -> sample origin_sample + b*rate/tempo`; a client joins by
     /// reading it with [`Self::handle_transport_query`] and quantizing its start
     /// onto it. The server only stores/broadcasts it -- in-memory (resets on
     /// restart), never scheduling audio from it.

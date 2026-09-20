@@ -32,26 +32,26 @@
 //! - [`BS1770`] is **the standard's own table** (ITU-R BS.1770-4, Annex 2:
 //!   "order 48, 4-phase, FIR interpolating"), transcribed rather than designed,
 //!   because a number this project calls dBTP should be the number the
-//!   recommendation defines. Measured: symmetric to the bit, ±0.22 dB of
+//!   recommendation defines. Measured: symmetric to the bit, +/-0.22 dB of
 //!   passband ripple out to 0.8 of Nyquist, images down about 40 dB.
-//! - [`FINE`] is **a design**, since the recommendation gives no table past 4×
+//! - [`FINE`] is **a design**, since the recommendation gives no table past 4*
 //!   while saying plainly that "higher sampling rates and over-sampling ratios
 //!   are preferred": 8 phases of the same 12 taps, a Kaiser-windowed sinc
-//!   (β = 3.6, cutoff 0.99 of the input Nyquist), normalized to an overall gain
-//!   of 8. Measured: ±0.1 dB out to 0.8 of Nyquist, images down 51 dB.
+//!   (beta = 3.6, cutoff 0.99 of the input Nyquist), normalized to an overall gain
+//!   of 8. Measured: +/-0.1 dB out to 0.8 of Nyquist, images down 51 dB.
 //!
 //! # Why the factor is the accuracy, and the standard says by how much
 //!
 //! The filter is not where a true-peak reading loses its last fraction of a
 //! decibel; the **grid** is. A peak can fall midway between two *oversampled*
 //! instants, and the deepest it can hide there is a property of arithmetic, not
-//! of anybody's filter -- `20·log10(cos(π · fnorm / L))`, which BS.1770-4's
+//! of anybody's filter -- `20*log10(cos(pi * fnorm / L))`, which BS.1770-4's
 //! Appendix 1 tabulates:
 //!
 //! | Oversampling | worst under-read at 0.45 of Nyquist | at Nyquist |
 //! |---|---|---|
-//! | 4× ([`BS1770`]) | 0.554 dB | 0.688 dB |
-//! | 8× ([`FINE`]) | 0.136 dB | 0.169 dB |
+//! | 4* ([`BS1770`]) | 0.554 dB | 0.688 dB |
+//! | 8* ([`FINE`]) | 0.136 dB | 0.169 dB |
 //!
 //! So [`BS1770`] is what the standard asks for and [`FINE`] is what to reach
 //! for when the reading has to be tight, and neither is a better *filter* than
@@ -93,7 +93,7 @@ pub const MAX_FACTOR: usize = 8;
 /// side of the output being computed.
 pub const GUARD: usize = TAPS / 2;
 
-/// **The ITU-R BS.1770-4 Annex 2 table**, phase 0 first: the 4×, order-48,
+/// **The ITU-R BS.1770-4 Annex 2 table**, phase 0 first: the 4*, order-48,
 /// 4-phase FIR the recommendation prints for true-peak measurement.
 ///
 /// `PHASES_4X[p][k]` multiplies the input sample `k` back from the current one
@@ -167,12 +167,12 @@ pub const PHASES_4X: [[f32; TAPS]; 4] = [
     ],
 ];
 
-/// **The 8× table**, designed rather than transcribed -- the recommendation
-/// gives none past 4× while saying plainly that higher ratios are preferred.
+/// **The 8* table**, designed rather than transcribed -- the recommendation
+/// gives none past 4* while saying plainly that higher ratios are preferred.
 ///
 /// It is the classic **fractional-delay** form, which is chosen for a property
 /// the standard's table does not have: the reconstruction at offset `d` from
-/// sample `i` is `sum_k x[i+k] · sinc(k − d) · kaiser(k − d)`, so at `d = 0`
+/// sample `i` is `sum_k x[i+k] * sinc(k - d) * kaiser(k - d)`, so at `d = 0`
 /// every term but `x[i]` is a sinc at an integer -- zero -- and **phase 0 is the
 /// sample itself, exactly**. A curve drawn from this table passes *through* its
 /// dots; one drawn from [`PHASES_4X`] misses them by up to 0.09, because that
@@ -180,7 +180,7 @@ pub const PHASES_4X: [[f32; TAPS]; 4] = [
 /// passthrough. It costs nothing in the measurement (a peak is a maximum over a
 /// grid either way) and it is the whole difference in a picture.
 ///
-/// Twelve taps per phase and a Kaiser window of `β = 7`, over `k = −5 ..= 6`.
+/// Twelve taps per phase and a Kaiser window of `beta = 7`, over `k = -5 ..= 6`.
 /// The test beside it re-derives the table from that one formula, so the block
 /// of digits in the source is a *result* rather than something nobody can
 /// regenerate.
@@ -301,10 +301,10 @@ pub struct Interpolator {
     phases: &'static [[f32; TAPS]],
 }
 
-/// The standard's 4× filter: what a reading called **dBTP** is measured with.
+/// The standard's 4* filter: what a reading called **dBTP** is measured with.
 pub const BS1770: Interpolator = Interpolator { phases: &PHASES_4X };
 
-/// The 8× filter: four times the grid, and a quarter of its worst under-read
+/// The 8* filter: four times the grid, and a quarter of its worst under-read
 /// (0.136 dB against 0.554 at 0.45 of Nyquist). What a drawing uses, since a
 /// curve is read by eye and seven points between two samples is a curve.
 pub const FINE: Interpolator = Interpolator { phases: &PHASES_8X };
@@ -336,7 +336,7 @@ impl Interpolator {
         acc
     }
 
-    /// **The reconstructed signal over a span**, at [`factor`](Self::factor)×
+    /// **The reconstructed signal over a span**, at [`factor`](Self::factor)*
     /// the sample rate.
     ///
     /// `input` is the span **plus [`GUARD`] samples of context at each end**,
@@ -429,7 +429,7 @@ impl Default for TruePeakMeter {
 
 impl TruePeakMeter {
     /// A meter that has seen nothing, measuring the way the standard says --
-    /// [`BS1770`], 4×.
+    /// [`BS1770`], 4*.
     pub fn new() -> Self {
         Self::with(BS1770)
     }
@@ -646,7 +646,7 @@ mod tests {
 
     /// **The designed table is reproducible from its own formula.** It is
     /// re-derived here from what its documentation states -- the
-    /// fractional-delay form, `sinc(k - d)` windowed by a Kaiser of `β = 7`
+    /// fractional-delay form, `sinc(k - d)` windowed by a Kaiser of `beta = 7`
     /// over `k = -5 ..= 6` -- so the block of digits in the source is a
     /// *result* rather than something nobody can regenerate.
     #[test]
@@ -760,8 +760,8 @@ mod tests {
     }
 
     /// **The standard's worst case, and the whole reason the measurement
-    /// exists**: a sine at a quarter of the sample rate, sampled at 45°, reads
-    /// `±1.0` at every sample -- full scale, and a meter watching samples has
+    /// exists**: a sine at a quarter of the sample rate, sampled at 45 degrees, reads
+    /// `+/-1.0` at every sample -- full scale, and a meter watching samples has
     /// nothing to report. The signal between them reaches `sqrt(2)`, so its
     /// true peak is **+3.01 dBTP**. BS.1770-4's Appendix 1 names this case: "a
     /// 3 dB under-read for an unfortunately-phased tone at a quarter of the
@@ -787,8 +787,8 @@ mod tests {
 
     /// **A finer grid reads a peak *closer*** -- which is not the same as
     /// reading it higher, and the difference is worth pinning down. The
-    /// standard's 4× filter has about a fifth of a decibel of passband ripple,
-    /// so it can land either side of the true amplitude; the 8× design is flat
+    /// standard's 4* filter has about a fifth of a decibel of passband ripple,
+    /// so it can land either side of the true amplitude; the 8* design is flat
     /// to a hundredth. On a sine of known amplitude the finer reading is the
     /// nearer one, every time.
     #[test]

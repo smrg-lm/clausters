@@ -404,11 +404,11 @@ export class ClaustersPower extends HTMLElement {
             const engine = await server();
             if (engine.context.state === "running") {
                 await engine.suspend();
-                this.button.textContent = "⏻ power";
+                this.button.textContent = "\u23FB power";
             } else {
                 // The page-wide switch also starts whatever is waiting to.
                 await startPage();
-                this.button.textContent = "⏸ suspend";
+                this.button.textContent = "\u23F8 suspend";
             }
         };
     }

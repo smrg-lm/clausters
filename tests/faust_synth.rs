@@ -203,7 +203,7 @@ fn faust_synth_plays_in_the_tree() {
     let expected_rms = 0.2 * std::f32::consts::FRAC_1_SQRT_2;
     assert!(
         (rms(&left) - expected_rms).abs() < 0.005,
-        "rms = {}, expected ≈ {expected_rms}",
+        "rms = {}, expected ~ {expected_rms}",
         rms(&left)
     );
 }
@@ -318,7 +318,7 @@ fn input_buses_feed_faust_synths() {
     let expected_rms = 0.2 * 0.5 * std::f32::consts::FRAC_1_SQRT_2;
     assert!(
         (rms(&left) - expected_rms).abs() < 0.005,
-        "rms = {}, expected ≈ {expected_rms}",
+        "rms = {}, expected ~ {expected_rms}",
         rms(&left)
     );
 }
@@ -353,7 +353,7 @@ fn ugen_and_faust_synths_mix_on_the_same_bus() {
     let expected_rms = 0.4 * std::f32::consts::FRAC_1_SQRT_2;
     assert!(
         (rms(&left) - expected_rms).abs() < 0.01,
-        "rms = {}, expected ≈ {expected_rms} (the two sines must mix)",
+        "rms = {}, expected ~ {expected_rms} (the two sines must mix)",
         rms(&left)
     );
 }
