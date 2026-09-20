@@ -215,6 +215,26 @@ on trust, so that is where drift accumulates:
 - Everything under `src/`, `tests/` and `examples/` (code, comments, strings,
   test names) is in English.
 - **Git commit messages are in English** (subject and body), ASCII-only.
+- **A source file is ASCII, in every language.** Code, comments, doc comments,
+  docstrings and the strings an application prints or logs: the aside is `--`,
+  never an em dash, and the rest goes the same way -- `...`, `->`, `<->`, `*`
+  for a product or a middle dot, `-` for a minus sign, `+/-`, `<=`, `>=`,
+  `sqrt()`, `^2`, `_i`, `pi`, `beta`, `sum`, `degrees`. A character a terminal,
+  a diff, a grep pattern or an editor's font may not render is a cost the
+  reader pays and the prose never repays. `tests/ascii.rs` enforces it over
+  every tracked source, configuration and page file, and **prints the file, the
+  line and the codepoint** when one appears.
+  - The exception is the file whose *subject* is the character: a glyph table
+    keyed by what it draws, a dead-key composition doc, a test over a letter
+    that takes two bytes, an example about accented text, a utf8 test vector.
+    Those are named one by one, with the reason, in that test's `DATA` list --
+    adding a file there is a claim about what it is, not a way past the rule.
+    Where the character must reach a screen from otherwise ordinary code, it is
+    written as an escape (`\u23FB`) rather than pasted in.
+  - **The books are not covered**: `docs/`, the three `docs/src/` trees and the
+    `PLAN.md` set are read rendered, where the typography is the point, and
+    they keep the em dash. A docstring is *not* a book even though it is
+    published into one -- it is read in the editor first.
 - The `PLAN.md` roadmaps (`PLAN.md`, `clients/python/PLAN.md`,
   `clients/gui/PLAN.md`, `clients/web/PLAN.md`), `docs/decisions.md` and the frozen
   `docs/history/build-log.md` are in English. The conversation with the user is

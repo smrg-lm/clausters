@@ -1023,6 +1023,42 @@ keeps the datagram-safe clamp), and the IPC command rings deliberately stayed
 at 64 KiB — large payloads ride TCP even locally, and growing the ring would
 bump the versioned segment layout for no demonstrated need.
 
+## Source files are ASCII; the books are not
+
+Code, comments, doc comments, docstrings and the strings an application prints
+carry no character above U+007F. The sweep that made it true (2026-09-19)
+replaced about 13 000 of them: 12 736 em dashes, then the arrows, ellipses,
+middle dots, minus signs, square roots, superscripts, subscripts and Greek that
+formulas in comments had reached for. `tests/ascii.rs` keeps it that way.
+
+**Why not everywhere.** The books keep their typography, and the split is not
+taste. A book is read **rendered** — mdBook has already chosen the font and the
+width, and an em dash there is a typeset em dash. A source file is read in
+whatever the reader has: a terminal at an unknown encoding, a diff in a
+pager, a `grep` pattern typed by hand, an editor whose font has no glyph for
+U+2212 and draws a box. The character costs the reader something and repays it
+only in a medium the source file never reaches. A docstring is the interesting
+case and it lands on the source side: it is published into a book, but it is
+read in the editor first, by whoever is changing the function.
+
+**Where the character stays.** Not every non-ASCII character in a source file
+is typography — in some of them it is the data: the font's glyph table is
+keyed by the character each arm draws; the dead-key composition docs name the
+marks they compose; a caret test needs a letter that takes two bytes; the OSC
+utf8 vector exists to carry one. Those files are listed **one by one, with the
+reason**, in the test's `DATA`, and a second test fails if a listed file turns
+out to be all ASCII after all — so the list cannot quietly become a place
+things are parked. Where a glyph must reach a screen from otherwise ordinary
+code, it is written as an escape (`"\u23FB power"`), which the web client's own
+HTML was already doing with `&#9211;`.
+
+**Why a test and not a habit.** The em dash had been the house style in source
+files for the project's whole life, and the same day this was decided, one
+change had been committed with both spellings in it — the mark is invisible
+until someone looks for it, and no formatter, linter or compiler reads prose.
+A rule about characters is exactly the kind a test can hold and a person
+cannot.
+
 ## Package SemVer is decoupled from the binary ABI counters
 
 Compatibility is tracked by **two monotonic integer counters** —
