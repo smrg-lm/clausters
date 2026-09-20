@@ -3,7 +3,7 @@
 //! A [`PvProgram`] is a small postfix program evaluated once per bin on each
 //! fresh spectral frame -- the `PV_Kernel` UGen's payload. Its opcodes are the
 //! shared [`builtins`](crate::builtins) operator tables plus a handful of
-//! per-bin loads (`mag`, `phase`, `bin`, `nbins`, `binfreq`, `p0`…), so a
+//! per-bin loads (`mag`, `phase`, `bin`, `nbins`, `binfreq`, `p0`...), so a
 //! client authors bin expressions with the *same* operator vocabulary it
 //! already uses for value math and UGen graphs, and the server evaluates them
 //! with the same scalar `apply_*` functions -- pure `f32`, bit-identical
@@ -15,7 +15,7 @@
 //! the audio thread as a fixed loop over a caller-provided stack -- no
 //! allocation, no recursion, no invalid program ever reaching it.
 //!
-//! Programs are a **per-bin map**: one `(mag, phase, bin, params…)` in, one
+//! Programs are a **per-bin map**: one `(mag, phase, bin, params...)` in, one
 //! value out, no state between bins or frames. Cross-frame state and bin
 //! remapping stay with the curated `PV_*` implementations (see
 //! `docs/decisions.md`, the per-frame-mechanism entry).
@@ -54,7 +54,7 @@ pub enum PvOp {
 }
 
 /// Resolves one wire word to its opcode: a load name (`"mag"`, `"phase"`,
-/// `"bin"`, `"nbins"`, `"binfreq"`, `"p0"`…`"p31"`) or an operator wire name
+/// `"bin"`, `"nbins"`, `"binfreq"`, `"p0"`...`"p31"`) or an operator wire name
 /// from the shared [`builtins`](crate::builtins) tables (which keep unary and
 /// binary names disjoint). Constants are numbers on the wire, not words.
 pub fn parse_word(word: &str) -> Option<PvOp> {

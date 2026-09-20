@@ -101,7 +101,7 @@ struct Shared {
 unsafe impl Send for Shared {}
 unsafe impl Sync for Shared {}
 
-/// The pool. `WorkerPool::new(0, …)` is a no-op pool: every stage runs
+/// The pool. `WorkerPool::new(0, ...)` is a no-op pool: every stage runs
 /// inline, sequentially -- the default for `engine_pair` and the whole test
 /// suite.
 pub struct WorkerPool {

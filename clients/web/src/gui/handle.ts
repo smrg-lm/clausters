@@ -152,7 +152,7 @@ export class WidgetHandle {
 export class WindowHandle extends WidgetHandle {
     private readonly bound: Map<string, number>;
     /**
-     * widget id → the def control it was built from, collected by the id walk
+     * widget id -> the def control it was built from, collected by the id walk
      * -- what {@link WindowHandle.bind} wires in one verb.
      */
     private readonly controlMap: Map<number, string>;
@@ -179,7 +179,7 @@ export class WindowHandle extends WidgetHandle {
         this.controlMap = controls;
     }
 
-    /** The `WidgetHandle` for the widget built with `name: …`. */
+    /** The `WidgetHandle` for the widget built with `name: ...`. */
     widget(name: string): WidgetHandle {
         const id = this.bound.get(name);
         if (id === undefined) {
@@ -192,7 +192,7 @@ export class WindowHandle extends WidgetHandle {
     }
 
     /**
-     * Adopts a redrawn tree's name → id map, in place. Called by
+     * Adopts a redrawn tree's name -> id map, in place. Called by
      * `GuiHost.define` when a window is redefined: one window is one handle,
      * so every reference the caller kept goes on resolving names correctly
      * instead of pointing at ids the redraw returned to the pool.

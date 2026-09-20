@@ -12,7 +12,7 @@
 // waveform view does not care which fed it.
 
 /**
- * Interleaves a decoded `AudioBuffer` into the flat `L R L R …` layout every
+ * Interleaves a decoded `AudioBuffer` into the flat `L R L R ...` layout every
  * buffer in the system uses (`frame * channels + channel`).
  */
 export function interleave(audio: AudioBuffer): Float32Array {

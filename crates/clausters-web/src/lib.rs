@@ -13,7 +13,7 @@
 //! worker count by design.
 //!
 //! Parity caveat (recorded in `docs/decisions.md`): wasm has no flush-to-zero
-//! mode, so native↔wasm bit-identity holds where the render stays out of the
+//! mode, so native<->wasm bit-identity holds where the render stays out of the
 //! denormal range -- the parity harness asserts on denormal-free scores.
 
 use clausters::server::render::{RenderConfig, Score, render_to_vec};

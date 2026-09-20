@@ -98,7 +98,7 @@ impl SpectrumState {
 
     /// Folds one newest tap window (`raw.len() == fft_size`) into the smoothed
     /// and peak-hold curves. `averaging` in `[0, 1)` weights the previous frame
-    /// (0 = instant, →1 = very smooth); `peak_hold` advances the decaying peak.
+    /// (0 = instant, ->1 = very smooth); `peak_hold` advances the decaying peak.
     pub fn update(&mut self, raw: &[f32], averaging: f32, peak_hold: bool) {
         if !analysis::magnitudes_db_into(
             raw,
@@ -335,7 +335,7 @@ pub(crate) fn draw_spectrum(
         if n_bins == 0 {
             continue;
         }
-        // The bin (fractional) a screen column maps to, through the display→Hz
+        // The bin (fractional) a screen column maps to, through the display->Hz
         // geometry shared with the spectrogram and its rulers -- the column's
         // position across the *visible window* of the axis, which is the one
         // remapping a navigable frequency axis costs the drawing.

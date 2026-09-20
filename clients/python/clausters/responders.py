@@ -110,7 +110,7 @@ class OscFunc:
 
     Registers ``func`` to fire when a message matching ``path`` arrives. The
     callback is called ``func(msg, time, src)`` -- ``msg`` the message as a list
-    ``[addr, arg1, …]``, ``time`` the bundle's Unix time (or ``None`` for an
+    ``[addr, arg1, ...]``, ``time`` the bundle's Unix time (or ``None`` for an
     immediate / bare message), ``src`` the ``(host, port)`` of the sender.
 
     Args:
@@ -191,7 +191,7 @@ class MidiFunc:
 
     Registers ``func`` to fire on channel-voice messages of a given type. The
     callback is called ``func(message, src)`` -- ``message`` a dict
-    (``{'type', 'channel', …}``, see `clausters.base._midiinterface.parse_midi`)
+    (``{'type', 'channel', ...}``, see `clausters.base._midiinterface.parse_midi`)
     and ``src`` the port name.
 
     Args:

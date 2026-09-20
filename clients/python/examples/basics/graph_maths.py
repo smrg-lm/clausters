@@ -8,7 +8,7 @@ Runs from the *installed* package, offline, like ``buffers/offline_render.py``::
     python clients/python/examples/basics/graph_maths.py out.wav
 
 Every operator and math method beyond `+ - * /` -- ``%``, ``min``/``max``, the
-comparisons, ``.midicps()``, ``.distort()``, ``.clip2()`` … -- composes the
+comparisons, ``.midicps()``, ``.distort()``, ``.clip2()`` ... -- composes the
 server's generic ``BinaryOpUGen``/``UnaryOpUGen``, computed by the same
 ``clausters-core`` code the client uses off the RT path (so a value you compute
 ahead of time and the UGen on the audio thread agree bit-for-bit). The point of

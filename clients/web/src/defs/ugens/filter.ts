@@ -103,10 +103,10 @@ export const svf = (
     new Ugen("Svf", [signal, freq, resonance(res.rq, res.q), low, band, high]);
 
 /**
- * The `(low, band, high)` gains for a continuous lowpass → bandpass →
+ * The `(low, band, high)` gains for a continuous lowpass -> bandpass ->
  * highpass sweep, to spread into `svf`: `svf(sig, freq, res, ...svfMorph(p))`.
  *
- * `pos` runs 0 → 1 → 2 and may be a signal, so the response becomes an
+ * `pos` runs 0 -> 1 -> 2 and may be a signal, so the response becomes an
  * automation lane like any other. The ordering lives here rather than on the
  * wire, where committing to one arbitrary sequence of responses would exclude
  * every other (notch, peak, allpass are all reachable through `svf` itself).

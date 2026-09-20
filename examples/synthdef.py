@@ -9,7 +9,7 @@ The build is **instance-based** -- the graph is just the tree of composed
 objects, with no thread-global "current SynthDef" the way sclang has -- so
 several defs can be built side by side. The four arithmetic operators map to
 the server's dedicated `Add`/`Sub`/`Mul`/`Div` UGens; everything beyond them
-(`%`, `min`/`max`, the comparisons, `.midicps()`, `.distort()` …) composes its
+(`%`, `min`/`max`, the comparisons, `.midicps()`, `.distort()` ...) composes its
 generic `BinaryOpUGen`/`UnaryOpUGen` -- see
 `clients/python/examples/basics/graph_maths.py`.
 

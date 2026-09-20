@@ -32,8 +32,8 @@ pub fn on_msg(
     let mut args = vec![
         OscType::String(name.to_string()),
         OscType::Int(node),
-        OscType::Int(0), // add to head…
-        OscType::Int(0), // …of the root group
+        OscType::Int(0), // add to head...
+        OscType::Int(0), // ...of the root group
         OscType::String("freq".into()),
         OscType::Float(scale::midi_to_hz(pitch as f64) as f32),
         OscType::String("amp".into()),

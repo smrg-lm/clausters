@@ -347,7 +347,7 @@ test("FaustDef parity: two outputs", () => {
 });
 
 // The box algebra's three vectors. Written against the TS surface only -- the
-// application is `.call(…)` where Python calls the box itself and `.outs()` is
+// application is `.call(...)` where Python calls the box itself and `.outs()` is
 // the same enumeration -- so what is compared is the emitted tree, never the
 // spelling that built it.
 

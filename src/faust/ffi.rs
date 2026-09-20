@@ -398,7 +398,7 @@ unsafe extern "C" {
 
     // ---- LLVM JIT (llvm-dsp-c.h) ----
     /// Compiles Faust *source code* (no lib context needed). it uses this;
-    /// Switches to JSON→Box construction + `createCDSPFactoryFromBoxes`.
+    /// Switches to JSON->Box construction + `createCDSPFactoryFromBoxes`.
     pub fn createCDSPFactoryFromString(
         name_app: *const c_char,
         dsp_content: *const c_char,

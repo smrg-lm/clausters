@@ -319,7 +319,7 @@ impl Element for Curve {
                 true
             }
             // The full breakpoint list replaces in one set -- the flat
-            // `[t, v, shape, curve, …]` array, or that array as a JSON string
+            // `[t, v, shape, curve, ...]` array, or that array as a JSON string
             // (the `/gui_set` scalar carrier).
             "points" => match points::parse_points(v, self.min, self.max) {
                 Some(p) if !p.is_empty() => {

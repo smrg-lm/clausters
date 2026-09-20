@@ -278,7 +278,7 @@ export class Multitrack {
     /**
      * The `multitrack` widget drawing this multitrack, built from what this object
      * holds. Any widget prop (`name`, `weight`, `link`, `ruler`, `sampleRate`,
-     * `playheadAt`…) passes through.
+     * `playheadAt`...) passes through.
      */
     view(props: Record<string, unknown> = {}): GuiNode {
         // The name is remembered so `attach` needs only the window: this object

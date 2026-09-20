@@ -767,7 +767,7 @@ export class Buffer {
     }
 
     /**
-     * Asks the running server what it holds in this slot (`/buffer_query` →
+     * Asks the running server what it holds in this slot (`/buffer_query` ->
      * `/buffer_query.reply bufnum frames channels sampleRate`), keeps the record on the
      * handle and returns it.
      *
@@ -822,10 +822,10 @@ export class Buffer {
     }
 
     /**
-     * Reads interleaved samples out of this buffer (`/buffer_getRange` → `/buffer_getRange.reply`), in
+     * Reads interleaved samples out of this buffer (`/buffer_getRange` -> `/buffer_getRange.reply`), in
      * chunks, as one `Float32Array`. `count` -1 reads to the end (the shape is
      * queried first). Sample indices are flat across channels
-     * (`frame * channels + channel`), so a stereo buffer reads `L R L R …`.
+     * (`frame * channels + channel`), so a stereo buffer reads `L R L R ...`.
      *
      * `chunk` (samples per round trip) defaults to the carrier's own bound
      * (`Server.bulkChunk`) -- megabytes per reply on a stream carrier, the
@@ -870,7 +870,7 @@ export class Buffer {
     }
 
     /**
-     * Fetches this buffer's **overview** (`/buffer_peaks` →
+     * Fetches this buffer's **overview** (`/buffer_peaks` ->
      * `/buffer_peaks.reply`), as `{ start, bucket, stats }`.
      *
      * The summary of a buffer that is standing still, and the sibling of the
@@ -935,10 +935,10 @@ export class Buffer {
     /**
      * Writes interleaved samples into this buffer (`/buffer_setRange`), in
      * chunks -- the write half of `getSamples`, and the step that closes an
-     * editor's read → edit → write cycle.
+     * editor's read -> edit -> write cycle.
      *
      * `samples` is laid down from flat index `start`, so a stereo buffer is
-     * written interleaved `L R L R …`, exactly as it reads back. The samples
+     * written interleaved `L R L R ...`, exactly as it reads back. The samples
      * cross as one little-endian `f32` blob per chunk rather than as float
      * arguments -- the protocol's rule for bulk data, and what makes writing a
      * multi-megabyte edit a byte copy instead of a per-sample encode. The buffer

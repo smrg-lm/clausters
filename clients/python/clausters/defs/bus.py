@@ -37,7 +37,7 @@ class Bus:
 
     - **Audio** -- a block of samples per channel every block, the signal
       itself. Buses ``0..outputs`` are the hardware outputs, which is why
-      ``out(0, …)`` is what you hear; `audio` allocates above them. Read one
+      ``out(0, ...)`` is what you hear; `audio` allocates above them. Read one
       with the ``in_`` UGen, write one with ``out``.
     - **Control** -- one float, updated per block: a parameter, not a signal. A
       slow envelope, a knob, an LFO. Cheap enough to have thousands. Read one
@@ -69,7 +69,7 @@ class Bus:
         n.map("amp", amp)                    # that control now tracks the bus
 
     amp.set(0.3)                             # one write, three voices
-    print(amp.get())                         # read back (f32: 0.30000001…)
+    print(amp.get())                         # read back (f32: 0.30000001...)
 
     g.free()
     amp.free()                               # the slot returns to the pool

@@ -22,7 +22,7 @@ def in_ctl(bus=0.0) -> Ugen:
 
 
 def _out_channels(kind, bus, signal):
-    """One writer per channel on consecutive buses (``bus``, ``bus+1``, …) --
+    """One writer per channel on consecutive buses (``bus``, ``bus+1``, ...) --
     the point where a channel list becomes buses. The base ``bus`` must be a
     number: a signal bus cannot be offset per channel client-side."""
     if isinstance(bus, bool) or not isinstance(bus, (int, float)):
@@ -138,7 +138,7 @@ def send_trig(trig, id=0, value=0.0) -> Ugen:
 
 def send_reply(trig, *values, cmd="/reply", reply_id=-1) -> Ugen:
     """On each trigger of ``trig``, sends the OSC message ``cmd nodeID reply_id
-    value…`` to ``/server_notify`` clients (``cmd`` defaults to ``/reply``). ``values``
+    value...`` to ``/server_notify`` clients (``cmd`` defaults to ``/reply``). ``values``
     is the arbitrary-arity payload. Output is silence; pass it as a `SynthDef`
     root."""
     return Ugen("SendReply", [trig, reply_id, *values], label=cmd)

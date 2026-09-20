@@ -10,7 +10,7 @@
 //! ([`correlation`]) as companion chrome. Pure (no GPU, no shm), so both fronts
 //! share it and it is unit-testable.
 //!
-//! The tick stores the two taps' windows interleaved `[l0, r0, l1, r1, …]` under
+//! The tick stores the two taps' windows interleaved `[l0, r0, l1, r1, ...]` under
 //! the element itself (its `live` state, filled by the tick); the render draws
 //! that verbatim, so a `hold` phasescope simply keeps its last window.
 
@@ -30,7 +30,7 @@ const MAX_EXTENT: f32 = std::f32::consts::SQRT_2;
 /// window is strided down to roughly this many points.
 const MAX_SEGMENTS: usize = 2000;
 
-/// Draws a phasescope from an interleaved `[l, r, l, r, …]` window: the framed
+/// Draws a phasescope from an interleaved `[l, r, l, r, ...]` window: the framed
 /// goniometer field with an age-faded Lissajous trail (oldest faint, newest
 /// bright), a faint mid/side center cross, and a correlation bar beneath. An
 /// empty or odd-length window draws just the field and an empty readout.

@@ -24,7 +24,7 @@
     </style>
   </head>
   <body>
-    <div id="note">parity pass starting…</div>
+    <div id="note">parity pass starting...</div>
 
     <!--
       The scripted parity pass: connects to the audio server
@@ -35,8 +35,8 @@
         /gui_def 1: window opened from the page      (each demo)
         audio-server WebSocket open                  (the WS leg)
         /bus_stream subscription: [10]                 (meters over the wire)
-        waveform: fetched peak cache sine.peaks …    (bulk: cache fetch)
-        waveform: fetched N samples from sine.f32 …  (bulk: raw fetch + wasm pyramid)
+        waveform: fetched peak cache sine.peaks ...    (bulk: cache fetch)
+        waveform: fetched N samples from sine.f32 ...  (bulk: raw fetch + wasm pyramid)
         buffer 0: N frames loaded into 1 waveform(s) (bulk: /buffer_getRange over WS)
 
       Serve sine.f32/sine.peaks next to this page and allocate server buffer 0

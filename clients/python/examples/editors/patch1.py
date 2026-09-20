@@ -45,7 +45,7 @@ The direction reads top to bottom, and the buses are never on screen: an unwired
 outlet keeps its def's default, so these defs default their bus controls to
 ``SILENT`` (a spare bus nobody reads) -- a box is silent until a cord reaches it --
 and the hardware output is reached through a **terminal def** (``dac``: an inlet,
-no outlet, its ``Out.ar(0, …)`` baked in), a box like any other, not an ``OUT``.
+no outlet, its ``Out.ar(0, ...)`` baked in), a box like any other, not an ``OUT``.
 
 The canvas, its scroll workspace and the two transport buttons are *named*, so
 the script wires each by name and never matches a widget id.
@@ -100,7 +100,7 @@ def trem(name: str = "trem") -> SynthDef:
 
 def dac(name: str = "dac") -> SynthDef:
     """The terminal stage: reads ``in``, scales it, and writes **hardware bus 0**
-    itself (baked ``Out.ar(0, …)``). It has an inlet and no outlet -- a cord into
+    itself (baked ``Out.ar(0, ...)``). It has an inlet and no outlet -- a cord into
     it is the only path to the speakers."""
     return SynthDef(name, out(0, in_(control("in", SILENT)) * control("amp", 0.4)))
 

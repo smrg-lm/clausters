@@ -816,7 +816,7 @@ impl SpectrogramView {
     }
 
     /// The normalized bottom of the log frequency axis (~20 Hz / Nyquist) -- the
-    /// same `f_lo` the shader's display→bin mapping uses, exposed so a ruler
+    /// same `f_lo` the shader's display->bin mapping uses, exposed so a ruler
     /// places its ticks with the identical geometry.
     pub fn log_floor(&self) -> f32 {
         (20.0 / self.stft.nyquist()).clamp(1e-5, 0.5)
@@ -826,7 +826,7 @@ impl SpectrogramView {
     /// (`start, len` with `0, 1` = the full axis; clamped) -- the live
     /// `y_start`/`y_len` props of the editor-grade widget. The internal view
     /// keeps the display-coordinate convention (scaled by `n_bins`), so the
-    /// shader's display→bin mapping is untouched.
+    /// shader's display->bin mapping is untouched.
     pub fn set_freq_window(&mut self, start: f64, len: f64) {
         self.freq.set_span(start, len);
     }
@@ -894,7 +894,7 @@ impl TimelineView for SpectrogramView {
         renderers.spectrogram.draw(pass, &self.texture);
     }
 
-    /// `L` cycles the frequency scale (linear → log → mel → bark); `[` / `]`
+    /// `L` cycles the frequency scale (linear -> log -> mel -> bark); `[` / `]`
     /// lower/raise the dB floor (contrast); `/` cycles the colormap.
     fn on_char(&mut self, c: char) -> bool {
         match c {

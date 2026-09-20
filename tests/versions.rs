@@ -23,7 +23,7 @@ fn read(rel: &str) -> String {
     fs::read_to_string(repo(rel)).unwrap_or_else(|e| panic!("cannot read {rel}: {e}"))
 }
 
-/// The first `version = "…"` (or `"version": "…"`) after `section`, which is
+/// The first `version = "..."` (or `"version": "..."`) after `section`, which is
 /// how every one of these files spells it.
 fn version_after(text: &str, section: &str, rel: &str) -> String {
     let from = text

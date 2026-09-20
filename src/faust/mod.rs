@@ -12,7 +12,7 @@
 //!   its bitcode. The decision log records why libfaust is built from source
 //!   and the binding is ours: distro packages ship without the LLVM backend
 //!   and without headers, and the existing crates (`faust-build`,
-//!   `faust-types`) do build-time Faust→Rust codegen, not JIT embedding.
+//!   `faust-types`) do build-time Faust->Rust codegen, not JIT embedding.
 //! - **wasm32** -- a page has no LLVM, so the compiler is `libfaust-wasm`
 //!   running in the engine's Worker and the def arrives as a **second wasm
 //!   module linked into the engine's own linear memory**, its `compute` reached
@@ -81,7 +81,7 @@ pub enum CompilePayload {
     Source(String),
     /// JSON box graph (see [`boxes`] for the schema).
     Json(String),
-    /// JSON signal tree, root `{"signals": …}` (see [`signals`]).
+    /// JSON signal tree, root `{"signals": ...}` (see [`signals`]).
     Signal(String),
 }
 
@@ -90,7 +90,7 @@ impl CompilePayload {
     /// starts with `{`, then a signal tree if the JSON object has a top-level
     /// `"signals"` key, otherwise a box tree. The sniff is unambiguous --
     /// Faust source never starts with `{`, and a box def's root is a single
-    /// box node (`{"op": …}`), never an object keyed by `"signals"`.
+    /// box node (`{"op": ...}`), never an object keyed by `"signals"`.
     pub fn classify(def: String) -> Self {
         if !def.trim_start().starts_with('{') {
             return Self::Source(def);

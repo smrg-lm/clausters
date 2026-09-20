@@ -38,7 +38,7 @@ outlet (the same structural fact the server uses to order a graph). Or pass a de
 
 The buses are never drawn or named by you, so **the hardware output is not one
 either**: a signal reaches the speakers through a **terminal def** -- a ``dac``
-with an inlet and no outlet, its ``Out.ar(0, …)`` baked in -- a box like any other,
+with an inlet and no outlet, its ``Out.ar(0, ...)`` baked in -- a box like any other,
 not a special ``OUT`` node.
 
 The **rate** of a port is its cord type: an audio port is a plain name, a control

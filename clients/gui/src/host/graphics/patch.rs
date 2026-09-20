@@ -2,12 +2,12 @@
 //!
 //! A box has **inlets on its top edge** and **outlets on its bottom edge**, each
 //! typed (audio `ar`, control `kr`, or -- the Def-view's third -- init `ir`), and a
-//! **cord** runs `outlet → inlet`. That is the whole surface: the picture reads
+//! **cord** runs `outlet -> inlet`. That is the whole surface: the picture reads
 //! as signal flow, top to bottom. Direction is not a guess: it comes from the def
 //! (a control feeding an `In` is an inlet, one feeding an `Out` an outlet), so
 //! drawing it directed is honest. The same widget draws **level 1** -- a GraphDef,
 //! whole-node boxes wired by server buses (a cord *is* a bus the client's
-//! cord→bus pass names, `clausters_core::patch`; audio/control only) -- and
+//! cord->bus pass names, `clausters_core::patch`; audio/control only) -- and
 //! **level 2** -- a SynthDef/FaustDef, UGen boxes wired by internal cords (never a
 //! bus; `ir` joins the cord types). The rate is the only thing that differs; the
 //! geometry, hit-testing and cords are one implementation.
@@ -135,7 +135,7 @@ impl Obj {
     }
 }
 
-/// One directed cord: box `from`'s outlet `from_out` → box `to`'s inlet `to_in`.
+/// One directed cord: box `from`'s outlet `from_out` -> box `to`'s inlet `to_in`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Cord {
     pub from: usize,
@@ -969,7 +969,7 @@ mod tests {
     use super::*;
     use crate::host::metrics::Metrics;
 
-    /// tone (out) → trem (in, out) → dac (in, out), no cords yet placed.
+    /// tone (out) -> trem (in, out) -> dac (in, out), no cords yet placed.
     fn boxes() -> Vec<Obj> {
         vec![
             Obj::new("tone", vec![], vec![Port::audio("out")]),

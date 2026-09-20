@@ -68,7 +68,7 @@ export const dshuf = (
 ): Ugen => new Ugen("Dshuf", [repeats, ...demandValues(values)], { rate: "dr" });
 
 /**
- * An arithmetic sequence: `start`, `start + step`, … The step is read on
+ * An arithmetic sequence: `start`, `start + step`, ... The step is read on
  * every item, so it may itself be a stream.
  */
 export const dseries = (
@@ -77,7 +77,7 @@ export const dseries = (
     step: Channel = 1.0,
 ): Ugen => new Ugen("Dseries", [repeats, start, step], { rate: "dr" });
 
-/** A geometric sequence: `start`, `start * grow`, … */
+/** A geometric sequence: `start`, `start * grow`, ... */
 export const dgeom = (
     repeats: Channel = 0.0,
     start: Channel = 1.0,

@@ -1,7 +1,7 @@
-//! Validation helpers shared by the JSON→Box ([`crate::faust::boxes`]) and
-//! JSON→Signal ([`crate::faust::signals`]) interpreters: arity/field checks
+//! Validation helpers shared by the JSON->Box ([`crate::faust::boxes`]) and
+//! JSON->Signal ([`crate::faust::signals`]) interpreters: arity/field checks
 //! and error messages that carry the path of the offending node from the
-//! root `$` (e.g. `at $.in[1]: …`).
+//! root `$` (e.g. `at $.in[1]: ...`).
 
 use std::ffi::{CString, c_char};
 use std::fmt::Display;

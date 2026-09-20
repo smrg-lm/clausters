@@ -116,7 +116,7 @@ pub fn widget_span(template: &Template) -> usize {
 
 /// The parameter values a mount supplies, in the order they win.
 ///
-/// Resolution is **attribute → preset → declared default**, so a preset is a
+/// Resolution is **attribute -> preset -> declared default**, so a preset is a
 /// named bundle of values and an attribute is a local override. Both maps may
 /// hold names the manifest does not declare (a tag carries `class` and `style`
 /// like any element); those are ignored rather than refused.

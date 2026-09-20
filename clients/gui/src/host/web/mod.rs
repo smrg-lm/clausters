@@ -10,7 +10,7 @@
 //! Only the carrier and the page glue are new:
 //!
 //! - a **binding surface** ([`GuiBridge`]) the in-page JS feeds OSC packets into
-//!   (a `/gui_def`, `/gui_set`, `/gui_bind`, …) and drains `/gui_event`/
+//!   (a `/gui_def`, `/gui_set`, `/gui_bind`, ...) and drains `/gui_event`/
 //!   `/gui_closed`/`/gui_info` out of, all as raw OSC bytes through the one
 //!   [`decode_packet`]/encode door;
 //! - a [`WsServerLink`]: the host's audio-server leg over the browser-native
@@ -213,7 +213,7 @@ struct WebApp {
     /// and the typed clipboard is what makes that binding a matter of a string
     /// crossing rather than of a format: text is one of its kinds.
     text_clipboard: crate::host::clipboard::Clip,
-    /// Live control-bus values streamed from the audio server (`/bus_stream` →
+    /// Live control-bus values streamed from the audio server (`/bus_stream` ->
     /// `/bus_stream.reply`), the browser's [`BusSource`] for meters/scopes/canvases.
     buses: Arc<StreamedBuses>,
     /// The bus set currently subscribed with `/bus_stream` (sorted), so a tree
@@ -263,7 +263,7 @@ struct WebApp {
     /// Whether the first streamed `/bus_stream.reply` snapshot was logged (one line as
     /// evidence the bus stream is flowing; logging every frame would spam).
     stream_seen: bool,
-    /// The server-buffer fetch machine (`/buffer_query` → chunked `/buffer_getRange`),
+    /// The server-buffer fetch machine (`/buffer_query` -> chunked `/buffer_getRange`),
     /// shared with the native front; requests ride the WS leg.
     fetches: BufferFetches,
 }

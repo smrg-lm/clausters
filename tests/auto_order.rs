@@ -192,7 +192,7 @@ fn auto_group_reorders_a_reversed_chain() {
     );
     server.send("/group_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
     // Deliberately reversed: master, then fx, then source -- each /synth_new
-    // triggers a re-sort, so the final order must be src → fx → master.
+    // triggers a re-sort, so the final order must be src -> fx -> master.
     for (name, id) in [("master", 1001), ("fx", 1002), ("src", 1003)] {
         server.send(
             "/synth_new",
@@ -322,7 +322,7 @@ fn g_sort_mode_sorts_existing_children_and_can_be_disabled() {
     server.wait_for_order(100, &[1001, 1002]);
     assert!(server.render(20).iter().all(|s| *s == 0.0));
 
-    // Enabling sorts what is already there…
+    // Enabling sorts what is already there...
     server.send("/group_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
     server.wait_for_order(100, &[1002, 1001]);
     let out = server.render(50);
@@ -331,7 +331,7 @@ fn g_sort_mode_sorts_existing_children_and_can_be_disabled() {
         "sorted chain must be audible"
     );
 
-    // …and disabling re-enables manual moves.
+    // ...and disabling re-enables manual moves.
     server.send("/group_sortMode", vec![OscType::Int(100), OscType::Int(0)]);
     server.send("/node_before", vec![OscType::Int(1001), OscType::Int(1002)]);
     server.wait_for_order(100, &[1001, 1002]);
@@ -527,7 +527,7 @@ fn dynamic_bus_indexes_are_reported_and_act_as_barriers() {
         vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
     );
     server.send("/group_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
-    // master, then the barrier, then src: src→master would normally re-sort,
+    // master, then the barrier, then src: src->master would normally re-sort,
     // but nothing may cross the dynamic node, so the order must hold.
     for (name, id) in [("master", 1001), ("dynread", 1002), ("src", 1003)] {
         server.send(

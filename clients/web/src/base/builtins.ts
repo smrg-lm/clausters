@@ -4,7 +4,7 @@
 // The value side of the operations the client applies to concrete numbers.
 // They go through `clausters-core` -- so they are computed in **f32**, matching
 // the server by construction; a JS number is f64 and would diverge. The
-// music-theory conversions (`midicps`, `dbamp`, …) go through the core too,
+// music-theory conversions (`midicps`, `dbamp`, ...) go through the core too,
 // so a value computed here and the same op running on the audio thread agree
 // exactly.
 //
@@ -275,7 +275,7 @@ export const exprange = (x: Num, lo = 0.01, hi = 1): Num =>
     mapOp("exprange", x, -1, 1, lo, hi, 0, "none");
 
 /**
- * Scale degree → MIDI note number in the pitch space `octave`/`root`, with
+ * Scale degree -> MIDI note number in the pitch space `octave`/`root`, with
  * floored octave wrapping (sclang semantics). An empty `scale` yields middle
  * C. The rule is the core's, so every client resolves a degree identically.
  */

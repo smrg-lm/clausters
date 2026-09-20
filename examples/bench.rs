@@ -115,7 +115,7 @@ fn main() {
     say!(
         "graph benchmark -- {SAMPLE_RATE} Hz, blocks of {BLOCK_SIZE} frames, release-mode wall clock"
     );
-    say!("\ndefault def (Sine · amp → 2× Out):");
+    say!("\ndefault def (Sine · amp -> 2× Out):");
     for &n in VOICE_COUNTS {
         report(n, bench(n, |_| make_default_synth()));
     }
@@ -166,7 +166,7 @@ fn main() {
 /// sine wavetable of scsynth's size (8192 samples = 4096 points) -- the
 /// measurement behind keeping `Sine` transcendental: if the table were much
 /// faster at high voice counts, a table-based sine would earn a place.
-/// Same graph shape for all three (osc · 0.001 → Out 0, freq at control 0).
+/// Same graph shape for all three (osc · 0.001 -> Out 0, freq at control 0).
 fn bench_sine_vs_wavetable() {
     use clausters::dsp::buffer::Buffer;
     use clausters::dsp::wavetable::{GenCommand, GenFlags};
@@ -269,7 +269,7 @@ fn bench_sine_vs_wavetable() {
 /// filter coefficient is interpolated here, would leave a 3 dB hole in the
 /// middle of every block a fast sweep crosses.
 ///
-/// The two rows are the same graph (`Sine → Pan2 → 2× Out`) with the position
+/// The two rows are the same graph (`Sine -> Pan2 -> 2× Out`) with the position
 /// wired to a constant and to an `LFTri`, so the difference between them is
 /// exactly the per-sample path: 64 polynomial evaluations a block instead of
 /// one. The claim being measured is that the second is affordable at all --
@@ -458,11 +458,11 @@ fn bench_fused() {
 ///    `FFT`/`IFFT` bookend pair (the `PV_*` in between are linear scans).
 /// 2. **Partitioned-convolution MAC** -- the frequency-domain delay-line inner
 ///    loop a future partitioned convolver runs per hop (`P` complex bin-wise
-///    multiply–accumulates). Uniformly partitioned, all of it lands on the hop
+///    multiply-accumulates). Uniformly partitioned, all of it lands on the hop
 ///    block unless the implementation spreads the partitions across the hop's
 ///    blocks -- this row is the spike that spreading would flatten.
-/// 3. **A full chain through the engine** -- `Sine → FFT → PV_MagAbove → IFFT
-///    → Out` per voice. The xRT column is the average story; the peak-block
+/// 3. **A full chain through the engine** -- `Sine -> FFT -> PV_MagAbove -> IFFT
+///    -> Out` per voice. The xRT column is the average story; the peak-block
 ///    column is the real-time one: every voice is added on the same block, so
 ///    all hops land on the same block -- the aligned worst case (hop-phase
 ///    staggering at instantiation is the lever that would spread it).
@@ -549,7 +549,7 @@ fn bench_spectral() {
     };
 
     say!(
-        "\nspectral chain (Sine → FFT 1024 → PV_MagAbove → IFFT → Out), aligned vs S11-staggered hops:"
+        "\nspectral chain (Sine -> FFT 1024 -> PV_MagAbove -> IFFT -> Out), aligned vs S11-staggered hops:"
     );
     say!(
         "  {:>6}  {:>11}  {:>12}  {:>14}  {:>14}",
@@ -725,7 +725,7 @@ fn time_per_call(mut f: impl FnMut() -> bool) -> f64 {
 
 /// One hop of a uniformly partitioned convolver's inner loop: accumulate
 /// `parts` complex bin-wise products of packed size-`n` frames (the
-/// [`fft::rfft_into`] layout: `[dc, nyquist, re, im, …]`) into one frame.
+/// [`fft::rfft_into`] layout: `[dc, nyquist, re, im, ...]`) into one frame.
 fn time_conv_mac(n: usize, parts: usize) -> f64 {
     let frames: Vec<Vec<f32>> = (0..parts)
         .map(|p| (0..n).map(|i| ((i + p) as f32 * 0.001).sin()).collect())
@@ -802,7 +802,7 @@ fn make_default_synth() -> Box<dyn SynthNode> {
 
 /// Head-to-head: the **same** DSP run by the two engines, so the only thing
 /// the timing reflects is per-synth audio-loop overhead -- UGen graph vs Faust
-/// LLVM. The graph is `sin(2π·phasor(freq)) · 0.2 → one bus`, which is exactly
+/// LLVM. The graph is `sin(2π·phasor(freq)) · 0.2 -> one bus`, which is exactly
 /// the parity pair from `tests/faust_parity.rs` (proven to agree sample for
 /// sample): identical math, one output each, same frequency control (index 0,
 /// swept by the harness), same `out` bus (0). Setup and JIT happen before the
@@ -841,7 +841,7 @@ fn bench_ugen_vs_faust() {
             .expect("faust sine compiles"),
     );
 
-    say!("\nUGen vs Faust -- identical DSP (sin(2π·phasor(freq)) · 0.2 → 1 bus), JIT excluded:");
+    say!("\nUGen vs Faust -- identical DSP (sin(2π·phasor(freq)) · 0.2 -> 1 bus), JIT excluded:");
     say!(
         "  {:>6}  {:>13}  {:>13}  {:>14}",
         "synths",
@@ -892,7 +892,7 @@ fn bench_ugen_vs_faust() {
 /// (`tests/faust_parity.rs::gain_stages_are_bit_exact`) -- one f32 multiply on
 /// the same samples, no transcendental and no f64/f32 asymmetry -- so the only
 /// difference timed is how each engine moves a block through one synth: three
-/// boxed `dyn` UGens with two intermediate wire buffers (`In · 0.5 → Out`)
+/// boxed `dyn` UGens with two intermediate wire buffers (`In · 0.5 -> Out`)
 /// against one Faust `compute` call (an in-copy, the multiply, an out-sum).
 #[cfg(feature = "faust")]
 fn bench_gain_overhead() {
@@ -937,7 +937,7 @@ fn bench_gain_overhead() {
     let in_idx = faust_gain.control_index("in").expect("in control");
     let out_idx = faust_gain.control_index("out").expect("out control");
 
-    say!("\nUGen vs Faust -- pure engine overhead (bit-exact · 0.5 gain, bus 4 → bus 0):");
+    say!("\nUGen vs Faust -- pure engine overhead (bit-exact · 0.5 gain, bus 4 -> bus 0):");
     say!(
         "  {:>6}  {:>13}  {:>13}  {:>14}",
         "synths",

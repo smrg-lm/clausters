@@ -247,7 +247,7 @@ fn compile_source(name: &str, source: &str) -> Result<FaustFactory, String> {
     factory_or_error(ptr, &error_msg)
 }
 
-/// JSON → Box API (see [`boxes`] for the schema). Validation errors come
+/// JSON -> Box API (see [`boxes`] for the schema). Validation errors come
 /// back with the path of the offending JSON node; Faust's own errors
 /// (arities, dangling inputs) come from the factory step, verbatim.
 fn compile_json(name: &str, json: &str) -> Result<FaustFactory, String> {
@@ -277,7 +277,7 @@ fn compile_json(name: &str, json: &str) -> Result<FaustFactory, String> {
     factory_or_error(ptr, &error_msg)
 }
 
-/// JSON → Signal API (see [`crate::faust::signals`] for the schema). Mirrors
+/// JSON -> Signal API (see [`crate::faust::signals`] for the schema). Mirrors
 /// [`compile_json`] but builds a NULL-terminated output-signal vector and
 /// calls `createCDSPFactoryFromSignals`.
 fn compile_signal(name: &str, json: &str) -> Result<FaustFactory, String> {

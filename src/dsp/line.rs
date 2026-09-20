@@ -50,7 +50,7 @@ enum Advance {
 /// An exponential ramp through or to zero is undefined, and what happens then
 /// is [`clausters_core::warp::exp_ends`]'s to say rather than this module's: a
 /// zero endpoint is nudged to a tiny same-signed level and a sign change falls
-/// back to a linear step, so `XLine(0, 1, …)` is a very steep rise rather
+/// back to a linear step, so `XLine(0, 1, ...)` is a very steep rise rather
 /// than a `NaN`. The envelope shapes read the same rule, which is what keeps a
 /// ramp and the curve an editor draws from being two answers.
 pub struct Line {

@@ -14,7 +14,7 @@ use super::super::{Host, HostEffect};
 use super::GestureEffect;
 use super::nav::group_view;
 
-/// Emits `/gui_event widget_id seq <args…>` (as an effect for the front to
+/// Emits `/gui_event widget_id seq <args...>` (as an effect for the front to
 /// send), **stamping it** so the owner's acknowledgement can name it.
 ///
 /// The stamp is issued here rather than at either front because a gesture is

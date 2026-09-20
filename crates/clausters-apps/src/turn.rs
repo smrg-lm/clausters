@@ -50,7 +50,7 @@ pub struct Record {
 }
 
 /// One message from the host: its address and its arguments,
-/// `<id> <seq> <version> <tag> <payload…>`.
+/// `<id> <seq> <version> <tag> <payload...>`.
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct Event {
     /// `"/gui_event"` or `"/gui_closed"`.

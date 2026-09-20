@@ -29,7 +29,7 @@
 
 use super::*;
 
-/// Result of a GraphDef bus allocation: the symbolic-name → first-index map,
+/// Result of a GraphDef bus allocation: the symbolic-name -> first-index map,
 /// plus the `(first, width)` runs taken from the audio and control pools (in
 /// that order), kept so teardown can hand them back.
 type GraphBusAlloc = (
@@ -69,9 +69,9 @@ impl CmdTranslator {
         }
     }
 
-    /// Allocates a GraphDef's private buses (resolved name → first index).
+    /// Allocates a GraphDef's private buses (resolved name -> first index).
     /// On a shortfall it hands back everything it took, so the caller's later
-    /// steps stay side-effect-free until this succeeds. Returns the name→index
+    /// steps stay side-effect-free until this succeeds. Returns the name->index
     /// map plus the `(first, width)` audio and control allocations.
     fn alloc_graph_buses(
         &mut self,
@@ -120,8 +120,8 @@ impl CmdTranslator {
     /// Instantiates the members at `indices` inside `parent`, consuming the
     /// pre-built synths and pre-allocated node ids (both parallel to
     /// `indices`): sets each control (bus references resolved against
-    /// `bus_index`, `"OUT"` → bus 0) and applies the `/node_map` wiring. Returns
-    /// member index → node id. Infallible -- the fallible `make_synth` and id
+    /// `bus_index`, `"OUT"` -> bus 0) and applies the `/node_map` wiring. Returns
+    /// member index -> node id. Infallible -- the fallible `make_synth` and id
     /// allocation happened in the caller, so an instance is never left
     /// half-built.
     #[allow(clippy::too_many_arguments)]
@@ -209,7 +209,7 @@ impl CmdTranslator {
     }
 
     /// Resolves the surface ports whose targets are *all* present in `node_of`
-    /// or `child_of` → `(node id, control index, mul, add)`. So passing the
+    /// or `child_of` -> `(node id, control index, mul, add)`. So passing the
     /// shared maps yields the shared ports and passing a slot's maps yields
     /// that slot's ports (a port never mixes the two -- see `validate`).
     ///
@@ -299,7 +299,7 @@ struct Planned {
     /// parent's and is neither taken nor released here.
     audio_buses: Vec<(usize, usize)>,
     control_buses: Vec<(usize, usize)>,
-    /// Member index → the plan of the nested graph it is.
+    /// Member index -> the plan of the nested graph it is.
     children: Vec<(usize, Planned)>,
 }
 

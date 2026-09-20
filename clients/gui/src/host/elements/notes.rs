@@ -1176,7 +1176,7 @@ fn clipboard_notes(text: &str) -> Option<Vec<notes::Note>> {
     (!notes.is_empty()).then_some(notes)
 }
 
-/// Parses a piano-roll clip's `notes`: a flat `[start, dur, pitch, …]` array
+/// Parses a piano-roll clip's `notes`: a flat `[start, dur, pitch, ...]` array
 /// (three numbers per note, the flat convention the `bpf` points use), each a
 /// [`Note`]. A short/absent/malformed array yields no notes (the
 /// clip then draws a waveform body).
@@ -1207,7 +1207,7 @@ fn parse_notes(props: &serde_json::Map<String, Value>) -> Vec<Note> {
         .collect()
 }
 
-/// Parse a `pianoroll`'s `osc` prop -- a flat `[time, label, time, label, …]`
+/// Parse a `pianoroll`'s `osc` prop -- a flat `[time, label, time, label, ...]`
 /// list of OSC markers (the label a short address/tag, an empty string
 /// meaning none). A trailing partial pair is dropped.
 fn parse_osc(props: &serde_json::Map<String, Value>) -> Vec<OscMark> {

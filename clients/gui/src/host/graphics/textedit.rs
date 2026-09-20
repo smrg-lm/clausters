@@ -551,7 +551,7 @@ mod tests {
         let s = "hello\nhi\nworld".to_string();
         let mut c = caret(4); // "hell|o" on line 1, col 4
         move_down(&s, &mut c, false);
-        // Line 2 "hi" is shorter than col 4 → clamps to its end.
+        // Line 2 "hi" is shorter than col 4 -> clamps to its end.
         assert_eq!(c.pos, 8); // end of "hi"
         move_down(&s, &mut c, false);
         // Column carried is the clamped one (2) into "world".

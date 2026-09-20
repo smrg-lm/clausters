@@ -72,7 +72,7 @@ pub(super) struct CanvasSlot {
     ///
     /// The shell reads the browser's own answer and ends the drag itself. This
     /// is the browser front's job and not the host's: the host is one
-    /// implementation and must be handed the same press → drag → release either
+    /// implementation and must be handed the same press -> drag -> release either
     /// side, which is what this restores.
     pub(super) buttons: Rc<Cell<u16>>,
     /// Kept alive for as long as the canvas is: dropping it removes the
@@ -94,7 +94,7 @@ pub(super) struct CanvasSlot {
     ///
     /// Read from the **event** rather than tracked from winit's
     /// `ModifiersChanged`, which a page gets only while the canvas has DOM
-    /// focus (`window_target.rs`: `has_focus.get() && …`). A reader who has not
+    /// focus (`window_target.rs`: `has_focus.get() && ...`). A reader who has not
     /// clicked the canvas yet holds Shift and pans nothing; one who releases it
     /// after clicking away leaves the front believing it is still down, and a
     /// plain drag pans. Every pointer event carries `shiftKey`/`ctrlKey`/

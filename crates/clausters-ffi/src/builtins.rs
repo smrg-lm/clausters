@@ -411,7 +411,7 @@ pub unsafe extern "C" fn clausters_core_correlation(
 }
 
 /// Maps `n` stereo pairs (`left`, `right`) to their **Lissajous / goniometer**
-/// coordinates, writing `2 * n` interleaved `f32`s `[x0, y0, x1, y1, …]` into
+/// coordinates, writing `2 * n` interleaved `f32`s `[x0, y0, x1, y1, ...]` into
 /// `out`, where `x` is the side component `(L − R)/√2` and `y` the mid
 /// `(L + R)/√2` -- the 45°-rotated stereo plane a goniometer draws. Returns 0, or
 /// -1 (leaving `out` untouched) on a null pointer.

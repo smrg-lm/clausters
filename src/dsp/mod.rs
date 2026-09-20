@@ -123,7 +123,7 @@ pub const NUM_CONTROL_BUSES: usize = 16384;
 /// all -- it is a configured resource and nothing in the code caps it.
 pub const MAX_UGEN_INPUTS: usize = 32;
 
-/// Boot-time capacities for the pre-allocated pools (scsynth's `-n`/`-b`/…).
+/// Boot-time capacities for the pre-allocated pools (scsynth's `-n`/`-b`/...).
 ///
 /// Every one of these sizes a slab or `Vec` built **once at server startup**:
 /// they are fixed at runtime by the CLI/config, never at compile time. The
@@ -556,7 +556,7 @@ pub struct TransportCtx {
 }
 
 /// What a UGen (via [`UGen::done`]) asks the engine to do when it finishes --
-/// scsynth's full done-action set (`Done.schelp`, values 0–15). `None`/
+/// scsynth's full done-action set (`Done.schelp`, values 0-15). `None`/
 /// `PauseSelf` are applied inline on the audio thread; every other action frees
 /// this node (and possibly a sibling or the group) and is queued for the drain
 /// after the block. The relative actions resolve the node's previous/next
@@ -914,7 +914,7 @@ pub const REPLY_NAME_MAX: usize = 31;
 pub enum ReplyKind {
     /// `SendTrig` -- a `/node_trigger nodeID trigID value` message.
     Trig,
-    /// `SendReply` -- a `cmdName nodeID replyID value…` message.
+    /// `SendReply` -- a `cmdName nodeID replyID value...` message.
     Reply,
     /// `Poll` -- a console line `label: value`, plus a `/node_trigger` when its trigid ≥ 0.
     Poll,

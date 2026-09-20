@@ -187,7 +187,7 @@ def web_builders() -> dict:
                                 "string", "number", "boolean"}
         # A leading positional parameter is a prop too (`label(text)`,
         # `meter(bus)`, `menu(options)`) -- but not the option bag itself, and
-        # not a child list (`track(clips)`, `panel(…, ...children)`), which is
+        # not a child list (`track(clips)`, `panel(..., ...children)`), which is
         # the tree, not a prop.
         for line in params.split("\n"):
             pm = re.match(r"\s{4}(\.\.\.)?(\w+)\s*\??[=:]", line)
@@ -241,7 +241,7 @@ def _literal_keys(text: str) -> set:
                 if depth <= 0:
                     break
         keys |= set(re.findall(r'"([a-z_][a-z_0-9]*)"', text[call.end():end]))
-    # A local reader closure over the same map: `let f = |k| props.get(k)…`,
+    # A local reader closure over the same map: `let f = |k| props.get(k)...`,
     # then `f("margin")` -- or `f("navigable", default)`, since a reader may
     # take the fallback beside the key.
     for name in re.findall(r"let (\w+) = \|k(?:ey)?: &str[^|]*\| props", text):
@@ -269,7 +269,7 @@ def _helper_bodies() -> dict:
 def _helper_keys() -> dict:
     """``{helper name: {prop}}`` for every function that reads a props map.
 
-    Includes the inherent methods (`Flow::parse`, `EditorProps::apply`, …) under
+    Includes the inherent methods (`Flow::parse`, `EditorProps::apply`, ...) under
     their `Type::method` name, since that is how the wire passes call them.
     """
     src = _rust_sources()
@@ -481,7 +481,7 @@ def host_props() -> dict:
         return keys
 
     out = {}
-    # Construction: `"layout" => WidgetKind::Panel { … }`, and the **guarded**
+    # Construction: `"layout" => WidgetKind::Panel { ... }`, and the **guarded**
     # arms one container's several constructions need (`"field" if it carries
     # a placement => Clip`), which are the same kind and so the same vocabulary.
     variant_of = {}
@@ -489,7 +489,7 @@ def host_props() -> dict:
         build, r'\s{8}("[a-z]+"(?:\s*\|\s*"[a-z]+")*)(?: if .*)?\s*=>'
     ):
         kinds = re.findall(r'"([a-z]+)"', m.group(1))
-        # An arm that delegates (`"signal" => build_signal(…)`) names its
+        # An arm that delegates (`"signal" => build_signal(...)`) names its
         # variant in the callee, not in itself.
         variant = re.search(r"WidgetKind::(\w+)", body)
         if not variant:
@@ -512,7 +512,7 @@ def host_props() -> dict:
             assert helper in helpers, f"{helper} moved; OUTBOARD is stale"
             out[kind] |= helpers[helper]
 
-    # Mutation: `WidgetKind::Waveform { … } => match key { … }`.
+    # Mutation: `WidgetKind::Waveform { ... } => match key { ... }`.
     for m, body in _arms(apply, r"\s{8}WidgetKind::(\w+)"):
         keys = _match_arm_keys(body) | keys_in(body)
         for variant in re.findall(r"WidgetKind::(\w+)", body.split("=>")[0]):

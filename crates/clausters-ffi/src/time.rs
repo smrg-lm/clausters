@@ -24,13 +24,13 @@ pub extern "C" fn clausters_core_secs_to_beats(
     base_beats + (secs - base_seconds) * tempo
 }
 
-/// Seconds → sample count at `sample_rate` (ties to even).
+/// Seconds -> sample count at `sample_rate` (ties to even).
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_core_secs_to_samples(secs: f64, sample_rate: f64) -> i64 {
     tempoclock::secs_to_samples(secs, sample_rate)
 }
 
-/// Sample count → seconds at `sample_rate`.
+/// Sample count -> seconds at `sample_rate`.
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_core_samples_to_secs(samples: i64, sample_rate: f64) -> f64 {
     tempoclock::samples_to_secs(samples, sample_rate)
@@ -50,14 +50,14 @@ pub extern "C" fn clausters_core_unix_to_sample(
 }
 
 /// Beats to wait so a routine starts on the next `quant` boundary of a grid
-/// currently at `pos` beats (`quant <= 0` → 0, i.e. now).
+/// currently at `pos` beats (`quant <= 0` -> 0, i.e. now).
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_core_quant_delay(pos: f64, quant: f64) -> f64 {
     tempoclock::quant_delay(pos, quant)
 }
 
 /// The bar index a beat position falls in on a grid of `quant` beats per bar
-/// (0-based; `quant <= 0` → 0, no bar grid) -- the display complement of
+/// (0-based; `quant <= 0` -> 0, no bar grid) -- the display complement of
 /// [`clausters_core_quant_delay`].
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_core_bar(beats: f64, quant: f64) -> f64 {
@@ -80,7 +80,7 @@ pub extern "C" fn clausters_core_ntp_timetag(ntp_secs: f64) -> u64 {
     clausters_core::osc::timetag_bits(clausters_core::osc::pack_timetag(ntp_secs))
 }
 
-/// A Unix timestamp → the 64 NTP timetag bits (adds the 1900→1970 offset,
+/// A Unix timestamp -> the 64 NTP timetag bits (adds the 1900->1970 offset,
 /// then packs like [`clausters_core_ntp_timetag`]).
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_core_unix_to_ntp(unix_secs: f64) -> u64 {

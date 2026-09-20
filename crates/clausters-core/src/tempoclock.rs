@@ -11,7 +11,7 @@
 //! - [`Scheduler`] -- a min-heap keyed by beat time with stable insertion
 //!   order, the structure a clock pops due events from.
 //!
-//! **Beats↔seconds is not here.** It is [`crate::tempomap::TempoMap`], and
+//! **Beats<->seconds is not here.** It is [`crate::tempomap::TempoMap`], and
 //! there is one of it: an affine clock is a one-segment map, so a struct
 //! holding `(tempo, base_beats, base_seconds)` beside it would be a second
 //! implementation of the same relation.
@@ -19,14 +19,14 @@
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
-/// Seconds → sample count at `sample_rate`, rounded to the nearest sample
+/// Seconds -> sample count at `sample_rate`, rounded to the nearest sample
 /// (ties to even, matching the builtins' `rint`).
 #[inline]
 pub fn secs_to_samples(secs: f64, sample_rate: f64) -> i64 {
     (secs * sample_rate).round_ties_even() as i64
 }
 
-/// Sample count → seconds at `sample_rate`.
+/// Sample count -> seconds at `sample_rate`.
 #[inline]
 pub fn samples_to_secs(samples: i64, sample_rate: f64) -> f64 {
     samples as f64 / sample_rate
@@ -53,7 +53,7 @@ pub fn samples_to_secs_over(at: i64, frames: i64, sample_rate: f64) -> f64 {
 }
 
 /// Beats to wait so a routine starts on the next `quant` boundary of a grid
-/// currently at `pos` beats (`quant <= 0` → now). A position already on the
+/// currently at `pos` beats (`quant <= 0` -> now). A position already on the
 /// boundary waits 0 -- the shared quantization rule every client applies.
 #[inline]
 pub fn quant_delay(pos: f64, quant: f64) -> f64 {

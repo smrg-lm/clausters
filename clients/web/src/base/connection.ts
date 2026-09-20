@@ -300,7 +300,7 @@ export async function pageConnection(
 
 /**
  * Accumulated NRT bundles, ordered by time, serialized to the binary score
- * (`[i32 len][packet]…`) the offline renderer consumes -- the Python client's
+ * (`[i32 len][packet]...`) the offline renderer consumes -- the Python client's
  * `OscScore`.
  */
 export class Score {

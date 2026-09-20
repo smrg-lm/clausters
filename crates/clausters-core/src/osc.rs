@@ -63,12 +63,12 @@ pub fn timetag_bits(t: OscTime) -> u64 {
     ((t.seconds as u64) << 32) | t.fractional as u64
 }
 
-/// A Unix timestamp (seconds since 1970, fractional allowed) → NTP [`OscTime`].
+/// A Unix timestamp (seconds since 1970, fractional allowed) -> NTP [`OscTime`].
 pub fn unix_to_ntp(unix_secs: f64) -> OscTime {
     pack_timetag(unix_secs + NTP_UNIX_OFFSET)
 }
 
-/// NTP [`OscTime`] → Unix timestamp (seconds since 1970).
+/// NTP [`OscTime`] -> Unix timestamp (seconds since 1970).
 pub fn ntp_to_unix(t: OscTime) -> f64 {
     t.seconds as f64 + t.fractional as f64 / 4_294_967_296.0 - NTP_UNIX_OFFSET
 }

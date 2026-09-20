@@ -95,9 +95,9 @@ impl UGen for SendTrig {
     }
 }
 
-/// `SendReply(trig, replyID, values…)` -- sends an arbitrary-arity OSC message
+/// `SendReply(trig, replyID, values...)` -- sends an arbitrary-arity OSC message
 /// (`cmdName` from the def, default `/reply`) as `cmdName nodeID replyID
-/// value…` on each trigger. Inputs after `trig`, `replyID` are the value list.
+/// value...` on each trigger. Inputs after `trig`, `replyID` are the value list.
 /// Output is silence.
 pub struct SendReply {
     cmd: String,

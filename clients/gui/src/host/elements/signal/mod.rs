@@ -32,7 +32,7 @@
 //! The wire says the **point** of the product -- `view` (the presentation),
 //! the source props (a `bus` is forward-only, anything else addressable) and
 //! `navigable` -- and [`point`] is where each combination's defaults live. The
-//! six names the catalog grew (`waveform`, `scope`, `spectrum`, …) were six
+//! six names the catalog grew (`waveform`, `scope`, `spectrum`, ...) were six
 //! points of it, and they are the two clients' builder names now, nothing the
 //! host knows about.
 

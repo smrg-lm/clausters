@@ -17,7 +17,7 @@ move the curve:
   ``4:1`` -- the fourth of them, on its first beat.
 
 **Drag a break-point and the top ruler re-rules under your hand.** That is the
-whole example. The curve reports its new shape (``/gui_event id "points" …``),
+whole example. The curve reports its new shape (``/gui_event id "points" ...``),
 this script rebuilds the timeline's `TempoMap` from it -- one `env` call, extents in
 seconds -- and sets it back on the ruler, which redraws. Nothing else moves: the
 seconds do not change, because seconds are not what a tempo edit changes.

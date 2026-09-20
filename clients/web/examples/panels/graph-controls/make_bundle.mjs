@@ -62,7 +62,7 @@
 //       cd clients/web && python3 -m http.server
 //
 //   and open `http://localhost:8000/examples/panels/graph-controls/` --
-//   `index.html` here is just `<clausters-bundle src="…">`; its power button
+//   `index.html` here is just `<clausters-bundle src="...">`; its power button
 //   boots the whole instrument in the tab.
 // - **Desktop, self-contained** (the embedded server; from `clients/gui`):
 //

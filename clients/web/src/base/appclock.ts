@@ -63,7 +63,7 @@ export type AppItem = Stream | (() => unknown);
 export class AppClock {
     /** The reading {@link AppClock.elapsed} counts from. */
     private readonly origin: number;
-    /** item → the timers queued for it, so `unsched` can drop all of them. */
+    /** item -> the timers queued for it, so `unsched` can drop all of them. */
     private readonly timers = new Map<AppItem, Set<ReturnType<typeof setTimeout>>>();
 
     constructor() {

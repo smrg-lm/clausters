@@ -39,7 +39,7 @@ __all__ = ["GuiHost", "WidgetInfo", "DEFAULT_PORT"]
 
 
 def _prop_args(props) -> list:
-    """A prop table as flat ``key value …`` OSC arguments.
+    """A prop table as flat ``key value ...`` OSC arguments.
 
     The one place a prop becomes a wire value, and it exists because there were
     two: a `/gui_set` coerced a flag and a **correction** did not, so an undo of
@@ -277,7 +277,7 @@ class GuiHost:
             adopt_ambient: make this the ambient host when none is registered,
                 exactly as `boot` does.
 
-        Returns: ``self``, so ``GuiHost(port=…).attach()`` reads as one
+        Returns: ``self``, so ``GuiHost(port=...).attach()`` reads as one
         expression.
         """
         from ..errors import ServerError
@@ -359,7 +359,7 @@ class GuiHost:
         inside ``tree`` are assigned too, in the copy that is sent -- the tree
         itself is untouched, so it can be opened again (see `define`). The returned
         `clausters.gui.handle.WindowHandle` **is** the window id (an ``int``) and
-        also resolves the tree's ``name``d widgets: ``win["cutoff"].set(…)``.
+        also resolves the tree's ``name``d widgets: ``win["cutoff"].set(...)``.
         Editing the open window is `set`; closing it is `close`. Any trailing
         ``blobs`` ride along exactly as in `define`.
 
@@ -410,7 +410,7 @@ class GuiHost:
         self.stop()
 
     def define(self, id: int, tree: dict, *blobs: bytes) -> WindowHandle:
-        """``/gui_def <id> <json> [blob…]`` -- build a whole widget tree in one
+        """``/gui_def <id> <json> [blob...]`` -- build a whole widget tree in one
         message, returning its `clausters.gui.handle.WindowHandle`. Any trailing
         ``blobs`` (e.g. waveform samples from
         `clausters.gui.guidef.samples_to_blob`) ride alongside the JSON and are
@@ -737,7 +737,7 @@ class GuiHost:
         self._send("/gui_set", id, *_prop_args(props))
 
     def ack(self, seq: int, doc_version: int = 0, generations=(), reason=None):
-        """``/gui_ack <seq> <docVersion> [<source> <generation>…] [<reason>]`` --
+        """``/gui_ack <seq> <docVersion> [<source> <generation>...] [<reason>]`` --
         answer the edits this host emitted, up to ``seq``.
 
         The reply ``/gui_event`` never had. Without it the host cannot tell an
@@ -814,7 +814,7 @@ class GuiHost:
         self._recycle_subtree(int(id), keep_root=False)
 
     def bind(self, id: int, address: str, *prefix):
-        """``/gui_bind <id> "server" <address> <prefix…>`` -- forward this widget's
+        """``/gui_bind <id> "server" <address> <prefix...>`` -- forward this widget's
         value **straight to the audio server**, bypassing this script.
 
         On every change the host sends ``address`` (an OSC path like ``/node_set``
@@ -1056,7 +1056,7 @@ class GuiHost:
         `WindowHandle.on_closed` for ``/gui_closed``). A ``/gui_closed`` also
         drops the window from the open set. Returns whether a callback ran."""
         if addr == "/gui_event" and args:
-            # ``<id> <seq> <version> <payload…>``: the stamp and the version the
+            # ``<id> <seq> <version> <payload...>``: the stamp and the version the
             # edit was made against are the second and third arguments of every
             # event, before any tag, so one rule reads them all. A callback is
             # handed the payload -- these two are the host's bookkeeping, and

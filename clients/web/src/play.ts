@@ -6,25 +6,25 @@
 // take. Like SuperCollider's `play` (and the Python client's), it dispatches
 // by kind:
 //
-// - an `Event` -- or a plain **object** of event keys -- → a note (immediate
+// - an `Event` -- or a plain **object** of event keys -- -> a note (immediate
 //   outside a clock, timetagged inside one);
-// - an `EventPattern` (a `Pbind`) → an `EventStreamPlayer` on a clock;
-// - a `Routine`/`Stream`, or a bare **generator** (object or function) →
+// - an `EventPattern` (a `Pbind`) -> an `EventStreamPlayer` on a clock;
+// - a `Routine`/`Stream`, or a bare **generator** (object or function) ->
 //   scheduled on a clock;
-// - a **def** (`SynthDef` / `FaustDef` / `GraphDef`) → sent and instanced on
+// - a **def** (`SynthDef` / `FaustDef` / `GraphDef`) -> sent and instanced on
 //   the server. Returns the node handle -- it plays until you free it;
-// - a bare **expression** (a UGen graph, a `ChannelList`, a Faust `Signal`) →
+// - a bare **expression** (a UGen graph, a `ChannelList`, a Faust `Signal`) ->
 //   the same, through the ephemeral-def coercion (`defs/asdef.ts`), so
 //   `play(sine(440).mul(0.5))` sounds a def it wrapped for you;
-// - a `Timeline` → played on its own clock (`Timeline.play`), on the ambient
+// - a `Timeline` -> played on its own clock (`Timeline.play`), on the ambient
 //   server;
-// - an `Automation` → its lane synth triggered and its targets mapped
+// - an `Automation` -> its lane synth triggered and its targets mapped
 //   (`await auto.prepare(server)` first -- see below);
-// - a `Buffer` → sounded through the stock playbuf instrument (a buffer
+// - a `Buffer` -> sounded through the stock playbuf instrument (a buffer
 //   sounds through an instrument; here the verb provides the default one --
 //   `rate`/`amp` controls, freed when the take ends);
 // - anything else following the **timeline-item protocol**
-//   (`play(destination)` -- an `OscItem`, …) → dispatched to it with the
+//   (`play(destination)` -- an `OscItem`, ...) -> dispatched to it with the
 //   ambient server.
 //
 // Everything resolves against the ambient environment (the running session,

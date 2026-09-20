@@ -1,6 +1,6 @@
 //! The patcher's cord-to-bus compile: a patch JSON in, its GraphDef wiring out.
 
-/// The GUI patcher's **cord → bus pass**: a directed
+/// The GUI patcher's **cord -> bus pass**: a directed
 /// [`Patch`](clausters_core::patch::Patch) as JSON in (`patch`/`patch_len`), its
 /// [`Compiled`](clausters_core::patch::Compiled) bus wiring as JSON written to
 /// `out` (capacity `out_cap`). Returns the number of bytes the output JSON needs
@@ -10,7 +10,7 @@
 /// A **compile** error (a malformed cord: reversed, mismatched rate, out of
 /// range) is not a `0`: it comes back *as* the output JSON, the object
 /// `{"error": "<message>"}`, so the caller reads one channel. Success is the
-/// `Compiled` object (`{"buses": …, "members": …}`).
+/// `Compiled` object (`{"buses": ..., "members": ...}`).
 ///
 /// # Safety
 /// `patch` must be readable for `patch_len` bytes and `out` writable for

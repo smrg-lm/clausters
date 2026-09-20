@@ -39,7 +39,7 @@
 //! dot. Outside a workspace the scale is 1 and this is the identity.
 //!
 //! [`super::super::layout`] consumes this on a `row`/`col` main axis, in one
-//! resolution order: explicit `w`/`h` → explicit `weight` → natural size → a
+//! resolution order: explicit `w`/`h` -> explicit `weight` -> natural size -> a
 //! share of the leftover. The cross axis keeps filling. It asks
 //! [`Widget::natural_size`], not the kind's, because a **container** may be
 //! sized by what it holds -- see [`Widget::hug_size`], which is still one

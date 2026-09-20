@@ -22,7 +22,7 @@
 //
 // There are three ways in: typed score text (ABC/PAE/MEI/MusicXML) handed to
 // `engrave`/`Score.open`; `fromNotes`/`fromTimeline`, which turn the client's
-// own `seq` data into MEI (the inverse direction, data→score); and
+// own `seq` data into MEI (the inverse direction, data->score); and
 // `svgToDisplayList`, the adapter the first two both flow through. `scoreView`
 // and `playheadSync` are the two helpers that put a page on screen and *play* it.
 //

@@ -104,7 +104,7 @@ def test_recv_reassembles_a_frame_split_across_segments():
 
 
 def test_recv_returns_none_when_no_data():
-    iface = _iface([])                    # recv() yields b"" → closed/timeout
+    iface = _iface([])                    # recv() yields b"" -> closed/timeout
     assert iface.recv(timeout=0.05) is None
 
 

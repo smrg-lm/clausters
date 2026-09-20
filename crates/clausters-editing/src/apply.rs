@@ -390,7 +390,7 @@ fn send(addr: &str, args: Vec<OscType>) -> Step {
 /// **The steps as JSON**, for a client that walks them in its own language.
 ///
 /// `{"send": {"addr", "args"}}` with each argument tagged by its OSC type --
-/// `{"i": n}`, `{"f": x}`, `{"s": "…"}`, and `{"b": [x, …]}` for a blob of
+/// `{"i": n}`, `{"f": x}`, `{"s": "..."}`, and `{"b": [x, ...]}` for a blob of
 /// little-endian `f32`, which the client packs; `{"await": {"command",
 /// "index"}}`; `{"sync": id}`.
 pub fn steps_json(steps: &[Step]) -> Value {

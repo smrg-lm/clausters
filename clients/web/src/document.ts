@@ -571,7 +571,7 @@ export interface Stitch {
  *
  * One reading for every endpoint that realizes a minted join, so the width, the
  * spans and the channel map a narrow part fills the join with are the crate's
- * and not this client's. `held` is source id → `{ buffer, channels, frames }`.
+ * and not this client's. `held` is source id -> `{ buffer, channels, frames }`.
  * `undefined` where there is nothing to make: not a join, or a part over a
  * source nobody loaded.
  */

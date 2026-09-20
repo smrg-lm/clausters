@@ -106,7 +106,7 @@ pub(super) struct App {
     /// from, since the gesture machine wants elapsed time and not a date.
     pub(super) started: Instant,
     pub(super) next_frame: Instant,
-    /// The server-buffer fetch machine (`/buffer_query` → chunked `/buffer_getRange`),
+    /// The server-buffer fetch machine (`/buffer_query` -> chunked `/buffer_getRange`),
     /// shared with the browser front.
     pub(super) fetches: BufferFetches,
     /// The node tree last read from the server, by group id, feeding `nodetree`
@@ -352,12 +352,12 @@ impl App {
         }
     }
 
-    /// Emits `/gui_event widget_id seq version <args…>` to the window's script.
+    /// Emits `/gui_event widget_id seq version <args...>` to the window's script.
     ///
     /// The stamp and the version are the **second and third** arguments, before
     /// any tag, so one rule reads every event whatever its payload: a control's
     /// bare value and a roll's variable-length note list are both
-    /// `<id> <seq> <version> …`. A `seq` of zero means the event is not an edit
+    /// `<id> <seq> <version> ...`. A `seq` of zero means the event is not an edit
     /// anyone will acknowledge; a `version` of zero means the host cannot say
     /// what state it drew, which is what an owner that never speaks of versions
     /// leaves it with.

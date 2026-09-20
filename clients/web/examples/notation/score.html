@@ -164,7 +164,7 @@ C D E F | G/A/G/F/ E D | C D/E/F/G/ A | G2 F E | [CEG] G C2 | C4 |
         // the page the window shows can be edited and re-engraved against it (a
         // narrow page, so the phrase wraps into a few systems and the view
         // scrolls).
-        log("loading the engraver …");
+        log("loading the engraver ...");
         const score = await notation.Score.open(PHRASE, { pageWidth: 1100 });
         let dl = score.displayList();
         log(`engraved: ${Object.keys(dl.glyphs).length} glyph outlines, `

@@ -1,4 +1,4 @@
-//! The frequency-domain (`fr`) chain: `FFT` → `PV_*` → `IFFT`.
+//! The frequency-domain (`fr`) chain: `FFT` -> `PV_*` -> `IFFT`.
 //!
 //! scsynth's spectral processing bookends a chain of `PV_*` (phase-vocoder)
 //! UGens between [`Fft`] (window an audio input and transform it to a complex
@@ -70,13 +70,13 @@ fn resolve_hop(winsize: usize, hop: Option<f32>) -> usize {
     ((winsize as f32 * frac).round() as usize).clamp(1, winsize)
 }
 
-/// The synth-private spectral frame shared by one `FFT`→`PV_*`→`IFFT` chain.
+/// The synth-private spectral frame shared by one `FFT`->`PV_*`->`IFFT` chain.
 /// Persistent across blocks (like the feedback `locals`); allocated once at
 /// synth init. See the module docs for why this replaces scsynth's mutable pool
 /// buffer.
 pub struct SpectralChain {
     /// The packed complex frame, `winsize` floats in the
-    /// [`fft::rfft_into`] layout `[dc, nyquist, re₁, im₁, …]`.
+    /// [`fft::rfft_into`] layout `[dc, nyquist, re₁, im₁, ...]`.
     pub frame: Vec<f32>,
     /// True on the processing slice where `FFT` wrote a fresh frame; the
     /// `PV_*`/`IFFT` UGens act only then. `FFT` clears it each slice.
@@ -776,8 +776,8 @@ impl UGen for PvBinShift {
 /// The general per-frame mechanism (`PV_Kernel`): interprets a pair of
 /// compile-validated bin-expression programs (`clausters_core::pvprog`) over
 /// every bin of each fresh frame -- magnitude and phase each get one program
-/// mapping `(mag, phase, bin, nbins, binfreq, p0…)` to the bin's new value.
-/// Inputs: `[chain, p0, p1, …]` -- the parameters are ordinary signal inputs
+/// mapping `(mag, phase, bin, nbins, binfreq, p0...)` to the bin's new value.
+/// Inputs: `[chain, p0, p1, ...]` -- the parameters are ordinary signal inputs
 /// sampled at the hop, so they can be controls, LFOs, anything.
 ///
 /// An omitted program is the identity, and the identity *phase* program takes
@@ -788,7 +788,7 @@ impl UGen for PvBinShift {
 ///
 /// The programs are a **per-bin map** -- no state across bins or frames, no
 /// bin remapping. Those stay curated implementations (`PV_MagFreeze`,
-/// `PV_BinShift`, …) per the stance; see `docs/decisions.md`.
+/// `PV_BinShift`, ...) per the stance; see `docs/decisions.md`.
 pub struct PvKernel {
     mag: PvProgram,
     phase: PvProgram,

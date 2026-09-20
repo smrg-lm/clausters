@@ -1,4 +1,4 @@
-//! The shared pointer-gesture state machine -- one press → drag → release
+//! The shared pointer-gesture state machine -- one press -> drag -> release
 //! interpreter over the widget tree for **both fronts**.
 //!
 //! The machine owns the in-progress [`Drag`] and turns pointer/wheel/keyboard
@@ -30,7 +30,7 @@
 //! [`wheel`] (the phase that opens no drag at all).
 //!
 //! Three more children are what the phases lean on, so the machine reads as
-//! press → drag → release without the plumbing in between: [`effects`] is what
+//! press -> drag -> release without the plumbing in between: [`effects`] is what
 //! a gesture *delivers* (the one place the bound-vs-event decision is made),
 //! [`nav`] is what it *reads and moves* (hit-testing, a scroll plane, a
 //! timeline group's pan/zoom/selection), and [`keys`] is the keyboard half --
@@ -49,7 +49,7 @@ use super::widget::element::ValueAxis;
 /// because it owns no transport, no window and no GPU.
 #[derive(Debug, PartialEq)]
 pub enum GestureEffect {
-    /// Emit `/gui_event widget_id <args…>` to the script behind window `def_id`.
+    /// Emit `/gui_event widget_id <args...>` to the script behind window `def_id`.
     Emit {
         def_id: i32,
         widget_id: i32,

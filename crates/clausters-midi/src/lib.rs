@@ -134,7 +134,7 @@ pub fn write_smf(events: &[TimedMessage], ppq: u16) -> Vec<u8> {
 // Voice 2) per event + End of Clip, words big-endian. MIDI 1.0 note velocities
 // are widened to 16 bits, so a clip carries them at full resolution.
 
-/// Widen a 7-bit value to 16 bits (bit-repeat fill, 0→0 and 127→65535) -- the
+/// Widen a 7-bit value to 16 bits (bit-repeat fill, 0->0 and 127->65535) -- the
 /// same scaling the server uses for live MIDI 1.0 input.
 fn scale_7_to_16(v: u8) -> u16 {
     let v = (v & 0x7f) as u16;

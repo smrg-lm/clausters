@@ -95,7 +95,7 @@ impl FaustJson {
     /// number comes from the label (`soundfile("3", 1)`) and falls back to the
     /// url, which is the order the libfaust walk's `add_soundfile` reads them
     /// in -- and both are read the same plain way it reads them, so Faust's own
-    /// `{'…'}` url spelling is not a number here any more than it is there. A
+    /// `{'...'}` url spelling is not a number here any more than it is there. A
     /// name that is not a number binds nothing and the field gets a silent
     /// placeholder, on both backends.
     pub fn layout(&self) -> DefLayout {

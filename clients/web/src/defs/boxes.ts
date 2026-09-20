@@ -13,7 +13,7 @@
 //
 // On top of the algebra, `faust` compiles any Faust **expression** into a
 // `Box` that composes like a primitive. That addition puts the whole Faust
-// library ecosystem (`os.osc`, `fi.lowpass`, `re.`, `pm.`, …) inside the same
+// library ecosystem (`os.osc`, `fi.lowpass`, `re.`, `pm.`, ...) inside the same
 // algebra without transcribing anything: library functions become boxes among
 // boxes.
 //
@@ -21,7 +21,7 @@
 // best as plain Faust (`FaustDef.fromSource`); graphs assembled one output at
 // a time from arithmetic and feedback suit `./signals.ts`. Regular banks ("N
 // copies with index-dependent parameters") are best written in Faust itself --
-// `par(i, N, …)`, widget labels with `%i`, `ba.take` -- and parametrized from
+// `par(i, N, ...)`, widget labels with `%i`, `ba.take` -- and parametrized from
 // TypeScript by splicing `N` and lists through `faust`'s eval arguments. Boxes
 // shine when the graph is conceived as composed processors, when its structure
 // is decided by the page's own data, and whenever library DSP has to mix with
@@ -44,11 +44,11 @@
 // positions are two input channels. Reusing the *same* `wire()` (or `cut()`)
 // object in more than one position is almost always a mistake, and
 // `FaustDef.fromBox` rejects it; route explicitly with `split`, or write that
-// stretch inside a `faust` fragment (`_ <: …`). Every *other* box value can be
+// stretch inside a `faust` fragment (`_ <: ...`). Every *other* box value can be
 // reused freely: a repeated subexpression is computed once (the server shares
 // identical subtrees).
 //
-// Reserved controls `in` and `out` (set with `/synth_new … "in" b "out" b`)
+// Reserved controls `in` and `out` (set with `/synth_new ... "in" b "out" b`)
 // choose the input/output buses; they are added by the server, not declared
 // here.
 
@@ -134,7 +134,7 @@ export class Box extends FaustExpr<Box, BoxInput> {
     }
 
     /**
-     * Selects one output channel: `st.get(0)` is `seq(st, par(wire, cut, …))`
+     * Selects one output channel: `st.get(0)` is `seq(st, par(wire, cut, ...))`
      * (the reference client's `st[0]`). Needs a known `numOutputs` (pass
      * `outs` to `faust` for fragments). The selected fragment is shared, not
      * recomputed, when several channels of the same box value are used.
@@ -236,10 +236,10 @@ export const cut = (): Box => new Box({ op: "cut" }, 1, 0);
 
 // ---- composition (n-ary, folded left, like the server) ----
 
-/** Sequential composition `a : b : …` (needs at least 2). */
+/** Sequential composition `a : b : ...` (needs at least 2). */
 export const seq = (...items: BoxInput[]): Box => compose("seq", items);
 
-/** Parallel composition `a , b , …` (needs at least 2). */
+/** Parallel composition `a , b , ...` (needs at least 2). */
 export function par(...items: BoxInput[]): Box {
     const boxes = atLeastTwo("par", items).map(box);
     return new Box(
@@ -276,7 +276,7 @@ function compose(op: string, items: readonly BoxInput[]): Box {
 /**
  * Recursive composition `a ~ b`: `b` feeds `a`'s first inputs back from `a`'s
  * first outputs, with one implicit sample of delay. Point-free -- for the
- * `rec((s) => …)` style, build the loop in a `faust` fragment or with
+ * `rec((s) => ...)` style, build the loop in a `faust` fragment or with
  * `./signals.ts` instead.
  */
 export function rec(a: BoxInput, b: BoxInput): Box {
@@ -368,7 +368,7 @@ function evalArg(a: EvalArg): string {
     if (a instanceof Box) {
         throw new TypeError(
             "a box cannot be an evaluation-stage argument; boxes are applied "
-                + "by calling the fragment: faust(src, …).call(box, …)",
+                + "by calling the fragment: faust(src, ...).call(box, ...)",
         );
     }
     if (typeof a === "number") {
@@ -587,7 +587,7 @@ export function checkWires(node: unknown): void {
             `a ${[...reused].sort().join("/")} box object was reused; each wire `
                 + "(and cut) is a distinct position -- every input needs its own "
                 + "wire(): route explicitly with split(), or write that stretch "
-                + 'inside a faust() fragment (e.g. "_ <: …")',
+                + 'inside a faust() fragment (e.g. "_ <: ...")',
         );
     }
 }

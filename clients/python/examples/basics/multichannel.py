@@ -23,7 +23,7 @@ The point of interest is the two `dup` semantics and the fold:
 And the container is an **expression** like any other, so it needs no def of
 its own to be heard or rendered: ``render(chans(a, b), channels=2)`` bounces it
 and ``play(sine(440).dup())`` sounds it in stereo on a live server. The channels
-land on buses 0, 1, … in order, which is why the render must have at least as
+land on buses 0, 1, ... in order, which is why the render must have at least as
 many outputs as the expression writes -- asking for fewer raises rather than
 dropping half the take.
 

@@ -395,7 +395,7 @@ fn bufrd_interpolates_wraps_and_clamps() {
         .send(add_synth(1000, bufrd(5.25, 0.0, 0.0)))
         .ok()
         .unwrap();
-    // Out-of-range phase: wraps when looping (9.0 → 1.0)...
+    // Out-of-range phase: wraps when looping (9.0 -> 1.0)...
     handle
         .send(add_synth(1001, bufrd(9.0, 1.0, 1.0)))
         .ok()
@@ -1232,7 +1232,7 @@ mod osc {
         })
         .unwrap();
 
-        // /buffer_allocRead → /done /buffer_allocRead 0, then /buffer_query → /buffer_query.reply.
+        // /buffer_allocRead -> /done /buffer_allocRead 0, then /buffer_query -> /buffer_query.reply.
         send(
             "/buffer_allocRead",
             vec![OscType::Int(0), OscType::String(path.clone())],
@@ -1443,7 +1443,7 @@ mod osc {
         server_thread.join().unwrap().unwrap();
     }
 
-    /// M31(a): the read → edit → write cycle an editor view needs. What a
+    /// M31(a): the read -> edit -> write cycle an editor view needs. What a
     /// client writes with `/buffer_set`/`/buffer_setRange` is exactly what
     /// `/buffer_getRange` reads back, and the engine plays the edited samples.
     #[test]

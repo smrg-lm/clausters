@@ -1,4 +1,4 @@
-//! Perceptual frequency-scale conversions: hertz ↔ mel and hertz ↔ bark.
+//! Perceptual frequency-scale conversions: hertz <-> mel and hertz <-> bark.
 //!
 //! General audio measurement math shared by every process that draws or
 //! analyzes a frequency axis (the GUI host's spectrogram ruler and shader
@@ -14,28 +14,28 @@
 //!   invertible on the whole axis, and `hz_to_bark(0) = −0.53` is simply the
 //!   axis floor a display normalizes against.
 //!
-//! It also carries the **MIDI note ↔ name** mapping (scientific pitch
+//! It also carries the **MIDI note <-> name** mapping (scientific pitch
 //! notation, `C4` = middle C = note 60), the pitch-axis analogue of the
 //! frequency scales: the piano-roll's pitch ruler and keyboard labels read it,
 //! and a client authoring notes can reuse the same names. Kept here so the
 //! musical spelling lives once alongside the perceptual scales -- as is the
-//! **MIDI note ↔ hertz** equal-temperament pair ([`midi_to_hz`]/[`hz_to_midi`],
+//! **MIDI note <-> hertz** equal-temperament pair ([`midi_to_hz`]/[`hz_to_midi`],
 //! A440), which the GUI host's piano voices and any client converting pitches
 //! share.
 
-/// Hertz → mel (O'Shaughnessy). Negative input is treated as 0.
+/// Hertz -> mel (O'Shaughnessy). Negative input is treated as 0.
 #[inline]
 pub fn hz_to_mel(hz: f64) -> f64 {
     2595.0 * (1.0 + hz.max(0.0) / 700.0).log10()
 }
 
-/// Mel → hertz, the exact inverse of [`hz_to_mel`]. Negative input maps to 0.
+/// Mel -> hertz, the exact inverse of [`hz_to_mel`]. Negative input maps to 0.
 #[inline]
 pub fn mel_to_hz(mel: f64) -> f64 {
     700.0 * (10f64.powf(mel.max(0.0) / 2595.0) - 1.0)
 }
 
-/// Hertz → bark (Traunmüller). Negative input is treated as 0; the value at
+/// Hertz -> bark (Traunmüller). Negative input is treated as 0; the value at
 /// 0 Hz is −0.53 (the formula's own floor -- normalize a display axis against
 /// it rather than clamping, so the inverse stays exact).
 #[inline]
@@ -44,7 +44,7 @@ pub fn hz_to_bark(hz: f64) -> f64 {
     26.81 * hz / (1960.0 + hz) - 0.53
 }
 
-/// Bark → hertz, the analytic inverse of [`hz_to_bark`]. Input is clamped to
+/// Bark -> hertz, the analytic inverse of [`hz_to_bark`]. Input is clamped to
 /// the formula's range `[−0.53, 26.28)` so the result stays finite and
 /// non-negative.
 #[inline]
@@ -53,14 +53,14 @@ pub fn bark_to_hz(bark: f64) -> f64 {
     1960.0 * (z + 0.53) / (26.28 - z)
 }
 
-/// MIDI note number → hertz, equal temperament over A440 (`69` → 440 Hz).
+/// MIDI note number -> hertz, equal temperament over A440 (`69` -> 440 Hz).
 /// Takes a fractional note number so detuned pitches map too.
 #[inline]
 pub fn midi_to_hz(midi: f64) -> f64 {
     440.0 * 2f64.powf((midi - 69.0) / 12.0)
 }
 
-/// Hertz → (fractional) MIDI note number, the exact inverse of
+/// Hertz -> (fractional) MIDI note number, the exact inverse of
 /// [`midi_to_hz`]. Non-positive input maps to `f64::NEG_INFINITY`'s clamp at
 /// note 0 rather than a NaN -- a display floor, like the bark form's.
 #[inline]
@@ -92,8 +92,8 @@ pub fn is_black_key(midi: i32) -> bool {
     matches!(pitch_class(midi), 1 | 3 | 6 | 8 | 10)
 }
 
-/// A MIDI note number's name in scientific pitch notation (`60` → `"C4"`,
-/// `69` → `"A4"`, `61` → `"C#4"`). The octave is `midi/12 − 1`, so middle C
+/// A MIDI note number's name in scientific pitch notation (`60` -> `"C4"`,
+/// `69` -> `"A4"`, `61` -> `"C#4"`). The octave is `midi/12 − 1`, so middle C
 /// (60) is `C4` and A440 (69) is `A4`; sharps are used for the black keys.
 pub fn note_name(midi: i32) -> String {
     let octave = midi.div_euclid(12) - 1;

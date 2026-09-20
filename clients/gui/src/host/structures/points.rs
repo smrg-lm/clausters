@@ -34,7 +34,7 @@ pub struct BpfPoint {
     pub curve: f32,
 }
 
-/// Parses the `points` property: a flat `[t, v, shape, curve, …]` JSON array
+/// Parses the `points` property: a flat `[t, v, shape, curve, ...]` JSON array
 /// (or that array as a JSON string, the `/gui_set` carrier -- OSC key/value
 /// pairs are scalars). Incomplete trailing quads are dropped; the points are
 /// sorted by time and their values clamped into `[lo, hi]`. `None` when the

@@ -357,7 +357,7 @@ impl CmdTranslator {
     }
 }
 
-/// `u128` bus mask → "0,1,16" (or "-" when empty).
+/// `u128` bus mask -> "0,1,16" (or "-" when empty).
 fn bus_list(buses: impl Iterator<Item = usize>) -> String {
     let buses: Vec<String> = buses.map(|b| b.to_string()).collect();
     if buses.is_empty() {

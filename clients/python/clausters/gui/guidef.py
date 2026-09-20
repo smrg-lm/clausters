@@ -28,7 +28,7 @@ a source the shortcuts do not pair.
 
 **Address a widget by name, not by id.** Pass ``name="cutoff"`` to any builder
 and `GuiHost.open` hands back a window handle you index by that name --
-``win["cutoff"].set(value=…)``, ``win["cutoff"].on_event(fn)``. The name is a
+``win["cutoff"].set(value=...)``, ``win["cutoff"].on_event(fn)``. The name is a
 **client-only** key: it labels the widget for the ``name -> handle`` map and is
 stripped from the JSON, so it never rides the wire. Unlike the assigned id
 (which recycles across redraws), a name is stable, which is what an edit-back or
@@ -123,7 +123,7 @@ strip) are that same widget configured down.
   TOML style file) overlaying the parent's theme for the whole subtree -- a
   **theme group**, recursive by construction. On a window root it persists
   with a named def. An empty table clears the group.
-- ``opacity`` -- how opaque the widget draws, ``0.0``–``1.0``. Like ``theme`` it
+- ``opacity`` -- how opaque the widget draws, ``0.0``-``1.0``. Like ``theme`` it
   is a **group's** property: it multiplies down the whole subtree, so a control
   inside a panel at ``0.5`` that is itself at ``0.5`` draws at ``0.25``. A
   negative number clears it. It fades the flat drawing -- the chrome, the
@@ -770,7 +770,7 @@ def node(type: str, *, children=None, id: int | None = None, **props) -> View:
                 raise TypeError(
                     f"{type}: a child must be a widget node, got {child!r} -- the "
                     "id is a keyword argument, so children come first: "
-                    f"{type}(child, ..., id=…)")
+                    f"{type}(child, ..., id=...)")
         out["children"] = kids
     built = View(out)
     for key, held in sources.items():
@@ -1185,7 +1185,7 @@ def _from_control(control, given: dict, props: dict, *, needs_range: bool) -> di
     if needs_range and lo is None and given.get("min") is None:
         raise ValueError(
             f"control {name!r} has no range to be drawn over -- spell one on the "
-            f"widget (knob({name}, min=…, max=…)). Only a FaustDef's parameter "
+            f"widget (knob({name}, min=..., max=...)). Only a FaustDef's parameter "
             "brings its own, from the hslider that declared it")
     given = dict(given)
     if "name" in props:
@@ -1958,7 +1958,7 @@ def _flat_notes(notes) -> list:
 
 def _flat_boxes(boxes) -> list:
     """A patcher's ``boxes`` as the list the wire carries -- each box its own
-    ``{"def": name, "inlets": [...], "outlets": [...], "x": …, "y": …}`` dict,
+    ``{"def": name, "inlets": [...], "outlets": [...], "x": ..., "y": ...}`` dict,
     kept verbatim (the schema is the host's, not this client's to reshape)."""
     return list(boxes)
 
@@ -2337,7 +2337,7 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
     then), and it is driven exactly like the timeline views':
 
     - ``playhead_at`` -- the engine sample-clock value at score time 0. Set it
-      once when a pass starts (``server.request("/clock_query", …)``) and the cursor
+      once when a pass starts (``server.request("/clock_query", ...)``) and the cursor
       *sweeps* on its own, since the host reads the clock every frame; a
       negative value stops it. ``sample_rate`` converts clock to musical time
       (omitted / ``0`` = the server's own rate).
@@ -2349,7 +2349,7 @@ def score(*, display_list: dict | None = None, playhead: float | None = None,
       passage keeps the cursor on it. A non-positive length is the straight
       pass.
 
-    All are settable live with ``GuiHost.set(score_id, playhead_at=…)``.
+    All are settable live with ``GuiHost.set(score_id, playhead_at=...)``.
     """
     extra = _drop_none(color=color, playhead=playhead, playhead_at=playhead_at,
                        playhead_loop_start=playhead_loop_start,
@@ -2506,7 +2506,7 @@ def timeruler(*, h: float = 20.0, autofit: bool | None = None, cursor: float | N
     around it: the label is text on the tick row, and making a word the target
     would give a marker called ``intro`` ten times the reach of one called
     ``2``. An edit flows back as a flat ``"markers"`` event (``time label color
-    …``): the time and the text are what the owner is handed, and what it keeps
+    ...``): the time and the text are what the owner is handed, and what it keeps
     against its own document.
 
     **The ruler is where the time range is swept.** Two selections live at once
@@ -2567,7 +2567,7 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
     - ``notes`` -- an iterable of ``(start, dur, pitch)`` or ``(start, dur, pitch,
       velocity, channel)`` MIDI notes: times in timeline samples, ``pitch`` a MIDI
       note number drawn over the ``[min, max]`` window (default the 88-key range
-      21–108), ``velocity`` ``0..127`` (default 100), ``channel`` ``0..15``. The
+      21-108), ``velocity`` ``0..127`` (default 100), ``channel`` ``0..15``. The
       notes are the MIDI messages the roll represents.
     - ``osc`` -- an iterable of ``(time, label)`` (or bare ``time``) markers, one
       per OSC or raw-MIDI timeline item, drawn as flags in a lane below the grid --
@@ -2594,7 +2594,7 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
     set a note's velocity; Ctrl+click the OSC lane to add/remove an event, drag
     one to move it. ``snap`` is the drag grid in timeline samples (``0`` = whole
     samples). An edit flows back as a flat ``"notes"`` event (``start dur pitch
-    velocity channel …``) or ``"osc"`` event (``time label …``) -- the edit-back
+    velocity channel ...``) or ``"osc"`` event (``time label ...``) -- the edit-back
     pattern -- so a driver updates the arrangement and re-renders.
 
     Navigation and chrome mirror the heavy editor views: it is a timeline widget,
@@ -2650,9 +2650,9 @@ def piano(*, min: int | None = None, max: int | None = None, active_min: int | N
 
     Range and navigation:
 
-    - ``min``/``max`` -- the visible MIDI range (default 36–96; ``min`` snaps
+    - ``min``/``max`` -- the visible MIDI range (default 36-96; ``min`` snaps
       down to a white key so the keyboard starts on a full key).
-    - ``overview`` -- the strip above the keys showing the full 0–127 range with
+    - ``overview`` -- the strip above the keys showing the full 0-127 range with
       the visible window marked: drag it to pan, wheel over it to zoom (wheel
       over the keys pans by white keys). On by default.
     - ``pan`` -- set ``False`` to disable all range navigation (the keyboard
@@ -2667,7 +2667,7 @@ def piano(*, min: int | None = None, max: int | None = None, active_min: int | N
     translate them 1:1 to MIDI note-on/note-off. Dragging across keys
     glissandos (off + on). ``velocity`` fixes the press velocity; unset, it
     maps from the press height (striking nearer the front edge plays louder).
-    ``channel`` (0–15, default 0) rides in every event.
+    ``channel`` (0-15, default 0) rides in every event.
 
     Mapping to server instruments, two ways:
 
@@ -2676,7 +2676,7 @@ def piano(*, min: int | None = None, max: int | None = None, active_min: int | N
       with ``freq``/``amp`` from pitch/velocity), ``state 0`` sends its
       ``gate=0``. Fully programmable, like driving any GuiDef.
     - **Host voices** -- set ``voice`` to a SynthDef name and the *host* manages
-      one server voice per held key: ``/synth_new <voice> … freq <hz> amp <vel/127>
+      one server voice per held key: ``/synth_new <voice> ... freq <hz> amp <vel/127>
       gate 1`` on press, ``gate 0`` on release. The def must have
       ``freq``/``amp``/``gate`` controls and free itself on release (an
       ``Env.adsr`` with ``FREE_SELF``). ``voice_args`` is an iterable of extra

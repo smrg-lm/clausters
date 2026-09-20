@@ -237,7 +237,7 @@ mod tests {
         assert_eq!(empty.current(), "", "no options is not a panic");
     }
 
-    /// The whole state machine: closed → open (nothing reported yet) → a row
+    /// The whole state machine: closed -> open (nothing reported yet) -> a row
     /// picks and closes. And the list is what the two passes read, so opening
     /// it declares an overlay and picking retires it.
     #[test]

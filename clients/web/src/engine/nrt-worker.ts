@@ -674,7 +674,7 @@ async function factory(
             }
         }
         // Source included: a program becomes a box through the schema's own
-        // escape hatch (`{"op": "faust", "src": …}`, which is `CDSPToBoxes`),
+        // escape hatch (`{"op": "faust", "src": ...}`, which is `CDSPToBoxes`),
         // so all three formats reach the compiler the same way and the page
         // keeps one arena. Compiling source through `createDSPFactory` instead
         // works, but it allocates and destroys a context of its own, and a

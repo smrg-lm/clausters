@@ -6,12 +6,12 @@
        2. the engine sample clock advancing (the worklet is really pulled),
        3. an /synth_new default sine measurably present at an AnalyserNode.
      The verdict lands in the DOM/title (parity.html style) and is also
-     beaconed as a fetch of /smoke-verdict-…, so the runner can read it from
+     beaconed as a fetch of /smoke-verdict-..., so the runner can read it from
      the HTTP server's access log in real time. -->
 <html lang="en">
 <head><meta charset="utf-8"><title>clausters worklet smoke</title></head>
 <body>
-<pre id="result">running…</pre>
+<pre id="result">running...</pre>
 <script type="module">
 import { bootClausters } from "../dist/engine/loader.js";
 import { loadCore, encodeMessage, decodePacket } from "../dist/index.js";

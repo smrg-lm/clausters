@@ -56,7 +56,7 @@ pub const MAX_PARTITIONS: usize = 256;
 /// (partition count), then `P` frames of `N = 2L` floats -- each partition
 /// zero-padded to `N` and packed by
 /// [`fft::rfft_into`](clausters_core::fft::rfft_into)
-/// (`[dc, nyquist, re₁, im₁, …]`).
+/// (`[dc, nyquist, re₁, im₁, ...]`).
 pub mod layout {
     /// Header length in samples (`[L, P]`).
     pub const HEADER: usize = 2;

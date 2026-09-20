@@ -142,7 +142,7 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         port = port if port is not None else cfg.get("port", 57110)
         latency = latency if latency is not None else cfg.get("latency", None)
         self.target = NetAddr(host, port)
-        #: the communication interface (RT/TCP by default, NRT/score, …). The
+        #: the communication interface (RT/TCP by default, NRT/score, ...). The
         #: Server owns it; swapping it is the RT/NRT seam. ``transport`` picks
         #: the default carrier when no explicit ``interface`` is given:
         #: ``"tcp"`` (the command plane -- reliable, and a def or a bulk read is

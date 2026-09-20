@@ -527,7 +527,7 @@ unsafe fn playback_ids_verb(
 
 /// **Makes what sounds be what the multitrack says**: the steps, as JSON
 /// (`{"steps": [...]}` or `{"error": "..."}`), allocating from `ids`. The multitrack
-/// is the document's JSON and `sources` the table of source id → buffer and
+/// is the document's JSON and `sources` the table of source id -> buffer and
 /// channels. Sizes with a null `out` and fills with a second call.
 ///
 /// # Safety

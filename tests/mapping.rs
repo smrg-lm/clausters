@@ -147,7 +147,7 @@ fn unmap_holds_the_last_value() {
         .unwrap();
     assert_freq(&mut engine, 330.0);
 
-    // -1 unmaps: the control keeps the last value it read…
+    // -1 unmaps: the control keeps the last value it read...
     handle.send(map(1000, CTL_FREQ, -1, false)).ok().unwrap();
     handle
         .send(Cmd::SetControlBus {
@@ -158,7 +158,7 @@ fn unmap_holds_the_last_value() {
         .unwrap();
     assert_freq(&mut engine, 330.0);
 
-    // …and a plain /node_set still works afterwards.
+    // ...and a plain /node_set still works afterwards.
     handle
         .send(Cmd::SetControl {
             id: 1000,

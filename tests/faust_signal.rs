@@ -1,4 +1,4 @@
-//! Signal API tests: the JSON → Signal interpreter (`faust::signals`). Gated
+//! Signal API tests: the JSON -> Signal interpreter (`faust::signals`). Gated
 //! behind the `faust` feature: `cargo test --features faust --test faust_signal`.
 //!
 //! Covers: a sine built from the Signal API's explicit `recursion`/`self`

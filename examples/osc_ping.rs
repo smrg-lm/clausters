@@ -146,7 +146,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // /node_mapAudio: bind a control to an *audio bus*, sampled once per
                 // block (control-rate). An LFO synth writes a slow sine into a
-                // non-output bus; the target's freq tracks it → vibrato.
+                // non-output bus; the target's freq tracks it -> vibrato.
                 let lfo = r#"{
                     "name": "lfo",
                     "ugens": [

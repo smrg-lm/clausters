@@ -162,7 +162,7 @@ class Content:
     def onto(cls, window: dict, *, playrate: float = 1.0,
              args: "dict | None" = None, looping: bool = False) -> "Content":
         """A window onto a source -- a `clausters.form` segment reference, or any
-        `{"source": …, "start": …, "duration": …}` the crate accepts.
+        `{"source": ..., "start": ..., "duration": ...}` the crate accepts.
 
         `duration` is how much of the source the window **reaches** -- the whole
         take, or the sum of a join's segments -- and not how much the region
@@ -349,7 +349,7 @@ class Automation:
     `target` says **what this automates** in the client's terms and is never
     read here -- a control name, a bus, a plugin's parameter index -- the same
     door a leaf's configuration is, and for the same reason. The points are
-    `{"at": seconds, "value": v, "data": …}`, the shape `clausters.document`'s
+    `{"at": seconds, "value": v, "data": ...}`, the shape `clausters.document`'s
     points vocabulary already carries.
     """
 
@@ -742,7 +742,7 @@ class Source:
     a working copy of that, and the person has not decided yet*.
     """
 
-    #: ``{"at": "file", "path": …}`` or ``{"at": "volatile"}``. A relative path
+    #: ``{"at": "file", "path": ...}`` or ``{"at": "volatile"}``. A relative path
     #: is resolved against the session's own folder, which is what makes a
     #: session directory movable; an absolute one names the user's own file,
     #: which a session must never copy or rewrite.

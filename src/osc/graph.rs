@@ -707,7 +707,7 @@ impl TreeMirror {
         }
     }
 
-    /// Records (`bus >= 0`) or clears (`bus < 0`) a control→bus mapping.
+    /// Records (`bus >= 0`) or clears (`bus < 0`) a control->bus mapping.
     /// Returns whether the change can affect the node's bus usage -- i.e. it
     /// touches an audio map (new or just-cleared) or a control used as a bus
     /// index -- so the caller knows to re-analyze and re-sort.

@@ -1,5 +1,5 @@
 //! `patch` -- the directed, typed patcher: boxes with inlets on their top edge
-//! and outlets on their bottom, and a cord per `outlet → inlet` connection.
+//! and outlets on their bottom, and a cord per `outlet -> inlet` connection.
 //!
 //! **The leaf that proves the drag shape is general rather than control-shaped**,
 //! which is why it is the last of the port. Nothing here is a value in a groove:
@@ -48,7 +48,7 @@ pub struct Patch {
 enum Drag {
     /// A cord being pulled from a port: the grabbed `(box, side, index)` and the
     /// cursor it is drawn to. It acts only on release -- over a compatible port
-    /// (an outlet↔inlet of matching rate) it draws a cord, anywhere else it
+    /// (an outlet<->inlet of matching rate) it draws a cord, anywhere else it
     /// cancels.
     Wire {
         port: (usize, Side, usize),
@@ -419,7 +419,7 @@ fn parse_patch(props: &serde_json::Map<String, Value>) -> PatchDraw {
 }
 
 /// Parses a box's port array: each entry a plain name string (audio, the
-/// default) or an object `{"name": …, "rate": "audio"|"control"|"init"}`.
+/// default) or an object `{"name": ..., "rate": "audio"|"control"|"init"}`.
 fn parse_ports(v: Option<&Value>) -> Vec<Port> {
     v.and_then(Value::as_array)
         .map(|ps| {
@@ -451,7 +451,7 @@ mod tests {
         serde_json::from_str(json).unwrap()
     }
 
-    /// `tone → dac`, both boxes placed explicitly so every hit below is
+    /// `tone -> dac`, both boxes placed explicitly so every hit below is
     /// arithmetic on the props rather than on the auto layout.
     fn graph() -> Patch {
         from_props(&props(

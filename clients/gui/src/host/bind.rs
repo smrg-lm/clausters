@@ -1,11 +1,11 @@
 //! Widget bindings: a widget's value going somewhere without the script.
 //!
-//! `/gui_bind <id> "server" <addr> <prefix…>` makes a widget's value flow
-//! **straight to the audio server** as the OSC message `addr prefix… value`,
+//! `/gui_bind <id> "server" <addr> <prefix...>` makes a widget's value flow
+//! **straight to the audio server** as the OSC message `addr prefix... value`,
 //! with no round-trip through the script -- the same idea as a MIDI binding in
 //! the server, where a control source is wired to a server-side destination
 //! instead of being polled. A bound knob sends an `/node_set` (or any "friend":
-//! `/bus_set`, `/node_setRange`, …) to the audio server on every change; an unbound one
+//! `/bus_set`, `/node_setRange`, ...) to the audio server on every change; an unbound one
 //! keeps emitting `/gui_event` back to the script. `/gui_bind <id>` with no
 //! target removes the binding, restoring the event path.
 //!
@@ -42,7 +42,7 @@ pub const DEST_WIDGET: &str = "widget";
 pub enum Binding {
     /// The audio server: an OSC `addr` and the fixed `prefix` arguments that
     /// precede the value (e.g. `/node_set` with prefix `[node, "cutoff"]`). On a
-    /// change the host sends `addr prefix… value`.
+    /// change the host sends `addr prefix... value`.
     Server { addr: String, prefix: Vec<OscType> },
     /// Another widget: the value applies to `prop` of widget `id`, exactly as a
     /// `/gui_set id prop value` would.
@@ -50,7 +50,7 @@ pub enum Binding {
 }
 
 impl Binding {
-    /// Parses a `/gui_bind` target tail: `"server" <addr> <prefix…>` or
+    /// Parses a `/gui_bind` target tail: `"server" <addr> <prefix...>` or
     /// `"widget" <target_id> <prop>`. The leading keyword names the
     /// destination; for a server binding the address must be an OSC path
     /// (starting with `/`) and the remaining arguments are the fixed prefix
@@ -126,7 +126,7 @@ impl Binding {
         }
     }
 
-    /// A server binding from `[addr, prefix…]`.
+    /// A server binding from `[addr, prefix...]`.
     fn server_from_json(items: &[Value]) -> Result<Binding, String> {
         let addr = match items.first() {
             Some(Value::String(s)) if s.starts_with('/') => s.clone(),
@@ -137,7 +137,7 @@ impl Binding {
     }
 
     /// The OSC message a **server** binding forwards `value` as:
-    /// `addr prefix… value`. `None` for a widget binding, which sends nothing
+    /// `addr prefix... value`. `None` for a widget binding, which sends nothing
     /// over the wire (see [`prop`](Self::prop)).
     pub fn message(&self, value: OscType) -> Option<OscMessage> {
         self.message_args(vec![value])
@@ -145,7 +145,7 @@ impl Binding {
 
     /// [`message`](Self::message) for a **flat list** of values (an editor's
     /// edit-back payload, e.g. a breakpoint list or a `/buffer_getRange.reply`
-    /// region): `addr prefix… values…` -- the widget-value forward generalized
+    /// region): `addr prefix... values...` -- the widget-value forward generalized
     /// to more than one argument.
     pub fn message_args(&self, mut values: Vec<OscType>) -> Option<OscMessage> {
         let Binding::Server { addr, prefix } = self else {

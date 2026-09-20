@@ -19,7 +19,7 @@ export const in_ = (bus: Channel = 0.0): Ugen => new Ugen("In", [bus]);
 export const inCtl = (bus: Channel = 0.0): Ugen => new Ugen("InCtl", [bus]);
 
 /**
- * One writer per channel on consecutive buses (`bus`, `bus+1`, …) -- the
+ * One writer per channel on consecutive buses (`bus`, `bus+1`, ...) -- the
  * point where a channel list becomes buses. The base `bus` must be a number:
  * a signal bus cannot be offset per channel client-side.
  */
@@ -171,7 +171,7 @@ export const sendTrig = (
 
 /**
  * On each trigger of `trig`, sends the OSC message `cmd nodeID replyId
- * value…` to `/server_notify` clients. Output is silence; pass it as a root.
+ * value...` to `/server_notify` clients. Output is silence; pass it as a root.
  */
 export const sendReply = (
     trig: Channel,

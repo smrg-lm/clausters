@@ -56,7 +56,7 @@ import { View } from "./view.ts";
  */
 export class Sources {
     /**
-     * source id → the buffer number it was read into, or **the object that
+     * source id -> the buffer number it was read into, or **the object that
      * holds it** -- a `Buffer`, a `Timeline`. Both are accepted because they
      * answer two different questions and a caller usually has the object: which
      * buffer to draw from is {@link Sources.bufnum}, and what a box **opens as**
@@ -124,7 +124,7 @@ export class Sources {
     }
 
     /**
-     * The whole table as the instance plan reads it: source id →
+     * The whole table as the instance plan reads it: source id ->
      * `{ buffer, channels }`.
      *
      * The one fact about a multitrack that is not in the multitrack, handed to the crate
@@ -152,7 +152,7 @@ export class Sources {
     }
 
     /**
-     * The table as a **join** reads it: source id → `{ buffer, channels, frames }`.
+     * The table as a **join** reads it: source id -> `{ buffer, channels, frames }`.
      *
      * {@link Sources.table} plus the length, which a join needs and a plan does
      * not: a part that names no range contributes the whole of its source, and

@@ -170,7 +170,7 @@ pub(crate) fn time_of(chain: &[Frame]) -> Option<(i32, TimeAxis)> {
 }
 
 /// Maps a cursor x within a view's body strip to a timeline sample through the
-/// shared navigation window -- the inverse of the renderer's sample→pixel map,
+/// shared navigation window -- the inverse of the renderer's sample->pixel map,
 /// used by every timeline gesture (select, locate, clip/note/marker drags).
 pub(crate) fn sample_at(nav_start: f64, nav_len: f64, body_x: f64, body_w: f64, x: f64) -> f64 {
     nav_start + nav_len * ((x - body_x) / body_w.max(1.0))

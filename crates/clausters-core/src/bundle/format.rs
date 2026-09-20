@@ -190,13 +190,13 @@ pub struct Allocation {
 /// One mounted instance: what to open and what to send.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Resolved {
-    /// The id to open the GuiDef under (`/gui_def <def_id> …`).
+    /// The id to open the GuiDef under (`/gui_def <def_id> ...`).
     pub def_id: i32,
     /// The tree, holes filled and widget ids offset. The root's `boot` list is
     /// **not** in it: it left in [`boot`](Self::boot), so no caller can send it
     /// twice.
     pub tree: Value,
-    /// The root's `boot` messages, resolved -- each `[addr, args…]`, with the
+    /// The root's `boot` messages, resolved -- each `[addr, args...]`, with the
     /// int/float distinction JSON already carries.
     pub boot: Vec<Vec<Value>>,
     /// The merged parameter values that produced the tree, typed as declared.

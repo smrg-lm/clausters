@@ -181,7 +181,7 @@ export function canvasIn(element: Element): HTMLCanvasElement {
     return canvas;
 }
 
-/** element → the canvas `canvasIn` made in it. */
+/** element -> the canvas `canvasIn` made in it. */
 const mounted = new WeakMap<Element, HTMLCanvasElement>();
 
 /**

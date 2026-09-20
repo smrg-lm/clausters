@@ -623,7 +623,7 @@ def _set_origin_rpath(path: str):
     host library typically uses ``DT_RUNPATH``, which (unlike the ``DT_RPATH``
     ``build.rs`` gives *our* artifacts) is **not** inherited down the dependency
     chain: the standalone binary's ``$ORIGIN/../_libs`` is therefore not
-    consulted for a vendored library's own deps (libz, libzstd, …), and the
+    consulted for a vendored library's own deps (libz, libzstd, ...), and the
     loader falls through to the system, whose soname may differ (the
     ``libxml2.so.2`` vs ``libxml2.so.16`` failure that first showed this, back
     when a shared libLLVM was bundled too). Pointing every vendored lib at

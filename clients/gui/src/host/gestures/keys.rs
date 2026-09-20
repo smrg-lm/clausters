@@ -29,7 +29,7 @@ impl Gestures {
     /// A key arriving at this window: Tab walks the focus ring, anything else
     /// goes to the focused element's
     /// [`Element::key`](crate::host::widget::Element::key) -- which delivers
-    /// whatever it reports exactly as a drag would, bound → straight to the
+    /// whatever it reports exactly as a drag would, bound -> straight to the
     /// audio server, else a `/gui_event`.
     ///
     /// `clipboard` is the host-wide clipboard a cut/copy/paste reads and writes
@@ -237,7 +237,7 @@ impl Gestures {
     /// intents and the owner answers with what the document now is.
     ///
     /// A paste carries the clipboard **with** it (`"paste" position kind json
-    /// [blob…]`), rather than the owner keeping a clipboard of its own: the
+    /// [blob...]`), rather than the owner keeping a clipboard of its own: the
     /// clipboard is the host's precisely so that a block copied in one window
     /// pastes in another, against a different owner or none.
     pub fn clipboard_key(

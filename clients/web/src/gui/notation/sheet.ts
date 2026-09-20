@@ -576,7 +576,7 @@ export function toVoice(sheet: Sheet, ids: number[], voice: number): Sheet {
 export interface MarkOptions {
     /** Articulations, by their MEI names (`stacc`, `acc`, `ten`, `marc`). */
     articulations?: string[];
-    /** A dynamic written under the staff at this note (`pp`…`ff`). */
+    /** A dynamic written under the staff at this note (`pp`...`ff`). */
     dynamic?: string;
     /** An ornament: `trill`, `mordent`, `turn`, `fermata`. */
     ornament?: string;

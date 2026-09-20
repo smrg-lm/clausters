@@ -245,7 +245,7 @@ impl OscServer {
         self.submit_nrt("/buffer_gen", index, from, job);
     }
 
-    /// `/buffer_query bufnum...` → `/buffer_query.reply` with (bufnum, frames, channels,
+    /// `/buffer_query bufnum...` -> `/buffer_query.reply` with (bufnum, frames, channels,
     /// sampleRate) per buffer; zeros for unallocated indices. Synchronous,
     /// answered from the mirror (= state as of the last completed command).
     pub(in crate::osc::server) fn handle_buffer_query(
@@ -330,7 +330,7 @@ impl OscServer {
         Ok(())
     }
 
-    /// `/buffer_get bufnum index...` → `/buffer_get.reply bufnum index value...`: read single
+    /// `/buffer_get bufnum index...` -> `/buffer_get.reply bufnum index value...`: read single
     /// samples (flat, interleaved) from the buffer mirror. Out-of-range indices
     /// (and any index into an unallocated buffer) read as `0.0`, mirroring how
     /// `Buffer::sample` and the audio-rate UGens treat them. Synchronous, like
@@ -357,7 +357,7 @@ impl OscServer {
         Ok(())
     }
 
-    /// `/buffer_getRange bufnum [start count]...` → `/buffer_getRange.reply bufnum [start blob]...`:
+    /// `/buffer_getRange bufnum [start count]...` -> `/buffer_getRange.reply bufnum [start blob]...`:
     /// read ranges of samples (flat, interleaved) from the buffer mirror -- how a
     /// GUI client pulls a buffer to display it, and the read half of
     /// `/buffer_setRange`. The request asks in samples; the reply carries each
@@ -396,7 +396,7 @@ impl OscServer {
         Ok(())
     }
 
-    /// `/buffer_peaks bufnum [bucket=256] [start=0] [frames=-1]` →
+    /// `/buffer_peaks bufnum [bucket=256] [start=0] [frames=-1]` ->
     /// `/buffer_peaks.reply bufnum startFrame bucket blob` (one or more):
     /// **the overview of a buffer that is standing still.**
     ///
@@ -500,7 +500,7 @@ impl OscServer {
         Ok(())
     }
 
-    /// `/buffer_export bufnum path` → `/done /buffer_export bufnum`: write the buffer's raw
+    /// `/buffer_export bufnum path` -> `/done /buffer_export bufnum`: write the buffer's raw
     /// samples (flat, interleaved, little-endian `f32`) to `path` as a **local
     /// shared resource**, so a same-machine client (the GUI host) can map and read
     /// a multi-megabyte buffer with no per-sample OSC traffic -- the bulk-data path,

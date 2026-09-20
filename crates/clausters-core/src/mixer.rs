@@ -39,7 +39,7 @@
 //! be a GraphDef and a compound effect needs no new mechanism.
 //!
 //! **Widths past stereo**: [`strip_def`] is written for 1 and 2 channels, which
-//! is what a track declares today. The general N→M downmix (BS.775 and its
+//! is what a track declares today. The general N->M downmix (BS.775 and its
 //! relatives) is named where the widths are checked and refused.
 
 use serde_json::{Value, json};

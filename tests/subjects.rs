@@ -7,7 +7,7 @@
 //! quietly shrinking the coverage the other suites believe they have.
 //!
 //! Three claims: the table describes rows that exist, with the arity they
-//! really have; every row of U1–U8 that a suite could test *has* a subject; and
+//! really have; every row of U1-U8 that a suite could test *has* a subject; and
 //! every subject actually renders. The rules that measure a signal live in the
 //! milestone suites -- this file only guards the declaration.
 

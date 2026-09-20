@@ -159,8 +159,8 @@ pub fn take_group_messages(group: i32) -> Vec<OscMessage> {
             addr: "/group_new".into(),
             args: vec![
                 OscType::Int(group),
-                OscType::Int(1), // add to the tail…
-                OscType::Int(0), // …of the root group
+                OscType::Int(1), // add to the tail...
+                OscType::Int(0), // ...of the root group
             ],
         },
         OscMessage {
@@ -223,8 +223,8 @@ impl Host {
                 args: vec![
                     OscType::String(TAKE_DEF.into()),
                     OscType::Int(first + ch as i32),
-                    OscType::Int(0),     // add to head…
-                    OscType::Int(group), // …of the governed group
+                    OscType::Int(0),     // add to head...
+                    OscType::Int(group), // ...of the governed group
                     OscType::String("bufnum".into()),
                     OscType::Float(bufnum as f32),
                     OscType::String("chan".into()),

@@ -2,7 +2,7 @@
 //
 // A small hierarchy so callers catch *what* went wrong instead of matching on
 // message text. Everything derives from `ClaustersError`, so a broad
-// `catch (e) { if (e instanceof ClaustersError) … }` still holds.
+// `catch (e) { if (e instanceof ClaustersError) ... }` still holds.
 
 /** Base class for every error this library throws on purpose. */
 export class ClaustersError extends Error {

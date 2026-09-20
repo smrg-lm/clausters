@@ -542,7 +542,7 @@ test("a stereo view of taps that have not all reported yet draws nothing", async
 test("reading a buffer chunks by the transport's frame ceiling", async () => {
     const { server, carrier } = await fakeServer();
     carrier.autoDone = false;
-    // 65536-byte frames → (65536 - 256) / 4 = 16320 samples per round trip.
+    // 65536-byte frames -> (65536 - 256) / 4 = 16320 samples per round trip.
     const total = 20000;
     const requests: number[][] = [];
     carrier.onSend((msg) => {

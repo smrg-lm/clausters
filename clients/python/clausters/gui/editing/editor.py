@@ -21,7 +21,7 @@ So the boundaries are:
 - **how an edit inverts is the crate's** (`history::Editable`), reached through
   the domain -- never re-derived here, and never twice per language;
 - **what a number is measured in is the structure's, and the bridge is the
-  editor's**: the unit bridge (beats and seconds ↔ timeline samples) is here
+  editor's**: the unit bridge (beats and seconds <-> timeline samples) is here
   because it is the same bridge for every structure, but the tempo it crosses
   beats through is **asked of the structure** on each use (`tempo_map`) and
   never kept -- an editor represents and edits a structure's data and holds
@@ -70,7 +70,7 @@ class Editor:
         structure: what is edited -- whatever the ``domain`` and the ``view``
             understand.
         sample_rate: the engine's sample rate; with the structure's tempo map
-            it fixes the data↔timeline-samples conversion.
+            it fixes the data<->timeline-samples conversion.
         domain: the `clausters.gui.editing.Domain` this structure's payloads are
             written in.
         view: the `clausters.gui.editing.View` that draws it.
@@ -188,10 +188,10 @@ class Editor:
         #: Whether the data changed since the last render.
         self.dirty = False
 
-    # ---- the unit bridge: the data ↔ timeline samples ----
+    # ---- the unit bridge: the data <-> timeline samples ----
 
     def tempo_map(self):
-        """The structure's beat→second map (`clausters.base.TempoMap`), asked
+        """The structure's beat->second map (`clausters.base.TempoMap`), asked
         for on each use, or ``None`` for a structure that holds no tempo.
 
         The map is **the structure's data**: a `clausters.seq.Timeline` holds
@@ -212,7 +212,7 @@ class Editor:
     @property
     def units_per_beat(self) -> float:
         """Timeline samples in the **first** beat -- the nominal ratio of the
-        data↔view bridge. One timeline unit is one audio sample, so a take
+        data<->view bridge. One timeline unit is one audio sample, so a take
         placed at its own frame count sits 1:1 on the axis.
 
         It is a ratio at a position, not a constant: under a tempo that changes,
@@ -222,8 +222,8 @@ class Editor:
         return self.beats_to_units(1.0) - self.beats_to_units(0.0)
 
     def beats_to_units(self, beats: float) -> float:
-        """Beats → timeline samples, through the multitrack's time map (and the
-        core's seconds→samples rounding every client shares).
+        """Beats -> timeline samples, through the multitrack's time map (and the
+        core's seconds->samples rounding every client shares).
 
         The axis is real time, so this is where a beat stops being a logical
         coordinate: a beat after a tempo change lands on the second it actually
@@ -241,7 +241,7 @@ class Editor:
         return self.units_to_beats(units)
 
     def units_to_beats(self, units: float) -> float:
-        """Timeline samples → beats: the inverse the edit-back path takes to turn
+        """Timeline samples -> beats: the inverse the edit-back path takes to turn
         a dragged clip back into a placement."""
         secs = _native.samples_to_secs(int(round(units)), self.sample_rate)
         return self._map().beats_at(secs)
@@ -255,12 +255,12 @@ class Editor:
         return self.sample_rate
 
     def secs_to_units(self, secs: float) -> float:
-        """Seconds → timeline samples: what a length of recorded audio is
+        """Seconds -> timeline samples: what a length of recorded audio is
         drawn with, since its seconds were fixed before any tempo was."""
         return float(_native.secs_to_samples(float(secs), self.sample_rate))
 
     def units_to_secs(self, units: float) -> float:
-        """Timeline samples → seconds: the inverse, for an edit-back that
+        """Timeline samples -> seconds: the inverse, for an edit-back that
         resized something measured in seconds."""
         return _native.samples_to_secs(int(round(units)), self.sample_rate)
 
@@ -455,7 +455,7 @@ class Editor:
         route. What is here is what each of those *does* in this client -- a
         window to forget, a history to step, a socket to answer.
         """
-        # ``<id> <seq> <version> <tag> <payload…>``: the stamp and the version
+        # ``<id> <seq> <version> <tag> <payload...>``: the stamp and the version
         # the gesture was made against are the second and third arguments of
         # every event, and the envelope is all the decision reads. The payload
         # never crosses for it -- what a report *means* is the domain's, and it

@@ -93,7 +93,7 @@ export interface EventDestination {
  * A note event: parameters that know how to play themselves.
  *
  * The keys split in two: a fixed **reserved** set drives timing and structure
- * (`dur`, `legato`, `stretch`, `addAction`/`target`, the pitch keys, …) and is
+ * (`dur`, `legato`, `stretch`, `addAction`/`target`, the pitch keys, ...) and is
  * never sent to the synth; every other numeric key is forwarded as a control.
  *
  * The derived quantities compute the values actually used: `midinote` and
@@ -188,7 +188,7 @@ export class Event {
     }
 
     /**
-     * The `name value …` control tail this event sends to the synth: `freq`
+     * The `name value ...` control tail this event sends to the synth: `freq`
      * and `amp` always, `out` when set, then every other numeric key that is
      * not reserved.
      */

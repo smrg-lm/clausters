@@ -52,7 +52,7 @@ fn the_hit_carries_the_containers_over_it() {
     let host = nested_host();
     let (fb_w, fb_h) = (800, 400);
     let at = |x: f64, y: f64| hit(&host, 1, fb_w, fb_h, x, y, &mono);
-    // The knob in the panel: window → panel, both layout containers, and
+    // The knob in the panel: window -> panel, both layout containers, and
     // no plane to pan.
     let h = at(100.0, 50.0).unwrap();
     assert_eq!(h.id, 3);

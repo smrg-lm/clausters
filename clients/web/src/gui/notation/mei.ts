@@ -4,7 +4,7 @@
 // The third way into the engraver, beside typed score text and the SVG adapter:
 // turn the client's own `seq` data (`Event`, `Timeline`) into MEI -- the format
 // `engrave` already reads -- so a melody or a bounced timeline is *seen* and
-// edited as notation, the inverse of the score→sound flow.
+// edited as notation, the inverse of the score->sound flow.
 //
 // **And back again.** {@link toTimeline} is the return trip: a sheet read into
 // what it sounds (`toNotes`, which is where the symbols are honoured) and placed
@@ -103,7 +103,7 @@ export interface MeiOptions {
  * (to edit and redraw).
  *
  * A duration that is not a single note value is written as **tied** notes (a
- * dotted value when exact, e.g. `1.5` beats → a dotted quarter), and a note that
+ * dotted value when exact, e.g. `1.5` beats -> a dotted quarter), and a note that
  * overruns a barline is split and tied across it. Off-grid durations (finer than
  * a 32nd, e.g. a triplet) snap to the grid here, on the way in: the model itself
  * holds an exact rational, so a tuplet is representable the moment a caller can
@@ -238,7 +238,7 @@ function instrumentFor(
 // measures and emits the XML.
 
 /**
- * A *duration* in beats → 32nd-note ticks (a whole note is `beatUnit` beats).
+ * A *duration* in beats -> 32nd-note ticks (a whole note is `beatUnit` beats).
  * At least one tick -- a sounding note never has zero length.
  */
 function durTicks(beats: number, beatUnit: number): number {
@@ -246,7 +246,7 @@ function durTicks(beats: number, beatUnit: number): number {
 }
 
 /**
- * A *position* on the beat axis → 32nd-note ticks. Unlike a duration this may be
+ * A *position* on the beat axis -> 32nd-note ticks. Unlike a duration this may be
  * zero: beat 0 is tick 0, not tick 1, or a downbeat onset would push a spurious
  * rest before the first note and knock the whole bar off the grid.
  */
@@ -334,7 +334,7 @@ function voiceFromTimeline(
         const beat = beats[i] as number;
         const events = groups.get(beat) as SeqEvent[];
         const onset = posTicks(beat, beatUnit);
-        if (onset > end) voice.push({ ticks: onset - end }); // a gap → a rest
+        if (onset > end) voice.push({ ticks: onset - end }); // a gap -> a rest
         let ticks = durTicks(
             Math.min(...events.map((e) => Number(e.get("dur")))),
             beatUnit,

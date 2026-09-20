@@ -261,7 +261,7 @@ class Buffer:
         """Allocate a buffer and read a sound file into it (``/buffer_allocRead``): the
         shape and sample rate come from the file (``num_frames`` 0 = the whole
         file, from ``file_start``). Decoding is by content (WAV, FLAC, OGG, MP3,
-        …). In NRT it scores at time 0; in RT ``wait=True`` blocks on ``/done``.
+        ...). In NRT it scores at time 0; in RT ``wait=True`` blocks on ``/done``.
 
         The shape is the **file's**, so the client cannot know it in advance:
         waiting reads it back (one `info` round trip) and the returned buffer
@@ -538,7 +538,7 @@ class Buffer:
         self._edit("/buffer_reverse", (start, frames), wait, timeout)
 
     def info(self, timeout: "float | None" = None) -> BufferInfo:
-        """Ask the running server what it holds in this slot (``/buffer_query`` →
+        """Ask the running server what it holds in this slot (``/buffer_query`` ->
         ``/buffer_query.reply bufnum frames channels sampleRate``), keep the record on the
         handle and return it.
 
@@ -554,7 +554,7 @@ class Buffer:
 
     def get_samples(self, start: int = 0, count: int = -1, *,
                     chunk: "int | None" = None, timeout: "float | None" = None):
-        """Fetch interleaved samples from this buffer (``/buffer_getRange`` →
+        """Fetch interleaved samples from this buffer (``/buffer_getRange`` ->
         ``/buffer_getRange.reply``), in chunks, as a stdlib ``array('f')``. ``count`` -1 = to
         the end (the shape is queried first). RT only (it needs replies); for
         display the GUI host fetches buffers itself.
@@ -615,7 +615,7 @@ class Buffer:
 
     def peaks(self, bucket: int = 256, start: int = 0, frames: int = -1, *,
               timeout: "float | None" = None):
-        """Fetch this buffer's **overview** (``/buffer_peaks`` →
+        """Fetch this buffer's **overview** (``/buffer_peaks`` ->
         ``/buffer_peaks.reply``), as ``(start_frame, bucket, stats)``.
 
         The summary of a buffer that is standing still, and the sibling of the
@@ -670,7 +670,7 @@ class Buffer:
                     wait: bool = True, timeout: "float | None" = None):
         """Write interleaved samples into this buffer (``/buffer_setRange``), in
         chunks -- the write half of `get_samples`, and the step that closes an
-        editor's read → edit → write cycle.
+        editor's read -> edit -> write cycle.
 
         ``samples`` is any sequence of numbers (a list, an ``array('f')``, what
         `get_samples` returned) laid down from flat index ``start``. Indices are

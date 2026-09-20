@@ -279,8 +279,8 @@ impl Host {
             addr: "/group_new".into(),
             args: vec![
                 OscType::Int(monitor),
-                OscType::Int(1),         // add to the tail…
-                OscType::Int(transport), // …of the transport's group
+                OscType::Int(1),         // add to the tail...
+                OscType::Int(transport), // ...of the transport's group
             ],
         });
         self.governed = Some(monitor);

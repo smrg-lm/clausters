@@ -56,7 +56,7 @@ and <code>session.close()</code> closes them.
 numeric core is wasm and has to be fetched before anything calls into it
 (<code>await loadCore()</code>, which a script does not need because the same
 code is already in the process), writing an envelope on a map is
-<code>tempoEnv(map, …)</code> rather than <code>map.env(…)</code> because the map
+<code>tempoEnv(map, ...)</code> rather than <code>map.env(...)</code> because the map
 is a generated wasm class that cannot grow a method, the engine is the tab's own
 (<code>Session.embed</code> is this client's <code>live</code>), the calls that
 reach it are awaited, and the watching loop is a timer rather than a sleeping

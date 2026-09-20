@@ -62,13 +62,13 @@ def dshuf(values, repeats=0.0) -> Ugen:
 
 
 def dseries(repeats=0.0, start=0.0, step=1.0) -> Ugen:
-    """An arithmetic sequence: ``start``, ``start + step``, … The step is read
+    """An arithmetic sequence: ``start``, ``start + step``, ... The step is read
     on every item, so it may itself be a stream."""
     return Ugen("Dseries", [repeats, start, step], rate="dr")
 
 
 def dgeom(repeats=0.0, start=1.0, grow=2.0) -> Ugen:
-    """A geometric sequence: ``start``, ``start * grow``, …"""
+    """A geometric sequence: ``start``, ``start * grow``, ..."""
     return Ugen("Dgeom", [repeats, start, grow], rate="dr")
 
 

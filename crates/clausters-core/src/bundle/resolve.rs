@@ -135,7 +135,7 @@ pub(super) fn resolve_node(
     Ok(Value::Object(out))
 }
 
-/// The root's `boot` list, each entry `[addr, args…]` with its holes filled.
+/// The root's `boot` list, each entry `[addr, args...]` with its holes filled.
 pub(super) fn resolve_boot(list: &[Value], ctx: &Ctx) -> Result<Vec<Vec<Value>>, Error> {
     let mut out = Vec::with_capacity(list.len());
     for entry in list {
@@ -198,7 +198,7 @@ pub(super) fn check_symbol_namespaces(symbols: &SymbolTable) -> Result<(), Error
 
 // --- parameters ----------------------------------------------------------
 
-/// Merges **attribute → preset → default** and types every declared parameter.
+/// Merges **attribute -> preset -> default** and types every declared parameter.
 pub(super) fn merge_params(
     manifest: &Manifest,
     input: &ParamInput,

@@ -271,8 +271,8 @@ fn outcome_bytes(outcome: &clausters_document::Outcome) -> Vec<u8> {
 ///
 /// ```json
 /// {"label": "drag the clip and its curve", "coalesce": false, "legs": [
-///   {"structure": 1, "forward": {"edit": {…}}, "backward": {…}, "key": "place:7"},
-///   {"structure": 2, "forward": {"edit": {…}}, "backward": {…}, "key": "points"}
+///   {"structure": 1, "forward": {"edit": {...}}, "backward": {...}, "key": "place:7"},
+///   {"structure": 2, "forward": {"edit": {...}}, "backward": {...}, "key": "points"}
 /// ]}
 /// ```
 ///
@@ -391,9 +391,9 @@ impl Request {
 /// order, and what only its owner can re-run.
 ///
 /// `direction` is `"undo"` or `"redo"`. Writes
-/// `{"label": …, "legs": [{"structure": <id>, "payloads": [<payload>, …]}, …],
-/// "remaining": [{"structure": <id>, "steps": [<step>, …]}, …],
-/// "skipped": [<label>, …]}`.
+/// `{"label": ..., "legs": [{"structure": <id>, "payloads": [<payload>, ...]}, ...],
+/// "remaining": [{"structure": <id>, "steps": [<step>, ...]}, ...],
+/// "skipped": [<label>, ...]}`.
 ///
 /// It is one door and not two because picking the side a direction reads, and
 /// keeping the legs one structure owns, are rules and not plumbing -- and every
@@ -712,7 +712,7 @@ pub unsafe extern "C" fn clausters_domain_coalesce_key(
 ///
 /// `state` is the structure in its own vocabulary -- a curve's points, a
 /// timeline's events -- and the answer is
-/// `{"state": …, "applied": bool, "reason"?: …, "current"?: …}`. Nothing for a
+/// `{"state": ..., "applied": bool, "reason"?: ..., "current"?: ...}`. Nothing for a
 /// vocabulary whose state is not a value a caller can hand over: the
 /// arrangement's tree (which needs a version to check against and a grid to
 /// snap to, and has [`clausters_document_apply`](crate::clausters_document_apply)

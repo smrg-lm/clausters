@@ -1,4 +1,4 @@
-"""Time: the beat↔second map, and the questions it answers.
+"""Time: the beat<->second map, and the questions it answers.
 
 A **beat is not a unit of time**. It is a logical coordinate, and what turns
 one into a second is the tempo -- which can change as it goes. So the two
@@ -104,7 +104,7 @@ __all__ = [
 
 def bar(beats: float, quant: float) -> float:
     """The bar a beat position falls in, on a grid of ``quant`` beats per bar
-    (0-based; ``quant <= 0`` → bar 0).
+    (0-based; ``quant <= 0`` -> bar 0).
 
     A bar count is a reading of the *beat* axis, so it needs no map: bars are
     beats grouped, not seconds grouped.
@@ -120,7 +120,7 @@ def beat_in_bar(beats: float, quant: float) -> float:
 
 def quant_delay(pos: float, quant: float) -> float:
     """Beats to wait from ``pos`` for the next ``quant`` boundary (a position
-    already on one waits 0; ``quant <= 0`` → now).
+    already on one waits 0; ``quant <= 0`` -> now).
 
     The shared quantization rule every client applies, and what `play`'s
     ``quant`` argument is computed with.
@@ -129,13 +129,13 @@ def quant_delay(pos: float, quant: float) -> float:
 
 
 def secs_to_samples(secs: float, sample_rate: float) -> int:
-    """Seconds → a sample count at ``sample_rate``, rounded the way the server
+    """Seconds -> a sample count at ``sample_rate``, rounded the way the server
     rounds. A length of audio crosses on this and never on a tempo: its seconds
     were fixed before any tempo was."""
     return _native.secs_to_samples(float(secs), float(sample_rate))
 
 
 def samples_to_secs(samples: int, sample_rate: float) -> float:
-    """A sample count → seconds at ``sample_rate`` -- the inverse of
+    """A sample count -> seconds at ``sample_rate`` -- the inverse of
     `secs_to_samples`."""
     return _native.samples_to_secs(int(samples), float(sample_rate))

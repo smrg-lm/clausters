@@ -10,7 +10,7 @@
 // **Composition is by method, not by operator.** TypeScript has no operator
 // overloading, so where the Python client writes `sine(freq) * amp` this one
 // writes `sine(freq).mul(amp)`, and every other operator or math method
-// (`mod`, `min`/`max`, comparisons, `.sin()`, `.midicps()`, `.distort()` …)
+// (`mod`, `min`/`max`, comparisons, `.sin()`, `.midicps()`, `.distort()` ...)
 // is a method carrying the same operator **name** the wire uses -- so the two
 // clients emit identical specs. The free `add`/`sub`/`mul`/`div` functions
 // take the number-on-the-left case (`sub(1, sig)`), which a method cannot.
@@ -27,7 +27,7 @@
 // input is a type error, and a `TypeError` at serialization.
 //
 // Reserved controls `in` and `out` (the input/output buses, set with
-// `/synth_new … "in" b "out" b`) are added by the server, not declared here.
+// `/synth_new ... "in" b "out" b`) are added by the server, not declared here.
 //
 // **Where things live.** The callables are grouped by family, one module each
 // -- the same split the Python package makes: `graph` (the node, control and
@@ -286,12 +286,12 @@ const INPUT_NAMES_MISALIGNED = new Set([
     "PV_Kernel",
 ]);
 
-/** Lazily built `kind -> [parameter name, …]` -- see {@link ugenInputNames}. */
+/** Lazily built `kind -> [parameter name, ...]` -- see {@link ugenInputNames}. */
 let INPUT_NAMES: Map<string, string[]> | null = null;
 
 /**
  * The positional parameter names of the builder that makes each UGen kind, read
- * from the `new Ugen("Kind", …)` literal in this module's own functions (a
+ * from the `new Ugen("Kind", ...)` literal in this module's own functions (a
  * builder is not named after its kind: `in_` builds `In`, `oscN` builds `OscN`).
  *
  * The Python client reads the same thing with `inspect`; this one reads

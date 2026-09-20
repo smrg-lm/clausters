@@ -217,7 +217,7 @@ impl Element for Keys {
                 .as_str()
                 .map(|s| self.voice = (!s.is_empty()).then(|| s.to_string()))
                 .is_some(),
-            // The flat `[name, value, …]` array rides as its JSON string, the
+            // The flat `[name, value, ...]` array rides as its JSON string, the
             // scalar carrier a `/gui_set` of a non-scalar always uses.
             "voice_args" => {
                 self.voice_args = parse::voice_args(&parse::as_array_props("voice_args", v));

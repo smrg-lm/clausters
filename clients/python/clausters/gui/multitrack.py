@@ -179,7 +179,7 @@ class Multitrack:
     def view(self, **props):
         """The `clausters.gui.multitrack` widget drawing this multitrack, built from
         what this object holds. Any widget prop (``name``, ``weight``, ``link``,
-        ``ruler``, ``sample_rate``, ``playhead_at``…) passes through."""
+        ``ruler``, ``sample_rate``, ``playhead_at``...) passes through."""
         props.setdefault("snap", self.snap)
         # The name is remembered so `attach` needs only the window: this object
         # built the node, so it is the one that knows what it called it.

@@ -5,7 +5,7 @@
 // view of it (`toWidget` renders the model the widget draws). A box is a **whole
 // def** (a SynthDef/FaustDef the server has) -- itself a graph -- and the patch
 // compiles to a **GraphDef**, whole nodes wired by server buses. A cord *is* a
-// bus, but you never number one: `compile` runs the shared cord→bus pass
+// bus, but you never number one: `compile` runs the shared cord->bus pass
 // (`clausters_core::patch`, through the core's wasm door) that names one bus per
 // connected net, its writers summing.
 //
@@ -25,7 +25,7 @@
 //
 // The buses are never drawn or named by you, so **the hardware output is not one
 // either**: a signal reaches the speakers through a **terminal def** -- a `dac`
-// with an inlet and no outlet, its `out(0, …)` baked in -- a box like any other.
+// with an inlet and no outlet, its `out(0, ...)` baked in -- a box like any other.
 //
 // The **rate** of a port is its cord type: an audio port is a plain name, a
 // control port the pair `[name, "control"]`.
@@ -69,7 +69,7 @@ export type CordRate = PortRate | "init";
 /** A port as a caller writes it: a bare name (audio), or `[name, rate]`. */
 export type PortSpec = string | readonly [name: string, rate: PortRate];
 
-/** A port in the flat form the cord→bus pass consumes. */
+/** A port in the flat form the cord->bus pass consumes. */
 export interface Port {
     name: string;
     dir: "in" | "out";
@@ -179,7 +179,7 @@ function* walk(roots: readonly unknown[]): Generator<Ugen> {
 
 /**
  * Normalize a port spec -- a bare name (audio) or `[name, "control"]` -- into the
- * flat `{name, dir, rate}` the cord→bus pass consumes.
+ * flat `{name, dir, rate}` the cord->bus pass consumes.
  */
 function port(spec: PortSpec, dir: "in" | "out"): Port {
     const [name, rate] = typeof spec === "string" ? [spec, "audio" as PortRate] : spec;
@@ -194,7 +194,7 @@ function port(spec: PortSpec, dir: "in" | "out"): Port {
  * `GraphDef`. Its boxes and the cords between their ports.
  */
 export class GraphPatch {
-    /** Each box, in the schema the cord→bus pass reads. */
+    /** Each box, in the schema the cord->bus pass reads. */
     boxes: PatchBox[] = [];
     /** Each cord, its ports flat indices into the box's `ports`. */
     cords: Cord[] = [];
@@ -234,7 +234,7 @@ export class GraphPatch {
     }
 
     /**
-     * Draw a directed cord: box `src`'s `outlet` → box `dst`'s `inlet` (each port
+     * Draw a directed cord: box `src`'s `outlet` -> box `dst`'s `inlet` (each port
      * by name or flat index). A no-op if it already exists, so applying an edit
      * twice is safe.
      */
@@ -249,7 +249,7 @@ export class GraphPatch {
         return this;
     }
 
-    /** Remove the cord `src.outlet → dst.inlet` if present. */
+    /** Remove the cord `src.outlet -> dst.inlet` if present. */
     disconnect(src: number, outlet: string | number, dst: number, inlet: string | number): this {
         const cord: Cord = {
             from_box: Math.trunc(src),
@@ -315,13 +315,13 @@ export class GraphPatch {
 
     // ---- compiling ----
 
-    /** The patch as the cord→bus pass reads it. */
+    /** The patch as the cord->bus pass reads it. */
     toJson(): { boxes: PatchBox[]; cords: Cord[] } {
         return { boxes: this.boxes, cords: this.cords };
     }
 
     /**
-     * Run the shared cord→bus pass. Answers `{buses, members}` -- one private bus
+     * Run the shared cord->bus pass. Answers `{buses, members}` -- one private bus
      * per connected net (writers summing), each member its def and its wired
      * controls. Throws on a bad cord (reversed, rate-mismatched, out of range),
      * naming the offender.
@@ -451,7 +451,7 @@ function patchToWidget(
 // ===================================================================
 
 /**
- * A UGen calculation rate → the cord type the widget draws. `ir` (init /
+ * A UGen calculation rate -> the cord type the widget draws. `ir` (init /
  * scalar) is the level-2 third weight (dashed); `dr` (demand) has no bus weight
  * of its own, so it reads as control. An **unset** UGen rate defaults to audio:
  * most UGens are audio-rate, and the exact per-kind default is the server's,
@@ -464,7 +464,7 @@ const UGEN_RATE: Record<string, CordRate> = {
     dr: "control",
 };
 
-/** A control **type** → the cord type. A scalar (`ir`) control is an init cord. */
+/** A control **type** -> the cord type. A scalar (`ir`) control is an init cord. */
 const CONTROL_RATE: Record<string, CordRate> = {
     kr: "control",
     control: "control",
@@ -479,8 +479,8 @@ const FAUST_CONTROL_OPS = new Set(["hslider", "vslider", "nentry", "button", "ch
 
 /**
  * The cord type of `node`'s output -- `"audio"`/`"control"`/`"init"` -- for
- * drawing and typing a cord. A `Ugen` maps its calc rate (unset → audio); a
- * `Control` maps its type (unset → control); a bare number is a constant
+ * drawing and typing a cord. A `Ugen` maps its calc rate (unset -> audio); a
+ * `Control` maps its type (unset -> control); a bare number is a constant
  * (init).
  */
 function rateOf(node: unknown): CordRate {
@@ -549,14 +549,14 @@ function topoUgens(outputs: readonly Channel[]): Ugen[] {
 export class DefPatch {
     /**
      * Each box, carrying a `kind` and a layout `role`. A **ugen** box:
-     * `{def, kind:"ugen", role:"object", ugen:{…}, ports:[…]}`. A **control**
-     * box: `{def, kind:"control", role:"source", control:{…}, ports:[outlet]}`.
+     * `{def, kind:"ugen", role:"object", ugen:{...}, ports:[...]}`. A **control**
+     * box: `{def, kind:"control", role:"source", control:{...}, ports:[outlet]}`.
      * A **const** value box: `{def, kind:"const", role:"const", const, ports:
      * [outlet]}`. A **faust** box mirrors ugen without the rebuild fields.
      */
     boxes: PatchBox[] = [];
     /**
-     * Each cord -- flat port indices into each box's `ports` (an outlet → an
+     * Each cord -- flat port indices into each box's `ports` (an outlet -> an
      * inlet).
      */
     cords: Cord[] = [];
@@ -601,7 +601,7 @@ export class DefPatch {
                 let src: number;
                 if (input instanceof Ugen) src = ugenBox.get(input)!;
                 else if (input instanceof Control) src = controls.get(input.name)!;
-                else src = patch.addConst(input); // a literal → its own value box
+                else src = patch.addConst(input); // a literal -> its own value box
                 patch.connect(src, outletFlat(patch.boxes[src]!), bi, pos);
             });
         }

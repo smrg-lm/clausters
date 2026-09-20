@@ -31,7 +31,7 @@ then run one or more demos (default: status):
          sampleRate/64 (≈ 750 Hz at 48 kHz).
 `demand`  a demand-rate step sequencer: an Impulse-driven `Demand` pulls
          note frequencies from a `Dseq` (`"rate": "dr"`) into a Sine.
-`signal` builds Faust defs with the **Signal API** (`{"signals": […]}`): a
+`signal` builds Faust defs with the **Signal API** (`{"signals": [...]}`): a
          sine from an explicit `recursion`/`self` phasor, and a one-pole
          lowpass on noise -- explicit sample-accurate feedback (needs the
          faust feature).
@@ -208,7 +208,7 @@ def demo_ugen(client: Client):
     client.send("/node_free", 3000)
 
 
-# ---- /def_send faust: JSON → Faust Box API generation ----
+# ---- /def_send faust: JSON -> Faust Box API generation ----
 
 
 def box(op: str, *inputs) -> dict:

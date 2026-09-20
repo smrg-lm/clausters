@@ -117,7 +117,7 @@ export function envGenArgs(env: Env): MsgArg[] {
  * A control-automation lane: a break-point curve (`Env`) driving one or more
  * `[node, control]` targets, rendered as a control buffer read onto a control
  * bus. Editable through `toPoints`/`fromPoints` -- the `bpf` widget's flat
- * `[time, value, shape, curve, …]` form: times in seconds, values in real
+ * `[time, value, shape, curve, ...]` form: times in seconds, values in real
  * control units. Its times are an `Env`'s, so they are in **seconds**: the
  * curve is a shape in real time, and the clock's tempo enters only where the
  * lane is scheduled.
@@ -164,7 +164,7 @@ export class Automation {
 
     /**
      * Builds one from a `bpf` breakpoint list -- `[[time, value, shape, curve],
-     * …]`, or the flat `[t, v, shape, curve, …]` a `"points"` event carries.
+     * ...]`, or the flat `[t, v, shape, curve, ...]` a `"points"` event carries.
      *
      * Times are in **seconds** -- they are an `Env`'s segment times, which is
      * what the curve is stored as and what the envelope math on the server
@@ -193,7 +193,7 @@ export class Automation {
         return new Automation(pointsToEnv(flat, envOptions), target, { name, frames });
     }
 
-    /** The curve as the `bpf` flat breakpoint list `[t, v, shape, curve, …]`. */
+    /** The curve as the `bpf` flat breakpoint list `[t, v, shape, curve, ...]`. */
     toPoints(): number[] {
         return envToPoints(this.env);
     }

@@ -161,10 +161,10 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
     ),
     // the general per-frame mechanism -- one UGen interpreting a
     // compile-validated bin-expression program (`mag_expr`/`phase_expr`) over
-    // every bin of each fresh frame. Inputs: `[chain, p0, p1, …]` (variadic
+    // every bin of each fresh frame. Inputs: `[chain, p0, p1, ...]` (variadic
     // parameters, sampled at the hop). An op outside the curated set is a
     // program here, never a new registry row (see docs/decisions.md).
-    // Variadic: only `chain` is fixed; `p0…` are the program's parameters.
+    // Variadic: only `chain` is fixed; `p0...` are the program's parameters.
     desc_spectral(
         "PV_Kernel",
         Variadic,

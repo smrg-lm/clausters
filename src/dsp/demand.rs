@@ -2,7 +2,7 @@
 //!
 //! A demand UGen is not in the block-execution order. It is a **sub-graph its
 //! driver owns**: the driver ([`Demand`], [`Duty`]) decides when a value is
-//! needed and pulls one; the source ([`Dlist`], [`Dramp`], …) yields the next
+//! needed and pulls one; the source ([`Dlist`], [`Dramp`], ...) yields the next
 //! item of its stream, or `NaN` once it has none left. Between two pulls the
 //! source does nothing at all -- a stream has no samples, only a next value.
 //!
@@ -24,7 +24,7 @@
 //! child the parent may never come back to. Reset propagation is per kind, not
 //! a blanket rule: the list sources reset the child they move to, `Dstutter`
 //! and `Dswitch1` reset their inputs outright, and the scalar sources
-//! (`Dseries`, `Dwhite`, …) propagate nothing, since they read their bounds
+//! (`Dseries`, `Dwhite`, ...) propagate nothing, since they read their bounds
 //! afresh on every pull anyway. This mirrors scsynth, where the same asymmetry
 //! is visible in which `_next` functions call `RESETINPUT`.
 //!
@@ -358,7 +358,7 @@ impl ListOrder {
     }
 }
 
-/// `Dseq(repeats, v0, v1, …)` and its three siblings: a value list traversed
+/// `Dseq(repeats, v0, v1, ...)` and its three siblings: a value list traversed
 /// `repeats` times (or endlessly), yielding one item per pull.
 ///
 /// **A value may be a stream**, and then it is *drained* rather than taken
@@ -568,7 +568,7 @@ impl UGen for Dstutter {
     }
 }
 
-/// `Dswitch1(index, v0, v1, …)`: yields **one** item of the stream `index`
+/// `Dswitch1(index, v0, v1, ...)`: yields **one** item of the stream `index`
 /// picks, then picks again on the next pull.
 ///
 /// The `1` in the name is the count: unlike a list source it never drains a

@@ -2,7 +2,7 @@
 //
 // A `Pattern` is a reusable, lazy description of a value sequence -- the
 // definition of a generator: iterating it yields the values (a fresh walk each
-// time), and it does not play. Value patterns (`Pseq`, `Pwhite`, …) feed
+// time), and it does not play. Value patterns (`Pseq`, `Pwhite`, ...) feed
 // `Pbind`, which combines per-key value patterns into a stream of `Event`s. An
 // `EventPattern` -- `Pbind`, and a list pattern whose every element is an event
 // pattern -- is what plays, on a clock, with `EventPattern.play` (see
@@ -87,7 +87,7 @@ export abstract class EventPattern<T = Event> extends Pattern<T> {
      * session, else the active one, else the default session): an omitted
      * `destination` takes that environment's server, and an omitted `clock`
      * the running routine's or, outside one, the default session's -- created
-     * and started on first use. So `new Pbind(…).play()` sounds with a
+     * and started on first use. So `new Pbind(...).play()` sounds with a
      * `Session` opened somewhere and nothing else wired.
      */
     play(
@@ -206,7 +206,7 @@ export class Pwhite extends Pattern<number> {
     }
 }
 
-/** Arithmetic series `start, start + step, …` (`length` values). */
+/** Arithmetic series `start, start + step, ...` (`length` values). */
 export class Pseries extends Pattern<number> {
     readonly start: number;
     readonly step: number;
@@ -228,7 +228,7 @@ export class Pseries extends Pattern<number> {
     }
 }
 
-/** Geometric series `start, start * grow, …` (`length` values). */
+/** Geometric series `start, start * grow, ...` (`length` values). */
 export class Pgeom extends Pattern<number> {
     readonly start: number;
     readonly grow: number;
@@ -326,7 +326,7 @@ export class Pbind extends EventPattern<Event> {
 // ---- list patterns over events ----
 //
 // What a list pattern is made as when every element is an event pattern: the
-// same pattern, and playable. `new Pseq([new Pbind(…), new Pbind(…)])` is one.
+// same pattern, and playable. `new Pseq([new Pbind(...), new Pbind(...)])` is one.
 
 class EventPseq<T> extends Pseq<T> {
     readonly [EVENTS] = true;

@@ -51,16 +51,16 @@ impl UGen for WhiteNoise {
     }
 }
 
-/// Number of generators in the Voss–McCartney sum. Sixteen covers about five
+/// Number of generators in the Voss-McCartney sum. Sixteen covers about five
 /// decades -- from a period of 2 samples to one of 2^16 -- which is the whole
 /// audible band and then some at any sample rate we run at.
 const PINK_ROWS: usize = 16;
 
 /// `PinkNoise`: equal energy per octave, −3 dB/octave. No inputs.
 ///
-/// **Voss–McCartney**, and deliberately not Trammell's stochastic variant. Both
+/// **Voss-McCartney**, and deliberately not Trammell's stochastic variant. Both
 /// sum a set of white generators updated at halving rates; the difference is
-/// the schedule. Voss–McCartney re-rolls the generator picked by the number of
+/// the schedule. Voss-McCartney re-rolls the generator picked by the number of
 /// trailing zeros in a counter, so **exactly one** of them changes per sample --
 /// a fixed cost, every sample, forever. Trammell's version decides at random
 /// which rows to update, which is cheaper on average and unbounded in the worst

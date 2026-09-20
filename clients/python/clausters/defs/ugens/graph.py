@@ -113,7 +113,7 @@ def _map_ugen(node, selector, args, clip):
 class _Node(_RangeMaps, SynthExpr):
     """Shared operator dispatch for graph leaves (`Ugen`, `Control`): `+ - * /`
     compose the dedicated alias kinds; every other operator and math method
-    (`%`, `min`, comparisons, `.sin()`, `.midicps()`, …) composes a generic
+    (`%`, `min`, comparisons, `.sin()`, `.midicps()`, ...) composes a generic
     `BinaryOpUGen`/`UnaryOpUGen` carrying the operator name."""
 
     def _compose_binop(self, selector, other):
@@ -359,7 +359,7 @@ def dup(x, n=2) -> ChannelList:
 
     A graph node (or a number) is repeated **by reference** -- the graph
     serializes it once, fanned out to every channel, so ``dup(sine(440))`` is
-    a cheap mono→stereo: identical channels. A **callable** is evaluated ``n``
+    a cheap mono->stereo: identical channels. A **callable** is evaluated ``n``
     times -- ``dup(white_noise, 8)`` (or ``dup(lambda: sine(rand(438, 442)),
     8)``) builds ``n`` *distinct* UGens, which is what a decorrelated or
     detuned bank needs; duplicating a `white_noise` by reference would give

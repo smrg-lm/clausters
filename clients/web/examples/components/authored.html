@@ -49,7 +49,7 @@
       <canvas id="surface"></canvas>
 
       <p>What the writer emitted -- the directory that was never written:</p>
-      <div id="listing">…</div>
+      <div id="listing">...</div>
     </main>
 
     <!--
@@ -158,7 +158,7 @@
         await freeBundle(mounted);
         mounted = null;
         canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
-        listing.textContent = "…";
+        listing.textContent = "...";
       }
 
       document.getElementById("start").onclick = () => start();

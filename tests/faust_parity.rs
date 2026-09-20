@@ -113,7 +113,7 @@ fn sine_spec(name: &str, bus: f32) -> String {
     .to_string()
 }
 
-/// The same graph through the JSON→Box schema, phase-aligned with `Sine`:
+/// The same graph through the JSON->Box schema, phase-aligned with `Sine`:
 /// our oscillator emits `sin(2π·n·f/SR)` starting at 0, while the raw Faust
 /// phasor `(+(f/SR) : wrap) ~ _` starts at `f/SR` -- the 1-sample `delay`
 /// (init 0) realigns it.

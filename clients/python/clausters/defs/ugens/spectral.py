@@ -19,7 +19,7 @@ def fft(source, active=1.0, *, fft_size=1024, hop=0.5, wintype=0) -> Ugen:
     transforms it to a spectral frame once per **hop**. ``active > 0`` runs the
     transform, ``<= 0`` holds. ``fft_size`` is the window size (a power of two:
     256/512/1024/2048/4096), ``hop`` the fraction of the window between frames,
-    ``wintype`` the window (a `clausters._native.Window`: 0 Hann, 1 sine, …).
+    ``wintype`` the window (a `clausters._native.Window`: 0 Hann, 1 sine, ...).
     These size the transform, so they are static fields given **only here** -- the
     server propagates them to the rest of the chain. The window is also settable
     live with `Server.u_cmd`. Feed the result to a ``pv_*`` filter or `ifft`."""
@@ -137,7 +137,7 @@ def pv_kernel(chain, *, mag=None, phase=None, params=()) -> Ugen:
     magnitude maps skip the polar conversion).
 
     ``params`` are extra signal inputs (controls, LFOs, constants) the
-    expressions read as ``param(0)``, ``param(1)``, … -- sampled once per hop.
+    expressions read as ``param(0)``, ``param(1)``, ... -- sampled once per hop.
 
     An expression is a **pure per-bin map**: no state across bins or frames,
     no reading other bins. Gates, tilts, masks and magnitude algebra belong

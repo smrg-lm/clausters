@@ -23,7 +23,7 @@ def score_view(display_list, *, scroll_id: int | None = None,
     """Wrap an engraved ``display_list`` in a `scroll` sized to the page, ready
     to drop into a window. The page is a dict, or a
     `clausters.gui.guidef.Source` holding one so a re-engrave reaches the
-    definition and every window at once (``source(display_list=…)``). The content area is ``width`` wide and as tall as the
+    definition and every window at once (``source(display_list=...)``). The content area is ``width`` wide and as tall as the
     page's aspect needs, so a multi-system score scrolls down the systems.
 
     ``zoom`` enables cursor-anchored zoom to read a dense passage, and it also
@@ -45,7 +45,7 @@ def score_view(display_list, *, scroll_id: int | None = None,
     hand; left ``None`` the host assigns them when the tree is opened. ``name``
     tags the inner `score` so a driver can address it by name -- the page the
     transport anchors, and the one a re-engrave pushes back -- instead of tracking
-    its id (``win[name].set(display_list=…)``). ``scroll_name`` tags the
+    its id (``win[name].set(display_list=...)``). ``scroll_name`` tags the
     **scroll**, which a driver needs for one thing: **the page is drawn to fit
     the box it is given**, so an edit that adds a system would shrink the whole
     engraving to keep it inside. Growing the box with the page instead keeps the

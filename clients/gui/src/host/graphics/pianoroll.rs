@@ -23,7 +23,7 @@
 //!
 //! Everything here is **display logic** (pixel mapping, hit-testing, drag
 //! clamps): it stays gui-side per the placement rule. The one multitrack of general
-//! musical knowledge -- the MIDI-note ↔ name/black-key spelling drawn on the
+//! musical knowledge -- the MIDI-note <-> name/black-key spelling drawn on the
 //! keyboard and the pitch ruler -- lives in `clausters_core::scale`.
 
 use clausters_core::scale;
@@ -594,7 +594,7 @@ mod tests {
         let g = grid();
         let nv = nav();
         let notes = vec![Note::new(100.0, 400.0, 60.0)];
-        // x range of the note: 100..500 samples over 1000 across width 400 →
+        // x range of the note: 100..500 samples over 1000 across width 400 ->
         // pixels 50 + [40, 200] = [90, 250].
         let x0 = to_x(100.0, &nv, g) as f32;
         let x1 = to_x(500.0, &nv, g) as f32;
@@ -605,10 +605,10 @@ mod tests {
         // Near the end edge.
         let h = note_hit(g, &nv, 0.0, &notes, 24.0, 96.0, x1 - 1.0, yc).unwrap();
         assert_eq!(h.part, Part::End);
-        // In the middle → body.
+        // In the middle -> body.
         let h = note_hit(g, &nv, 0.0, &notes, 24.0, 96.0, (x0 + x1) * 0.5, yc).unwrap();
         assert_eq!(h.part, Part::Body);
-        // Off the note → miss.
+        // Off the note -> miss.
         assert!(note_hit(g, &nv, 0.0, &notes, 24.0, 96.0, x0 - 20.0, yc).is_none());
     }
 

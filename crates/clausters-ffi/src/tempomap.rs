@@ -1,4 +1,4 @@
-//! The multitrack's beat↔second time map, as an opaque handle.
+//! The multitrack's beat<->second time map, as an opaque handle.
 //!
 //! Like `clausters_sched_*`, the structure stays in Rust and only flat data
 //! crosses: beats, seconds and tempos as `f64`, a curve as a small integer.
@@ -85,7 +85,7 @@ pub unsafe extern "C" fn clausters_tempomap_load(json: *const u8, len: usize) ->
 /// The bridge a reader of a document would otherwise take three decisions to
 /// write: a ramp reaches the *next* entry, the default is prepended when the
 /// first entry is past beat 0, and no entries at all is the default alone.
-/// Each entry is `{"beats": …, "tempo": …, "ramp": bool}` with the tempo in
+/// Each entry is `{"beats": ..., "tempo": ..., "ramp": bool}` with the tempo in
 /// beats **per second**, as every tempo in this module is -- a document writing
 /// beats per minute divides once, where it reads its own field.
 ///

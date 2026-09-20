@@ -115,7 +115,7 @@ export function setDefaultOscReceiver(receiver: OscReceiver): OscReceiver {
  *
  * Registers `func` to fire when a message matching `path` arrives. The
  * callback is called `func(msg, time, src)` -- `msg` the message as
- * `[addr, arg1, …]`, `time` the containing bundle's Unix time (`null` for an
+ * `[addr, arg1, ...]`, `time` the containing bundle's Unix time (`null` for an
  * immediate or bare message), `src` the carrier it arrived on.
  *
  * - `src` -- respond only to that sender (a socket's URL, or `"page"` for the
@@ -292,7 +292,7 @@ export function setDefaultMidiReceiver(receiver: MidiReceiver): MidiReceiver {
  *
  * Registers `func` to fire on channel-voice messages of a given type. The
  * callback is called `func(message, src)` -- `message` an object
- * (`{type, channel, …}`, see `parseMidi`) and `src` the port's name.
+ * (`{type, channel, ...}`, see `parseMidi`) and `src` the port's name.
  *
  * - `chan` -- respond only on that channel (0..15).
  * - `argTemplate` -- a `{field: matcher}` object matched against the message's

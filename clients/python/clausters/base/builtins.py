@@ -5,7 +5,7 @@ applies to concrete numbers. The arithmetic/comparison/transcendental
 primitives go through `clausters._native` (the shared ``clausters-core``)
 so they are computed in **f32**, matching the server by construction -- Python's
 own ``float`` is f64 and would diverge. The music-theory conversions
-(``midicps`` …) go through the core too, so they are bit-identical to the
+(``midicps`` ...) go through the core too, so they are bit-identical to the
 server's ``UnaryOpUGen`` (S3) -- a value computed off the RT path and the same op
 on the audio thread agree exactly.
 
@@ -263,7 +263,7 @@ def exprange(x, lo=0.01, hi=1.0):
     return _map(MapOp.EXPRANGE, x, -1.0, 1.0, lo, hi, clip="none")
 
 
-# Wire selector → function, so AbstractObject value subclasses can dispatch by
+# Wire selector -> function, so AbstractObject value subclasses can dispatch by
 # the operator names the graph layer puts on the wire. The two spellings differ
 # where SuperCollider's name and the protocol's do (`asint` -> `asinteger`):
 # the key is the def format's, the value is this client's.

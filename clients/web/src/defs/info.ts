@@ -461,7 +461,7 @@ function parseTreeNodes(
     return [out, i];
 }
 
-/** `/group_queryTree.reply` → a `Tree` of `NodeInfo`. */
+/** `/group_queryTree.reply` -> a `Tree` of `NodeInfo`. */
 export function parseQueryTree(args: ReplyArgs): Tree {
     const detail = Number(args[0]);
     const rootId = Number(args[1]);

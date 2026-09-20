@@ -57,7 +57,7 @@ pub unsafe extern "C" fn clausters_core_bundle_requirements(
 /// [`ResolveRequest`](clausters_core::bundle::ResolveRequest) as JSON in (the
 /// manifest, the template, the allocation and the supplied parameters), the
 /// [`Resolved`](clausters_core::bundle::Resolved) tree and boot list as JSON
-/// out. A resolution error comes back as `{"error": …}`; `0` means the input
+/// out. A resolution error comes back as `{"error": ...}`; `0` means the input
 /// was not a readable request.
 ///
 /// # Safety
@@ -90,7 +90,7 @@ pub unsafe extern "C" fn clausters_core_bundle_resolve(
 /// The writers' pre-flight: a
 /// [`ValidateRequest`](clausters_core::bundle::ValidateRequest) as JSON in (the
 /// manifest, the template, and the def payloads to check for holes), and either
-/// `{"ok":true}` or `{"error": …}` out -- so a bundle that would fail to mount
+/// `{"ok":true}` or `{"error": ...}` out -- so a bundle that would fail to mount
 /// fails to be written. `0` means the input was not a readable request.
 ///
 /// # Safety
@@ -179,7 +179,7 @@ mod tests {
         assert_eq!(v["tree"]["children"][0]["value"], 440.0);
     }
 
-    /// A resolution error comes back on the one channel, as `{"error": …}`.
+    /// A resolution error comes back on the one channel, as `{"error": ...}`.
     #[test]
     fn bundle_resolve_reports_a_bad_value_as_an_error_object() {
         let request = format!(

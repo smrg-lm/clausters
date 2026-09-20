@@ -17,7 +17,7 @@
  *   owns.
  * - {@link View} -- the `GuiDef` of one structure, and the registry from widget id
  *   to what it shows. The only per-domain thing on the graphic side.
- * - {@link Domain} -- the data adapter: gesture → payload, payload → the client
+ * - {@link Domain} -- the data adapter: gesture -> payload, payload -> the client
  *   object, the label and the coalesce key. It does not know how an edit inverts
  *   (that is the crate's `history::Editable`) and it does not draw.
  * - {@link Echo} -- the acknowledgement protocol: the stamp, the version, the

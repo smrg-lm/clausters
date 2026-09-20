@@ -102,7 +102,7 @@ const SIGNATURE_DIFFERS: Record<string, string> = {
 };
 
 /**
- * Wire input → the parameter that carries it, where the client spells it
+ * Wire input -> the parameter that carries it, where the client spells it
  * differently on purpose. The resonant filters take `rq` and `q` as one
  * options object, so the caller may give either; Python takes the same pair as
  * `rq=` plus a keyword-only `q=`.
@@ -135,7 +135,7 @@ function params(fn: Function): Param[] {
     const src = fn.toString();
     const arrow = src.indexOf("=>");
     const open = src.indexOf("(");
-    // A single parameter may have lost its parentheses (`bufnum=>new Ugen(…)`):
+    // A single parameter may have lost its parentheses (`bufnum=>new Ugen(...)`):
     // the transpiler that strips the types is free to drop them, and then the
     // first `(` in the source belongs to the **body**, whose arguments would be
     // read as a signature. Everything with parentheses falls through below.
@@ -173,7 +173,7 @@ function params(fn: Function): Param[] {
     }
     return parts.map((p) => {
         // A destructured parameter is an options object whatever is inside it.
-        if (p.startsWith("{")) return { name: "{…}", options: true };
+        if (p.startsWith("{")) return { name: "{...}", options: true };
         const eq = p.indexOf("=");
         if (eq < 0) return { name: p.trim() };
         const def = p.slice(eq + 1).trim();
@@ -181,7 +181,7 @@ function params(fn: Function): Param[] {
     });
 }
 
-/** kind → builder, read from the `new Ugen("Kind"` literal in its body. */
+/** kind -> builder, read from the `new Ugen("Kind"` literal in its body. */
 function buildersByKind(): Map<string, [string, Function]> {
     const out = new Map<string, [string, Function]>();
     for (const [name, value] of Object.entries(U)) {

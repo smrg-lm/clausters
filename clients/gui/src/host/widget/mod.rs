@@ -12,7 +12,7 @@
 //!
 //! The standardized widgets at this milestone are `window` + `panel`/layout
 //! (`row`/`col`/`grid`/`free`) + `label`, plus the heavy `waveform` view, fed
-//! its samples either inline (`"data": [f32…]`) or -- for bulk -- from an OSC blob
+//! its samples either inline (`"data": [f32...]`) or -- for bulk -- from an OSC blob
 //! carried alongside the JSON in the same `/gui_def` message (`"blob": <index>`).
 //! Both keep the int/float distinction and the "flat primitives at the boundary"
 //! rule; a server buffer reference (`"buffer"`) is recognized but deferred to the
@@ -40,7 +40,7 @@
 //!
 //! Per-widget *behavior* (drawing, hit-testing, editing) is not here at all --
 //! it lives in each widget's own module (`bpf`, `pianoroll`, `track`, `patch`,
-//! `textedit`, …); this module owns only the typed data and its wire mapping.
+//! `textedit`, ...); this module owns only the typed data and its wire mapping.
 
 use crate::host::diag;
 use std::path::PathBuf;
@@ -198,7 +198,7 @@ pub struct Widget {
     /// roles that carry this widget's function (see
     /// [`Theme::accent_seeded`](super::theme::Theme::accent_seeded)).
     pub color: Option<super::paint::Color>,
-    /// The `gestures` prop: the container's own (modifier → plan) table, replacing
+    /// The `gestures` prop: the container's own (modifier -> plan) table, replacing
     /// the default its kind carries ([`GestureMap::of_kind`]). `None` on the
     /// overwhelming majority of widgets, which are not containers and whose
     /// press is the element's.

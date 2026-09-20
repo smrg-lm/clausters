@@ -1,9 +1,9 @@
-//! OSC message → engine command translation, shared between the real-time
+//! OSC message -> engine command translation, shared between the real-time
 //! server ([`crate::osc::server`]) and the NRT renderer
 //! ([`crate::server::render`]).
 //!
 //! [`CmdTranslator`] owns everything that turning a message into fully built
-//! [`Cmd`]s requires: the def tables, the node→def mirror that resolves
+//! [`Cmd`]s requires: the def tables, the node->def mirror that resolves
 //! `/node_set` control names, and the auto node-ID counter. It covers the
 //! schedulable subset of the protocol (`/synth_new`, node/group commands,
 //! `/bus_set`) plus the synchronous def-table commands (`/def_send synth`, `/def_free`).

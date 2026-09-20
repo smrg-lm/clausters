@@ -29,8 +29,8 @@ here a box is a <b>whole def</b> and a cord <i>is</i> a <b>server bus</b>;
 there a box is a <b>UGen</b> and a cord is an internal wire.
 
 A <code>GraphPatch</code> is the programmatic level-1 patcher: boxes with typed
-inlets and outlets, and a cord per <code>outlet → inlet</code>. A cord is a bus,
-but you never number one: <code>compile</code> runs the shared cord→bus pass and
+inlets and outlets, and a cord per <code>outlet -> inlet</code>. A cord is a bus,
+but you never number one: <code>compile</code> runs the shared cord->bus pass and
 names one.
 
 <b>Auto-layout</b> -- the host lays every box out itself, sources on top and
@@ -43,7 +43,7 @@ picture and the object stay one thing. The patch sits in a
 The buses are never on screen: an unwired outlet keeps its def's default, so
 these defs default their bus controls to a spare bus nobody reads, and the
 hardware output is reached through a <b>terminal def</b> (<code>dac</code>: an
-inlet, no outlet, its <code>out(0, …)</code> baked in) -- a box like any other,
+inlet, no outlet, its <code>out(0, ...)</code> baked in) -- a box like any other,
 not an <code>OUT</code>.</div>
 
       <button id="run">open the patcher</button>

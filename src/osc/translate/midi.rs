@@ -130,7 +130,7 @@ impl CmdTranslator {
     /// `/midi_map channel selector name`: route a message type to a control.
     /// Selectors: `note`, `vel`, `gate`, `bend`,
     /// `pressure` (channel aftertouch), `poly` (per-note aftertouch), `ccN`
-    /// (control change), `progN` (program → instrument def `name`).
+    /// (control change), `progN` (program -> instrument def `name`).
     pub(in crate::osc::translate) fn midi_map(
         &mut self,
         msg: &rosc::OscMessage,
@@ -264,7 +264,7 @@ impl CmdTranslator {
         }
     }
 
-    /// Note on → `/synth_new` with `freq`/`amp` from the conversions. Retriggering
+    /// Note on -> `/synth_new` with `freq`/`amp` from the conversions. Retriggering
     /// a note already sounding frees the old voice first.
     fn midi_note_on(
         &mut self,
@@ -328,7 +328,7 @@ impl CmdTranslator {
         Ok(())
     }
 
-    /// Note off → `/node_free` (or `/node_set gate 0` for gate-aware bindings).
+    /// Note off -> `/node_free` (or `/node_set gate 0` for gate-aware bindings).
     fn midi_note_off(&mut self, channel: u8, note: u8, cmds: &mut Vec<Cmd>) -> Result<(), String> {
         let Some(id) = self.midi.voices.remove(&(channel, note)) else {
             return Ok(());

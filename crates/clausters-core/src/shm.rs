@@ -149,9 +149,9 @@ struct Ring {
 #[repr(C)]
 struct Layout {
     header: Header,
-    /// Client → server commands.
+    /// Client -> server commands.
     c2s: Ring,
-    /// Server → client replies.
+    /// Server -> client replies.
     s2c: Ring,
 }
 
@@ -196,7 +196,7 @@ pub const fn controls_offset() -> usize {
 }
 
 /// Byte offset of the **audio-bus region**: the control slots' end. Two arrays
-/// of one word per audio bus follow, the bus → tap directory then the levels.
+/// of one word per audio bus follow, the bus -> tap directory then the levels.
 pub const fn bus_region_offset(control_buses: usize) -> usize {
     controls_offset() + control_buses * size_of::<AtomicU32>()
 }
@@ -809,7 +809,7 @@ impl View {
     }
 
     /// Appends one packet to the outbound ring, tagged for `peer` -- who wrote
-    /// it (client → server) or who it is for (server → client). `false` when
+    /// it (client -> server) or who it is for (server -> client). `false` when
     /// the ring lacks space: backpressure, and the caller may retry, since
     /// nothing was dropped.
     pub fn push(&self, role: Role, peer: u32, packet: &[u8]) -> bool {

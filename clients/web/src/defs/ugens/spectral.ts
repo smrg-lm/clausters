@@ -3,7 +3,7 @@
 //
 // A chain is a **frame**, not a signal: `fft` opens one, each `pv*` transforms
 // it in place and `ifft` closes it back to samples. Wire them in order
-// (`fft` → `pv*` → … → `ifft`). The frame is synth-private scratch (no buffer
+// (`fft` -> `pv*` -> ... -> `ifft`). The frame is synth-private scratch (no buffer
 // to allocate), which is why only `fft` names a size -- the server propagates
 // it down the chain.
 
@@ -12,7 +12,7 @@ import type { Channel } from "./graph.ts";
 import { pvTokens } from "../pv_expr.ts";
 import type { PvOperand } from "../pv_expr.ts";
 
-/** The window `fft` transforms with (`0` Hann, `1` sine, …). */
+/** The window `fft` transforms with (`0` Hann, `1` sine, ...). */
 export interface FftOptions {
     /** The window size, a power of two: 256/512/1024/2048/4096. */
     fftSize?: number;
@@ -45,7 +45,7 @@ export const fft = (
 
 /**
  * Closes a spectral chain: inverse-transforms each fresh frame and
- * overlap-adds it back to audio (window-normalized, so a bare `fft` → `ifft`
+ * overlap-adds it back to audio (window-normalized, so a bare `fft` -> `ifft`
  * reconstructs at unity gain, delayed by one window). `chain` is the output
  * of an `fft` or a `pv*` filter.
  */
@@ -153,7 +153,7 @@ export interface PvKernelOptions {
     mag?: PvOperand;
     /** The bin's new phase; omitted, each bin's phase is kept *exactly*. */
     phase?: PvOperand;
-    /** Extra signal inputs the expressions read as `param(0)`, `param(1)`, … */
+    /** Extra signal inputs the expressions read as `param(0)`, `param(1)`, ... */
     params?: readonly Channel[];
 }
 
@@ -167,7 +167,7 @@ export interface PvKernelOptions {
  * (the cheap path: pure magnitude maps skip the polar conversion).
  *
  * `params` are extra signal inputs (controls, LFOs, constants) the
- * expressions read as `param(0)`, `param(1)`, … -- sampled once per hop.
+ * expressions read as `param(0)`, `param(1)`, ... -- sampled once per hop.
  *
  * An expression is a **pure per-bin map**: no state across bins or frames, no
  * reading other bins. Gates, tilts, masks and magnitude algebra belong here;

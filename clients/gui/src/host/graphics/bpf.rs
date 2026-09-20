@@ -21,7 +21,7 @@
 //! hit-test, edit ops, the flat wire form) shared by both fronts and
 //! unit-tested without a window; only the shape evaluation lives in the core
 //! (the placement rule). The wire form -- props, `/gui_set` and the edit-back
-//! event alike -- is the flat quad list `t0 v0 shape0 curve0 t1 v1 …` (the last
+//! event alike -- is the flat quad list `t0 v0 shape0 curve0 t1 v1 ...` (the last
 //! point's shape/curve are carried but unused), keeping ints int and floats
 //! float.
 

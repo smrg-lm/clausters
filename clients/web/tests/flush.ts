@@ -4,7 +4,7 @@
  * `TempoClock.sched` resumes what is due in a microtask rather than on the
  * scheduling call's own stack, so `play()` returns before a routine's first
  * pass -- the ordering the Python client has, and what
- * `Routine.run(function* () { … })` needs to be able to read its own binding.
+ * `Routine.run(function* () { ... })` needs to be able to read its own binding.
  * A test that drives the clock by hand therefore has one thing to await: this.
  *
  * It is a macrotask on purpose. Awaiting a resolved promise would drain only

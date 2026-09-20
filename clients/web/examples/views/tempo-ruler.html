@@ -39,7 +39,7 @@ first beat.
 
 <b>Drag a break-point and the top ruler re-rules under your hand.</b> That is
 the whole example. The curve reports its new shape
-(<code>/gui_event id "points" …</code>), this page rebuilds the timeline's
+(<code>/gui_event id "points" ...</code>), this page rebuilds the timeline's
 <code>TempoMap</code> from it -- one <code>tempoEnv</code> call, extents in
 seconds -- and sets it back on the ruler, which redraws. Nothing else moves: the
 seconds do not change, because seconds are not what a tempo edit changes.

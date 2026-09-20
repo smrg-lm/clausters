@@ -454,7 +454,7 @@ B c d e | f2 e d | c B A B | G4 |
 
         // Opening the score is the one asynchronous step of the layer, and only
         // because the engraver module is fetched the first time a page engraves.
-        log("loading the engraver …");
+        log("loading the engraver ...");
         score = await notation.Score.open(PHRASE, { pageWidth: 1100 });
         const sheet = score.sheet();   // throws if it could not be read
         const items = sheet.staves.reduce(

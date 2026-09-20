@@ -1,7 +1,7 @@
-//! The patcher's cord → bus pass: a directed patch compiled to a GraphDef wiring.
+//! The patcher's cord -> bus pass: a directed patch compiled to a GraphDef wiring.
 //!
 //! The GUI patcher (the P track) is a **directed, typed graph**: boxes with
-//! typed inlets/outlets, a cord running `outlet → inlet`. A cord *is* a bus, but
+//! typed inlets/outlets, a cord running `outlet -> inlet`. A cord *is* a bus, but
 //! the user never numbers one -- that bookkeeping is this module's job, kept here
 //! (and not per client) because every client that draws a patch needs the
 //! identical translation. It is the front half a hand-wired GraphDef never
@@ -11,19 +11,19 @@
 //! # What it computes
 //!
 //! In a GraphDef a member's control feeding an `Out` writes **one** bus and a
-//! control feeding an `In` reads **one** bus, so a cord `A.out → B.in` means A's
+//! control feeding an `In` reads **one** bus, so a cord `A.out -> B.in` means A's
 //! outlet and B's inlet share a bus. Transitively, the buses are the **connected
 //! components** of the cord graph over the set of all ports: every outlet in a
 //! component writes the component's bus, every inlet reads it (getting the sum of
 //! the writers). That single rule is the whole model:
 //!
-//! - **fan-in** (many outlets → one inlet) → one bus the writers **sum** onto;
-//! - **fan-out** (one outlet → many inlets) → the readers share the outlet's bus.
+//! - **fan-in** (many outlets -> one inlet) -> one bus the writers **sum** onto;
+//! - **fan-out** (one outlet -> many inlets) -> the readers share the outlet's bus.
 //!
-//! Every net is a private bus (`b0`, `b1`, …). There is **no hardware node**:
+//! Every net is a private bus (`b0`, `b1`, ...). There is **no hardware node**:
 //! the buses are never drawn, so the hardware output is not one either -- a signal
 //! reaches the speakers through a **terminal def** (a `dac`: an inlet, and an
-//! `Out.ar(0, …)` baked in, so no outlet), a member like any other.
+//! `Out.ar(0, ...)` baked in, so no outlet), a member like any other.
 //!
 //! # What it does *not* do
 //!
@@ -46,7 +46,7 @@ use serde::{Deserialize, Serialize};
 /// because a server bus is one of those two rates; `Init` (`ir`) is the third the
 /// **level-2** Def-view adds, where a cord is an internal UGen wire (never an
 /// allocated bus) and a scalar/init-rate output is a legitimate connection. The
-/// level-1 cord→bus pass ([`compile`]) is only ever handed audio/control ports.
+/// level-1 cord->bus pass ([`compile`]) is only ever handed audio/control ports.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Rate {
@@ -56,7 +56,7 @@ pub enum Rate {
 }
 
 /// A port's direction. An outlet writes its bus; an inlet reads it. A cord runs
-/// `Out → In`; any other pairing is refused.
+/// `Out -> In`; any other pairing is refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Dir {
@@ -95,7 +95,7 @@ impl Port {
 }
 
 /// One box on the canvas: a def with its typed ports. Every box is a member; a
-/// **terminal** def (a `dac`, reaching hardware via a baked `Out.ar(0, …)`) is
+/// **terminal** def (a `dac`, reaching hardware via a baked `Out.ar(0, ...)`) is
 /// one with inlets and no outlets -- there is no special hardware box.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PatchBox {
@@ -114,7 +114,7 @@ impl PatchBox {
     }
 }
 
-/// One directed cord: `(from_box, from_port)` outlet → `(to_box, to_port)`
+/// One directed cord: `(from_box, from_port)` outlet -> `(to_box, to_port)`
 /// inlet. Boxes and ports are indices into [`Patch`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Cord {
@@ -150,7 +150,7 @@ pub struct Bus {
     pub rate: Rate,
 }
 
-/// One control of a member wired to a bus (`control → bus`). Only connected
+/// One control of a member wired to a bus (`control -> bus`). Only connected
 /// controls appear; an unwired control is omitted and keeps the def's default.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Wiring {
@@ -181,11 +181,11 @@ pub struct Compiled {
 }
 
 /// Compiles a directed [`Patch`] into its [`Compiled`] bus wiring: one bus per
-/// connected net of cords, its writers summing, named `b0`, `b1`, …
+/// connected net of cords, its writers summing, named `b0`, `b1`, ...
 /// Deterministic -- the output does not depend on cord order.
 ///
 /// Returns an error, naming the offending cord, when a cord references a missing
-/// box/port, runs the wrong way (not `outlet → inlet`), or joins mismatched
+/// box/port, runs the wrong way (not `outlet -> inlet`), or joins mismatched
 /// rates.
 pub fn compile(patch: &Patch) -> Result<Compiled, String> {
     // Global port index: box b's ports occupy `offsets[b] .. offsets[b+1]`.
@@ -197,7 +197,7 @@ pub fn compile(patch: &Patch) -> Result<Compiled, String> {
     }
     offsets.push(total);
 
-    // Reverse map: global port → (box, local port), for the rate lookup.
+    // Reverse map: global port -> (box, local port), for the rate lookup.
     let mut port_box = vec![0usize; total];
     let mut port_local = vec![0usize; total];
     for (bi, b) in patch.boxes.iter().enumerate() {
@@ -344,8 +344,8 @@ impl UnionFind {
 mod tests {
     use super::*;
 
-    /// `tone` (a source: outlet only), `trem` (in → out), `dac` (a terminal sink:
-    /// an inlet, no outlet -- it reaches hardware via a baked `Out.ar(0, …)`).
+    /// `tone` (a source: outlet only), `trem` (in -> out), `dac` (a terminal sink:
+    /// an inlet, no outlet -- it reaches hardware via a baked `Out.ar(0, ...)`).
     fn tone() -> PatchBox {
         PatchBox::member("tone", vec![Port::audio_out("out")])
     }

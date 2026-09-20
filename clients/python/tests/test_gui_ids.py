@@ -154,7 +154,7 @@ def test_dispatch_routes_event_and_close_to_the_callbacks():
     closed = []
     win.on_closed(lambda: closed.append(True))
 
-    # ``<id> <seq> <version> <payload…>``: the stamp and the version the gesture
+    # ``<id> <seq> <version> <payload...>``: the stamp and the version the gesture
     # was made against are the second and third arguments of every event, and a
     # callback is handed the payload -- those two are the host's bookkeeping,
     # answered by `ack` rather than by a widget's handler.

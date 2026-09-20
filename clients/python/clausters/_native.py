@@ -1011,7 +1011,7 @@ def compile_patch(patch: dict) -> dict:
     "audio"|"control"}, ...]}``, each cord a ``{"from_box", "from_port",
     "to_box", "to_port"}``. Returns ``{"buses": [{"name", "rate"}, ...],
     "members": [{"box_index", "def", "controls": [{"control", "bus"}, ...]}, ...]}``
-    -- one private bus per connected net (writers summing), named ``b0``, ``b1``, …
+    -- one private bus per connected net (writers summing), named ``b0``, ``b1``, ...
     A signal reaches hardware through a terminal def (a ``dac``), never a drawn bus.
 
     Raises `ValueError` on a malformed cord (reversed, rate-mismatched, out of
@@ -1158,7 +1158,7 @@ class Document:
 
         Args:
             intent: the edit -- ``{"intent": "place"|"configure"|"setmembers"|
-                "writesamples", "node": id, …}``. Absolute: it states the
+                "writesamples", "node": id, ...}``. Absolute: it states the
                 *resulting* value, never an increment.
             against: the state the edit was made against -- ``{"version": N}``,
                 or ``None`` for unstated, which applies unchecked. An edit made
@@ -1206,7 +1206,7 @@ class Document:
         """Resolve a selection to the spans of samples underneath it.
 
         Args:
-            selection: ``{"start", "len", …}`` -- see the crate's ``Selection``.
+            selection: ``{"start", "len", ...}`` -- see the crate's ``Selection``.
             frames_per_beat: the bridge between the arrangement's beats and the
                 samples' frames. Supplied rather than derived: tempo is the
                 caller's, the arithmetic is the crate's.
@@ -1218,7 +1218,7 @@ class Document:
                 frames on the shared axis.
 
         Returns:
-            ``[{"node", "source", "generation", "range", "at"}, …]`` in tree
+            ``[{"node", "source", "generation", "range", "at"}, ...]`` in tree
             order, with the placement's base, the element's trim and the clamp
             at both ends already applied. Empty when nothing with samples was
             underneath -- a group and a generator are in the way of a selection,
@@ -1246,7 +1246,7 @@ def document_apply(document: dict, intent: dict, *, against=None, quant: float =
     per drag holds a `Document` instead and pays nothing per edit.
 
     Returns:
-        ``{"document": …, "outcome": {…}}`` -- the shape this call has always
+        ``{"document": ..., "outcome": {...}}`` -- the shape this call has always
         had, so a caller written against it does not change.
     """
     with Document(document) as doc:
@@ -1826,7 +1826,7 @@ def domain_edit(domain: str, state, payload: dict) -> "dict | None":
         payload: the edit.
 
     Returns:
-        ``{"state": …, "applied": bool, "reason"?: …, "current"?: …}``, or
+        ``{"state": ..., "applied": bool, "reason"?: ..., "current"?: ...}``, or
         ``None`` for a vocabulary whose state is not a value a caller can hand
         over: `TREE` (what it edits is a handle that lives across the seam, not
         a value) and `SAMPLES` (a borrowed view whose frames are in a server
@@ -2201,7 +2201,7 @@ class History:
         """**One step of the pile, routed** -- or ``None`` when there was
         nothing to walk.
 
-        ``direction`` is ``"undo"`` or ``"redo"``. Returns ``{"label": …,
+        ``direction`` is ``"undo"`` or ``"redo"``. Returns ``{"label": ...,
         "legs": [...], "remaining": [...], "skipped": [...]}``, where each leg
         is ``{"structure": <id>, "payloads": [...]}`` -- **one entry per
         structure**, not one per leg, each structure's payloads in the order it
@@ -2463,8 +2463,8 @@ class Log:
     def undo(self, document: "Document") -> "dict | None":
         """Undo the last thing done, applying its inverses to ``document``.
 
-        Returns ``{"undone": [<intent>, …], "label": …, "skipped": […],
-        "others": […], "remaining": []}``, or ``None`` when there was nothing to
+        Returns ``{"undone": [<intent>, ...], "label": ..., "skipped": [...],
+        "others": [...], "remaining": []}``, or ``None`` when there was nothing to
         undo; the document changed behind its handle. ``skipped`` names the
         entries the walk passed over because nothing can invert them. A leg that
         belongs to another structure is left alone and reported in ``others`` --
@@ -2478,7 +2478,7 @@ class Log:
     def redo(self, document: "Document") -> "dict | None":
         """Redo what was last undone, applying what it can.
 
-        Returns ``{"redone": [<intent>, …], "remaining": [<step>, …]}`` plus
+        Returns ``{"redone": [<intent>, ...], "remaining": [<step>, ...]}`` plus
         ``label``, ``skipped`` and ``others`` as `undo` has them, or ``None``
         when there was nothing to redo. The ordinary edits are applied
         to the document and reported, so a redo is the same shape as an undo;

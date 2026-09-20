@@ -23,7 +23,7 @@
 //! binding had: `apply`, `resolve`, and a `snapshot` for whoever wants the tree.
 //! Nothing about "the crate is the only applier" changes; what changes is that
 //! an edit now costs the edit. A client that wants the by-value convenience
-//! builds it in its own language out of open → apply → snapshot → free, and
+//! builds it in its own language out of open -> apply -> snapshot -> free, and
 //! pays the serialization only where it actually asked for it.
 //!
 //! # Size-then-fill, and the two rules it needs
@@ -296,7 +296,7 @@ pub unsafe extern "C" fn clausters_document_snapshot(
 /// (`{"version":N}`, or null for unstated), and `quant` the musical grid a
 /// placement snaps to in beats (`0` snaps nothing).
 ///
-/// Writes `{"effective": …, "applied": bool, "reason": …, "stale": bool}` to
+/// Writes `{"effective": ..., "applied": bool, "reason": ..., "stale": bool}` to
 /// `out` and returns the byte count it needs. The **document is not in the
 /// reply** -- that is the whole point of the handle, and a caller that wants it
 /// asks [`clausters_document_snapshot`]. Returns `0` when the handle is null or

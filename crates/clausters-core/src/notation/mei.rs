@@ -118,10 +118,10 @@ pub struct Slot {
     pub midis: Vec<i32>,
     /// How long it lasts, in 32nd-notes.
     pub ticks: i32,
-    /// Articulations, by their MEI names (`stacc`, `acc`, `ten`, `marc`, …).
+    /// Articulations, by their MEI names (`stacc`, `acc`, `ten`, `marc`, ...).
     #[serde(default)]
     pub articulations: Vec<String>,
-    /// A dynamic written at this note (`pp`, `mf`, `ff`, …).
+    /// A dynamic written at this note (`pp`, `mf`, `ff`, ...).
     #[serde(default)]
     pub dynamic: Option<String>,
     /// An ornament on this note (`trill`, `mordent`, `turn`, `fermata`).
@@ -961,7 +961,7 @@ pub fn key_alteration(key: &str, step: Step) -> i32 {
     key_alterations(keysig)[step.index() as usize]
 }
 
-/// Which steps a key signature alters, indexed by step (`C` = 0 … `B` = 6).
+/// Which steps a key signature alters, indexed by step (`C` = 0 ... `B` = 6).
 ///
 /// Sharps arrive in the order F C G D A E B and flats in the reverse, which is
 /// what "3 sharps" and "2 flats" name.

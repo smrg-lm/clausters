@@ -1513,7 +1513,7 @@ impl EngineHandle {
     }
 
     /// The engine's stream clock: samples processed so far, published once
-    /// per block. Timetag→sample conversion anchors on this.
+    /// per block. Timetag->sample conversion anchors on this.
     pub fn current_samples(&self) -> u64 {
         self.sample_clock.load(Ordering::Relaxed)
     }

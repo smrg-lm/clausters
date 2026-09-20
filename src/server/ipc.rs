@@ -672,7 +672,7 @@ impl IpcPeer {
     }
 
     /// Appends one packet to the outbound ring, tagged for `peer` -- who wrote
-    /// it (client → server) or who it is for (server → client). `false` when
+    /// it (client -> server) or who it is for (server -> client). `false` when
     /// the ring lacks space -- backpressure, the caller may retry (nothing is
     /// dropped).
     pub fn push(&self, peer: u32, packet: &[u8]) -> bool {

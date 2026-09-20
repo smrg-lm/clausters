@@ -23,9 +23,9 @@
 partitioned <code>conv</code> UGen.
 
 The pipeline is the whole point. An impulse response goes into a buffer;
-<code>buffer.gen("prepare_partconv", …)</code> turns it into the
+<code>buffer.gen("prepare_partconv", ...)</code> turns it into the
 <b>partitioned spectra</b> the convolver reads, sized with
-<code>partconvFrames</code>; and <code>conv(sig, kernel, …)</code> convolves
+<code>partconvFrames</code>; and <code>conv(sig, kernel, ...)</code> convolves
 against those ready spectra with a <b>flat</b> per-block cost -- the partition
 products are spread across the hop, so a long tail does not spike the block
 where the FFT lands.

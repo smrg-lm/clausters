@@ -398,7 +398,7 @@ fn draw_spectrum(d: &mut Draw, g: &Geom, p: &PlotParams) {
 }
 
 /// The (fractional) bin a spectrum-view pixel column maps to, through the
-/// display→Hz geometry shared with the spectrogram and its rulers.
+/// display->Hz geometry shared with the spectrogram and its rulers.
 fn bin_at_column(
     c: usize,
     columns: usize,

@@ -231,12 +231,12 @@ export class GuiHost {
     /** The window ids opened through `open` and not yet closed. */
     private readonly opened = new Set<number>();
     /**
-     * id → its child ids, for every widget this client defined -- the subtree
+     * id -> its child ids, for every widget this client defined -- the subtree
      * `free` walks to return the whole branch's ids to the pool.
      */
     private readonly children = new Map<number, number[]>();
     /**
-     * Window id → the handle handed out for it, so a redraw refreshes it
+     * Window id -> the handle handed out for it, so a redraw refreshes it
      * in place instead of orphaning the caller's copy.
      */
     private readonly handles = new Map<number, WindowHandle>();
@@ -279,10 +279,10 @@ export class GuiHost {
      * has windows of its own and no document to mount into.
      */
     page: ClaustersGui | null = null;
-    /** Window id → the disposer that stops following its element's box. */
+    /** Window id -> the disposer that stops following its element's box. */
     private readonly fitted = new Map<number, () => void>();
     /**
-     * Widget id → the sources that widget draws, so a recycled widget stops
+     * Widget id -> the sources that widget draws, so a recycled widget stops
      * being one of the live ends a `Source.set` reaches.
      */
     private readonly sources = new Map<number, Source[]>();
@@ -536,7 +536,7 @@ export class GuiHost {
     }
 
     /**
-     * `/gui_def <id> <json> [blob…]` -- build a whole widget tree in one
+     * `/gui_def <id> <json> [blob...]` -- build a whole widget tree in one
      * message, returning its `WindowHandle`. Trailing `blobs` (e.g. waveform
      * samples from `samplesToBlob`) ride alongside the JSON and are
      * referenced by index from a widget's `blob` property.
@@ -767,7 +767,7 @@ export class GuiHost {
     /**
      * Walks `node` (whose id is `nodeId`) and returns **a copy** carrying the
      * ids: every id-less descendant gets a fresh one, each id's children are
-     * recorded (the subtree `free` recycles), and name → id is collected. The
+     * recorded (the subtree `free` recycles), and name -> id is collected. The
      * root carries no id in the tree -- it is the `/gui_def` argument -- so its
      * id is passed in.
      *
@@ -945,7 +945,7 @@ export class GuiHost {
     }
 
     /**
-     * `/gui_ack <seq> <docVersion> [<source> <generation>…] [<reason>]` -- answer
+     * `/gui_ack <seq> <docVersion> [<source> <generation>...] [<reason>]` -- answer
      * the edits the host emitted, up to `seq`.
      *
      * The reply `/gui_event` never had. Without it the host cannot tell an edit
@@ -999,12 +999,12 @@ export class GuiHost {
     }
 
     /**
-     * `/gui_set <id> <k> <v> …` -- update one live widget. A value that is
+     * `/gui_set <id> <k> <v> ...` -- update one live widget. A value that is
      * logically an array or a table (a curve's break-points, a theme) rides
      * as its **JSON string**, since an OSC key/value is a scalar.
      *
      * Prop names are written the way the builders take them and go out the
-     * way the wire wants them (`windowMs` → `window_ms`), which is the
+     * way the wire wants them (`windowMs` -> `window_ms`), which is the
      * package's standing rule -- the options are TypeScript's, the props are
      * the wire's. A name already in wire form passes through untouched, so
      * `set({ ruler: "off" })` is what it always was.
@@ -1038,7 +1038,7 @@ export class GuiHost {
     }
 
     /**
-     * `/gui_bind <id> "server" <address> <prefix…>` -- forward this widget's
+     * `/gui_bind <id> "server" <address> <prefix...>` -- forward this widget's
      * value **straight to the audio server**, bypassing this script.
      *
      * On every change the host sends `address` (an OSC path like `/node_set` or
@@ -1082,7 +1082,7 @@ export class GuiHost {
     }
 
     /**
-     * `/gui_query <id>` → the `/gui_info` reply. Rejects with `ReplyTimeout`
+     * `/gui_query <id>` -> the `/gui_info` reply. Rejects with `ReplyTimeout`
      * if the host does not answer; an **empty** `type` means no such widget.
      *
      * What the widget **is now**: the props it was defined with, with every
@@ -1221,7 +1221,7 @@ export class GuiHost {
      */
     private route(msg: OscMessage): void {
         if (msg.addr === "/gui_event" && msg.args.length > 0) {
-            // `<id> <seq> <version> <payload…>`: the stamp and the version the
+            // `<id> <seq> <version> <payload...>`: the stamp and the version the
             // edit was made against are the second and third arguments of every
             // event, before any tag, so one rule reads them all. A handler is
             // given the payload -- those two are this client's bookkeeping, and

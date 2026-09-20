@@ -44,7 +44,7 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 /// the fallback used by the NRT renderer and tests.
 pub const NUM_BUFFERS: usize = 4096;
 
-/// The engine-side pool: index → installed buffer.
+/// The engine-side pool: index -> installed buffer.
 pub type BufferPool = Vec<Option<Arc<Buffer>>>;
 
 /// A pool of the default capacity ([`NUM_BUFFERS`]).

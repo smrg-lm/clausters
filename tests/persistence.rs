@@ -390,7 +390,7 @@ mod faust {
         assert_eq!(restored.num_inputs, original.num_inputs);
         assert_eq!(restored.num_outputs, original.num_outputs);
 
-        // Same compiled DSP → bit-for-bit identical output.
+        // Same compiled DSP -> bit-for-bit identical output.
         assert_eq!(render_mono(&original, 8), render_mono(&restored, 8));
     }
 

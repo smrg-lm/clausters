@@ -15,7 +15,7 @@
 //! device pixels, so HiDPI is exact), never against a mean width. Every
 //! generator lays out over the **visible sub-range** of its axis, so vertical
 //! zoom/pan reveal finer rungs exactly like horizontal zoom does. The
-//! frequency ticks are placed with the **identical** display→bin geometry the
+//! frequency ticks are placed with the **identical** display->bin geometry the
 //! spectrogram shader uses (linear, log, mel or bark; the perceptual forms
 //! from `clausters_core::scale`), so a tick labeled 1 kHz sits exactly on the
 //! 1 kHz row of pixels. No GPU, no widget types: positions come out as
@@ -777,7 +777,7 @@ pub(crate) fn readout_value(v: f64, span: f64) -> String {
     fmt_decimal(v, step)
 }
 
-/// Display coordinate `d` (0 = axis bottom, 1 = Nyquist) → frequency in Hz,
+/// Display coordinate `d` (0 = axis bottom, 1 = Nyquist) -> frequency in Hz,
 /// the exact mapping the spectrogram shader applies per scale -- the single
 /// inversion the ruler ticks and the cursor readout both use. `f_lo_norm` is
 /// the shader's normalized log-axis floor (~20 Hz / Nyquist).
@@ -793,7 +793,7 @@ pub(crate) fn display_to_hz(d: f64, nyquist: f64, scale: FreqScale, f_lo_norm: f
     }
 }
 
-/// Frequency in Hz → display coordinate under `scale`, the inverse of
+/// Frequency in Hz -> display coordinate under `scale`, the inverse of
 /// [`display_to_hz`] (the tick-placement direction).
 pub(crate) fn hz_to_display(f: f64, nyquist: f64, scale: FreqScale, f_lo_norm: f64) -> f64 {
     match scale {
@@ -812,7 +812,7 @@ pub(crate) fn hz_to_display(f: f64, nyquist: f64, scale: FreqScale, f_lo_norm: f
 
 /// The ticks of a frequency ruler over the visible display window
 /// `[y_start, y_start + y_len)` of the axis (bottom = the axis floor, top =
-/// Nyquist at no zoom), matching the spectrogram shader's display→bin mapping
+/// Nyquist at no zoom), matching the spectrogram shader's display->bin mapping
 /// for `scale`. A **wide** window (a decade or more) uses the classic decade
 /// scheme -- 1/2/5 multiples labeled, the remaining integer multiples as
 /// minors, thinned by the measured label height (the log and perceptual

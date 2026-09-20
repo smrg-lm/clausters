@@ -672,7 +672,7 @@ export interface WidgetOptions {
      */
     color?: string;
     /**
-     * How opaque this widget draws, `0`–`1`. Like a theme group it is a
+     * How opaque this widget draws, `0`-`1`. Like a theme group it is a
      * **group's** property: it multiplies down the whole subtree, so a control
      * at `0.5` inside a panel at `0.5` draws at `0.25`. A negative number
      * clears it.
@@ -753,7 +753,7 @@ export interface TimelineOptions extends WidgetOptions {
      * slop around it: the label is text on the tick row, and making a word the
      * target would give a marker called `intro` ten times the reach of one
      * called `2`. An edit flows back as a flat `"markers"` event (`time label
-     * color …`): the time and the text are what the owner is handed, and what
+     * color ...`): the time and the text are what the owner is handed, and what
      * it keeps against its own document.
      */
     markers?: MarkerSpec;
@@ -916,7 +916,7 @@ function flag(value: boolean | undefined): number | undefined {
 }
 
 /**
- * A ruler switch: a named strip (`"time"`, `"hz"`, `"off"`, …) or a boolean
+ * A ruler switch: a named strip (`"time"`, `"hz"`, `"off"`, ...) or a boolean
  * shorthand, as the scope-family widgets accept it.
  */
 function strip(value: boolean | string | undefined): string | number | undefined {
@@ -1663,7 +1663,7 @@ function fromControl(
     if (needsRange && lo === undefined && given.min === undefined) {
         throw new Error(
             `control '${control.name}' has no range to be drawn over -- spell one ` +
-                `on the widget (knob(${control.name}, { min: …, max: … })). Only a ` +
+                `on the widget (knob(${control.name}, { min: ..., max: ... })). Only a ` +
                 "FaustDef's parameter brings its own, from the hslider that " +
                 "declared it",
         );
@@ -1683,7 +1683,7 @@ function fromControl(
 }
 
 /**
- * Splits a control widget's arguments: `knob(freq, { … })` or `knob({ … })`.
+ * Splits a control widget's arguments: `knob(freq, { ... })` or `knob({ ... })`.
  * Returns the control (or `null`) and the option bag.
  */
 function controlArgs<T>(
@@ -2494,7 +2494,7 @@ export function nodetree(
  * Break-points `(time, value)` plus a per-segment shape using the server's
  * own envelope shape numbers, evaluated host-side through the same shared
  * math its `EnvGen` plays -- what you draw is what you hear. `points` takes
- * either the flat wire quads `[t, v, shape, curve, …]` or a list of
+ * either the flat wire quads `[t, v, shape, curve, ...]` or a list of
  * `[time, value]` / `[time, value, curve]` tuples whose curve is an `Env`
  * shape name or a numeric curvature (see `envToPoints`/`pointsToEnv` for the
  * `Env` round trip). Editing flows back as `"points"` with the flat list.
@@ -2598,7 +2598,7 @@ export function pianoroll(
  * The playable `piano` virtual keyboard: keys with real piano proportions,
  * resizing freely with the widget.
  *
- * `min`/`max` are the visible MIDI range (default 36–96; `min` snaps down to
+ * `min`/`max` are the visible MIDI range (default 36-96; `min` snaps down to
  * a white key), `activeMin`/`activeMax` the mapped range (keys outside draw
  * grayed and are inert), and the `overview` strip pans and zooms the window
  * (`pan: false` freezes all navigation). Playing emits **MIDI-shaped**
@@ -3025,7 +3025,7 @@ export function score(
  * `boxes` and `cords` are the widget's split schema: each box is
  * `{def, inlets, outlets, x?, y?}` (a port is a bare name for audio, or
  * `{name, rate}`), and `cords` is the flat `[fromBox, outlet, toBox, inlet,
- * …]` list of indices. Dragging a box flows back as `"move"`, and dragging an
+ * ...]` list of indices. Dragging a box flows back as `"move"`, and dragging an
  * outlet onto an inlet as `"wire"` -- the driver owns the geometry and the
  * graph, and re-renders.
  */
@@ -3054,7 +3054,7 @@ export function patch(
  * `shader` is the body of a `shade` function the host wraps and runs:
  * `fn shade(uv: vec2<f32>, frag: vec4<f32>) -> vec4<f32>`. Inside it the host
  * exposes `u.resolution`, `u.time` and `u.params` -- four values driven either
- * from the script (`set(id, { param0: … })` lands in `u.params.x`) or from a
+ * from the script (`set(id, { param0: ... })` lands in `u.params.x`) or from a
  * control bus per slot (`buses`), read every frame, so a shader animates from
  * OSC parameters and from live server audio at once.
  */
@@ -3170,7 +3170,7 @@ function sourceProps(options: Pick<SourceOptions,
 // ---- the flat wire forms ----
 
 /**
- * Break-points: either the flat wire quads `[t, v, shape, curve, …]` or
+ * Break-points: either the flat wire quads `[t, v, shape, curve, ...]` or
  * `[time, value]` / `[time, value, curve]` tuples.
  */
 export type PointSpec =
@@ -3194,7 +3194,7 @@ export function flatPoints(points: PointSpec): number[] {
     if (typeof list[0] === "number") {
         const flat = list as number[];
         if (flat.length % 4 !== 0) {
-            throw new TypeError("a flat points list must be [t, v, shape, curve, …] quads");
+            throw new TypeError("a flat points list must be [t, v, shape, curve, ...] quads");
         }
         return flat.map((x, i) => (i % 4 === 2 ? Math.trunc(x) : x));
     }
@@ -3226,7 +3226,7 @@ export function flatNotes(notes: NoteSpec): number[] {
     return out;
 }
 
-/** A patcher's `cords` as the flat `[fromBox, outlet, toBox, inlet, …]` ints. */
+/** A patcher's `cords` as the flat `[fromBox, outlet, toBox, inlet, ...]` ints. */
 export function flatCords(cords: readonly number[]): number[] {
     return cords.map((n) => Math.trunc(n));
 }
@@ -3324,7 +3324,7 @@ export function flatOsc(marks: OscMarkSpec): (number | string)[] {
  * A GuiDef tree as the JSON string carried in `/gui_def`.
  *
  * The client-only `name` key is stripped from every node: it labels the
- * widget for the host client's name → handle map and never rides the wire.
+ * widget for the host client's name -> handle map and never rides the wire.
  */
 export function toJson(tree: GuiNode): string {
     return JSON.stringify(stripNames(tree));

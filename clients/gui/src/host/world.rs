@@ -36,7 +36,7 @@ pub struct World<'a> {
     /// nodes" and "nobody to ask".
     pub server_attached: bool,
     /// The server's sample rate, placing a frequency axis or a time ruler whose
-    /// widget names no rate of its own (`0.0` → unknown).
+    /// widget names no rate of its own (`0.0` -> unknown).
     pub sample_rate: f64,
     /// The engine's sample clock (samples since boot; the shm header natively,
     /// the polled `/clock_query` in the browser). What a playhead is drawn from.

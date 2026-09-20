@@ -46,7 +46,7 @@ def edit(structure, *, sample_rate: float = 0.0,
         structure: what to edit -- a `clausters.defs.Buffer` (its samples), a
             `clausters.seq.Automation` (its curve), a `clausters.seq.Timeline`
             (its notes) or a `clausters.multitrack.Multitrack` (the multitrack).
-        sample_rate: the engine's rate, which fixes the data↔view bridge. A
+        sample_rate: the engine's rate, which fixes the data<->view bridge. A
             take knows its own and needs none.
         host: the `clausters.gui.host.GuiHost` to open on; ``None`` -- the
             ordinary case -- resolves the ambient one, the rule

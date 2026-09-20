@@ -30,7 +30,7 @@ Two <b>wavetable-format</b> buffers are filled with <code>/buffer_gen sine1</cod
 bright harmonic stack. The wavetable flag stores the offset/slope pairs the
 interpolating readers expect. <code>vosc(pos, freq)</code> reads the table at
 <code>pos</code> and crossfades toward the next one by its fractional part, so
-a lagged <code>pos</code> gliding 0 → 1 <b>morphs</b> sine into saw while the
+a lagged <code>pos</code> gliding 0 -> 1 <b>morphs</b> sine into saw while the
 note holds -- which is why the two tables must be adjacent and equally sized.
 
 Buffer 2 holds a <code>cheby</code> transfer curve, and

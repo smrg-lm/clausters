@@ -55,7 +55,7 @@ pub(crate) fn parse_tempo_map(v: &Value) -> Option<Arc<TempoMap>> {
     parsed.map(Arc::new)
 }
 
-/// Parse a `piano`'s `voice_args` -- a flat `[name, value, name, value, …]`
+/// Parse a `piano`'s `voice_args` -- a flat `[name, value, name, value, ...]`
 /// list of extra `/synth_new` control pairs (the `bind`-prefix posture: names are
 /// strings, values numbers). A trailing partial pair is dropped.
 pub(crate) fn voice_args(props: &serde_json::Map<String, Value>) -> Vec<(String, f32)> {
@@ -321,7 +321,7 @@ pub(crate) fn keeps_bulk(props: &serde_json::Map<String, Value>) -> bool {
     props.get("data").and_then(Value::as_str) == Some(KEEP)
 }
 
-/// Resolves a sample-view widget's inline samples: inline `"data": [f32…]`, or
+/// Resolves a sample-view widget's inline samples: inline `"data": [f32...]`, or
 /// `"blob": <index>` into the OSC blobs carried with the def (raw little-endian
 /// `f32`). Shared by `waveform` and `plot`; `kind` names the widget in errors.
 ///

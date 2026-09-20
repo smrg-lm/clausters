@@ -75,8 +75,8 @@ fn fx_def(name: &str, bus: f32) -> OscMessage {
 /// The torture graph, sent identically to every engine under test:
 /// a parallel group holding disjoint sources (one stage), a nested group
 /// as a unit, insert fx on two buses (second stage), two masters summing
-/// into the hardware bus (write conflict ⇒ serialized), and a dynamic
-/// reader (signal-driven bus index ⇒ runs alone).
+/// into the hardware bus (write conflict => serialized), and a dynamic
+/// reader (signal-driven bus index => runs alone).
 fn torture_graph() -> Vec<OscMessage> {
     let mut m = vec![
         src_def("src16", 16.0, 220.0),
@@ -210,7 +210,7 @@ impl Rig {
     fn send(&mut self, messages: &[OscMessage]) {
         for m in messages {
             if m.addr == "/def_send" {
-                // `/def_send <family> <payload…>`: these are all synth defs.
+                // `/def_send <family> <payload...>`: these are all synth defs.
                 self.translator.d_recv(&m.args[1..]).unwrap();
                 continue;
             }

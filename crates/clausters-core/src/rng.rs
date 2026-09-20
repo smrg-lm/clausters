@@ -102,7 +102,7 @@ impl WhiteNoise {
 }
 
 /// A seeded value-level generator for the sequencing layer (`Pwhite`, `Prand`,
-/// …): the same splitmix64 seeding and xorshift64 step as [`WhiteNoise`], but
+/// ...): the same splitmix64 seeding and xorshift64 step as [`WhiteNoise`], but
 /// yielding `f64` uniforms and bounded integers instead of audio samples. It
 /// lives here so a seeded pattern replays the **same stream in every client
 /// language** -- the host language's own RNG (e.g. Python's Mersenne Twister)

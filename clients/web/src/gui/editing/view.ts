@@ -32,7 +32,7 @@ import type { Editor } from "./editor.ts";
  * going out of step is how a gesture reaches the wrong object.
  */
 export abstract class View<S = unknown> {
-    /** widget id → what that widget draws. Rebuilt by every `draw`. */
+    /** widget id -> what that widget draws. Rebuilt by every `draw`. */
     widgets = new Map<number, unknown>();
 
     /**

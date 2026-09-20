@@ -10,7 +10,7 @@ import type { Channel } from "./graph.ts";
 
 /**
  * The action `envGen` takes when its envelope finishes -- scsynth's full
- * done-action set (0–15). The relative actions act on the synth's neighbours
+ * done-action set (0-15). The relative actions act on the synth's neighbours
  * in its group; a paused node is resumed with `Server.run` (`/node_run`).
  */
 export const DoneAction = {
@@ -39,7 +39,7 @@ export const DoneAction = {
 export type DoneAction = (typeof DoneAction)[keyof typeof DoneAction];
 
 /**
- * Envelope shape name → the server's shape number. A numeric curve value
+ * Envelope shape name -> the server's shape number. A numeric curve value
  * maps to the custom-curvature shape (5) instead.
  */
 const SHAPE_NUMBERS: Record<string, number> = {
@@ -66,7 +66,7 @@ const SHAPE_NUMBERS: Record<string, number> = {
 export type Curve = string | number;
 
 /**
- * A shape name (`"lin"`, `"exp"`, `"sin"`, …) or a numeric curvature as the
+ * A shape name (`"lin"`, `"exp"`, `"sin"`, ...) or a numeric curvature as the
  * wire's `[shape, curve]` pair. A number selects the custom-curvature shape,
  * so a drawn segment and a played one agree by construction -- which is why
  * the GuiDef `bpf`/`clip` builders resolve their break-points through here.
@@ -132,7 +132,7 @@ export class Env {
     }
 
     /**
-     * A fixed-duration percussive hit: 0 → `level` → 0. No sustain, so a
+     * A fixed-duration percussive hit: 0 -> `level` -> 0. No sustain, so a
      * rising gate triggers the whole thing.
      */
     static perc(attack = 0.01, release = 1.0, level = 1.0, curve: Curve = -4.0): Env {
@@ -205,7 +205,7 @@ export class Env {
 
 /**
  * An `Env` (levels / segment times / curves) as the flat `bpf` breakpoint
- * list `[t, v, shape, curve, …]`, with absolute times starting at `timeAt`.
+ * list `[t, v, shape, curve, ...]`, with absolute times starting at `timeAt`.
  * The last point carries a linear placeholder (no segment leaves it). Feed
  * the result to the `bpf` widget or to a live `points` set.
  */
@@ -222,7 +222,7 @@ export function envToPoints(env: Env, { timeAt = 0.0 }: { timeAt?: number } = {}
 }
 
 /**
- * A `bpf` breakpoint list -- the flat `t v shape curve …` quads a `"points"`
+ * A `bpf` breakpoint list -- the flat `t v shape curve ...` quads a `"points"`
  * event carries -- as an `Env`: absolute times become segment durations and
  * each segment keeps its shape (the numeric curvature for the custom shape,
  * the shape name otherwise).
@@ -247,7 +247,7 @@ export function pointsToEnv(
     if (quads.length < 2) {
         throw new TypeError("an envelope needs at least two breakpoints");
     }
-    // First name wins for the aliased numbers ("lin"/"exp"/… come before
+    // First name wins for the aliased numbers ("lin"/"exp"/... come before
     // their long forms in the table).
     const names = new Map<number, string>();
     for (const [name, num] of Object.entries(SHAPE_NUMBERS)) {

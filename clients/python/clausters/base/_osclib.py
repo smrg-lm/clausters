@@ -9,7 +9,7 @@ on top of this in `base/_oscinterface.py`.
 The byte codec itself stays per-language (structured arguments cannot cross the
 flat C ABI -- the documented seam exception), but **every time value** goes
 through the native core: timetag packing (`clausters._native.ntp_timetag` /
-``unix_to_ntp``, fraction *rounded*) and the timetag↔sample math, so identical
+``unix_to_ntp``, fraction *rounded*) and the timetag<->sample math, so identical
 instants produce identical bits in every client.
 """
 
@@ -91,7 +91,7 @@ def score_bundle(seconds: float, *packets: bytes) -> bytes:
 
 
 def score(*bundles: bytes) -> bytes:
-    """Frames bundles into the binary NRT score (`[i32 len][packet]…`)."""
+    """Frames bundles into the binary NRT score (`[i32 len][packet]...`)."""
     return b"".join(struct.pack(">i", len(b)) + b for b in bundles)
 
 
@@ -103,7 +103,7 @@ def _read_string(data: bytes) -> tuple[str, bytes]:
 
 def decode(packet: bytes) -> tuple[str, list]:
     """Decodes a single OSC message into ``(addr, args)``. Enough for the
-    server's replies (`/done`, `/fail`, `/server_status.reply`, …); bundles are not
+    server's replies (`/done`, `/fail`, `/server_status.reply`, ...); bundles are not
     expected as replies."""
     addr, rest = _read_string(packet)
     tags, rest = _read_string(rest)

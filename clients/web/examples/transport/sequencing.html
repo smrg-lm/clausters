@@ -70,7 +70,7 @@ and a new tempo written there, which pins that instant for the same reason.</div
         <button id="headPlay" disabled>play</button>
         <button id="headStop" disabled>stop</button>
         <button id="headLocate" disabled>locate to beat 2</button>
-        <label><input id="loop" type="checkbox" disabled /> loop bars 1–2</label>
+        <label><input id="loop" type="checkbox" disabled /> loop bars 1-2</label>
         <span id="position">position 0.00</span>
       </div>
 
@@ -241,7 +241,7 @@ and a new tempo written there, which pins that instant for the same reason.</div
       el("loop").onchange = () => {
         if (el("loop").checked) timeline.loop(0, 2);
         else timeline.unloop();
-        log(el("loop").checked ? "looping beats 0–2" : "looping off");
+        log(el("loop").checked ? "looping beats 0-2" : "looping off");
       };
     </script>
   </body>

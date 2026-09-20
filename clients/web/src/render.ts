@@ -5,16 +5,16 @@
 // **generator** thing (an algorithm that describes sound) into a **generated**
 // one (samples -- random-access audio). It dispatches by kind:
 //
-// - a binary **score** (`Uint8Array`) → the offline renderer, as is;
+// - a binary **score** (`Uint8Array`) -> the offline renderer, as is;
 // - a **def** (`SynthDef` / `FaustDef` / `GraphDef`) or a bare **expression**
 //   (a UGen graph, a `ChannelList`, a Faust `Signal` -- coerced through
-//   `defs/asdef.ts`) → instanced offline for `dur` seconds, the audible
+//   `defs/asdef.ts`) -> instanced offline for `dur` seconds, the audible
 //   sibling of `plot(def)`;
 // - a `Timeline`, an `EventPattern`, a `Routine`/`Stream` or a bare
-//   **generator** → an **offline bounce**: an offline session plays it and
+//   **generator** -> an **offline bounce**: an offline session plays it and
 //   the drained score is rendered. An endless source needs `until` (the
 //   bounce would never drain);
-// - a **value pattern** (a `Pattern` whose values are not events) → the values
+// - a **value pattern** (a `Pattern` whose values are not events) -> the values
 //   it generates, as an array. An endless one needs `count`.
 //
 // **An offline bounce runs in an offline session**, and the tempo is the

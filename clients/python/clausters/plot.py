@@ -27,7 +27,7 @@ involved unless the object itself needs one). It dispatches by kind:
   **live** server (`clausters.base.main.Main.resolve_server`) with its shape
   and sample rate, and plotted -- the way to check a buffer's contents.
 - any other **iterable of numbers** -- a list, a stdlib ``array``, a
-  `clausters.seq.pattern.Pattern` (``Pseq``, ``Pwhite``, …) or any stream -- is
+  `clausters.seq.pattern.Pattern` (``Pseq``, ``Pwhite``, ...) or any stream -- is
   read (up to ``n`` values for the endless ones) and plotted as a
   sequence: index counts on the x axis and the value axis **auto-fitted** to
   the data, whatever its range. A list of per-channel lists plots multichannel.
@@ -78,7 +78,7 @@ class PlotWindow:
     def set(self, **props):
         """Live-set plot props (``view``, ``min``/``max`` -- a number, or
         ``"auto"`` to refit -- ``freq_scale``, ``db_floor``/``db_ceil``,
-        ``ruler``/``ruler_y``, ``label``…) via ``/gui_set``."""
+        ``ruler``/``ruler_y``, ``label``...) via ``/gui_set``."""
         self.host.set(self.widget_id, **props)
         return self
 
@@ -225,7 +225,7 @@ class PatchWindow:
         self.widget_id = widget_id
 
     def set(self, **props):
-        """Live-set the patch widget's props (``label``, ``boxes``, ``cords``…)
+        """Live-set the patch widget's props (``label``, ``boxes``, ``cords``...)
         via ``/gui_set``."""
         self.host.set(self.widget_id, **props)
         return self

@@ -335,7 +335,7 @@ class Vector(Element):
         buffer: the `clausters.defs.Buffer` on the server.
         instrument: the def that plays it (its ``buf`` control gets the buffer
             number), or ``None`` for a buffer that is data only.
-        controls: extra event parameters passed to that def (``amp``, ``rate``…).
+        controls: extra event parameters passed to that def (``amp``, ``rate``...).
         onset: start in beats relative to the context, or ``None``.
         duration: length in **seconds** -- how long the clip sounds. Give it for
             a take placed in time (an event's default length is used

@@ -71,7 +71,7 @@ fn one_shot(level: f32) -> String {
 /// The sample indices where a trigger source actually fires.
 ///
 /// `Impulse` accumulates its phase in `f64`, so a 100 Hz train at 48 kHz lands
-/// on 0, 481, 961 … rather than on exact multiples of 480 -- a tenth of a
+/// on 0, 481, 961 ... rather than on exact multiples of 480 -- a tenth of a
 /// sample of drift per period, which is the oscillator being honest and not
 /// something the counters under test should be asserted against. Every test
 /// below that needs "the fourth trigger" asks the train where it is.

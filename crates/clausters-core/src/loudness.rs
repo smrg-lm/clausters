@@ -1376,7 +1376,7 @@ mod tests {
 
     /// **Case 11**, for live meters -- one signal of twenty (i·0.15 s of
     /// silence, 3 s at −38+i, 3−i·0.15 s of silence): max S reads −38, −37,
-    /// …, −19 ±0.1 in succession. Read after each segment of one live meter.
+    /// ..., −19 ±0.1 in succession. Read after each segment of one live meter.
     #[test]
     fn tech3341_case_11_short_term_max_live() {
         let mut m = LoudnessMeter::new(2, FS);
@@ -1441,7 +1441,7 @@ mod tests {
     }
 
     /// **Case 14**, for live meters -- twenty (i·20 ms of silence, 400 ms at
-    /// −38+i, 400−i·20 ms of silence): max M reads −38, −37, …, −19 ±0.1.
+    /// −38+i, 400−i·20 ms of silence): max M reads −38, −37, ..., −19 ±0.1.
     #[test]
     fn tech3341_case_14_momentary_max_live() {
         let mut m = LoudnessMeter::new(2, FS);

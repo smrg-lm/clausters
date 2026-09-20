@@ -642,7 +642,7 @@ class ClockView {
 
     /**
      * What a `Server` stamps a bundle with when the timeline plays on a
-     * **server transport**: seconds of this node's axis → a sample of the
+     * **server transport**: seconds of this node's axis -> a sample of the
      * transport's clock. `null` on a timeline playing on its own clock, where
      * the ordinary timetag or `/sched_at` path applies.
      */
@@ -1148,7 +1148,7 @@ export class TransportPlayer implements TreeDriver {
 
     private broadcast(msg: ResponderMessage): void {
         // /transport_query.reply originSample tempo defined playing position
-        // group transportSample positionSample …
+        // group transportSample positionSample ...
         if (msg.length < 9) return;
         const playing = Boolean(Number(msg[4]));
         const position = Number(msg[8]);

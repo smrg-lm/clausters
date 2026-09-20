@@ -197,7 +197,7 @@
         // `midSide` is normalized to be **its own inverse**, so encoding and
         // decoding a pair returns it unchanged: a 300 Hz left and a 900 Hz
         // right come back on their own channels. Collapsing the same pair
-        // with `stereoWidth(…, 0)` scales the side to nothing, which puts
+        // with `stereoWidth(..., 0)` scales the side to nothing, which puts
         // both tones on both channels.
         const pair = () => [sine(300.0).mul(0.2), sine(900.0).mul(0.2)];
         await new SynthDef("cat_ms", (() => {

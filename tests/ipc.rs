@@ -500,7 +500,7 @@ fn embed_render_returns_flat_samples() {
     assert!(samples.iter().any(|s| *s != 0.0), "the default def sounds");
     unsafe { clausters_free_samples(ptr, frames) };
 
-    // Error path: garbage score → NULL + message.
+    // Error path: garbage score -> NULL + message.
     let ptr = unsafe {
         clausters_render(
             b"garbage".as_ptr(),

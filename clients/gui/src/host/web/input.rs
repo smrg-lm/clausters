@@ -444,7 +444,7 @@ impl WebApp {
                 ElementState::Released => self.on_release(def),
             },
             // A finger drives the same machine a pointer does: the desktop's
-            // press → drag → release, with the touch's own position. winit
+            // press -> drag -> release, with the touch's own position. winit
             // reports touch separately from the pointer events, so without this
             // arm a phone reaches every DOM control on the page and nothing at
             // all inside a canvas.

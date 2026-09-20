@@ -25,7 +25,7 @@ shader over its area, ShaderToy-style. The host gives the shader three uniforms
 vec4 -- and the params are driven <b>two ways</b>, which is the whole point of
 the widget:
 
-<code>u.params.x</code> from the <b>script</b>: <code>set({ param0: … })</code>
+<code>u.params.x</code> from the <b>script</b>: <code>set({ param0: ... })</code>
 sends an OSC value the host writes into the uniform. <code>u.params.y</code>
 from a <b>control bus</b>, read straight out of the audio server's memory every
 frame (zero OSC), exactly the path the meters use. The <code>buses</code>

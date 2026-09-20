@@ -150,7 +150,7 @@ pub struct GraphMember {
     /// Initial control values by name (literals or internal-bus references).
     #[serde(default)]
     pub controls: HashMap<String, ControlValue>,
-    /// Extra control→bus maps applied as `/node_map` (control name → internal
+    /// Extra control->bus maps applied as `/node_map` (control name -> internal
     /// control-bus name), for controls fed continuously by a bus.
     #[serde(default)]
     pub maps: HashMap<String, String>,
@@ -220,7 +220,7 @@ pub struct GraphDefSpec {
     #[serde(default)]
     pub buses: Vec<GraphBus>,
     pub members: Vec<GraphMember>,
-    /// Named parameter surface: port name → inner targets.
+    /// Named parameter surface: port name -> inner targets.
     #[serde(default)]
     pub surface: HashMap<String, Vec<SurfaceTarget>>,
     /// Initial surface-port values applied at instantiation (overridable by
@@ -349,7 +349,7 @@ impl GraphDefSpec {
 use std::collections::HashSet;
 use std::sync::Arc;
 
-/// A resolved surface: port name → `(member node id, control index, mul, add)`.
+/// A resolved surface: port name -> `(member node id, control index, mul, add)`.
 pub type ResolvedSurface = HashMap<String, Vec<(i32, u32, f32, f32)>>;
 
 /// How deeply GraphDefs may be nested inside each other. A cycle -- a graph that
@@ -363,9 +363,9 @@ pub const MAX_GRAPH_DEPTH: usize = 8;
 pub struct GraphInstance {
     /// The def, kept so `/graph_newVoice` can instantiate its per-voice members.
     pub def: Arc<GraphDefSpec>,
-    /// Shared member index → node id (per-voice members are absent).
+    /// Shared member index -> node id (per-voice members are absent).
     pub shared_nodes: HashMap<usize, i32>,
-    /// Resolved internal bus name → first index, shared by all voices.
+    /// Resolved internal bus name -> first index, shared by all voices.
     pub bus_index: HashMap<String, usize>,
     /// Private audio buses `(first, width)` to free on teardown.
     pub audio_buses: Vec<(usize, usize)>,
@@ -373,7 +373,7 @@ pub struct GraphInstance {
     pub control_buses: Vec<(usize, usize)>,
     /// Resolved shared surface (`/node_set` against the instance group id).
     pub surface: ResolvedSurface,
-    /// Member index → the sub-instance group id, for members that are
+    /// Member index -> the sub-instance group id, for members that are
     /// themselves graphs. Freed with this one, and what a re-exported port
     /// resolves through.
     pub children: HashMap<usize, i32>,
@@ -390,10 +390,10 @@ pub struct GraphVoice {
     /// Which slot this fills. A voice is `"voice"`.
     pub slot: String,
     pub surface: ResolvedSurface,
-    /// Member index → node id, for the slot's one-node members -- what
+    /// Member index -> node id, for the slot's one-node members -- what
     /// `/graph_moveSlot` re-wires against the instance it moves into.
     pub nodes: HashMap<usize, i32>,
-    /// Member index → sub-instance group id, as in [`GraphInstance::children`].
+    /// Member index -> sub-instance group id, as in [`GraphInstance::children`].
     pub children: HashMap<usize, i32>,
 }
 

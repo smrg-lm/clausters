@@ -16,7 +16,7 @@ and the server resources:
 - `server` -- `Server`: the live OSC round-trip
   (definitions, nodes, buses, buffers, ``/done``/``/fail``, ``/server_notify``).
 - `ugens` / `synthdef` -- the UGen
-  graph (lowercase callables → `Ugen`/`Control`) and
+  graph (lowercase callables -> `Ugen`/`Control`) and
   `SynthDef` (``/def_send synth``), the UGen-graph counterpart of the Faust
   `signals` / `FaustDef` pair.
 """

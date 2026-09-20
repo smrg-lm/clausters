@@ -162,7 +162,7 @@ impl TestServer {
     }
 
     /// Ticks the engine and polls /server_status until the given reply argument
-    /// matches or the deadline passes. Covers the network→FIFO→audio round
+    /// matches or the deadline passes. Covers the network->FIFO->audio round
     /// trip. The reply opens on its first real field, so argument 1 is the
     /// synth count and 2 the group count -- reached through the two named
     /// wrappers below rather than by index.
@@ -1640,7 +1640,7 @@ fn send_trig_replies_tr_and_needs_no_out() {
     server.quit();
 }
 
-/// `SendReply` replies at a custom OSC address with `nodeID replyID value…`.
+/// `SendReply` replies at a custom OSC address with `nodeID replyID value...`.
 #[test]
 fn send_reply_replies_at_custom_address() {
     let mut server = TestServer::spawn();

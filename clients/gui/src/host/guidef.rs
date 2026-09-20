@@ -7,7 +7,7 @@
 //! continuous values `f64` distinct across the wire -- the "flat primitives at
 //! the boundary" rule the rest of the project relies on.
 //!
-//! The node type is deliberately **generic**: `{ id, type, <props…>, children }`.
+//! The node type is deliberately **generic**: `{ id, type, <props...>, children }`.
 //! The catalog of widget *types* (containers, controls, the heavy GPU views)
 //! grows by adding a renderer/handler in later milestones, never by changing
 //! this shape -- the host parses, registers and introspects any tree without
@@ -20,7 +20,7 @@ use serde_json::{Map, Value};
 
 /// One node of a GuiDef tree.
 ///
-/// The root node's `id` is supplied out of band by the `/gui_def <id> …`
+/// The root node's `id` is supplied out of band by the `/gui_def <id> ...`
 /// argument (mirroring how a `SynthDef`'s name is the `/def_send synth` argument, not a
 /// field inside the graph), so it is optional here; every child carries its own
 /// client-allocated `id` in the JSON. Everything that is not `id`/`type`/
@@ -32,14 +32,14 @@ pub struct GuiNode {
     /// `/gui_def` argument); present on every descendant.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<i32>,
-    /// The widget type tag (`"window"`, `"knob"`, `"waveform"`, …). Opaque to
+    /// The widget type tag (`"window"`, `"knob"`, `"waveform"`, ...). Opaque to
     /// the host at this milestone: stored and reported, not yet rendered.
     #[serde(rename = "type")]
     pub kind: String,
     /// Child widgets, forming the subtree freed together by `/gui_free`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<GuiNode>,
-    /// Every other property (`label`, `min`, `max`, `value`, `buffer`, …),
+    /// Every other property (`label`, `min`, `max`, `value`, `buffer`, ...),
     /// captured as-is so the int/float distinction survives.
     #[serde(flatten)]
     pub props: Map<String, Value>,

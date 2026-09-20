@@ -116,7 +116,7 @@ pub struct UGenSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<String>,
     /// `BinaryOpUGen`/`UnaryOpUGen`: the operator, by **name** (`"mul"`,
-    /// `"midicps"`, `"clip2"`, …). Ignored by every other kind. The compiler
+    /// `"midicps"`, `"clip2"`, ...). Ignored by every other kind. The compiler
     /// resolves it against the shared `clausters_core::builtins` operator table.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub op: Option<String>,
@@ -154,9 +154,9 @@ pub struct UGenSpec {
     pub max_delay: Option<f32>,
     /// `PV_Kernel`: the magnitude bin-expression as a **postfix token list** --
     /// a number pushes a constant, a word is a per-bin load (`"mag"`,
-    /// `"phase"`, `"bin"`, `"nbins"`, `"binfreq"`, `"p0"`…) or an operator wire
+    /// `"phase"`, `"bin"`, `"nbins"`, `"binfreq"`, `"p0"`...) or an operator wire
     /// name from the shared `clausters_core::builtins` tables (`"mul"`,
-    /// `"ge"`, `"tanh"`, …). Omitted means the identity (`["mag"]`). Validated
+    /// `"ge"`, `"tanh"`, ...). Omitted means the identity (`["mag"]`). Validated
     /// at compile time (see `clausters_core::pvprog`). Ignored by every other
     /// kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -473,7 +473,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
         // `PV_Kernel` bin expressions: resolve and validate the postfix
         // token lists now, so the RT thread only ever runs a program that
         // passed the stack/arity checks. The parameters a program may read
-        // (`p0`…) are this UGen's inputs past the chain (input 0).
+        // (`p0`...) are this UGen's inputs past the chain (input 0).
         let n_params = u.inputs.len().saturating_sub(1);
         if let Some(tokens) = &u.mag_expr {
             let what = format!("ugens[{i}] ({}) mag_expr", u.kind);

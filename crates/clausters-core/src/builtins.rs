@@ -7,7 +7,7 @@
 //!
 //! Semantics: `Add`/`Sub`/`Mul`/`Div` are exactly the server's `dsp::binop`
 //! (so the refactored server stays bit-identical). The remaining ops mirror
-//! Faust's Signal API (`sin`, `log`, `min`, `pow`, …, see the server's
+//! Faust's Signal API (`sin`, `log`, `min`, `pow`, ..., see the server's
 //! `faust::signals`) with the same formula; they are *not* guaranteed
 //! bit-identical to Faust's LLVM codegen -- that is the documented tolerance.
 //!
@@ -486,7 +486,7 @@ pub fn apply_binary(op: BinaryOp, a: f32, b: f32) -> f32 {
         Div => a / b,
         Mod => a % b,
         Pow => a.powf(b),
-        // Explicit comparison (Faust's `select2(a<b, …)`) for a deterministic
+        // Explicit comparison (Faust's `select2(a<b, ...)`) for a deterministic
         // result independent of platform fmin/fmax NaN handling.
         Min => {
             if a < b {
@@ -811,7 +811,7 @@ slice_dispatch! {
         Distort, Softclip,
 }
 
-/// Scale-degree → MIDI note number: `degree` indexes `scale` (semitone offsets
+/// Scale-degree -> MIDI note number: `degree` indexes `scale` (semitone offsets
 /// within one octave) in the pitch space `octave`/`root`, wrapping with octave
 /// carry -- degree −1 on a 7-note scale is the 7th one octave down (floored
 /// division, sclang semantics). An empty `scale` yields middle C (60). The

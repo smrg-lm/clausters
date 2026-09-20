@@ -82,7 +82,7 @@ pub fn osc_encode_message(addr: &str, args: js_sys::Array) -> Result<Vec<u8>, Js
     encode_message(addr, js_args(args)?).map_err(|e| JsError::new(&e))
 }
 
-/// A JS array of `[tag, value]` pairs → typed OSC arguments.
+/// A JS array of `[tag, value]` pairs -> typed OSC arguments.
 #[cfg(target_arch = "wasm32")]
 fn js_args(args: js_sys::Array) -> Result<Vec<OscType>, JsError> {
     let mut typed = Vec::with_capacity(args.length() as usize);
@@ -617,14 +617,14 @@ pub fn secs_to_beats(tempo: f64, base_beats: f64, base_seconds: f64, secs: f64) 
     base_beats + (secs - base_seconds) * tempo
 }
 
-/// Seconds → sample count at `sample_rate` (ties to even).
+/// Seconds -> sample count at `sample_rate` (ties to even).
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub fn secs_to_samples(secs: f64, sample_rate: f64) -> f64 {
     tempoclock::secs_to_samples(secs, sample_rate) as f64
 }
 
-/// Sample count → seconds at `sample_rate`.
+/// Sample count -> seconds at `sample_rate`.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub fn samples_to_secs(samples: f64, sample_rate: f64) -> f64 {
@@ -632,7 +632,7 @@ pub fn samples_to_secs(samples: f64, sample_rate: f64) -> f64 {
 }
 
 /// Beats to wait so a routine starts on the next `quant` boundary of the grid
-/// (`quant <= 0` → now). The snapping rule every client shares.
+/// (`quant <= 0` -> now). The snapping rule every client shares.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub fn quant_delay(pos: f64, quant: f64) -> f64 {
@@ -653,7 +653,7 @@ pub fn beat_in_bar(beats: f64, quant: f64) -> f64 {
     tempoclock::beat_in_bar(beats, quant)
 }
 
-/// A Unix timestamp → the 64 NTP timetag bits, as a `BigInt` (the wire value
+/// A Unix timestamp -> the 64 NTP timetag bits, as a `BigInt` (the wire value
 /// is a full 64-bit word; JS numbers would lose its low bits).
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
@@ -661,7 +661,7 @@ pub fn unix_to_ntp(unix_secs: f64) -> u64 {
     osc::timetag_bits(osc::unix_to_ntp(unix_secs))
 }
 
-/// A Unix timestamp → the server's absolute sample, through a `/clock_query` anchor
+/// A Unix timestamp -> the server's absolute sample, through a `/clock_query` anchor
 /// (`anchor_unix`, `anchor_sample`) and the measured `rate`.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
@@ -729,7 +729,7 @@ impl Default for JsScheduler {
     }
 }
 
-/// The multitrack's beat↔second time map, the JS face of
+/// The multitrack's beat<->second time map, the JS face of
 /// [`clausters_core::tempomap::TempoMap`].
 ///
 /// A beat is a logical coordinate, not a unit of time; this is the function
@@ -988,7 +988,7 @@ impl JsTempoMap {
 // doors take the same shape -- an array of `[addr, [[tag, value], ...]]` -- so
 // the caller assembles a whole timed emission in one crossing.
 
-/// One `[addr, args]` JS pair → a core message.
+/// One `[addr, args]` JS pair -> a core message.
 #[cfg(target_arch = "wasm32")]
 fn js_message(entry: &JsValue) -> Result<OscMessage, JsError> {
     let pair = js_sys::Array::from(entry);
@@ -1010,14 +1010,14 @@ fn encode_bundle(time: osc::OscTime, messages: js_sys::Array) -> Result<Vec<u8>,
 }
 
 /// JS face: a bundle stamped at `unix_secs` (the wall clock the server reads
-/// as an NTP timetag) → `Uint8Array`.
+/// as an NTP timetag) -> `Uint8Array`.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub fn osc_encode_bundle(unix_secs: f64, messages: js_sys::Array) -> Result<Vec<u8>, JsError> {
     encode_bundle(osc::unix_to_ntp(unix_secs), messages)
 }
 
-/// JS face: a bundle stamped at `secs` **from the start of a render** → the
+/// JS face: a bundle stamped at `secs` **from the start of a render** -> the
 /// bundle an NRT score is made of. The same packing as [`osc_encode_bundle`]
 /// on a different epoch: a score's time is not a wall clock, so nothing is
 /// added to it (`clausters_core::osc::pack_timetag`, the rule every client
@@ -1029,7 +1029,7 @@ pub fn osc_encode_score_bundle(secs: f64, messages: js_sys::Array) -> Result<Vec
     encode_bundle(osc::pack_timetag(secs), messages)
 }
 
-/// JS face: a bundle with the *immediate* timetag → `Uint8Array`. What rides
+/// JS face: a bundle with the *immediate* timetag -> `Uint8Array`. What rides
 /// inside `/sched_at`, whose own absolute sample carries the time.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
@@ -1139,7 +1139,7 @@ pub fn map(
     ) as f64)
 }
 
-/// JS face: scale degree → MIDI note number in the pitch space
+/// JS face: scale degree -> MIDI note number in the pitch space
 /// `octave`/`root`, with floored octave wrapping (sclang semantics). An empty
 /// `scale` yields middle C.
 #[cfg(target_arch = "wasm32")]
@@ -1156,7 +1156,7 @@ pub fn degree_to_midinote(degree: f64, octave: f64, root: f64, scale: &[f32]) ->
 // none of this (the engine shares the page's audio clock); this is the door
 // the WebSocket carrier's tracker drives.
 
-/// The local-time ↔ sample regression, the JS face of
+/// The local-time <-> sample regression, the JS face of
 /// [`clausters_core::clocksync::SampleClockModel`].
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = SampleClockModel)]
@@ -2336,7 +2336,7 @@ impl JsHistory {
     /// throw for a word that is neither.
     ///
     /// Returns `{ label, legs, remaining, skipped }`, where `legs` is
-    /// `[{ structure, payloads }, …]` -- one entry per structure rather than
+    /// `[{ structure, payloads }, ...]` -- one entry per structure rather than
     /// one per leg. It is one call and not two because picking the side a
     /// direction reads, and keeping the legs one structure owns, are rules and
     /// not plumbing, and every caller was writing both for itself.
@@ -2492,11 +2492,11 @@ impl JsHistory {
     }
 }
 
-/// The patcher's **cord→bus pass**: a directed patch (`{boxes, cords}`) in, the
+/// The patcher's **cord->bus pass**: a directed patch (`{boxes, cords}`) in, the
 /// buses and wired members it compiles to out, both as JSON.
 ///
 /// One bus per connected net, its writers summing, and a bad cord -- reversed,
-/// rate-mismatched, out of range -- comes back as `{"error": …}` naming it. The
+/// rate-mismatched, out of range -- comes back as `{"error": ...}` naming it. The
 /// same door the C ABI opens as `clausters_core_patch_compile`: a patcher is a
 /// model with one compilation, and a second implementation of it in TypeScript
 /// would be a second answer to "what does this cord mean".
@@ -2713,7 +2713,7 @@ impl JsScore {
         self.0.transpose_to(element_id, position, page)
     }
 
-    /// One raw editor action (`set`, `insert`, `delete`, …) as a single undo
+    /// One raw editor action (`set`, `insert`, `delete`, ...) as a single undo
     /// step, `param` being its parameter object as JSON.
     pub fn edit(&mut self, action: &str, param: &str) -> bool {
         self.0.edit(action, param)
@@ -2785,7 +2785,7 @@ pub fn voice_to_sheet(voice: &str, meter: &str, clef: &str, key: &str) -> Result
 /// **One export for every operation there will ever be**: the verb and its
 /// parameters are inside `op` (`{"op": "transpose", "semitones": 2}`), so a new
 /// operation costs nothing here. What the C ABI answers in an envelope
-/// (`{"ok": …}` / `{"error": …}`) this **throws** instead, which is the same
+/// (`{"ok": ...}` / `{"error": ...}`) this **throws** instead, which is the same
 /// behaviour in the shape a page expects -- and the reason the refusal reaches
 /// the caller either way, since a refused operation has to say why.
 ///
@@ -2825,7 +2825,7 @@ pub fn sheet_to_mei(sheet: &str) -> Result<String, JsError> {
 /// answer because the inverse has to be read *before* the edit lands.
 ///
 /// `state` is the structure in its own vocabulary and the answer is
-/// `{"state": …, "applied": bool, "reason"?: …, "current"?: …}`, or an empty
+/// `{"state": ..., "applied": bool, "reason"?: ..., "current"?: ...}`, or an empty
 /// string for a vocabulary whose state is not a value a caller can hand over:
 /// the arrangement's tree (which has {@link JsDocument.apply} of its own) and a
 /// span of samples (a borrowed view whose frames are in a buffer).

@@ -650,7 +650,7 @@ fn steps(v: &[f32]) -> Vec<(usize, f32)> {
     out
 }
 
-/// Asserts that `events` are the levels `1, 2, 3, …` a period apart, each
+/// Asserts that `events` are the levels `1, 2, 3, ...` a period apart, each
 /// within a sample of where the exact period puts it.
 fn assert_periodic(events: &[(usize, f32)], period: f32, what: &str) {
     for (n, &(i, level)) in events.iter().enumerate() {

@@ -169,7 +169,7 @@ pub enum HitShape {
     Ellipse,
 }
 
-/// The SMuFL **Noteheads** range (U+E0A0–U+E0FF): the glyphs whose shape is an
+/// The SMuFL **Noteheads** range (U+E0A0-U+E0FF): the glyphs whose shape is an
 /// oval and whose box therefore over-answers for them. Whether a codepoint is a
 /// notehead is a fact about the font's layout, not about this page, so it is
 /// read straight off the range rather than configured.
@@ -396,7 +396,7 @@ pub struct ScoreData {
     /// the answer is one message away, and snapping back first would show the
     /// old pitch for a frame.
     pub drag: Option<ScoreDrag>,
-    /// Whether a drag on an element **edits** it (a pitch drag → `"transpose"`).
+    /// Whether a drag on an element **edits** it (a pitch drag -> `"transpose"`).
     /// Off by default: a score is a view, and the host holds no score, so an
     /// edit the client will not apply is a gesture that cannot be fulfilled -- an
     /// editor opts in (`editable: true`). Selection and the `"element"` click are

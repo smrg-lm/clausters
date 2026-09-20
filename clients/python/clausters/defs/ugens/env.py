@@ -72,7 +72,7 @@ _SHAPE_NUMBERS = {
 
 
 def _resolve_curve(spec):
-    """A shape name (``'lin'``, ``'exp'``, ``'sin'`` …) or a numeric curvature
+    """A shape name (``'lin'``, ``'exp'``, ``'sin'`` ...) or a numeric curvature
     -> ``(shape_number, curve_value)``. A number selects the custom-curvature
     shape, where 0 is linear, positive starts slow, negative starts fast."""
     if isinstance(spec, str):

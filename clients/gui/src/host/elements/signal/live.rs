@@ -149,7 +149,7 @@ pub struct LiveState {
     /// A control-rate trace's rolling history, oldest first.
     pub history: VecDeque<f32>,
     /// The triggered multichannel window an audio-rate trace draws, or a
-    /// phasescope's interleaved `[l, r, l, r, …]` pairs.
+    /// phasescope's interleaved `[l, r, l, r, ...]` pairs.
     pub window: TapWindow,
     /// The persistent analysis of a live spectrum, one state per channel.
     pub spectra: Vec<SpectrumState>,

@@ -8,13 +8,13 @@
 //! the white-key width (the one derived unit): every white key is 1 unit wide,
 //! a black key [`BLACK_W`] units wide and [`BLACK_LEN`] of the white key's
 //! length, and the black keys are **not** centered on the white-key boundaries
-//! -- within the C–E group the rear (upper) segments of C, D and E are equal
-//! (`(3 − 2b)/3` each), within F–B those of F, G, A and B are equal
+//! -- within the C-E group the rear (upper) segments of C, D and E are equal
+//! (`(3 − 2b)/3` each), within F-B those of F, G, A and B are equal
 //! (`(4 − 3b)/4`), which is how the physical keyboard distributes them. All
 //! layout derives from the widget rect, so the drawing scales with it.
 //!
 //! Everything here is **display logic plus message shaping**; the one multitrack of
-//! general musical knowledge -- note spelling and the MIDI↔hertz map -- lives in
+//! general musical knowledge -- note spelling and the MIDI<->hertz map -- lives in
 //! `clausters_core::scale` per the placement rule.
 
 use clausters_core::scale;
@@ -37,10 +37,10 @@ pub const MIDI_MAX: i32 = 127;
 /// The smallest visible span zoom can reach (one octave), in semitones.
 pub const MIN_SPAN: i32 = 12;
 
-/// The rear (upper) segment width of the C–E group's white keys, so C#/D# and
+/// The rear (upper) segment width of the C-E group's white keys, so C#/D# and
 /// the three segments share the 3-unit span exactly: `3·cr + 2·b = 3`.
 const C_REAR: f32 = (3.0 - 2.0 * BLACK_W) / 3.0;
-/// The rear segment width of the F–B group's white keys: `4·fr + 3·b = 4`.
+/// The rear segment width of the F-B group's white keys: `4·fr + 3·b = 4`.
 const F_REAR: f32 = (4.0 - 3.0 * BLACK_W) / 4.0;
 
 /// White keys below each pitch class within one octave (cumulative count).
@@ -465,13 +465,13 @@ mod tests {
         assert_eq!(white_units(72) - white_units(60), 7.0);
         assert_eq!(white_units(12) - white_units(0), 7.0);
         // Consecutive white keys are 1 unit apart.
-        assert_eq!(white_units(62) - white_units(60), 1.0); // C→D
-        assert_eq!(white_units(65) - white_units(64), 1.0); // E→F (no black between)
+        assert_eq!(white_units(62) - white_units(60), 1.0); // C->D
+        assert_eq!(white_units(65) - white_units(64), 1.0); // E->F (no black between)
     }
 
     #[test]
     fn rear_segments_are_equal_within_each_group() {
-        // C–E: the segments left of C#, between C# and D#, and right of D#.
+        // C-E: the segments left of C#, between C# and D#, and right of D#.
         let c_sharp = black_offset(1).unwrap();
         let d_sharp = black_offset(3).unwrap();
         let seg1 = c_sharp; // C's rear
@@ -480,7 +480,7 @@ mod tests {
         assert!((seg1 - C_REAR).abs() < 1e-6);
         assert!((seg2 - C_REAR).abs() < 1e-6);
         assert!((seg3 - C_REAR).abs() < 1e-6);
-        // F–B: four equal rear segments around F#, G#, A#.
+        // F-B: four equal rear segments around F#, G#, A#.
         let f_sharp = black_offset(6).unwrap();
         let g_sharp = black_offset(8).unwrap();
         let a_sharp = black_offset(10).unwrap();
@@ -499,7 +499,7 @@ mod tests {
         let lay = l(61, 70); // C#4..A#4
         assert_eq!(lay.min, 60); // C4
         assert_eq!(lay.max, 71); // B4
-        // One octave C..B = 7 white keys over 700 px → 100 px per white key.
+        // One octave C..B = 7 white keys over 700 px -> 100 px per white key.
         assert_eq!(n_white(60, 71), 7);
         assert!((lay.white_w - 100.0).abs() < 1e-3);
     }
@@ -584,9 +584,9 @@ mod tests {
     #[test]
     fn pan_white_steps_whole_white_keys() {
         let (min, max) = pan_white(60, 72, 1);
-        assert_eq!((min, max), (62, 74)); // C→D
+        assert_eq!((min, max), (62, 74)); // C->D
         let (min, _) = pan_white(60, 72, -1);
-        assert_eq!(min, 59); // C→B below
+        assert_eq!(min, 59); // C->B below
         // At the edge it stays put.
         assert_eq!(pan_white(0, 12, -1), (0, 12));
     }
@@ -598,10 +598,10 @@ mod tests {
         assert!(min <= 66 && 66 <= max);
         assert!(max - min < 60);
         assert!(!scale::is_black_key(min));
-        // The span never shrinks below one octave…
+        // The span never shrinks below one octave...
         let (min, max) = zoom_range(60, 72, 0.1, 66.0);
         assert_eq!(max - min, MIN_SPAN);
-        // …and never grows past the MIDI range.
+        // ...and never grows past the MIDI range.
         let (min, max) = zoom_range(0, 120, 4.0, 60.0);
         assert!(min >= 0 && max <= MIDI_MAX);
         assert!(max - min >= 120);

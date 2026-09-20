@@ -53,7 +53,7 @@ export interface MidiPorts {
     readonly outputs: ReadonlyMap<string, MidiOutputPort>;
 }
 
-/** A decoded channel-voice message: `{type, channel, …}`, matched by `type`. */
+/** A decoded channel-voice message: `{type, channel, ...}`, matched by `type`. */
 export interface MidiMessage {
     type: string;
     channel: number;
@@ -61,7 +61,7 @@ export interface MidiMessage {
 }
 
 // Channel-voice status nibbles -> (message type name, data-field names). A
-// parsed message is `{type, channel, …}` in the style of mido / the responder
+// parsed message is `{type, channel, ...}` in the style of mido / the responder
 // layer, so `MidiFunc` matches on `type`.
 const CV_TYPES: Record<number, [string, string[]]> = {
     0x80: ["note_off", ["note", "velocity"]],
@@ -74,7 +74,7 @@ const CV_TYPES: Record<number, [string, string[]]> = {
 };
 
 /**
- * Decodes raw channel-voice bytes into a message object (`{type, channel, …}`),
+ * Decodes raw channel-voice bytes into a message object (`{type, channel, ...}`),
  * or `null` for a non-channel-voice / malformed message.
  *
  * `pitchwheel` combines the two 7-bit data bytes into a single 14-bit `pitch`
@@ -317,7 +317,7 @@ export interface MidiServerOptions {
  *
  * A `Pbind` played on a clock with this as the destination renders each `Event`
  * as a note on/off pair, handed to the held interface (an NRT score or a live
- * port). Note number from `event.midinote()`, velocity from `amp` (0..1 →
+ * port). Note number from `event.midinote()`, velocity from `amp` (0..1 ->
  * 0..127).
  */
 export class MidiServer implements EventDestination {

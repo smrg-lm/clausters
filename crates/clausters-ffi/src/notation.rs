@@ -183,8 +183,8 @@ pub unsafe extern "C" fn clausters_core_voice_to_sheet(
 /// that costs is that this table cannot see the verbs, which is exactly what
 /// the catalog is contrasted against.
 ///
-/// The result is an **envelope**, so a refusal keeps its reason: `{"ok": …}`
-/// carries the new sheet, `{"error": "…"}` a sentence saying what was refused.
+/// The result is an **envelope**, so a refusal keeps its reason: `{"ok": ...}`
+/// carries the new sheet, `{"error": "..."}` a sentence saying what was refused.
 /// A refused operation changes nothing -- the caller still holds the sheet it
 /// sent, because the model crossed by value and was never handed over.
 ///
@@ -220,7 +220,7 @@ pub unsafe extern "C" fn clausters_core_sheet_apply(
 }
 
 /// Write a score model out as MEI, in the same envelope
-/// [`clausters_core_sheet_apply`] uses: `{"ok": "<mei…>"}` or `{"error": "…"}`.
+/// [`clausters_core_sheet_apply`] uses: `{"ok": "<mei...>"}` or `{"error": "..."}`.
 ///
 /// The refusals are the ones the emitter owes a caller: a duration that is not
 /// an exact note value (a tuplet), an accidental past a double, and the
@@ -309,8 +309,8 @@ pub unsafe extern "C" fn clausters_core_mei_to_sheet(
 /// reading, as JSON -- and write them to `out` (capacity `out_cap`). Returns the
 /// byte count the result needs, or `0` when `sheet` is null.
 ///
-/// The answer is the same envelope the other sheet calls use: `{"ok": [ … ]}`
-/// with one entry per sounding note, or `{"error": "…"}`.
+/// The answer is the same envelope the other sheet calls use: `{"ok": [ ... ]}`
+/// with one entry per sounding note, or `{"error": "..."}`.
 ///
 /// Each note carries **two lengths** -- `dur`, what is written, and `sustain`,
 /// what is heard -- because they are different numbers whenever an articulation
@@ -594,7 +594,7 @@ pub unsafe extern "C" fn clausters_score_apply(h: *mut Score, op: *const u8, op_
 }
 
 /// The open score as the **model**, written to `out` in the usual envelope:
-/// `{"ok": …}` with the sheet, or `{"error": "…"}` when the document could not
+/// `{"ok": ...}` with the sheet, or `{"error": "..."}` when the document could not
 /// be read into one -- which is a state and not a failure, since the page still
 /// draws and still plays and only the model's verbs are unavailable.
 ///

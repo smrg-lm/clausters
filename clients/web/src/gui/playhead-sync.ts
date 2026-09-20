@@ -61,16 +61,16 @@ export interface PlayheadSyncOptions {
      * is never kept here. With no structure, positions are seconds.
      */
     structure?: MapHolder | (() => MapHolder);
-    /** The engine's sample rate; with the map it fixes the beats→samples axis. */
+    /** The engine's sample rate; with the map it fixes the beats->samples axis. */
     sampleRate: number;
     /**
-     * `toUnits(beats)` → the view's own units, for the static cursor. Defaults
-     * to beats→samples, which is what the timeline views use; an engraved page
-     * passes its beats→milliseconds.
+     * `toUnits(beats)` -> the view's own units, for the static cursor. Defaults
+     * to beats->samples, which is what the timeline views use; an engraved page
+     * passes its beats->milliseconds.
      */
     toUnits?: (beats: number) => number;
     /**
-     * `extent()` → the structure's length, in its own units, where {@link PlayheadSync.update}
+     * `extent()` -> the structure's length, in its own units, where {@link PlayheadSync.update}
      * parks the cursor when a pass ends. Read on each use, so a structure that grew
      * (a clip dragged past the end) ends where it now ends.
      */
@@ -217,8 +217,8 @@ export class PlayheadSync {
     }
 
     /**
-     * Beats → samples of the engine clock, through the structure's time map (and the
-     * core's seconds→samples rounding every client shares).
+     * Beats -> samples of the engine clock, through the structure's time map (and the
+     * core's seconds->samples rounding every client shares).
      *
      * Where the line's origin comes from, so it must be the map and not a ratio:
      * the host sweeps the playhead by engine samples, and a beat placed by a
@@ -307,7 +307,7 @@ export class PlayheadSync {
     }
 
     /**
-     * Samples of the transport → beats, through the same map
+     * Samples of the transport -> beats, through the same map
      * {@link PlayheadSync.beatsToSamples} goes the other way -- so what the engine
      * reports and what the ruler draws are one function read in two directions.
      * Seconds, where what plays holds no map.

@@ -9,7 +9,7 @@
 // explains it.
 //
 // A bundle's declared parameters are attributes on the tag, with `preset`
-// beside them; resolution is **attribute → preset → declared default**:
+// beside them; resolution is **attribute -> preset -> declared default**:
 //
 //     <fm-voice></fm-voice>                        the defaults
 //     <fm-voice freq="440" title="voice 2"></fm-voice>

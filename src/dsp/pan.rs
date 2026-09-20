@@ -44,7 +44,7 @@
 //! artifact of dividing by nothing, not an audio number.)
 //!
 //! It stays `f64` anyway, because the engine cannot see the difference: on
-//! `Sine → Pan2 → 2× Out` the whole-graph throughput is unchanged. A row's
+//! `Sine -> Pan2 -> 2× Out` the whole-graph throughput is unchanged. A row's
 //! arithmetic is a small part of a block that spends most of its time in its
 //! sources, which is the same reason the fused rows kept their naive loops
 //! (`docs/decisions.md`). Anyone revisiting this should get an engine-level

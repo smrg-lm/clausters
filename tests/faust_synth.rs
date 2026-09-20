@@ -3,7 +3,7 @@
 //!
 //! Engine-level tests drive the same command FIFO the network thread uses
 //! and listen with signal asserts; the OSC test at the end covers the whole
-//! `/def_send faust` → `/synth_new` → `/node_set` → `/node_free` round trip with a manually
+//! `/def_send faust` -> `/synth_new` -> `/node_set` -> `/node_free` round trip with a manually
 //! ticked engine.
 
 #![cfg(feature = "faust")]
@@ -296,7 +296,7 @@ fn out_control_routes_to_another_bus() {
 
 #[test]
 fn input_buses_feed_faust_synths() {
-    // Sine onto private bus 4, then a Faust gain stage 4 → 0. Tree order
+    // Sine onto private bus 4, then a Faust gain stage 4 -> 0. Tree order
     // (both at the tail, gain added second) makes the chain causal within
     // the block.
     let sine = compile_def("fsine", SINE_SRC);
@@ -380,7 +380,7 @@ fn freed_faust_synth_drops_on_this_thread_and_factory_survives() {
     assert_eq!(handle.collect_garbage(), 1);
 }
 
-// ---- OSC round trip: /def_send faust → /synth_new → /node_set → /node_free ----
+// ---- OSC round trip: /def_send faust -> /synth_new -> /node_set -> /node_free ----
 
 mod osc {
     use super::*;

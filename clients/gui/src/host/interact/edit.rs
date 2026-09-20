@@ -4,7 +4,7 @@
 //! Each element gets *one* door, and both fronts go through it -- which is what
 //! keeps a turned knob, a dragged break-point or a moved box meaning the same
 //! thing natively and in a page. Two shapes recur: a setter that writes the
-//! value ([`scroll_set_view`]) and a `…_edit` door that hands a closure the
+//! value ([`scroll_set_view`]) and a `..._edit` door that hands a closure the
 //! element's own model, so the fronts never unpack a [`WidgetKind`] variant
 //! themselves.
 //!

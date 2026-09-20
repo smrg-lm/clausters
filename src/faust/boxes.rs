@@ -1,4 +1,4 @@
-//! JSON → Box API interpreter.
+//! JSON -> Box API interpreter.
 //!
 //! A Faust def arrives as a JSON tree where every node denotes a box
 //! expression; the interpreter walks it and issues the corresponding `Cbox*`
@@ -28,10 +28,10 @@
 //! | `button`, `checkbox` | `label` | named control (0/1) |
 //! | `fconst`, `fvar` | `ctype`: `"int"`/`"real"`, `name`, `file` (optional) | `CboxFConst`/`CboxFVar` (runtime scalar, e.g. `fSamplingFreq` behind `ma.SR`) |
 //! | `hgroup`, `vgroup` | `label`, `in`: exactly 1 box | control grouping |
-//! | `waveform` | `values`: non-empty array of numbers | `waveform{…}` -- outputs the (size, content) pair |
+//! | `waveform` | `values`: non-empty array of numbers | `waveform{...}` -- outputs the (size, content) pair |
 //! | `rdtable` | `in`: size, init, ridx -- or 2 boxes when a `waveform` stands in for (size, init) | `rdtable` |
 //! | `rwtable` | `in`: size, init, widx, wsig, ridx -- or 4 boxes starting with a `waveform` | `rwtable` |
-//! | `faust` | `src` | escape hatch: a complete Faust program (`process = …`) compiled with `CDSPToBoxes`, giving access to the stdlib (`os.osc`, `fi.lowpass`, …) as a composable box |
+//! | `faust` | `src` | escape hatch: a complete Faust program (`process = ...`) compiled with `CDSPToBoxes`, giving access to the stdlib (`os.osc`, `fi.lowpass`, ...) as a composable box |
 //!
 //! Example -- `sin(2π·phasor(freq)) * 0.2` with `freq` as a named control:
 //!
@@ -185,7 +185,7 @@ unsafe fn build(
         }
         _ => Err(err(
             path,
-            "expected a box: number, \"_\", \"!\" or {\"op\": …} object",
+            "expected a box: number, \"_\", \"!\" or {\"op\": ...} object",
         )),
     }
 }
@@ -354,7 +354,7 @@ unsafe fn build_op(
     }
 }
 
-/// `seq(par(inputs…), primitive)` -- how upstream's own `Cbox*TableAux`
+/// `seq(par(inputs...), primitive)` -- how upstream's own `Cbox*TableAux`
 /// helpers apply the 0-argument table primitives. Faust checks the summed
 /// output arity against the primitive's inputs at compile time.
 // The five build-context args (obj/op/path/cstrings/memo) thread through every
@@ -393,7 +393,7 @@ unsafe fn faust_fragment(
     unsafe { dsp_to_boxes(src, path, memo) }
 }
 
-/// Faust source → box, inside the current lib context, memoized by source
+/// Faust source -> box, inside the current lib context, memoized by source
 /// text (see [`FragMemo`] for why the *pointer* must be reused). The source
 /// is fully consumed by the call, so its C string can die with this frame.
 unsafe fn dsp_to_boxes(src: &str, path: &str, memo: &mut FragMemo) -> Result<FaustBox, String> {

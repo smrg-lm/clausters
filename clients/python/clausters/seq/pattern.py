@@ -2,7 +2,7 @@
 
 A `Pattern` is a reusable, lazy description of a value sequence -- the
 definition of a generator: iterating it yields the values (a fresh stream each
-time), and it does not play. Value patterns (``Pseq``, ``Pwhite``, …) feed
+time), and it does not play. Value patterns (``Pseq``, ``Pwhite``, ...) feed
 `Pbind`, which combines per-key value patterns into a stream of `Event`
 objects. An `EventPattern` -- `Pbind`, and a list pattern whose every element
 is an event pattern -- is what plays, on a clock, with `EventPattern.play` (see
@@ -175,7 +175,7 @@ class Pwhite(Pattern):
 
 
 class Pseries(Pattern):
-    """Arithmetic series ``start, start+step, …`` (``length`` values)."""
+    """Arithmetic series ``start, start+step, ...`` (``length`` values)."""
 
     def __init__(self, start=0.0, step=1.0, length=INF):
         self.start, self.step, self.length = start, step, length
@@ -190,7 +190,7 @@ class Pseries(Pattern):
 
 
 class Pgeom(Pattern):
-    """Geometric series ``start, start*grow, …`` (``length`` values)."""
+    """Geometric series ``start, start*grow, ...`` (``length`` values)."""
 
     def __init__(self, start=1.0, grow=2.0, length=INF):
         self.start, self.grow, self.length = start, grow, length

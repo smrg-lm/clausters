@@ -1652,7 +1652,7 @@ mod tests {
         assert_eq!(nav.len, 2.0, "the view came along");
         host.zoom_timeline(10, 0.5, 0.0);
         let (nav, _) = host.timeline_nav(11).unwrap();
-        assert_eq!(nav.len, 2.0, "…and no longer follows the old group");
+        assert_eq!(nav.len, 2.0, "...and no longer follows the old group");
         // Joining an existing group adopts its state instead.
         host.handle_packet(
             set_msg(

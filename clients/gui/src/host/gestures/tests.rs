@@ -253,7 +253,7 @@ fn workspace(extra: &str) -> Host {
 }
 
 /// A window holding one full-area directed patch: `tone` (an outlet)
-/// and `dac` (an inlet and an outlet), a cord tone.out → dac.in.
+/// and `dac` (an inlet and an outlet), a cord tone.out -> dac.in.
 #[cfg(feature = "patcher")]
 fn patch_host() -> Host {
     host_from(

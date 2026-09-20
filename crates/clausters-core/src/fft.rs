@@ -16,8 +16,8 @@
 //! - [`rfft_magnitudes_into`] -- the half-spectrum magnitudes the spectrogram
 //!   draws.
 //! - [`rfft_into`] -- a **forward** transform packing the complex frame in the
-//!   canonical spectral-buffer layout `[dc, nyquist, re₁, im₁, …]` (scsynth's
-//!   `FFT` buffer format), the wire the server's `FFT`→`PV_*`→`IFFT` chain
+//!   canonical spectral-buffer layout `[dc, nyquist, re₁, im₁, ...]` (scsynth's
+//!   `FFT` buffer format), the wire the server's `FFT`->`PV_*`->`IFFT` chain
 //!   passes between its UGens.
 //! - [`irfft_into`] -- the matching **inverse**: it reconstructs the full
 //!   Hermitian-symmetric spectrum from that packed half-frame and runs
@@ -83,7 +83,7 @@ pub fn rfft_magnitudes_into(input: &[f32], mags: &mut [f32]) -> bool {
 /// canonical spectral-buffer layout -- the same one scsynth's `FFT` buffer uses:
 ///
 /// ```text
-/// frame = [ DC, Nyquist, re₁, im₁, re₂, im₂, …, re_{n/2-1}, im_{n/2-1} ]
+/// frame = [ DC, Nyquist, re₁, im₁, re₂, im₂, ..., re_{n/2-1}, im_{n/2-1} ]
 /// ```
 ///
 /// The two purely-real terms (DC and Nyquist) share the first two slots; bins

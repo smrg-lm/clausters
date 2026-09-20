@@ -165,7 +165,7 @@ impl MultitrackPlayback {
     }
 
     /// **A second of the multitrack as a sample**, at the rate it was last
-    /// planned at and with the core's seconds → samples rounding.
+    /// planned at and with the core's seconds -> samples rounding.
     pub fn secs_to_samples(&self, secs: f64) -> i64 {
         secs_to_samples(secs.max(0.0), self.rate)
     }

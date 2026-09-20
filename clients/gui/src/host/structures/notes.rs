@@ -443,10 +443,10 @@ mod tests {
     #[test]
     fn resize_respects_min_dur_from_either_edge() {
         let mut notes = vec![Note::new(100.0, 200.0, 60.0)];
-        // Drag the end back past the start → clamped to min_dur.
+        // Drag the end back past the start -> clamped to min_dur.
         resize_note(&mut notes, 0, Part::End, 50.0, floor(10.0, None));
         assert_eq!(notes[0].dur, 10.0);
-        // Drag the start forward past the end → clamped.
+        // Drag the start forward past the end -> clamped.
         let mut notes = vec![Note::new(100.0, 200.0, 60.0)]; // end = 300
         resize_note(&mut notes, 0, Part::Start, 400.0, floor(10.0, None));
         assert_eq!(notes[0].start, 290.0);

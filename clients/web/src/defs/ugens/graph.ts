@@ -564,7 +564,7 @@ export function chans(
  *
  * A graph node (or a number) is repeated **by reference** -- the graph
  * serializes it once, fanned out to every channel, so `dup(sine(440))` is a
- * cheap mono→stereo: identical channels. A **function** is called `n` times
+ * cheap mono->stereo: identical channels. A **function** is called `n` times
  * -- `dup(whiteNoise, 8)` builds `n` *distinct* UGens, which is what a
  * decorrelated or detuned bank needs; duplicating a `whiteNoise` by
  * reference would give `n` copies of the same noise.

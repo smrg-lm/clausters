@@ -129,7 +129,7 @@ export class Playback {
     // ---- the instance ----
 
     /**
-     * Track id → the control buses its meters write and how wide it is: a run
+     * Track id -> the control buses its meters write and how wide it is: a run
      * of `2 * channels`, the level first and the mark that waits after it.
      *
      * What the host reads every frame, straight out of the shared segment,

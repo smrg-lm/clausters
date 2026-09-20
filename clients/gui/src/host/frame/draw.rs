@@ -364,7 +364,7 @@ pub(super) fn draw_editor_overlay(
         let (y0, y_len) = editor.y_view();
         let display = y0 + (1.0 - rel) * y_len;
         let text = match vertical {
-            // Spectrogram: invert the shader's display→bin mapping at the
+            // Spectrogram: invert the shader's display->bin mapping at the
             // cursor's height for the frequency under it.
             Vertical::Frequency(nyquist, scale, f_lo) => {
                 let f = ruler::display_to_hz(display, nyquist, scale, f_lo);

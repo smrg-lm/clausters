@@ -204,7 +204,7 @@ mod tests {
     use super::*;
     use std::net::TcpListener;
 
-    /// `connect` → `send` → `recv` → `close` round-trips through a real
+    /// `connect` -> `send` -> `recv` -> `close` round-trips through a real
     /// WebSocket, embedded nulls and all, against an inline echo server.
     #[test]
     fn connect_send_recv_close_round_trip() {

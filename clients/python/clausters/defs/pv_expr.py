@@ -20,7 +20,7 @@ sig = ifft(chain)
 ```
 
 **What an expression can be**: a pure map from one bin's values --
-``(mag, phase, bin_index, nbins, binfreq, param(i)…)`` -- to the bin's new
+``(mag, phase, bin_index, nbins, binfreq, param(i)...)`` -- to the bin's new
 magnitude or phase. No state between bins or frames, no reading *other* bins:
 cross-frame ops (freeze, smear) and bin remaps (shift) stay with the dedicated
 ``pv_*`` filters. Anything that *is* a per-bin map -- gates, tilts, masks,
@@ -47,7 +47,7 @@ _ARITH = {"add", "sub", "mul", "div"}
 
 class PvExpr(AbstractObject):
     """A node of a symbolic per-bin expression. Build these by composing the
-    module's terms (`mag`, `phase`, …) with operators and math methods; pass
+    module's terms (`mag`, `phase`, ...) with operators and math methods; pass
     the result to `pv_kernel`, which serializes it with `pv_tokens`."""
 
     def _compose_binop(self, selector, other):
@@ -83,7 +83,7 @@ def _operand(x):
 
 
 class _Term(PvExpr):
-    """A leaf term: one wire word (`"mag"`, `"bin"`, `"p0"`, …)."""
+    """A leaf term: one wire word (`"mag"`, `"bin"`, `"p0"`, ...)."""
 
     def __init__(self, word):
         self.word = word

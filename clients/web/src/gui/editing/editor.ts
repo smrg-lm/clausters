@@ -17,7 +17,7 @@
  * - **how an edit inverts is the crate's** (`history::Editable`), reached
  *   through the domain -- never re-derived here, and never twice per language;
  * - **what a number is measured in is the editor's**: the unit bridge (beats and
- *   seconds ↔ timeline samples) is here because it is the same bridge for every
+ *   seconds <-> timeline samples) is here because it is the same bridge for every
  *   structure, and a view that computed its own would be a second answer.
  *
  * A multitrack application is this class plus what only a tree has: a held document,
@@ -277,10 +277,10 @@ export class Editor<S = unknown> implements Adopting {
         this.app.register(this);
     }
 
-    // ---- the unit bridge: the data ↔ timeline samples ----
+    // ---- the unit bridge: the data <-> timeline samples ----
 
     /**
-     * The structure's beat→second map, asked for on each use, or `null` for a
+     * The structure's beat->second map, asked for on each use, or `null` for a
      * structure that holds no tempo.
      *
      * The map is **the structure's data**: a `Timeline` holds its own
@@ -310,7 +310,7 @@ export class Editor<S = unknown> implements Adopting {
     }
 
     /**
-     * Timeline samples in the **first** beat -- the nominal ratio of the data↔view
+     * Timeline samples in the **first** beat -- the nominal ratio of the data<->view
      * bridge. A ratio at a position, not a constant: under a tempo that changes,
      * a later beat is a different number of samples wide.
      */
@@ -319,14 +319,14 @@ export class Editor<S = unknown> implements Adopting {
     }
 
     /**
-     * Beats → timeline samples, through the multitrack's time map (and the core's
-     * seconds→samples rounding every client shares).
+     * Beats -> timeline samples, through the multitrack's time map (and the core's
+     * seconds->samples rounding every client shares).
      */
     beatsToUnits(beats: number): number {
         return Number(secs_to_samples(this.mapOf().secsAt(Number(beats)), this.sampleRate));
     }
 
-    /** Timeline samples → beats: the inverse the edit-back path takes. */
+    /** Timeline samples -> beats: the inverse the edit-back path takes. */
     unitsToBeats(units: number): number {
         return this.mapOf().beatsAt(samples_to_secs(Math.round(units), this.sampleRate));
     }
@@ -340,12 +340,12 @@ export class Editor<S = unknown> implements Adopting {
         return this.sampleRate;
     }
 
-    /** Seconds → timeline samples. */
+    /** Seconds -> timeline samples. */
     secsToUnits(secs: number): number {
         return Number(secs_to_samples(Number(secs), this.sampleRate));
     }
 
-    /** Timeline samples → seconds. */
+    /** Timeline samples -> seconds. */
     unitsToSecs(units: number): number {
         return samples_to_secs(Math.round(units), this.sampleRate);
     }
@@ -613,7 +613,7 @@ export class Editor<S = unknown> implements Adopting {
 
     /** `apply`, without the turn around it: what the message actually does. */
     protected deliver(addr: string, rawArgs: readonly unknown[]): boolean {
-        // `<id> <seq> <version> <tag> <payload…>`: the stamp and the version the
+        // `<id> <seq> <version> <tag> <payload...>`: the stamp and the version the
         // gesture was made against are the second and third arguments of every
         // event, and the envelope is all the decision reads. The payload never
         // crosses for it -- what a report *means* is the domain's, and it crosses

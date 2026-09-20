@@ -234,7 +234,7 @@ export interface SetTempoOptions {
 /** A scheduler that keeps musical time in beats and resumes routines on it. */
 export class TempoClock {
     /**
-     * The beat→second map, and the clock's whole relation to time. It
+     * The beat->second map, and the clock's whole relation to time. It
      * starts as one constant-tempo segment, which computes exactly the affine
      * expression this clock always used; {@link TempoClock.setTempo} records a
      * breakpoint on it instead of overwriting the one anchor there used to be,
@@ -858,7 +858,7 @@ export class TempoClock {
      * so `play()` on a running clock ran the routine's first pass *before it
      * returned* -- where the Python client pushes and lets its own thread pick
      * the routine up, so `play()` returns first. That is what
-     * `Routine.run(function* () { … })` needs: the name is bound by the
+     * `Routine.run(function* () { ... })` needs: the name is bound by the
      * assignment this call is on the right-hand side of, and a first pass that
      * runs before it exists cannot read it.
      *

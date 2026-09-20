@@ -101,7 +101,7 @@ def render(element, destination, clock=None, *, at: float = 0.0, quant=None,
            ports=None):
     """Render ``element`` onto ``destination``.
 
-    A **concrete** element (an `Aggregate`, `Track`, `Clang`, …) is flattened to
+    A **concrete** element (an `Aggregate`, `Track`, `Clang`, ...) is flattened to
     a `clausters.seq.Timeline` and played -- RT (a live destination) or NRT (a
     score, drained by `Session.render`), sample-identical; returns the
     timeline, which is what the transport verbs are on.

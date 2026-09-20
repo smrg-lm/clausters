@@ -80,7 +80,7 @@ mod tests {
         assert!(in_disc(50.0, 50.0, cx, cy, r), "the centre");
         assert!(in_disc(70.0, 50.0, cx, cy, r), "the rim, exactly");
         assert!(!in_disc(70.0, 70.0, cx, cy, r), "the corner of the box");
-        // …and the ordering the square root would have given, without it.
+        // ...and the ordering the square root would have given, without it.
         assert!(dist2(55.0, 50.0, cx, cy) < dist2(60.0, 50.0, cx, cy));
     }
 

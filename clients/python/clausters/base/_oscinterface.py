@@ -8,7 +8,7 @@ score without changing the routine. Every interface speaks the same two calls --
 - ``'unix'``  -- ``when`` is an absolute wall-clock instant (RT, sent now).
 - ``'score'`` -- ``when`` is seconds from the render start (NRT, accumulated).
 
-A *message* is a tuple ``(addr, arg1, …)``. The timetag↔sample math lives in
+A *message* is a tuple ``(addr, arg1, ...)``. The timetag<->sample math lives in
 the native core; this layer only encodes and routes.
 """
 
@@ -28,7 +28,7 @@ class OscReceiver:
     so external apps can target it), runs a background thread that decodes each
     datagram through `clausters.base._osclib.decode_packet` (bundles unwrapped),
     and calls every registered handler with ``(addr, args, time, src)``. Each
-    handler self-filters (by address, args, …); the receiver itself stays a thin
+    handler self-filters (by address, args, ...); the receiver itself stays a thin
     transport + demux, mirroring the server's single decode door.
 
     Dispatch threading:
@@ -38,7 +38,7 @@ class OscReceiver:
       response, schedule a routine on a clock (non-blocking) rather than looping
       here.
     - With a ``clock``, each matched handler is dispatched via
-      ``clock.sched(0.0, …)`` so it runs on the clock thread with the running
+      ``clock.sched(0.0, ...)`` so it runs on the clock thread with the running
       routine's logical time available. The same golden rule applies: a handler
       must not block the clock thread.
     """
@@ -456,7 +456,7 @@ class OscWsInterface(OscInterface):
 
 class OscScore:
     """Accumulated NRT bundles, ordered by time, serialized to a binary score
-    (`[i32 len][packet]…`) that the offline renderer consumes."""
+    (`[i32 len][packet]...`) that the offline renderer consumes."""
 
     def __init__(self):
         self.bundles = []  # (time_seconds, packet_bytes)

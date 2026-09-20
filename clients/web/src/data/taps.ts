@@ -109,7 +109,7 @@ export class TapStream {
 
     /**
      * The newest windows of `count` adjacent buses from `first`, interleaved
-     * frame-major (`L R L R …`) over the frames they share -- the layout a
+     * frame-major (`L R L R ...`) over the frames they share -- the layout a
      * stereo view reads, and the one `lissajous` and `correlation` take.
      * Empty until every one of those buses has a window.
      */

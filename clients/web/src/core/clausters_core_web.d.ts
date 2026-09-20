@@ -190,7 +190,7 @@ export class History {
      * throw for a word that is neither.
      *
      * Returns `{ label, legs, remaining, skipped }`, where `legs` is
-     * `[{ structure, payloads }, …]` -- one entry per structure rather than
+     * `[{ structure, payloads }, ...]` -- one entry per structure rather than
      * one per leg. It is one call and not two because picking the side a
      * direction reads, and keeping the legs one structure owns, are rules and
      * not plumbing, and every caller was writing both for itself.
@@ -562,7 +562,7 @@ export class Rng {
 }
 
 /**
- * The local-time ↔ sample regression, the JS face of
+ * The local-time <-> sample regression, the JS face of
  * [`clausters_core::clocksync::SampleClockModel`].
  */
 export class SampleClockModel {
@@ -663,7 +663,7 @@ export class Score {
      */
     displayList(page: number): string;
     /**
-     * One raw editor action (`set`, `insert`, `delete`, …) as a single undo
+     * One raw editor action (`set`, `insert`, `delete`, ...) as a single undo
      * step, `param` being its parameter object as JSON.
      */
     edit(action: string, param: string): boolean;
@@ -744,7 +744,7 @@ export class StepRunner {
 }
 
 /**
- * The multitrack's beat↔second time map, the JS face of
+ * The multitrack's beat<->second time map, the JS face of
  * [`clausters_core::tempomap::TempoMap`].
  *
  * A beat is a logical coordinate, not a unit of time; this is the function
@@ -1057,7 +1057,7 @@ export function correlation(left: Float32Array, right: Float32Array): number | u
 export function curveAxis(values: Float64Array, kept_lo?: number | null, kept_hi?: number | null): Float64Array;
 
 /**
- * JS face: scale degree → MIDI note number in the pitch space
+ * JS face: scale degree -> MIDI note number in the pitch space
  * `octave`/`root`, with floored octave wrapping (sclang semantics). An empty
  * `scale` yields middle C.
  */
@@ -1088,7 +1088,7 @@ export function domainCoalesceKey(domain: string, payload: string): string;
  * answer because the inverse has to be read *before* the edit lands.
  *
  * `state` is the structure in its own vocabulary and the answer is
- * `{"state": …, "applied": bool, "reason"?: …, "current"?: …}`, or an empty
+ * `{"state": ..., "applied": bool, "reason"?: ..., "current"?: ...}`, or an empty
  * string for a vocabulary whose state is not a value a caller can hand over:
  * the arrangement's tree (which has {@link JsDocument.apply} of its own) and a
  * span of samples (a borrowed view whose frames are in a buffer).
@@ -1335,12 +1335,12 @@ export function osc_decode_packet_timed(bytes: Uint8Array): Array<any>;
 
 /**
  * JS face: a bundle stamped at `unix_secs` (the wall clock the server reads
- * as an NTP timetag) → `Uint8Array`.
+ * as an NTP timetag) -> `Uint8Array`.
  */
 export function osc_encode_bundle(unix_secs: number, messages: Array<any>): Uint8Array;
 
 /**
- * JS face: a bundle with the *immediate* timetag → `Uint8Array`. What rides
+ * JS face: a bundle with the *immediate* timetag -> `Uint8Array`. What rides
  * inside `/sched_at`, whose own absolute sample carries the time.
  */
 export function osc_encode_immediate_bundle(messages: Array<any>): Uint8Array;
@@ -1353,7 +1353,7 @@ export function osc_encode_immediate_bundle(messages: Array<any>): Uint8Array;
 export function osc_encode_message(addr: string, args: Array<any>): Uint8Array;
 
 /**
- * JS face: a bundle stamped at `secs` **from the start of a render** → the
+ * JS face: a bundle stamped at `secs` **from the start of a render** -> the
  * bundle an NRT score is made of. The same packing as [`osc_encode_bundle`]
  * on a different epoch: a score's time is not a wall clock, so nothing is
  * added to it (`clausters_core::osc::pack_timetag`, the rule every client
@@ -1363,11 +1363,11 @@ export function osc_encode_message(addr: string, args: Array<any>): Uint8Array;
 export function osc_encode_score_bundle(secs: number, messages: Array<any>): Uint8Array;
 
 /**
- * The patcher's **cord→bus pass**: a directed patch (`{boxes, cords}`) in, the
+ * The patcher's **cord->bus pass**: a directed patch (`{boxes, cords}`) in, the
  * buses and wired members it compiles to out, both as JSON.
  *
  * One bus per connected net, its writers summing, and a bad cord -- reversed,
- * rate-mismatched, out of range -- comes back as `{"error": …}` naming it. The
+ * rate-mismatched, out of range -- comes back as `{"error": ...}` naming it. The
  * same door the C ABI opens as `clausters_core_patch_compile`: a patcher is a
  * model with one compilation, and a second implementation of it in TypeScript
  * would be a second answer to "what does this cord mean".
@@ -1389,7 +1389,7 @@ export function pointsProps(points: Float64Array, kept_lo?: number | null, kept_
 
 /**
  * Beats to wait so a routine starts on the next `quant` boundary of the grid
- * (`quant <= 0` → now). The snapping rule every client shares.
+ * (`quant <= 0` -> now). The snapping rule every client shares.
  */
 export function quant_delay(pos: number, quant: number): number;
 
@@ -1400,7 +1400,7 @@ export function quant_delay(pos: number, quant: number): number;
 export function samplesMeasures(request: string): string;
 
 /**
- * Sample count → seconds at `sample_rate`.
+ * Sample count -> seconds at `sample_rate`.
  */
 export function samples_to_secs(samples: number, sample_rate: number): number;
 
@@ -1410,7 +1410,7 @@ export function samples_to_secs(samples: number, sample_rate: number): number;
 export function secs_to_beats(tempo: number, base_beats: number, base_seconds: number, secs: number): number;
 
 /**
- * Seconds → sample count at `sample_rate` (ties to even).
+ * Seconds -> sample count at `sample_rate` (ties to even).
  */
 export function secs_to_samples(secs: number, sample_rate: number): number;
 
@@ -1444,7 +1444,7 @@ export function shareOf(base: number, span: number, index: number, of: number): 
  * **One export for every operation there will ever be**: the verb and its
  * parameters are inside `op` (`{"op": "transpose", "semitones": 2}`), so a new
  * operation costs nothing here. What the C ABI answers in an envelope
- * (`{"ok": …}` / `{"error": …}`) this **throws** instead, which is the same
+ * (`{"ok": ...}` / `{"error": ...}`) this **throws** instead, which is the same
  * behaviour in the shape a page expects -- and the reason the refusal reaches
  * the caller either way, since a refused operation has to say why.
  *
@@ -1516,13 +1516,13 @@ export function true_peak(samples: Float32Array, channels: number, channel: numb
 export function unary(op: string, x: number): number;
 
 /**
- * A Unix timestamp → the 64 NTP timetag bits, as a `BigInt` (the wire value
+ * A Unix timestamp -> the 64 NTP timetag bits, as a `BigInt` (the wire value
  * is a full 64-bit word; JS numbers would lose its low bits).
  */
 export function unix_to_ntp(unix_secs: number): bigint;
 
 /**
- * A Unix timestamp → the server's absolute sample, through a `/clock_query` anchor
+ * A Unix timestamp -> the server's absolute sample, through a `/clock_query` anchor
  * (`anchor_unix`, `anchor_sample`) and the measured `rate`.
  */
 export function unix_to_sample(unix_secs: number, anchor_unix: number, anchor_sample: number, rate: number): number;

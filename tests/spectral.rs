@@ -1,4 +1,4 @@
-//! S8 tests: the frequency-domain (`fr`) chain -- an `FFT`→`IFFT` round trip
+//! S8 tests: the frequency-domain (`fr`) chain -- an `FFT`->`IFFT` round trip
 //! reconstructs a tone, and a `PV_*` filter attenuates a band -- driven through
 //! the real engine (`process_block`), plus a `/node_ugenCmd` window swap.
 

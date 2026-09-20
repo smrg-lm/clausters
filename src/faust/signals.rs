@@ -1,4 +1,4 @@
-//! JSON → Signal API interpreter (the lower-level Faust API).
+//! JSON -> Signal API interpreter (the lower-level Faust API).
 //!
 //! Where [`crate::faust::boxes`] maps a box-composition algebra, this maps the
 //! **Signal API** (`libfaust-signal-c.h`): every node is one signal (one
@@ -10,7 +10,7 @@
 //!
 //! # Schema
 //!
-//! The root is `{"signals": [ <node>, … ]}` -- one node per DSP **output**
+//! The root is `{"signals": [ <node>, ... ]}` -- one node per DSP **output**
 //! (this is also how a signal def declares >1 output). A bare JSON **number**
 //! is a constant (`int` if integral within `i32`, `real` otherwise).
 //!
@@ -41,7 +41,7 @@
 //! recursion (`CsigSelfN`/`CsigRecursionN`) is not exposed: like the box `~`,
 //! single recursion is the surface.
 //!
-//! Errors carry the path of the offending node (`at $.signals[0].in[1]: …`);
+//! Errors carry the path of the offending node (`at $.signals[0].in[1]: ...`);
 //! semantic errors (dangling inputs, a `self` outside a recursion) are Faust's
 //! own and surface verbatim at factory creation.
 
@@ -158,7 +158,10 @@ unsafe fn build(
             };
             unsafe { build_op(op, obj, path, cstrings) }
         }
-        _ => Err(err(path, "expected a signal: number or {\"op\": …} object")),
+        _ => Err(err(
+            path,
+            "expected a signal: number or {\"op\": ...} object",
+        )),
     }
 }
 

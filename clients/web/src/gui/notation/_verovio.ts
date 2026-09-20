@@ -26,7 +26,7 @@ let modulePromise: Promise<VerovioModule> | null = null;
 
 /**
  * Where the engraver module lives. Resolved against this module's own URL, the
- * way the worklet is (`new URL(…, import.meta.url)`) -- the form a bundler
+ * way the worklet is (`new URL(..., import.meta.url)`) -- the form a bundler
  * copies as an asset -- with an override for a page that stages it elsewhere.
  */
 let engraverUrl: string | null = null;

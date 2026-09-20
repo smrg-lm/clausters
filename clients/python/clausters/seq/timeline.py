@@ -293,7 +293,7 @@ class Timeline:
 
     def index_at(self, beat) -> int:
         """The cursor (index) of the first item at or after ``beat`` -- the seek
-        primitive `play(at=…)` and `locate` start from."""
+        primitive `play(at=...)` and `locate` start from."""
         return bisect.bisect_left(self._entries, float(beat), key=lambda e: e.beat)
 
     def range(self, t0, t1) -> list:

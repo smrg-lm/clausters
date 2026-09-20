@@ -223,7 +223,7 @@ impl Toolkit {
     }
 
     /// Apply one editor action, given as a JSON object string
-    /// (`{"action": …, "param": {…}}`); returns whether verovio accepted it.
+    /// (`{"action": ..., "param": {...}}`); returns whether verovio accepted it.
     ///
     /// Editing a document that has been loaded but never rendered **segfaults** --
     /// the editor reaches through drawing state the load does not build -- so a

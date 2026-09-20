@@ -19,7 +19,7 @@
 // ```
 //
 // **What an expression can be**: a pure map from one bin's values -- `(mag,
-// phase, binIndex, nbins, binfreq, param(i)…)` -- to the bin's new magnitude
+// phase, binIndex, nbins, binfreq, param(i)...)` -- to the bin's new magnitude
 // or phase. No state between bins or frames, no reading *other* bins:
 // cross-frame ops (freeze, smear) and bin remaps (shift) stay with the
 // dedicated `pv*` filters. Anything that *is* a per-bin map -- gates, tilts,
@@ -51,7 +51,7 @@ type PvResult<T> = Composed<PvExpr, T, Fan<never, never>>;
 
 /**
  * A node of a symbolic per-bin expression. Build these by composing the
- * module's terms (`mag`, `phase`, …) with the math methods; pass the result
+ * module's terms (`mag`, `phase`, ...) with the math methods; pass the result
  * to `pvKernel`, which serializes it with `pvTokens`.
  */
 export abstract class PvExpr extends AbstractObject<PvExpr, PvOperand> {
@@ -97,7 +97,7 @@ function operand(x: unknown): PvExpr | number {
     return x;
 }
 
-/** A leaf term: one wire word (`"mag"`, `"bin"`, `"p0"`, …). */
+/** A leaf term: one wire word (`"mag"`, `"bin"`, `"p0"`, ...). */
 class PvTerm extends PvExpr {
     readonly word: string;
 

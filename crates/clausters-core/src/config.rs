@@ -235,7 +235,7 @@ pub const DEFAULT_BIND: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 
 /// How far a WebSocket front sits from its program's base port when it is given
 /// no number of its own. It shares the TCP namespace, so it cannot share the
-/// TCP number: 57110 → 57120 for the audio server, 57210 → 57220 for the GUI
+/// TCP number: 57110 -> 57120 for the audio server, 57210 -> 57220 for the GUI
 /// host.
 pub const WS_PORT_OFFSET: u16 = 10;
 

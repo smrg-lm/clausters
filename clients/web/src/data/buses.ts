@@ -124,7 +124,7 @@ export class BusStream {
         this.listeners.clear();
     }
 
-    /** One `/bus_stream.reply bus value …` snapshot into `values`. */
+    /** One `/bus_stream.reply bus value ...` snapshot into `values`. */
     private take(msg: ResponderMessage): void {
         let touched = false;
         for (let i = 1; i + 1 < msg.length; i += 2) {

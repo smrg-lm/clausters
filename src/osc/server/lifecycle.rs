@@ -610,7 +610,7 @@ impl OscServer {
                     self.notify_trigger(msg.node_id, msg.id, value);
                 }
                 ReplyKind::Reply => {
-                    // Custom address `cmdName nodeID replyID value…`.
+                    // Custom address `cmdName nodeID replyID value...`.
                     let mut args = vec![OscType::Int(msg.node_id), OscType::Int(msg.id)];
                     args.extend(msg.values().iter().map(|v| OscType::Float(*v)));
                     let addr = msg.name().to_string();

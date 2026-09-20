@@ -97,7 +97,7 @@ pub struct Part {
     /// Whether either fade is set at all. The common part has neither, and the
     /// whole crossfade arm is then one predicted branch.
     faded: bool,
-    /// Stitched channel → source channel, one entry per channel of the stitched
+    /// Stitched channel -> source channel, one entry per channel of the stitched
     /// buffer. A negative entry is silence. It is **routing and not level**: a
     /// mono take heard on both sides of a stereo clip is `[0, 0]` here and a pan
     /// law in the graph, because what is loud is the mixer's question and what

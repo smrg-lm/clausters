@@ -4,7 +4,7 @@
 // **Composition is by method, not by operator.** TypeScript has no operator
 // overloading, so where the Python client writes `sine(freq) * amp` this one
 // writes `sine(freq).mul(amp)`, and every other operator or math method
-// (`mod`, `min`/`max`, comparisons, `.sin()`, `.midicps()`, `.distort()` …) is
+// (`mod`, `min`/`max`, comparisons, `.sin()`, `.midicps()`, `.distort()` ...) is
 // a method carrying the same operator **name** the wire uses -- so the two
 // clients emit identical specs.
 //

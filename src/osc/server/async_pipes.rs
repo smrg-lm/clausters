@@ -71,7 +71,7 @@ impl OscServer {
     /// `/def_send faust <name> <def>`: queue an async Faust compilation. The def
     /// format is sniffed by [`CompilePayload::classify`]: raw Faust source,
     /// a JSON box graph (`faust::boxes`), or a JSON signal tree
-    /// (`faust::signals`, root `{"signals": …}`).
+    /// (`faust::signals`, root `{"signals": ...}`).
     #[cfg(feature = "faust")]
     pub(in crate::osc::server) fn handle_def_send_faust(
         &mut self,

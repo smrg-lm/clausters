@@ -1,4 +1,4 @@
-//! The time map: beats (logical time) ↔ seconds (wall-clock time) under a
+//! The time map: beats (logical time) <-> seconds (wall-clock time) under a
 //! tempo that changes as it goes.
 //!
 //! A beat is **not** a unit of time. It is a logical coordinate that only
@@ -57,7 +57,7 @@ pub enum Shape {
     Linear,
     /// Tempo geometric in beats: `T(u) = T₀·(T₁/T₀)^u`. Equal *ratios* of
     /// tempo over equal stretches of beat -- the musician's accelerando, where
-    /// 60→120 and 120→240 feel like the same move.
+    /// 60->120 and 120->240 feel like the same move.
     Exponential,
     /// `Env`'s curvature knob: `T(u) = A + B·e^{cu}`, linear at `c = 0`,
     /// starting slow for `c > 0` and fast for `c < 0`.
@@ -497,7 +497,7 @@ impl fmt::Display for TempoError {
 
 impl std::error::Error for TempoError {}
 
-/// The beat→second map: an ordered list of tempo segments with the
+/// The beat->second map: an ordered list of tempo segments with the
 /// seconds cached at every breakpoint.
 ///
 /// It is a **pure function**, not a running thing: it knows nothing of now,

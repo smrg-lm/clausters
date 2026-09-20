@@ -25,10 +25,10 @@ props.
 
 The host draws every chrome color from one <b>theme</b> -- a table of named roles
 (<code>background</code>, <code>panel</code>, <code>text</code>,
-<code>accent</code>, …) -- and the customization is the same partial table at
+<code>accent</code>, ...) -- and the customization is the same partial table at
 every level, each overlaying the previous:
 
-<b>1. The host's own table</b> (<code>host.theme({…})</code>, the
+<b>1. The host's own table</b> (<code>host.theme({...})</code>, the
 <code>/gui_theme</code> verb): one look for the whole host. This page warms the
 accent with it. <b>2. A theme group</b> (the <code>theme</code> prop on a
 container): a partial table scoped to that subtree, recursive by construction --
@@ -40,7 +40,7 @@ Overlays resolve when a def arrives or a <code>set</code> changes them -- never
 per frame -- so a styled window costs exactly what a plain one costs.
 
 <b>Two more props shape the drawing rather than its color</b>:
-<code>opacity</code> (0–1) fades a widget and, like a theme group, multiplies
+<code>opacity</code> (0-1) fades a widget and, like a theme group, multiplies
 down its whole subtree; <code>radius</code> rounds the corners of the boxes a
 widget draws, clamped to half the shorter side of each.</div>
 

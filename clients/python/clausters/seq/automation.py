@@ -61,7 +61,7 @@ def add_automation_def(server, *, wait: bool = True):
 
 
 def _norm_targets(target):
-    """A single ``(node, control)`` pair or an iterable of them → a list."""
+    """A single ``(node, control)`` pair or an iterable of them -> a list."""
     if target is None:
         return []
     if (isinstance(target, tuple) and len(target) == 2
@@ -120,8 +120,8 @@ class Automation:
     @classmethod
     def from_points(cls, points, target, *, name=None, frames: int = DEFAULT_FRAMES,
                     **env_kwargs) -> "Automation":
-        """Build from a ``bpf`` breakpoint list ``[(time, value, shape, curve), …]``
-        (or the flat ``[t, v, shape, curve, …]`` a ``"points"`` event carries).
+        """Build from a ``bpf`` breakpoint list ``[(time, value, shape, curve), ...]``
+        (or the flat ``[t, v, shape, curve, ...]`` a ``"points"`` event carries).
 
         Times are in **seconds** -- they are an `clausters.defs.ugens.Env`'s
         segment times, which is what the curve is stored as and what the
@@ -134,7 +134,7 @@ class Automation:
         return cls(points_to_env(flat, **env_kwargs), target, name=name, frames=frames)
 
     def to_points(self) -> list:
-        """The curve as the ``bpf`` flat breakpoint list ``[t, v, shape, curve, …]``."""
+        """The curve as the ``bpf`` flat breakpoint list ``[t, v, shape, curve, ...]``."""
         return env_to_points(self.env)
 
     def duration(self) -> float:

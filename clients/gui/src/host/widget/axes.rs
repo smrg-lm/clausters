@@ -7,7 +7,7 @@
 //! which are already the free-placement props, and a container that is placed
 //! *and* owns axes would have no way to say which it meant.
 //!
-//! Inside the host they are flat (`view_start`, `ruler_y`, `y_len`, …): one
+//! Inside the host they are flat (`view_start`, `ruler_y`, `y_len`, ...): one
 //! prop per key, which is what [`EditorProps`](super::EditorProps) parses, what
 //! a `/gui_set` addresses and what a `/gui_info` can answer -- an OSC reply is
 //! flat arguments, so a structural prop cannot be reported at all. So a pair is

@@ -190,7 +190,7 @@ class Node:
 
     def u_cmd(self, ugen_index: int, name: str, *args):
         """Sends a typed command to **one UGen instance** inside this synth
-        (``/node_ugenCmd nodeID ugenIndex name args…``). The server hashes ``name`` to a
+        (``/node_ugenCmd nodeID ugenIndex name args...``). The server hashes ``name`` to a
         stable selector and routes the numeric ``args`` to that UGen on the audio
         thread. The FFT chain uses it to swap a window live, e.g.
         ``synth.u_cmd(fft_index, "window", 4)`` for a Blackman window
@@ -217,11 +217,11 @@ class Node:
         self._server().send_msg("/node_run", self.id, 1 if flag else 0)
 
     def pause(self):
-        """Pauses this node (``/node_run … 0``). See `run`."""
+        """Pauses this node (``/node_run ... 0``). See `run`."""
         self.run(False)
 
     def resume(self):
-        """Resumes this node (``/node_run … 1``). See `run`."""
+        """Resumes this node (``/node_run ... 1``). See `run`."""
         self.run(True)
 
     def before(self, target) -> "Node":

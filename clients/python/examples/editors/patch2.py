@@ -50,7 +50,7 @@ from clausters.gui import GuiHost
 # cord (dashed) is the scalar ``detune`` read once at note start. Each UGen
 # becomes a box -- inlets named from the builder's own signature (``out(bus,
 # signal)`` -> ``bus``/``signal``), the arithmetic and op UGens named by their
-# operation (``Mul``, ``Add``, ``midicps`` …) -- and every input a cord, unless it
+# operation (``Mul``, ``Add``, ``midicps`` ...) -- and every input a cord, unless it
 # is a constant (then it stays the box's value, drawn as a plain inlet).
 
 # %%

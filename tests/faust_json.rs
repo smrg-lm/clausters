@@ -1,4 +1,4 @@
-//! F2 tests: the JSON → Box API interpreter. Gated behind the `faust`
+//! F2 tests: the JSON -> Box API interpreter. Gated behind the `faust`
 //! feature: `cargo test --features faust --test faust_json`.
 //!
 //! Covers: the JSON sine graph built from primitives (parity with the F0
@@ -165,7 +165,7 @@ fn raw_source_defs_resolve_stdlib_imports() {
 /// wrapping integer counter -- the output must walk the table verbatim.
 #[test]
 fn waveform_rdtable_cycles_through_the_table() {
-    // counter = (+(1) ~ _) - 1 = 0, 1, 2, …; idx = counter & 3.
+    // counter = (+(1) ~ _) - 1 = 0, 1, 2, ...; idx = counter & 3.
     let counter = json!({"op": "sub", "in": [
         {"op": "rec", "in": [{"op": "add", "in": ["_", {"op": "int", "value": 1}]}, "_"]},
         {"op": "int", "value": 1}

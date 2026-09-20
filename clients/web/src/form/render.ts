@@ -142,7 +142,7 @@ export function toTimeline(
 /**
  * Renders `element` onto `destination`.
  *
- * A **concrete** element (an `Aggregate`, `Track`, `Clang`, …) is flattened to a
+ * A **concrete** element (an `Aggregate`, `Track`, `Clang`, ...) is flattened to a
  * timeline and played through a `Playhead` over `clock` -- RT or NRT,
  * sample-identical; returns the `Playhead`.
  *

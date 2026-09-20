@@ -5,8 +5,8 @@ The UGen-graph counterpart of `clausters.defs.signals`: each function here
 is a small **lowercase** callable that returns a `Ugen` node (one
 output); composing nodes with Python operators or these functions builds the
 graph a `SynthDef` serializes into the JSON
-``SynthDefSpec`` the server's ``/def_send synth`` consumes (``{"controls": […],
-"ugens": […]}`` -- see the server's ``synthdef`` module).
+``SynthDefSpec`` the server's ``/def_send synth`` consumes (``{"controls": [...],
+"ugens": [...]}`` -- see the server's ``synthdef`` module).
 
 **Instance-based, no global build context.** Unlike sclang -- where ``SynthDef``
 build relies on a thread-global "current graph" that every ``UGen.new`` mutates
@@ -25,7 +25,7 @@ feedback (``local_in``/``local_out``), the ``env_gen`` envelope, the ``lag``/
 ``madd``/``sum3``/``sum4``. **Maths works**: ``+ - * /`` map to the
 ``Add``/``Sub``/``Mul``/``Div`` kinds and every other operator or method
 (``%``, ``min``/``max``, comparisons, ``.sin()``, ``.midicps()``,
-``.distort()`` …) composes a generic ``BinaryOpUGen``/``UnaryOpUGen`` carrying
+``.distort()`` ...) composes a generic ``BinaryOpUGen``/``UnaryOpUGen`` carrying
 the operator name -- the same op the value side computes, so the two agree
 bit-for-bit. Reach for a Faust def (`clausters.defs.signals`) only for genuinely
 custom per-sample DSP (recursion, tables, sample-accurate feedback).
@@ -47,7 +47,7 @@ Envelopes are the `Env` breakpoint builder plus the `env_gen` callable, which
 serialize to the ``EnvGen`` UGen's flat input list.
 
 Reserved controls ``in`` and ``out`` (the input/output buses, set with
-``/synth_new … "in" b "out" b``) are added by the server, not declared here.
+``/synth_new ... "in" b "out" b``) are added by the server, not declared here.
 
 **Where things live.** The callables are grouped by family, one module each:
 `graph` (the node, control and channel-list types, plus the fused arithmetic),

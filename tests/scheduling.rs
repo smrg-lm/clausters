@@ -1,6 +1,6 @@
 //! M6 tests: sample-accurate scheduling of timed bundles. Engine-level
 //! tests assert exactness to the sample (DC signals make the edges visible);
-//! the OSC test covers NTP timetag → sample conversion against a live
+//! the OSC test covers NTP timetag -> sample conversion against a live
 //! server with a manually ticked engine.
 
 #![cfg(feature = "synth")]
@@ -221,7 +221,7 @@ fn scheduled_impulse_lands_on_its_exact_sample() {
 
 #[test]
 fn impulse_train_is_periodic_to_the_sample() {
-    // freq = SR / 64 → an impulse exactly every 64 samples, the first on the
+    // freq = SR / 64 -> an impulse exactly every 64 samples, the first on the
     // synth's first frame; the f64 phase keeps it drift-free.
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
     handle.send(add_impulse(1000, SR / 64.0)).ok().unwrap();

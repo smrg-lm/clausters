@@ -4,7 +4,7 @@
 // ids. Add actions match the server: head/tail of a group, before/after a
 // node, or replace. `Synth` and `Group` hold an id and the server it lives on,
 // and own the commands addressed to it: **the constructor creates the node** --
-// `new Synth(…)`, `new Group(…)`, `Group.graph(…)` -- and `set`, `map`, `run`
+// `new Synth(...)`, `new Group(...)`, `Group.graph(...)` -- and `set`, `map`, `run`
 // and `free` drive it. The id pool itself belongs to the `Server`.
 //
 // `fromId` is the other door: a handle on a node that **already** exists,
@@ -55,7 +55,7 @@ export function nodeId(node: NodeLike): number {
 export type Controls = Record<string, number> | readonly (readonly [string, number])[];
 
 /**
- * Control values flattened into the `name value name value …` tail every
+ * Control values flattened into the `name value name value ...` tail every
  * node command takes. Accepts an object or a list of pairs.
  */
 export function flattenControls(controls?: Controls): OscArg[] {
@@ -128,7 +128,7 @@ export class Node {
     }
 
     /**
-     * This node as the server holds it **right now** (`/node_query` → `/node_query.reply`):
+     * This node as the server holds it **right now** (`/node_query` -> `/node_query.reply`):
      * where it sits in the tree, and for a synth its def, its controls, its
      * `/node_map` bindings and the buses it reads and writes.
      *
@@ -150,7 +150,7 @@ export class Node {
 
     /**
      * Sends a typed command to **one UGen instance** inside this synth
-     * (`/node_ugenCmd nodeID ugenIndex name args…`); an unrecognized `name` is a
+     * (`/node_ugenCmd nodeID ugenIndex name args...`); an unrecognized `name` is a
      * no-op on the server.
      */
     uCmd(ugenIndex: number, name: string, ...args: number[]): void {
@@ -184,12 +184,12 @@ export class Node {
         this.srv().sendMsg("/node_run", ["i", this.id], ["i", flag ? 1 : 0]);
     }
 
-    /** Pauses this node (`/node_run … 0`). */
+    /** Pauses this node (`/node_run ... 0`). */
     pause(): void {
         this.run(false);
     }
 
-    /** Resumes this node (`/node_run … 1`). */
+    /** Resumes this node (`/node_run ... 1`). */
     resume(): void {
         this.run(true);
     }

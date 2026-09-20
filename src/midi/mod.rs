@@ -77,8 +77,8 @@ pub enum ChannelVoiceMessage {
     },
 }
 
-/// Widen a 7-bit MIDI 1.0 value to 16 bits (bit-repeat fill, so 0→0 and
-/// 127→65535).
+/// Widen a 7-bit MIDI 1.0 value to 16 bits (bit-repeat fill, so 0->0 and
+/// 127->65535).
 #[inline]
 pub fn widen_7_to_16(v: u8) -> u16 {
     let v = (v & 0x7f) as u16;
@@ -174,9 +174,9 @@ pub struct MidiBinding {
     pub pressure_control: Option<String>,
     /// Poly (per-note) aftertouch.
     pub poly_control: Option<String>,
-    /// CC number → control name.
+    /// CC number -> control name.
     pub cc: HashMap<u8, String>,
-    /// Program number → instrument def name (program change re-selects it).
+    /// Program number -> instrument def name (program change re-selects it).
     pub programs: HashMap<u8, String>,
     /// when the instrument is a **GraphDef**, the shared instance group
     /// spawned at bind time. A note then spawns a per-voice sub-graph
@@ -216,7 +216,7 @@ impl MidiBinding {
 }
 
 /// The server's MIDI binding state: per-channel bindings, the live
-/// `(channel, note) → node` voice table, and the registry of the reserved
+/// `(channel, note) -> node` voice table, and the registry of the reserved
 /// node-id range. Lives on the network thread.
 pub struct MidiBindings {
     pub channels: HashMap<u8, MidiBinding>,
@@ -315,7 +315,7 @@ mod tests {
 
     #[test]
     fn pitch_bend_center() {
-        // 14-bit center is 0x2000 → ~0x8000_0000 widened.
+        // 14-bit center is 0x2000 -> ~0x8000_0000 widened.
         if let Some(ChannelVoiceMessage::PitchBend { value, .. }) = parse_midi1(0xe0, 0x00, 0x40) {
             assert!(convert::bend2control(value).abs() < 1e-3);
         } else {

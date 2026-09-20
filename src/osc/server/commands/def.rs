@@ -38,7 +38,7 @@ impl OscServer {
         }
     }
 
-    /// `/def_send <family> <payload…>` -- sends a def of any family: `"synth"`
+    /// `/def_send <family> <payload...>` -- sends a def of any family: `"synth"`
     /// (one `SynthDefSpec` JSON blob), `"faust"` (a name and a def payload) or
     /// `"graph"` (one `GraphDefSpec` JSON blob). The family is a wire argument
     /// rather than three commands because it is already a datum of a def -- it
@@ -182,7 +182,7 @@ impl OscServer {
         Ok(())
     }
 
-    /// `/def_query [name...]` → one `/def_query.reply` per def, then `/done "/def_query"`
+    /// `/def_query [name...]` -> one `/def_query.reply` per def, then `/done "/def_query"`
     ///. No argument lists every loaded def. The reply is one message per
     /// def because the control surface is variable-length: an aggregate would
     /// nest, and a large catalog would outgrow a UDP datagram.

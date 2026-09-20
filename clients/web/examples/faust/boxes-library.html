@@ -26,7 +26,7 @@ page. The web port of the Python client's
 the same calls in the same order.
 
 <code>defs.boxes</code> reuses the Faust libraries <b>without transcribing
-them</b>: <code>box.faust(…)</code> compiles any Faust expression into a
+them</b>: <code>box.faust(...)</code> compiles any Faust expression into a
 <code>Box</code> that composes like a primitive. This example builds an
 instrument out of three library pieces -- an oscillator (<code>os.osc</code>), a
 lowpass (<code>fi.lowpass</code>) and a stereo reverb
@@ -39,7 +39,7 @@ The two application stages at work, kept apart in the syntax:
 <li>arguments to <code>box.faust</code> are <b>evaluation-stage</b>, spliced
 into the Faust source text (the filter order <code>3</code>, the reverb's
 structural parameters);</li>
-<li>arguments to <code>.call(…)</code> on the resulting box are
+<li>arguments to <code>.call(...)</code> on the resulting box are
 <b>composition-stage</b>, boxes wired to its signal inputs (the sliders, the
 previous stage).</li>
 </ul>

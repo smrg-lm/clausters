@@ -124,7 +124,7 @@ fn kr_output_is_constant_within_each_block() {
         ]
     }"#;
     let out = render(json, 6);
-    // Every 64-sample block is flat…
+    // Every 64-sample block is flat...
     for b in 0..6 {
         let blk = block(&out, b);
         assert!(
@@ -132,7 +132,7 @@ fn kr_output_is_constant_within_each_block() {
             "kr block {b} is not constant: {blk:?}"
         );
     }
-    // …but the per-block value tracks the sine (440 Hz doesn't divide the
+    // ...but the per-block value tracks the sine (440 Hz doesn't divide the
     // block rate, so consecutive blocks differ).
     let values: Vec<f32> = (0..6).map(|b| block(&out, b)[0]).collect();
     assert!(

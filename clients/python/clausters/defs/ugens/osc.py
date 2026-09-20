@@ -23,7 +23,7 @@ def white_noise() -> Ugen:
 
 
 def pink_noise() -> Ugen:
-    """Equal energy per octave, −3 dB/octave (Voss–McCartney).
+    """Equal energy per octave, −3 dB/octave (Voss-McCartney).
 
     A **quiet** signal by construction -- around 0.13 RMS against white noise's
     0.58, which is the level a def ported from sclang expects. Scale it up

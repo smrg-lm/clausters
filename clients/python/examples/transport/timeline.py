@@ -3,7 +3,7 @@
 
 A `Pbind` is a forward-only generator -- you cannot seek it. A `Timeline` is the
 opposite: an editable plan of timed items with random access by beat, and it
-plays itself -- `play(at=…)`, `locate(beat)`, `loop(start, end)`, `pause()`,
+plays itself -- `play(at=...)`, `locate(beat)`, `loop(start, end)`, `pause()`,
 `stop()` -- reporting a song `position`. No clock and no playhead are handled:
 the timeline plays on a clock of its own, with its own tempo map.
 

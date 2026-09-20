@@ -8,8 +8,8 @@
 //! **ordering and encoding** of the boot, platform-agnostic and natively
 //! unit-tested; the fetching (a page concern) stays in JS.
 //!
-//! [`boot_packets`] mirrors the server's own boot order (defs → graphdefs →
-//! boot preset → the GuiDef's `boot` messages) and brackets it with two
+//! [`boot_packets`] mirrors the server's own boot order (defs -> graphdefs ->
+//! boot preset -> the GuiDef's `boot` messages) and brackets it with two
 //! `/server_sync`s: the first marks the defs in (the barrier the native flow gets
 //! implicitly by loading in-process), the second -- arriving after everything,
 //! since the engine serves strictly in order -- is the page's "bundle is up"
@@ -87,7 +87,7 @@ fn sync(id: i32) -> OscMessage {
 
 /// The `/graph_new` messages of a `boot.json` preset -- one per entry, exactly
 /// as the server's own boot builds them: `[{"graph": <name>, "ports":
-/// {<port>: <value>, …}}, …]`, instantiated with id `-1` (server-allocated)
+/// {<port>: <value>, ...}}, ...]`, instantiated with id `-1` (server-allocated)
 /// at the tail of the root group. Malformed entries are skipped, matching the
 /// server's per-entry warn-and-continue.
 fn boot_graphs(boot_json: &[u8]) -> Vec<OscMessage> {
@@ -122,7 +122,7 @@ fn boot_graphs(boot_json: &[u8]) -> Vec<OscMessage> {
     out
 }
 
-/// The `boot` messages declared at a GuiDef's root: a list of `[addr, args…]`
+/// The `boot` messages declared at a GuiDef's root: a list of `[addr, args...]`
 /// the standalone host sends to the server right after the defs load, to bring
 /// the instrument up (e.g. `["/synth_new", "drone", 1000, 0, 0]`). The int/float
 /// distinction is preserved (a JSON integer is an OSC `Int`, so node ids stay
@@ -217,7 +217,7 @@ impl MountAllocator {
 /// One mounted instance, ready to send: the GuiDef to open and the messages
 /// that bring its half of the server up.
 pub struct Mount {
-    /// The id to open the GuiDef under (`/gui_def <def_id> …`).
+    /// The id to open the GuiDef under (`/gui_def <def_id> ...`).
     pub def_id: i32,
     /// The resolved tree, as the JSON the `/gui_def` argument carries.
     pub tree: Vec<u8>,

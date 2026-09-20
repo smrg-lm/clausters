@@ -38,7 +38,7 @@ import { SamplesEditor, isSamples } from "./samples.ts";
 /** What `edit` passes on to whichever editor the structure asks for. */
 export interface EditOptions {
     /**
-     * The engine's rate, which fixes the data↔view bridge. A take knows its own
+     * The engine's rate, which fixes the data<->view bridge. A take knows its own
      * and needs none.
      */
     sampleRate?: number;

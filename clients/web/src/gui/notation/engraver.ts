@@ -351,7 +351,7 @@ export class Score {
     }
 
     /**
-     * Apply one raw editor action (`set`, `insert`, `delete`, …) as a single undo
+     * Apply one raw editor action (`set`, `insert`, `delete`, ...) as a single undo
      * step -- the escape hatch for what {@link Score.transpose} does not cover.
      * A rejected action leaves the score untouched.
      */

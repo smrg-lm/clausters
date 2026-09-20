@@ -124,7 +124,7 @@ fn record_path(dir: &Path, name: &str) -> PathBuf {
 }
 
 /// The bitcode file is named `<stem>.<sha16>.bc`, so a stale `.bc` left by an
-/// interrupted overwrite (different payload → different sha) is never paired
+/// interrupted overwrite (different payload -> different sha) is never paired
 /// with a fresher record.
 fn bitcode_path(dir: &Path, name: &str, sha: &str) -> PathBuf {
     dir.join(format!("{}.{}.bc", sanitize_name(name), &sha[..16]))
@@ -170,7 +170,7 @@ pub fn persist(factory: &FaustFactory, name: &str, payload: &CompilePayload, dir
 pub fn try_restore(record: &FaustRecord, dir: &Path) -> Result<FaustFactory, String> {
     if record.faust_version != faust_version() {
         return Err(format!(
-            "libfaust version changed ({} → {})",
+            "libfaust version changed ({} -> {})",
             record.faust_version,
             faust_version()
         ));

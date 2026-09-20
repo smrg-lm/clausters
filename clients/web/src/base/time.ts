@@ -1,5 +1,5 @@
 /**
- * Time: the beat↔second map, and the questions it answers.
+ * Time: the beat<->second map, and the questions it answers.
  *
  * A **beat is not a unit of time**. It is a logical coordinate, and what turns
  * one into a second is the tempo -- which can change as it goes. So the two
@@ -98,7 +98,7 @@ import {
 } from "../core/clausters_core_web.js";
 
 /**
- * The beat↔second map (see the module comment).
+ * The beat<->second map (see the module comment).
  *
  * The core's own class, behind a guard: constructing one before `loadCore` has
  * resolved says so, rather than failing as an unreadable read of an
@@ -219,7 +219,7 @@ export const STEP = "step";
 /** A segment's tempo ramps linearly (in beats) to the next breakpoint. */
 export const LINEAR = "linear";
 /** A segment's tempo ramps geometrically -- equal *ratios* over equal stretches
- * of beat, so 60→120 and 120→240 are the same move. */
+ * of beat, so 60->120 and 120->240 are the same move. */
 export const EXPONENTIAL = "exponential";
 
 /**
@@ -329,7 +329,7 @@ export function tempoSegments(map: TempoMap): number[][] {
 
 /**
  * The bar a beat position falls in, on a grid of `quant` beats per bar
- * (0-based; `quant <= 0` → bar 0).
+ * (0-based; `quant <= 0` -> bar 0).
  *
  * A bar count is a reading of the *beat* axis, so it needs no map: bars are
  * beats grouped, not seconds grouped.
@@ -350,7 +350,7 @@ export function beatInBar(beats: number, quant: number): number {
 
 /**
  * Beats to wait from `pos` for the next `quant` boundary (a position already on
- * one waits 0; `quant <= 0` → now).
+ * one waits 0; `quant <= 0` -> now).
  *
  * The shared quantization rule every client applies, and what `play`'s `quant`
  * argument is computed with.
@@ -361,7 +361,7 @@ export function quantDelay(pos: number, quant: number): number {
 }
 
 /**
- * Seconds → a sample count at `sampleRate`, rounded the way the server rounds.
+ * Seconds -> a sample count at `sampleRate`, rounded the way the server rounds.
  * A length of audio crosses on this and never on a tempo: its seconds were
  * fixed before any tempo was.
  */
@@ -371,7 +371,7 @@ export function secsToSamples(secs: number, sampleRate: number): number {
 }
 
 /**
- * A sample count → seconds at `sampleRate` -- the inverse of
+ * A sample count -> seconds at `sampleRate` -- the inverse of
  * {@link secsToSamples}.
  */
 export function samplesToSecs(samples: number, sampleRate: number): number {

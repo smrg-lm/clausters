@@ -179,7 +179,7 @@ pub struct OscServer {
     socket: Option<UdpSocket>,
     info: ServerInfo,
     handle: EngineHandle,
-    /// Def tables, node→def mirror and message→command translation, shared
+    /// Def tables, node->def mirror and message->command translation, shared
     /// with the NRT renderer (see [`crate::osc::translate`]).
     /// Owns the network-side buffer mirror (`translator.buffers`), updated
     /// when NRT results are installed: serves `/buffer_query` and gives `/buffer_read`,
@@ -731,7 +731,7 @@ fn synthdef_spec_bytes(args: &[OscType]) -> Option<&[u8]> {
 const NTP_UNIX_OFFSET: f64 = 2_208_988_800.0;
 
 /// The current wall-clock instant as an OSC/NTP timetag (seconds since 1900 in
-/// a 32-bit count, plus a 32-bit binary fraction) -- the inverse of the NTP→Unix
+/// a 32-bit count, plus a 32-bit binary fraction) -- the inverse of the NTP->Unix
 /// math in `timetag_delta_secs`. Published alongside the sample counter in
 /// `/clock_query.reply` so a client gets the anchor `(osc_time, sample)` it needs to
 /// place its logical OSC time on this server's sample axis.

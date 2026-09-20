@@ -21,7 +21,7 @@
 //!   computes natively, not against Faust's own LLVM codegen.
 //! - [`rng`] -- the seeded white-noise generator, identical to the server's
 //!   `dsp::noise`, so a client can reproduce a noise stream sample for sample.
-//! - [`tempomap`] -- the beat↔second time map under a tempo that
+//! - [`tempomap`] -- the beat<->second time map under a tempo that
 //!   changes along it (the integral of `1/tempo`), which every client and the
 //!   editor query and a clock adopts as its single segment.
 //! - [`tempoclock`] -- beat/second/sample arithmetic, quantization and a
@@ -30,7 +30,7 @@
 //!   (`sample = a + b·t` over a sliding anchor window) behind locking a client
 //!   clock to a server over a network transport.
 //! - [`osc`] -- the OSC seam shared by the server and every client: the single
-//!   `decode_packet` door, bundle/timetag assembly and timetag↔sample
+//!   `decode_packet` door, bundle/timetag assembly and timetag<->sample
 //!   conversion (depends on `rosc`; not allocation-free).
 //! - [`config`] -- the shared TOML configuration model (user + project layers,
 //!   the same schema the server and every client read), with the native path
@@ -38,9 +38,9 @@
 //! - [`fft`] -- forward **and** inverse real FFT (over `microfft`,
 //!   zero-allocation), shared by the GUI spectrogram and the server's
 //!   `FFT`/`IFFT` UGens so the transform lives once.
-//! - [`window`] -- the smoothing windows (Hann, Welch, …) the FFT chain applies,
+//! - [`window`] -- the smoothing windows (Hann, Welch, ...) the FFT chain applies,
 //!   shared with the clients for bit-identical analysis.
-//! - [`scale`] -- perceptual frequency-scale conversions (hertz ↔ mel/bark)
+//! - [`scale`] -- perceptual frequency-scale conversions (hertz <-> mel/bark)
 //!   shared by every frequency-axis display and analysis.
 //! - [`envshape`] -- the envelope segment shapes (the SuperCollider shape
 //!   curves), shared by the server's `EnvGen` and any client drawing or
@@ -68,7 +68,7 @@
 //!   placeholder pass that turns one persisted GuiDef template into N
 //!   non-colliding mounted instances, shared so a browser tab, a
 //!   `clausters-gui --standalone` and a loopback host read one format.
-//! - [`patch`] -- the GUI patcher's cord → bus pass: a directed patch (typed
+//! - [`patch`] -- the GUI patcher's cord -> bus pass: a directed patch (typed
 //!   inlets/outlets, cords) compiled to a GraphDef's bus wiring (one bus per
 //!   connected net, its writers summing), shared so every client that draws a
 //!   patch translates it identically.

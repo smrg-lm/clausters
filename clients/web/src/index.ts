@@ -9,7 +9,7 @@
 // two def families, nodes, buses and buffers), naming no transport.
 //
 // The GUI host is driven the same way: `GuiHost` (the `gui` namespace holds
-// the GuiDef builders -- `gui.window`, `gui.knob`, …) sits on that same
+// the GuiDef builders -- `gui.window`, `gui.knob`, ...) sits on that same
 // connection seam, over the in-page host or a `--ws` one.
 //
 // The data paths (`data/`) are the reading direction of that same seam: the

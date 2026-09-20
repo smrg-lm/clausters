@@ -54,7 +54,7 @@ pub mod ws;
 // Every module's `extern "C"` items are re-exported here. The C symbols do not
 // care which file declares them (`no_mangle` names are flat), but a Rust caller
 // -- this crate's own `notation` module, a doc link, a binding that links the
-// crate -- keeps naming them `clausters_ffi::…`.
+// crate -- keeps naming them `clausters_ffi::...`.
 pub use builtins::*;
 pub use bundle::*;
 pub use clocksync::*;
@@ -88,7 +88,7 @@ pub use time::*;
 /// `clausters_registry_*` finite-resource id registry (node ids, buses,
 /// buffers -- every client's allocator and the server's reserved ranges share
 /// the one occupancy-map model, internally locked per handle); v11 the
-/// `clausters_core_patch_compile` cord→bus pass (a directed patch JSON in, its
+/// `clausters_core_patch_compile` cord->bus pass (a directed patch JSON in, its
 /// GraphDef wiring JSON out -- the GUI patcher's translation, shared so every
 /// client compiles a patch identically); v12 the notation surface
 /// (feature-gated, see `clausters_core::notation`) -- the pure
@@ -181,8 +181,8 @@ pub use time::*;
 /// `clausters_history_register` minting a structure's identity and every call
 /// that names one taking it. `undo` and `redo` lost their document argument and
 /// apply nothing: a history holds structures this surface cannot reach, so they
-/// hand back each payload with the structure it belongs to (`{"inverses": …}`,
-/// `{"edits": …, "remaining": …}`) and the caller applies them through whatever
+/// hand back each payload with the structure it belongs to (`{"inverses": ...}`,
+/// `{"edits": ..., "remaining": ...}`) and the caller applies them through whatever
 /// door each domain has. `record` gained the coalesce **key**, because "the
 /// same thing done the same way" is a sentence in a vocabulary the pile does
 /// not read.

@@ -65,7 +65,7 @@ impl Decoded {
 
 /// Decodes a soundfile already in memory -- the Worker's whole job.
 ///
-/// `ext` is the format hint (`"wav"`, `"flac"`, …, no dot; an empty hint still
+/// `ext` is the format hint (`"wav"`, `"flac"`, ..., no dot; an empty hint still
 /// probes by content). `label` names the source in an error. `file_start` and
 /// `num_frames` slice it exactly as `/buffer_allocRead` does, with
 /// `num_frames <= 0` meaning "to the end", and `channels` selects and reorders

@@ -83,7 +83,7 @@ export class PlotWindow {
 
     /**
      * Live-sets plot props (`view`, `min`/`max` -- a number, or `"auto"` to
-     * refit -- `freqScale`, `dbFloor`/`dbCeil`, `ruler`/`rulerY`, `label`…)
+     * refit -- `freqScale`, `dbFloor`/`dbCeil`, `ruler`/`rulerY`, `label`...)
      * through `/gui_set`.
      */
     set(props: Record<string, PropValue>): this {
@@ -140,7 +140,7 @@ export class PatchWindow {
         this.widgetId = widgetId;
     }
 
-    /** Live-sets the patch widget's props (`label`, `boxes`, `cords`…) through `/gui_set`. */
+    /** Live-sets the patch widget's props (`label`, `boxes`, `cords`...) through `/gui_set`. */
     set(props: Record<string, PropValue>): this {
         this.host.set(this.widgetId, props);
         return this;

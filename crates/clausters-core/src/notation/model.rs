@@ -171,10 +171,10 @@ impl Pitch {
 /// emitting and reading them is the emission milestone's.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Marks {
-    /// Articulations, by their MEI names (`stacc`, `acc`, `ten`, `marc`, …).
+    /// Articulations, by their MEI names (`stacc`, `acc`, `ten`, `marc`, ...).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub articulations: Vec<String>,
-    /// A dynamic attached to this note (`pp`, `mf`, `ff`, …). It is written
+    /// A dynamic attached to this note (`pp`, `mf`, `ff`, ...). It is written
     /// under the staff at this note's own position.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dynamic: Option<String>,

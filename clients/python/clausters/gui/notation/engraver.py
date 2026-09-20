@@ -367,7 +367,7 @@ def engrave(data: str, *, page: int = 1, scale: int = 40,
 
 def page_json(display_list: dict) -> str:
     """The **drawing** layers of ``display_list`` as the JSON string a live
-    ``GuiHost.set(score_id, display_list=…)`` takes -- how a re-engraved page
+    ``GuiHost.set(score_id, display_list=...)`` takes -- how a re-engraved page
     replaces the one on screen after an edit, without redefining the window.
 
     The same layers `clausters.gui.guidef.score` sends when it builds the

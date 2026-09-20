@@ -720,7 +720,7 @@ fn run_session(
     // guess, and "read-only" is worth saying outright rather than discovering
     // by pressing the key and watching nothing happen.
     let title = match save_to {
-        Some(out) => format!("{} → {}", name(path), name(out)),
+        Some(out) => format!("{} -> {}", name(path), name(out)),
         None => format!("{} (read-only: no --save-to)", name(path)),
     };
     let def_id = 1;

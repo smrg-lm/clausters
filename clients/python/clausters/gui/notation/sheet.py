@@ -41,7 +41,7 @@ from ._abi import _MISSING, _text, _u8
 def _unwrap(payload: str):
     """Read the envelope the sheet calls answer in.
 
-    The C ABI answers ``{"ok": …}`` or ``{"error": "…"}`` because a refusal has
+    The C ABI answers ``{"ok": ...}`` or ``{"error": "..."}`` because a refusal has
     to keep its reason; Python raises instead, which is the same behaviour in
     the shape a caller expects. A refused operation changed nothing -- the sheet
     crossed by value, so the caller still holds what it sent.
@@ -470,7 +470,7 @@ def marks(*, articulations: list | None = None, dynamic: str | None = None,
 
     ``articulations`` are MEI's names (``"stacc"``, ``"acc"``, ``"ten"``,
     ``"marc"``); ``dynamic`` is written under the staff at this note
-    (``"pp"``…``"ff"``); ``ornament`` is ``"trill"``, ``"mordent"``, ``"turn"``
+    (``"pp"``...``"ff"``); ``ornament`` is ``"trill"``, ``"mordent"``, ``"turn"``
     or ``"fermata"``; ``grace`` makes it a grace note (``"acc"`` for an
     acciaccatura, ``"unacc"`` for an appoggiatura); ``stem`` forces ``"up"`` or
     ``"down"``; ``sounding`` is how long it **sounds** when that is not how long

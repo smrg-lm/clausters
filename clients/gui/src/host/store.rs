@@ -9,7 +9,7 @@
 //! (`defs/graphdefs`) and GuiDefs (`defs/guidefs`) sit side by side and the
 //! standalone host can read them all.
 //!
-//! A GuiDef is identified on the wire by an integer id (`/gui_def <id> …`), so a
+//! A GuiDef is identified on the wire by an integer id (`/gui_def <id> ...`), so a
 //! saved record carries both the id and the verbatim tree JSON: `{ "id": <i32>,
 //! "gui": <tree> }`. Loading replays it as a `/gui_def`.
 

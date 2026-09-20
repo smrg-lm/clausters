@@ -331,7 +331,7 @@ pub struct Marker {
     /// Where it is, in timeline sample units -- the *exact* position, kept
     /// whatever the zoom.
     pub time: f64,
-    /// What it says. A marker added by hand is **numbered** (`"1"`, `"2"`, …)
+    /// What it says. A marker added by hand is **numbered** (`"1"`, `"2"`, ...)
     /// until something renames it, which is what makes the gesture usable with
     /// no text entry in front of it.
     pub label: String,
@@ -350,7 +350,7 @@ impl Marker {
     }
 }
 
-/// Parses the `markers` prop: a flat `[time, label, color, …]` list, the
+/// Parses the `markers` prop: a flat `[time, label, color, ...]` list, the
 /// convention every list on this wire follows (a scalar array, so one
 /// `/gui_set` can carry it as its JSON string). A trailing partial triple is
 /// dropped, an empty colour means the theme's.
@@ -798,7 +798,7 @@ pub enum GestureStep {
     ///
     /// Stricter than [`GestureStep::Sample`]: it is refused where a pixel is
     /// more than one sample, because a stroke there would write values the
-    /// reader cannot see. The refusal is **visible** (`"refused" "draw" …`)
+    /// reader cannot see. The refusal is **visible** (`"refused" "draw" ...`)
     /// rather than a silent decline -- a pencil that sometimes does nothing
     /// teaches that it sometimes does not work.
     Draw,
@@ -806,7 +806,7 @@ pub enum GestureStep {
     Locate,
     /// **Add a marker under the pointer, or remove the one already there** --
     /// the ruler's edit, and the only one it has. A new marker is *numbered*
-    /// (`"1"`, `"2"`, …), which is what makes the gesture usable with no text
+    /// (`"1"`, `"2"`, ...), which is what makes the gesture usable with no text
     /// entry in front of it; renaming and recolouring are the owner's, through
     /// the `markers` prop.
     ///

@@ -22,7 +22,7 @@ from .moment import Moment
 
 
 # Channel-voice status nibbles -> (message type name, data-field names). A
-# parsed message is a dict ``{'type', 'channel', <fields…>}`` in the style of
+# parsed message is a dict ``{'type', 'channel', <fields...>}`` in the style of
 # mido / sc3's responder layer, so `MidiFunc` matches on ``type``.
 _CV_TYPES = {
     0x80: ("note_off", ("note", "velocity")),
@@ -37,7 +37,7 @@ _CV_TYPES = {
 
 def parse_midi(message) -> dict | None:
     """Decode raw channel-voice bytes into a message dict (``{'type',
-    'channel', …}``), or ``None`` for a non-channel-voice / malformed message.
+    'channel', ...}``), or ``None`` for a non-channel-voice / malformed message.
 
     ``pitchwheel`` combines the two 7-bit data bytes into a single 14-bit
     ``pitch`` (0..16383, centre 8192); every other field is a raw 7-bit value.
@@ -153,7 +153,7 @@ class MidiServer:
     `Pbind` played on a clock with this as the
     destination renders each `Event` as a note
     on/off pair, handed to the held interface (NRT score or live port). Note
-    number from `event.midinote()`, velocity from `amp` (0..1 → 0..127)."""
+    number from `event.midinote()`, velocity from `amp` (0..1 -> 0..127)."""
 
     def __init__(self, interface=None, channel: int = 0, ppq: int = 480):
         self.interface = interface if interface is not None else MidiNrtInterface()
@@ -210,7 +210,7 @@ class MidiReceiver:
     feature (midir / ALSA seq on Linux) that other apps and devices route into,
     runs a background thread that polls the crate for raw messages, decodes each
     with `parse_midi`, and calls every registered handler with ``(message,
-    src)`` -- ``message`` a dict (``{'type', 'channel', …}``), ``src`` the port
+    src)`` -- ``message`` a dict (``{'type', 'channel', ...}``), ``src`` the port
     name. Same dispatch threading as `OscReceiver`: inline on the poll thread by
     default, or via ``clock.sched`` when a ``clock`` is given. The golden rule
     holds -- a handler must not block its thread.

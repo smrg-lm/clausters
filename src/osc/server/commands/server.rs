@@ -212,7 +212,7 @@ impl OscServer {
         Ok(())
     }
 
-    /// `/ugen_query [kind...]` → one `/ugen_query.reply` per UGen, then `/done "/ugen_query"`
+    /// `/ugen_query [kind...]` -> one `/ugen_query.reply` per UGen, then `/done "/ugen_query"`
     ///: the catalog straight from the `dsp::registry` descriptors, so a
     /// palette derives from the server's truth instead of a client-side copy.
     /// An unknown kind replies with an empty rate set and no inputs.

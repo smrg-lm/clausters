@@ -71,11 +71,11 @@ class PlayheadSync:
             returning the object that has one. The map is never kept here. With
             no structure, or one that holds no map, positions are seconds.
         sample_rate: the engine's sample rate. With the map it fixes the
-            beats→samples conversion the anchor is expressed in.
-        to_units: ``to_units(beats)`` → the view's own units, for the static
-            cursor. Defaults to beats→samples, which is what the timeline views
-            use; an engraved page passes its beats→milliseconds.
-        extent: ``extent()`` → the structure's length, in its own units, where
+            beats->samples conversion the anchor is expressed in.
+        to_units: ``to_units(beats)`` -> the view's own units, for the static
+            cursor. Defaults to beats->samples, which is what the timeline views
+            use; an engraved page passes its beats->milliseconds.
+        extent: ``extent()`` -> the structure's length, in its own units, where
             `update` parks the cursor when a pass ends. Read on each use, so a
             structure that grew
             (a clip dragged past the end) ends where it now ends.
@@ -150,8 +150,8 @@ class PlayheadSync:
         return getattr(structure, "map", None)
 
     def beats_to_samples(self, beats: float) -> float:
-        """Beats → samples of the engine clock, through the structure's time map
-        (and the core's seconds→samples rounding every client shares).
+        """Beats -> samples of the engine clock, through the structure's time map
+        (and the core's seconds->samples rounding every client shares).
 
         Where the line's origin comes from, so it must be the map and not a
         ratio: the host sweeps the playhead by engine samples, and a beat placed
@@ -268,7 +268,7 @@ class PlayheadSync:
         return self
 
     def samples_to_beats(self, samples: float) -> float:
-        """Samples of the transport → beats, through the same map `beats_to_samples`
+        """Samples of the transport -> beats, through the same map `beats_to_samples`
         goes the other way -- so what the engine reports and what the ruler draws
         are one function read in two directions. Seconds, where what plays
         holds no map."""

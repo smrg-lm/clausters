@@ -1,6 +1,6 @@
 //! The UGen catalog as **data**: one [`UGenDescriptor`] per kind, holding
 //! everything the compiler and engine need (name, arity, rates, bus role,
-//! execution mode, constructor). There is no central `match kind { … }`: the
+//! execution mode, constructor). There is no central `match kind { ... }`: the
 //! compiler and the bus analysis read descriptor fields, so they stay generic
 //! and **adding a UGen is a single entry in `UGENS`** -- the catalog grows
 //! without touching general logic.
@@ -262,7 +262,7 @@ pub enum ExecMode {
     Spectral,
 }
 
-/// A spectral-chain UGen's place in the `FFT`→`PV_*`→`IFFT` pipeline, used
+/// A spectral-chain UGen's place in the `FFT`->`PV_*`->`IFFT` pipeline, used
 /// by the compiler to allocate and thread the synth-private
 /// [`SpectralChain`](crate::dsp::spectral::SpectralChain). `None` on every
 /// non-spectral kind.
@@ -276,7 +276,7 @@ pub enum SpectralRole {
     /// Transforms a chain in place (`PV_*`). Its input 0 is the upstream chain
     /// wire; it inherits that chain's slot.
     Filter,
-    /// Combines **two** chains (`PV_Add`/`PV_Mul`/…): inputs 0 and 1 are
+    /// Combines **two** chains (`PV_Add`/`PV_Mul`/...): inputs 0 and 1 are
     /// chain wires of equal window size and distinct slots; the result lands
     /// in chain A (input 0), whose slot the combiner inherits.
     Filter2,

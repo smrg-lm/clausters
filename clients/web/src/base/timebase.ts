@@ -49,11 +49,11 @@ import {
 // through the map. Python keeps them behind `_native` for the same reason.
 // What is below is the pair a caller *does* hold both arguments for.
 
-/** Seconds → sample count at `rate` (ties to even, the server's rounding). */
+/** Seconds -> sample count at `rate` (ties to even, the server's rounding). */
 export const secsToSamples = (secs: number, rate: number): number =>
     coreSecsToSamples(secs, rate);
 
-/** Sample count → seconds at `rate`. */
+/** Sample count -> seconds at `rate`. */
 export const samplesToSecs = (samples: number, rate: number): number =>
     coreSamplesToSecs(samples, rate);
 
@@ -72,13 +72,13 @@ export const beatInBar = (beats: number, quant: number): number =>
     coreBeatInBar(beats, quant);
 
 /**
- * A Unix timestamp → the 64 NTP timetag bits. A `bigint`: the wire value is a
+ * A Unix timestamp -> the 64 NTP timetag bits. A `bigint`: the wire value is a
  * full 64-bit word and a JS number would drop its low bits.
  */
 export const unixToNtp = (unixSecs: number): bigint => coreUnixToNtp(unixSecs);
 
 /**
- * A Unix timestamp → the server's absolute sample, through a `/clock_query` anchor
+ * A Unix timestamp -> the server's absolute sample, through a `/clock_query` anchor
  * and the measured rate.
  */
 export const unixToSample = (

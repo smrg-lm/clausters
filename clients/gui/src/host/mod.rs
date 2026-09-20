@@ -486,7 +486,7 @@ pub trait BusSource: Send + Sync {
     }
 
     /// The server's sample rate when this source knows it (`0.0` otherwise);
-    /// sizes the oscilloscope windows (`window_ms` → samples).
+    /// sizes the oscilloscope windows (`window_ms` -> samples).
     fn sample_rate(&self) -> f64 {
         0.0
     }
@@ -538,11 +538,11 @@ pub const GUI_DEF: &str = "/gui_def";
 pub const GUI_SET: &str = "/gui_set";
 pub const GUI_FREE: &str = "/gui_free";
 pub const GUI_QUERY: &str = "/gui_query";
-/// `/gui_ack <seq> <docVersion> [<source> <generation>…] [<reason>]` -- the
+/// `/gui_ack <seq> <docVersion> [<source> <generation>...] [<reason>]` -- the
 /// owner's answer to the edits this host emitted.
 ///
 /// The reply `/gui_event` never had. Everything else the host asks has one
-/// (`/gui_query` → `/gui_info`), and without this an edit the owner refused or
+/// (`/gui_query` -> `/gui_info`), and without this an edit the owner refused or
 /// transformed was indistinguishable from one it took: the host went on drawing
 /// what the hand did, forever.
 ///
@@ -1334,7 +1334,7 @@ impl Host {
         }
     }
 
-    /// `/gui_def <id> <json> [blob…]` -- build a whole widget tree from one JSON
+    /// `/gui_def <id> <json> [blob...]` -- build a whole widget tree from one JSON
     /// GuiDef (with any bulk data, e.g. waveform samples, as trailing blobs). A
     /// `window` root also opens (or rebuilds) a window.
     fn on_def(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
@@ -1950,7 +1950,7 @@ impl Host {
     }
 
     /// `/gui_query <id>` -- reply `/gui_info <id> <type> <k> <v> ...`.
-    /// `/gui_ack <seq> <docVersion> [<source> <generation>…] [<reason>]` -- the
+    /// `/gui_ack <seq> <docVersion> [<source> <generation>...] [<reason>]` -- the
     /// owner reports how far it has processed and what state that left.
     ///
     /// One rule and no branch: retire every pending edit at or below `seq`. The
@@ -2813,7 +2813,7 @@ impl Host {
         live.into_iter().collect()
     }
 
-    /// `/gui_bind <id> "server" <addr> <prefix…>` -- forward this widget's value
+    /// `/gui_bind <id> "server" <addr> <prefix...>` -- forward this widget's value
     /// straight to the audio server on every change, bypassing the script (the
     /// low-latency interactive path). With no target (`/gui_bind <id>`) the
     /// binding is removed and the `/gui_event` path restored.
@@ -2868,7 +2868,7 @@ impl Host {
 
     /// [`forward`](Self::forward) for a **flat list** of values -- the edit-back
     /// payload of an editor widget (a `bpf`'s breakpoint list today, a drawn
-    /// buffer region later): a bound editor sends `addr prefix… values…` to
+    /// buffer region later): a bound editor sends `addr prefix... values...` to
     /// the audio server, or the payload's JSON carrier to another widget's
     /// prop, bypassing the script exactly as a bound knob does.
     pub fn forward_args(
@@ -3167,7 +3167,7 @@ impl Host {
     }
 
     /// Registers a [`Binding`] for every widget that declares an inline `bind`
-    /// array in the GuiDef (`{"id":…,"type":…,"bind":["/node_set",node,"freq"]}`).
+    /// array in the GuiDef (`{"id":...,"type":...,"bind":["/node_set",node,"freq"]}`).
     fn register_inline_bindings(&mut self, node: &GuiNode) {
         if let Some(id) = node.id
             && let Some(Value::Array(items)) = node.props.get("bind")
