@@ -56,15 +56,26 @@ package, never the wire.
      this binding v22"* instead of an `AttributeError` at some later call site.
      Under the amend rule both sides would read the same number all cycle and
      that failure would surface as a missing symbol.
-   - **The SemVer tier moves once per unreleased cycle.** Here the old rule was
-     right and stays: a version is consumer-facing and ordering-sensitive, and
-     bumping the breaking tier twice before a tag invents a release that never
-     existed. If the tier has already moved since the last tag, a further
-     breaking change rides the bump that is already there.
+   - **The SemVer tier may move more than once per unreleased cycle, and gaps
+     are free here too.** This half used to say the opposite — once per cycle,
+     a further breaking change riding the bump already there — on the grounds
+     that moving it twice "invents a release that never existed". It does not:
+     an invented release would be two *tags*, and the number in the tree is the
+     **development version**, the one a tag would publish if it were cut today.
+     A number never tagged was never resolved, installed or depended on by
+     anyone, so it is not a release skipped — it is a number that never
+     existed. `0.9.0` and `0.10.0` are exactly that, and `0.11.0` (2026-09-19)
+     is the development version after them, moved for the volume of change
+     accumulated since `v0.8.1` rather than for any boundary.
 
-   So a counter is *not* the last tag's plus one, and it is not meant to be;
-   check that it **differs**, which is rule 3's trigger and all any consumer
-   reads.
+     What must hold is only this: the sequence is **monotonically increasing**
+     and **never reuses a number already tagged**. Rule 1 says when the tier
+     *has* to move; it never forbids moving it, so "enough has changed" is a
+     sufficient reason on its own.
+
+   So neither kind of number is the last tag's plus one, and neither is meant
+   to be; check that each one **differs**, which is rule 3's trigger and all
+   any consumer reads.
 
 Rationale (why the decouple) is in `docs/decisions.md`.
 
@@ -74,9 +85,10 @@ Rationale (why the decouple) is in `docs/decisions.md`.
 in the tree is the development version, and the tag publishes *it* — a release
 does not open by choosing a number. So the tag to cut is whatever
 `Cargo.toml` already says (`v0.8.0` for `version = "0.8.0"`), and the question
-"which bump" belongs to the commit that made the breaking change, not to this
-procedure. If the rules above say the tier is wrong for what accumulated since
-the last tag, fix it as its own commit first, then release.
+"which bump" belongs to the commit that made the breaking change — or to the
+one that judged enough had accumulated — not to this procedure. If the rules
+above say the tier is wrong for what accumulated since the last tag, fix it as
+its own commit first, then release.
 
 1. **One version, one command.** The number is decided in the root
    `Cargo.toml`'s `[workspace.package].version`, which the eight Cargo crates
@@ -91,12 +103,12 @@ the last tag, fix it as its own commit first, then release.
    drifted, and `package-lock.json` was found two minors behind.)
 2. **Both ABI counters and the SemVer tier against the last tag** —
    `.claude/skills/release-versioning/versions.sh`, which prints all three and
-   exits non-zero if it cannot find one. Read it by rule 5: a counter that
-   **differs** is what rule 3 triggers on — by how much is not a question and a
-   gap is not a defect — while the version is the one that must have moved its
-   breaking tier **exactly once** since the tag. Two steps there (0.8.1 → 0.9.0
-   → 0.10.0) invented a release that never existed; settle on one before
-   tagging rather than tagging both.
+   exits non-zero if it cannot find one. Read all three by rule 5: what is
+   checked is that each one **differs** from the last tag's — by how much is not
+   a question and a gap is not a defect, for the version as much as for the
+   counters. The one thing the print has to show is rule 3's linkage: a counter
+   that moved and a breaking tier that did not is the state to fix before
+   tagging.
 
    The script **searches** for each constant instead of naming its path, and
    that is the point rather than tidiness: `ABI_VERSION` has already moved file
@@ -104,7 +116,7 @@ the last tag, fix it as its own commit first, then release.
    hardcoded `git show <tag>:src/server/ipc.rs | grep ABI_VERSION` this step
    used to be went on returning an empty string afterwards — which reads
    exactly like "did not move". A check whose failure mode is silence is not a
-   check, which is the same defect rule 5 had in prose.
+   check, which is the defect rule 5's first wording had in prose.
 3. **Rehearse the gate before the tag exists.** `gh workflow run release.yml
    --ref main` runs `release.yml`'s `verify` job — the full fmt/clippy/rustdoc
    feature matrix plus `cargo test` on the default set and on `+embed` — with

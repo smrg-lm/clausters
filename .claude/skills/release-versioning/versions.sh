@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # The three version numbers, as they were at the last tag and as they are now.
 #
-# Read it by rule 5 in SKILL.md: an ABI counter that *differs* is what triggers
-# the breaking-tier linkage -- by how much is not a question and a gap is not a
-# defect -- while the version must have moved its breaking tier exactly once.
+# Read it by rule 5 in SKILL.md: all three are read the same way, by whether
+# they *differ* from the last tag's -- by how much is not a question and a gap
+# is not a defect, for the version as much as for the counters. What the print
+# is for is the linkage: a counter that moved beside a breaking tier that did
+# not is the state to fix before tagging.
 #
 # It searches for each constant rather than naming a path, because ABI_VERSION
 # has already moved file once (src/server/ipc.rs -> crates/clausters-core/src/

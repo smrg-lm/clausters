@@ -1034,8 +1034,8 @@ peer checks on attach/load, refusing to connect on a mismatch.
 
 **Why.** A binary boundary needs a check that an *already-compiled* peer can make
 at runtime, before it trusts a single byte of layout — SemVer strings cannot do
-that job, and the two boundaries evolve on independent cadences (the core FFI is
-at v14 while the embed/IPC ABI is at v5). A monotonic integer per
+that job, and the two boundaries evolve on independent cadences (by 0.11.0 the
+core FFI is at v68 while the embed/IPC ABI is at v11). A monotonic integer per
 boundary is exactly the scsynth plugin-ABI lesson: every binary seam is
 versioned and verified where it is crossed. SemVer is left to govern the
 *package* — what `cargo`/`pip` resolves — where it belongs.
@@ -1055,18 +1055,39 @@ the major is `0`, per standard pre-1.0 SemVer where the minor acts as the major;
 the major once at `1.0`). The reverse is not required — a minor can ship purely
 additive source-API work without touching either counter.
 
-That a counter measures **distance, not history** follows from the same
-reasoning, and decides a case that comes up during development: when a boundary
-changes twice before the first change has shipped, the second amends the first
-bump rather than adding another. The number exists for a compiled peer asking
-"can I attach to this?", and that peer only ever knew the last published value;
-counting the intermediate states would tell it about releases that never
-existed, and burn a version on each. It is the same argument that keeps the
-counter off SemVer — the seam is described by where it *is*, not by how it got
-there.
+**Amended 2026-09-19: no number here is a distance, and none of the three is
+the last tag's plus one.** This entry used to argue that a counter measures
+"distance, not history" — that a boundary changing twice before shipping should
+*amend* the first bump rather than add another — and the release rules grew a
+matching clause for SemVer, that the breaking tier moves exactly once per
+unreleased cycle. Both halves were wrong, in the same way and for a reason each:
 
-The mechanical release rules live in `CLAUDE.md` ("Versioning"); this entry is
-the *why*.
+- **The counters are read by equality and nothing else** (`header.abi_version
+  != ABI_VERSION`, `got != CORE_ABI_VERSION`). Nothing subtracts, orders or
+  counts them, so "distance" was a quantity with no consumer. Amending instead
+  of bumping also costs something real in this checkout, where the staged
+  `_bin`/`_libs` copy wins over `target/`: a counter that moved turns a stale
+  staging into *"speaks ABI v21, this binding v22"* on attach, while under the
+  amend rule both sides read the same number all cycle and the same staleness
+  surfaces as a missing symbol at some later call site.
+- **A number never tagged is not a release skipped.** The argument against
+  passing through versions was that it "tells about releases that never
+  existed" — but an invented release is a second *tag*, not a number the tree
+  passed through. The version in the tree is the **development version**: what
+  a tag would publish if one were cut today. Nobody resolved, installed or
+  depended on `0.9.0` or `0.10.0`, so nothing was burnt by them; `0.11.0` is
+  simply the development version after them, moved for the volume of change
+  since `v0.8.1` and not for any boundary. What has to hold is that the
+  sequence increases and never reuses a number already tagged.
+
+So all three numbers are checked the same way — **that they differ** from what
+the last tag carried — which is exactly what the linkage rule above triggers on,
+and all any consumer reads. What the amend rule was really defending is the
+sentence that opens this entry: the seam is described by where it *is*, not by
+how it got there. That survives; the arithmetic it was dressed in does not.
+
+The mechanical release rules live in the `release-versioning` skill; this entry
+is the *why*.
 
 ## Client defaults for the wheel: sample clock (live only) and an enveloped default synth
 
