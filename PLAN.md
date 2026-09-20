@@ -251,6 +251,83 @@ completed items lives in the git history.)
 
   **Acceptance (met).** A poll lists one row per role and one per worker, never a row for a worker the server does not have; the audio row counts one call per block and the net row one per turn; two polls never report less than the first (`tests/osc.rs::server_load_reports_every_role_cumulatively`); each worker accounts the stages it took and a sequential engine reports no `dsp` row at all (`tests/parallel.rs::every_worker_accounts_the_stages_it_took`); the audio thread stays allocation-free (`tests/rt_safety.rs`); and the example reads a live server's roles while it plays, with the NRT row moving for a `/buffer_gen` neither CPU figure would have shown.
 
+- ⬜ **M35 — MPE: the expression belongs to the note, and the shape it takes is MIDI 2.0's** *(opened 2026-09-19)*
+
+  **What is missing.** `/midi_bind` binds **one channel** to an instrument, and every expressive message on it reaches **every** voice of that channel (`midi_set_channel`). MPE is the opposite arrangement: a *zone* of member channels, one note per channel at a time, and bend/pressure/timbre addressed to that one note through the channel it sits on. Nothing in the server knows what a zone is, and the control-change path never looks at **RPN** — which is how a zone is declared (RPN 6, over CC 101/100/6/38). So an MPE controller routed into the virtual port today plays the notes and loses all three expression dimensions: they either go nowhere or, once mapped, go to every voice at once.
+
+  **The decision: the internal model is per-note, and MPE 1.0 is a decoder in front of it.** `ChannelVoiceMessage` already normalizes every value to MIDI 2.0 / UMP resolution while carrying only MIDI 1.0's *message set*. MIDI 2.0 has per-note pitch bend and per-note controllers natively — which is precisely what MPE emulates by spending a channel per note. So the model grows `PerNotePitchBend` and `PerNoteController` (with a per-note identity), the actuation path learns to address one voice, and **MPE becomes a stateful front-end that turns channel-per-note into those messages**. One actuation path instead of an MPE mode beside the plain one, and a later UMP transport then costs a parser rather than a second design.
+
+  **MIDI 1.0 compatibility is not a fallback here, it is the wire.** MPE *is*
+  MIDI 1.0 — a convention over its channel-voice messages, which is the whole
+  reason it spends a channel per note — and the transport decodes nothing else
+  today (`live.rs` reads three bytes through `parse_midi1`). So the per-note
+  internal model is a *representation*, never a requirement on the wire: a
+  plain keyboard on one channel keeps arriving as it does now. What that costs
+  is three rules, each of which breaks an existing setup if it is left implicit:
+
+  - **The RPN parse only listens on a zone's channels.** Declaring a zone means
+    watching CC 101, 100, 6 and 38 — and `/midi_map ccN` takes *any* number
+    today, those four included, so a decoder that swallows them globally
+    silently steals a control from a binding that already maps CC 6. A channel
+    with no zone over it passes every control change through raw, as it does
+    now.
+  - **A zone of zero members is how a device says "plain MIDI again"**, per the
+    specification, and it has to be honored: the zone dissolves and its channels
+    go back to being ordinary bound channels rather than leaving the server in a
+    mode nothing can leave.
+  - **Bend is pitch only inside a zone.** For a per-channel binding, pitch bend
+    keeps doing exactly what it does today — `bend2control` into whatever
+    `/midi_map bend` named, or nothing at all when it named nothing. The
+    note + member bend + master bend sum is the *zone's* rule, not a new global
+    one, and `midi_set_channel` stays the per-channel path untouched.
+
+  A channel held by a per-channel binding and covered by a zone at once is the
+  one case where the two models meet, and it is **refused by whichever command
+  creates the overlap** — a zone whose members reach a bound channel, or a
+  `/midi_bind` on a channel a zone already covers — rather than resolved by
+  precedence: two owners of one channel is a configuration mistake, and saying
+  so is cheaper than picking a winner the user cannot see. The same holds for
+  the layout a device declares: an RPN that would widen a zone over a bound
+  channel is refused as the command would be, and the binding stands.
+
+  **Where it lives, which is not where it looks like it lives.** There are two MIDI stacks today and they do not touch: `src/midi/` (input transport + bindings + actuation, midir directly) and `crates/clausters-midi` (file I/O and live ports for the clients, behind a flat-data C ABI); the root crate does not depend on the crate. The **zone layout, the RPN parse and the per-note state machine are language-agnostic and wanted at both ends** — the server decodes them on input, a client assigns channels on output — so they belong in `clausters-midi`, which its own module doc already anticipates ("and, later, the server"), and the root crate takes its first dependency on it. What stays server-side is the binding and the actuation (`osc/translate/midi.rs`), which are about defs and nodes and have no MIDI logic to share. **The ABI shape is settled** (`docs/decisions.md`): the decoder crosses as an **opaque handle** — `clausters_mpe_decoder_new`/`feed`/`poll`/`free`, feeding and polling separate because a master bend turns one message into several — and **not** as a caller-held state block, whose layout would have become the ABI and made every change to what the decoder remembers a `MIDI_ABI_VERSION` bump. It is the shape `clausters_midi_input_open`/`poll`/`close` already has, and it is **not** behind the `live` feature: this piece is pure computation, it has to build for wasm, and the server calls the safe Rust face (`Decoder::feed`/`poll`) directly. `MIDI_ABI_VERSION` goes to 3.
+
+  **The pieces.**
+  - **Zones, and the verb is its own.** Parse RPN 6 into a layout (lower zone: master channel 1 plus N members ascending; upper zone: master 16 plus N descending). The binding is **`/midi_bindZone master members instrument [target addAction gate]`** rather than extra arguments on `/midi_bind`, whose first argument would otherwise mean a channel in one call and a master in another; it joins the second-tier full-word namespace the protocol already uses, and leaves the existing command's parsing untouched. The `members` argument is the layout for a controller that **sends no RPN** — `0` means "wait for one" — and **RPN 6 wins at runtime**, a device being authoritative about its own layout. Persisted in `midi.json` with serde defaults, so the files a running setup already has keep loading.
+  - **A binding is readable back, which today none is.** The dispatch carries `/midi_bind`, `/midi_unbind` and `/midi_map` and no query at all, so a client cannot ask what a channel is bound to — let alone what zone covers it. **`/midi_query [channel...]`** in the introspection mold: one `/midi_query.reply` per binding and then `/done "/midi_query"`, reporting the channel *or* the zone (master plus its members), the instrument, `target`/`addAction`/`gate` and the resolved control map. Argument-less it lists every binding, and an unbound channel comes back empty rather than failing the batch.
+  - **Routing.** A bend, a channel pressure or a CC 74 arriving on a **member** channel reaches that channel's note; on the **master** it reaches every note of the zone. `midi_set_channel` stays as it is for the plain per-channel binding.
+  - **Bend is pitch, and it has a range.** MPE's defaults are +/-48 semitones on a member and +/-2 on the master, and the two **sum**: a voice's frequency is `midi2freq(note + bend_member * range_member + bend_master * range_master)`. Today `bend2control` yields a bipolar -1..1 into a named control, which cannot express any of that; the range is per zone (RPN 0) and still mappable to a control for defs that want the raw value.
+  - **The third dimension is a CC number, not a selector wired to one.** The specification assigns Y to **CC 74 by default** and lets a device use another, so a `timbre` selector hardwired to 74 would be wrong. The **zone carries the number** (74 unless configured) and `timbre` names the control it drives; `/midi_map cc74` goes on meaning what it means today, for whoever thinks in messages rather than in dimensions. The two open-source schools split exactly there — JUCE and Surge name the dimension (`pressure`/`pitchbend`/`timbre`), VCV Rack and MIDI 2.0 itself name the message or its number, CC 74 staying 74 — and separating the number from the name is what serves both.
+  - **A zone is playable unmapped.** A plain binding defaults `freq`/`amp` and nothing else; a zone also defaults `pressure` and `timbre` (the table below has the whole set). It costs nothing — an unknown control name is already a no-op on the actuation path — and it is what lets a controller play its three dimensions into a def that declares them without a single `/midi_map`. **The names are ours**: the specification names no parameters, only dimensions and the messages that carry them, so these come from JUCE's vocabulary and from the spellings the selector table already uses — `pressure` rather than `press`, which is the host's word for a gesture, and `lift` a full word like the rest. The only names the specification would have endorsed are `y` and `z`, which say nothing to whoever writes the def.
+  - **Note identity, and the three tables it takes.** `(channel, note)` is not a key under MPE: a controller reuses member channels and repeats a note number across them. A note-on allocates a **note id** (what UMP hands over anyway) and the state becomes three lookups — `note id -> voice` (the voices table, rekeyed), `(channel, note) -> note id` for the note-off to resolve, **newest first** when a channel repeats a note, and `channel -> note ids` for a member channel's expression to find what is sounding on it. The plain per-channel path keeps its `(channel, note)` key and is not rekeyed.
+  - **Voice budget.** A zone is up to 15 simultaneous voices, all drawn from the reserved MIDI range of the node-id partition; check that `NodeIdPartition::from_max_nodes` sizes it for a zone held down with the sustain pedal, and fail loudly rather than silently dropping notes.
+
+  **The whole selector table afterwards**, since the two bullets above add to a
+  set that is spread across three paragraphs otherwise. A default applies when
+  nothing maps the selector; "zone" marks a default a zone gives and a plain
+  per-channel binding does not.
+
+  | Selector | Message | Default control | Notes |
+  |---|---|---|---|
+  | `note` | note on/off number | `freq` | |
+  | `vel` / `velocity` | note-on velocity | `amp` | |
+  | `gate` | (note off, for a gate-aware binding) | `gate` | |
+  | `bend` | pitch bend | none | inside a zone it also folds into `freq`, mapped or not |
+  | `pressure` | channel pressure | `pressure` (zone) | |
+  | `poly` | per-note aftertouch | none | to that note's voice |
+  | `timbre` | the zone's third-dimension CC (74 unless configured) | `timbre` (zone) | **new** |
+  | `lift` | note-off velocity | none | **new**, discarded today |
+  | `ccN` | control change `N` | none | |
+  | `progN` | program `N` | (selects an instrument def) | |
+
+  **Four ends, not two, because the packages move together.** The **GUI host** is one of them and it is easy to miss: `clients/gui` has the `midi` feature **on by default**, depends on `clausters-midi` with `live`, and paints live input into a `midi_in` roll through `parse_note` — which reads note-on and note-off and nothing else, so an MPE note would be painted flat, without the bend that is the point of playing it. The host binds the same decoder (it already depends on the crate) and the roll paints the per-note pitch, so a glide reads as a glide. Host-managed voices (`host/voices.rs`) sending expression *out* is a later thing and not this milestone's.
+
+  Python's `MidiServer` emits on a fixed channel: output needs a **channel assigner** — round robin over the members, preferring a channel with nothing sounding, and when every member is busy reusing the **least recently used** one (the note that has been held longest), which is the rule JUCE's `MPEChannelAssigner` settles on — the zone RPN written at the head of a file or a port, and `Event` fields for the per-note dimensions. The **web client has no MIDI surface at all** — an existing divergence this milestone does not deepen: it is written into `clients/web/PLAN.md` as the gap it is, naming the shape the port follows.
+
+  **The reference implementation.** JUCE's `juce_audio_basics/mpe`. What is worth taking is the *separation*, not the code: `MPEZoneLayout` (zones and the RPN that declares them), `MPEInstrument` (the note state machine holding the five dimensions of every sounding note), `MPEValue` (7- and 14-bit unified), `MPEChannelAssigner` (the output side). The first three map almost one to one onto what `clausters-midi` grows here.
+
+  **Acceptance.** A zone declared over RPN is recognized and readable back; a per-channel binding that maps CC 6 still receives it, and a plain MIDI 1.0 keyboard with a bend wheel behaves exactly as it does before this milestone (a regression test over the existing path, not an inspection); a member bend moves only its own voice while a master bend moves the whole zone; a full controller stream (three dimensions x 15 channels) drives one def with no allocation on the audio thread (`tests/rt_safety.rs`); a take recorded through the Python client writes out with its expression and reads back on another host; `docs/schemas.md` gains the zone commands, `docs/architecture.md` the decoder's place, and an example plays an MPE controller into a gate-aware def.
+
 ### Reviewed ideas: what was dropped and why
 
 - **Denormals** (from the memory/efficiency idea): already implemented post-M7

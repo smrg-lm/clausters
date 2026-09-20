@@ -1976,6 +1976,33 @@ from the frame the line is at, one dragged away goes quiet as the hand lifts it
   Named here so a reader going through the parity gaps is not left thinking it
   is unrecorded.
 
+- ⬜ **MIDI is missing here entirely, not only MPE** *(found 2026-09-19, sizing
+  the server's MPE milestone and looking for the web end of the wire)*. The
+  Python client has a whole MIDI leg: `base/_midiinterface.py` (the RT/NRT seam
+  for MIDI — a `MidiServer` a `Pbind` plays through, a `MidiScore` that writes a
+  `.mid` or a MIDI 2.0 clip file offline, a virtual output port live), a
+  `MidiReceiver` draining a virtual input port, and `responders.MidiFunc`
+  demuxing the decoded messages. This client has **none of it** — not a
+  destination, not a receiver, not a responder — and `clients/web/src` mentions
+  MIDI only where `midicps` happens to be a builtin.
+
+  So it is not a gap MPE opens; MPE only makes it visible, because the shared
+  decoder the server's milestone puts in `clausters-midi` is the piece a page
+  would bind too. Naming it here keeps the standing rule honest: a surface one
+  client has and the other does not is a defect, and "the port has not reached
+  it yet" is a reason for this entry, not for the silence.
+
+  **The order is decided and it is not this milestone's**: the Python client is
+  the reference and this one ports it, *after* MPE lands there — so the port
+  crosses once, against a leg that already carries per-note expression, instead
+  of porting MIDI 1.0's channel model and then porting it again. What the port
+  will have to decide, and what makes this an entry rather than a translation:
+  the browser has **Web MIDI** of its own, so a page's transport is that API and
+  not a virtual ALSA port, and whether the shared decoder reaches it through the
+  wasm core or the page decodes with what the browser hands it is the design
+  question to answer first. The file writers (`.mid`, the clip file) have no such
+  question — they are the same bytes from the same crate.
+
 - ✅ **The logging area system is Python-only** *(found 2026-09-09, reading the
   two `gui/editing/` surfaces against each other for `W30`)*. `clausters.log`
   gives every area of the Python client a logger a script can arm by name —

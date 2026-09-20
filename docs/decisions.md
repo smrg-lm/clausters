@@ -8805,3 +8805,64 @@ page explaining it, uses the structure's name.
 
 Plain English survives: one piece of code, a turn metered in pieces, a file
 written in two pieces. What is retired is the *term of art*.
+
+## The MPE decoder crosses as a handle, because a state block would freeze what it remembers
+
+*2026-09-19.*
+
+`clausters-midi`'s contract is the one every boundary in this project states the
+same way: **only flat data crosses** — integers and pointer+length arrays in, a
+malloc'd byte buffer out, never a library type. MPE decoding does not fit that
+sentence as written, and it is worth saying why before it is made to. A
+decoder **remembers**: an RPN parameter number arrives spread over four control
+changes (CC 101, 100, 6, 38) and means nothing until the fourth; the zone
+layout it declares then governs every later message; and each sounding note
+carries its five dimensions until its note-off. So the question this milestone
+had to answer first is not what the decoder computes but **how its state
+crosses**.
+
+**Two shapes were on the table.** A **caller-held state block** — the caller
+allocates `clausters_mpe_state_size()` bytes, resets them, and passes them to
+every call — is genuinely possible here, because the state is bounded: sixteen
+channels of RPN accumulation, two zones, and at most fifteen member notes each.
+Nothing grows, so nothing allocates, and the flat-data sentence holds
+literally. The alternative is an **opaque handle**, `new`/`feed`/`poll`/`free`,
+with the state private behind it.
+
+**The handle wins, for a reason that is not precedent.** Precedent does point
+that way — the crate already does exactly this twice, for the live output port
+and the live input port, and the `Input` doc frames the handle-plus-poll pair as
+what *keeps* the contract rather than what bends it: no callback ever crosses
+the boundary, and the host language keeps control of its threads. But the
+deciding argument is what a state block would cost later. **Its layout is the
+ABI.** Every change to what the decoder remembers — a sixth dimension, a zone
+rule refined, a note table resized, a field widened — becomes a
+`MIDI_ABI_VERSION` bump and a rebuild for callers that never look inside the
+block and have no use for its contents. The handle keeps that layout on the
+Rust side, where it is private and free to change, and the ABI commits only to
+the four calls. A decoder is exactly the kind of thing whose internals are
+expected to move; freezing them into the wire buys nothing back.
+
+**The shape.** `clausters_mpe_decoder_new` returns the handle;
+`clausters_mpe_feed(handle, bytes, len)` takes one raw message;
+`clausters_mpe_poll(handle, out, cap, out_len)` dequeues one decoded per-note
+message, drained in a loop until it returns 0; `clausters_mpe_free` closes it.
+Feeding and polling are **separate calls, not one that returns its events**,
+because one message in is not one message out: a master-channel bend touches
+every note of the zone, so the output is a queue — the same shape
+`clausters_midi_input_poll` already has, for the same reason. Configuring a zone
+explicitly (for a controller whose layout is known and which sends no RPN) is a
+setter on the handle, which is precisely the thing a state block would have had
+to expose as layout.
+
+**It is not behind the `live` feature**, and that is the other half of the
+decision. The two existing handles wrap an OS resource and a thread, so they
+are gated on `midir`; this one is pure computation. It has to build for wasm,
+and it has to be callable from the server as **plain Rust** — `Decoder::feed` /
+`Decoder::poll` — with the C ABI as a thin shell over that safe face, exactly as
+`Input::open` sits under `clausters_midi_input_open`. Which is also the first
+time the root crate depends on `clausters-midi` at all: the two MIDI stacks have
+not touched until now, and the shared piece is what joins them.
+
+`MIDI_ABI_VERSION` goes to **3**, following v2's precedent of bumping on an
+added surface rather than only on a changed one.

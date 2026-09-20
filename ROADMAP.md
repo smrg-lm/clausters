@@ -370,6 +370,22 @@ its plan; the plan is where its acceptance is read.
   mapping question above.
 
 
+- ⬜ **`M35` — MPE: the expression belongs to the note** *(root `PLAN.md`,
+  "Future milestones (M9+)")*. A milestone in an otherwise closed track,
+  opened 2026-09-19, and listed last because nothing above waits on it. Its
+  decisions are taken rather than pending — the internal model, the ABI the
+  shared decoder crosses on (`docs/decisions.md`, "The MPE decoder crosses as a
+  handle"), the three rules that keep MIDI 1.0 working, the zone's own verb and
+  the query that reads a binding back — so what is left is the work. **It moves
+  four packages**, which is the reason it is not small: the server, the crate
+  the decoder lands in, the Python client's output, and the GUI host, whose
+  `midi` feature is on by default and whose live roll would paint an MPE note
+  flat. **Related:** "MIDI is missing here entirely, not only MPE"
+  (`clients/web/PLAN.md`, Parity gaps), which is deliberately *after* this one —
+  the web client ports a Python leg that already carries per-note expression,
+  so the port crosses once; and `C18` above, the deferred MIDI-timing decision,
+  which this does not reopen.
+
 ### The larger questions, and the plans' own Future directions
 
 Named, not enumerated: each is written where it belongs and is read there.
