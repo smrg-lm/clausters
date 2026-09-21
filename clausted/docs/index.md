@@ -17,8 +17,8 @@ evaluate stays alive in the session, and its output appears in the *post* window
 
 ## Try it
 
-The code blocks in the documentation can be evaluated with the play button that
-appears on each block:
+Each code block in the documentation has a copy button in its corner. Copy
+this one, paste it in the editor and evaluate it with `Ctrl+Enter`:
 
 ```python
 def greeting(name):

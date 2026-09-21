@@ -22,10 +22,14 @@ function highlightPython(code: string, dark: boolean): string {
   return html;
 }
 
-// Lucide's "play" icon (ISC), inline because this HTML does not go through Svelte.
-const PLAY_ICON =
+// Lucide's "copy" and "check" icons (ISC), inline because this HTML does not go through Svelte.
+const icon = (body: string) =>
   '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
-  'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>';
+  `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+export const COPY_ICON = icon(
+  '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+);
+export const COPIED_ICON = icon('<path d="M20 6 9 17l-5-5"/>');
 
 const md = new MarkdownIt({ html: true, linkify: true, typographer: true });
 
@@ -40,22 +44,22 @@ md.core.ruler.push("heading_ids", (state) => {
   }
 });
 
-// ```python blocks carry a button that evaluates them in the session.
-const evalButtonClass = buttonVariants({ variant: "ghost", size: "icon-sm" }) + " eval-block";
+// Every code block carries a button that copies it; ```python blocks are highlighted.
+const copyButtonClass = buttonVariants({ variant: "ghost", size: "icon-sm" }) + " copy-block";
 
 md.renderer.rules.fence = (tokens, idx, _opts, env) => {
   const token = tokens[idx];
   const lang = token.info.trim().split(/\s+/)[0].toLowerCase();
   const code = token.content;
-  if (lang === "python" || lang === "py") {
-    const e = env as unknown as Env;
-    const i = e.blocks.push(code) - 1;
-    return (
-      `<div class="code-block"><button class="${evalButtonClass}" data-block="${i}" title="Evaluate in the session" aria-label="Evaluate in the session">${PLAY_ICON}</button>` +
-      `<pre><code class="language-python">${highlightPython(code, e.dark)}</code></pre></div>`
-    );
-  }
-  return `<pre><code>${escape(code)}</code></pre>`;
+  const e = env as unknown as Env;
+  const i = e.blocks.push(code) - 1;
+  const python = lang === "python" || lang === "py";
+  return (
+    `<div class="code-block"><button class="${copyButtonClass}" data-block="${i}" title="Copy" aria-label="Copy">${COPY_ICON}</button>` +
+    (python
+      ? `<pre><code class="language-python">${highlightPython(code, e.dark)}</code></pre></div>`
+      : `<pre><code>${escape(code)}</code></pre></div>`)
+  );
 };
 
 // `type` rather than `interface`: markdown-it requires a type with an implicit index signature.
@@ -66,7 +70,7 @@ type Env = {
 
 export interface Rendered {
   html: string;
-  /** The code of each Python block, indexed by `data-block`. */
+  /** The code of each block, indexed by `data-block`. */
   blocks: string[];
 }
 

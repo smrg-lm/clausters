@@ -2,8 +2,8 @@
   import { onMount, tick } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import { renderMarkdown, slugify } from "./markdown";
-  import { evaluate, info, pyHelp, pyInspect } from "./session.svelte";
+  import { COPIED_ICON, COPY_ICON, renderMarkdown, slugify } from "./markdown";
+  import { info, pyHelp, pyInspect } from "./session.svelte";
   import ArrowLeft from "@lucide/svelte/icons/arrow-left";
   import ArrowRight from "@lucide/svelte/icons/arrow-right";
   import House from "@lucide/svelte/icons/house";
@@ -165,9 +165,16 @@
 
   function onClick(e: MouseEvent) {
     const target = e.target as HTMLElement;
-    const button = target.closest<HTMLButtonElement>("button.eval-block");
+    const button = target.closest<HTMLButtonElement>("button.copy-block");
     if (button) {
-      evaluate(blocks[Number(button.dataset.block)], `<doc:${title}>`, 1);
+      navigator.clipboard.writeText(blocks[Number(button.dataset.block)]).then(
+        () => {
+          // A check for a moment, where the click was.
+          button.innerHTML = COPIED_ICON;
+          setTimeout(() => (button.innerHTML = COPY_ICON), 1200);
+        },
+        (err) => info(`Could not copy: ${err}\n`),
+      );
       return;
     }
     const link = target.closest("a");
@@ -262,7 +269,7 @@
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
   <article
     class="prose prose-sm max-w-none min-h-0 flex-1 overflow-auto px-5 pt-4 pb-5
-      [&_.code-block]:relative [&_.eval-block]:absolute [&_.eval-block]:top-1.5 [&_.eval-block]:right-1.5
+      [&_.code-block]:relative [&_.copy-block]:absolute [&_.copy-block]:top-1.5 [&_.copy-block]:right-1.5
       [&_pre]:font-mono [&_pre]:text-(length:--code-size) [&_pre_code]:[font-size:inherit]"
     style:font-size="var(--code-size)"
     bind:this={content}
