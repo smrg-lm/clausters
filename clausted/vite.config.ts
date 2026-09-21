@@ -24,6 +24,11 @@ export default defineConfig({
     target: "safari15",
     minify: !process.env.TAURI_ENV_DEBUG,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
-    chunkSizeWarningLimit: 1000,
+    // Every part of the bundle (the editor, the documentation's renderer, the
+    // panels) is used at startup, and it is ~335 kB gzipped: splitting it would
+    // only fetch the same code in more requests. The limit stays as a tripwire
+    // for a jump -- a dependency pulled in twice, a heavy one by mistake --
+    // above today's ~1 MB.
+    chunkSizeWarningLimit: 1500,
   },
 });
