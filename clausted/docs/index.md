@@ -35,8 +35,16 @@ method) shows its signature and its documentation; typing `(` or `,` inside a
 call shows its parameters, with the current one highlighted.
 
 The documentation is hidden with the x on its bar (or View → Documentation) and
-comes back with `F1` or `Ctrl+D`. The post window can be moved below the editor
-by dragging the handle on its bar, with the button on the right of that bar, or
-from View → Post Window.
+comes back with `F1` or `Ctrl+D`.
+
+The window holds up to four panels in two columns: the editor, the documentation,
+the post window and, with View → Split Editor, a second editor beside the first
+(View → Move Tab to Other Editor moves the current file across). Any panel can be
+dragged by the handle at the start of its bar to another place; the places it can
+go to are shown while dragging. A moved panel takes the size of the place it goes
+to, and keeps its own height when it enters a column that had one panel.
+
+A tab with unsaved changes shows a dot; closing it, or closing the window, asks
+before those changes are lost. Undoing back to the saved text clears the dot.
 
 More: [how the session works](session.md) · [help on `print`](python/print.md)
