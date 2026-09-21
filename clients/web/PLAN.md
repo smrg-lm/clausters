@@ -918,6 +918,8 @@ timing: the TS side of C23 pulls in buffers, `Env` and a control def.
 
 **Acceptance:** a curve authored in TS drives a synth's control over either carrier with the same values the Python client produces for the same break points, and dragging it in the browser GUI's `bpf` widget moves the sounding value.
 
+**Removed 2026-09-20.** `seq/automation.ts` is gone with its Python sibling, and the curve it carried is `Bpf` in `defs/ugens` -- see "`seq/automation.ts` goes, and `Bpf` comes" in Found by use, and the entry it references in the Python plan for why. What follows is the record of what this milestone shipped, kept as written.
+
 **What shipped.** `seq/automation.ts`, at its sibling's path and with its
 sibling's shape: `LANE_DEF`, `autoLaneDef()`, `addAutomationDef()` and the
 `Automation` class (`fromPoints`/`toPoints`/`duration`/`prepare`/`play`/
