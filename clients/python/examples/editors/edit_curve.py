@@ -4,8 +4,8 @@
 The smallest of the three structures `clausters.gui.edit` opens, and the one
 that shows what the verb is for. There is **no multitrack here** -- no
 arrangement, no document, no track. A script builds a
-`clausters.seq.Automation`, hands it to ``edit``, and reads the edited curve
-back out of the object it already holds.
+`clausters.defs.Bpf`, hands it to ``edit``, and reads the edited curve back out
+of the object it already holds.
 
 What to do in the window:
 
@@ -17,7 +17,7 @@ What to do in the window:
 
 **Nothing here drives a loop.** ``edit`` opens the window and the host's event
 loop delivers each gesture to the curve on its own thread, so reading the
-`clausters.seq.Automation` at any moment reads what the hand has left there.
+`clausters.defs.Bpf` at any moment reads what the hand has left there.
 
 **How an edit inverts is the shared crate's.** The payload goes in with the
 curve as it stands and comes back as the curve it now is *plus* the payload that
@@ -46,25 +46,27 @@ from clausters.gui import edit
 # %% [markdown]
 # ## A curve, built the ordinary way
 #
-# Four break points in seconds, with the shape of each segment on the point that
-# starts it. Nothing about this object knows it is going to be edited.
+# Four break points in seconds, with the shape of each segment named on the
+# point that starts it -- the same shape names an `clausters.defs.Env` takes,
+# because a `clausters.defs.Bpf` is the same envelope in absolute coordinates.
+# Nothing about this object knows it is going to be edited.
 
 # %%
-from clausters.seq.automation import Automation
+from clausters.defs import Bpf
 
-curve = Automation.from_points(
-    [(0.0, 200.0, 1, 0.0),      # linear up
-     (0.5, 4000.0, 2, 0.0),     # exponential down
-     (2.0, 800.0, 1, 0.0),
-     (3.0, 200.0, 1, 0.0)],
-    target=None, name="cutoff")
+curve = Bpf([(0.0, 200.0, "lin"),      # linear up
+             (0.5, 4000.0, "exp"),     # exponential down
+             (2.0, 800.0),
+             (3.0, 200.0)])
 
 # %% [markdown]
 # ## One verb
 #
-# `clausters.gui.edit` dispatches on **what the structure is**: an `Automation`
-# opens as a `clausters.gui.editing.PointsEditor` -- one `bpf` widget, the
-# ``points`` vocabulary, and the curve's own editing context.
+# `clausters.gui.edit` dispatches on **what the structure holds**, never on its
+# class: anything that can give and take break points -- a `clausters.defs.Bpf`,
+# an `clausters.defs.Env`, a `clausters.multitrack.Automation` -- opens as a
+# `clausters.gui.editing.PointsEditor`: one `bpf` widget, the ``points``
+# vocabulary, and the curve's own editing context.
 
 # %%
 # Nothing here plays, so nothing is booted -- and with no server there is no
@@ -89,9 +91,8 @@ def second_window():
 # %% [markdown]
 # ## Read it back
 #
-# Nothing is handed back at the end: the `Automation` passed in *is* the edited
-# one, so reading `clausters.seq.Automation.to_points` is how a script sees what
-# was drawn.
+# Nothing is handed back at the end: the `Bpf` passed in *is* the edited one, so
+# reading `clausters.defs.Bpf.to_points` is how a script sees what was drawn.
 
 # %%
 def read_back() -> list:

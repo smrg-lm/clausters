@@ -4,7 +4,7 @@ everything.
 
 ``play`` sounds whatever you hand it against the ambient context -- an event or
 a plain dict, a generator, a bare signal expression (a UGen graph or a Faust
-box), a named def, a timeline, a buffer, an automation -- and ``render``
+box), a named def, a timeline, a buffer -- and ``render``
 performs the change of state offline: an expression or a pattern in, samples
 (and here a WAV) out. This tour visits every playable kind audibly, and closes
 the circle by rendering a phrase to a file, loading it back as a buffer and
@@ -32,9 +32,8 @@ import time
 
 from clausters import Event, play, render
 from clausters.defs import SynthDef, boxes as box, control, out, sine
-from clausters.defs.ugens import Env
+from clausters.defs.ugens import Env, env_gen
 from clausters.seq import Pbind, Pseq
-from clausters.seq.automation import Automation
 from clausters.seq.timeline import Timeline
 
 from clausters import Session
@@ -99,21 +98,15 @@ long_note = play(Event(degree=0, dur=30.0))   # would sustain ~24 s...
 time.sleep(PAUSE)
 long_note.free()                              # ...cut now
 
-# %% An automation coupled to a sounding node: the curve is written to a
-# control bus and /node_map'd onto the control -- the node follows it, then keeps
-# the last value. Outside a clock there is nothing to convert; the
-# returned automation stops the sweep early (the control holds where it was).
-# The curve's segment times are seconds -- an `Env`'s are -- so three of them
-# here means three seconds of sweep whatever any clock is doing.
-print("an automation sweeping a sounding node's freq, interrupted mid-sweep")
-node = play(sine(control("freq", 440.0)) * 0.15)
-sweep = Automation(Env([440.0, 1760.0, 440.0], [1.5, 1.5]),
-                   target=(node, "freq"))
-play(sweep)
+# %% A curve inside the expression: an `Env` played by `env_gen` sweeps the
+# frequency from within the node, so there is one node and nothing to map. A
+# curve's segment times are seconds, so three of them here means three seconds
+# of sweep whatever any clock is doing. Freeing the node cuts it wherever it is.
+print("a curve sweeping a node's freq from inside it, cut mid-sweep")
+node = play(sine(env_gen(Env([440.0, 1760.0, 440.0], [1.5, 1.5]))) * 0.15)
 time.sleep(1.5)
-sweep.stop()                # interrupted at the top: the freq holds there
-time.sleep(1.0)
-node.free()
+node.free()                 # cut at the top of the sweep
+time.sleep(0.5)
 
 # %% A timeline: already-generated placement, playing itself on a clock of its
 # own.

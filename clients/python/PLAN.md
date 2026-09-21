@@ -1518,6 +1518,134 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ✅ **`Editor.window` handed back a handle in one client and a bare number in
+  the other, so a widget the caller passed in was reachable from a script and
+  not from a page** *(found 2026-09-20, rewriting `editors/bpf` as `edit_env`
+  over the two clients; fixed the same day)*. An editor takes `extra` -- widgets
+  appended after the picture, the caller's own, which the editor never touches --
+  and the only way to bind one is to resolve it **by name** on the open window.
+  Python's `Editor.window` returns what `open()` returned, a
+  `clausters.gui.handle.WindowHandle`, which subclasses `int` and resolves
+  names; the TypeScript getter returned `this.windowId` while the handle sat
+  beside it in a private `windowHandle`, so `editor.window.widget("play")` did
+  not exist on that side.
+
+  **What it cost was almost the example.** Writing the page against what it
+  could reach meant dropping the curve menu and the play button, and then
+  dropping them from the script too so the two would match -- an example cut
+  down to the smaller client, with the shortfall filed as a divergence to live
+  with. That is the wrong reading of the rule: an example never *invents*
+  surface, but a surface one client has and the other does not is a defect to
+  fix, and going the other way is how a gap becomes permanent. The getter now
+  returns the handle in both, `id` returns the number in both, and both examples
+  have the menu and the button.
+
+- ✅ **`seq.Automation` is three things fused, and one of them is a second
+  implementation of what the crate already plays** *(found 2026-09-20 by the
+  user, asking for the module to go into quarantine beside `form`, which is
+  where it came from: "fue un error dejar la clase Automation porque se pisa con
+  la nueva clase Automation del editor multipista"; fixed the same day)*. The
+  class carries three
+  unrelated responsibilities, and only the third is its own:
+
+  1. **The curve** — `self.env`, an `Env`. Built with `points_to_env`, read with
+     `env_to_points`, measured with `sum(env.times)`. Borrowed whole.
+  2. **The binding** — `targets`, `name`: which `(node, control)` the curve
+     drives. The same thing `multitrack.Automation.target` says, and says
+     better, because the document's version names a port rather than a live
+     node id.
+  3. **The server resources** — `buf`, `bus`, `node`, `frames`, `LANE_DEF`,
+     `auto_lane_def`, and `prepare`/`refill`/`play`/`stop`/`free`. A renderer of
+     control curves, not a structure.
+
+  **The name is the visible half of it.** `clausters.multitrack.Automation` is
+  the document's curve over one parameter, and it is the one that deserves the
+  word; two classes called `Automation` in one package, one of them frozen, is
+  the collision the quarantine exposed rather than caused.
+
+  **The third responsibility is the real finding: it is written twice.** The
+  same job — a curve drives a control over time — exists as
+  `clausters_core::mixer::curve_def` plus
+  `clausters_document::multitrack::nodes::curves`, in Rust, once, and the
+  multitrack's curves are heard through it today (`examples/editors/edit_multitrack.py`,
+  "the curves are heard"). The maths agrees — both sides evaluate segments with
+  `clausters_core::envshape` — but the mechanics do not, and the crate's is
+  better at three things the client's cannot do at all:
+
+  - **A locate costs no message.** The crate's lane synth takes `at` and `step`
+    and reads its table against the transport's own position; `Automation` derives
+    a playback rate from `dur` and runs from wherever `play` started it.
+  - **The curve owns its port.** `instance::hand_ports` withholds from the hand
+    every port a curve drives, so a fader under a curve does nothing and a
+    reconcile does not silence the curve — the bug that entry records (adding a
+    box to a track stopped its automation from being heard). `Automation` maps
+    with a bare `/node_map` and nothing arbitrates.
+  - **It survives the node being remade.** `CurveState` re-maps when the owner's
+    generation changes; a clip dragged to another track keeps its curve.
+
+  And the client's half is written **twice over** — `seq/automation.py` and
+  `seq/automation.ts`, each defining its own `clausters.auto_lane` — which is
+  the shape the non-divergence rule exists to prevent.
+
+  **The fix, decided with the user and shipped the same day.** Three moves:
+
+  - **`Bpf`**: an envelope in **absolute coordinates**, beside `Env` in
+    `defs/ugens`. The same composite datum in another basis — `Env` measures
+    segment durations from `levels`/`times`/`curves`, a `Bpf` is a list of
+    `(at, value, shape, curve)` — and nothing else: no buffer, no bus, no
+    `prepare`. It is a *specification*, which is why the renderer does not
+    belong in it. The conversion is already written and already outside the
+    quarantine (`env_to_points`/`points_to_env`), and the two are to be
+    **interchangeable**: everything that takes an `Env` — `env_gen`, `plot`,
+    `Buffer.gen("env")`, the editor — takes a `Bpf`, and the reverse.
+  - **`seq.Automation` is removed**, not moved. There is no renderer to
+    preserve: the one that is used is in Rust, and the capability it wrapped is
+    not lost — `Env` + `EnvGen` drives a control live today, and the
+    multitrack's curves are played by the crate.
+  - **`PointsEditor` stops being typed on it.** It was born editing an `Env`
+    (`G21`'s `bpf` widget and `examples/editors/bpf.py`, "draws an envelope and
+    hears an `EnvGen` play it"); `C23` hung `Automation` on it afterwards
+    ("reusing the bpf editor (G21) for the curve"), and the `isinstance` in
+    `is_curve` is the residue of that order rather than its reason. It edits a
+    curve: an `Env`, a `Bpf`, or a `multitrack.Automation`, whose `points` are
+    already that shape.
+
+  **What this deliberately does not build.** A client class that renders a
+  control curve into a table for a `PlayBuf` to read — over an `Env` or over a
+  `Bpf` indifferently — is a reasonable thing to want and is *not* part of the
+  specification. It is written down here and built later, if something needs it.
+
+  **The pass, package by package** (the surface is one, so it closed in one
+  commit): `defs/ugens` gained `Bpf` and `env_gen_args` in both clients; `play`
+  and `plot` lost the `Automation` branch (`plot` already rendered an `Env`);
+  `gui/editing/points` lost the import and the `isinstance`; `seq/__init__` and
+  `seq/index.ts` lost the re-export; `examples/transport/automation_lane` and the
+  sweep cell of `examples/basics/verbs` went in both clients, and
+  `examples/editors/edit_curve` is written over a `Bpf`; `timelines.md`'s
+  "Automation: a curve as a timeline item", `routines-and-clocks.md`'s
+  "Automation: a curve driving a control" and the `Automation` rows of
+  `verbs.md`/`composition.md` went with them, in both books, as did
+  `docs/architecture.md`'s row and the two `example-parity.md` sections;
+  `test_automation.py` became `test_bpf.py`, and the seq and form vectors were
+  regenerated.
+
+  **Two things the pass turned up that were not in the plan.** The crate-points
+  conversion existed **twice** — `gui/editing/points` had the pair that
+  `multitrack.Automation` needed, so it moved to `clausters.multitrack` as
+  `crate_points`/`flat_points` and both call it. And `form`'s `Element` could
+  only ever wrap a curve **because that curve played itself**
+  (`form/render.py`, `hasattr(wrapped, "play")`); a `Bpf` is data and plays
+  nothing, so the `a_curve_on_its_event` parity vector could no longer be
+  built and was dropped rather than given a substitute body — `form` is frozen
+  and a vector kept alive by scaffolding is worse than one fewer case.
+
+  **What the name question settled.** A `Bpf` has **no `name`**. The one
+  `Automation` carried defaulted to its first target's control
+  (`self.targets[0][1]`) and reached only two screen labels, both of which the
+  caller already supplies — `edit(title=)` and `plot(label=)`. A
+  `multitrack.Automation` keeps its own, because there it is the lane's name and
+  the session saves it.
+
 - ✅ **`clausters-gui` was documented as a command and declared as none**
   *(found 2026-09-19, reported from another project following the README's
   install check; fixed the same day)*. `pyproject.toml` declared one console
@@ -4364,6 +4492,15 @@ work, where a pending item reads as done.)*
   edits through `edit()` and has the history, so the right-hand column is three:
   `bpf`, `pianoroll`, `pianoroll_midi`.
 
+  **Re-read 2026-09-20**: `editors/bpf` is `edit_env` now, in both clients. What
+  moved it was `Env` answering the curve protocol (`to_points`/`set_points`), so
+  `edit(env)` opens the same `bpf` widget the example drove by hand -- and the
+  file lost its script-owned break-point list, its `points_to_env` round trip
+  and its `/gui_set` push along with it, because there is no second copy of the
+  curve to keep aligned. `Ctrl`+`Z` works there now. **The right-hand column is
+  two**: `pianoroll`, `pianoroll_midi` -- and they are the piano-roll twice,
+  which makes what is left one question rather than three.
+
 - ✅ **Assigning a running clock's tempo re-sloped the whole map from beat 0**
   *(found 2026-09-16 by the user, by ear, in an interactive session: a routine
   on `TempoClock(2)` with `t.tempo = 3` and later `t.tempo = 4`, heard as a
@@ -4820,7 +4957,7 @@ than being ticked here.
 
   `Env` and `EnvGen` were not touched and are not in the way of any of it.
 
-- ⬜ **A drawn curve is a list of points, and `Env` is an envelope for `EnvGen`**
+- ✅ **A drawn curve is a list of points, and `Env` is an envelope for `EnvGen`**
   *(named 2026-08-30 by the user, sizing what a general curve editor would need)*.
   The two are not two spellings of one thing, and the axis is what separates
   them. `Env` holds `levels`, segment `times` as **durations** (one fewer than
@@ -4858,6 +4995,21 @@ than being ticked here.
   `clausters.seq.automation.Automation`, which keeps an `Env` and discretizes it
   with `/buffer_gen "env"`: whether it takes the points too, and what a drawn
   curve does if it ever needs a sustain.
+
+  **Answered 2026-09-20**, with the entry above ("`seq.Automation` is three
+  things fused"), and all three open questions went the same way once the class
+  came apart. The point list **is** a named type in both clients — `Bpf`, beside
+  `Env` in `defs/ugens`, and it takes the shape *names* `Env` takes rather than
+  the wire's numbers. `Env` **keeps the round trip**, in both directions and as
+  the seam itself (`to_points`/`set_points` on each side, `env_to_points` /
+  `points_to_env` between them), which is what lets `env_gen`, `plot` and
+  `edit` take either without asking which they hold. And a drawn curve that
+  needs a sustain **has one**: `Bpf` carries `release_node`/`loop_node` as
+  indices into its *points*, and `to_env` shifts them across the leading `hold`
+  a drawn initial delay becomes — so the conversion this entry called "lossy in
+  one direction" no longer is. What made all of it possible is that
+  `seq.Automation` was removed rather than reconciled: the placement it held was
+  the thing insisting on an `Env`, and the multitrack owns that placement now.
 
 - ✅ **`Track` wraps a `Timeline`, so the tree has two ways of placing things**
   *(named 2026-08-30 by the user: a track is a restricted `Aggregate`, and the

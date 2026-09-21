@@ -169,6 +169,28 @@ class Env:
         return cls([levels[0]] + levels, times, "step",
                    release_node=release_node, loop_node=loop_node)
 
+    def to_points(self, *, time_at: float = 0.0) -> list:
+        """This envelope in the **other basis**: the flat ``[t, v, shape,
+        curve, ...]`` break points a `Bpf` is written with, absolute from
+        ``time_at``. The conversion is `env_to_points`."""
+        return env_to_points(self, time_at=time_at)
+
+    def set_points(self, points, *, time_at: float = 0.0) -> "Env":
+        """Take this envelope's shape from a flat break-point list, in place.
+
+        The other half of `to_points`, and what makes an `Env` editable by
+        anything that draws break points. ``release_node`` and ``loop_node``
+        survive when they still index a level and are dropped when they do not
+        -- a curve redrawn with fewer points has no say about where the old
+        sustain was."""
+        fresh = points_to_env(points, time_at=time_at)
+        self.levels, self.times, self.curves = fresh.levels, fresh.times, fresh.curves
+        for attr in ("release_node", "loop_node"):
+            node = getattr(self, attr)
+            if node is not None and int(node) >= len(self.levels):
+                setattr(self, attr, None)
+        return self
+
     def to_inputs(self):
         """The envelope as the flat number list `env_gen` appends after its
         fixed inputs: ``initLevel, numSegments, releaseNode, loopNode`` then
@@ -262,7 +284,7 @@ def free_self_when_done(source) -> Ugen:
     return Ugen("FreeSelfWhenDone", [source])
 
 
-# ---- break-point <-> Env mapping (shared by the bpf widget and automation) ----
+# ---- break-point <-> Env mapping (the Env <-> Bpf seam, and the bpf widget) ----
 
 
 def env_to_points(env, *, time_at: float = 0.0) -> list:
@@ -311,3 +333,165 @@ def points_to_env(points, *, time_at: float = 0.0, **env_kwargs):
         times.insert(0, delay)
         curve.insert(0, "hold")
     return Env(levels, times, curve, **env_kwargs)
+
+
+def env_gen_args(env) -> list:
+    """An envelope as the flat ``/buffer_gen "env"`` argument list: ``level0``,
+    then a ``(level, time, shape, curve)`` quad per segment.
+
+    The server evaluates it with the same shape maths `env_gen` plays
+    (``clausters_core::envshape``), so a buffer filled this way and an `EnvGen`
+    reading the same envelope agree. Segment times are **relative** here -- only
+    their proportions matter, since what maps the buffer onto real time is
+    whatever reads it. Takes an `Env` or a `Bpf`.
+    """
+    if not isinstance(env, Env):
+        env = env.to_env()
+    args = [float(env.levels[0])]
+    for k in range(len(env.times)):
+        shape, curve = _resolve_curve(env.curves[k])
+        args += [float(env.levels[k + 1]), float(env.times[k]), int(shape), float(curve)]
+    return args
+
+
+def quads(points, curve=None) -> list:
+    """A break-point list as ``(at, value, shape, curve)`` tuples.
+
+    Every spelling of a break point is read here, and a point is written the way
+    an `Env` segment is -- **with the curve's name**, not with the server's shape
+    number:
+
+    - ``(at, value)`` -- linear, or whatever ``curve`` says;
+    - ``(at, value, "exp")`` -- a shape name or a numeric curvature, the same
+      values `Env`'s ``curve`` takes, resolved by `_resolve_curve`;
+    - ``(at, value, shape, curve)`` -- the resolved pair, which is what the
+      ``bpf`` widget sends and what a ``"points"`` event carries;
+    - a flat ``[t, v, shape, curve, ...]`` list of numbers -- the same resolved
+      form, dropping a trailing partial quad rather than guessing at it.
+
+    ``curve`` is the shape for the points that do not name one: a single name or
+    curvature for all of them, or a list with one per **segment** (one fewer
+    than the points, as `Env` counts them). A point that names its own shape
+    keeps it.
+    """
+    if points and not isinstance(points[0], (list, tuple)):
+        flat = [float(x) for x in points]
+        points = [flat[i:i + 4]
+                  for i in range(0, len(flat) - len(flat) % 4, 4)]
+    points = [tuple(point) for point in points]
+    if isinstance(curve, (list, tuple)):
+        segments = max(len(points) - 1, 0)
+        if len(curve) != segments:
+            raise ValueError(
+                f"curve list ({len(curve)}) must match the number of "
+                f"segments ({segments})"
+            )
+        curves = list(curve) + ["lin"]
+    else:
+        # The last point's shape is a placeholder -- no segment leaves it -- so
+        # a blanket `curve` stops one short, which is what `env_to_points`
+        # writes and what keeps a round trip identical.
+        curves = [("lin" if curve is None else curve)] * max(len(points) - 1, 0)
+        curves.append("lin")
+    out = []
+    for point, default in zip(points, curves):
+        if len(point) == 2:
+            shape, value = _resolve_curve(default)
+        elif len(point) == 3:
+            shape, value = _resolve_curve(point[2])
+        elif len(point) == 4:
+            shape, value = int(point[2]), float(point[3])
+        else:
+            raise ValueError(
+                f"a break point is (at, value), (at, value, curve) or "
+                f"(at, value, shape, curve); got {len(point)} numbers"
+            )
+        out.append((float(point[0]), float(point[1]), shape, value))
+    return out
+
+
+class Bpf:
+    """A break-point curve: the same envelope an `Env` is, in **absolute
+    coordinates**.
+
+    One datum, two bases. An `Env` says ``levels``, segment ``times`` and a
+    ``curve`` per segment, which is what `env_gen` and ``/buffer_gen "env"``
+    read; a `Bpf` says ``(at, value, shape, curve)`` per point, with ``at`` an
+    absolute second and the shape belonging to the segment that *leaves* that
+    point, which is what a drawn curve is and what the ``bpf`` widget sends. The
+    conversion both ways is `env_to_points` / `points_to_env`, and the two are
+    interchangeable wherever a curve is asked for: `env_gen` plays either,
+    `clausters.plot` draws either, and `clausters.gui.edit` opens either.
+
+    It is a **specification and nothing else** -- no buffer, no bus, no
+    server. Rendering a control curve to something a node can read is the
+    multitrack's job and it is done in the shared crate
+    (``clausters_core::mixer``), once, for every client.
+
+    Usage::
+
+        curve = Bpf([(0.0, 200.0), (2.0, 4000.0)], curve="exp")
+        play(Synth("filter", cutoff=env_gen(curve)))
+    """
+
+    #: The unit this object's length is in -- **seconds**, like the `Env` it is
+    #: another spelling of.
+    duration_unit = "seconds"
+
+    def __init__(self, points, *, curve=None, release_node=None, loop_node=None):
+        self.points = quads(points, curve)
+        if len(self.points) < 2:
+            raise ValueError("a curve needs at least two break points")
+        #: The index of the point the curve sustains at while a gate is held,
+        #: and the one a loop returns to -- an `Env`'s two, in this basis, since
+        #: a point here is a level there.
+        self.release_node = release_node
+        self.loop_node = loop_node
+
+    @classmethod
+    def from_env(cls, env, *, time_at: float = 0.0) -> "Bpf":
+        """The same curve, read out of an `Env`."""
+        return cls(env_to_points(env, time_at=time_at),
+                   release_node=env.release_node, loop_node=env.loop_node)
+
+    def to_env(self, *, time_at: float = 0.0) -> Env:
+        """The same curve as an `Env`, which is what plays it.
+
+        A first point later than ``time_at`` is a drawn initial delay and
+        becomes a leading ``hold`` segment (`points_to_env` says why), so the
+        sustain and loop indices move with it."""
+        env = points_to_env(self.to_points(), time_at=time_at)
+        shift = len(env.levels) - len(self.points)
+        for attr in ("release_node", "loop_node"):
+            node = getattr(self, attr)
+            setattr(env, attr, None if node is None else int(node) + shift)
+        return env
+
+    def to_points(self) -> list:
+        """The curve as the flat ``[t, v, shape, curve, ...]`` list the ``bpf``
+        widget and a ``"points"`` event both speak."""
+        return [x for point in self.points for x in point]
+
+    def set_points(self, points, curve=None) -> "Bpf":
+        """Take this curve's points from a break-point list, in place -- the
+        other half of `to_points`, and what an editor writes back through. Reads
+        every spelling `quads` does."""
+        fresh = quads(points, curve)
+        if len(fresh) < 2:
+            raise ValueError("a curve needs at least two break points")
+        self.points = fresh
+        for attr in ("release_node", "loop_node"):
+            node = getattr(self, attr)
+            if node is not None and int(node) >= len(self.points):
+                setattr(self, attr, None)
+        return self
+
+    def to_inputs(self) -> list:
+        """The flat inputs `env_gen` appends -- `Env.to_inputs` of `to_env`, so
+        a `Bpf` is played wherever an `Env` is."""
+        return self.to_env().to_inputs()
+
+    def duration(self) -> float:
+        """The span the curve covers, in **seconds**: its last point's time
+        less its first's."""
+        return float(self.points[-1][0] - self.points[0][0])

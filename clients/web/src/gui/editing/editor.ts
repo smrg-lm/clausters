@@ -531,12 +531,23 @@ export class Editor<S = unknown> implements Adopting {
         return () => this.detach();
     }
 
-    /** The open window's id, or `null`. */
-    get window(): number | null {
-        return this.windowId;
+    /**
+     * The open window's **handle**, or `null`.
+     *
+     * The same object {@link Editor.open} hands back: it carries the window's
+     * id and resolves the tree's **named** widgets, which is how a script
+     * reaches the widgets it passed as `extra` --
+     * `editor.window.widget("play").onClick(...)`. The reference client's
+     * `Editor.window` answers the same way (there a `WindowHandle` subclasses
+     * `int`, so the id reads straight off it); this getter returned the bare
+     * number while the handle sat beside it, which made an `extra` widget
+     * unreachable from a page and reachable from a script.
+     */
+    get window(): WindowHandle | null {
+        return this.windowHandle;
     }
 
-    /** The open window's id, or `null` -- the same number as {@link window}. */
+    /** The open window's id, or `null` -- {@link Editor.window}'s own `id`. */
     get id(): number | null {
         return this.windowId;
     }

@@ -3100,6 +3100,33 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 
 ## Found by use: the running list of fixes
 
+- ✅ **`Editor.window` returned the bare id while the handle sat beside it**
+  *(found 2026-09-20; the finding and the reasoning are one entry in
+  `clients/python/PLAN.md`, "Found by use" -- "`Editor.window` handed back a
+  handle in one client and a bare number in the other" -- and are not restated
+  here)*. This side's half: the getter returns `windowHandle` rather than
+  `windowId`, so `editor.window.widget("play")` reaches a widget passed as
+  `extra`, the way the reference client's `editor.window["play"]` does. `id`
+  still returns the number. One caller moved (`gui/editing/samples.ts`, a null
+  check).
+
+- ✅ **`seq/automation.ts` goes, and `Bpf` comes** *(found 2026-09-20 by the
+  user; the finding, the analysis and the decision are one entry in
+  `clients/python/PLAN.md`, "Found by use" -- "`seq.Automation` is three things
+  fused, and one of them is a second implementation of what the crate already
+  plays", and are not restated here)*. This side's half of that pass: `Bpf`
+  beside `Env` in `defs/ugens`, interchangeable with it; `seq/automation.ts`
+  deleted with its second copy of `clausters.auto_lane`; the `Automation`
+  branches out of `play.ts` and `plot.ts` and the import out of
+  `gui/editing/points.ts`; the re-exports out of `seq/index.ts` and
+  `src/index.ts`; `examples/transport/automation-lane.html` and the sweep of
+  `examples/basics/verbs.html` gone, `examples/editors/edit-curve.html` rewritten
+  over a `Bpf`; the `Automation` sections and rows out of
+  `docs/src/routines-and-clocks.md`, `docs/src/verbs.md` and
+  `docs/src/composition.md`; and the vectors `tests/gen-seq-vectors.py` and
+  `tests/gen-form-vectors.py` build from one regenerated. It closes in the same
+  commit as the Python side, which is what the surface being one means.
+
 - ✅ **One WebSocket test fails only when the whole suite runs** *(found
   2026-09-18, running `./test.sh` after adding the manual ordering verbs; fixed
   the same day, and it was not the test)*.

@@ -178,7 +178,7 @@ export function itemFromData(data: Record<string, unknown> | null | undefined): 
  * timeline beat.
  *
  * **An item is anything playable**: an `Event`, an `OscItem`/`MidiItem`, an
- * `Automation`, an event pattern, a `Routine` -- and **another timeline**, which its
+ * an event pattern, a `Routine` -- and **another timeline**, which its
  * parent plays when it reaches it. Each timeline keeps its own units: a
  * child's beats go to seconds through its own map, so siblings at different
  * tempi start together by construction. One tree plays on one engine, the
@@ -599,7 +599,7 @@ export class Timeline {
  * tree.
  *
  * An item of a child measures in the **child's** beats -- an event's sustain, an
- * automation's length, a routine's yields, a pattern's durations -- but only the
+ * a routine's yields, a pattern's durations -- but only the
  * root's clock runs. So the node hands each item this view: its beats and
  * conversions are the child's, placed on the root's time by the node's origin,
  * and what it schedules goes onto the root's clock at the beat that

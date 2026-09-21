@@ -167,7 +167,7 @@ import atexit
 import json
 import sys
 from ..base.bulk import samples_to_blob as _samples_to_blob
-from ..defs.ugens import env_to_points, points_to_env  # re-exported; shared with seq.automation
+from ..defs.ugens import env_to_points, points_to_env  # re-exported; the Env <-> Bpf seam
 
 __all__ = [
     "View",

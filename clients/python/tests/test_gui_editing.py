@@ -13,8 +13,7 @@ import pytest
 from clausters.gui.editing import (Application, Domain, Echo, Editing,
                                    Editor, View)
 from clausters.gui.ids import GuiIdAllocator
-from clausters.defs.ugens import Env
-from clausters.seq.automation import Automation
+from clausters.defs.ugens import Bpf
 
 SR = 48_000.0
 
@@ -291,12 +290,12 @@ def test_a_new_structure_does_not_inherit_a_freed_ones_screen_state():
     from clausters.gui.editing import PointsView
 
     view = PointsView()
-    gone = Automation(Env([0.0, 100.0], [2.0]), None, name="gone")
+    gone = Bpf([(0.0, 0.0), (2.0, 100.0)])
     view.drawn(gone, gone.to_points())
     del gone
     gc.collect()
 
-    fresh = Automation(Env([0.0, 1.0], [2.0]), None, name="fresh")
+    fresh = Bpf([(0.0, 0.0), (2.0, 1.0)])
     drawn = view.drawn(fresh, fresh.to_points())
     assert drawn["max"] < 10.0, f"it took the freed curve's axis: {drawn}"
 

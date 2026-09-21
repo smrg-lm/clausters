@@ -14,8 +14,8 @@
 //   the signal directly. It plots as wide as it writes;
 // - an `Env` is rendered through the engine's own `envGen`, so the drawn curve
 //   is exactly what the engine plays -- not a second evaluation of the same
-//   break points. An `Automation` plots the same way (its curve *is* an
-//   `Env`), labelled with the automation's control name;
+//   break points. A `Bpf` plots the same way -- it is the same envelope in
+//   absolute coordinates;
 // - a `Buffer` (or a buffer number) is fetched from the ambient **live**
 //   server with its shape and rate -- the way to check a buffer's contents;
 // - any other **iterable of numbers** -- an array, a `Float32Array`, a
@@ -47,13 +47,12 @@ import { GraphDef } from "./defs/graphdef.ts";
 import { Synth } from "./defs/node.ts";
 import type { Controls } from "./defs/node.ts";
 import { SynthDef } from "./defs/synthdef.ts";
-import { Env, control, envGen, out } from "./defs/ugens/index.ts";
+import { Bpf, Env, control, envGen, out } from "./defs/ugens/index.ts";
 import { GuiHost, pageGuiConnection } from "./gui/host.ts";
 import type { Stage } from "./gui/host.ts";
 import type { PropValue } from "./gui/host.ts";
 import { ambientHost } from "./gui/ambient.ts";
 import * as guidef from "./gui/guidef.ts";
-import { Automation } from "./seq/automation.ts";
 import { Pattern } from "./seq/pattern.ts";
 import { bounceDef } from "./render.ts";
 
@@ -227,7 +226,7 @@ export type Plottable =
     | FaustDef
     | GraphDef
     | Env
-    | Automation
+    | Bpf
     | Buffer
     | number
     | Iterable<number>
@@ -373,9 +372,7 @@ async function resolve(
     },
 ): Promise<Drawn> {
     if (obj instanceof Env) return renderEnv(obj, sampleRate, "env");
-    if (obj instanceof Automation) {
-        return renderEnv(obj.env, sampleRate, obj.name);
-    }
+    if (obj instanceof Bpf) return renderEnv(obj.toEnv(), sampleRate, "env");
     if (isExpr(obj)) {
         // Plot configures its render for what is being looked at, so the
         // expression is as wide as it writes (`exprChannels` is the one place

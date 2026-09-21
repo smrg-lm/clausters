@@ -51,6 +51,7 @@ from .signals import Signal
 from .synthdef import SynthDef
 from . import pv_expr
 from .ugens import (
+    Bpf,
     ChannelList,
     Control,
     DoneAction,
@@ -254,6 +255,7 @@ __all__ = ["IdSpaces",
     "duty",
     "tduty",
     "env_gen",
+    "Bpf",
     "Env",
     "DoneAction",
     "Bus",

@@ -45,7 +45,7 @@
       import {
         Buffer, Session, SynthDef, gui, plot, seq,
       } from "../dist/index.js";
-      import { Env, control, out, sine } from "../dist/defs/index.js";
+      import { Bpf, Env, control, out, sine } from "../dist/defs/index.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
       const log = (line) => {
@@ -114,12 +114,12 @@
         await opened("sequence", plot(new seq.Pwhite(40.0, 4700.0), { n: 200 }));
         check(shapes.sequence.props.ruler === "samples", "sequence: an index axis");
 
-        // An automation's curve is an Env, labelled with its control name.
-        const auto = new seq.Automation(new Env([200.0, 4000.0], [0.5]), null,
-          { name: "cutoff" });
-        await opened("automation", plot(auto));
-        check(shapes.automation.props.label === "cutoff",
-          `automation: labelled ${shapes.automation.props.label}`);
+        // A Bpf is the same envelope in absolute coordinates, so it draws
+        // the same way; the label is the caller's, as it is for an Env.
+        const curve = new Bpf([[0.0, 200.0], [0.5, 4000.0]]);
+        await opened("curve", plot(curve, { label: "cutoff" }));
+        check(shapes.curve.props.label === "cutoff",
+          `curve: labelled ${shapes.curve.props.label}`);
 
         // ---- the window stays adjustable, and closes ----
         defWin.set({ view: "spectrum" });
@@ -143,8 +143,8 @@
           ? `PASS: six plot kinds drew -- def ${shapes.def.props.channels} lanes, `
             + `expression ${shapes.expression.props.channels}, env at `
             + `${shapes.env.props.sample_rate} Hz, buffer `
-            + `${shapes.buffer.props.channels}, a rate-less sequence and an `
-            + `automation labelled ${shapes.automation.props.label}; `
+            + `${shapes.buffer.props.channels}, a rate-less sequence and a `
+            + `curve labelled ${shapes.curve.props.label}; `
             + `set retuned one to spectrum and a registered host won`
           : `FAIL: ${failures.join("; ")}`);
       }

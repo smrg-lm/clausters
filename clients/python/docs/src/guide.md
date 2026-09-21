@@ -74,7 +74,7 @@ See [Defining instruments: FaustDef and SynthDef](defs.md) for the full def-buil
 
 ## The ambient verbs — `play`, `plot`, `render`
 
-On top of the sessions sit three free-standing verbs that resolve the ambient context (the running session, else the default one), each a single entry for many kinds: `play` sounds what already sounds directly (an event or dict, a pattern, a routine or generator, a def or bare expression, a timeline, a buffer, an automation), `render` performs the change of state to audio (defs and expressions, arrangement elements, timelines, patterns — offline to samples or a WAV, or delegated to a live destination), and `plot` (with its live sibling `scope`) is the visual counterpart. See [The ambient verbs](verbs.md) for the full dispatch tables and the play/render split.
+On top of the sessions sit three free-standing verbs that resolve the ambient context (the running session, else the default one), each a single entry for many kinds: `play` sounds what already sounds directly (an event or dict, a pattern, a routine or generator, a def or bare expression, a timeline, a buffer), `render` performs the change of state to audio (defs and expressions, arrangement elements, timelines, patterns — offline to samples or a WAV, or delegated to a live destination), and `plot` (with its live sibling `scope`) is the visual counterpart. See [The ambient verbs](verbs.md) for the full dispatch tables and the play/render split.
 
 ## The seam, restated
 

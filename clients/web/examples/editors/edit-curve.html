@@ -24,9 +24,9 @@ its own.
 
 The smallest of the three structures <code>edit</code> opens, and the one that
 shows what the verb is for. There is <b>no multitrack here</b> -- no
-arrangement, no document, no track. The page builds an <code>Automation</code>,
-hands it to <code>edit</code>, and reads the edited curve back out of the object
-it already holds.
+arrangement, no document, no track. The page builds a <code>Bpf</code>, hands
+it to <code>edit</code>, and reads the edited curve back out of the object it
+already holds.
 
 <b>Drag a point</b> to move it; <b>drag a segment</b> vertically to bend it;
 <b>Ctrl+click</b> adds or removes one; <b>Ctrl+Z</b> undoes. The second window
@@ -60,20 +60,21 @@ lands.</div>
     -->
     <script type="module">
       import { Session, gui } from "../../dist/index.js";
-      import { Automation } from "../../dist/seq/index.js";
+      import { Bpf } from "../../dist/defs/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
 
-      // A curve, built the ordinary way: four break points in seconds, with the
-      // shape of each segment on the point that starts it. Nothing about this
-      // object knows it is going to be edited.
-      const curve = Automation.fromPoints(
-        [[0.0, 200.0, 1, 0.0],      // linear up
-         [0.5, 4000.0, 2, 0.0],     // exponential down
-         [2.0, 800.0, 1, 0.0],
-         [3.0, 200.0, 1, 0.0]],
-        null, { name: "cutoff" });
+      // A curve, built the ordinary way: four break points in seconds, with
+      // the shape of each segment named on the point that starts it -- the same
+      // shape names an `Env` takes, because a `Bpf` is the same envelope in
+      // absolute coordinates. Nothing about this object knows it is going to be
+      // edited.
+      const curve = new Bpf([
+        [0.0, 200.0, "lin"],      // linear up
+        [0.5, 4000.0, "exp"],     // exponential down
+        [2.0, 800.0],
+        [3.0, 200.0]]);
 
       /** The curve as it now stands: the object passed in *is* the edited one. */
       function readBack() {
@@ -100,9 +101,11 @@ lands.</div>
         // always has its in-page engine, and nothing is sent to it here.
         const session = await Session.embed();
 
-        // One verb. `edit` dispatches on **what the structure is**: an
-        // `Automation` opens as a PointsEditor -- one `bpf` widget, the `points`
-        // vocabulary, and the curve's own editing context.
+        // One verb. `edit` dispatches on **what the structure holds**, never
+        // on its class: anything that can give and take break points -- a
+        // `Bpf`, an `Env`, a `multitrack.Automation` -- opens as a
+        // PointsEditor: one `bpf` widget, the `points` vocabulary, and the
+        // curve's own editing context.
         const editor = await gui.edit(curve, {
           sampleRate: 48_000, title: "cutoff", stage: $("stage"),
         });

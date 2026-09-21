@@ -31,7 +31,6 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 
 from clausters.form import (Aggregate, Clang, Element, Generator, Segments,  # noqa: E402
                             Sequence, Track, Vector, flatten)
-from clausters.seq.automation import Automation  # noqa: E402
 from clausters.seq import Event as SeqEvent  # noqa: E402
 from clausters.seq.timeline import Timeline  # noqa: E402
 
@@ -108,24 +107,6 @@ def a_frozen_generator():
     return aggregate
 
 
-def a_curve_on_its_event():
-    """An envelope attached to the note it shapes: a simultaneous aggregate of a
-    `Clang` and a base `Element` wrapping an `Automation`.
-
-    The curve is the case the writer has to get right leaf-side -- a base
-    `Element` is also what an *unknown* body comes back as, and telling the two
-    apart is what decides whether the document carries the break-points or the
-    automation's own fields.
-    """
-    curve = Automation.from_points([(0.0, 200.0, 1, 0.0), (2.0, 900.0, 2, 0.0),
-                                    (4.0, 300.0, 1, 0.0)], None, name="freq")
-    aggregate = Aggregate()
-    aggregate.add(Aggregate([(0.0, Clang(SeqEvent(instrument="drone", dur=4.0))),
-                         (0.0, Element(curve, duration=4.0))], name="sweep"),
-              offset=0.0)
-    return aggregate
-
-
 def a_mixed_aggregate():
     """The tree's own mixing: a muted lane, a soloed one, and a level.
 
@@ -153,7 +134,6 @@ CASES = [
     ("a_track", a_track),
     ("a_window", a_window),
     ("a_frozen_generator", a_frozen_generator),
-    ("a_curve_on_its_event", a_curve_on_its_event),
     ("a_mixed_aggregate", a_mixed_aggregate),
 ]
 

@@ -71,6 +71,8 @@ import {
 } from "./core/clausters_core_web.js";
 import { TempoMap } from "./base/time.ts";
 import { Buffer } from "./defs/buffer.ts";
+import { quads } from "./defs/ugens/env.ts";
+import type { Curve as CurveSpec, PointsLike } from "./defs/ugens/env.ts";
 import type { Server } from "./defs/server/index.ts";
 import { resolveServer } from "./defs/wire.ts";
 import { FIRST_VERSION, SESSION_FORMAT, editingLoad } from "./document.ts";
@@ -421,6 +423,46 @@ export class Lane {
 }
 
 /**
+ * A break-point list as the **document's** points: `{ at, value, data }`, with
+ * the segment's shape in the point's own `data`.
+ *
+ * The one place the two vocabularies meet in this direction. Reads every
+ * spelling {@link quads} does, curve names included, and the crate carries the
+ * `data` without ever reading it -- which is what lets a shape survive an undo
+ * instead of coming back straight.
+ */
+export function cratePoints(points: PointsLike, curve?: CurveSpec | readonly CurveSpec[]): Extra[] {
+    return quads(points, curve).map(([at, value, shape, curvature]) => ({
+        at,
+        value,
+        data: { shape, curve: curvature },
+    }));
+}
+
+/**
+ * The document's points back as the flat `[t, v, shape, curve, ...]` quads the
+ * `bpf` view and a curve both speak -- the other direction.
+ *
+ * A point that says nothing about its segment is linear, which is what a curve
+ * drawn somewhere that has no shapes means.
+ */
+export function flatPoints(
+    points: readonly { at?: unknown; value?: unknown; data?: unknown }[],
+): number[] {
+    const out: number[] = [];
+    for (const point of points) {
+        const data = (point.data ?? {}) as { shape?: number; curve?: number };
+        out.push(
+            Number(point.at ?? 0.0),
+            Number(point.value ?? 0.0),
+            Math.trunc(Number(data.shape ?? 1)),
+            Number(data.curve ?? 0.0),
+        );
+    }
+    return out;
+}
+
+/**
  * A curve over one parameter, in the arrangement's own time.
  *
  * `target` says **what this automates** in the client's terms and is never read
@@ -460,6 +502,31 @@ export class Automation {
         this.visible = fields.visible ?? false;
         this.enabled = fields.enabled ?? true;
         this.extra = fields.extra ?? {};
+    }
+
+    /**
+     * The curve as the flat `[t, v, shape, curve, ...]` break points the `bpf`
+     * view and a `"points"` event speak -- the curve protocol `gui.edit` opens
+     * a curve by, shared with `Env` and `Bpf`.
+     *
+     * A point that says nothing about its segment is linear, which is what a
+     * curve drawn somewhere that has no shapes means.
+     */
+    toPoints(): number[] {
+        return flatPoints(this.points);
+    }
+
+    /**
+     * Take the curve's break points from a break-point list, in place -- the
+     * other half of {@link Automation.toPoints}, and what an editor writes back
+     * through. Reads every spelling {@link quads} does, curve names included.
+     *
+     * The shape of each segment travels in the point's own `data`, which the
+     * document crate carries and never reads.
+     */
+    setPoints(points: PointsLike, curve?: CurveSpec | readonly CurveSpec[]): this {
+        this.points = cratePoints(points, curve);
+        return this;
     }
 
     write(): Extra {

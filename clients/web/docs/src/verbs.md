@@ -33,7 +33,6 @@ The three carry one semantic each, and the split is deliberate:
 | a `Routine`/`Stream`, or a bare generator | schedules it on a clock | the routine |
 | a def, or a bare expression (`Ugen` / `ChannelList` / `Signal`) | sends it and instances it | the node handle |
 | a `Timeline` | plays it on its own clock, on the ambient server | the timeline |
-| an `Automation` | triggers its lane and maps its targets | the automation |
 | a `Buffer` | sounds it through the stock playbuf instrument | the synth |
 
 **Plottables** — `await plot(x)` (each call opens its own window):
@@ -41,7 +40,7 @@ The three carry one semantic each, and the split is deliberate:
 | You hand it | It shows |
 |---|---|
 | a def, or a bare expression | its output, rendered offline for `dur` seconds — one lane per channel |
-| an `Env` or an `Automation` | the curve, rendered through the engine's own `envGen` |
+| an `Env` or a `Bpf` | the curve, rendered through the engine's own `envGen` |
 | a `Buffer` or a buffer number | its contents, fetched from the ambient live server |
 | any iterable of numbers (a `Pattern`, an array, a `Float32Array`) | the sequence, index on the x axis and the value range fitted |
 

@@ -439,7 +439,7 @@ of the Python client's book; the reasoning behind it is in
 | A window onto contents, and a run of them | what a **cut** makes and a **join** assembles — over samples (`BufferSegments`) or over a timeline of events (`NoteSegments`); **not** the arrangement's, which is why it is not in `form` | `clients/python/clausters/segments.py`, `clients/web/src/segments.ts` |
 | Set (mixed placement — a track) | `seq.Timeline` | `seq/timeline.py` |
 | Function (a process) | a def (`SynthDef`/`FaustDef`/`GraphDef`) **or** a `Pbind`/`Routine` | `defs/`, `seq/pattern.py`, `base/stream.py` |
-| Automation (a curve) | an `Env` discretized into a control buffer, read onto a bus | `seq/automation.py`, `/buffer_gen "env"`, `src/dsp/io.rs` (`OutCtl`) |
+| Automation (a curve) | an envelope in two bases -- `Env` (segment times) and `Bpf` (absolute) -- played by `EnvGen`, and, on a multitrack, sampled into a table a lane synth reads onto a control bus | `defs/ugens/env.py`, `crates/clausters-core/src/mixer.rs` (`curve_def`), `crates/clausters-document/src/multitrack/nodes.rs`, `src/dsp/io.rs` (`OutCtl`) |
 | Change of state (generator → generated) | evaluating a def or bouncing an event pattern | `render.py`, `session.py`, `src/server/render.rs` |
 | Rendering (in time) | timetagged bundles (RT) or a `Score` (NRT) — one flattening, two destinations | `form/render.py`, `seq/timeline.py` (`Timeline.play`), `src/server/render.rs` |
 | The editor driver (data ↔ view) | — the one part that is new, and the only one that knows both | `clients/python/clausters/gui/editing/`, `clients/web/src/gui/editing/` |
@@ -571,9 +571,11 @@ binding it, which is where the picture gets its single owner. See
 `crates/clausters-document/PLAN.md`.
 
 **`edit(x)` is the verb, and the three domains under it are where the seam pays
-for itself.** `clausters.gui.edit` dispatches on what the structure is —
-`SamplesEditor` over a `Buffer` and a `waveform`, `PointsEditor` over an
-`Automation` and a `bpf`, `NotesEditor` over a `Timeline` and a `pianoroll` —
+for itself.** `clausters.gui.edit` dispatches on what the structure holds —
+`SamplesEditor` over a `Buffer` and a `waveform`, `PointsEditor` over a curve
+(anything answering `to_points`/`set_points`: a `Bpf`, an `Env`, a
+`multitrack.Automation`) and a `bpf`, `NotesEditor` over a `Timeline` and a
+`pianoroll` —
 and each is the generic `Editor` with a `Domain` and a `View` in it and nothing
 else. The inverse is the crate's, through `clausters_domain_edit`: the state
 goes in with the payload and comes back as what the structure now is *plus* what

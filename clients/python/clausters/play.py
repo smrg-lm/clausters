@@ -24,9 +24,6 @@ Like SuperCollider's ``play`` (and sc3's), it dispatches by kind:
 - a `clausters.defs.Buffer` -> sounded through the stock playbuf instrument
   (a buffer sounds through an instrument; here the verb provides the default
   one -- ``rate``/``amp`` controls, freed when the take ends);
-- an `clausters.seq.automation.Automation` -> prepared if needed and
-  triggered on the ambient server -- the interactive "apply this curve to
-  that node's control, now" (outside a clock its beats read as seconds);
 - anything else following the **timeline-item protocol**
   (``play(destination)`` -- an `OscItem`, a `MidiItem`, ...) -> dispatched
   to it with the ambient server.
@@ -71,10 +68,8 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
             (`clausters.defs.SynthDef` /
             `clausters.defs.FaustDef` / `clausters.defs.GraphDef`); a
             `clausters.seq.timeline.Timeline`; a `clausters.defs.Buffer`
-            (sounded through the stock playbuf instrument); an
-            `clausters.seq.automation.Automation` (prepared and triggered);
-            or anything with a ``play(destination)`` (the timeline-item
-            protocol).
+            (sounded through the stock playbuf instrument); or anything with
+            a ``play(destination)`` (the timeline-item protocol).
         server: the destination server; ``None`` resolves the ambient one (the
             running session's, else the booted default -- see
             `clausters.base.main.Main.resolve_server`).
@@ -97,11 +92,9 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         `clausters.seq.eventstream.EventStreamPlayer` for a pattern
         (``.stop()``), the routine for a routine, the node handle -- a
         `clausters.defs.Synth` or instance `clausters.defs.Group` -- for a
-        def, expression or buffer (``.free()``), the
-        timeline itself (``.stop()``), and
-        the `clausters.seq.automation.Automation` itself (``.stop()``).
+        def, expression or buffer (``.free()``), and the timeline itself
+        (``.stop()``).
     """
-    from .seq.automation import Automation
     from .seq.event import Event
     from .seq.pattern import EventPattern, Pattern
     from .seq.timeline import Timeline
@@ -135,14 +128,6 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         return playable.play(at=0.0, quant=quant, destination=main.resolve_server(server))
     if isinstance(playable, Buffer):
         return _play_buffer(playable, main.resolve_server(server), controls)
-    if isinstance(playable, Automation):
-        resolved = main.resolve_server(server)
-        if playable.buf is None or playable.bus is None:
-            # Interactive trigger: we are off the clock thread, so preparing
-            # (allocating and filling the control buffer) may block here.
-            playable.prepare(resolved)
-        playable.play(resolved)
-        return playable
     from .form.element import Element
 
     if isinstance(playable, Element):
@@ -161,7 +146,7 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         "or event dict, an EventPattern (Pbind), a Routine/Stream or "
         "generator, a def or bare expression (Ugen/ChannelList/Signal/Box), "
         "a Timeline, "
-        "a Buffer, an Automation, or anything with play(destination). An "
+        "a Buffer, or anything with play(destination). An "
         "arrangement Element is rendered, not played -- see "
         "clausters.form.render."
     )

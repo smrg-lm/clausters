@@ -189,7 +189,7 @@ class Element:
     def duration_unit(self) -> str:
         """The unit `duration` is in: `SECONDS` for the elements whose data
         is samples (`Vector`, `Segments`), and for anything wrapped that
-        measures itself in seconds (a `clausters.seq.Automation`'s curve is an
+        measures itself in seconds (a `clausters.defs.Bpf` is an
         envelope, and an envelope's segment times are real time); `BEATS`
         otherwise.
 
@@ -242,9 +242,8 @@ class Element:
 
     def play(self, destination):
         """Delegate playing to the wrapped item's ``play(destination)`` -- the
-        double-dispatch seam shared by `clausters.seq.Event`,
-        `clausters.seq.timeline.OscItem`/`MidiItem` and
-        `clausters.seq.Automation`.
+        double-dispatch seam shared by `clausters.seq.Event` and
+        `clausters.seq.timeline.OscItem`/`MidiItem`.
 
         Container and pattern-backed elements (`Aggregate`, `Track`, a `Sequence`
         wrapping a `Pattern`) are **not** directly playable this way -- they are

@@ -30,7 +30,9 @@ whole design:
   of a person does wrong is otherwise visible to nobody.
 `edit(x)` is how a person calls it: one verb over the fundamental structures,
 dispatching on what the structure is -- `SamplesEditor` over a
-`clausters.defs.Buffer`, `PointsEditor` over a `clausters.seq.Automation`,
+`clausters.defs.Buffer`, `PointsEditor` over a curve (a
+`clausters.defs.Bpf`, an `clausters.defs.Env` or a
+`clausters.multitrack.Automation`),
 `NotesEditor` over a `clausters.seq.Timeline`, `MultitrackEditor` over a
 `clausters.multitrack.Multitrack`. Each is `Editor` with its own domain and view
 in it and nothing else, which is what the split was for -- and the multitrack's

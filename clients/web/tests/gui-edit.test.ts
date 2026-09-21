@@ -18,7 +18,7 @@ import { loadCore } from "../src/base/core.ts";
 import { Editing, NotesEditor, PointsEditor, SamplesEditor, edit, measures, watch }
     from "../src/gui/editing/index.ts";
 import { unwatch } from "../src/base/log.ts";
-import { Automation } from "../src/seq/automation.ts";
+import { Bpf } from "../src/defs/ugens/index.ts";
 import { Event as SeqEvent } from "../src/seq/event.ts";
 import { OscItem, Timeline } from "../src/seq/timeline.ts";
 import type { GuiHost, PropValue } from "../src/gui/host.ts";
@@ -72,8 +72,7 @@ class FakeHost {
 
 const asHost = (host: FakeHost): GuiHost => host as unknown as GuiHost;
 
-const aCurve = (): Automation =>
-    Automation.fromPoints([[0.0, 200.0, 2, 0.0], [2.0, 900.0, 1, 0.0]], null, { name: "cutoff" });
+const aCurve = (): Bpf => new Bpf([[0.0, 200.0, "exp"], [2.0, 900.0]]);
 
 const aTimeline = (): Timeline =>
     new Timeline([

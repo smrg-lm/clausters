@@ -291,34 +291,18 @@ def test_play_buffer_stock_instrument_renders_audible_output(clean_default):
         pytest.skip(f"clausters-ffi not built: {e}")
     from clausters import Session
     from clausters.defs import Env
-    from clausters.seq.automation import _env_gen_args
+    from clausters.defs.ugens import env_gen_args
 
     session = Session.nrt()
     server = session.server
     buf = Buffer.alloc(4800, 1, server=server)          # 0.1 s at 48 kHz
     # Fill it with a constant 1.0 (the env generator, level 1 throughout).
-    buf.gen("env", *_env_gen_args(Env([1.0, 1.0], [1.0])))
+    buf.gen("env", *env_gen_args(Env([1.0, 1.0], [1.0])))
     play(buf, server=server)
     _st0 = session.render(sample_rate=48_000.0, channels=1)
     samples, frames = _st0.samples, _st0.frames
     assert frames >= 4800
     assert max(abs(x) for x in samples) > 0.9, "the take sounds at unity"
-
-
-def test_free_play_triggers_an_automation_immediately(clean_default):
-    from clausters.defs import Env
-    from clausters.seq.automation import Automation
-
-    server = _nrt_server()
-    main.server = server
-    auto = Automation(Env([200.0, 800.0, 200.0], [0.1, 0.3]),
-                      target=(5, "freq"))
-    node = play(auto)                           # prepares and triggers
-    assert node is not None
-    assert auto.buf is not None and auto.bus is not None
-    # Outside a clock the curve's beats read as seconds: freed at 0.4.
-    times = sorted(t for t, _ in server.interface.score.bundles)
-    assert times[-1] == pytest.approx(0.4)
 
 
 def test_free_play_falls_back_to_the_timeline_item_protocol(clean_default):
@@ -387,23 +371,6 @@ def test_event_release_closes_the_gate_or_frees(clean_default):
     rest_ev.free()
     rest_ev.release()
 
-
-def test_automation_stops_early(clean_default):
-    from clausters.defs import Env
-    from clausters.seq.automation import Automation
-
-    server = _nrt_server()
-    main.server = server
-    auto = play(Automation(Env([200.0, 800.0], [60.0]), target=(5, "freq")))
-    assert isinstance(auto, Automation)     # the verb returns the stoppable
-    assert auto.node is not None
-    auto.stop()                             # a minute of sweep, cut now
-    assert auto.node is None
-    assert _addrs(server)[-1] == "/node_free"
-    auto.stop()                             # idempotent
-
-
-# ---- as_def: the shared expression -> def coercion ----
 
 def test_as_def_wraps_a_bare_ugen_in_out():
     sdef = as_def(sine(440.0))

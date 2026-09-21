@@ -287,40 +287,6 @@
    "flat": [],
    "relation": "successive"
   },
-  "a_curve_on_its_event": {
-   "flat": [
-    {
-     "beat": 0.0,
-     "event": {
-      "type": "note",
-      "instrument": "drone",
-      "dur": 4.0,
-      "legato": 0.8,
-      "stretch": 1.0,
-      "amp": 0.1,
-      "add_action": 1,
-      "target": 0,
-      "has_gate": false,
-      "octave": 5.0,
-      "root": 0.0,
-      "scale": [
-       0,
-       2,
-       4,
-       5,
-       7,
-       9,
-       11
-      ]
-     }
-    },
-    {
-     "beat": 0.0,
-     "item": "Automation"
-    }
-   ],
-   "relation": "simultaneous"
-  },
   "a_mixed_aggregate": {
    "flat": [
     {

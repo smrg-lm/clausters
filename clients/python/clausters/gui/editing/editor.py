@@ -863,7 +863,13 @@ class Editor:
 
     @property
     def window(self):
-        """The open window's id, or ``None``."""
+        """The open window's **handle**, or ``None``.
+
+        The same object `open` hands back: a `clausters.gui.handle.WindowHandle`,
+        which equals the window id and also resolves the tree's **named**
+        widgets -- which is how a script reaches the widgets it passed as
+        ``extra``, ``editor.window["play"].on_click(...)``.
+        """
         return self._window
 
     #: What a handle in this client is addressed by. `clausters.plot.PlotWindow`
@@ -871,7 +877,8 @@ class Editor:
     #: four things a visual verb hands back are read the same way.
     @property
     def id(self):
-        """The open window's id, or ``None`` -- the same number as `window`."""
+        """The open window's id, or ``None`` -- the same number as `window`,
+        which is an ``int`` subclass."""
         return self._window
 
     @property

@@ -44,7 +44,8 @@ def edit(structure, *, sample_rate: float = 0.0,
 
     Args:
         structure: what to edit -- a `clausters.defs.Buffer` (its samples), a
-            `clausters.seq.Automation` (its curve), a `clausters.seq.Timeline`
+            a curve (a `clausters.defs.Bpf`, an `clausters.defs.Env` or a
+            `clausters.multitrack.Automation`), a `clausters.seq.Timeline`
             (its notes) or a `clausters.multitrack.Multitrack` (the multitrack).
         sample_rate: the engine's rate, which fixes the data<->view bridge. A
             take knows its own and needs none.
@@ -90,7 +91,8 @@ def edit(structure, *, sample_rate: float = 0.0,
     else:
         raise TypeError(
             f"nothing edits a {type(structure).__name__}: `edit` opens a Buffer "
-            f"(its samples), an Automation (its curve), a Timeline (its notes) "
+            f"(its samples), a curve -- anything with to_points/set_points -- "
+            f"a Timeline (its notes) "
             f"or a Multitrack (the multitrack)."
         )
     if open:

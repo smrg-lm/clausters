@@ -26,8 +26,7 @@ import {
     pointsProps as corePointsProps,
 } from "../../core/clausters_core_web.js";
 import { POINTS, domainEdit } from "../../document.ts";
-import { pointsToEnv } from "../../defs/ugens/env.ts";
-import { Automation } from "../../seq/automation.ts";
+import { cratePoints, flatPoints } from "../../multitrack.ts";
 import { window as guiWindow } from "../guidef.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { PropValue } from "../host.ts";
@@ -36,21 +35,18 @@ import { Editor } from "./editor.ts";
 import type { GenericEditorOptions } from "./editor.ts";
 import { View } from "./view.ts";
 
-/** What the `bpf` widget sends and takes: flat `t v shape curve` quads. */
-export const QUAD = 4;
-
 /**
- * A flat `points` payload as `[t, value, shape, curve]` tuples, dropping a
- * trailing partial quad rather than guessing at it.
+ * What a curve editor asks of a structure: break points it can read and write
+ * back, and nothing about its type.
+ *
+ * An `Env`, a `Bpf` and a `multitrack.Automation` all answer it, and so would a
+ * fourth thing that learned the pair -- which is the point, and why `isCurve`
+ * asks for the methods rather than for a class.
  */
-export function quads(flat: readonly unknown[]): [number, number, number, number][] {
-    const values = flat.map(Number);
-    const out: [number, number, number, number][] = [];
-    for (let i = 0; i + QUAD <= values.length; i += QUAD) {
-        out.push([values[i] as number, values[i + 1] as number,
-            Math.trunc(values[i + 2] as number), values[i + 3] as number]);
-    }
-    return out;
+export interface EditableCurve {
+    toPoints(): number[];
+    setPoints(points: readonly number[]): unknown;
+    name?: string;
 }
 
 /** One point as the crate holds it. */
@@ -63,8 +59,12 @@ export interface CratePoint {
 /**
  * A curve's vocabulary: the crate's `points`, with the shape of each segment
  * carried in the point's own `data`.
+ *
+ * **What it asks of the structure is `toPoints` and `setPoints`**, and nothing
+ * about its type -- an `Env`, a `Bpf` and a `multitrack.Automation` are all
+ * curves here, and a fourth thing that learns the pair would be too.
  */
-export class PointsDomain extends Domain<Automation> {
+export class PointsDomain extends Domain<EditableCurve> {
     override readonly name = POINTS;
     override readonly ingested = true;
 
@@ -72,46 +72,26 @@ export class PointsDomain extends Domain<Automation> {
      * The curve as the crate holds it -- the state `current` is read against and
      * `project` writes back.
      *
-     * **The `Env` seam, not a gesture.** It is here rather than in the crate for
-     * the reason `project` is: what it crosses is the object *this page* holds,
-     * and the vocabulary on the other side is already the crate's.
+     * **The curve seam, not a gesture.** It is here rather than in the crate
+     * for the reason `project` is: what it crosses is the object *this page*
+     * holds, and the vocabulary on the other side is already the crate's. Both
+     * directions are {@link cratePoints} and {@link flatPoints}, written once
+     * because a `multitrack.Automation` converts the same way.
      */
-    state(structure: Automation): CratePoint[] {
-        return quads(structure.toPoints()).map(([at, value, shape, curve]) => ({
-            at,
-            value,
-            data: { shape, curve },
-        }));
+    state(structure: EditableCurve): CratePoint[] {
+        return cratePoints(structure.toPoints()) as unknown as CratePoint[];
     }
 
-    current(structure: Automation, payload: unknown): unknown {
+    current(structure: EditableCurve, payload: unknown): unknown {
         return domainEdit(this.name, this.state(structure), payload)?.current ?? null;
     }
 
-    project(structure: Automation, payload: unknown): boolean {
+    project(structure: EditableCurve, payload: unknown): boolean {
         const edited = domainEdit(this.name, this.state(structure), payload);
         if (edited === undefined || !edited.applied) return false;
-        structure.env = pointsToEnv(flatPoints(edited.state as CratePoint[]));
-        // One door: the envelope the page holds and the control buffer the lane
-        // synth reads cannot disagree about which of the two happened.
-        void structure.refill();
+        structure.setPoints(flatPoints(edited.state as CratePoint[]));
         return true;
     }
-}
-
-/**
- * The crate's points back as the flat quads the view and the `Env` both speak. A
- * point that says nothing about its segment is linear, which is what a curve
- * drawn somewhere that has no shapes means.
- */
-export function flatPoints(points: readonly CratePoint[]): number[] {
-    const out: number[] = [];
-    for (const point of points) {
-        const data = point.data ?? {};
-        out.push(Number(point.at ?? 0), Number(point.value ?? 0),
-            Math.trunc(Number(data.shape ?? 1)), Number(data.curve ?? 0));
-    }
-    return out;
 }
 
 /** One `bpf`: the curve on its own axis. */
@@ -141,7 +121,7 @@ export function curveAxis(
     return [Number(out[0]), Number(out[1])];
 }
 
-export class PointsView extends View<Automation> {
+export class PointsView extends View<EditableCurve> {
     /**
      * The value axis this view is drawing against, and the time it spans, kept
      * per structure so a redraw does not re-fit them. Both only ever **grow** --
@@ -161,7 +141,7 @@ export class PointsView extends View<Automation> {
      * both only ever grow, and a curve that refits while a point is being
      * dragged moves every other point on screen.
      */
-    drawn(structure: Automation, points: readonly number[]): Record<string, PropValue> {
+    drawn(structure: EditableCurve, points: readonly number[]): Record<string, PropValue> {
         const kept = this.kept.get(structure);
         const props = JSON.parse(
             corePointsProps(
@@ -176,7 +156,7 @@ export class PointsView extends View<Automation> {
         return props;
     }
 
-    build(editor: Editor<Automation>): GuiNode {
+    build(editor: Editor<EditableCurve>): GuiNode {
         const drawn = this.drawn(editor.structure, editor.structure.toPoints());
         return guiWindow(
             { title: editor.title, w: editor.size[0], h: editor.size[1], layout: "col" },
@@ -189,21 +169,20 @@ export class PointsView extends View<Automation> {
         );
     }
 
-    override props(editor: Editor<Automation>): Record<string, PropValue> {
+    override props(editor: Editor<EditableCurve>): Record<string, PropValue> {
         return this.drawn(editor.structure, editor.structure.toPoints());
     }
 }
 
 /**
- * A curve on screen, editable back into the `Automation` the caller already
- * holds.
+ * A curve on screen, editable back into the curve the caller already holds.
  *
  * Nothing is handed back at the end: the object the page passed in *is* the
- * edited one, and reading `Automation.toPoints` after an edit is how a caller
- * sees what was drawn.
+ * edited one, and reading its `toPoints` after an edit is how a caller sees
+ * what was drawn.
  */
-export class PointsEditor extends Editor<Automation> {
-    constructor(curve: Automation, options: GenericEditorOptions<Automation>) {
+export class PointsEditor extends Editor<EditableCurve> {
+    constructor(curve: EditableCurve, options: GenericEditorOptions<EditableCurve>) {
         super(curve, {
             title: "Curve",
             ...options,
@@ -213,12 +192,23 @@ export class PointsEditor extends Editor<Automation> {
     }
 }
 
-function nameOf(curve: Automation): string {
+function nameOf(curve: EditableCurve): string {
     const name = (curve as { name?: string }).name;
     return typeof name === "string" && name ? name : "curve";
 }
 
-/** Whether `edit` should open this as a curve. */
-export function isCurve(structure: unknown): structure is Automation {
-    return structure instanceof Automation;
+/**
+ * Whether `edit` should open this as a curve.
+ *
+ * **Asked of the structure, not of a type list.** What a curve editor needs is
+ * an addressable list of break points it can read and write back, which is the
+ * `toPoints`/`setPoints` pair -- so an `Env`, a `Bpf` and a
+ * `multitrack.Automation` all open, and none of them is named here.
+ */
+export function isCurve(structure: unknown): structure is EditableCurve {
+    const curve = structure as Partial<EditableCurve> | null;
+    return (
+        typeof curve === "object" && curve !== null &&
+        typeof curve.toPoints === "function" && typeof curve.setPoints === "function"
+    );
 }

@@ -178,7 +178,7 @@ def test_plot_renders_an_env_through_the_engine():
     widget = _plot_widget(host.opened[0])
     assert widget["label"] == "env"
     frames = os.path.getsize(widget["path"]) // 4
-    assert abs(frames - 0.4 * SR) <= 128, f"~0.4 s (sum of times), got {frames}"
+    assert abs(frames - 0.4 * SR) <= 128, f"~0.4 s (the curve's span), got {frames}"
 
 
 def test_plot_renders_a_bare_ugen_expression():
@@ -214,15 +214,15 @@ def test_plot_derives_its_width_from_a_channel_list():
     assert _plot_widget(host.opened[0]).get("channels", 1) == 1
 
 
-def test_plot_renders_an_automation_curve():
+def test_plot_renders_a_bpf_curve():
+    # A `Bpf` is an `Env` in the other basis, so it draws the same way and
+    # through the same engine render -- labelled with the curve's own name.
     _embed_or_skip()
-    from clausters.defs import Env
-    from clausters.seq.automation import Automation
+    from clausters.defs import Bpf
 
-    auto = Automation(Env(levels=[200.0, 4000.0, 200.0], times=[0.1, 0.3]),
-                      target=(None, "cutoff"))
+    curve = Bpf([(0.0, 200.0), (0.1, 4000.0), (0.4, 200.0)])
     host = FakeHost()
-    plot(auto, sample_rate=SR, host=host)
+    plot(curve, sample_rate=SR, host=host, label="cutoff")
     widget = _plot_widget(host.opened[0])
     assert widget["label"] == "cutoff"
     frames = os.path.getsize(widget["path"]) // 4

@@ -342,6 +342,37 @@ class Lane:
         )
 
 
+def crate_points(points, curve=None) -> list:
+    """A break-point list as the **document's** points: ``{"at", "value",
+    "data"}``, with the segment's shape in the point's own ``data``.
+
+    The one place the two vocabularies meet in this direction. Reads every
+    spelling `clausters.defs.ugens.quads` does, curve names included, and the
+    crate carries the ``data`` without ever reading it -- which is what lets a
+    shape survive an undo instead of coming back straight.
+    """
+    from .defs.ugens import quads
+
+    return [{"at": at, "value": value,
+             "data": {"shape": shape, "curve": curvature}}
+            for at, value, shape, curvature in quads(points, curve)]
+
+
+def flat_points(points) -> list:
+    """The document's points back as the flat ``[t, v, shape, curve, ...]``
+    quads the ``bpf`` view and a curve both speak -- the other direction.
+
+    A point that says nothing about its segment is linear, which is what a curve
+    drawn somewhere that has no shapes means.
+    """
+    out: list = []
+    for point in points:
+        data = point.get("data") or {}
+        out += [float(point.get("at", 0.0)), float(point.get("value", 0.0)),
+                int(data.get("shape", 1)), float(data.get("curve", 0.0))]
+    return out
+
+
 @dataclass
 class Automation:
     """A curve over one parameter, in the arrangement's own time.
@@ -364,6 +395,27 @@ class Automation:
     #: without being deleted, which is what an arm or a bypass is.
     enabled: bool = True
     extra: dict = field(default_factory=dict)
+
+    def to_points(self) -> list:
+        """The curve as the flat ``[t, v, shape, curve, ...]`` break points the
+        ``bpf`` view and a ``"points"`` event speak -- the curve protocol
+        `clausters.gui.edit` opens a curve by, shared with
+        `clausters.defs.ugens.Env` and `clausters.defs.ugens.Bpf`.
+
+        A point that says nothing about its segment is linear, which is what a
+        curve drawn somewhere that has no shapes means."""
+        return flat_points(self.points)
+
+    def set_points(self, points, curve=None) -> "Automation":
+        """Take the curve's break points from a break-point list, in place --
+        the other half of `to_points`, and what an editor writes back through.
+        Reads every spelling `clausters.defs.ugens.quads` does, curve names
+        included.
+
+        The shape of each segment travels in the point's own ``data``, which the
+        document crate carries and never reads."""
+        self.points = crate_points(points, curve)
+        return self
 
     def write(self) -> dict:
         out: dict = {"id": self.id}

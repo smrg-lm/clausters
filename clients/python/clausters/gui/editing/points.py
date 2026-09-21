@@ -23,42 +23,19 @@ losing the data rather than declining to interpret it.
 import weakref
 
 from ... import _native
-from ...defs.ugens import points_to_env
-from ...seq.automation import Automation
+from ...multitrack import crate_points, flat_points
 from .domain import Domain
 from .editor import Editor
 from .view import View
 
-#: What the ``bpf`` widget sends and takes: flat ``t v shape curve`` quads.
-QUAD = 4
-
-
-def quads(flat) -> list:
-    """A flat ``points`` payload as ``(t, value, shape, curve)`` tuples,
-    dropping a trailing partial quad rather than guessing at it."""
-    values = [float(v) for v in flat]
-    return [(values[i], values[i + 1], int(values[i + 2]), values[i + 3])
-            for i in range(0, len(values) - len(values) % QUAD, QUAD)]
-
-
-def flat(points) -> list:
-    """The crate's points back as the flat quads the view and the `Env` both
-    speak -- the other half of the `Env` seam `PointsDomain.state` opens.
-
-    A point that says nothing about its segment is linear, which is what a curve
-    drawn somewhere that has no shapes means.
-    """
-    out: list = []
-    for point in points:
-        data = point.get("data") or {}
-        out += [float(point.get("at", 0.0)), float(point.get("value", 0.0)),
-                int(data.get("shape", 1)), float(data.get("curve", 0.0))]
-    return out
-
-
 class PointsDomain(Domain):
     """A curve's vocabulary: the crate's ``points``, with the shape of each
-    segment carried in the point's own ``data``."""
+    segment carried in the point's own ``data``.
+
+    **What it asks of the structure is `to_points` and `set_points`**, and
+    nothing about its type -- an `clausters.defs.ugens.Env`, a
+    `clausters.defs.ugens.Bpf` and a `clausters.multitrack.Automation` are all
+    curves here, and a fourth thing that learns the pair would be too."""
 
     name = _native.POINTS
     ingested = True
@@ -67,13 +44,14 @@ class PointsDomain(Domain):
         """The curve as the crate holds it -- the state `current` is read
         against and `project` writes back.
 
-        **The `Env` seam, not a gesture.** It is here rather than in the crate
+        **The curve seam, not a gesture.** It is here rather than in the crate
         for the reason `project` is: what this crosses is the object *this
         client* holds, and the vocabulary on the other side is already the
-        crate's.
+        crate's. Both directions are `clausters.multitrack.crate_points` and
+        `clausters.multitrack.flat_points`, written once because a
+        `clausters.multitrack.Automation` converts the same way.
         """
-        return [{"at": t, "value": v, "data": {"shape": shape, "curve": curve}}
-                for t, v, shape, curve in quads(structure.to_points())]
+        return crate_points(structure.to_points())
 
     def current(self, structure, payload: dict) -> "dict | None":
         edited = _native.domain_edit(self.name, self.state(structure), payload)
@@ -83,10 +61,7 @@ class PointsDomain(Domain):
         edited = _native.domain_edit(self.name, self.state(structure), payload)
         if edited is None or not edited.get("applied"):
             return False
-        structure.env = points_to_env(flat(edited["state"]))
-        # One door: the envelope the script holds and the control buffer the
-        # lane synth reads cannot disagree about which of the two happened.
-        structure.refill()
+        structure.set_points(flat_points(edited["state"]))
         return True
 
 
@@ -152,12 +127,11 @@ class PointsView(View):
 
 
 class PointsEditor(Editor):
-    """A curve on screen, editable back into the `clausters.seq.Automation` the
-    caller already holds.
+    """A curve on screen, editable back into the curve the caller already holds.
 
     Nothing is handed back at the end: the object the script passed in *is* the
-    edited one, and reading `clausters.seq.Automation.to_points` after an edit
-    is how a caller sees what was drawn.
+    edited one, and reading its ``to_points`` after an edit is how a caller sees
+    what was drawn.
     """
 
     def __init__(self, curve, *, sample_rate: float,
@@ -173,5 +147,13 @@ def _name(curve) -> str:
 
 
 def is_curve(structure) -> bool:
-    """Whether `edit` should open this as a curve."""
-    return isinstance(structure, Automation)
+    """Whether `edit` should open this as a curve.
+
+    **Asked of the structure, not of a type list.** What a curve editor needs is
+    an addressable list of break points it can read and write back, which is the
+    ``to_points``/``set_points`` pair -- so an `clausters.defs.ugens.Env`, a
+    `clausters.defs.ugens.Bpf` and a `clausters.multitrack.Automation` all open,
+    and none of them is named here.
+    """
+    return (callable(getattr(structure, "to_points", None))
+            and callable(getattr(structure, "set_points", None)))

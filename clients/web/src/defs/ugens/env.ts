@@ -7,6 +7,7 @@
 
 import { Ugen } from "./graph.ts";
 import type { Channel } from "./graph.ts";
+import type { MsgArg } from "../../base/osc.ts";
 
 /**
  * The action `envGen` takes when its envelope finishes -- scsynth's full
@@ -96,11 +97,11 @@ export function resolveCurve(spec: Curve): [number, number] {
  * it to `envGen`.
  */
 export class Env {
-    readonly levels: number[];
-    readonly times: number[];
-    readonly curves: Curve[];
-    readonly releaseNode?: number;
-    readonly loopNode?: number;
+    levels: number[];
+    times: number[];
+    curves: Curve[];
+    releaseNode?: number;
+    loopNode?: number;
 
     constructor(
         levels: readonly number[],
@@ -186,6 +187,41 @@ export class Env {
     }
 
     /**
+     * This envelope in the **other basis**: the flat `[t, v, shape, curve,
+     * ...]` break points a {@link Bpf} is written with, absolute from
+     * `timeAt`. The conversion is {@link envToPoints}.
+     */
+    toPoints({ timeAt = 0.0 }: { timeAt?: number } = {}): number[] {
+        return envToPoints(this, { timeAt });
+    }
+
+    /**
+     * Take this envelope's shape from a break-point list, in place.
+     *
+     * The other half of {@link Env.toPoints}, and what makes an `Env` editable
+     * by anything that draws break points. `releaseNode` and `loopNode`
+     * survive when they still index a level and are dropped when they do not --
+     * a curve redrawn with fewer points has no say about where the old sustain
+     * was.
+     */
+    setPoints(
+        points: PointsLike,
+        { timeAt = 0.0, curve }: { timeAt?: number; curve?: Curve | readonly Curve[] } = {},
+    ): this {
+        const fresh = pointsToEnv(flatQuads(quads(points, curve)), { timeAt });
+        this.levels = fresh.levels;
+        this.times = fresh.times;
+        this.curves = fresh.curves;
+        if (this.releaseNode !== undefined && this.releaseNode >= this.levels.length) {
+            this.releaseNode = undefined;
+        }
+        if (this.loopNode !== undefined && this.loopNode >= this.levels.length) {
+            this.loopNode = undefined;
+        }
+        return this;
+    }
+
+    /**
      * The envelope as the flat number list `envGen` appends after its fixed
      * inputs: `initLevel, numSegments, releaseNode, loopNode` then `target,
      * duration, shape, curve` per segment.
@@ -268,14 +304,15 @@ export function pointsToEnv(
 }
 
 /**
- * Plays an `Env`. A rising `gate` (re)triggers from the start; while the
+ * Plays an `Env` or a {@link Bpf} -- the same envelope in either basis. A
+ * rising `gate` (re)triggers from the start; while the
  * gate is held the envelope sustains at the env's release node; when the
  * gate falls it plays the release segments. `levelScale`/`levelBias` affine
  * the output, `timeScale` stretches every segment. `doneAction` is taken
  * when the envelope finishes.
  */
 export function envGen(
-    env: Env,
+    env: Env | Bpf,
     {
         gate: gateInput = 1.0,
         levelScale = 1.0,
@@ -361,3 +398,236 @@ export const done = (source: Channel): Ugen => new Ugen("Done", [source]);
  */
 export const freeSelfWhenDone = (source: Channel): Ugen =>
     new Ugen("FreeSelfWhenDone", [source]);
+
+/**
+ * A break point, in any of the spellings {@link quads} reads: `[at, value]`,
+ * `[at, value, curve]` with a shape name or a numeric curvature, or the
+ * resolved `[at, value, shape, curve]` the `bpf` widget sends.
+ */
+export type Point = readonly [number, number] | readonly [number, number, Curve] |
+    readonly [number, number, number, number];
+
+/** A break-point list: points, or the flat `t v shape curve ...` numbers. */
+export type PointsLike = readonly Point[] | readonly number[];
+
+/** A resolved break point: the shape number and the curvature the wire carries. */
+export type Quad = [number, number, number, number];
+
+/**
+ * A break-point list as `[at, value, shape, curve]` quads.
+ *
+ * Every spelling of a break point is read here, and a point is written the way
+ * an {@link Env} segment is -- **with the curve's name**, not with the server's
+ * shape number: `[at, value]` is linear or whatever `curve` says, `[at, value,
+ * "exp"]` names its own shape (any value `Env`'s `curve` takes), `[at, value,
+ * shape, curve]` is the resolved pair, and a flat number array is that same
+ * resolved form, dropping a trailing partial quad rather than guessing at it.
+ *
+ * `curve` is the shape for the points that do not name one: one for all of
+ * them, or an array with one per **segment** (one fewer than the points, as
+ * `Env` counts them). A point that names its own shape keeps it.
+ */
+export function quads(points: PointsLike, curve?: Curve | readonly Curve[]): Quad[] {
+    let read: (readonly (number | string)[])[];
+    if (points.length > 0 && !Array.isArray(points[0])) {
+        read = [];
+        const flat = points as readonly number[];
+        for (let i = 0; i + 4 <= flat.length; i += 4) read.push(flat.slice(i, i + 4));
+    } else {
+        read = (points as readonly Point[]).map((point) => [...point]);
+    }
+    let curves: Curve[];
+    if (Array.isArray(curve)) {
+        const segments = Math.max(read.length - 1, 0);
+        if (curve.length !== segments) {
+            throw new TypeError(
+                `curve list (${curve.length}) must match the number of ` +
+                    `segments (${segments})`,
+            );
+        }
+        curves = [...(curve as readonly Curve[]), "lin"];
+    } else {
+        // The last point's shape is a placeholder -- no segment leaves it -- so
+        // a blanket `curve` stops one short, which is what `envToPoints` writes
+        // and what keeps a round trip identical.
+        curves = new Array(Math.max(read.length - 1, 0)).fill(
+            (curve ?? "lin") as Curve,
+        );
+        curves.push("lin");
+    }
+    return read.map((point, i) => {
+        let shape: number;
+        let curvature: number;
+        if (point.length === 2) {
+            [shape, curvature] = resolveCurve(curves[i]!);
+        } else if (point.length === 3) {
+            [shape, curvature] = resolveCurve(point[2] as Curve);
+        } else if (point.length === 4) {
+            shape = Math.trunc(point[2] as number);
+            curvature = Number(point[3]);
+        } else {
+            throw new TypeError(
+                "a break point is [at, value], [at, value, curve] or " +
+                    `[at, value, shape, curve]; got ${point.length} numbers`,
+            );
+        }
+        return [Number(point[0]), Number(point[1]), shape, curvature] as Quad;
+    });
+}
+
+/** Resolved quads back as the flat list the `bpf` widget and a `"points"` event speak. */
+export function flatQuads(points: readonly Quad[]): number[] {
+    return points.flatMap((point) => [...point]);
+}
+
+/**
+ * An envelope as the flat `/buffer_gen "env"` argument list: `level0`, then a
+ * `(level, time, shape, curve)` quad per segment.
+ *
+ * The server evaluates it with the same shape maths {@link envGen} plays
+ * (`clausters_core::envshape`), so a buffer filled this way and an `EnvGen`
+ * reading the same envelope agree. Segment times are **relative** here -- only
+ * their proportions matter, since what maps the buffer onto real time is
+ * whatever reads it.
+ *
+ * Tagged rather than inferred, so the bytes are the reference client's: a shape
+ * is an int and everything else a float, where the inference rule would send a
+ * whole-numbered level as an int.
+ */
+export function envGenArgs(env: Env | Bpf): MsgArg[] {
+    const shape = env instanceof Env ? env : env.toEnv();
+    const args: MsgArg[] = [["f", shape.levels[0]!]];
+    for (let k = 0; k < shape.times.length; k++) {
+        const [number_, curvature] = resolveCurve(shape.curves[k]!);
+        args.push(["f", shape.levels[k + 1]!], ["f", shape.times[k]!],
+            ["i", number_], ["f", curvature]);
+    }
+    return args;
+}
+
+/**
+ * A break-point curve: the same envelope an {@link Env} is, in **absolute
+ * coordinates**.
+ *
+ * One datum, two bases. An `Env` says `levels`, segment `times` and a `curve`
+ * per segment, which is what {@link envGen} and `/buffer_gen "env"` read; a
+ * `Bpf` says `[at, value, shape, curve]` per point, with `at` an absolute
+ * second and the curve belonging to the segment that *leaves* that point, which
+ * is what a drawn curve is and what the `bpf` widget sends. The conversion both
+ * ways is {@link envToPoints} / {@link pointsToEnv}, and the two are
+ * interchangeable wherever a curve is asked for: `envGen` plays either, `plot`
+ * draws either, and `gui.edit` opens either.
+ *
+ * It is a **specification and nothing else** -- no buffer, no bus, no server.
+ * Rendering a control curve to something a node can read is the multitrack's
+ * job and it is done in the shared crate (`clausters_core::mixer`), once, for
+ * every client.
+ *
+ * ```ts
+ * const curve = new Bpf([[0.0, 200.0], [2.0, 4000.0]], { curve: "exp" });
+ * play(new Synth("filter", { cutoff: envGen(curve) }));
+ * ```
+ */
+export class Bpf {
+    /**
+     * The unit this object's length is in -- **seconds**, like the `Env` it is
+     * another spelling of.
+     */
+    static readonly durationUnit = "seconds";
+
+    points: Quad[];
+    /**
+     * The index of the point the curve sustains at while a gate is held, and
+     * the one a loop returns to -- an `Env`'s two, in this basis, since a point
+     * here is a level there.
+     */
+    releaseNode?: number;
+    loopNode?: number;
+
+    constructor(
+        points: PointsLike,
+        {
+            curve,
+            releaseNode,
+            loopNode,
+        }: {
+            curve?: Curve | readonly Curve[];
+            releaseNode?: number;
+            loopNode?: number;
+        } = {},
+    ) {
+        this.points = quads(points, curve);
+        if (this.points.length < 2) {
+            throw new TypeError("a curve needs at least two break points");
+        }
+        this.releaseNode = releaseNode;
+        this.loopNode = loopNode;
+    }
+
+    /** The same curve, read out of an `Env`. */
+    static fromEnv(env: Env, { timeAt = 0.0 }: { timeAt?: number } = {}): Bpf {
+        return new Bpf(envToPoints(env, { timeAt }), {
+            releaseNode: env.releaseNode,
+            loopNode: env.loopNode,
+        });
+    }
+
+    /**
+     * The same curve as an `Env`, which is what plays it.
+     *
+     * A first point later than `timeAt` is a drawn initial delay and becomes a
+     * leading `hold` segment ({@link pointsToEnv} says why), so the sustain and
+     * loop indices move with it.
+     */
+    toEnv({ timeAt = 0.0 }: { timeAt?: number } = {}): Env {
+        const env = pointsToEnv(this.toPoints(), { timeAt });
+        const shift = env.levels.length - this.points.length;
+        env.releaseNode = this.releaseNode === undefined ? undefined : this.releaseNode + shift;
+        env.loopNode = this.loopNode === undefined ? undefined : this.loopNode + shift;
+        return env;
+    }
+
+    /**
+     * The curve as the flat `[t, v, shape, curve, ...]` list the `bpf` widget
+     * and a `"points"` event both speak.
+     */
+    toPoints(): number[] {
+        return flatQuads(this.points);
+    }
+
+    /**
+     * Take this curve's points from a break-point list, in place -- the other
+     * half of {@link Bpf.toPoints}, and what an editor writes back through.
+     * Reads every spelling {@link quads} does.
+     */
+    setPoints(points: PointsLike, curve?: Curve | readonly Curve[]): this {
+        const fresh = quads(points, curve);
+        if (fresh.length < 2) {
+            throw new TypeError("a curve needs at least two break points");
+        }
+        this.points = fresh;
+        if (this.releaseNode !== undefined && this.releaseNode >= this.points.length) {
+            this.releaseNode = undefined;
+        }
+        if (this.loopNode !== undefined && this.loopNode >= this.points.length) {
+            this.loopNode = undefined;
+        }
+        return this;
+    }
+
+    /**
+     * The flat inputs `envGen` appends -- {@link Env.toInputs} of
+     * {@link Bpf.toEnv}, so a `Bpf` is played wherever an `Env` is.
+     */
+    toInputs(): number[] {
+        return this.toEnv().toInputs();
+    }
+
+    /**
+     * The span the curve covers, in **seconds**: its last point's time less its
+     * first's.
+     */
+    duration(): number {
+        return this.points[this.points.length - 1]![0] - this.points[0]![0];
+    }
+}

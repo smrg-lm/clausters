@@ -48,13 +48,14 @@ can open.
 ## `edit(x)`: one verb over the four structures
 
 `clausters.gui.edit` opens whichever editor the structure asks for, and it
-dispatches on **what the structure is** — that being the question a caller has
-already answered by holding one:
+dispatches on **what the structure holds**, never on its class — a curve editor
+asks for break points it can read and write back, and everything that answers
+opens, which is why the curve row below names three unrelated types:
 
 | `edit(x)` where x is | opens | over | its vocabulary |
 |---|---|---|---|
 | a `Buffer` | `SamplesEditor` | a `waveform` | `samples` |
-| an `Automation` | `PointsEditor` | a `bpf` | `points` |
+| a curve — a `Bpf`, an `Env`, a `multitrack.Automation` | `PointsEditor` | a `bpf` | `points` |
 | a `Timeline` | `NotesEditor` | a `pianoroll` | `events` |
 | a `Multitrack` | `MultitrackEditor` | a `multitrack` | `clips`/`lanes` |
 

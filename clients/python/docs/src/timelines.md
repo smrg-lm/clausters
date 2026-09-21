@@ -53,7 +53,7 @@ An item is **anything playable**:
 
 - an `Event` — it plays a note on a `Server` for OSC, or a `MidiServer` for MIDI, the same double dispatch the patterns use;
 - `OscItem` and `MidiItem`, which wrap a raw message, for a plain editable OSC or MIDI score;
-- an `Automation` (below), an event pattern, or a `Routine`;
+- an event pattern, or a `Routine`;
 - **another `Timeline`**.
 
 ```python
@@ -63,7 +63,7 @@ tl.add(0.0, OscItem("/synth_new", "default", -1, 0, 0, "freq", 440.0))
 tl.add(1.0, MidiItem(b"\x90\x3c\x64"))     # note on, key 60, vel 100
 ```
 
-Every item measures in **its timeline's beats**: an event's sustain, an automation's length, a pattern's durations and a routine's `yield`s are all read through the map of the timeline that holds them.
+Every item measures in **its timeline's beats**: an event's sustain, a pattern's durations and a routine's `yield`s are all read through the map of the timeline that holds them.
 
 A routine has no position to enter in its middle, so it is played **fresh** each time its onset is reached (a new `Routine` over the same function), and a locate past its onset does not bring it back. Stopping, locating or wrapping a loop unschedules the routines that pass started.
 
@@ -110,50 +110,6 @@ song.play()
 - **A parent covers its children.** `duration()` extends to the end of a child that lasts longer than the parent's own items, converted through both maps; a looping child never ends.
 - **A loop shorter than a child** plays, pass after pass, only the part of the child that falls inside the window, compared in seconds.
 - **Entering a child in its middle** — a locate or a loop landing inside it — enters it at its beat that corresponds, and its contents follow the rule above: the next onset plays, a passed one does not.
-
-## Automation: a curve as a timeline item
-
-A `clausters.seq.Automation` is the other static structure this module has: a
-**break-point curve driving one or more `(node, control)` targets**, and a
-timeline plays it exactly as it plays an event, because it is a timeline item.
-
-```python
-from clausters.seq import Automation
-
-sweep = Automation.from_points(
-    [(0.0, 200.0, 1, 0.0),      # 200 Hz ...
-     (2.0, 900.0, 2, 0.0),      # ... up to 900 (segment shape 2: exponential)
-     (4.0, 300.0, 1, 0.0)],     # ... back down (shape 1: linear)
-    target=(synth, "cutoff"), name="cutoff")
-
-sweep.prepare(server)           # allocate and fill its buffer and bus, once
-timeline.add(0.0, sweep)        # and it plays like anything else on the line
-```
-
-Break-points are `(time, value, shape, curve)` — values in the control's **real
-units** (Hertz here, not a normalized 0–1), and the stored curve is an `Env`, the
-same object a `bpf` editor round-trips through `to_points` / `from_points`. So a
-drawn envelope and a played automation are one object, and
-[`edit(curve)`](gui.md) opens it.
-
-**How it is rendered is machinery you already have.** The curve is discretized on
-the server into a **control buffer** (`/buffer_gen "env"`, evaluated through the
-same envelope math the `EnvGen` UGen plays, so what is drawn is what is heard),
-and at play time a small control synth reads that buffer onto a **control bus**
-over the curve's duration. A target follows the bus via `/node_map`; with
-`target=None` the automation simply writes its bus and whoever wants it reads it.
-
-**The two phases are the client's standing rule, not this class's quirk.**
-`prepare(server)` **blocks** — it allocates and fills the buffer — so it runs at
-setup, off the clock thread. Playing only *schedules*, and never blocks.
-
-**An edit does not reach a sweep already running.** What a synth reads is the
-control buffer, filled once; after editing the curve, `refill()` writes the new
-shape and the next play reads it. That is one command the server applies ahead
-of the synth that reads it, so it is safe from a UI loop.
-
-Its length is in **seconds**, because an envelope's segment times are real time —
-which is what `duration_unit` reports, and what anything measuring it has to ask.
 
 ## Offline rendering
 

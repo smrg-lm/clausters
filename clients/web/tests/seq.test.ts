@@ -34,7 +34,6 @@ import {
 import type { EventDestination, PlayDestination } from "../src/seq/index.ts";
 import type { OscHandler } from "../src/base/receiver.ts";
 import type { Server } from "../src/defs/server/index.ts";
-import { Automation } from "../src/seq/automation.ts";
 import { play } from "../src/play.ts";
 import { flush } from "./flush.ts";
 
@@ -294,34 +293,4 @@ test("a list pattern over events is an event pattern", () => {
     assert.ok(!("play" in new Pseq([1, 2])));
     assert.ok(!(phrase instanceof Pseq), "a Pbind is not a list pattern");
     assert.deepEqual([...new Pseq([phrase], 2)].map((e) => e.get("freq")), [440, 550, 440, 550]);
-});
-
-test("an automation's lane is freed where the curve ends, across a tempo change", async () => {
-    // Two seconds of curve, started at beat 0, with the tempo doubling at beat
-    // 1: the first second covers one beat and the next covers two, so the lane
-    // is freed three beats later. One tempo times the duration would say two.
-    const { clock, run } = harness(1.0);
-    clock.setTempo(2.0, { at: 1.0 });
-
-    const auto = Automation.fromPoints([0.0, 0.2, 1, 0.0, 2.0, 0.8, 1, 0.0], null);
-    auto.buf = { bufnum: 0 } as unknown as typeof auto.buf;
-    auto.bus = { index: 0 } as unknown as typeof auto.bus;
-    const frees: (number | undefined)[] = [];
-    const server = {
-        nodes: { alloc: () => 1000 },
-        sendBundle(msgs: readonly [string, ...unknown[]][], options?: { delayBeats?: number }) {
-            if (msgs.some(([addr]) => addr === "/node_free")) frees.push(options?.delayBeats);
-        },
-    } as unknown as Server;
-
-    clock.start();
-    clock.play(new Routine(function* () {
-        auto.play(server);
-        yield 4;
-    }));
-    await run(1);
-    clock.stop();
-
-    assert.equal(frees.length, 1);
-    assert.ok(Math.abs(frees[0]! - 3.0) < 1e-9, `freed after ${frees[0]} beats`);
 });

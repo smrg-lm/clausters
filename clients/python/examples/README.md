@@ -32,7 +32,7 @@ read against each other.
 | `basics/` | the language: a note, an envelope, control types, channels, graph maths, wavetables, the ambient verbs |
 | `spectral/` | the frequency domain: the FFT chain, cross-synthesis, bin expressions, convolution |
 | `buffers/` | samples the client reads, writes and bounces |
-| `transport/` | time: a timeline, an automation lane, and the shared transport across clients |
+| `transport/` | time: a timeline, a conductor, and the shared transport across clients |
 | `io/` | the outside: OSC in and out, MIDI, the wire, an embedded server, several servers |
 | `faust/` | DSP written as Faust rather than as a UGen graph |
 | `panels/` | GUI: controls, layout, style, and the hosts that carry them |

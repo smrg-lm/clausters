@@ -45,7 +45,6 @@ function is the uniform entry that picks the right one.
 | a def — `SynthDef` / `FaustDef` / `GraphDef` | sends and instances it, with optional `controls` | the `Synth` (or instance `Group`) — `.free()` |
 | a `Timeline` | plays it on its own clock, on the ambient server | the timeline — `.stop()` (and `pause`/`locate`/`loop`) |
 | a `Buffer` | sounds it through the stock playbuf instrument (`rate`/`amp` controls, freed when the take ends) | the `Synth` — `.free()` cuts the take early |
-| an `Automation` | prepares it if needed and applies the curve to its target controls, now | the automation itself — `.stop()` interrupts the sweep (the controls hold their last value) |
 | anything with `play(destination)` (the timeline-item protocol: `OscItem`, `MidiItem`, …) | dispatches to it | whatever it returns |
 
 A **value pattern** (`Pseq([1, 2, 3])`, `Pwhite`, …) is not a playable: a
@@ -55,9 +54,9 @@ values are events. `play` refuses one by name; `render` generates its values.
 Everything `play` returns knows how to **end what it started** — even the
 self-terminating kinds, whose duration can be extreme: a note frees itself
 after its sustain, but the completed event's `.free()` cuts it *now*; a take
-and a sweep end on their own, but the handle's `.free()` / the automation's
-`.stop()` interrupt them. (The release already scheduled at play time still
-arrives; it lands on a node that is gone and is harmless.)
+ends on its own, but the handle's `.free()` interrupts it. (The release already
+scheduled at play time still arrives; it lands on a node that is gone and is
+harmless.)
 
 **Plottables** — `plot(x)` (each call opens its own window; see the
 [`plot` API](api.md) for the display options — `view="spectrum"`, rulers,
@@ -67,7 +66,7 @@ ranges):
 |---|---|
 | a def, or a bare expression (`Ugen` / `Signal` / `Box`) | its output, rendered offline for `dur` seconds — one lane per channel |
 | an `Env` | the curve as the engine's own `EnvGen` plays it (gate-released at its sustain point) |
-| an `Automation` | its curve, the same engine-evaluated way, labelled with the control name |
+| a `Bpf` | the same curve in absolute coordinates, evaluated the same way, labelled with the curve's own name |
 | a `Buffer` (or buffer number) | its contents, fetched from the live server |
 | any iterable of numbers — a list, a value pattern (`Pseq`, `Pwhite`, …), a stream | the sequence, index on the x axis (endless ones cap at `n`) |
 
@@ -140,9 +139,9 @@ being already generated, *is* playable. The full story is in
   `Synth` — a routine must never block the clock thread.
 - **`play(buffer)` needs the buffer's length.** On a live server it queries an
   unfilled handle; offline (NRT) the handle must carry `frames` up front.
-- **Beats read as seconds outside a clock.** An interactive `play(event)` or
-  `play(automation)` (no routine in flight) times itself on wall time at
-  tempo 1.0, exactly like a bare `Event().play()`.
+- **Beats read as seconds outside a clock.** An interactive `play(event)` (no
+  routine in flight) times itself on wall time at tempo 1.0, exactly like a
+  bare `Event().play()`.
 
 ## What a render gives back
 

@@ -19,7 +19,6 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { Automation } from "../src/seq/automation.ts";
 import { Event as SeqEvent } from "../src/seq/event.ts";
 import { Timeline } from "../src/seq/timeline.ts";
 import {
@@ -151,27 +150,6 @@ const cases: Record<string, () => Aggregate> = {
             4.0,
         );
         aggregate.add(new Sequence(null, null, 1.0, { name: "unheld" }), 4.0);
-        return aggregate;
-    },
-
-    a_curve_on_its_event() {
-        const curve = Automation.fromPoints(
-            [[0.0, 200.0, 1, 0.0], [2.0, 900.0, 2, 0.0], [4.0, 300.0, 1, 0.0]],
-            null,
-            { name: "freq" },
-        );
-        const aggregate = new Aggregate();
-        aggregate.add(
-            new Aggregate(
-                [
-                    [0.0, new Clang(new SeqEvent({ instrument: "drone", dur: 4.0 }))],
-                    [0.0, new Element(curve, null, 4.0)],
-                ],
-                "concrete",
-                { name: "sweep" },
-            ),
-            0.0,
-        );
         return aggregate;
     },
 

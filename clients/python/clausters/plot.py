@@ -21,8 +21,8 @@ involved unless the object itself needs one). It dispatches by kind:
 - an `clausters.defs.Env` is rendered through the server's own ``EnvGen`` (a
   one-node NRT render, gate-released at its sustain point when it has one), so
   the drawn curve is exactly what the engine plays -- not a client-side
-  re-evaluation. An `clausters.seq.automation.Automation` plots the same way --
-  its curve is an `Env` -- labelled with the automation's control name.
+  re-evaluation. A `clausters.defs.Bpf` plots the same way -- it is the same
+  envelope in absolute coordinates.
 - a `clausters.defs.Buffer` (or a buffer number) is fetched from the ambient
   **live** server (`clausters.base.main.Main.resolve_server`) with its shape
   and sample rate, and plotted -- the way to check a buffer's contents.
@@ -126,9 +126,8 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
     Args:
         obj: what to plot -- a def (`SynthDef`/`FaustDef`/`GraphDef`, rendered
             offline) or a bare expression (`Ugen`/`ChannelList`/`Signal`/
-            `Box`, coerced to an ephemeral def first), an `Env` or
-            `Automation` (rendered
-            through ``EnvGen``), a `Buffer` or buffer number (fetched from
+            `Box`, coerced to an ephemeral def first), an `Env` or a `Bpf`
+            (rendered through ``EnvGen``), a `Buffer` or buffer number (fetched from
             the ambient live server), or an iterable of numbers / of
             per-channel number lists, read up to ``n`` values.
         dur: seconds a def is held before it is freed -- the rendered length.
@@ -162,8 +161,8 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
             ``win.set(ruler=...)``.
         ruler_y: ``"off"`` hides the value-axis strip (shown by default).
         label: the plot's label strip (defaults to something sensible per
-            kind -- the def's name, ``expr``, ``buffer <n>``, ``env``, an
-            automation's control name, ``sequence``).
+            kind -- the def's name, ``expr``, ``buffer <n>``, ``env``,
+            ``sequence``).
         title: the window title (defaults to the label).
         w: window width in px.
         h: window height (default sized to the channel count).
@@ -292,14 +291,12 @@ def _resolve(obj, *, dur, controls, defs, n, sample_rate, channels):
     from .defs.faustdef import FaustDef
     from .defs.graphdef import GraphDef
     from .defs.synthdef import SynthDef
-    from .defs.ugens import Env
-    from .seq.automation import Automation
+    from .defs.ugens import Bpf, Env
 
     if isinstance(obj, Env):
         return _render_env(obj, sample_rate)
-    if isinstance(obj, Automation):
-        samples, chans, rate, _ = _render_env(obj.env, sample_rate)
-        return samples, chans, rate, obj.name
+    if isinstance(obj, Bpf):
+        return _render_env(obj.to_env(), sample_rate)
     if isinstance(obj, Expr):
         # A bare expression: the same ephemeral-def coercion play uses. Plot
         # configures its render for what is being looked at, so the expression

@@ -130,7 +130,7 @@ class Timeline:
     *is* a timeline beat.
 
     **An item is anything playable**: an `Event`, an `OscItem`/`MidiItem`, an
-    `Automation`, an event pattern, a `Routine` -- and **another timeline**, which its
+    an event pattern, a `Routine` -- and **another timeline**, which its
     parent plays when it reaches it. Each timeline keeps its own units: a
     child's beats go to seconds through its own map, so siblings at different
     tempi start together by construction. One tree plays on one engine, the

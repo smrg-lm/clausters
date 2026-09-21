@@ -245,17 +245,20 @@ from .demand import (
     tduty,
 )
 from .env import (
+    Bpf,
     DoneAction,
     Env,
     detect_silence,
     done,
     env_gen,
+    env_gen_args,
     env_to_points,
     free_self,
     free_self_when_done,
     line,
     pause_self,
     points_to_env,
+    quads,
     x_line,
 )
 
@@ -494,17 +497,20 @@ __all__ = [
     "dxrand",
     "tduty",
     # env
+    "Bpf",
     "DoneAction",
     "Env",
     "detect_silence",
     "done",
     "env_gen",
+    "env_gen_args",
     "env_to_points",
     "free_self",
     "free_self_when_done",
     "line",
     "pause_self",
     "points_to_env",
+    "quads",
     "x_line",
     "ugen_input_names",
 ]

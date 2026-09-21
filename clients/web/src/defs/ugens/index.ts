@@ -251,21 +251,25 @@ export {
 export type { ConvOptions, FftOptions, PvKernelOptions } from "./spectral.ts";
 
 export {
+    Bpf,
     DoneAction,
     Env,
     detectSilence,
     done,
     envGen,
+    envGenArgs,
     envToPoints,
+    flatQuads,
     freeSelf,
     freeSelfWhenDone,
     line,
     pauseSelf,
     pointsToEnv,
+    quads,
     resolveCurve,
     xLine,
 } from "./env.ts";
-export type { Curve } from "./env.ts";
+export type { Curve, Point, PointsLike, Quad } from "./env.ts";
 
 // ---- the inlet labels a patcher's Def view reads ----
 

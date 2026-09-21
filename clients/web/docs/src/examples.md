@@ -25,7 +25,7 @@ under the same name:
 | `basics/` | the language: the engine in a page, a def built and played, control types, channels, graph maths, wavetables, the ambient verbs |
 | `spectral/` | the frequency domain |
 | `buffers/` | samples read, written and bounced |
-| `transport/` | time: patterns on a clock, an automation lane, the shared transport |
+| `transport/` | time: patterns on a clock, a conductor, the shared transport |
 | `io/` | the outside: responders |
 | `panels/` | GUI: controls and layout, and the hosts that carry them |
 | `views/` | GUI: reading something — meters, scopes, a waveform, a recording |

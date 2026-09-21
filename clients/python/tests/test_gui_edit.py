@@ -13,12 +13,11 @@ import pytest
 
 from clausters import TempoMap
 
-from clausters.defs.ugens import points_to_env
 from clausters.gui import edit
 from clausters.gui.editing import (Editing, NotesEditor, PointsEditor,
                                    SamplesEditor, measures)
 from clausters.seq import Timeline
-from clausters.seq.automation import Automation
+from clausters.defs.ugens import Bpf
 from clausters.seq.event import Event as SeqEvent
 
 SR = 48_000.0
@@ -83,9 +82,8 @@ class FakeHost:
     loop = None
 
 
-def a_curve() -> Automation:
-    return Automation.from_points(
-        [(0.0, 200.0, 2, 0.0), (2.0, 900.0, 1, 0.0)], None, name="cutoff")
+def a_curve() -> Bpf:
+    return Bpf([(0.0, 200.0, "exp"), (2.0, 900.0)])
 
 
 def a_timeline() -> Timeline:
@@ -576,14 +574,14 @@ def test_the_axis_is_held_rather_than_refitted_under_the_hand():
     band = first["axes"]["y"]
 
     # A point dragged down and back up must leave the drawing where it was.
-    curve.env = points_to_env([0.0, 500.0, 2, 0.0, 2.0, 600.0, 1, 0.0])
+    curve.set_points([0.0, 500.0, 2, 0.0, 2.0, 600.0, 1, 0.0])
     again = editor.draw()["children"][0]
     assert again["axes"]["y"] == band
     assert again["duration"] == first["duration"]
 
     # And a curve that no longer fits inside it widens the end that stopped
     # holding it, keeping the other.
-    curve.env = points_to_env([0.0, 200.0, 2, 0.0, 4.0, 9000.0, 1, 0.0])
+    curve.set_points([0.0, 200.0, 2, 0.0, 4.0, 9000.0, 1, 0.0])
     wider = editor.draw()["children"][0]["axes"]["y"]
     assert wider["max"] > band["max"] and wider["min"] == band["min"]
     assert editor.draw()["children"][0]["duration"] == pytest.approx(4.0)

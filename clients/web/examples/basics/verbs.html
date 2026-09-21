@@ -31,13 +31,7 @@ on the in-page engine; <code>Session.live(url)</code> would open the same
 session on a <code>clausters --ws</code> server and
 <code>Session.nrt()</code> one that never sounds -- and nothing below would
 change. The tour ends on all three.
-
-One line here is the platform's and the script has no counterpart for it: an
-<b>automation</b> is prepared before it is played
-(<code>await sweep.prepare(server)</code>). Preparing allocates and fills a
-control buffer, which waits; a script's <code>play</code> can do that on the
-spot because it is off the clock thread, and a page's verb is synchronous, so
-it refuses an unprepared one by name instead.</div>
+</div>
 
       <div class="row">
         <button id="open">open a session</button>
@@ -58,7 +52,7 @@ it refuses an unprepared one by name instead.</div>
       import {
         Buffer, Event, Session, SynthDef, play, render, seq,
       } from "../../dist/index.js";
-      import { Env, boxes as box, control, out, sine } from "../../dist/defs/index.js";
+      import { Env, boxes as box, control, envGen, out, sine } from "../../dist/defs/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
@@ -122,20 +116,11 @@ it refuses an unprepared one by name instead.</div>
         await wait(PAUSE);
         longNote.free();                                             // ...cut now
 
-        log("an automation sweeping a sounding node's freq, interrupted mid-sweep");
-        node = play(sine(control("freq", 440.0)).mul(0.15));
-        const sweep = new seq.Automation(
-          new Env([440.0, 1760.0, 440.0], [1.5, 1.5]), [node, "freq"]);
-        // The platform's one extra line. Preparing allocates and fills a
-        // control buffer, which waits; the script's `play` does that on the
-        // spot because it is off the clock thread, and a page's verb is
-        // synchronous, so it refuses an unprepared automation by name.
-        await sweep.prepare(session.server);
-        play(sweep);
+        log("a curve sweeping a node's freq from inside it, cut mid-sweep");
+        node = play(sine(envGen(new Env([440.0, 1760.0, 440.0], [1.5, 1.5]))).mul(0.15));
         await wait(1500);
-        sweep.stop();          // interrupted at the top: the freq holds there
-        await wait(1000);
-        node.free();
+        node.free();           // cut at the top of the sweep
+        await wait(500);
 
         log("a timeline, two placed notes");
         const tl = new seq.Timeline();
