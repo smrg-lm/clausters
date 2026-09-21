@@ -4,7 +4,7 @@
   import * as Resizable from "$lib/components/ui/resizable";
   import { Button } from "$lib/components/ui/button";
   import { Separator } from "$lib/components/ui/separator";
-  import Editor from "./lib/Editor.svelte";
+  import Editor, { type MovedTab } from "./lib/Editor.svelte";
   import Post from "./lib/Post.svelte";
   import Docs from "./lib/Docs.svelte";
   import AppMenu, { type MenuActions } from "./lib/AppMenu.svelte";
@@ -28,14 +28,64 @@
   import Square from "@lucide/svelte/icons/square";
   import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
 
-  let editor: Editor;
+  const editors: Partial<Record<PanelId, Editor>> = $state({});
   let post: Post;
   let docs: Docs;
   let environments: EnvironmentsDialog;
   let preferences: PreferencesDialog;
 
+  // --- Editor groups ---
+  // One code editor, or two side by side; the menu and the shortcuts act on the one
+  // that had the focus last.
+  const editorIds = $derived(
+    (["editor-1", "editor-2"] as PanelId[]).filter((id) => [...settings.layout.left, ...settings.layout.right].includes(id)),
+  );
+  let activeEditor = $state<PanelId>("editor-1");
+  const editor = () => editors[activeEditor] ?? editors["editor-1"]!;
+
+  /** Shows `path` in another group than `from`, if one has it open. */
+  function openElsewhere(from: PanelId, path: string): boolean {
+    for (const id of editorIds) {
+      if (id !== from && editors[id]?.showPath(path)) return true;
+    }
+    return false;
+  }
+
   const clone = (l: Layout): Layout => ({ left: [...l.left], right: [...l.right] });
   const columnOf = (l: Layout, id: PanelId) => (l.left.includes(id) ? "left" : "right");
+
+  /** Opens a second editor in the other column; with two, closes the second and
+   *  hands its tabs to the first. */
+  function toggleSplit() {
+    const l = clone(settings.layout);
+    if (editorIds.includes("editor-2")) {
+      const moved: MovedTab[] = editors["editor-2"]?.takeTabs(true) ?? [];
+      l.left = l.left.filter((p) => p !== "editor-2");
+      l.right = l.right.filter((p) => p !== "editor-2");
+      setLayout(l);
+      activeEditor = "editor-1";
+      editors["editor-1"]!.putTabs(moved);
+      editors["editor-1"]!.focus();
+      return;
+    }
+    const home = columnOf(l, "editor-1");
+    const other = home === "left" ? "right" : "left";
+    l[other].unshift("editor-2");
+    // A full column hands its bottom panel to the first editor's column.
+    if (l[other].length > COLUMN_SLOTS) l[home].push(l[other].pop()!);
+    setLayout(l);
+    activeEditor = "editor-2";
+  }
+
+  /** Moves the current editor's active tab to the other editor. */
+  function moveTab() {
+    const to = editorIds.find((id) => id !== activeEditor);
+    if (!to) return;
+    const moved = editor().takeTabs();
+    editors[to]!.putTabs(moved);
+    activeEditor = to;
+    editors[to]!.focus();
+  }
 
   // --- Panel layout ---
   // Each panel is created only once (below, under "panels") and *moved* into the slot it belongs in:
@@ -241,13 +291,15 @@
   }
 
   const actions: MenuActions = {
-    newFile: () => editor.newFile(),
-    openFile: () => editor.openFile(),
-    saveFile: (saveAs) => editor.saveFile(saveAs),
-    closeTab: () => editor.closeTab(),
+    newFile: () => editor().newFile(),
+    openFile: () => editor().openFile(),
+    saveFile: (saveAs) => editor().saveFile(saveAs),
+    closeTab: () => editor().closeTab(),
     quit: () => getCurrentWindow().close(),
-    runLine: () => editor.runLine(),
-    runBlock: () => editor.runBlock(),
+    runLine: () => editor().runLine(),
+    runBlock: () => editor().runBlock(),
+    toggleSplit,
+    moveTab,
     interrupt,
     restart,
     clearPost: () => post.clear(),
@@ -419,16 +471,21 @@
 
 <!-- The panels, created once; the layout places each in its slot (see `adopt`). -->
 <div class="hidden">
-  <div class="h-full" bind:this={nodes["editor-1"]}>
-    <Editor
-      bind:this={editor}
-      onDragStart={(e) => startDrag("editor-1", e)}
-      onHelp={(w) => {
-        showDocs();
-        docs.help(w);
-      }}
-    />
-  </div>
+  {#each editorIds as id (id)}
+    <div class="h-full" bind:this={nodes[id]}>
+      <Editor
+        bind:this={editors[id]}
+        current={editorIds.length === 1 || activeEditor === id}
+        onFocus={() => (activeEditor = id)}
+        onDragStart={(e) => startDrag(id, e)}
+        openElsewhere={(path) => openElsewhere(id, path)}
+        onHelp={(w) => {
+          showDocs();
+          docs.help(w);
+        }}
+      />
+    </div>
+  {/each}
   <div class="h-full" bind:this={nodes.docs}>
     <Docs
       bind:this={docs}

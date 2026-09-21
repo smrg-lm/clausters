@@ -1,3 +1,19 @@
+<script lang="ts" module>
+  // Shared by every editor group, so that two groups never both have an "untitled 1".
+  let untitled = 0;
+
+  /** A tab taken out of one group to be put in another. The state is rebuilt
+   *  there, since its extensions belong to the group that made it. */
+  export interface MovedTab {
+    path: string | null;
+    name: string;
+    doc: string;
+    anchor: number;
+    head: number;
+    dirty: boolean;
+  }
+</script>
+
 <script lang="ts">
   import { onMount } from "svelte";
   import { Compartment, EditorState } from "@codemirror/state";
@@ -17,7 +33,22 @@
   import X from "@lucide/svelte/icons/x";
   import Grip from "./Grip.svelte";
 
-  let { onHelp, onDragStart }: { onHelp: (word: string) => void; onDragStart: (e: PointerEvent) => void } = $props();
+  let {
+    current = true,
+    onHelp,
+    onFocus,
+    onDragStart,
+    openElsewhere,
+  }: {
+    /** The group the menu and the shortcuts act on; its active tab is marked. */
+    current?: boolean;
+    onHelp: (word: string) => void;
+    /** This group became the one the menu and the shortcuts act on. */
+    onFocus: () => void;
+    onDragStart: (e: PointerEvent) => void;
+    /** Shows `path` if another group has it open; a file is open in one group at a time. */
+    openElsewhere: (path: string) => boolean;
+  } = $props();
 
   interface Tab {
     path: string | null;
@@ -30,7 +61,6 @@
   let active = $state(0);
   let host: HTMLDivElement;
   let view: EditorView;
-  let untitled = 0;
 
   const filters = [
     { name: "Python", extensions: ["py"] },
@@ -98,10 +128,56 @@
     show(i);
   }
 
-  function addTab(path: string | null, name: string, doc: string) {
+  function addTab(path: string | null, name: string, doc: string, selection?: { anchor: number; head: number }) {
     if (tabs[active]) tabs[active].state = view.state;
-    tabs.push({ path, name, dirty: false, state: EditorState.create({ doc, extensions: extensions() }) });
+    tabs.push({ path, name, dirty: false, state: EditorState.create({ doc, selection, extensions: extensions() }) });
     show(tabs.length - 1);
+  }
+
+  /** An empty, untouched new tab: replaced by the next file instead of piling up. */
+  const isBlank = (i: number) => {
+    const t = tabs[i];
+    return !!t && !t.path && !t.dirty && (i === active ? view.state : t.state).doc.length === 0;
+  };
+
+  export function focus() {
+    view.focus();
+  }
+
+  /** Shows the tab holding `path`, if this group has one. */
+  export function showPath(path: string): boolean {
+    const i = tabs.findIndex((t) => t.path === path);
+    if (i < 0) return false;
+    select(i);
+    return true;
+  }
+
+  /** Takes the active tab out (or every tab, with `all`) to put it in another group. */
+  export function takeTabs(all = false): MovedTab[] {
+    tabs[active].state = view.state;
+    const taken = (all ? tabs.map((_, i) => i) : [active])
+      .filter((i) => !isBlank(i))
+      .map((i) => {
+        const t = tabs[i];
+        const { anchor, head } = t.state.selection.main;
+        return { path: t.path, name: t.name, doc: t.state.doc.toString(), anchor, head, dirty: t.dirty };
+      });
+    if (all) {
+      tabs = [];
+      newFile();
+    } else if (taken.length) {
+      closeAt(active);
+    }
+    return taken;
+  }
+
+  export function putTabs(moved: MovedTab[]) {
+    for (const m of moved) {
+      const blank = isBlank(active) ? active : -1;
+      addTab(m.path, m.name, m.doc, { anchor: m.anchor, head: m.head });
+      tabs[active].dirty = m.dirty;
+      if (blank >= 0) closeAt(blank);
+    }
   }
 
   export function newFile() {
@@ -111,14 +187,11 @@
   export async function openFile() {
     const path = await open({ multiple: false, filters });
     if (typeof path !== "string") return;
-    const existing = tabs.findIndex((t) => t.path === path);
-    if (existing >= 0) return select(existing);
+    if (showPath(path) || openElsewhere(path)) return;
     try {
       const text = await invoke<string>("read_file", { path });
-      // An empty, untouched new tab is replaced instead of piling up.
       const previous = active;
-      const t = tabs[previous];
-      const replace = t && !t.path && !t.dirty && view.state.doc.length === 0;
+      const replace = isBlank(previous);
       addTab(path, basename(path), text);
       if (replace) closeAt(previous);
     } catch (e) {
@@ -177,7 +250,7 @@
   });
 </script>
 
-<div class="flex h-full min-w-0 flex-col">
+<div class="flex h-full min-w-0 flex-col" onfocusin={onFocus}>
   <div class="flex h-9 shrink-0 border-b bg-secondary">
     <div class="flex items-center border-r pl-1">
       <Grip label="editor" {onDragStart} />
@@ -188,7 +261,10 @@
           class={[
             "group relative flex max-w-56 items-center border-r text-sm",
             i === active
-              ? "bg-background text-foreground before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-ring"
+              ? [
+                  "bg-background text-foreground before:absolute before:inset-x-0 before:top-0 before:h-0.5",
+                  current ? "before:bg-ring" : "before:bg-border",
+                ]
               : "text-muted-foreground hover:text-foreground",
           ]}
           role="tab"

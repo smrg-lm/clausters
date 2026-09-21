@@ -22,6 +22,8 @@
     quit(): void;
     runLine(): void;
     runBlock(): void;
+    toggleSplit(): void;
+    moveTab(): void;
     interrupt(): void;
     restart(): void;
     clearPost(): void;
@@ -32,6 +34,8 @@
   }
 
   let { actions: a }: { actions: MenuActions } = $props();
+
+  const split = $derived([...settings.layout.left, ...settings.layout.right].includes("editor-2"));
 
   let fonts = $state<[string, string][]>([]);
   onMount(async () => (fonts = await fontOptions()));
@@ -103,6 +107,8 @@
       <Menubar.CheckboxItem checked={settings.showDocs} onCheckedChange={(v) => setShowDocs(v)}>
         Documentation
       </Menubar.CheckboxItem>
+      <Menubar.CheckboxItem checked={split} onCheckedChange={a.toggleSplit}>Split Editor</Menubar.CheckboxItem>
+      <Menubar.Item disabled={!split} onSelect={a.moveTab}>Move Tab to Other Editor</Menubar.Item>
       <Menubar.Separator />
       {@render item("Increase Size", () => zoom(1), "Ctrl++")}
       {@render item("Decrease Size", () => zoom(-1), "Ctrl+-")}

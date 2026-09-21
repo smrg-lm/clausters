@@ -44,8 +44,8 @@ interface Stored {
   layout: Layout;
 }
 
-/** The panels: the code editor, the documentation and the post window. */
-export type PanelId = "editor-1" | "docs" | "post";
+/** The panels: one or two code editors, the documentation and the post window. */
+export type PanelId = "editor-1" | "editor-2" | "docs" | "post";
 export interface Layout {
   left: PanelId[];
   right: PanelId[];
@@ -54,13 +54,14 @@ export const COLUMN_SLOTS = 2;
 
 const DEFAULT_LAYOUT: Layout = { left: ["editor-1"], right: ["docs", "post"] };
 
-/** A stored layout, if it is a well-formed one: every panel once, at most two per column. */
+/** A stored layout, if it is a well-formed one: every panel once (the second
+ *  editor optional), at most two per column. */
 function validLayout(v: unknown): Layout | null {
   const l = v as Layout;
   if (!l || !Array.isArray(l.left) || !Array.isArray(l.right)) return null;
   if (l.left.length > COLUMN_SLOTS || l.right.length > COLUMN_SLOTS) return null;
   const all = [...l.left, ...l.right];
-  const known: PanelId[] = ["editor-1", "docs", "post"];
+  const known: PanelId[] = ["editor-1", "editor-2", "docs", "post"];
   if (all.some((p) => !known.includes(p)) || new Set(all).size !== all.length) return null;
   if (!all.includes("editor-1") || !all.includes("docs") || !all.includes("post")) return null;
   return { left: [...l.left], right: [...l.right] };
