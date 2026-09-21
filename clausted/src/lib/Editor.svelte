@@ -144,6 +144,11 @@
     view.focus();
   }
 
+  /** The names of the tabs with unsaved changes. */
+  export function unsaved(): string[] {
+    return tabs.filter((t) => t.dirty).map((t) => t.name);
+  }
+
   /** Shows the tab holding `path`, if this group has one. */
   export function showPath(path: string): boolean {
     const i = tabs.findIndex((t) => t.path === path);

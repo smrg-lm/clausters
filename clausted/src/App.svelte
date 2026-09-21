@@ -8,7 +8,7 @@
   import Post from "./lib/Post.svelte";
   import Docs from "./lib/Docs.svelte";
   import AppMenu, { type MenuActions } from "./lib/AppMenu.svelte";
-  import ConfirmDialog from "./lib/ConfirmDialog.svelte";
+  import ConfirmDialog, { confirm } from "./lib/ConfirmDialog.svelte";
   import EnvironmentsDialog from "./lib/EnvironmentsDialog.svelte";
   import PreferencesDialog from "./lib/PreferencesDialog.svelte";
   import { initSession, interrupt, restart, session, startSession } from "./lib/session.svelte";
@@ -358,6 +358,32 @@
   onMount(() => {
     window.addEventListener("wheel", onWheel, { passive: false });
     return () => window.removeEventListener("wheel", onWheel);
+  });
+
+  // Closing the window (its button, Ctrl+Q, File > Quit) asks first when a file has
+  // unsaved changes, as closing its tab does.
+  onMount(() => {
+    let unlisten: Promise<() => void>;
+    try {
+      unlisten = getCurrentWindow().onCloseRequested(async (event) => {
+        const names = editorIds.flatMap((id) => editors[id]?.unsaved() ?? []);
+        if (names.length === 0) return;
+        const ok = await confirm({
+          title: names.length === 1 ? `Quit with "${names[0]}" unsaved?` : `Quit with ${names.length} files unsaved?`,
+          description:
+            names.length === 1
+              ? "There are unsaved changes that will be lost."
+              : `There are unsaved changes that will be lost in ${names.map((n) => `"${n}"`).join(", ")}.`,
+          action: "Quit without saving",
+        });
+        if (!ok) event.preventDefault();
+      });
+    } catch {
+      return; // outside Tauri
+    }
+    return () => {
+      unlisten.then((f) => f());
+    };
   });
 
   onMount(async () => {
