@@ -231,7 +231,7 @@
     class="prose prose-sm max-w-none min-h-0 flex-1 overflow-auto px-5 pt-4 pb-5
       [&_.code-block]:relative [&_.eval-block]:absolute [&_.eval-block]:top-1.5 [&_.eval-block]:right-1.5
       [&_pre]:font-mono [&_pre]:text-(length:--code-size) [&_pre_code]:[font-size:inherit]"
-    style:font-size="calc(var(--code-size) + 1px)"
+    style:font-size="var(--code-size)"
     bind:this={content}
     onclick={onClick}
   >

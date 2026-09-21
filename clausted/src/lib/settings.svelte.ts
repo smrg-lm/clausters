@@ -3,8 +3,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 // The only font bundled with the app (OFL license); the rest are chosen from the system's.
-import "@fontsource/jetbrains-mono/latin-400.css";
-import "@fontsource/jetbrains-mono/latin-ext-400.css";
+import "@fontsource/jetbrains-mono/latin-500.css";
+import "@fontsource/jetbrains-mono/latin-ext-500.css";
 
 export type ThemePref = "system" | "light" | "dark";
 
