@@ -4479,7 +4479,7 @@ work, where a pending item reads as done.)*
   (`clients/gui/PLAN.md`, Future directions), where the user's full
   specification is written down.
 
-- ⬜ **Half the editors a hand can use have no history, because they edit
+- ✅ **Half the editors a hand can use have no history, because they edit
   through the raw event** *(found 2026-09-07 by the user, by eye, in
   `editors/pianoroll` and then `editors/bpf`: "ctrl+z / ctrl+shift+z no hace
   nada", twice)*. Counted over the examples that let a hand edit a structure,
@@ -4524,6 +4524,16 @@ work, where a pending item reads as done.)*
   curve to keep aligned. `Ctrl`+`Z` works there now. **The right-hand column is
   two**: `pianoroll`, `pianoroll_midi` -- and they are the piano-roll twice,
   which makes what is left one question rather than three.
+
+  **And that one question is not this entry's**, re-read 2026-09-21: the two
+  survivors are the notes editor, whose seam `X3` exists to settle -- the events
+  view is shaped out of the client's own objects, so what the crate edits is the
+  first thing to decide and nothing under it can be ported before that. So what
+  this entry found is closed on the client's side (`edit_curve`, `edit_notes`,
+  `edit_samples`, `notation/score_editor`, `edit_multitrack`, `edit_env` all
+  edit through `edit()` and walk one history), and the remainder is carried by
+  **`X3 - The notes editor`** (`crates/clausters-apps/PLAN.md`), which already
+  names this entry under its own "Related".
 
 - ✅ **Assigning a running clock's tempo re-sloped the whole map from beat 0**
   *(found 2026-09-16 by the user, by ear, in an interactive session: a routine

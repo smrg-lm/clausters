@@ -134,7 +134,9 @@ opened it.
 
   **Related:** the examples that edit notes through the raw event and have no
   history (`clients/python/PLAN.md`, "Half the editors a hand can use have no
-  history"); configurable key bindings (`clients/gui/PLAN.md`, `G36`) and the
+  history") -- that entry closed on 2026-09-21 with `pianoroll` and
+  `pianoroll_midi` as its only survivors, and **hands them here**, because
+  porting them onto the editing seam waits on what this milestone edits; configurable key bindings (`clients/gui/PLAN.md`, `G36`) and the
   interaction-vocabulary entry beside it ("The whole interaction vocabulary is
   provisional…"); and an application inside
   another (`crates/clausters-document/PLAN.md`, Future directions), which is what
