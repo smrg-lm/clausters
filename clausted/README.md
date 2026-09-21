@@ -5,6 +5,10 @@ window with the output and a Markdown documentation viewer. Tauri 2 + Svelte 5 +
 CodeMirror 6. The interface uses [shadcn-svelte](https://shadcn-svelte.com)
 (Neutral theme) and Tailwind; the editor uses VS Code's syntax colors.
 
+It lives in the `clausters` repository but is independent of it: every command
+and path below is relative to this folder (`clausted/`), not to the repository
+root.
+
 ## Requirements (Ubuntu/Debian)
 
 ```sh
@@ -81,6 +85,7 @@ src/
   lib/editorTheme.ts       editor theme: shadcn variables + VS Code syntax colors
   lib/evaluation.ts        what each shortcut evaluates (line, selection, block)
   lib/hints.ts             documentation tooltips and parameter help (from the session)
+  lib/ui/tooltip.ts        themed tooltips for every `title` attribute on the page
   lib/Post.svelte          output window
   lib/Docs.svelte          documentation viewer, history, help (Ctrl+D)
   lib/markdown.ts          markdown-it + DOMPurify + highlighting
