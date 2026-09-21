@@ -21,6 +21,9 @@ const fromShadcn = {
   gutterForeground: "var(--muted-foreground)",
   gutterActiveForeground: "var(--foreground)",
   gutterBorder: "transparent",
+  // The theme brings its own font list (Menlo, Monaco, ...) with a selector that
+  // wins over the one in Editor.svelte: without this the preference is ignored.
+  fontFamily: "var(--mono)",
 };
 
 const dark = vscodeDarkInit({ settings: fromShadcn });
