@@ -15,7 +15,10 @@
 
   let { onChooseFolder, onClose }: { onChooseFolder: () => void; onClose: () => void } = $props();
 
-  type Page = { kind: "doc"; path: string; anchor?: string } | { kind: "text"; title: string; text: string };
+  // `scroll` is where the page was left, so that going back returns there.
+  type Page = ({ kind: "doc"; path: string; anchor?: string } | { kind: "text"; title: string; text: string }) & {
+    scroll?: number;
+  };
 
   let docs = $state<string[]>([]);
   let history = $state<Page[]>([]);
@@ -82,21 +85,32 @@
       plain = page.text;
     }
     await tick();
-    scrollTo(page.kind === "doc" ? page.anchor : undefined);
+    if (page.scroll !== undefined) content.scrollTop = page.scroll;
+    else scrollTo(page.kind === "doc" ? page.anchor : undefined);
+  }
+
+  /** Remembers where the current page was left before moving away from it. */
+  function leave() {
+    if (history[pos]) history[pos].scroll = content.scrollTop;
   }
 
   function go(page: Page) {
+    leave();
     history = [...history.slice(0, pos + 1), page];
     pos = history.length - 1;
     show(page);
   }
 
   function back() {
-    if (pos > 0) show(history[--pos]);
+    if (pos <= 0) return;
+    leave();
+    show(history[--pos]);
   }
 
   function forward() {
-    if (pos < history.length - 1) show(history[++pos]);
+    if (pos >= history.length - 1) return;
+    leave();
+    show(history[++pos]);
   }
 
   export function openDoc(path: string, anchor?: string) {
@@ -165,7 +179,8 @@
       return;
     }
     const [path, anchor] = href.split("#");
-    if (!path) return scrollTo(anchor);
+    // An anchor in the same document is a step in the history too, like a link to another one.
+    if (!path) return current?.kind === "doc" ? openDoc(current.path, anchor) : scrollTo(anchor);
     openDoc(current?.kind === "doc" ? resolve(current.path, path) : path, anchor);
   }
 
