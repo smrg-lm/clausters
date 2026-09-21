@@ -1,4 +1,6 @@
 <script lang="ts" module>
+  import type { Text } from "@codemirror/state";
+
   // Shared by every editor group, so that two groups never both have an "untitled 1".
   let untitled = 0;
 
@@ -11,6 +13,7 @@
     anchor: number;
     head: number;
     dirty: boolean;
+    saved: Text;
   }
 </script>
 
@@ -55,6 +58,8 @@
     name: string;
     state: EditorState;
     dirty: boolean;
+    /** The text as last opened or saved: the tab is modified while it differs. */
+    saved: Text;
   }
 
   let tabs = $state<Tab[]>([]);
@@ -110,7 +115,8 @@
     pythonHints((expr) => pyInspect(expr)),
     EditorView.updateListener.of((u) => {
       const t = tabs[active];
-      if (u.docChanged && t && !t.dirty) t.dirty = true;
+      // Compared with what was saved, so undoing back to it (or retyping it) clears the mark.
+      if (u.docChanged && t) t.dirty = !u.state.doc.eq(t.saved);
     }),
   ];
 
@@ -130,7 +136,8 @@
 
   function addTab(path: string | null, name: string, doc: string, selection?: { anchor: number; head: number }) {
     if (tabs[active]) tabs[active].state = view.state;
-    tabs.push({ path, name, dirty: false, state: EditorState.create({ doc, selection, extensions: extensions() }) });
+    const state = EditorState.create({ doc, selection, extensions: extensions() });
+    tabs.push({ path, name, dirty: false, saved: state.doc, state });
     show(tabs.length - 1);
   }
 
@@ -165,7 +172,8 @@
       .map((i) => {
         const t = tabs[i];
         const { anchor, head } = t.state.selection.main;
-        return { path: t.path, name: t.name, doc: t.state.doc.toString(), anchor, head, dirty: t.dirty };
+        const doc = t.state.doc.toString();
+        return { path: t.path, name: t.name, doc, anchor, head, dirty: t.dirty, saved: t.saved };
       });
     if (all) {
       tabs = [];
@@ -181,6 +189,7 @@
       const blank = isBlank(active) ? active : -1;
       addTab(m.path, m.name, m.doc, { anchor: m.anchor, head: m.head });
       tabs[active].dirty = m.dirty;
+      tabs[active].saved = m.saved;
       if (blank >= 0) closeAt(blank);
     }
   }
@@ -211,11 +220,15 @@
       path = await save({ defaultPath: t.path ?? `${t.name.replace(/\s+/g, "_")}.py`, filters });
       if (!path) return;
     }
+    // What is written, not what is on screen once the write returns: an edit made
+    // in between keeps the tab modified.
+    const written = view.state.doc;
     try {
-      await invoke("write_file", { path, contents: view.state.doc.toString() });
+      await invoke("write_file", { path, contents: written.toString() });
       t.path = path;
       t.name = basename(path);
-      t.dirty = false;
+      t.saved = written;
+      t.dirty = !(t === tabs[active] ? view.state : t.state).doc.eq(written);
     } catch (e) {
       info(`${e}\n`);
     }
