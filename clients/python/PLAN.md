@@ -1518,6 +1518,30 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ✅ **`edit(curve)` could not be told the value range, so an amplitude
+  envelope's zero was unreachable by hand** *(found 2026-09-21 by the user, by
+  ear, drawing in `editors/edit_env`: "estoy poniendo la curva en cero al
+  principio pero igual suena", then "nunca llega a cero, tampoco al final";
+  fixed the same day)*. A view with no declared axis derives one --
+  `envshape::curve_range`, the break-points' own range with a tenth of headroom
+  -- so a curve over `0..1` was drawn against **-0.1 .. 1.1**: the floor of the
+  field was -0.1 and zero sat 8.3% up it. Dragging to the floor gives a small
+  *negative* amplitude, which does not silence anything, it inverts the phase.
+  The envelope was never wrong -- `Env.set_points` on a drawn zero gives
+  `levels [0.0, 0.0, 1.0, 0.0]` -- the field was.
+
+  The headroom is right where it was written: a range that is not known needs
+  air, and a flat curve needs a band to be dragged in at all. What was missing
+  is a way for a caller who *knows* the range to say it, and the example that
+  found this had one before `edit` existed -- the hand-built window passed
+  `bpf(min=0.0, max=1.0)` straight to the widget, so its floor was a real zero.
+  Driving the same widget through `edit()` lost it.
+
+  `PointsEditor` takes `min`/`max` now, both or neither, and they reach it
+  through `edit(curve, min=, max=)`. It is the axis's **floor, not a clamp**:
+  `envshape::curve_axis` already widens a kept axis and never narrows it, so a
+  point dragged outside still grows the field. Both examples declare `[0, 1]`.
+
 - ✅ **`Editor.window` handed back a handle in one client and a bare number in
   the other, so a widget the caller passed in was reachable from a script and
   not from a page** *(found 2026-09-20, rewriting `editors/bpf` as `edit_env`

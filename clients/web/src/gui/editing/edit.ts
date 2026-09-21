@@ -76,11 +76,22 @@ export interface EditOptions {
      */
     sources?: MultitrackEditorOptions["sources"];
     server?: Server;
+    /**
+     * **A curve's own two**, ignored by every other structure: the value axis
+     * it is drawn against, both or neither. Without them the axis is derived
+     * from the break-points with a tenth of headroom, so the field's floor sits
+     * below the lowest value -- fine for a curve whose range is open, wrong for
+     * one that means something at its ends (an amplitude envelope's zero).
+     */
+    min?: number;
+    max?: number;
 }
 
 /** Builds the editor `structure` asks for, without opening it. */
 function editorFor(structure: unknown, options: EditOptions): Editor<never> {
-    const { sampleRate = 0, host: _h, stage: _s, open: _o, ...rest } = options;
+    const {
+        sampleRate = 0, host: _h, stage: _s, open: _o, min, max, ...rest
+    } = options;
     if (isSamples(structure)) {
         return new SamplesEditor(structure, {
             sampleRate,
@@ -90,6 +101,8 @@ function editorFor(structure: unknown, options: EditOptions): Editor<never> {
     if (isCurve(structure)) {
         return new PointsEditor(structure, {
             sampleRate: sampleRate || 48_000,
+            min,
+            max,
             ...rest,
         }) as unknown as Editor<never>;
     }

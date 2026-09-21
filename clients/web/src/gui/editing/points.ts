@@ -123,12 +123,30 @@ export function curveAxis(
 
 export class PointsView extends View<EditableCurve> {
     /**
+     * The axis the **caller declared**, or `undefined` to derive one.
+     *
+     * A derived axis is the break-points' own range with a tenth of headroom,
+     * which is right when the range is unknown -- a flat curve still needs a
+     * band to be dragged in -- and wrong when it is known: on an amplitude
+     * envelope it puts the field's floor below zero, so the one value that
+     * matters cannot be reached by hand. A caller who knows the range says it,
+     * and it is the axis's **floor**, widened like any other but never
+     * narrowed.
+     */
+    private declared: [number, number] | undefined;
+
+    /**
      * The value axis this view is drawing against, and the time it spans, kept
      * per structure so a redraw does not re-fit them. Both only ever **grow** --
      * see {@link axis}.
      */
     private kept = new Map<unknown, [number, number]>();
     private span = new Map<unknown, number>();
+
+    constructor(axis?: readonly [number, number]) {
+        super();
+        this.declared = axis === undefined ? undefined : [axis[0], axis[1]];
+    }
 
     /**
      * The props this curve is drawn with, and the axis they settled on
@@ -142,7 +160,7 @@ export class PointsView extends View<EditableCurve> {
      * dragged moves every other point on screen.
      */
     drawn(structure: EditableCurve, points: readonly number[]): Record<string, PropValue> {
-        const kept = this.kept.get(structure);
+        const kept = this.kept.get(structure) ?? this.declared;
         const props = JSON.parse(
             corePointsProps(
                 Float64Array.from(points, Number),
@@ -174,6 +192,14 @@ export class PointsView extends View<EditableCurve> {
     }
 }
 
+/** What {@link PointsEditor} takes on top of the generic editor's options. */
+export interface PointsEditorOptions extends GenericEditorOptions<EditableCurve> {
+    /** The bottom of the value axis, with {@link PointsEditorOptions.max}. */
+    min?: number;
+    /** The top of the value axis, with {@link PointsEditorOptions.min}. */
+    max?: number;
+}
+
 /**
  * A curve on screen, editable back into the curve the caller already holds.
  *
@@ -182,12 +208,27 @@ export class PointsView extends View<EditableCurve> {
  * what was drawn.
  */
 export class PointsEditor extends Editor<EditableCurve> {
-    constructor(curve: EditableCurve, options: GenericEditorOptions<EditableCurve>) {
+    /**
+     * `min`/`max` declare the **value axis** the curve is drawn against, both
+     * or neither. Without them the axis is derived from the break-points with a
+     * tenth of headroom, which leaves the field's floor below the lowest value
+     * -- fine for a curve whose range is open, wrong for one that means
+     * something at its ends (an amplitude envelope's zero, a pan's extremes).
+     * Declared, the axis still **grows** to hold a point dragged outside it; it
+     * just never starts narrower than what the caller said.
+     */
+    constructor(curve: EditableCurve, options: PointsEditorOptions) {
+        const { min, max, ...rest } = options;
+        if ((min === undefined) !== (max === undefined)) {
+            throw new TypeError(
+                "a declared axis needs both ends: pass min and max, or neither",
+            );
+        }
         super(curve, {
             title: "Curve",
-            ...options,
+            ...rest,
             domain: new PointsDomain(),
-            view: new PointsView(),
+            view: new PointsView(min === undefined ? undefined : [min, max!]),
         });
     }
 }

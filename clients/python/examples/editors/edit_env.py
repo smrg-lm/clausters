@@ -18,12 +18,6 @@ What to do in the window:
 - the **curve menu** applies one shape to every segment at once, which is a
   write to the `clausters.defs.Env` and not a gesture.
 
-**Every gesture sounds.** ``editor.on_change`` is called once per gesture that
-changed the data, and this file answers it by sending a fresh def built from the
-envelope and spawning a note. Nothing here keeps a break-point list of its own:
-the `clausters.defs.Env` passed to ``edit`` *is* the edited one, and reading it
-after a gesture reads what the hand left there.
-
 The sibling `edit_curve.py` opens the same widget over a `clausters.defs.Bpf` --
 the same envelope in absolute coordinates -- and never plays it. This one is the
 other half: the same curve as the thing `EnvGen` reads.
@@ -109,41 +103,43 @@ def set_curve(spec):
 # `clausters.gui.editing.PointsEditor`. ``extra`` appends widgets after the
 # picture -- they are the script's, and the editor never touches their ids --
 # and `clausters.gui.editing.Editor.window` resolves them by name.
-#
-# `clausters.gui.editing.Editor.on_change` is called once per gesture that
-# changed the envelope -- once for a whole drag, because that is what a hand
-# did -- so drawing plays.
+
 
 # %%
 editor = edit(
     env, sample_rate=48_000.0, title="amp env -> EnvGen",
+    # **The axis is declared.** An amplitude envelope means something at its
+    # ends, and a derived axis pads the data's range by a tenth -- which puts
+    # the field's floor below zero, so the one value that matters here cannot be
+    # reached by hand. Declaring it puts 0 on the floor; it still grows if a
+    # point is dragged outside.
+    min=0.0, max=1.0,
     extra=[menu(name="curve", options=[str(c) for c in CURVES],
                 label="curve (all segments)"),
-           button(name="play", label="play again"),
-           label(name="hint", text="drag points/segments; Ctrl+click adds/removes")],
+           button(name="play", label="play"),
+           label(name="hint",
+                 text="drag points/segments; Ctrl+click adds/removes; play sends it")],
 )
-editor.on_change = play
 editor.window["play"].on_click(lambda *_: play())
 editor.window["curve"].on_event(lambda index: set_curve(CURVES[int(index)]))
-print(f"opened window {editor.id} -- draw, and every gesture sounds")
+print(f"opened window {editor.id} -- draw the envelope, then press play")
 
 # %% [markdown]
-# ## Hear the seed, then rewrite it from the script
+# ## Rewrite it from the script
 # The envelope is the script's object, so a script may write it too:
 # `clausters.defs.Env.set_points` takes the break points of another envelope,
 # and `clausters.gui.editing.Editor.adopt` brings the window in step.
 
 # %%
-play()
 env.set_points(Env.perc(0.01, 1.2).to_points())
 editor.adopt()
 print("the editor now holds a percussive envelope instead")
 
 # %% [markdown]
 # ## Drive it
-# Cell-run: keep drawing, and call `play()` between cells when you want the same
-# envelope again. Script-run: hold the window open until you close it, then tear
-# everything down.
+# Cell-run: keep drawing and call `play()` between cells, or press the button.
+# Script-run: hold the window open until you close it -- editing is silent, the
+# **play** button sends the note -- then tear everything down.
 
 # %%
 if __name__ == "__main__" and not hasattr(sys, "ps1"):
@@ -152,4 +148,4 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
     finally:
         session.close()
 else:
-    print("up -- draw to hear it; play() replays; session.close() to end")
+    print("up -- draw and press play; play() does the same; session.close() to end")

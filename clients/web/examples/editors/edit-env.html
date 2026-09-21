@@ -35,12 +35,7 @@ between its neighbours); <b>drag a segment</b> vertically to bend its curvature;
 envelope, not to the window; and the <b>curve menu</b> applies one shape to
 every segment at once, which is a write to the <code>Env</code> and not a
 gesture.
-
-<b>Every gesture sounds.</b> <code>editor.onChange</code> is called once per
-gesture that changed the data, and this page answers it by sending a fresh def
-built from the envelope and spawning a note. Nothing here keeps a break-point
-list of its own: the <code>Env</code> passed to <code>edit</code> <i>is</i> the
-edited one.</div>
+</div>
 
       <button id="run">open the editor</button>
       <div id="stage"></div>
@@ -49,9 +44,9 @@ edited one.</div>
 
     <!--
       The web sibling of clients/python/examples/editors/edit_env.py, call for
-      call: the ADSR-shaped Env, `play`, `edit` with `onChange` wired to it, and
-      the two calls at the end (one note, then the envelope rewritten from the
-      script and adopted).
+      call: the ADSR-shaped Env, `play`, `edit` with the declared axis and the
+      two widgets of the page's own, and the envelope rewritten from the script
+      and adopted at the end.
 
       The platform's differences are the usual two: the host is the wasm one in
       this tab and draws into an element, and nothing is pumped.
@@ -117,27 +112,28 @@ edited one.</div>
         // points, so it opens as a PointsEditor. `extra` appends widgets after
         // the picture -- they are the page's, and the editor never touches
         // their ids -- and `editor.window` resolves them by name.
-        //
-        // `onChange` is called once per gesture that changed the envelope --
-        // once for a whole drag, because that is what a hand did -- so drawing
-        // plays.
         editor = await gui.edit(env, {
           sampleRate: 48_000, title: "amp env -> EnvGen", stage: $("stage"),
+          // **The axis is declared.** An amplitude envelope means something at
+          // its ends, and a derived axis pads the data's range by a tenth --
+          // which puts the field's floor below zero, so the one value that
+          // matters here cannot be reached by hand. Declaring it puts 0 on the
+          // floor; it still grows if a point is dragged outside.
+          min: 0.0, max: 1.0,
           extra: [
             gui.menu(CURVES.map(String), { name: "curve", label: "curve (all segments)" }),
-            gui.button({ name: "play", label: "play again" }),
-            gui.label("drag points/segments; Ctrl+click adds/removes", { name: "hint" }),
+            gui.button({ name: "play", label: "play" }),
+            gui.label("drag points/segments; Ctrl+click adds/removes; play sends it",
+              { name: "hint" }),
           ],
         });
-        editor.onChange = () => { void play(); };
         editor.window.widget("play").onClick(() => play());
         editor.window.widget("curve").onEvent((index) => setCurve(CURVES[Number(index)]));
-        log(`opened window ${editor.id} -- draw, and every gesture sounds`);
+        log(`opened window ${editor.id} -- draw the envelope, then press play`);
 
         // The envelope is the page's object, so the page may write it too:
         // `Env.setPoints` takes the break points of another envelope, and
         // `adopt` brings the window in step.
-        await play();
         env.setPoints(Env.perc(0.01, 1.2).toPoints());
         editor.adopt();
         log("the editor now holds a percussive envelope instead");

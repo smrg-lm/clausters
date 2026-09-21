@@ -72,7 +72,7 @@ export { Playback } from "./playback.ts";
 // read it; what a page sees now is the reconciler's answer.
 export type { Step, StepArg } from "./playback.ts";
 export { PointsDomain, PointsEditor, PointsView } from "./points.ts";
-export type { CratePoint, EditableCurve } from "./points.ts";
+export type { CratePoint, EditableCurve, PointsEditorOptions } from "./points.ts";
 export { MEASURES, SamplesDomain, SamplesEditor, SamplesView, measures } from "./samples.ts";
 export type { Measure, SamplesEditorOptions } from "./samples.ts";
 export { Echo } from "./echo.ts";

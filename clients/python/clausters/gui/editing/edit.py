@@ -58,9 +58,14 @@ def edit(structure, *, sample_rate: float = 0.0,
             inspecting the picture it would draw -- the only case the separate
             `clausters.gui.editing.Editor.open` was ever for.
         options: passed through to the editor -- ``title``, ``width``,
-            ``height``, ``base_id``, and ``context`` for a view that joins an
-            editing context the caller already has (which is what makes a
-            composed window undo across several structures in one order).
+            ``height``, ``base_id``, ``extra`` (widgets of the caller's own,
+            appended after the picture and resolved by name on
+            `clausters.gui.editing.Editor.window`), and ``context`` for a view
+            that joins an editing context the caller already has (which is what
+            makes a composed window undo across several structures in one
+            order). A curve also takes ``min``/``max``, the value axis it is
+            drawn against -- without them the axis is derived from the data with
+            headroom, so the field's floor sits below the lowest value.
 
     Returns:
         The editor, **open**. It is the handle the window is addressed by --

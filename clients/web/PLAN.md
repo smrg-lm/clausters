@@ -3100,6 +3100,16 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 
 ## Found by use: the running list of fixes
 
+- ✅ **`edit(curve)` could not be told the value range** *(found 2026-09-21;
+  the finding and the reasoning are one entry in `clients/python/PLAN.md`,
+  "Found by use" -- "`edit(curve)` could not be told the value range, so an
+  amplitude envelope's zero was unreachable by hand" -- and are not restated
+  here)*. This side's half: `PointsEditor` takes a `PointsEditorOptions` with
+  `min`/`max`, `PointsView` holds the declared axis as the floor its kept axis
+  starts from, and `edit` passes the pair through to the curve alone -- the
+  other editors never see it. `examples/editors/edit-env.html` declares
+  `[0, 1]`.
+
 - ✅ **`Editor.window` returned the bare id while the handle sat beside it**
   *(found 2026-09-20; the finding and the reasoning are one entry in
   `clients/python/PLAN.md`, "Found by use" -- "`Editor.window` handed back a

@@ -75,3 +75,30 @@ def test_a_redrawn_curve_drops_a_sustain_it_no_longer_has():
 def test_a_curve_needs_two_points():
     with pytest.raises(ValueError):
         Bpf([(0.0, 1.0, 1, 0.0)])
+
+
+def test_a_declared_axis_is_the_floor_and_still_grows():
+    # A derived axis pads the data by a tenth, which puts the field's floor
+    # below the lowest value -- on an amplitude envelope that makes zero
+    # unreachable by hand. A caller who knows the range says it.
+    from clausters.gui.editing.points import PointsView
+
+    env = Env([0.0, 1.0, 0.4, 0.0], [0.05, 0.3, 1.2], ["exp", -4.0, "sin"])
+    derived = PointsView().drawn(env, env.to_points())
+    assert (derived["min"], derived["max"]) == (-0.1, 1.1)
+
+    view = PointsView((0.0, 1.0))
+    declared = view.drawn(env, env.to_points())
+    assert (declared["min"], declared["max"]) == (0.0, 1.0)
+
+    # Declared is a floor, not a clamp: a point dragged outside widens it.
+    env.set_points([0.0, -0.5, 1, 0.0, 1.0, 1.0, 1, 0.0])
+    grown = view.drawn(env, env.to_points())
+    assert grown["min"] < 0.0 and grown["max"] == 1.0
+
+
+def test_a_declared_axis_needs_both_ends():
+    from clausters.gui.editing.points import PointsEditor
+
+    with pytest.raises(ValueError, match="both ends"):
+        PointsEditor(Env([0.0, 1.0], [1.0]), sample_rate=48_000.0, min=0.0)

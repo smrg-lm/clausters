@@ -79,8 +79,18 @@ class PointsView(View):
     axis must not do.
     """
 
-    def __init__(self):
+    def __init__(self, axis=None):
         super().__init__()
+        #: The axis the **caller declared**, or ``None`` to derive one.
+        #:
+        #: A derived axis is the break-points' own range with a tenth of
+        #: headroom, which is right when the range is unknown -- a flat curve
+        #: still needs a band to be dragged in -- and wrong when it is known:
+        #: on an amplitude envelope it puts the field's floor below zero, so
+        #: the one value that matters cannot be reached by hand. A caller who
+        #: knows the range says it, and it is the axis's **floor**, widened by
+        #: `axis` like any other but never narrowed.
+        self._declared = None if axis is None else (float(axis[0]), float(axis[1]))
         #: The value axis this view is drawing against, and the time it spans,
         #: kept per structure so a redraw does not re-fit them. Both only ever
         #: **grow** -- see `axis`.
@@ -105,7 +115,8 @@ class PointsView(View):
         refits while a point is being dragged moves every other point on
         screen.
         """
-        props = _native.points_props(points, self._axis.get(structure),
+        props = _native.points_props(points,
+                                     self._axis.get(structure, self._declared),
                                      self._span.get(structure, 0.0))
         self._axis[structure] = (props["min"], props["max"])
         self._span[structure] = props.get("duration", 0.0)
@@ -134,11 +145,23 @@ class PointsEditor(Editor):
     what was drawn.
     """
 
-    def __init__(self, curve, *, sample_rate: float,
-                 title: str = "Curve", **options):
+    def __init__(self, curve, *, sample_rate: float, title: str = "Curve",
+                 min=None, max=None, **options):
+        """``min``/``max`` declare the **value axis** the curve is drawn
+        against, both or neither. Without them the axis is derived from the
+        break-points with a tenth of headroom, which leaves the field's floor
+        below the lowest value -- fine for a curve whose range is open, wrong
+        for one that means something at its ends (an amplitude envelope's zero,
+        a pan's extremes). Declared, the axis still **grows** to hold a point
+        dragged outside it; it just never starts narrower than what the caller
+        said."""
+        if (min is None) != (max is None):
+            raise ValueError(
+                "a declared axis needs both ends: pass min and max, or neither")
+        axis = None if min is None else (min, max)
         super().__init__(curve, sample_rate=sample_rate,
-                         domain=PointsDomain(), view=PointsView(), title=title,
-                         **options)
+                         domain=PointsDomain(), view=PointsView(axis),
+                         title=title, **options)
 
 
 def _name(curve) -> str:
