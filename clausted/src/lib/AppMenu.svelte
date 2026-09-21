@@ -7,12 +7,10 @@
     THEMES,
     fontOptions,
     setFont,
-    setPostPosition,
     setShowDocs,
     setTheme,
     settings,
     zoom,
-    type PostPosition,
     type ThemePref,
   } from "./settings.svelte";
 
@@ -105,15 +103,6 @@
       <Menubar.CheckboxItem checked={settings.showDocs} onCheckedChange={(v) => setShowDocs(v)}>
         Documentation
       </Menubar.CheckboxItem>
-      <Menubar.Sub>
-        <Menubar.SubTrigger>Post Window</Menubar.SubTrigger>
-        <Menubar.SubContent>
-          <Menubar.RadioGroup value={settings.postPosition} onValueChange={(v) => setPostPosition(v as PostPosition)}>
-            <Menubar.RadioItem value="right">On the Right</Menubar.RadioItem>
-            <Menubar.RadioItem value="bottom">Below the Editor</Menubar.RadioItem>
-          </Menubar.RadioGroup>
-        </Menubar.SubContent>
-      </Menubar.Sub>
       <Menubar.Separator />
       {@render item("Increase Size", () => zoom(1), "Ctrl++")}
       {@render item("Decrease Size", () => zoom(-1), "Ctrl+-")}

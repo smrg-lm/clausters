@@ -1,24 +1,14 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { onMessage, type Msg } from "./session.svelte";
-  import { settings, setAutoscroll, type PostPosition } from "./settings.svelte";
+  import { settings, setAutoscroll } from "./settings.svelte";
+  import Grip from "./Grip.svelte";
   import { Button } from "$lib/components/ui/button";
   import { Toggle } from "$lib/components/ui/toggle";
   import Eraser from "@lucide/svelte/icons/eraser";
   import ArrowDownToLine from "@lucide/svelte/icons/arrow-down-to-line";
-  import GripVertical from "@lucide/svelte/icons/grip-vertical";
-  import PanelBottom from "@lucide/svelte/icons/panel-bottom";
-  import PanelRight from "@lucide/svelte/icons/panel-right";
 
-  let {
-    position,
-    onMove,
-    onDragStart,
-  }: {
-    position: PostPosition;
-    onMove: (position: PostPosition) => void;
-    onDragStart: (e: PointerEvent) => void;
-  } = $props();
+  let { onDragStart }: { onDragStart: (e: PointerEvent) => void } = $props();
 
   const MAX_CHUNKS = 4000;
   const MAX_CHUNK_LEN = 8000;
@@ -56,17 +46,7 @@
 
 <div class="flex h-full flex-col">
   <div class="flex h-9 shrink-0 items-center gap-0.5 border-b bg-secondary px-1">
-    <!-- Handle for dragging the window to another position -->
-    <div
-      class="flex h-8 w-5 cursor-grab touch-none items-center justify-center text-muted-foreground hover:text-foreground"
-      role="button"
-      tabindex="-1"
-      title="Drag to move the post window"
-      aria-label="Move the post window"
-      onpointerdown={onDragStart}
-    >
-      <GripVertical class="size-4" />
-    </div>
+    <Grip label="post window" {onDragStart} />
     <Button variant="ghost" size="icon-sm" onclick={clear} title="Clear the post window" aria-label="Clear the post window">
       <Eraser />
     </Button>
@@ -83,16 +63,6 @@
     >
       <ArrowDownToLine />
     </Toggle>
-    <span class="flex-1"></span>
-    {#if position === "right"}
-      <Button variant="ghost" size="icon-sm" onclick={() => onMove("bottom")} title="Move below the editor" aria-label="Move below the editor">
-        <PanelBottom />
-      </Button>
-    {:else}
-      <Button variant="ghost" size="icon-sm" onclick={() => onMove("right")} title="Move to the right" aria-label="Move to the right">
-        <PanelRight />
-      </Button>
-    {/if}
   </div>
   <pre
     class="m-0 min-h-0 flex-1 overflow-auto px-3 py-2 font-mono break-words whitespace-pre-wrap

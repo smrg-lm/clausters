@@ -12,8 +12,13 @@
   import { Button } from "$lib/components/ui/button";
   import * as Select from "$lib/components/ui/select";
   import { settings } from "./settings.svelte";
+  import Grip from "./Grip.svelte";
 
-  let { onChooseFolder, onClose }: { onChooseFolder: () => void; onClose: () => void } = $props();
+  let {
+    onChooseFolder,
+    onClose,
+    onDragStart,
+  }: { onChooseFolder: () => void; onClose: () => void; onDragStart: (e: PointerEvent) => void } = $props();
 
   // `scroll` is where the page was left, so that going back returns there.
   type Page = ({ kind: "doc"; path: string; anchor?: string } | { kind: "text"; title: string; text: string }) & {
@@ -220,6 +225,7 @@
 
 <div class="flex h-full flex-col">
   <div class="flex h-9 shrink-0 items-center gap-0.5 border-b bg-secondary px-1">
+    <Grip label="documentation" {onDragStart} />
     <Button variant="ghost" size="icon-sm" onclick={back} disabled={pos <= 0} title="Back" aria-label="Back">
       <ArrowLeft />
     </Button>

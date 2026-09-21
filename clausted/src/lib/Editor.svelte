@@ -15,8 +15,9 @@
   import { pythonHints } from "./hints";
   import { settings } from "./settings.svelte";
   import X from "@lucide/svelte/icons/x";
+  import Grip from "./Grip.svelte";
 
-  let { onHelp }: { onHelp: (word: string) => void } = $props();
+  let { onHelp, onDragStart }: { onHelp: (word: string) => void; onDragStart: (e: PointerEvent) => void } = $props();
 
   interface Tab {
     path: string | null;
@@ -177,31 +178,36 @@
 </script>
 
 <div class="flex h-full min-w-0 flex-col">
-  <div class="flex h-9 shrink-0 overflow-x-auto border-b bg-secondary [scrollbar-width:none]" role="tablist">
-    {#each tabs as tab, i (tab)}
-      <div
-        class={[
-          "group relative flex max-w-56 items-center border-r text-sm",
-          i === active
-            ? "bg-background text-foreground before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-ring"
-            : "text-muted-foreground hover:text-foreground",
-        ]}
-        role="tab"
-        tabindex="-1"
-        aria-selected={i === active}
-        title={tab.path ?? tab.name}
-        onauxclick={(e) => e.button === 1 && closeTab(i)}
-      >
-        <button class="truncate py-2 pr-1 pl-3" onclick={() => select(i)}>{tab.name}</button>
-        <!-- A "modified" dot that turns into an x on hover. -->
-        <Button variant="ghost" size="icon-xs" class="mr-1.5" onclick={() => closeTab(i)} aria-label="Close {tab.name}">
-          {#if tab.dirty}
-            <span class="size-2 rounded-full bg-current group-hover:hidden"></span>
-          {/if}
-          <X class={[tab.dirty ? "hidden group-hover:block" : i === active ? "" : "invisible group-hover:visible"]} />
-        </Button>
-      </div>
-    {/each}
+  <div class="flex h-9 shrink-0 border-b bg-secondary">
+    <div class="flex items-center border-r pl-1">
+      <Grip label="editor" {onDragStart} />
+    </div>
+    <div class="flex min-w-0 flex-1 overflow-x-auto [scrollbar-width:none]" role="tablist">
+      {#each tabs as tab, i (tab)}
+        <div
+          class={[
+            "group relative flex max-w-56 items-center border-r text-sm",
+            i === active
+              ? "bg-background text-foreground before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-ring"
+              : "text-muted-foreground hover:text-foreground",
+          ]}
+          role="tab"
+          tabindex="-1"
+          aria-selected={i === active}
+          title={tab.path ?? tab.name}
+          onauxclick={(e) => e.button === 1 && closeTab(i)}
+        >
+          <button class="truncate py-2 pr-1 pl-3" onclick={() => select(i)}>{tab.name}</button>
+          <!-- A "modified" dot that turns into an x on hover. -->
+          <Button variant="ghost" size="icon-xs" class="mr-1.5" onclick={() => closeTab(i)} aria-label="Close {tab.name}">
+            {#if tab.dirty}
+              <span class="size-2 rounded-full bg-current group-hover:hidden"></span>
+            {/if}
+            <X class={[tab.dirty ? "hidden group-hover:block" : i === active ? "" : "invisible group-hover:visible"]} />
+          </Button>
+        </div>
+      {/each}
+    </div>
   </div>
   <div class="min-h-0 flex-1 [&_.cm-editor]:h-full [&_.cm-focused]:outline-none! [&_.cm-evalFlash]:bg-ring/25!" bind:this={host}></div>
 </div>
