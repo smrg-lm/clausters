@@ -43,10 +43,10 @@ clausters-gui = "clausters._cli:gui_main"
 [dependency-groups]
 dev = ["pytest>=7"]
 
-[tool.setuptools]
-packages = ["clausters", "clausters.base", "clausters.seq", "clausters.defs",
-            "clausters.defs.server", "clausters.defs.ugens", "clausters.form",
-            "clausters.gui"]
+# Discovered, not listed: a hand-written list silently dropped every subpackage
+# added after it (the wheel shipped without clausters.gui.editing).
+[tool.setuptools.packages.find]
+include = ["clausters", "clausters.*"]
 
 # The cargo-built artifacts that build_native.py stages into the package: the
 # cdylibs in _libs/ (embedded server / numeric core), libfaust (also _libs/, so a
