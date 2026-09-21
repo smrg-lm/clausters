@@ -29,9 +29,10 @@ it to <code>edit</code>, and reads the edited curve back out of the object it
 already holds.
 
 <b>Drag a point</b> to move it; <b>drag a segment</b> vertically to bend it;
-<b>Ctrl+click</b> adds or removes one; <b>Ctrl+Z</b> undoes. The second window
-below is the same curve: an undo stack belongs to the data, so a step in either
-window walks the one order both of them made.
+<b>Ctrl+click</b> adds or removes one; <b>Ctrl+Z</b> undoes. Call
+<code>secondWindow()</code> from the console for a second view of the same
+curve: an undo stack belongs to the data, so a step in either window walks the
+one order both of them made.
 
 <b>How an edit inverts is the shared crate's.</b> The payload goes in with the
 curve as it stands and comes back as the curve it now is <i>plus</i> the payload
@@ -40,7 +41,6 @@ lands.</div>
 
       <button id="run">open the editor</button>
       <div id="stage"></div>
-      <button id="second" disabled>open a second view</button>
       <div id="other"></div>
       <button id="read" disabled>read the curve back</button>
       <pre id="log"></pre>
@@ -48,7 +48,7 @@ lands.</div>
 
     <!--
       The web sibling of clients/python/examples/editors/edit_curve.py, call for
-      call: the same four break points, the same `edit`, the same second window
+      call: the same four break points, the same `edit`, the same second view
       over one curve, and the same read-back out of the object the page holds.
 
       The platform's difference is the usual one: the host is the wasm one in
@@ -106,18 +106,23 @@ lands.</div>
         // `Bpf`, an `Env`, a `multitrack.Automation` -- opens as a
         // PointsEditor: one `bpf` widget, the `points` vocabulary, and the
         // curve's own editing context.
+        // The axis is declared: a cutoff lives above zero, and a derived one
+        // pads the data's range by a tenth -- which here puts the field's floor
+        // at -180 Hz, where a point dragged down crosses zero and the
+        // exponential segment above it reads linearly, having no ratio between
+        // its ends.
         const editor = await gui.edit(curve, {
           sampleRate: 48_000, title: "cutoff", stage: $("stage"),
+          min: 20.0, max: 5000.0,
         });
         log("draw in the window; Ctrl+Z undoes. Close it when you are done.");
 
         // Calling `edit` again over the **same** curve gives a second window.
         // It is not a copy and it does not get a history of its own: an undo
         // stack belongs to the data, so Ctrl+Z in either window steps the one
-        // order both of them made. The script keeps it in a cell of its own for
-        // the same reason this page keeps it behind a button.
-        $("second").disabled = false;
-        $("second").onclick = () => secondWindow();
+        // order both of them made. The script calls it from a cell; a page has
+        // no cells, so it goes where a page's own prompt can reach it.
+        globalThis.secondWindow = secondWindow;
 
         // The same ending the script has, in the shape a page can take it:
         // there a script *blocks* on `wait()` so it does not exit while the

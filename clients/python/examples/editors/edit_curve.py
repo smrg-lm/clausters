@@ -72,7 +72,11 @@ curve = Bpf([(0.0, 200.0, "lin"),      # linear up
 # Nothing here plays, so nothing is booted -- and with no server there is no
 # sample clock to put the session's clocks on, so they keep wall-clock time.
 session = Session.live(boot=False, timebase=MonotonicTimebase())
-editor = edit(curve, sample_rate=48_000.0, title="cutoff")
+# The axis is declared: a cutoff lives above zero, and a derived one pads the
+# data's range by a tenth -- which here puts the field's floor at -180 Hz, where
+# a point dragged down crosses zero and the exponential segment above it reads
+# linearly, having no ratio between its ends.
+editor = edit(curve, sample_rate=48_000.0, title="cutoff", min=20.0, max=5000.0)
 
 
 # %% [markdown]
