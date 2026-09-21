@@ -1518,9 +1518,9 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
-- ⬜ **The API reference leaves out 26 public-named modules, and nothing says
+- ✅ **The API reference leaves out 26 public-named modules, and nothing says
   which of them are meant to be out** *(found 2026-09-21, splitting the
-  reference into one page per package)*. The module list in
+  reference into one page per package; fixed the same day)*. The module list in
   `docs/gen_api.py` (before that, in `pydoc-markdown.yml`) is written by hand,
   and every module added after it was written is missing from the published
   reference with no error: `clausters.config`, `.launch`, `.log`, `.segments`;
@@ -1536,6 +1536,15 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   the unpublished ones are named in `gen_api.py` with the reason, so that the
   script can **fail on any public-named module that is in neither list** --
   which is what keeps the next one from going missing the same way.
+
+  All 26 were public: each has a module docstring written for a reader, and
+  the package marks private with a leading underscore and nothing else. So
+  there is no list at all now -- `gen_api.py` walks the package and publishes
+  every module whose dotted name has no `_` component, one page per module,
+  and fails when `SUMMARY.md` does not name exactly those pages (mdBook renders
+  nothing it does not name). The same pass found the filter publishing private
+  classes whole and every dunder: pydoc-markdown's `exclude_private` is checked
+  after "has members -> keep"; an expression replaces it.
 
 - ✅ **`edit(curve)` could not be told the value range, so an amplitude
   envelope's zero was unreachable by hand** *(found 2026-09-21 by the user, by

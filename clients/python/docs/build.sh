@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # Build the Clausters Python client documentation book.
 #
-# Step 1 generates the API reference pages (src/api/, one per package) from the
+# Step 1 generates the API reference pages (src/api/, one per module) from the
 # package docstrings with pydoc-markdown (gen_api.py) -- a static AST parse, so
 # no native cdylib is needed. Step 2 builds the mdBook. Both outputs (src/api/
 # and book/) are git-ignored.
@@ -17,6 +17,6 @@
 set -e
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$here/.."             # clients/python -- where pydoc-markdown.yml and clausters/ live
-python3 docs/gen_api.py   # pydoc-markdown once per package -> docs/src/api/
+python3 docs/gen_api.py   # pydoc-markdown, one page per module -> docs/src/api/
 mdbook build docs         # -> docs/book/
 echo "Built: $here/book/index.html"

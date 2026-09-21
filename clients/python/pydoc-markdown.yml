@@ -4,19 +4,23 @@
 # import the modules), so the API pages are generated without building or
 # loading any native cdylib.
 #
-# The modules are not listed here: the reference is one page per package, and
-# docs/gen_api.py runs pydoc-markdown once per page with that page's modules on
-# the command line (`-m`), writing docs/src/api/<package>.md. Run that script,
-# not pydoc-markdown alone. The output is plain Markdown -- no Sphinx directives.
+# The modules are not listed here: docs/gen_api.py finds them by walking the
+# package, drives pydoc-markdown as a library over this file, and writes one
+# page per module to docs/src/api/. Run that script, not pydoc-markdown alone.
+# The output is plain Markdown -- no Sphinx directives.
 loaders:
   - type: python
     search_path: ["."]
 processors:
+  # The expression, not `exclude_private`: that option is checked only after
+  # "has members -> keep", so a private class with methods was published whole,
+  # and it lets every dunder through (`__call__`, `__init__`). A leading
+  # underscore is private here, dunders included. Modules are kept even when
+  # they have nothing documented but their docstring: each one is a page.
   - type: filter
+    expression: "not name.startswith('_') and default()"
     documented_only: true
-    exclude_private: true
-    exclude_special: true
-    skip_empty_modules: true
+    skip_empty_modules: false
   - type: smart
 # No `crossref` processor, deliberately. It rewrites `#name` into a cross
 # reference, and these docstrings are plain Markdown with no cross-reference
@@ -28,10 +32,8 @@ processors:
 # anchor links). Removing it changed nothing else in the generated page.
 renderer:
   type: markdown
-  # No filename: the page goes to stdout, and gen_api.py writes it under its
-  # package's title.
-  render_toc: true
-  render_toc_title: ""
+  # No filename and no table of contents: gen_api.py writes each page and puts
+  # the page's contents list after the module's docstring.
   insert_header_anchors: true
   descriptive_class_title: false
   add_method_class_prefix: true

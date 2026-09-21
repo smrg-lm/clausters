@@ -198,7 +198,7 @@ The two never interfere: each has its own server, its own clock and its own inte
 
 Live coding wants the whole system reachable from one interpreter: a separate audio server (so it survives a client restart, is shared, and keeps the audio thread out of Python) and, often, the visual server beside it — without opening three terminals or spelling out a shared-memory path. `Session.live` and `Session.gui` do exactly that, and everything they start is torn down when the session is closed **or the interpreter exits** — a normal exit, an unhandled exception, or an abandoned handle garbage-collected. Nothing is left running.
 
-`session.gui()` launches the `clausters-gui` visual server and returns a [`GuiHost`](api/clausters.gui.md#clausters.gui.host.GuiHost) connected to it — the GUI parallel of `live()` booting a server. You never spell out an address or a segment: the host is started with its client leg pointed at this session's server and mapping the same shared-memory segment the server was booted with, so meters, scopes and playheads read the engine with no per-frame messages. The host is owned by the session and stopped on `close`.
+`session.gui()` launches the `clausters-gui` visual server and returns a [`GuiHost`](api/clausters.gui.host.md#clausters.gui.host.GuiHost) connected to it — the GUI parallel of `live()` booting a server. You never spell out an address or a segment: the host is started with its client leg pointed at this session's server and mapping the same shared-memory segment the server was booted with, so meters, scopes and playheads read the engine with no per-frame messages. The host is owned by the session and stopped on `close`.
 
 ```python
 from clausters import Session
@@ -430,7 +430,7 @@ server.close()
 
 ## See also
 
-- [API reference](api/clausters.md#clausters.session.Session) — the generated reference for `Session` and every method.
+- [API reference](api/clausters.session.md#clausters.session.Session) — the generated reference for `Session` and every method.
 - [The client, layer by layer](guide.md) — where the `Server`, the clock and the seam fit in the whole client.
 - [Routines and clocks](routines-and-clocks.md) — the level below a session: driving a `Routine`, a `TempoClock` and a `Server` yourself.
 - [Timing models](timing-models.md) — the ways a clock keeps time (wall-clock, sample-locked, shared transport) and how to observe each.

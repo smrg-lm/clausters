@@ -24,3 +24,10 @@ build-dir = "book"
 default-theme = "rust"
 preferred-dark-theme = "ayu"
 git-repository-url = "https://github.com/smrg-lm/clausters"
+
+# The API reference is a page per module, about a hundred: the sidebar opens one
+# level (the packages and the top-level modules) and each package unfolds on
+# demand.
+[output.html.fold]
+enable = true
+level = 1

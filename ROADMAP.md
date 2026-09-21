@@ -110,11 +110,7 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-- ⬜ **The API reference leaves out 26 public-named modules**
-  (`clients/python/PLAN.md`, Found by use). The Python reference's module list
-  is hand-written and fell behind the package; `segments`, `launch` and most
-  of `gui.editing` are unpublished. Which of them are internal is settled
-  while doing it; then the generator fails on any module in neither list.
+None open.
 
 
 ## 2. Fixes that need a decision first

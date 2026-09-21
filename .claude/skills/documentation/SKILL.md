@@ -40,11 +40,13 @@ writing. Then place the page.
   `///` / `//!` doc comments. This *is* the crate reference; no hand-written
   mirror.
 - **Python API reference** — `clients/python/docs/src/api/`, one page per
-  package, **generated** from the package docstrings by pydoc-markdown
-  (`clients/python/docs/gen_api.py` holds the page table,
-  `clients/python/pydoc-markdown.yml` the rendering; both the pages and `book/`
-  git-ignored). Never hand-edit them; a new public module goes into the page
-  table of `gen_api.py`, a new page into `src/SUMMARY.md` too.
+  module, **generated** from the package docstrings by pydoc-markdown
+  (`clients/python/docs/gen_api.py` finds the modules and writes the pages,
+  `clients/python/pydoc-markdown.yml` holds the filter and the rendering; both
+  the pages and `book/` git-ignored). Never hand-edit them. Every module whose
+  dotted name has no component starting with `_` is published; a new one also
+  needs its line in `src/SUMMARY.md`, and the script fails, printing the block,
+  until it has it.
 - **TypeScript API reference** — `clients/web/docs/src/api/`, **generated** from
   the sources' TSDoc comments by TypeDoc (`clients/web/typedoc.json`; both it
   and `book/` git-ignored). Never hand-edit those pages, and write the source's

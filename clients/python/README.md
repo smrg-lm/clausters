@@ -320,8 +320,8 @@ pydoc-markdown` works too in any environment that is not externally managed
 (PEP 668).
 
 `build.sh` runs two steps: `docs/gen_api.py` runs `pydoc-markdown` (a **static
-AST parse** of the public modules — no cdylib needed) once per package and
-writes `docs/src/api/`, one page each, then `mdbook build
+AST parse** of the public modules — no cdylib needed) and writes
+`docs/src/api/`, one page per module, then `mdbook build
 docs` renders the book to `docs/book/` (both git-ignored). For a live-reload
 preview, after generating the API pages once:
 

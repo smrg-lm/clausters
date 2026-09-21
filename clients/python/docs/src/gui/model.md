@@ -261,7 +261,7 @@ and flat values.
 ## Where to go next
 
 - The props of each builder, with defaults and event payloads: the
-  [API reference](../api/clausters.gui.md).
+  [API reference](../api/clausters.gui.guidef.md).
 - The same vocabulary as a wire specification, with the edit-back payloads and
   the gesture table: the server guide's
   [GUI protocol chapter](https://clausters.readthedocs.io/en/latest/gui-protocol.html).

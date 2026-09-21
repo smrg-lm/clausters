@@ -585,7 +585,7 @@ write touched, and you are the one who allocated the buffer.
   (`peaks_cache_file`) is what fills it in.
 
 The shortcuts name the six common points, and the props of each are documented
-with them in the [API reference](api/clausters.gui.md):
+with them in the [API reference](api/clausters.gui.guidef.md):
 
 ```python
 from clausters.gui import (phasescope, plot, scope, spectrogram, spectrum, waveform)
@@ -1161,7 +1161,7 @@ two phases, several instruments in one document — is the
   session's server and mapping the same shared segment — which is what lets a
   meter, a scope and a playhead read the engine with no per-frame messages.
 - Every builder's own props, defaults and event payloads are in the
-  [API reference](api/clausters.gui.md).
+  [API reference](api/clausters.gui.guidef.md).
 - The wire underneath — the `/gui_*` commands, the event payloads, the axis
   properties — is the server guide's
   [GUI protocol chapter](https://clausters.readthedocs.io/en/latest/gui-protocol.html).
