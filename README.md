@@ -168,6 +168,13 @@ so they also build and read offline:
   library: see [`docs/using-as-a-library.md`](docs/using-as-a-library.md)).
 - **Contributing / dev setup** — [`docs/contributing.md`](docs/contributing.md).
 
+## clausted
+
+[`clausted/`](clausted/) is a standalone Python editor with an interactive
+session (Tauri 2 + Svelte 5), kept in this repository but independent of the
+server, the host and the clients: its own Cargo workspace, its own npm package
+and its own CI workflow. See [`clausted/README.md`](clausted/README.md).
+
 ## License
 
 **GPL-3.0-or-later** — see [COPYING](COPYING). The embedded libfaust is GPLv2+.

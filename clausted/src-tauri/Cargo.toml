@@ -1,0 +1,31 @@
+# Independent workspace: clausted is a standalone application, not a member of
+# the root `clausters` workspace and not a client of the server. Building from
+# `clausted/src-tauri/` uses this manifest; building the core from the repo root
+# ignores it, so Tauri and WebKitGTK never enter the server's build.
+[workspace]
+
+[package]
+name = "clausted"
+version = "0.1.0"
+description = "A lightweight Python editor with an interactive session"
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "clausted_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+fontdb = "0.24.0"
+shell-words = "1.1.1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

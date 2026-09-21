@@ -79,6 +79,13 @@ written in Rust and controlled over OSC (UDP, default port 57110).
   run each family, and at most name one or two entry points. A topic page may
   still point at *one* example that shows what it is explaining — that is a
   cross-reference, not a catalog.
+- **`clausted/` is a standalone application**, not a package of the project:
+  a Python editor with an interactive session (Tauri 2 + Svelte 5) that works
+  with any Python, clausters or not. It is its own Cargo workspace
+  (`clausted/src-tauri`) and its own npm package, keeps its own version, and
+  is built and checked only by `.github/workflows/clausted.yml`. Nothing below
+  about the packages moving together, the clients or the books applies to it;
+  the language conventions and the commit workflow do.
 
 ## Cross-client build strategy
 
