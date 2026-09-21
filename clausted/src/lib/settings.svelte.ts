@@ -182,6 +182,14 @@ function loadSizes(): GridSizes {
 
 export const gridSizes: GridSizes = loadSizes();
 
+// Before the grid had its own sizes, paneforge kept one set per arrangement under
+// `paneforge:clausted-*`; nothing reads them any more.
+try {
+  for (const key of Object.keys(localStorage)) {
+    if (key.startsWith("paneforge:clausted-")) localStorage.removeItem(key);
+  }
+} catch {}
+
 export function setGridSize(key: keyof GridSizes, value: number) {
   if (!(value > 0 && value < 100) || gridSizes[key] === value) return;
   gridSizes[key] = value;
