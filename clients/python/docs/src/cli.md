@@ -53,9 +53,9 @@ Without them the only way out is `kill`, which is a blunter instrument than the
 server needs: `/server_quit` lets it shut its own device and streams down.
 
 The same three are available from Python as
-[`Server.free_all`](api.md#clausters.defs.server.Server.free_all),
-[`Server.quit`](api.md#clausters.defs.server.Server.quit) and
-[`Server.query_info`](api.md#clausters.defs.server.queries.ServerQueries.query_info), on a
+[`Server.free_all`](api/clausters.defs.server.md#clausters.defs.server.Server.free_all),
+[`Server.quit`](api/clausters.defs.server.md#clausters.defs.server.Server.quit) and
+[`Server.query_info`](api/clausters.defs.server.md#clausters.defs.server.queries.ServerQueries.query_info), on a
 handle from [`attach`](sessions.md#several-servers-and-the-one-you-did-not-start).
 
 **Exit codes**: `0` on success, `1` when no server answers at that address (so

@@ -1,8 +1,8 @@
 # mdBook configuration for the Clausters Python client documentation.
 #
 # The book sources live in `src/`; `src/SUMMARY.md` is the table of contents.
-# The API reference page `src/api.md` is *generated* from the package docstrings
-# by pydoc-markdown (see ../pydoc-markdown.yml and ./build.sh) and is git-ignored
+# The API reference pages `src/api/` are *generated* from the package docstrings
+# by pydoc-markdown (see ./gen_api.py and ./build.sh) and are git-ignored
 # along with the build output `book/`.
 #
 # Build locally with `./build.sh` (generates the API page, then runs mdbook).

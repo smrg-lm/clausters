@@ -27,7 +27,7 @@ The three verbs carry one semantic each, and the split is deliberate:
   memory or a file; either way it reports what it did.
 - **`plot`** is the visual sibling of `render`: the same render, drawn
   in its own window instead of returned. (Its live counterpart is
-  [`scope`](api.md), which taps buses on a running server.)
+  [`scope`](api/clausters.md#clausters.scope), which taps buses on a running server.)
 
 Each playable kind also carries the same ambient `.play()` method; the free
 function is the uniform entry that picks the right one.
@@ -59,7 +59,7 @@ scheduled at play time still arrives; it lands on a node that is gone and is
 harmless.)
 
 **Plottables** — `plot(x)` (each call opens its own window; see the
-[`plot` API](api.md) for the display options — `view="spectrum"`, rulers,
+[`plot` API](api/clausters.md#clausters.plot) for the display options — `view="spectrum"`, rulers,
 ranges):
 
 | You hand it | What you see |

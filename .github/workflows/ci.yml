@@ -298,11 +298,10 @@ jobs:
       - run: pip install pydoc-markdown
       - name: Server / workspace book
         run: mdbook build .
-      - name: Python client book (pydoc-markdown API page + book)
+      - name: Python client book (pydoc-markdown API pages + book)
         run: |
-          cd clients/python
-          pydoc-markdown
-          mdbook build docs
+          python3 clients/python/docs/gen_api.py
+          mdbook build clients/python/docs
       # TypeDoc parses with its own TypeScript, installed apart from the
       # package's; the package's own dev dependencies are installed because
       # its tsconfig asks for the `node` type library. No wasm and no Rust:

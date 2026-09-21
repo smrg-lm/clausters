@@ -28,4 +28,13 @@
 # Reference
 
 - [Command line](cli.md)
-- [API reference](api.md)
+- [API reference](api/clausters.md)
+  - [clausters.base](api/clausters.base.md)
+  - [clausters.seq](api/clausters.seq.md)
+  - [clausters.defs](api/clausters.defs.md)
+  - [clausters.defs.ugens](api/clausters.defs.ugens.md)
+  - [clausters.defs.server](api/clausters.defs.server.md)
+  - [clausters.form](api/clausters.form.md)
+  - [clausters.gui](api/clausters.gui.md)
+  - [clausters.gui.editing](api/clausters.gui.editing.md)
+  - [clausters.gui.notation](api/clausters.gui.notation.md)

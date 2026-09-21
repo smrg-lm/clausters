@@ -465,4 +465,4 @@ the order they come in.
 - [A DAW-style transport](transport.md) — the shared beat grid clients phase-align on.
 - [Timing models](timing-models.md) — the timing references a timeline's clock is made on, and `quant`.
 - [Examples](examples.md) — `timeline.py`, a timeline's transport live.
-- [API reference](api.md) — `Timeline`, `OscItem`, `MidiItem`.
+- [API reference](api/clausters.seq.md#clausters.seq.timeline) — `Timeline`, `OscItem`, `MidiItem`.

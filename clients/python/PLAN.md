@@ -1518,6 +1518,25 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
 
 ## Found by use: the running list of fixes and open questions
 
+- ⬜ **The API reference leaves out 26 public-named modules, and nothing says
+  which of them are meant to be out** *(found 2026-09-21, splitting the
+  reference into one page per package)*. The module list in
+  `docs/gen_api.py` (before that, in `pydoc-markdown.yml`) is written by hand,
+  and every module added after it was written is missing from the published
+  reference with no error: `clausters.config`, `.launch`, `.log`, `.segments`;
+  in `base`, `appclock`, `bulk`, `destination`, `environment`, `ids`, `loop`,
+  `moment`, `rand`, `time`; in `defs`, `info`, `patch`, `pv_expr`; in `gui`,
+  `handle`, `ids`; and eight of `gui.editing` (`application`, `edit`, `events`,
+  `multitrack`, `playback`, `points`, `samples`, `trace`). Some are internal
+  and meant to stay out (the id allocators, probably), some are plainly
+  public (`segments` is what a cut yields). The same hand-written-list defect
+  shipped a wheel without `clausters.gui.editing` the same day; the packaging
+  side was fixed by discovery.
+  **The decision:** which of these are public. Then the list is completed, and
+  the unpublished ones are named in `gen_api.py` with the reason, so that the
+  script can **fail on any public-named module that is in neither list** --
+  which is what keeps the next one from going missing the same way.
+
 - ✅ **`edit(curve)` could not be told the value range, so an amplitude
   envelope's zero was unreachable by hand** *(found 2026-09-21 by the user, by
   ear, drawing in `editors/edit_env`: "estoy poniendo la curva en cero al

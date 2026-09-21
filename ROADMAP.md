@@ -118,6 +118,13 @@ None open.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
+- ⬜ **The API reference leaves out 26 public-named modules**
+  (`clients/python/PLAN.md`, Found by use). The Python reference's module list
+  is hand-written and fell behind the package; `segments`, `launch` and most
+  of `gui.editing` are unpublished.
+  **The decision:** which of the 26 are public; after it, the generator fails
+  on any module in neither list.
+
 - ⬜ **The page suite is one browser, and the second one found a defect it had
   been passing over** (`clients/web/PLAN.md`, Found by use). Chrome and Firefox
   disagree about what an API **refuses**, so a page that is wrong everywhere

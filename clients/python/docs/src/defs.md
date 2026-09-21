@@ -9,7 +9,7 @@ Rule of thumb, not a hierarchy: reach for a `SynthDef` when the units you need a
 
 Both are built the same way: **lowercase callables** that compose with ordinary Python operators into a JSON tree. Both are **instance-based** — there is no thread-global "current graph" as in sclang, so the tree *is* the composed objects and several defs build concurrently. And both are sent **asynchronously**, behind the `/server_sync` barrier (see [Sending a def](#sending-a-def)).
 
-This page is the conceptual map and the catalog of what each callable does. The exact wire format — the JSON node shapes, the UGen registry, the `/def_send faust` / `/def_send synth` signatures and their `/done` / `/fail` replies — is specified in the **[Clausters server book](https://clausters.readthedocs.io/)** (the schemas / OSC reference chapter); this client is one consumer of it. The generated [API reference](api.md) carries the per-symbol signatures.
+This page is the conceptual map and the catalog of what each callable does. The exact wire format — the JSON node shapes, the UGen registry, the `/def_send faust` / `/def_send synth` signatures and their `/done` / `/fail` replies — is specified in the **[Clausters server book](https://clausters.readthedocs.io/)** (the schemas / OSC reference chapter); this client is one consumer of it. The generated [API reference](api/clausters.defs.md) carries the per-symbol signatures.
 
 ## The shared shape
 
@@ -167,7 +167,7 @@ st = box.faust("re.stereo_freeverb", 0.8, 0.7, 0.5, 23, outs=2)(dry, dry)
 left, right = st.outs()                               # or st[0], st[1]
 ```
 
-The composition surface mirrors the server's box schema one to one: `seq` / `par` / `split` / `merge` (n-ary, folded left), `rec(a, b)` (point-free `~`; for the `rec(lambda s: ...)` style use `signals` or a fragment), `wire` / `cut`, `delay` / `delay1`, `select2` / `select3`, the same controls, groups (`hgroup` / `vgroup`), foreign values (`fconst` / `fvar` / `sr()`) and tables (`waveform` / `rdtable` / `rwtable`) as the signal API, and the same operators on `Box` (with `%` mapping to Faust's `fmod`; the box schema has no shifts). See the [API reference](api.md) for signatures.
+The composition surface mirrors the server's box schema one to one: `seq` / `par` / `split` / `merge` (n-ary, folded left), `rec(a, b)` (point-free `~`; for the `rec(lambda s: ...)` style use `signals` or a fragment), `wire` / `cut`, `delay` / `delay1`, `select2` / `select3`, the same controls, groups (`hgroup` / `vgroup`), foreign values (`fconst` / `fvar` / `sr()`) and tables (`waveform` / `rdtable` / `rwtable`) as the signal API, and the same operators on `Box` (with `%` mapping to Faust's `fmod`; the box schema has no shifts). See the [API reference](api/clausters.defs.md) for signatures.
 
 ### Choosing a form
 

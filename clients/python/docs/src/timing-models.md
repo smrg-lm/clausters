@@ -131,5 +131,5 @@ MIDI output never uses the sample clock. A `MidiServer` writing a score keeps it
 
 - [Routines and clocks](routines-and-clocks.md) — writing the routines you play on these clocks.
 - [Sessions](sessions.md) — the handle that bundles a clock and a server.
-- [API reference](api.md) — `Server.sample_timebase`, `TempoClock.join_transport`, `Session`, `Server`.
+- [API reference](api/clausters.md) — `Server.sample_timebase`, `TempoClock.join_transport`, `Session`, `Server`.
 - The **[Clausters server book](https://clausters.readthedocs.io/)** — `/clock_query` (the master-clock anchor), `/sched_at` and `/transport_set`.

@@ -26,7 +26,7 @@ The key design property is a single seam: the `Server` holds a communication int
 - **Want the ergonomic entry point?** [Sessions](sessions.md) shows how one handle drives a live take or an offline render, and [The ambient verbs](verbs.md) covers `play`, `plot` and `render` — what each accepts and why the split.
 - **Driving the clock yourself?** [Routines and clocks](routines-and-clocks.md) writes routines by hand, and [Timing models](timing-models.md) covers the `TempoClock`'s timing modes — wall-clock, sample-locked, shared transport — and how to observe each.
 - **Looking for runnable code?** See [Examples](examples.md).
-- **Looking for a symbol?** The [API reference](api.md) is generated from the package docstrings.
+- **Looking for a symbol?** The [API reference](api/clausters.md) is generated from the package docstrings.
 
 ## License
 

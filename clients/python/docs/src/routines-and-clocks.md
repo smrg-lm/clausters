@@ -230,4 +230,4 @@ For the other direction — reacting to OSC another application sends *you* — 
 - [Timing models](timing-models.md) — the ways a clock keeps time (wall-clock, sample-locked, shared transport) and how to observe each.
 - [Sessions](sessions.md) — the ergonomic handle that bundles a clock and a server, for when you do not need this level of control.
 - [The client, layer by layer](guide.md) — where routines, clocks and the server sit in the whole client.
-- [API reference](api.md) — `TempoClock`, `Routine`, `Event` and the `Server` methods used here.
+- [API reference](api/clausters.base.md) — `TempoClock`, `Routine`, `Event` and the `Server` methods used here.

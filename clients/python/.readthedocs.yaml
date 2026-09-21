@@ -7,7 +7,7 @@
 #   - this Python client book   -> clients/python/.readthedocs.yaml (this file)
 #
 # Read the Docs has no native mdBook builder, so the build is driven with
-# build.commands: fetch a prebuilt mdBook, generate the API page with
+# build.commands: fetch a prebuilt mdBook, generate the API pages with
 # pydoc-markdown, build the book, and copy the HTML into $READTHEDOCS_OUTPUT/html.
 version: 2
 
@@ -27,7 +27,7 @@ build:
       curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
         "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
         | tar -xz -C "$HOME/bin"
-    - bash -c "cd clients/python && pydoc-markdown"
+    - python3 clients/python/docs/gen_api.py
     - "$HOME/bin/mdbook build clients/python/docs"
     - mkdir -p "$READTHEDOCS_OUTPUT/html"
     - cp -r clients/python/docs/book/. "$READTHEDOCS_OUTPUT/html/"

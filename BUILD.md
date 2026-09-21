@@ -436,12 +436,12 @@ mdbook serve --open              # live-reload preview at http://localhost:3000
 cargo doc --open
 ```
 
-The **Python client book** additionally generates its API page from the
+The **Python client book** additionally generates its API pages from the
 package docstrings with pydoc-markdown:
 
 ```sh
 uv tool install --python 3.12 pydoc-markdown   # user-space, no sudo (or: uvx / pip install)
-clients/python/docs/build.sh                   # writes src/api.md, then mdbook build
+clients/python/docs/build.sh                   # writes src/api/, then mdbook build
 ```
 
 Details and the reasons for the 3.12 pin are in

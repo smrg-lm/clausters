@@ -309,7 +309,7 @@ books, one per platform, cross-linked). Build it:
 ```sh
 uv tool install --python 3.12 pydoc-markdown   # user-space CLI in ~/.local/bin
 cargo install mdbook --version 0.4.40           # the version CI and Read the Docs use
-clients/python/docs/build.sh                    # writes src/api.md, then runs `mdbook build`
+clients/python/docs/build.sh                    # writes src/api/, then runs `mdbook build`
 ```
 
 `pydoc-markdown` is installed here as a **user-space** [uv](https://docs.astral.sh/uv/)
@@ -319,10 +319,11 @@ lag the newest CPython, and 3.12 is also what Read the Docs builds with.
 pydoc-markdown` works too in any environment that is not externally managed
 (PEP 668).
 
-`build.sh` runs two steps: `pydoc-markdown` (a **static AST parse** of the
-public modules — no cdylib needed) writes `docs/src/api.md`, then `mdbook build
+`build.sh` runs two steps: `docs/gen_api.py` runs `pydoc-markdown` (a **static
+AST parse** of the public modules — no cdylib needed) once per package and
+writes `docs/src/api/`, one page each, then `mdbook build
 docs` renders the book to `docs/book/` (both git-ignored). For a live-reload
-preview, after generating the API page once:
+preview, after generating the API pages once:
 
 ```sh
 mdbook serve --open clients/python/docs    # http://localhost:3000

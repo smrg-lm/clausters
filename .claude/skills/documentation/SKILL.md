@@ -39,9 +39,12 @@ writing. Then place the page.
 - **Rust API reference** — the rustdoc (`cargo doc --no-deps`), generated from
   `///` / `//!` doc comments. This *is* the crate reference; no hand-written
   mirror.
-- **Python API reference** — `clients/python/docs/src/api.md`, **generated** from
-  the package docstrings by pydoc-markdown (`clients/python/pydoc-markdown.yml`;
-  both it and `book/` git-ignored). Never hand-edit `api.md`.
+- **Python API reference** — `clients/python/docs/src/api/`, one page per
+  package, **generated** from the package docstrings by pydoc-markdown
+  (`clients/python/docs/gen_api.py` holds the page table,
+  `clients/python/pydoc-markdown.yml` the rendering; both the pages and `book/`
+  git-ignored). Never hand-edit them; a new public module goes into the page
+  table of `gen_api.py`, a new page into `src/SUMMARY.md` too.
 - **TypeScript API reference** — `clients/web/docs/src/api/`, **generated** from
   the sources' TSDoc comments by TypeDoc (`clients/web/typedoc.json`; both it
   and `book/` git-ignored). Never hand-edit those pages, and write the source's
@@ -85,7 +88,7 @@ Both go in **user space**, no sudo:
 - **pydoc-markdown** (Python reference) — `uv tool install --python 3.12
   pydoc-markdown`. Pin 3.12: its deps lag the newest CPython, and 3.12 is also
   Read the Docs' version. Then `clients/python/docs/build.sh` regenerates
-  `api.md` and rebuilds the book. (`uvx pydoc-markdown`, or `pip install` on a
+  the API pages and rebuilds the book. (`uvx pydoc-markdown`, or `pip install` on a
   non-PEP-668 env, also work — see `clients/python/README.md`.)
 - **TypeDoc** (TypeScript reference) — `npm install -g typedoc@0.28
   typedoc-plugin-markdown@4 typescript@5.9` (npm's prefix is under `~/.local`;
@@ -122,7 +125,7 @@ the feature pages (the documented hybrid below).
 **The two books have opposite balances — know which you are editing.** The
 **Python book is the usage book**: it maps cleanly to user Diataxis — Tutorial
 (`getting-started.md`), Explanation (`introduction.md`, `guide.md`), Reference
-(`api.md`), plus the `examples.md` catalog; light and consumer-first. The
+(`api/`), plus the `examples.md` catalog; light and consumer-first. The
 **server book leans heavily technical**, with only a thin usage layer: its
 genuine usage docs are `getting-started.md` and `examples.md` (plus the
 command-sending surface of `schemas.md`), while the deep `schemas.md` tables, the
@@ -147,7 +150,7 @@ thin usage layer with internals — link to them instead.
   layout and the **embed C ABI** signatures are its embedded Reference block.
 - **Reference** — the contracts and catalogs: `schemas.md` (defs / UGens / OSC
   commands — the wire format), `examples.md` (the examples catalog), the rustdoc,
-  Python `api.md`. One uniform entry per component/example; complete and
+  the Python `api/` pages. One uniform entry per component/example; complete and
   opinion-free.
 
 **House style for feature pages (a deliberate hybrid).** Clausters keeps one
@@ -252,8 +255,8 @@ of truth.
   reference. Keep examples in doc comments compiling (`mdbook test` /
   `cargo test --doc`).
 - **Python** — write Google-style **Markdown** docstrings, then regenerate:
-  `clients/python/docs/build.sh` runs pydoc-markdown into `src/api.md`. Edit the
-  docstrings, never the generated `api.md`.
+  `clients/python/docs/build.sh` runs pydoc-markdown into `src/api/`. Edit the
+  docstrings, never the generated pages.
 
 The plain-Markdown / no-RST rule from above is also what keeps these two
 generators honest — a side benefit of a rule adopted for the source read.

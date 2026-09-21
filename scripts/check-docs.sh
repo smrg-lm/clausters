@@ -19,7 +19,7 @@
 #
 # Unlike the feature matrix this one *writes*: a doc build generates pages. All
 # of it lands in git-ignored output (`book/`, `clients/*/docs/book/`,
-# `clients/python/docs/src/api.md`, `clients/web/docs/src/api/`), so the working
+# `clients/python/docs/src/api/`, `clients/web/docs/src/api/`), so the working
 # tree is untouched, but do not expect a read-only gate.
 #
 # Every leg runs even if an earlier one fails -- a run that stops at the first
@@ -86,9 +86,9 @@ if [ "$want_server" = 1 ]; then
     run "server" "$root" mdbook build .
 fi
 if [ "$want_python" = 1 ]; then
-    # pydoc-markdown regenerates docs/src/api.md from the package docstrings;
-    # the book then fails on anything the page turned into.
-    run "python(api)" "$root/clients/python" pydoc-markdown
+    # pydoc-markdown regenerates docs/src/api/ from the package docstrings;
+    # the book then fails on anything the pages turned into.
+    run "python(api)" "$root/clients/python" python3 docs/gen_api.py
     run "python(book)" "$root/clients/python" mdbook build docs
 fi
 if [ "$want_web" = 1 ]; then

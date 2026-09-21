@@ -1,92 +1,16 @@
 # pydoc-markdown configuration for the Clausters Python client API reference.
 #
 # It reads the package source *statically* (docspec parses the AST; it does not
-# import the modules), so the API page is generated without building or loading
-# any native cdylib. Run it from this directory:
+# import the modules), so the API pages are generated without building or
+# loading any native cdylib.
 #
-#   cd clients/python && pydoc-markdown      # writes docs/src/api.md
-#
-# Only the public modules are listed. The private loaders and wire helpers
-# (_native, _osclib, _libpath, _midi, _oscinterface, _midiinterface) are
-# intentionally excluded. The output is plain Markdown -- no Sphinx directives.
+# The modules are not listed here: the reference is one page per package, and
+# docs/gen_api.py runs pydoc-markdown once per page with that page's modules on
+# the command line (`-m`), writing docs/src/api/<package>.md. Run that script,
+# not pydoc-markdown alone. The output is plain Markdown -- no Sphinx directives.
 loaders:
   - type: python
     search_path: ["."]
-    modules:
-      - clausters
-      - clausters.play
-      - clausters.plot
-      - clausters.render
-      - clausters.scope
-      - clausters.session
-      - clausters.responders
-      - clausters.bundle
-      - clausters.ipc
-      - clausters.errors
-      - clausters.data
-      - clausters.document
-      - clausters.multitrack
-      - clausters.base
-      - clausters.base.builtins
-      - clausters.base.absobject
-      - clausters.base.stream
-      - clausters.base.clock
-      - clausters.base.timebase
-      - clausters.base.netaddr
-      - clausters.base.main
-      - clausters.seq
-      - clausters.seq.event
-      - clausters.seq.pattern
-      - clausters.seq.eventstream
-      - clausters.seq.timeline
-      - clausters.defs
-      - clausters.defs.expr
-      - clausters.defs.signals
-      - clausters.defs.boxes
-      - clausters.defs.ugens
-      - clausters.defs.ugens.graph
-      - clausters.defs.ugens.osc
-      - clausters.defs.ugens.filter
-      - clausters.defs.ugens.pan
-      - clausters.defs.ugens.io
-      - clausters.defs.ugens.buf
-      - clausters.defs.ugens.spectral
-      - clausters.defs.ugens.trig
-      - clausters.defs.ugens.demand
-      - clausters.defs.ugens.env
-      - clausters.defs.asdef
-      - clausters.defs.faustdef
-      - clausters.defs.synthdef
-      - clausters.defs.graphdef
-      - clausters.defs.server
-      - clausters.defs.server.options
-      - clausters.defs.server.queries
-      - clausters.defs.server.transport
-      - clausters.defs.server.streams
-      - clausters.defs.node
-      - clausters.defs.bus
-      - clausters.defs.buffer
-      - clausters.defs.clocksync
-      - clausters.form
-      - clausters.form.element
-      - clausters.form.aggregate
-      - clausters.form.render
-      - clausters.gui
-      - clausters.gui.guidef
-      - clausters.gui.editing
-      - clausters.gui.editing.context
-      - clausters.gui.editing.domain
-      - clausters.gui.editing.echo
-      - clausters.gui.editing.editor
-      - clausters.gui.editing.view
-      - clausters.gui.host
-      - clausters.gui.multitrack
-      - clausters.gui.notation
-      - clausters.gui.notation.engraver
-      - clausters.gui.notation.mei
-      - clausters.gui.notation.sheet
-      - clausters.gui.notation.view
-      - clausters.gui.playhead_sync
 processors:
   - type: filter
     documented_only: true
@@ -104,9 +28,10 @@ processors:
 # anchor links). Removing it changed nothing else in the generated page.
 renderer:
   type: markdown
-  filename: docs/src/api.md
+  # No filename: the page goes to stdout, and gen_api.py writes it under its
+  # package's title.
   render_toc: true
-  render_toc_title: "API reference"
+  render_toc_title: ""
   insert_header_anchors: true
   descriptive_class_title: false
   add_method_class_prefix: true
