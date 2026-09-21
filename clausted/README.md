@@ -57,7 +57,7 @@ paths. The menu entry does not show up in the applications menu, because
 ## Environments and configuration
 
 - **Virtual environments** (Session → Python Environments): created in
-  `~/.local/share/com.lucas.clausted/venvs/<name>` with `python3 -m venv`, and
+  `~/.local/share/io.github.smrg-lm.clausters.clausted/venvs/<name>` with `python3 -m venv`, and
   the *install source* (the arguments of `pip install`, e.g. `/path/to/package`
   or `-e /path/to/package`) is installed into them. The session uses the last
   environment chosen, also after reopening the app.
@@ -65,7 +65,7 @@ paths. The menu entry does not show up in the applications menu, because
   documentation panel): any folder with `.md` files; by default, the one bundled
   with the app.
 - **Startup code** (File → Preferences): runs at the start of every session.
-- Everything is kept in `~/.config/com.lucas.clausted/config.json`.
+- Everything is kept in `~/.config/io.github.smrg-lm.clausters.clausted/config.json`.
 - `CLAUSTED_PYTHON=/path/python` forces an interpreter (it takes precedence over
   the environment).
 
