@@ -25,12 +25,24 @@
   let content: HTMLElement;
   let blocks: string[] = [];
   let source: string | null = null;
+  /** The document on screen, so that a link into it only scrolls. */
+  let shownPath: string | null = null;
+
+  // Each document's last rendering: going back to a page whose text has not changed
+  // skips parsing and sanitizing it again. Keyed by path; the source is compared,
+  // so a file edited on disk is rendered afresh.
+  const renders = new Map<string, { source: string; dark: boolean; html: string; blocks: string[] }>();
 
   function render() {
     if (source === null) return;
-    const rendered = renderMarkdown(source, settings.dark);
-    html = rendered.html;
-    blocks = rendered.blocks;
+    const dark = settings.dark;
+    let cached = shownPath === null ? undefined : renders.get(shownPath);
+    if (!cached || cached.source !== source || cached.dark !== dark) {
+      cached = { source, dark, ...renderMarkdown(source, dark) };
+      if (shownPath !== null) renders.set(shownPath, cached);
+    }
+    html = cached.html;
+    blocks = cached.blocks;
   }
 
   // Code blocks use the active theme's syntax colors.
@@ -50,18 +62,22 @@
   }
 
   async function show(page: Page) {
-    if (page.kind === "doc") {
+    // A document already on screen is not read again: only the anchor changes.
+    if (page.kind === "doc" && (page.path !== shownPath || source === null)) {
       try {
         source = await invoke<string>("read_doc", { path: page.path });
+        shownPath = page.path;
         render();
         plain = null;
       } catch (e) {
         source = null;
+        shownPath = null;
         html = "";
         plain = String(e);
       }
-    } else {
+    } else if (page.kind === "text") {
       source = null;
+      shownPath = null;
       html = "";
       plain = page.text;
     }
@@ -157,6 +173,8 @@
   export async function reload() {
     history = [];
     pos = -1;
+    renders.clear();
+    shownPath = null;
     try {
       docs = await invoke<string[]>("list_docs");
     } catch (e) {
