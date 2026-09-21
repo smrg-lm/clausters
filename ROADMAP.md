@@ -110,20 +110,17 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-None open.
+- ⬜ **The API reference leaves out 26 public-named modules**
+  (`clients/python/PLAN.md`, Found by use). The Python reference's module list
+  is hand-written and fell behind the package; `segments`, `launch` and most
+  of `gui.editing` are unpublished. Which of them are internal is settled
+  while doing it; then the generator fails on any module in neither list.
 
 
 ## 2. Fixes that need a decision first
 
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
-
-- ⬜ **The API reference leaves out 26 public-named modules**
-  (`clients/python/PLAN.md`, Found by use). The Python reference's module list
-  is hand-written and fell behind the package; `segments`, `launch` and most
-  of `gui.editing` are unpublished.
-  **The decision:** which of the 26 are public; after it, the generator fails
-  on any module in neither list.
 
 - ⬜ **The page suite is one browser, and the second one found a defect it had
   been passing over** (`clients/web/PLAN.md`, Found by use). Chrome and Firefox
