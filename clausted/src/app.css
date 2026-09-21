@@ -133,3 +133,15 @@
   --tw-prose-th-borders: var(--border);
   --tw-prose-td-borders: var(--border);
 }
+
+/* prose-sm's headings (h1 at 2.14em) are too large beside the body text in a
+   side panel. */
+.prose h1 {
+  font-size: 1.5em;
+}
+.prose h2 {
+  font-size: 1.25em;
+}
+.prose h3 {
+  font-size: 1.1em;
+}
