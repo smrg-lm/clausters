@@ -349,8 +349,8 @@ export class Element {
 
     /**
      * Renders this element onto `destination` -- the change of state to sound. A
-     * concrete element flattens and plays through a `seq.Playhead` over `clock`
-     * (returns the playhead); a logical {@link Aggregate} sends and instances a
+     * concrete element flattens and plays through a `seq.Timeline` (returns the
+     * timeline it flattened to); a logical {@link Aggregate} sends and instances a
      * `GraphDef` on the server (returns a promise of the instance group). See
      * `./render.ts`.
      */

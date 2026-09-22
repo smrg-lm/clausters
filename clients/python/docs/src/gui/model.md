@@ -1,13 +1,13 @@
 # Building from the model alone
 
-The previous chapter used the shortcuts — `panel`, `waveform`, `track`,
+The previous chapter used the shortcuts — `panel`, `waveform`, `timeruler`,
 `scope` — because they are what a script reaches for. This one builds the same
 kind of thing **without any of them**, from the four containers, the elements
 and `node` itself.
 
 Two reasons to spend an afternoon here. The shortcuts each carry **one common
 case**: `waveform` is a navigating trace over addressable samples, `plot` the
-same trace standing still, `track` a field with lane chrome. When what you want
+same trace standing still, `timeruler` a `field` with nothing on it. When what you want
 is a point they do not name, the model is where you say it. And the model *is*
 the wire — a tree built this way is, key for key, the JSON that goes out — so
 this is also the chapter to read before binding a new language to the host.
@@ -46,32 +46,26 @@ Reach for `node` when there is nothing to convert.
 ## The four containers
 
 ```python
-from clausters.gui import field, layout, plane, view
+from clausters.gui import layout, node, plane, view
 ```
 
-| Builder | Axes | What it gives its children |
-|---|---|---|
-| `window` | 0 | a root: a top-level window (or, in a page, a canvas) |
-| `layout` | 0 | an arrangement — `flow` is `row`, `col`, `grid`, `free` or `stack` |
-| `plane` | 2, locked to one scale | a pannable, zoomable plane in content units |
-| `field` | 2, independent | time against whatever the elements on it measure |
+| Type | Builder | Axes | What it gives its children |
+|---|---|---|---|
+| `window` | `view` | 0 | a root: a top-level window (or, in a page, a canvas) |
+| `layout` | `layout` | 0 | an arrangement — `flow` is `row`, `col`, `grid`, `free` or `stack` |
+| `plane` | `plane` | 2, locked to one scale | a pannable, zoomable plane in content units |
+| `field` | `node("field", ...)` | 2, independent | nothing: it is the free-standing ruler of a navigation group |
 
-A `field` is one container in three uses, and **what is on it** decides which:
+A `field` is only a ruler: an `axes` pair and nothing placed on it, which the
+`timeruler` shortcut writes with its props named. It was once a lane and a clip
+too, told apart by what was on it, and both are `multitrack` props now — a lane
+cannot sit in a void, so it is a row of the one widget that owns it, and a clip
+is a row of that widget's `clips`. So `field` has no builder of its own, and
+`node` writes one:
 
 ```python
-field(a, b, label="drums")                 # a lane: it holds other fields
-field(offset=0.0, dur=48000.0, data=take)  # a clip: it is placed on an x axis
-field(h=22.0, axes={"x": {"unit": "beats"}})   # a bare ruler: nothing on it
+node("field", h=22.0, axes={"x": {"unit": "beats", "link": 1}})
 ```
-
-An empty `field` with lane chrome is still a lane — a multitrack opens those
-all the time — so the ruler is the case that has to say what it is: a strip of
-a given `h`, nothing placed on it, no lane chrome.
-
-A clip's **bodies are still props** (`data`, `notes`, `points`), not children.
-That is the one place the model has not finished moving: the host builds the
-bodies from the clip's own props and layers them, and a later milestone turns
-them into children a script writes.
 
 ## The axes carry the chrome
 
@@ -80,7 +74,8 @@ selection, the playhead, the value range — belongs to the **container**, under
 one `axes` key:
 
 ```python
-field(
+signal(
+    view="trace", path="take.f32",
     axes={"x": {"unit": "beats", "tempo": 2.0, "quant": 4.0, "link": 1,
                 "start": 0.0, "len": 96000.0},
           "y": {"unit": "db", "min": -1.0, "max": 1.0}})
@@ -166,12 +161,12 @@ GUI roadmap and not built — say them and you get the nearest thing the host ha
 ## A worked window
 
 Here is a small editor built entirely from the model: a picker over two pages,
-a two-lane arrangement under a shared ruler, and a patcher beside it. Nothing
+a take and an automation curve under a shared ruler, and a patcher beside it. Nothing
 below is a shortcut.
 
 ```python
-from clausters.gui import (curve, field, layout, menu, node, notes, plane,
-                           signal, slider, window)
+from clausters.gui import (curve, layout, menu, node, plane, signal, slider,
+                           view)
 
 SR, BEAT = 48_000.0, 24_000.0
 take = [0.0] * 1024          # whatever you have; a path or a buffer is likelier
@@ -187,16 +182,12 @@ v = view(
 
     # -- one page at a time
     layout(
-        # page 0: two lanes and a ruler, all on one axis
+        # page 0: a take, a curve and a ruler, all on one axis
         layout(
-            field(field(offset=0.0, dur=4 * BEAT, data=take, label="take"),
-                  field(offset=4 * BEAT, dur=4 * BEAT,
-                        notes=[(0.0, BEAT, 60), (BEAT, BEAT, 67)]),
-                  name="lane", label="drums", axes={"x": axis}),
-            field(field(offset=0.0, dur=8 * BEAT,
-                        points=[(0.0, 0.0), (4 * BEAT, 1.0, "exp"), (8 * BEAT, 0.0)]),
+            signal(view="trace", data=take, name="lane", axes={"x": axis}),
+            curve(points=[(0.0, 0.0), (4 * BEAT, 1.0, "exp"), (8 * BEAT, 0.0)],
                   label="filter", axes={"x": axis}),
-            field(h=22.0, axes={"x": axis}),
+            node("field", h=22.0, axes={"x": axis}),
             flow="col"),
 
         # page 1: the same graph as a patcher, on a plane
@@ -220,9 +211,9 @@ win["scroll"].bind_widget(win["lane"], "view_start")
 
 Two things in there are worth naming.
 
-**One `axis` dict, three containers.** The two lanes and the ruler share the
-same `link`, so they share one navigation group: zoom or pan any of them and
-all three move, including the one on the page nobody is looking at. The axis is
+**One `axis` dict, three widgets.** The take, the curve and the ruler share
+the same `link`, so they share one navigation group: zoom or pan any of them
+and all three move, including when the page is not the one being looked at. The axis is
 the group's, not any container's — which is why the slider drives it through
 whichever member it is bound to.
 
@@ -239,14 +230,13 @@ and `to_json` is what the client sends:
 ```python
 from clausters.gui.guidef import to_json
 
-print(to_json(field(signal(view="trace", data=[0.0, 1.0], navigable=True),
-                    label="drums", axes={"x": {"unit": "beats", "link": 1}})))
+print(to_json(signal(view="trace", data=[0.0, 1.0], navigable=True,
+                     axes={"x": {"unit": "beats", "link": 1}})))
 ```
 
 ```json
-{"type": "field", "label": "drums", "axes": {"x": {"unit": "beats", "link": 1}},
- "children": [{"type": "signal", "view": "trace", "data": [0.0, 1.0],
-               "navigable": 1}]}
+{"type": "signal", "view": "trace", "data": [0.0, 1.0], "navigable": 1,
+ "axes": {"x": {"unit": "beats", "link": 1}}}
 ```
 
 That is the whole protocol: one JSON document, carried in one OSC argument,

@@ -306,10 +306,11 @@ things:
 | **Control** | an element with a value and no axis | `slider`, `knob`, `number`, `button`, `toggle`, `text`, `menu` |
 
 That is the whole vocabulary. The builders you just used — `panel`, and later
-`waveform`, `track`, `scope` — are **shortcuts**: each builds one of those
-nodes with the props of one common case. `layout`, `plane`, `field` and
-`signal` are there beside them for the cases no shortcut names, and you can mix
-the two freely in one tree.
+`waveform`, `timeruler`, `scope` — are **shortcuts**: each builds one of those
+nodes with the props of one common case. `layout`, `plane` and `signal` are
+there beside them for the cases no shortcut names, and you can mix the two
+freely in one tree. A `field` is only a free-standing ruler, which `timeruler`
+writes.
 
 Two consequences worth having in mind while reading on. A **ruler, a navigation
 window, a selection, a playhead and a value range belong to a container's
@@ -1165,8 +1166,8 @@ two phases, several instruments in one document — is the
 - The wire underneath — the `/gui_*` commands, the event payloads, the axis
   properties — is the server guide's
   [GUI protocol chapter](https://clausters.readthedocs.io/en/latest/gui-protocol.html).
-- The arrangement model draws itself through these same `field` containers:
-  the [document chapter](composition.md) is the layer above.
+- A multitrack is drawn by one `multitrack` widget, and what it holds is the
+  document's: the [document chapter](composition.md) is the layer above.
 - The runnable demos live in `clients/python/examples/`, one capability each;
   `window.py` is the "first pixels" one to start from.
 - Everything above used the shortcuts, which is what a script reaches for.

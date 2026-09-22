@@ -7451,3 +7451,17 @@ finished work, where a pending item reads as done.
   assigned is not a floor, and the protocol test moved onto the path an editor
   takes.
 
+- ⬜ **A `signal`'s docstring describes it "inside a `clip`", and there is no
+  clip container any more** *(found 2026-09-21, fixing the books' references to
+  the builders `b75a4298` removed)*. `signal` in both clients
+  (`clausters/gui/guidef.py`, `src/gui/guidef.ts`) documents `at`/`dur` as a
+  body's stretch of "the clip's own time" and `start`/`loop` as its window onto
+  its samples, "only" inside a `clip` — the container a `field` with a
+  placement used to be. The host still reads the four (`widget::parse::span`,
+  the body window in `widget/props.rs`), so the props are not simply dead: what
+  is open is **which container gives them a meaning now** — a multitrack box
+  draws its contents through the body door from its own `clips` row, not from
+  a child `signal` — and so whether the docstrings are to name that container,
+  or the props are surface nothing can reach from a GuiDef and go in both
+  clients and the host. The `pianoroll`'s docstrings name a "compact `clip`
+  roll" beside it in the same way.

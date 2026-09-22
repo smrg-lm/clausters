@@ -18,13 +18,14 @@ ruler, its navigation window, the selection, the playhead, the value range --
 belongs to the **container's** ``axes``, not to each element drawn against it.
 
 The builders named after widgets (`panel`, `stack`, `scroll`, `waveform`,
-`plot`, `scope`, `track`, `clip`, `timeruler`, ...) are **shortcuts**: each
-builds a model node with the props of one common case, and takes its axis
-chrome as flat keywords (``ruler=``, ``link=``, ``min=``) which it packs into
-the pair for you. `layout`, `plane`, `field` and `signal` are the general
-builders beside them, for the cases no shortcut names -- a lane that is also a
-clip, a plane that is neither a scroll view nor a patcher, a presentation over
-a source the shortcuts do not pair.
+`plot`, `scope`, `timeruler`, ...) are **shortcuts**: each builds a model
+node with the props of one common case, and takes its axis chrome as flat
+keywords (``ruler=``, ``link=``, ``min=``) which it packs into the pair for
+you. `layout`, `plane` and `signal` are the general builders beside them, for
+the cases no shortcut names -- a plane that is neither a scroll view nor a
+patcher, a presentation over a source the shortcuts do not pair. A `field` is
+only a free-standing ruler, so it has no general builder: `timeruler` writes
+one, and `node` writes any other.
 
 **Address a widget by name, not by id.** Pass ``name="cutoff"`` to any builder
 and `GuiHost.open` hands back a window handle you index by that name --
@@ -118,7 +119,7 @@ strip) are that same widget configured down.
   widget's function: the accent family (a slider's handle and fill, a button
   face, a meter's bar), the trace, the first series color of a multichannel
   view, a clip's body. An empty string clears it.
-- ``theme`` -- on a container (`window`/`panel`/`scroll`/`track`), a partial
+- ``theme`` -- on a container (`window`/`panel`/`scroll`), a partial
   color-role table (``{"role": "#rrggbb[aa]"}``, the same shape as the host's
   TOML style file) overlaying the parent's theme for the whole subtree -- a
   **theme group**, recursive by construction. On a window root it persists
@@ -139,7 +140,7 @@ strip) are that same widget configured down.
 **A container also declares its gestures.** Panning, sweeping a selection and
 locating the transport belong to the coordinate system a container gives its
 contents, not to what is drawn in it -- which is why Shift+drag pans the same
-way over a ``waveform``, a ``track`` lane, a ``pianoroll`` and a ``timeruler``.
+way over a ``waveform``, a ``multitrack``, a ``pianoroll`` and a ``timeruler``.
 A ``gestures`` prop replaces that mapping, keyed by modifier (``drag``
 for the plain drag, ``shift``, ``ctrl``, ``alt``), each value an ordered plan
 of steps: ``element`` (hand the press to whatever is under the cursor -- a clip,
@@ -785,7 +786,7 @@ def node(type: str, *, children=None, id: int | None = None, **props) -> View:
 # A GuiDef names three kinds of thing: a **container** owning 0, 1 or 2 axes,
 # an **element** drawn against them, and a **control**, which is an element
 # with a value and no axis. The builders below name that model; the ones
-# further down (`panel`, `waveform`, `track`, ...) are shortcuts that build
+# further down (`panel`, `waveform`, `timeruler`, ...) are shortcuts that build
 # the same nodes with a familiar name and the props of one common case.
 
 
@@ -952,7 +953,7 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
     six common points of the product.
 
     ``axes`` is the axis pair the rulers, the navigation window, the selection,
-    the playhead and the value range belong to (see `field`).
+    the playhead and the value range belong to (see the module docstring).
 
     **Inside a `clip`** four more mean something, and only there: ``at`` and
     ``dur`` place this body on a **stretch** of the clip's own time (a clip
@@ -2477,11 +2478,11 @@ def timeruler(*, h: float = 20.0, autofit: bool | None = None, cursor: float | N
     """A free-standing **time ruler**: the shared axis drawn as a strip the
     document places -- a DAW's ruler above its tracks.
 
-    A `track`'s own ``ruler`` is a strip reserved out of *that lane's* height, so
-    ruling a stack of lanes means choosing one to carry it and to pay for it,
-    and the strip then sits wherever that lane sits -- between two lanes, unless
-    it is the last. This widget has a box of its own instead: put it above the
-    lanes and no lane loses a pixel.
+    A view's own ``ruler`` is a strip reserved out of *that view's* height, so
+    ruling a stack of views means choosing one to carry it and to pay for it,
+    and the strip then sits wherever that view sits -- between two of them,
+    unless it is the last. This widget has a box of its own instead: put it
+    above the views and none of them loses a pixel.
 
     It reads the axis of the navigation group named by ``link``, so it labels
     exactly what those lanes show and moves with them. With **no** ``link`` it

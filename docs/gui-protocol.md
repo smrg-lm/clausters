@@ -383,7 +383,7 @@ view that owns it, and a clip is a row of that view's `clips`.
 
 **A clip is a view, and what it holds configures it.** Nothing on the wire spells
 "audio clip" or "midi clip", and that is the model rather than an omission: the
-`field` states a placement, its children state what is drawn on it, and the edits
+clip's row states a placement, its contents state what is drawn in it, and the edits
 a hand may perform — move, trim, `split`, `join` — belong to the *contents* under
 it, not to a type. So a clip over samples and a clip over a timeline of notes take
 the same edits, each in the unit of what it measures, and a client that admits one

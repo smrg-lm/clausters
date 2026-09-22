@@ -121,8 +121,8 @@ The vocabulary is the field's own:
 - A **lane** is one of a track's several contents, an ordered list of regions.
 - A **track** holds several lanes and **plays one**, which is what comping is:
   record six passes into six lanes, then take from each.
-- An **automation** is a curve over one parameter, in the arrangement's time.
-- The **arrangement** is the tracks plus what the multitrack has one of: the tempo
+- An **automation** is a curve over one parameter, in the multitrack's time.
+- The **multitrack** is the tracks plus what there is one of: the tempo
   map, the meter map, the markers, the loop. They are there and not on a track
   precisely so that no two tracks can disagree about them.
 
@@ -154,21 +154,20 @@ session saved in beats, before this, is converted when it is read.
 ### Editing a multitrack: the verbs a multitrack admits
 
 The multitrack has an edit vocabulary of its own, and it is reached through the same
-door every other structure is — `domain_edit`, with `ARRANGEMENT` as the
+door every other structure is — `domain_edit`, with `MULTITRACK` as the
 vocabulary. Hand over the multitrack as the crate's JSON and the edit; take back the
 multitrack as it now stands and the edit that puts it back.
 
 ```python
-from clausters.multitrack import Arrangement
-from clausters.document import ARRANGEMENT, domain_edit
+from clausters.document import MULTITRACK, domain_edit
 
 edited = domain_edit(
-    ARRANGEMENT, multitrack.write(),
+    MULTITRACK, multitrack.write(),
     {"intent": "placeregion", "region": 3, "track": 1, "lane": 2,
      "position": 16.0, "layer": 0},
 )
 edited["applied"]                       # True
-Arrangement.read(edited["state"])       # the multitrack with the region moved
+Multitrack.read(edited["state"])        # the multitrack with the region moved
 edited["current"]                       # the edit that puts it back
 ```
 

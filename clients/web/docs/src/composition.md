@@ -120,8 +120,8 @@ The vocabulary is the field's own:
 - A **lane** is one of a track's several contents, an ordered list of regions.
 - A **track** holds several lanes and **plays one**, which is what comping is:
   record six passes into six lanes, then take from each.
-- An **automation** is a curve over one parameter, in the arrangement's time.
-- The **arrangement** is the tracks plus what the multitrack has one of: the tempo
+- An **automation** is a curve over one parameter, in the multitrack's time.
+- The **multitrack** is the tracks plus what there is one of: the tempo
   map, the meter map, the markers, the loop. They are there and not on a track
   precisely so that no two tracks can disagree about them.
 
@@ -154,19 +154,19 @@ session saved in beats, before this, is converted when it is read.
 ### Editing a multitrack: the verbs a multitrack admits
 
 The multitrack has an edit vocabulary of its own, and it is reached through the same
-door every other structure is — `domainEdit`, with `ARRANGEMENT` as the
+door every other structure is — `domainEdit`, with `MULTITRACK` as the
 vocabulary. Hand over the multitrack as the crate's JSON and the edit; take back the
 multitrack as it now stands and the edit that puts it back.
 
 ```javascript
-import { Arrangement, document as doc } from "clausters";
+import { document as doc } from "clausters";
 
-const edited = doc.domainEdit(doc.ARRANGEMENT, multitrack.write(), {
+const edited = doc.domainEdit(doc.MULTITRACK, multitrack.write(), {
     intent: "placeregion", region: 3, track: 1, lane: 2,
     position: 16, layer: 0,
 });
 edited.applied;                     // true
-Arrangement.read(edited.state);     // the multitrack with the region moved
+Multitrack.read(edited.state);      // the multitrack with the region moved
 edited.current;                     // the edit that puts it back
 ```
 

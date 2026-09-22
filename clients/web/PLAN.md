@@ -4582,7 +4582,7 @@ sound.
   general tree", a sentence about the `form` pages that had stood over nothing
   in the Python book since they were deleted.
 
-- ⬜ **The web book and README name a surface the package does not export**
+- ✅ **The web book and README name a surface the package does not export**
   *(found 2026-09-21, reviewing the tree)*.
   `docs/src/composition.md`, "Editing a multitrack", imports `Arrangement` and
   `Content` from `"clausters"` and edits with `doc.ARRANGEMENT`: the root
@@ -4599,3 +4599,14 @@ sound.
   caught the first is the Python entry's ("The book's examples import names
   that no longer exist, and nothing reads a book's code"), written once for
   both books.
+
+  **Fixed 2026-09-21.** `Content` is a root export, the snippet edits through
+  `doc.MULTITRACK` and reads back with `Multitrack.read`, the README says a
+  `Timeline` plays itself and is its own transport, and the two `form`
+  docstrings say `render` returns the timeline. The check is not one test for
+  both books after all: `tests/book-imports.test.ts` resolves each
+  `import { ... } from "clausters..."` in a javascript or typescript block
+  through the built package's `exports` map, and every `alias.Name` a block
+  reads off an imported namespace — the second half is what catches
+  `doc.ARRANGEMENT`, which no import names. On the old pages it reports the
+  three this entry found.

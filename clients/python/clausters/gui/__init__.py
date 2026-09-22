@@ -18,10 +18,10 @@ events, optionally host-managed server voices), a
 live ``nodetree`` of the server's node graph, a static ``plot`` of a signal and
 a drawable ``bpf`` envelope editor (the server's own ``EnvGen`` segment shapes;
 edits flow back as flat ``"points"`` events -- see `env_to_points` /
-`points_to_env` for the `clausters.defs.Env` round trip), a multitrack
-``track``/``clip`` timeline (clips placed by ``offset``/``dur`` on one shared
-time axis -- the DAW-style track editor, whose clip bodies are a take, a
-piano-roll or an editable automation curve) and a ``patch`` **patcher** of a
+`points_to_env` for the `clausters.defs.Env` round trip), a ``multitrack``
+(one widget holding the lanes and the clips on them, on one shared time axis
+-- the DAW-style track editor, whose boxes draw a take or a piano-roll and
+carry editable automation curves) and a ``patch`` **patcher** of a
 directed, typed signal graph (drag an outlet onto an inlet to wire it);
 live updates flow through ``/gui_set`` and interactions come back as
 ``/gui_event``/``/gui_closed``. `clausters.gui.edit` opens an editor over a

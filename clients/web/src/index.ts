@@ -233,6 +233,7 @@ export * as multitrack from "./multitrack.ts";
 export {
     Multitrack,
     Automation,
+    Content,
     Fade,
     FrozenSource,
     Lane,

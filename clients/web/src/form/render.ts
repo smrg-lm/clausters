@@ -122,7 +122,7 @@ export function flatten(
 
 /**
  * Flattens `element` into a flat `seq.Timeline` in absolute beats -- the
- * structure a `Playhead` plays and a transport seeks. `tempo` is the clock's,
+ * structure that plays itself and a transport seeks. `tempo` is the clock's,
  * in beats per second (see {@link flatten}).
  */
 export function toTimeline(
@@ -143,8 +143,8 @@ export function toTimeline(
  * Renders `element` onto `destination`.
  *
  * A **concrete** element (an `Aggregate`, `Track`, `Clang`, ...) is flattened to a
- * timeline and played through a `Playhead` over `clock` -- RT or NRT,
- * sample-identical; returns the `Playhead`.
+ * `seq.Timeline` and played over `clock` -- RT or NRT, sample-identical; returns
+ * the timeline, which is what the transport verbs are on.
  *
  * A **logical** `Aggregate` is translated to a `GraphDef`, sent (`/def_send
  * graph`) and instanced (`/graph_new`, with `ports` overriding the surface

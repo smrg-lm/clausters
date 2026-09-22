@@ -4718,7 +4718,7 @@ work, where a pending item reads as done.)*
   unchanged -- it never read `beats()` -- and still puts the beat on the
   physical now. No physical reading for a routine was added; nothing needs one.
 
-- ⬜ **The book's examples import names that no longer exist, and nothing
+- ✅ **The book's examples import names that no longer exist, and nothing
   reads a book's code** *(found 2026-09-21, reviewing the tree)*. Three, each a rename the prose did not follow:
   `docs/src/composition.md`, "Editing a multitrack", imports `Arrangement` from
   `clausters.multitrack` and `ARRANGEMENT` from `clausters.document` — the type
@@ -4737,6 +4737,23 @@ work, where a pending item reads as done.)*
   under a second, and the web book's `import { ... } from "clausters"` checked
   against the built package found its two. **To do:** fix the three, and make
   that check a test in each client's suite, so the next rename fails there.
+
+  **Fixed 2026-09-21.** `composition.md` edits through `MULTITRACK` and reads
+  back with `Multitrack.read`, and its list says the **multitrack** is the
+  tracks plus what there is one of, where it still said the arrangement. The
+  GUI chapter's "four containers" say what a `field` is now — the
+  free-standing ruler, written by `timeruler` or `node("field", ...)` — and
+  its worked window puts a take, a curve and a ruler on one axis instead of
+  lanes made of fields; `gui.md` names `timeruler` where it named `field` and
+  `track` as builders, and says the multitrack is one widget. The docstrings
+  that listed `track`, `clip` and `field` as builders (`clausters.gui`,
+  `guidef`, `timeruler`, the gesture and theme notes) name what exists, in
+  both clients, and `docs/gui-protocol.md` no longer says a `field` states a
+  clip's placement. `tests/test_book_imports.py` resolves every
+  `from clausters... import` in the Python book, the server book and the
+  README — 375 names, and the four this entry found fail it on the old pages.
+  What it does not read (a snippet's calls) stays by eye; the one snippet that
+  changed was run end to end.
 
 - ⬜ **The wheel's `clausters-gui` cannot open a standalone window or sound a
   session** *(found 2026-09-21, the same review)*. `build_native.py` builds the

@@ -29,10 +29,11 @@ things:
 | **Control** | an element with a value and no axis | `slider`, `knob`, `number`, `button`, `toggle`, `text`, `menu` |
 
 The builders named after the old catalog — `panel`, `stack`, `scroll`,
-`waveform`, `plot`, `scope`, `spectrum`, `spectrogram`, `phasescope`, `track`,
-`clip`, `timeruler`, `pianoroll`, `bpf`, `piano`, `nodetree`, `patch` — are
-**shortcuts** onto those nodes with the props of one common case. `layout`,
-`plane`, `field` and `signal` are the general ones beside them. Both emit the
+`waveform`, `plot`, `scope`, `spectrum`, `spectrogram`, `phasescope`,
+`multitrack`, `timeruler`, `pianoroll`, `bpf`, `piano`, `nodetree`, `patch` —
+are **shortcuts** onto those nodes with the props of one common case. `layout`,
+`plane` and `signal` are the general ones beside them; a `field` is only a
+free-standing ruler, which `timeruler` writes. Both emit the
 same JSON the Python builders emit, vector for vector; the wire is the shared
 thing, the language surface is not.
 

@@ -114,11 +114,6 @@ Found by a review of the tree on 2026-09-21, which read the Rust side clean
 (the full feature matrix, CI green, the three books building, pyright at zero,
 the web package publishable with its suite passing). In this order:
 
-- ⬜ **The book's examples import names that no longer exist, and nothing
-  reads a book's code** *(`clients/python/PLAN.md`, Found by use)*, with its
-  web half, **The web book and README name a surface the package does not
-  export** *(`clients/web/PLAN.md`, Found by use)*. One pass over both books,
-  and the check that keeps them honest.
 - ⬜ **A box can be stretched past the samples it has**
   *(`clients/gui/PLAN.md`, Found by use)*. A regression in the multitrack
   editor, not diagnosed yet; read with **A box drawn a different length than

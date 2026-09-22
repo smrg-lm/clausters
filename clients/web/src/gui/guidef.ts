@@ -700,7 +700,7 @@ export interface WidgetOptions {
      *
      * Panning, sweeping a selection and locating the transport belong to the
      * coordinate system a container gives its contents, which is why
-     * Shift+drag pans the same way over a `waveform`, a `track` lane, a
+     * Shift+drag pans the same way over a `waveform`, a `multitrack`, a
      * `pianoroll` and a `timeruler`. A plan that consumes nothing falls
      * outward to the container around it; a table names only the modifiers it
      * changes (`{ drag: "pan", shift: "select" }`), and the vertical strip of
@@ -1026,8 +1026,8 @@ export function node(
 
 // A GuiDef names three kinds of thing: a **container** owning 0, 1 or 2 axes,
 // an **element** drawn against them, and a **control**, which is an element
-// with a value and no axis. The four builders here name that model; the ones
-// below (`panel`, `waveform`, `track`, ...) are shortcuts that build the same
+// with a value and no axis. The builders here name that model; the ones below
+// (`panel`, `waveform`, `timeruler`, ...) are shortcuts that build the same
 // nodes with a familiar name and the props of one common case.
 
 /**
@@ -2648,10 +2648,10 @@ export function piano(
  * A free-standing **time ruler**: the shared axis drawn as a strip the document
  * places -- a DAW's ruler above its tracks.
  *
- * A `track`'s own `ruler` is reserved out of *that lane's* height, so ruling a
- * stack of lanes means picking one to carry it and to pay for it, and the strip
- * then sits wherever that lane sits. This widget owns its box instead: put it
- * above the lanes and no lane loses a pixel.
+ * A view's own `ruler` is reserved out of *that view's* height, so ruling a
+ * stack of views means picking one to carry it and to pay for it, and the strip
+ * then sits wherever that view sits. This widget owns its box instead: put it
+ * above the views and none of them loses a pixel.
  *
  * It reads the axis of the group named by `link`; with **no** `link` it joins
  * the window's lanes on its own, since a free-standing ruler exists to rule
