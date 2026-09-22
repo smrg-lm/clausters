@@ -4536,8 +4536,13 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
   `contents_of` now answers that for a box named there. Held by
   `a_join_is_trimmed_no_further_than_its_spans`, which pulls a join of two
   300-frame spans out to 900 and fails without the fix; a box over a loaded
-  take already stopped at its last frame, raw or kept whole. Not seen by eye
-  yet in `editors/edit_multitrack`, which is where it was reported.
+  take already stopped at its last frame, raw or kept whole. **Seen by eye
+  2026-09-22** in `editors/edit_multitrack`, where it was reported: a joined
+  box's edge stops where its spans end, the picture and the rectangle agree
+  through a trim from either edge, and nothing about a box at the session's own
+  rate changed -- which is the whole of what the ratio work underneath it owed
+  (`crates/clausters-document/PLAN.md`, "A box is measured in the view's
+  samples and filled with the source's frames").
 
 - ✅ **The position cursor stood between two samples, beside the playhead that started from it** *(found 2026-09-17 by the user, zoomed to the sample in the multitrack editor)*. A click placed the group's cursor at the fractional sample under the pixel, while the transport it cued located on a whole one, so the two lines stood apart. `set_timeline_cursor` puts the cursor on a whole sample, as a selection already was, and the `"locate"` report carries that sample as a double. Held by `the_ruler_of_the_focused_view_does_not_take_its_focus_away`.
 
