@@ -2171,3 +2171,40 @@ fn a_span_that_reads_nothing_is_dropped() {
     assert!(mt.segments.is_empty());
     assert_eq!(mt.needs().takes, vec![9], "back to the box's own buffer");
 }
+
+/// **A join stops at its spans.** A join's own buffer is never fetched -- it is
+/// drawn from the takes its spans read -- so a bound asked of the takes found
+/// nothing for it, and an edge drag pulled a join past the end of its samples
+/// while every other box stopped at its last frame. Its length is the sum of
+/// its spans, known before any sample has arrived.
+#[test]
+fn a_join_is_trimmed_no_further_than_its_spans() {
+    let m = Metrics::default();
+    let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+    let len = 1000.0;
+    // Two 300-frame spans of take 0; the join's own buffer, 5, is never asked for.
+    let mut mt = from_props(&props(
+        r#"{"lanes": ["one", "", 100, 0, 0, 1, 1],
+            "clips": ["a", "one", 0, 400, 0, "", 5],
+            "segments": ["a", 0, 0, 300, "a", 0, 300, 300]}"#,
+    ));
+    assert_eq!(
+        mt.needs().takes,
+        vec![0],
+        "a join asks for the takes it reads"
+    );
+    assert_eq!(mt.contents_of(0).total, Some(600.0));
+
+    let edge = xy(&mt, &m, rect, 400.0, len, 0);
+    let far = xy(&mt, &m, rect, 900.0, len, 0);
+    assert!(matches!(
+        mt.press(edge, &input(&m, rect, len)),
+        Claim::Take(_)
+    ));
+    mt.drag(far, &input(&m, rect, len));
+    mt.release(far, true, &input(&m, rect, len));
+    assert_eq!(
+        mt.clips[0].place.dur, 600.0,
+        "the edge stops where the spans end"
+    );
+}

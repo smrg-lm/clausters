@@ -4524,7 +4524,20 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 
 ## Found by use: the running list of fixes
 
-- ⬜ **A box can be stretched past the samples it has** *(found 2026-09-17 by the user, in the multitrack editor, after the multitrack moved to seconds; reported as a regression)*. An edge drag on a box that does not loop is meant to stop at the last frame of its source (`boxes::drag` bounded by `Contents::total`, the frames the widget knows for that box), and it no longer does: the box's right edge goes on past its duration in samples. Not diagnosed yet. Where to look first: what `contents_of` answers for a box now -- the source's length as the widget learns it, and the box's window start against it, since the start and the lengths now cross through the seconds rule (`tempoclock::secs_to_samples_over`) -- and whether the `clips` props the editor sends still carry what the bound is computed from.
+- ✅ **A box can be stretched past the samples it has** *(found 2026-09-17 by the user, in the multitrack editor, after the multitrack moved to seconds; reported as a regression)*. An edge drag on a box that does not loop is meant to stop at the last frame of its source (`boxes::drag` bounded by `Contents::total`, the frames the widget knows for that box), and it no longer does: the box's right edge goes on past its duration in samples. Not diagnosed yet. Where to look first: what `contents_of` answers for a box now -- the source's length as the widget learns it, and the box's window start against it, since the start and the lengths now cross through the seconds rule (`tempoclock::secs_to_samples_over`) -- and whether the `clips` props the editor sends still carry what the bound is computed from.
+
+  **Fixed 2026-09-21: it was a join, and the seconds were not involved.** The
+  bound held for every box over a take and for none over a join. Since "A join
+  is drawn from the takes it reads" (`7ed858b1`, 2026-09-15) a join's own buffer
+  is never fetched, so `contents_of` found no take under the join's `source`,
+  answered no length, and an edge was bounded by nothing -- the case the
+  contract reserves for samples nobody loaded. A join's length is the sum of its
+  spans, which the `segments` prop carries before any sample arrives, and
+  `contents_of` now answers that for a box named there. Held by
+  `a_join_is_trimmed_no_further_than_its_spans`, which pulls a join of two
+  300-frame spans out to 900 and fails without the fix; a box over a loaded
+  take already stopped at its last frame, raw or kept whole. Not seen by eye
+  yet in `editors/edit_multitrack`, which is where it was reported.
 
 - ✅ **The position cursor stood between two samples, beside the playhead that started from it** *(found 2026-09-17 by the user, zoomed to the sample in the multitrack editor)*. A click placed the group's cursor at the fractional sample under the pixel, while the transport it cued located on a whole one, so the two lines stood apart. `set_timeline_cursor` puts the cursor on a whole sample, as a selection already was, and the `"locate"` report carries that sample as a double. Held by `the_ruler_of_the_focused_view_does_not_take_its_focus_away`.
 

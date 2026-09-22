@@ -114,11 +114,6 @@ Found by a review of the tree on 2026-09-21, which read the Rust side clean
 (the full feature matrix, CI green, the three books building, pyright at zero,
 the web package publishable with its suite passing). In this order:
 
-- ⬜ **A box can be stretched past the samples it has**
-  *(`clients/gui/PLAN.md`, Found by use)*. A regression in the multitrack
-  editor, not diagnosed yet; read with **A box drawn a different length than
-  its samples** (`crates/clausters-document/PLAN.md`, Found by use), which may
-  be the same defect seen from the picture.
 - ⬜ **Milestone labels and a retired verb are still in published code and
   docs** *(root `PLAN.md`, Found by use)*. Mechanical; last, because nothing
   waits on it.
@@ -183,6 +178,12 @@ a person saw it work.
   builds and packs the web package with no event guard. What is left is a dry
   run on a pushed `main`, watched through `build-web` — the first time the
   wasm-vendor composite runs on Actions.
+
+- ⬜ **A box drawn a different length than its samples**
+  *(`crates/clausters-document/PLAN.md`, Found by use)*. Probably the join
+  whose edges were bounded by nothing, fixed 2026-09-21; what is left is a
+  by-eye pass over `editors/edit_multitrack` — stretch a join, and a box over a
+  single take — to say whether it was.
 
 
 ## 4. Milestones left hanging

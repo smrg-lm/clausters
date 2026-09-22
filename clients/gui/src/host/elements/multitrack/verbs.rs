@@ -91,16 +91,26 @@ impl Multitrack {
     /// past it there is nothing to show and nothing to play; and a box over
     /// samples nobody loaded stops at nothing, since there is no length to stop
     /// at -- which is the silence the edge used to leave in every case.
+    ///
+    /// **A join's length is its spans'**, not a take's. Its own buffer is never
+    /// fetched -- it is drawn from the takes its spans read -- so asking the
+    /// takes for it found nothing, and a join was the one box an edge could
+    /// pull past its samples. The sum of the spans is exactly what the join is,
+    /// and it is known the moment the join is, before any sample arrives.
     pub(super) fn contents_of(&self, n: usize) -> Contents {
         let Some(clip) = self.clips.get(n) else {
             return Contents::default();
         };
-        Contents {
-            total: self
+        let total = match self.segments.get(&clip.name) {
+            Some(spans) => Some(spans.iter().map(|s| s.frames.max(0.0)).sum()),
+            None => self
                 .takes
                 .get(&clip.source)
                 .and_then(SignalElement::sample_shape)
                 .map(|(_, frames)| frames as f64),
+        };
+        Contents {
+            total,
             looping: self.wraps(&clip.name),
         }
     }
