@@ -177,7 +177,8 @@ is reproducible with the same line:
   bump, are in the repo-root `CLAUDE.md`.
 - **Tagged releases** (`.github/workflows/release.yml`): pushing a `v*` tag
   builds the self-contained Python wheel (client + embedded server +
-  standalone binary; Linux x86_64 for now) and a server-binary tarball,
+  standalone server binary + the GUI host as a standalone application; Linux
+  x86_64 for now) and a server-binary tarball,
   publishes the wheel to PyPI and the web client to npm, and attaches the wheel
   and the binary to a GitHub release. PyPI auth is
   [Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (OIDC — no

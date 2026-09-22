@@ -51,8 +51,10 @@ Environment knobs (also honoured by ``setup.py``):
                                  ``clausters-gui`` binary (a light, server-only
                                  wheel); a source checkout's ``clients/gui/target``
                                  binary is still used at runtime if present.
-- ``CLAUSTERS_GUI_FEATURES``     extra cargo features for the GUI binary (e.g.
-                                 ``standalone``); default none.
+- ``CLAUSTERS_GUI_FEATURES``     the GUI binary's features, replacing the
+                                 default (``standalone-faust``, or
+                                 ``standalone`` where there is no libfaust to
+                                 link).
 - ``CLAUSTERS_CARGO_FEATURES``   features for the embed library
                                  (default ``embed,realtime``).
 - ``CLAUSTERS_CARGO_PROFILE``    ``release`` (default) or ``debug``.
@@ -268,12 +270,33 @@ def _gui_workspace(workspace: str) -> str:
     return os.path.join(workspace, "clients", "gui")
 
 
-def _cargo_build_gui(workspace: str, profile: str):
+def _gui_features(with_faust: bool) -> str:
+    """The GUI binary's features: **the standalone host**, with the Faust
+    family where there is a libfaust to link.
+
+    The wheel's host is a `--standalone` application and not only a client, so
+    it links the embedded server -- in that mode it *is* `clausters` the
+    server, with a window over it, and it is packaged the same way down to the
+    rpath its own `build.rs` writes. Without it, `clausters-gui --standalone`
+    refuses out loud and `--session` opens a window whose takes draw empty,
+    which is not what `pip install clausters` promises.
+
+    `faust` goes with it for the reason the server's does: an installed wheel
+    compiles FaustDefs with nothing else on the machine, and a standalone host
+    that skipped exactly that family would be the one place the promise did not
+    hold. Where there is no libfaust to link, it degrades to `standalone` the
+    way the server degrades to a SynthDef-only build -- the families are peers
+    here too.
+    """
+    return "standalone-faust" if with_faust else "standalone"
+
+
+def _cargo_build_gui(workspace: str, profile: str, with_faust: bool = True):
     """Build the ``clausters-gui`` binary in its own workspace (``clients/gui``)."""
     cmd = ["cargo", "build", "--bin", "clausters-gui"]
     if profile == "release":
         cmd.append("--release")
-    features = os.environ.get("CLAUSTERS_GUI_FEATURES")
+    features = os.environ.get("CLAUSTERS_GUI_FEATURES") or _gui_features(with_faust)
     if features:
         cmd += ["--features", features]
     print("clausters: " + " ".join(cmd) + " (in clients/gui)")
@@ -340,11 +363,14 @@ def stage_faust_libs(profile: str) -> list[str]:
     """Copy libfaust -- and its transitive deps -- beside the cdylibs in ``_libs/``.
 
     The `faust` feature is on by default, so the built artifacts link libfaust
-    dynamically. Bundling it is what makes an installed wheel able to compile a
-    FaustDef on a machine without it installed -- the same self-contained
-    packaging the ``clausters-gui`` binary gets. ``build.rs`` writes a `DT_RPATH`
-    of ``$ORIGIN``/``$ORIGIN/../_libs``, inherited by transitive dependencies, so
-    the loader finds these copies before (or without) any system ones.
+    dynamically, and so does the staged ``clausters-gui``, which is a
+    standalone host and therefore the server with a window over it. Bundling
+    libfaust is what makes an installed wheel able to compile a FaustDef on a
+    machine without it installed -- from a script, from the console command, or
+    from a window the host opened on its own. Each linking crate's ``build.rs``
+    writes the same `DT_RPATH` of ``$ORIGIN``/``$ORIGIN/../_libs``, inherited by
+    transitive dependencies, so the loader finds these copies before (or
+    without) any system ones.
 
     libfaust does not stop at itself: the LLVM it links statically still reaches
     libz and libzstd, neither of which is ours nor guaranteed on the target.
@@ -360,7 +386,11 @@ def stage_faust_libs(profile: str) -> list[str]:
     the loader asks for. A server built without the feature needs no libfaust, so
     nothing is found and nothing is staged.
     """
-    artifacts = [p for p in (staged_bin(), *staged_libs()) if p]
+    # **The staged host is read too**, because a standalone one links libfaust
+    # exactly as the server does -- in that mode it is the server, with a
+    # window over it -- and a closure that skipped it would vendor whatever the
+    # server happens to need and miss anything only the host asks for.
+    artifacts = [p for p in (staged_bin(), staged_gui_bin(), *staged_libs()) if p]
     # The one library we deliberately vendor (the Faust JIT compiler), keyed by
     # the exact soname the loader asks for and its resolved build-host path. We
     # scope the closure to *this* root, not to the whole binary, so we never drag
@@ -695,7 +725,7 @@ def build_and_stage(profile: str = "release", *, allow_skip: bool = False) -> li
     # The visual server (clausters-gui), from its own workspace, bundled so the
     # one package is self-contained. Skippable for a light, server-only wheel.
     if not os.environ.get("CLAUSTERS_SKIP_GUI_BUILD"):
-        _cargo_build_gui(workspace, profile)
+        _cargo_build_gui(workspace, profile, with_faust)
         guiname = stage_gui_binary(workspace, profile)
         if guiname:
             copied.append(guiname)

@@ -125,13 +125,6 @@ on each one; none of them is being taken by this file.
   back and when, since discarding history is the event that makes a source
   unreachable and nothing connects the two.
 
-- ⬜ **The wheel's `clausters-gui` cannot open a standalone window or sound a
-  session** *(`clients/python/PLAN.md`, Found by use)*. The package's README
-  promises `clausters-gui --standalone`, and the wheel's host refuses it.
-  **The decision:** whether the wheel's host links the embedded server, and
-  with which def families, or whether the docs say a standalone host is a
-  source build.
-
 - ⬜ **The page suite is one browser, and the second one found a defect it had
   been passing over** (`clients/web/PLAN.md`, Found by use). Chrome and Firefox
   disagree about what an API **refuses**, so a page that is wrong everywhere

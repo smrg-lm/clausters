@@ -4755,7 +4755,7 @@ work, where a pending item reads as done.)*
   What it does not read (a snippet's calls) stays by eye; the one snippet that
   changed was run end to end.
 
-- ⬜ **The wheel's `clausters-gui` cannot open a standalone window or sound a
+- ✅ **The wheel's `clausters-gui` cannot open a standalone window or sound a
   session** *(found 2026-09-21, the same review)*. `build_native.py` builds the
   host with no extra features unless `CLAUSTERS_GUI_FEATURES` says otherwise,
   and neither `release.yml` nor `setup.py` sets it, so the wheel carries a host
@@ -4775,6 +4775,28 @@ work, where a pending item reads as done.)*
   server's do — and what that weighs against the 15 MB host staged today; or
   whether the wheel stays a client's host and the docs say a standalone host
   is a source build. Either way the docs and the wheel say the same thing.
+
+  **Decided by the user 2026-09-22 and done: the host ships as the standalone
+  application.** `build_native._gui_features` builds it with `standalone-faust`,
+  degrading to `standalone` where there is no libfaust to link, the way the
+  server degrades to a SynthDef-only build -- and a release cannot degrade,
+  since `CLAUSTERS_REQUIRE_COMPLETE` refuses the skip that would.
+
+  **What it needed first was an rpath.** The server crate's build script emits
+  `-l faust` and its search path, and those reach a binary that depends on the
+  crate; the *rpath* does not, because a link argument is the linking package's
+  and stops there. So the host came out with `NEEDED libfaust.so.2` and no
+  `RPATH` at all -- `ldd` answered "not found" even on a machine with libfaust
+  installed. `clients/gui/build.rs` states the same recipe the root one does,
+  under the feature that links it. Measured on the staged tree, copied away
+  from the checkout with `HOME` pointing nowhere: 18.2 MB (was 14.5), libfaust
+  resolved through `_libs/`, and `--standalone` looking for the GuiDef instead
+  of refusing the mode.
+
+  `scripts/refresh-bin.sh` stopped forcing `standalone` -- it did so because
+  the wheel left the mode out, and now that would be the one thing making a
+  manual test differ from the package. `BUILD.md`'s artifact table and
+  `docs/contributing.md` say what the wheel's host is.
 
 ## Future directions (a design that is not a fix)
 

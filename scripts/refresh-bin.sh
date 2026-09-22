@@ -52,18 +52,14 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-# The GUI host is built **with `standalone`** here, unlike the wheel's own
-# build, and that is the difference between refreshing for a manual test and
-# packaging one. `standalone` links the server crate into the host so a saved
-# session can be opened with no language client behind it -- which is the whole
-# subject of `session.py` and of every H-track example. Off, the host still
-# runs and still draws, and a take just comes back **empty** with a warning, so
-# the failure is quiet and looks like the example is broken. Since this script
-# is what CLAUDE.md tells everyone to run before any manual test, it must not
-# be what silently removes the mode under test. Override by exporting
-# CLAUSTERS_GUI_FEATURES yourself.
-: "${CLAUSTERS_GUI_FEATURES:=standalone}"
-export CLAUSTERS_GUI_FEATURES
+# **Nothing is set here about the GUI host's features**, and that is the point:
+# what this stages has to be what a wheel stages, or a manual test proves a
+# build nobody installs. This script used to force `standalone`, because the
+# wheel's own build left it out and a host without it opens a saved session
+# with every take **empty** and a warning -- a quiet failure that reads as a
+# broken example. The wheel builds the standalone host now (`build_native`'s
+# `_gui_features`), so the override would be the thing making the two differ.
+# Export CLAUSTERS_GUI_FEATURES yourself to build something else.
 
 if [ "$refresh" = 1 ]; then
     # shellcheck disable=SC2086  # an empty flag must vanish, not quote to ""

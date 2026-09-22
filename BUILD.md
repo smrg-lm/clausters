@@ -293,7 +293,17 @@ artifacts, each with the features its mode needs:
 | standalone server (networked / shm), the `clausters` command | `clausters` binary | crate defaults |
 | in-process embedded server (the embed C ABI) | `libclausters` cdylib | defaults **+ `embed,realtime`** |
 | the language-agnostic core FFI (ctypes/N-API/wasm) | `libclausters_ffi` cdylib | its crate defaults |
-| the visual / GUI server | `clausters-gui` binary | its crate defaults |
+| the visual / GUI server, **and the standalone application** | `clausters-gui` binary | its crate defaults **+ `standalone-faust`** |
+
+The host is built as the **standalone application** rather than only as a
+client: `clausters-gui --standalone <name>` and `clausters-gui --session <file>`
+open a window with the embedded server behind them, so a saved session sounds
+from an installed wheel with no script and no server process. In that mode the
+host *is* `clausters` the server with a window over it, which is why it is
+packaged the same way -- it links libfaust and carries the same `DT_RPATH`
+(`clients/gui/build.rs`, the same recipe as the root one), so the bundled
+`_libs/` answers for it. Where there is no libfaust to link, it degrades to
+`standalone` exactly as the server degrades to a SynthDef-only build.
 
 The crate defaults (`synth, faust, realtime, midi, pipewire, rtprio`) carry
 **both def families**, live audio, ALSA-seq MIDI and RT scheduling into every
