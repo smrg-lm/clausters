@@ -2140,7 +2140,7 @@ fn a_join_asks_for_the_takes_its_spans_read_and_not_for_its_own_buffer() {
         r#"{"lanes": ["one", "", 100, 0, 0, 1.0, 1],
             "clips": ["join", "one", 0, 400, 0, "", 9,
                       "plain", "one", 400, 100, 0, "", 5],
-            "segments": ["join", 7, 200, 200, "join", 7, 0, 200]}"#,
+            "segments": ["join", 7, 200, 200, 1, "join", 7, 0, 200, 1]}"#,
     ));
     assert_eq!(
         mt.needs().takes,
@@ -2166,7 +2166,7 @@ fn a_span_that_reads_nothing_is_dropped() {
     let mt = from_props(&props(
         r#"{"lanes": ["one", "", 100, 0, 0, 1.0, 1],
             "clips": ["join", "one", 0, 400, 0, "", 9],
-            "segments": ["join", -1, 0, 200, "join", 7, 0, 0, "join", 7]}"#,
+            "segments": ["join", -1, 0, 200, 1, "join", 7, 0, 0, 1, "join", 7]}"#,
     ));
     assert!(mt.segments.is_empty());
     assert_eq!(mt.needs().takes, vec![9], "back to the box's own buffer");
@@ -2186,7 +2186,7 @@ fn a_join_is_trimmed_no_further_than_its_spans() {
     let mut mt = from_props(&props(
         r#"{"lanes": ["one", "", 100, 0, 0, 1, 1],
             "clips": ["a", "one", 0, 400, 0, "", 5],
-            "segments": ["a", 0, 0, 300, "a", 0, 300, 300]}"#,
+            "segments": ["a", 0, 0, 300, 1, "a", 0, 300, 300, 1]}"#,
     ));
     assert_eq!(
         mt.needs().takes,

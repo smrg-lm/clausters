@@ -81,8 +81,25 @@ pub struct Part {
     pub src_index: i32,
     /// The first frame read from `src`.
     pub src_start: usize,
-    /// How many frames this part contributes.
+    /// How many frames this part contributes **to the join**.
     pub frames: usize,
+    /// **Frames of the source per frame of the join**: `1.0` for a part whose
+    /// samples were written at the join's own rate, and the ratio between the
+    /// two otherwise -- `44100 / 48000` for a 44.1 kHz take joined into a
+    /// 48 kHz session.
+    ///
+    /// It is here, on the part, because it is a fact about *those* samples: a
+    /// join of six spans of five files is one buffer with one rate, and each
+    /// span crosses to it by its own. A part at `1.0` keeps the indexed load a
+    /// plain buffer costs, behind one predicted comparison; one that is not
+    /// reads between two frames, with the same linear reading every reader in
+    /// this server makes.
+    ///
+    /// So the span it reads from its source is `frames * rate` -- the caller
+    /// says what the part contributes to the join and the ratio says what that
+    /// costs in the source, which is the direction every other number here
+    /// runs in (`start` is the join's, `src_start` is the source's).
+    pub rate: f64,
     /// A linear fade over this many frames at the part's start, and at its end.
     /// Two spans that do not continue each other make a step, which is a click
     /// however well the frames themselves are read -- this is the few
@@ -97,6 +114,10 @@ pub struct Part {
     /// Whether either fade is set at all. The common part has neither, and the
     /// whole crossfade arm is then one predicted branch.
     faded: bool,
+    /// Whether [`rate`](Self::rate) is anything but one, so the read path is
+    /// chosen by a comparison made once at build rather than by a float test
+    /// per sample.
+    resampled: bool,
     /// Stitched channel -> source channel, one entry per channel of the stitched
     /// buffer. A negative entry is silence. It is **routing and not level**: a
     /// mono take heard on both sides of a stereo clip is `[0, 0]` here and a pan
@@ -153,19 +174,52 @@ impl<'a> PartRun<'a> {
         if src_ch < 0 {
             return 0.0;
         }
-        let frame = self.part.src_start + inner;
-        // The part was validated when it was built -- its span is inside its
-        // source and its map inside the source's channels -- so this is an
-        // indexed load and not a second bounds check.
-        let value = match self.cells {
-            Some(cells) => Buffer::load(&cells[frame * self.stride + src_ch as usize]),
-            None => self.part.src.sample(frame, src_ch as usize),
+        let value = if self.part.resampled {
+            self.between(inner, src_ch as usize)
+        } else {
+            let frame = self.part.src_start + inner;
+            // The part was validated when it was built -- its span is inside
+            // its source and its map inside the source's channels -- so this
+            // is an indexed load and not a second bounds check.
+            self.frame(frame, src_ch as usize)
         };
         if self.part.faded {
             value * fade(self.part, inner)
         } else {
             value
         }
+    }
+
+    /// One frame of the source, by the cheapest path this run has.
+    #[inline]
+    fn frame(&self, frame: usize, src_ch: usize) -> f32 {
+        match self.cells {
+            Some(cells) => Buffer::load(&cells[frame * self.stride + src_ch]),
+            None => self.part.src.sample(frame, src_ch),
+        }
+    }
+
+    /// **The sample a part at another rate reads** `inner` frames into the
+    /// join: the source's own frames run `rate` per join frame, so this lands
+    /// between two of them and reads the line between, which is the reading
+    /// `PlayBuf` and `BufRd` make and the one a drawing of these samples
+    /// claims.
+    ///
+    /// Bounded here rather than by the validation, because that is the one
+    /// thing a ratio makes unprovable at build: the last frame of a part whose
+    /// span does not divide evenly lands a fraction past its source, and a
+    /// clamp is a comparison against a read that would be out of bounds.
+    #[inline]
+    fn between(&self, inner: usize, src_ch: usize) -> f32 {
+        let last = self.part.src.frames().saturating_sub(1);
+        let pos = self.part.src_start as f64 + inner as f64 * self.part.rate;
+        let f0 = (pos as usize).min(last);
+        let frac = pos - f0 as f64;
+        clausters_core::resample::Interpolator::played(
+            self.frame(f0, src_ch),
+            self.frame((f0 + 1).min(last), src_ch),
+            frac,
+        )
     }
 }
 
@@ -208,6 +262,8 @@ pub struct PartSpec {
     pub src: Arc<Buffer>,
     pub src_index: i32,
     pub src_start: usize,
+    /// How many frames this part contributes **to the join** -- the source
+    /// span it reads is this times the ratio the rates make ([`Part::rate`]).
     pub frames: usize,
     pub fade_in: usize,
     pub fade_out: usize,
@@ -228,10 +284,18 @@ pub struct Stitch {
 impl Stitch {
     /// Builds a stitch from the parts in order, computing where each one lands.
     ///
+    /// **A part whose source is at another rate is read at that rate**, not
+    /// refused: its samples run `src_sr / sample_rate` frames per frame of the
+    /// join, which is the same crossing a reader makes over a buffer of any
+    /// rate. A join is still not a *converter* -- it owns no samples and stores
+    /// none, so nothing here is written out at the join's rate; the ratio is
+    /// carried and read through, and the join goes on being a view of the takes
+    /// it is spans of. A caller wanting converted samples renders them, which
+    /// is a different verb.
+    ///
     /// Rejects what cannot be read rather than reading it wrong: a part with no
     /// frames, a map of the wrong width, a source that is itself too deeply
-    /// stitched, or a source at another sample rate -- a stitch is a join, not a
-    /// resampler, and the caller that knows the rates converts first.
+    /// stitched, or a source whose rate is not a positive number.
     pub fn new(specs: Vec<PartSpec>, channels: usize, sample_rate: f64) -> Result<Self, String> {
         if specs.is_empty() {
             return Err("a stitched buffer needs at least one part".into());
@@ -248,13 +312,15 @@ impl Stitch {
                     spec.map.len()
                 ));
             }
-            if spec.src.sample_rate() != sample_rate {
-                return Err(format!(
-                    "part {i}: source is at {} Hz and the stitch at {sample_rate} Hz; \
-                     resample before stitching",
-                    spec.src.sample_rate()
-                ));
-            }
+            let rate = match (spec.src.sample_rate(), sample_rate) {
+                (src, join) if src > 0.0 && join > 0.0 => src / join,
+                _ => {
+                    return Err(format!(
+                        "part {i}: a rate of zero is no axis -- source {} Hz, stitch {sample_rate} Hz",
+                        spec.src.sample_rate()
+                    ));
+                }
+            };
             if depth(&spec.src) >= MAX_DEPTH {
                 return Err(format!(
                     "part {i}: sources are stitched more than {MAX_DEPTH} deep"
@@ -275,6 +341,10 @@ impl Stitch {
                 fade_in_step: 1.0 / (fade_in + 1) as f32,
                 fade_out_step: 1.0 / (fade_out + 1) as f32,
                 faded: fade_in > 0 || fade_out > 0,
+                rate,
+                // One comparison at build instead of a float test per sample:
+                // the ordinary join is every part at its join's own rate.
+                resampled: (rate - 1.0).abs() > f64::EPSILON,
                 map: spec.map.into_boxed_slice(),
                 start,
             });
@@ -475,17 +545,39 @@ mod tests {
         assert!(too_deep.is_err(), "one level past the cap is refused");
     }
 
-    /// **A join is not a resampler.** Two rates in one buffer is a question this
-    /// has no answer to, so it says so rather than reading the frames at the
-    /// wrong speed.
+    /// **A part at another rate is read at that rate.** A join owns no samples,
+    /// so it converts nothing and stores nothing: the part carries the ratio
+    /// its rates make and is read through it, the way every reader here crosses
+    /// a buffer of any rate.
     #[test]
-    fn a_source_at_another_rate_is_refused() {
-        let a = Arc::new(Buffer::new(vec![1.0, 2.0], 1, 2, 44_100.0));
-        let built = Stitch::new(vec![spec(&a, 0, 2)], 1, 48_000.0);
-        assert!(
-            built.is_err_and(|e| e.contains("resample")),
-            "it says what to do"
-        );
+    fn a_source_at_another_rate_is_read_at_its_own() {
+        // A ramp at half the join's rate: one frame of the join is half a frame
+        // of the source, so the join reads 0, 0.5, 1, 1.5, ... of it.
+        let a = Arc::new(Buffer::new(vec![0.0, 1.0, 2.0, 3.0], 1, 4, 24_000.0));
+        let s = Stitch::new(vec![spec(&a, 0, 6)], 1, 48_000.0).expect("built, not refused");
+        let read: Vec<f32> = (0..6).map(|f| s.sample(f, 0)).collect();
+        assert_eq!(read, vec![0.0, 0.5, 1.0, 1.5, 2.0, 2.5]);
+        assert_eq!(s.frames(), 6, "the part contributes what it was asked for");
+    }
+
+    /// **The last frames of a part that does not divide evenly stay inside its
+    /// source.** A ratio makes the span unprovable at build, so the read is
+    /// clamped: the end of the join is the source's last frame rather than a
+    /// read past it.
+    #[test]
+    fn a_part_that_runs_past_its_source_stops_at_its_last_frame() {
+        let a = Arc::new(Buffer::new(vec![0.0, 1.0], 1, 2, 24_000.0));
+        let s = Stitch::new(vec![spec(&a, 0, 6)], 1, 48_000.0).expect("built");
+        let read: Vec<f32> = (0..6).map(|f| s.sample(f, 0)).collect();
+        assert_eq!(read, vec![0.0, 0.5, 1.0, 1.0, 1.0, 1.0]);
+    }
+
+    /// A rate of zero is no axis at all, and a part over one is refused rather
+    /// than read at some rate nobody chose.
+    #[test]
+    fn a_source_with_no_rate_is_refused() {
+        let a = Arc::new(Buffer::new(vec![1.0, 2.0], 1, 2, 0.0));
+        assert!(Stitch::new(vec![spec(&a, 0, 2)], 1, 48_000.0).is_err());
     }
 
     /// **Two fades cannot eat each other.** Each is capped at half the part, so

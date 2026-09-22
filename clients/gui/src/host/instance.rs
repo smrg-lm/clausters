@@ -183,6 +183,9 @@ impl Host {
                     bufnum,
                     channels: Some(stitch.channels as u32),
                     frames: Some(stitch.frames),
+                    // A join is one buffer at one rate, and the projection
+                    // just said which.
+                    rate: Some(stitch.rate).filter(|r| *r > 0.0),
                 },
             );
             messages.push((bufnum, document::sources::stitch_message(bufnum, &stitch)));

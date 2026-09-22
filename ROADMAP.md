@@ -118,6 +118,13 @@ None open.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
+- ⬜ **The takes a history can still reach are never given back**
+  *(`crates/clausters-document/PLAN.md`, Found by use)*. An undo frees no take,
+  deliberately -- that is what lets a redo find what it left -- so a long
+  editing day holds every join it ever made. **The decision:** who gives them
+  back and when, since discarding history is the event that makes a source
+  unreachable and nothing connects the two.
+
 - ⬜ **The wheel's `clausters-gui` cannot open a standalone window or sound a
   session** *(`clients/python/PLAN.md`, Found by use)*. The package's README
   promises `clausters-gui --standalone`, and the wheel's host refuses it.

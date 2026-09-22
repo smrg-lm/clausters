@@ -8922,8 +8922,36 @@ that is the resampling error — a true thing to be able to see, and the reason
 the two readings are two functions with different names rather than one anybody
 could reach for by accident.
 
-**What a join still cannot do.** Its parts must be at one rate (`a join is not a
-resampler`): a join is a new source with a rate of its own, and joining takes
-that disagree needs the samples actually converted. That is the one place where
-"resampling is an edit" still holds, and it is the only thing `Source.sample_rate`
-was ever used for before this.
+**A join takes parts at any rate, by the same rule.** It used to refuse them
+(`a join is not a resampler`), and the reason that refusal looked necessary is
+that a join seems like a conversion. It is not: a stitched buffer **owns no
+samples**, so there is nothing to convert into. Each part carries the ratio its
+source's rate makes with the join's and is read through it -- two frames and the
+line between them, per sample, for the parts that need it -- which is the same
+reading a box over a take at another rate already gets, one level up. A part at
+the join's own rate keeps the indexed load it always had, behind a comparison
+made once when the stitch is built.
+
+So the ratio never travels: the server takes it off the buffers, as it does for
+a reader, and what the command states is how many frames **of the join** a part
+fills. That is the one meaning that changes -- a part used to state what it read
+of its source, and the two are the same count only at one rate. The picture
+follows the same shape: `segments` gained the ratio per span, so a join is drawn
+from the takes it is spans of whatever rates they are.
+
+What a join is still not is a **converter**: nothing is written out at the
+join's rate, so a mixed-rate join costs the reading and not memory. Wanting the
+samples themselves converted is rendering them, which is a different verb and
+does not exist yet.
+
+**Undo and redo do not change any of this, and that is what settles the
+storage.** A join is built once and its samples are its parts'; a take buffer is
+freed by nobody on an undo (the reconciliation frees only the curve tables), and
+a source the multitrack stops naming is still a source -- the rule that keeps a
+redo finding what it left. So the whole history is walked with no conversion
+repeated and nothing written to disk, and a join reaches disk only when a save
+promotes its lifetime, like any other minted source. The cost that leaves is
+**memory**: the takes a history can still reach are held for as long as it can
+reach them, and giving them back is tied to discarding history rather than to
+the document. That is written down as open in `crates/clausters-document/PLAN.md`
+rather than solved here.

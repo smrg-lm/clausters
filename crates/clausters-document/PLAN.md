@@ -2032,6 +2032,37 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   projection's `rates` and its window in the source's frames, the edge that
   stops at 48000 samples over 44100 frames, and the grid the dots are drawn on.
   **`playrate` is read now** -- it was stored by both clients and read by
-  nothing -- and what stays open is the join, whose parts must still be at one
-  rate: joining takes that disagree needs the samples converted, which is the
-  one place "resampling is an edit" still holds.
+  nothing.
+
+  **And the join followed the same day**, since its refusal rested on the same
+  mistake: a stitched buffer owns no samples, so joining takes at different
+  rates converts nothing. Each part carries the ratio its source makes with the
+  join and is read through it (`dsp::stitch`), a part at the join's own rate
+  keeps its indexed load behind a comparison made at build, and what the command
+  states is how many frames **of the join** a part fills -- the ratio itself
+  never travels, because the server takes it off the buffers. `segments` gained
+  the ratio per span so the picture says the same thing, and the projection
+  counts a part's contribution rather than its span. A join is still not a
+  *converter*: nothing is written out at its rate, so a mixed-rate join costs
+  the reading and not memory. `docs/decisions.md` carries both halves.
+
+- ⬜ **The takes a history can still reach are never given back** *(found
+  2026-09-22, settling where a join's samples live)*. An undo frees no take: the
+  reconciliation frees only the curve tables, and a source the multitrack stops
+  naming is still a source -- deliberately, since that is what lets a redo find
+  what it left rather than build it again (`clients/python/PLAN.md`, "A second
+  join left an empty box, because a source the piece stopped naming is still a
+  source"). So a session that joins, undoes, joins again holds every join it
+  ever made, and the takes under them, for as long as the history can name them.
+  It is the right default -- rebuilding a join on a redo would cost the stitch
+  and, for a mixed-rate one, would have to be identical rather than equivalent
+  -- and it has no ceiling.
+  **What is undecided** is who gives them back and when. Discarding history is
+  the event that makes a source unreachable, and nothing today connects the two:
+  the pile is trimmed (`clausters-editing`'s history has a depth), the sources
+  are not. The shapes worth weighing: a source table that walks the pile and
+  frees what no entry can reach any more; a lifetime tier below `temporary`
+  whose buffers die with the step that made them; or leaving it and saying so
+  in the docs, which is honest for a session and wrong for a long editing day.
+  **Related:** `Lifetime`, whose `temporary` tier already says "dies with the
+  edit session unless a save promotes it" -- nothing enforces that either.

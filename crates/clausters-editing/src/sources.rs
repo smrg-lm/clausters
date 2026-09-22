@@ -36,7 +36,7 @@ use clausters_document::session::{Location, Part, Source};
 /// answers the first two, which is all a *plan* needs; a join needs the third,
 /// because a part that names no range contributes the whole of its source and
 /// only the caller knows how much that is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
 pub struct Held {
     /// The server buffer holding the samples.
     pub buffer: i32,
@@ -44,6 +44,11 @@ pub struct Held {
     pub channels: usize,
     /// How many frames, for a part that takes all of it.
     pub frames: u64,
+    /// **The rate its samples were written at**, or `0` where the caller does
+    /// not know -- and then the part is read as though it were the join's own,
+    /// which is what every part of a session recorded at one rate is.
+    #[serde(default)]
+    pub rate: f64,
 }
 
 /// One part of a join, resolved: a run of one buffer, and which of its channels
@@ -119,15 +124,37 @@ pub fn stitch(source: &Source, held: &HashMap<SourceId, Held>) -> Option<Stitch>
                 .unwrap_or(1)
                 .max(1)
         });
+    // **The join's rate is stated or it is its first part's.** A join is one
+    // buffer with one rate, and a source that says which has been written down
+    // that way; a minted one says nothing yet, and then it is the rate of what
+    // it is made of, which for every join of one session's takes is that
+    // session's.
+    let rate = source
+        .sample_rate
+        .filter(|r| *r > 0.0)
+        .or_else(|| resolved.iter().map(|h| h.rate).find(|r| *r > 0.0))
+        .unwrap_or(0.0);
     let mut frames = 0u64;
     let mut out = Vec::with_capacity(parts.len());
     for (part, take) in parts.iter().zip(&resolved) {
         let (start, span) = span_of(part, take);
-        frames += span;
+        // **A part states what it contributes to the join, not what it reads.**
+        // The two are the same number only while its samples were written at
+        // the join's rate; a 44.1 kHz span of 44100 frames is one second, and
+        // one second of a 48 kHz join is 48000 of its frames. The server reads
+        // the span back out of that by the same ratio, which it takes off the
+        // buffers themselves -- so nothing about the ratio travels.
+        let contributed = match (take.rate, rate) {
+            (src, join) if src > 0.0 && join > 0.0 && src != join => {
+                ((span as f64) * join / src).round() as u64
+            }
+            _ => span,
+        };
+        frames += contributed;
         out.push(StitchPart {
             buffer: take.buffer,
             start,
-            frames: span,
+            frames: contributed,
             fade_in: part.fade_in,
             fade_out: part.fade_out,
             channels: map_of(part, take.channels, channels),
@@ -135,7 +162,7 @@ pub fn stitch(source: &Source, held: &HashMap<SourceId, Held>) -> Option<Stitch>
     }
     Some(Stitch {
         channels,
-        rate: source.sample_rate.unwrap_or(0.0),
+        rate,
         frames,
         parts: out,
     })
@@ -146,7 +173,7 @@ pub fn stitch(source: &Source, held: &HashMap<SourceId, Held>) -> Option<Stitch>
 /// `source` is a source-table entry as the document writes one -- a minted
 /// source as an intent carries it reads the same, its `id` beside the rest --
 /// and `held` is the caller's table: source id to `{"buffer", "channels",
-/// "frames"}`. The answer is the [`Stitch`] with its parts' fades as
+/// "frames", "rate"}`. The answer is the [`Stitch`] with its parts' fades as
 /// `fadeIn`/`fadeOut`, or `null` where there is nothing to make: not a join, no
 /// parts, or a part over a source the caller has not resolved.
 pub fn stitch_json(source: &str, held: &str) -> String {
@@ -166,7 +193,8 @@ pub fn stitch_json(source: &str, held: &str) -> String {
     }
 }
 
-/// The frames a part contributes: its range, or the whole of its source.
+/// The span a part reads **of its source**, in that source's own frames: its
+/// range, or the whole of it.
 fn span_of(part: &Part, take: &Held) -> (u64, u64) {
     match &part.source.range {
         Some(range) => (range.start, range.len()),
@@ -227,6 +255,9 @@ mod tests {
                         buffer: *buffer,
                         channels: *channels,
                         frames: *frames,
+                        // Unknown, which is what a table that says nothing
+                        // about rates means: read at the join's own.
+                        rate: 0.0,
                     },
                 )
             })
@@ -253,6 +284,75 @@ mod tests {
             "null",
             "a part nobody loaded"
         );
+    }
+
+    /// **A join takes parts at other rates, and each says what it contributes.**
+    /// A join owns no samples, so nothing is converted: a part states how much
+    /// of the join it fills, and the server reads its source back out of that
+    /// by the ratio the two rates make -- which it takes off the buffers, so no
+    /// ratio travels. One second of a 44.1 kHz take is 48000 frames of a 48 kHz
+    /// join, and the join is as long as what its parts fill.
+    #[test]
+    fn a_part_at_another_rate_states_what_it_fills_of_the_join() {
+        let source = join(
+            vec![part(1, Some((0, 44_100))), part(2, Some((0, 24_000)))],
+            Some(1),
+        );
+        let table = HashMap::from([
+            (
+                SourceId(1),
+                Held {
+                    buffer: 7,
+                    channels: 1,
+                    frames: 44_100,
+                    rate: 44_100.0,
+                },
+            ),
+            (
+                SourceId(2),
+                Held {
+                    buffer: 8,
+                    channels: 1,
+                    frames: 48_000,
+                    rate: 48_000.0,
+                },
+            ),
+        ]);
+        let made = stitch(&source, &table).expect("both parts are there");
+        assert_eq!(
+            made.rate, 48_000.0,
+            "the join's own, as the source states it"
+        );
+        assert_eq!(
+            made.parts[0].frames, 48_000,
+            "a second of the 44.1 kHz take fills a second of the join"
+        );
+        assert_eq!(made.parts[0].start, 0, "read from its own first frame");
+        assert_eq!(
+            made.parts[1].frames, 24_000,
+            "and a part at the join's rate fills what it reads"
+        );
+        assert_eq!(made.frames, 72_000, "the join is what its parts fill");
+    }
+
+    /// A minted join says no rate of its own yet, and then it is its first
+    /// part's -- which for every join of one session's takes is that session's.
+    #[test]
+    fn a_minted_join_takes_the_rate_of_what_it_is_made_of() {
+        let mut source = join(vec![part(1, Some((0, 100)))], Some(1));
+        source.sample_rate = None;
+        let table = HashMap::from([(
+            SourceId(1),
+            Held {
+                buffer: 7,
+                channels: 1,
+                frames: 200,
+                rate: 44_100.0,
+            },
+        )]);
+        let made = stitch(&source, &table).expect("its part is there");
+        assert_eq!(made.rate, 44_100.0);
+        assert_eq!(made.parts[0].frames, 100, "so nothing crosses anything");
     }
 
     /// The ordinary join: two spans of one take, back to back.

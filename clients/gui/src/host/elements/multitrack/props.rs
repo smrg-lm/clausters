@@ -284,9 +284,11 @@ pub(super) fn parse_names(props: &Map<String, Value>, key: &str) -> Vec<String> 
         .unwrap_or_default()
 }
 
-/// The `segments` prop: the flat `box source start frames` quadruple array --
-/// the spans each join is made of, in the order they play, grouped by the box
-/// they belong to.
+/// The `segments` prop: the flat `box source start frames rate` quintuple
+/// array -- the spans each join is made of, in the order they play, grouped by
+/// the box they belong to. `frames` is what the span contributes to the join
+/// and `rate` how many frames of its take that is worth, which is one for a
+/// take at the join's own rate.
 ///
 /// A trailing partial group is dropped rather than half-read, and so is a span
 /// that reads nothing; a box whose spans are all dropped is not named, so it is
@@ -296,11 +298,14 @@ pub(super) fn parse_segments(props: &Map<String, Value>) -> HashMap<String, Vec<
         return HashMap::new();
     };
     let mut out: HashMap<String, Vec<super::Span>> = HashMap::new();
-    for group in items.as_chunks::<4>().0 {
+    for group in items.as_chunks::<5>().0 {
         let (Some(name), Some(source)) = (group[0].as_str(), group[1].as_i64()) else {
             continue;
         };
         let frames = group[3].as_f64().unwrap_or(0.0);
+        // A span that states no rate is read frame for frame, which is every
+        // span of a join whose takes are at its own rate.
+        let rate = group[4].as_f64().filter(|r| *r > 0.0).unwrap_or(1.0);
         if source < 0 || frames <= 0.0 {
             continue;
         }
@@ -308,6 +313,7 @@ pub(super) fn parse_segments(props: &Map<String, Value>) -> HashMap<String, Vec<
             source: source as i32,
             start: group[2].as_f64().unwrap_or(0.0).max(0.0),
             frames,
+            rate,
         });
     }
     out

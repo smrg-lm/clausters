@@ -81,8 +81,13 @@ pub(super) struct Span {
     pub source: i32,
     /// The frame of that take the span starts at.
     pub start: f64,
-    /// How many frames it reads.
+    /// How many frames **of the join** it contributes.
     pub frames: f64,
+    /// **How many frames of its take one frame of the join is**: one, unless
+    /// that take was written at another rate, which a join reads through
+    /// rather than converting -- the same ratio the server's stitch reads it
+    /// by, so the picture and the sound are one statement.
+    pub rate: f64,
 }
 
 /// **How far a drag reaches for a neighbour's edge**, in device pixels.

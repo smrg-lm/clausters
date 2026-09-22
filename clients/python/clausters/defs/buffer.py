@@ -30,7 +30,11 @@ class Part(NamedTuple):
     `Buffer.parts` gives back.
 
     ``source`` is a `Buffer` or a bare slot number, ``start`` the first frame
-    read from it and ``frames`` how many it contributes. ``fade_in`` and
+    read from it and ``frames`` how many frames **of the join** it fills. The
+    two are the same count while the source is at the join's own rate; a source
+    at another rate is read through the ratio the two make, so a second of a
+    44.1 kHz take fills 48000 frames of a 48 kHz join and reads 44100 of its
+    own. The server takes that ratio off the buffers themselves. ``fade_in`` and
     ``fade_out`` are linear fades in frames, which is the few milliseconds an
     editor puts on a cut: two spans that do not continue each other make a step,
     and a step is a click however well the frames are read.
@@ -207,8 +211,9 @@ class Buffer:
         over does not silence it.
 
         Args:
-            parts: the `Part`s, in the order they play. Every source must be at
-                the join's sample rate: a join is not a resampler.
+            parts: the `Part`s, in the order they play. A source at another
+                rate is read at that rate rather than refused -- a join owns no
+                samples, so it converts none and stores none.
             channels: how wide the join is. ``None`` takes the first part's
                 source's width, which needs a `Buffer` that knows its shape.
             sample_rate: the join's rate; 0.0 means the server's.

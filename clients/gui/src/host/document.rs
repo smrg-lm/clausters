@@ -593,29 +593,31 @@ impl Owner {
     /// open the file to know it. A length already stated is kept. Returns how
     /// many takes learned one.
     pub fn learn_lengths(&mut self, frames_of: impl Fn(i32) -> Option<u64>) -> usize {
-        let learned: Vec<(clausters_document::SourceId, i32, Option<u32>, u64)> = self
+        // The take as it will stand, built here: what is learned is the length
+        // and only the length, so the rest of the entry travels unread.
+        let learned: Vec<(clausters_document::SourceId, sources::Take)> = self
             .takes
             .iter()
             .filter(|(_, take)| take.frames.is_none_or(|f| f == 0))
             .filter_map(|(id, take)| {
                 let frames = frames_of(take.bufnum).filter(|f| *f > 0)?;
-                Some((*id, take.bufnum, take.channels, frames))
+                Some((
+                    *id,
+                    sources::Take {
+                        frames: Some(frames),
+                        ..*take
+                    },
+                ))
             })
             .collect();
-        for &(id, bufnum, channels, frames) in &learned {
+        for &(id, take) in &learned {
+            let frames = take.frames.unwrap_or(0);
             if let Some(entry) = self.session.as_mut().and_then(|s| s.sources.get_mut(&id))
                 && entry.frames.is_none_or(|f| f == 0)
             {
                 entry.frames = Some(frames);
             }
-            self.takes.insert(
-                id,
-                sources::Take {
-                    bufnum,
-                    channels,
-                    frames: Some(frames),
-                },
-            );
+            self.takes.insert(id, take);
         }
         learned.len()
     }
@@ -1758,6 +1760,7 @@ mod window_verb_tests {
                     bufnum: bufnum.as_i64().unwrap() as i32,
                     channels: None,
                     frames: None,
+                    rate: None,
                 },
             );
         }
@@ -1926,6 +1929,7 @@ mod window_verb_tests {
                 bufnum: 3,
                 channels: Some(1),
                 frames: Some(96_000),
+                rate: None,
             },
         );
         let mut owner = owner.with_takes(takes);
@@ -2364,6 +2368,7 @@ mod window_verb_tests {
                     bufnum: 7,
                     channels: Some(2),
                     frames: Some(192_000),
+                    rate: None,
                 },
             );
         }
@@ -2406,6 +2411,7 @@ mod window_verb_tests {
             bufnum,
             channels: Some(1),
             frames,
+            rate: None,
         };
         owner
             .takes

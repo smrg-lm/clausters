@@ -1084,7 +1084,9 @@ mod tests {
         let segments = props["segments"]
             .as_array()
             .unwrap_or_else(|| panic!("segments in {props:?}"));
-        // Frames, and frames are whole: a span is a count of them.
+        // Frames, and frames are whole: a span is a count of them. The fifth
+        // of each quintuple is how many frames of the take one frame of the
+        // join is -- one here, since the take is at the session's own rate.
         let half = json!(SR as u64);
         assert_eq!(
             segments.as_slice(),
@@ -1093,10 +1095,12 @@ mod tests {
                 json!(7),
                 half.clone(),
                 half.clone(),
+                json!(1.0),
                 json!("12"),
                 json!(7),
                 json!(0),
                 half,
+                json!(1.0),
             ]
             .as_slice(),
             "the joined box, drawn from the take it is spans of"

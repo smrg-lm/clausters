@@ -79,6 +79,10 @@ impl Multitrack {
             let Some(take) = self.takes.get(&span.source) else {
                 continue;
             };
+            // Frames of **this take** per sample of the box: the box's own
+            // crossing, then the span's. A span at the join's rate contributes
+            // nothing but one.
+            let span_rate = rate * span.rate;
             let x = |t: f64| cr.x + ((t - local.start) / local.len) as f32 * cr.w;
             let rect = Rect::new(x(lo), cr.y, x(hi) - x(lo), cr.h);
             let space = TimeSpace::of(
@@ -89,8 +93,8 @@ impl Multitrack {
                 clip.place.dur,
             )
             .with_window(SourceWindow {
-                start: span.start - from * rate,
-                rate,
+                start: span.start - from * span_rate,
+                rate: span_rate,
                 ..SourceWindow::default()
             });
             take.draw_body(d, rect, &space);

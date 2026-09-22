@@ -480,6 +480,7 @@ mod tests {
                     bufnum: 7,
                     channels: Some(1),
                     frames: Some(96_000),
+                    rate: None,
                 },
             );
             takes

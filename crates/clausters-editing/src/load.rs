@@ -42,6 +42,10 @@ pub struct Take {
     pub channels: Option<u32>,
     /// Frames per channel, when the table said.
     pub frames: Option<u64>,
+    /// **The rate those samples were written at**, when the table said. A take
+    /// that does not say is read at the session's own rate, which is every
+    /// take of a session recorded at one.
+    pub rate: Option<f64>,
 }
 
 /// Which buffer each source was read into.
@@ -183,6 +187,9 @@ pub fn plan(
                         bufnum,
                         channels: source.channels,
                         frames: source.frames,
+                        // What the session wrote down about these samples. The
+                        // file decides in the end, as it does for the width.
+                        rate: source.sample_rate,
                     },
                 );
                 load.messages.push(OscMessage {
@@ -292,6 +299,9 @@ fn stitch(
                     bufnum,
                     channels: Some(made.channels as u32),
                     frames: Some(made.frames),
+                    // A join is one buffer at one rate, and the projection just
+                    // said which.
+                    rate: Some(made.rate).filter(|r| *r > 0.0),
                 },
             );
             load.messages.push(stitch_message(bufnum, &made));
@@ -319,6 +329,7 @@ pub fn held_takes(takes: &Takes) -> HashMap<SourceId, Held> {
                     buffer: take.bufnum,
                     channels: take.channels.unwrap_or(1).max(1) as usize,
                     frames: take.frames.unwrap_or(0),
+                    rate: take.rate.unwrap_or(0.0),
                 },
             )
         })

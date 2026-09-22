@@ -133,8 +133,9 @@ export class Buffer {
      * silence it.
      *
      * `channels` is how wide the join is, defaulting to the first part's
-     * source's width; `sampleRate` 0 means the server's, and every source must
-     * already be at the join's rate -- a join is not a resampler.
+     * source's width, and `sampleRate` 0 means the server's. A source at
+     * another rate is read at that rate rather than refused -- a join owns no
+     * samples, so it converts none and stores none.
      */
     static async stitch(
         parts: Part[],
