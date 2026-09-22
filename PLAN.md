@@ -3248,3 +3248,39 @@ finished work, where a pending item reads as done.
   with no change of its own. Measured: the first `/clock_query` after `boot()`
   already reads the settled epoch, and the routine's first note now lands
   **500.0 ms** before the second (was about 420).
+
+- ⬜ **The npm half of a release has never run before the tag that publishes
+  it** *(found 2026-09-21, reviewing the tree)*. The
+  dry run (`gh workflow run release.yml`) proves `verify` and the wheel's
+  `build`, and skips every job guarded by `github.event_name == 'push'` — and
+  `publish-npm` is where the whole web package is **built**, not only where it
+  is published: `.github/actions/wasm-vendor` (the emsdk builds of the Faust
+  compiler and of verovio, added after `v0.8.1`), `build.sh` and `npm run
+  check-package`. CI's `web` job runs the smokes without the vendor step. So
+  that path has never run on Actions, and its first run is the one-way one. A
+  failure there publishes nothing — `publish-pypi` needs `publish-npm` — but
+  leaves a tag to delete and re-cut, which is what the dry run exists to
+  prevent. Locally the package is fine today (`build.sh`, `check-package`
+  "publishable", `test.sh` 1158/1158 and the 24 pages), so what is unproved is
+  the runner's path, not the package.
+  **To do:** split the build out of `publish-npm` into a `build-web` job with
+  no event guard (vendor, `build.sh`, `check-package`, `npm pack`, the tarball
+  uploaded as an artifact, as `build` does for the wheel), and let
+  `publish-npm` publish that tarball. The dry run then packages both halves.
+
+- ⬜ **Milestone labels and a retired verb are still in published code and
+  docs** *(found 2026-09-21, the same review)*. Labels, which mean nothing to a
+  reader: `clients/web/src/defs/server/index.ts:1` (W0),
+  `clients/web/src/gui/page.ts:195` (W4), `docs/architecture.md:1225`
+  (W26/W27), `docs/bindings.md:273` (O31), and in the GUI host
+  `host/elements/multitrack/mod.rs:10`, `host/graphics/multitrack.rs:14`,
+  `host/widget/build.rs:82` (G34) and `host/widget/reconcile/tests.rs:65`
+  (O23). "Realize" for making a join's buffer:
+  `clients/python/clausters/_native.py:1426`,
+  `clients/python/clausters/gui/editing/multitrack.py:199,230`,
+  `clients/web/src/document.ts:572`,
+  `clients/web/src/gui/editing/multitrack.ts:263,324` and the
+  `clausters_editing_stitch` row of `docs/bindings.md` — the buffer is
+  **built**. (The "realizes" in `docs/architecture.md`'s MIDI lines and in
+  `docs/schemas.md`'s filter note are neither of these and can go with the
+  same pass.)

@@ -4582,3 +4582,20 @@ sound.
   general tree", a sentence about the `form` pages that had stood over nothing
   in the Python book since they were deleted.
 
+- ⬜ **The web book and README name a surface the package does not export**
+  *(found 2026-09-21, reviewing the tree)*.
+  `docs/src/composition.md`, "Editing a multitrack", imports `Arrangement` and
+  `Content` from `"clausters"` and edits with `doc.ARRANGEMENT`: the root
+  exports `Multitrack` and the vocabulary is `MULTITRACK`, and `Content` is
+  reachable only as `multitrack.Content` — the root's re-export list from
+  `./multitrack.ts` leaves it out, where `Session` and `Source` are left out
+  because they would collide with the client's own names and `Content` would
+  not. `README.md` lists `Playhead` in `seq`, retired 2026-09-17, and the
+  docstrings of `form/element.ts:352` and `form/render.ts:125,146-147` say a
+  concrete element plays through a `Playhead` and `render` returns one — it
+  returns the `Timeline`. **To do:** export `Content` from the root (the
+  Python book imports it from `clausters.multitrack`, and a page reads the
+  root), fix the snippet and the four sentences; the check that would have
+  caught the first is the Python entry's ("The book's examples import names
+  that no longer exist, and nothing reads a book's code"), written once for
+  both books.

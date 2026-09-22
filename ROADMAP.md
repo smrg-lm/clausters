@@ -110,13 +110,39 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-None open.
+Found by a review of the tree on 2026-09-21, which read the Rust side clean
+(the full feature matrix, CI green, the three books building, pyright at zero,
+the web package publishable with its suite passing). In this order:
+
+- ⬜ **The npm half of a release has never run before the tag that publishes
+  it** *(root `PLAN.md`, Found by use)*. First, because it is what makes the
+  dry run prove the whole release path.
+- ⬜ **The book's examples import names that no longer exist, and nothing
+  reads a book's code** *(`clients/python/PLAN.md`, Found by use)*, with its
+  web half, **The web book and README name a surface the package does not
+  export** *(`clients/web/PLAN.md`, Found by use)*. One pass over both books,
+  and the check that keeps them honest.
+- ⬜ **A box can be stretched past the samples it has**
+  *(`clients/gui/PLAN.md`, Found by use)*. A regression in the multitrack
+  editor, not diagnosed yet; read with **A box drawn a different length than
+  its samples** (`crates/clausters-document/PLAN.md`, Found by use), which may
+  be the same defect seen from the picture.
+- ⬜ **Milestone labels and a retired verb are still in published code and
+  docs** *(root `PLAN.md`, Found by use)*. Mechanical; last, because nothing
+  waits on it.
 
 
 ## 2. Fixes that need a decision first
 
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
+
+- ⬜ **The wheel's `clausters-gui` cannot open a standalone window or sound a
+  session** *(`clients/python/PLAN.md`, Found by use)*. The package's README
+  promises `clausters-gui --standalone`, and the wheel's host refuses it.
+  **The decision:** whether the wheel's host links the embedded server, and
+  with which def families, or whether the docs say a standalone host is a
+  source build.
 
 - ⬜ **The page suite is one browser, and the second one found a defect it had
   been passing over** (`clients/web/PLAN.md`, Found by use). Chrome and Firefox

@@ -4718,6 +4718,47 @@ work, where a pending item reads as done.)*
   unchanged -- it never read `beats()` -- and still puts the beat on the
   physical now. No physical reading for a routine was added; nothing needs one.
 
+- ⬜ **The book's examples import names that no longer exist, and nothing
+  reads a book's code** *(found 2026-09-21, reviewing the tree)*. Three, each a rename the prose did not follow:
+  `docs/src/composition.md`, "Editing a multitrack", imports `Arrangement` from
+  `clausters.multitrack` and `ARRANGEMENT` from `clausters.document` — the type
+  is `Multitrack` since 2026-09-08 and the vocabulary is `MULTITRACK`; and
+  `docs/src/gui/model.md`, "The four containers", imports `field` from
+  `clausters.gui` and gives it a row of the table, a builder removed with
+  `b75a4298` ("track and clip stop being widgets"). The module docstring of
+  `clausters/gui/guidef.py` still names `field` among the containers too.
+  The web book carries the same snippet (`clients/web/PLAN.md`, "Found by
+  use", "The web book and README name a surface the package does not
+  export").
+  **What it exposed:** nothing reads the code in a book. pyright reads the
+  examples and the tests, and the doc build reads links, so a snippet that no
+  longer imports compiles, tests and builds clean. A script that imports each
+  name of every `from clausters... import` in `docs/src` found all three in
+  under a second, and the web book's `import { ... } from "clausters"` checked
+  against the built package found its two. **To do:** fix the three, and make
+  that check a test in each client's suite, so the next rename fails there.
+
+- ⬜ **The wheel's `clausters-gui` cannot open a standalone window or sound a
+  session** *(found 2026-09-21, the same review)*. `build_native.py` builds the
+  host with no extra features unless `CLAUSTERS_GUI_FEATURES` says otherwise,
+  and neither `release.yml` nor `setup.py` sets it, so the wheel carries a host
+  without `standalone`. Run from the staged `_bin`, `clausters-gui
+  --standalone <name>` exits with "this clausters-gui was built without
+  standalone support; rebuild with `--features standalone`", and `--session`
+  opens with its takes drawn empty and nothing to play them. Yet the package's
+  `README.md` lists `clausters-gui --standalone` among what `pip install`
+  gives, `docs/src/bundles.md` and `docs/src/configuration/gui.md` present it
+  as the launch, and `docs/architecture.md` names `clausters-gui --session` as
+  the multitrack editor's entry point. Driven from a script (`Session.gui()`) nothing is missing: the
+  host is a client there and the server is the script's.
+  **The decision:** whether the wheel's host links the embedded server —
+  `standalone` (the `synth` family only) or `standalone-faust`, which also
+  links libfaust from a binary built in the `clients/gui` workspace, whose
+  rpath has to find `_libs` the way the root crate's `build.rs` makes the
+  server's do — and what that weighs against the 15 MB host staged today; or
+  whether the wheel stays a client's host and the docs say a standalone host
+  is a source build. Either way the docs and the wheel say the same thing.
+
 ## Future directions (a design that is not a fix)
 
 - ⬜ **A clone: a new sequence made from a clip, or from a segment of one**
