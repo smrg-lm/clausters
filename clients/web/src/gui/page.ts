@@ -191,9 +191,9 @@ const mounted = new WeakMap<Element, HTMLCanvasElement>();
  * *A view with no parent is a window* is the rule the reference client settled;
  * a page has no window, so the sentence finishes here: a view with no element
  * is a canvas. That is what makes several canvases in one document fall out of
- * opening several views, rather than being a feature -- the host has kept one
- * surface per `window`-rooted def since W4, and this is the client side finally
- * asking for them.
+ * opening several views, rather than being a feature -- the host keeps one
+ * surface per `window`-rooted def, and this is the client side asking for
+ * them.
  */
 export function newCanvas(): HTMLCanvasElement {
     const canvas = document.createElement("canvas");

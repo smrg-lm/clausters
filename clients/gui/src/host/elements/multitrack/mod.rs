@@ -7,8 +7,8 @@
 //! What that replaces is a *tree* of `Track` widgets under whatever generic
 //! container a script picked -- a shape with nobody in it that owned the multitrack,
 //! so a gesture had nowhere to report *the multitrack* and reported what the hand
-//! did to whichever widget it touched. `clients/gui/PLAN.md`'s `G34` carries
-//! the whole argument.
+//! did to whichever widget it touched. `clients/gui/PLAN.md`, "The multitrack
+//! editor reuses the widget set that grew past it", carries the whole argument.
 //!
 //! **The lanes and the clips are props**, flat like a roll's `notes`: a client
 //! describes the multitrack and never composes a tree of it, never registers a

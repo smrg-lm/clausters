@@ -79,7 +79,7 @@ pub(super) fn build_kind(
         // **One meaning left**: the free-standing ruler over a navigation
         // group. `field` used to be three things told apart by what was on it
         // -- a lane, a clip placed on its parent's axis, or this -- and the
-        // first two are `multitrack` props now (`G34`): a lane cannot sit in a
+        // first two are `multitrack` props now: a lane cannot sit in a
         // void, so it is always inside the view that owns it.
         "field" => WidgetKind::TimeRuler {
             editor: EditorProps::parse_ruler(props),

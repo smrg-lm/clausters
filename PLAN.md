@@ -3280,7 +3280,7 @@ finished work, where a pending item reads as done.
   pushed `main`, watched through `build-web`, with the wasm-vendor composite
   building on a cold cache for the first time.
 
-- ⬜ **Milestone labels and a retired verb are still in published code and
+- ✅ **Milestone labels and a retired verb are still in published code and
   docs** *(found 2026-09-21, the same review)*. Labels, which mean nothing to a
   reader: `clients/web/src/defs/server/index.ts:1` (W0),
   `clients/web/src/gui/page.ts:195` (W4), `docs/architecture.md:1225`
@@ -3296,3 +3296,10 @@ finished work, where a pending item reads as done.
   **built**. (The "realizes" in `docs/architecture.md`'s MIDI lines and in
   `docs/schemas.md`'s filter note are neither of these and can go with the
   same pass.)
+
+  **Fixed 2026-09-21.** The labels are gone: a comment that pointed at a
+  milestone for its argument points at the plan section by its title, and the
+  rest lost a coordinate that said nothing. The join's buffer is **built**
+  in all seven places, and the other four "realizes" (the MIDI actuation twice
+  in `docs/architecture.md`, a MIDI voice and scsynth's filters in
+  `docs/schemas.md`) say **translates** and **implements**.

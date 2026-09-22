@@ -62,7 +62,7 @@ fn scroll_and_select(host: &mut Host, id: i32) {
 
 #[test]
 fn a_view_that_survives_keeps_its_zoom_when_another_one_changes() {
-    // O23's acceptance, and the complaint this branch opened with: a clip
+    // The reconcile's acceptance, and the complaint it opened with: a clip
     // appearing in one view used to take the zoom of every other one with it.
     let mut host = Host::new();
     define(&mut host, &window(""));

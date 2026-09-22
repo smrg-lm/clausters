@@ -110,13 +110,7 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-Found by a review of the tree on 2026-09-21, which read the Rust side clean
-(the full feature matrix, CI green, the three books building, pyright at zero,
-the web package publishable with its suite passing). In this order:
-
-- ⬜ **Milestone labels and a retired verb are still in published code and
-  docs** *(root `PLAN.md`, Found by use)*. Mechanical; last, because nothing
-  waits on it.
+None open.
 
 
 ## 2. Fixes that need a decision first

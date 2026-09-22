@@ -569,7 +569,7 @@ export interface Stitch {
  * **What a source made of spans comes to** -- the buffer a join is, resolved
  * against the caller's table.
  *
- * One reading for every endpoint that realizes a minted join, so the width, the
+ * One reading for every endpoint that builds a minted join, so the width, the
  * spans and the channel map a narrow part fills the join with are the crate's
  * and not this client's. `held` is source id -> `{ buffer, channels, frames }`.
  * `undefined` where there is nothing to make: not a join, or a part over a

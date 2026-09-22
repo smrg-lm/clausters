@@ -1423,7 +1423,7 @@ def editing_stitch(source: dict, held: dict) -> "dict | None":
     """**What a source made of spans comes to** -- the buffer a join is,
     resolved against the caller's table (`clausters_editing_stitch`).
 
-    One reading for every endpoint that realizes a minted join, so the width,
+    One reading for every endpoint that builds a minted join, so the width,
     the spans and the channel map a narrow part fills the join with are the
     crate's and not this client's.
 

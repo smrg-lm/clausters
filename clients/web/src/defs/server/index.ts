@@ -1,4 +1,4 @@
-// The audio server, driven over the W0 carrier seam (mirrors
+// The audio server, driven over the carrier seam (mirrors
 // `clausters/defs/server/`).
 //
 // A `Server` is the only object that knows a connection: defs, nodes, buses

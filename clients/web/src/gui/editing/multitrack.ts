@@ -260,7 +260,7 @@ export class MultitrackDomain extends Domain<Multitrack> {
      *
      * **The source first.** A join over fragments mints the source its box is a
      * window onto, and a box over a source nothing answers for is left out of the
-     * plan -- so realizing it after the multitrack names it would be one pass of
+     * plan -- so building it after the multitrack names it would be one pass of
      * silence. It runs again on a redo, which is right: the source is gone the
      * moment nothing windows it.
      */
@@ -321,7 +321,7 @@ export class MultitrackDomain extends Domain<Multitrack> {
         if (id === undefined) return;
         // **What the join is comes from the crate** (`editingStitch`): its
         // width, its spans and the channel map a narrow part fills it with, read
-        // once for every endpoint that realizes one. What is left here is the
+        // once for every endpoint that builds one. What is left here is the
         // command and the table.
         const made = editingStitch(minted as Record<string, unknown>, this.bridge.sources.held());
         if (made === undefined) return;
