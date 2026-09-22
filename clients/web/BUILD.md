@@ -233,9 +233,11 @@ gate the workflow passes through.
    ```
 
 3. **Tag.** `git tag vX.Y.Z && git push --tags` runs `release.yml`, whose
-   `publish-npm` job compiles the three wasm bundles with the lockfile-pinned
-   `wasm-bindgen` CLI, emits `dist/`, runs the checker and publishes with
-   provenance. Auth is the `NPM_TOKEN` secret of the repository's `npm`
+   `build-web` job compiles the three wasm bundles with the lockfile-pinned
+   `wasm-bindgen` CLI, emits `dist/`, runs the checker and packs the tarball,
+   and whose `publish-npm` job publishes that tarball with provenance. The
+   release's dry run (`gh workflow run release.yml`) runs `build-web` too, so
+   the runner's path is proved before a tag depends on it. Auth is the `NPM_TOKEN` secret of the repository's `npm`
    environment — an automation token with publish rights. (npm's OIDC trusted
    publishing is configured per package on a package that already exists, so
    the token is what can create one; it can be swapped in later.)

@@ -28,8 +28,9 @@
 
 name: Release
 
-# The manual trigger is a dry run of everything except publishing: `verify` and
-# `build` run exactly as they would for a release, and the three jobs that put
+# The manual trigger is a dry run of everything except publishing: `verify`,
+# `build` and `build-web` run exactly as they would for a release, and the three
+# jobs that put
 # something in a registry or a GitHub release are skipped -- so the workflow can
 # be proved on Actions without a tag and without anything reaching PyPI or npm.
 # A tag is one-way; neither the gate nor the packaging should be first exercised
@@ -39,7 +40,10 @@ name: Release
 # assembles wrong, fails at exactly the moment nothing can be taken back --
 # nothing else in the repository builds one, and the artifact it uploads is the
 # only place the packaged size and the bundled library list can be read between
-# tags. The one thing a dry run's build gets wrong is cosmetic: the server
+# tags. `build-web` is there for the same reason on the npm side: it is the one
+# place the wasm-vendor composite (the Faust compiler and the engraver, built
+# with emsdk) and `check-package` run on a runner, and before it was split out
+# of `publish-npm` their first run on Actions was a tag's. The one thing a dry run's build gets wrong is cosmetic: the server
 # tarball takes its version from the ref, so on a dispatch it is named after the
 # branch rather than a version.
 on:
@@ -220,11 +224,11 @@ jobs:
   publish-pypi:
     name: publish to PyPI (trusted publishing)
     # Gated on the npm leg, not merely on the wheel build: publishing is
-    # one-way, so the release either goes out whole or not at all. A web build
-    # that breaks after the wheel is on PyPI cannot be taken back, and it is
-    # the npm side that carries the long, uncached wasm build -- the one with
-    # something to fail at. The order between the two registries is arbitrary;
-    # what matters is that one of them is a gate.
+    # one-way, so the release either goes out whole or not at all. Both
+    # packages are built before either registry is touched, so what is left to
+    # fail here is a registry refusing -- and an npm publish that fails after
+    # the wheel is on PyPI cannot be taken back. The order between the two
+    # registries is arbitrary; what matters is that one of them is a gate.
     needs: [build, publish-npm]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -238,19 +242,16 @@ jobs:
           path: dist
       - uses: pypa/gh-action-pypi-publish@release/v1
 
-  publish-npm:
-    name: publish the web client to npm
-    # Behind `verify` on its own account, not merely by sitting after `build`:
-    # this job publishes, and it is the one leg that does not depend on the
-    # wheel build, so without this it would be the way an unverified commit
-    # reached a registry.
+  build-web:
+    name: web package (npm tarball)
+    # The web package's build, apart from its publication so the dry run runs
+    # it: no event guard, for the reason `build` has none. The tarball it
+    # uploads is exactly what `publish-npm` puts in the registry -- that job
+    # checks nothing out and builds nothing, so what the dry run proved is what
+    # a tag publishes.
     needs: verify
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    environment: npm
-    permissions:
-      id-token: write # provenance
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -259,7 +260,6 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
-          registry-url: "https://registry.npmjs.org"
       - uses: Swatinem/rust-cache@v2
         with:
           key: web-wasm
@@ -281,22 +281,47 @@ jobs:
       # out with. Built from the same pins the native libraries use, because
       # neither has a usable published build (the composite says why). Without
       # this step build.sh prints its two "note: vendor/... missing" lines and
-      # publishes a package with no compiler and no engraver -- which is what
-      # check-package now refuses.
+      # the package has no compiler and no engraver -- which is what
+      # check-package refuses.
       - uses: ./.github/actions/wasm-vendor
       # build.sh compiles the engine, the GUI host and the core's JS door to
       # wasm, stages the bundles into dist/ and emits src/ -> dist/. The
       # checker then refuses a tree that is missing either half, or a version
-      # that disagrees with the crate's -- one release, one version.
-      - name: Build the package
+      # that disagrees with the crate's -- one release, one version. `npm pack`
+      # writes the tarball and prints its file list into the log.
+      - name: Build and pack the package
         working-directory: clients/web
         run: |
           npm ci
           ./build.sh
           npm run check-package
+          npm pack
+      - uses: actions/upload-artifact@v6
+        with:
+          name: npm-package
+          path: clients/web/clausters-*.tgz
+
+  publish-npm:
+    name: publish the web client to npm
+    # Publishes the tarball `build-web` made and nothing else: a tarball is
+    # published as it is, with no lifecycle script run, so the checker that
+    # `prepublishOnly` would run has already run there.
+    needs: build-web
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      id-token: write # provenance
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - uses: actions/download-artifact@v7
+        with:
+          name: npm-package
       - name: Publish
-        working-directory: clients/web
-        run: npm publish --provenance
+        run: npm publish ./clausters-*.tgz --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -311,10 +336,15 @@ jobs:
     permissions:
       contents: write
     steps:
+      # The wheel and the server binary; the npm tarball is the registry's.
       - uses: actions/download-artifact@v7
         with:
+          name: wheel
           path: assets
-          merge-multiple: true
+      - uses: actions/download-artifact@v7
+        with:
+          name: server-binary
+          path: assets
       - uses: softprops/action-gh-release@v3
         with:
           files: assets/*

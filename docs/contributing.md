@@ -193,14 +193,16 @@ is reproducible with the same line:
   tag points at; every other job hangs off it. A tag is not a proof: it can sit
   on a commit whose CI is red or never ran. **Rehearse it without a tag** with
   *Actions → Release → Run workflow* (or `gh workflow run release.yml`): the
-  manual trigger runs `verify` and nothing else — the build, both registry legs
-  and the release page are skipped — so the gate can be exercised without a
-  one-way publish.
-- **The npm leg** builds what CI never does: the `publish-npm` job installs the
-  wasm32 target and the `wasm-bindgen` CLI the lockfiles pin, runs
-  `clients/web/build.sh` to compile and stage the three wasm bundles, passes
-  `npm run check-package` (which refuses a `dist/` missing a bundle, or a
-  version disagreeing with the crate's) and publishes with provenance. Auth is
+  manual trigger runs `verify` and both builds — the wheel and the npm tarball,
+  each uploaded as an artifact — and skips both registry legs and the release
+  page, so the gate and the packaging are exercised without a one-way publish.
+- **The npm leg** builds what CI never does: the `build-web` job installs the
+  wasm32 target and the `wasm-bindgen` CLI the lockfiles pin, builds the
+  vendored Faust compiler and engraver, runs `clients/web/build.sh` to compile
+  and stage the three wasm bundles, passes `npm run check-package` (which
+  refuses a `dist/` missing a bundle, or a version disagreeing with the
+  crate's) and packs the tarball; `publish-npm` publishes that tarball, with
+  provenance, and builds nothing. Auth is
   an automation token in the `NPM_TOKEN` secret of an `npm` environment, not
   OIDC: npm's trusted publishing is configured per package, on a package the
   registry already has. The procedure and the local rehearsal are in

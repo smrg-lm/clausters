@@ -3268,6 +3268,18 @@ finished work, where a pending item reads as done.
   uploaded as an artifact, as `build` does for the wheel), and let
   `publish-npm` publish that tarball. The dry run then packages both halves.
 
+  **Done in the tree 2026-09-21, and open until a dry run is watched.**
+  `build-web` has no event guard and uploads `npm-package` (the `npm pack`
+  tarball, whose file list lands in the log); `publish-npm` checks nothing out,
+  downloads it and runs `npm publish ./clausters-*.tgz --provenance`; the
+  release page downloads the wheel and the server binary by name, so the
+  tarball is not attached to it. `docs/contributing.md`, `clients/web/BUILD.md`
+  and the `release-versioning` skill say what the dry run now runs — two of the
+  three still said it ran `verify` alone, which had been wrong since the wheel
+  joined it. What is left is the proof: a `gh workflow run release.yml` on a
+  pushed `main`, watched through `build-web`, with the wasm-vendor composite
+  building on a cold cache for the first time.
+
 - ⬜ **Milestone labels and a retired verb are still in published code and
   docs** *(found 2026-09-21, the same review)*. Labels, which mean nothing to a
   reader: `clients/web/src/defs/server/index.ts:1` (W0),

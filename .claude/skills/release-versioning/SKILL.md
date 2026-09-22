@@ -119,10 +119,12 @@ its own commit first, then release.
    check, which is the defect rule 5's first wording had in prose.
 3. **Rehearse the gate before the tag exists.** `gh workflow run release.yml
    --ref main` runs `release.yml`'s `verify` job — the full fmt/clippy/rustdoc
-   feature matrix plus `cargo test` on the default set and on `+embed` — with
-   every build and publish job skipped by `if: github.event_name == 'push'`.
-   Watch it green (`gh run watch <id> --exit-status`, ~6 min warm) on the exact
-   commit about to be tagged. On a tag, `verify` runs *after* the tag exists, so
+   feature matrix plus `cargo test` on the default set and on `+embed` — and
+   both builds, `build` (the wheel and the server binary) and `build-web` (the
+   npm tarball, vendored wasm included), with the publish jobs and the release
+   page skipped by `if: github.event_name == 'push'`.
+   Watch it green (`gh run watch <id> --exit-status`) on the exact commit about
+   to be tagged; the two packages it built are the run's artifacts. On a tag, `verify` runs *after* the tag exists, so
    a red one leaves a tag to delete and re-cut; the rehearsal moves that
    discovery earlier and costs nothing but runner time.
 4. **Tag and push.** `git tag vX.Y.Z && git push origin vX.Y.Z`. From here it is

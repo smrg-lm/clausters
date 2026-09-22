@@ -114,9 +114,6 @@ Found by a review of the tree on 2026-09-21, which read the Rust side clean
 (the full feature matrix, CI green, the three books building, pyright at zero,
 the web package publishable with its suite passing). In this order:
 
-- ⬜ **The npm half of a release has never run before the tag that publishes
-  it** *(root `PLAN.md`, Found by use)*. First, because it is what makes the
-  dry run prove the whole release path.
 - ⬜ **The book's examples import names that no longer exist, and nothing
   reads a book's code** *(`clients/python/PLAN.md`, Found by use)*, with its
   web half, **The web book and README name a surface the package does not
@@ -185,6 +182,12 @@ a person saw it work.
   repository, a deliberately broken tree, a `v*` tag) and says what does not
   count as proof. **Related:** it is filed here rather than in section 4 because
   the milestone's *code* is done; what is left is somebody watching it fail.
+
+- ⬜ **The npm half of a release has never run before the tag that publishes
+  it** *(root `PLAN.md`, Found by use)*. The split is in the tree: `build-web`
+  builds and packs the web package with no event guard. What is left is a dry
+  run on a pushed `main`, watched through `build-web` — the first time the
+  wasm-vendor composite runs on Actions.
 
 
 ## 4. Milestones left hanging
