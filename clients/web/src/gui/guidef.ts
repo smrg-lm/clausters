@@ -1253,18 +1253,20 @@ export function signal(
         /** The same prop under its older name. */
         measure?: string;
         /**
-         * **Inside a `clip`**, and only there: where on the clip's own time
-         * this body sits (`at`) and how much of it it covers (`dur`). A clip
-         * holding three segments of three files holds three takes, each over
-         * its own third. A body that names neither fills the clip.
+         * **Placed inside a container that measures time**: where on that
+         * container's own axis this body sits (`at`) and how much of it it
+         * covers (`dur`), which is what makes it a **layer** of it rather than
+         * a view filling it. A body that names neither fills what holds it,
+         * and that is the ordinary one.
          */
         at?: number;
         dur?: number;
         /**
-         * **Inside a `clip`**: this body's own window onto its buffer -- the
-         * source frame it reads from, and whether that window wraps. A body
-         * that names neither reads through the clip's own window, which is
-         * every take written as a clip prop.
+         * **This body's own window onto its samples**: the source frame it
+         * reads from, and whether that window wraps past their end. A body
+         * that names neither reads through the window its container states, so
+         * the two are stated once where every layer of a placement reads the
+         * same stretch.
          */
         start?: number;
         loop?: boolean;
@@ -2543,8 +2545,9 @@ export function bpf(
 
 /**
  * The editor-grade `pianoroll`: a keyboard gutter, a note grid, a velocity
- * lane and an OSC lane -- the timeline sibling of the compact `clip`
- * roll, drawing the same notes with editing, rulers and navigation.
+ * lane and an OSC lane -- the timeline sibling of the compact roll a
+ * `multitrack` draws inside a box, drawing the same notes with editing,
+ * rulers and navigation.
  *
  * `notes` are `[start, dur, pitch]` or `[start, dur, pitch, velocity,
  * channel]` MIDI notes (times in timeline samples, pitch drawn over

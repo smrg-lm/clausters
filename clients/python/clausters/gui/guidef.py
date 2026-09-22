@@ -955,13 +955,13 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
     ``axes`` is the axis pair the rulers, the navigation window, the selection,
     the playhead and the value range belong to (see the module docstring).
 
-    **Inside a `clip`** four more mean something, and only there: ``at`` and
-    ``dur`` place this body on a **stretch** of the clip's own time (a clip
-    holding three segments of three files holds three takes, each over its own
-    third), and ``start``/``loop`` are that body's own **window** onto its
-    samples -- the frame it reads from, and whether it wraps. A body that names
-    none of them fills the clip and reads through the clip's own window, which
-    is every take written as a clip prop.
+    **Placed inside a container that measures time**, four more mean
+    something: ``at`` and ``dur`` put this body on a **stretch** of that
+    container's own axis, which is what makes it a **layer** of it rather than
+    a view filling it, and ``start``/``loop`` are that body's own **window**
+    onto its samples -- the frame it reads from, and whether it wraps past
+    their end. A body that names none of them fills what holds it and reads
+    through the window its container states, which is the ordinary one.
     """
     extra = _drop_none(view=view, data=_samples_arg(data),
                        blob=blob, buffer=buffer, path=path, cache=cache,
@@ -2559,7 +2559,7 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
               color: str | None = None, markers=None, axes: dict | None = None, id: int | None = None, **props) -> View:
     """The dedicated editor-grade ``pianoroll`` view: a piano keyboard gutter, a
     note grid, an optional velocity lane and an OSC lane -- the timeline
-    sibling of the compact `clip` piano-roll body, drawing the **same notes** with
+    sibling of the compact roll a `multitrack` draws inside a box, drawing the **same notes** with
     the same geometry (they share the host's ``pianoroll`` primitives), plus
     editing, rulers and navigation.
 

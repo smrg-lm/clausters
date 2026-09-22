@@ -847,6 +847,7 @@ interface Plan {
                 span: number;
                 start: number;
                 looping: boolean;
+                rate: number;
             }[];
             curves: { id: number; port: string; at: number; step: number; table: number[] }[];
         }[];

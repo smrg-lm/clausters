@@ -7469,7 +7469,7 @@ finished work, where a pending item reads as done.
   assigned is not a floor, and the protocol test moved onto the path an editor
   takes.
 
-- ⬜ **A `signal`'s docstring describes it "inside a `clip`", and there is no
+- ✅ **A `signal`'s docstring describes it "inside a `clip`", and there is no
   clip container any more** *(found 2026-09-21, fixing the books' references to
   the builders `b75a4298` removed)*. `signal` in both clients
   (`clausters/gui/guidef.py`, `src/gui/guidef.ts`) documents `at`/`dur` as a
@@ -7483,3 +7483,15 @@ finished work, where a pending item reads as done.
   or the props are surface nothing can reach from a GuiDef and go in both
   clients and the host. The `pianoroll`'s docstrings name a "compact `clip`
   roll" beside it in the same way.
+
+  **Answered and fixed 2026-09-22: the props are live and the container is the
+  one that measures time.** `widget::mod` parses `at`/`dur` off any node and
+  `host::layers::layer_input` places the child by them, inside whatever
+  container holds a time axis -- which is the layer mechanism `b75a4298` kept
+  whole on purpose ("the container it was written for is exactly what an
+  entered box brings back"). So nothing was dead; what was wrong was the
+  *name*: the four props say what a **layer of a placement** is, and the clip
+  that used to be that placement cannot be written any more. Both clients'
+  `signal` docstrings say that, and the two `pianoroll` ones -- plus the two
+  examples that echoed them -- name the compact roll a `multitrack` draws
+  inside a box instead of a "`clip` roll".

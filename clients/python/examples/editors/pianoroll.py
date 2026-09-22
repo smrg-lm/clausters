@@ -2,9 +2,9 @@
 """Draw MIDI notes (and OSC markers) in the editor-grade ``pianoroll`` and hear
 them play.
 
-The dedicated piano-roll view, the editor-grade sibling of the multitrack's
-compact `clip` roll (they share the host's note primitives, so a note is drawn
-and edited the same way in both). It contemplates the two message families a
+The dedicated piano-roll view, the editor-grade sibling of the compact roll a
+multitrack draws inside a box (they share the host's note primitives, so a note
+is drawn and edited the same way in both). It contemplates the two message families a
 sequence carries: **MIDI notes** in the grid (pitch x time, with velocity and
 channel) and **OSC items** as markers in a lane below it.
 
