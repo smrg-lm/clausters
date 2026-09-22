@@ -662,8 +662,11 @@ def _plan(ed) -> dict:
 
 
 def test_a_box_is_planned_in_frames_from_where_its_window_opens():
-    """The crossing from the multitrack to the readers: a box is placed in seconds and
-    read in frames, and a trimmed one reads on rather than restarting."""
+    """The crossing from the multitrack to the readers: a box is **placed** in
+    frames of the transport and its window **opens** at a second of its source,
+    which is the frame the buffer's own rate makes of it -- the reader crosses
+    that one with `BufSampleRate`, since the buffer is what knows the rate its
+    samples were written at. A trimmed box reads on rather than restarting."""
     ed = editor(multitrack())
     region = ed.structure.tracks[0].lanes[0].regions[1]
     region.content = window(1, start=0.5, duration=2.0)
@@ -671,7 +674,8 @@ def test_a_box_is_planned_in_frames_from_where_its_window_opens():
     assert reader["buffer"] == 7, "the buffer the source was read into"
     assert reader["at"] == pytest.approx(4.0 * SR), "a beat is a second here"
     assert reader["span"] == pytest.approx(2.0 * SR)
-    assert reader["start"] == pytest.approx(0.5 * SR), "where the window opens"
+    assert reader["start"] == pytest.approx(0.5), "where the window opens, in its seconds"
+    assert reader["rate"] == pytest.approx(1.0), "and at its own pitch"
     assert reader["looping"] is False
 
 

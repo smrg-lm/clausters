@@ -336,6 +336,30 @@ impl Interpolator {
         acc
     }
 
+    /// **What a reader produces between two samples**, which is not the same
+    /// question as [`at`](Self::at) and is deliberately a different function.
+    ///
+    /// A reader crossing a buffer at some rate lands between frames every
+    /// sample and has to answer in the time of one multiply-add, so it reads
+    /// **linearly** -- `PlayBuf` and `BufRd` both do, and so does anything else
+    /// that plays samples at a rate. [`at`](Self::at) is the *signal* those
+    /// samples are of, which takes a twelve-tap filter and is what a drawing
+    /// shows as the curve **through** them.
+    ///
+    /// Both exist, and a caller picks by what it is claiming. A picture of the
+    /// samples a resampled placement plays uses this one, because the claim is
+    /// "this is what you will hear"; the reconstruction over it stays the
+    /// signal, and where the two visibly differ that difference is the
+    /// resampling error, which is a true thing to be able to see.
+    ///
+    /// It is an associated function and not a method because no filter table
+    /// is involved: there is one linear reading and every reader makes it.
+    #[inline]
+    pub fn played(a: f32, b: f32, frac: f64) -> f32 {
+        let frac = frac.clamp(0.0, 1.0) as f32;
+        a * (1.0 - frac) + b * frac
+    }
+
     /// **The reconstructed signal over a span**, at [`factor`](Self::factor)*
     /// the sample rate.
     ///
@@ -954,6 +978,40 @@ mod tests {
                     "case {case}, channel {channel}: {got:.3} dBTP against {want} +0.2/-0.4"
                 );
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod played_tests {
+    use super::*;
+
+    /// **The ends of the interval are the samples themselves**, so a reader
+    /// crossing a buffer lands on a whole frame exactly and only interpolates
+    /// between them -- and so does a drawing of the samples it produces.
+    #[test]
+    fn a_reader_between_two_samples_lands_on_them_at_the_ends() {
+        assert_eq!(Interpolator::played(1.0, -1.0, 0.0), 1.0);
+        assert_eq!(Interpolator::played(1.0, -1.0, 1.0), -1.0);
+        assert_eq!(Interpolator::played(1.0, -1.0, 0.5), 0.0);
+        // A fraction outside the interval is clamped rather than extrapolated:
+        // past the next sample is the next sample's own business.
+        assert_eq!(Interpolator::played(1.0, -1.0, 2.0), -1.0);
+        assert_eq!(Interpolator::played(1.0, -1.0, -1.0), 1.0);
+    }
+
+    /// It is a **straight line** between the two, which is what makes it the
+    /// reader's reading and not the signal: the reconstruction of a band-limited
+    /// signal is a curve, and `oversample_into` is where that one is.
+    #[test]
+    fn a_reader_reads_the_straight_line_between_them() {
+        for k in 0..=10 {
+            let frac = f64::from(k) / 10.0;
+            let got = Interpolator::played(0.0, 10.0, frac);
+            assert!(
+                (f64::from(got) - frac * 10.0).abs() < 1e-5,
+                "at {frac}: {got}"
+            );
         }
     }
 }

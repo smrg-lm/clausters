@@ -8866,3 +8866,64 @@ not touched until now, and the shared piece is what joins them.
 
 `MIDI_ABI_VERSION` goes to **3**, following v2's precedent of bumping on an
 added surface rather than only on a changed one.
+
+## A source at another rate is resampled as it plays, and one ratio says so everywhere
+
+A multitrack is placed in **seconds** and drawn in the session's **samples**,
+while the samples behind a box are counted in the **source's own frames**. Those
+are the same number only while the source was written at the rate the session
+runs at, and until now everything assumed they always were: the reader added the
+transport's frames to the window's start, the projection crossed the window's
+start with the *view's* rate, the picture read the source frame for sample, and
+the edge a hand pulls compared a frame count against a length in session
+samples. A 44.1 kHz take in a 48 kHz session was therefore drawn **8.8% longer
+than its samples**, its edge stopped 8.8% short of them, and it played 8.8%
+sharp from the wrong frame.
+
+**The decision, the field's and the user's: nothing is converted on the way in.**
+A file keeps the rate it was written at, the buffer keeps it (`/buffer_read`
+always has, as scsynth does), and the **reader resamples as it plays** — in real
+time, or in a render, through the same nodes. That is what `PlayBuf(buf,
+BufRateScale(buf) * rate)` has always meant here, and the multitrack's own
+reader was the one player not spelling it.
+
+**One ratio, three consumers.** How many frames of its source one sample of a
+box is:
+
+- **The reader that sounds** (`clausters_core::mixer::reader_def`) crosses its
+  phase by `BufRateScale(buf) * rate` and its window's start by
+  `BufSampleRate(buf)`. Both come off the buffer, so the audio path needs
+  nothing said by a client: what travels is the region's `playrate`, the half of
+  the reading speed that is a decision rather than a fact about the samples.
+  `mixer::START` is therefore in the source's **seconds**, not in frames — a
+  plan that crossed it would need every source's rate to state a number the
+  server already has.
+- **The picture** (`SourceWindow::rate`) maps a box's local time to source
+  frames by the same ratio, so what is drawn is as long as what is played.
+- **The edge a hand pulls** (`structures::boxes::Contents::rate`) converts the
+  frames behind a box into the box's own units before it stops there.
+
+The two clients hand the ratio's other half over in the source table they
+already keep (`{buffer, channels, frames, rate}`), and the projection turns it
+into the `rates` prop — flat `box rate` pairs, a name list like `loops`, and for
+the same reason: it follows from the source and the region, so a hand cannot
+edit it and a report carrying it would hand back a number the widget was told.
+A box not named reads one frame per sample.
+
+**Zoomed to the sample, the dots are what the engine produces.** A resampled box
+reads *between* its source's frames, so drawing the source's frames where they
+fall would draw samples nothing plays. The drawing steps the placement's own
+grid instead and reads each point the way the reader does — and "the way the
+reader does" is a shared function, `resample::Interpolator::played`, which both
+`BufRd`/`PlayBuf` and the drawing call: **linear**, because a reader answers in
+one multiply-add per sample. The band-limited reconstruction stays where it was,
+as the `signal` layer drawn *through* the dots, and where the two visibly part,
+that is the resampling error — a true thing to be able to see, and the reason
+the two readings are two functions with different names rather than one anybody
+could reach for by accident.
+
+**What a join still cannot do.** Its parts must be at one rate (`a join is not a
+resampler`): a join is a new source with a rate of its own, and joining takes
+that disagree needs the samples actually converted. That is the one place where
+"resampling is an edit" still holds, and it is the only thing `Source.sample_rate`
+was ever used for before this.

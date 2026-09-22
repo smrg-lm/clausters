@@ -93,6 +93,13 @@ pub struct Box {
     /// the three answers to that question which changes what *sounds* -- so it
     /// is the multitrack's and travels with the box.
     pub looping: bool,
+    /// **How fast the box reads its source**, as a factor over the source's own
+    /// pitch: the region's `playrate`. One box second is `playrate` source
+    /// seconds, so it is half of what puts the samples on the box's axis -- the
+    /// other half is the source's own rate against the one the box is measured
+    /// in, which is a fact about the samples rather than about the box and so
+    /// is not here.
+    pub playrate: f64,
 }
 
 /// The key a client's fader is kept under in a track's opaque table.
@@ -140,7 +147,7 @@ pub fn boxes(multitrack: &Multitrack) -> Vec<Box> {
             continue;
         };
         for region in &lane.regions {
-            let (source, start, content, looping) = window_of(region);
+            let (source, start, content, looping, playrate) = window_of(region);
             out.push(Box {
                 region: region.id,
                 row: track.id,
@@ -155,6 +162,7 @@ pub fn boxes(multitrack: &Multitrack) -> Vec<Box> {
                     .unwrap_or_else(|| format!("region {}", region.id.0)),
                 muted: region.muted,
                 looping,
+                playrate,
             });
         }
     }
@@ -711,7 +719,7 @@ pub fn read_join(
     // onto samples has nothing a part could name.
     let mut spans = Vec::new();
     for (_, _, region) in &held {
-        let (Some(source), start, _, looping) = window_of(region) else {
+        let (Some(source), start, _, looping, _) = window_of(region) else {
             return Err("one of these boxes is not a window onto samples");
         };
         if looping {
@@ -1066,18 +1074,22 @@ fn rewound_content(region: &Region, box_: &Placed) -> Content {
 
 /// The samples a region is a window onto, where it opens, how much there is,
 /// and whether the window wraps.
-fn window_of(region: &Region) -> (Option<SourceId>, f64, f64, bool) {
+fn window_of(region: &Region) -> (Option<SourceId>, f64, f64, bool, f64) {
     let Content::Window {
-        window, looping, ..
+        window,
+        looping,
+        playrate,
+        ..
     } = &region.content
     else {
-        return (None, 0.0, 0.0, false);
+        return (None, 0.0, 0.0, false, 1.0);
     };
     (
         window.source.samples().map(|s| s.source),
         window.start,
         window.duration,
         *looping,
+        *playrate,
     )
 }
 

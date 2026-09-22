@@ -125,6 +125,18 @@ pub trait Buffers {
         None
     }
 
+    /// **The rate `source`'s samples were written at**, when this caller knows
+    /// -- or `None`, which means "assume the axis the box is measured on".
+    ///
+    /// A box is placed and drawn in the **view's** samples and filled with the
+    /// **source's** frames, and the two are the same number only while the two
+    /// rates are. It is asked here rather than carried on a box because it is a
+    /// fact about the samples and not about the placement: six boxes over one
+    /// 44.1 kHz take all read it at 44.1 kHz.
+    fn rate(&self, _source: SourceId) -> Option<f64> {
+        None
+    }
+
     /// **How many frames `source` holds**, when this caller knows -- or `None`.
     ///
     /// What lets a join be refused as an edit instead of applied and left
@@ -144,6 +156,9 @@ pub struct Held {
     pub buffers: HashMap<SourceId, i64>,
     /// How many frames each holds, where the table said.
     pub lengths: HashMap<SourceId, u64>,
+    /// What rate each was written at, where the table said. A source that says
+    /// none is read as one frame per sample of the view.
+    pub rates: HashMap<SourceId, f64>,
 }
 
 impl Held {
@@ -152,6 +167,7 @@ impl Held {
         Self {
             buffers: table(sources),
             lengths: lengths(sources),
+            rates: source_rates(sources),
         }
     }
 }
@@ -171,6 +187,10 @@ impl Buffers for Held {
 
     fn frames(&self, source: SourceId) -> Option<u64> {
         self.lengths.get(&source).copied()
+    }
+
+    fn rate(&self, source: SourceId) -> Option<f64> {
+        self.rates.get(&source).copied()
     }
 }
 
@@ -246,6 +266,19 @@ impl Look<'_> {
 
     fn bufnum(&self, source: Option<SourceId>) -> i64 {
         source.map_or(-1, |id| self.sources.bufnum(id))
+    }
+
+    /// **The rate a source's samples were written at**, or this view's own
+    /// where nobody says -- which makes one frame one sample, the answer for
+    /// every source recorded at the rate the session runs at.
+    pub fn source_rate(&self, source: Option<SourceId>) -> f64 {
+        let rate = source
+            .and_then(|id| self.sources.rate(id))
+            .filter(|rate| *rate > 0.0)
+            .unwrap_or(self.rate);
+        // The same floor every crossing here takes: a rate of zero is no axis
+        // at all, and frames and seconds are then the same number.
+        if rate > 0.0 { rate } else { 1.0 }
     }
 }
 
@@ -325,6 +358,40 @@ pub fn segments(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
     out
 }
 
+/// **How many frames of a box's source one sample of the box is**: the source's
+/// own rate against the axis the box is measured on, times the box's playrate.
+///
+/// One number, because the picture, the edge a hand pulls and the reader that
+/// sounds all ask the same question and any two of them answering it apart is
+/// how a box comes to be drawn a different length than its samples. The
+/// reader's half is `BufRateScale(buf) * rate` off the buffer itself
+/// (`clausters_core::mixer`); this is the same product for everyone who has to
+/// say it in the view's samples.
+pub fn box_rate(box_: &picture::Box, look: &Look<'_>) -> f64 {
+    let axis = if look.rate > 0.0 { look.rate } else { 1.0 };
+    let rate = look.source_rate(box_.source) * box_.playrate / axis;
+    if rate > 0.0 { rate } else { 1.0 }
+}
+
+/// The boxes whose samples are **not** one frame per sample, as flat
+/// `name rate` pairs: how many frames of its source one sample of that box is.
+///
+/// A name list like `loops` rather than a field of the septuple, and for the
+/// same two reasons: the septuple is a fixed width every reader chunks by, and
+/// this is not a fact a hand can edit -- it follows from the source's rate and
+/// the box's playrate. A box not named here reads one frame per sample, which
+/// is every box of a session recorded at its own rate.
+pub fn rates(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
+    let mut out = Vec::new();
+    for box_ in picture::boxes(multitrack) {
+        let rate = box_rate(&box_, look);
+        if (rate - 1.0).abs() > f64::EPSILON {
+            out.extend([json!(box_.region.0.to_string()), json!(rate)]);
+        }
+    }
+    out
+}
+
 pub fn clips(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
     let mut out = Vec::new();
     for box_ in picture::boxes(multitrack) {
@@ -333,7 +400,10 @@ pub fn clips(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
             json!(box_.row.0.to_string()),
             json!(look.frame_at(box_.position.0)),
             json!(look.frames_over(box_.position.0, box_.length.0)),
-            json!(box_.start * look.rate),
+            // The window's start is a **second of the source**, so it crosses
+            // to a frame at the source's own rate -- the same crossing the
+            // reader makes with `BufSampleRate`, and not the view's.
+            json!(box_.start * look.source_rate(box_.source)),
             json!(box_.label),
             json!(look.bufnum(box_.source)),
         ]);
@@ -508,6 +578,7 @@ pub fn props(multitrack: &Multitrack, look: &Look<'_>) -> Map<String, Value> {
     out.insert("points".into(), Value::Array(points(multitrack, look)));
     out.insert("hidden".into(), json!(hidden(multitrack)));
     out.insert("loops".into(), json!(loops(multitrack)));
+    out.insert("rates".into(), Value::Array(rates(multitrack, look)));
     out.insert("segments".into(), Value::Array(segments(multitrack, look)));
     out
 }
@@ -573,7 +644,12 @@ fn placed(values: &[Value], look: &Look<'_>) -> Vec<picture::Placed> {
             row: NodeId(row),
             position: Second(position),
             length: Second(length),
-            start: look.secs_at(number(&group[4])),
+            // A box's start comes back as a **frame of its source**, so it
+            // crosses back at that source's own rate and not at the view's.
+            start: {
+                let source = look.sources.source(number(&group[6]) as i64);
+                number(&group[4]) / look.source_rate(source)
+            },
             // How much a **new** box shows: the stretch it occupies.
             content: length,
             source: look.sources.source(number(&group[6]) as i64),
@@ -722,10 +798,11 @@ pub fn reading(multitrack: &Multitrack, tag: &str, values: &[Value], look: &Look
             &placed(values, look),
             picture::fresh_id(multitrack),
             &|source| {
+                let rate = look.source_rate(Some(source));
                 look.sources
                     .frames(source)
-                    .filter(|_| look.rate > 0.0)
-                    .map(|frames| frames as f64 / look.rate)
+                    .filter(|_| rate > 0.0)
+                    .map(|frames| frames as f64 / rate)
             },
         )),
         "lanes" => Reading::of(picture::read_rows(multitrack, &strips(values))),
@@ -818,6 +895,24 @@ pub fn intake_value(
     intake(&multitrack, tag, values, &look)
 }
 
+/// **What rate each source's samples were written at**, off the same table
+/// [`table`] reads: an entry's `rate`, where it states a positive one. A source
+/// that states none is read at the view's own rate, which is one frame per
+/// sample.
+pub fn source_rates(sources: &Value) -> HashMap<SourceId, f64> {
+    let Some(entries) = sources.as_object() else {
+        return HashMap::new();
+    };
+    entries
+        .iter()
+        .filter_map(|(id, entry)| {
+            let id = id.parse::<u64>().ok()?;
+            let rate = entry.get("rate")?.as_f64().filter(|r| *r > 0.0)?;
+            Some((SourceId(id), rate))
+        })
+        .collect()
+}
+
 /// **How many frames each source holds**, off the same table [`table`] reads:
 /// an entry's `frames`, where it states a positive one. A zero is what a
 /// client writes for a length it does not know, so it is left out rather than
@@ -880,6 +975,99 @@ mod tests {
         let mut multitrack = Multitrack::default();
         multitrack.tracks.push(track);
         multitrack
+    }
+
+    /// **A box over a source written at another rate says so, and its window
+    /// is in that source's frames.** The multitrack's axis is the session's
+    /// samples and the samples behind a box are its source's frames, and the
+    /// two are the same number only while the rates are: a 44.1 kHz take on a
+    /// 48 kHz session is `0.91875` frames of source per sample of box. The
+    /// picture, the edge a hand pulls and the reader that sounds all cross by
+    /// that one number.
+    #[test]
+    fn a_source_written_at_another_rate_states_its_own() {
+        let source = SourceId(7);
+        let mut multitrack = multitrack();
+        let region = &mut multitrack.tracks[0].lanes[0].regions[0];
+        region.content = Content::Window {
+            window: SegmentRef {
+                source: SegmentSource::Samples(SourceRef {
+                    source,
+                    lifetime: Lifetime::Session,
+                    generation: 0,
+                    range: None,
+                }),
+                // Half a second into the take, in the take's own seconds.
+                start: 0.5,
+                duration: 4.0,
+            },
+            playrate: 1.0,
+            args: Opaque::none(),
+            looping: false,
+        };
+        let held = Held {
+            buffers: HashMap::from([(source, 0)]),
+            lengths: HashMap::from([(source, 44_100)]),
+            rates: HashMap::from([(source, 44_100.0)]),
+        };
+        let look = Look {
+            rate: 48_000.0,
+            sources: &held,
+        };
+
+        let rates = rates(&multitrack, &look);
+        assert_eq!(rates[0], json!("3"), "the box it is about");
+        assert!(
+            (rates[1].as_f64().expect("a number") - 0.91875).abs() < 1e-12,
+            "44100 frames of source per 48000 samples of box: {:?}",
+            rates[1]
+        );
+
+        // And its window's start is a frame of **that** take: half a second in
+        // is 22050 frames, not the 24000 the session's rate would have said.
+        let clips = clips(&multitrack, &look);
+        assert_eq!(clips[4], json!(22_050.0));
+
+        // The way back is the same crossing, so what the hand did not move
+        // comes back where it was.
+        let read = placed(&clips, &look);
+        assert!((read[0].start - 0.5).abs() < 1e-12, "{:?}", read[0].start);
+    }
+
+    /// A box over a source at the session's own rate states nothing: one frame
+    /// per sample is what `rates` leaving it out means, and every session
+    /// recorded at its own rate is that case.
+    #[test]
+    fn a_source_at_the_sessions_own_rate_is_not_named() {
+        let source = SourceId(7);
+        let mut multitrack = multitrack();
+        let region = &mut multitrack.tracks[0].lanes[0].regions[0];
+        region.content = Content::Window {
+            window: SegmentRef {
+                source: SegmentSource::Samples(SourceRef {
+                    source,
+                    lifetime: Lifetime::Session,
+                    generation: 0,
+                    range: None,
+                }),
+                start: 0.5,
+                duration: 4.0,
+            },
+            playrate: 1.0,
+            args: Opaque::none(),
+            looping: false,
+        };
+        let held = Held {
+            buffers: HashMap::from([(source, 0)]),
+            lengths: HashMap::from([(source, 48_000)]),
+            rates: HashMap::from([(source, 48_000.0)]),
+        };
+        let look = Look {
+            rate: 48_000.0,
+            sources: &held,
+        };
+        assert!(rates(&multitrack, &look).is_empty());
+        assert_eq!(clips(&multitrack, &look)[4], json!(24_000.0));
     }
 
     /// A curve with one point at the origin and one `at` seconds along.
@@ -1417,6 +1605,7 @@ mod tests {
         let held = Held {
             buffers: HashMap::new(),
             lengths: HashMap::from([(source, 96_000)]),
+            rates: HashMap::new(),
         };
         let known = Look {
             rate: 48_000.0,

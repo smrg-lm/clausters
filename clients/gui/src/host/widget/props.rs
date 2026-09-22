@@ -1320,6 +1320,21 @@ pub struct SourceWindow {
     /// read frame for sample -- the picture a time stretch would produce,
     /// which nothing here produces yet. Off by default: an edge drag is a trim.
     pub fit: bool,
+    /// **How many frames of the source one unit of the placement's time is.**
+    ///
+    /// One, for every source whose samples were written at the rate the
+    /// placement is measured in -- which is why it is a ratio and not two
+    /// rates: the drawing never needs to know either one. A 44.1 kHz take
+    /// placed on a 48 kHz axis reads `0.91875`, and a box whose region asks to
+    /// be played at double speed reads twice whatever that is. It is the same
+    /// product the reader that sounds crosses its phase by
+    /// (`clausters_core::mixer`, `BufRateScale(buf) * rate`), so the picture
+    /// and the sound follow one number.
+    ///
+    /// Not to be confused with [`fit`](Self::fit), which is not a ratio at all:
+    /// a fitted window scales the *whole* source into the span however long
+    /// either is.
+    pub rate: f64,
 }
 
 impl Default for SourceWindow {
@@ -1328,6 +1343,7 @@ impl Default for SourceWindow {
             start: 0.0,
             looping: false,
             fit: false,
+            rate: 1.0,
         }
     }
 }
@@ -1338,7 +1354,7 @@ impl SourceWindow {
     /// the difference between a body that reads its own segment and one that is
     /// drawn through the clip's.
     pub(crate) fn declared(props: &serde_json::Map<String, Value>) -> Option<Self> {
-        ["start", "loop", "fit"]
+        ["start", "loop", "fit", "rate"]
             .iter()
             .any(|k| props.contains_key(*k))
             .then(|| Self::parse(props))
@@ -1350,6 +1366,7 @@ impl SourceWindow {
             start: number_f64(props, "start", 0.0),
             looping: props.get("loop").and_then(truthy).unwrap_or(false),
             fit: props.get("fit").and_then(truthy).unwrap_or(false),
+            rate: number_f64(props, "rate", 1.0),
         }
     }
 
@@ -1367,7 +1384,7 @@ impl SourceWindow {
         if self.fit {
             return (dur > 0.0).then(|| (t / dur * total).clamp(0.0, total));
         }
-        let s = self.start + t;
+        let s = self.start + t * self.frames_per_unit();
         if self.looping {
             return Some(s.rem_euclid(total));
         }
@@ -1381,8 +1398,16 @@ impl SourceWindow {
         match self.fit {
             true if total > 0.0 => source / total * dur,
             true => 0.0,
-            false => source - self.start,
+            false => (source - self.start) / self.frames_per_unit(),
         }
+    }
+
+    /// [`rate`](Self::rate), never zero or negative: a window that states one
+    /// reads its samples backwards or not at all, and neither is a picture. A
+    /// bad number is one frame per unit, which is what a window that states
+    /// nothing means.
+    pub fn frames_per_unit(&self) -> f64 {
+        if self.rate > 0.0 { self.rate } else { 1.0 }
     }
 
     /// The **runs** a placement's `[from, to]` local span breaks into, each one
@@ -1403,12 +1428,13 @@ impl SourceWindow {
         if self.fit {
             return vec![(from, to, self.source_at(from, dur, total).unwrap_or(0.0))];
         }
+        let rate = self.frames_per_unit();
         if !self.looping {
             // The part of the window that is on the samples, and nothing else.
-            let lo = from.max(-self.start);
-            let hi = to.min(total - self.start);
+            let lo = from.max(-self.start / rate);
+            let hi = to.min((total - self.start) / rate);
             return if hi > lo {
-                vec![(lo, hi, self.start + lo)]
+                vec![(lo, hi, self.start + lo * rate)]
             } else {
                 Vec::new()
             };
@@ -1419,8 +1445,8 @@ impl SourceWindow {
         // count is bounded by the pixels the caller will draw it into, since a
         // run thinner than a pixel is still one run.
         while t < to && runs.len() < MAX_LOOP_RUNS {
-            let source = (self.start + t).rem_euclid(total);
-            let end = (t + (total - source)).min(to);
+            let source = (self.start + t * rate).rem_euclid(total);
+            let end = (t + (total - source) / rate).min(to);
             runs.push((t, end, source));
             t = end;
         }
@@ -1472,6 +1498,7 @@ mod window_tests {
             start: -100.0,
             looping: true,
             fit: false,
+            rate: 1.0,
         };
         assert_eq!(w.source_at(0.0, 400.0, 1000.0), Some(900.0));
         assert_eq!(w.source_at(100.0, 400.0, 1000.0), Some(0.0));
@@ -1508,6 +1535,7 @@ mod window_tests {
             start: 900.0,
             looping: true,
             fit: false,
+            rate: 1.0,
         };
         assert_eq!(
             looped.runs(0.0, 2100.0, 2100.0, 1000.0),

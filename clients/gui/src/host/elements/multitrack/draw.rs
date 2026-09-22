@@ -61,11 +61,15 @@ impl Multitrack {
     /// box's frame stands under it until it does.
     fn draw_spans(&self, d: &mut Draw, cr: Rect, local: &View, clip: &Clip, spans: &[Span]) {
         let (shown_from, shown_to) = (local.start, local.start + local.len);
+        // The spans are counted in the join's frames and the box in its own
+        // samples, so every crossing between the two goes through the box's
+        // rate -- one, for a join at the rate this multitrack measures in.
+        let rate = self.rate_of(&clip.name);
         let mut at = 0.0;
         for span in spans {
             // The span's stretch of the box, in the box's own time.
-            let from = at - clip.place.start;
-            let to = from + span.frames;
+            let from = (at - clip.place.start) / rate;
+            let to = from + span.frames / rate;
             at += span.frames;
             let lo = from.max(shown_from).max(0.0);
             let hi = to.min(shown_to).min(clip.place.dur);
@@ -85,7 +89,8 @@ impl Multitrack {
                 clip.place.dur,
             )
             .with_window(SourceWindow {
-                start: span.start - from,
+                start: span.start - from * rate,
+                rate,
                 ..SourceWindow::default()
             });
             take.draw_body(d, rect, &space);
@@ -259,6 +264,10 @@ impl Multitrack {
             // onto something nobody loaded.
             let space = TimeSpace::of(local, clip.place.dur).with_window(SourceWindow {
                 start: clip.place.start,
+                // Frames of the source per sample of the box: one, unless the
+                // multitrack said this box's source was written at another rate
+                // or that it plays at another speed.
+                rate: self.rate_of(&clip.name),
                 // A box longer than its samples **wraps** where the multitrack says
                 // it loops, and shows nothing past their end where it does not:
                 // the picture is what the box reads, and it reads this.

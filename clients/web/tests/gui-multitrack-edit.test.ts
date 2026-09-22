@@ -865,8 +865,12 @@ function plan(ed: MultitrackEditor): Plan {
 }
 
 test("a box is planned in frames from where its window opens", () => {
-    // The crossing from the multitrack to the readers: a box is placed in seconds and
-    // read in frames, and a trimmed one reads on rather than restarting.
+    // The crossing from the multitrack to the readers: a box is **placed** in
+    // frames of the transport and its window **opens** at a second of its
+    // source, which is the frame the buffer's own rate makes of it -- the
+    // reader crosses that one with `BufSampleRate`, since the buffer is what
+    // knows the rate its samples were written at. A trimmed box reads on
+    // rather than restarting.
     const ed = editor(multitrack());
     const region = ed.structure.tracks[0].lanes[0].regions[1];
     region.content = window(1, 0.5, 2.0);
@@ -874,7 +878,8 @@ test("a box is planned in frames from where its window opens", () => {
     assert.equal(reader.buffer, 7, "the buffer the source was read into");
     near(reader.at, 4.0 * SR);            // a beat is a second here
     near(reader.span, 2.0 * SR);
-    near(reader.start, 0.5 * SR);         // where the window opens
+    near(reader.start, 0.5);              // where the window opens, in its seconds
+    near(reader.rate, 1.0);               // and at its own pitch
     assert.equal(reader.looping, false);
 });
 

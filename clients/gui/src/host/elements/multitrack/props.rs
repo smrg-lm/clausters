@@ -65,6 +65,7 @@ pub(super) fn from_props(props: &Map<String, Value>) -> Multitrack {
         layer: props.get("layer").and_then(Value::as_str).and_then(named),
         hidden: parse_hidden(props),
         loops: parse_names(props, "loops"),
+        rates: parse_rates(props),
         segments: parse_segments(props),
         meters: parse_meters(props),
         zoom: HashMap::new(),
@@ -312,6 +313,29 @@ pub(super) fn parse_segments(props: &Map<String, Value>) -> HashMap<String, Vec<
     out
 }
 
+/// The `rates` prop: the flat `box rate` pairs -- how many frames of its source
+/// one sample of that box is.
+///
+/// A box not named reads one frame per sample, which is every box over a source
+/// written at the rate the multitrack is measured in. A rate that is zero or
+/// negative is dropped rather than read: it would draw the samples backwards or
+/// not at all, and a box whose rate nobody stated is the ordinary box.
+pub(super) fn parse_rates(props: &Map<String, Value>) -> HashMap<String, f64> {
+    let Some(Value::Array(items)) = props.get("rates") else {
+        return HashMap::new();
+    };
+    let mut out = HashMap::new();
+    for pair in items.as_chunks::<2>().0 {
+        let (Some(name), Some(rate)) = (pair[0].as_str(), pair[1].as_f64()) else {
+            continue;
+        };
+        if rate > 0.0 {
+            out.insert(name.to_string(), rate);
+        }
+    }
+    out
+}
+
 /// A name set as a `/gui_set` value: the same space-separated list the prop
 /// takes.
 pub(super) fn names_of(v: &Value) -> Vec<String> {
@@ -499,6 +523,10 @@ impl Multitrack {
             }
             "loops" => {
                 self.loops = names_of(v);
+                true
+            }
+            "rates" => {
+                self.rates = parse_rates(&parse::as_array_props("rates", v));
                 true
             }
             // **The spans a join is drawn from**, replaced whole like every

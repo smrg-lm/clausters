@@ -75,8 +75,25 @@ pub const MUTE: &str = "mute";
 pub const AT: &str = "at";
 /// How long a box lasts, in frames.
 pub const SPAN: &str = "span";
-/// The first frame of the source a box reads.
+/// The **second of the source** a box's own zero reads.
+///
+/// Seconds and not frames, because the frame it lands on is the *buffer's*
+/// question and the buffer is what knows its own sample rate: the reader
+/// crosses it with `BufSampleRate`, the way it crosses the playing speed with
+/// `BufRateScale`. A caller that converted here would need a table of every
+/// source's rate to hand a number the server can already work out.
 pub const START: &str = "start";
+/// **How fast a box reads its source**, as a factor over playing it at its own
+/// pitch: `1` is the recording as it was made, `2` an octave up and half as
+/// long. The region's `playrate`, and nothing else.
+///
+/// It is a factor and not the reading speed itself because the reading speed is
+/// two things multiplied and only one of them is anybody's decision. The other
+/// is the source's own rate against the engine's (`BufRateScale`), which the
+/// reader reads off the buffer -- so a 44.1 kHz take in a 48 kHz session plays
+/// at its true pitch with nothing said, which is what `PlayBuf` has always
+/// meant by `BufRateScale(buf) * rate`.
+pub const RATE: &str = "rate";
 /// The buffer a box reads.
 ///
 /// **Not initial-rate**, deliberately: `BufRd` looks the buffer up once a
@@ -220,6 +237,18 @@ fn lagged(name: &str, default: f32) -> Value {
 /// The window is a gate rather than a schedule for the same reason: `at` and
 /// `span` are read every block, so an edit while it sounds lands on the next
 /// block and nothing has to be re-armed.
+///
+/// # The transport is in engine samples and the buffer is in its own frames
+///
+/// The two are the same number only while the source was recorded at the rate
+/// the engine runs at, and a reader that added them together said they always
+/// were: a 44.1 kHz take in a 48 kHz session played 8.8% sharp, and its window
+/// began at the wrong frame by the same ratio. So the phase is crossed rather
+/// than added -- `BufRateScale(buf)` frames of source per engine sample, times
+/// [`RATE`], and [`START`] crossed by `BufSampleRate(buf)`. Both come off the
+/// buffer itself, which is the one thing that knows what rate its samples were
+/// written at; it is `PlayBuf(buf, BufRateScale(buf) * rate)` spelled inside
+/// the def that plays a box, and it needs nothing said by a client.
 pub fn reader_def() -> Value {
     json!({
         "name": reader_name(),
@@ -231,24 +260,35 @@ pub fn reader_def() -> Value {
             control(SPAN, 0.0),
             control(START, 0.0),
             control(LOOP, 0.0),
+            control(RATE, 1.0),
             lagged(GAIN, 1.0),
         ],
         "ugens": [
-            // 0: frames since this box began; negative before it starts.
+            // 0: engine samples since this box began; negative before it starts.
             {"kind": "TransportPos", "inputs": [{"control": 3}]},
-            // 1..3: inside the window?
+            // 1..3: inside the window? The gate is the transport's, so it is
+            // asked in the transport's own samples and no rate reaches it.
             {"kind": "BinaryOpUGen", "op": "ge", "inputs": [{"ugen": 0}, {"const": 0.0}]},
             {"kind": "BinaryOpUGen", "op": "lt", "inputs": [{"ugen": 0}, {"control": 4}]},
             {"kind": "Mul", "inputs": [{"ugen": 1}, {"ugen": 2}]},
-            // 4..5: the frame of the source that is, read interpolated.
-            {"kind": "Add", "inputs": [{"ugen": 0}, {"control": 5}]},
+            // 4..6: frames of the source per engine sample -- the buffer's own
+            // rate against the engine's, times the box's playrate -- and the
+            // frames that many make since the box began.
+            {"kind": "BufRateScale", "inputs": [{"control": 1}]},
+            {"kind": "Mul", "inputs": [{"ugen": 4}, {"control": 7}]},
+            {"kind": "Mul", "inputs": [{"ugen": 0}, {"ugen": 5}]},
+            // 7..9: the window's own start, a second of the source crossed by
+            // the buffer's rate, and the frame that is, read interpolated.
+            {"kind": "BufSampleRate", "inputs": [{"control": 1}]},
+            {"kind": "Mul", "inputs": [{"ugen": 7}, {"control": 5}]},
+            {"kind": "Add", "inputs": [{"ugen": 6}, {"ugen": 8}]},
             {"kind": "BufRd", "inputs": [
-                {"control": 1}, {"control": 2}, {"ugen": 4}, {"control": 6}
+                {"control": 1}, {"control": 2}, {"ugen": 9}, {"control": 6}
             ]},
-            // 6..8: gated, levelled, out.
-            {"kind": "Mul", "inputs": [{"ugen": 5}, {"ugen": 3}]},
-            {"kind": "Mul", "inputs": [{"ugen": 6}, {"control": 7}]},
-            {"kind": "Out", "inputs": [{"control": 0}, {"ugen": 7}]}
+            // 11..13: gated, levelled, out.
+            {"kind": "Mul", "inputs": [{"ugen": 10}, {"ugen": 3}]},
+            {"kind": "Mul", "inputs": [{"ugen": 11}, {"control": 8}]},
+            {"kind": "Out", "inputs": [{"control": 0}, {"ugen": 12}]}
         ]
     })
 }

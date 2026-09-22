@@ -352,6 +352,7 @@
         1.0,
         0.0
       ],
+      "rates": [],
       "segments": []
     }
   },
@@ -503,6 +504,7 @@
         1.0,
         0.0
       ],
+      "rates": [],
       "segments": []
     }
   },
@@ -670,6 +672,7 @@
         1.0,
         0.0
       ],
+      "rates": [],
       "segments": []
     }
   },
@@ -2603,6 +2606,7 @@
                   "meters": [],
                   "playhead_at": 0.0,
                   "points": [],
+                  "rates": [],
                   "ruler": "beats",
                   "sample_rate": 48000.0,
                   "segments": [],
@@ -2968,6 +2972,7 @@
                   "meters": [],
                   "playhead_at": 0.0,
                   "points": [],
+                  "rates": [],
                   "ruler": "beats",
                   "sample_rate": 48000.0,
                   "segments": [],
@@ -3106,6 +3111,7 @@
                   "meters": [],
                   "playhead_at": 0.0,
                   "points": [],
+                  "rates": [],
                   "ruler": "beats",
                   "sample_rate": 48000.0,
                   "segments": [],

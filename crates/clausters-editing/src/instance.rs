@@ -775,6 +775,7 @@ impl Instance {
                 ("loop", f64::from(u8::from(reader.looping))),
                 ("span", reader.span),
                 ("start", reader.start),
+                ("rate", reader.rate),
             ]
             .into_iter()
             .map(|(port, value)| (port.to_string(), Port::Number(value)))

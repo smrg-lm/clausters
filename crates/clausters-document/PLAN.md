@@ -1729,15 +1729,46 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
 
 - ✅ **Boxes that met on a sample stopped meeting once the multitrack was in seconds** *(found 2026-09-17 by the user, the day it landed: a snap that sometimes missed, a join refused, and in the editor example)*. The projection crossed a length on its own (`dur / rate`) and an end as `(at + dur) / rate`, which differ in the last bit for most sample counts, so a box's end and the next box's start stopped being equal and `read_join` -- comparing seconds against `f64::EPSILON` -- saw a gap. Beats had hidden it by computing a length as the difference of two converted positions. **Fixed** by one rule for every crossing, in the core (`tempoclock::secs_to_samples_over`/`samples_to_secs_over`): a position lands on a whole sample and a length is the difference of its two ends; a join asks where boxes meet in samples at the view's rate. The host also reported positions as `f32`, which holds a whole sample only up to 2^24 (under six minutes at 48 kHz); the `clips` and `points` reports are doubles now. Held by `halves_placed_at_any_sample_draw_back_there_and_join` and the core's `a_span_crosses_as_the_difference_of_its_ends`.
 
-- ⬜ **A box drawn a different length than its samples** *(reported 2026-09-17 by the user, with a screenshot, in the same message as the entry above: "la visual de las muestras no coincide con la longitud de la caja de los clips como antes")*. In `clients/python/examples/editors/edit_multitrack.py`, the box's picture and its span no longer agree. Not reproduced: the gestures that led there are not known yet, and nothing in the crossing fix above explains a difference that large.
+- ✅ **A box drawn a different length than its samples** *(reported 2026-09-17 by the user, with a screenshot, in the same message as the entry above: "la visual de las muestras no coincide con la longitud de la caja de los clips como antes")*. In `clients/python/examples/editors/edit_multitrack.py`, the box's picture and its span no longer agree. Not reproduced: the gestures that led there are not known yet, and nothing in the crossing fix above explains a difference that large.
 
-  **Probably the join defect, not confirmed** *(2026-09-21)*.
-  `clients/gui/PLAN.md`, "A box can be stretched past the samples it has", was
-  a join whose edges were bounded by nothing: after such a stretch the box is
-  longer than the spans it draws, which is this picture, and the example's
-  session has a join. Whether this report was that is for the next by-eye pass
-  over `editors/edit_multitrack` to say; if a box over a single take still
-  disagrees with its samples, this entry is something else.
+  **Gone, confirmed by the user 2026-09-22; read the path before closing it.**
+  The whole path, since it is spread over four places and this entry is what
+  names them: a box's rectangle is `graphics/track.rs` -- `clip_x_range` puts
+  `offset`/`dur` through the navigation window, `clip_rect` is the rectangle,
+  `clip_local_view` is the slice of `[0, dur]` the rectangle shows, and
+  `clip_ends_on_screen`/`clip_grips` are the two grips, which the renderer and
+  the hit test both call so that the strip that lights up is the strip that
+  resizes. Its **contents** are `elements/multitrack/draw.rs::paint`, which
+  hands the body the box's own axis (`TimeSpace::of(local, dur)`) and its window
+  onto the source (`SourceWindow { start, looping, fit: false }`), or
+  `draw_spans` for a join. And the **stretch** is `structures/boxes.rs::drag`,
+  one function for every box with a time axis -- a multitrack's boxes and a
+  roll's notes alike -- whose rules are: the end edge moves only the duration,
+  the start edge trims by carrying `start` with it, a drag never leaves less
+  than `MIN_DUR` (one sample, a length in the axis' units and never a count of
+  pixels), never passes `Bounds::limit` (the far edge of the domain), and never
+  passes `Contents::total` unless the box loops. `fit: false` is the sentence
+  the drawing and the drag agree on: **an edge drag is a trim**, the samples are
+  read frame for sample, and nothing here stretches material.
+
+  **So the picture and the box can only agree while one sample of the box is
+  one frame of the source**, and the two candidates for this report are both
+  breaks of that. The **join's edge**: a join's own buffer is not fetched, so
+  `contents_of` answered no length and `drag` bounded its edge by nothing until
+  2026-09-21 (`clients/gui/PLAN.md`, "A box can be stretched past the samples it
+  has") -- a join pulled out is drawn exactly as long as it is and reads the
+  spans it has, which is this picture. The **report's numbers**: `json_arg` sent
+  a box's placement back as `f32`, exact for whole samples only up to 2^24 of
+  them (under six minutes at 48 kHz), which was harmless while a placement on
+  the wire was a count of beats and stopped being so the day it became a count
+  of samples; they are doubles since the crossing fix above, which landed the
+  same day this was reported and said it explained nothing. Which of the two it
+  was is not established, and the entry closes on the picture agreeing rather
+  than on a cause.
+
+  **What the reading turned up is the entry below** -- the rate a box is
+  measured in is the view's and the frames behind it are the source's, and
+  nothing converts between them.
 
 - ✅ **A join is a flat list of segments, and a segment never names a join** *(decided 2026-09-13 by the user, after joins of joins nested past the server's four levels -- `clients/gui/PLAN.md`, "Found by use")*. The model, in the user's words: a segment is a read-only two-dimensional pointer into a buffer or a file, `{ source, start, length }`, and a join makes a new object that is a list of those; no recursion. So a `Location::Segments` part names a **take**, never another source that is itself segments. `picture::read_join` holds that by construction: a box over a join reads through to the join's parts, cut to what the box shows (`segments_of`), and a part that states no range, or a span past the end of the join, is refused rather than joined around. What a caller has to know for it is the segments of the joins it holds (`Buffers::parts`); the multitrack editor learns them from the joins it mints, since a join is never edited. A session saved before this may still hold a join over a join, which is read one level through and not repaired.
 
@@ -1942,3 +1973,65 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   What it actually needs is the piece's **time map** (`clausters_core::tempomap::TempoMap`, which shipped 2026-08-31 with the client fix): the beat→second function, the integral of `1/tempo`. Both clients bind it, the clock holds one, and `Node::end` would take one instead of a scalar. That crosses the FFI, which is the same decision as the one below.
 
   **And the decision this waits on**: a piece with a tempo curve has nowhere to store it. The document carries no tempo field and `to_session` writes none, so a map lives only on the clock and is lost on save. The question is whether a tempo map is **notation** — part of the piece, saved with it, read by whatever plays it — or **execution**, which the clock builds and a save drops. The type is the same either way; what the answer settles is who constructs it and whether the format grows a field. Reading it against `O14` (what a leaf's config is *of*) is the natural place, since both are about what the document claims to carry.
+
+- ✅ **A box is measured in the view's samples and filled with the source's
+  frames, and nothing converts between them** *(found 2026-09-22, reading the
+  drawing and drag path for the entry above)*. A box's `offset`, `dur` and
+  `start` reach the host as samples at the **view's** rate (`clips` crosses each
+  through `look.frame_at`, and `start` through `box_.start * look.rate`), while
+  what bounds and fills it is counted in the **source's** frames: the host's
+  `contents_of` answers the take's frame count, and the body is drawn frame for
+  sample (`fit: false`). The two agree only when the source's samples were
+  recorded at the rate the view measures in, and nothing anywhere checks that,
+  converts for it or carries what would be needed to -- the props door takes one
+  rate and a table of `{buffer, channels, frames}`, and `nodes::SourceInfo`, the
+  plan's own table, carries `buffer` and `channels` and no rate at all. Measured:
+  a one-second take of 44100 frames at 44.1 kHz, placed whole in a 48 kHz
+  session, is drawn **48000 samples long over 44100 frames of samples** -- 8.8%
+  of box with nothing in it, its edge stopping 3900 samples short of its own end.
+  **It reaches sound, not only the picture**: `nodes::plan` reads the window's
+  start as `window.start * sample_rate` with the session's rate, so the reader
+  starts at the wrong frame of such a buffer by the same ratio.
+
+  **`playrate` is the same question already stored**: a `Content` carries one
+  (both clients write it, `Content.onto(..., playrate=)` / `Content.onto(w,
+  {playrate})`), and outside constructors that pass `1.0` **nothing reads it** --
+  not the picture, not the plan, not the drawing. A region at half rate reads
+  twice the frames and would be drawn and bounded as though it read the same
+  number.
+
+  **The decision** is which one the document means, and it is one answer for the
+  picture, the bound and the plan: either a source's samples are resampled to the
+  session's rate when they are read in, so one sample is one frame by
+  construction and `playrate` is the only ratio left; or a box's window carries
+  the ratio (the source's rate and its `playrate`) all the way to the drawing and
+  to `PlayBuf`, which means `SourceInfo`, the props table and `SourceWindow` all
+  grow it. The second is also what a time stretch would need, and `SourceWindow`
+  already reserves `fit` for the picture that produces.
+
+  **Decided by the user 2026-09-22 and done: the reader resamples as it plays,
+  and one ratio is read by everything that has to say it.** Nothing is converted
+  on the way in -- a buffer keeps the rate its file was written at, as it always
+  has and as scsynth does -- and the multitrack's reader crosses its phase by
+  `BufRateScale(buf) * rate` and its window's start by `BufSampleRate(buf)`,
+  which is `PlayBuf`'s own idiom spelled in the def that plays a box. So the
+  **audio path asks a client for nothing**: what travels is the region's
+  `playrate`, which is the half of the reading speed that is a decision, and
+  `mixer::START` is now the source's **seconds**. The picture crosses by
+  `SourceWindow::rate` and the edge a hand pulls by `Contents::rate`, both fed
+  from the `rates` prop the projection writes (flat `box rate` pairs, a name
+  list like `loops`) out of the source table both clients already keep, which
+  grew a `rate` beside its `frames`. Zoomed to the sample a resampled box draws
+  **the samples it plays** -- the reader's own linear reading between frames,
+  through the shared `resample::Interpolator::played` that `BufRd` itself now
+  calls -- with the band-limited reconstruction still drawn through them, so the
+  resampling error is visible instead of being hidden by drawing one curve
+  twice. The reasoning is `docs/decisions.md`, "A source at another rate is
+  resampled as it plays, and one ratio says so everywhere". Held by tests on
+  each layer: the reading in the core, the plan's seconds and playrate, the
+  projection's `rates` and its window in the source's frames, the edge that
+  stops at 48000 samples over 44100 frames, and the grid the dots are drawn on.
+  **`playrate` is read now** -- it was stored by both clients and read by
+  nothing -- and what stays open is the join, whose parts must still be at one
+  rate: joining takes that disagree needs the samples converted, which is the
+  one place "resampling is an edit" still holds.

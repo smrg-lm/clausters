@@ -79,10 +79,34 @@ pub struct Placement {
 /// `total` is `None` for a box with no contents to run off -- a roll, a bare
 /// automation, **a note** -- and then an edge drag is bounded by nothing but the
 /// box's own floor and the domain it sits in.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Contents {
     pub total: Option<f64>,
     pub looping: bool,
+    /// **How many frames of the source one unit of the box's time is.**
+    ///
+    /// The box is placed and trimmed on its container's axis and the contents
+    /// are counted in the source's own frames, and those are the same number
+    /// only while the samples were written at the rate the axis measures in. A
+    /// 44.1 kHz take on a 48 kHz axis reads `0.91875`, and an edge that
+    /// compared the two directly stopped 8.8% short of the samples it has --
+    /// or, the other way, left that much box with nothing in it.
+    ///
+    /// It is the ratio the picture draws by ([`SourceWindow::rate`]) and the
+    /// one the reader sounds by, which is the point of there being one.
+    ///
+    /// [`SourceWindow::rate`]: crate::host::widget::SourceWindow::rate
+    pub rate: f64,
+}
+
+impl Default for Contents {
+    fn default() -> Self {
+        Self {
+            total: None,
+            looping: false,
+            rate: 1.0,
+        }
+    }
 }
 
 impl Contents {
@@ -91,6 +115,20 @@ impl Contents {
     /// the tail of the iteration before.
     fn unbounded(&self) -> bool {
         self.looping || self.total.is_none()
+    }
+
+    /// [`rate`](Self::rate), never zero or negative -- the same floor the
+    /// window's own ratio takes, and for the same reason.
+    fn frames_per_unit(&self) -> f64 {
+        if self.rate > 0.0 { self.rate } else { 1.0 }
+    }
+
+    /// **How much box** the frames behind it can fill, from the frame its zero
+    /// reads: the bound an end edge stops at, in the box's own units.
+    fn reach(&self, start: f64) -> Option<f64> {
+        self.total
+            .filter(|_| !self.unbounded())
+            .map(|total| (total - start) / self.frames_per_unit())
     }
 }
 
@@ -222,8 +260,8 @@ pub fn drag(
             // The contents runs out where the window does: without a loop the
             // end edge stops at the last frame, because past it there is
             // nothing to show and nothing to play.
-            if let Some(total) = contents.total.filter(|_| !contents.unbounded()) {
-                new_end = new_end.min(orig.offset + (total - orig.start).max(floor));
+            if let Some(reach) = contents.reach(orig.start) {
+                new_end = new_end.min(orig.offset + reach.max(floor));
             }
             Placement {
                 dur: new_end.max(orig.offset + floor) - orig.offset,
@@ -238,14 +276,16 @@ pub fn drag(
             // contents does unless the box loops, where what lies before frame
             // zero is the tail of the iteration before it.
             if !contents.unbounded() {
-                new_off = new_off.max(orig.offset - orig.start);
+                new_off = new_off.max(orig.offset - orig.start / contents.frames_per_unit());
             }
             Placement {
                 offset: new_off,
                 dur: end - new_off,
                 // The trim: the window's head travels with the edge, which is
-                // what makes an edge drag a trim and not a squeeze.
-                start: orig.start + (new_off - orig.offset),
+                // what makes an edge drag a trim and not a squeeze -- by as
+                // many frames as the travel is worth, which is the travel
+                // itself only while one unit is one frame.
+                start: orig.start + (new_off - orig.offset) * contents.frames_per_unit(),
             }
         }
     }

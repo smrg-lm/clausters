@@ -173,12 +173,6 @@ a person saw it work.
   run on a pushed `main`, watched through `build-web` — the first time the
   wasm-vendor composite runs on Actions.
 
-- ⬜ **A box drawn a different length than its samples**
-  *(`crates/clausters-document/PLAN.md`, Found by use)*. Probably the join
-  whose edges were bounded by nothing, fixed 2026-09-21; what is left is a
-  by-eye pass over `editors/edit_multitrack` — stretch a join, and a box over a
-  single take — to say whether it was.
-
 
 ## 4. Milestones left hanging
 

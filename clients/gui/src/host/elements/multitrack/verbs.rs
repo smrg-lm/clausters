@@ -112,7 +112,16 @@ impl Multitrack {
         Contents {
             total,
             looping: self.wraps(&clip.name),
+            rate: self.rate_of(&clip.name),
         }
+    }
+
+    /// **How many frames of its source one sample of box `name` is** -- what
+    /// the `rates` prop says, or one frame per sample for a box it does not
+    /// name, which is every box over a source written at this multitrack's own
+    /// rate.
+    pub(super) fn rate_of(&self, name: &str) -> f64 {
+        self.rates.get(name).copied().unwrap_or(1.0)
     }
 
     /// **Whether box `name`'s window wraps** -- what the `loops` prop names.

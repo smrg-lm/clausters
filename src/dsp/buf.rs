@@ -66,7 +66,7 @@ impl<'a> Reader<'a> {
     #[inline]
     fn read(&mut self, pos: f64, channel: usize, looping: bool) -> f32 {
         let f0 = pos as usize; // pos >= 0 by contract
-        let frac = (pos - f0 as f64) as f32;
+        let frac = pos - f0 as f64;
         let f1 = if f0 + 1 < self.buf.frames() {
             f0 + 1
         } else if looping {
@@ -79,7 +79,13 @@ impl<'a> Reader<'a> {
         if !self.run.holds(f0) {
             self.run = self.buf.run_at(f0);
         }
-        self.run.sample(f0, channel) * (1.0 - frac) + self.run.sample(f1, channel) * frac
+        // **The one linear reading**, the core's, so that what this produces
+        // and what a drawing of it claims are the same arithmetic.
+        clausters_core::resample::Interpolator::played(
+            self.run.sample(f0, channel),
+            self.run.sample(f1, channel),
+            frac,
+        )
     }
 }
 

@@ -849,14 +849,29 @@ pub(crate) fn draw_take(
             // Inside a run the window is affine, whichever kind it is: the
             // source frame at its start plus the time since, or the fitted
             // mapping over the whole span.
+            // ...at `rate` frames of source per unit of clip time, which is
+            // one for a source written at the rate the clip is measured in and
+            // the ratio between the two otherwise.
+            let rate = window.frames_per_unit();
             let src = move |x: f32| match window.fit {
                 true => (local_t(cr, local, x as f64) / dur * total).clamp(0.0, total),
-                false => source0 + (local_t(cr, local, x as f64) - from),
+                false => source0 + (local_t(cr, local, x as f64) - from) * rate,
             };
             let x_of = move |s: f64| match window.fit {
                 true => local_x(cr, local, s / total * dur),
-                false => local_x(cr, local, from + (s - source0)),
+                false => local_x(cr, local, from + (s - source0) / rate),
             };
+            // **The samples this run draws are the placement's, not the
+            // source's.** Where a box reads its source at another rate the two
+            // are different grids: the engine resamples as it plays, so what it
+            // produces is the reconstruction read on the box's own samples, and
+            // those are the dots worth drawing. The grid is stated from the
+            // box's zero rather than from this run, so panning does not slide
+            // the dots by a fraction of a sample.
+            let grid = (rate - 1.0).abs().gt(&1e-9).then(|| {
+                let first = source0 - from.rem_euclid(1.0) * rate;
+                (first, rate)
+            });
             // One picture per measure, the envelope first and the level body
             // inside it.
             for (measure, alpha) in layers.drawn_measures() {
@@ -878,6 +893,7 @@ pub(crate) fn draw_take(
                     .with_dots(m.point_radius)
                     .with_measure(measure)
                     .with_rate(sample_rate)
+                    .with_grid(grid)
                     .with_written(written),
                 );
             }

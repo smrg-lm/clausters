@@ -61,10 +61,20 @@ pub struct PlannedReader {
     pub at: f64,
     /// How long it lasts, in frames.
     pub span: f64,
-    /// The first frame of the source it reads.
+    /// The **second of the source** its own zero reads.
+    ///
+    /// Seconds, because the frame that is depends on the rate those samples
+    /// were written at and the buffer is what knows it: the reader crosses it
+    /// with `BufSampleRate` (`mixer::START`). A plan that crossed it here
+    /// would need every source's rate to say a number the server already has.
     pub start: f64,
     /// Whether the window wraps past the end of the source.
     pub looping: bool,
+    /// **How fast it reads its source**, as a factor over the source's own
+    /// pitch -- the region's `playrate` and nothing else. The rest of the
+    /// reading speed is the source's rate against the engine's, which the
+    /// reader takes off the buffer (`mixer::RATE`).
+    pub rate: f64,
 }
 
 /// One curve, ready to be heard: the port it drives and the table a reader
@@ -311,7 +321,10 @@ pub fn plan(
         };
         for region in &lane.regions {
             let Content::Window {
-                window, looping, ..
+                window,
+                looping,
+                playrate,
+                ..
             } = &region.content
             else {
                 // A window onto a node of the document is content the multitrack
@@ -336,9 +349,11 @@ pub fn plan(
                     // The window's own start is in the source's **seconds**,
                     // the unit a recording measures in and no tempo scales --
                     // the same one `picture::Box::start` reports and both
-                    // clients write.
-                    start: window.start * sample_rate,
+                    // clients write -- and it crosses to a frame against the
+                    // buffer's own rate, which is the reader's to ask.
+                    start: window.start,
                     looping: *looping,
+                    rate: *playrate,
                 })
                 .collect();
             let pair = (info.channels.max(1), channels);
@@ -452,8 +467,37 @@ mod tests {
         assert_eq!(clips[1].readers[0].at, 2.0 * 48_000.0);
         assert_eq!(
             clips[0].readers[0].start, 0.0,
-            "and the window's own start is in the source's seconds, crossed here"
+            "and the window's own start is in the source's seconds, crossed by the reader"
         );
+    }
+
+    /// **The window's start stays in seconds and the playrate reaches the
+    /// reader.** The frame a second lands on depends on the rate those samples
+    /// were written at, which the buffer knows and this does not: a plan that
+    /// crossed it here would read a 44.1 kHz take from the wrong frame in a
+    /// 48 kHz session, by 8.8%. What the plan does say is the box's own
+    /// playrate, which is the half of the reading speed that is a decision.
+    #[test]
+    fn a_window_reaches_the_reader_in_seconds_with_its_playrate() {
+        let mut multitrack = multitrack();
+        let region = &mut multitrack.tracks[0].lanes[0].regions[0];
+        let Content::Window {
+            window, playrate, ..
+        } = &mut region.content
+        else {
+            panic!("a window");
+        };
+        window.start = 1.5;
+        *playrate = 2.0;
+
+        let plan = plan(&multitrack, 48_000.0, &sources());
+        let reader = &plan.tracks[0].clips[0].readers[0];
+        assert_eq!(reader.start, 1.5, "a second and a half of the source");
+        assert_eq!(reader.rate, 2.0, "read twice as fast");
+        // And the placement is untouched: how fast a box reads its source says
+        // nothing about where it sits or how long it lasts.
+        assert_eq!(reader.at, 0.0);
+        assert_eq!(reader.span, 2.0 * 48_000.0);
     }
 
     /// **A tempo moves no box.** The multitrack is in seconds, and the tempo map

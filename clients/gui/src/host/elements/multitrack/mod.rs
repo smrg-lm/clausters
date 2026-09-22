@@ -188,6 +188,14 @@ pub struct Multitrack {
     /// here is what an edge drag may do and how the samples are drawn under a
     /// box longer than they are.
     loops: Vec<String>,
+    /// **How many frames of its source one sample of a box is**, by box name --
+    /// the `rates` prop.
+    ///
+    /// A box not named here reads one frame per sample. It is what puts a
+    /// source recorded at another rate, or a box asked to play faster than its
+    /// source, on this multitrack's axis: the picture, the edge a hand pulls
+    /// and the reader that sounds all cross by this one number.
+    pub(super) rates: HashMap<String, f64>,
     /// **The spans each join is made of**, by box name -- the `segments` prop.
     ///
     /// A box named here is drawn from the takes these spans read, span by span,
@@ -302,6 +310,7 @@ impl Default for Multitrack {
             hidden: Vec::new(),
             holding: None,
             loops: Vec::new(),
+            rates: HashMap::new(),
             segments: HashMap::new(),
             meters: HashMap::new(),
             zoom: HashMap::new(),

@@ -152,21 +152,40 @@ export class Sources {
     }
 
     /**
-     * The table as a **join** reads it: source id -> `{ buffer, channels, frames }`.
+     * The table as a **join** and a **picture** read it: source id ->
+     * `{ buffer, channels, frames, rate }`.
      *
-     * {@link Sources.table} plus the length, which a join needs and a plan does
-     * not: a part that names no range contributes the whole of its source, and
-     * only whoever loaded it knows how much that is.
+     * {@link Sources.table} plus two facts about the samples themselves, which
+     * a plan does not need and these do. The **length**, which a join needs: a
+     * part that names no range contributes the whole of its source, and only
+     * whoever loaded it knows how much that is. And the **rate they were
+     * written at**, which a picture needs: a box is placed and drawn in the
+     * session's samples and filled with its source's frames, and those are the
+     * same number only while the two rates are -- a 44.1 kHz take on a 48 kHz
+     * session is drawn 8.8% longer than its samples without it. Zero means
+     * unknown, and a source that says nothing is read at the session's own
+     * rate.
      */
-    held(): Record<string, { buffer: number; channels: number; frames: number }> {
-        const out: Record<string, { buffer: number; channels: number; frames: number }> = {};
+    held(): Record<string, { buffer: number; channels: number; frames: number; rate: number }> {
+        const out: Record<
+            string,
+            { buffer: number; channels: number; frames: number; rate: number }
+        > = {};
         for (const [source, entry] of Object.entries(this.table())) {
             const held = this.buffers.get(Number(source));
             const frames =
                 typeof held === "object" && held !== null
                     ? Number((held as { frames?: unknown }).frames ?? 0)
                     : 0;
-            out[source] = { ...entry, frames: Math.max(0, Math.trunc(frames || 0)) };
+            const rate =
+                typeof held === "object" && held !== null
+                    ? Number((held as { sampleRate?: unknown }).sampleRate ?? 0)
+                    : 0;
+            out[source] = {
+                ...entry,
+                frames: Math.max(0, Math.trunc(frames || 0)),
+                rate: Math.max(0, rate || 0),
+            };
         }
         return out;
     }

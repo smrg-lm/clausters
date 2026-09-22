@@ -2208,3 +2208,50 @@ fn a_join_is_trimmed_no_further_than_its_spans() {
         "the edge stops where the spans end"
     );
 }
+
+/// **A box whose source was written at another rate is bounded in its own
+/// samples.** The box is placed and trimmed on the multitrack's axis and the
+/// take is counted in its own frames, and an edge that compared the two
+/// directly stopped where neither is: a 44.1 kHz take on a 48 kHz multitrack
+/// reaches 8.8% further than its frame count says.
+#[test]
+fn an_edge_stops_where_the_samples_do_at_the_sources_own_rate() {
+    use crate::host::widget::element::Loaded;
+    let m = Metrics::default();
+    let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
+    let len = 100_000.0;
+    // 44100 frames of a 44.1 kHz take, drawn on a 48 kHz axis: 0.91875 frames
+    // of source per sample of box, so the whole take is 48000 samples long.
+    let mut mt = from_props(&props(
+        r#"{"lanes": ["one", "", 100, 0, 0, 1, 1],
+            "clips": ["a", "one", 0, 20000, 0, "", 0],
+            "rates": ["a", 0.91875]}"#,
+    ));
+    mt.bulk_of(
+        0,
+        Loaded::Raw {
+            samples: vec![0.25; 44_100],
+            channels: 1,
+        },
+    );
+    let contents = mt.contents_of(0);
+    assert_eq!(contents.total, Some(44_100.0), "the take's own frames");
+    assert!(
+        (contents.rate - 0.91875).abs() < 1e-9,
+        "and the box's own rate"
+    );
+
+    let edge = xy(&mt, &m, rect, 20_000.0, len, 0);
+    let far = xy(&mt, &m, rect, 90_000.0, len, 0);
+    assert!(matches!(
+        mt.press(edge, &input(&m, rect, len)),
+        Claim::Take(_)
+    ));
+    mt.drag(far, &input(&m, rect, len));
+    mt.release(far, true, &input(&m, rect, len));
+    let dur = mt.clips[0].place.dur;
+    assert!(
+        (dur - 48_000.0).abs() < 1.0,
+        "the whole take, in the multitrack's samples: {dur}"
+    );
+}

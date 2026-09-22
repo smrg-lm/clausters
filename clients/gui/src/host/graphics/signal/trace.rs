@@ -517,6 +517,21 @@ pub struct TraceStyle {
     /// nothing has happened in yet. So the picture stops, and the axis past it
     /// stays empty until the writer gets there.
     pub written: Option<f64>,
+    /// **The samples this picture is of**, when they are not the source's own:
+    /// where the first of them sits in the source's frames, and how many
+    /// frames apart they are.
+    ///
+    /// `None` -- the ordinary case -- draws the source's samples where they
+    /// are. It is set by a placement that reads its source at another rate: a
+    /// 44.1 kHz take on a 48 kHz axis is *resampled as it plays*, and what
+    /// leaves the engine is the reconstructed signal read on the engine's own
+    /// grid, not the take's frames. Zoomed to the sample those are different
+    /// pictures -- different dots, in different places -- and the one worth
+    /// drawing is what is played. So the dots step by this spacing and take
+    /// their values from the reconstruction between the source's samples,
+    /// which is the same curve the `signal` layer draws and the same one the
+    /// reader interpolates.
+    pub grid: Option<(f64, f64)>,
 }
 
 /// Whether sample dots are drawn at `spacing` pixels apart: they need to read
@@ -569,7 +584,17 @@ impl TraceStyle {
             body_window: 0.0,
             plate: None,
             written: None,
+            grid: None,
         }
+    }
+
+    /// The same trace, drawn on **the samples a placement reads**, given as
+    /// where the first one sits in the source's frames and how many frames
+    /// apart they are (see [`TraceStyle::grid`]). A spacing of one frame, or
+    /// none at all, is the source's own samples and sets nothing.
+    pub fn with_grid(mut self, grid: Option<(f64, f64)>) -> Self {
+        self.grid = grid.filter(|(_, step)| *step > 0.0 && (*step - 1.0).abs() > 1e-9);
+        self
     }
 
     /// The same trace, writing its figures on a plate -- what a layer drawn
@@ -698,10 +723,16 @@ pub fn draw_channel(
     // between them and the reconstruction over them -- all at once, so a reader
     // never sees the waveform change character and only then see why. A style
     // with no dots has no such moment and keeps the old crossing.
+    // **The samples drawn, per pixel** -- the source's own, or the ones a
+    // resampling placement reads, which are further apart or closer together
+    // by its spacing. The regime is a question about the picture, so it is
+    // asked about what is in it; the columns below still read the source's
+    // frames, which is what `per_px` stays.
+    let drawn_per_px = style.grid.map_or(per_px, |(_, step)| per_px / step);
     let sample_zoom = if style.dot_radius > 0.0 {
-        samples_are_drawn(per_px, style.dot_radius)
+        samples_are_drawn(drawn_per_px, style.dot_radius)
     } else {
-        per_px <= LINE_THRESHOLD
+        drawn_per_px <= LINE_THRESHOLD
     };
     let columns = !sample_zoom || !trace.has_raw();
     // The reconstruction is a layer over **resolvable** samples. Zoomed out, a
@@ -780,7 +811,8 @@ pub fn draw_channel(
         // Where the samples land decides whether each one is marked: the line
         // is an interpolation the drawing invents, and a dot is what says which
         // points of it are data.
-        let spacing = (x_of(1.0) - x_of(0.0)).abs();
+        let step_frames = style.grid.map_or(1.0, |(_, step)| step);
+        let spacing = (x_of(step_frames) - x_of(0.0)).abs();
         let dots = dots_fit(spacing, style.dot_radius);
         // **Never finer than the screen**: the reconstruction is drawn where
         // there are pixels for a curve and nowhere else.
@@ -813,12 +845,19 @@ pub fn draw_channel(
         const ON_EDGE: f64 = 1e-6;
         let (from, to) = (src(rect.x), src(rect.x + rect.w));
         let mut prev: Option<[f32; 2]> = None;
-        for f in first..=last.max(first) {
-            let p = [x_of(f as f64), y_at(trace.at(ch, f as f64))];
+        for at in samples_drawn(style.grid, first, last.max(first)) {
+            // On the source's own samples this is the sample; on a resampled
+            // placement's grid it is the reconstruction at that instant, which
+            // is what the engine reads there.
+            let v = match style.grid {
+                None => trace.at(ch, at),
+                Some(_) => played_at(trace, ch, at, end),
+            };
+            let p = [x_of(at), y_at(v)];
             if let (true, Some(q)) = (line, prev) {
                 mesh.line(q, p, style.width, style.color);
             }
-            let inside = f as f64 >= from - ON_EDGE && (f as f64) < to - ON_EDGE;
+            let inside = at >= from - ON_EDGE && at < to - ON_EDGE;
             if dots && inside {
                 mesh.disc(p[0], p[1], style.dot_radius, style.color);
             }
@@ -978,16 +1017,59 @@ fn curve_step(spacing: f32) -> Option<usize> {
 /// itself, with the samples outside the take taken as silence -- the edge
 /// policy `clausters_core::resample` documents, so the curve at the very start
 /// of a take is the same curve the measurement reads there.
-fn reconstruct(trace: &Trace, ch: usize, f: usize, frames: usize, out: &mut [f32]) -> usize {
-    let filter = resample::FINE;
-    let factor = filter.factor().min(out.len());
-    if factor == 0 {
-        return 0;
+/// **Where each drawn sample sits**, in the source's frames: the source's own
+/// samples `first..=last`, or the positions a resampling placement reads,
+/// which are `grid`'s spacing apart and land between them.
+///
+/// The grid is generated from its own origin rather than from `first`, so the
+/// dots do not shift by a fraction of a sample as a view is panned: where a
+/// placement reads is a fact about the placement, not about what is on screen.
+fn samples_drawn(grid: Option<(f64, f64)>, first: usize, last: usize) -> Vec<f64> {
+    let (lo, hi) = (first as f64, last as f64);
+    let Some((origin, step)) = grid.filter(|(_, step)| *step > 0.0) else {
+        return (first..=last).map(|f| f as f64).collect();
+    };
+    let k0 = ((lo - origin) / step).ceil();
+    let n = (((hi - origin) / step).floor() - k0).max(-1.0) as isize;
+    (0..=n)
+        .map(|k| origin + (k0 + k as f64) * step)
+        .take(MAX_DRAWN)
+        .collect()
+}
+
+/// The most samples one channel's dot pass draws. A grid finer than the
+/// source's could otherwise ask for more points than there are pixels many
+/// times over, and the crossing above already says this regime only runs where
+/// the samples are separate on screen -- this is the floor under a spacing that
+/// is nonsense rather than a policy.
+const MAX_DRAWN: usize = 1 << 16;
+
+/// **The sample a reader produces at `at`**: the core's one linear reading
+/// between the two frames it falls between
+/// ([`Interpolator::played`](resample::Interpolator::played)), which is the
+/// arithmetic `BufRd` and `PlayBuf` do. On a whole frame it is that frame.
+///
+/// Not the reconstruction: this is what a resampled placement's dots *are*, and
+/// a dot drawn from the twelve-tap filter would be a sample the engine never
+/// produces. The reconstruction is still drawn over them by the `signal`
+/// layer, and where the two part is the resampling error, visible rather than
+/// hidden by drawing the same curve twice.
+fn played_at(trace: &Trace, ch: usize, at: f64, frames: usize) -> f32 {
+    let f = at.floor();
+    let frac = at - f;
+    if frac <= f64::EPSILON || f < 0.0 {
+        return trace.at(ch, at);
     }
+    let (f0, f1) = (f as usize, (f as usize + 1).min(frames.saturating_sub(1)));
+    resample::Interpolator::played(trace.at(ch, f0 as f64), trace.at(ch, f1 as f64), frac)
+}
+
+/// The [`resample::TAPS`]-tap window centred on sample `f`, as the core's
+/// filter reads one: `GUARD - 1` samples before it, itself, and `GUARD` after,
+/// with silence past either end of the samples.
+fn window_at(trace: &Trace, ch: usize, f: usize, frames: usize) -> [f32; resample::TAPS] {
     let mut window = [0.0f32; resample::TAPS];
     for (k, slot) in window.iter_mut().enumerate() {
-        // The same centred window the core reads: `GUARD - 1` samples before
-        // this one, itself, and `GUARD` after.
         let at = f as isize + 1 + k as isize - resample::GUARD as isize;
         *slot = if at < 0 || at as usize >= frames {
             0.0
@@ -995,6 +1077,16 @@ fn reconstruct(trace: &Trace, ch: usize, f: usize, frames: usize, out: &mut [f32
             trace.at(ch, at as f64)
         };
     }
+    window
+}
+
+fn reconstruct(trace: &Trace, ch: usize, f: usize, frames: usize, out: &mut [f32]) -> usize {
+    let filter = resample::FINE;
+    let factor = filter.factor().min(out.len());
+    if factor == 0 {
+        return 0;
+    }
+    let window = window_at(trace, ch, f, frames);
     for (p, slot) in out.iter_mut().enumerate().take(factor) {
         *slot = filter.phase_at(&window, p);
     }
@@ -2182,5 +2274,50 @@ mod tests {
         // One quad per pixel column, and each one carries the envelope the
         // pyramid still knows about.
         assert_eq!(mesh.vertex_count(), 200 * 6);
+    }
+}
+
+#[cfg(test)]
+mod grid_tests {
+    use super::*;
+
+    /// **The samples drawn are the placement's, and they do not slide.** A
+    /// resampling placement reads between the source's frames, so the dots are
+    /// its own grid -- generated from the placement's zero, so panning the view
+    /// moves which of them are on screen and never where they are.
+    #[test]
+    fn a_resampling_placement_draws_its_own_samples() {
+        // The source's own samples, when no grid is stated.
+        assert_eq!(samples_drawn(None, 2, 5), vec![2.0, 3.0, 4.0, 5.0]);
+        // Every other frame, from frame 1: the dots fall on 1, 3, 5 whichever
+        // window asks.
+        let grid = Some((1.0, 2.0));
+        assert_eq!(samples_drawn(grid, 0, 6), vec![1.0, 3.0, 5.0]);
+        assert_eq!(samples_drawn(grid, 2, 6), vec![3.0, 5.0]);
+        // Finer than the source: two dots between each pair of frames.
+        assert_eq!(samples_drawn(Some((0.0, 0.5)), 0, 1), vec![0.0, 0.5, 1.0]);
+        // A grid with nothing in the span draws nothing rather than one dot at
+        // the edge.
+        assert!(samples_drawn(Some((0.0, 10.0)), 3, 7).is_empty());
+    }
+
+    /// **A dot is the sample the engine will produce**, which is the reader's
+    /// linear reading and not the twelve-tap reconstruction over it: the dots
+    /// claim "this is what you hear", and the `signal` layer keeps drawing the
+    /// signal through them.
+    #[test]
+    fn a_dot_between_two_frames_is_what_the_reader_reads() {
+        let samples = [0.0f32, 1.0, 0.0, -1.0];
+        let trace = Trace::Samples {
+            samples: &samples,
+            channels: 1,
+        };
+        assert_eq!(played_at(&trace, 0, 1.0, 4), 1.0, "a whole frame is itself");
+        assert_eq!(played_at(&trace, 0, 1.5, 4), 0.5, "and halfway is halfway");
+        assert_eq!(
+            played_at(&trace, 0, 2.25, 4),
+            clausters_core::resample::Interpolator::played(0.0, -1.0, 0.25),
+            "the core's reading, and nobody's second one"
+        );
     }
 }

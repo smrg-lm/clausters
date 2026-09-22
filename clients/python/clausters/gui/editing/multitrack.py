@@ -100,12 +100,19 @@ class Sources:
         return None if isinstance(found, (int, float)) else found
 
     def held(self) -> dict:
-        """The table as a **join** reads it: source id -> ``{"buffer",
-        "channels", "frames"}``.
+        """The table as a **join** and a **picture** read it: source id ->
+        ``{"buffer", "channels", "frames", "rate"}``.
 
-        `table` plus the length, which a join needs and a plan does not: a part
-        that names no range contributes the whole of its source, and only
-        whoever loaded it knows how much that is.
+        `table` plus two facts about the samples themselves, which a plan does
+        not need and these do. The **length**, which a join needs: a part that
+        names no range contributes the whole of its source, and only whoever
+        loaded it knows how much that is. And the **rate they were written
+        at**, which a picture needs: a box is placed and drawn in the session's
+        samples and filled with its source's frames, and those are the same
+        number only while the two rates are -- a 44.1 kHz take on a 48 kHz
+        session is drawn 8.8% longer than its samples without it. Zero means
+        unknown, and a source that says nothing is read at the session's own
+        rate.
         """
         out: dict = {}
         for source, entry in self.table().items():
@@ -116,6 +123,9 @@ class Sources:
             frames = getattr(held, "frames", 0)
             known = isinstance(frames, (int, float)) and not isinstance(frames, bool)
             entry["frames"] = max(0, int(frames)) if known else 0
+            rate = getattr(held, "sample_rate", 0.0)
+            known = isinstance(rate, (int, float)) and not isinstance(rate, bool)
+            entry["rate"] = max(0.0, float(rate)) if known else 0.0
             out[source] = entry
         return out
 
