@@ -157,6 +157,37 @@ opened it.
   editor over a buffer with no document behind it keeps the in-place path is
   read when the two converge into `AudioEditor`.
 
+  **The steps**, each closed by its own commit, in this order because each
+  one is what the next is written over:
+
+  - ✅ **X1.1 - The parts list is Rust's.** A module of `clausters-document`
+    over a flat `[Part]` (the join's own recipe, `session::Location::Segments`):
+    its length, the parts a span of it is, and removing, inserting and
+    replacing a span -- so cut, copy, paste and a new take spliced in are one
+    arithmetic, written once. `picture.rs`'s private span reading becomes a
+    caller of it. Every part here is at the join's rate: a mixed-rate list is
+    the multitrack's case and is not widened into this one.
+  - ⬜ **X1.2 - A history names the sources it holds.** An entry declares the
+    sources either of its halves reaches; the history answers which of a set
+    no entry names any more, reports the ones its budget or a clear let go
+    (`released()`'s rule, for sources), and trims by a byte budget over what
+    only it holds. The roots it does not know -- the document, the clipboard
+    -- are the caller's, and the question is asked with them.
+  - ⬜ **X1.3 - `AudioEditor`: the turns over a take made of parts.** Cut,
+    copy, paste and delete over the selection as new parts lists; the pencil
+    as a new take per gesture, spliced in; each turn answering the steps to
+    carry out (allocate and write a take, restitch the drawn join, free what
+    the history released) with the buffer numbers the caller hands in.
+  - ⬜ **X1.4 - Mix**, as the server's verb over two spans into a new take.
+  - ⬜ **X1.5 - The doors and both clients**: the C ABI, wasm, the Python
+    `AudioEditor`, its web port, the standalone host; `docs/bindings.md`.
+  - ⬜ **X1.6 - Disk and saving**: takes as regions under `--shm`, a save
+    promoting what the document reaches, the browser's backing decided.
+  - ⬜ **X1.7 - A step re-reads what it changed** (the `/gui_ack` generation,
+    above).
+  - ⬜ **X1.8 - The books and the example** that is this milestone's manual
+    test.
+
   **Open, and not decided here:** the browser has no mapping, so whether its
   history stays in memory under the byte budget or goes to OPFS; the budgets'
   defaults; where the segment model lands in Rust, given that

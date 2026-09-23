@@ -61,6 +61,7 @@ pub mod history;
 pub mod intent;
 pub mod log;
 pub mod multitrack;
+pub mod parts;
 pub mod points;
 pub mod resolve;
 pub mod samples;

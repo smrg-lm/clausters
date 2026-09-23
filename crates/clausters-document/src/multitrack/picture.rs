@@ -895,33 +895,8 @@ fn segments_of(
             channels: None,
         }]);
     };
-    let mut out = Vec::new();
-    let mut at = 0u64;
-    for part in parts {
-        let Some(range) = part.source.range else {
-            return Err(
-                "one of these boxes is a join whose parts do not say which frames they are",
-            );
-        };
-        let (lo, hi) = (at, at + range.len());
-        at = hi;
-        let (a, b) = (from.max(lo), to.min(hi));
-        if a >= b {
-            continue;
-        }
-        let mut multitrack = part.clone();
-        multitrack.source.range = Some(Range {
-            start: range.start + (a - lo),
-            end: range.start + (b - lo),
-        });
-        if a != lo {
-            multitrack.fade_in = 0;
-        }
-        if b != hi {
-            multitrack.fade_out = 0;
-        }
-        out.push(multitrack);
-    }
+    let out = crate::parts::span(&parts, from, to)
+        .map_err(|_| "one of these boxes is a join whose parts do not say which frames they are")?;
     if out.is_empty() {
         return Err("one of these boxes reads past the end of the join it is a window onto");
     }
