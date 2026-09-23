@@ -78,6 +78,9 @@ pub struct AudioEditor {
     rate: f64,
     /// The join the window draws: the list, stitched.
     display: i64,
+    /// The file the take was read from, which a save writes over -- or the
+    /// one a save-as last named. `None` for a take no file holds.
+    path: Option<String>,
     list: Vec<Part>,
     /// Frames of every take this editor knows -- the one it opened and each it
     /// made -- by buffer.
@@ -141,6 +144,7 @@ impl AudioEditor {
             channels: channels.max(1),
             rate: if rate > 0.0 { rate } else { 48_000.0 },
             display,
+            path: None,
             list: Vec::new(),
             frames: BTreeMap::new(),
             spare: Vec::new(),
@@ -269,6 +273,52 @@ impl AudioEditor {
         ]))
     }
 
+    /// **Saving: the take as the edits have left it, written as a file.**
+    ///
+    /// With no `path` it is written **over the file it was read from** -- an
+    /// audio editor's save is the user's own act on the user's own file, the
+    /// one place the program writes one. With a `path` it is a save-as: the
+    /// edit goes to that file, which becomes the one a later save writes. A
+    /// take no file holds has to be saved as one. The join is written through
+    /// its parts, so what lands is exactly what is heard; `format` is the
+    /// sample format (`"float"`, `"int24"` or `"int16"`).
+    pub fn save(&mut self, path: Option<&str>, format: &str) -> Result<Value, String> {
+        let path = match path.filter(|p| !p.is_empty()) {
+            Some(path) => path.to_string(),
+            None => self
+                .path
+                .clone()
+                .ok_or("this take was not read from a file: save it as one")?,
+        };
+        if !matches!(format, "float" | "int24" | "int16") {
+            return Err(format!(
+                "'{format}' is not a sample format (float, int24, int16)"
+            ));
+        }
+        self.path = Some(path.clone());
+        let display = self.display as i32;
+        Ok(steps_json(&[
+            send(
+                "/buffer_write",
+                vec![
+                    OscType::Int(display),
+                    OscType::String(path),
+                    OscType::String("wav".into()),
+                    OscType::String(format.into()),
+                ],
+            ),
+            Step::AwaitDone {
+                command: "/buffer_write".into(),
+                index: Some(display),
+            },
+        ]))
+    }
+
+    /// The file a save writes over, when there is one.
+    pub fn file(&self) -> Option<&str> {
+        self.path.as_deref()
+    }
+
     /// A spill the caller could not carry out -- the write was refused, a
     /// quota full -- so the take is still in its buffer.
     pub fn kept(&mut self, buffer: i64) {
@@ -387,6 +437,26 @@ impl AudioEditor {
             version,
             ..Outcome::default()
         };
+        // **Ctrl+S over the window is a save**, the window's own verb: it names
+        // no widget, changes nothing the history holds, and is answered with
+        // the steps that write the file.
+        if message.addr == "/gui_event" && message.is_window && message.tag == "save" {
+            out.turn = Kind::Route;
+            let reason = match self.save(None, "float") {
+                Ok(steps) => {
+                    out.steps = Some(steps);
+                    None
+                }
+                Err(why) => Some(why),
+            };
+            out.answer = Some(conversation::answer(
+                message.seq,
+                version,
+                reason,
+                Vec::new(),
+            ));
+            return out;
+        }
         match self.conversation.read(&message) {
             Turn::Nothing => {}
             Turn::Closed => {
@@ -797,6 +867,8 @@ struct Facts {
     /// Buffers for new takes, appended to what the editor already holds.
     buffers: Option<Vec<i64>>,
     chunk: Option<usize>,
+    /// The file the take was read from.
+    path: Option<String>,
     /// The directory a take leaves memory for.
     scratch: Option<String>,
     #[serde(deserialize_with = "present")]
@@ -841,6 +913,9 @@ impl AudioEditor {
         if let Some(buffers) = facts.buffers {
             self.spare.extend(buffers);
         }
+        if let Some(path) = facts.path.filter(|p| !p.is_empty()) {
+            self.path = Some(path);
+        }
         if let Some(scratch) = facts.scratch.filter(|s| !s.is_empty()) {
             self.scratch = Some(scratch);
         }
@@ -866,7 +941,8 @@ impl AudioEditor {
 }
 
 /// **An editor built from a JSON request** -- `take`, `frames`, `channels`,
-/// `rate`, `display`, `buffers`, `chunk`, `scratch` (the directory a take only
+/// `rate`, `display`, `buffers`, `chunk`, `path` (the file the take was read
+/// from, which a save writes over), `scratch` (the directory a take only
 /// the history holds is written to when it leaves memory), `name`, `layers`,
 /// `title`, `w`, `h` and `version` -- or the reason it cannot be.
 pub fn new_json(request: &str) -> Result<AudioEditor, String> {
@@ -908,6 +984,9 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
 /// - `apply` -- `payload`: `{"steps"}` for a list the history handed back, or
 ///   `{}` for a payload that is not one.
 /// - `parts` -- `{"parts", "frames"}`: the list, and how long it is.
+/// - `save` -- `path` and `format` (`"float"` when absent), both optional:
+///   `{"steps", "path"}`, what writes the take over its file or, given a
+///   `path`, as that file; or `{"error"}`.
 /// - `kept` -- `buffer`: a spill the caller could not carry out, so that take
 ///   is still in its buffer. Answers `{}`.
 /// - `acknowledge` -- `seq`, `version`, `reason`: an [`Answer`].
@@ -955,6 +1034,13 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
             None => "{}".into(),
         },
         "parts" => json!({ "parts": editor.list(), "frames": editor.length() }).to_string(),
+        "save" => {
+            let format = get("format").as_str().unwrap_or("float").to_string();
+            match editor.save(get("path").as_str(), &format) {
+                Ok(steps) => json!({ "steps": steps, "path": editor.file() }).to_string(),
+                Err(error) => json!({ "error": error }).to_string(),
+            }
+        }
         "kept" => {
             editor.kept(int(&get("buffer")));
             "{}".into()

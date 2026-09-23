@@ -126,6 +126,7 @@ class AudioEditor(Editor):
             "openAudio", f"audio:{int(take.bufnum)}",
             {**self._facts(), "frames": int(getattr(take, "frames", 0) or 0),
              "take": int(take.bufnum), "display": self._display,
+             "path": getattr(take, "path", None),
              "layers": list(view.layers)}, take, domain)
         if history_bytes is not None:
             self._editing.limit_bytes(history_bytes)
@@ -175,6 +176,25 @@ class AudioEditor(Editor):
                       max(1, int(getattr(self.structure, "channels", 1) or 1)),
                       self.sample_rate, server=self._server)
 
+    def save(self, path: "str | None" = None, *,
+             sample_format: str = "float") -> str:
+        """**Write the take as the edits have left it** -- over the file it was
+        read from, or, given a ``path``, as that file, which a later `save`
+        then writes over. Ctrl+S in the window is the same save.
+
+        ``sample_format`` is ``"float"``, ``"int24"`` or ``"int16"``. Answers
+        the path written.
+
+        Raises:
+            ValueError: the take was read from no file and no ``path`` was
+                given, or the format is not one of those three.
+        """
+        answer = self._call("save", path=path, format=str(sample_format))
+        if "error" in answer:
+            raise ValueError(answer["error"])
+        self.domain.run(self.structure, answer.get("steps") or [])
+        return str(answer["path"])
+
     @property
     def parts(self) -> list:
         """What the take is made of now: one ``dict`` per span, in reading
@@ -214,10 +234,11 @@ class AudioEditor(Editor):
         if outcome.get("turn") in (None, "nothing"):
             return False
         changed = bool(outcome.get("changed"))
+        # **The steps are this client's to carry out**: a new take made where
+        # the turn needed one and the join stitched over the list -- or, for a
+        # save from the window, the file written.
+        self.domain.run(self.structure, outcome.get("steps") or [])
         if changed:
-            # **The steps are this client's to carry out**: a new take made
-            # where the turn needed one, then the join stitched over the list.
-            self.domain.run(self.structure, outcome.get("steps") or [])
             self.dirty = True
             self._editing.changed()
         if outcome.get("locate") is not None:

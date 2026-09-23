@@ -197,9 +197,9 @@ its plan; the plan is where its acceptance is read.
   freed by reachability, which also closes the document plan's "The takes a
   history can still reach are never given back" -- with the browser's backing
   decided (its own file system, one spilling rule on both platforms, `X1.6`),
-  and with the multitrack receiving an audio editor's changes when the audio
-  editor saves them, the two being separate applications (`X1.9`); where the
-  segment model lands in Rust is open, and which takes the
+  and its save written over the take's own file, the multitrack and the audio
+  editor being separate applications (`X1.9`); a step re-reading only what it
+  changed (`X1.7`) is left, and where the segment model lands in Rust is open, and which takes the
   generation `/gui_ack` carries and nothing reads (`clients/gui/PLAN.md`, Found
   by use); **`X2`** a buffer editor that draws a table by
   hand, where the wavetable conversion and what the hand edits are open; **`X3`**

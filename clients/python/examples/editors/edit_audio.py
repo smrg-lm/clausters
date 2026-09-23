@@ -18,11 +18,12 @@ can still reach them and freed when neither can -- ``history_bytes`` below caps
 what only the history holds, and the oldest entries go first past it.
 
 What to do in the window: **drag** to select, then **Ctrl+X** to cut,
-**Ctrl+C** to copy, **Ctrl+V** to paste at the selection's start and
+**Ctrl+C** to copy, **Ctrl+V** to paste at the cursor and
 **Ctrl+Shift+V** to mix there. **Wheel** to zoom in until each sample is a
 disc, then **Alt+drag** to draw. **Ctrl+Z** and **Ctrl+Shift+Z** walk the
 history. ``hear()`` plays the take as the edits have left it, and ``parts()``
-prints what it is made of.
+prints what it is made of. ``editor.save(path)`` writes it as a file; the take
+here was made in memory, so it has none of its own for Ctrl+S to write over.
 
 Run it as a script, or step through the cells::
 

@@ -8955,3 +8955,33 @@ promotes its lifetime, like any other minted source. The cost that leaves is
 reach them, and giving them back is tied to discarding history rather than to
 the document. That is written down as open in `crates/clausters-document/PLAN.md`
 rather than solved here.
+
+## The audio editor's history holds takes, never samples, and its save writes the user's file
+
+*(Decided with the user, 2026-09-22.)* An audio editor edits a take as a **list
+of parts** over takes that are never written once a history entry names them: a
+cut is a new list, and a paste, a mix or a pencil stroke writes a new take the
+size of the span it touches and splices it in. The alternative every editor
+starts from -- write the buffer in place and keep what a stroke replaced as the
+inverse -- puts samples in the history, and editing a long file is then a
+history the size of the edits. Here an entry is two lists and the names of the
+takes they read, so an undo costs the list; the takes are given back by
+reachability (the document, the history, the clipboard) and, past a resident
+budget, written to a scratch directory and read back when a step needs them.
+
+The earlier decision that a copy-on-write per block would rewrite a megabyte
+for a fifty-sample stroke, and would have to be flattened to be heard, no longer
+held: a take the size of the span is not a block, and the server plays a join
+as it is.
+
+**Its save writes over the file the take was read from.** That is the one place
+the program writes a file the user brought, and it is deliberate: in an audio
+editor saving *is* the user's act on the user's file, and the rule that no file
+is ever overwritten protects that file from everything the program does on its
+own -- an edit, a render, a spill -- not from the save the user asked for. A
+save-as writes another file instead, which a later save then writes over.
+
+The audio editor and the multitrack editor are **separate applications**. A
+take of the multitrack may be opened in an audio editor, as another program
+would open it; the two share no editing context and no undo order, and nothing
+one does reaches the other while it edits.

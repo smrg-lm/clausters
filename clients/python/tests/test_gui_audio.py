@@ -102,6 +102,7 @@ class FakeBuffer:
         self.frames = frames
         self.channels = channels
         self.sample_rate = SR
+        self.path = None
         self.server = FakeServer()
 
     def set_samples(self, samples, start=0, **kwargs):
@@ -185,6 +186,18 @@ def test_a_take_past_the_resident_budget_goes_to_disk_and_comes_back():
     take.server.sent.clear()
     assert editor.undo() is True
     assert take.server.addrs()[:2] == ["/buffer_allocRead", "/buffer_stitch"]
+
+
+def test_a_save_writes_the_edited_take_over_its_file_or_as_another():
+    take = FakeBuffer()
+    take.path = "/takes/a.wav"
+    editor, _host, _wid, _context = opened(take)
+    take.server.sent.clear()
+    assert editor.save() == "/takes/a.wav"
+    assert take.server.sent == [("/buffer_write", (editor.buffer.bufnum,
+                                                   "/takes/a.wav", "wav", "float"))]
+    assert editor.save("/takes/b.wav", sample_format="int24") == "/takes/b.wav"
+    assert editor.save() == "/takes/b.wav"
 
 
 if __name__ == "__main__":

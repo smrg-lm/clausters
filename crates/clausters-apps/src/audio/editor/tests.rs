@@ -326,3 +326,52 @@ fn a_mix_is_a_new_take_over_the_frames_the_block_lands_on() {
         "one buffer left, and a mix needs two"
     );
 }
+
+#[test]
+fn a_save_writes_the_join_over_the_file_and_a_save_as_moves_it() {
+    let mut editor = opened(1);
+    let refused = call(&mut editor, json!({"verb": "save"}));
+    assert!(
+        refused["error"]
+            .as_str()
+            .unwrap()
+            .contains("save it as one")
+    );
+
+    call(&mut editor, json!({"verb": "sync", "path": "/takes/a.wav"}));
+    let saved = call(&mut editor, json!({"verb": "save"}));
+    assert_eq!(saved["path"], "/takes/a.wav");
+    assert_eq!(
+        args(&saved["steps"], "/buffer_write"),
+        [
+            json!({"i": 9}),
+            json!({"s": "/takes/a.wav"}),
+            json!({"s": "wav"}),
+            json!({"s": "float"})
+        ],
+        "the join, over the file it was read from"
+    );
+    let moved = call(
+        &mut editor,
+        json!({"verb": "save", "path": "/takes/b.wav", "format": "int24"}),
+    );
+    assert_eq!(moved["path"], "/takes/b.wav");
+    assert_eq!(
+        call(&mut editor, json!({"verb": "save"}))["path"],
+        "/takes/b.wav"
+    );
+    assert!(call(&mut editor, json!({"verb": "save", "format": "mp3"}))["error"].is_string());
+}
+
+#[test]
+fn ctrl_s_over_the_window_is_a_save() {
+    let mut editor = opened(1);
+    call(&mut editor, json!({"verb": "sync", "path": "/takes/a.wav"}));
+    let out = event(&mut editor, json!([900, 5, 0, "save"]));
+    assert_eq!(
+        walk(&out["steps"]),
+        ["/buffer_write", "await /buffer_write"]
+    );
+    assert_eq!(out["answer"]["seq"], 5);
+    assert!(out.get("record").is_none(), "a save is no edit");
+}

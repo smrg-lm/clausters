@@ -203,9 +203,9 @@ opened it.
     the member whose server the takes are on. `AudioEditor` in both clients
     walks the steps, tops up the buffers before every turn and frees what
     comes back; the host's cut now copies first, and **Ctrl+Shift+V** reports
-    `"mix"`. **Not done, and it is the next step rather than this one's**: the
-    standalone host has no audio editor, because it has no way to open one --
-    see `X1.9`.
+    `"mix"`. The standalone host has no audio editor, and with the multitrack
+    and the audio editor separate applications (`X1.9`) it has no box to
+    open one from; running it there is its own question.
   - ✅ **X1.6 - Disk**: takes as regions under `--shm`, the browser's
     backing decided. *(Saving moved to `X1.9`, where it is what reaches the
     multitrack.)*
@@ -239,22 +239,16 @@ opened it.
     test. `edit_audio.py` / `edit-audio.html`; both clients' composition
     chapters and `docs/architecture.md`. The script was checked by hand
     (2026-09-22): cut, undo and redo, copy, paste at the cursor.
-  - ⬜ **X1.9 - Saving the edited take, and a multitrack that receives it.**
-    **Reshaped with the user 2026-09-22**, replacing the "every turn" answer
-    taken earlier that day: **the multitrack and the audio editor are
-    unrelated applications**. Opening a take of the multitrack in an audio
-    editor is opening another application -- its own editing context, its
-    own undo order -- and nothing it does reaches the multitrack while it
-    edits. **What reaches the multitrack is a save**: when the audio editor
-    writes what it edited to disk, the multitrack receives the change. Two
-    things to build. *Saving*: the join written out as a file (a verb of the
-    editor, over `/buffer_write` of the join, which reads through its parts).
-    *Receiving*: a multitrack whose source names that file reads it again,
-    which is where the source's generation counter is the answer rather than
-    a new mechanism. And one to wire: entering a box from the multitrack
-    opens the audio editor as a separate application, in the clients and in
-    the standalone host -- which today opens the samples editor, one that
-    writes the take in place.
+  - ✅ **X1.9 - Saving the edited take.** **Reshaped with the user
+    2026-09-22**, twice that day: the multitrack and the audio editor are
+    **separate, incompatible applications** -- no box of the multitrack
+    opens the audio editor, and nothing either does reaches the other. **A
+    save writes over the file the take was read from**, and a save-as writes
+    another file, which a later save writes over (`docs/decisions.md`). The
+    editor's `save` writes the join through its parts (`/buffer_write`), as
+    float unless told otherwise; Ctrl+S over its window is the same save.
+    Checked against a real server: a cut take saved over its file reads back
+    at the cut's length.
 
   **Open, and not decided here:** the browser has no mapping, so whether its
   history stays in memory under the byte budget or goes to OPFS; the budgets'

@@ -37,10 +37,11 @@ still reach them and freed when neither can -- <code>historyBytes</code> caps
 what only the history holds, and the oldest entries go first past it.
 
 <b>Drag</b> to select, then <b>Ctrl+X</b> to cut, <b>Ctrl+C</b> to copy,
-<b>Ctrl+V</b> to paste at the selection's start and <b>Ctrl+Shift+V</b> to mix
+<b>Ctrl+V</b> to paste at the cursor and <b>Ctrl+Shift+V</b> to mix
 there. <b>Wheel</b> to zoom in until each sample is a disc, then
 <b>Alt+drag</b> to draw. <b>Ctrl+Z</b> and <b>Ctrl+Shift+Z</b> walk the
-history.</div>
+history. <code>editor.save({ path })</code> writes it as a file; the take here
+was made in memory, so it has none of its own for Ctrl+S to write over.</div>
 
       <button id="run">open the take</button>
       <div id="stage"></div>

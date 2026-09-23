@@ -106,6 +106,7 @@ class FakeBuffer {
     frames: number;
     channels: number;
     sampleRate = SR;
+    path: string | undefined = undefined;
     server = new FakeServer();
 
     constructor(frames = 100, channels = 1) {
@@ -222,4 +223,17 @@ test("a take past the resident budget goes to disk and comes back", async () => 
     assert.equal(editor.undo(), true);
     await settle();
     assert.deepEqual(take.server.addrs().slice(0, 2), ["/buffer_allocRead", "/buffer_stitch"]);
+});
+
+test("a save writes the edited take over its file or as another", async () => {
+    const take = new FakeBuffer();
+    take.path = "/takes/a.wav";
+    const [editor] = await opened(take);
+    take.server.sent = [];
+    assert.equal(await editor.save(), "/takes/a.wav");
+    assert.deepEqual(take.server.sent, [
+        ["/buffer_write", [editor.buffer.bufnum, "/takes/a.wav", "wav", "float"]],
+    ]);
+    assert.equal(await editor.save({ path: "/takes/b.wav", sampleFormat: "int24" }), "/takes/b.wav");
+    assert.equal(await editor.save(), "/takes/b.wav");
 });

@@ -206,6 +206,7 @@ export class AudioEditor extends Editor<Buffer> {
                 frames: Math.trunc(take.frames || 0),
                 take: Math.trunc(take.bufnum),
                 display: this.display,
+                path: take.path ?? null,
                 layers: view.layers,
             },
             take,
@@ -297,6 +298,27 @@ export class AudioEditor extends Editor<Buffer> {
     }
 
     /**
+     * **Writes the take as the edits have left it** -- over the file it was read
+     * from, or, given a `path`, as that file, which a later `save` then writes
+     * over. Ctrl+S in the window is the same save. Resolves to the path written.
+     *
+     * `sampleFormat` is `"float"`, `"int24"` or `"int16"`. Throws a
+     * `RangeError` when the take was read from no file and no `path` was given,
+     * or the format is not one of those three.
+     */
+    async save({
+        path,
+        sampleFormat = "float",
+    }: { path?: string; sampleFormat?: string } = {}): Promise<string> {
+        const answer = this.coreCall("save", { path: path ?? null, format: sampleFormat });
+        if (typeof answer.error === "string") throw new RangeError(answer.error);
+        const domain = this.domain as AudioDomain;
+        domain.run(this.structure, (answer.steps as unknown[] | undefined) ?? []);
+        await domain.idle();
+        return String(answer.path);
+    }
+
+    /**
      * What the take is made of now: one object per span, in reading order, each
      * naming the buffer it reads and the frames of it.
      */
@@ -343,10 +365,11 @@ export class AudioEditor extends Editor<Buffer> {
     private take(outcome: Outcome): boolean {
         if (outcome.turn === undefined || outcome.turn === "nothing") return false;
         const changed = outcome.changed === true;
+        // **The steps are this page's to carry out**: a new take made where the
+        // turn needed one and the join stitched over the list -- or, for a save
+        // from the window, the file written.
+        (this.domain as AudioDomain).run(this.structure, outcome.steps ?? []);
         if (changed) {
-            // **The steps are this page's to carry out**: a new take made where
-            // the turn needed one, then the join stitched over the list.
-            (this.domain as AudioDomain).run(this.structure, outcome.steps ?? []);
             this.dirty = true;
             this.editing.changed();
         }
