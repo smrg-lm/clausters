@@ -275,6 +275,30 @@ fn a_box_sounds_only_inside_its_own_window() {
     );
 }
 
+/// **A reader is silent outside its source, whatever its window says.** A box
+/// longer than what is left of its buffer reads past the end, where `BufRd`
+/// clamps and holds the last sample: without the buffer's own end in the gate,
+/// that sample stays on the bus as a constant for as long as the transport
+/// rolls. The window here is four times the take, and only the take is heard.
+#[test]
+fn a_box_longer_than_its_take_is_silent_past_the_take() {
+    let mut s = session();
+    send_defs(&mut s, &[(1, 2)], 2);
+    dc(&mut s, 0, 4 * BLOCK, 1.0);
+    one_box(&mut s, (16 * BLOCK) as f32, 0.0);
+    send(&mut s, "/transport_play", vec![]);
+    s.settle_for(2);
+
+    let heard: Vec<bool> = (0..24).map(|_| peaks(&mut s, 1).0 > 0.0).collect();
+    let first = heard.iter().position(|&h| h).expect("it is heard at all");
+    let last = heard.iter().rposition(|&h| h).expect("it is heard at all");
+    assert_eq!(
+        last - first + 1,
+        4,
+        "four blocks, which is the take, not the sixteen of the window: {heard:?}"
+    );
+}
+
 /// **A port written at any level reaches the control it names.** The track's
 /// mute and the multitrack's gain are the same word on three different strips, which
 /// is what makes an automation's target resolvable at all.

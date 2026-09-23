@@ -119,23 +119,34 @@ pub fn take_def_message() -> OscMessage {
             // and without the ramp both edges click, which is what a hard cut
             // at a non-zero sample is.
             //
+            // **Where it ends is the nearer of the span and the buffer's own
+            // end**, so the gate closes whether or not anybody stated a span:
+            // a take played whole leaves `span` at no end, and it is the
+            // buffer that says where it stops. Asked of the buffer every
+            // block, so an edit that makes the take shorter or longer while
+            // it sounds moves the end with it.
+            //
             // It is one expression rather than two comparisons and an
             // envelope: the distance to the nearer edge, over the ramp,
             // clamped to `[0, 1]`. Outside the span that distance is negative,
             // so the clamp *is* the gate; inside, it is 1 everywhere but the
             // ramp. A region shorter than two ramps gets a triangle, which is
             // the right answer rather than a special case.
-            {"kind": "Sub", "inputs": [{"control": 6}, {"ugen": 0}]},
+            {"kind": "BufFrames", "inputs": [{"control": 0}]},
+            {"kind": "Sub", "inputs": [{"ugen": 3}, {"control": 5}]},
             {"kind": "BinaryOpUGen", "op": "min", "inputs": [
-                {"ugen": 0}, {"ugen": 3}]},
-            {"kind": "Mul", "inputs": [{"ugen": 4}, {"const": 1.0 / RAMP}]},
+                {"control": 6}, {"ugen": 4}]},
+            {"kind": "Sub", "inputs": [{"ugen": 5}, {"ugen": 0}]},
+            {"kind": "BinaryOpUGen", "op": "min", "inputs": [
+                {"ugen": 0}, {"ugen": 6}]},
+            {"kind": "Mul", "inputs": [{"ugen": 7}, {"const": 1.0 / RAMP}]},
             {"kind": "BinaryOpUGen", "op": "max", "inputs": [
-                {"ugen": 5}, {"const": 0.0}]},
+                {"ugen": 8}, {"const": 0.0}]},
             {"kind": "BinaryOpUGen", "op": "min", "inputs": [
-                {"ugen": 6}, {"const": 1.0}]},
-            {"kind": "Mul", "inputs": [{"ugen": 2}, {"ugen": 7}]},
-            {"kind": "Mul", "inputs": [{"ugen": 8}, {"control": 2}]},
-            {"kind": "Out", "inputs": [{"control": 3}, {"ugen": 9}]},
+                {"ugen": 9}, {"const": 1.0}]},
+            {"kind": "Mul", "inputs": [{"ugen": 2}, {"ugen": 10}]},
+            {"kind": "Mul", "inputs": [{"ugen": 11}, {"control": 2}]},
+            {"kind": "Out", "inputs": [{"control": 3}, {"ugen": 12}]},
         ],
     });
     OscMessage {
@@ -180,9 +191,9 @@ impl Host {
     /// be written.
     ///
     /// `looping` names the span to repeat, in frames; `None` plays on past the
-    /// end, where the reader clamps and goes quiet -- there is no "one shot" to
-    /// arrange, because the transport simply keeps rolling and the head keeps
-    /// moving, which is what a DAW does.
+    /// end, where the def's gate closes at the buffer's last frame -- there is
+    /// no "one shot" to arrange, because the transport simply keeps rolling and
+    /// the head keeps moving, as a multitrack's does.
     pub fn play_buffer(
         &mut self,
         def_id: i32,
@@ -372,6 +383,9 @@ mod tests {
                 "TransportPos",
                 "Add",
                 "BufRd",
+                "BufFrames",
+                "Sub",
+                "BinaryOpUGen",
                 "Sub",
                 "BinaryOpUGen",
                 "Mul",
@@ -401,10 +415,15 @@ mod tests {
         // to `[0, 1]` -- so outside the span the clamp is the gate and inside
         // it is 1 everywhere but the ramp, which is what keeps both edges from
         // clicking.
-        assert_eq!(spec["ugens"][4]["op"], "min", "the nearer edge");
-        assert_eq!(spec["ugens"][6]["op"], "max", "clamped below");
-        assert_eq!(spec["ugens"][7]["op"], "min", "and above");
-        assert_eq!(spec["ugens"][5]["inputs"][1]["const"], 1.0 / RAMP);
+        //
+        // The end is the nearer of the span and the buffer's own end, so a
+        // take played with no span still stops where its samples do.
+        assert_eq!(spec["ugens"][3]["inputs"][0]["control"], 0, "this buffer");
+        assert_eq!(spec["ugens"][5]["op"], "min", "span or buffer, the nearer");
+        assert_eq!(spec["ugens"][7]["op"], "min", "the nearer edge");
+        assert_eq!(spec["ugens"][9]["op"], "max", "clamped below");
+        assert_eq!(spec["ugens"][10]["op"], "min", "and above");
+        assert_eq!(spec["ugens"][8]["inputs"][1]["const"], 1.0 / RAMP);
         let span = spec["controls"]
             .as_array()
             .expect("controls")
@@ -414,6 +433,91 @@ mod tests {
         assert_eq!(
             span["default"], NO_END,
             "unstated is no end, because a control left alone has to be inert"
+        );
+    }
+
+    /// **A take played past its end is silent**, heard on a server rather than
+    /// read off the def. The transport keeps rolling after the last frame and
+    /// `BufRd` clamps there, so what the gate is for is exactly this: with no
+    /// span stated, the take's last sample stayed on the output as a constant
+    /// for as long as the transport rolled.
+    #[cfg(feature = "standalone")]
+    #[test]
+    fn a_take_played_past_its_end_is_silent() {
+        use clausters::server::nrtsession::{NrtSession, SessionConfig};
+
+        const BLOCK: usize = 64;
+        let mut s = NrtSession::open(&SessionConfig {
+            sample_rate: 48_000.0,
+            channels: 2,
+            ..Default::default()
+        })
+        .expect("open");
+        let send = |s: &mut NrtSession, msg: OscMessage| {
+            assert!(
+                s.send_msg(&msg.addr, msg.args).expect("encode"),
+                "ring full"
+            );
+        };
+        send(&mut s, take_def_message());
+        for msg in take_group_messages(1001) {
+            send(&mut s, msg);
+        }
+        let frames = 16 * BLOCK as i32;
+        send(
+            &mut s,
+            OscMessage {
+                addr: "/buffer_alloc".into(),
+                args: vec![OscType::Int(0), OscType::Int(frames), OscType::Int(1)],
+            },
+        );
+        s.settle_for(8);
+        send(
+            &mut s,
+            OscMessage {
+                addr: "/buffer_fill".into(),
+                args: vec![
+                    OscType::Int(0),
+                    OscType::Int(0),
+                    OscType::Int(frames),
+                    OscType::Float(0.5),
+                ],
+            },
+        );
+        send(
+            &mut s,
+            OscMessage {
+                addr: "/synth_new".into(),
+                args: vec![
+                    OscType::String(TAKE_DEF.into()),
+                    OscType::Int(2000),
+                    OscType::Int(0),
+                    OscType::Int(1001),
+                    OscType::String("bufnum".into()),
+                    OscType::Float(0.0),
+                ],
+            },
+        );
+        send(
+            &mut s,
+            OscMessage {
+                addr: "/transport_play".into(),
+                args: vec![],
+            },
+        );
+        s.settle_for(4);
+
+        let out = s.run_to_vec((64 * BLOCK) as u64).expect("the render ran");
+        let left: Vec<f32> = out.as_chunks::<2>().0.iter().map(|f| f[0]).collect();
+        assert!(
+            left.iter().any(|x| *x > 0.4),
+            "the take is heard while the transport is inside it"
+        );
+        let tail = &left[32 * BLOCK..];
+        assert!(
+            tail.iter().all(|x| *x == 0.0),
+            "and past its end the output is zero, not its last sample held: {:?}",
+            tail.iter().find(|x| **x != 0.0)
         );
     }
 
