@@ -90,24 +90,23 @@ opened it.
   never given back", which is the same problem seen from the multitrack).*
 
   **What the field does, and the one principle under all of it.** Three shapes
-  exist. *Immutable blocks shared between undo states* — Audacity: a track is a
-  sequence of blocks of up to ~1 MB, a block is never rewritten (a change makes
-  new blocks), every undo state is a block list, so two states share everything
+  exist. *Immutable blocks shared between undo states*: a track is a sequence
+  of blocks of about a megabyte, a block is never rewritten (a change makes new
+  blocks), every undo state is a block list, so two states share everything
   that did not change and a duplicated selection costs no disk; a block goes
   when no state names it, and the history's space is reclaimed when the project
-  closes. *A temporary file per undo level* — Audition, Sound Forge: destructive
-  editors that copy the file to scratch and leave undo files on disk, so memory
-  stays flat and disk grows, which is why both offer a manual "clear history"
-  and Audition warns when its reserve runs out. *Non-destructive over files* —
-  REAPER, Ardour, Pro Tools, Logic: material stays in files, an edit changes
-  regions, a render or a glue writes a new file; the history is light and
-  REAPER caps it in megabytes, dropping the oldest states; unused files are
-  **never** deleted on their own (Ardour's clean-up goes through a wastebasket
-  flushed only in a later session). In all three **the history names immutable
-  audio and never copies it**.
+  closes. *A temporary file per undo level*: destructive editors copy the file
+  to scratch and leave undo files on disk, so memory stays flat and disk grows,
+  which is why they offer a manual "clear history" and warn when the scratch
+  reserve runs out. *Non-destructive over files*: material stays in files, an
+  edit changes regions, a render or a glue writes a new file; the history is
+  light and some cap it in megabytes, dropping the oldest states; unused files
+  are **never** deleted on their own, and one clean-up goes through a
+  wastebasket flushed only in a later session. In all three **the history
+  names immutable audio and never copies it**.
 
   **What clausters already has for that shape.** The server's joins
-  (`/buffer_stitch`) are Audacity's block list: spans over takes, owning no
+  (`/buffer_stitch`) are that block list: spans over takes, owning no
   samples, played by the engine directly, at mixed rates. `S19`'s regions make
   every buffer a mapped file under `--shm`, so "down to disk" already exists
   and the operating system's page cache is what manages memory. `S12` keeps
@@ -123,8 +122,8 @@ opened it.
   2. **An operation that computes samples writes a new take the size of the
      span it touched** — mix, gain, a process, and **the pencil: a new take per
      gesture**, not a write into the buffer. The parts list splices it in.
-     This is Audacity's rule (a block is never updated) at the granularity of
-     the edit instead of a fixed block.
+     This is the block rule (a block is never updated) at the granularity of
+     the edit instead of a fixed size.
   3. **A history entry holds source ids, not samples.** For audio the file-backed
      `Spill` is no longer needed — the takes *are* the disk store; `Spill` stays
      for payloads that are not audio.
@@ -133,13 +132,12 @@ opened it.
      reaches — because the budget trimmed the pile, or a clear-history ran — is
      freed. `released()` generalized to sources, and it is what finally enforces
      `Lifetime::Temporary`'s "dies with the edit session".
-  5. **Two budgets and an explicit clear**, as REAPER and Audition have: the
+  5. **Two budgets and an explicit clear**, as the field has them: the
      entry count that exists, plus a byte budget over what **only** the history
      holds, and a "clear history" verb.
   6. **Memory or disk is the backing's decision, not the history's.** With a
      mapped region the disk is the virtual memory. A save promotes only what the
-     document reaches; the rest is temporary and goes when the session closes,
-     as Audacity does on close.
+     document reaches; the rest is temporary and goes when the session closes.
   7. **A parts list is flattened in Rust** (`clausters-core` or
      `clausters-editing`): a join over a join always resolves to one flat list of
      spans over takes, so repeated edits never approach the server's four-level
