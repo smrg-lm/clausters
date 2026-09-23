@@ -25,18 +25,26 @@ pub fn parse_buffer_msg(
         "/buffer_alloc" => {
             let (index, frames) = match args {
                 [OscType::Int(index), OscType::Int(frames), ..] => (*index, *frames),
-                _ => return Err("expected: bufnum, frames [, channels]".into()),
+                _ => return Err("expected: bufnum, frames [, channels, sampleRate]".into()),
             };
             let channels = int_arg(args, 2).unwrap_or(1);
             if frames <= 0 || channels <= 0 {
                 return Err("frames and channels must be positive".into());
             }
+            // **The rate the samples will be written at**, when it is not the
+            // server's: a buffer an editor fills with frames of a 44.1 kHz take
+            // holds 44.1 kHz samples wherever it is allocated, and every reader
+            // takes its rate off the buffer. Zero or absent is the server's.
+            let sample_rate = float_arg(args, 3)
+                .map(f64::from)
+                .filter(|r| *r > 0.0)
+                .unwrap_or(default_sample_rate);
             (
                 index,
                 NrtJob::Alloc {
                     frames: frames as usize,
                     channels: channels as usize,
-                    sample_rate: default_sample_rate,
+                    sample_rate,
                 },
             )
         }

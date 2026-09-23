@@ -640,7 +640,7 @@ That is how a cut assembled from several takes — or from one take in another o
 ## Buffers (`/buffer_*`)
 
 ```text
-/buffer_alloc     bufnum frames [channels=1]                  # zeroed buffer
+/buffer_alloc     bufnum frames [channels=1] [sampleRate=0]   # zeroed buffer; 0 = the server's rate
 /buffer_allocRead bufnum path [fileStart=0] [numFrames=0=all] # shape from the file
 /buffer_read      bufnum path [fileStart=0] [numFrames=-1=all] [bufStart=0]
 /buffer_allocReadChannel bufnum path fileStart numFrames channel...  # shape from the file, selected channels

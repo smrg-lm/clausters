@@ -170,18 +170,26 @@ class Buffer:
     # ---- constructors ----
 
     @classmethod
-    def alloc(cls, frames: int, channels: int = 1, *, wait: bool = True,
+    def alloc(cls, frames: int, channels: int = 1, *,
+              sample_rate: float = 0.0, wait: bool = True,
               timeout: "float | None" = None, server=None) -> "Buffer":
         """Allocates a zeroed buffer. In NRT it scores ``/buffer_alloc`` at time 0
         (so the renderer installs it before time advances); in RT ``wait=True``
-        (default) blocks on ``/done``, ``wait=False`` is fire-and-forget."""
+        (default) blocks on ``/done``, ``wait=False`` is fire-and-forget.
+
+        `sample_rate` is the rate the samples will be written at, `0.0` (the
+        default) for the server's: a buffer filled with frames of a take
+        recorded at another rate holds samples at that rate, and every reader
+        takes the rate off the buffer."""
         srv = _resolve(server)
         bufnum = srv.buffers.alloc()
-        buf = cls(bufnum, frames, channels, server=srv)
+        buf = cls(bufnum, frames, channels, sample_rate, server=srv)
+        args = (bufnum, frames, channels) + (
+            (float(sample_rate),) if sample_rate > 0 else ())
         if buf._scored() or not wait:
-            srv.send_msg("/buffer_alloc", bufnum, frames, channels)
+            srv.send_msg("/buffer_alloc", *args)
             return buf
-        addr, args = srv.request("/buffer_alloc", bufnum, frames, channels,
+        addr, args = srv.request("/buffer_alloc", *args,
                                  timeout=timeout, expect=("/done", "/fail"))
         if addr == "/fail":
             srv.buffers.free(bufnum)

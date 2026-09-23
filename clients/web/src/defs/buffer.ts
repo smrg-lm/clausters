@@ -168,11 +168,23 @@ export class Buffer {
         return new Buffer(bufnum, frames, width, sampleRate, server);
     }
 
-    /** Allocates a zeroed buffer (`/buffer_alloc`). */
+    /**
+     * Allocates a zeroed buffer (`/buffer_alloc`).
+     *
+     * `sampleRate` is the rate the samples will be written at, `0` (the
+     * default) for the server's: a buffer filled with frames of a take
+     * recorded at another rate holds samples at that rate, and every reader
+     * takes the rate off the buffer.
+     */
     static async alloc(
         frames: number,
         channels = 1,
-        { wait = true, timeout, server: on }: BufferOptions & { wait?: boolean } = {},
+        {
+            sampleRate = 0.0,
+            wait = true,
+            timeout,
+            server: on,
+        }: BufferOptions & { sampleRate?: number; wait?: boolean } = {},
     ): Promise<Buffer> {
         const server = resolveServer(on);
         const bufnum = server.buffers.alloc();
@@ -180,10 +192,11 @@ export class Buffer {
             ["i", bufnum],
             ["i", Math.trunc(frames)],
             ["i", Math.trunc(channels)],
+            ...(sampleRate > 0 ? [["f", sampleRate] as MsgArg] : []),
         ];
         if (!wait) {
             server.sendMsg("/buffer_alloc", ...args);
-            return new Buffer(bufnum, frames, channels, 0.0, server);
+            return new Buffer(bufnum, frames, channels, sampleRate, server);
         }
         try {
             await server.command("/buffer_alloc", args, timeout);
@@ -191,7 +204,7 @@ export class Buffer {
             server.buffers.free(bufnum);
             throw error;
         }
-        return new Buffer(bufnum, frames, channels, 0.0, server);
+        return new Buffer(bufnum, frames, channels, sampleRate, server);
     }
 
     /**

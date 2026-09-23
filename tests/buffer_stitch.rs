@@ -445,3 +445,54 @@ fn a_join_says_what_it_is_made_of() {
     assert_eq!(m.args[1], OscType::Int(0), "no channels, and no failure");
     assert!(fails(&mut s).is_empty(), "nothing was refused");
 }
+
+/// **A buffer allocated at a take's rate joins that take frame for frame.**
+/// A 24 kHz buffer on a 48 kHz server, stitched into a 24 kHz join, fills as
+/// many frames of the join as it holds -- which is what a take drawn over a
+/// span of a take at another rate than the server's needs to be.
+#[test]
+fn a_buffer_allocated_at_a_rate_of_its_own_joins_at_that_rate() {
+    let mut s = session();
+    send(
+        &mut s,
+        "/buffer_alloc",
+        vec![
+            OscType::Int(3),
+            OscType::Int(4),
+            OscType::Int(1),
+            OscType::Float(24_000.0),
+        ],
+    );
+    s.settle_for(4);
+    send(&mut s, "/buffer_query", vec![OscType::Int(3)]);
+    let m = reply(&mut s, "/buffer_query.reply").expect("a reply");
+    assert_eq!(m.args[3], OscType::Float(24_000.0));
+    send(
+        &mut s,
+        "/buffer_setRange",
+        vec![
+            OscType::Int(3),
+            OscType::Int(0),
+            blob(&[0.1, 0.2, 0.3, 0.4]),
+        ],
+    );
+    s.settle_for(4);
+    send(
+        &mut s,
+        "/buffer_stitch",
+        vec![
+            OscType::Int(5),
+            OscType::Int(1),
+            OscType::Float(24_000.0),
+            OscType::Int(3),
+            OscType::Int(0),
+            OscType::Int(4),
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+    );
+    s.settle_for(4);
+    assert_eq!(read_back(&mut s, 5, 8), [0.1, 0.2, 0.3, 0.4]);
+    assert!(fails(&mut s).is_empty());
+}
