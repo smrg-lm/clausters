@@ -187,7 +187,11 @@ opened it.
     the server runs at. A stroke over a take wider than one channel starts as
     the frames it was drawn over, copied out of the join by the server
     (`/buffer_gen copy`, which now reads only the span).
-  - ⬜ **X1.4 - Mix**, as the server's verb over two spans into a new take.
+  - ✅ **X1.4 - Mix**, as the server's verb over two spans into a new take.
+    `/buffer_mix` adds another buffer's frames into a span (the source may be a
+    join); the editor's `mix` copies the frames under the block into a new take,
+    writes the block into a scratch buffer it frees in the same steps, and mixes
+    one into the other.
   - ⬜ **X1.5 - The doors and both clients**: the C ABI, wasm, the Python
     `AudioEditor`, its web port, the standalone host; `docs/bindings.md`.
     The host's **cut puts nothing on the clipboard** (`ClipVerb::Cut` only

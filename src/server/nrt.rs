@@ -171,7 +171,7 @@ impl SampleWrite {
 /// One destructive edit, parsed. The span is in **frames** -- a selection is a
 /// stretch of time across every channel, which is a different unit from the
 /// flat interleaved index `/buffer_set*` speaks.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum EditOp {
     /// Scale by a factor sweeping `from` to `to` along an envelope shape:
     /// constant gain, a fade either way, or silence.
@@ -185,6 +185,16 @@ pub enum EditOp {
     },
     /// Turn the span's frames around, channels untouched inside each frame.
     Reverse { start: usize, frames: usize },
+    /// Add `frames` frames of `source` from `src_start`, scaled by `gain`.
+    /// The source is read when the job runs, so a write to it earlier in the
+    /// queue is what it reads.
+    Mix {
+        start: usize,
+        frames: usize,
+        source: Arc<Buffer>,
+        src_start: usize,
+        gain: f32,
+    },
 }
 
 impl EditOp {
@@ -193,9 +203,9 @@ impl EditOp {
     /// buffer's.
     pub fn span(&self) -> (usize, usize) {
         match self {
-            EditOp::Gain { start, frames, .. } | EditOp::Reverse { start, frames } => {
-                (*start, *frames)
-            }
+            EditOp::Gain { start, frames, .. }
+            | EditOp::Reverse { start, frames }
+            | EditOp::Mix { start, frames, .. } => (*start, *frames),
         }
     }
 }
@@ -853,13 +863,29 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
                 EditOp::Reverse { frames, .. } => {
                     clausters_core::edit::reverse(&mut data, channels, 0, frames.min(span_frames))
                 }
+                EditOp::Mix {
+                    frames,
+                    source,
+                    src_start,
+                    gain,
+                    ..
+                } => {
+                    let width = source.channels().max(1);
+                    let from: Vec<f32> = (0..frames)
+                        .flat_map(|f| (0..width).map(move |c| (f, c)))
+                        .map(|(f, c)| source.sample(src_start + f, c))
+                        .collect();
+                    clausters_core::edit::mix(&mut data, channels, 0, frames, &from, width, gain)
+                }
             };
             out.map_err(|e| e.to_string())?;
             for (i, v) in data.iter().enumerate() {
                 base.set_at(start + i, *v);
             }
-            let (start, frames) = op.span();
-            Ok(NrtAction::Wrote { start, frames })
+            Ok(NrtAction::Wrote {
+                start: span_start,
+                frames: span_frames,
+            })
         }
         NrtJob::Fill { base, fills } => {
             // In place, like every other write of a span. A fill says how many

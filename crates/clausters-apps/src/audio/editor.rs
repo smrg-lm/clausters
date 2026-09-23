@@ -358,6 +358,7 @@ impl AudioEditor {
             "draw" | "sample" => self.stroke(tag, values),
             "cut" => self.cut(values),
             "paste" => self.paste(values),
+            "mix" => self.mix(values),
             _ => return (None, Vec::new()),
         };
         match edited {
@@ -498,6 +499,96 @@ impl AudioEditor {
     /// its width or its rate is not the take's, since fitting either would be
     /// an edit nobody asked for.
     fn paste(&mut self, values: &[Value]) -> Result<Edited, String> {
+        let (position, samples) = self.block(values)?;
+        let frames = samples.len() as u64 / u64::from(self.channels);
+        if frames == 0 {
+            return Ok(None);
+        }
+        let buffer = self.next_buffer()?;
+        let mut steps = self.allocate(buffer, frames);
+        steps.extend(self.fill(buffer, &samples));
+        self.frames.insert(buffer, frames);
+        let list = parts::insert(&self.list, position, &[part(buffer, 0, frames)])?;
+        Ok(Some(("paste".into(), list, steps)))
+    }
+
+    /// **A mix adds the block onto the frames it lands on**, and the result is
+    /// a new take over those frames.
+    ///
+    /// The frames under the block are copied out of the join into a take of
+    /// their own, the block is written into a scratch buffer, and the server
+    /// adds one into the other (`/buffer_mix`) -- the sum is an operation over
+    /// samples, so it is the server's. The scratch buffer is freed by the same
+    /// steps and goes back to the ones this editor holds. A block that runs
+    /// past the end of the take is mixed as far as the take goes.
+    fn mix(&mut self, values: &[Value]) -> Result<Edited, String> {
+        let (position, mut samples) = self.block(values)?;
+        let width = u64::from(self.channels);
+        let total = self.length();
+        if position >= total {
+            return Err("the mix lands past the end of the take".into());
+        }
+        let frames = (samples.len() as u64 / width).min(total - position);
+        samples.truncate((frames * width) as usize);
+        if frames == 0 {
+            return Ok(None);
+        }
+        if self.spare.len() < 2 {
+            return Err("a mix needs two buffers handed over: the take and a scratch one".into());
+        }
+        let (take, scratch) = (self.spare.remove(0), self.spare.remove(0));
+        let mut steps = self.allocate(take, frames);
+        steps.push(send(
+            "/buffer_gen",
+            vec![
+                OscType::Int(take as i32),
+                OscType::String("copy".into()),
+                OscType::Int(0),
+                OscType::Int(self.display as i32),
+                OscType::Int((position * width) as i32),
+                OscType::Int((frames * width) as i32),
+            ],
+        ));
+        steps.push(Step::AwaitDone {
+            command: "/buffer_gen".into(),
+            index: Some(take as i32),
+        });
+        steps.extend(self.allocate(scratch, frames));
+        steps.extend(self.fill(scratch, &samples));
+        steps.push(send(
+            "/buffer_mix",
+            vec![
+                OscType::Int(take as i32),
+                OscType::Int(0),
+                OscType::Int(scratch as i32),
+                OscType::Int(0),
+                OscType::Int(frames as i32),
+                OscType::Float(1.0),
+            ],
+        ));
+        steps.push(Step::AwaitDone {
+            command: "/buffer_mix".into(),
+            index: Some(take as i32),
+        });
+        steps.push(send("/buffer_free", vec![OscType::Int(scratch as i32)]));
+        steps.push(Step::AwaitDone {
+            command: "/buffer_free".into(),
+            index: Some(scratch as i32),
+        });
+        self.spare.push(scratch);
+        self.frames.insert(take, frames);
+        let list = parts::replace(
+            &self.list,
+            position,
+            position + frames,
+            &[part(take, 0, frames)],
+        )?;
+        Ok(Some(("mix".into(), list, steps)))
+    }
+
+    /// **The block a paste or a mix carries**: where it goes, and its samples
+    /// interleaved at the take's width -- or why it does not fit this take.
+    fn block(&self, values: &[Value]) -> Result<(u64, Vec<f32>), String> {
         let position = values.first().map_or(0.0, number).round().max(0.0) as u64;
         let doc = values.get(2).map(text).unwrap_or_default();
         let Ok(clip) = serde_json::from_str::<Clipboard>(&doc) else {
@@ -527,34 +618,39 @@ impl AudioEditor {
                 self.rate
             ));
         }
-        let samples: Vec<f32> = match values.get(3 + blob) {
+        let mut samples: Vec<f32> = match values.get(3 + blob) {
             Some(Value::Array(items)) => items.iter().map(|v| number(v) as f32).collect(),
             _ => return Err("the clipboard's samples did not travel with it".into()),
         };
-        let frames = frames.min(samples.len() as u64 / u64::from(self.channels));
-        if frames == 0 {
-            return Ok(None);
-        }
-        let buffer = self.next_buffer()?;
-        let mut steps = self.allocate(buffer, frames);
-        let flat = &samples[..(frames * u64::from(self.channels)) as usize];
-        for (i, run) in flat.chunks(self.chunk.max(1)).enumerate() {
-            steps.push(send(
-                "/buffer_setRange",
-                vec![
-                    OscType::Int(buffer as i32),
-                    OscType::Int((i * self.chunk.max(1)) as i32),
-                    OscType::Blob(run.iter().flat_map(|v| v.to_le_bytes()).collect()),
-                ],
-            ));
-        }
+        let width = u64::from(self.channels);
+        let frames = frames.min(samples.len() as u64 / width);
+        samples.truncate((frames * width) as usize);
+        Ok((position, samples))
+    }
+
+    /// The steps that write `samples`, interleaved, into `buffer` from its
+    /// first frame, and wait for the last write.
+    fn fill(&self, buffer: i64, samples: &[f32]) -> Vec<Step> {
+        let chunk = self.chunk.max(1);
+        let mut steps: Vec<Step> = samples
+            .chunks(chunk)
+            .enumerate()
+            .map(|(i, run)| {
+                send(
+                    "/buffer_setRange",
+                    vec![
+                        OscType::Int(buffer as i32),
+                        OscType::Int((i * chunk) as i32),
+                        OscType::Blob(run.iter().flat_map(|v| v.to_le_bytes()).collect()),
+                    ],
+                )
+            })
+            .collect();
         steps.push(Step::AwaitDone {
             command: "/buffer_setRange".into(),
             index: Some(buffer as i32),
         });
-        self.frames.insert(buffer, frames);
-        let list = parts::insert(&self.list, position, &[part(buffer, 0, frames)])?;
-        Ok(Some(("paste".into(), list, steps)))
+        steps
     }
 
     /// A tag that says what the view is looking at rather than what changed.

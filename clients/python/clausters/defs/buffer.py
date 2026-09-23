@@ -550,6 +550,20 @@ class Buffer:
         ``start`` and ``frames`` are frames, ``frames=-1`` to the end."""
         self._edit("/buffer_reverse", (start, frames), wait, timeout)
 
+    def mix(self, source: "Buffer", start: int = 0, src_start: int = 0,
+            frames: int = -1, *, gain: float = 1.0, wait: bool = True,
+            timeout: "float | None" = None):
+        """Add frames of `source` into a span of this buffer (``/buffer_mix``)
+        -- a paste that adds rather than replaces.
+
+        ``frames`` frames of `source` from ``src_start`` are scaled by ``gain``
+        and added into this buffer from ``start``; every position is a frame.
+        ``frames=-1`` runs as far as both buffers allow. `source` may be a join,
+        read through its parts; a narrower source repeats across this buffer's
+        channels."""
+        self._edit("/buffer_mix", (start, source.bufnum, src_start, frames,
+                                   float(gain)), wait, timeout)
+
     def info(self, timeout: "float | None" = None) -> BufferInfo:
         """Ask the running server what it holds in this slot (``/buffer_query`` ->
         ``/buffer_query.reply bufnum frames channels sampleRate``), keep the record on the

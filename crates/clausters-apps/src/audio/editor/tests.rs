@@ -264,3 +264,60 @@ fn a_list_the_history_hands_back_is_the_take_again() {
         json!({})
     );
 }
+
+#[test]
+fn a_mix_is_a_new_take_over_the_frames_the_block_lands_on() {
+    let mut editor = opened(1);
+    let doc = serde_json::to_string(&Clipboard::samples(1, 3, 44100.0, 0)).unwrap();
+    let out = event(
+        &mut editor,
+        json!([12, 1, 0, "mix", 98.0, "samples", doc, [0.1, 0.2, 0.3]]),
+    );
+    let steps = &out["steps"];
+    assert_eq!(
+        walk(steps),
+        [
+            "/buffer_alloc",
+            "sync",
+            "/buffer_gen",
+            "await /buffer_gen",
+            "/buffer_alloc",
+            "sync",
+            "/buffer_setRange",
+            "await /buffer_setRange",
+            "/buffer_mix",
+            "await /buffer_mix",
+            "/buffer_free",
+            "await /buffer_free",
+            "/buffer_stitch",
+            "await /buffer_stitch"
+        ]
+    );
+    assert_eq!(
+        args(steps, "/buffer_mix"),
+        [
+            json!({"i": 20}),
+            json!({"i": 0}),
+            json!({"i": 21}),
+            json!({"i": 0}),
+            json!({"i": 2}),
+            json!({"f": 1.0})
+        ],
+        "two frames: the block runs past the end of the take and is mixed as far as it goes"
+    );
+    assert_eq!(spans(&mut editor), [(3, 0, 98), (20, 0, 2)]);
+    assert_eq!(out["record"]["label"], "mix");
+
+    // The scratch buffer came back: the next mix takes 21 as its take.
+    let again = event(
+        &mut editor,
+        json!([12, 2, 1, "mix", 0.0, "samples", doc, [0.1, 0.2, 0.3]]),
+    );
+    assert!(
+        again["answer"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("two buffers"),
+        "one buffer left, and a mix needs two"
+    );
+}

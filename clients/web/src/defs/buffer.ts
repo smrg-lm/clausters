@@ -781,6 +781,48 @@ export class Buffer {
     }
 
     /**
+     * Adds frames of `source` into a span of this buffer (`/buffer_mix`) -- a
+     * paste that adds rather than replaces.
+     *
+     * `frames` frames of `source` from `srcStart` are scaled by `gain` and
+     * added into this buffer from `start`; every position is a frame.
+     * `frames: -1` runs as far as both buffers allow. `source` may be a join,
+     * read through its parts; a narrower source repeats across this buffer's
+     * channels.
+     */
+    async mix(
+        source: Buffer,
+        {
+            start = 0,
+            srcStart = 0,
+            frames = -1,
+            gain = 1,
+            wait = true,
+            timeout,
+        }: {
+            start?: number;
+            srcStart?: number;
+            frames?: number;
+            gain?: number;
+            wait?: boolean;
+            timeout?: number;
+        } = {},
+    ): Promise<void> {
+        await this.edit(
+            "/buffer_mix",
+            [
+                ["i", start],
+                ["i", source.bufnum],
+                ["i", srcStart],
+                ["i", frames],
+                ["f", gain],
+            ],
+            wait,
+            timeout,
+        );
+    }
+
+    /**
      * Asks the running server what it holds in this slot (`/buffer_query` ->
      * `/buffer_query.reply bufnum frames channels sampleRate`), keeps the record on the
      * handle and returns it.

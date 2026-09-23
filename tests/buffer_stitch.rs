@@ -528,3 +528,50 @@ fn a_span_of_a_join_copies_out_through_its_parts() {
     assert_eq!(read_back(&mut s, 7, 3), [3.0, 4.0, 5.0]);
     assert!(fails(&mut s).is_empty());
 }
+
+/// **A mix adds another buffer's frames into a span, scaled**, and reads its
+/// source through a join like any reader -- which is how a paste that mixes
+/// lands on a take made of parts: the frames it lands on are copied out of the
+/// join into a take of their own, and the block is mixed into that.
+#[test]
+fn a_mix_adds_a_span_of_another_buffer_and_never_writes_a_join() {
+    let mut s = session();
+    mono(&mut s, 1, &[1.0, 1.0, 1.0, 1.0]);
+    mono(&mut s, 2, &[0.5, 0.25]);
+    mono(&mut s, 3, &[2.0, 3.0]);
+    stitch(
+        &mut s,
+        5,
+        1,
+        vec![part(2, 0, 2, 0, 0, 0), part(3, 0, 2, 0, 0, 0)],
+    );
+    let mix = |s: &mut NrtSession, dst: i32, start: i32, src: i32, from: i32, n: i32| {
+        send(
+            s,
+            "/buffer_mix",
+            vec![
+                OscType::Int(dst),
+                OscType::Int(start),
+                OscType::Int(src),
+                OscType::Int(from),
+                OscType::Int(n),
+                OscType::Float(2.0),
+            ],
+        );
+        s.settle_for(4);
+    };
+    mix(&mut s, 1, 1, 5, 1, 2);
+    assert_eq!(read_back(&mut s, 1, 4), [1.0, 1.5, 5.0, 1.0]);
+    assert!(fails(&mut s).is_empty());
+
+    mix(&mut s, 5, 0, 1, 0, 1);
+    assert!(
+        fails(&mut s).iter().any(|f| f.contains("join")),
+        "a join is read, never written"
+    );
+    mix(&mut s, 1, 3, 2, 0, 2);
+    assert!(
+        fails(&mut s).iter().any(|f| f.contains("do not fit")),
+        "a span past the end fails rather than doing less"
+    );
+}

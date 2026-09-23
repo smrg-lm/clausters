@@ -368,6 +368,10 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     ("/buffer_getRange", |s, _, m, f| {
         s.handle_buffer_get_range(Args::new(m), f)
     }),
+    ("/buffer_mix", |s, addr, m, f| {
+        s.handle_buffer_cmd(addr, m, f);
+        Ok(())
+    }),
     ("/buffer_parts", |s, _, m, f| {
         s.handle_buffer_parts(Args::new(m), f)
     }),

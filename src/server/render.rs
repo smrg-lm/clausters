@@ -475,6 +475,7 @@ impl Renderer {
             | "/buffer_set"
             | "/buffer_setRange"
             | "/buffer_gain"
+            | "/buffer_mix"
             | "/buffer_reverse"
             | "/buffer_fill"
             | "/buffer_readChannel"

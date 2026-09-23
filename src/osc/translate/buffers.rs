@@ -255,6 +255,64 @@ pub fn parse_buffer_msg(
             }
             (*index, NrtJob::Edit { base: current, op })
         }
+        // A mix: another buffer's frames added into a span of this one's --
+        // the paste that adds rather than replaces. The span is in frames, as
+        // the other edits' are, and a negative count runs as far as both
+        // buffers allow.
+        "/buffer_mix" => {
+            let (index, start, src, src_start) = match args {
+                [
+                    OscType::Int(index),
+                    OscType::Int(start),
+                    OscType::Int(src),
+                    OscType::Int(src_start),
+                    ..,
+                ] => (*index, *start, *src, *src_start),
+                _ => {
+                    return Err(
+                        "expected: bufnum, start, srcBufnum, srcStart [, frames, gain]".into(),
+                    );
+                }
+            };
+            let Some(current) = mirror_buffer(mirror, index) else {
+                return Err(format!("no buffer allocated at {index}"));
+            };
+            let Some(source) = mirror_buffer(mirror, src) else {
+                return Err(format!("no source buffer allocated at {src}"));
+            };
+            if start < 0 || src_start < 0 {
+                return Err("start frames must not be negative".into());
+            }
+            let (start, src_start) = (start as usize, src_start as usize);
+            let frames = match int_arg(args, 4).unwrap_or(-1) {
+                n if n < 0 => current
+                    .frames()
+                    .saturating_sub(start)
+                    .min(source.frames().saturating_sub(src_start)),
+                n => n as usize,
+            };
+            if start.saturating_add(frames) > current.frames()
+                || src_start.saturating_add(frames) > source.frames()
+            {
+                return Err(format!(
+                    "{frames} frames do not fit: buffer {index} from {start}, buffer {src} from {src_start}"
+                ));
+            }
+            let gain = float_arg(args, 5).unwrap_or(1.0);
+            (
+                index,
+                NrtJob::Edit {
+                    base: current,
+                    op: EditOp::Mix {
+                        start,
+                        frames,
+                        source,
+                        src_start,
+                        gain,
+                    },
+                },
+            )
+        }
         // The write half of the read pair: `/buffer_set` takes (index, value)
         // pairs, `/buffer_setRange` takes (start, blob) runs -- bulk samples ride
         // as one little-endian f32 blob, the convention `/bus_tapStream.reply`

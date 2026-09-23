@@ -1,10 +1,10 @@
 //! Destructive edits over a span of interleaved samples -- the verbs an audio
 //! editor applies to samples.
 //!
-//! Three of them, and the set is small on purpose: `gain` with a shape covers
+//! Four of them, and the set is small on purpose: `gain` with a shape covers
 //! constant gain, fades in and out, silence and each half of a crossfade;
-//! [`replace`] is what a pencil stroke and a paste produce; [`reverse`] is
-//! itself. What is *not* here is anything with a timeline -- a fade is
+//! [`replace`] is what a pencil stroke and a paste produce; [`mix`] is a paste
+//! that adds rather than replaces; [`reverse`] is itself. What is *not* here is anything with a timeline -- a fade is
 //! arithmetic over a span and an effect is a graph, and the second belongs to
 //! the engine (`server::nrtsession`), not to this module. That line, and not
 //! "does it need a UGen", is what decides where an edit operation lives.
@@ -197,6 +197,40 @@ pub fn replace(
     Ok(())
 }
 
+/// **Adds `source` into `frames` frames from `start`**, scaled by `gain` --
+/// what a paste that mixes rather than inserts is.
+///
+/// `source` holds exactly `frames` frames of `source_channels` channels; a
+/// source narrower than the span **repeats** (its channel `c % source_channels`
+/// feeds channel `c`), which is how a join reads a narrower part too, so a mono
+/// block mixed into a stereo take is heard on both sides.
+pub fn mix(
+    data: &mut [f32],
+    channels: usize,
+    start: usize,
+    frames: usize,
+    source: &[f32],
+    source_channels: usize,
+    gain: f32,
+) -> Result<(), EditError> {
+    let span = range(data, channels, start, frames)?;
+    if source_channels == 0 {
+        return Err(EditError::Shape);
+    }
+    if source.len() != frames * source_channels {
+        return Err(EditError::Length);
+    }
+    for (frame, from) in data[span]
+        .chunks_exact_mut(channels)
+        .zip(source.chunks_exact(source_channels))
+    {
+        for (c, s) in frame.iter_mut().enumerate() {
+            *s += gain * from[c % source_channels];
+        }
+    }
+    Ok(())
+}
+
 /// Reverses `frames` frames from `start`, in place.
 ///
 /// Frames are reversed, not samples: a stereo pair stays a stereo pair, and
@@ -226,6 +260,21 @@ pub fn reverse(
 mod tests {
     use super::*;
     use crate::envshape::{SHAPE_LINEAR, SHAPE_STEP};
+
+    #[test]
+    fn a_mix_adds_the_source_scaled_and_a_narrow_source_repeats() {
+        let mut data = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+        mix(&mut data, 2, 1, 2, &[0.5, 1.0], 1, 2.0).unwrap();
+        assert_eq!(data, [1.0, 1.0, 2.0, 2.0, 3.0, 3.0]);
+        assert_eq!(
+            mix(&mut data, 2, 0, 2, &[0.5], 1, 1.0),
+            Err(EditError::Length)
+        );
+        assert_eq!(
+            mix(&mut data, 2, 2, 2, &[0.5, 0.5], 1, 1.0),
+            Err(EditError::Span)
+        );
+    }
 
     fn ramp(frames: usize, channels: usize) -> Vec<f32> {
         (0..frames * channels).map(|i| i as f32 + 1.0).collect()
