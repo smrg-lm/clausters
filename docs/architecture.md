@@ -950,7 +950,21 @@ What a write does to the buffer is steps too (`clausters_editing::samples::write
 `/buffer_setRange` for a mono take, `/buffer_setRangeChannel` for one channel of a
 wider one, walked by the runner against the take's server — for a stroke and for
 a step of the history alike. The turn's words — `Kind`, `Leg`, `Record`, `Event` — are
-the two applications' own and live in `clausters_apps::turn`.
+the applications' own and live in `clausters_apps::turn`.
+
+The **audio editor** is the third (`clausters_apps::audio`), and it edits the same
+take without ever writing it. Its window is the samples editor's, drawn over a
+**join** the editor owns the recipe of — a flat list of parts over immutable takes
+(`clausters_document::parts`, the arithmetic a multitrack's join is minted with
+too). A cut is a new list; a paste, a mix and a pencil stroke each write a new
+take the size of the span they touch and splice it in, so a take a history entry
+names is never written again. A turn answers the steps that make the new take and
+stitch the join again, and the entry it records names the takes each of its two
+lists reads (`history::Entry::holding`). The editing context gives those back: after
+every turn and step it hands the caller, as buffers to free, the takes no entry
+and no member reaches any more (`History::released_sources`), and a byte budget
+trims the oldest entries until what only the history holds fits
+(`History::trim_to_bytes`).
 
 **The editor's turns are here too** (`clausters_apps::multitrack::editor`). One
 `MultitrackEditor` holds one view's end of the conversation with the host and

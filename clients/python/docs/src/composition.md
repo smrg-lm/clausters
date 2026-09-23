@@ -59,6 +59,17 @@ opens, which is why the curve row below names three unrelated types:
 | a `Timeline` | `NotesEditor` | a `pianoroll` | `events` |
 | a `Multitrack` | `MultitrackEditor` | a `multitrack` | `clips`/`lanes` |
 
+**A take has a second editor, opened by name**: `clausters.gui.editing.AudioEditor`.
+`edit(buffer)` draws the take and writes each stroke into it; `AudioEditor(take)`
+never writes the take at all. Its window draws a **join** the editor owns, and
+every edit -- a cut, a paste, a mix (Ctrl+Shift+V), a pencil stroke -- leaves a
+new list of spans over the take and over the takes the edits made: a stroke is a
+new take the size of the stroke, spliced over the frames it was drawn on. An undo
+is the list before, stitched again, so it costs the list and not the samples.
+The takes a history can still reach are kept, and freed when it cannot;
+`history_bytes=` caps what only the history holds. `editor.buffer` is the edited
+take, to play or read, and `editor.parts` what it is made of.
+
 ```python
 from clausters.gui import edit
 

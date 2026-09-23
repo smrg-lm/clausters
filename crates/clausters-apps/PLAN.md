@@ -210,8 +210,10 @@ opened it.
     promoting what the document reaches, the browser's backing decided.
   - ⬜ **X1.7 - A step re-reads what it changed** (the `/gui_ack` generation,
     above).
-  - ⬜ **X1.8 - The books and the example** that is this milestone's manual
-    test.
+  - ✅ **X1.8 - The books and the example** that is this milestone's manual
+    test. `edit_audio.py` / `edit-audio.html`; both clients' composition
+    chapters and `docs/architecture.md`. The script was checked by hand
+    (2026-09-22): cut, undo and redo, copy, paste at the cursor.
   - ⬜ **X1.9 - A box entered from the multitrack opens the audio editor, and
     the edit reaches the region.** Entering a take today opens the samples
     editor over the take's own buffer, which writes the take in place -- the
