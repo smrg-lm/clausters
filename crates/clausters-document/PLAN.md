@@ -114,6 +114,8 @@ The eight that opened with this file were taken one at a time and are in the sec
 
   **The server buffer *is* the working copy.** Loading material into a pool buffer copies it — `/buffer_allocRead` reads a file into a buffer and the file is not touched again — so an edit that writes that buffer has already not written the source. What the four-layer rule protects is *the user's own file*, and it is protected by the copy that loading already made, not by a second copy on top of it. So there is **no confirmation step per edit**: what confirms a stroke is the acknowledgement (O3) and the log entry, which is what the editor already does. A `Lifetime::Session` buffer is edited where it lies.
 
+  **Superseded for the audio editor on 2026-09-22** (`crates/clausters-apps/PLAN.md`, `X1`, "The design: the history holds references to immutable takes, never samples"): a take a history entry names is immutable, and a stroke writes a new take the size of its span rather than writing in place. The two arguments this rested on -- a per-block copy for a short stroke, and a block sequence that would have to be flattened to be heard -- no longer hold now that joins are played as they are.
+
   **Undo does not need one either, and the crate already says so.** `inverse_of` returns the *empty* write for `WriteSamples` — "the samples are not in the document ... which is why a destructive caller reads its own span before writing" — and the host does exactly that (`read_inverse`: `"sample"` carries the value it replaced, `"draw"` carries the run). So the previous samples live in the **log**, span by span, which is cheaper than a second take and is already built. The cost argument that once justified a working copy was never the one holding undo up.
 
   **Where a temporary copy is still mandatory, and it is a property of how the material is held rather than of cost:** material reached **by reference to the user's own file** — mapped rather than loaded, which is the path S19/H6 open. There an edit would write the user's file, which the four-layer rule forbids outright, so the edit must materialize a `Lifetime::Temporary` copy first and `confirm`/`promote` are what settle it. That is the whole remaining job of `OpenEdit`, and it is why the vocabulary stays in the format: a session that dies mid-edit over mapped material has to reopen knowing what was undecided.
@@ -2066,3 +2068,9 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   in the docs, which is honest for a session and wrong for a long editing day.
   **Related:** `Lifetime`, whose `temporary` tier already says "dies with the
   edit session unless a save promotes it" -- nothing enforces that either.
+  **Decided 2026-09-22, and the work is `X1`'s** (`crates/clausters-apps/PLAN.md`,
+  "The design: the history holds references to immutable takes, never
+  samples"): the first shape, generalized -- a source is freed when no root
+  reaches it (the document, the history's entries, the clipboard), with a byte
+  budget beside the entry count and an explicit clear. This entry closes when
+  that lands.

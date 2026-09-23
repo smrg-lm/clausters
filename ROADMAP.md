@@ -118,13 +118,6 @@ None open.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-- ⬜ **The takes a history can still reach are never given back**
-  *(`crates/clausters-document/PLAN.md`, Found by use)*. An undo frees no take,
-  deliberately -- that is what lets a redo find what it left -- so a long
-  editing day holds every join it ever made. **The decision:** who gives them
-  back and when, since discarding history is the event that makes a source
-  unreachable and nothing connects the two.
-
 - ⬜ **The page suite is one browser, and the second one found a defect it had
   been passing over** (`clients/web/PLAN.md`, Found by use). Chrome and Firefox
   disagree about what an API **refuses**, so a page that is wrong everywhere
@@ -199,9 +192,13 @@ its plan; the plan is where its acceptance is read.
   *(`crates/clausters-apps/PLAN.md`, "The milestones")*. Each is written with
   what exists under it and what is open, and each opens on a decision:
   **`X1`** the audio editor, whose requirements are stated (cut, copy and paste
-  over segments, mix, a history in memory and on disk) and whose memory/disk
-  split and segment model are not, and which takes the generation `/gui_ack`
-  carries and nothing reads (`clients/gui/PLAN.md`, Found by use); **`X2`** a buffer editor that draws a table by
+  over segments, mix, a history in memory and on disk) and whose history is
+  designed -- references to immutable takes, a new take per gesture, sources
+  freed by reachability, which also closes the document plan's "The takes a
+  history can still reach are never given back" -- while the browser's backing
+  and where the segment model lands in Rust are open, and which takes the
+  generation `/gui_ack` carries and nothing reads (`clients/gui/PLAN.md`, Found
+  by use); **`X2`** a buffer editor that draws a table by
   hand, where the wavetable conversion and what the hand edits are open; **`X3`**
   the notes editor, decided to be an application, opening on what the crate
   edits; **`X4`** whether the points editor is one; **`X5`** the score editor over
