@@ -1,26 +1,26 @@
-# clausted: the standalone Python editor under clausted/ (Tauri 2 + Svelte 5).
+# clausters-editor: the standalone Python editor under clausters-editor/ (Tauri 2 + Svelte 5).
 #
 # A workflow of its own rather than a job in ci.yml, for the `paths` filter:
-# clausted shares no code with the server, the clients or the host, so a change
+# clausters-editor shares no code with the server, the clients or the host, so a change
 # anywhere else cannot break it and a change to it cannot break them. It runs
-# only when clausted/ (or this file) changes, and ci.yml never builds it.
+# only when clausters-editor/ (or this file) changes, and ci.yml never builds it.
 #
 # `npm run build` is the frontend's compile check, as svelte-check is its type
 # check. The cargo steps are debug builds, which point Tauri at the dev server
 # instead of embedding `dist/`, so they do not depend on it.
 
-name: clausted
+name: clausters-editor
 
 on:
   push:
     branches: [main]
     paths:
-      - "clausted/**"
-      - ".github/workflows/clausted.yml"
+      - "clausters-editor/**"
+      - ".github/workflows/clausters-editor.yml"
   pull_request:
     paths:
-      - "clausted/**"
-      - ".github/workflows/clausted.yml"
+      - "clausters-editor/**"
+      - ".github/workflows/clausters-editor.yml"
 
 env:
   CARGO_TERM_COLOR: always
@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: clausted
+        working-directory: clausters-editor
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -48,13 +48,13 @@ jobs:
             libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: clausted/src-tauri
+          workspaces: clausters-editor/src-tauri
       - run: npm ci
       - run: npm run check
       - run: npm run build
       - run: cargo fmt --check
-        working-directory: clausted/src-tauri
+        working-directory: clausters-editor/src-tauri
       - run: cargo clippy --all-targets -- -D warnings
-        working-directory: clausted/src-tauri
+        working-directory: clausters-editor/src-tauri
       - run: cargo test
-        working-directory: clausted/src-tauri
+        working-directory: clausters-editor/src-tauri

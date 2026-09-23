@@ -1,4 +1,4 @@
-# clausted
+# clausters-editor
 
 A Python editor with a **persistent interactive session**: the code you
 evaluate stays alive in the session, and its output appears in the *post* window.

@@ -30,10 +30,10 @@ pub struct Session {
     pid: AtomicU32,
 }
 
-/// The session's interpreter and environment name: `CLAUSTED_PYTHON`, else the active
+/// The session's interpreter and environment name: `CLAUSTERS_EDITOR_PYTHON`, else the active
 /// environment, else the system Python.
 fn python_exe(app: &AppHandle) -> (String, Option<String>) {
-    if let Ok(exe) = std::env::var("CLAUSTED_PYTHON") {
+    if let Ok(exe) = std::env::var("CLAUSTERS_EDITOR_PYTHON") {
         return (exe, None);
     }
     if let Some((name, python)) = crate::envs::active_python(app) {

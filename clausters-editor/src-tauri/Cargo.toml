@@ -1,18 +1,18 @@
-# Independent workspace: clausted is a standalone application, not a member of
+# Independent workspace: clausters-editor is a standalone application, not a member of
 # the root `clausters` workspace and not a client of the server. Building from
-# `clausted/src-tauri/` uses this manifest; building the core from the repo root
+# `clausters-editor/src-tauri/` uses this manifest; building the core from the repo root
 # ignores it, so Tauri and WebKitGTK never enter the server's build.
 [workspace]
 
 [package]
-name = "clausted"
+name = "clausters-editor"
 version = "0.1.0"
 description = "A lightweight Python editor with an interactive session"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
 [lib]
-name = "clausted_lib"
+name = "clausters_editor_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

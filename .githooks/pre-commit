@@ -26,7 +26,7 @@
 #     git config core.hooksPath .githooks
 #
 # Only the workspaces the working tree actually touches are linted (root,
-# clients/gui, fuzz, clausted -- four separate workspaces), and only the books whose
+# clients/gui, fuzz, clausters-editor -- four separate workspaces), and only the books whose
 # sources it touches are built, so a commit pays for what it changed and
 # nothing else.
 #
@@ -98,7 +98,7 @@ fi
 want_root=0
 want_gui=0
 want_fuzz=0
-want_clausted=0
+want_editor=0
 books=""
 while IFS= read -r -d '' entry; do
     case "${entry:0:1}" in
@@ -126,19 +126,19 @@ while IFS= read -r -d '' entry; do
     case "$path" in
         clients/gui/*) want_gui=1 ;;
         fuzz/*) want_fuzz=1 ;;
-        clausted/*) want_clausted=1 ;;
+        clausters-editor/*) want_editor=1 ;;
         clients/*) ;; # other clients hold no Rust the root workspace builds
         *) want_root=1 ;;
     esac
 done < <(git -C "$root" status --porcelain -z --untracked-files=all 2>/dev/null)
 
-[ "$want_root$want_gui$want_fuzz$want_clausted" = "0000" ] && [ -z "$books" ] && exit 0
+[ "$want_root$want_gui$want_fuzz$want_editor" = "0000" ] && [ -z "$books" ] && exit 0
 
 # Said now that it is known whether any Rust leg was even wanted: an inert
 # toolchain is worth a warning when it stops a check, not when there was
 # nothing for it to check.
 if [ -n "$missing" ]; then
-    if [ "$want_root$want_gui$want_fuzz$want_clausted" != "0000" ]; then
+    if [ "$want_root$want_gui$want_fuzz$want_editor" != "0000" ]; then
         echo "clausters: pre-commit's Rust legs are inert -- not available:$missing." >&2
         echo "Commits touching Rust are NOT being checked for fmt/clippy warnings." >&2
         echo "The components come from rustup: rustup component add rustfmt clippy." >&2
@@ -147,7 +147,7 @@ if [ -n "$missing" ]; then
     want_root=0
     want_gui=0
     want_fuzz=0
-    want_clausted=0
+    want_editor=0
 fi
 
 # --- Lint them ---------------------------------------------------------------
@@ -176,9 +176,9 @@ if [ "$want_fuzz" = 1 ]; then
     check "fmt(fuzz)" "$root/fuzz" cargo fmt --check
     check "clippy(fuzz)" "$root/fuzz" cargo clippy --all-targets -- -D warnings
 fi
-if [ "$want_clausted" = 1 ]; then
-    check "fmt(clausted)" "$root/clausted/src-tauri" cargo fmt --check
-    check "clippy(clausted)" "$root/clausted/src-tauri" cargo clippy --all-targets -- -D warnings
+if [ "$want_editor" = 1 ]; then
+    check "fmt(clausters-editor)" "$root/clausters-editor/src-tauri" cargo fmt --check
+    check "clippy(clausters-editor)" "$root/clausters-editor/src-tauri" cargo clippy --all-targets -- -D warnings
 fi
 if [ -n "$books" ]; then
     # shellcheck disable=SC2086 -- $books is a list of literal words.

@@ -171,7 +171,8 @@ mod tests {
 
     #[test]
     fn whole_word_and_code() {
-        let dir = std::env::temp_dir().join(format!("clausted-test-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("clausters-editor-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join("a.md"),

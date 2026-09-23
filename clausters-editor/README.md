@@ -1,4 +1,4 @@
-# clausted
+# clausters-editor
 
 A lightweight Python editor with an interactive session: an editor, a *post*
 window with the output and a Markdown documentation viewer. Tauri 2 + Svelte 5 +
@@ -6,7 +6,7 @@ CodeMirror 6. The interface uses [shadcn-svelte](https://shadcn-svelte.com)
 (Neutral theme) and Tailwind; the editor uses VS Code's syntax colors.
 
 It lives in the `clausters` repository but is independent of it: every command
-and path below is relative to this folder (`clausted/`), not to the repository
+and path below is relative to this folder (`clausters-editor/`), not to the repository
 root.
 
 ## Requirements (Ubuntu/Debian)
@@ -47,7 +47,7 @@ T=$(mktemp -d)
 export XDG_CONFIG_HOME=$T/config XDG_DATA_HOME=$T/data XDG_CACHE_HOME=$T/cache
 
 ./install.sh install --prefix "$T/pfx"
-"$T/pfx/bin/clausted"             # the app starts with no previous configuration or environments
+"$T/pfx/bin/clausters-editor"             # the app starts with no previous configuration or environments
 
 ./install.sh uninstall --purge -y --prefix "$T/pfx"   # deletes only what is in $T
 rm -rf "$T"
@@ -61,7 +61,7 @@ paths. The menu entry does not show up in the applications menu, because
 ## Environments and configuration
 
 - **Virtual environments** (Session → Python Environments): created in
-  `~/.local/share/io.github.smrg-lm.clausters.clausted/venvs/<name>` with `python3 -m venv`, and
+  `~/.local/share/io.github.smrg-lm.clausters.editor/venvs/<name>` with `python3 -m venv`, and
   the *install source* (the arguments of `pip install`, e.g. `/path/to/package`
   or `-e /path/to/package`) is installed into them. The session uses the last
   environment chosen, also after reopening the app.
@@ -69,8 +69,8 @@ paths. The menu entry does not show up in the applications menu, because
   documentation panel): any folder with `.md` files; by default, the one bundled
   with the app.
 - **Startup code** (File → Preferences): runs at the start of every session.
-- Everything is kept in `~/.config/io.github.smrg-lm.clausters.clausted/config.json`.
-- `CLAUSTED_PYTHON=/path/python` forces an interpreter (it takes precedence over
+- Everything is kept in `~/.config/io.github.smrg-lm.clausters.editor/config.json`.
+- `CLAUSTERS_EDITOR_PYTHON=/path/python` forces an interpreter (it takes precedence over
   the environment).
 
 ## Layout

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "clausted",
+  "productName": "clausters-editor",
   "version": "0.1.0",
-  "identifier": "io.github.smrg-lm.clausters.clausted",
+  "identifier": "io.github.smrg-lm.clausters.editor",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -11,7 +11,7 @@
   },
   "app": {
     "windows": [
-      { "title": "clausted", "width": 1280, "height": 800 }
+      { "title": "clausters-editor", "width": 1280, "height": 800 }
     ],
     "security": { "csp": null }
   },

@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    clausted_lib::run()
+    clausters_editor_lib::run()
 }

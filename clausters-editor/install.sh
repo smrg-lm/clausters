@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs, updates or uninstalls clausted for the current user (no sudo).
+# Installs, updates or uninstalls clausters-editor for the current user (no sudo).
 #
 #   ./install.sh install     builds and copies the binary, the documentation and the menu entry
 #   ./install.sh update      the same as install (rebuilds and replaces)
@@ -7,7 +7,7 @@
 #                            configuration, virtual environments and cache
 #
 # Options:
-#   --prefix DIR   destination (default ~/.local): DIR/bin, DIR/lib/clausted, DIR/share
+#   --prefix DIR   destination (default ~/.local): DIR/bin, DIR/lib/clausters-editor, DIR/share
 #   --no-build     does not rebuild; uses the binary already built
 #   --purge        (uninstall) deletes the app's data
 #   -y, --yes      does not ask for confirmation

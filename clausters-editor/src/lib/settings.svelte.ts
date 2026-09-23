@@ -31,7 +31,7 @@ export async function fontOptions(): Promise<[string, string][]> {
 export const DEFAULT_SIZE = 14;
 const MIN_SIZE = 9;
 const MAX_SIZE = 32;
-const KEY = "clausted.settings";
+const KEY = "clausters-editor.settings";
 
 interface Stored {
   theme: ThemePref;
@@ -167,7 +167,7 @@ export interface GridSizes {
   left: number;
   right: number;
 }
-const SIZES_KEY = "clausted.grid";
+const SIZES_KEY = "clausters-editor.grid";
 const DEFAULT_SIZES: GridSizes = { x: 58, left: 60, right: 60 };
 
 function loadSizes(): GridSizes {

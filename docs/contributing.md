@@ -232,7 +232,7 @@ Its counterpart for the documentation is `scripts/check-docs.sh`, which builds t
 
 ## The commit hook
 
-`.githooks/pre-commit` stops a commit whose `cargo fmt --check` or `cargo clippy` is dirty, for the default feature set of the workspaces the working tree touches (root, `clients/gui`, `fuzz` and `clausted` are four separate workspaces), and a commit whose changes break a **book** — it runs `scripts/check-docs.sh` for the books whose sources the tree touches (a book's own pages, and whatever its API generator parses: the Python package's docstrings, the web package's TypeScript). A commit that touches neither costs nothing.
+`.githooks/pre-commit` stops a commit whose `cargo fmt --check` or `cargo clippy` is dirty, for the default feature set of the workspaces the working tree touches (root, `clients/gui`, `fuzz` and `clausters-editor` are four separate workspaces), and a commit whose changes break a **book** — it runs `scripts/check-docs.sh` for the books whose sources the tree touches (a book's own pages, and whatever its API generator parses: the Python package's docstrings, the web package's TypeScript). A commit that touches neither costs nothing.
 
 The books are in the hook because they are the check with the least coverage anywhere else: a dangling TSDoc `{@link}`, a page missing from a `SUMMARY.md` or a docstring pydoc-markdown chokes on compiles fine, tests fine, lints fine, and is seen by nothing until CI's `docs` job — which is where most of this repository's red builds have come from. The script builds all three the way CI and Read the Docs build them, with the same pinned tools, in about five seconds; run it by hand (`scripts/check-docs.sh [server|python|web]`) whenever the hook is not in play.
 

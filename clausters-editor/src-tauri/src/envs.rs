@@ -26,7 +26,7 @@ pub struct EnvInfo {
 }
 
 /// File, inside each environment, holding its install source.
-const SOURCE_FILE: &str = "clausted-source.txt";
+const SOURCE_FILE: &str = "clausters-editor-source.txt";
 
 /// The environment's source; those created before it was stored use the global one from the config.
 fn source_of(app: &AppHandle, dir: &Path) -> String {

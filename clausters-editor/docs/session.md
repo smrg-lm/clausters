@@ -11,10 +11,10 @@ evaluation shares the same namespace, as in a console.
   for instance for the usual `import`s, and is shown in the post window.
 
 To use another interpreter (for instance, one in a virtual environment), start
-the editor with the `CLAUSTED_PYTHON` variable:
+the editor with the `CLAUSTERS_EDITOR_PYTHON` variable:
 
 ```
-CLAUSTED_PYTHON=~/project/.venv/bin/python npm run tauri dev
+CLAUSTERS_EDITOR_PYTHON=~/project/.venv/bin/python npm run tauri dev
 ```
 
 ## Interrupting
