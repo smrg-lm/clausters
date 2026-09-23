@@ -191,6 +191,12 @@ its plan; the plan is where its acceptance is read.
   arrangement, the question the multitrack and piano-roll views already
   answered for their own material.
 
+- ⬜ **`X7` — the audio editor's nodes on the server**
+  *(`crates/clausters-apps/PLAN.md`, "X7")*. Taken before the other
+  applications because it is how a take being edited is heard and measured:
+  the monitor's readers held a take's last sample on the output and nothing
+  in the window showed it. It opens on whether the host's monitor goes away.
+
 - ⬜ **The applications after the multitrack, `X2`-`X6`**
   *(`crates/clausters-apps/PLAN.md`, "The milestones")*. Each is written with
   what exists under it and what is open, and each opens on a decision:

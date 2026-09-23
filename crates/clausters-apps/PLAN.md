@@ -404,6 +404,53 @@ opened it.
   about the bundle's size rather than where an application lives, over the same
   widgets.
 
+- ⬜ **X7 - The audio editor's nodes on the server.** *(Asked for by the user
+  2026-09-23: the multitrack has a node design on the server, and the audio
+  editor needs the same, at least to watch its amplitude on a level meter.)*
+
+  **What exists.** The audio editor sounds its take through the GUI host's
+  monitor (`clients/gui/src/host/play.rs`): one `clausters-gui-take` reader per
+  channel in a group bound to the transport. The host allocates the nodes and
+  holds them until another take is played or the monitor is stopped. Nothing
+  measures what the readers write, and no client knows the nodes exist. The
+  multitrack has the design this lacks: `clausters_editing::playback`
+  (`MultitrackPlayback`) holds an instance, the applier that carries it out
+  and the transport, and answers every verb as steps. Its readers and
+  meters are defs in `clausters_core::mixer`, and a strip's meter writes a
+  control bus that the host draws.
+
+  **What was found without it** *(2026-09-23)*. Space over a take with no
+  selection played on past the take's end, and the reader held the take's
+  last sample on the output as long as the transport rolled. The gate is fixed
+  (`dcf7b90a`), but it was a DC offset on the whole system's audio that
+  nothing in the window showed. A meter on the editor's output shows it, and
+  the node tree the editor owns is where to look for what is still sounding.
+
+  **What it has to do:**
+
+  - **The editor owns its nodes**, planned once in Rust like the multitrack's:
+    readers, a meter and a group bound to the transport, created when the
+    take is played and freed when the window closes. The node tree after a
+    close is the one before the open.
+  - **A level meter on what the editor plays**, drawn in the editor's window
+    and fed by a control bus a meter node writes, as a multitrack strip is.
+    It falls to zero when nothing sounds, so a constant left on the output is
+    visible as a constant.
+  - **The same nodes in both clients and in the standalone host**, since the
+    audio editor is one application (the non-divergence rule).
+
+  **The two applications stay separate.** The audio editor does not become a
+  one-track multitrack. The building blocks it can share are the reader and
+  meter defs, the transport group and the applier's steps, not the multitrack
+  or its instance.
+
+  **Open:** whether the host's monitor goes away and every take plays through
+  this, or stays as the host's for a window with no application behind it;
+  whether the meter is per channel or per take; where the meter sits in the
+  window (the editor's own layers, or the window's chrome); whether the
+  editor's playback is a separate object, as `MultitrackPlayback` is, or part
+  of `AudioEditor`.
+
 ## Definition of done (per milestone)
 
 The project rule: code plus tests, a clear commit message, this file's checkbox,
