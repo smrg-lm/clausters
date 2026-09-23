@@ -790,7 +790,8 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
 ///
 /// - `sync` -- any of the facts [`new_json`] reads: handed over before the
 ///   verbs that read them; `buffers` are added to the ones the editor holds.
-///   Answers `{}`.
+///   Answers `{"spare"}`, how many it holds now -- a turn takes one for a
+///   stroke or a paste and two for a mix, so a caller keeps it topped up.
 /// - `layers` -- `stack`, optional: `{"layers", "measure"}` or `{"error"}`.
 /// - `window` -- `widget`: the window, as a GuiDef.
 /// - `props` -- `widget`: the correction.
@@ -821,7 +822,7 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
                     ..facts
                 });
             }
-            "{}".into()
+            json!({ "spare": editor.spare.len() }).to_string()
         }
         "layers" => {
             if let Some(stack) = request.get("stack") {

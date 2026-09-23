@@ -57,6 +57,10 @@ export interface Applier {
  */
 export interface StepHandler extends Applier {
     stepped?(structure: never | object, applied: Record<string, unknown>): void;
+    /** An audio editor's: carry out the steps that stitch its take again. */
+    run?(structure: never | object, steps: unknown[]): void;
+    /** An audio editor's: free takes nothing reaches any more. */
+    free?(structure: never | object, buffers: number[]): void;
 }
 
 /**
@@ -96,7 +100,7 @@ export interface RecordingLeg {
 
 /** One thing a step does, for a page to carry out. */
 export interface Effect {
-    /** `"multitrack"`, `"samples"` or `"external"`. */
+    /** `"multitrack"`, `"samples"`, `"audio"` or `"external"`. */
     kind: string;
     /** The member it is for. */
     member: number;
@@ -104,6 +108,19 @@ export interface Effect {
     applied?: Record<string, unknown>;
     /** A take's writes, or an external member's payloads. */
     payloads?: unknown[];
+    /** An audio editor's: the steps that stitch its take again. */
+    steps?: unknown[];
+}
+
+/**
+ * **Takes a member made that nothing reaches any more**: the buffers to free,
+ * on that member's server.
+ */
+export interface Freed {
+    /** The member whose takes they were. */
+    member: number;
+    /** The buffers. */
+    buffers: number[];
 }
 
 /** **What a step of the order came to.** */
@@ -114,6 +131,8 @@ export interface Stepped {
     reason?: string;
     /** What each member carries out. */
     effects?: Effect[];
+    /** The takes to free, once the effects are carried out. */
+    freed?: Freed[];
     /** The version after the step. */
     version?: number;
 }
@@ -124,6 +143,8 @@ export interface Turned {
     outcome?: Record<string, unknown>;
     /** The step an undo or a redo asked for, already taken. */
     stepped?: Stepped;
+    /** The takes to free, once the turn's own steps are carried out. */
+    freed?: Freed[];
     /** The version after the turn. */
     version?: number;
 }
@@ -310,6 +331,15 @@ export class Editing {
         return this.version;
     }
 
+    /**
+     * **Limits the takes only the history holds** to `bytes`, or lifts the
+     * limit with `null`. Past it the oldest entries go first, and the takes
+     * they held come back to be freed.
+     */
+    limitBytes(bytes: number | null): void {
+        if (this.#core !== null) this.#call("bytes", { bytes });
+    }
+
     /** **One message to a member**, read, recorded and answered by the crate. */
     event(member: number, addr: string, args: unknown[]): Turned {
         const turned = this.#call("event", { member, addr, args }) as Turned | null;
@@ -331,8 +361,9 @@ export class Editing {
 
     /**
      * **Carry a step's effects out** on the structures they name: a multitrack
-     * written back, a take's writes projected, an external member's payloads
-     * applied.
+     * written back, a take's writes projected, an audio editor's join stitched
+     * again, an external member's payloads applied -- and then the takes the
+     * step let go of freed.
      */
     carry(stepped: Stepped): void {
         for (const effect of stepped.effects ?? []) {
@@ -342,11 +373,30 @@ export class Editing {
                 held.handler.stepped?.(held.structure as never, effect.applied ?? {});
                 continue;
             }
+            if (effect.kind === "audio") {
+                held.handler.run?.(held.structure as never, effect.steps ?? []);
+                continue;
+            }
             for (const payload of effect.payloads ?? []) {
                 if (payload !== null && typeof payload === "object") {
                     held.handler.project(held.structure as never, payload);
                 }
             }
+        }
+        this.release(stepped.freed);
+    }
+
+    /**
+     * **Free the takes nothing reaches any more** -- what a turn or a step hands
+     * back as `freed`, each list under the member that made those takes, whose
+     * server they are on. Called after the turn's own steps are carried out, so
+     * no join is still reading them.
+     */
+    release(freed: readonly Freed[] | undefined): void {
+        for (const entry of freed ?? []) {
+            const held = this.handlers.get(Number(entry.member));
+            if (held === undefined || held.handler === null) continue;
+            held.handler.free?.(held.structure as never, entry.buffers ?? []);
         }
     }
 

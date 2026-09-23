@@ -263,32 +263,20 @@ impl Gestures {
         match verb {
             ClipVerb::Copy => {
                 let (start, len) = (start?, len?);
-                let offset = host.widget_kind(ctx.def_id, id)?.editor()?.offset;
-                // The selection is in **timeline** samples and an element reads
-                // its own frames: a clip placed late holds sample 0 at its
-                // offset, which is the one conversion between the axis and the
-                // contents on it.
-                let from = (start - offset).max(0.0) as u64;
-                let block = element_block(host, ctx, id, from, len as u64);
-                match block {
-                    Some(block) => {
-                        clip.put_samples(block.samples.into(), block.channels, block.sample_rate);
-                        // A copy changed nothing, so it reports nothing.
-                    }
-                    // Said out loud, in the one direction the host has: the
-                    // owner learns the reader could not read, which is what a
-                    // refusal is for.
-                    None => emit(
-                        host,
-                        &mut out,
-                        ctx.def_id,
-                        id,
-                        refusal("copy", "this source has no samples the host can read"),
-                    ),
-                }
+                copy_selection(host, ctx, id, start, len, clip, &mut out, "copy")?;
             }
+            // **A cut is a copy and a removal**, and the copy half is the
+            // host's to make, as a copy is: the block goes on the clipboard
+            // first, and only a cut whose block is on it asks the owner to take
+            // the span out. One the host cannot read declines, like a copy --
+            // taking something out that nothing holds any more would be the
+            // one cut worse than none.
             ClipVerb::Cut => {
                 let (start, len) = (start?, len?);
+                if !copy_selection(host, ctx, id, start, len, clip, &mut out, "cut")? {
+                    out.push(GestureEffect::Redraw(ctx.def_id));
+                    return Some(out);
+                }
                 emit(
                     host,
                     &mut out,
@@ -301,7 +289,12 @@ impl Gestures {
                     ],
                 );
             }
-            ClipVerb::Paste => {
+            ClipVerb::Paste | ClipVerb::Mix => {
+                let tag = if verb == ClipVerb::Mix {
+                    "mix"
+                } else {
+                    "paste"
+                };
                 let doc = clip.doc()?;
                 if !clip.is_whole() {
                     // A header whose payload did not travel: declining is the
@@ -311,12 +304,12 @@ impl Gestures {
                         &mut out,
                         ctx.def_id,
                         id,
-                        refusal("paste", "the clipboard's payload did not travel with it"),
+                        refusal(tag, "the clipboard's payload did not travel with it"),
                     );
                     return Some(out);
                 }
                 let mut args = vec![
-                    OscType::String("paste".into()),
+                    OscType::String(tag.into()),
                     // Where: the selection's start, which is where a locate or a
                     // sweep last put the axis -- a paste has no pointer of its
                     // own, and the cursor is what the reader was looking at.
@@ -370,12 +363,53 @@ impl Gestures {
     }
 }
 
-/// Which of the three clipboard verbs a key asked for.
+/// Which of the clipboard verbs a key asked for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClipVerb {
     Copy,
     Cut,
     Paste,
+    /// A paste that **adds** the block onto what is there rather than putting
+    /// it in -- the same payload, answered by the owner as a mix.
+    Mix,
+}
+
+/// **The selected span onto the clipboard**, or the refusal said to the owner
+/// under `verb` when the host cannot read it. Answers whether it copied.
+#[allow(clippy::too_many_arguments)] // the gesture's own context, spelled out
+fn copy_selection(
+    host: &mut Host,
+    ctx: &GestureCtx,
+    id: i32,
+    start: f64,
+    len: f64,
+    clip: &mut Clip,
+    out: &mut Vec<GestureEffect>,
+    verb: &str,
+) -> Option<bool> {
+    let offset = host.widget_kind(ctx.def_id, id)?.editor()?.offset;
+    // The selection is in **timeline** samples and an element reads its own
+    // frames: a clip placed late holds sample 0 at its offset, which is the
+    // one conversion between the axis and the contents on it.
+    let from = (start - offset).max(0.0) as u64;
+    match element_block(host, ctx, id, from, len as u64) {
+        Some(block) => {
+            clip.put_samples(block.samples.into(), block.channels, block.sample_rate);
+            Some(true)
+        }
+        // Said out loud, in the one direction the host has: the owner learns
+        // the reader could not read, which is what a refusal is for.
+        None => {
+            emit(
+                host,
+                out,
+                ctx.def_id,
+                id,
+                refusal(verb, "this source has no samples the host can read"),
+            );
+            Some(false)
+        }
+    }
 }
 
 /// The contents behind widget `id` over `frames` of its own frames from

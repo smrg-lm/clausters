@@ -1314,6 +1314,10 @@ TREE = "tree"
 MULTITRACK = "multitrack"
 POINTS = "points"
 SAMPLES = "samples"
+#: A take made of **parts** -- spans of immutable takes read back to back --
+#: which is what an audio editor edits: a step of its history is the list
+#: before or after, never samples.
+PARTS = "parts"
 EVENTS = "events"
 
 

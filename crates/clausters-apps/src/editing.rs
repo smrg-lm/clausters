@@ -162,10 +162,11 @@ pub struct Turned {
     /// changed what they draw.
     pub corrections: Vec<Corrected>,
     /// **The takes to free**: buffers no entry of the history and no member
-    /// reaches any more. The caller frees them -- after carrying out the
-    /// turn's steps, which stop the joins from reading them.
+    /// reaches any more, each under the member that made it -- whose server
+    /// it is on. The caller frees them after carrying out the turn's steps,
+    /// which stop the joins from reading them.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub freed: Vec<i64>,
+    pub freed: Vec<Freed>,
     /// The version after the turn.
     pub version: i64,
 }
@@ -220,6 +221,16 @@ pub enum Effect {
     },
 }
 
+/// **Takes a member made that nothing reaches any more**: the buffers to free,
+/// on that member's server.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Freed {
+    /// The member whose take they were.
+    pub member: MemberId,
+    /// The buffers.
+    pub buffers: Vec<i64>,
+}
+
 /// **What a step of the history came to.**
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -237,7 +248,7 @@ pub struct Stepped {
     /// The takes to free, once the effects are carried out. See
     /// [`Turned::freed`].
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub freed: Vec<i64>,
+    pub freed: Vec<Freed>,
     /// The version after the step.
     pub version: i64,
 }
@@ -281,7 +292,7 @@ impl Editing {
     /// **The takes no entry and no member reaches any more**, forgotten by
     /// every member and handed back as the buffers to free -- after the byte
     /// limit, when there is one, has trimmed the pile.
-    fn release(&mut self) -> Vec<i64> {
+    fn release(&mut self) -> Vec<Freed> {
         let editors: Vec<&AudioEditor> = self
             .seats
             .iter()
@@ -301,21 +312,42 @@ impl Editing {
             let is_rooted = |source: SourceId| rooted.contains(&source);
             self.history.trim_to_bytes(bytes, &size_of, &is_rooted);
         }
-        let freed: Vec<i64> = self
+        let released: Vec<i64> = self
             .history
             .released_sources()
             .into_iter()
             .filter(|source| !rooted.contains(source))
             .map(|source| source.0 as i64)
             .collect();
+        // Each take goes back under the member that made it: the one that
+        // knows its size is the one whose server it is on.
+        let mut out: Vec<Freed> = Vec::new();
+        for buffer in released {
+            let owner = self.seats.iter().position(|seat| {
+                matches!(&seat.member, Member::Audio(editor) if editor.bytes(buffer).is_some())
+            });
+            let Some(owner) = owner else {
+                continue;
+            };
+            let member = owner as MemberId;
+            match out.iter_mut().find(|f| f.member == member) {
+                Some(freed) => freed.buffers.push(buffer),
+                None => out.push(Freed {
+                    member,
+                    buffers: vec![buffer],
+                }),
+            }
+        }
         for seat in &mut self.seats {
             if let Member::Audio(editor) = &mut seat.member {
-                for buffer in &freed {
-                    editor.forget(*buffer);
+                for freed in &out {
+                    for buffer in &freed.buffers {
+                        editor.forget(*buffer);
+                    }
                 }
             }
         }
-        freed
+        out
     }
 
     /// The version a host names back.
@@ -1238,7 +1270,7 @@ mod tests {
         let second = draw(&mut editing, take, 2, 30);
         assert_eq!(
             second["freed"],
-            json!([20]),
+            json!([{"member": take, "buffers": [20]}]),
             "the redo is gone, and 20 with it"
         );
     }
@@ -1257,7 +1289,7 @@ mod tests {
         draw(&mut editing, take, 1, 10);
         draw(&mut editing, take, 2, 10);
         let third = draw(&mut editing, take, 3, 10);
-        assert_eq!(third["freed"], json!([20]));
+        assert_eq!(third["freed"], json!([{"member": take, "buffers": [20]}]));
         assert_eq!(
             call(&mut editing, json!({"verb": "state"}))["canUndo"],
             true

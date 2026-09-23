@@ -437,6 +437,12 @@ export const MULTITRACK = "multitrack";
 export const POINTS = "points";
 /** A span of samples' vocabulary. See {@link TREE}. */
 export const SAMPLES = "samples";
+/**
+ * A take made of **parts** -- spans of immutable takes read back to back --
+ * which is what an audio editor edits: a step of its history is the list
+ * before or after, never samples. See {@link TREE}.
+ */
+export const PARTS = "parts";
 /** A timeline of events' vocabulary. See {@link TREE}. */
 export const EVENTS = "events";
 

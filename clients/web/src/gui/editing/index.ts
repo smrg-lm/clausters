@@ -47,10 +47,12 @@
  */
 
 export { Application, BASE_ID } from "./application.ts";
+export { AudioDomain, AudioEditor } from "./audio.ts";
+export type { AudioEditorOptions } from "./audio.ts";
 export type { Drawing } from "./application.ts";
 export { Editing, FIRST_VERSION, contexts } from "./context.ts";
 export type {
-    Adopting, Applier, Effect, RecordingLeg, StepHandler, Stepped, Turned,
+    Adopting, Applier, Effect, Freed, RecordingLeg, StepHandler, Stepped, Turned,
 } from "./context.ts";
 export { Domain } from "./domain.ts";
 export { edit } from "./edit.ts";

@@ -39,6 +39,11 @@ in it and nothing else, which is what the split was for -- and the multitrack's
 two halves are the *crate's*, so the picture it draws and the report it reads
 are the same ones the standalone host draws and reads.
 
+`AudioEditor` is opened by name rather than by `edit`: it edits a
+`clausters.defs.Buffer` too, but as a list of parts over takes it never writes,
+which is a different editor over the same structure rather than the same one
+dispatched differently.
+
 `View` here is **not** `clausters.gui.guidef.View`, and only this one is reached
 as `clausters.gui.editing.View`: the guidef one is a tree you can open, this one
 is the picture of a structure plus the registry that resolves an event back to
@@ -47,6 +52,7 @@ writes changes.
 """
 
 from .application import BASE_ID, Application
+from .audio import AudioDomain, AudioEditor
 from .context import ATTR, FIRST_VERSION, Editing
 from .domain import Domain
 from .echo import Echo
@@ -63,6 +69,8 @@ from .trace import watch
 from .view import View
 
 __all__ = [
+    "AudioDomain",
+    "AudioEditor",
     "ATTR",
     "Application",
     "BASE_ID",

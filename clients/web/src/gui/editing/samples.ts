@@ -86,8 +86,10 @@ interface Write {
 /**
  * An event's arguments as JSON carries them: a blob is the run a stroke wrote or
  * replaced, read into its numbers -- the wire's framing is this page's.
+ *
+ * @internal
  */
-function plain(value: unknown): unknown {
+export function plain(value: unknown): unknown {
     if (value instanceof ArrayBuffer) return floats(new Uint8Array(value));
     if (ArrayBuffer.isView(value)) return floats(value);
     if (Array.isArray(value)) return value.map(plain);

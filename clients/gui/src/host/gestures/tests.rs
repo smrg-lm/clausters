@@ -1082,10 +1082,14 @@ fn copy_reads_the_samples_and_cut_and_paste_leave_as_intents() {
     assert_eq!(clip.doc().unwrap().kind(), "samples");
     assert_eq!(&clip.blobs()[0][..], &[0.2, 0.3, 0.4, 0.5]);
 
-    // Cut: the host owns none of it, so what leaves is the request.
+    // Cut: a copy and a removal. The copy is the host's, so the block is on
+    // the clipboard first; the removal is the owner's, so what leaves is the
+    // request.
+    let mut cut = crate::host::clipboard::Clip::default();
     let effects = g
-        .clipboard_key(&mut host, &ctx, ClipVerb::Cut, 400.0, 150.0, &mut clip)
+        .clipboard_key(&mut host, &ctx, ClipVerb::Cut, 400.0, 150.0, &mut cut)
         .expect("answered");
+    assert_eq!(&cut.blobs()[0][..], &[0.2, 0.3, 0.4, 0.5], "a cut copies");
     let args = emitted_args(&effects, 50).expect("a cut reports");
     assert_eq!(args[0], OscType::String("cut".into()));
     assert_eq!(args.len(), 3, "the span it names: {args:?}");
@@ -1099,6 +1103,15 @@ fn copy_reads_the_samples_and_cut_and_paste_leave_as_intents() {
     let args = emitted_args(&effects, 50).expect("a paste reports");
     assert_eq!(args[0], OscType::String("paste".into()));
     assert_eq!(args[2], OscType::String("samples".into()));
+    assert!(matches!(args[4], OscType::Blob(ref b) if b.len() == 16));
+
+    // A mix is the same payload under its own word: the owner adds the block
+    // onto what is there rather than putting it in.
+    let effects = g
+        .clipboard_key(&mut host, &ctx, ClipVerb::Mix, 400.0, 150.0, &mut clip)
+        .expect("answered");
+    let args = emitted_args(&effects, 50).expect("a mix reports");
+    assert_eq!(args[0], OscType::String("mix".into()));
     assert!(matches!(args[4], OscType::Blob(ref b) if b.len() == 16));
 }
 

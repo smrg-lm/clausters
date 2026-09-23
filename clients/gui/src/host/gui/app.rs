@@ -886,8 +886,15 @@ impl ApplicationHandler<UserEvent> for App {
                     Key::Character(ref c) if c.eq_ignore_ascii_case("x") && self.ctrl(def_id) => {
                         self.clipboard_key(def_id, ClipVerb::Cut);
                     }
+                    // Ctrl+Shift+V pastes by adding: the block is mixed onto
+                    // what is under it rather than put in.
                     Key::Character(ref c) if c.eq_ignore_ascii_case("v") && self.ctrl(def_id) => {
-                        self.clipboard_key(def_id, ClipVerb::Paste);
+                        let verb = if self.shift(def_id) {
+                            ClipVerb::Mix
+                        } else {
+                            ClipVerb::Paste
+                        };
+                        self.clipboard_key(def_id, verb);
                     }
                     _ => {}
                 }

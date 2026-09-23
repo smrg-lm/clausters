@@ -294,11 +294,17 @@ impl WebApp {
                     None => return,
                 }
             }
+            // Ctrl+Shift+V pastes by adding, as the native host's does.
             Key::Character(c) if c.eq_ignore_ascii_case("v") && ctx.ctrl => {
+                let verb = if ctx.shift {
+                    ClipVerb::Mix
+                } else {
+                    ClipVerb::Paste
+                };
                 match slot.gestures.clipboard_key(
                     &mut self.host,
                     &ctx,
-                    ClipVerb::Paste,
+                    verb,
                     cx,
                     cy,
                     &mut self.text_clipboard,

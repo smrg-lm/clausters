@@ -99,9 +99,9 @@ class Editing:
 
     def open(self, verb: str, key: str, request: dict, structure,
              handler) -> tuple:
-        """**Open an editor in this context** -- ``verb`` is ``"openMultitrack"``
-        or ``"openSamples"`` -- as the structure ``key`` names, and answer its
-        ``(member, identity)``.
+        """**Open an editor in this context** -- ``verb`` is ``"openMultitrack"``,
+        ``"openSamples"`` or ``"openAudio"`` -- as the structure ``key`` names,
+        and answer its ``(member, identity)``.
 
         ``handler`` is what carries a step out for it: the editor's domain.
 
@@ -187,6 +187,13 @@ class Editing:
             self.version = int(self.core.call("moved").get("version", self.version))
         return self.version
 
+    def limit_bytes(self, bytes: "int | None") -> None:
+        """**Limits the takes only the history holds** to ``bytes``, or lifts
+        the limit with ``None``. Past it the oldest entries go first, and the
+        takes they held come back to be freed."""
+        if self.core is not None:
+            self.core.call("bytes", bytes=None if bytes is None else int(bytes))
+
     def event(self, member: int, addr: str, args: list) -> dict:
         """**One message to a member**, read, recorded and answered by the
         crate: ``{"outcome", "stepped"?, "corrections", "version"}``."""
@@ -209,8 +216,9 @@ class Editing:
 
     def carry(self, stepped: dict) -> None:
         """**Carry a step's effects out** on the structures they name: a multitrack
-        written back, a take's writes projected, an external member's payloads
-        applied."""
+        written back, a take's writes projected, an audio editor's join
+        stitched again, an external member's payloads applied -- and then the
+        takes the step let go of freed."""
         for effect in stepped.get("effects") or ():
             structure, handler = self._handlers.get(int(effect.get("member", -1)),
                                                     (None, None))
@@ -219,9 +227,24 @@ class Editing:
             if effect.get("kind") == "multitrack":
                 handler.stepped(structure, effect.get("applied") or {})
                 continue
+            if effect.get("kind") == "audio":
+                handler.run(structure, effect.get("steps") or [])
+                continue
             for payload in effect.get("payloads") or ():
                 if isinstance(payload, dict):
                     handler.project(structure, payload)
+        self.release(stepped.get("freed"))
+
+    def release(self, freed) -> None:
+        """**Free the takes nothing reaches any more** -- what a turn or a step
+        hands back as ``freed``, each list under the member that made those
+        takes, whose server they are on. Called after the turn's own steps are
+        carried out, so no join is still reading them."""
+        for entry in freed or ():
+            structure, handler = self._handlers.get(int(entry.get("member", -1)),
+                                                    (None, None))
+            if handler is not None and hasattr(handler, "free"):
+                handler.free(structure, entry.get("buffers") or [])
 
     def _state(self) -> dict:
         return {} if self.core is None else self.core.call("state")

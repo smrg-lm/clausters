@@ -192,17 +192,36 @@ opened it.
     join); the editor's `mix` copies the frames under the block into a new take,
     writes the block into a scratch buffer it frees in the same steps, and mixes
     one into the other.
-  - ⬜ **X1.5 - The doors and both clients**: the C ABI, wasm, the Python
+  - ✅ **X1.5 - The doors and both clients**: the C ABI, wasm, the Python
     `AudioEditor`, its web port, the standalone host; `docs/bindings.md`.
     The host's **cut puts nothing on the clipboard** (`ClipVerb::Cut` only
     reports the span): a cut is a copy and a removal, and the copy half is
     the host's to make, as its copy already is.
+    *Landed with no new symbol*: the context's JSON door already carried any
+    verb, so `openAudio` and `bytes` reach both clients through
+    `clausters_apps_editing_call`, and a turn and a step answer `freed` under
+    the member whose server the takes are on. `AudioEditor` in both clients
+    walks the steps, tops up the buffers before every turn and frees what
+    comes back; the host's cut now copies first, and **Ctrl+Shift+V** reports
+    `"mix"`. **Not done, and it is the next step rather than this one's**: the
+    standalone host has no audio editor, because it has no way to open one --
+    see `X1.9`.
   - ⬜ **X1.6 - Disk and saving**: takes as regions under `--shm`, a save
     promoting what the document reaches, the browser's backing decided.
   - ⬜ **X1.7 - A step re-reads what it changed** (the `/gui_ack` generation,
     above).
   - ⬜ **X1.8 - The books and the example** that is this milestone's manual
     test.
+  - ⬜ **X1.9 - A box entered from the multitrack opens the audio editor, and
+    the edit reaches the region.** Entering a take today opens the samples
+    editor over the take's own buffer, which writes the take in place -- the
+    one thing this design forbids. What an entered take edits has to become
+    a source the region windows, and **the decision** is when: every turn
+    (the region names the edited list as a new `Location::Segments` source,
+    so the multitrack plays the edit as it is made) or a confirmation (the
+    region keeps the take until the edit is taken). The standalone host gets
+    its audio editor through the same door, since entering a box is the one
+    way it has to open one.
 
   **Open, and not decided here:** the browser has no mapping, so whether its
   history stays in memory under the byte budget or goes to OPFS; the budgets'
