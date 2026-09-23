@@ -108,6 +108,14 @@ export class AudioDomain extends Domain<Buffer> {
         });
     }
 
+    /**
+     * Run `then` once the work queued so far has landed: what a turn's answer
+     * waits for, since it asks the window to read a join the steps replace.
+     */
+    after(then: () => void): void {
+        this.#queue(async () => then());
+    }
+
     /** One piece of work after the last, and a failure reported rather than swallowed. */
     #queue(run: () => Promise<void>): void {
         this.#work = this.#work.then(run).catch((error: unknown) => {
@@ -304,8 +312,19 @@ export class AudioEditor extends Editor<Buffer> {
             this.selection = outcome.selection as unknown as Selection;
             this.selected();
         }
-        this.echo.send(outcome.answer);
+        // The answer asks the window to read the join again, so it goes once
+        // the steps that replace the join have landed.
+        const answer = outcome.answer;
+        (this.domain as AudioDomain).after(() => this.echo.send(answer));
         return changed;
+    }
+
+    /**
+     * Draw what a history walk left behind -- once the join the walk stitched
+     * again has landed, since what the window is told is to read it again.
+     */
+    override reflectStep(): void {
+        (this.domain as AudioDomain).after(() => super.reflectStep());
     }
 
     /** What the picture measures. See {@link SamplesEditor.layers}. */

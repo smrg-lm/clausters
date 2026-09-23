@@ -192,6 +192,11 @@ fn a_cut_takes_the_span_out_and_writes_no_samples() {
     );
     assert_eq!(spans(&mut editor), [(3, 0, 10), (3, 30, 100)]);
     assert_eq!(out["record"]["label"], "cut");
+    assert_eq!(
+        out["answer"]["corrections"],
+        json!([{"widget": 12, "props": {"reload": 1}}]),
+        "the join is replaced whole, so the picture reads it again"
+    );
     assert_eq!(call(&mut editor, json!({"verb": "parts"}))["frames"], 80);
 
     let all = event(&mut editor, json!([12, 2, 1, "cut", 0.0, 80.0]));

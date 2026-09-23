@@ -56,6 +56,8 @@ pub struct Outcome {
     pub version: i64,
     /// **The steps to carry out**, in the JSON a runner walks: a new take made
     /// where the turn needed one, then the drawn join stitched over the list.
+    /// The answer asks the window to read the join again, so it is sent once
+    /// these have landed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub steps: Option<Value>,
     /// Where the position cursor was placed, in seconds.
@@ -369,7 +371,11 @@ impl AudioEditor {
                 out.steps = Some(steps_json(&steps));
                 out.changed = true;
                 out.version += 1;
-                (None, Vec::new())
+                // **The picture is read again**, unlike a stroke over a buffer
+                // the host holds: the join it draws is replaced whole by the
+                // stitch, and only the answer can say so. A caller sends the
+                // answer once the steps have landed.
+                (None, resync(widget))
             }
             Ok(None) => (None, Vec::new()),
             Err(why) => (Some(why), resync(widget)),
