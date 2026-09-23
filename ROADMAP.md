@@ -195,9 +195,11 @@ its plan; the plan is where its acceptance is read.
   over segments, mix, a history in memory and on disk) and whose history is
   designed -- references to immutable takes, a new take per gesture, sources
   freed by reachability, which also closes the document plan's "The takes a
-  history can still reach are never given back" -- while the browser's backing,
-  where the segment model lands in Rust and when an edit made inside a box
-  entered from the multitrack reaches its region (`X1.9`) are open, and which takes the
+  history can still reach are never given back" -- with the browser's backing
+  decided (its own file system, one spilling rule on both platforms, `X1.6`)
+  and an edit made inside a box entered from the multitrack reaching its
+  region on every turn (`X1.9`), while where the segment model lands in Rust
+  is open, and which takes the
   generation `/gui_ack` carries and nothing reads (`clients/gui/PLAN.md`, Found
   by use); **`X2`** a buffer editor that draws a table by
   hand, where the wavetable conversion and what the hand edits are open; **`X3`**

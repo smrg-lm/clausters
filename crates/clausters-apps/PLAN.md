@@ -208,6 +208,21 @@ opened it.
     see `X1.9`.
   - ⬜ **X1.6 - Disk and saving**: takes as regions under `--shm`, a save
     promoting what the document reaches, the browser's backing decided.
+    **Decided with the user 2026-09-22: the browser uses its file system
+    (the origin's private one, which `/buffer_write` and `/buffer_allocRead`
+    already reach in a page) within the quota it is given.** That makes the
+    backing **one rule on both platforms**, written once in the crate: a
+    take only the history holds is **spilled** past a resident budget --
+    written to a scratch path (`/buffer_write`, float, so the samples come
+    back exact) and freed -- and a step whose list reads a spilled take
+    reads it back (`/buffer_allocRead`) before the join is stitched. Its
+    buffer number stays the take's identity while it is on disk. It helps
+    natively too: a region under `--shm` lives in `/dev/shm`, which is
+    memory. The byte budget stays the bound on everything the history
+    holds, spilled or not, and a write the quota refuses trims the oldest
+    entries instead. The scratch directory is the caller's to name; a file
+    is named by the buffer it held, so a directory holds at most one file
+    per buffer number the session ever used.
   - ⬜ **X1.7 - A step re-reads what it changed** (the `/gui_ack` generation,
     above).
   - ✅ **X1.8 - The books and the example** that is this milestone's manual
@@ -221,7 +236,13 @@ opened it.
     a source the region windows, and **the decision** is when: every turn
     (the region names the edited list as a new `Location::Segments` source,
     so the multitrack plays the edit as it is made) or a confirmation (the
-    region keeps the take until the edit is taken). The standalone host gets
+    region keeps the take until the edit is taken). **Decided with the user
+    2026-09-22: every turn.** So a turn of an audio editor entered from a
+    box is one entry with two legs -- the list, and the region repointed to
+    the source the list now is -- and the takes an edit makes enter the
+    session's source table as temporary sources; which number a take is
+    known by on each side (a buffer to the audio editor, a `SourceId` to the
+    document) is the first thing this step settles. The standalone host gets
     its audio editor through the same door, since entering a box is the one
     way it has to open one.
 
