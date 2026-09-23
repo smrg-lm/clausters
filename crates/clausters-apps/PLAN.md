@@ -50,7 +50,8 @@ opened it.
 
 ## The milestones
 
-- ⬜ **X1 - The audio editor.** *(Requirements stated by the user 2026-09-14.)*
+- ✅ **X1 - The audio editor.** *(Requirements stated by the user 2026-09-14;
+  closed 2026-09-22.)*
   The samples editor becomes **`AudioEditor`**: editing samples by hand (the
   pencil, one grabbed sample) is one of its operations and `SamplesEditor` stays
   the name of that part.
@@ -233,8 +234,11 @@ opened it.
     temporary one natively, one named after the join in a page); checked
     against a real server, where a take written out and read back returns
     exact.*
-  - ⬜ **X1.7 - A step re-reads what it changed** (the `/gui_ack` generation,
-    above).
+  - ➡️ **X1.7 - A step re-reads what it changed** (the `/gui_ack` generation,
+    above). **Moved to `X2` with the user 2026-09-22**: it was written for an
+    editor that writes a buffer in place, and the audio editor is not one --
+    every edit stitches its join again and a cut moves everything after it, so
+    re-reading the whole join is the right answer there.
   - ✅ **X1.8 - The books and the example** that is this milestone's manual
     test. `edit_audio.py` / `edit-audio.html`; both clients' composition
     chapters and `docs/architecture.md`. The script was checked by hand
@@ -269,6 +273,17 @@ opened it.
   same tables from a formula. The samples editor already draws into a server
   buffer and writes it with `/buffer_setRange` (`clausters_editing::samples::write_steps`),
   so what differs is the table and what reads it, not the path.
+
+  **A history step re-reads what it changed, not the whole buffer** *(moved
+  here from `X1.7`, 2026-09-22)*. An editor that writes a buffer in place --
+  this one, and the samples editor it is modelled on -- answers undo and redo
+  with `reload`, which re-reads the whole buffer for a stroke of a thousand
+  samples. `/gui_ack` already carries `source generation` pairs that the host
+  keeps and nothing reads, and no client sends one (`clients/gui/PLAN.md`,
+  Found by use, "A generation is carried, stored, and read by nothing"). What
+  it waits on is what a source id is on that path -- a document's source, or
+  a widget's `buffer=N`; the audio editor answered it for itself (its takes'
+  ids are their buffer numbers), which is the precedent to read first.
 
   **What a table is on this server, and what the editor has to respect**
   (`docs/schemas.md`, "Table generation and the wavetable format"):

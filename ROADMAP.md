@@ -49,9 +49,9 @@ sounds from all three. **The application-scope track is closed**
 (`clients/gui/PLAN.md`, AP track): the samples editor is the second application
 in `crates/clausters-apps`, and the undo order over both is the crate's editing
 context, in both clients and the standalone host. The applications after the
-multitrack — the audio editor, a buffer editor, the notes editor, the score
+multitrack — a buffer editor, the notes editor, the score
 editor, and which composed views get one — are milestones of
-`crates/clausters-apps/PLAN.md` (`X1`-`X6`), each opened on a question rather
+`crates/clausters-apps/PLAN.md` (`X2`-`X6`), each opened on a question rather
 than on a design, and the score editor is not started.
 
 One thing deferred to `O24` still has no step of its own: the manual surface
@@ -188,21 +188,12 @@ its plan; the plan is where its acceptance is read.
   arrangement, the question the multitrack and piano-roll views already
   answered for their own material.
 
-- ⬜ **The applications after the multitrack, `X1`-`X6`**
+- ⬜ **The applications after the multitrack, `X2`-`X6`**
   *(`crates/clausters-apps/PLAN.md`, "The milestones")*. Each is written with
   what exists under it and what is open, and each opens on a decision:
-  **`X1`** the audio editor, whose requirements are stated (cut, copy and paste
-  over segments, mix, a history in memory and on disk) and whose history is
-  designed -- references to immutable takes, a new take per gesture, sources
-  freed by reachability, which also closes the document plan's "The takes a
-  history can still reach are never given back" -- with the browser's backing
-  decided (its own file system, one spilling rule on both platforms, `X1.6`),
-  and its save written over the take's own file, the multitrack and the audio
-  editor being separate applications (`X1.9`); a step re-reading only what it
-  changed (`X1.7`) is left, and where the segment model lands in Rust is open, and which takes the
-  generation `/gui_ack` carries and nothing reads (`clients/gui/PLAN.md`, Found
-  by use); **`X2`** a buffer editor that draws a table by
-  hand, where the wavetable conversion and what the hand edits are open; **`X3`**
+  **`X2`** a buffer editor that draws a table by
+  hand, where the wavetable conversion and what the hand edits are open, and
+  which takes the generation `/gui_ack` carries and nothing reads; **`X3`**
   the notes editor, decided to be an application, opening on what the crate
   edits; **`X4`** whether the points editor is one; **`X5`** the score editor over
   the `N` track; **`X6`** which composed views (scope, plot, waveform,
@@ -344,8 +335,7 @@ its plan; the plan is where its acceptance is read.
   Sonic Visualiser's pane/layer shape - layers that display audio and layers
   that annotate it as one kind on one axis, with the rule that *the axis belongs
   to the pane, not to the content*. The two entries are one design and the host's
-  is the view half; read them together before either starts. **Related:** `X1`,
-  the audio editor as an application (`crates/clausters-apps/PLAN.md`).
+  is the view half; read them together before either starts.
 
 - ⬜ **The free arrangement plane (the blueprint view)** *(`clients/gui/PLAN.md`,
   Future directions)*. A **second kind of multitrack**, explicitly not a milestone

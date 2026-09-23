@@ -2048,7 +2048,7 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   *converter*: nothing is written out at its rate, so a mixed-rate join costs
   the reading and not memory. `docs/decisions.md` carries both halves.
 
-- ⬜ **The takes a history can still reach are never given back** *(found
+- ✅ **The takes a history can still reach are never given back** *(found
   2026-09-22, settling where a join's samples live)*. An undo frees no take: the
   reconciliation frees only the curve tables, and a source the multitrack stops
   naming is still a source -- deliberately, since that is what lets a redo find
@@ -2073,4 +2073,11 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   samples"): the first shape, generalized -- a source is freed when no root
   reaches it (the document, the history's entries, the clipboard), with a byte
   budget beside the entry count and an explicit clear. This entry closes when
-  that lands.
+  that lands. **Closed 2026-09-22 with `X1`**: an entry names the sources
+  each half reaches (`history::Entry::holding`), the history reports the ones
+  none reaches any more (`History::released_sources`) and trims by bytes
+  (`History::trim_to_bytes`); the audio editor's context frees them and spills
+  the oldest to disk past a resident budget. The multitrack's own joins do
+  not record their holdings yet -- their entries go through the document's
+  log -- so that half is still open, and it is a smaller question now that
+  the mechanism exists.
