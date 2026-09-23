@@ -50,8 +50,8 @@ opened it.
 
 ## The milestones
 
-- ✅ **X1 - The audio editor.** *(Requirements stated by the user 2026-09-14;
-  closed 2026-09-22.)*
+- ⬜ **X1 - The audio editor.** *(Requirements stated by the user 2026-09-14;
+  reopened 2026-09-23 for `X1.11`.)*
   The samples editor becomes **`AudioEditor`**: editing samples by hand (the
   pencil, one grabbed sample) is one of its operations and `SamplesEditor` stays
   the name of that part.
@@ -253,6 +253,25 @@ opened it.
     float unless told otherwise; Ctrl+S over its window is the same save.
     Checked against a real server: a cut take saved over its file reads back
     at the cut's length.
+
+  - ✅ **X1.10 - The multitrack opens no editor over a box** *(decided with
+    the user 2026-09-23)*. The multitrack edits non-destructively -- where
+    things are, never the files or buffers a box reads -- so a double click
+    on a box is a press like any other, and the `enter` outcome, the `box`
+    verb and both clients' `enter` went. The applications are distinct and
+    have distinct purposes; the rules of use that keep an application
+    coherent are not what this crate implements. What it implements is what
+    the audio editor can edit.
+  - ⬜ **X1.11 - The audio editor over a server buffer, with the pencil as
+    one of its operations.** *(Stated by the user 2026-09-23.)* What the
+    audio editor edits is **a file or a server buffer**, and `SamplesEditor`
+    -- drawing samples by hand -- is a function of it rather than an
+    application beside it. Over a buffer, **saving is rewriting the buffer's
+    contents, or creating a new buffer**; reusing the buffer while it is
+    being edited sounds a glitch, which is the user's to avoid and not the
+    editor's to prevent. So the editor edits a private copy of what it opened,
+    and the buffer it came from is written only by a save -- the rule the file
+    already follows.
 
   **Open, and not decided here:** the browser has no mapping, so whether its
   history stays in memory under the byte budget or goes to OPFS; the budgets'

@@ -426,7 +426,7 @@ pub(super) fn roll_body(notes: &[f64]) -> Notes {
     props.insert("osc_lane".into(), Value::from(false));
     props.insert("ruler".into(), Value::from("off"));
     // Read-only here, which is the line the whole widget is drawn on: the
-    // multitrack places, and a box is **entered** to edit what is in it.
+    // multitrack places, and never edits what a box holds.
     props.insert("editable".into(), Value::from(false));
     crate::host::elements::notes::from_props(&props)
 }

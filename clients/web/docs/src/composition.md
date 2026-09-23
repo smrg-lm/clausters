@@ -234,9 +234,7 @@ const editor = await gui.edit(multitrack, {
 
 `sources` is the one fact about a multitrack that is not in the multitrack: the document
 names a **source id**, never a path and never a buffer number, so which buffer
-each source was read into travels beside it. The same table answers what a box
-opens as when it is entered — double click one and its take opens in the sample
-editor, on the multitrack's own undo order.
+each source was read into travels beside it.
 
 **Given a `server`, the multitrack sounds.** The editor keeps one resident reader per
 box in a group the server's transport governs, and puts them where the multitrack says

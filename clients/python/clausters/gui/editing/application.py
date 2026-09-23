@@ -32,9 +32,8 @@ being a tidier arrangement of the same code:
 
 - **Several editors can share one.** One host, one id space, one socket drain
   and one undo order across a bundle of subviews. That is an application in the
-  ordinary sense, and the multitrack is the one shaped like it: a multitrack plus the
-  boxes a hand entered out of it are one window set, and
-  `clausters.gui.editing.MultitrackEditor.enter` hands each of them this.
+  ordinary sense: editors a script composes into one window set share it by
+  being handed the same one.
 - **An editor with no window is not a special case.** An application with no
   host resolves nothing, hands out ids from its own counter and answers the
   acknowledgement by doing nothing, which is exactly what inspecting `draw()`

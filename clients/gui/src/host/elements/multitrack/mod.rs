@@ -15,12 +15,11 @@
 //! handler per box, and never learns a widget id. Identity is the client's own
 //! name, so what comes back names what the script already knows.
 //!
-//! **It places; a clip is entered to edit.** A clip's contents draw read-only
-//! here -- this widget owns *where* things are, not what is inside them -- and
-//! editing one is opening it in the editor its structure asks for. That is what
-//! keeps a heavy widget from becoming every widget, and it is the line the three
-//! applications are drawn on: the multitrack places, the audio editor and the
-//! score editor edit.
+//! **It places, and never edits what a clip holds.** A clip's contents draw
+//! read-only here -- this widget owns *where* things are, not what is inside
+//! them. The multitrack edits non-destructively, so nothing a hand does here
+//! reaches the samples or the notes a box reads; editing those is another
+//! application's, opened on its own.
 
 use clausters_core::osc::OscType;
 use std::collections::{HashMap, HashSet};

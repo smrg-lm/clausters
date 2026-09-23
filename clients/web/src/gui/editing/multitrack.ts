@@ -57,10 +57,8 @@ import { View } from "./view.ts";
 export class Sources {
     /**
      * source id -> the buffer number it was read into, or **the object that
-     * holds it** -- a `Buffer`, a `Timeline`. Both are accepted because they
-     * answer two different questions and a caller usually has the object: which
-     * buffer to draw from is {@link Sources.bufnum}, and what a box **opens as**
-     * is {@link Sources.structure}.
+     * holds it** (a `Buffer`), since a caller usually has the object;
+     * {@link Sources.bufnum} reads the number off either.
      */
     readonly buffers: Map<number, number | object>;
 
@@ -107,20 +105,6 @@ export class Sources {
         // always made.
         const bufnum = (held as { bufnum?: unknown }).bufnum;
         return bufnum === undefined || bufnum === null ? -1 : Math.trunc(Number(bufnum));
-    }
-
-    /**
-     * **What a box over this source opens as** -- the object a caller gave, or
-     * `undefined` for a source it named by number alone.
-     *
-     * A multitrack names a source and an editor edits a structure; only whoever
-     * loaded the samples holds both, which is the same reason this class exists
-     * at all.
-     */
-    structure(source: number | undefined | null): object | undefined {
-        if (source === undefined || source === null) return undefined;
-        const held = this.buffers.get(Math.trunc(source));
-        return typeof held === "object" ? held : undefined;
     }
 
     /**
@@ -468,7 +452,6 @@ interface Outcome {
     minted?: unknown[];
     locate?: number;
     selection?: Record<string, unknown>;
-    enter?: string;
     transport?: TransportVerb;
     cursor?: number;
 }
@@ -524,13 +507,6 @@ export class MultitrackEditor extends Editor<Multitrack> {
      * about a multitrack that are not in the multitrack.
      */
     readonly bridge: Bridge;
-
-    /**
-     * The editors a hand opened by entering a box, by box name -- held so a
-     * second double click on the same box raises the one that is already open
-     * rather than a second window over one structure.
-     */
-    readonly entered = new Map<string, Editor<never>>();
 
     /**
      * What the multitrack **sounds** as, when it can be heard at all: a
@@ -684,7 +660,6 @@ export class MultitrackEditor extends Editor<Multitrack> {
         if (outcome.selection !== undefined) {
             this.selection = outcome.selection as unknown as Selection;
         }
-        if (outcome.enter !== undefined) void this.enter(outcome.enter);
         if (outcome.cursor !== undefined) this.cursor = outcome.cursor;
         if (outcome.transport !== undefined) this.transported = this.transport(outcome.transport);
         this.echo.send(outcome.answer);
@@ -840,11 +815,8 @@ export class MultitrackEditor extends Editor<Multitrack> {
     }
 
     /**
-     * The position cursor was placed at `at` seconds, here or in a window entered
-     * from here: cue a stopped transport there and leave a rolling one alone.
-     *
-     * This is what a box's own ruler reaches, because a structure inside a multitrack
-     * has no transport of its own -- the multitrack is the one that has one.
+     * The position cursor was placed at `at` seconds: cue a stopped transport
+     * there and leave a rolling one alone.
      */
     override locate(at: number): void {
         this.playback?.cue(at);
@@ -879,88 +851,9 @@ export class MultitrackEditor extends Editor<Multitrack> {
         this.echo.send(this.coreCall("settle") as unknown as Answer);
     }
 
-    /**
-     * Open the contents of the box called `name` in an editor of its own, and
-     * hand it back (`null` for a box with nothing to open).
-     *
-     * **The multitrack places; a box is entered to edit.** What a box holds is
-     * a structure like any other -- a take's samples, a timeline of notes -- so
-     * entering one is {@link edit} over that structure, with no second
-     * implementation of any editor.
-     *
-     * **One undo order, and it is the multitrack's.** The editor is opened on this
-     * multitrack's editing context, so a note written inside a box and a box dragged
-     * on the stack walk one history: an undo that needed a window reopened to
-     * reach it is a hole in the order that does not announce itself. What that
-     * costs is that the entered structure stays in the context while the multitrack
-     * is open even if its window is closed -- which the context already does,
-     * since it holds what it registered.
-     *
-     * **And one window set**, which is the multitrack's {@link Application}: a box
-     * entered out of a multitrack is part of looking at the multitrack, so it draws on the
-     * same host, names widgets in the same id space and walks the same order
-     * without resolving anything of its own. Its **acknowledgement stays its
-     * own** -- an {@link Echo} is one view's end of the conversation, and a box
-     * sharing the multitrack's floor would silence the multitrack's staleness check every
-     * time a hand edited inside the box.
-     *
-     * The object comes from {@link Sources}, which is where the one fact about
-     * a multitrack that is not in the multitrack already lives: the document names a
-     * source and only whoever loaded it holds the structure.
-     */
-    async enter(name: string): Promise<Editor<never> | null> {
-        const { edit } = await import("./edit.ts");
-        const found = this.entered.get(name);
-        if (found !== undefined) return found;
-        // **What the box is, is the multitrack's** (the core's `box`): the source its
-        // region windows and what a window over it is called.
-        this.syncCore();
-        const contents = this.coreCall("box", { name }) as
-            | { source: number | null; title: string }
-            | null;
-        if (contents === null) return null;
-        const held = this.bridge.sources.structure(contents.source ?? undefined);
-        if (held === undefined) return null;
-        const opened = await edit(held, {
-            sampleRate: this.bridge.rate,
-            context: this.editing,
-            app: this.app,
-            host: this.host ?? undefined,
-            title: String(contents.title || name),
-            // **On the host the multitrack is on, or on no screen at all.** A multitrack
-            // that was never opened has no window to enter one *from*, and
-            // resolving an ambient host there would put a box on screen while
-            // the multitrack it belongs to is not.
-            open: this.host !== null,
-        });
-        // **The multitrack is what this window is composed inside**, which is what a
-        // ruler clicked in there needs: a take has no transport of its own, so
-        // the position it places is the multitrack's to act on.
-        opened.composedIn = this as Editor;
-        this.entered.set(name, opened);
-        // **A window the reader closed is enterable again**, and it is the only
-        // way one leaves this table: an editor that is merely not on screen is
-        // still the one that box is open in, so a second double click raises it
-        // rather than making a second editor over one structure.
-        if (this.host !== null) opened.onClosed(() => this.entered.delete(name));
-        return opened;
-    }
-
-    /**
-     * Close this multitrack's window, and the boxes opened out of it with it.
-     *
-     * A window entered *from* the multitrack is part of looking at the multitrack: what
-     * outlives both is the history, which is the data's and was never a
-     * window's.
-     */
+    /** Close this multitrack's window, and its playback with it. */
     override close(): this {
         this.playback?.close();
-        for (const opened of [...this.entered.values()]) {
-            if (!opened.closed) opened.close();
-        }
-        // The handlers cleared their own entries; this is for the ones that
-        // were never on screen to clear.
-        this.entered.clear();
         return super.close();
     }
 }

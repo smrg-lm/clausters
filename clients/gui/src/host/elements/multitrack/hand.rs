@@ -379,17 +379,6 @@ impl Multitrack {
         let Some((clip, part)) = self.clip_at(input, at) else {
             return Claim::Decline;
         };
-        // **A box is entered to edit it**, and entering is a double click --
-        // the gesture a desktop already spends on "open this". What leaves is
-        // the box's name and nothing else: which editor that box asks for is a
-        // question about its *contents*, and this widget owns where things are
-        // rather than what is inside them.
-        if input.clicks >= 2 {
-            return Claim::events(Events::message(vec![
-                OscType::String("enter".into()),
-                OscType::String(self.clips[clip].name.clone()),
-            ]));
-        }
         // **Alt adds or removes that one**, the same key that adds a note to a
         // roll's selection. A plain click selects it alone, and that is decided
         // on release (see [`Element::release`]): a press is not yet a gesture.

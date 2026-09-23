@@ -51,7 +51,7 @@ in `crates/clausters-apps`, and the undo order over both is the crate's editing
 context, in both clients and the standalone host. The applications after the
 multitrack — a buffer editor, the notes editor, the score
 editor, and which composed views get one — are milestones of
-`crates/clausters-apps/PLAN.md` (`X2`-`X6`), each opened on a question rather
+`crates/clausters-apps/PLAN.md` (`X1`-`X6`), each opened on a question rather
 than on a design, and the score editor is not started.
 
 One thing deferred to `O24` still has no step of its own: the manual surface
@@ -191,10 +191,12 @@ its plan; the plan is where its acceptance is read.
   arrangement, the question the multitrack and piano-roll views already
   answered for their own material.
 
-- ⬜ **The applications after the multitrack, `X2`-`X6`**
+- ⬜ **The applications after the multitrack, `X1`-`X6`**
   *(`crates/clausters-apps/PLAN.md`, "The milestones")*. Each is written with
   what exists under it and what is open, and each opens on a decision:
-  **`X2`** a buffer editor that draws a table by
+  **`X1`** the audio editor, left with editing a server buffer as well as a
+  file (`X1.11`: a private copy, saved by rewriting the buffer or into a new
+  one, the pencil one of its operations); **`X2`** a buffer editor that draws a table by
   hand, where the wavetable conversion and what the hand edits are open, and
   which takes the generation `/gui_ack` carries and nothing reads; **`X3`**
   the notes editor, decided to be an application, opening on what the crate

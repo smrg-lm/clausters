@@ -11,8 +11,7 @@ host is answered with are the shared crate's
 (`clausters._native.EditingCore`), which the standalone host runs and
 the web client binds too. What this adds is what a language owns: the
 `clausters.multitrack.Multitrack` object a script holds and gets written back
-onto, which server buffer a source was read into, the history a multitrack shares
-with the boxes entered out of it, and the socket.
+onto, which server buffer a source was read into, and the socket.
 
 **Seconds meet frames through the rate alone.** A multitrack is placed in
 seconds, so a position and a length are each their seconds times the rate, and
@@ -57,10 +56,8 @@ class Sources:
 
     def __init__(self, buffers=None):
         #: source id -> the buffer number it was read into, or **the object
-        #: that holds it** -- a `clausters.defs.Buffer`, a
-        #: `clausters.seq.Timeline`. Both are accepted because they answer two
-        #: different questions and a caller usually has the object: which buffer
-        #: to draw from is `bufnum`, and what a box **opens as** is `structure`.
+        #: that holds it** (a `clausters.defs.Buffer`), since a caller usually
+        #: has the object; `bufnum` reads the number off either.
         self.buffers = dict(buffers or {})
 
     def bufnum(self, source) -> int:
@@ -85,19 +82,6 @@ class Sources:
         # above has always made.
         held = getattr(found, "bufnum", None)
         return -1 if held is None else int(held)
-
-    def structure(self, source):
-        """**What a box over this source opens as** -- the object a caller gave,
-        or ``None`` for a source it named by number alone.
-
-        A multitrack names a source and an editor edits a structure; only whoever
-        loaded the samples holds both, which is the same reason this class
-        exists at all.
-        """
-        if source is None:
-            return None
-        found = self.buffers.get(int(source))
-        return None if isinstance(found, (int, float)) else found
 
     def held(self) -> dict:
         """The table as a **join** and a **picture** read it: source id ->
@@ -345,10 +329,6 @@ class MultitrackEditor(Editor):
         #: The axis and the buffer table this window crosses to -- the two things
         #: about a multitrack that are not in the multitrack.
         self.bridge = bridge
-        #: The editors a hand opened by entering a box, by box name -- held so a
-        #: second double click on the same box raises the one that is already
-        #: open rather than a second window over one structure.
-        self.entered: dict = {}
         #: What the multitrack **sounds** as, when it can be heard at all:
         #: `clausters.gui.editing.playback.Playback` over the server this was
         #: given, and ``None`` for a multitrack opened with none. A multitrack nobody can
@@ -454,8 +434,6 @@ class MultitrackEditor(Editor):
                 self.on_locate(self.cursor)
         if outcome.get("selection") is not None:
             self.selection = outcome["selection"]
-        if outcome.get("enter") is not None:
-            self.enter(str(outcome["enter"]))
         if outcome.get("cursor") is not None:
             self.cursor = float(outcome["cursor"])
         if outcome.get("transport") is not None:
@@ -584,13 +562,8 @@ class MultitrackEditor(Editor):
         self._take(self._call("stop"))
 
     def locate(self, at: float):
-        """The position cursor was placed at ``at`` seconds, here or in a window
-        entered from here: cue a stopped transport there and leave a rolling one
-        alone.
-
-        This is what a box's own ruler reaches, because a structure inside a
-        multitrack has no transport of its own -- the multitrack is the one that has one.
-        """
+        """The position cursor was placed at ``at`` seconds: cue a stopped
+        transport there and leave a rolling one alone."""
         if self.playback is not None:
             self.playback.cue(at)
 
@@ -621,87 +594,10 @@ class MultitrackEditor(Editor):
         self._sync_core()
         self.echo.send(self._call("settle"))
 
-    def enter(self, name: str):
-        """Open the contents of the box called ``name`` in an editor of its
-        own, and return it (``None`` for a box with nothing to open).
-
-        **The multitrack places; a box is entered to edit.** What a box holds
-        is a structure like any other -- a take's samples, a timeline of notes --
-        so entering one is `clausters.gui.editing.edit` over that structure,
-        with no second implementation of any editor.
-
-        **One undo order, and it is the multitrack's.** The editor is opened on this
-        multitrack's editing context, so a note written inside a box and a box
-        dragged on the stack walk one history: an undo that needed a window
-        reopened to reach it is a hole in the order that does not announce
-        itself. What that costs is that the entered structure stays in the
-        context while the multitrack is open even if its window is closed -- which
-        the context already does, since it holds what it registered.
-
-        **And one window set**, which is the multitrack's
-        `clausters.gui.editing.Application`: a box entered out of a multitrack is
-        part of looking at the multitrack, so it draws on the same host, names
-        widgets in the same id space and walks the same order without resolving
-        anything of its own. Its **acknowledgement stays its own** -- an
-        `clausters.gui.editing.Echo` is one view's end of the conversation, and
-        a box sharing the multitrack's floor would silence the multitrack's staleness
-        check every time a hand edited inside the box.
-
-        The object comes from `Sources`, which is where the one fact about a
-        multitrack that is not in the multitrack already lives: the document names a
-        source and only whoever loaded it holds the structure.
-        """
-        from .edit import edit
-
-        found = self.entered.get(name)
-        if found is not None:
-            return found
-        # **What the box is, is the multitrack's** (the core's `box`): the source its
-        # region windows and what a window over it is called.
-        self._sync_core()
-        contents = self._call("box", name=str(name))
-        if not contents:
-            return None
-        held = self.bridge.sources.structure(contents.get("source"))
-        if held is None:
-            return None
-        opened = edit(held, sample_rate=self.bridge.rate,
-                      context=self._editing, app=self.app, host=self._host,
-                      title=str(contents.get("title") or name),
-                      # **On the host the multitrack is on, or on no screen at
-                      # all.** A multitrack that was never opened has no window to
-                      # enter one *from*, and resolving an ambient host there
-                      # would put a box on screen while the multitrack it belongs to
-                      # is not.
-                      open=self._host is not None)
-        # **The multitrack is what this window is composed inside**, which is what a
-        # ruler clicked in there needs: a take has no transport of its own, so
-        # the position it places is the multitrack's to act on.
-        opened.composed_in = self
-        self.entered[name] = opened
-        # **A window the reader closed is enterable again**, and it is the only
-        # way one leaves this table: an editor that is merely not on screen is
-        # still the one that box is open in, so a second double click raises it
-        # rather than making a second editor over one structure.
-        if self._host is not None:
-            opened.on_closed(lambda: self.entered.pop(name, None))
-        return opened
-
     def close(self):
-        """Close this multitrack's window, and the boxes opened out of it with it.
-
-        A window entered *from* the multitrack is part of looking at the multitrack: what
-        outlives both is the history, which is the data's and was never a
-        window's.
-        """
+        """Close this multitrack's window, and its playback with it."""
         if self.playback is not None:
             self.playback.close()
-        for opened in list(self.entered.values()):
-            if not opened.closed:
-                opened.close()
-        # The handlers cleared their own entries; this is for the ones that
-        # were never on screen to clear.
-        self.entered.clear()
         super().close()
 
 

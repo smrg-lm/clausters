@@ -562,24 +562,16 @@ fn dragging_a_point_reports_every_curve() {
     assert_eq!(args[11], OscType::String("env".into()), "the layer too");
 }
 
-/// **A box is entered with a double click**, and what leaves is its name.
-///
-/// The widget owns *where* things are and not what is inside them, so it
-/// says which box was opened and stops there: which editor that box asks
-/// for is a question about its contents, and whoever holds the multitrack is
-/// the one that can answer it.
+/// **A second press on a box is a press like the first**: the multitrack edits
+/// non-destructively and opens nothing over what a box holds, so a double click
+/// grabs the box and says nothing.
 #[test]
-fn a_second_press_on_a_box_enters_it() {
+fn a_second_press_on_a_box_is_a_press() {
     let m = Metrics::default();
     let rect = Rect::new(0.0, 0.0, 600.0, 220.0);
     let len = 1000.0;
     let mut mt = multitrack();
     let on_a = xy(&mt, &m, rect, 250.0, len, 0);
-
-    let once = input(&m, rect, len);
-    assert!(matches!(mt.press(on_a, &once), Claim::Take(_)));
-    assert!(mt.grab.is_some(), "one press grabs the box");
-
     let twice = Input {
         clicks: 2,
         ..input(&m, rect, len)
@@ -587,11 +579,11 @@ fn a_second_press_on_a_box_enters_it() {
     let Claim::Take(take) = mt.press(on_a, &twice) else {
         panic!("the second press is taken");
     };
-    let msgs = take.events.into_messages();
-    let args = msgs.first().expect("one message");
-    assert_eq!(args[0], OscType::String("enter".into()));
-    assert_eq!(args[1], OscType::String("a".into()));
-    assert!(mt.grab.is_none(), "and nothing is being dragged");
+    assert!(
+        take.events.into_messages().is_empty(),
+        "and reports nothing"
+    );
+    assert!(mt.grab.is_some(), "it grabs the box, as one press does");
 }
 
 /// **A track is zoomed vertically by pulling its header's bottom edge**, and

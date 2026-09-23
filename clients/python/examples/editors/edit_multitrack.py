@@ -254,10 +254,8 @@ print(f"wrote {saved.save(os.path.join(OUT, 'edit_multitrack.json'))}")
 # %%
 session.gui()          # the host wired to this session's server
 editor = edit(multitrack, sample_rate=SR, server=server,
-              #: Which buffer each source was read into -- and, given as the
-              #: **objects**, what a box opens as when it is entered: the same
-              #: table answers both, because a multitrack names a source and only
-              #: whoever loaded it holds the take.
+              #: Which buffer each source was read into: a multitrack names a
+              #: source, and only whoever loaded it holds the take.
               sources={id: BUFS[take] for id, take in SOURCES.items()},
               title="multitrack", width=1000, height=560)
 
