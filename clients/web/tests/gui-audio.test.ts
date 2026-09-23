@@ -141,13 +141,15 @@ const spans = (editor: AudioEditor): [number, number][] =>
         return [source.source, source.range.start];
     });
 
-test("the window draws a join stitched over the whole take", async () => {
+test("the window draws a join over a private copy of the take", async () => {
     const take = new FakeBuffer();
     const [editor] = await opened(take);
     const display = editor.buffer.bufnum;
+    const copy = take.server.sent.find(([addr]) => addr === "/buffer_gen")![1];
+    assert.deepEqual([copy[1], copy[3]], ["copy", take.bufnum], "copied out of the take");
     const stitched = take.server.sent.filter(([addr]) => addr === "/buffer_stitch");
     assert.equal(stitched[0]![1][0], display);
-    assert.equal(stitched[0]![1][3], take.bufnum, "it reads the take");
+    assert.equal(stitched[0]![1][3], copy[0], "it reads the copy");
     assert.equal(editor.buffer.frames, 100);
     assert.ok(!take.server.addrs().includes("/buffer_setRange"), "the take is never written");
 });
@@ -165,7 +167,8 @@ test("a stroke writes a new take and the join reads it", async () => {
         "/buffer_stitch",
     ]);
     const fresh = take.server.sent[0]![1][0]!;
-    assert.deepEqual(spans(editor), [[7, 0], [fresh, 0], [7, 42]]);
+    const copy = spans(editor)[0]![0];
+    assert.deepEqual(spans(editor), [[copy, 0], [fresh, 0], [copy, 42]]);
 });
 
 test("a take the history cannot reach is freed", async () => {
@@ -209,6 +212,7 @@ test("a cut moves no samples", async () => {
 test("a take past the resident budget goes to disk and comes back", async () => {
     const take = new FakeBuffer();
     const [editor, , wid, context] = await opened(take, { residentBytes: 0, scratch: "/scratch" });
+    take.server.sent = [];
     for (const seq of [1, 2]) {
         editor.apply("/gui_event", [wid, seq, context.version, "draw", 0, 10, [0.5], [0.0]]);
         await settle();
@@ -236,4 +240,18 @@ test("a save writes the edited take over its file or as another", async () => {
     ]);
     assert.equal(await editor.save({ path: "/takes/b.wav", sampleFormat: "int24" }), "/takes/b.wav");
     assert.equal(await editor.save(), "/takes/b.wav");
+});
+
+test("a save over a buffer rewrites it or writes a new one", async () => {
+    const take = new FakeBuffer();
+    const [editor, , wid] = await opened(take);
+    editor.apply("/gui_event", [wid, 1, 0, "cut", 10.0, 20.0]);
+    await settle();
+    take.server.sent = [];
+    const saved = (await editor.save()) as { bufnum: number; frames: number };
+    assert.deepEqual([saved.bufnum, saved.frames], [take.bufnum, 80]);
+    assert.deepEqual(take.server.addrs(), ["/buffer_alloc", "/server_sync", "/buffer_gen"]);
+    const fresh = (await editor.save({ buffer: true })) as { bufnum: number };
+    assert.ok(![take.bufnum, editor.buffer.bufnum].includes(fresh.bufnum));
+    assert.equal(((await editor.save()) as { bufnum: number }).bufnum, fresh.bufnum, "a later save writes there");
 });

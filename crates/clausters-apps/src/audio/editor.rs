@@ -78,9 +78,14 @@ pub struct AudioEditor {
     rate: f64,
     /// The join the window draws: the list, stitched.
     display: i64,
-    /// The file the take was read from, which a save writes over -- or the
-    /// one a save-as last named. `None` for a take no file holds.
-    path: Option<String>,
+    /// **What a save writes**: the file the take was read from, or the server
+    /// buffer it was opened from -- or whichever a save-as last named.
+    target: Target,
+    /// The buffer the editor was opened over. Written by a save and by
+    /// nothing else: the editor edits a private copy of it ([`Self::open`]).
+    opened: i64,
+    /// Whether the private copy has been made.
+    copied: bool,
     list: Vec<Part>,
     /// Frames of every take this editor knows -- the one it opened and each it
     /// made -- by buffer.
@@ -144,7 +149,9 @@ impl AudioEditor {
             channels: channels.max(1),
             rate: if rate > 0.0 { rate } else { 48_000.0 },
             display,
-            path: None,
+            target: Target::Buffer(take),
+            opened: take,
+            copied: false,
             list: Vec::new(),
             frames: BTreeMap::new(),
             spare: Vec::new(),
@@ -273,50 +280,84 @@ impl AudioEditor {
         ]))
     }
 
-    /// **Saving: the take as the edits have left it, written as a file.**
+    /// **Saving: the take as the edits have left it, written where it belongs.**
     ///
-    /// With no `path` it is written **over the file it was read from** -- an
-    /// audio editor's save is the user's own act on the user's own file, the
-    /// one place the program writes one. With a `path` it is a save-as: the
-    /// edit goes to that file, which becomes the one a later save writes. A
-    /// take no file holds has to be saved as one. The join is written through
-    /// its parts, so what lands is exactly what is heard; `format` is the
-    /// sample format (`"float"`, `"int24"` or `"int16"`).
-    pub fn save(&mut self, path: Option<&str>, format: &str) -> Result<Value, String> {
-        let path = match path.filter(|p| !p.is_empty()) {
-            Some(path) => path.to_string(),
-            None => self
-                .path
-                .clone()
-                .ok_or("this take was not read from a file: save it as one")?,
-        };
+    /// With no `to` it is written **over what the take was opened from** --
+    /// the file it was read from, or the server buffer it was opened over. An
+    /// audio editor's save is the user's own act on the user's own file or
+    /// buffer, the one place the program writes one. With a `to` it is a
+    /// save-as: the edit goes to that file or that buffer, which becomes the
+    /// one a later save writes. The join is read through its parts, so what
+    /// lands is exactly what is heard.
+    ///
+    /// **A file** is written as a WAV in `format` (`"float"`, `"int24"` or
+    /// `"int16"`). **A buffer** is rewritten whole, at the take's length -- a
+    /// cut made it shorter, a paste longer -- so whatever reads it hears the
+    /// edit from then on; saving into a buffer that is sounding is heard as the
+    /// glitch it is, and it is the user's to avoid rather than the editor's to
+    /// refuse. A new buffer is the caller's to hand over, as every buffer
+    /// number here is.
+    pub fn save(&mut self, to: Option<Target>, format: &str) -> Result<Value, String> {
+        let to = to.unwrap_or_else(|| self.target.clone());
         if !matches!(format, "float" | "int24" | "int16") {
             return Err(format!(
                 "'{format}' is not a sample format (float, int24, int16)"
             ));
         }
-        self.path = Some(path.clone());
         let display = self.display as i32;
-        Ok(steps_json(&[
-            send(
-                "/buffer_write",
-                vec![
-                    OscType::Int(display),
-                    OscType::String(path),
-                    OscType::String("wav".into()),
-                    OscType::String(format.into()),
-                ],
-            ),
-            Step::AwaitDone {
-                command: "/buffer_write".into(),
-                index: Some(display),
-            },
-        ]))
+        let steps = match &to {
+            Target::File(path) if path.is_empty() => {
+                return Err("a file is saved under a path".into());
+            }
+            Target::File(path) => vec![
+                send(
+                    "/buffer_write",
+                    vec![
+                        OscType::Int(display),
+                        OscType::String(path.clone()),
+                        OscType::String("wav".into()),
+                        OscType::String(format.into()),
+                    ],
+                ),
+                Step::AwaitDone {
+                    command: "/buffer_write".into(),
+                    index: Some(display),
+                },
+            ],
+            Target::Buffer(buffer) => {
+                if *buffer == self.display || self.frames.contains_key(buffer) {
+                    return Err(format!(
+                        "buffer {buffer} is one this editor reads: save into another"
+                    ));
+                }
+                let frames = self.length();
+                let width = u64::from(self.channels);
+                let mut steps = self.allocate(*buffer, frames);
+                steps.push(send(
+                    "/buffer_gen",
+                    vec![
+                        OscType::Int(*buffer as i32),
+                        OscType::String("copy".into()),
+                        OscType::Int(0),
+                        OscType::Int(display),
+                        OscType::Int(0),
+                        OscType::Int((frames * width) as i32),
+                    ],
+                ));
+                steps.push(Step::AwaitDone {
+                    command: "/buffer_gen".into(),
+                    index: Some(*buffer as i32),
+                });
+                steps
+            }
+        };
+        self.target = to;
+        Ok(steps_json(&steps))
     }
 
-    /// The file a save writes over, when there is one.
-    pub fn file(&self) -> Option<&str> {
-        self.path.as_deref()
+    /// What a save writes over.
+    pub fn target(&self) -> &Target {
+        &self.target
     }
 
     /// A spill the caller could not carry out -- the write was refused, a
@@ -351,10 +392,41 @@ impl AudioEditor {
         steps
     }
 
-    /// **The steps that make the window's join what the list is** -- what
-    /// opening the editor carries out first, and what every turn ends with.
-    pub fn open(&self) -> Value {
-        steps_json(&self.stitched())
+    /// **Opening: a private copy of what the editor was opened over, and the
+    /// window's join stitched over it.**
+    ///
+    /// The buffer the editor was handed is never named by the history, so a
+    /// save can rewrite it -- the user's buffer, or the one a file was read
+    /// into -- without taking the frames an undo needs away from under it.
+    /// The copy is a buffer the caller handed over, as every new take is;
+    /// with none, the editor cannot open.
+    pub fn open(&mut self) -> Result<Value, String> {
+        let mut steps = Vec::new();
+        if !self.copied {
+            let frames = self.frames.get(&self.opened).copied().unwrap_or(0);
+            let copy = self.next_buffer()?;
+            steps.extend(self.allocate(copy, frames));
+            steps.push(send(
+                "/buffer_gen",
+                vec![
+                    OscType::Int(copy as i32),
+                    OscType::String("copy".into()),
+                    OscType::Int(0),
+                    OscType::Int(self.opened as i32),
+                    OscType::Int(0),
+                    OscType::Int((frames * u64::from(self.channels)) as i32),
+                ],
+            ));
+            steps.push(Step::AwaitDone {
+                command: "/buffer_gen".into(),
+                index: Some(copy as i32),
+            });
+            self.frames.remove(&self.opened);
+            self.reopen(copy, frames);
+            self.copied = true;
+        }
+        steps.extend(self.stitched());
+        Ok(steps_json(&steps))
     }
 
     /// The list, stitched into the display buffer, and the `/done` awaited.
@@ -840,6 +912,15 @@ impl AudioEditor {
     }
 }
 
+/// **Where a save writes**: a file, or a server buffer.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Target {
+    /// A file on the server's filesystem -- the page's own storage, in a tab.
+    File(String),
+    /// A server buffer, rewritten whole at the take's length.
+    Buffer(i64),
+}
+
 /// What a gesture made: its label, the list after it and the steps that make
 /// its new takes -- or nothing at all.
 type Edited = Option<(String, Vec<Part>, Vec<Step>)>;
@@ -914,7 +995,7 @@ impl AudioEditor {
             self.spare.extend(buffers);
         }
         if let Some(path) = facts.path.filter(|p| !p.is_empty()) {
-            self.path = Some(path);
+            self.target = Target::File(path);
         }
         if let Some(scratch) = facts.scratch.filter(|s| !s.is_empty()) {
             self.scratch = Some(scratch);
@@ -979,14 +1060,17 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
 /// - `layers` -- `stack`, optional: `{"layers", "measure"}` or `{"error"}`.
 /// - `window` -- `widget`: the window, as a GuiDef.
 /// - `props` -- `widget`: the correction.
-/// - `open` -- `{"steps"}`: what makes the drawn join the take.
 /// - `event` -- `addr`, `args`, `version`: an [`Outcome`].
 /// - `apply` -- `payload`: `{"steps"}` for a list the history handed back, or
 ///   `{}` for a payload that is not one.
 /// - `parts` -- `{"parts", "frames"}`: the list, and how long it is.
-/// - `save` -- `path` and `format` (`"float"` when absent), both optional:
-///   `{"steps", "path"}`, what writes the take over its file or, given a
-///   `path`, as that file; or `{"error"}`.
+/// - `open` -- `{"steps"}`: the private copy of what the editor was opened
+///   over, and the join stitched over it; or `{"error"}` with no buffer
+///   handed over for the copy.
+/// - `save` -- `path` or `buffer`, and `format` (`"float"` when absent), all
+///   optional: `{"steps", "path"}` or `{"steps", "buffer"}`, what writes the
+///   take over what it was opened from or, given one, into that file or that
+///   buffer; or `{"error"}`.
 /// - `kept` -- `buffer`: a spill the caller could not carry out, so that take
 ///   is still in its buffer. Answers `{}`.
 /// - `acknowledge` -- `seq`, `version`, `reason`: an [`Answer`].
@@ -1024,7 +1108,10 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
         }
         "window" => editor.window(widget).to_string(),
         "props" => Value::Object(props(widget)).to_string(),
-        "open" => json!({ "steps": editor.open() }).to_string(),
+        "open" => match editor.open() {
+            Ok(steps) => json!({ "steps": steps }).to_string(),
+            Err(error) => json!({ "error": error }).to_string(),
+        },
         "event" => {
             let event = serde_json::from_value::<Event>(request.clone()).unwrap_or_default();
             serde_json::to_string(&editor.event(&event, version)).unwrap_or_else(|_| "{}".into())
@@ -1036,8 +1123,20 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
         "parts" => json!({ "parts": editor.list(), "frames": editor.length() }).to_string(),
         "save" => {
             let format = get("format").as_str().unwrap_or("float").to_string();
-            match editor.save(get("path").as_str(), &format) {
-                Ok(steps) => json!({ "steps": steps, "path": editor.file() }).to_string(),
+            let to = match (get("path").as_str(), get("buffer").as_i64()) {
+                (Some(path), _) => Some(Target::File(path.to_string())),
+                (None, Some(buffer)) => Some(Target::Buffer(buffer)),
+                (None, None) => None,
+            };
+            match editor.save(to, &format) {
+                Ok(steps) => {
+                    let mut answer = json!({ "steps": steps });
+                    match editor.target() {
+                        Target::File(path) => answer["path"] = json!(path),
+                        Target::Buffer(buffer) => answer["buffer"] = json!(buffer),
+                    }
+                    answer.to_string()
+                }
                 Err(error) => json!({ "error": error }).to_string(),
             }
         }

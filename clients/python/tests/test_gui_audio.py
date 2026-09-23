@@ -117,13 +117,15 @@ def opened(take, **options):
     return editor, host, host.trees[0]["children"][0]["id"], context
 
 
-def test_the_window_draws_a_join_stitched_over_the_whole_take():
+def test_the_window_draws_a_join_over_a_private_copy_of_the_take():
     take = FakeBuffer()
     editor, _host, _wid, _context = opened(take)
     display = editor.buffer.bufnum
+    copy = [args for addr, args in take.server.sent if addr == "/buffer_gen"][0]
+    assert (copy[1], copy[3]) == ("copy", take.bufnum), "copied out of the take"
     stitched = [args for addr, args in take.server.sent if addr == "/buffer_stitch"]
     assert stitched and stitched[0][0] == display
-    assert stitched[0][3] == take.bufnum, "it reads the take"
+    assert stitched[0][3] == copy[0], "it reads the copy"
     assert editor.buffer.frames == 100
     assert "/buffer_setRange" not in take.server.addrs(), "the take is never written"
 
@@ -137,8 +139,9 @@ def test_a_stroke_writes_a_new_take_and_the_join_reads_it():
     assert take.server.addrs() == ["/buffer_alloc", "/server_sync",
                                    "/buffer_setRange", "/buffer_stitch"]
     new = take.server.sent[0][1][0]
+    copy = editor.parts[0]["source"]["source"]
     assert [(p["source"]["source"], p["source"]["range"]["start"])
-            for p in editor.parts] == [(7, 0), (new, 0), (7, 42)]
+            for p in editor.parts] == [(copy, 0), (new, 0), (copy, 42)]
 
 
 def test_a_take_the_history_cannot_reach_is_freed():
@@ -177,6 +180,7 @@ def test_a_cut_moves_no_samples():
 def test_a_take_past_the_resident_budget_goes_to_disk_and_comes_back():
     take = FakeBuffer()
     editor, _host, wid, context = opened(take, resident_bytes=0, scratch="/scratch")
+    take.server.sent.clear()
     for seq in (1, 2):
         editor.apply("/gui_event", [wid, seq, context.version, "draw", 0, 10,
                                     [0.5], [0.0]])
@@ -198,6 +202,19 @@ def test_a_save_writes_the_edited_take_over_its_file_or_as_another():
                                                    "/takes/a.wav", "wav", "float"))]
     assert editor.save("/takes/b.wav", sample_format="int24") == "/takes/b.wav"
     assert editor.save() == "/takes/b.wav"
+
+
+def test_a_save_over_a_buffer_rewrites_it_or_writes_a_new_one():
+    take = FakeBuffer()
+    editor, _host, wid, _context = opened(take)
+    editor.apply("/gui_event", [wid, 1, 0, "cut", 10.0, 20.0])
+    take.server.sent.clear()
+    saved = editor.save()
+    assert saved.bufnum == take.bufnum and saved.frames == 80
+    assert take.server.addrs() == ["/buffer_alloc", "/server_sync", "/buffer_gen"]
+    fresh = editor.save(buffer=True)
+    assert fresh.bufnum not in (take.bufnum, editor.buffer.bufnum)
+    assert editor.save().bufnum == fresh.bufnum, "a later save writes there"
 
 
 if __name__ == "__main__":

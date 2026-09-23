@@ -67,7 +67,7 @@ new list of spans over the take and over the takes the edits made: a stroke is a
 new take the size of the stroke, spliced over the frames it was drawn on. An undo
 is the list before, stitched again, so it costs the list and not the samples.
 The takes a history can still reach are kept, and freed when it cannot;
-`history_bytes=` caps what only the history holds, and `resident_bytes=` how much of that stays in memory -- past it the oldest takes are written to a `scratch=` directory and read back when an undo reaches them. `editor.save()` writes the edited take over the file it was read from (Ctrl+S in the window does the same), and `editor.save(path)` writes it as another file, which a later save then writes over. `editor.buffer` is the edited
+`history_bytes=` caps what only the history holds, and `resident_bytes=` how much of that stays in memory -- past it the oldest takes are written to a `scratch=` directory and read back when an undo reaches them. What it opens is a file or a server buffer, and it edits a private copy of it: `editor.save()` writes the edited take over what it was opened from -- the file it was read from, or the buffer, rewritten whole at the take's length -- and Ctrl+S in the window does the same. `editor.save(path)` writes it as another file and `editor.save(buffer=b)` into another buffer (`buffer=True` for a new one), which a later save then writes over. `editor.buffer` is the edited
 take, to play or read, and `editor.parts` what it is made of.
 
 ```python

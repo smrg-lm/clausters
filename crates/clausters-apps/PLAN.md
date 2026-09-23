@@ -272,6 +272,16 @@ opened it.
     editor's to prevent. So the editor edits a private copy of what it opened,
     and the buffer it came from is written only by a save -- the rule the file
     already follows.
+    *Landed 2026-09-23*: `open` makes the private copy (a buffer the caller
+    hands over) and the history names only that; `save` takes a
+    `Target::File` or a `Target::Buffer`, rewrites a buffer whole at the
+    take's length through the join, and a save-as moves the target. Both
+    clients' `save` take `path` or `buffer` (a `Buffer`, or `True`/`true`
+    for a new one). Checked against a real server: a cut saved over its
+    buffer leaves it at the cut's length, and an undo after it is whole.
+    **Still open**: the pencil is one of the audio editor's operations
+    (a stroke is a new take), but `SamplesEditor` still stands beside it as
+    its own editor, and `edit(buffer)` opens that one.
 
   **Open, and not decided here:** the browser has no mapping, so whether its
   history stays in memory under the byte budget or goes to OPFS; the budgets'

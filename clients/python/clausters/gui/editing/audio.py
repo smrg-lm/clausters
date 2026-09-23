@@ -137,7 +137,12 @@ class AudioEditor(Editor):
             self._call("sync", scratch=str(scratch))
             self._editing.limit_resident(resident_bytes)
         self._top_up()
-        domain.run(take, self._call("open").get("steps") or [])
+        opened = self._call("open")
+        if "error" in opened:
+            raise ValueError(opened["error"])
+        # **A private copy of the take**, and the join over it: the buffer the
+        # editor was handed is written by a save and by nothing else.
+        domain.run(take, opened.get("steps") or [])
 
     def _facts(self) -> dict:
         take = self.structure
@@ -176,24 +181,43 @@ class AudioEditor(Editor):
                       max(1, int(getattr(self.structure, "channels", 1) or 1)),
                       self.sample_rate, server=self._server)
 
-    def save(self, path: "str | None" = None, *,
-             sample_format: str = "float") -> str:
-        """**Write the take as the edits have left it** -- over the file it was
-        read from, or, given a ``path``, as that file, which a later `save`
-        then writes over. Ctrl+S in the window is the same save.
+    def save(self, path: "str | None" = None, *, buffer=None,
+             sample_format: str = "float"):
+        """**Write the take as the edits have left it** -- over what it was
+        opened from (the file it was read from, or the server buffer it was
+        opened over), or, given a ``path`` or a ``buffer``, there, which a later
+        `save` then writes over. Ctrl+S in the window is the same save.
 
-        ``sample_format`` is ``"float"``, ``"int24"`` or ``"int16"``. Answers
-        the path written.
+        A **buffer** is rewritten whole at the take's length, so whatever reads
+        it hears the edit from then on -- saving into one that is sounding is
+        heard as a glitch, which is yours to avoid. ``buffer`` is a
+        `clausters.defs.Buffer` to rewrite, or ``True`` for a new one.
+        ``sample_format`` (``"float"``, ``"int24"``, ``"int16"``) is a file's.
+
+        Answers the path written, or the `clausters.defs.Buffer`.
 
         Raises:
-            ValueError: the take was read from no file and no ``path`` was
-                given, or the format is not one of those three.
+            ValueError: the format is not one of those three, or the buffer is
+                one the editor reads.
         """
-        answer = self._call("save", path=path, format=str(sample_format))
+        from ...defs.buffer import Buffer
+        request = {"format": str(sample_format)}
+        if path is not None:
+            request["path"] = str(path)
+        elif buffer is True:
+            request["buffer"] = self._server.buffers.alloc()
+        elif buffer is not None:
+            request["buffer"] = int(buffer.bufnum)
+        answer = self._call("save", **request)
         if "error" in answer:
             raise ValueError(answer["error"])
         self.domain.run(self.structure, answer.get("steps") or [])
-        return str(answer["path"])
+        if "path" in answer:
+            return str(answer["path"])
+        frames = int(self._call("parts").get("frames", 0))
+        return Buffer(int(answer["buffer"]), frames,
+                      max(1, int(getattr(self.structure, "channels", 1) or 1)),
+                      self.sample_rate, server=self._server)
 
     @property
     def parts(self) -> list:

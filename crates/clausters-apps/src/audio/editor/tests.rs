@@ -73,16 +73,88 @@ fn event(editor: &mut AudioEditor, args: Value) -> Value {
 }
 
 #[test]
-fn opening_stitches_the_window_s_join_over_the_whole_take() {
+fn opening_copies_the_take_and_stitches_the_window_s_join_over_the_copy() {
     let mut editor = opened(1);
     let steps = call(&mut editor, json!({"verb": "open"}))["steps"].clone();
-    assert_eq!(walk(&steps), ["/buffer_stitch", "await /buffer_stitch"]);
+    assert_eq!(
+        walk(&steps),
+        [
+            "/buffer_alloc",
+            "sync",
+            "/buffer_gen",
+            "await /buffer_gen",
+            "/buffer_stitch",
+            "await /buffer_stitch"
+        ]
+    );
+    assert_eq!(
+        args(&steps, "/buffer_gen"),
+        [
+            json!({"i": 20}),
+            json!({"s": "copy"}),
+            json!({"i": 0}),
+            json!({"i": 3}),
+            json!({"i": 0}),
+            json!({"i": 100})
+        ],
+        "a private copy of the buffer it was opened over"
+    );
     let stitched = args(&steps, "/buffer_stitch");
     assert_eq!(stitched[0], json!({"i": 9}), "the display buffer");
-    assert_eq!(stitched[3], json!({"i": 3}), "reads the take");
-    assert_eq!(stitched[5], json!({"i": 100}), "all of it");
+    assert_eq!(
+        stitched[3],
+        json!({"i": 20}),
+        "reads the copy, never the take"
+    );
+    assert_eq!(spans(&mut editor), [(20, 0, 100)]);
+    let again = call(&mut editor, json!({"verb": "open"}))["steps"].clone();
+    assert_eq!(
+        walk(&again),
+        ["/buffer_stitch", "await /buffer_stitch"],
+        "copied once"
+    );
     let def = call(&mut editor, json!({"verb": "window", "widget": 12}));
     assert_eq!(def["children"][0]["buffer"], 9, "the window draws the join");
+
+    let bare = &mut new_json(r#"{"take": 3, "frames": 100, "display": 9}"#).unwrap();
+    assert!(
+        call(bare, json!({"verb": "open"}))["error"].is_string(),
+        "no buffer for the copy"
+    );
+}
+
+#[test]
+fn a_save_over_a_buffer_rewrites_it_at_the_take_s_length() {
+    let mut editor = opened(1);
+    call(&mut editor, json!({"verb": "open"}));
+    call(&mut editor, json!({"verb": "sync", "buffers": [30, 31]}));
+    event(&mut editor, json!([12, 1, 0, "cut", 10.0, 20.0]));
+    let saved = call(&mut editor, json!({"verb": "save"}));
+    assert_eq!(saved["buffer"], 3, "over the buffer it was opened from");
+    let steps = &saved["steps"];
+    assert_eq!(
+        walk(steps),
+        ["/buffer_alloc", "sync", "/buffer_gen", "await /buffer_gen"]
+    );
+    assert_eq!(
+        args(steps, "/buffer_alloc")[..2],
+        [json!({"i": 3}), json!({"i": 80})],
+        "rewritten whole, at the cut take's length"
+    );
+    assert_eq!(
+        args(steps, "/buffer_gen")[3],
+        json!({"i": 9}),
+        "read out of the join"
+    );
+
+    let moved = call(&mut editor, json!({"verb": "save", "buffer": 40}));
+    assert_eq!(moved["buffer"], 40, "a save-as into a new buffer");
+    assert_eq!(call(&mut editor, json!({"verb": "save"}))["buffer"], 40);
+    let refused = call(&mut editor, json!({"verb": "save", "buffer": 20}));
+    assert!(
+        refused["error"].as_str().unwrap().contains("reads"),
+        "never into a buffer the list reads"
+    );
 }
 
 #[test]
@@ -330,14 +402,6 @@ fn a_mix_is_a_new_take_over_the_frames_the_block_lands_on() {
 #[test]
 fn a_save_writes_the_join_over_the_file_and_a_save_as_moves_it() {
     let mut editor = opened(1);
-    let refused = call(&mut editor, json!({"verb": "save"}));
-    assert!(
-        refused["error"]
-            .as_str()
-            .unwrap()
-            .contains("save it as one")
-    );
-
     call(&mut editor, json!({"verb": "sync", "path": "/takes/a.wav"}));
     let saved = call(&mut editor, json!({"verb": "save"}));
     assert_eq!(saved["path"], "/takes/a.wav");

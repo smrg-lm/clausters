@@ -222,7 +222,11 @@ export class AudioEditor extends Editor<Buffer> {
             this.editing.limitResident(options.residentBytes);
         }
         this.topUp();
-        domain.run(take, (this.coreCall("open").steps as unknown[] | undefined) ?? []);
+        const copied = this.coreCall("open");
+        if (typeof copied.error === "string") throw new RangeError(copied.error);
+        // **A private copy of the take**, and the join over it: the buffer the
+        // editor was handed is written by a save and by nothing else.
+        domain.run(take, (copied.steps as unknown[] | undefined) ?? []);
     }
 
     /**
@@ -298,24 +302,46 @@ export class AudioEditor extends Editor<Buffer> {
     }
 
     /**
-     * **Writes the take as the edits have left it** -- over the file it was read
-     * from, or, given a `path`, as that file, which a later `save` then writes
-     * over. Ctrl+S in the window is the same save. Resolves to the path written.
+     * **Writes the take as the edits have left it** -- over what it was opened
+     * from (the file it was read from, or the server buffer it was opened
+     * over), or, given a `path` or a `buffer`, there, which a later `save` then
+     * writes over. Ctrl+S in the window is the same save.
      *
-     * `sampleFormat` is `"float"`, `"int24"` or `"int16"`. Throws a
-     * `RangeError` when the take was read from no file and no `path` was given,
-     * or the format is not one of those three.
+     * A **buffer** is rewritten whole at the take's length, so whatever reads it
+     * hears the edit from then on -- saving into one that is sounding is heard
+     * as a glitch, which is yours to avoid. `buffer` is a {@link Buffer} to
+     * rewrite, or `true` for a new one. `sampleFormat` (`"float"`, `"int24"`,
+     * `"int16"`) is a file's.
+     *
+     * Resolves to the path written, or the {@link Buffer}. Throws a
+     * `RangeError` when the format is not one of those three, or the buffer is
+     * one the editor reads.
      */
     async save({
         path,
+        buffer,
         sampleFormat = "float",
-    }: { path?: string; sampleFormat?: string } = {}): Promise<string> {
-        const answer = this.coreCall("save", { path: path ?? null, format: sampleFormat });
+    }: { path?: string; buffer?: Buffer | true; sampleFormat?: string } = {}): Promise<
+        string | Buffer
+    > {
+        const request: Record<string, unknown> = { format: sampleFormat };
+        if (path !== undefined) request.path = path;
+        else if (buffer === true) request.buffer = this.server.buffers.alloc();
+        else if (buffer !== undefined) request.buffer = Math.trunc(buffer.bufnum);
+        const answer = this.coreCall("save", request);
         if (typeof answer.error === "string") throw new RangeError(answer.error);
         const domain = this.domain as AudioDomain;
         domain.run(this.structure, (answer.steps as unknown[] | undefined) ?? []);
         await domain.idle();
-        return String(answer.path);
+        if (typeof answer.path === "string") return answer.path;
+        const frames = Number(this.coreCall("parts").frames ?? 0);
+        return new Buffer(
+            Number(answer.buffer),
+            frames,
+            Math.max(1, Math.trunc(this.structure.channels || 1)),
+            this.sampleRate,
+            this.server,
+        );
     }
 
     /**

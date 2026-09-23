@@ -8974,14 +8974,21 @@ for a fifty-sample stroke, and would have to be flattened to be heard, no longer
 held: a take the size of the span is not a block, and the server plays a join
 as it is.
 
-**Its save writes over the file the take was read from.** That is the one place
-the program writes a file the user brought, and it is deliberate: in an audio
-editor saving *is* the user's act on the user's file, and the rule that no file
-is ever overwritten protects that file from everything the program does on its
-own -- an edit, a render, a spill -- not from the save the user asked for. A
-save-as writes another file instead, which a later save then writes over.
+**Its save writes over what the take was opened from** -- a file, or a server
+buffer. That is the one place the program writes a file the user brought, and it
+is deliberate: in an audio editor saving *is* the user's act on the user's file,
+and the rule that no file is ever overwritten protects that file from everything
+the program does on its own -- an edit, a render, a spill -- not from the save
+the user asked for. A save-as writes another file or another buffer instead,
+which a later save then writes over. A buffer is rewritten whole at the take's
+length, so whatever reads it hears the edit from then on; saving into one that
+is sounding is heard as a glitch, and that is the user's to avoid rather than
+the editor's to refuse. What makes a save into the opened buffer safe for the
+history is that the editor never edits it: it opens a **private copy**, and the
+history names only that and the takes the edits made.
 
-The audio editor and the multitrack editor are **separate applications**. A
-take of the multitrack may be opened in an audio editor, as another program
-would open it; the two share no editing context and no undo order, and nothing
-one does reaches the other while it edits.
+The audio editor and the multitrack editor are **separate applications**, with
+different purposes: the multitrack edits non-destructively and opens no editor
+over what a box holds, and the audio editor has a history of its own. What makes
+an application coherent -- its rules of use -- is the application's; what the
+crate implements is what each can edit.
