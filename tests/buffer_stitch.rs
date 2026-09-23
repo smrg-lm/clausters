@@ -496,3 +496,35 @@ fn a_buffer_allocated_at_a_rate_of_its_own_joins_at_that_rate() {
     assert_eq!(read_back(&mut s, 5, 8), [0.1, 0.2, 0.3, 0.4]);
     assert!(fails(&mut s).is_empty());
 }
+
+/// **A join can be copied out of**, a span at a time: `/buffer_gen copy` from
+/// a join reads its frames through the parts, which is how a stroke's take
+/// starts as the frames it is drawn over.
+#[test]
+fn a_span_of_a_join_copies_out_through_its_parts() {
+    let mut s = session();
+    mono(&mut s, 1, &[1.0, 2.0, 3.0]);
+    mono(&mut s, 2, &[4.0, 5.0, 6.0]);
+    stitch(
+        &mut s,
+        5,
+        1,
+        vec![part(1, 0, 3, 0, 0, 0), part(2, 0, 3, 0, 0, 0)],
+    );
+    mono(&mut s, 7, &[0.0, 0.0, 0.0]);
+    send(
+        &mut s,
+        "/buffer_gen",
+        vec![
+            OscType::Int(7),
+            OscType::String("copy".into()),
+            OscType::Int(0),
+            OscType::Int(5),
+            OscType::Int(2),
+            OscType::Int(3),
+        ],
+    );
+    s.settle_for(4);
+    assert_eq!(read_back(&mut s, 7, 3), [3.0, 4.0, 5.0]);
+    assert!(fails(&mut s).is_empty());
+}

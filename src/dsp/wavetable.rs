@@ -282,14 +282,18 @@ fn copy_samples(
     num: i64,
 ) -> Vec<f32> {
     let mut data = current.to_vec();
-    let src = src.to_vec();
     let dst_avail = data.len().saturating_sub(dst_start);
     let src_avail = src.len().saturating_sub(src_start);
     let mut take = dst_avail.min(src_avail);
     if num >= 0 {
         take = take.min(num as usize);
     }
-    data[dst_start..dst_start + take].copy_from_slice(&src[src_start..src_start + take]);
+    // **Only the span is read**, never the whole source: an editor copies a
+    // stroke's worth out of a take that may be ten minutes long, and reading
+    // it through a join is a read per sample, not a copy of the join.
+    for (k, out) in data[dst_start..dst_start + take].iter_mut().enumerate() {
+        *out = src.at(src_start + k);
+    }
     data
 }
 
