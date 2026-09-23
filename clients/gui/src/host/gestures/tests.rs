@@ -1105,6 +1105,16 @@ fn copy_reads_the_samples_and_cut_and_paste_leave_as_intents() {
     assert_eq!(args[2], OscType::String("samples".into()));
     assert!(matches!(args[4], OscType::Blob(ref b) if b.len() == 16));
 
+    // A click leaves a selection of zero length, and a paste lands where it
+    // put the cursor -- not at frame 0, which is what reading only a span
+    // answered.
+    host.select_timeline(50, 6.0, 6.0);
+    let effects = g
+        .clipboard_key(&mut host, &ctx, ClipVerb::Paste, 400.0, 150.0, &mut clip)
+        .expect("answered");
+    let args = emitted_args(&effects, 50).expect("a paste reports");
+    assert_eq!(args[1], OscType::Float(6.0), "at the cursor");
+
     // A mix is the same payload under its own word: the owner adds the block
     // onto what is there rather than putting it in.
     let effects = g

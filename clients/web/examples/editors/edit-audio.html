@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: AudioEditor</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 46rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      #stage { width: 720px; max-width: 100%; height: 420px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note"><code>AudioEditor</code>: a take edited as a list of parts,
+never written.
+
+<code>edit(buffer)</code> draws a take and writes each stroke into it.
+<code>AudioEditor</code> never writes the take at all. The window draws a
+<b>join</b> -- a buffer made of spans of other buffers -- and every edit leaves a
+new list of those spans: a <b>cut</b> takes a span out of the list and moves no
+samples; a <b>paste</b> writes the block into a take of its own and puts it in;
+a <b>mix</b> writes a new take over the frames the block lands on, the block
+added onto them; a <b>pencil stroke</b> writes a new take the size of the stroke
+and splices it over the frames it was drawn on.
+
+So an undo is the list before, stitched again: it costs the list, not the
+samples. The takes a stroke or a paste made are kept while an undo or a redo can
+still reach them and freed when neither can -- <code>historyBytes</code> caps
+what only the history holds, and the oldest entries go first past it.
+
+<b>Drag</b> to select, then <b>Ctrl+X</b> to cut, <b>Ctrl+C</b> to copy,
+<b>Ctrl+V</b> to paste at the selection's start and <b>Ctrl+Shift+V</b> to mix
+there. <b>Wheel</b> to zoom in until each sample is a disc, then
+<b>Alt+drag</b> to draw. <b>Ctrl+Z</b> and <b>Ctrl+Shift+Z</b> walk the
+history.</div>
+
+      <button id="run">open the take</button>
+      <div id="stage"></div>
+      <div>
+        <button id="play" disabled>play the take</button>
+        <button id="parts" disabled>what it is made of</button>
+      </div>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The web sibling of clients/python/examples/editors/edit_audio.py, call
+      for call: the same generated take, the same `AudioEditor`, the same
+      `play` of the join it draws, and the same list of parts read back.
+
+      The platform's differences are the usual two: the host is the wasm one in
+      this tab and draws into an element, and nothing is pumped.
+
+      Serve clients/web (the package root) and open
+      /examples/editors/edit-audio.html. Build it first: ./build.sh
+    -->
+    <script type="module">
+      import { Session, play } from "../../dist/index.js";
+      import { Buffer } from "../../dist/defs/index.js";
+      import { editing } from "../../dist/gui/index.js";
+
+      const $ = (id) => document.getElementById(id);
+      const log = (line) => { $("log").textContent += line + "\n"; };
+
+      const SECONDS = 2.0;
+
+      async function run() {
+        $("run").disabled = true;
+        const session = await Session.embed();
+        const server = session.server;
+        const rate = (await server.queryInfo()).nominalSampleRate;
+
+        // A take, made here: the same take edit-samples.html draws on, so the
+        // two editors can be told apart by what they do to it.
+        const frames = Math.trunc(SECONDS * rate);
+        const samples = new Float32Array(frames);
+        for (let i = 0; i < frames; i += 1) {
+          samples[i] = Math.exp(-3.0 * i / frames) * 0.7 *
+            Math.sin(2 * Math.PI * 440.0 * i / rate);
+        }
+        const take = await Buffer.fromSamples(samples, 1, rate, { server });
+
+        await session.gui();
+        // One `waveform` over the join the editor owns. The take itself is
+        // never written: every edit is a new list of parts over it and over
+        // the takes the edits made.
+        const editor = new editing.AudioEditor(take, {
+          title: "take", historyBytes: 64 * 1024 * 1024,
+        });
+        await editor.open(undefined, { stage: $("stage") });
+
+        // `editor.buffer` is the join the window draws: the take as the edits
+        // have left it, which `play` reads like any other buffer.
+        $("play").disabled = false;
+        $("play").onclick = () => play(editor.buffer, { server });
+        $("parts").disabled = false;
+        $("parts").onclick = () => {
+          for (const part of editor.parts) {
+            const span = part.source.range;
+            log(`buffer ${part.source.source}: frames ${span.start}..${span.end}`);
+          }
+        };
+
+        log("drag to select, Ctrl+X / Ctrl+C / Ctrl+V / Ctrl+Shift+V, Alt+drag to draw");
+        editor.wait().then(() => log("the window is closed"));
+      }
+
+      $("run").onclick = () => run().catch((e) => log(`error: ${e}`));
+    </script>
+  </body>
+</html>

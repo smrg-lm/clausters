@@ -109,6 +109,15 @@ export class AudioDomain extends Domain<Buffer> {
     }
 
     /**
+     * The work queued so far, landed.
+     *
+     * @internal
+     */
+    idle(): Promise<void> {
+        return this.#work;
+    }
+
+    /**
      * Run `then` once the work queued so far has landed: what a turn's answer
      * waits for, since it asks the window to read a join the steps replace.
      */
@@ -187,6 +196,19 @@ export class AudioEditor extends Editor<Buffer> {
         }
         this.topUp();
         domain.run(take, (this.coreCall("open").steps as unknown[] | undefined) ?? []);
+    }
+
+    /**
+     * Opens the window once the join it draws has been stitched -- the steps
+     * the constructor queued -- so the first picture is the take and not an
+     * empty buffer.
+     */
+    override async open(
+        host?: Parameters<Editor<Buffer>["open"]>[0],
+        options: Parameters<Editor<Buffer>["open"]>[1] = {},
+    ): ReturnType<Editor<Buffer>["open"]> {
+        await (this.domain as AudioDomain).idle();
+        return super.open(host, options);
     }
 
     /** What this page holds about the take and the window. */
