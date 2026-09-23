@@ -1,7 +1,7 @@
 """Editing a take as **a list of parts over immutable takes**: the audio editor.
 
-`clausters.gui.editing.SamplesEditor` writes a stroke into the buffer it draws.
-This one never writes a buffer that already exists. The window draws a
+What it opens is **a file or a server buffer**, and it edits a private copy:
+nothing it was handed is written until it is saved. The window draws a
 **join** -- a buffer made of spans of other buffers (`Buffer.stitch`) -- and
 every edit leaves a new list of those spans: a cut takes a span out, a paste
 puts a new take in, a mix adds the block onto a new take over the frames it
@@ -280,7 +280,14 @@ class AudioEditor(Editor):
 
     @property
     def layers(self) -> tuple:
-        """What the picture measures. See `SamplesEditor.layers`."""
+        """What the picture measures -- `("peak", "rms")` for the editor's
+        view, `("peak",)` for the bare envelope.
+
+        **Assigning it on an open view sends one message.** The measure is a
+        live `/gui_set` prop, so the body appears and disappears over the peaks
+        with the picture, the axis, the zoom, the selection and the playhead all
+        exactly where they were.
+        """
         return self.view.layers
 
     @layers.setter
@@ -294,4 +301,11 @@ class AudioEditor(Editor):
                 self._host.set(wid, measure=answer["measure"])
 
 
-__all__ = ["AudioDomain", "AudioEditor", "measures"]
+def is_take(structure) -> bool:
+    """Whether `edit` should open this in the audio editor: anything with a
+    buffer number and samples it can write, which is what a
+    `clausters.defs.Buffer` answers with."""
+    return hasattr(structure, "bufnum") and hasattr(structure, "set_samples")
+
+
+__all__ = ["AudioDomain", "AudioEditor", "is_take", "measures"]

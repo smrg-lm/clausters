@@ -1,4 +1,5 @@
-//! **The samples editor**: the window a take opens in.
+//! **The window a take is drawn in**, and the measures its picture stacks --
+//! what the audio editor opens ([`crate::audio`]).
 //!
 //! One widget, the take's picture: a `waveform` over the server buffer on its
 //! own time axis, measured as a stack -- what the signal reached (`peak`) with
@@ -23,8 +24,6 @@
 use serde_json::{Map, Value, json};
 
 use clausters_document::view::catalogue::{self, Waveform};
-
-pub mod editor;
 
 /// **The measures a signal view can stack**, in the order a reader thinks of
 /// them: what the signal reached, and what it held inside that.

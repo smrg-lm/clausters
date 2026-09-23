@@ -8,7 +8,8 @@ list is the crate's and is tested there.
 
 import pytest
 
-from clausters.gui.editing import AudioEditor, Editing
+from clausters.gui import edit
+from clausters.gui.editing import AudioEditor, Editing, measures
 
 SR = 48_000.0
 
@@ -215,6 +216,34 @@ def test_a_save_over_a_buffer_rewrites_it_or_writes_a_new_one():
     fresh = editor.save(buffer=True)
     assert fresh.bufnum not in (take.bufnum, editor.buffer.bufnum)
     assert editor.save().bufnum == fresh.bufnum, "a later save writes there"
+
+
+def test_edit_opens_a_buffer_in_the_audio_editor():
+    assert isinstance(edit(FakeBuffer(), open=False, context=Editing()), AudioEditor)
+
+
+def test_a_takes_window_is_composed_by_the_crate():
+    take = FakeBuffer(frames=8, channels=2)
+    editor, host, wid, _context = opened(take, title="take")
+    tree = host.trees[0]
+    assert (tree["type"], tree["title"], tree["flow"]) == ("window", "take", "col")
+    picture = tree["children"][0]
+    assert picture["type"] == "signal" and picture["id"] == wid
+    assert (picture["buffer"], picture["channels"]) == (editor.buffer.bufnum, 2)
+    assert picture["measure"] == "peak rms"
+    assert picture["gestures"] == {"drag": "select", "alt": "draw", "ctrl": "sample"}
+    assert editor.view.props(editor, wid) == {"reload": 1}
+
+
+def test_a_refused_measure_stack_keeps_the_one_the_picture_had():
+    editor = AudioEditor(FakeBuffer(), layers=("peak",), context=Editing())
+    editor.layers = ("rms", "peak")
+    assert editor.layers == ("rms", "peak")
+    with pytest.raises(ValueError, match="'loud'"):
+        editor.layers = ("loud",)
+    assert editor.layers == ("rms", "peak")
+    with pytest.raises(ValueError, match="measures something"):
+        measures(())
 
 
 if __name__ == "__main__":

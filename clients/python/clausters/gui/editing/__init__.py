@@ -29,7 +29,7 @@ whole design:
   asked (`CLAUSTERS_EDIT_LOG=1`, or `watch()`), because what a window in front
   of a person does wrong is otherwise visible to nobody.
 `edit(x)` is how a person calls it: one verb over the fundamental structures,
-dispatching on what the structure is -- `SamplesEditor` over a
+dispatching on what the structure is -- `AudioEditor` over a
 `clausters.defs.Buffer`, `PointsEditor` over a curve (a
 `clausters.defs.Bpf`, an `clausters.defs.Env` or a
 `clausters.multitrack.Automation`),
@@ -38,11 +38,6 @@ dispatching on what the structure is -- `SamplesEditor` over a
 in it and nothing else, which is what the split was for -- and the multitrack's
 two halves are the *crate's*, so the picture it draws and the report it reads
 are the same ones the standalone host draws and reads.
-
-`AudioEditor` is opened by name rather than by `edit`: it edits a
-`clausters.defs.Buffer` too, but as a list of parts over takes it never writes,
-which is a different editor over the same structure rather than the same one
-dispatched differently.
 
 `View` here is **not** `clausters.gui.guidef.View`, and only this one is reached
 as `clausters.gui.editing.View`: the guidef one is a tree you can open, this one
@@ -63,8 +58,7 @@ from .multitrack import (MultitrackDomain, MultitrackEditor, MultitrackView,
                          Sources)
 from .playback import Playback
 from .points import PointsDomain, PointsEditor, PointsView
-from .samples import (MEASURES, SamplesDomain, SamplesEditor, SamplesView,
-                      measures)
+from .samples import MEASURES, SamplesView, measures
 from .trace import watch
 from .view import View
 
@@ -91,8 +85,6 @@ __all__ = [
     "PointsDomain",
     "PointsEditor",
     "PointsView",
-    "SamplesDomain",
-    "SamplesEditor",
     "SamplesView",
     "View",
     "edit",

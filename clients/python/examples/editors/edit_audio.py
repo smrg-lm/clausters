@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""``AudioEditor``: a take edited as a list of parts, never written.
+"""``edit(buffer)``: a take in the audio editor, edited as a list of parts.
 
-`edit(buffer)` draws a take and writes each stroke into it. `AudioEditor` never
-writes the take at all. The window draws a **join** -- a buffer made of spans
-of other buffers -- and every edit leaves a new list of those spans:
+A `clausters.defs.Buffer` opens in `clausters.gui.editing.AudioEditor`, which
+edits a private copy of it and writes nothing it was handed until it is saved.
+The window draws a **join** -- a buffer made of spans of other buffers -- and
+every edit leaves a new list of those spans:
 
 - a **cut** takes a span out of the list, and moves no samples;
 - a **paste** writes the block into a take of its own and puts it in;
@@ -22,8 +23,9 @@ What to do in the window: **drag** to select, then **Ctrl+X** to cut,
 **Ctrl+Shift+V** to mix there. **Wheel** to zoom in until each sample is a
 disc, then **Alt+drag** to draw. **Ctrl+Z** and **Ctrl+Shift+Z** walk the
 history. ``hear()`` plays the take as the edits have left it, and ``parts()``
-prints what it is made of. ``editor.save(path)`` writes it as a file; the take
-here was made in memory, so it has none of its own for Ctrl+S to write over.
+prints what it is made of. ``editor.save()`` -- or Ctrl+S in the window --
+writes the edit back into the buffer it was opened from, and
+``editor.save(path)`` writes it as a file instead.
 
 Run it as a script, or step through the cells::
 
@@ -41,7 +43,7 @@ import sys
 
 from clausters import Session, play
 from clausters.defs import Buffer
-from clausters.gui.editing import AudioEditor
+from clausters.gui import edit
 
 SECONDS = 2.0
 
@@ -49,8 +51,8 @@ SECONDS = 2.0
 # ## A take, made here
 #
 # Two seconds of a decaying tone, written into a server buffer with
-# `clausters.defs.Buffer.from_samples`: the same take `edit_samples.py` draws
-# on, so the two editors can be told apart by what they do to it.
+# `clausters.defs.Buffer.from_samples`. A shape worth recognizing, so an edit
+# over it is visibly an edit over *this*.
 
 # %%
 session = Session.live()
@@ -64,16 +66,15 @@ samples = [
 take = Buffer.from_samples(samples, 1, rate, server=server)
 
 # %% [markdown]
-# ## The editor
+# ## One verb
 #
-# One `waveform` over the join the editor owns. The take itself is never
-# written: every edit is a new list of parts over it and over the takes the
-# edits made.
+# A `Buffer` opens in the audio editor: one `waveform` over the join it owns.
+# The buffer is not written while you edit -- every edit is a new list of parts
+# over a copy of it and over the takes the edits made -- until you save.
 
 # %%
 session.gui()          # the host wired to this session's server
-editor = AudioEditor(take, title="take", history_bytes=64 * 1024 * 1024)
-editor.open()
+editor = edit(take, title="take", history_bytes=64 * 1024 * 1024)
 
 # %% [markdown]
 # ## Hear it, and read what it is made of

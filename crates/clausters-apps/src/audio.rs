@@ -1,7 +1,7 @@
 //! **The audio editor**: a take edited as a list of parts over immutable takes.
 //!
-//! The samples editor writes a stroke into the buffer it draws. This one never
-//! writes a buffer that exists: the window draws a **join** the editor owns
+//! What it opens is **a file or a server buffer**, and it never writes a buffer
+//! that exists while it edits: the window draws a **join** the editor owns
 //! the recipe of, and every edit leaves a new recipe --
 //! [`clausters_document::parts`] over the takes it names. A cut takes a span
 //! out of the list; a paste puts a new take in; a pencil stroke writes **a new

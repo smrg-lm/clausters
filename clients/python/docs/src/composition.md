@@ -54,14 +54,13 @@ opens, which is why the curve row below names three unrelated types:
 
 | `edit(x)` where x is | opens | over | its vocabulary |
 |---|---|---|---|
-| a `Buffer` | `SamplesEditor` | a `waveform` | `samples` |
+| a `Buffer` | `AudioEditor` | a `waveform` | `parts` |
 | a curve — a `Bpf`, an `Env`, a `multitrack.Automation` | `PointsEditor` | a `bpf` | `points` |
 | a `Timeline` | `NotesEditor` | a `pianoroll` | `events` |
 | a `Multitrack` | `MultitrackEditor` | a `multitrack` | `clips`/`lanes` |
 
-**A take has a second editor, opened by name**: `clausters.gui.editing.AudioEditor`.
-`edit(buffer)` draws the take and writes each stroke into it; `AudioEditor(take)`
-never writes the take at all. Its window draws a **join** the editor owns, and
+**A `Buffer` opens in the audio editor**, `clausters.gui.editing.AudioEditor`.
+It writes nothing it was handed while it edits. Its window draws a **join** the editor owns, and
 every edit -- a cut, a paste, a mix (Ctrl+Shift+V), a pencil stroke -- leaves a
 new list of spans over the take and over the takes the edits made: a stroke is a
 new take the size of the stroke, spliced over the frames it was drawn on. An undo
@@ -83,7 +82,7 @@ structure you already hold is the edited one from that moment: read it whenever,
 and it says what the hand has left there. `open=False` builds the editor without
 a window, for a caller composing one.
 
-Nothing is handed back: the object passed in *is* the edited one. A
+Nothing is handed back: the object passed in *is* the edited one -- except a buffer, which the audio editor writes back when it is saved. A
 **multitrack** is one of them, and what opens is the multitrack editor — the
 rest of this chapter is what it edits.
 

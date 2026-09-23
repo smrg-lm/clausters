@@ -31,7 +31,7 @@
  *   asked (`CLAUSTERS_LOG=gui.editing`, or {@link watch}), because what a window
  *   in front of a person does wrong is otherwise visible to nobody.
  * {@link edit} is how a person calls it: one verb over the fundamental
- * structures, dispatching on what the structure is -- {@link SamplesEditor} over
+ * structures, dispatching on what the structure is -- {@link AudioEditor} over
  * a `Buffer`, {@link PointsEditor} over an `Automation`, {@link NotesEditor}
  * over a `Timeline`, {@link MultitrackEditor} over a `Multitrack`. Each is
  * `Editor` with its own domain and view in it and nothing else, which is what
@@ -47,7 +47,7 @@
  */
 
 export { Application, BASE_ID } from "./application.ts";
-export { AudioDomain, AudioEditor } from "./audio.ts";
+export { AudioDomain, AudioEditor, isTake } from "./audio.ts";
 export type { AudioEditorOptions } from "./audio.ts";
 export type { Drawing } from "./application.ts";
 export { Editing, FIRST_VERSION, contexts } from "./context.ts";
@@ -75,8 +75,8 @@ export { Playback } from "./playback.ts";
 export type { Step, StepArg } from "./playback.ts";
 export { PointsDomain, PointsEditor, PointsView } from "./points.ts";
 export type { CratePoint, EditableCurve, PointsEditorOptions } from "./points.ts";
-export { MEASURES, SamplesDomain, SamplesEditor, SamplesView, measures } from "./samples.ts";
-export type { Measure, SamplesEditorOptions } from "./samples.ts";
+export { MEASURES, SamplesView, measures } from "./samples.ts";
+export type { Measure } from "./samples.ts";
 export { Echo } from "./echo.ts";
 export type { Answer, Correction, Envelope, Turn } from "./echo.ts";
 export { Editor, notAnEdit, resolveEditorHost } from "./editor.ts";

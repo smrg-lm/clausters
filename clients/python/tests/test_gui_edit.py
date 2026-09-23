@@ -7,15 +7,12 @@ read back is the edit that was drawn, and a window composing two structures
 undoes across both in the order the edits were made.
 """
 
-import struct
-
 import pytest
 
 from clausters import TempoMap
 
 from clausters.gui import edit
-from clausters.gui.editing import (Editing, NotesEditor, PointsEditor,
-                                   SamplesEditor, measures)
+from clausters.gui.editing import Editing, NotesEditor, PointsEditor
 from clausters.seq import Timeline
 from clausters.defs.ugens import Bpf
 from clausters.seq.event import Event as SeqEvent
@@ -91,58 +88,10 @@ def a_timeline() -> Timeline:
                      (1.0, SeqEvent(midinote=64, dur=1.0))])
 
 
-class FakeServer:
-    """The two writes a take's editor sends, laid into a `FakeBuffer`, and the
-    ``/done`` each is answered with."""
-
-    def __init__(self, take):
-        self.take = take
-        self.sent: list = []
-
-    def _bulk_chunk(self, timeout=None) -> int:
-        return 8192
-
-    def send_msg(self, addr, *args):
-        self.sent.append(addr)
-        take = self.take
-        values = struct.unpack(f"<{len(args[-1]) // 4}f", args[-1])
-        if addr == "/buffer_setRange":
-            first = int(args[1])
-        else:
-            first = int(args[2]) * take.channels + int(args[1])
-        stride = 1 if addr == "/buffer_setRange" else take.channels
-        for i, value in enumerate(values):
-            take.data[first + i * stride] = float(value)
-
-    def request(self, addr, *args, expect=None, timeout=None):
-        self.send_msg(addr, *args)
-        return "/done", [addr, int(args[0])]
-
-
-class FakeBuffer:
-    """A server buffer, as the samples domain touches one: a number, a shape,
-    and the server its writes go to."""
-
-    def __init__(self, frames=16, channels=1):
-        self.bufnum = 7
-        self.frames = frames
-        self.channels = channels
-        self.sample_rate = SR
-        self.data = [0.0] * (frames * channels)
-        self.server = FakeServer(self)
-
-    def set_samples(self, samples, start=0, **kwargs):
-        raise AssertionError("a take's editor writes through its steps")
-
-
 def opened(editor):
     host = FakeHost()
     editor.open(host)
     return host, host.trees[0]["children"][0]["id"]
-
-
-def blob(values) -> bytes:
-    return struct.pack(f"<{len(values)}f", *values)
 
 
 # ---- the verb ----
@@ -150,7 +99,6 @@ def blob(values) -> bytes:
 def test_the_verb_opens_the_editor_the_structure_asks_for():
     assert isinstance(edit(a_curve(), sample_rate=SR, open=False), PointsEditor)
     assert isinstance(edit(a_timeline(), sample_rate=SR, open=False), NotesEditor)
-    assert isinstance(edit(FakeBuffer(), open=False), SamplesEditor)
 
 
 def test_the_verb_opens_the_window_and_subscribes_the_editor_to_the_host():
@@ -397,70 +345,6 @@ def test_the_notes_gesture_does_not_move_the_markers():
     editor.apply("/gui_event", [wid, 1, 0, "notes", 0.0, BEAT, 67, 100, 0])
     assert [(beat, type(item).__name__) for beat, item in timeline] == \
         [(0.0, "Event"), (3.0, "OscItem")]
-
-
-# ---- samples ----
-
-def test_a_stroke_writes_the_servers_buffer_and_undoes_off_the_wire():
-    take = FakeBuffer(frames=8)
-    editor = edit(take, open=False)
-    _host, wid = opened(editor)
-
-    assert editor.apply("/gui_event", [wid, 1, 0, "draw", 0, 2,
-                                       blob([0.5, -0.5]),
-                                       blob([0.0, 0.0])]) is True
-    assert take.data[2:4] == [0.5, -0.5]
-    assert editor.can_undo and editor.undo_label == "draw the samples"
-    # The inverse rode on the wire: nothing was read back to invert it.
-    assert editor.undo() is True
-    assert take.data[2:4] == [0.0, 0.0]
-
-
-def test_a_takes_window_is_composed_by_the_crate():
-    take = FakeBuffer(frames=8, channels=2)
-    editor = edit(take, title="take", open=False)
-    host, wid = opened(editor)
-    tree = host.trees[0]
-    assert (tree["type"], tree["title"], tree["flow"]) == ("window", "take", "col")
-    picture = tree["children"][0]
-    assert picture["type"] == "signal" and picture["id"] == wid
-    assert (picture["buffer"], picture["channels"]) == (take.bufnum, 2)
-    assert picture["measure"] == "peak rms"
-    assert picture["label"] == f"buffer {take.bufnum}"
-    assert picture["gestures"] == {"drag": "select", "alt": "draw", "ctrl": "sample"}
-    assert editor.view.props(editor, wid) == {"reload": 1}
-
-
-def test_a_refused_measure_stack_keeps_the_one_the_picture_had():
-    editor = SamplesEditor(FakeBuffer(), sample_rate=SR, layers=("peak",))
-    editor.layers = ("rms", "peak")
-    assert editor.layers == ("rms", "peak")
-    with pytest.raises(ValueError, match="'loud'"):
-        editor.layers = ("loud",)
-    assert editor.layers == ("rms", "peak")
-    with pytest.raises(ValueError, match="measures something"):
-        measures(())
-
-
-def test_one_dragged_sample_is_the_same_edit_one_frame_wide():
-    take = FakeBuffer(frames=8)
-    editor = edit(take, open=False)
-    _host, wid = opened(editor)
-    assert editor.apply("/gui_event", [wid, 1, 0, "sample", 0, 3, 0.9, 0.0]) is True
-    assert take.data[3] == pytest.approx(0.9)
-    editor.undo()
-    assert take.data[3] == pytest.approx(0.0)
-
-
-def test_a_stroke_on_one_channel_of_a_stereo_take_leaves_the_other_alone():
-    take = FakeBuffer(frames=4, channels=2)
-    take.data = [0.1, 0.2] * 4
-    editor = edit(take, open=False)
-    _host, wid = opened(editor)
-    editor.apply("/gui_event", [wid, 1, 0, "draw", 1, 1,
-                                blob([0.7, 0.8]), blob([0.2, 0.2])])
-    assert take.data == pytest.approx([0.1, 0.2, 0.1, 0.7, 0.1, 0.8, 0.1, 0.2])
-    assert take.server.sent == ["/buffer_setRangeChannel"], "one channel, never read"
 
 
 # ---- the acceptance the track was opened with ----

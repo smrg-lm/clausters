@@ -50,8 +50,8 @@ opened it.
 
 ## The milestones
 
-- ⬜ **X1 - The audio editor.** *(Requirements stated by the user 2026-09-14;
-  reopened 2026-09-23 for `X1.11`.)*
+- ✅ **X1 - The audio editor.** *(Requirements stated by the user 2026-09-14;
+  reopened 2026-09-23 for `X1.11`, closed the same day.)*
   The samples editor becomes **`AudioEditor`**: editing samples by hand (the
   pencil, one grabbed sample) is one of its operations and `SamplesEditor` stays
   the name of that part.
@@ -262,7 +262,7 @@ opened it.
     have distinct purposes; the rules of use that keep an application
     coherent are not what this crate implements. What it implements is what
     the audio editor can edit.
-  - ⬜ **X1.11 - The audio editor over a server buffer, with the pencil as
+  - ✅ **X1.11 - The audio editor over a server buffer, with the pencil as
     one of its operations.** *(Stated by the user 2026-09-23.)* What the
     audio editor edits is **a file or a server buffer**, and `SamplesEditor`
     -- drawing samples by hand -- is a function of it rather than an
@@ -279,9 +279,13 @@ opened it.
     clients' `save` take `path` or `buffer` (a `Buffer`, or `True`/`true`
     for a new one). Checked against a real server: a cut saved over its
     buffer leaves it at the cut's length, and an undo after it is whole.
-    **Still open**: the pencil is one of the audio editor's operations
-    (a stroke is a new take), but `SamplesEditor` still stands beside it as
-    its own editor, and `edit(buffer)` opens that one.
+    **And the samples editor is no longer an editor of its own** (with the
+    user, 2026-09-23): `edit(buffer)` opens the audio editor in both
+    clients, `SamplesEditor` and its member of the context went, and the
+    `edit_samples` example pair with them -- `edit_audio` is the example. What
+    stays of it is what the audio editor uses: the window a take is drawn in
+    (`clausters_apps::samples`) and the reading of a stroke
+    (`clausters_editing::samples`).
 
   **Open, and not decided here:** the browser has no mapping, so whether its
   history stays in memory under the byte budget or goes to OPFS; the budgets'
@@ -299,13 +303,16 @@ opened it.
 - ⬜ **X2 - The buffer editor: drawing a table by hand.** *(Proposed by the user
   2026-09-14, on the samples editor as its model.)* A buffer on the server drawn
   and edited by hand — the manual counterpart of `/buffer_gen`, which computes the
-  same tables from a formula. The samples editor already draws into a server
-  buffer and writes it with `/buffer_setRange` (`clausters_editing::samples::write_steps`),
-  so what differs is the table and what reads it, not the path.
+  same tables from a formula. *(2026-09-23: the samples editor this was modelled
+  on is gone -- a buffer opens in the audio editor, which edits a copy and
+  writes it back on a save. What remains of its path is the in-place write,
+  `/buffer_setRange` through `clausters_editing::samples::write_steps`, and
+  whether a table is drawn in place or through the audio editor is this
+  milestone's first question.)*
 
   **A history step re-reads what it changed, not the whole buffer** *(moved
   here from `X1.7`, 2026-09-22)*. An editor that writes a buffer in place --
-  this one, and the samples editor it is modelled on -- answers undo and redo
+  as this one may, and as the samples editor did -- answers undo and redo
   with `reload`, which re-reads the whole buffer for a stroke of a thousand
   samples. `/gui_ack` already carries `source generation` pairs that the host
   keeps and nothing reads, and no client sends one (`clients/gui/PLAN.md`,

@@ -31,9 +31,10 @@ import type { GuiHost, Stage } from "../host.ts";
 import { NotesEditor, isEvents } from "./events.ts";
 import { MultitrackEditor, isMultitrack } from "./multitrack.ts";
 import type { MultitrackEditorOptions } from "./multitrack.ts";
+import type { AudioEditorOptions } from "./audio.ts";
 import type { Server } from "../../defs/server/index.ts";
 import { PointsEditor, isCurve } from "./points.ts";
-import { SamplesEditor, isSamples } from "./samples.ts";
+import { AudioEditor, isTake } from "./audio.ts";
 
 /** What `edit` passes on to whichever editor the structure asks for. */
 export interface EditOptions {
@@ -85,6 +86,14 @@ export interface EditOptions {
      */
     min?: number;
     max?: number;
+    /**
+     * **A buffer's own three**, ignored by every other structure: the audio
+     * editor's history limits and where a take leaves memory for
+     * ({@link AudioEditorOptions}).
+     */
+    historyBytes?: number | null;
+    residentBytes?: number | null;
+    scratch?: string;
 }
 
 /** Builds the editor `structure` asks for, without opening it. */
@@ -92,8 +101,8 @@ function editorFor(structure: unknown, options: EditOptions): Editor<never> {
     const {
         sampleRate = 0, host: _h, stage: _s, open: _o, min, max, ...rest
     } = options;
-    if (isSamples(structure)) {
-        return new SamplesEditor(structure, {
+    if (isTake(structure)) {
+        return new AudioEditor(structure, {
             sampleRate,
             ...rest,
         }) as unknown as Editor<never>;

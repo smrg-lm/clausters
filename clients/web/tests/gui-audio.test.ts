@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { AudioEditor, Editing } from "../src/gui/editing/index.ts";
+import { AudioEditor, Editing, edit, measures } from "../src/gui/editing/index.ts";
 import type { GuiHost, PropValue } from "../src/gui/host.ts";
 import type { GuiNode } from "../src/gui/guidef.ts";
 
@@ -254,4 +254,37 @@ test("a save over a buffer rewrites it or writes a new one", async () => {
     const fresh = (await editor.save({ buffer: true })) as { bufnum: number };
     assert.ok(![take.bufnum, editor.buffer.bufnum].includes(fresh.bufnum));
     assert.equal(((await editor.save()) as { bufnum: number }).bufnum, fresh.bufnum, "a later save writes there");
+});
+
+test("edit opens a buffer in the audio editor", async () => {
+    const editor = await edit(new FakeBuffer() as never, { open: false, context: new Editing() });
+    assert.ok(editor instanceof AudioEditor);
+});
+
+test("a take's window is composed by the crate", async () => {
+    const take = new FakeBuffer(8, 2);
+    const context = new Editing();
+    const editor = new AudioEditor(take as never, { sampleRate: SR, title: "take", context });
+    const host = new FakeHost();
+    await editor.open(host as unknown as GuiHost);
+    const tree = host.trees[0]!;
+    assert.deepEqual([tree.type, tree.title, tree.flow], ["window", "take", "col"]);
+    const picture = tree.children![0]! as Record<string, unknown>;
+    const wid = Number(picture.id);
+    assert.equal(picture.type, "signal");
+    assert.deepEqual([picture.buffer, picture.channels], [editor.buffer.bufnum, 2]);
+    assert.equal(picture.measure, "peak rms");
+    assert.deepEqual(picture.gestures, { drag: "select", alt: "draw", ctrl: "sample" });
+    assert.deepEqual(editor.view!.props(editor as never, wid), { reload: 1 });
+});
+
+test("a refused measure stack keeps the one the picture had", () => {
+    const editor = new AudioEditor(new FakeBuffer() as never, {
+        sampleRate: SR, layers: ["peak"], context: new Editing(),
+    });
+    editor.layers = ["rms", "peak"];
+    assert.deepEqual(editor.layers, ["rms", "peak"]);
+    assert.throws(() => (editor.layers = ["loud"]), /'loud'/);
+    assert.deepEqual(editor.layers, ["rms", "peak"]);
+    assert.throws(() => measures([]), /measures something/);
 });

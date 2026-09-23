@@ -15,7 +15,7 @@ import { TempoMap } from "../src/base/time.ts";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
-import { Editing, NotesEditor, PointsEditor, SamplesEditor, edit, measures, watch }
+import { Editing, NotesEditor, PointsEditor, edit, watch }
     from "../src/gui/editing/index.ts";
 import { unwatch } from "../src/base/log.ts";
 import { Bpf } from "../src/defs/ugens/index.ts";
@@ -80,65 +80,6 @@ const aTimeline = (): Timeline =>
         [1.0, new SeqEvent({ midinote: 64, dur: 1.0 })],
     ]);
 
-/** The two writes a take's editor sends, laid into a `FakeBuffer`. */
-class FakeServer {
-    sent: string[] = [];
-    private readonly take: FakeBuffer;
-
-    constructor(take: FakeBuffer) {
-        this.take = take;
-    }
-
-    bulkChunk(): Promise<number> {
-        return Promise.resolve(8192);
-    }
-
-    sendMsg(addr: string, ...args: unknown[]): void {
-        this.sent.push(addr);
-        const bytes = args[args.length - 1] as Uint8Array;
-        const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-        const mono = addr === "/buffer_setRange";
-        const at = (i: number) => {
-            const arg = args[i];
-            return Array.isArray(arg) ? Number(arg[1]) : Number(arg);
-        };
-        const first = mono ? at(1) : at(2) * this.take.channels + at(1);
-        const stride = mono ? 1 : this.take.channels;
-        for (let i = 0; i * 4 < bytes.byteLength; i += 1) {
-            this.take.data[first + i * stride] = view.getFloat32(i * 4, true);
-        }
-    }
-
-    request(addr: string, args: unknown[]): Promise<{ addr: string; args: unknown[] }> {
-        this.sendMsg(addr, ...args);
-        const bufnum = Array.isArray(args[0]) ? Number(args[0][1]) : Number(args[0]);
-        return Promise.resolve({ addr: "/done", args: [addr, bufnum] });
-    }
-}
-
-/**
- * A server buffer, as the samples domain touches one: a number, a shape, and
- * the server its writes go to.
- */
-class FakeBuffer {
-    bufnum = 7;
-    frames: number;
-    channels: number;
-    sampleRate = SR;
-    data: number[];
-    server: FakeServer;
-
-    constructor(frames = 16, channels = 1) {
-        this.frames = frames;
-        this.channels = channels;
-        this.data = new Array(frames * channels).fill(0);
-        this.server = new FakeServer(this);
-    }
-
-    setSamples(): Promise<void> {
-        return Promise.reject(new Error("a take's editor writes through its steps"));
-    }
-}
 
 async function opened(editor: { open: (h: GuiHost) => Promise<unknown> }) {
     const host = new FakeHost();
@@ -155,7 +96,6 @@ test("the verb opens the editor the structure asks for", async () => {
     const off = { open: false } as const;
     assert.ok((await edit(aCurve(), { sampleRate: SR, ...off })) instanceof PointsEditor);
     assert.ok((await edit(aTimeline(), { sampleRate: SR, ...off })) instanceof NotesEditor);
-    assert.ok((await edit(new FakeBuffer(), off)) instanceof SamplesEditor);
 });
 
 test("something none of the three reads says what they are", async () => {
@@ -418,82 +358,6 @@ test("the notes gesture does not move the markers", async () => {
         [...timeline].map(([beat, item]) => [beat, (item as object).constructor.name]),
         [[0.0, "Event"], [3.0, "OscItem"]],
     );
-});
-
-// ---- samples ----
-
-test("a stroke writes the server's buffer and undoes off the wire", async () => {
-    const take = new FakeBuffer(8);
-    const editor = await edit(take, { open: false });
-    const { wid } = await opened(editor);
-
-    assert.equal(
-        editor.apply("/gui_event", [wid, 1, 0, "draw", 0, 2, blob([0.5, -0.5]), blob([0, 0])]),
-        true,
-    );
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.deepEqual(take.data.slice(2, 4), [0.5, -0.5]);
-    assert.equal(editor.canUndo, true);
-    assert.equal(editor.undoLabel, "draw the samples");
-    // The inverse rode on the wire: nothing was read back to invert it.
-    assert.equal(editor.undo(), true);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.deepEqual(take.data.slice(2, 4), [0, 0]);
-});
-
-test("one dragged sample is the same edit one frame wide", async () => {
-    const take = new FakeBuffer(8);
-    const editor = await edit(take, { open: false });
-    const { wid } = await opened(editor);
-    assert.equal(editor.apply("/gui_event", [wid, 1, 0, "sample", 0, 3, 0.9, 0.0]), true);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    // A server buffer holds `f32`, and the write crosses as one.
-    assert.equal(take.data[3], Math.fround(0.9));
-    editor.undo();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.equal(take.data[3], 0);
-});
-
-test("a stroke on one channel of a stereo take leaves the other alone", async () => {
-    const take = new FakeBuffer(4, 2);
-    take.data = [0.1, 0.2, 0.1, 0.2, 0.1, 0.2, 0.1, 0.2];
-    const editor = await edit(take, { open: false });
-    const { wid } = await opened(editor);
-    editor.apply("/gui_event", [wid, 1, 0, "draw", 1, 1, blob([0.7, 0.8]), blob([0.2, 0.2])]);
-    // The interleaved splice is a read and a write, so it settles a turn later.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.deepEqual(
-        take.data.map((v) => Math.round(v * 10) / 10),
-        [0.1, 0.2, 0.1, 0.7, 0.1, 0.8, 0.1, 0.2],
-    );
-    assert.deepEqual(take.server.sent, ["/buffer_setRangeChannel"], "one channel, never read");
-});
-
-test("a take's window is composed by the crate", async () => {
-    const take = new FakeBuffer(8, 2);
-    const editor = await edit(take, { title: "take", open: false });
-    const { host, wid } = await opened(editor);
-    const tree = host.trees[0] as GuiNode & Record<string, unknown>;
-    assert.deepEqual([tree.type, tree.title, tree.flow], ["window", "take", "col"]);
-    const picture = (tree.children as (GuiNode & Record<string, unknown>)[])[0];
-    assert.equal(picture.type, "signal");
-    assert.equal(picture.id, wid);
-    assert.deepEqual([picture.buffer, picture.channels], [take.bufnum, 2]);
-    assert.equal(picture.measure, "peak rms");
-    assert.equal(picture.label, `buffer ${take.bufnum}`);
-    assert.deepEqual(picture.gestures, { drag: "select", alt: "draw", ctrl: "sample" });
-    assert.deepEqual(editor.view?.props(editor, wid), { reload: 1 });
-});
-
-test("a refused measure stack keeps the one the picture had", async () => {
-    const editor = new SamplesEditor(new FakeBuffer() as never, { sampleRate: SR, layers: ["peak"] });
-    editor.layers = ["rms", "peak"];
-    assert.deepEqual(editor.layers, ["rms", "peak"]);
-    assert.throws(() => {
-        editor.layers = ["loud"];
-    }, /'loud'/);
-    assert.deepEqual(editor.layers, ["rms", "peak"]);
-    assert.throws(() => measures([]), /measures something/);
 });
 
 // ---- the acceptance the track was opened with ----

@@ -53,14 +53,13 @@ why the curve row below names three unrelated types:
 
 | `edit(x)` where x is | opens | over | its vocabulary |
 |---|---|---|---|
-| a `Buffer` | `SamplesEditor` | a `waveform` | `samples` |
+| a `Buffer` | `AudioEditor` | a `waveform` | `parts` |
 | a curve — a `Bpf`, an `Env`, a `multitrack.Automation` | `PointsEditor` | a `bpf` | `points` |
 | a `Timeline` | `NotesEditor` | a `pianoroll` | `events` |
 | a `Multitrack` | `MultitrackEditor` | a `multitrack` | `clips`/`lanes` |
 
-**A take has a second editor, opened by name**: `editing.AudioEditor`.
-`edit(buffer)` draws the take and writes each stroke into it; `new AudioEditor(take, ...)`
-never writes the take at all. Its window draws a **join** the editor owns, and
+**A `Buffer` opens in the audio editor**, `editing.AudioEditor`.
+It writes nothing it was handed while it edits. Its window draws a **join** the editor owns, and
 every edit -- a cut, a paste, a mix (Ctrl+Shift+V), a pencil stroke -- leaves a
 new list of spans over the take and over the takes the edits made: a stroke is a
 new take the size of the stroke, spliced over the frames it was drawn on. An undo
@@ -82,7 +81,7 @@ without a window, for a caller composing one. It is `await`ed where the referenc
 client's `edit` is not, for the reason `plot` and `View.open` are — resolving the
 ambient host may have to boot it.
 
-Nothing is handed back: the object passed in *is* the edited one. A **multitrack** is
+Nothing is handed back: the object passed in *is* the edited one -- except a buffer, which the audio editor writes back when it is saved. A **multitrack** is
 one of them, and what opens is the multitrack editor — the rest of this
 chapter is what it edits.
 

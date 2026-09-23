@@ -9,7 +9,7 @@ same argument one level up: an editor asks the *data* for its editing context
 instead of building one of its own.
 
 **The context is the shared crate's** (`clausters._native.EditingCore`): the
-history, the version, and its **members** -- the multitrack and samples editors
+history, the version, and its **members** -- the multitrack and audio editors
 opened in it, whose turns and steps it takes, and the structures the crate does
 not apply (a curve, a timeline, a score), which join as external members and
 get their legs back. No application holds a history of its own: one opened
@@ -99,9 +99,9 @@ class Editing:
 
     def open(self, verb: str, key: str, request: dict, structure,
              handler) -> tuple:
-        """**Open an editor in this context** -- ``verb`` is ``"openMultitrack"``,
-        ``"openSamples"`` or ``"openAudio"`` -- as the structure ``key`` names,
-        and answer its ``(member, identity)``.
+        """**Open an editor in this context** -- ``verb`` is ``"openMultitrack"``
+        or ``"openAudio"`` -- as the structure ``key`` names, and answer its
+        ``(member, identity)``.
 
         ``handler`` is what carries a step out for it: the editor's domain.
 

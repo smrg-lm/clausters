@@ -1768,7 +1768,7 @@ class EditingCore:
     every editor opened in it.
 
     Every verb crosses through `call`, as JSON: ``openMultitrack`` and
-    ``openSamples`` open an editor under a key and answer its ``member``,
+    ``openAudio`` open an editor under a key and answer its ``member``,
     ``external`` takes in a structure the crate does not apply, ``event`` reads
     and records a member's message, ``step`` walks the history, ``record``
     takes an external member's entry, ``member`` reaches one editor's own verbs,

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>clausters: AudioEditor</title>
+    <title>clausters: edit(buffer)</title>
     <link rel="icon" href="data:," />
     <style>
       html, body { margin: 0; min-height: 100%; background: #0d0d12;
@@ -19,11 +19,11 @@
   </head>
   <body>
     <main>
-      <div id="note"><code>AudioEditor</code>: a take edited as a list of parts,
-never written.
+      <div id="note"><code>edit(buffer)</code>: a take in the audio editor, edited
+as a list of parts.
 
-<code>edit(buffer)</code> draws a take and writes each stroke into it.
-<code>AudioEditor</code> never writes the take at all. The window draws a
+A <code>Buffer</code> opens in <code>AudioEditor</code>, which edits a private
+copy of it and writes nothing it was handed until it is saved. The window draws a
 <b>join</b> -- a buffer made of spans of other buffers -- and every edit leaves a
 new list of those spans: a <b>cut</b> takes a span out of the list and moves no
 samples; a <b>paste</b> writes the block into a take of its own and puts it in;
@@ -40,8 +40,9 @@ what only the history holds, and the oldest entries go first past it.
 <b>Ctrl+V</b> to paste at the cursor and <b>Ctrl+Shift+V</b> to mix
 there. <b>Wheel</b> to zoom in until each sample is a disc, then
 <b>Alt+drag</b> to draw. <b>Ctrl+Z</b> and <b>Ctrl+Shift+Z</b> walk the
-history. <code>editor.save({ path })</code> writes it as a file; the take here
-was made in memory, so it has none of its own for Ctrl+S to write over.</div>
+history. <code>editor.save()</code> -- or Ctrl+S in the window -- writes the
+edit back into the buffer it was opened from, and
+<code>editor.save({ path })</code> writes it as a file instead.</div>
 
       <button id="run">open the take</button>
       <div id="stage"></div>
@@ -54,7 +55,7 @@ was made in memory, so it has none of its own for Ctrl+S to write over.</div>
 
     <!--
       The web sibling of clients/python/examples/editors/edit_audio.py, call
-      for call: the same generated take, the same `AudioEditor`, the same
+      for call: the same generated take, the same `edit`, the same
       `play` of the join it draws, and the same list of parts read back.
 
       The platform's differences are the usual two: the host is the wasm one in
@@ -64,9 +65,8 @@ was made in memory, so it has none of its own for Ctrl+S to write over.</div>
       /examples/editors/edit-audio.html. Build it first: ./build.sh
     -->
     <script type="module">
-      import { Session, play } from "../../dist/index.js";
+      import { Session, gui, play } from "../../dist/index.js";
       import { Buffer } from "../../dist/defs/index.js";
-      import { editing } from "../../dist/gui/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
@@ -79,8 +79,8 @@ was made in memory, so it has none of its own for Ctrl+S to write over.</div>
         const server = session.server;
         const rate = (await server.queryInfo()).nominalSampleRate;
 
-        // A take, made here: the same take edit-samples.html draws on, so the
-        // two editors can be told apart by what they do to it.
+        // A take, made here: two seconds of a decaying tone. A shape worth
+        // recognizing, so an edit over it is visibly an edit over *this*.
         const frames = Math.trunc(SECONDS * rate);
         const samples = new Float32Array(frames);
         for (let i = 0; i < frames; i += 1) {
@@ -90,13 +90,13 @@ was made in memory, so it has none of its own for Ctrl+S to write over.</div>
         const take = await Buffer.fromSamples(samples, 1, rate, { server });
 
         await session.gui();
-        // One `waveform` over the join the editor owns. The take itself is
-        // never written: every edit is a new list of parts over it and over
-        // the takes the edits made.
-        const editor = new editing.AudioEditor(take, {
-          title: "take", historyBytes: 64 * 1024 * 1024,
+        // One verb. A `Buffer` opens in the audio editor: one `waveform` over
+        // the join it owns. The buffer is not written while you edit -- every
+        // edit is a new list of parts over a copy of it and over the takes the
+        // edits made -- until you save.
+        const editor = await gui.edit(take, {
+          title: "take", historyBytes: 64 * 1024 * 1024, stage: $("stage"),
         });
-        await editor.open(undefined, { stage: $("stage") });
 
         // `editor.buffer` is the join the window draws: the take as the edits
         // have left it, which `play` reads like any other buffer.

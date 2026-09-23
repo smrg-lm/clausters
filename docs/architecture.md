@@ -572,7 +572,7 @@ binding it, which is where the picture gets its single owner. See
 
 **`edit(x)` is the verb, and the three domains under it are where the seam pays
 for itself.** `clausters.gui.edit` dispatches on what the structure holds —
-`SamplesEditor` over a `Buffer` and a `waveform`, `PointsEditor` over a curve
+`AudioEditor` over a `Buffer` and a `waveform`, `PointsEditor` over a curve
 (anything answering `to_points`/`set_points`: a `Bpf`, an `Env`, a
 `multitrack.Automation`) and a `bpf`, `NotesEditor` over a `Timeline` and a
 `pianoroll` —
@@ -592,7 +592,7 @@ back a straight line.
 **Composing editors rather than reimplementing them is the pattern that
 survives.** A view over part of a structure is not a mode with a private draw:
 it builds the editor `edit(x)` would build over that part — a `NotesEditor` over
-a timeline, a `SamplesEditor` over a buffer — and joins it to the same `Editing`
+a timeline, an `AudioEditor` over a buffer — and joins it to the same `Editing`
 context. What that gives is the thing a mode could not have: **one undo order
 across vocabularies**. A history step is handed round the context
 (`Editor.project_legs` / `reflect_step`), so an entry naming several structures
@@ -936,24 +936,16 @@ one for itself numbers the row through `Transport::Numbered`. A script's own
 widgets are appended by the client, since a widget over a live source keeps a
 binding no JSON carries.
 
-The **samples editor's window** is the second (`clausters_apps::samples`): one
-`waveform` over a take's server buffer on a time ruler, with the catalogue's
-three-gesture plan, the measures its picture stacks (`peak`, `rms`, checked by
-`samples::measures`), a label from the take's name or its buffer, and `reload` as
-the correction a write from the other side answers with. Its handle
-(`clausters_apps::samples::editor::SamplesEditor`) holds those facts between
-messages and composes and corrects the window through the same kind of JSON door
-the multitrack editor has. Its turns are there too: a stroke or a dragged sample
-is read with the run it replaced in one reading, so the inverse is the reading's,
-and a turn answers the write to carry out on the buffer and the entry to record.
-What a write does to the buffer is steps too (`clausters_editing::samples::write_steps`):
-`/buffer_setRange` for a mono take, `/buffer_setRangeChannel` for one channel of a
-wider one, walked by the runner against the take's server — for a stroke and for
-a step of the history alike. The turn's words — `Kind`, `Leg`, `Record`, `Event` — are
-the applications' own and live in `clausters_apps::turn`.
+The **window a take is drawn in** is `clausters_apps::samples`: one `waveform`
+over a server buffer on a time ruler, with the catalogue's three-gesture plan,
+the measures its picture stacks (`peak`, `rms`, checked by `samples::measures`), a
+label from the take's name or its buffer, and `reload` as the correction a change
+from the other side answers with. The turn's words — `Kind`, `Leg`, `Record`,
+`Event` — are the applications' own and live in `clausters_apps::turn`.
 
-The **audio editor** is the third (`clausters_apps::audio`), and it edits the same
-take without ever writing it. Its window is the samples editor's, drawn over a
+The **audio editor** is the second application (`clausters_apps::audio`), and
+what it opens is a file or a server buffer, through a private copy it edits and
+writes back only on a save. Its window is that one, drawn over a
 **join** the editor owns the recipe of — a flat list of parts over immutable takes
 (`clausters_document::parts`, the arithmetic a multitrack's join is minted with
 too). A cut is a new list; a paste, a mix and a pencil stroke each write a new

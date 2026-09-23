@@ -1,8 +1,8 @@
 /**
  * Editing a take as **a list of parts over immutable takes**: the audio editor.
  *
- * {@link SamplesEditor} writes a stroke into the buffer it draws. This one never
- * writes a buffer that already exists. The window draws a **join** -- a buffer
+ * What it opens is **a file or a server buffer**, and it edits a private copy:
+ * nothing it was handed is written until it is saved. The window draws a **join** -- a buffer
  * made of spans of other buffers (`Buffer.stitch`) -- and every edit leaves a
  * new list of those spans: a cut takes a span out, a paste puts a new take in,
  * a mix adds the block onto a new take over the frames it lands on, and a
@@ -424,7 +424,15 @@ export class AudioEditor extends Editor<Buffer> {
         (this.domain as AudioDomain).after(() => super.reflectStep());
     }
 
-    /** What the picture measures. See {@link SamplesEditor.layers}. */
+    /**
+     * What the picture measures -- `["peak", "rms"]` for the editor's view,
+     * `["peak"]` for the bare envelope.
+     *
+     * **Assigning it on an open view sends one message.** The measure is a live
+     * `/gui_set` prop, so the body appears and disappears over the peaks with
+     * the picture, the axis, the zoom, the selection and the playhead all
+     * exactly where they were.
+     */
     get layers(): Measure[] {
         return [...(this.view as SamplesView).layers];
     }
@@ -460,4 +468,14 @@ export interface AudioEditorOptions extends GenericEditorOptions<Buffer> {
      * not given.
      */
     scratch?: string;
+}
+
+/**
+ * Whether {@link edit} should open this in the audio editor: anything with a
+ * buffer number and samples it can write, which is what a `Buffer` answers with.
+ */
+export function isTake(structure: unknown): structure is Buffer {
+    const candidate = structure as { bufnum?: unknown; setSamples?: unknown };
+    return candidate !== null && typeof candidate === "object" &&
+        typeof candidate.bufnum === "number" && typeof candidate.setSamples === "function";
 }

@@ -255,7 +255,7 @@ export class Editing {
 
     /**
      * **Open an editor in this context** -- `verb` is `"openMultitrack"` or
-     * `"openSamples"` -- as the structure `key` names, and answer its member and
+     * `"openAudio"` -- as the structure `key` names, and answer its member and
      * identity. `handler` is what carries a step out for it: the editor's
      * domain. Throws with the crate's reason when it refuses the request.
      */

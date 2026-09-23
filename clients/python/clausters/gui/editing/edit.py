@@ -9,7 +9,9 @@ takes over the draining, so a script that edits writes no loop at all --
 
 -- and what comes back is the editor, which is the handle the window is closed
 and undone through. Reading is done on the structure itself: nothing is handed
-back at the end because the object passed in *is* the edited one.
+back at the end because the object passed in *is* the edited one. A buffer is
+the exception, and deliberately: `clausters.gui.editing.AudioEditor` edits a
+copy of it and writes it back when it is saved, as an audio editor does.
 
 One call over the fundamental structures -- a buffer's samples, a break-point
 curve, a timeline of events, and a **multitrack** -- each of which is a
@@ -35,7 +37,7 @@ its history means, and `edit` inherits it for free.
 from .events import NotesEditor, is_events
 from .multitrack import MultitrackEditor, is_multitrack
 from .points import PointsEditor, is_curve
-from .samples import SamplesEditor, is_samples
+from .audio import AudioEditor, is_take
 
 
 def edit(structure, *, sample_rate: float = 0.0,
@@ -43,8 +45,8 @@ def edit(structure, *, sample_rate: float = 0.0,
     """Open ``structure`` in an editor of its own kind.
 
     Args:
-        structure: what to edit -- a `clausters.defs.Buffer` (its samples), a
-            a curve (a `clausters.defs.Bpf`, an `clausters.defs.Env` or a
+        structure: what to edit -- a `clausters.defs.Buffer` (in the audio
+            editor, which edits a copy and writes it back on `save`), a curve (a `clausters.defs.Bpf`, an `clausters.defs.Env` or a
             `clausters.multitrack.Automation`), a `clausters.seq.Timeline`
             (its notes) or a `clausters.multitrack.Multitrack` (the multitrack).
         sample_rate: the engine's rate, which fixes the data<->view bridge. A
@@ -73,15 +75,16 @@ def edit(structure, *, sample_rate: float = 0.0,
         -- and a caller who wants none of that may discard it: the host holds an
         open editor until its window closes, so ``edit(curve)`` on its own is a
         complete program. Reading the edited data is done on the structure that
-        was passed in, which *is* the edited one.
+        was passed in, which *is* the edited one -- except a buffer, which the
+        audio editor writes back when it is saved.
 
     Raises:
         TypeError: for something none of the three domains reads, naming what
             they are -- an unopenable structure is a question about the data,
             and answering it with a bare failure teaches nothing.
     """
-    if is_samples(structure):
-        editor = SamplesEditor(structure, sample_rate=sample_rate, **options)
+    if is_take(structure):
+        editor = AudioEditor(structure, sample_rate=sample_rate, **options)
     elif is_curve(structure):
         editor = PointsEditor(structure, sample_rate=sample_rate or 48_000.0,
                               **options)

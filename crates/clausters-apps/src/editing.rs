@@ -34,13 +34,11 @@ use serde_json::{Value, json};
 
 use clausters_document::history::{Direction, Entry, History, Step, StructureId};
 use clausters_document::multitrack::edit::MULTITRACK;
-use clausters_document::samples::SAMPLES;
 use clausters_document::{Opaque, SourceId};
 use clausters_editing::conversation::Answer;
 
 use crate::audio::editor::{self as audio, AudioEditor};
 use crate::multitrack::editor::{self as multitrack, MultitrackEditor};
-use crate::samples::editor::{self as samples, SamplesEditor};
 use crate::turn::{Event, Kind, Record, int};
 
 /// The version an unedited context is at. One rather than zero, because zero is
@@ -55,8 +53,6 @@ pub type MemberId = u32;
 pub enum Member {
     /// A multitrack editor over a multitrack.
     Multitrack(Box<MultitrackEditor>),
-    /// A samples editor over a take.
-    Samples(SamplesEditor),
     /// An audio editor over a take made of parts.
     Audio(Box<AudioEditor>),
     /// A structure the crate does not apply: the context records and walks for
@@ -71,7 +67,6 @@ impl Member {
     fn domain(&self) -> String {
         match self {
             Member::Multitrack(_) => MULTITRACK.into(),
-            Member::Samples(_) => SAMPLES.into(),
             Member::Audio(_) => audio::DOMAIN.into(),
             Member::External { domain } => domain.clone(),
         }
@@ -91,8 +86,6 @@ struct Seat {
 pub enum Outcome {
     /// A multitrack editor's.
     Multitrack(multitrack::Outcome),
-    /// A samples editor's.
-    Samples(samples::Outcome),
     /// An audio editor's.
     Audio(audio::Outcome),
 }
@@ -101,7 +94,6 @@ impl Outcome {
     fn kind(&self) -> Kind {
         match self {
             Outcome::Multitrack(o) => o.turn,
-            Outcome::Samples(o) => o.turn,
             Outcome::Audio(o) => o.turn,
         }
     }
@@ -109,7 +101,6 @@ impl Outcome {
     fn record(&self) -> Option<&Record> {
         match self {
             Outcome::Multitrack(o) => o.record.as_ref(),
-            Outcome::Samples(o) => o.record.as_ref(),
             Outcome::Audio(o) => o.record.as_ref(),
         }
     }
@@ -117,7 +108,6 @@ impl Outcome {
     fn changed(&self) -> bool {
         match self {
             Outcome::Multitrack(o) => o.changed,
-            Outcome::Samples(o) => o.changed,
             Outcome::Audio(o) => o.changed,
         }
     }
@@ -125,7 +115,6 @@ impl Outcome {
     fn version(&self) -> i64 {
         match self {
             Outcome::Multitrack(o) => o.version,
-            Outcome::Samples(o) => o.version,
             Outcome::Audio(o) => o.version,
         }
     }
@@ -133,7 +122,6 @@ impl Outcome {
     fn step(&self) -> (i64, bool) {
         match self {
             Outcome::Multitrack(o) => (o.seq, o.redo),
-            Outcome::Samples(o) => (o.seq, o.redo),
             Outcome::Audio(o) => (o.seq, o.redo),
         }
     }
@@ -141,7 +129,6 @@ impl Outcome {
     fn answer(&mut self, answer: Answer) {
         match self {
             Outcome::Multitrack(o) => o.answer = Some(answer),
-            Outcome::Samples(o) => o.answer = Some(answer),
             Outcome::Audio(o) => o.answer = Some(answer),
         }
     }
@@ -195,16 +182,6 @@ pub enum Effect {
         member: MemberId,
         /// What applying it did: the multitrack as it now stands, a source minted.
         applied: multitrack::Applied,
-    },
-    /// Writes to a take's buffer, in order: `write` payloads, which the member
-    /// turns into steps (its `write` verb) with the bound of the server the take
-    /// is on.
-    #[serde(rename_all = "camelCase")]
-    Samples {
-        /// The member.
-        member: MemberId,
-        /// The payloads.
-        payloads: Vec<Value>,
     },
     /// The steps an audio editor's take is stitched again with, for the list
     /// the step handed it.
@@ -602,7 +579,6 @@ impl Editing {
         let structure = seat.structure;
         let mut outcome = match &mut seat.member {
             Member::Multitrack(editor) => Outcome::Multitrack(editor.event(event, version)),
-            Member::Samples(editor) => Outcome::Samples(editor.event(event, version)),
             Member::Audio(editor) => Outcome::Audio(editor.event(event, version)),
             Member::External { .. } => return None,
         };
@@ -627,9 +603,6 @@ impl Editing {
             if let Some(seat) = self.seats.get(member as usize) {
                 match &seat.member {
                     Member::Multitrack(editor) => {
-                        outcome.answer(editor.acknowledge(seq, version, reason));
-                    }
-                    Member::Samples(editor) => {
                         outcome.answer(editor.acknowledge(seq, version, reason));
                     }
                     Member::Audio(editor) => {
@@ -703,14 +676,6 @@ impl Editing {
                             out.effects.push(Effect::Audio { member, steps });
                         }
                     }
-                    Member::Samples(_) if !written => {
-                        written = true;
-                        applied |= !payloads.is_empty();
-                        out.effects.push(Effect::Samples {
-                            member,
-                            payloads: payloads.iter().map(|p| p.0.clone()).collect(),
-                        });
-                    }
                     Member::External { .. } if !written => {
                         written = true;
                         applied |= !payloads.is_empty();
@@ -751,7 +716,6 @@ impl Editing {
             }
             let answer = match &mut seat.member {
                 Member::Multitrack(editor) => editor.resync_all(version),
-                Member::Samples(editor) => editor.resync_all(version),
                 Member::Audio(editor) => editor.resync_all(version),
                 Member::External { .. } => continue,
             };
@@ -791,9 +755,6 @@ struct RecordedLeg {
 /// - `openMultitrack` -- `key`, and what a multitrack editor is built from
 ///   (`clausters_apps::multitrack::editor::new_json`, the version aside):
 ///   `{"member", "structure"}`, or `{"error"}`.
-/// - `openSamples` -- `key`, and what a samples editor is built from
-///   (`clausters_apps::samples::editor::new_json`): `{"member", "structure"}`,
-///   or `{"error"}`.
 /// - `openAudio` -- `key`, and what an audio editor is built from
 ///   (`clausters_apps::audio::editor::new_json`): `{"member", "structure"}`,
 ///   or `{"error"}`.
@@ -836,10 +797,6 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
         "openMultitrack" => match multitrack::new_json(&request.to_string()) {
             Some(editor) => joined(editing, &key, Member::Multitrack(Box::new(editor))),
             None => json!({ "error": "the request names no multitrack" }).to_string(),
-        },
-        "openSamples" => match samples::new_json(&request.to_string()) {
-            Ok(editor) => joined(editing, &key, Member::Samples(editor)),
-            Err(error) => json!({ "error": error }).to_string(),
         },
         "openAudio" => match audio::new_json(&request.to_string()) {
             Ok(editor) => joined(editing, &key, Member::Audio(Box::new(editor))),
@@ -910,7 +867,6 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                 Some(Member::Multitrack(editor)) => {
                     multitrack::call_json(editor, &call.to_string())
                 }
-                Some(Member::Samples(editor)) => samples::call_json(editor, &call.to_string()),
                 Some(Member::Audio(editor)) => audio::call_json(editor, &call.to_string()),
                 _ => "{}".into(),
             }
@@ -992,12 +948,17 @@ mod tests {
         Member::Multitrack(Box::new(editor))
     }
 
-    /// A mono take in buffer 7, drawn by widget 50 in window 49.
+    /// A mono take in buffer 7, a hundred frames, edited by an audio editor
+    /// drawn by widget 50 in window 49, with buffers for new takes.
     fn a_take() -> Member {
-        let mut editor = samples::new_json(r#"{"buffer": 7, "version": 1}"#).unwrap();
-        samples::call_json(&mut editor, r#"{"verb": "window", "widget": 50}"#);
-        samples::call_json(&mut editor, r#"{"verb": "sync", "window": 49}"#);
-        Member::Samples(editor)
+        let mut editor = audio::new_json(
+            r#"{"take": 7, "frames": 100, "display": 9, "buffers": [20, 21, 22, 23],
+                "version": 1}"#,
+        )
+        .unwrap();
+        audio::call_json(&mut editor, r#"{"verb": "window", "widget": 50}"#);
+        audio::call_json(&mut editor, r#"{"verb": "sync", "window": 49}"#);
+        Member::Audio(Box::new(editor))
     }
 
     fn event(widget: i64, seq: i64, tag: &str, values: Vec<Value>) -> Event {
@@ -1034,19 +995,29 @@ mod tests {
         }
     }
 
-    fn written(stepped: &Stepped) -> Vec<Value> {
+    /// The takes an audio member's list reads now, in order.
+    fn reads(editing: &Editing, member: MemberId) -> Vec<u64> {
+        match editing.member(member) {
+            Some(Member::Audio(editor)) => editor
+                .list()
+                .iter()
+                .map(|part| part.source.source.0)
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// How many audio members a step stitched again.
+    fn stitched(stepped: &Stepped) -> usize {
         stepped
             .effects
             .iter()
-            .filter_map(|e| match e {
-                Effect::Samples { payloads, .. } => Some(payloads[0]["values"].clone()),
-                _ => None,
-            })
-            .collect()
+            .filter(|e| matches!(e, Effect::Audio { .. }))
+            .count()
     }
 
     /// **An editor open alone is a context of one**: its stroke is recorded
-    /// there, and an undo hands back the write that puts the take back.
+    /// there, and an undo hands back the list that puts the take back.
     #[test]
     fn an_editor_open_alone_undoes_through_a_context_of_one() {
         let mut editing = Editing::default();
@@ -1059,10 +1030,12 @@ mod tests {
         assert!(editing.can_undo());
         assert_eq!(editing.undo_label().as_deref(), Some("draw the samples"));
 
+        assert_eq!(reads(&editing, take), [7, 20, 7]);
         let undone = editing.step(Direction::Undo);
         assert!(undone.stepped);
         assert_eq!(undone.version, 3);
-        assert_eq!(written(&undone), [json!([0.0])]);
+        assert_eq!(stitched(&undone), 1);
+        assert_eq!(reads(&editing, take), [7]);
         assert_eq!(
             undone.corrections,
             [Corrected {
@@ -1079,8 +1052,8 @@ mod tests {
             }],
             "the window reads the take again"
         );
-        let redone = editing.step(Direction::Redo);
-        assert_eq!(written(&redone), [json!([0.5])]);
+        editing.step(Direction::Redo);
+        assert_eq!(reads(&editing, take), [7, 20, 7]);
     }
 
     /// **Two applications in one context walk one order**: a box moved, a
@@ -1113,7 +1086,8 @@ mod tests {
         assert_eq!(position(&mut editing, multitrack), 2.0);
 
         let back = editing.step(Direction::Undo);
-        assert_eq!(written(&back), [json!([0.0])], "the stroke, in between");
+        assert_eq!(stitched(&back), 1, "the stroke, in between");
+        assert_eq!(reads(&editing, take), [7]);
         assert_eq!(position(&mut editing, multitrack), 2.0);
 
         editing.step(Direction::Undo);
@@ -1121,12 +1095,13 @@ mod tests {
         assert!(!editing.can_undo());
 
         editing.step(Direction::Redo);
-        let forward = editing.step(Direction::Redo);
-        assert_eq!(written(&forward), [json!([0.5])]);
+        editing.step(Direction::Redo);
+        assert_eq!(reads(&editing, take), [7, 20, 7]);
     }
 
     /// **Two windows over one take are one structure**: a stroke in one is
-    /// undone once, whichever asks.
+    /// one entry, undone once whichever asks, and each window's join is
+    /// stitched again over the list the step handed back.
     #[test]
     fn two_windows_over_one_take_are_one_structure() {
         let mut editing = Editing::default();
@@ -1136,7 +1111,13 @@ mod tests {
             .event(left, &event(50, 1, "draw", stroke(0.5, 0.0)))
             .unwrap();
         let undone = editing.step(Direction::Undo);
-        assert_eq!(written(&undone).len(), 1, "one write, not one per window");
+        assert!(undone.stepped);
+        assert_eq!(stitched(&undone), 2, "each window draws its own join");
+        assert_eq!(
+            (reads(&editing, left), reads(&editing, right)),
+            (vec![7], vec![7])
+        );
+        assert!(!editing.can_undo(), "one entry");
         assert!(undone.corrections.iter().any(|c| c.member == right));
     }
 
@@ -1284,7 +1265,7 @@ mod tests {
         let turned = editing.event(take, &undo).unwrap();
         let stepped = turned.stepped.expect("a step");
         assert!(stepped.stepped);
-        let Outcome::Samples(outcome) = &turned.outcome else {
+        let Outcome::Audio(outcome) = &turned.outcome else {
             panic!()
         };
         assert_eq!(
@@ -1306,7 +1287,8 @@ mod tests {
         };
         let take = call(
             &mut editing,
-            json!({"verb": "openSamples", "key": "buffer:7", "buffer": 7}),
+            json!({"verb": "openAudio", "key": "buffer:7", "take": 7, "frames": 100,
+                   "display": 9, "buffers": [20]}),
         )["member"]
             .clone();
         call(
@@ -1319,7 +1301,7 @@ mod tests {
                    "args": [50, 1, 0, "draw", 0, 2, [0.5], [0.0]]}),
         );
         assert_eq!(turned["version"], 2);
-        assert_eq!(turned["outcome"]["edit"]["values"], json!([0.5]));
+        assert_eq!(turned["outcome"]["record"]["label"], "draw the samples");
         let state = call(&mut editing, json!({"verb": "state"}));
         assert_eq!(
             call(&mut editing, json!({"verb": "moved"}))["version"],
@@ -1328,11 +1310,11 @@ mod tests {
         );
         assert_eq!(state["undoLabel"], "draw the samples");
         let stepped = call(&mut editing, json!({"verb": "step", "direction": "undo"}));
-        assert_eq!(stepped["effects"][0]["kind"], "samples");
+        assert_eq!(stepped["effects"][0]["kind"], "audio");
         assert_eq!(
             call(
                 &mut editing,
-                json!({"verb": "openSamples", "key": "x", "layers": []})
+                json!({"verb": "openAudio", "key": "x", "layers": []})
             )["error"]
                 .as_str()
                 .map(|e| e.contains("measures something")),
