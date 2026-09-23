@@ -70,7 +70,7 @@ class FakeAllocator {
     }
 }
 
-type Sent = [string, number[]];
+type Sent = [string, (number | string)[]];
 
 /**
  * Every message a take's steps send, in order, each answered the way the server
@@ -84,7 +84,10 @@ class FakeServer {
         return Promise.resolve(8192);
     }
     sendMsg(addr: string, ...args: unknown[]): void {
-        this.sent.push([addr, args.map((a) => (Array.isArray(a) ? Number(a[1]) : Number.NaN))]);
+        this.sent.push([
+            addr,
+            args.map((a) => (Array.isArray(a) ? (a[1] as number | string) : typeof a === "string" ? a : Number.NaN)),
+        ]);
     }
     request(addr: string, args: unknown[]): Promise<{ addr: string; args: unknown[] }> {
         this.sendMsg(addr, ...args);
@@ -121,7 +124,7 @@ const settle = async (): Promise<void> => {
 
 async function opened(
     take: FakeBuffer,
-    options: { historyBytes?: number } = {},
+    options: { historyBytes?: number; residentBytes?: number; scratch?: string } = {},
 ): Promise<[AudioEditor, FakeHost, number, Editing]> {
     const context = new Editing();
     const editor = new AudioEditor(take as never, { sampleRate: SR, context, ...options });
@@ -200,4 +203,23 @@ test("a cut moves no samples", async () => {
     assert.equal(editor.buffer.frames, 80);
     assert.equal(editor.undo(), true);
     assert.equal(editor.buffer.frames, 100);
+});
+
+test("a take past the resident budget goes to disk and comes back", async () => {
+    const take = new FakeBuffer();
+    const [editor, , wid, context] = await opened(take, { residentBytes: 0, scratch: "/scratch" });
+    for (const seq of [1, 2]) {
+        editor.apply("/gui_event", [wid, seq, context.version, "draw", 0, 10, [0.5], [0.0]]);
+        await settle();
+    }
+    const first = take.server.sent[take.server.addrs().indexOf("/buffer_alloc")]![1][0];
+    assert.ok(
+        take.server.sent.some(
+            ([addr, args]) => addr === "/buffer_write" && args[1] === `/scratch/take-${first}.wav`,
+        ),
+    );
+    take.server.sent = [];
+    assert.equal(editor.undo(), true);
+    await settle();
+    assert.deepEqual(take.server.addrs().slice(0, 2), ["/buffer_allocRead", "/buffer_stitch"]);
 });

@@ -964,7 +964,11 @@ lists reads (`history::Entry::holding`). The editing context gives those back: a
 every turn and step it hands the caller, as buffers to free, the takes no entry
 and no member reaches any more (`History::released_sources`), and a byte budget
 trims the oldest entries until what only the history holds fits
-(`History::trim_to_bytes`).
+(`History::trim_to_bytes`). A second budget keeps only part of that in memory:
+past it the oldest such takes are written to a scratch directory and their
+buffers freed, the buffer number staying the take's identity, and a step whose
+list reads one reads it back before stitching -- the same rule natively and in a
+page, whose server writes to the origin's private file system.
 
 **The editor's turns are here too** (`clausters_apps::multitrack::editor`). One
 `MultitrackEditor` holds one view's end of the conversation with the host and

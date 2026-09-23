@@ -10,8 +10,8 @@
 //! Each entry states the takes its two lists read, so the history holds them
 //! for as long as it can walk to them.
 
-use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -84,6 +84,13 @@ pub struct AudioEditor {
     frames: BTreeMap<i64, u64>,
     /// Buffers the caller handed over for new takes, next first.
     spare: Vec<i64>,
+    /// Where a take only the history holds is written when it leaves memory,
+    /// or `None` when none may.
+    scratch: Option<String>,
+    /// The takes that are on disk rather than in a buffer: each keeps its
+    /// buffer number as its identity, and is read back into it when a list
+    /// that reads it is stitched again.
+    spilled: BTreeSet<i64>,
     chunk: usize,
     name: Option<String>,
     layers: Vec<String>,
@@ -137,6 +144,8 @@ impl AudioEditor {
             list: Vec::new(),
             frames: BTreeMap::new(),
             spare: Vec::new(),
+            scratch: None,
+            spilled: BTreeSet::new(),
             chunk: DEFAULT_CHUNK,
             name: None,
             layers: measures(layers)?,
@@ -205,7 +214,91 @@ impl AudioEditor {
     pub fn forget(&mut self, buffer: i64) {
         if buffer != self.take {
             self.frames.remove(&buffer);
+            self.spilled.remove(&buffer);
         }
+    }
+
+    /// Whether the take in `buffer` is on disk rather than in its buffer --
+    /// so freeing it gives back a number and frees no buffer.
+    pub fn is_spilled(&self, buffer: i64) -> bool {
+        self.spilled.contains(&buffer)
+    }
+
+    /// Where the take in `buffer` is written when it leaves memory.
+    fn path(&self, buffer: i64) -> Option<String> {
+        let scratch = self.scratch.as_deref()?;
+        Some(format!(
+            "{}/take-{buffer}.wav",
+            scratch.trim_end_matches('/')
+        ))
+    }
+
+    /// **Takes a take out of memory**: the steps that write it to the scratch
+    /// path and free its buffer, or `None` for one that cannot go -- no
+    /// scratch, the take this editor opened, one the list reads now, one
+    /// already on disk, or one it never made. Written as float, so what is
+    /// read back is what was written.
+    pub fn spill(&mut self, buffer: i64) -> Option<Value> {
+        let path = self.path(buffer)?;
+        let reads = parts::sources(&self.list).contains(&SourceId(buffer as u64));
+        if buffer == self.take || reads || self.spilled.contains(&buffer) {
+            return None;
+        }
+        self.frames.get(&buffer)?;
+        self.spilled.insert(buffer);
+        let index = buffer as i32;
+        Some(steps_json(&[
+            send(
+                "/buffer_write",
+                vec![
+                    OscType::Int(index),
+                    OscType::String(path),
+                    OscType::String("wav".into()),
+                    OscType::String("float".into()),
+                ],
+            ),
+            Step::AwaitDone {
+                command: "/buffer_write".into(),
+                index: Some(index),
+            },
+            send("/buffer_free", vec![OscType::Int(index)]),
+            Step::AwaitDone {
+                command: "/buffer_free".into(),
+                index: Some(index),
+            },
+        ]))
+    }
+
+    /// A spill the caller could not carry out -- the write was refused, a
+    /// quota full -- so the take is still in its buffer.
+    pub fn kept(&mut self, buffer: i64) {
+        self.spilled.remove(&buffer);
+    }
+
+    /// The steps that read back every take on disk the list now reads, before
+    /// the join over it is stitched.
+    fn restored(&mut self) -> Vec<Step> {
+        let wanted: Vec<i64> = parts::sources(&self.list)
+            .iter()
+            .map(|s| s.0 as i64)
+            .filter(|b| self.spilled.contains(b))
+            .collect();
+        let mut steps = Vec::new();
+        for buffer in wanted {
+            let Some(path) = self.path(buffer) else {
+                continue;
+            };
+            self.spilled.remove(&buffer);
+            steps.push(send(
+                "/buffer_allocRead",
+                vec![OscType::Int(buffer as i32), OscType::String(path)],
+            ));
+            steps.push(Step::AwaitDone {
+                command: "/buffer_allocRead".into(),
+                index: Some(buffer as i32),
+            });
+        }
+        steps
     }
 
     /// **The steps that make the window's join what the list is** -- what
@@ -269,7 +362,9 @@ impl AudioEditor {
     /// payload is not a list.
     pub fn apply(&mut self, payload: &Value) -> Option<Value> {
         self.list = parts::read(&Opaque(payload.clone()))?;
-        Some(steps_json(&self.stitched()))
+        let mut steps = self.restored();
+        steps.extend(self.stitched());
+        Some(steps_json(&steps))
     }
 
     /// **One message from the host**, read and answered.
@@ -366,6 +461,7 @@ impl AudioEditor {
         match edited {
             Ok(Some((label, list, mut steps))) => {
                 let before = std::mem::replace(&mut self.list, list);
+                steps.extend(self.restored());
                 steps.extend(self.stitched());
                 out.record = Some(self.record(&label, &before));
                 out.steps = Some(steps_json(&steps));
@@ -701,6 +797,8 @@ struct Facts {
     /// Buffers for new takes, appended to what the editor already holds.
     buffers: Option<Vec<i64>>,
     chunk: Option<usize>,
+    /// The directory a take leaves memory for.
+    scratch: Option<String>,
     #[serde(deserialize_with = "present")]
     name: Option<Option<String>>,
     layers: Option<Vec<String>>,
@@ -743,6 +841,9 @@ impl AudioEditor {
         if let Some(buffers) = facts.buffers {
             self.spare.extend(buffers);
         }
+        if let Some(scratch) = facts.scratch.filter(|s| !s.is_empty()) {
+            self.scratch = Some(scratch);
+        }
         if let Some(chunk) = facts.chunk {
             self.chunk = chunk.max(1);
         }
@@ -765,8 +866,9 @@ impl AudioEditor {
 }
 
 /// **An editor built from a JSON request** -- `take`, `frames`, `channels`,
-/// `rate`, `display`, `buffers`, `chunk`, `name`, `layers`, `title`, `w`, `h`
-/// and `version` -- or the reason it cannot be.
+/// `rate`, `display`, `buffers`, `chunk`, `scratch` (the directory a take only
+/// the history holds is written to when it leaves memory), `name`, `layers`,
+/// `title`, `w`, `h` and `version` -- or the reason it cannot be.
 pub fn new_json(request: &str) -> Result<AudioEditor, String> {
     let facts: Facts =
         serde_json::from_str(request).map_err(|e| format!("not an audio editor request: {e}"))?;
@@ -806,6 +908,8 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
 /// - `apply` -- `payload`: `{"steps"}` for a list the history handed back, or
 ///   `{}` for a payload that is not one.
 /// - `parts` -- `{"parts", "frames"}`: the list, and how long it is.
+/// - `kept` -- `buffer`: a spill the caller could not carry out, so that take
+///   is still in its buffer. Answers `{}`.
 /// - `acknowledge` -- `seq`, `version`, `reason`: an [`Answer`].
 ///
 /// An unknown verb answers `{}`.
@@ -851,6 +955,10 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
             None => "{}".into(),
         },
         "parts" => json!({ "parts": editor.list(), "frames": editor.length() }).to_string(),
+        "kept" => {
+            editor.kept(int(&get("buffer")));
+            "{}".into()
+        }
         "acknowledge" => serde_json::to_string(&editor.acknowledge(
             int(&get("seq")),
             version,

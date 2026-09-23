@@ -173,5 +173,19 @@ def test_a_cut_moves_no_samples():
     assert editor.buffer.frames == 100
 
 
+def test_a_take_past_the_resident_budget_goes_to_disk_and_comes_back():
+    take = FakeBuffer()
+    editor, _host, wid, context = opened(take, resident_bytes=0, scratch="/scratch")
+    for seq in (1, 2):
+        editor.apply("/gui_event", [wid, seq, context.version, "draw", 0, 10,
+                                    [0.5], [0.0]])
+    first = take.server.sent[take.server.addrs().index("/buffer_alloc")][1][0]
+    assert ("/buffer_write", (first, f"/scratch/take-{first}.wav", "wav", "float")) \
+        in take.server.sent
+    take.server.sent.clear()
+    assert editor.undo() is True
+    assert take.server.addrs()[:2] == ["/buffer_allocRead", "/buffer_stitch"]
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))

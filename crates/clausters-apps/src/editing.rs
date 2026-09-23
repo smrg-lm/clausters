@@ -167,6 +167,10 @@ pub struct Turned {
     /// which stop the joins from reading them.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub freed: Vec<Freed>,
+    /// **The takes to write to disk**, once the turn's own steps are carried
+    /// out: past the resident budget, the oldest takes only the history holds.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub stored: Vec<Stored>,
     /// The version after the turn.
     pub version: i64,
 }
@@ -227,8 +231,25 @@ pub enum Effect {
 pub struct Freed {
     /// The member whose take they were.
     pub member: MemberId,
-    /// The buffers.
+    /// The buffer numbers, to give back.
     pub buffers: Vec<i64>,
+    /// Those of them whose take was on disk: the number goes back, and there
+    /// is no buffer on the server to free.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub spilled: Vec<i64>,
+}
+
+/// **A take leaving memory**: only the history holds it, and the resident
+/// budget is past. The member's steps write it to disk and free its buffer; a
+/// caller that cannot carry them out tells the member it was `kept`.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Stored {
+    /// The member whose take it is.
+    pub member: MemberId,
+    /// Its buffer, which stays its number while it is on disk.
+    pub buffer: i64,
+    /// The steps that write it and free the buffer.
+    pub steps: Value,
 }
 
 /// **What a step of the history came to.**
@@ -249,6 +270,9 @@ pub struct Stepped {
     /// [`Turned::freed`].
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub freed: Vec<Freed>,
+    /// The takes to write to disk. See [`Turned::stored`].
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub stored: Vec<Stored>,
     /// The version after the step.
     pub version: i64,
 }
@@ -262,6 +286,9 @@ pub struct Editing {
     keys: HashMap<String, StructureId>,
     /// The most bytes of takes only the history holds, when there is a limit.
     bytes: Option<u64>,
+    /// The most of those bytes kept in memory, when there is a limit; the rest
+    /// is on disk.
+    resident: Option<u64>,
 }
 
 impl Default for Editing {
@@ -279,7 +306,16 @@ impl Editing {
             seats: Vec::new(),
             keys: HashMap::new(),
             bytes: None,
+            resident: None,
         }
+    }
+
+    /// **Keeps at most `bytes` of the takes only the history holds in
+    /// memory**, or lifts the limit with `None`. Past it the oldest go to disk,
+    /// through the member that made them, and a step that needs one reads it
+    /// back.
+    pub fn set_resident(&mut self, bytes: Option<u64>) {
+        self.resident = bytes;
     }
 
     /// **Limits the takes only the history holds to `bytes`**, or lifts the
@@ -292,7 +328,7 @@ impl Editing {
     /// **The takes no entry and no member reaches any more**, forgotten by
     /// every member and handed back as the buffers to free -- after the byte
     /// limit, when there is one, has trimmed the pile.
-    fn release(&mut self) -> Vec<Freed> {
+    fn release(&mut self) -> (Vec<Freed>, Vec<Stored>) {
         let editors: Vec<&AudioEditor> = self
             .seats
             .iter()
@@ -330,12 +366,24 @@ impl Editing {
                 continue;
             };
             let member = owner as MemberId;
-            match out.iter_mut().find(|f| f.member == member) {
-                Some(freed) => freed.buffers.push(buffer),
-                None => out.push(Freed {
-                    member,
-                    buffers: vec![buffer],
-                }),
+            let spilled = matches!(
+                &self.seats[owner].member,
+                Member::Audio(editor) if editor.is_spilled(buffer)
+            );
+            let at = match out.iter().position(|f| f.member == member) {
+                Some(at) => at,
+                None => {
+                    out.push(Freed {
+                        member,
+                        buffers: Vec::new(),
+                        spilled: Vec::new(),
+                    });
+                    out.len() - 1
+                }
+            };
+            out[at].buffers.push(buffer);
+            if spilled {
+                out[at].spilled.push(buffer);
             }
         }
         for seat in &mut self.seats {
@@ -345,6 +393,63 @@ impl Editing {
                         editor.forget(*buffer);
                     }
                 }
+            }
+        }
+        let stored = self.store();
+        (out, stored)
+    }
+
+    /// **The takes past the resident budget, out of memory**: of the takes
+    /// only the history holds and still in a buffer, the oldest go to disk
+    /// until what is left fits.
+    fn store(&mut self) -> Vec<Stored> {
+        let Some(limit) = self.resident else {
+            return Vec::new();
+        };
+        let rooted: Vec<SourceId> = self
+            .seats
+            .iter()
+            .filter_map(|seat| match &seat.member {
+                Member::Audio(editor) => Some(editor.rooted()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        // Oldest first: the order the pile names them in.
+        let mut resident: Vec<(usize, i64, u64)> = Vec::new();
+        for source in self.history.held_sources() {
+            if rooted.contains(&source) {
+                continue;
+            }
+            let buffer = source.0 as i64;
+            let found = self.seats.iter().position(
+                |seat| matches!(&seat.member, Member::Audio(e) if e.bytes(buffer).is_some()),
+            );
+            let Some(owner) = found else {
+                continue;
+            };
+            if let Member::Audio(editor) = &self.seats[owner].member
+                && !editor.is_spilled(buffer)
+                && let Some(bytes) = editor.bytes(buffer)
+            {
+                resident.push((owner, buffer, bytes));
+            }
+        }
+        let mut total: u64 = resident.iter().map(|(_, _, b)| b).sum();
+        let mut out = Vec::new();
+        for (owner, buffer, bytes) in resident {
+            if total <= limit {
+                break;
+            }
+            if let Member::Audio(editor) = &mut self.seats[owner].member
+                && let Some(steps) = editor.spill(buffer)
+            {
+                total -= bytes;
+                out.push(Stored {
+                    member: owner as MemberId,
+                    buffer,
+                    steps,
+                });
             }
         }
         out
@@ -535,12 +640,13 @@ impl Editing {
             }
             stepped = Some(step);
         }
-        let freed = self.release();
+        let (freed, stored) = self.release();
         Some(Turned {
             outcome,
             stepped,
             corrections,
             freed,
+            stored,
             version: self.version,
         })
     }
@@ -564,6 +670,7 @@ impl Editing {
             effects: Vec::new(),
             corrections: Vec::new(),
             freed: Vec::new(),
+            stored: Vec::new(),
             version: self.version,
         };
         let Some(walked) = self.history.walk(direction) else {
@@ -629,7 +736,7 @@ impl Editing {
         out.stepped = true;
         out.version = self.version;
         out.corrections = self.corrections(None);
-        out.freed = self.release();
+        (out.freed, out.stored) = self.release();
         out
     }
 
@@ -692,6 +799,9 @@ struct RecordedLeg {
 ///   or `{"error"}`.
 /// - `bytes` -- `bytes`, or `null` for none: the most bytes of takes only the
 ///   history may hold. Answers `{}`.
+/// - `resident` -- `bytes`, or `null` for none: the most of those kept in
+///   memory; past it the oldest go to disk (a turn's and a step's `stored`).
+///   Answers `{}`.
 /// - `external` -- `key`, `domain`: `{"member", "structure"}`.
 /// - `event` -- `member`, `addr`, `args`: a [`Turned`], or `null`.
 /// - `step` -- `direction` (`"undo"` or `"redo"`): a [`Stepped`].
@@ -737,6 +847,10 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
         },
         "bytes" => {
             editing.set_bytes(get(&request, "bytes").as_u64());
+            "{}".into()
+        }
+        "resident" => {
+            editing.set_resident(get(&request, "bytes").as_u64());
             "{}".into()
         }
         "external" => {
@@ -1305,5 +1419,66 @@ mod tests {
             .map(|p| p["source"]["source"].as_u64().unwrap())
             .collect();
         assert_eq!(reads, [3, 22, 3]);
+    }
+
+    /// **Past the resident budget the oldest take only the history holds goes
+    /// to disk**, and the step that needs it reads it back before stitching.
+    #[test]
+    fn a_take_past_the_resident_budget_goes_to_disk_and_comes_back() {
+        let mut editing = Editing::default();
+        let take = an_audio_take(&mut editing);
+        call(
+            &mut editing,
+            json!({"verb": "member", "member": take,
+                   "call": {"verb": "sync", "scratch": "/scratch"}}),
+        );
+        // One frame is four bytes: nothing only the history holds stays in
+        // memory.
+        call(&mut editing, json!({"verb": "resident", "bytes": 0}));
+        draw(&mut editing, take, 1, 10);
+        let second = draw(&mut editing, take, 2, 10);
+        assert_eq!(second["stored"][0]["buffer"], 20, "the first stroke's take");
+        let steps = second["stored"][0]["steps"].as_array().unwrap();
+        assert_eq!(steps[0]["send"]["addr"], "/buffer_write");
+        assert_eq!(
+            steps[0]["send"]["args"][1],
+            json!({"s": "/scratch/take-20.wav"})
+        );
+        assert_eq!(steps[2]["send"]["addr"], "/buffer_free");
+
+        // Undo the second stroke: the list reads the first one's take again,
+        // so it is read back before the join is stitched.
+        let undone = call(&mut editing, json!({"verb": "step", "direction": "undo"}));
+        let steps = undone["effects"][0]["steps"].as_array().unwrap();
+        assert_eq!(steps[0]["send"]["addr"], "/buffer_allocRead");
+        assert_eq!(
+            steps[0]["send"]["args"][1],
+            json!({"s": "/scratch/take-20.wav"})
+        );
+        assert_eq!(steps[2]["send"]["addr"], "/buffer_stitch");
+        // ...and the take the undo left behind is now the one on disk.
+        assert_eq!(undone["stored"][0]["buffer"], 21);
+    }
+
+    /// **A take on disk that the history lets go of frees no buffer**: its
+    /// number goes back, and there is nothing on the server to free.
+    #[test]
+    fn a_take_freed_from_disk_frees_no_buffer() {
+        let mut editing = Editing::default();
+        let take = an_audio_take(&mut editing);
+        call(
+            &mut editing,
+            json!({"verb": "member", "member": take,
+                   "call": {"verb": "sync", "scratch": "/scratch"}}),
+        );
+        call(&mut editing, json!({"verb": "resident", "bytes": 0}));
+        call(&mut editing, json!({"verb": "bytes", "bytes": 4}));
+        draw(&mut editing, take, 1, 10);
+        draw(&mut editing, take, 2, 10);
+        let third = draw(&mut editing, take, 3, 10);
+        assert_eq!(
+            third["freed"],
+            json!([{"member": take, "buffers": [20], "spilled": [20]}])
+        );
     }
 }

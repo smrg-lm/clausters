@@ -194,6 +194,13 @@ class Editing:
         if self.core is not None:
             self.core.call("bytes", bytes=None if bytes is None else int(bytes))
 
+    def limit_resident(self, bytes: "int | None") -> None:
+        """**Keeps at most ``bytes`` of the takes only the history holds in
+        memory**, or lifts the limit with ``None``. Past it the oldest are
+        written to disk and read back when a step needs them."""
+        if self.core is not None:
+            self.core.call("resident", bytes=None if bytes is None else int(bytes))
+
     def event(self, member: int, addr: str, args: list) -> dict:
         """**One message to a member**, read, recorded and answered by the
         crate: ``{"outcome", "stepped"?, "corrections", "version"}``."""
@@ -233,18 +240,25 @@ class Editing:
             for payload in effect.get("payloads") or ():
                 if isinstance(payload, dict):
                     handler.project(structure, payload)
-        self.release(stepped.get("freed"))
+        self.release(stepped.get("freed"), stepped.get("stored"))
 
-    def release(self, freed) -> None:
-        """**Free the takes nothing reaches any more** -- what a turn or a step
-        hands back as ``freed``, each list under the member that made those
-        takes, whose server they are on. Called after the turn's own steps are
+    def release(self, freed, stored=None) -> None:
+        """**Free the takes nothing reaches any more, and write to disk the
+        ones past the resident budget** -- what a turn or a step hands back as
+        ``freed`` and ``stored``, each under the member that made those takes,
+        whose server they are on. Called after the turn's own steps are
         carried out, so no join is still reading them."""
         for entry in freed or ():
             structure, handler = self._handlers.get(int(entry.get("member", -1)),
                                                     (None, None))
             if handler is not None and hasattr(handler, "free"):
-                handler.free(structure, entry.get("buffers") or [])
+                handler.free(structure, entry.get("buffers") or [],
+                             entry.get("spilled") or [])
+        for entry in stored or ():
+            member = int(entry.get("member", -1))
+            structure, handler = self._handlers.get(member, (None, None))
+            if handler is not None and hasattr(handler, "store"):
+                handler.store(structure, int(entry["buffer"]), entry.get("steps") or [])
 
     def _state(self) -> dict:
         return {} if self.core is None else self.core.call("state")

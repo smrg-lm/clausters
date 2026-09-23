@@ -206,8 +206,9 @@ opened it.
     `"mix"`. **Not done, and it is the next step rather than this one's**: the
     standalone host has no audio editor, because it has no way to open one --
     see `X1.9`.
-  - ⬜ **X1.6 - Disk and saving**: takes as regions under `--shm`, a save
-    promoting what the document reaches, the browser's backing decided.
+  - ✅ **X1.6 - Disk**: takes as regions under `--shm`, the browser's
+    backing decided. *(Saving moved to `X1.9`, where it is what reaches the
+    multitrack.)*
     **Decided with the user 2026-09-22: the browser uses its file system
     (the origin's private one, which `/buffer_write` and `/buffer_allocRead`
     already reach in a page) within the quota it is given.** That makes the
@@ -219,32 +220,41 @@ opened it.
     buffer number stays the take's identity while it is on disk. It helps
     natively too: a region under `--shm` lives in `/dev/shm`, which is
     memory. The byte budget stays the bound on everything the history
-    holds, spilled or not, and a write the quota refuses trims the oldest
-    entries instead. The scratch directory is the caller's to name; a file
-    is named by the buffer it held, so a directory holds at most one file
-    per buffer number the session ever used.
+    holds, spilled or not, and a write the server refuses -- a quota full --
+    leaves the take in memory (the member is told it was `kept`). The
+    scratch directory is the caller's to name; a file is named by the buffer
+    it held, so a directory holds at most one file per buffer number the
+    session ever used.
+    *Landed as the context's `resident` budget beside `bytes`: a turn and a
+    step answer `stored` (the steps that write a take and free its buffer),
+    a step that needs one back reads it before stitching, and a take freed
+    from disk gives back its number without a `/buffer_free`. Both clients
+    take `resident_bytes`/`residentBytes` and a `scratch` directory (a
+    temporary one natively, one named after the join in a page); checked
+    against a real server, where a take written out and read back returns
+    exact.*
   - ⬜ **X1.7 - A step re-reads what it changed** (the `/gui_ack` generation,
     above).
   - ✅ **X1.8 - The books and the example** that is this milestone's manual
     test. `edit_audio.py` / `edit-audio.html`; both clients' composition
     chapters and `docs/architecture.md`. The script was checked by hand
     (2026-09-22): cut, undo and redo, copy, paste at the cursor.
-  - ⬜ **X1.9 - A box entered from the multitrack opens the audio editor, and
-    the edit reaches the region.** Entering a take today opens the samples
-    editor over the take's own buffer, which writes the take in place -- the
-    one thing this design forbids. What an entered take edits has to become
-    a source the region windows, and **the decision** is when: every turn
-    (the region names the edited list as a new `Location::Segments` source,
-    so the multitrack plays the edit as it is made) or a confirmation (the
-    region keeps the take until the edit is taken). **Decided with the user
-    2026-09-22: every turn.** So a turn of an audio editor entered from a
-    box is one entry with two legs -- the list, and the region repointed to
-    the source the list now is -- and the takes an edit makes enter the
-    session's source table as temporary sources; which number a take is
-    known by on each side (a buffer to the audio editor, a `SourceId` to the
-    document) is the first thing this step settles. The standalone host gets
-    its audio editor through the same door, since entering a box is the one
-    way it has to open one.
+  - ⬜ **X1.9 - Saving the edited take, and a multitrack that receives it.**
+    **Reshaped with the user 2026-09-22**, replacing the "every turn" answer
+    taken earlier that day: **the multitrack and the audio editor are
+    unrelated applications**. Opening a take of the multitrack in an audio
+    editor is opening another application -- its own editing context, its
+    own undo order -- and nothing it does reaches the multitrack while it
+    edits. **What reaches the multitrack is a save**: when the audio editor
+    writes what it edited to disk, the multitrack receives the change. Two
+    things to build. *Saving*: the join written out as a file (a verb of the
+    editor, over `/buffer_write` of the join, which reads through its parts).
+    *Receiving*: a multitrack whose source names that file reads it again,
+    which is where the source's generation counter is the answer rather than
+    a new mechanism. And one to wire: entering a box from the multitrack
+    opens the audio editor as a separate application, in the clients and in
+    the standalone host -- which today opens the samples editor, one that
+    writes the take in place.
 
   **Open, and not decided here:** the browser has no mapping, so whether its
   history stays in memory under the byte budget or goes to OPFS; the budgets'

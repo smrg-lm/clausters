@@ -96,14 +96,36 @@ export class AudioDomain extends Domain<Buffer> {
         return true;
     }
 
-    /** Free takes the context handed back: nothing reaches them any more. */
-    free(_structure: Buffer, buffers: number[]): void {
+    /**
+     * Free takes the context handed back: nothing reaches them any more. A take
+     * on disk (`spilled`) has no buffer to free, only its number to give back.
+     */
+    free(_structure: Buffer, buffers: number[], spilled: number[] = []): void {
         const editor = this.editor;
         if (editor === null || buffers.length === 0) return;
         this.#queue(async () => {
             for (const bufnum of buffers) {
-                editor.server.sendMsg("/buffer_free", ["i", Math.trunc(bufnum)]);
+                if (!spilled.includes(bufnum)) {
+                    editor.server.sendMsg("/buffer_free", ["i", Math.trunc(bufnum)]);
+                }
                 editor.server.buffers.free(Math.trunc(bufnum));
+            }
+        });
+    }
+
+    /**
+     * Write a take to disk and free its buffer. A write the server refuses --
+     * the page's storage full -- leaves the take in memory, and the crate is
+     * told so.
+     */
+    store(_structure: Buffer, buffer: number, steps: unknown[]): void {
+        const editor = this.editor;
+        if (editor === null) return;
+        this.#work = this.#work.then(async () => {
+            try {
+                await runSteps(editor.server, editor.runner, steps as never);
+            } catch {
+                editor.coreCall("kept", { buffer });
             }
         });
     }
@@ -193,6 +215,10 @@ export class AudioEditor extends Editor<Buffer> {
         this.structureId = opened.identity;
         if (options.historyBytes !== undefined && options.historyBytes !== null) {
             this.editing.limitBytes(options.historyBytes);
+        }
+        if (options.residentBytes !== undefined && options.residentBytes !== null) {
+            this.coreCall("sync", { scratch: options.scratch ?? `clausters-audio/${this.display}` });
+            this.editing.limitResident(options.residentBytes);
         }
         this.topUp();
         domain.run(take, (this.coreCall("open").steps as unknown[] | undefined) ?? []);
@@ -288,11 +314,11 @@ export class AudioEditor extends Editor<Buffer> {
         if (outcome.turn === "step") {
             const stepped = this.app.stepped(this.editing, turned.stepped ?? {}, this);
             this.echo.send(outcome.answer);
-            this.editing.release(turned.freed);
+            this.editing.release(turned.freed, turned.stored);
             return stepped;
         }
         const changed = this.take(outcome);
-        this.editing.release(turned.freed);
+        this.editing.release(turned.freed, turned.stored);
         return changed;
     }
 
@@ -306,7 +332,7 @@ export class AudioEditor extends Editor<Buffer> {
             plain([wid, 0, 0, tag, ...values]) as unknown[],
         );
         const changed = this.take((turned.outcome ?? {}) as Outcome);
-        this.editing.release(turned.freed);
+        this.editing.release(turned.freed, turned.stored);
         return changed;
     }
 
@@ -373,4 +399,16 @@ export interface AudioEditorOptions extends GenericEditorOptions<Buffer> {
     layers?: readonly string[];
     /** The most bytes of takes only the history may hold; absent for no limit. */
     historyBytes?: number | null;
+    /**
+     * The most of those kept in memory; absent for all of them. Past it the
+     * oldest are written to `scratch` and read back when an undo or a redo
+     * needs them.
+     */
+    residentBytes?: number | null;
+    /**
+     * The directory, on the server's filesystem -- the page's own storage, in a
+     * tab -- a take leaves memory for. One named after the editor's join when
+     * not given.
+     */
+    scratch?: string;
 }

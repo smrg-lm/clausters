@@ -66,7 +66,7 @@ new list of spans over the take and over the takes the edits made: a stroke is a
 new take the size of the stroke, spliced over the frames it was drawn on. An undo
 is the list before, stitched again, so it costs the list and not the samples.
 The takes a history can still reach are kept, and freed when it cannot;
-`historyBytes` caps what only the history holds. `editor.buffer` is the edited
+`historyBytes` caps what only the history holds, and `residentBytes` how much of that stays in memory -- past it the oldest takes are written to the page's own storage (`scratch`) and read back when an undo reaches them. `editor.buffer` is the edited
 take, to play or read, and `editor.parts` what it is made of.
 
 ```ts

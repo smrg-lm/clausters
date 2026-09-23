@@ -59,8 +59,13 @@ export interface StepHandler extends Applier {
     stepped?(structure: never | object, applied: Record<string, unknown>): void;
     /** An audio editor's: carry out the steps that stitch its take again. */
     run?(structure: never | object, steps: unknown[]): void;
-    /** An audio editor's: free takes nothing reaches any more. */
-    free?(structure: never | object, buffers: number[]): void;
+    /**
+     * An audio editor's: free takes nothing reaches any more. A take on disk
+     * (`spilled`) has no buffer to free, only its number to give back.
+     */
+    free?(structure: never | object, buffers: number[], spilled: number[]): void;
+    /** An audio editor's: write a take to disk and free its buffer. */
+    store?(structure: never | object, buffer: number, steps: unknown[]): void;
 }
 
 /**
@@ -119,8 +124,23 @@ export interface Effect {
 export interface Freed {
     /** The member whose takes they were. */
     member: number;
-    /** The buffers. */
+    /** The buffer numbers, to give back. */
     buffers: number[];
+    /** Those whose take was on disk: no buffer on the server to free. */
+    spilled?: number[];
+}
+
+/**
+ * **A take leaving memory**: only the history holds it, and the resident budget
+ * is past.
+ */
+export interface Stored {
+    /** The member whose take it is. */
+    member: number;
+    /** Its buffer, which stays its number while it is on disk. */
+    buffer: number;
+    /** The steps that write it and free the buffer. */
+    steps: unknown[];
 }
 
 /** **What a step of the order came to.** */
@@ -133,6 +153,8 @@ export interface Stepped {
     effects?: Effect[];
     /** The takes to free, once the effects are carried out. */
     freed?: Freed[];
+    /** The takes to write to disk, once the effects are carried out. */
+    stored?: Stored[];
     /** The version after the step. */
     version?: number;
 }
@@ -145,6 +167,8 @@ export interface Turned {
     stepped?: Stepped;
     /** The takes to free, once the turn's own steps are carried out. */
     freed?: Freed[];
+    /** The takes to write to disk, once the turn's own steps are carried out. */
+    stored?: Stored[];
     /** The version after the turn. */
     version?: number;
 }
@@ -340,6 +364,15 @@ export class Editing {
         if (this.#core !== null) this.#call("bytes", { bytes });
     }
 
+    /**
+     * **Keeps at most `bytes` of the takes only the history holds in memory**,
+     * or lifts the limit with `null`. Past it the oldest are written to disk
+     * and read back when a step needs them.
+     */
+    limitResident(bytes: number | null): void {
+        if (this.#core !== null) this.#call("resident", { bytes });
+    }
+
     /** **One message to a member**, read, recorded and answered by the crate. */
     event(member: number, addr: string, args: unknown[]): Turned {
         const turned = this.#call("event", { member, addr, args }) as Turned | null;
@@ -383,20 +416,26 @@ export class Editing {
                 }
             }
         }
-        this.release(stepped.freed);
+        this.release(stepped.freed, stepped.stored);
     }
 
     /**
-     * **Free the takes nothing reaches any more** -- what a turn or a step hands
-     * back as `freed`, each list under the member that made those takes, whose
-     * server they are on. Called after the turn's own steps are carried out, so
-     * no join is still reading them.
+     * **Free the takes nothing reaches any more, and write to disk the ones past
+     * the resident budget** -- what a turn or a step hands back as `freed` and
+     * `stored`, each under the member that made those takes, whose server they
+     * are on. Called after the turn's own steps are carried out, so no join is
+     * still reading them.
      */
-    release(freed: readonly Freed[] | undefined): void {
+    release(freed: readonly Freed[] | undefined, stored?: readonly Stored[]): void {
         for (const entry of freed ?? []) {
             const held = this.handlers.get(Number(entry.member));
             if (held === undefined || held.handler === null) continue;
-            held.handler.free?.(held.structure as never, entry.buffers ?? []);
+            held.handler.free?.(held.structure as never, entry.buffers ?? [], entry.spilled ?? []);
+        }
+        for (const entry of stored ?? []) {
+            const held = this.handlers.get(Number(entry.member));
+            if (held === undefined || held.handler === null) continue;
+            held.handler.store?.(held.structure as never, Number(entry.buffer), entry.steps ?? []);
         }
     }
 

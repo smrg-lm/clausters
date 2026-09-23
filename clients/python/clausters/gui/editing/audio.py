@@ -27,6 +27,7 @@ entries go first.
 
 from ... import _native
 from ..._steps import run_steps
+from ...errors import CommandError
 from ...defs._wire import resolve as _resolve
 from .domain import Domain
 from .editor import Editor
@@ -60,14 +61,28 @@ class AudioDomain(Domain):
         run_steps(editor._server, editor._runner, steps)
         return True
 
-    def free(self, structure, buffers) -> None:
-        """Free takes the context handed back: nothing reaches them any more."""
+    def free(self, structure, buffers, spilled=()) -> None:
+        """Free takes the context handed back: nothing reaches them any more.
+        A take on disk (``spilled``) has no buffer to free, only its number to
+        give back."""
         editor = self.editor
         if editor is None:
             return
         for bufnum in buffers:
-            editor._server.send_msg("/buffer_free", int(bufnum))
+            if bufnum not in spilled:
+                editor._server.send_msg("/buffer_free", int(bufnum))
             editor._server.buffers.free(int(bufnum))
+
+    def store(self, structure, buffer: int, steps) -> None:
+        """Write a take to disk and free its buffer. A write the server refuses
+        -- no room -- leaves the take in memory, and the crate is told so."""
+        editor = self.editor
+        if editor is None:
+            return
+        try:
+            run_steps(editor._server, editor._runner, steps)
+        except CommandError:
+            editor._call("kept", buffer=int(buffer))
 
 
 class AudioEditor(Editor):
@@ -84,11 +99,17 @@ class AudioEditor(Editor):
         layers: what the picture measures, innermost last.
         history_bytes: the most bytes of takes only the history may hold, or
             ``None`` for no limit.
+        resident_bytes: the most of those kept in memory, or ``None`` for all
+            of them; past it the oldest are written to ``scratch`` and read
+            back when an undo or a redo needs them.
+        scratch: the directory, on the server's filesystem, a take leaves
+            memory for. A temporary one when not given.
     """
 
     def __init__(self, take, *, sample_rate: float = 0.0, title: str = "Audio",
                  layers=MEASURES, history_bytes: "int | None" = None,
-                 **options):
+                 resident_bytes: "int | None" = None,
+                 scratch: "str | None" = None, **options):
         rate = float(sample_rate or getattr(take, "sample_rate", 0.0) or 48_000.0)
         view = SamplesView(layers)
         domain = AudioDomain()
@@ -108,6 +129,12 @@ class AudioEditor(Editor):
              "layers": list(view.layers)}, take, domain)
         if history_bytes is not None:
             self._editing.limit_bytes(history_bytes)
+        if resident_bytes is not None:
+            if scratch is None:
+                import tempfile
+                scratch = tempfile.mkdtemp(prefix="clausters-audio-")
+            self._call("sync", scratch=str(scratch))
+            self._editing.limit_resident(resident_bytes)
         self._top_up()
         domain.run(take, self._call("open").get("steps") or [])
 
@@ -165,10 +192,10 @@ class AudioEditor(Editor):
         if outcome.get("turn") == "step":
             stepped = self.app.stepped(turned.get("stepped") or {}, self)
             self.echo.send(outcome.get("answer"))
-            self._editing.release(turned.get("freed"))
+            self._editing.release(turned.get("freed"), turned.get("stored"))
             return stepped
         changed = self._take(outcome)
-        self._editing.release(turned.get("freed"))
+        self._editing.release(turned.get("freed"), turned.get("stored"))
         return changed
 
     def _route(self, args) -> bool:
@@ -178,7 +205,7 @@ class AudioEditor(Editor):
         turned = self._editing.event(self._member, "/gui_event",
                                      _plain([wid, 0, 0, tag, *values]))
         changed = self._take(turned.get("outcome") or {})
-        self._editing.release(turned.get("freed"))
+        self._editing.release(turned.get("freed"), turned.get("stored"))
         return changed
 
     def _take(self, outcome: dict) -> bool:
