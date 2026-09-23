@@ -2077,7 +2077,14 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   each half reaches (`history::Entry::holding`), the history reports the ones
   none reaches any more (`History::released_sources`) and trims by bytes
   (`History::trim_to_bytes`); the audio editor's context frees them and spills
-  the oldest to disk past a resident budget. The multitrack's own joins do
-  not record their holdings yet -- their entries go through the document's
-  log -- so that half is still open, and it is a smaller question now that
-  the mechanism exists.
+  the oldest to disk past a resident budget. What is left for the multitrack
+  is the entry below.
+
+- ⬜ **The multitrack's joins do not say which takes they hold** *(found
+  2026-09-22, closing the entry above)*. The history can now hold and give
+  back takes (`Entry::holding`, `History::released_sources`), and the audio
+  editor uses it. A multitrack's entries go through the document's log and
+  name no sources, so a join minted and undone is still kept for as long as
+  the session runs. The mechanism exists; what is missing is the multitrack's
+  entries stating the sources their two halves reach, and a caller (the
+  clients, the standalone host) freeing what comes back.
