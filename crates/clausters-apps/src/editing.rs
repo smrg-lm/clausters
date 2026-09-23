@@ -32,12 +32,13 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use clausters_document::Opaque;
 use clausters_document::history::{Direction, Entry, History, Step, StructureId};
 use clausters_document::multitrack::edit::MULTITRACK;
 use clausters_document::samples::SAMPLES;
+use clausters_document::{Opaque, SourceId};
 use clausters_editing::conversation::Answer;
 
+use crate::audio::editor::{self as audio, AudioEditor};
 use crate::multitrack::editor::{self as multitrack, MultitrackEditor};
 use crate::samples::editor::{self as samples, SamplesEditor};
 use crate::turn::{Event, Kind, Record, int};
@@ -56,6 +57,8 @@ pub enum Member {
     Multitrack(Box<MultitrackEditor>),
     /// A samples editor over a take.
     Samples(SamplesEditor),
+    /// An audio editor over a take made of parts.
+    Audio(Box<AudioEditor>),
     /// A structure the crate does not apply: the context records and walks for
     /// it, and hands its legs back to be applied.
     External {
@@ -69,6 +72,7 @@ impl Member {
         match self {
             Member::Multitrack(_) => MULTITRACK.into(),
             Member::Samples(_) => SAMPLES.into(),
+            Member::Audio(_) => audio::DOMAIN.into(),
             Member::External { domain } => domain.clone(),
         }
     }
@@ -89,6 +93,8 @@ pub enum Outcome {
     Multitrack(multitrack::Outcome),
     /// A samples editor's.
     Samples(samples::Outcome),
+    /// An audio editor's.
+    Audio(audio::Outcome),
 }
 
 impl Outcome {
@@ -96,6 +102,7 @@ impl Outcome {
         match self {
             Outcome::Multitrack(o) => o.turn,
             Outcome::Samples(o) => o.turn,
+            Outcome::Audio(o) => o.turn,
         }
     }
 
@@ -103,6 +110,7 @@ impl Outcome {
         match self {
             Outcome::Multitrack(o) => o.record.as_ref(),
             Outcome::Samples(o) => o.record.as_ref(),
+            Outcome::Audio(o) => o.record.as_ref(),
         }
     }
 
@@ -110,6 +118,7 @@ impl Outcome {
         match self {
             Outcome::Multitrack(o) => o.changed,
             Outcome::Samples(o) => o.changed,
+            Outcome::Audio(o) => o.changed,
         }
     }
 
@@ -117,6 +126,7 @@ impl Outcome {
         match self {
             Outcome::Multitrack(o) => o.version,
             Outcome::Samples(o) => o.version,
+            Outcome::Audio(o) => o.version,
         }
     }
 
@@ -124,6 +134,7 @@ impl Outcome {
         match self {
             Outcome::Multitrack(o) => (o.seq, o.redo),
             Outcome::Samples(o) => (o.seq, o.redo),
+            Outcome::Audio(o) => (o.seq, o.redo),
         }
     }
 
@@ -131,6 +142,7 @@ impl Outcome {
         match self {
             Outcome::Multitrack(o) => o.answer = Some(answer),
             Outcome::Samples(o) => o.answer = Some(answer),
+            Outcome::Audio(o) => o.answer = Some(answer),
         }
     }
 }
@@ -149,6 +161,11 @@ pub struct Turned {
     /// What every **other** member's window is corrected with, when the turn
     /// changed what they draw.
     pub corrections: Vec<Corrected>,
+    /// **The takes to free**: buffers no entry of the history and no member
+    /// reaches any more. The caller frees them -- after carrying out the
+    /// turn's steps, which stop the joins from reading them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub freed: Vec<i64>,
     /// The version after the turn.
     pub version: i64,
 }
@@ -184,6 +201,15 @@ pub enum Effect {
         /// The payloads.
         payloads: Vec<Value>,
     },
+    /// The steps an audio editor's take is stitched again with, for the list
+    /// the step handed it.
+    #[serde(rename_all = "camelCase")]
+    Audio {
+        /// The member.
+        member: MemberId,
+        /// The steps, in the JSON a runner walks.
+        steps: Value,
+    },
     /// Payloads an external member applies, in order.
     #[serde(rename_all = "camelCase")]
     External {
@@ -208,6 +234,10 @@ pub struct Stepped {
     pub effects: Vec<Effect>,
     /// What every member's window is corrected with.
     pub corrections: Vec<Corrected>,
+    /// The takes to free, once the effects are carried out. See
+    /// [`Turned::freed`].
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub freed: Vec<i64>,
     /// The version after the step.
     pub version: i64,
 }
@@ -219,6 +249,8 @@ pub struct Editing {
     version: i64,
     seats: Vec<Seat>,
     keys: HashMap<String, StructureId>,
+    /// The most bytes of takes only the history holds, when there is a limit.
+    bytes: Option<u64>,
 }
 
 impl Default for Editing {
@@ -235,7 +267,55 @@ impl Editing {
             version: FIRST_VERSION,
             seats: Vec::new(),
             keys: HashMap::new(),
+            bytes: None,
         }
+    }
+
+    /// **Limits the takes only the history holds to `bytes`**, or lifts the
+    /// limit with `None`. The oldest entries go first when a turn passes it,
+    /// and what they held comes back as takes to free.
+    pub fn set_bytes(&mut self, bytes: Option<u64>) {
+        self.bytes = bytes;
+    }
+
+    /// **The takes no entry and no member reaches any more**, forgotten by
+    /// every member and handed back as the buffers to free -- after the byte
+    /// limit, when there is one, has trimmed the pile.
+    fn release(&mut self) -> Vec<i64> {
+        let editors: Vec<&AudioEditor> = self
+            .seats
+            .iter()
+            .filter_map(|seat| match &seat.member {
+                Member::Audio(editor) => Some(editor.as_ref()),
+                _ => None,
+            })
+            .collect();
+        let rooted: Vec<SourceId> = editors.iter().flat_map(|e| e.rooted()).collect();
+        if let Some(bytes) = self.bytes {
+            let size_of = |source: SourceId| {
+                editors
+                    .iter()
+                    .find_map(|e| e.bytes(source.0 as i64))
+                    .unwrap_or(0)
+            };
+            let is_rooted = |source: SourceId| rooted.contains(&source);
+            self.history.trim_to_bytes(bytes, &size_of, &is_rooted);
+        }
+        let freed: Vec<i64> = self
+            .history
+            .released_sources()
+            .into_iter()
+            .filter(|source| !rooted.contains(source))
+            .map(|source| source.0 as i64)
+            .collect();
+        for seat in &mut self.seats {
+            if let Member::Audio(editor) = &mut seat.member {
+                for buffer in &freed {
+                    editor.forget(*buffer);
+                }
+            }
+        }
+        freed
     }
 
     /// The version a host names back.
@@ -359,6 +439,10 @@ impl Editing {
                 Some(e) => e.and(structure, forward, backward),
                 None => Entry::new(record.label.clone(), structure, forward, backward),
             };
+            let next = next.holding(
+                leg.holds_forward.iter().map(|s| SourceId(*s)),
+                leg.holds_backward.iter().map(|s| SourceId(*s)),
+            );
             entry = Some(if leg.key.is_empty() {
                 next
             } else {
@@ -382,6 +466,7 @@ impl Editing {
         let mut outcome = match &mut seat.member {
             Member::Multitrack(editor) => Outcome::Multitrack(editor.event(event, version)),
             Member::Samples(editor) => Outcome::Samples(editor.event(event, version)),
+            Member::Audio(editor) => Outcome::Audio(editor.event(event, version)),
             Member::External { .. } => return None,
         };
         if let Some(record) = outcome.record().cloned() {
@@ -410,15 +495,20 @@ impl Editing {
                     Member::Samples(editor) => {
                         outcome.answer(editor.acknowledge(seq, version, reason));
                     }
+                    Member::Audio(editor) => {
+                        outcome.answer(editor.acknowledge(seq, version, reason));
+                    }
                     Member::External { .. } => {}
                 }
             }
             stepped = Some(step);
         }
+        let freed = self.release();
         Some(Turned {
             outcome,
             stepped,
             corrections,
+            freed,
             version: self.version,
         })
     }
@@ -441,6 +531,7 @@ impl Editing {
             reason: None,
             effects: Vec::new(),
             corrections: Vec::new(),
+            freed: Vec::new(),
             version: self.version,
         };
         let Some(walked) = self.history.walk(direction) else {
@@ -463,6 +554,14 @@ impl Editing {
                                 member,
                                 applied: done,
                             });
+                        }
+                    }
+                    Member::Audio(editor) => {
+                        // The last list is the take: a step names one list per
+                        // entry, and what it leaves is what is drawn.
+                        if let Some(steps) = payloads.last().and_then(|p| editor.apply(&p.0)) {
+                            applied = true;
+                            out.effects.push(Effect::Audio { member, steps });
                         }
                     }
                     Member::Samples(_) if !written => {
@@ -498,6 +597,7 @@ impl Editing {
         out.stepped = true;
         out.version = self.version;
         out.corrections = self.corrections(None);
+        out.freed = self.release();
         out
     }
 
@@ -513,6 +613,7 @@ impl Editing {
             let answer = match &mut seat.member {
                 Member::Multitrack(editor) => editor.resync_all(version),
                 Member::Samples(editor) => editor.resync_all(version),
+                Member::Audio(editor) => editor.resync_all(version),
                 Member::External { .. } => continue,
             };
             if answer != Answer::Silent {
@@ -538,6 +639,10 @@ struct RecordedLeg {
     backward: Value,
     #[serde(default)]
     key: Option<String>,
+    #[serde(default, rename = "holdsForward")]
+    holds_forward: Vec<u64>,
+    #[serde(default, rename = "holdsBackward")]
+    holds_backward: Vec<u64>,
 }
 
 /// **One verb of a context, over JSON** -- the door both clients bind.
@@ -550,6 +655,11 @@ struct RecordedLeg {
 /// - `openSamples` -- `key`, and what a samples editor is built from
 ///   (`clausters_apps::samples::editor::new_json`): `{"member", "structure"}`,
 ///   or `{"error"}`.
+/// - `openAudio` -- `key`, and what an audio editor is built from
+///   (`clausters_apps::audio::editor::new_json`): `{"member", "structure"}`,
+///   or `{"error"}`.
+/// - `bytes` -- `bytes`, or `null` for none: the most bytes of takes only the
+///   history may hold. Answers `{}`.
 /// - `external` -- `key`, `domain`: `{"member", "structure"}`.
 /// - `event` -- `member`, `addr`, `args`: a [`Turned`], or `null`.
 /// - `step` -- `direction` (`"undo"` or `"redo"`): a [`Stepped`].
@@ -589,6 +699,14 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
             Ok(editor) => joined(editing, &key, Member::Samples(editor)),
             Err(error) => json!({ "error": error }).to_string(),
         },
+        "openAudio" => match audio::new_json(&request.to_string()) {
+            Ok(editor) => joined(editing, &key, Member::Audio(Box::new(editor))),
+            Err(error) => json!({ "error": error }).to_string(),
+        },
+        "bytes" => {
+            editing.set_bytes(get(&request, "bytes").as_u64());
+            "{}".into()
+        }
         "external" => {
             let domain = get(&request, "domain")
                 .as_str()
@@ -620,6 +738,8 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                             forward: leg.forward,
                             backward: leg.backward,
                             key: leg.key.unwrap_or_default(),
+                            holds_forward: leg.holds_forward,
+                            holds_backward: leg.holds_backward,
                         })
                         .collect(),
                 };
@@ -645,6 +765,7 @@ pub fn call_json(editing: &mut Editing, request: &str) -> String {
                     multitrack::call_json(editor, &call.to_string())
                 }
                 Some(Member::Samples(editor)) => samples::call_json(editor, &call.to_string()),
+                Some(Member::Audio(editor)) => audio::call_json(editor, &call.to_string()),
                 _ => "{}".into(),
             }
         }
@@ -891,6 +1012,7 @@ mod tests {
                 forward: json!({"edit": {"points": [1.0]}}),
                 backward: json!({"points": [0.0]}),
                 key: String::new(),
+                ..Default::default()
             }],
         };
         assert!(editing.record(curve, &record, false));
@@ -982,6 +1104,7 @@ mod tests {
                 forward: json!({"edit": {"nonsense": true}}),
                 backward: json!({"nonsense": true}),
                 key: String::new(),
+                ..Default::default()
             }],
         };
         editing.record(multitrack, &record, false);
@@ -1069,5 +1192,86 @@ mod tests {
                 .map(|e| e.contains("measures something")),
             Some(true)
         );
+    }
+
+    fn call(editing: &mut Editing, request: Value) -> Value {
+        serde_json::from_str(&call_json(editing, &request.to_string())).unwrap()
+    }
+
+    /// An audio editor over take 3 (100 frames), drawn through join 9 by
+    /// widget 12, with buffers 20..24 for new takes.
+    fn an_audio_take(editing: &mut Editing) -> MemberId {
+        let opened = call(
+            editing,
+            json!({"verb": "openAudio", "key": "take:3", "take": 3, "frames": 100,
+                   "rate": 48000, "display": 9, "buffers": [20, 21, 22, 23]}),
+        );
+        let member = opened["member"].as_u64().unwrap() as MemberId;
+        call(
+            editing,
+            json!({"verb": "member", "member": member, "call": {"verb": "window", "widget": 12}}),
+        );
+        member
+    }
+
+    fn draw(editing: &mut Editing, member: MemberId, seq: i64, at: i64) -> Value {
+        let version = editing.version();
+        call(
+            editing,
+            json!({"verb": "event", "member": member, "addr": "/gui_event",
+                   "args": [12, seq, version, "draw", 0, at, [0.5], [0.0]]}),
+        )
+    }
+
+    /// **A take the history can no longer reach is handed back to free**, and
+    /// one it can is not: an undo keeps the stroke's take for the redo, and
+    /// the edit after it lets it go.
+    #[test]
+    fn a_stroke_s_take_is_freed_when_no_entry_can_reach_it() {
+        let mut editing = Editing::default();
+        let take = an_audio_take(&mut editing);
+        let first = draw(&mut editing, take, 1, 10);
+        assert!(first.get("freed").is_none());
+        let undone = call(&mut editing, json!({"verb": "step", "direction": "undo"}));
+        assert_eq!(undone["effects"][0]["kind"], "audio");
+        assert!(undone.get("freed").is_none(), "a redo can still find it");
+        let second = draw(&mut editing, take, 2, 30);
+        assert_eq!(
+            second["freed"],
+            json!([20]),
+            "the redo is gone, and 20 with it"
+        );
+    }
+
+    /// **The byte limit trims what only the history holds**, oldest first, and
+    /// never a take the list still reads.
+    #[test]
+    fn the_byte_limit_frees_the_oldest_takes_only_the_history_holds() {
+        let mut editing = Editing::default();
+        let take = an_audio_take(&mut editing);
+        // One frame of mono is four bytes. Three strokes over one frame leave
+        // two takes only the history reads -- the first and the second, each
+        // replaced by the next -- which is eight: the oldest entries go until
+        // the second is all that is left, and the first is freed.
+        call(&mut editing, json!({"verb": "bytes", "bytes": 4}));
+        draw(&mut editing, take, 1, 10);
+        draw(&mut editing, take, 2, 10);
+        let third = draw(&mut editing, take, 3, 10);
+        assert_eq!(third["freed"], json!([20]));
+        assert_eq!(
+            call(&mut editing, json!({"verb": "state"}))["canUndo"],
+            true
+        );
+        let list = call(
+            &mut editing,
+            json!({"verb": "member", "member": take, "call": {"verb": "parts"}}),
+        );
+        let reads: Vec<u64> = list["parts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["source"]["source"].as_u64().unwrap())
+            .collect();
+        assert_eq!(reads, [3, 22, 3]);
     }
 }

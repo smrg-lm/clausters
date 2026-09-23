@@ -171,14 +171,28 @@ opened it.
     (`released()`'s rule, for sources), and trims by a byte budget over what
     only it holds. The roots it does not know -- the document, the clipboard
     -- are the caller's, and the question is asked with them.
-  - ⬜ **X1.3 - `AudioEditor`: the turns over a take made of parts.** Cut,
+  - ✅ **X1.3 - `AudioEditor`: the turns over a take made of parts.** Cut,
     copy, paste and delete over the selection as new parts lists; the pencil
     as a new take per gesture, spliced in; each turn answering the steps to
     carry out (allocate and write a take, restitch the drawn join, free what
     the history released) with the buffer numbers the caller hands in.
+    *Landed as `clausters_apps::audio`, seated in `editing::Editing` as
+    `Member::Audio`, with three answers taken on the way:* a take's source id
+    is **its buffer number** (the question `X1.7` names, answered for this
+    application); a **paste writes a new take** from the block the host's
+    clipboard carries, since the clipboard is the host's and travels as
+    samples -- a paste of what this editor itself cut could name its parts
+    instead, and that is left open; and `/buffer_alloc` gained a
+    `sampleRate`, so every new take is at the edited take's rate whatever
+    the server runs at. A stroke over a take wider than one channel starts as
+    the frames it was drawn over, copied out of the join by the server
+    (`/buffer_gen copy`, which now reads only the span).
   - ⬜ **X1.4 - Mix**, as the server's verb over two spans into a new take.
   - ⬜ **X1.5 - The doors and both clients**: the C ABI, wasm, the Python
     `AudioEditor`, its web port, the standalone host; `docs/bindings.md`.
+    The host's **cut puts nothing on the clipboard** (`ClipVerb::Cut` only
+    reports the span): a cut is a copy and a removal, and the copy half is
+    the host's to make, as its copy already is.
   - ⬜ **X1.6 - Disk and saving**: takes as regions under `--shm`, a save
     promoting what the document reaches, the browser's backing decided.
   - ⬜ **X1.7 - A step re-reads what it changed** (the `/gui_ack` generation,

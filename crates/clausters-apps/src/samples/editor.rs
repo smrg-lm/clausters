@@ -246,6 +246,7 @@ impl SamplesEditor {
                     backward,
                     key: domain::coalesce_key(SAMPLES, &Opaque(payload.clone()))
                         .unwrap_or_default(),
+                    ..Default::default()
                 }],
             });
         }

@@ -29,7 +29,7 @@ pub enum Kind {
 
 /// One structure's share of an entry to record: how to redo it, how to put it
 /// back, and what makes two of them the same thing done the same way.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct Leg {
     /// `{"edit": <payload>}`.
     pub forward: Value,
@@ -37,6 +37,14 @@ pub struct Leg {
     pub backward: Value,
     /// The coalesce key, empty for an edit that never coalesces.
     pub key: String,
+    /// **The sources redoing this leg reads** -- the takes a list of parts
+    /// names -- which the history holds for as long as the entry can be
+    /// walked. Empty for a leg over no sources.
+    #[serde(rename = "holdsForward", skip_serializing_if = "Vec::is_empty")]
+    pub holds_forward: Vec<u64>,
+    /// The sources undoing it reads.
+    #[serde(rename = "holdsBackward", skip_serializing_if = "Vec::is_empty")]
+    pub holds_backward: Vec<u64>,
 }
 
 /// An entry for the history the caller keeps: one gesture, however many edits

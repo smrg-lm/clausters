@@ -132,3 +132,10 @@ fn a_list_over_joins_reads_through_to_the_takes() {
     let flat = flatten(&faded_list, &of).unwrap();
     assert_eq!((flat[0].fade_in, flat[1].fade_out), (3, 3));
 }
+
+#[test]
+fn a_list_travels_as_its_own_payload_and_nothing_else_reads_as_one() {
+    let list = vec![faded(part(1, 0, 10), 2, 0), part(2, 5, 9)];
+    assert_eq!(read(&payload(&list)), Some(list));
+    assert_eq!(read(&Opaque(serde_json::json!({"intent": "write"}))), None);
+}

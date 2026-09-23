@@ -33,8 +33,32 @@
 //! makes a list come back to itself: cutting a span and pasting it back where
 //! it was leaves the list it started from, not three parts over one take.
 
+use serde_json::json;
+
 use crate::session::Part;
-use crate::{Range, SourceId};
+use crate::{Opaque, Range, SourceId};
+
+/// **The domain name a take made of parts is registered under** in a history.
+///
+/// Its one verb states the result, as every vocabulary here does: *the take is
+/// now these parts*. So an entry's forward half is the list after an edit and
+/// its backward half the list before it, and both are small whatever the take
+/// is -- the samples stay in the takes the lists name.
+pub const PARTS: &str = "parts";
+
+/// **An edit in the parts vocabulary**: `{"intent": "parts", "parts": [...]}`.
+pub fn payload(parts: &[Part]) -> Opaque {
+    Opaque(json!({ "intent": PARTS, "parts": parts }))
+}
+
+/// The list a [`payload`] states, or `None` for a payload of another
+/// vocabulary.
+pub fn read(payload: &Opaque) -> Option<Vec<Part>> {
+    if payload.0.get("intent").and_then(|i| i.as_str()) != Some(PARTS) {
+        return None;
+    }
+    serde_json::from_value(payload.0.get("parts")?.clone()).ok()
+}
 
 /// Why a list could not be read.
 pub const UNRANGED: &str = "a part of this join does not say which frames it is";

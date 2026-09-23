@@ -675,6 +675,7 @@ impl MultitrackEditor {
                     backward,
                     key: domain::coalesce_key(MULTITRACK, &Opaque(payload.clone()))
                         .unwrap_or_default(),
+                    ..Default::default()
                 });
             }
         }
