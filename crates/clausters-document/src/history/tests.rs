@@ -768,3 +768,114 @@ fn a_direction_is_read_in_one_place_because_it_crosses_as_text() {
     assert_eq!(Direction::parse("Undo"), None);
     assert_eq!(Direction::parse(""), None);
 }
+
+/// One edit over a take made of parts: the list after, the list before, and
+/// the takes each of them reads.
+fn over_takes(structure: StructureId, after: &[u64], before: &[u64]) -> Entry {
+    Entry::new(
+        "splice",
+        structure,
+        Step::Edit(Opaque(json!(after))),
+        Opaque(json!(before)),
+    )
+    .holding(
+        after.iter().map(|s| SourceId(*s)),
+        before.iter().map(|s| SourceId(*s)),
+    )
+}
+
+#[test]
+fn a_take_an_entry_can_reach_is_held_until_no_entry_can() {
+    let mut history = History::new().budget(2);
+    let take = history.register("parts");
+    history.record(over_takes(take, &[1, 2], &[1]));
+    assert!(history.holds_source(SourceId(2)), "a redo would read it");
+    history.record(over_takes(take, &[1, 3], &[1, 2]));
+    history.record(over_takes(take, &[1, 4], &[1, 3]));
+    // The first entry fell off the budget; 2 is still the second's undo.
+    assert!(history.released_sources().is_empty());
+    history.record(over_takes(take, &[1, 5], &[1, 4]));
+    assert_eq!(history.released_sources(), [SourceId(2)]);
+    assert!(history.released_sources().is_empty(), "reported once");
+    assert_eq!(
+        history.held_sources(),
+        [SourceId(1), SourceId(4), SourceId(3), SourceId(5)]
+    );
+}
+
+#[test]
+fn an_edit_after_an_undo_lets_the_redo_s_takes_go() {
+    let mut history = History::new();
+    let take = history.register("parts");
+    history.record(over_takes(take, &[2], &[1]));
+    history.undo();
+    assert!(
+        history.holds_source(SourceId(2)),
+        "the redo can still find it"
+    );
+    history.record(over_takes(take, &[3], &[1]));
+    assert_eq!(history.released_sources(), [SourceId(2)]);
+}
+
+#[test]
+fn a_merge_keeps_the_oldest_undo_and_the_newest_redo_and_lets_the_middle_go() {
+    let mut history = History::new();
+    let take = history.register("parts");
+    history.record(over_takes(take, &[2], &[1]).keyed("draw"));
+    history.record(over_takes(take, &[3], &[2]).keyed("draw").continuing());
+    assert_eq!(history.len(), 1);
+    assert_eq!(history.released_sources(), [SourceId(2)]);
+    assert_eq!(history.held_sources(), [SourceId(3), SourceId(1)]);
+}
+
+#[test]
+fn clearing_lets_every_take_go() {
+    let mut history = History::new();
+    let take = history.register("parts");
+    history.record(over_takes(take, &[2], &[1]));
+    history.clear();
+    let mut gone = history.released_sources();
+    gone.sort();
+    assert_eq!(gone, [SourceId(1), SourceId(2)]);
+}
+
+#[test]
+fn a_byte_budget_counts_only_what_nothing_else_reaches() {
+    let mut history = History::new();
+    let take = history.register("parts");
+    history.record(over_takes(take, &[1, 2], &[1]));
+    history.record(over_takes(take, &[1, 3], &[1, 2]));
+    history.record(over_takes(take, &[1, 4], &[1, 3]));
+    let size = |_: SourceId| 100;
+    // The document reads 1 and 4: what only the history holds is 2 and 3.
+    let rooted = |s: SourceId| s == SourceId(1) || s == SourceId(4);
+    assert_eq!(history.trim_to_bytes(200, &size, &rooted), 0);
+    assert_eq!(
+        history.trim_to_bytes(100, &size, &rooted),
+        2,
+        "oldest first"
+    );
+    assert_eq!(history.len(), 1);
+    assert_eq!(
+        history.held_sources(),
+        [SourceId(1), SourceId(4), SourceId(3)]
+    );
+    let mut gone = history.released_sources();
+    gone.sort();
+    assert_eq!(gone, [SourceId(2)]);
+}
+
+#[test]
+fn with_nothing_to_undo_the_farthest_redo_goes_first() {
+    let mut history = History::new();
+    let take = history.register("parts");
+    history.record(over_takes(take, &[2], &[1]));
+    history.record(over_takes(take, &[3], &[2]));
+    history.undo();
+    history.undo();
+    let size = |_: SourceId| 100;
+    let rooted = |s: SourceId| s == SourceId(1);
+    assert_eq!(history.trim_to_bytes(100, &size, &rooted), 1);
+    assert_eq!(history.released_sources(), [SourceId(3)]);
+    assert_eq!(history.redo_label().as_deref(), Some("splice"));
+}

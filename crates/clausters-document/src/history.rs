@@ -50,6 +50,18 @@
 //! threshold a payload leaves the pile for a content-addressed store, so an
 //! undo/redo pair naming the same bytes holds one copy.
 //!
+//! # A source outlives the edit that stopped naming it
+//!
+//! An edit over a take made of parts leaves a new list and keeps the takes
+//! the old one read, because an undo reads them again -- so an entry states
+//! the sources each of its halves reaches ([`Entry::holding`]), and the
+//! history is what knows when none can be reached any more: an entry trimmed
+//! by the budget, dropped by an edit after an undo, merged away or cleared lets
+//! its sources go, and [`History::released_sources`] reports the ones no entry
+//! left holds. Freeing them stays the caller's, whose document and clipboard
+//! are the other roots. The entry count is one budget; the samples those takes
+//! cost are the other, and [`History::trim_to_bytes`] is it.
+//!
 //! # What the history does not do
 //!
 //! It never applies anything. [`History::undo`] hands back the inverses and
@@ -64,7 +76,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 
-use crate::Opaque;
+use crate::{Opaque, SourceId};
 
 /// A structure's identity within one history.
 ///
@@ -270,6 +282,9 @@ pub trait Editable {
 struct Half {
     step: Step,
     blob: Option<SpillId>,
+    /// The sources this half reaches -- what applying it would make something
+    /// read. See [`Entry::holding`].
+    holds: Vec<SourceId>,
 }
 
 /// One structure's share of a transaction: how to redo it there, and how to
@@ -383,6 +398,29 @@ impl Entry {
         self
     }
 
+    /// **The sources the last leg's two halves reach**: what redoing it and
+    /// what undoing it would make something read.
+    ///
+    /// The history never reads a payload, so it cannot find a source inside
+    /// one; the caller that built the leg states them. It is what lets a take
+    /// outlive the edit that stopped naming it -- a redo has to find what it
+    /// left -- and be given back once no entry can reach it any more
+    /// ([`History::released_sources`]). Stated per half because a merge keeps
+    /// one half of each entry and lets the others go.
+    pub fn holding(
+        mut self,
+        forward: impl IntoIterator<Item = SourceId>,
+        backward: impl IntoIterator<Item = SourceId>,
+    ) -> Self {
+        if let Some(last) = self.changes.last_mut() {
+            last.forward.holds = forward.into_iter().collect();
+            if let Some(half) = &mut last.backward {
+                half.holds = backward.into_iter().collect();
+            }
+        }
+        self
+    }
+
     /// How many legs this transaction holds.
     pub fn len(&self) -> usize {
         self.changes.len()
@@ -416,10 +454,12 @@ fn change(structure: StructureId, forward: Step, backward: Option<Opaque>) -> Ch
         forward: Half {
             step: forward,
             blob: None,
+            holds: Vec::new(),
         },
         backward: backward.map(|payload| Half {
             step: Step::Edit(payload),
             blob: None,
+            holds: Vec::new(),
         }),
     }
 }
@@ -559,6 +599,9 @@ pub struct History {
     /// Structures the caller has deleted, still named by an entry. Their data
     /// must stay alive until [`History::released`] hands the identity back.
     forgotten: Vec<StructureId>,
+    /// Sources a half that is gone was holding, to be checked against what is
+    /// still held before [`History::released_sources`] hands them back.
+    let_go: Vec<SourceId>,
     entries: Vec<Entry>,
     cursor: usize,
     /// Where the cursor stood when the work was last saved, or `None` when that
@@ -597,6 +640,7 @@ impl History {
         Self {
             structures: HashMap::new(),
             forgotten: Vec::new(),
+            let_go: Vec::new(),
             entries: Vec::new(),
             cursor: 0,
             saved: Some(0),
@@ -677,9 +721,11 @@ impl History {
             for change in &mut entry.changes {
                 if change.structure == structure
                     && let Some(half) = change.backward.take()
-                    && let Some(blob) = half.blob
                 {
-                    orphaned.push(blob);
+                    self.let_go.extend(half.holds);
+                    if let Some(blob) = half.blob {
+                        orphaned.push(blob);
+                    }
                 }
             }
         }
@@ -715,6 +761,95 @@ impl History {
             .partition(|structure| !self.names(*structure));
         self.forgotten = held;
         free
+    }
+
+    /// **Whether any entry can still reach `source`**, undoing or redoing.
+    pub fn holds_source(&self, source: SourceId) -> bool {
+        self.entries.iter().any(|entry| {
+            entry.changes.iter().any(|c| {
+                c.forward.holds.contains(&source)
+                    || c.backward
+                        .as_ref()
+                        .is_some_and(|b| b.holds.contains(&source))
+            })
+        })
+    }
+
+    /// **Every source an entry can still reach**, once each.
+    pub fn held_sources(&self) -> Vec<SourceId> {
+        let mut out: Vec<SourceId> = Vec::new();
+        for change in self.entries.iter().flat_map(|e| &e.changes) {
+            let halves = std::iter::once(&change.forward).chain(change.backward.as_ref());
+            for source in halves.flat_map(|half| &half.holds) {
+                if !out.contains(source) {
+                    out.push(*source);
+                }
+            }
+        }
+        out
+    }
+
+    /// The sources an entry that left was holding and none still holds,
+    /// without draining -- [`History::pending_release`]'s reason, for sources.
+    pub fn pending_sources(&self) -> Vec<SourceId> {
+        let mut out: Vec<SourceId> = Vec::new();
+        for source in &self.let_go {
+            if !out.contains(source) && !self.holds_source(*source) {
+                out.push(*source);
+            }
+        }
+        out
+    }
+
+    /// **The sources this history has let go of**: held by an entry that is
+    /// gone -- trimmed by a budget, dropped by a new edit after an undo, merged
+    /// away, cleared -- and held by no entry left. Drains: each is reported
+    /// once.
+    ///
+    /// Not yet free to go, only no longer the history's: the document and a
+    /// clipboard may still name one, and those are the caller's roots, so the
+    /// caller frees what none of them reaches either.
+    pub fn released_sources(&mut self) -> Vec<SourceId> {
+        let out = self.pending_sources();
+        self.let_go.clear();
+        out
+    }
+
+    /// **Trims the pile until what only it holds fits in `bytes`**, and says how
+    /// many entries went.
+    ///
+    /// The entry count is one budget and this is the other: a hundred cuts
+    /// cost nothing and a hundred takes drawn over a long file cost their
+    /// samples. `size_of` answers a source's size and `rooted` whether
+    /// something besides the history reaches it -- the document, a clipboard --
+    /// since a take the document reads costs the history nothing to keep
+    /// naming. The oldest entry goes first; with nothing left to undo, the
+    /// farthest redo does, so what is dropped is always what is furthest from
+    /// where the person stands.
+    pub fn trim_to_bytes(
+        &mut self,
+        bytes: u64,
+        size_of: &dyn Fn(SourceId) -> u64,
+        rooted: &dyn Fn(SourceId) -> bool,
+    ) -> usize {
+        let only_mine = |history: &Self| -> u64 {
+            history
+                .held_sources()
+                .into_iter()
+                .filter(|source| !rooted(*source))
+                .map(size_of)
+                .sum()
+        };
+        let mut dropped = 0;
+        while !self.entries.is_empty() && only_mine(self) > bytes {
+            if self.cursor > 0 {
+                self.drop_oldest();
+            } else {
+                self.drop_farthest_redo();
+            }
+            dropped += 1;
+        }
+        dropped
     }
 
     /// Whether any entry names this structure.
@@ -1156,8 +1291,13 @@ impl History {
                 released.push(id);
             }
             old.forward.step = new.forward.step.clone();
-            if let Some(id) = new.backward.as_ref().and_then(|half| half.blob) {
-                released.push(id);
+            let held = std::mem::replace(&mut old.forward.holds, new.forward.holds.clone());
+            self.let_go.extend(held);
+            if let Some(half) = &new.backward {
+                self.let_go.extend(half.holds.iter().copied());
+                if let Some(id) = half.blob {
+                    released.push(id);
+                }
             }
         }
         last.label = entry.label.clone();
@@ -1186,20 +1326,38 @@ impl History {
 
     fn enforce_budget(&mut self) {
         while self.entries.len() > self.budget {
-            let oldest = self.entries.remove(0);
-            self.release(&oldest);
-            self.cursor = self.cursor.saturating_sub(1);
-            // The mark falls off with the entry it stood behind: past that
-            // point the history can no longer walk back to what was saved.
-            self.saved = match self.saved {
-                Some(0) | None => None,
-                Some(at) => Some(at - 1),
-            };
+            self.drop_oldest();
+        }
+    }
+
+    fn drop_oldest(&mut self) {
+        let oldest = self.entries.remove(0);
+        self.release(&oldest);
+        self.cursor = self.cursor.saturating_sub(1);
+        // The mark falls off with the entry it stood behind: past that point
+        // the history can no longer walk back to what was saved.
+        self.saved = match self.saved {
+            Some(0) | None => None,
+            Some(at) => Some(at - 1),
+        };
+    }
+
+    fn drop_farthest_redo(&mut self) {
+        let Some(last) = self.entries.pop() else {
+            return;
+        };
+        self.release(&last);
+        if self.saved.is_some_and(|at| at > self.entries.len()) {
+            self.saved = None;
         }
     }
 
     fn release(&mut self, entry: &Entry) {
         for change in &entry.changes {
+            self.let_go.extend(change.forward.holds.iter().copied());
+            if let Some(half) = &change.backward {
+                self.let_go.extend(half.holds.iter().copied());
+            }
             for blob in [
                 change.forward.blob,
                 change.backward.as_ref().and_then(|half| half.blob),

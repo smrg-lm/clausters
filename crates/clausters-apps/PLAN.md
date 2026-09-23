@@ -165,7 +165,7 @@ opened it.
     arithmetic, written once. `picture.rs`'s private span reading becomes a
     caller of it. Every part here is at the join's rate: a mixed-rate list is
     the multitrack's case and is not widened into this one.
-  - ⬜ **X1.2 - A history names the sources it holds.** An entry declares the
+  - ✅ **X1.2 - A history names the sources it holds.** An entry declares the
     sources either of its halves reaches; the history answers which of a set
     no entry names any more, reports the ones its budget or a clear let go
     (`released()`'s rule, for sources), and trims by a byte budget over what
