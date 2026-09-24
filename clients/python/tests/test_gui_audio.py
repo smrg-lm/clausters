@@ -21,6 +21,7 @@ class FakeHost:
         self.acks: list = []
         self.trees: list = []
         self.next = 20_000
+        self.clock = "device"
 
     def alloc_id(self) -> int:
         self.next += 1
@@ -42,6 +43,9 @@ class FakeHost:
 
     def close(self, id):
         pass
+
+    def head_clock(self, name):
+        self.clock = name
 
     def _set_closed_handler(self, id, func):
         pass
@@ -129,6 +133,14 @@ def test_the_window_draws_a_join_over_a_private_copy_of_the_take():
     assert stitched[0][3] == copy[0], "it reads the copy"
     assert editor.buffer.frames == 100
     assert "/buffer_setRange" not in take.server.addrs(), "the take is never written"
+
+
+def test_the_window_opens_with_both_cursors_on_the_transport_clock():
+    editor, host, _wid, _context = opened(FakeBuffer())
+    take = host.trees[0]["children"][0]
+    assert take["axes"]["x"]["cursor"] == 0.0, "the position cursor, placed"
+    assert take["axes"]["x"]["playhead_at"] == 0.0, "the play cursor, anchored"
+    assert host.clock == "transport", "drawn from the transport's position"
 
 
 def test_a_stroke_writes_a_new_take_and_the_join_reads_it():

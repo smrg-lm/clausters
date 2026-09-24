@@ -233,13 +233,20 @@ export class AudioEditor extends Editor<Buffer> {
      * Opens the window once the join it draws has been stitched -- the steps
      * the constructor queued -- so the first picture is the take and not an
      * empty buffer.
+     *
+     * The window anchors the play cursor at 0, and the counter that makes that
+     * the take's own frame is the transport's position -- what the monitor
+     * plays from -- so the host is asked for that clock, as a multitrack
+     * editor asks for it when it opens.
      */
     override async open(
         host?: Parameters<Editor<Buffer>["open"]>[0],
         options: Parameters<Editor<Buffer>["open"]>[1] = {},
     ): ReturnType<Editor<Buffer>["open"]> {
         await (this.domain as AudioDomain).idle();
-        return super.open(host, options);
+        const handle = await super.open(host, options);
+        this.host?.headClock("transport");
+        return handle;
     }
 
     /** What this page holds about the take and the window. */

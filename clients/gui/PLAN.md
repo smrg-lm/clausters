@@ -7507,3 +7507,12 @@ finished work, where a pending item reads as done.
   a selection loops — and stops back at it, and **Home**/**End** put the
   position cursor at the take's start and end. Pausing is still the monitor's
   verb (`Host::pause_playback`); no key reaches it.
+
+  **Neither cursor was there when the window opened** *(the same day)*. The
+  audio editor's window placed no position cursor and anchored no play cursor,
+  and the host drew heads from the device clock until the first play. The
+  catalogue's waveform now takes a `cursor` beside `playhead_at`, the clients'
+  window and the standalone host's take panes both open with the two at 0, and
+  both clients' audio editors ask for the transport clock when they open, as
+  the multitrack's do. A stop leaves the play cursor anchored: the stop puts
+  the position back on the mark, so the line stands there.

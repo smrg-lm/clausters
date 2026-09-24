@@ -4952,19 +4952,19 @@ mod write_tests {
         assert!(host.playing_widget().is_none());
     }
 
-    /// **The play cursor is the transport's position while the monitor
-    /// plays**, and it goes when the monitor stops: an anchor of 0 on the
-    /// transport's clock is the take's own frame, and a stopped monitor leaves
-    /// only the position cursor on screen.
+    /// **The play cursor is the transport's position**, before, during and
+    /// after a pass: an anchor of 0 on the transport's clock is the take's own
+    /// frame, and a stop leaves it anchored, since the stop puts the position
+    /// back on the mark.
     #[test]
-    fn the_monitor_draws_a_play_cursor_while_it_plays() {
+    fn the_monitor_draws_the_play_cursor_from_the_transport() {
         let (mut host, _server) = take_host(1, 16);
         let key = host.timeline_key(50).expect("the take is on a timeline");
         assert!(host.play_buffer(1, 50, 0, None));
         assert_eq!(host.head_clock(), HeadClock::Transport);
         assert_eq!(host.timelines().state(key).unwrap().playhead_at, 0.0);
         assert!(host.stop_playback());
-        assert_eq!(host.timelines().state(key).unwrap().playhead_at, -1.0);
+        assert_eq!(host.timelines().state(key).unwrap().playhead_at, 0.0);
     }
 
     /// Where the pointer is over widget 50, for a gesture aimed at the take.

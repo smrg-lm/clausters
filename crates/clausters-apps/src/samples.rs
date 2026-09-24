@@ -93,6 +93,14 @@ pub fn window(w: &Window<'_>) -> Value {
         ruler: "time".into(),
         sample_rate: w.rate,
         label: label(w.name, w.buffer),
+        // **Both cursors are there from the start.** The position cursor
+        // stands at the take's first frame, where a play with nothing placed
+        // starts; the play cursor is anchored at 0 because the counter it is
+        // drawn from is the transport's position (the editor asks for that
+        // clock when it opens), so it stands on the position cursor until
+        // something plays and goes back there when it stops.
+        cursor: Some(0.0),
+        playhead_at: Some(0.0),
         ..Waveform::default()
     });
     picture.insert("id".into(), json!(w.widget));
@@ -173,6 +181,14 @@ mod tests {
         assert_eq!(take["buffer"], 3);
         assert_eq!(take["channels"], 2);
         assert_eq!(take["measure"], "peak rms");
+        assert_eq!(
+            take["axes"]["x"]["cursor"], 0.0,
+            "the position cursor, placed"
+        );
+        assert_eq!(
+            take["axes"]["x"]["playhead_at"], 0.0,
+            "the play cursor, anchored"
+        );
         assert_eq!(take["label"], "glide");
         assert_eq!(take["axes"]["x"]["unit"], "time");
         assert!(

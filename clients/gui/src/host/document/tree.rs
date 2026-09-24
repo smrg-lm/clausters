@@ -586,6 +586,10 @@ fn take_editors(
                 label: label_of(node),
                 height: Some(editor_height(take.channels)),
                 playhead_at: Some(0.0),
+                // The position cursor from the start, where a play with
+                // nothing placed begins -- the play cursor stands on it until
+                // something plays.
+                cursor: Some(0.0),
                 ..catalogue::Waveform::default()
             });
             props.insert("id".into(), json!(widget));
@@ -1062,6 +1066,16 @@ mod take_tests {
             clip[3], 96_000.0,
             "as long as the samples, in timeline units"
         );
+        // Its own pane opens with both cursors, as a client's audio editor
+        // does: the position cursor placed and the play cursor anchored.
+        let pane = drawn.def["children"]
+            .as_array()
+            .expect("children")
+            .iter()
+            .find(|c| c["type"] == "signal" && c["buffer"] == 7)
+            .expect("the take's pane");
+        assert_eq!(pane["axes"]["x"]["cursor"], 0.0);
+        assert_eq!(pane["axes"]["x"]["playhead_at"], 0.0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

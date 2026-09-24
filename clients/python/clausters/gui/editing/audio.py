@@ -144,6 +144,19 @@ class AudioEditor(Editor):
         # editor was handed is written by a save and by nothing else.
         domain.run(take, opened.get("steps") or [])
 
+    def open(self, host=None, id: "int | None" = None):
+        """Open the window, with its play cursor drawn from the transport.
+
+        The window anchors the play cursor at 0, and the counter that makes
+        that the take's own frame is the transport's position -- what the
+        monitor plays from. A multitrack editor asks for the same clock when
+        it opens, for the same reason.
+        """
+        window = super().open(host, id)
+        if self._host is not None:
+            self._host.head_clock("transport")
+        return window
+
     def _facts(self) -> dict:
         take = self.structure
         name = getattr(take, "name", None)

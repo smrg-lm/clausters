@@ -274,9 +274,6 @@ impl Host {
         let Some(monitor) = self.playing.take() else {
             return false;
         };
-        // Stopped, the play cursor goes and the position cursor is what is
-        // left: nothing is playing, so there is no play position to draw.
-        self.set_timeline_playhead(monitor.widget, -1.0);
         self.send_sound(OscMessage {
             addr: "/transport_stop".into(),
             args: vec![],

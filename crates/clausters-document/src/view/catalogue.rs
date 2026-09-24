@@ -73,6 +73,9 @@ pub struct Waveform {
     pub height: Option<f64>,
     /// The sample the playhead is anchored at, for a view following a clock.
     pub playhead_at: Option<f64>,
+    /// Where the position cursor stands when the view opens, in samples.
+    /// `None` places none.
+    pub cursor: Option<f64>,
 }
 
 /// The props a take's picture is drawn from -- a `signal` shown as a `trace`.
@@ -112,6 +115,9 @@ pub fn waveform(take: &Waveform) -> Map<String, Value> {
     }
     if let Some(at) = take.playhead_at {
         x.insert("playhead_at".into(), json!(at));
+    }
+    if let Some(cursor) = take.cursor {
+        x.insert("cursor".into(), json!(cursor));
     }
     axes(&mut props, x, Map::new());
     props

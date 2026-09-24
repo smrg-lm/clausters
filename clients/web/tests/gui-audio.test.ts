@@ -25,6 +25,7 @@ const SR = 48_000;
 class FakeHost {
     acks: [number, [number, Record<string, PropValue>][], string | undefined][] = [];
     trees: GuiNode[] = [];
+    clock = "device";
     private next = 20_000;
 
     allocId(): number {
@@ -39,6 +40,9 @@ class FakeHost {
         return { id };
     }
     set(): void {}
+    headClock(name: string): void {
+        this.clock = name;
+    }
     onMessage(): () => void {
         return () => {};
     }
@@ -152,6 +156,16 @@ test("the window draws a join over a private copy of the take", async () => {
     assert.equal(stitched[0]![1][3], copy[0], "it reads the copy");
     assert.equal(editor.buffer.frames, 100);
     assert.ok(!take.server.addrs().includes("/buffer_setRange"), "the take is never written");
+});
+
+test("the window opens with both cursors on the transport clock", async () => {
+    const [, host] = await opened(new FakeBuffer());
+    const take = host.trees[0]!.children![0]! as unknown as {
+        axes: { x: Record<string, unknown> };
+    };
+    assert.equal(take.axes.x.cursor, 0, "the position cursor, placed");
+    assert.equal(take.axes.x.playhead_at, 0, "the play cursor, anchored");
+    assert.equal(host.clock, "transport", "drawn from the transport's position");
 });
 
 test("a stroke writes a new take and the join reads it", async () => {
