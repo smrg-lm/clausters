@@ -247,6 +247,14 @@ impl WebApp {
             self.play_key(def);
             return;
         }
+        // `L` switches the take monitor's loop, as on the desktop.
+        if matches!(key, Key::Character(c) if c.eq_ignore_ascii_case("l")) && !ctx.ctrl {
+            if let Some(slot) = self.canvases.get_mut(&def) {
+                let effects = slot.gestures.loop_key(&mut self.host, &ctx);
+                self.apply_gesture_effects(effects);
+            }
+            return;
+        }
         // Home and End put the position cursor at the start or the end of the
         // samples under the pointer, as on the desktop.
         if let Key::Named(named @ (NamedKey::Home | NamedKey::End)) = key {

@@ -877,6 +877,10 @@ impl ApplicationHandler<UserEvent> for App {
                     ref key if is_space(key) => {
                         self.play_key(def_id);
                     }
+                    // `L` switches the take monitor's loop.
+                    Key::Character(ref c) if c.eq_ignore_ascii_case("l") && !self.ctrl(def_id) => {
+                        self.loop_key(def_id);
+                    }
                     // Home and End put the position cursor at the start or the
                     // end of the samples under the pointer.
                     Key::Named(NamedKey::Home) => {

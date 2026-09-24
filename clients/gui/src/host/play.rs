@@ -56,6 +56,36 @@ pub struct Monitor {
     pub rolling: bool,
 }
 
+/// **How a pass over a take ends**: it loops over a span, or it runs until an
+/// end and goes back.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pass {
+    /// Over and over, inside the half-open span.
+    Loop(u64, u64),
+    /// Until `end`, where the transport stops and is located to `back`.
+    Until { end: u64, back: u64 },
+}
+
+/// The monitor's loop switch, and what the host has heard of the transport.
+///
+/// **An end the engine reached is told from a stop this host sent by
+/// counting.** Every `/transport_*` command is answered with a broadcast of
+/// the whole state, so the stream a host hears is full of "stopped" -- the
+/// loop, the locate and the end a play sends first all say it. What marks a
+/// stop is a **transition** from rolling to stopped, and each `/transport_stop`
+/// this host sends cancels one; one left over is the engine stopping on its
+/// end mark, or somebody else stopping the transport, and either way the
+/// monitor's pass is over.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Follow {
+    /// Whether the monitor loops (`L`): a selection, or the whole take.
+    pub looping: bool,
+    /// Whether the last state heard was rolling.
+    seen_rolling: bool,
+    /// Stops this host has sent and not yet heard the transition of.
+    stops_in_flight: u32,
+}
+
 /// The def name the host plays a take through. Namespaced, because it is loaded
 /// into the same server a multitrack's own defs live in.
 pub const TAKE_DEF: &str = "clausters-gui-take";
@@ -190,17 +220,11 @@ impl Host {
     /// pointed at: the same lookup an edit takes, so what plays is what would
     /// be written.
     ///
-    /// `looping` names the span to repeat, in frames; `None` plays on past the
-    /// end, where the def's gate closes at the buffer's last frame -- there is
-    /// no "one shot" to arrange, because the transport simply keeps rolling and
-    /// the head keeps moving, as a multitrack's does.
-    pub fn play_buffer(
-        &mut self,
-        def_id: i32,
-        widget_id: i32,
-        start: u64,
-        looping: Option<(u64, u64)>,
-    ) -> bool {
+    /// `pass` says how it ends: a [`Pass::Loop`] repeats its span, in frames;
+    /// a [`Pass::Until`] sets the transport's end mark, so the engine stops on
+    /// that frame and locates back -- the take's end or a selection's, and the
+    /// position cursor, which is where the play cursor then stands.
+    pub fn play_buffer(&mut self, def_id: i32, widget_id: i32, start: u64, pass: Pass) -> bool {
         let Some(bufnum) = self.buffer_of(def_id, widget_id) else {
             return false;
         };
@@ -226,7 +250,16 @@ impl Host {
             return false;
         };
         let group = self.monitor_group().unwrap_or(0);
-        self.set_loop(looping);
+        match pass {
+            Pass::Loop(from, to) => {
+                self.set_loop(Some((from, to)));
+                self.set_end(None);
+            }
+            Pass::Until { end, back } => {
+                self.set_loop(None);
+                self.set_end(Some((end, back)));
+            }
+        }
         self.locate(start);
         for ch in 0..channels {
             self.send_sound(OscMessage {
@@ -274,10 +307,7 @@ impl Host {
         let Some(monitor) = self.playing.take() else {
             return false;
         };
-        self.send_sound(OscMessage {
-            addr: "/transport_stop".into(),
-            args: vec![],
-        });
+        self.send_stop();
         // One `/node_free` naming every reader: the ids are one contiguous run,
         // and freeing them together is what keeps a stereo take from
         // half-stopping.
@@ -303,14 +333,14 @@ impl Host {
         let mut monitor = self.playing?;
         monitor.rolling = !monitor.rolling;
         self.playing = Some(monitor);
-        self.send_sound(OscMessage {
-            addr: if monitor.rolling {
-                "/transport_play".into()
-            } else {
-                "/transport_stop".into()
-            },
-            args: vec![],
-        });
+        if monitor.rolling {
+            self.send_sound(OscMessage {
+                addr: "/transport_play".into(),
+                args: vec![],
+            });
+        } else {
+            self.send_stop();
+        }
         Some(monitor.rolling)
     }
 
@@ -322,6 +352,71 @@ impl Host {
             addr: "/transport_locateSample".into(),
             args: vec![OscType::Long(frame as i64)],
         });
+    }
+
+    /// Sends a `/transport_stop`, counted, so the stop it causes is not taken
+    /// for the engine ending a pass ([`Follow`]).
+    fn send_stop(&mut self) {
+        self.follow.stops_in_flight += 1;
+        self.send_sound(OscMessage {
+            addr: "/transport_stop".into(),
+            args: vec![],
+        });
+    }
+
+    /// Sets the transport's end mark -- where a rolling pass stops, and where
+    /// it goes back to -- or clears it with `None`.
+    pub fn set_end(&mut self, mark: Option<(u64, u64)>) {
+        self.send_sound(OscMessage {
+            addr: "/transport_end".into(),
+            args: match mark {
+                Some((end, back)) => vec![OscType::Long(end as i64), OscType::Long(back as i64)],
+                None => vec![],
+            },
+        });
+    }
+
+    /// Whether the monitor loops.
+    pub fn monitor_loops(&self) -> bool {
+        self.follow.looping
+    }
+
+    /// Switches the monitor's loop (`L`), and answers the new state. It takes
+    /// effect on the next play: a pass already running keeps the end it began
+    /// with.
+    pub fn toggle_monitor_loop(&mut self) -> bool {
+        self.follow.looping = !self.follow.looping;
+        self.follow.looping
+    }
+
+    /// **A `/transport_query.reply` heard**: a transition from rolling to
+    /// stopped that no stop of this host's accounts for is a pass that ended
+    /// without it -- the engine on its end mark, or another client -- and the
+    /// monitor's readers are freed, so the next press of the space bar plays.
+    /// The engine has already located the transport back, so nothing is sent
+    /// but the free.
+    pub(crate) fn on_transport_state(&mut self, args: &[OscType]) {
+        let Some(OscType::Int(playing)) = args.get(3) else {
+            return;
+        };
+        let rolling = *playing != 0;
+        let stopped = self.follow.seen_rolling && !rolling;
+        self.follow.seen_rolling = rolling;
+        if !stopped {
+            return;
+        }
+        if self.follow.stops_in_flight > 0 {
+            self.follow.stops_in_flight -= 1;
+            return;
+        }
+        if let Some(monitor) = self.playing.take() {
+            self.send_sound(OscMessage {
+                addr: "/node_free".into(),
+                args: (0..monitor.channels)
+                    .map(|ch| OscType::Int(monitor.first + ch as i32))
+                    .collect(),
+            });
+        }
     }
 
     /// Sets the span the transport loops inside, or clears it with `None`. The

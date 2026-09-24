@@ -16,6 +16,7 @@
 
 use super::super::Host;
 use super::super::interact::Hit;
+use super::super::play::Pass;
 use crate::host::diag;
 use clausters_core::osc::OscType;
 
@@ -202,15 +203,47 @@ impl Gestures {
         if let Some(loaded) = host.monitor()
             && over.is_none_or(|id| id == loaded.widget)
         {
-            let mark = start_of(host, loaded.widget).0;
+            let mark =
+                position_cursor(host, loaded.widget).unwrap_or(start_of(host, loaded.widget).0);
             host.stop_playback();
             host.locate(mark);
             return Some(vec![GestureEffect::Redraw(ctx.def_id)]);
         }
         let id = over?;
         let (start, span) = start_of(host, id);
-        host.play_buffer(ctx.def_id, id, start, span)
+        let frames = host.buffer_frames(ctx.def_id, id)?;
+        // **How the pass ends is the loop switch's** (`L`). Looping, a
+        // selection repeats and so does a take with none. Not looping, the
+        // pass stops at the end of the selection or of the take, and the
+        // transport goes back to the position cursor -- where a selection's
+        // play started, when there is no cursor apart from it.
+        let pass = if host.monitor_loops() {
+            let (from, to) = span.unwrap_or((0, frames));
+            Pass::Loop(from, to)
+        } else {
+            let end = span.map_or(frames, |(_, to)| to);
+            let back = position_cursor(host, id).unwrap_or(start);
+            Pass::Until { end, back }
+        };
+        host.play_buffer(ctx.def_id, id, start, pass)
             .then(|| vec![GestureEffect::Redraw(ctx.def_id)])
+    }
+
+    /// **`L` switches the monitor's loop**, and the status bar says which way
+    /// it went -- the one place the state is shown, since the applications have
+    /// no transport row. It takes effect on the next play.
+    pub fn loop_key(&self, host: &mut Host, ctx: &GestureCtx) -> Vec<GestureEffect> {
+        let looping = host.toggle_monitor_loop();
+        host.say(
+            ctx.def_id,
+            crate::host::status::Line {
+                kind: crate::host::status::Kind::Did,
+                widget: None,
+                verb: "loop".into(),
+                text: if looping { "loop on" } else { "loop off" }.into(),
+            },
+        );
+        vec![GestureEffect::Redraw(ctx.def_id)]
     }
 
     /// **Home and End: the position cursor to the start or the end of the
@@ -446,6 +479,13 @@ fn element_block(
         .as_element()?
         .samples()?
         .sample_block(start, frames, ctx.sample_rate)
+}
+
+/// The position cursor of view `id`, when one is placed.
+fn position_cursor(host: &Host, id: i32) -> Option<u64> {
+    let key = host.timeline_key(id)?;
+    let cursor = host.timelines().state(key)?.cursor()?;
+    Some(cursor.max(0.0) as u64)
 }
 
 /// **Where a play over view `id` starts, and the span it loops** -- read off

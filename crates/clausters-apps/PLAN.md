@@ -715,6 +715,14 @@ opened it.
   not a prop of the view — no chrome, no button — and a line in the status bar
   says which way it went.
 
+  **Shipped for the audio editor** *(2026-09-24)*, in the host, so both
+  clients and the standalone host have it: the monitor's pass is a
+  `play::Pass`, a loop or an end with its return, and `L` is a window key of
+  both fronts. The host tells the engine's end from a stop it sent by counting
+  the stops it sent (`play::Follow`), since every transport command's
+  broadcast says "stopped" and only a transition nobody here caused is a pass
+  that ended.
+
   **The multitrack, optionally.** The same end, at the end of its contents:
   the latest start plus duration of any clip on any track. It is a setting of
   the multitrack's playback, off by default, computed by the crate's playback

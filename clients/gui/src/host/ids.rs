@@ -126,6 +126,7 @@ impl Host {
                     }
                 }
             }
+            "/transport_query.reply" => self.on_transport_state(&msg.args),
             _ => {}
         }
         self.multitrack_reply(from, msg);

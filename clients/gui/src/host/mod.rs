@@ -714,6 +714,10 @@ pub struct Host {
     /// The take the **monitor** is loaded with (see [`play`]). One take at a
     /// time, so this is one entry and not a list.
     playing: Option<play::Monitor>,
+    /// Whether the monitor **loops** (`L`), and what it has heard of the
+    /// transport's rolling state -- how an end the engine reached on its own is
+    /// told from a stop this host sent ([`play::Follow`]).
+    follow: play::Follow,
     /// **What the multitrack is playing through** -- the instance, the handle tables
     /// and the allocators a standalone host keeps as any other endpoint does
     /// ([`instance`]).
@@ -843,6 +847,7 @@ impl Host {
             ),
             governed: None,
             playing: None,
+            follow: play::Follow::default(),
             instance: instance::Playing::default(),
             owns_transport: false,
             outbox: Default::default(),
@@ -4906,7 +4911,7 @@ mod write_tests {
     fn the_monitor_plays_a_takes_buffer_and_stops_it() {
         let (mut host, server) = take_host(1, 16);
         assert!(
-            host.play_buffer(1, 50, 0, None),
+            host.play_buffer(1, 50, 0, play::Pass::Until { end: 16, back: 0 }),
             "a take with a buffer plays"
         );
         let group = bound_group(&server);
@@ -4918,6 +4923,13 @@ mod write_tests {
         let msg = received(&server).expect("the loop was cleared");
         assert_eq!(msg.addr, "/transport_loop");
         assert!(msg.args.is_empty(), "no arguments turns looping off");
+        let msg = received(&server).expect("the end was marked");
+        assert_eq!(msg.addr, "/transport_end");
+        assert_eq!(
+            msg.args,
+            vec![OscType::Long(16), OscType::Long(0)],
+            "the take's end, and back to the start"
+        );
         let msg = received(&server).expect("the multitrack was located");
         assert_eq!(msg.addr, "/transport_locateSample");
         assert_eq!(msg.args[0], OscType::Long(0));
@@ -4960,7 +4972,7 @@ mod write_tests {
     fn the_monitor_draws_the_play_cursor_from_the_transport() {
         let (mut host, _server) = take_host(1, 16);
         let key = host.timeline_key(50).expect("the take is on a timeline");
-        assert!(host.play_buffer(1, 50, 0, None));
+        assert!(host.play_buffer(1, 50, 0, play::Pass::Until { end: 16, back: 0 }));
         assert_eq!(host.head_clock(), HeadClock::Transport);
         assert_eq!(host.timelines().state(key).unwrap().playhead_at, 0.0);
         assert!(host.stop_playback());
@@ -4993,6 +5005,13 @@ mod write_tests {
         assert_eq!(host.playing_widget(), Some(50));
         bound_group(&server);
         assert_eq!(received(&server).unwrap().addr, "/transport_loop");
+        let end = received(&server).unwrap();
+        assert_eq!(end.addr, "/transport_end");
+        assert_eq!(
+            end.args,
+            vec![OscType::Long(16), OscType::Long(4)],
+            "the take's end, and back to the mark"
+        );
         let locate = received(&server).unwrap();
         assert_eq!(locate.addr, "/transport_locateSample");
         assert_eq!(locate.args[0], OscType::Long(4), "from the mark");
@@ -5006,6 +5025,73 @@ mod write_tests {
         let locate = received(&server).unwrap();
         assert_eq!(locate.addr, "/transport_locateSample");
         assert_eq!(locate.args[0], OscType::Long(4), "and back at the mark");
+    }
+
+    /// **A pass the engine ended frees the readers; a stop this host sent is
+    /// not taken for one.** The broadcasts are full of "stopped" -- every
+    /// command before a play says it -- so only a transition counts, and each
+    /// stop the host sent cancels one.
+    #[test]
+    fn an_end_the_engine_reached_frees_the_readers_and_a_hosts_stop_does_not() {
+        let state = |playing: i32| {
+            let mut args = vec![
+                OscType::Long(0),
+                OscType::Double(0.0),
+                OscType::Int(0),
+                OscType::Int(playing),
+            ];
+            args.extend([OscType::Double(0.0), OscType::Int(1)]);
+            OscMessage {
+                addr: "/transport_query.reply".into(),
+                args,
+            }
+        };
+        let (mut host, _server) = take_host(1, 16);
+
+        // A stop this host sent, then a play: the stop's transition arrives
+        // after the new pass started, and it is not that pass's end.
+        assert!(host.play_buffer(1, 50, 0, play::Pass::Until { end: 16, back: 0 }));
+        host.on_server_reply(instance::Leg::Server, &state(0)); // the commands before it
+        host.on_server_reply(instance::Leg::Server, &state(1)); // the play
+        assert!(host.stop_playback());
+        assert!(host.play_buffer(1, 50, 0, play::Pass::Until { end: 16, back: 0 }));
+        host.on_server_reply(instance::Leg::Server, &state(0)); // the host's stop
+        host.on_server_reply(instance::Leg::Server, &state(1)); // the new play
+        assert_eq!(host.playing_widget(), Some(50), "the new pass stands");
+
+        // Then the engine stops on the mark: nobody here sent that one.
+        host.on_server_reply(instance::Leg::Server, &state(0));
+        assert!(host.playing_widget().is_none(), "the pass is over");
+    }
+
+    /// **`L` switches the loop, and a play reads it**: looping, a take with no
+    /// selection repeats whole; not, it stops at its end.
+    #[test]
+    fn l_switches_the_monitors_loop() {
+        let (mut host, server) = take_host(1, 16);
+        let ctx = gestures::GestureCtx::new(1, 800, 400);
+        let (cx, cy) = over_the_take(&host, &ctx);
+        let g = gestures::Gestures::default();
+        assert!(!host.monitor_loops());
+        g.loop_key(&mut host, &ctx);
+        assert!(host.monitor_loops());
+        let said = host.statuses();
+        let line = said.get(&1).and_then(|s| s.last()).expect("a line");
+        assert_eq!(line.text, "loop on");
+        drop(said);
+
+        assert!(g.play_key(&mut host, &ctx, cx, cy).is_some());
+        bound_group(&server);
+        let msg = received(&server).unwrap();
+        assert_eq!(msg.addr, "/transport_loop");
+        assert_eq!(
+            msg.args,
+            vec![OscType::Long(0), OscType::Long(16)],
+            "the whole take"
+        );
+        let msg = received(&server).unwrap();
+        assert_eq!(msg.addr, "/transport_end");
+        assert!(msg.args.is_empty(), "and no end while it loops");
     }
 
     /// **Home and End put the position cursor at the ends of the take** --
@@ -5031,7 +5117,7 @@ mod write_tests {
     #[test]
     fn playing_a_span_locates_and_loops_before_the_readers_are_made() {
         let (mut host, server) = take_host(1, 16);
-        assert!(host.play_buffer(1, 50, 4, Some((4, 12))));
+        assert!(host.play_buffer(1, 50, 4, play::Pass::Loop(4, 12)));
         bound_group(&server);
 
         let msg = received(&server).expect("the loop went first");
@@ -5041,6 +5127,9 @@ mod write_tests {
             vec![OscType::Long(4), OscType::Long(12)],
             "half-open, so the span is the selection's own bounds"
         );
+        let msg = received(&server).expect("a loop has no end");
+        assert_eq!(msg.addr, "/transport_end");
+        assert!(msg.args.is_empty(), "no arguments clears the mark");
         let msg = received(&server).expect("then the locate");
         assert_eq!(msg.addr, "/transport_locateSample");
         assert_eq!(msg.args[0], OscType::Long(4));
@@ -5061,10 +5150,10 @@ mod write_tests {
     #[test]
     fn pausing_keeps_the_readers_and_resuming_continues() {
         let (mut host, server) = take_host(1, 16);
-        assert!(host.play_buffer(1, 50, 0, None));
+        assert!(host.play_buffer(1, 50, 0, play::Pass::Until { end: 16, back: 0 }));
         bound_group(&server);
-        for _ in 0..4 {
-            received(&server); // the loop, the locate, the reader, the play
+        for _ in 0..5 {
+            received(&server); // the loop, the end, the locate, the reader, the play
         }
 
         assert_eq!(host.pause_playback(), Some(false), "rolling -> paused");
@@ -5105,9 +5194,10 @@ mod write_tests {
     #[test]
     fn a_stereo_take_plays_a_reader_per_channel_and_stops_them_together() {
         let (mut host, server) = take_host(2, 16);
-        assert!(host.play_buffer(1, 50, 0, None));
+        assert!(host.play_buffer(1, 50, 0, play::Pass::Until { end: 16, back: 0 }));
         bound_group(&server);
         received(&server).expect("/transport_loop");
+        received(&server).expect("/transport_end");
         received(&server).expect("/transport_locateSample");
         for ch in 0..2 {
             let msg = received(&server).expect("a reader per channel");

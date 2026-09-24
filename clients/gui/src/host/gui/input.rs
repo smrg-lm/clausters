@@ -261,6 +261,19 @@ impl App {
         true
     }
 
+    /// `L`: the take monitor's loop, switched, with a status line saying so.
+    pub(super) fn loop_key(&mut self, def_id: i32) {
+        let ctx = self.gesture_ctx(def_id);
+        let Some(effects) = self
+            .windows
+            .get_mut(&def_id)
+            .map(|ws| ws.gestures.loop_key(&mut self.host, &ctx))
+        else {
+            return;
+        };
+        self.apply_gesture_effects(effects);
+    }
+
     /// Home or End: the position cursor to the start or the end of the
     /// samples under the pointer. Returns whether it was consumed.
     pub(super) fn ends_key(&mut self, def_id: i32, to_end: bool) -> bool {
