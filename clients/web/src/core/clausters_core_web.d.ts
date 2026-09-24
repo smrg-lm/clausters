@@ -390,9 +390,17 @@ export class MultitrackPlayback {
      */
     setRolling(rolling: boolean): void;
     /**
+     * The steps that switch whether a pass stops at the end of the contents.
+     */
+    setStopAtEnd(on: boolean): string;
+    /**
      * The steps that halt and go back to the mark.
      */
     stop(mark: number): string;
+    /**
+     * Whether a pass stops at the end of the contents.
+     */
+    stopsAtEnd(): boolean;
     /**
      * The steps that make what sounds be what the multitrack says.
      */
@@ -1685,7 +1693,9 @@ export interface InitOutput {
     readonly multitrackplayback_samplesToSecs: (a: number, b: number) => number;
     readonly multitrackplayback_secsToSamples: (a: number, b: number) => number;
     readonly multitrackplayback_setRolling: (a: number, b: number) => void;
+    readonly multitrackplayback_setStopAtEnd: (a: number, b: number) => [number, number];
     readonly multitrackplayback_stop: (a: number, b: number) => [number, number];
+    readonly multitrackplayback_stopsAtEnd: (a: number) => number;
     readonly multitrackplayback_sync: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
     readonly node_id_partition: (a: number) => [number, number, number];
     readonly osc_decode_packet: (a: number, b: number) => [number, number, number];

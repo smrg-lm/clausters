@@ -1582,6 +1582,12 @@ impl JsMultitrackPlayback {
         clausters_editing::playback::answer_json(Ok(self.0.cue(secs)))
     }
 
+    /// The steps that switch whether a pass stops at the end of the contents.
+    #[wasm_bindgen(js_name = setStopAtEnd)]
+    pub fn set_stop_at_end(&mut self, on: bool) -> String {
+        clausters_editing::playback::answer_json(Ok(self.0.set_stop_at_end(on)))
+    }
+
     /// The steps that free everything the multitrack made.
     pub fn close(&mut self, ids: &mut JsIdSpaces) -> String {
         clausters_editing::playback::answer_json(self.0.close(&mut ids.0))
@@ -1601,6 +1607,12 @@ impl JsMultitrackPlayback {
     /// Whether the transport was last told to roll.
     pub fn rolling(&self) -> bool {
         self.0.rolling()
+    }
+
+    /// Whether a pass stops at the end of the contents.
+    #[wasm_bindgen(js_name = stopsAtEnd)]
+    pub fn stops_at_end(&self) -> bool {
+        self.0.stops_at_end()
     }
 
     /// A second of the multitrack as a sample.

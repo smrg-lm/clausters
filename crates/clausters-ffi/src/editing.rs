@@ -646,6 +646,28 @@ pub unsafe extern "C" fn clausters_editing_playback_cue(
     unsafe { playback_verb(p, out, out_cap, |pb| answer_json(Ok(pb.cue(secs)))) }
 }
 
+/// The steps that switch whether a pass stops at the end of the contents
+/// (`on` non-zero), going back to the position cursor -- the transport's end
+/// mark, sent only when it moves.
+///
+/// # Safety
+/// As [`clausters_editing_playback_sync`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_playback_set_stop_at_end(
+    p: *mut FfiPlayback,
+    on: i32,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    use clausters_editing::playback::answer_json;
+    // SAFETY: forwarded from this function's own contract.
+    unsafe {
+        playback_verb(p, out, out_cap, |pb| {
+            answer_json(Ok(pb.set_stop_at_end(on != 0)))
+        })
+    }
+}
+
 /// The steps that free everything the multitrack made, releasing into `ids`.
 ///
 /// # Safety
@@ -704,6 +726,24 @@ pub unsafe extern "C" fn clausters_editing_playback_rolling(p: *mut FfiPlayback)
     // SAFETY: caller guarantees `p` is null or live.
     unsafe { p.as_ref() }
         .and_then(|playback| playback.0.lock().ok().map(|held| i32::from(held.rolling())))
+        .unwrap_or(0)
+}
+
+/// Whether a pass stops at the end of the contents: 1 or 0.
+///
+/// # Safety
+/// `p` must be null or a live playback.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_playback_stops_at_end(p: *mut FfiPlayback) -> i32 {
+    // SAFETY: caller guarantees `p` is null or live.
+    unsafe { p.as_ref() }
+        .and_then(|playback| {
+            playback
+                .0
+                .lock()
+                .ok()
+                .map(|held| i32::from(held.stops_at_end()))
+        })
         .unwrap_or(0)
 }
 

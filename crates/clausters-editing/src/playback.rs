@@ -42,6 +42,16 @@ pub struct MultitrackPlayback {
     rate: f64,
     /// Whether the transport was last told to roll.
     rolling: bool,
+    /// Whether a pass stops at the end of the contents ([`Self::set_stop_at_end`]).
+    stop_at_end: bool,
+    /// Where the contents end, in seconds of the multitrack: the last region's
+    /// end on any track and any lane, as of the last [`Self::sync`].
+    content_end: f64,
+    /// The position cursor, in seconds -- where a pass that stops at the end
+    /// goes back to. Moved by [`Self::cue`] and [`Self::stop`].
+    mark: f64,
+    /// The end mark last sent, in samples, so it is sent only when it moves.
+    end_sent: Option<(i64, i64)>,
 }
 
 impl MultitrackPlayback {
@@ -53,6 +63,10 @@ impl MultitrackPlayback {
             applier: Applier::new(endpoint),
             rate: 48_000.0,
             rolling: false,
+            stop_at_end: false,
+            content_end: 0.0,
+            mark: 0.0,
+            end_sent: None,
         }
     }
 
@@ -71,7 +85,48 @@ impl MultitrackPlayback {
         self.rate = rate;
         let plan = nodes::plan(multitrack, rate, sources);
         let ops = self.instance.reconcile(&plan, gain);
-        self.applier.apply(ops, ids)
+        let mut steps = self.applier.apply(ops, ids)?;
+        // An edit that moves the last region moves where a pass stops.
+        self.content_end = multitrack.end().0;
+        steps.extend(self.end_steps());
+        Ok(steps)
+    }
+
+    /// **Whether a pass stops at the end of the contents** -- where the last
+    /// region ends, on any track and any lane -- going back to the position
+    /// cursor, as an audio editor's does. Off by default: a multitrack is also
+    /// played past its end, to record onto or to hear a tail. What it sends is
+    /// the transport's end mark, and only when that moves; a loop set on the
+    /// transport wins over it.
+    pub fn set_stop_at_end(&mut self, on: bool) -> Vec<Step> {
+        self.stop_at_end = on;
+        self.end_steps()
+    }
+
+    /// Whether a pass stops at the end of the contents.
+    pub fn stops_at_end(&self) -> bool {
+        self.stop_at_end
+    }
+
+    /// The end mark the switch, the contents and the cursor ask for, sent
+    /// when it differs from the one last sent.
+    fn end_steps(&mut self) -> Vec<Step> {
+        let want = (self.stop_at_end && self.content_end > 0.0).then(|| {
+            (
+                self.secs_to_samples(self.content_end),
+                self.secs_to_samples(self.mark),
+            )
+        });
+        if want == self.end_sent {
+            return Vec::new();
+        }
+        self.end_sent = want;
+        command(
+            "/transport_end",
+            want.map_or_else(Vec::new, |(end, back)| {
+                vec![OscType::Long(end), OscType::Long(back)]
+            }),
+        )
     }
 
     /// **Rolls the transport**, or continues a paused pass: the engine keeps
@@ -103,8 +158,10 @@ impl MultitrackPlayback {
     /// **Halts and goes back to the mark**, not to the top: the next play
     /// starts from where the position cursor is.
     pub fn stop(&mut self, mark: f64) -> Vec<Step> {
+        self.mark = mark;
         let mut steps = self.pause();
         steps.extend(self.locate(mark));
+        steps.extend(self.end_steps());
         steps
     }
 
@@ -121,11 +178,16 @@ impl MultitrackPlayback {
     /// rolling one is left alone, because moving the mark mid-pass must not
     /// move the music.
     pub fn cue(&mut self, secs: f64) -> Vec<Step> {
-        if self.rolling {
+        self.mark = secs;
+        let mut steps = if self.rolling {
             Vec::new()
         } else {
             self.locate(secs)
-        }
+        };
+        // Where a pass that stops at the end goes back to is the cursor, so
+        // the mark follows it -- mid-pass too, since it moves no music.
+        steps.extend(self.end_steps());
+        steps
     }
 
     /// Frees everything the multitrack made. The multitrack itself is untouched: what a
@@ -273,6 +335,99 @@ mod tests {
             tracks: vec![Track::new(NodeId(10), NodeId(11))],
             ..Multitrack::default()
         }
+    }
+
+    /// A multitrack whose one region ends at `end` seconds.
+    fn ending_at(end: f64) -> Multitrack {
+        use clausters_document::multitrack::{Content, Region};
+        use clausters_document::{Lifetime, Second, SegmentRef, SegmentSource, SourceRef};
+
+        let mut multitrack = multitrack();
+        let window = SegmentRef {
+            source: SegmentSource::Samples(SourceRef {
+                source: SourceId(1),
+                lifetime: Lifetime::Session,
+                generation: 0,
+                range: None,
+            }),
+            start: 0.0,
+            duration: end,
+        };
+        multitrack.tracks[0].lanes[0].place(Region::new(
+            NodeId(20),
+            Second(0.0),
+            Second(end),
+            Content::window(window),
+        ));
+        multitrack
+    }
+
+    /// The `/transport_end` among `steps`, as its arguments.
+    fn end_mark(steps: &[Step]) -> Option<Vec<OscType>> {
+        steps.iter().find_map(|step| match step {
+            Step::Send(m) if m.addr == "/transport_end" => Some(m.args.clone()),
+            _ => None,
+        })
+    }
+
+    /// **Stopping at the end is a switch, off by default**: on, the end mark is
+    /// where the last region ends and the return is the position cursor, and
+    /// it is sent only when one of the two moves.
+    #[test]
+    fn a_pass_stops_at_the_end_of_the_contents_when_asked() {
+        let mut playback = MultitrackPlayback::new(Endpoint::default());
+        let steps = playback
+            .sync(
+                &ending_at(5.0),
+                48_000.0,
+                &HashMap::new(),
+                1.0,
+                &mut spaces(),
+            )
+            .unwrap();
+        assert_eq!(end_mark(&steps), None, "off: nothing is marked");
+
+        let on = playback.set_stop_at_end(true);
+        assert_eq!(
+            end_mark(&on),
+            Some(vec![OscType::Long(240_000), OscType::Long(0)]),
+            "the last region's end, back to the cursor"
+        );
+        let cued = playback.cue(1.0);
+        assert_eq!(
+            end_mark(&cued),
+            Some(vec![OscType::Long(240_000), OscType::Long(48_000)]),
+            "the return follows the cursor"
+        );
+        let same = playback
+            .sync(
+                &ending_at(5.0),
+                48_000.0,
+                &HashMap::new(),
+                1.0,
+                &mut spaces(),
+            )
+            .unwrap();
+        assert_eq!(end_mark(&same), None, "sent only when it moves");
+        let longer = playback
+            .sync(
+                &ending_at(7.0),
+                48_000.0,
+                &HashMap::new(),
+                1.0,
+                &mut spaces(),
+            )
+            .unwrap();
+        assert_eq!(
+            end_mark(&longer),
+            Some(vec![OscType::Long(336_000), OscType::Long(48_000)]),
+            "an edit that moves the last region moves it"
+        );
+        assert_eq!(
+            end_mark(&playback.set_stop_at_end(false)),
+            Some(vec![]),
+            "off clears it"
+        );
     }
 
     /// **A locate is the second's sample**, and a tempo in the multitrack

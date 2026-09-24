@@ -193,12 +193,28 @@ class Playback:
         nothing puts the position cursor down, which is where the next play
         starts; moving the mark mid-pass must not move the music.
         """
-        self._instance.set_rolling(self.playing)
+        rolling = self.playing
+        self._instance.set_rolling(rolling)
         steps = self._instance.cue(secs)
         if steps:
             self._run(steps)
+        if not rolling:
             self.transport.reported(position_sample=self._instance.secs_to_samples(secs))
         return self
+
+    @property
+    def stop_at_end(self) -> bool:
+        """Whether a pass **stops at the end of the contents** -- where the
+        last region ends, on any track and any lane -- going back to the
+        position cursor, as an audio editor's does. Off by default: a
+        multitrack is also played past its end. The engine stops on that
+        frame (the transport's end mark), and a loop set on the transport wins
+        over it."""
+        return self._instance.stops_at_end()
+
+    @stop_at_end.setter
+    def stop_at_end(self, on: bool) -> None:
+        self._run(self._instance.set_stop_at_end(bool(on)))
 
     def close(self):
         """Free the instance. The multitrack itself is untouched: what a

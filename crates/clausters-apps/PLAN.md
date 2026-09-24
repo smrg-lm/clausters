@@ -729,7 +729,15 @@ opened it.
   (`clausters_editing`) so both clients and the standalone host set the same
   mark; an edit that moves the last clip moves the mark.
 
-  **Open:** whether the multitrack's setting gets a key, and whether a
+  **Shipped for the multitrack as a switch** *(2026-09-24)*:
+  `MultitrackPlayback::set_stop_at_end` in `clausters_editing`, the end taken
+  from `Multitrack::end` on every `sync` and the return from the position
+  cursor `cue` and `stop` already carry, sent as the transport's end mark only
+  when it moves -- bound in C and wasm and exposed as `Playback.stop_at_end` /
+  `Playback.stopAtEnd` in both clients.
+
+  **Open:** how the switch is reached in the standalone host, which has no
+  client to set it -- a key, or a setting of the session; and whether a
   selection there plays once as the audio editor's does.
 
   **Acceptance:** in the audio editor, a pass with no loop stops at the take's

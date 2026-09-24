@@ -371,10 +371,12 @@ sits over it.
 | `clausters_editing_playback_stop` | `JsMultitrackPlayback.stop` | `idiom` — the steps that halt and go back to the mark |
 | `clausters_editing_playback_locate` | `JsMultitrackPlayback.locate` | `idiom` — the steps that put the transport at a second of the multitrack |
 | `clausters_editing_playback_cue` | `JsMultitrackPlayback.cue` | `idiom` — a locate for a stopped transport, nothing for a rolling one |
+| `clausters_editing_playback_set_stop_at_end` | `JsMultitrackPlayback.set_stop_at_end` | `idiom` — the steps that switch whether a pass stops at the end of the contents, back to the position cursor; `on` is an `int32` in C and a boolean in wasm |
 | `clausters_editing_playback_close` | `JsMultitrackPlayback.close` | `idiom` — the steps that free everything the muece made |
 | `clausters_editing_playback_meters` | `JsMultitrackPlayback.meters` | `idiom` — the meter bus runs by track, as JSON |
 | `clausters_editing_playback_set_rolling` | `JsMultitrackPlayback.set_rolling` | `idiom` — whether the transport is rolling, when the caller learned it from the engine |
 | `clausters_editing_playback_rolling` | `JsMultitrackPlayback.rolling` | `idiom` — whether the transport was last told to roll; C answers 1 or 0 |
+| `clausters_editing_playback_stops_at_end` | `JsMultitrackPlayback.stops_at_end` | `idiom` — whether a pass stops at the end of the contents; C answers 1 or 0 |
 | `clausters_editing_playback_secs_to_samples` | `JsMultitrackPlayback.secs_to_samples` | `idiom` — a second of the multitrack as a sample, at the rate it was planned at; wasm answers a double |
 | `clausters_editing_playback_samples_to_secs` | `JsMultitrackPlayback.samples_to_secs` | `idiom` — a sample as a second of the multitrack |
 | `clausters_editing_intake` | `editing_intake` | `idiom` — **what a gesture means**, in a structure's own vocabulary: a tag and a flat list of values become the payloads an edit is. One door over all four domains (`points`, `samples`, `events`, `multitrack`), because a host reports every gesture the same way — and because a fifth vocabulary then has nowhere to grow. Both take the domain, the tag and one JSON request; C sizes and fills a buffer where wasm returns the string |

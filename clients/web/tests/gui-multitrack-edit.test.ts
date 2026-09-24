@@ -792,5 +792,14 @@ test("the playback sends the crate's steps and waits where they say", async () =
         ["h", BigInt(multitrack.secsToSamples(2.0))],
         "a sample rides as 64 bits",
     );
+
+    // Stopping at the end is the crate's switch, read back through the binding;
+    // with no contents there is no end to mark, so nothing is sent.
+    (playback as unknown as { instance: unknown }).instance = multitrack;
+    log.length = 0;
+    assert.equal(playback.stopAtEnd, false);
+    playback.stopAtEnd = true;
+    assert.equal(playback.stopAtEnd, true);
+    assert.equal(log.length, 0, "no contents, nothing to mark");
 });
 

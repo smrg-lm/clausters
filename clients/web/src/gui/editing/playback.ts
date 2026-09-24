@@ -280,13 +280,29 @@ export class Playback {
      */
     cue(secs: number): this {
         if (this.instance === null) return this;
-        this.instance.setRolling(this.playing);
+        const rolling = this.playing;
+        this.instance.setRolling(rolling);
         const answer = this.instance.cue(secs);
-        if (answer !== '{"steps":[]}') {
+        if (answer !== '{"steps":[]}') void this.run(answer);
+        if (!rolling) {
             this.transport.reported({ positionSample: this.instance.secsToSamples(secs) });
-            void this.run(answer);
         }
         return this;
+    }
+
+    /**
+     * Whether a pass **stops at the end of the contents** -- where the last
+     * region ends, on any track and any lane -- going back to the position
+     * cursor, as an audio editor's does. Off by default: a multitrack is also
+     * played past its end. The engine stops on that frame (the transport's end
+     * mark), and a loop set on the transport wins over it.
+     */
+    get stopAtEnd(): boolean {
+        return this.instance?.stopsAtEnd() ?? false;
+    }
+
+    set stopAtEnd(on: boolean) {
+        if (this.instance !== null) void this.run(this.instance.setStopAtEnd(on));
     }
 
     /**
