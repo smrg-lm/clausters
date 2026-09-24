@@ -200,14 +200,6 @@ its plan; the plan is where its acceptance is read.
   arrangement, the question the multitrack and piano-roll views already
   answered for their own material.
 
-- ⬜ **`X7` — the audio editor's nodes on the server**
-  *(`crates/clausters-apps/PLAN.md`, "X7")*. Taken before the other
-  applications because it is how a take being edited is heard and measured:
-  the monitor's readers held a take's last sample on the output and nothing
-  in the window showed it. It opens on the GraphDef, which the user reviews
-  before it is built, and it needs a stopping phase in the server's transport
-  for the declick.
-
 - ⬜ **The applications after the multitrack, `X2`-`X6`**
   *(`crates/clausters-apps/PLAN.md`, "The milestones")*. Each is written with
   what exists under it and what is open, and each opens on a decision:
@@ -278,6 +270,19 @@ its plan; the plan is where its acceptance is read.
   "unscheduled" reads as a decision rather than an oversight.
 
 ### The near work
+
+- ⬜ **`T6` — several transports on one server** *(`PLAN.md`, the T track)*.
+  **Taken first**, by the user's decision (2026-09-23): the audio editor's own
+  nodes need a transport of their own beside a multitrack's, and the server has
+  one. A protocol change across the server, both clients, the GUI host and the
+  books at once.
+
+- ⬜ **`X7` — the audio editor's nodes on the server**
+  *(`crates/clausters-apps/PLAN.md`, "X7")*. After `T6`, which it needs. It is
+  how a take being edited is heard and measured: the monitor's readers held a
+  take's last sample on the output and nothing in the window showed it. Its
+  GraphDef is written out in the plan for the user's review, and its declick
+  needs a stopping phase in the server's transport.
 
 - ⬜ **`C54` - a timeline plays what is under the cursor, and an edit reaches
   the pass that is running**, with its port **`W31`**

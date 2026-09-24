@@ -473,6 +473,123 @@ opened it.
     an effect is heard and not written. Applying one to the take is a separate
     operation on the server.
 
+  **The GraphDef, for review** *(written 2026-09-23; nothing of it is built)*.
+  Two graphs and three SynthDefs, named with their own prefix (`ae`) so
+  nothing in them is the multitrack's. `N` is the take's channel count. The
+  JSON is the wire's own shape (`docs/schemas.md`, "GraphDef"), written out for
+  a stereo take.
+
+  ```text
+  editor group                          /group_new, owned by the editor
+  |- transport group                    /transport_group on the editor's own transport (T6)
+  |  `- ae.play2        graph           buses: dry (private, 2), out (external, 2)
+  |     |- [source] ae.reader x N       one per channel -> dry:chan
+  |     |- [fx]     effects in preview  on dry (wiring open, see below)
+  |     `- ae.pass2                     dry -> out
+  `- ae.output2         graph           buses: in (external, 2)
+     |- ae.meter2                      in -> two control buses (the level meter)
+     `- ae.declick2                     in -> hardware, times the transport's ramp
+  ```
+
+  The bus between the two graphs is one **the editor allocates** (N audio
+  channels from the client's bus allocator) and hands to both as their
+  external bus. A graph's private buses belong to its own instance, and the
+  two graphs live in different groups, so no private bus can join them.
+  `ae.output2` is added at the tail of the editor group, after the transport
+  group, so it reads the bus in the same block the readers wrote it.
+
+  **`ae.reader`** -- one channel of the take, following the transport. It is
+  the multitrack's reader without the parts a take played whole does not use:
+  no `at` (the take starts at the transport's zero), no `start`, no `loop`
+  (the transport loops) and no `rate` beyond the buffer's own.
+
+  ```json
+  {"name": "ae.reader",
+   "controls": [
+     {"name": "out",  "default": 0},
+     {"name": "buf",  "default": 0},
+     {"name": "chan", "default": 0},
+     {"name": "span", "default": 0}],
+   "ugens": [
+     {"kind": "TransportPos", "inputs": [{"const": 0}]},
+     {"kind": "BinaryOpUGen", "op": "ge", "inputs": [{"ugen": 0}, {"const": 0}]},
+     {"kind": "BinaryOpUGen", "op": "lt", "inputs": [{"ugen": 0}, {"control": 3}]},
+     {"kind": "Mul", "inputs": [{"ugen": 1}, {"ugen": 2}]},
+     {"kind": "BufRateScale", "inputs": [{"control": 1}]},
+     {"kind": "Mul", "inputs": [{"ugen": 0}, {"ugen": 4}]},
+     {"kind": "BufRd", "inputs": [{"control": 1}, {"control": 2}, {"ugen": 5}, {"const": 0}]},
+     {"kind": "Mul", "inputs": [{"ugen": 6}, {"ugen": 3}]},
+     {"kind": "Add", "inputs": [{"control": 0}, {"control": 2}]},
+     {"kind": "Out", "inputs": [{"ugen": 8}, {"ugen": 7}]}]}
+  ```
+
+  - `span` is the take's length on the transport, in engine samples (`frames`
+    times the engine's rate over the take's): the editor stitches the join,
+    so it knows the length after every edit and sets `span` in the same turn.
+    Past it the gate is exactly zero, and nothing is compared against the
+    buffer per sample.
+  - The gate is a step at both ends, with no ramp: the take's first and last
+    samples are heard as they are, so a click in the file is heard as a click.
+  - `Out` writes `out + chan`, so each reader lands on its own channel of
+    `dry` whatever the slot hands it as `out`.
+
+  **`ae.pass2`** -- `dry` onto `out` at unity: `In` per channel into `Out`.
+  It is what an empty `fx` slot leaves sounding, and the point after the
+  effects where the take leaves the play graph.
+
+  **`ae.play2`**:
+
+  ```json
+  {"name": "ae.play2",
+   "buses": [
+     {"name": "dry", "rate": "audio", "channels": 2},
+     {"name": "out", "rate": "audio", "channels": 2, "external": true}],
+   "members": [
+     {"def": "ae.pass2", "controls": {"in0": "dry:0", "in1": "dry:1",
+                                      "out0": "out:0", "out1": "out:1"}},
+     {"def": "ae.reader", "slot": "source", "controls": {"out": "dry"}}],
+   "surface": {
+     "buf":  [{"member": 1, "control": "buf"}],
+     "chan": [{"member": 1, "control": "chan"}],
+     "span": [{"member": 1, "control": "span"}]}}
+  ```
+
+  **`ae.meter2`** -- the multitrack's meter, the same algorithm under the
+  editor's own name: `In` per channel, `Meter` with the field's ballistics
+  (`clausters_core::mixer::METER_DECAY`, `METER_HOLD`), `OutCtl` onto a
+  control bus the host draws. It is written once in `clausters-core` and only
+  its name is the editor's. **`ae.declick2`** -- `In` per channel, times
+  `TransportFade`, onto the hardware.
+
+  **`ae.output2`**:
+
+  ```json
+  {"name": "ae.output2",
+   "buses": [{"name": "in", "rate": "audio", "channels": 2, "external": true}],
+   "members": [
+     {"def": "ae.meter2",   "controls": {"in0": "in:0", "in1": "in:1"}},
+     {"def": "ae.declick2", "controls": {"in0": "in:0", "in1": "in:1"}}],
+   "surface": {
+     "meter/out0":  [{"member": 0, "control": "out0"}],
+     "meter/out1":  [{"member": 0, "control": "out1"}],
+     "meter/decay": [{"member": 0, "control": "decay"}],
+     "meter/hold":  [{"member": 0, "control": "hold"}],
+     "out0": [{"member": 1, "control": "out0"}],
+     "out1": [{"member": 1, "control": "out1"}]}}
+  ```
+
+  - **The meter reads the take before the declick**, so it shows the take and
+    not the ramp. It still falls to zero on a pause, because the frozen readers
+    write nothing and the bus is cleared every block.
+  - **A mono take** is one reader, and `ae.output2` wires `in1` to `in:0`, so
+    the take is heard on both sides at unity, as an audio editor plays a mono
+    file. There is no pan law, since there is no strip.
+  - **`TransportFade`** is a new UGen: the level of the transport's
+    declick ramp, `1` while rolling, falling to `0` across the stopping phase
+    and rising from `0` on a play. The engine publishes it in
+    `ProcessCtx::transport` beside `rolling`, and with T6 it is the ramp of the
+    node's own transport.
+
   **Acceptance:** past the take's end the output is exactly zero; play and
   pause at any frame make no click, and a loop's wrap is not faded; the meter
   shows the level while it plays and falls to zero on a pause; closing the
@@ -481,13 +598,16 @@ opened it.
   editor's example shows the meter.
 
   **Open:**
-  - The GraphDef itself: its members, buses, slots and surface. It is written
-    out and reviewed with the user before it is built (the user asked for that
-    review, 2026-09-23).
+  - The GraphDef above, until the user has reviewed it.
+  - **How the `fx` slot is wired**: an effect in place on `dry` (reading and
+    replacing it, bypassed by pausing it) or between `dry` and a second bus
+    (bypassed by routing around it). It is decided with the first effect,
+    since an empty slot cannot be checked by ear.
   - The stop's ramp: its length, and where the position comes to rest after a
     stop (the sample the stop was asked at, or the end of the ramp).
-  - **One transport per server**: `/transport_group` binds one group, so a
-    multitrack and an audio editor on the same server both want it.
+  - **One transport per server** today: `/transport_group` binds one group, so
+    a multitrack and an audio editor on the same server both want it. That is
+    `T6` (`PLAN.md`), taken first.
   - Whether the host's monitor goes away, or stays for a window with no
     application behind it.
   - Whether the meter is per channel, and where it sits in the window.

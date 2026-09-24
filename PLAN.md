@@ -396,6 +396,48 @@ Cargo feature: every build has both clocks and both queues.
 
   **Acceptance:** a locate while stopped moves the published position, and the graph reads the new one on play; a reader following the position renders the same samples as the same span expressed in a score and rendered in batch (T1's own technique, over a seeded def, deliberately not block-aligned); loop points wrap with no client in the loop and no discontinuity at the seam; the elapsed clock stays monotonic across a locate and `/sched_atTransport` behaves exactly as before; `tests/rt_safety.rs` stays green. **The packages move together**: `/transport_query.reply` gains the position **appended** (so a client reading only the older fields keeps working), `/transport_loop` and whatever the locate grows get their builders in both clients, and `docs/schemas.md` plus `docs/sample-clock.md` carry the two-quantity distinction — which is the part most likely to be misread, since one of them is called "the transport clock" and is not the piece's time.
 
+- ⬜ **T6 — Several transports on one server** *(made a milestone and taken
+  first by the user, 2026-09-23; it was a future direction since 2026-09-17,
+  left for when there was a case that needed it)*. The case: the audio editor gets nodes of
+  its own on the server (`crates/clausters-apps/PLAN.md`, `X7`), with its own
+  play, pause and locate, and a multitrack on the same server has its own.
+  `/transport_group` binds one group and the server has one transport -- one
+  governed group, one transport clock (the frozen total), one position anchor,
+  one loop, one transport-axis queue -- so the two would share one playhead.
+
+  **The shape** (from the future direction it replaces): a transport becomes a
+  resource **addressed by id and sized at boot** (like `--taps`), so the audio
+  thread never allocates. Each has its own governed group, clock, position
+  anchor, loop and transport-axis queue. The id reaches every surface that
+  names the transport: the `/transport_*` commands and `/sched_atTransport`,
+  the `TransportPos` UGen, the per-transport clocks and positions in the
+  shared-memory segment, the change notifications, and `/gui_headClock`, which
+  says which transport a view draws from. `ProcessCtx::transport`, which every
+  UGen reads today, becomes the transport the node's governed group belongs
+  to -- so a node reads the state of *its* transport, and a node governed by
+  none reads a stopped one, as it does today with no group bound.
+
+  **Compatibility:** transport `0` is what exists today, and a command that
+  names no transport means it, so a client that never names one keeps working.
+  `timeline.transport = server` was named to survive this (2026-09-17): a
+  server with several transports makes it hold one of them
+  (`server.transport(id)`), and nothing else in the surface moves.
+
+  **Open:** how many transports a boot sizes by default; whether one
+  transport may govern more than one group (the multitrack's master, and the
+  audio editor's output, stay *outside* the governed group -- `X7` and the
+  document plan's "The master freezes with the transport" -- which needs a
+  parent group, not a second governed one); and whether the `/transport_*`
+  commands take the id as a first argument or as a new address family.
+
+  **Acceptance:** two transports on one server play, pause, locate and loop
+  independently, each frozen and thawed at its own sample; a node reads its
+  own transport's position; transport `0` behaves exactly as the one transport
+  did, so every existing test and example stays green; `tests/rt_safety.rs`
+  stays green. **The packages move together**: `docs/schemas.md`,
+  `docs/sample-clock.md`, both clients' builders and the GUI host's head
+  clock, in the same pass.
+
 Open, not blocking:
 
 - ⬜ **T2 — `/transport_set`'s grid origin on the transport axis.** With a group
@@ -2336,8 +2378,9 @@ where it came from).
   and no pre-fader send, once the ramp is over. Measured before it is taken, and
   taken without touching the audible rule.
 
-- ⬜ **Several transports on one server, to play concurrently** *(named
-  2026-09-17 with the user, designing how a timeline plays on a server's
+- ✅ **Several transports on one server, to play concurrently** *(moved to the
+  T track as T6, 2026-09-23, when the audio editor's nodes gave it a case.
+  Named 2026-09-17 with the user, designing how a timeline plays on a server's
   transport; `clients/python/PLAN.md`, the tempo-map entry)*. A server has
   one transport today -- one governed group, one transport clock, one position
   anchor, one loop -- so two things that each want their own play, pause and
