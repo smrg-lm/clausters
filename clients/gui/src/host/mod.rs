@@ -4952,6 +4952,79 @@ mod write_tests {
         assert!(host.playing_widget().is_none());
     }
 
+    /// **The play cursor is the transport's position while the monitor
+    /// plays**, and it goes when the monitor stops: an anchor of 0 on the
+    /// transport's clock is the take's own frame, and a stopped monitor leaves
+    /// only the position cursor on screen.
+    #[test]
+    fn the_monitor_draws_a_play_cursor_while_it_plays() {
+        let (mut host, _server) = take_host(1, 16);
+        let key = host.timeline_key(50).expect("the take is on a timeline");
+        assert!(host.play_buffer(1, 50, 0, None));
+        assert_eq!(host.head_clock(), HeadClock::Transport);
+        assert_eq!(host.timelines().state(key).unwrap().playhead_at, 0.0);
+        assert!(host.stop_playback());
+        assert_eq!(host.timelines().state(key).unwrap().playhead_at, -1.0);
+    }
+
+    /// Where the pointer is over widget 50, for a gesture aimed at the take.
+    fn over_the_take(host: &Host, ctx: &gestures::GestureCtx) -> (f64, f64) {
+        let area = host.content_area(ctx.def_id, ctx.fb_w, ctx.fb_h);
+        let r = layout::layout(area, host.window_def(1).unwrap(), host.metrics_for(1))
+            .into_iter()
+            .find(|p| p.widget.id == Some(50))
+            .expect("the take is placed")
+            .rect;
+        ((r.x + r.w * 0.5) as f64, (r.y + r.h * 0.5) as f64)
+    }
+
+    /// **Space plays from the position cursor, and a second press stops and
+    /// goes back to it** -- the transport is located at the mark, not left
+    /// wherever the pass ended, so the next press plays from the same place.
+    #[test]
+    fn space_plays_from_the_position_cursor_and_stops_back_at_it() {
+        let (mut host, server) = take_host(1, 16);
+        let ctx = gestures::GestureCtx::new(1, 800, 400);
+        let (cx, cy) = over_the_take(&host, &ctx);
+        let g = gestures::Gestures::default();
+        host.set_timeline_cursor(50, 4.0);
+
+        assert!(g.play_key(&mut host, &ctx, cx, cy).is_some());
+        assert_eq!(host.playing_widget(), Some(50));
+        bound_group(&server);
+        assert_eq!(received(&server).unwrap().addr, "/transport_loop");
+        let locate = received(&server).unwrap();
+        assert_eq!(locate.addr, "/transport_locateSample");
+        assert_eq!(locate.args[0], OscType::Long(4), "from the mark");
+        assert_eq!(received(&server).unwrap().addr, "/synth_new");
+        assert_eq!(received(&server).unwrap().addr, "/transport_play");
+
+        assert!(g.play_key(&mut host, &ctx, cx, cy).is_some());
+        assert!(host.playing_widget().is_none(), "the second press stops");
+        assert_eq!(received(&server).unwrap().addr, "/transport_stop");
+        assert_eq!(received(&server).unwrap().addr, "/node_free");
+        let locate = received(&server).unwrap();
+        assert_eq!(locate.addr, "/transport_locateSample");
+        assert_eq!(locate.args[0], OscType::Long(4), "and back at the mark");
+    }
+
+    /// **Home and End put the position cursor at the ends of the take** --
+    /// frame 0 and one past the last frame, where a paste would append.
+    #[test]
+    fn home_and_end_put_the_position_cursor_at_the_ends() {
+        let (mut host, _server) = take_host(1, 16);
+        let ctx = gestures::GestureCtx::new(1, 800, 400);
+        let (cx, cy) = over_the_take(&host, &ctx);
+        let g = gestures::Gestures::default();
+        let key = host.timeline_key(50).unwrap();
+        let cursor = |host: &Host| host.timelines().state(key).unwrap().cursor();
+
+        assert!(g.ends_key(&mut host, &ctx, true, cx, cy).is_some());
+        assert_eq!(cursor(&host), Some(16.0), "End: the end of the take");
+        assert!(g.ends_key(&mut host, &ctx, false, cx, cy).is_some());
+        assert_eq!(cursor(&host), Some(0.0), "Home: its start");
+    }
+
     /// **The seek and the loop are the transport's, and they go out before a
     /// reader exists** -- so the readers are created standing where the multitrack
     /// is rather than sliding into place from wherever the last take left it.

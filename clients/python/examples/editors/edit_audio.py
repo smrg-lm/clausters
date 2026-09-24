@@ -20,9 +20,12 @@ what only the history holds, and the oldest entries go first past it.
 
 What to do in the window: **drag** to select, then **Ctrl+X** to cut,
 **Ctrl+C** to copy, **Ctrl+V** to paste at the cursor and
-**Ctrl+Shift+V** to mix there. **Wheel** to zoom in until each sample is a
-disc, then **Alt+drag** to draw. **Ctrl+Z** and **Ctrl+Shift+Z** walk the
-history. ``hear()`` plays the take as the edits have left it, and ``parts()``
+**Ctrl+Shift+V** to mix there. **Click** to put the position cursor down,
+and **Home** and **End** to put it at the take's start and end. **Space**
+plays from the cursor -- a selection plays as a loop -- with the play cursor
+following the sound, and a second press stops it back at the position
+cursor. **Wheel** to zoom in until each sample is a disc, then **Alt+drag**
+to draw. **Ctrl+Z** and **Ctrl+Shift+Z** walk the history. ``hear()`` plays the take as the edits have left it, and ``parts()``
 prints what it is made of. ``editor.save()`` -- or Ctrl+S in the window --
 writes the edit back into the buffer it was opened from, and
 ``editor.save(path)`` writes it as a file instead.

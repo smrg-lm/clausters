@@ -877,6 +877,14 @@ impl ApplicationHandler<UserEvent> for App {
                     ref key if is_space(key) => {
                         self.play_key(def_id);
                     }
+                    // Home and End put the position cursor at the start or the
+                    // end of the samples under the pointer.
+                    Key::Named(NamedKey::Home) => {
+                        self.ends_key(def_id, false);
+                    }
+                    Key::Named(NamedKey::End) => {
+                        self.ends_key(def_id, true);
+                    }
                     // The clipboard verbs over the view under the cursor. They
                     // are last, so a focused field and a roll's own block keys
                     // both answer first: this is what nothing else wanted.

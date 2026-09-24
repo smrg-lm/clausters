@@ -261,6 +261,24 @@ impl App {
         true
     }
 
+    /// Home or End: the position cursor to the start or the end of the
+    /// samples under the pointer. Returns whether it was consumed.
+    pub(super) fn ends_key(&mut self, def_id: i32, to_end: bool) -> bool {
+        let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) else {
+            return false;
+        };
+        let ctx = self.gesture_ctx(def_id);
+        let Some(effects) = self
+            .windows
+            .get_mut(&def_id)
+            .and_then(|ws| ws.gestures.ends_key(&mut self.host, &ctx, to_end, cx, cy))
+        else {
+            return false;
+        };
+        self.apply_gesture_effects(effects);
+        true
+    }
+
     /// Undo or redo over a window: the route to whoever owns the document.
     /// The host keeps no history, so this only reports (see
     /// [`Gestures::history`](crate::host::gestures::Gestures::history)).

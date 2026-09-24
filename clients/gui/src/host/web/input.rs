@@ -247,6 +247,18 @@ impl WebApp {
             self.play_key(def);
             return;
         }
+        // Home and End put the position cursor at the start or the end of the
+        // samples under the pointer, as on the desktop.
+        if let Key::Named(named @ (NamedKey::Home | NamedKey::End)) = key {
+            if let Some(slot) = self.canvases.get_mut(&def)
+                && let Some(effects) =
+                    slot.gestures
+                        .ends_key(&mut self.host, &ctx, *named == NamedKey::End, cx, cy)
+            {
+                self.apply_gesture_effects(effects);
+            }
+            return;
+        }
         if matches!(key, Key::Character(c) if c.eq_ignore_ascii_case("s")) && ctx.ctrl {
             self.window_verb(def, "save");
             return;

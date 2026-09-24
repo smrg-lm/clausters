@@ -38,7 +38,7 @@ use crate::host::diag;
 use clausters_core::osc::{OscMessage, OscType};
 use serde_json::json;
 
-use super::Host;
+use super::{HeadClock, Host};
 
 /// What the monitor is loaded with: whose contents, over how many channels,
 /// and whether the transport is rolling it.
@@ -249,6 +249,13 @@ impl Host {
             addr: "/transport_play".into(),
             args: vec![],
         });
+        // **The play cursor is the transport's position**, drawn by the host
+        // every frame from the engine's own counter -- an anchor of 0 on that
+        // clock is the take's own frame, since the readers play it from the
+        // transport's zero. It wraps where a loop wraps and holds where a pause
+        // holds, with no message per frame.
+        self.set_head_clock(HeadClock::Transport);
+        self.set_timeline_playhead(widget_id, 0.0);
         self.playing = Some(Monitor {
             widget: widget_id,
             first,
@@ -267,6 +274,9 @@ impl Host {
         let Some(monitor) = self.playing.take() else {
             return false;
         };
+        // Stopped, the play cursor goes and the position cursor is what is
+        // left: nothing is playing, so there is no play position to draw.
+        self.set_timeline_playhead(monitor.widget, -1.0);
         self.send_sound(OscMessage {
             addr: "/transport_stop".into(),
             args: vec![],

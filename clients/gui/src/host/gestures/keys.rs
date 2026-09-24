@@ -178,7 +178,7 @@ impl Gestures {
     ///
     /// **Where it starts and whether it repeats are read off the view**, not
     /// asked for: a selection plays as a loop over exactly the span it covers,
-    /// and with no selection the take plays from its start. The transport is
+    /// and with no selection the take plays from the position cursor. The transport is
     /// what carries both -- a locate and a loop span -- so nothing here computes
     /// a time or keeps one in step.
     pub fn play_key(
@@ -188,12 +188,11 @@ impl Gestures {
         cx: f64,
         cy: f64,
     ) -> Option<Vec<GestureEffect>> {
-        // **Space is play/pause, and a loaded monitor is never reloaded.** A
-        // monitor already sounding is paused where it stands; a paused one
-        // resumes and *continues*, because the governed group froze with its
-        // readers' state intact and the position froze with it. Neither needs a
-        // start: where to begin was decided when the take was loaded, and moved
-        // since by whatever swept over it.
+        // **Space is play/stop, and a stop goes back to the position cursor.**
+        // A monitor already sounding is stopped and the transport is located
+        // at the mark the reader put down -- not left wherever the pass ended
+        // -- so the next press plays from the same place, as a multitrack's
+        // does.
         //
         // The one thing still addressed by the pointer is *which* take to load:
         // space over a take the monitor is not holding plays that one instead,
@@ -203,23 +202,38 @@ impl Gestures {
         if let Some(loaded) = host.monitor()
             && over.is_none_or(|id| id == loaded.widget)
         {
-            host.pause_playback();
-            return Some(Vec::new());
+            let mark = start_of(host, loaded.widget).0;
+            host.stop_playback();
+            host.locate(mark);
+            return Some(vec![GestureEffect::Redraw(ctx.def_id)]);
         }
         let id = over?;
-        let state = host
-            .timeline_key(id)
-            .and_then(|key| host.timelines().state(key))
-            .copied();
-        // **The cursor is where it starts, span or no span.** A click leaves a
-        // selection of zero length, and its start is the cursor -- reading only
-        // the *spans*, as this did, sent every play back to frame 0 and made
-        // the click that placed the head look like it had done nothing.
-        let start = state.map_or(0.0, |s| s.sel_start).max(0.0) as u64;
-        let span = state
-            .and_then(|s| s.selection())
-            .map(|(from, len)| (from.max(0.0) as u64, (from + len).max(0.0) as u64));
-        host.play_buffer(ctx.def_id, id, start, span).then(Vec::new)
+        let (start, span) = start_of(host, id);
+        host.play_buffer(ctx.def_id, id, start, span)
+            .then(|| vec![GestureEffect::Redraw(ctx.def_id)])
+    }
+
+    /// **Home and End: the position cursor to the start or the end of the
+    /// samples under the pointer** -- the same placing a click on the body
+    /// makes, so the owner is told where the mark went and a play that follows
+    /// starts there.
+    ///
+    /// Returns `None` over anything that draws no samples, so the key falls
+    /// through to whatever else the window does with it.
+    pub fn ends_key(
+        &self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        to_end: bool,
+        cx: f64,
+        cy: f64,
+    ) -> Option<Vec<GestureEffect>> {
+        let Hit { id, .. } = hit(host, ctx, cx, cy)?;
+        let frames = host.buffer_frames(ctx.def_id, id)?;
+        let pos = if to_end { frames as f64 } else { 0.0 };
+        let mut out = Vec::new();
+        super::nav::locate_at(host, &mut out, ctx, id, pos);
+        Some(out)
     }
 
     /// **Copy, cut and paste over the selection**, addressed to the view under
@@ -432,4 +446,23 @@ fn element_block(
         .as_element()?
         .samples()?
         .sample_block(start, frames, ctx.sample_rate)
+}
+
+/// **Where a play over view `id` starts, and the span it loops** -- read off
+/// the view, never asked for. A selection plays as a loop over exactly the
+/// span it covers, from its start; with none it plays from the position
+/// cursor, and from frame 0 where no cursor has been placed.
+fn start_of(host: &Host, id: i32) -> (u64, Option<(u64, u64)>) {
+    let state = host
+        .timeline_key(id)
+        .and_then(|key| host.timelines().state(key))
+        .copied();
+    let span = state
+        .and_then(|s| s.selection())
+        .map(|(from, len)| (from.max(0.0) as u64, (from + len).max(0.0) as u64));
+    let start = match span {
+        Some((from, _)) => from,
+        None => state.and_then(|s| s.cursor()).unwrap_or(0.0).max(0.0) as u64,
+    };
+    (start, span)
 }

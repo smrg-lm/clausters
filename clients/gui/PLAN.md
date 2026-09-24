@@ -7495,3 +7495,15 @@ finished work, where a pending item reads as done.
   `signal` docstrings say that, and the two `pianoroll` ones -- plus the two
   examples that echoed them -- name the compact roll a `multitrack` draws
   inside a box instead of a "`clip` roll".
+
+- ✅ **The audio editor showed no play cursor, and space paused instead of
+  stopping** *(found 2026-09-24 by the user, in `edit_audio.py`: "no puedo
+  saber dónde está el cursor"; fixed the same day)*. The take monitor rolled
+  the transport and drew nothing of it, so where the sound was could only be
+  guessed; and a second press paused where the pass stood, so the next press
+  continued from there rather than from the mark. Now the monitor anchors the
+  view's play cursor to the transport's position (the host draws it from the
+  engine's counter, as a multitrack's), space plays from the position cursor —
+  a selection loops — and stops back at it, and **Home**/**End** put the
+  position cursor at the take's start and end. Pausing is still the monitor's
+  verb (`Host::pause_playback`); no key reaches it.
