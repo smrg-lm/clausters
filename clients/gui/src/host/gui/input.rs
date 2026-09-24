@@ -241,14 +241,19 @@ impl App {
     /// `play`, which a multitrack editor reads as play/pause. Returns whether it
     /// was consumed.
     pub(super) fn play_key(&mut self, def_id: i32) -> bool {
-        if let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) {
-            let ctx = self.gesture_ctx(def_id);
-            if let Some(ws) = self.windows.get_mut(&def_id)
-                && let Some(effects) = ws.gestures.play_key(&mut self.host, &ctx, cx, cy)
-            {
-                self.apply_gesture_effects(effects);
-                return true;
-            }
+        // An unknown pointer is off the window: the gesture then addresses the
+        // window's one take, if it has exactly one.
+        let (cx, cy) = self
+            .windows
+            .get(&def_id)
+            .and_then(|w| w.cursor)
+            .unwrap_or((-1.0, -1.0));
+        let ctx = self.gesture_ctx(def_id);
+        if let Some(ws) = self.windows.get_mut(&def_id)
+            && let Some(effects) = ws.gestures.play_key(&mut self.host, &ctx, cx, cy)
+        {
+            self.apply_gesture_effects(effects);
+            return true;
         }
         // **A multitrack is the window's, not the pointer's.** Its readers are
         // resident and follow the transport, so there is nothing to point at --
@@ -277,9 +282,11 @@ impl App {
     /// Home or End: the position cursor to the start or the end of the
     /// samples under the pointer. Returns whether it was consumed.
     pub(super) fn ends_key(&mut self, def_id: i32, to_end: bool) -> bool {
-        let Some((cx, cy)) = self.windows.get(&def_id).and_then(|w| w.cursor) else {
-            return false;
-        };
+        let (cx, cy) = self
+            .windows
+            .get(&def_id)
+            .and_then(|w| w.cursor)
+            .unwrap_or((-1.0, -1.0));
         let ctx = self.gesture_ctx(def_id);
         let Some(effects) = self
             .windows

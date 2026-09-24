@@ -5094,6 +5094,21 @@ mod write_tests {
         assert!(msg.args.is_empty(), "and no end while it loops");
     }
 
+    /// **With no pointer, the keys reach the window's one take** -- the first
+    /// press after a window opens has none, since the pointer is unknown until
+    /// it moves, and it used to do nothing (found 2026-09-24 by the user).
+    #[test]
+    fn with_no_pointer_the_keys_reach_the_windows_one_take() {
+        let (mut host, _server) = take_host(1, 16);
+        let ctx = gestures::GestureCtx::new(1, 800, 400);
+        let g = gestures::Gestures::default();
+        assert!(g.ends_key(&mut host, &ctx, true, -1.0, -1.0).is_some());
+        let key = host.timeline_key(50).unwrap();
+        assert_eq!(host.timelines().state(key).unwrap().cursor(), Some(16.0));
+        assert!(g.play_key(&mut host, &ctx, -1.0, -1.0).is_some());
+        assert_eq!(host.playing_widget(), Some(50), "space plays it");
+    }
+
     /// **Home and End put the position cursor at the ends of the take** --
     /// frame 0 and one past the last frame, where a paste would append.
     #[test]

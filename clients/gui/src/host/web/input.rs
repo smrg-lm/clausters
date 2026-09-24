@@ -53,6 +53,14 @@ impl WebApp {
     /// live in this front's GPU slots, so they are copied out here) -- the
     /// browser twin of the native front's snapshot.
     pub(super) fn gesture_ctx(&self, def: i32) -> Option<(GestureCtx, (f64, f64))> {
+        let ctx = self.window_ctx(def)?;
+        Some((ctx, self.canvases.get(&def)?.cursor?))
+    }
+
+    /// The gesture context of canvas `def` whether or not a pointer has been
+    /// over it -- what a window key that needs no pointer is handed, with the
+    /// pointer standing off the canvas.
+    pub(super) fn window_ctx(&self, def: i32) -> Option<GestureCtx> {
         let slot = self.canvases.get(&def)?;
         let (fb_w, fb_h) = slot.fb();
         let mut ctx = GestureCtx::new(def, fb_w, fb_h);
@@ -84,7 +92,7 @@ impl WebApp {
                 }
             }
         }
-        Some((ctx, slot.cursor?))
+        Some(ctx)
     }
 
     /// Carries out a gesture's effects over this front's sinks: `/gui_event`s
@@ -201,6 +209,8 @@ impl WebApp {
             // nothing is under it: the window's own keys are all that is left.
             if is_space(key) {
                 self.play_key(def);
+            } else if let Some(ctx) = self.window_ctx(def) {
+                self.take_keys(def, key, &ctx, -1.0, -1.0);
             }
             return;
         };
@@ -247,24 +257,7 @@ impl WebApp {
             self.play_key(def);
             return;
         }
-        // `L` switches the take monitor's loop, as on the desktop.
-        if matches!(key, Key::Character(c) if c.eq_ignore_ascii_case("l")) && !ctx.ctrl {
-            if let Some(slot) = self.canvases.get_mut(&def) {
-                let effects = slot.gestures.loop_key(&mut self.host, &ctx);
-                self.apply_gesture_effects(effects);
-            }
-            return;
-        }
-        // Home and End put the position cursor at the start or the end of the
-        // samples under the pointer, as on the desktop.
-        if let Key::Named(named @ (NamedKey::Home | NamedKey::End)) = key {
-            if let Some(slot) = self.canvases.get_mut(&def)
-                && let Some(effects) =
-                    slot.gestures
-                        .ends_key(&mut self.host, &ctx, *named == NamedKey::End, cx, cy)
-            {
-                self.apply_gesture_effects(effects);
-            }
+        if self.take_keys(def, key, &ctx, cx, cy) {
             return;
         }
         if matches!(key, Key::Character(c) if c.eq_ignore_ascii_case("s")) && ctx.ctrl {
@@ -338,12 +331,44 @@ impl WebApp {
         self.apply_gesture_effects(effects);
     }
 
+    /// The take monitor's keys, as on the desktop: `L` switches its loop, and
+    /// Home and End put the position cursor at the start or the end of the
+    /// samples under the pointer -- or of the window's one take, with no
+    /// pointer. Returns whether the key was one of them.
+    fn take_keys(&mut self, def: i32, key: &Key, ctx: &GestureCtx, cx: f64, cy: f64) -> bool {
+        if matches!(key, Key::Character(c) if c.eq_ignore_ascii_case("l")) && !ctx.ctrl {
+            if let Some(slot) = self.canvases.get_mut(&def) {
+                let effects = slot.gestures.loop_key(&mut self.host, ctx);
+                self.apply_gesture_effects(effects);
+            }
+            return true;
+        }
+        if let Key::Named(named @ (NamedKey::Home | NamedKey::End)) = key {
+            if let Some(slot) = self.canvases.get_mut(&def)
+                && let Some(effects) =
+                    slot.gestures
+                        .ends_key(&mut self.host, ctx, *named == NamedKey::End, cx, cy)
+            {
+                self.apply_gesture_effects(effects);
+            }
+            return true;
+        }
+        false
+    }
+
     /// The space bar: play the take the cursor is over and stop what is
     /// playing, or -- over nothing a take answers for, or with no pointer over
     /// the canvas yet -- the window's own `play`, which a multitrack editor reads
     /// as play/pause. The browser twin of the native front's `play_key`.
     fn play_key(&mut self, def: i32) {
-        if let Some((ctx, (cx, cy))) = self.gesture_ctx(def)
+        // An unknown pointer is off the canvas: the gesture then addresses the
+        // window's one take, if it has exactly one.
+        let (cx, cy) = self
+            .canvases
+            .get(&def)
+            .and_then(|slot| slot.cursor)
+            .unwrap_or((-1.0, -1.0));
+        if let Some(ctx) = self.window_ctx(def)
             && let Some(slot) = self.canvases.get_mut(&def)
             && let Some(effects) = slot.gestures.play_key(&mut self.host, &ctx, cx, cy)
         {

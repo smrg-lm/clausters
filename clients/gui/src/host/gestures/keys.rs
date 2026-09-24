@@ -209,7 +209,13 @@ impl Gestures {
             host.locate(mark);
             return Some(vec![GestureEffect::Redraw(ctx.def_id)]);
         }
-        let id = over?;
+        // **With no pointer, the window's one take.** A window that holds a
+        // single view of samples means that one whether or not the pointer
+        // has been over it -- the first press after a window opens has no
+        // pointer at all, since it is unknown until it moves. A window of
+        // several views (a multitrack, its ruler, its take panes) is still
+        // addressed by pointing, and over nothing it is the window's own verb.
+        let id = over.or_else(|| sole_take(host, ctx.def_id))?;
         let (start, span) = start_of(host, id);
         let frames = host.buffer_frames(ctx.def_id, id)?;
         // **How the pass ends is the loop switch's** (`L`). Looping, a
@@ -261,7 +267,9 @@ impl Gestures {
         cx: f64,
         cy: f64,
     ) -> Option<Vec<GestureEffect>> {
-        let Hit { id, .. } = hit(host, ctx, cx, cy)?;
+        let id = hit(host, ctx, cx, cy)
+            .map(|Hit { id, .. }| id)
+            .or_else(|| sole_take(host, ctx.def_id))?;
         let frames = host.buffer_frames(ctx.def_id, id)?;
         let pos = if to_end { frames as f64 } else { 0.0 };
         let mut out = Vec::new();
@@ -479,6 +487,16 @@ fn element_block(
         .as_element()?
         .samples()?
         .sample_block(start, frames, ctx.sample_rate)
+}
+
+/// The window's **only** timeline view, when there is exactly one and it
+/// draws samples -- what a key with no pointer is addressed to.
+fn sole_take(host: &Host, def_id: i32) -> Option<i32> {
+    let views = timeline_ids(host.window_def(def_id)?);
+    match views.as_slice() {
+        [id] if host.buffer_frames(def_id, *id).is_some() => Some(*id),
+        _ => None,
+    }
 }
 
 /// The position cursor of view `id`, when one is placed.

@@ -7516,3 +7516,15 @@ finished work, where a pending item reads as done.
   both clients' audio editors ask for the transport clock when they open, as
   the multitrack's do. A stop leaves the play cursor anchored: the stop puts
   the position back on the mark, so the line stands there.
+
+- ✅ **Space did nothing in a freshly opened audio editor until the mouse
+  moved** *(found 2026-09-24 by the user: "al abrir la ventana el cursor está
+  pero tocar barra no hace nada hasta que no se cambia de posición con el
+  mouse"; fixed the same day)*. The monitor's keys were addressed to the view
+  under the pointer, and a window that has just opened has no pointer: it is
+  unknown until it moves, so the native front skipped the take gesture and
+  sent the multitrack's window verb, which an audio editor does not answer.
+  Now space, Home and End with no pointer — or over nothing — reach the
+  window's **one** take, when the window has a single timeline view and it
+  draws samples; a window of several views (a multitrack, its ruler, its take
+  panes) is still addressed by pointing. Both fronts.
