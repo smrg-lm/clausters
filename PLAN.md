@@ -501,10 +501,18 @@ Cargo feature: every build has both clocks and both queues.
   `examples/transports.py` is the manual test, two takes one per side, each on
   its own transport.
 
-  **What it left open.** The head clock is one per host
+  **What it left open, closed the same day.** The head clock was one per host
   (`clients/gui/PLAN.md`, Found by use), and a node outside every governed
-  group reads transport 0, which is not what `X7`'s output wants
-  (`crates/clausters-apps/PLAN.md`, `X7`, Open).
+  group read transport 0, which is not what `X7`'s output wants. Both were
+  decided with the user: **`/gui_headClock <id> <which> [transport]`**, the id
+  a window or a widget and never optional, resolved per view -- a widget draws
+  from the counter named on it or its nearest ancestor, then its window's,
+  then the host's `--clock` -- so a window can hold several views playing
+  several timelines; and **`/transport_follow <t> <group>`**, a group whose
+  nodes read transport `t` without being frozen by it or routed to its queue,
+  which is where `X7`'s output goes. The reply appends the following group.
+  `MultitrackPlayback::transport` answers which transport a multitrack plays
+  on, so a client names it rather than repeating the number.
 
   **Acceptance:** two transports on one server play, pause, locate and loop
   independently, each frozen and thawed at its own sample; a node reads its

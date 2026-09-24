@@ -530,7 +530,11 @@ def test_transport_at_names_its_transport_and_reads_only_its_replies():
     iface.queue_reply("/transport_query.reply", *base[:5], 300, *base[6:], 2)
     state = two.transport_state()
     assert state["transport"] == 2 and state["group"] == 300
+    assert state["follow"] is None
     assert iface.sent[-1] == ("/transport_query", [2])
+    iface.queue_reply("/done", "/transport_follow")
+    two.transport_follow(400)
+    assert iface.sent[-1] == ("/transport_follow", [2, 400])
 
 
 def test_records_print_readably_and_agree_with_their_container():

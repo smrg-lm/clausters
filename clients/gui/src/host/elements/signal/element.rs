@@ -643,6 +643,7 @@ mod tests {
             scale: 1.0,
             time,
             focused: false,
+            clock: 0.0,
         };
         let draw = |time| {
             let mut mesh = Mesh::default();

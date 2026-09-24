@@ -234,6 +234,7 @@ mod tests {
             time: None,
             clip: None,
             focused: false,
+            clock: 0.0,
         };
         let [(_, SlotFrame::Shader { body, params, .. })] = &c.slots(&ctx)[..] else {
             panic!("a canvas claims the shader slot");

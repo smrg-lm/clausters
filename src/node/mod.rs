@@ -275,11 +275,15 @@ struct NodeSlot {
     /// during processing (silent). A paused **group** skips its whole subtree.
     /// Cleared by `/node_run 1` (or `FreeSelfResumeNext` on the next sibling).
     paused: bool,
-    /// The transport this group is the governed group of, or
-    /// [`NO_TRANSPORT`]. Every node under it reads that transport's
-    /// [`TransportCtx`] -- the nearest tagged ancestor wins -- and a node under
-    /// none reads transport 0's.
+    /// The transport this group is bound to, or [`NO_TRANSPORT`]. Every node
+    /// under it reads that transport's [`TransportCtx`] -- the nearest tagged
+    /// ancestor wins -- and a node under none reads transport 0's.
     transport: u16,
+    /// Whether that binding **governs** the group (`/transport_group`: frozen
+    /// with the transport, and its timed bundles on the transport's queue) or
+    /// only has it **follow** the transport (`/transport_follow`: its nodes
+    /// read it and nothing more).
+    governs: bool,
 }
 
 /// A slot no transport governs.
@@ -351,6 +355,7 @@ impl NodeTree {
             }),
             paused: false,
             transport: NO_TRANSPORT,
+            governs: false,
         });
         Self {
             slots,
@@ -397,6 +402,19 @@ impl NodeTree {
     /// `None`. Returns `false` for an unknown id or a synth. RT-safe: a lookup
     /// and a store.
     pub fn set_governing(&mut self, id: i32, transport: Option<usize>) -> bool {
+        self.bind_transport(id, transport, true)
+    }
+
+    /// Tags group `id` as **following** `transport` -- its nodes read it, and
+    /// it neither freezes them nor routes their bundles -- or clears the tag
+    /// with `None`. Returns `false` for an unknown id or a synth. RT-safe.
+    pub fn set_following(&mut self, id: i32, transport: Option<usize>) -> bool {
+        self.bind_transport(id, transport, false)
+    }
+
+    /// The one store behind both bindings. Clearing clears only a tag of the
+    /// same kind, so unbinding one never takes the other away.
+    fn bind_transport(&mut self, id: i32, transport: Option<usize>, governs: bool) -> bool {
         let Some(idx) = self.find(id) else {
             return false;
         };
@@ -404,20 +422,28 @@ impl NodeTree {
             return false;
         }
         if let Some(slot) = self.slot_mut(idx) {
-            slot.transport = transport.map_or(NO_TRANSPORT, |t| t as u16);
+            match transport {
+                Some(t) => {
+                    slot.transport = t as u16;
+                    slot.governs = governs;
+                }
+                None if slot.governs == governs => slot.transport = NO_TRANSPORT,
+                None => {}
+            }
         }
         true
     }
 
-    /// The transport governing `id`: the tag of the nearest ancestor that
-    /// carries one, `id` itself included, or `None` when nothing above it is
-    /// governed. A walk up `parent`, bounded like [`Self::is_under`], so it is
-    /// safe on the audio thread.
+    /// The transport governing `id`: the one bound to the nearest governed
+    /// group above it, `id` itself included, or `None` when nothing above it
+    /// is governed. A group that only follows a transport is walked past. A
+    /// walk up `parent`, bounded like [`Self::is_under`], so it is safe on the
+    /// audio thread.
     pub fn governing(&self, id: i32) -> Option<usize> {
         let mut idx = self.find(id)?;
         for _ in 0..=self.slots.len() {
             let slot = self.slot(idx)?;
-            if slot.transport != NO_TRANSPORT {
+            if slot.transport != NO_TRANSPORT && slot.governs {
                 return Some(slot.transport as usize);
             }
             if slot.parent == NO_PARENT {
@@ -702,6 +728,7 @@ impl NodeTree {
             kind,
             paused: false,
             transport: NO_TRANSPORT,
+            governs: false,
         });
         let g = self.group_of_mut(parent_idx).unwrap();
         let pos = pos.min(g.children.len());

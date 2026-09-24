@@ -44,8 +44,9 @@ class FakeHost:
     def close(self, id):
         pass
 
-    def head_clock(self, name):
+    def head_clock(self, id, name, transport=0):
         self.clock = name
+        self.clock_of = int(getattr(id, "id", id))
 
     def _set_closed_handler(self, id, func):
         pass
@@ -141,6 +142,7 @@ def test_the_window_opens_with_both_cursors_on_the_transport_clock():
     assert take["axes"]["x"]["cursor"] == 0.0, "the position cursor, placed"
     assert take["axes"]["x"]["playhead_at"] == 0.0, "the play cursor, anchored"
     assert host.clock == "transport", "drawn from the transport's position"
+    assert host.clock_of == 901, "the editor's own window"
 
 
 def test_a_stroke_writes_a_new_take_and_the_join_reads_it():

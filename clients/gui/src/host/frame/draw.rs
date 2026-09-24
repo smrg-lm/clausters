@@ -325,7 +325,10 @@ pub(super) fn draw_editor_overlay(
     // while playing, else the parked line of a located, stopped transport.
     for (pos, color) in [
         (chrome.cursor(), theme.cursor),
-        (chrome.head_at(inputs.world.sample_clock), theme.playhead),
+        (
+            chrome.head_at(inputs.world.clocks.at(Some(item.id))),
+            theme.playhead,
+        ),
     ] {
         if let Some(pos) = pos
             && pos >= nav.start
@@ -772,6 +775,7 @@ pub(super) fn draw_element_overlays(
                 scale: p.scale,
                 time: None,
                 focused: p.widget.id.is_some() && p.widget.id == inputs.focused,
+                clock: inputs.world.clocks.at(p.widget.id),
             },
         );
     }

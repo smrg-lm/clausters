@@ -729,6 +729,18 @@ pub unsafe extern "C" fn clausters_editing_playback_rolling(p: *mut FfiPlayback)
         .unwrap_or(0)
 }
 
+/// The transport the multitrack plays on; 0 for a null playback.
+///
+/// # Safety
+/// `p` must be null or a live playback.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_playback_transport(p: *mut FfiPlayback) -> i32 {
+    // SAFETY: caller guarantees `p` is null or live.
+    unsafe { p.as_ref() }
+        .and_then(|playback| playback.0.lock().ok().map(|held| held.transport()))
+        .unwrap_or(0)
+}
+
 /// Whether a pass stops at the end of the contents: 1 or 0.
 ///
 /// # Safety

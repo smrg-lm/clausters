@@ -245,7 +245,7 @@ export class AudioEditor extends Editor<Buffer> {
     ): ReturnType<Editor<Buffer>["open"]> {
         await (this.domain as AudioDomain).idle();
         const handle = await super.open(host, options);
-        this.host?.headClock("transport");
+        this.host?.headClock(handle, "transport");
         return handle;
     }
 

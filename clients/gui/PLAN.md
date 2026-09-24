@@ -7538,8 +7538,9 @@ finished work, where a pending item reads as done.
   left only. A mono take now gets two readers of its one channel, to the left
   bus and the right, as a mono file is heard in any editor.
 
-- ⬜ **The head clock is one per host, and a host can hold applications on
-  two transports** *(found 2026-09-24, closing the root plan's `T6`)*.
+- ✅ **The head clock is one per host, and a host can hold applications on
+  two transports** *(found 2026-09-24, closing the root plan's `T6`; fixed
+  the same day)*.
   `/gui_headClock "transport" <id>` names which transport's position every
   playhead in the host is drawn from, and that was enough while a server had
   one transport. With several, a standalone host running a multitrack on
@@ -7547,3 +7548,20 @@ finished work, where a pending item reads as done.
   from the wrong transport. What it wants is the transport per window, or per
   view, beside the anchor a window already carries -- decided when the audio
   editor takes a transport of its own (`crates/clausters-apps/PLAN.md`, `X7`).
+
+  **Per view, and the id is required** (the user). `/gui_headClock <id>
+  <which> [transport]` names the counter on a window or a widget; a widget
+  draws from its own or its nearest ancestor's, then its window's, then the
+  host's `--clock`, so one window can hold several complex widgets that each
+  play a timeline. The host reads every counter a window needs once per frame
+  (`Host::head_clocks`), each element and gesture asks for its widget's, a
+  freed widget takes what was named on it along, and a page polls
+  `/transport_query` for each transport a visible playhead reads. The
+  monitor names its take's view, and the clients name the window.
+
+- ⬜ **A window repaints whole for a line that moves in one view** *(the
+  user, 2026-09-24, with the head clock per view)*. A frame is the window's:
+  every view is redrawn while any playhead in it moves. Now that the host
+  knows which views draw a moving line and from which counter, a frame could
+  repaint only those -- a change to the drawing pipeline rather than to the
+  protocol, and a design of its own.

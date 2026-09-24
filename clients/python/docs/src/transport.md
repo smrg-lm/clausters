@@ -235,6 +235,12 @@ it — so a reader following `transport_pos` needs no id of its own: it follows
 whichever transport its group is bound to, and transport 0 when none is.
 `transport_state()` says which transport it read in its ``transport`` entry.
 
+What must go on running while a transport is stopped and still has to know it
+— an output with its meter and its declick, beside the governed group or
+around it — **follows** the transport instead of being governed by it:
+`transport_follow(group)` has its nodes read the transport and nothing freeze
+them.
+
 ## See also
 
 - [Timing models](timing-models.md) — the time reference behind beat-accurate vs sample-exact alignment.

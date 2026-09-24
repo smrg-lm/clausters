@@ -1920,3 +1920,69 @@ fn rebinding_one_transport_leaves_the_other_bound() {
     assert_eq!(out[0], 0.0, "transport 0 still holds its group");
     assert!((out[1] - 0.25).abs() < 1e-6, "unbinding thawed group 200");
 }
+
+/// A group that **follows** a transport reads it and is never frozen by it:
+/// the shape of an output that sits beside the governed group, whose meter and
+/// declick go on running while the transport is stopped and still need to know
+/// where the transport is. Its bundles stay on the device queue.
+#[cfg(feature = "synth")]
+#[test]
+fn a_following_group_reads_its_transport_and_is_not_frozen() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    add_position_synth_in_new_group(&mut handle, 100, 0);
+    handle
+        .send(Cmd::TransportFollow {
+            transport: 1,
+            id: 100,
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportLocate {
+            transport: 1,
+            position: 2_000,
+        })
+        .ok()
+        .unwrap();
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    engine.process_block(&mut out);
+    let bus0 = |out: &[f32]| -> Vec<f32> { out.iter().step_by(2).copied().collect() };
+    assert!(
+        bus0(&out).iter().all(|s| *s == 2_000.0),
+        "stopped, it runs and reads transport 1 holding at 2000"
+    );
+    run(&mut handle, 1, true);
+    engine.process_block(&mut out);
+    assert_eq!(bus0(&out)[0], 2_000.0, "and follows it as it rolls");
+    assert_eq!(bus0(&out)[BLOCK_SIZE - 1], (2_000 + BLOCK_SIZE - 1) as f32);
+
+    // A bundle aimed inside it is not the transport's to hold.
+    handle
+        .send(Cmd::Schedule {
+            time: 0,
+            cmds: vec![Cmd::SetControl {
+                id: 101,
+                index: 0,
+                value: 1.0,
+            }],
+        })
+        .ok()
+        .unwrap();
+    engine.process_block(&mut out);
+    assert!(engine.transport_queue_is_empty(1));
+
+    // Ending the follow puts it back on transport 0.
+    handle
+        .send(Cmd::TransportFollow {
+            transport: 1,
+            id: -1,
+        })
+        .ok()
+        .unwrap();
+    engine.process_block(&mut out);
+    assert_eq!(
+        bus0(&out)[0],
+        -1.0,
+        "transport 0, at 0, minus the offset of 1"
+    );
+}

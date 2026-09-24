@@ -1609,6 +1609,11 @@ impl JsMultitrackPlayback {
         self.0.rolling()
     }
 
+    /// The transport the multitrack plays on.
+    pub fn transport(&self) -> i32 {
+        self.0.transport()
+    }
+
     /// Whether a pass stops at the end of the contents.
     #[wasm_bindgen(js_name = stopsAtEnd)]
     pub fn stops_at_end(&self) -> bool {

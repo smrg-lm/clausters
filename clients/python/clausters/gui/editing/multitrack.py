@@ -468,7 +468,7 @@ class MultitrackEditor(Editor):
         """
         window = super().open(host, id)
         if self.playback is not None and self._window is not None:
-            self.playback.attach(self._host)
+            self.playback.attach(self._host, self._window)
             # **The transport row's buttons are the editor's**, like the multitrack
             # and its ruler: a click on one is a turn the core reads, so it
             # learns their ids once the window has numbered them.

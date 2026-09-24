@@ -739,33 +739,41 @@ export class GuiHost {
     }
 
     /**
-     * `/gui_headClock <which> [transport]` -- which counter every playhead is
-     * drawn from; on `"transport"`, which transport (0 unless named).
+     * `/gui_headClock <id> <which> [transport]` -- which counter the playheads
+     * of `id` are drawn from: a window, or a widget and every view under it
+     * that names none of its own. `id` is an id or a handle.
      *
-     * `"device"` (the default) is the engine's sample clock, which never stops:
-     * what a host watching a live server wants, since its meters, scopes and
-     * taps are all on that axis. `"transport"` is the **transport's position** -- it
-     * holds while the transport is stopped, jumps wherever `/transport_locate`
-     * puts it and wraps at a loop's end, all inside the engine.
+     * `"device"` is the engine's sample clock, which never stops: what a host
+     * watching a live server wants, since its meters, scopes and taps are all
+     * on that axis. `"transport"` is a **transport's position** -- transport
+     * `transport`, 0 unless named -- which holds while the transport is
+     * stopped, jumps wherever `/transport_locate` puts it and wraps at a loop's
+     * end, all inside the engine.
      *
      * That is the one an editor wants, and it changes what a script has to do:
-     * drawing it needs no anchor (`playhead_at` of `0`) and no message
-     * per frame, because seeking, looping and pausing become transport commands
-     * rather than a line the script keeps in step. Host-wide and id-less, like
-     * {@link GuiHost.theme} and {@link GuiHost.font}, because it says what the
-     * numbers a window is handed *mean*.
+     * drawing it needs no anchor (`playhead_at` of `0`) and no message per
+     * frame, because seeking, looping and pausing become transport commands
+     * rather than a line the script keeps in step.
      *
-     * A word the host does not know is logged and ignored, so the line keeps
-     * drawing what it was drawing. The native launch-time spelling is
-     * `--clock <device|transport>`. It is `headClock` and not `clock` because a
-     * host already has one -- its application clock -- and this names a counter,
-     * not a scheduler.
+     * **Per view.** A view draws from the counter named on it or on its nearest
+     * ancestor, then its window's, then the host's own default (the native
+     * `--clock`) -- so one window can hold two views that play two timelines,
+     * each on its own transport. A word the host does not know, or an id no
+     * window holds, is logged and ignored, so the line keeps drawing what it
+     * was drawing. It is `headClock` and not `clock` because a host already has
+     * one -- its application clock -- and this names a counter, not a
+     * scheduler.
      */
-    headClock(which: "device" | "transport", transport = 0): void {
+    headClock(
+        id: number | { readonly id: number },
+        which: "device" | "transport",
+        transport = 0,
+    ): void {
+        const target = typeof id === "number" ? id : id.id;
         if (which === "transport" && transport !== 0) {
-            this.send("/gui_headClock", which, ["i", Math.trunc(transport)]);
+            this.send("/gui_headClock", ["i", target], which, ["i", Math.trunc(transport)]);
         } else {
-            this.send("/gui_headClock", which);
+            this.send("/gui_headClock", ["i", target], which);
         }
     }
 

@@ -443,8 +443,9 @@ impl App {
                 node_trees: &self.node_trees,
                 server_attached,
                 sample_rate: self.shm.as_ref().map_or(0.0, |s| s.sample_rate()),
-                sample_clock: {
-                    let now = self.host.playhead_clock(self.shm.as_deref());
+                clocks: {
+                    let clocks = self.host.head_clocks(def_id, self.shm.as_deref());
+                    let now = clocks.window;
                     // Once a second, and only under `debug`: what the head is
                     // being drawn from. A line that does not move is either a
                     // transport that is not rolling or a segment nobody is
@@ -456,7 +457,7 @@ impl App {
                             tracing::debug!("playhead clock: {now}");
                         }
                     }
-                    now
+                    clocks
                 },
                 cursor,
                 timelines: self.host.timelines(),
@@ -943,7 +944,10 @@ impl App {
     pub(super) fn playhead_sample(&self, def_id: i32, id: i32) -> Option<f64> {
         let tree = self.host.window_def(def_id)?;
         let e = tree.find(id)?.kind.editor()?;
-        let clock = self.host.playhead_clock(self.shm.as_deref());
+        let clock = self
+            .host
+            .head_clocks(def_id, self.shm.as_deref())
+            .at(Some(id));
         self.host
             .timelines()
             .state(group_key(id, e.link))?

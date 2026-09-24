@@ -106,6 +106,12 @@ pub enum Cmd {
         transport: usize,
         id: i32,
     },
+    /// Has group `id` follow transport `transport` -- its nodes read it, and it
+    /// is not frozen -- or ends that with `id < 0`.
+    TransportFollow {
+        transport: usize,
+        id: i32,
+    },
     /// `/transport_locate`: moves the transport's position, leaving both clocks
     /// alone. One store of the anchor -- see `server::clock_axis`.
     TransportLocate {
@@ -308,6 +314,10 @@ struct TransportState {
     frozen_total: u64,
     /// The group it governs, frozen while it is stopped.
     group: Option<i32>,
+    /// The group that follows it: its nodes read this transport and are
+    /// never frozen by it -- what sits beside the governed group and must go
+    /// on running while it is stopped.
+    follow: Option<i32>,
     /// Where it stands, as an anchor onto its clock: the position a locate put
     /// it at, and the transport sample that locate landed on. A read is one
     /// add, so the position costs the per-sample path nothing.
@@ -333,6 +343,7 @@ impl TransportState {
             rolling: false,
             frozen_total: 0,
             group: None,
+            follow: None,
             position: PositionAnchor::default(),
             looping: None,
             end: None,
@@ -417,6 +428,7 @@ pub(crate) fn cmd_target_nodes(cmd: &Cmd) -> [Option<i32>; 2] {
         // opinion about which axis the bundle belongs to.
         Cmd::TransportRun { .. }
         | Cmd::TransportGroup { .. }
+        | Cmd::TransportFollow { .. }
         | Cmd::TransportLocate { .. }
         | Cmd::TransportLoop { .. }
         | Cmd::TransportEnd { .. }
@@ -1346,6 +1358,17 @@ impl Engine {
                         if !t.rolling {
                             self.tree.set_paused(id, true);
                         }
+                    }
+                }
+                Cmd::TransportFollow { transport, id } => {
+                    let Some(t) = self.transports.get_mut(transport) else {
+                        return;
+                    };
+                    if let Some(previous) = t.follow.take() {
+                        self.tree.set_following(previous, None);
+                    }
+                    if id >= 0 && self.tree.set_following(id, Some(transport)) {
+                        t.follow = Some(id);
                     }
                 }
                 Cmd::TransportLocate {

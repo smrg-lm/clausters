@@ -103,6 +103,12 @@ impl MultitrackPlayback {
         self.end_steps()
     }
 
+    /// The transport this multitrack plays on -- what its transport commands
+    /// name, and what a view drawing its play cursor reads.
+    pub fn transport(&self) -> i32 {
+        MULTITRACK_TRANSPORT
+    }
+
     /// Whether a pass stops at the end of the contents.
     pub fn stops_at_end(&self) -> bool {
         self.stop_at_end

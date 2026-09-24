@@ -273,8 +273,8 @@ its plan; the plan is where its acceptance is read.
 
 - ⬜ **`X7` — the audio editor's nodes on the server**
   *(`crates/clausters-apps/PLAN.md`, "X7")*. **Taken next**, now that `T6`
-  gave it a transport of its own; two things `T6` left are its to settle (its
-  Open list). It is
+  gave it a transport of its own, a way for its output to read it
+  (`/transport_follow`) and a play cursor drawn per view. It is
   how a take being edited is heard and measured: the monitor's readers held a
   take's last sample on the output and nothing in the window showed it. Its
   GraphDef is written out in the plan for the user's review, and its declick

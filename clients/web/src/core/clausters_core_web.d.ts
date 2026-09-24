@@ -405,6 +405,10 @@ export class MultitrackPlayback {
      * The steps that make what sounds be what the multitrack says.
      */
     sync(multitrack: string, sample_rate: number, sources: string, gain: number, ids: IdSpaces): string;
+    /**
+     * The transport the multitrack plays on.
+     */
+    transport(): number;
 }
 
 /**
@@ -1697,6 +1701,7 @@ export interface InitOutput {
     readonly multitrackplayback_stop: (a: number, b: number) => [number, number];
     readonly multitrackplayback_stopsAtEnd: (a: number) => number;
     readonly multitrackplayback_sync: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
+    readonly multitrackplayback_transport: (a: number) => number;
     readonly node_id_partition: (a: number) => [number, number, number];
     readonly osc_decode_packet: (a: number, b: number) => [number, number, number];
     readonly osc_decode_packet_timed: (a: number, b: number) => [number, number, number];
@@ -1782,7 +1787,6 @@ export interface InitOutput {
     readonly tempomap_dump: (a: number) => [number, number];
     readonly tempomap_env: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
     readonly tempomap_fromChanges: (a: number, b: number, c: number) => number;
-    readonly tempomap_isEmpty: (a: number) => number;
     readonly tempomap_last: (a: number) => [number, number];
     readonly tempomap_len: (a: number) => number;
     readonly tempomap_load: (a: number, b: number) => number;
@@ -1818,6 +1822,7 @@ export interface InitOutput {
     readonly widgetids_retire: (a: number, b: number) => [number, number];
     readonly widgetids_unbounded: (a: number) => number;
     readonly widgetids_contains: (a: number, b: number) => number;
+    readonly tempomap_isEmpty: (a: number) => number;
     readonly widgetids_inUse: (a: number) => number;
     readonly clausters_midi_abi_version: () => number;
     readonly clausters_midi_free: (a: number, b: number) => void;

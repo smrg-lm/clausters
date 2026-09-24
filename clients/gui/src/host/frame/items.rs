@@ -188,12 +188,14 @@ pub(super) fn collect_widgets(
                     // handed a picture of it, which is what makes one element
                     // both a standalone view and a lane's content.
                     time: p.widget.id.zip(p.widget.kind.editor()).and_then(|(id, e)| {
-                        inputs
-                            .world
-                            .timelines
-                            .space_of(id, e.link, Some(inputs.world.sample_clock))
+                        inputs.world.timelines.space_of(
+                            id,
+                            e.link,
+                            Some(inputs.world.clocks.at(Some(id))),
+                        )
                     }),
                     focused: p.widget.id.is_some() && p.widget.id == inputs.focused,
+                    clock: inputs.world.clocks.at(p.widget.id),
                 };
                 el.draw(&mut Draw::new(mesh, m, th), &ctx);
                 // ...and, for a view the shared mesh cannot carry, what its

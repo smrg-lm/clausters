@@ -26,6 +26,39 @@ use super::timeline::TimelineGroups;
 use super::widget::Rate;
 use crate::host::graphics::nodetree::NodeTree;
 
+/// The counters one window's playheads are drawn from, read once for a frame
+/// ([`Host::head_clocks`](super::Host::head_clocks)).
+///
+/// A view draws from the counter named on it or on its nearest ancestor, and
+/// its window's otherwise ([`HeadClock`](super::HeadClock)); this is that
+/// choice already made and read, so a playhead asks for its widget's number
+/// and never for which counter it is.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HeadClocks {
+    /// The window's own counter, for every widget that names none.
+    pub window: f64,
+    /// The widgets that draw from another counter, with its reading.
+    pub widgets: HashMap<i32, f64>,
+}
+
+impl HeadClocks {
+    /// One reading for every widget -- what a front or a test that has one
+    /// number hands a frame.
+    pub fn uniform(clock: f64) -> Self {
+        Self {
+            window: clock,
+            widgets: HashMap::new(),
+        }
+    }
+
+    /// The clock widget `id` sweeps its playhead from; the window's for a
+    /// widget with no id or none of its own.
+    pub fn at(&self, id: Option<i32>) -> f64 {
+        id.and_then(|id| self.widgets.get(&id).copied())
+            .unwrap_or(self.window)
+    }
+}
+
 /// The outside, as one frame sees it. Read-only, identical for every element.
 pub struct World<'a> {
     /// The control-bus source (`None` reads zero everywhere).
@@ -38,9 +71,10 @@ pub struct World<'a> {
     /// The server's sample rate, placing a frequency axis or a time ruler whose
     /// widget names no rate of its own (`0.0` -> unknown).
     pub sample_rate: f64,
-    /// The engine's sample clock (samples since boot; the shm header natively,
-    /// the polled `/clock_query` in the browser). What a playhead is drawn from.
-    pub sample_clock: f64,
+    /// The counters this window's playheads are drawn from, read once for the
+    /// frame -- the device clock or a transport's position, per view
+    /// ([`HeadClocks::at`]).
+    pub clocks: HeadClocks,
     /// The pointer in device pixels, for the cursor readouts (`None` = the
     /// pointer is not over this window).
     pub cursor: Option<(f64, f64)>,
@@ -90,7 +124,7 @@ impl Default for World<'_> {
             node_trees: EMPTY.get_or_init(HashMap::new),
             server_attached: false,
             sample_rate: 0.0,
-            sample_clock: 0.0,
+            clocks: HeadClocks::default(),
             cursor: None,
             timelines: NO_GROUPS.get_or_init(TimelineGroups::default),
         }

@@ -9029,3 +9029,22 @@ which goes anywhere a server is taken as a transport.
 The segment's transport counters became a table of 64 rows after the header
 (ABI 12), a fixed size so it could stay in the fixed prefix; sized at run time
 it would have trailed the rings and moved every offset after it.
+
+**What reads a transport without being governed by it follows it.** An
+application's output sits beside its governed group so that it never
+freezes -- a meter must fall and a declick must run across the stop -- and
+under the rule above it would read transport 0. Rather than give the UGens
+that read a transport an id input, which would put a run-time number in a
+def, a group can be bound to **follow** a transport (`/transport_follow`): its
+nodes read it and nothing freezes them or queues their bundles on it. The
+rule stays one rule -- a node reads the transport of the nearest bound group
+above it -- and a def still names none.
+
+**The playhead's counter is chosen per view, by id.** `/gui_headClock` had no
+id because it said what the numbers a host is handed mean, and one host read
+one transport. With several, a host running two applications draws two
+timelines, and a window may hold several complex widgets that each play one.
+So the command names a window or a widget first -- required, since an integer
+may follow the word -- and a widget draws from the counter named on it or on
+its nearest ancestor, then its window's, then the host's `--clock`: the same
+nearest-ancestor rule the transports themselves follow.

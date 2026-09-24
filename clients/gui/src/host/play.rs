@@ -299,7 +299,7 @@ impl Host {
         // clock is the take's own frame, since the readers play it from the
         // transport's zero. It wraps where a loop wraps and holds where a pause
         // holds, with no message per frame.
-        self.set_head_clock(HeadClock::Transport(MONITOR_TRANSPORT as usize));
+        self.set_head_clock_of(widget_id, HeadClock::Transport(MONITOR_TRANSPORT as usize));
         self.set_timeline_playhead(widget_id, 0.0);
         self.playing = Some(Monitor {
             widget: widget_id,

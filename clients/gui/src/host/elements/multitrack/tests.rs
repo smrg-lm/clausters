@@ -95,6 +95,7 @@ fn a_metered_track_declares_its_buses_and_reads_them() {
         time: None,
         clip: None,
         focused: false,
+        clock: 0.0,
     };
     let live = mt.live_header(&mt.lanes[0], &ctx);
     assert_eq!(live.meters, vec![(1.0, 1.0), (0.0, 0.0)]);
@@ -201,6 +202,7 @@ fn a_spectral_box_names_the_take_its_texture_is() {
         time: None,
         clip: None,
         focused: false,
+        clock: 0.0,
     };
     assert!(
         mt.texture_bodies(&ctx).is_empty(),

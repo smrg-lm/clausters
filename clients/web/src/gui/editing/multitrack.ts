@@ -699,7 +699,7 @@ export class MultitrackEditor extends Editor<Multitrack> {
         const playback = this.playback;
         if (playback !== null) {
             await playback.prepare();
-            playback.attach(this.host);
+            playback.attach(this.host, handle);
             // **The transport row's buttons are the editor's**, like the multitrack
             // and its ruler: a click on one is a turn the core reads, so it
             // learns their ids once the window has numbered them.

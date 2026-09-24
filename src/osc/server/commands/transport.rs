@@ -86,6 +86,7 @@ impl OscServer {
             OscType::Long(end),
             OscType::Long(back),
             OscType::Int(k as i32),
+            OscType::Int(t.follow.unwrap_or(-1)),
         ]
     }
 
@@ -178,6 +179,7 @@ impl OscServer {
             // could see.
             loop_span: previous.loop_span,
             group: previous.group,
+            follow: previous.follow,
             end_mark: previous.end_mark,
             // Setting the grid locates the transport to 0 below, and that locate
             // records itself.
@@ -461,6 +463,67 @@ impl OscServer {
         self.broadcast_transport(k);
     }
 
+    /// Refuses group `id` a second transport: `except_governed` is the
+    /// transport whose governed group it may already be (the one being
+    /// rebound), `except_follow` the one it may already follow.
+    fn one_transport_per_group(
+        &self,
+        id: i32,
+        except_governed: Option<usize>,
+        except_follow: Option<usize>,
+    ) -> Answer {
+        for (j, t) in self.transports.iter().enumerate() {
+            if t.group == Some(id) && Some(j) != except_governed {
+                return Err(format!("group {id} is governed by transport {j}"));
+            }
+            if t.follow == Some(id) && Some(j) != except_follow {
+                return Err(format!("group {id} follows transport {j}"));
+            }
+        }
+        Ok(())
+    }
+
+    /// `/transport_follow <int32 transport> <int32 group>` -- has a group
+    /// **follow** the transport, or ends that with a negative id.
+    ///
+    /// Its nodes read the transport -- its position, whether it rolls -- as a
+    /// governed group's do, and nothing freezes them: what it is for is the
+    /// part of an application that must go on running while its transport is
+    /// stopped (an output with its meter and its declick) and still has to
+    /// know that transport. Its timed bundles stay on the device queue. A
+    /// transport has one following group, as it has one governed group; the
+    /// governed group may sit inside it, and a node reads the transport of
+    /// the nearest bound group above it either way.
+    pub(in crate::osc::server) fn handle_transport_follow(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let k = self.transport_arg(&mut args)?;
+        let id = args.int()?;
+        if id >= 0 {
+            if self.translator.mirror.children(id).is_none() {
+                return Err(format!("unknown group {id}"));
+            }
+            self.one_transport_per_group(id, None, Some(k))?;
+        }
+        self.transports[k].follow = if id >= 0 { Some(id) } else { None };
+        if self
+            .handle
+            .send(Cmd::TransportFollow { transport: k, id })
+            .is_err()
+        {
+            return Err("command FIFO full".into());
+        }
+        self.reply(
+            from,
+            "/done",
+            vec![OscType::String("/transport_follow".into())],
+        );
+        self.broadcast_transport(k);
+        Ok(())
+    }
+
     /// `/transport_group <int32 transport> <int32 group>` -- binds the group the transport
     /// governs, or unbinds with a negative id.
     ///
@@ -482,10 +545,8 @@ impl OscServer {
         }
         // A group has one transport: two would each freeze and thaw it on
         // their own, and it would play whenever the last one said.
-        if let Some(other) = (0..self.transports.len())
-            .find(|&j| j != k && id >= 0 && self.transports[j].group == Some(id))
-        {
-            return Err(format!("group {id} is governed by transport {other}"));
+        if id >= 0 {
+            self.one_transport_per_group(id, Some(k), None)?;
         }
         self.transports[k].group = if id >= 0 { Some(id) } else { None };
         if self

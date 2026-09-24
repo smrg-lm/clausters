@@ -85,7 +85,7 @@ class Playback:
         self.sync()
         self.locate(editor.cursor or 0.0)
 
-    def attach(self, host) -> None:
+    def attach(self, host, window) -> None:
         """The multitrack went on screen: draw the line from the engine's own
         position.
 
@@ -98,7 +98,7 @@ class Playback:
         if host is None:
             return
         self.transport.host = host
-        host.head_clock("transport")
+        host.head_clock(window, "transport", self._instance.transport())
         self.locate(self.transport.position)
 
     # ---- the instance ----

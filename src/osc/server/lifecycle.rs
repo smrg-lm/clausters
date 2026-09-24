@@ -535,6 +535,16 @@ impl OscServer {
                             .ok();
                         self.broadcast_transport(k);
                     }
+                    if let Some(k) = self.transports.iter().position(|t| t.follow == Some(id)) {
+                        self.transports[k].follow = None;
+                        self.handle
+                            .send(Cmd::TransportFollow {
+                                transport: k,
+                                id: -1,
+                            })
+                            .ok();
+                        self.broadcast_transport(k);
+                    }
                 }
                 Garbage::FreedBuffer(_) => {}
                 Garbage::TransportEnded { transport } => self.on_transport_ended(transport),

@@ -153,8 +153,8 @@ class AudioEditor(Editor):
         it opens, for the same reason.
         """
         window = super().open(host, id)
-        if self._host is not None:
-            self._host.head_clock("transport")
+        if self._host is not None and window is not None:
+            self._host.head_clock(window, "transport")
         return window
 
     def _facts(self) -> dict:

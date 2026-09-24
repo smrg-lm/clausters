@@ -119,10 +119,10 @@ export class Playback {
      * statement: `GuiHost.headClock` and the transport's own are the same
      * decision, and letting them disagree draws a line nobody put there.
      */
-    attach(host: GuiHost | null): void {
+    attach(host: GuiHost | null, window: number | { readonly id: number }): void {
         if (host === null) return;
         this.transport.host = host;
-        host.headClock("transport");
+        host.headClock(window, "transport", this.instance?.transport() ?? 0);
         this.locate(this.transport.position);
     }
 

@@ -83,7 +83,9 @@ class ServerTransport:
     def transport_state(self, timeout: "float | None" = None):
         """The full shared transport state as a dict ``{origin_sample, tempo,
         playing, position, group, transport_sample, position_sample, loop,
-        end, transport}``, ``transport`` being this handle's `transport_id`.
+        end, transport, follow}``, ``transport`` being this handle's
+        `transport_id` and ``follow`` the group that follows it
+        (`transport_follow`) or ``None``.
 
         **Always a dict**: the transport exists whether or not anyone has
         defined a beat grid, because rolling, stopping and saying where the
@@ -132,6 +134,7 @@ class ServerTransport:
             "loop": (loop_start, loop_end) if loop_end > loop_start else None,
             "end": None if end < 0 else (end, None if back < 0 else back),
             "transport": self.transport_id,
+            "follow": None if len(args) < 14 or int(args[13]) < 0 else int(args[13]),
         }
 
     def transport_group(self, group, timeout: "float | None" = None):
@@ -154,6 +157,25 @@ class ServerTransport:
                                   timeout=timeout, expect=("/done", "/fail"))
         if addr == "/fail":
             raise CommandError(f"/transport_group failed: {args}")
+        return self
+
+    def transport_follow(self, group, timeout: "float | None" = None):
+        """Have ``group`` **follow** the transport (``/transport_follow``), or end
+        that with ``None``. ``group`` is a `clausters.defs.node.Group` or its
+        raw id.
+
+        Its nodes read the transport -- its position, whether it rolls -- as a
+        governed group's do, and nothing freezes them. It is for the part of an
+        application that must go on running while its transport is stopped, an
+        output with its meter and its declick, and still has to know that
+        transport. The governed group may sit inside it. A transport has one
+        following group, as it has one governed group, and a group is bound to
+        one transport either way."""
+        arg = -1 if group is None else _target_id(group)
+        addr, args = self.request("/transport_follow", self.transport_id, arg,
+                                  timeout=timeout, expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/transport_follow failed: {args}")
         return self
 
     def sched_at_transport(self, target: int, *messages):

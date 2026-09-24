@@ -199,6 +199,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use clausters_core::osc::{OscMessage, OscPacket, OscType};
+
+use crate::host::world::HeadClocks;
 use serde_json::Value;
 
 pub use bind::Binding;
@@ -513,14 +515,18 @@ pub trait BusSource: Send + Sync {
     }
 }
 
-/// Which of an engine's two counters a window's **playhead** reads.
+/// Which of an engine's counters a **playhead** reads.
 ///
-/// A [`BusSource`] carries both and a widget draws one number, so the choice
-/// is made once -- on the **host** ([`Host::set_head_clock`]), rather than as a
-/// prop on every widget that could carry a head. It sits there and not on the
-/// source because a host launched by a client opens its segment before it is
-/// told what it is drawing, and because the browser has no segment at all and
-/// answers the same question from `/transport_query`.
+/// A [`BusSource`] carries them all and a widget draws one number. The choice
+/// is the host's to hold ([`Host::set_head_clock_of`]) and is made **per
+/// view**: a widget draws from the counter set on it or on its nearest
+/// ancestor, its window's when none is, and the host's default
+/// ([`Host::set_head_clock`], the launch-time `--clock`) when the window names
+/// none either -- so a window holding two views that play two timelines draws
+/// each from its own. It sits on the host and not on the source because a host
+/// launched by a client opens its segment before it is told what it is
+/// drawing, and because the browser has no segment at all and answers the same
+/// question from `/transport_query`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum HeadClock {
     /// The device clock: samples processed since boot, never stopping. What a
@@ -810,14 +816,13 @@ pub struct Host {
     /// [`Element::key`](widget::Element::key) and only falls through to the
     /// front's own shortcuts when the element does not answer it.
     focused: Option<(i32, i32)>,
-    /// Which of the segment's counters every playhead in this host is drawn
-    /// from. See [`HeadClock`] and [`Host::playhead_clock`].
-    ///
-    /// **A property of the host, not of a widget**, for the same reason the
-    /// typeface and the theme are: it says what the numbers a window is being
-    /// handed *mean*, and one host reads one server. The launch spelling is
-    /// `--clock`, the wire's is [`GUI_CLOCK`].
+    /// The counter a playhead is drawn from where nothing names one: the
+    /// launch-time `--clock`. See [`HeadClock`].
     head_clock: HeadClock,
+    /// The counters named on the wire ([`GUI_CLOCK`]), by window or widget id.
+    /// A widget draws from its own entry or its nearest ancestor's
+    /// ([`Host::head_clocks`]); an entry goes when its widget is freed.
+    head_clocks: HashMap<i32, HeadClock>,
 }
 
 impl Default for Host {
@@ -831,6 +836,7 @@ impl Host {
         Self {
             registry: Registry::new(),
             head_clock: HeadClock::default(),
+            head_clocks: HashMap::new(),
             window_defs: HashMap::new(),
             watched_buses: Vec::new(),
             buffer_stream: (Vec::new(), 0),
@@ -923,33 +929,143 @@ impl Host {
         self.server = Some(link);
     }
 
-    /// Which counter every playhead in this host is drawn from.
+    /// The counter a playhead is drawn from where no window or widget names
+    /// one.
     pub fn head_clock(&self) -> HeadClock {
         self.head_clock
     }
 
-    /// Draws every playhead from `head` from now on.
-    ///
-    /// It takes effect on the next frame and touches nothing else: a window's
-    /// `playhead_at` anchor keeps its meaning, and under
-    /// [`Transport`](HeadClock::Transport) an anchor of `0` is what a script
-    /// wants, because the counter is already the transport's own time.
+    /// Draws every playhead nothing names a counter for from `head` -- the
+    /// launch-time `--clock`.
     pub fn set_head_clock(&mut self, head: HeadClock) {
         self.head_clock = head;
     }
 
-    /// The clock a playhead sweeps from: `bus`'s device clock or its transport
-    /// position, whichever [`head_clock`](Self::head_clock) names.
+    /// Draws the playheads of `id` -- a window, or a widget and everything
+    /// under it -- from `head` from now on.
     ///
-    /// **The one place the choice is resolved.** Above here a playhead reads
-    /// "the clock" and never asks which, which is what keeps the two fronts
-    /// from each answering it their own way.
-    pub fn playhead_clock(&self, bus: Option<&dyn BusSource>) -> f64 {
-        let Some(bus) = bus else { return 0.0 };
-        match self.head_clock {
+    /// It takes effect on the next frame and touches nothing else: a view's
+    /// `playhead_at` anchor keeps its meaning, and under
+    /// [`Transport`](HeadClock::Transport) an anchor of `0` is what a script
+    /// wants, because the counter is already the transport's own time.
+    pub fn set_head_clock_of(&mut self, id: i32, head: HeadClock) {
+        self.head_clocks.insert(id, head);
+    }
+
+    /// The counter widget `id` of window `def_id` draws from: its own, its
+    /// nearest ancestor's, the window's, or the host's default. `None` for
+    /// the window itself.
+    pub fn head_clock_of(&self, def_id: i32, id: Option<i32>) -> HeadClock {
+        let window = self.window_head_clock(def_id);
+        let (Some(id), Some(tree)) = (id, self.window_defs.get(&def_id)) else {
+            return window;
+        };
+        fn find(
+            w: &Widget,
+            id: i32,
+            above: HeadClock,
+            named: &HashMap<i32, HeadClock>,
+        ) -> Option<HeadClock> {
+            let here = w.id.and_then(|i| named.get(&i).copied()).unwrap_or(above);
+            if w.id == Some(id) {
+                return Some(here);
+            }
+            w.children.iter().find_map(|c| find(c, id, here, named))
+        }
+        find(tree, id, window, &self.head_clocks).unwrap_or(window)
+    }
+
+    fn window_head_clock(&self, def_id: i32) -> HeadClock {
+        self.head_clocks
+            .get(&def_id)
+            .copied()
+            .unwrap_or(self.head_clock)
+    }
+
+    /// Every transport window `def_id` draws a playhead from -- what a front
+    /// with no segment polls the position of.
+    pub fn transports_drawn(&self, def_id: i32) -> Vec<usize> {
+        let mut out = Vec::new();
+        if let HeadClock::Transport(t) = self.window_head_clock(def_id) {
+            out.push(t);
+        }
+        if let Some(tree) = self.window_defs.get(&def_id) {
+            for w in tree.descendants() {
+                if let Some(HeadClock::Transport(t)) = w.id.and_then(|i| self.head_clocks.get(&i))
+                    && !out.contains(t)
+                {
+                    out.push(*t);
+                }
+            }
+        }
+        out
+    }
+
+    /// Whether window `def_id` draws anything from the device clock -- the one
+    /// counter a front with no segment polls apart from the transports.
+    pub fn device_drawn(&self, def_id: i32) -> bool {
+        self.window_head_clock(def_id) == HeadClock::Device
+            || self.window_defs.get(&def_id).is_some_and(|tree| {
+                tree.descendants().any(|w| {
+                    w.id.and_then(|i| self.head_clocks.get(&i)) == Some(&HeadClock::Device)
+                })
+            })
+    }
+
+    /// The clocks window `def_id`'s playheads sweep from this frame, read
+    /// once off `bus`: the window's own counter, and the reading of each
+    /// widget that draws from another ([`HeadClocks::at`]).
+    ///
+    /// **The one place the choice is resolved.** Below here a playhead reads
+    /// "its clock" by widget and never asks which counter it is, which is what
+    /// keeps the two fronts from each answering it their own way.
+    pub fn head_clocks(&self, def_id: i32, bus: Option<&dyn BusSource>) -> HeadClocks {
+        let Some(bus) = bus else {
+            return HeadClocks::default();
+        };
+        let read = |head: HeadClock| match head {
             HeadClock::Device => bus.sample_clock(),
             HeadClock::Transport(transport) => bus.transport_position(transport),
+        };
+        let window = self.window_head_clock(def_id);
+        let mut clocks = HeadClocks {
+            window: read(window),
+            widgets: HashMap::new(),
+        };
+        // Nothing named below the window: every widget reads its counter, and
+        // the tree is not walked.
+        if self.head_clocks.keys().all(|id| *id == def_id) {
+            return clocks;
         }
+        fn walk(
+            w: &Widget,
+            above: HeadClock,
+            window: HeadClock,
+            named: &HashMap<i32, HeadClock>,
+            out: &mut HashMap<i32, f64>,
+            read: &dyn Fn(HeadClock) -> f64,
+        ) {
+            let here = w.id.and_then(|i| named.get(&i).copied()).unwrap_or(above);
+            if let Some(id) = w.id
+                && here != window
+            {
+                out.insert(id, read(here));
+            }
+            for c in &w.children {
+                walk(c, here, window, named, out, read);
+            }
+        }
+        if let Some(tree) = self.window_defs.get(&def_id) {
+            walk(
+                tree,
+                window,
+                window,
+                &self.head_clocks,
+                &mut clocks.widgets,
+                &read,
+            );
+        }
+        clocks
     }
 
     /// Points the host at the **samples** of a shared segment: from here a
@@ -1674,44 +1790,73 @@ impl Host {
         diag::info!("{from}: {GUI_METRICS}: {} role(s) overlaid", table.len());
     }
 
-    /// `/gui_headClock <which> [<int32 transport>]` -- draw every playhead from
-    /// this counter from now on; `"transport"` reads transport 0 unless it
-    /// names another.
+    /// `/gui_headClock <id> <which> [<int32 transport>]` -- draw the playheads
+    /// of `id` from this counter from now on: a window, or a widget and every
+    /// view under it that names none of its own. `"transport"` reads transport
+    /// 0 unless it names another.
     ///
-    /// Host-wide and idless, like the typeface and the theme, and for the same
-    /// reason: it says what the numbers a window is handed *mean*, and one host
-    /// reads one server. A word this host does not know is reported and
-    /// ignored, so a typo leaves the line drawing what it was drawing rather
-    /// than stopping it.
+    /// The id is not optional, for the reason a transport's is not: the word
+    /// after it may be followed by an integer, so an id that could be missing
+    /// could not be told from a transport. An id no window holds is reported
+    /// and ignored, as is a word this host does not know, so a typo leaves the
+    /// line drawing what it was drawing.
     fn on_clock(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
-        let which = match args.first() {
+        let Some(id) = int_arg(args, 0) else {
+            return diag::warn!("{from}: {GUI_CLOCK} needs the id of a window or a widget");
+        };
+        let which = match args.get(1) {
             Some(OscType::String(s)) => s.as_str(),
-            _ => return diag::warn!("{from}: {GUI_CLOCK} needs \"device\" or \"transport\""),
+            _ => return diag::warn!("{from}: {GUI_CLOCK} {id} needs \"device\" or \"transport\""),
         };
         let head = match which {
             "device" => HeadClock::Device,
-            "transport" => match args.get(1) {
+            "transport" => match args.get(2) {
                 None => HeadClock::Transport(0),
                 Some(OscType::Int(k)) if *k >= 0 => HeadClock::Transport(*k as usize),
                 Some(other) => {
                     return diag::warn!(
-                        "{from}: {GUI_CLOCK}: {other:?} is not a transport id; still drawing \
-                         the one it was"
+                        "{from}: {GUI_CLOCK} {id}: {other:?} is not a transport id; still \
+                         drawing the one it was"
                     );
                 }
             },
             other => {
                 return diag::warn!(
-                    "{from}: {GUI_CLOCK}: no counter called {other:?}; still drawing the \
-                              one it was"
+                    "{from}: {GUI_CLOCK} {id}: no counter called {other:?}; still drawing the \
+                     one it was"
                 );
             }
         };
-        self.set_head_clock(head);
-        for id in self.window_def_ids() {
-            effects.push(HostEffect::Redraw(id));
+        let Some(window) = self.window_holding(id) else {
+            return diag::warn!("{from}: {GUI_CLOCK} {id}: no window holds it");
+        };
+        self.set_head_clock_of(id, head);
+        effects.push(HostEffect::Redraw(window));
+        diag::info!("{from}: {GUI_CLOCK} {id}: playheads now read the {which}");
+    }
+
+    /// The window `id` is, or the one holding widget `id`.
+    fn window_holding(&self, id: i32) -> Option<i32> {
+        if self.window_defs.contains_key(&id) {
+            return Some(id);
         }
-        diag::info!("{from}: {GUI_CLOCK}: playheads now read the {which}");
+        self.window_defs
+            .iter()
+            .find(|(_, tree)| tree.find(id).is_some())
+            .map(|(def, _)| *def)
+    }
+
+    /// Drops the counters named on ids no window holds any more.
+    fn prune_head_clocks(&mut self) {
+        let stale: Vec<i32> = self
+            .head_clocks
+            .keys()
+            .copied()
+            .filter(|id| !self.window_defs.contains_key(id) && !self.registry.contains(*id))
+            .collect();
+        for id in stale {
+            self.head_clocks.remove(&id);
+        }
     }
 
     /// `/gui_set <id> <k> <v> ...` -- update one live widget's properties, in the
@@ -1960,6 +2105,7 @@ impl Host {
         self.prune_voices();
         self.prune_timeline_groups();
         self.prune_focus();
+        self.prune_head_clocks();
         if removed > 0 {
             diag::info!("{from}: {GUI_FREE} {id}: freed {removed} widget(s)");
         } else {
@@ -3621,15 +3767,14 @@ mod tests {
         );
     }
 
-    /// **A window's playhead reads the counter the host was told to read.** The
-    /// segment publishes both -- the device clock, which never stops, and the
-    /// transport's position in the multitrack, which holds while stopped, jumps on a
-    /// locate and wraps in a loop -- and an editor wants the second. Until this
-    /// existed the choice was made where the segment was opened, so a host
-    /// launched by a client could only ever draw the device clock and a script
-    /// had to anchor the line itself.
+    /// **A playhead reads the counter named on its view, its window, or the
+    /// host.** The segment publishes the device clock, which never stops, and
+    /// each transport's position, which holds while stopped, jumps on a locate
+    /// and wraps in a loop. A widget reads the one named on it or its nearest
+    /// ancestor, then its window's, then the host's default -- so one window
+    /// can hold two views playing two transports.
     #[test]
-    fn the_playhead_reads_the_counter_the_host_was_told_to_read() {
+    fn a_playhead_reads_the_counter_named_nearest_it() {
         struct Both;
         impl BusSource for Both {
             fn control(&self, _index: usize) -> f32 {
@@ -3642,66 +3787,104 @@ mod tests {
                 1_200.0 + transport as f64
             }
         }
+        const TWO: &str = r#"{"type":"window","children":[
+            {"id":20,"type":"layout","flow":"row","children":[
+                {"id":21,"type":"knob"},
+                {"id":22,"type":"knob"}]},
+            {"id":30,"type":"knob"}
+        ]}"#;
         let mut host = Host::new();
+        host.handle_packet(def_msg(1, TWO), from());
         let bus = Both;
-        assert_eq!(host.playhead_clock(Some(&bus as &dyn BusSource)), 48_000.0);
+        let clocks = |host: &Host| host.head_clocks(1, Some(&bus as &dyn BusSource));
+        assert_eq!(clocks(&host).at(Some(21)), 48_000.0, "the host's default");
+
         host.set_head_clock(HeadClock::Transport(0));
-        assert_eq!(host.playhead_clock(Some(&bus as &dyn BusSource)), 1_200.0);
-        host.set_head_clock(HeadClock::Transport(3));
-        assert_eq!(
-            host.playhead_clock(Some(&bus as &dyn BusSource)),
-            1_203.0,
-            "the transport it names"
+        assert_eq!(clocks(&host).at(Some(21)), 1_200.0);
+        host.set_head_clock_of(1, HeadClock::Transport(3));
+        assert_eq!(clocks(&host).at(Some(30)), 1_203.0, "the window's");
+        host.set_head_clock_of(20, HeadClock::Transport(1));
+        host.set_head_clock_of(22, HeadClock::Device);
+        let read = clocks(&host);
+        assert_eq!(read.at(Some(21)), 1_201.0, "its ancestor's");
+        assert_eq!(read.at(Some(22)), 48_000.0, "its own");
+        assert_eq!(read.at(Some(30)), 1_203.0, "the window's still");
+        assert_eq!(read.at(None), 1_203.0);
+        assert_eq!(host.head_clock_of(1, Some(21)), HeadClock::Transport(1));
+        let mut drawn = host.transports_drawn(1);
+        drawn.sort();
+        assert_eq!(drawn, [1, 3]);
+        assert!(host.device_drawn(1));
+        // No source at all is the same answer everywhere: nothing to read.
+        assert_eq!(host.head_clocks(1, None).at(Some(21)), 0.0);
+
+        // Freeing a widget forgets what was named on it.
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_FREE.into(),
+                args: vec![OscType::Int(20)],
+            }),
+            from(),
         );
-        // No source at all is the same answer either way: nothing to read.
-        assert_eq!(host.playhead_clock(None), 0.0);
+        assert_eq!(host.transports_drawn(1), [3]);
     }
 
-    /// **A client says which counter the playheads read**, the way it says
-    /// which typeface and which theme. Before this the choice was fixed where
-    /// the segment was opened, so a host launched by a script drew the device
-    /// clock and nothing else -- and a script driving the transport had to
-    /// anchor the line itself, which cannot express a locate or a loop.
+    /// **A client says which counter a window's or a view's playheads read**,
+    /// by id. Before this the choice was fixed where the segment was opened,
+    /// so a host launched by a script drew the device clock and nothing else --
+    /// and a script driving the transport had to anchor the line itself, which
+    /// cannot express a locate or a loop.
     #[test]
     fn a_client_says_which_counter_the_playheads_read() {
         let mut host = Host::new();
         host.handle_packet(def_msg(1, TREE), from());
-        assert_eq!(host.head_clock(), HeadClock::Device, "the default");
+        assert_eq!(
+            host.head_clock_of(1, None),
+            HeadClock::Device,
+            "the default"
+        );
 
-        let clock = |which: &str| {
+        let clock = |id: i32, which: &str, transport: Option<i32>| {
+            let mut args = vec![OscType::Int(id), OscType::String(which.into())];
+            args.extend(transport.map(OscType::Int));
             OscPacket::Message(OscMessage {
                 addr: GUI_CLOCK.into(),
-                args: vec![OscType::String(which.into())],
+                args,
             })
         };
         assert!(
-            !host.handle_packet(clock("transport"), from()).is_empty(),
-            "the open window redraws: the line it draws now means something else"
+            !host
+                .handle_packet(clock(1, "transport", None), from())
+                .is_empty(),
+            "the window redraws: the line it draws now means something else"
         );
         assert_eq!(
-            host.head_clock(),
+            host.head_clock_of(1, Some(10)),
             HeadClock::Transport(0),
             "transport 0 unnamed"
         );
-        host.handle_packet(
-            OscPacket::Message(OscMessage {
-                addr: GUI_CLOCK.into(),
-                args: vec![OscType::String("transport".into()), OscType::Int(2)],
-            }),
-            from(),
-        );
+        host.handle_packet(clock(10, "transport", Some(2)), from());
         assert_eq!(
-            host.head_clock(),
+            host.head_clock_of(1, Some(10)),
             HeadClock::Transport(2),
-            "or the one named"
+            "or the one named, on the view"
         );
+        assert_eq!(host.head_clock_of(1, None), HeadClock::Transport(0));
 
-        // A word the host does not know leaves it drawing what it was drawing.
-        assert!(host.handle_packet(clock("nonsense"), from()).is_empty());
-        assert_eq!(host.head_clock(), HeadClock::Transport(2));
+        // A word the host does not know, and an id no window holds, leave it
+        // drawing what it was drawing.
+        assert!(
+            host.handle_packet(clock(10, "nonsense", None), from())
+                .is_empty()
+        );
+        assert!(
+            host.handle_packet(clock(99, "device", None), from())
+                .is_empty()
+        );
+        assert_eq!(host.head_clock_of(1, Some(10)), HeadClock::Transport(2));
 
-        host.handle_packet(clock("device"), from());
-        assert_eq!(host.head_clock(), HeadClock::Device);
+        host.handle_packet(clock(10, "device", None), from());
+        assert_eq!(host.head_clock_of(1, Some(10)), HeadClock::Device);
     }
 
     /// **The report's start frame rides as a long**, and a reader that took
@@ -5020,7 +5203,11 @@ mod write_tests {
         let (mut host, _server) = take_host(1, 16);
         let key = host.timeline_key(50).expect("the take is on a timeline");
         assert!(host.play_buffer(1, 50, 0, play::Pass::Until { end: 16, back: 0 }));
-        assert_eq!(host.head_clock(), HeadClock::Transport(0));
+        assert_eq!(
+            host.head_clock_of(1, Some(50)),
+            HeadClock::Transport(play::MONITOR_TRANSPORT as usize),
+            "the take's view, and nothing else in the host"
+        );
         assert_eq!(host.timelines().state(key).unwrap().playhead_at, 0.0);
         assert!(host.stop_playback());
         assert_eq!(host.timelines().state(key).unwrap().playhead_at, 0.0);

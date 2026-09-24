@@ -512,8 +512,14 @@ test("each transport rolls on its own, addressed through transportAt", {
         assert.equal(zero.playing, false, "and nothing rolled it");
         assert.equal(zero.positionSample, 0);
 
-        // One group, one transport.
+        // One group, one transport -- governed or following.
         await assert.rejects(server.transportGroup(governed), CommandError);
+        const output = new Group({ server });
+        await one.transportFollow(output);
+        assert.equal((await one.transportState()).follow, output.id);
+        await assert.rejects(server.transportFollow(governed), CommandError);
+        await one.transportFollow(null);
+        output.free();
         await assert.rejects(server.transportAt(99).transportPlay(), CommandError);
 
         await one.transportStop();

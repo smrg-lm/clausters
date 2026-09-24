@@ -322,6 +322,8 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_editing_playback_set_rolling.restype = None
     lib.clausters_editing_playback_rolling.argtypes = [ctypes.c_void_p]
     lib.clausters_editing_playback_rolling.restype = ctypes.c_int32
+    lib.clausters_editing_playback_transport.argtypes = [ctypes.c_void_p]
+    lib.clausters_editing_playback_transport.restype = ctypes.c_int32
     lib.clausters_editing_playback_stops_at_end.argtypes = [ctypes.c_void_p]
     lib.clausters_editing_playback_stops_at_end.restype = ctypes.c_int32
     lib.clausters_editing_playback_secs_to_samples.argtypes = [ctypes.c_void_p, ctypes.c_double]
@@ -1618,6 +1620,12 @@ class MultitrackPlayback:
         """Whether the transport was last told to roll."""
         return bool(self._handle) and bool(
             lib().clausters_editing_playback_rolling(ctypes.c_void_p(self._handle)))
+
+    def transport(self) -> int:
+        """The transport the multitrack plays on."""
+        if not self._handle:
+            return 0
+        return int(lib().clausters_editing_playback_transport(ctypes.c_void_p(self._handle)))
 
     def stops_at_end(self) -> bool:
         """Whether a pass stops at the end of the contents."""

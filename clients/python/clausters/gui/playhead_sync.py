@@ -132,7 +132,8 @@ class PlayheadSync:
         #: until one is asked for.
         self._transport = {}
         if self.head_clock == "transport" and host is not None and hasattr(host, "head_clock"):
-            host.head_clock("transport")
+            for target in self._targets():
+                host.head_clock(target, "transport")
 
     # ---- the unit bridge ----
 

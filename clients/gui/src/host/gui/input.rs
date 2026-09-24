@@ -23,7 +23,7 @@ impl App {
         // ...and the clock the frame sweeps the playhead with, for the same
         // reason: a click that locates while the transport runs re-anchors the
         // sweep, and it must land where the line is drawn.
-        ctx.sample_clock = self.host.playhead_clock(self.shm.as_deref());
+        ctx.clocks = self.host.head_clocks(def_id, self.shm.as_deref());
         // ...and this front's own wall clock, which is what tells one press
         // from the second of a double click. The rule is the machine's; the
         // clock is the platform's, because there is none in the shared core.

@@ -624,35 +624,38 @@ class GuiHost:
         """
         self._send("/gui_metrics", json.dumps(dict(table)))
 
-    def head_clock(self, which: str, transport: int = 0):
-        """``/gui_headClock <which> [transport]`` -- which counter every playhead
-        is drawn from; on ``"transport"``, which transport (0 unless named).
+    def head_clock(self, id, which: str, transport: int = 0):
+        """``/gui_headClock <id> <which> [transport]`` -- which counter the
+        playheads of ``id`` are drawn from: a window, or a widget and every view
+        under it that names none of its own. ``id`` is an id or a handle.
 
-        ``"device"`` (the default) is the engine's sample clock, which never
-        stops: what a host watching a live server wants, since its meters,
-        scopes and taps are all on that axis. ``"transport"`` is the
-        **transport's position** -- it holds while the transport is stopped, jumps wherever
-        ``/transport_locate`` puts it and wraps at a loop's end, all inside the
-        engine.
+        ``"device"`` is the engine's sample clock, which never stops: what a
+        host watching a live server wants, since its meters, scopes and taps
+        are all on that axis. ``"transport"`` is a **transport's position** --
+        transport ``transport``, 0 unless named -- which holds while the
+        transport is stopped, jumps wherever ``/transport_locate`` puts it and
+        wraps at a loop's end, all inside the engine.
 
         That is the one an editor wants, and it changes what a script has to do:
         drawing it needs no anchor (``playhead_at=0``) and no message per
         frame, because seeking, looping and pausing become transport commands
-        rather than a line the script keeps in step. Host-wide and id-less, like
-        `theme` and `font`, because it says what the numbers a window is handed
-        *mean*.
+        rather than a line the script keeps in step.
 
-        A word the host does not know is logged and ignored, so the line keeps
-        drawing what it was drawing. The launch-time spelling is the host's own
-        ``--clock <device|transport>``; ``--session`` implies ``transport``. It is
+        **Per view.** A view draws from the counter named on it or on its
+        nearest ancestor, then its window's, then the host's own default (its
+        ``--clock``, and ``--session`` implies ``transport``) -- so one window
+        can hold two views that play two timelines, each on its own transport.
+        A word the host does not know, or an id no window holds, is logged and
+        ignored, so the line keeps drawing what it was drawing. It is
         ``head_clock`` and not ``clock`` because a host already has one -- its
         `clausters.base.appclock.AppClock` -- and this names a counter, not a
         scheduler.
         """
+        target = int(getattr(id, "id", id))
         if which == "transport" and int(transport) != 0:
-            self._send("/gui_headClock", str(which), int(transport))
+            self._send("/gui_headClock", target, str(which), int(transport))
         else:
-            self._send("/gui_headClock", str(which))
+            self._send("/gui_headClock", target, str(which))
 
     def _stamp(self, node: dict, node_id: int, names: dict, controls: dict) -> dict:
         """A **copy** of ``node`` with a fresh id on every id-less descendant:

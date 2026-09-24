@@ -126,6 +126,8 @@ timeline.transport = right;                 // a timeline on transport 1
 
 A node reads the transport that governs it — the nearest governed group above it — so a reader following `transportPos` needs no id of its own: it follows whichever transport its group is bound to, and transport 0 when none is. `transportState()` says which transport it read in its `transport` field.
 
+What must go on running while a transport is stopped and still has to know it — an output with its meter and its declick, beside the governed group or around it — **follows** the transport instead of being governed by it: `transportFollow(group)` has its nodes read the transport and nothing freeze them.
+
 ## See also
 
 - [Routines and clocks](routines-and-clocks.md) — the clock the freeze holds, and the logical time it keeps.

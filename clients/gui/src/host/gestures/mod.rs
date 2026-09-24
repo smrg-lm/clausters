@@ -95,11 +95,11 @@ pub struct GestureCtx {
     /// it: a frequency axis has a resolution, and the zoom is not allowed past
     /// it.
     pub sample_rate: f64,
-    /// The engine's sample clock (`0.0` when this front does not know it) -- the
-    /// same one the frame sweeps the playhead with. **One cursor** needs it: a
-    /// click that lands while the transport is running re-anchors the sweep, and
-    /// the anchor is a clock value.
-    pub sample_clock: f64,
+    /// The clocks the window's playheads sweep from (all `0.0` when this front
+    /// does not know them) -- the same ones the frame draws with. **One
+    /// cursor** needs them: a click that lands while the transport is running
+    /// re-anchors the sweep, and the anchor is a clock value.
+    pub clocks: crate::host::world::HeadClocks,
     /// **The front's wall clock, in milliseconds** (`0.0` when this front has
     /// none), monotonic within a run.
     ///
@@ -126,7 +126,7 @@ impl GestureCtx {
             alt: false,
             slot_channels: HashMap::new(),
             sample_rate: 0.0,
-            sample_clock: 0.0,
+            clocks: crate::host::world::HeadClocks::default(),
             now_ms: 0.0,
         }
     }

@@ -1855,6 +1855,7 @@ fn transport_query_and_set() {
             OscType::Long(-1),
             OscType::Long(-1),
             OscType::Int(0),
+            OscType::Int(-1),
         ]
     );
 
@@ -1887,6 +1888,7 @@ fn transport_query_and_set() {
             OscType::Long(-1),
             OscType::Long(-1),
             OscType::Int(0),
+            OscType::Int(-1),
         ]
     );
 
@@ -2012,6 +2014,7 @@ fn transport_pushes_on_change_to_notify_clients() {
             OscType::Long(-1),
             OscType::Long(-1),
             OscType::Int(0),
+            OscType::Int(-1),
         ]
     );
 
@@ -2298,6 +2301,73 @@ fn each_transport_is_addressed_by_its_id() {
     server.send("/transport_stop", vec![]);
     let fail = server.recv_until("/fail");
     assert_eq!(fail.args[0], OscType::String("/transport_stop".into()));
+    server.quit();
+}
+
+/// `/transport_follow` has a group read a transport without being frozen by
+/// it; the reply says which group follows, and a group bound to one transport
+/// cannot follow another.
+#[test]
+fn a_group_follows_a_transport_and_the_reply_says_which() {
+    let mut server = TestServer::spawn();
+    server.send("/server_notify", vec![OscType::Int(1)]);
+    server.recv_until("/done");
+    for group in [100, 200] {
+        server.send(
+            "/group_new",
+            vec![OscType::Int(group), OscType::Int(0), OscType::Int(0)],
+        );
+    }
+    server.wait_for_group_count(3);
+    server.send("/transport_group", vec![OscType::Int(1), OscType::Int(200)]);
+    server.recv_until("/done");
+
+    server.send(
+        "/transport_follow",
+        vec![OscType::Int(1), OscType::Int(100)],
+    );
+    assert_eq!(
+        server.recv_until("/done").args[0],
+        OscType::String("/transport_follow".into())
+    );
+    let push = loop {
+        let reply = server.recv_until("/transport_query.reply");
+        if reply.args[13] == OscType::Int(100) {
+            break reply;
+        }
+    };
+    assert_eq!(push.args[12], OscType::Int(1));
+    assert_eq!(
+        push.args[5],
+        OscType::Int(200),
+        "the governed group beside it"
+    );
+
+    // Bound once, it cannot be bound again anywhere.
+    server.send(
+        "/transport_follow",
+        vec![OscType::Int(2), OscType::Int(100)],
+    );
+    server.recv_until("/fail");
+    server.send(
+        "/transport_follow",
+        vec![OscType::Int(2), OscType::Int(200)],
+    );
+    server.recv_until("/fail");
+    server.send("/transport_group", vec![OscType::Int(1), OscType::Int(100)]);
+    server.recv_until("/fail");
+
+    // Freeing it ends the follow.
+    server.send("/node_free", vec![OscType::Int(100)]);
+    server.wait_for_group_count(2);
+    server.send("/transport_query", vec![OscType::Int(1)]);
+    loop {
+        let reply = server.recv_until("/transport_query.reply");
+        if reply.args[13] == OscType::Int(-1) {
+            break;
+        }
+        server.send("/transport_query", vec![OscType::Int(1)]);
+    }
     server.quit();
 }
 

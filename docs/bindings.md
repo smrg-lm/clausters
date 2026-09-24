@@ -376,6 +376,7 @@ sits over it.
 | `clausters_editing_playback_meters` | `JsMultitrackPlayback.meters` | `idiom` — the meter bus runs by track, as JSON |
 | `clausters_editing_playback_set_rolling` | `JsMultitrackPlayback.set_rolling` | `idiom` — whether the transport is rolling, when the caller learned it from the engine |
 | `clausters_editing_playback_rolling` | `JsMultitrackPlayback.rolling` | `idiom` — whether the transport was last told to roll; C answers 1 or 0 |
+| `clausters_editing_playback_transport` | `JsMultitrackPlayback.transport` | `idiom` — the transport the multitrack plays on, which its commands name and its play cursor is drawn from |
 | `clausters_editing_playback_stops_at_end` | `JsMultitrackPlayback.stops_at_end` | `idiom` — whether a pass stops at the end of the contents; C answers 1 or 0 |
 | `clausters_editing_playback_secs_to_samples` | `JsMultitrackPlayback.secs_to_samples` | `idiom` — a second of the multitrack as a sample, at the rate it was planned at; wasm answers a double |
 | `clausters_editing_playback_samples_to_secs` | `JsMultitrackPlayback.samples_to_secs` | `idiom` — a sample as a second of the multitrack |

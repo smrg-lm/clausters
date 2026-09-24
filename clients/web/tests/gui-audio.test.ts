@@ -26,6 +26,7 @@ class FakeHost {
     acks: [number, [number, Record<string, PropValue>][], string | undefined][] = [];
     trees: GuiNode[] = [];
     clock = "device";
+    clockOf = -1;
     private next = 20_000;
 
     allocId(): number {
@@ -40,8 +41,9 @@ class FakeHost {
         return { id };
     }
     set(): void {}
-    headClock(name: string): void {
+    headClock(id: number | { readonly id: number }, name: string): void {
         this.clock = name;
+        this.clockOf = typeof id === "number" ? id : id.id;
     }
     onMessage(): () => void {
         return () => {};
@@ -159,13 +161,14 @@ test("the window draws a join over a private copy of the take", async () => {
 });
 
 test("the window opens with both cursors on the transport clock", async () => {
-    const [, host] = await opened(new FakeBuffer());
+    const [editor, host] = await opened(new FakeBuffer());
     const take = host.trees[0]!.children![0]! as unknown as {
         axes: { x: Record<string, unknown> };
     };
     assert.equal(take.axes.x.cursor, 0, "the position cursor, placed");
     assert.equal(take.axes.x.playhead_at, 0, "the play cursor, anchored");
     assert.equal(host.clock, "transport", "drawn from the transport's position");
+    assert.equal(host.clockOf, editor.window!.id, "the editor's own window");
 });
 
 test("a stroke writes a new take and the join reads it", async () => {

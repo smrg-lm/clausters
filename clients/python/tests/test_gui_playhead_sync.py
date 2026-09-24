@@ -507,8 +507,8 @@ class HeadClockHost(FakeHost):
         super().__init__()
         self.head = None
 
-    def head_clock(self, which):
-        self.head = which
+    def head_clock(self, id, which, transport=0):
+        self.head = (id, which)
 
 
 def transport_sync(host=None, server=None):
@@ -523,7 +523,7 @@ def test_a_transport_sync_tells_the_host_which_counter_to_draw():
     computing the line and the host starts reading the transport's position."""
     host = HeadClockHost()
     tp = transport_sync(host)
-    assert host.head == "transport"
+    assert host.head == (7, "transport"), "on the view the line is drawn in"
     # And the anchor is 0, because the counter already *is* the transport's time.
     tp.play()
     assert host.last("playhead_at") == 0.0

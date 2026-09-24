@@ -125,9 +125,7 @@ impl Element for Score {
         mesh.rect(ctx.rect, theme.panel);
         // The cursor sweeps off the engine clock while a pass plays
         // (`playhead_at`), so playback costs no messages per frame.
-        let head = self
-            .data
-            .head_ms(ctx.world.sample_clock, ctx.world.sample_rate);
+        let head = self.data.head_ms(ctx.clock, ctx.world.sample_rate);
         let colors = ScoreColors {
             ink: theme.text,
             playhead: theme.playhead,

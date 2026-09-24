@@ -84,6 +84,8 @@ export interface TransportState {
     end: [number, number | null] | null;
     /** Which transport this is: the handle's `transportId`. */
     transport: number;
+    /** The group that follows it (`transportFollow`), or `null`. */
+    follow: number | null;
 }
 
 /** A reply matcher: whether a `/transport_query.reply` is about `transport`. */
@@ -205,6 +207,9 @@ export class ServerTransport {
             loop: loopEnd > loopStart ? [loopStart, loopEnd] : null,
             end: end < 0 ? null : [end, back < 0 ? null : back],
             transport: this.transportId,
+            follow: msg.args.length > 13 && Number(msg.args[13]) >= 0
+                ? Number(msg.args[13])
+                : null,
         };
     }
 
@@ -230,6 +235,28 @@ export class ServerTransport {
     ): Promise<Server> {
         const id = group === null ? -1 : nodeId(group);
         await this.command("/transport_group", [["i", this.transportId], ["i", id]], timeout);
+        return this;
+    }
+
+    /**
+     * Has `group` **follow** the transport (`/transport_follow`), or ends that
+     * with `null`.
+     *
+     * Its nodes read the transport -- its position, whether it rolls -- as a
+     * governed group's do, and nothing freezes them. It is for the part of an
+     * application that must go on running while its transport is stopped, an
+     * output with its meter and its declick, and still has to know that
+     * transport. The governed group may sit inside it. A transport has one
+     * following group, as it has one governed group, and a group is bound to
+     * one transport either way.
+     */
+    async transportFollow(
+        this: Server,
+        group: NodeLike | null,
+        timeout?: number,
+    ): Promise<Server> {
+        const id = group === null ? -1 : nodeId(group);
+        await this.command("/transport_follow", [["i", this.transportId], ["i", id]], timeout);
         return this;
     }
 

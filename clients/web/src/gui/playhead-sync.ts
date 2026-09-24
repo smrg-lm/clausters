@@ -197,7 +197,9 @@ export class PlayheadSync {
         this.extent = extent ?? null;
         this.clock = clock;
         this.governed = Boolean(governed);
-        if (this.headClock === "transport") this.host?.headClock("transport");
+        if (this.headClock === "transport") {
+            for (const target of this.targets()) this.host?.headClock(target, "transport");
+        }
     }
 
     // ---- the unit bridge ----

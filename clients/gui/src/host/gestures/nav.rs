@@ -383,7 +383,7 @@ pub(super) fn cursor_of(host: &Host, ctx: &GestureCtx, id: i32) -> Option<f64> {
     if state.cursor >= 0.0 {
         return Some(state.cursor);
     }
-    state.head_at(ctx.sample_clock)
+    state.head_at(ctx.clocks.at(Some(id)))
 }
 
 pub(super) fn locate_at(

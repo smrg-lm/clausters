@@ -507,7 +507,10 @@ impl WebApp {
     /// from the `/bus_tapStream.reply` store (time-based, exactly like the native tick),
     /// then repaint.
     fn on_tick(&mut self) {
-        let mut wants_clock = false;
+        // The counters some visible playhead is drawn from: the device clock,
+        // and each transport whose position one reads.
+        let mut wants_device = false;
+        let mut wants_transports: Vec<usize> = Vec::new();
         let dt = self.tick_clock.delta();
         // Applied after the loop: registering an axis' length borrows the
         // host, which the loop holds a tree of.
@@ -544,27 +547,36 @@ impl WebApp {
             // Asked after the tick, so the mutable walk above is over: whether
             // this tree draws a moving playhead is what makes the page poll the
             // engine clock at all.
-            if let Some(tree) = self.host.window_def(def) {
-                wants_clock |= live::tree_has_playhead(tree, self.host.timelines());
+            if let Some(tree) = self.host.window_def(def)
+                && live::tree_has_playhead(tree, self.host.timelines())
+            {
+                wants_device |= self.host.device_drawn(def);
+                for t in self.host.transports_drawn(def) {
+                    if !wants_transports.contains(&t) {
+                        wants_transports.push(t);
+                    }
+                }
             }
         }
         self.apply_extents(extents);
         // A visible playhead needs the engine clock: poll it once per tick (the
         // browser's stand-in for the shm header's sample clock) -- once for the
         // page, however many canvases show one.
-        if wants_clock && let Some(server) = self.host.server() {
-            // Which counter the line is drawn from decides which one is worth
-            // a message: the position is the transport's own to report.
-            let (addr, args) = match self.host.head_clock() {
-                crate::host::HeadClock::Device => ("/clock_query", vec![]),
-                crate::host::HeadClock::Transport(transport) => {
-                    ("/transport_query", vec![OscType::Int(transport as i32)])
-                }
-            };
-            let _ = server.send(OscMessage {
-                addr: addr.into(),
-                args,
-            });
+        if let Some(server) = self.host.server() {
+            // Which counters the lines are drawn from decides which are worth a
+            // message: a position is its transport's own to report.
+            if wants_device {
+                let _ = server.send(OscMessage {
+                    addr: "/clock_query".into(),
+                    args: vec![],
+                });
+            }
+            for transport in wants_transports {
+                let _ = server.send(OscMessage {
+                    addr: "/transport_query".into(),
+                    args: vec![OscType::Int(transport as i32)],
+                });
+            }
         }
         self.advance_edge_scroll();
     }

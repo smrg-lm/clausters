@@ -156,6 +156,10 @@ pub struct Ctx<'a> {
     /// this only for what the ring cannot say -- a field's caret and selection,
     /// which exist while it is being typed into and not otherwise.
     pub focused: bool,
+    /// The clock this element's playhead sweeps from this frame -- the counter
+    /// named on it or on its nearest ancestor, else its window's, already read
+    /// ([`HeadClocks::at`](crate::host::world::HeadClocks::at)).
+    pub clock: f64,
 }
 
 /// **How a body that draws through a texture slot samples it**: the dB window

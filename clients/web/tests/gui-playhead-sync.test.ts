@@ -463,10 +463,10 @@ class TransportServer {
 
 /** A host that also records `headClock`. */
 class HeadClockHost extends FakeHost {
-    head: string | null = null;
+    head: [number, string] | null = null;
 
-    headClock(which: string): void {
-        this.head = which;
+    headClock(id: number, which: string): void {
+        this.head = [id, which];
     }
 }
 
@@ -485,7 +485,7 @@ test("a transport sync tells the host which counter to draw", async () => {
     // computing the line and the host starts reading the transport's position.
     const host = new HeadClockHost();
     const tp = transportSync(host);
-    assert.equal(host.head, "transport");
+    assert.deepEqual(host.head, [7, "transport"], "on the view the line is drawn in");
     await tp.play();
     assert.equal(host.last("playhead_at"), 0.0);
 });
