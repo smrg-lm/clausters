@@ -187,35 +187,44 @@ impl OscServer {
         }
     }
 
-    /// `/sched_clear [axis]`: flushes pending timed bundles from the engine's
-    /// schedule queues. The bundles' heap (boxed synths and the `Vec` shells)
-    /// leaves through the garbage FIFO, so nothing is dropped on the audio
-    /// thread. Replies `/done`.
+    /// `/sched_clear ["transport" <int32 transport>]`: flushes pending timed
+    /// bundles from the engine's schedule queues. The bundles' heap (boxed
+    /// synths and the `Vec` shells) leaves through the garbage FIFO, so nothing
+    /// is dropped on the audio thread. Replies `/done`.
     ///
-    /// With no argument it is the panic button it always was: both queues, the
-    /// device one and the transport one. With `"transport"` it drops the
-    /// **transport queue alone**, which is what a client re-cueing a plan after
-    /// a locate asks for -- the transport clock does not jump, so bundles queued
-    /// for the position left behind would sound at it, and clearing everything
-    /// would take every other client's score with them.
+    /// With no argument it is the panic button it always was: every queue, the
+    /// device one and each transport's. With `"transport"` and an id it drops
+    /// **that transport's queue alone**, which is what a client re-cueing a
+    /// plan after a locate asks for -- a transport clock does not jump, so
+    /// bundles queued for the position left behind would sound at it, and
+    /// clearing everything would take every other client's score with them.
     fn handle_sched_clear(&mut self, msg: &OscMessage, from: ClientId) {
         const ADDR: &str = "/sched_clear";
-        let transport_only = match msg.args.first() {
-            None => false,
-            Some(OscType::String(axis)) if axis == "transport" => true,
-            Some(_) => return self.fail(from, ADDR, "expected no argument or \"transport\""),
+        let only = match msg.args.first() {
+            None => None,
+            Some(OscType::String(axis)) if axis == "transport" => {
+                let mut args = Args::new(msg);
+                let _ = args.one();
+                match self.transport_arg(&mut args) {
+                    Ok(k) => Some(k),
+                    Err(why) => return self.fail(from, ADDR, why),
+                }
+            }
+            Some(_) => {
+                return self.fail(
+                    from,
+                    ADDR,
+                    "expected no argument or \"transport\" and a transport id",
+                );
+            }
         };
-        if self
-            .handle
-            .send(Cmd::ClearSched { transport_only })
-            .is_err()
-        {
+        if self.handle.send(Cmd::ClearSched { only }).is_err() {
             return self.fail(from, ADDR, "command FIFO full");
         }
         self.reply(from, "/done", vec![OscType::String(ADDR.into())]);
     }
 
-    /// `/sched_atTransport <int64 target> <blob packet>` -- like
+    /// `/sched_atTransport <int32 transport> <int64 target> <blob packet>` -- like
     /// [`Self::handle_sched_at`], but the target is a position on the
     /// **transport** clock rather than the device one.
     ///
@@ -228,19 +237,25 @@ impl OscServer {
     /// which is what a silently mismatched axis would do.
     fn handle_sched_at_transport(&mut self, msg: &OscMessage, from: ClientId) {
         const ADDR: &str = "/sched_atTransport";
-        let Some(group) = self.transport.group else {
+        const SHAPE: &str = "expected (int32 transport, int64 sampleTarget, blob packet)";
+        let mut args = Args::new(msg);
+        let k = match self.transport_arg(&mut args) {
+            Ok(k) => k,
+            Err(why) => return self.fail(from, ADDR, why),
+        };
+        let Some(group) = self.transports[k].group else {
             return self.fail(from, ADDR, "no group bound");
         };
-        let target = match msg.args.first() {
+        let target = match msg.args.get(1) {
             Some(OscType::Long(v)) => *v,
             Some(OscType::Int(v)) => *v as i64,
-            _ => return self.fail(from, ADDR, "expected (int64 sampleTarget, blob packet)"),
+            _ => return self.fail(from, ADDR, SHAPE),
         };
         if target < 0 {
             return self.fail(from, ADDR, "sample target must be >= 0");
         }
-        let Some(OscType::Blob(blob)) = msg.args.get(1) else {
-            return self.fail(from, ADDR, "expected (int64 sampleTarget, blob packet)");
+        let Some(OscType::Blob(blob)) = msg.args.get(2) else {
+            return self.fail(from, ADDR, SHAPE);
         };
         let packet = match crate::osc::decode_packet(blob) {
             Ok(packet) => packet,
@@ -257,7 +272,7 @@ impl OscServer {
         // The engine's queue speaks the device axis and converts on arrival, so
         // hand it the device time this transport target corresponds to and let
         // its own conversion round-trip it back unchanged.
-        let frozen = self.handle.current_frozen_total();
+        let frozen = self.handle.current_frozen_total(k);
         let device = TransportSample::new(target as u64).to_device(frozen).get();
         if self
             .handle
@@ -679,16 +694,14 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     ("/transport_play", |s, _, m, f| {
         s.handle_transport_play(Args::new(m), f)
     }),
-    ("/transport_query", |s, _, _, f| {
-        s.handle_transport_query(f);
-        Ok(())
+    ("/transport_query", |s, _, m, f| {
+        s.handle_transport_query(Args::new(m), f)
     }),
     ("/transport_set", |s, _, m, f| {
         s.handle_transport(Args::new(m), f)
     }),
-    ("/transport_stop", |s, _, _, f| {
-        s.handle_transport_stop(f);
-        Ok(())
+    ("/transport_stop", |s, _, m, f| {
+        s.handle_transport_stop(Args::new(m), f)
     }),
     ("/ugen_query", |s, _, m, f| {
         s.handle_ugen_query(Args::new(m), f)

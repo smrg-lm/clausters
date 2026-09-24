@@ -487,6 +487,41 @@ test("the end mark stops a rolling transport and goes back", { skip: !hasServer 
     });
 });
 
+test("each transport rolls on its own, addressed through transportAt", {
+    skip: !hasServer,
+}, async () => {
+    await withServer(async (server) => {
+        assert.equal(server.transportAt(0), server, "transport 0 is the server itself");
+        const one = server.transportAt(1);
+        assert.equal(one.transportId, 1);
+        assert.equal((await server.queryInfo()).transports, 8, "the default boot");
+
+        const governed = new Group({ server });
+        await one.transportGroup(governed);
+        await one.transportLocateSample(4_800);
+        await one.transportPlay();
+        await sleep(120);
+        const rolling = await one.transportState();
+        assert.equal(rolling.transport, 1);
+        assert.equal(rolling.group, governed.id);
+        assert.ok(rolling.playing && rolling.positionSample > 4_800, "transport 1 rolls");
+
+        const zero = await server.transportState();
+        assert.equal(zero.transport, 0);
+        assert.equal(zero.group, null, "transport 0 has no group");
+        assert.equal(zero.playing, false, "and nothing rolled it");
+        assert.equal(zero.positionSample, 0);
+
+        // One group, one transport.
+        await assert.rejects(server.transportGroup(governed), CommandError);
+        await assert.rejects(server.transportAt(99).transportPlay(), CommandError);
+
+        await one.transportStop();
+        await one.transportGroup(null);
+        governed.free();
+    });
+});
+
 test("/sched_atTransport verifies the axis it is told", { skip: !hasServer }, async () => {
     await withServer(async (server) => {
         await new SynthDef("ts_hold", out(0.0, sine(control("freq", 220.0)).mul(0.0)))

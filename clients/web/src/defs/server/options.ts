@@ -97,6 +97,12 @@ export interface ServerInfo extends ServerSizing {
      * against a server too old to report it.
      */
     maxStreamBuses: number;
+    /**
+     * How many transports the server has (`--transports`), addressed `0` to
+     * `transports - 1` (`Server.transportAt`). Falls back to the one transport
+     * a server too old to report it had.
+     */
+    transports: number;
 }
 
 /**
@@ -125,6 +131,7 @@ export function formatServerInfo(info: ServerInfo): string {
         `  taps    ${taps}`,
         `  frame   ${info.maxFrame} bytes max`,
         `  stream  ${info.maxStreamBuses} buses per /bus_stream`,
+        `  transports ${info.transports}`,
     ].join("\n");
 }
 

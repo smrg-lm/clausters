@@ -787,8 +787,9 @@ test("the playback sends the crate's steps and waits where they say", async () =
     await held.run(multitrack.locate(2.0));
     assert.equal(log.length, 1);
     assert.deepEqual(log[0]!.slice(0, 2), ["request", "/transport_locateSample"]);
+    assert.deepEqual(log[0]![2], ["i", 0], "the multitrack's transport, first");
     assert.deepEqual(
-        log[0]![2],
+        log[0]![3],
         ["h", BigInt(multitrack.secsToSamples(2.0))],
         "a sample rides as 64 bits",
     );

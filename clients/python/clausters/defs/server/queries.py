@@ -96,6 +96,7 @@ class ServerQueries:
             tap_frames=at(12, int, 0),
             max_frame=at(13, int, 65536),
             max_stream_buses=at(14, int, 128),
+            transports=at(15, int, 1),
         )
 
     # ---- node tree introspection (RT only) ----

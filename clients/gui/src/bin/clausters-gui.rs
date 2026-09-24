@@ -301,7 +301,7 @@ fn run(args: &[String]) -> Result<(), String> {
                     .ok_or_else(|| format!("--clock needs device or transport\n{USAGE}"))?;
                 cli_head = Some(match v.as_str() {
                     "device" => HeadClock::Device,
-                    "transport" => HeadClock::Transport,
+                    "transport" => HeadClock::Transport(0),
                     other => {
                         return Err(format!(
                             "--clock takes device or transport, not {other}\n{USAGE}"
@@ -471,7 +471,7 @@ fn run(args: &[String]) -> Result<(), String> {
             host.set_id_share(cli_id_share).map_err(|e| e.to_string())?;
             // A session editor's time is the transport's, which is what the
             // head reads unless the launch said otherwise.
-            host.set_head_clock(cli_head.unwrap_or(HeadClock::Transport));
+            host.set_head_clock(cli_head.unwrap_or(HeadClock::Transport(0)));
             host
         });
     }

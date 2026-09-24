@@ -88,31 +88,41 @@ pub enum Cmd {
         id: i32,
         run: bool,
     },
-    /// Rolls (`rolling = true`) or stops (`false`) the transport. Stopped, the
-    /// transport clock holds and the transport queue cannot fall due; the
-    /// device clock is untouched either way.
+    /// Rolls (`rolling = true`) or stops (`false`) transport `transport`.
+    /// Stopped, its clock holds and its queue cannot fall due; the device
+    /// clock is untouched either way.
+    ///
+    /// Every transport command names its transport, an index below the
+    /// server's `--transports`; the network thread refuses any other, and the
+    /// engine ignores one that slips past.
     TransportRun {
+        transport: usize,
         rolling: bool,
     },
-    /// Binds the group the transport governs; `id < 0` unbinds. Unbinding
-    /// thaws the group, so no frozen ownerless subtree is left behind.
+    /// Binds the group transport `transport` governs; `id < 0` unbinds.
+    /// Unbinding thaws the group, so no frozen ownerless subtree is left
+    /// behind.
     TransportGroup {
+        transport: usize,
         id: i32,
     },
     /// `/transport_locate`: moves the transport's position, leaving both clocks
     /// alone. One store of the anchor -- see `server::clock_axis`.
     TransportLocate {
+        transport: usize,
         position: u64,
     },
     /// `/transport_loop`: the span the position wraps inside, `None` to stop
     /// looping. An empty or inverted span is not a loop and is rejected before
     /// it reaches here.
     TransportLoop {
+        transport: usize,
         span: Option<Range<u64>>,
     },
     /// `/transport_end`: the end mark, where a rolling transport stops, and
     /// where it is located once it has. `None` clears the mark.
     TransportEnd {
+        transport: usize,
         mark: Option<EndMark>,
     },
     /// `/node_before` / `/node_after`.
@@ -182,13 +192,13 @@ pub enum Cmd {
     /// `Vec<Cmd>` (with its boxed synths) leaves through the garbage FIFO as
     /// [`Garbage::SpentBundle`], so nothing is freed on the audio thread.
     ///
-    /// `transport_only` drops the **transport queue alone** and leaves the
-    /// device one standing: that is what a client re-cueing a plan after a
-    /// locate needs, since the transport queue rides a clock that does not
-    /// jump, so what was queued for the old position would otherwise sound
-    /// there.
+    /// `only` names one transport whose queue goes **alone**, leaving the
+    /// device queue and every other transport's standing: that is what a
+    /// client re-cueing a plan after a locate needs, since a transport queue
+    /// rides a clock that does not jump, so what was queued for the old
+    /// position would otherwise sound there. `None` drops every queue.
     ClearSched {
-        transport_only: bool,
+        only: Option<usize>,
     },
     /// `/node_ugenCmd`: a typed command addressed to one UGen instance inside a synth.
     /// The payload is inline (no heap), so applying it allocates nothing.
@@ -251,11 +261,13 @@ pub enum Garbage {
     /// one: a clear drops what a client asked to drop, and reporting it as a
     /// rejection made a re-cue look like an overflow.
     RejectedBundle(Vec<Cmd>),
-    /// The transport reached its end mark and stopped there, so whoever
+    /// A transport reached its end mark and stopped there, so whoever
     /// mirrors the rolling state learns it without polling. Not garbage, and
     /// carried here for the reason a rejection is: it is the one FIFO the
     /// network thread drains on every turn, idle ticks included.
-    TransportEnded,
+    TransportEnded {
+        transport: usize,
+    },
 }
 
 /// Where a rolling transport stops (`end`) and where it is located once it
@@ -272,12 +284,105 @@ struct ScheduledBundle {
     cmds: Vec<Cmd>,
 }
 
-/// A timed bundle on the transport axis. Same shape as [`ScheduledBundle`];
+/// A timed bundle on a transport's axis. Same shape as [`ScheduledBundle`];
 /// the type of `time` is the whole difference, and it is what keeps the two
-/// queues from being fed each other's stamps.
+/// kinds of queue from being fed each other's stamps.
 struct ScheduledBundleT {
     time: TransportSample,
     cmds: Vec<Cmd>,
+}
+
+/// One transport, as the audio thread holds it.
+///
+/// Every transport is independent: its own rolling state, its own clock (the
+/// device clock minus what *it* has spent stopped), its own position, loop,
+/// end mark, governed group and queue. They share nothing but the device
+/// clock they are all measured from, so stopping one moves nothing about
+/// another.
+struct TransportState {
+    /// Whether it rolls. Stopped, `frozen_total` accumulates and its clock
+    /// holds.
+    rolling: bool,
+    /// Total samples it has spent stopped since boot. The whole of the
+    /// device -> transport conversion (see `server::clock_axis`).
+    frozen_total: u64,
+    /// The group it governs, frozen while it is stopped.
+    group: Option<i32>,
+    /// Where it stands, as an anchor onto its clock: the position a locate put
+    /// it at, and the transport sample that locate landed on. A read is one
+    /// add, so the position costs the per-sample path nothing.
+    position: PositionAnchor,
+    /// The span the position wraps inside while looping. Always non-empty:
+    /// an empty or inverted span is refused before it reaches the engine, and
+    /// the wrap would not terminate over one.
+    looping: Option<Range<u64>>,
+    /// The end mark: where it stops when rolling and no loop is set.
+    end: Option<EndMark>,
+    /// Pending timed bundles on its axis. Frozen with it: while stopped
+    /// nothing here can fall due, and nothing here is rewritten. Pre-allocated
+    /// like the device queue, to the same capacity.
+    sched: Vec<ScheduledBundleT>,
+    /// Where inside the current block its frozen run began, if it is stopped
+    /// -- scratch for [`Engine::process_block`], `None` outside it.
+    frozen_from: Option<usize>,
+}
+
+impl TransportState {
+    fn new() -> Self {
+        Self {
+            rolling: false,
+            frozen_total: 0,
+            group: None,
+            position: PositionAnchor::default(),
+            looping: None,
+            end: None,
+            sched: Vec::with_capacity(SCHED_CAPACITY),
+            frozen_from: None,
+        }
+    }
+
+    /// Its clock at device sample `device`.
+    fn at(&self, device: u64) -> TransportSample {
+        DeviceSample::new(device).to_transport(self.frozen_total)
+    }
+
+    /// The device sample at which it reaches the edge that cuts a block --
+    /// the loop's end while a loop is set, the end mark otherwise -- when it
+    /// rolls and the edge is ahead of `device`. A position already at or past
+    /// the end mark is due at once: a transport never rolls past its mark. A
+    /// loop wins, since the position wraps before it could reach the mark.
+    fn edge_due(&self, device: u64) -> Option<u64> {
+        if !self.rolling {
+            return None;
+        }
+        let here = self.at(device);
+        if let Some(span) = &self.looping {
+            return self
+                .position
+                .reaching(TransportPosition::new(span.end), here)
+                .map(|t| t.to_device(self.frozen_total).get());
+        }
+        let mark = self.end?;
+        let reached = self
+            .position
+            .reaching(TransportPosition::new(mark.end), here)
+            .unwrap_or(here);
+        Some(reached.to_device(self.frozen_total).get())
+    }
+}
+
+/// One transport's numbers, mirrored for the network thread once per block.
+#[derive(Default)]
+struct TransportClocks {
+    /// Its clock: samples elapsed under it.
+    clock: AtomicU64,
+    /// Total samples it has spent stopped. Published beside the clock rather
+    /// than derived from the device clock minus it, because those are two
+    /// separate loads and can straddle a block.
+    frozen: AtomicU64,
+    /// Where it stands. Not a clock: it jumps and it wraps (see
+    /// `server::clock_axis`).
+    position: AtomicU64,
 }
 
 /// The node a command acts on, if it acts on one. For a node being created it
@@ -468,35 +573,12 @@ pub struct Engine {
     /// Samples processed since start; the stream clock scheduled bundles
     /// are measured against.
     now: u64,
-    /// Whether the transport rolls. Stopped, `frozen_total` accumulates and
-    /// `transport_now` holds.
-    transport_rolling: bool,
-    /// Total samples the transport has spent stopped since boot. The whole of
-    /// the device -> transport conversion (see `server::clock_axis`).
-    frozen_total: u64,
-    /// Block-accurate mirror of the transport clock for the network thread,
-    /// beside `sample_clock`.
-    transport_clock: Arc<AtomicU64>,
-    /// Total samples the transport has spent stopped, mirrored for the network
-    /// thread. Published beside the clock rather than derived from
-    /// `current_samples() - current_transport_samples()`, because those are two
-    /// separate loads and can straddle a block.
-    frozen_clock: Arc<AtomicU64>,
-    /// The group the transport governs, frozen while the transport is stopped.
-    transport_group: Option<i32>,
-    /// Where the transport stands, as an anchor onto the transport clock: the position
-    /// a locate put it at, and the transport sample that locate landed on. A
-    /// read is one add, so the position costs the per-sample path nothing.
-    position: PositionAnchor,
-    /// Block-accurate mirror of the transport's position for the network thread
-    /// and the segment.
-    position_clock: Arc<AtomicU64>,
-    /// The span the position wraps inside while looping. Always non-empty:
-    /// an empty or inverted span is refused before it reaches the engine, and
-    /// the wrap below would not terminate over one.
-    transport_loop: Option<Range<u64>>,
-    /// The end mark: where a rolling transport stops when no loop is set.
-    transport_end: Option<EndMark>,
+    /// The transports, sized at boot (`--transports`) and never grown.
+    /// Transport 0 is the one a server has always had.
+    transports: Vec<TransportState>,
+    /// Block-accurate mirror of each transport's clocks and position for the
+    /// network thread, indexed like `transports`.
+    transport_clocks: Arc<[TransportClocks]>,
     /// How far into the current block the engine is standing, in samples.
     /// Zero outside [`Engine::process_block`]'s cut loop; see
     /// [`Engine::transport_here`] for why anything reads it.
@@ -504,10 +586,6 @@ pub struct Engine {
     /// Pending timed bundles, sorted by time (stable for equal times).
     /// Pre-allocated: insertion and removal never allocate.
     sched: Vec<ScheduledBundle>,
-    /// Pending timed bundles on the transport axis. Frozen with the transport:
-    /// while stopped nothing here can fall due, and nothing here is rewritten.
-    /// Pre-allocated like `sched`, to the same capacity.
-    sched_transport: Vec<ScheduledBundleT>,
     sample_clock: Arc<AtomicU64>,
     /// block-accurate mirror of the sample clock into the IPC segment
     /// (one extra Release store per block); the Arc pins the mapping.
@@ -561,15 +639,9 @@ pub struct EngineHandle {
     reply_rx: Consumer<ReplyMsg>,
     control_buses: ControlBuses,
     sample_clock: Arc<AtomicU64>,
-    transport_clock: Arc<AtomicU64>,
-    /// Total samples the transport has spent stopped, mirrored for the network
-    /// thread. Published beside the clock rather than derived from
-    /// `current_samples() - current_transport_samples()`, because those are two
-    /// separate loads and can straddle a block.
-    frozen_clock: Arc<AtomicU64>,
-    /// Block-accurate mirror of the transport's position (`/transport_locate`),
-    /// which is not a clock: it jumps and it wraps. See `server::clock_axis`.
-    position_clock: Arc<AtomicU64>,
+    /// Each transport's clocks and position, as the engine last published
+    /// them.
+    transport_clocks: Arc<[TransportClocks]>,
     counters: Arc<Counters>,
     meters: Arc<Meters>,
     /// The IPC segment when one exists -- the network thread reads the audio
@@ -653,34 +725,33 @@ pub fn engine_pair_full(
     };
     let meters = Meters::new(workers);
     let sample_clock = Arc::new(AtomicU64::new(0));
-    let transport_clock = Arc::new(AtomicU64::new(0));
-    let frozen_clock = Arc::new(AtomicU64::new(0));
-    let position_clock = Arc::new(AtomicU64::new(0));
+    let transport_clocks: Arc<[TransportClocks]> = (0..limits.transports)
+        .map(|_| TransportClocks::default())
+        .collect();
+    if let Some(segment) = &ipc {
+        segment.set_transports(limits.transports);
+    }
+    let mut tree = NodeTree::with_capacity(limits.max_nodes);
+    tree.set_transports(limits.transports);
     let tap_buses = vec![-1i32; ipc.as_ref().map_or(0, |s| s.taps())];
     let segment = ipc.clone();
     let engine = Engine {
         sample_rate,
         level_release: level_release(sample_rate),
         channels,
-        tree: NodeTree::with_capacity(limits.max_nodes),
+        tree,
         pool: WorkerPool::new(workers, &meters),
         buses: Buses::new(control_buses.clone(), audio_buses),
         buffers: empty_pool_with(limits.max_buffers),
         input_channels: 0,
         input_rx: None,
         now: 0,
-        transport_rolling: false,
-        frozen_total: 0,
-        transport_clock: Arc::clone(&transport_clock),
-        position: PositionAnchor::default(),
+        transports: (0..limits.transports)
+            .map(|_| TransportState::new())
+            .collect(),
+        transport_clocks: Arc::clone(&transport_clocks),
         cursor: 0,
-        position_clock: Arc::clone(&position_clock),
-        transport_loop: None,
-        transport_end: None,
-        frozen_clock: Arc::clone(&frozen_clock),
-        transport_group: None,
         sched: Vec::with_capacity(SCHED_CAPACITY),
-        sched_transport: Vec::with_capacity(SCHED_CAPACITY),
         sample_clock: Arc::clone(&sample_clock),
         ipc,
         tap_buses,
@@ -707,9 +778,7 @@ pub fn engine_pair_full(
         reply_rx,
         control_buses,
         sample_clock,
-        transport_clock,
-        position_clock,
-        frozen_clock,
+        transport_clocks,
         counters,
         meters,
         segment,
@@ -733,98 +802,59 @@ impl Engine {
         self.now
     }
 
-    /// The transport clock: samples elapsed under the transport.
-    pub fn transport_now(&self) -> TransportSample {
-        DeviceSample::new(self.now).to_transport(self.frozen_total)
+    /// How many transports this engine has (`--transports`).
+    pub fn transports(&self) -> usize {
+        self.transports.len()
     }
 
-    /// The transport clock **at the cursor** -- where inside the current block
+    /// Transport `transport`'s clock: samples elapsed under it. Panics past
+    /// the table, like any index.
+    pub fn transport_now(&self, transport: usize) -> TransportSample {
+        self.transports[transport].at(self.now)
+    }
+
+    /// The device sample **at the cursor** -- where inside the current block
     /// the engine is standing, rather than at its first sample.
     ///
     /// A locate arrives inside a timed bundle and lands on an exact sample, so
     /// anchoring it at the block's start would put the transport up to a block
     /// away from where the client asked. Same reason `frozen_total` is
-    /// credited at the sample the transport flips rather than a block at a
-    /// time. Outside the block-cut loop the cursor is 0 and this is
-    /// [`Self::transport_now`].
-    fn transport_here(&self) -> TransportSample {
-        DeviceSample::new(self.now + self.cursor as u64).to_transport(self.frozen_total)
+    /// credited at the sample a transport flips rather than a block at a
+    /// time. Outside the block-cut loop the cursor is 0 and this is the
+    /// block's start.
+    fn device_here(&self) -> u64 {
+        self.now + self.cursor as u64
     }
 
-    /// Where the transport stands at the cursor.
-    fn position_here(&self) -> TransportPosition {
-        self.position.at(self.transport_here())
+    /// Whether transport `transport`'s queue holds nothing. A server that
+    /// never binds a group never puts a bundle there, so this staying true is
+    /// the observable form of "scheduling behaves exactly as it did before the
+    /// transport".
+    pub fn transport_queue_is_empty(&self, transport: usize) -> bool {
+        self.transports[transport].sched.is_empty()
     }
 
-    /// The device sample at which the position reaches the loop's end, when a
-    /// loop is on, the transport rolls and the end is still ahead -- what the
-    /// block is cut at so a wrap lands on its exact sample.
-    fn loop_wrap_due(&self) -> Option<u64> {
-        if !self.transport_rolling {
-            return None;
-        }
-        let span = self.transport_loop.as_ref()?;
-        let here = self.transport_here();
-        self.position
-            .reaching(TransportPosition::new(span.end), here)
-            .map(|t| t.to_device(self.frozen_total).get())
-    }
-
-    /// The device sample at which the transport reaches its end mark, when one
-    /// is set, the transport rolls and no loop is set -- a loop wins, since
-    /// the position wraps before it could reach the mark. A position already
-    /// at or past the mark is due at once: the transport never rolls past it.
-    fn end_due(&self) -> Option<u64> {
-        if !self.transport_rolling || self.transport_loop.is_some() {
-            return None;
-        }
-        let mark = self.transport_end?;
-        let here = self.transport_here();
-        let reached = self
-            .position
-            .reaching(TransportPosition::new(mark.end), here)
-            .unwrap_or(here);
-        Some(reached.to_device(self.frozen_total).get())
-    }
-
-    /// Whether the transport queue holds nothing. A server that never binds a
-    /// group never puts a bundle here, so this staying true is the observable
-    /// form of "scheduling behaves exactly as it did before the transport".
-    pub fn transport_queue_is_empty(&self) -> bool {
-        self.sched_transport.is_empty()
-    }
-
-    /// Whether a scheduled bundle belongs to the transport queue.
+    /// The transport whose queue a scheduled bundle belongs to, or `None` for
+    /// the device queue.
     ///
-    /// A bundle is atomic, so it goes whole to one queue: if **any** message
-    /// targets a node at or under the governed group, the bundle is governed.
-    /// A command with no node target (a bus write, a buffer, a def) carries no
-    /// opinion and rides the bundle's verdict; a bundle of nothing but those
-    /// goes to the device queue.
+    /// A bundle is atomic, so it goes whole to one queue: the first message
+    /// that targets a governed node decides it, and the transport is the one
+    /// governing that node -- the nearest governed group above it
+    /// ([`NodeTree::governing`]). A command with no node target (a bus write,
+    /// a buffer, a def) carries no opinion and rides the bundle's verdict; a
+    /// bundle of nothing but those goes to the device queue.
     ///
     /// RT-safe: the walk up the `parent` links is bounded and allocates
     /// nothing, so this is a plain scan of the bundle.
-    ///
-    /// **The group is resolved once, not once per message.** Behind an id is a
-    /// linear scan of the tree's slots, and asking `is_descendant_of` per
-    /// target scanned for the *ancestor* every time as well -- a second scan for
-    /// a node that had not moved since the first. The anchor is that lookup,
-    /// hoisted ([`NodeTree::anchor`]), which halves the scans a bundle costs.
-    /// It is safe to hold across the scan for the reason it is unsafe to hold
-    /// any longer: nothing adds or frees a node between here and the end of
-    /// this bundle's classification.
-    fn bundle_is_governed(&self, cmds: &[Cmd]) -> bool {
-        let Some(group) = self.transport_group else {
-            return false;
-        };
-        let Some(anchor) = self.tree.anchor(group) else {
-            return false;
-        };
-        cmds.iter().any(|cmd| {
+    fn governing_transport(&self, cmds: &[Cmd]) -> Option<usize> {
+        if self.transports.iter().all(|t| t.group.is_none()) {
+            return None;
+        }
+        cmds.iter().find_map(|cmd| {
             cmd_target_nodes(cmd)
                 .iter()
                 .flatten()
-                .any(|id| self.tree.is_under(*id, anchor))
+                .find_map(|id| self.tree.governing(*id))
         })
     }
 
@@ -921,39 +951,43 @@ impl Engine {
         self.fill_input_buses();
         let block_start = self.now;
         let block_end = block_start + BLOCK_SIZE as u64;
-        // The block is cut by the union of both queues: a transport entry
-        // is projected onto the device axis with the frozen total known at
-        // this instant, and a stopped transport can never reach its own queue.
+        // The block is cut by the union of every queue: a transport entry is
+        // projected onto the device axis with its transport's frozen total
+        // known at this instant, and a stopped transport can never reach its
+        // own queue.
         let mut offset = 0usize;
-        // Where inside this block the current frozen run began, if the
-        // transport is stopped. Frozen time is credited **at the sample the
-        // transport flips**, not a whole block at a time: a stop and a
-        // resume both land mid-block, and crediting a flat `BLOCK_SIZE`
-        // whenever the transport happened to be stopped at the boundary
-        // loses (stop offset - resume offset) samples on every cycle, an
-        // error that accumulates without bound. Crediting at the flip also
-        // keeps `frozen_total` correct *during* the block, which is what
-        // the transport-queue projection below reads.
-        let mut frozen_from = if self.transport_rolling {
-            None
-        } else {
-            Some(0usize)
-        };
+        // Where inside this block each transport's current frozen run began,
+        // if it is stopped. Frozen time is credited **at the sample the
+        // transport flips**, not a whole block at a time: a stop and a resume
+        // both land mid-block, and crediting a flat `BLOCK_SIZE` whenever the
+        // transport happened to be stopped at the boundary loses (stop offset
+        // - resume offset) samples on every cycle, an error that accumulates
+        // without bound. Crediting at the flip also keeps `frozen_total`
+        // correct *during* the block, which is what the transport-queue
+        // projection below reads.
+        for t in &mut self.transports {
+            t.frozen_from = if t.rolling { None } else { Some(0) };
+        }
         loop {
             let device_due = self.sched.first().map(|b| b.time);
-            // A transport entry's device time only exists while rolling: a
-            // stopped transport can never reach it. Both this and
-            // `frozen_total` are read afresh on every iteration, because a
-            // bundle applied below may have carried a `TransportRun` -- a
-            // stop scheduled mid-block freezes the transport queue from
-            // that sample on, which is the wanted behaviour.
-            let transport_due = if self.transport_rolling {
-                self.sched_transport
-                    .first()
-                    .map(|b| b.time.to_device(self.frozen_total).get())
-            } else {
-                None
-            };
+            // The earliest entry of any rolling transport's queue. A
+            // transport entry's device time only exists while it rolls: a
+            // stopped transport can never reach it. Read afresh on every
+            // iteration, because a bundle applied below may have carried a
+            // `TransportRun` -- a stop scheduled mid-block freezes that queue
+            // from that sample on, which is the wanted behaviour. Ties between
+            // transports go to the lower id.
+            let transport_due = self
+                .transports
+                .iter()
+                .enumerate()
+                .filter(|(_, t)| t.rolling)
+                .filter_map(|(i, t)| {
+                    t.sched
+                        .first()
+                        .map(|b| (i, b.time.to_device(t.frozen_total).get()))
+                })
+                .min_by_key(|&(_, due)| due);
             let take_transport = match (device_due, transport_due) {
                 (_, None) => false,
                 (None, Some(_)) => true,
@@ -963,19 +997,20 @@ impl Engine {
                 // enqueued). Device-first is the right side, since it makes
                 // an empty transport queue indistinguishable from a single
                 // queue over the device axis.
-                (Some(d), Some(t)) => t < d,
+                (Some(d), Some((_, t))) => t < d,
             };
             let queue_due = if take_transport {
-                transport_due
+                transport_due.map(|(_, due)| due)
             } else {
                 device_due
             };
             let queue_due = queue_due.filter(|t| *t < block_end);
-            // A loop's end is the third thing that cuts a block, and it is cut
-            // for the same reason the other two are: the wrap lands on an
-            // exact sample. Cutting there is also what keeps the position
-            // *linear inside every slice*, so a reader following it ramps by
-            // one per sample and never has to know a loop exists.
+            // A transport's edge -- its loop's end, or its end mark -- is the
+            // third thing that cuts a block, and it is cut for the same reason
+            // the other two are: the wrap or the stop lands on an exact
+            // sample. Cutting there is also what keeps each position *linear
+            // inside every slice*, so a reader following it ramps by one per
+            // sample and never has to know a loop exists.
             //
             // `<= block_end`, where a bundle is `<`: a bundle at the boundary
             // belongs to the next block, but a wrap there belongs to *this*
@@ -983,22 +1018,27 @@ impl Engine {
             // what the next block's first sample plays -- and that sample is
             // the loop's start. Reading it a block late is a playhead that
             // overshoots the loop by a block, once per pass.
-            //
-            // The end mark cuts the block the same way, on the same terms, and
-            // never beside a wrap: a loop that is set is the only edge.
-            let wrap_due = self
-                .loop_wrap_due()
-                .or_else(|| self.end_due())
-                .filter(|w| *w <= block_end);
-            // A wrap ties with a bundle by yielding to it: the queues keep the
-            // device-first preference they already had among themselves, and a
-            // wrap that stays due is taken on the next turn of the loop.
-            let take_wrap = match (wrap_due, queue_due) {
+            let here = block_start + offset as u64;
+            let edge_due = self
+                .transports
+                .iter()
+                .enumerate()
+                .filter_map(|(i, t)| t.edge_due(here).map(|due| (i, due)))
+                .min_by_key(|&(_, due)| due)
+                .filter(|&(_, due)| due <= block_end);
+            // An edge ties with a bundle by yielding to it: the queues keep the
+            // device-first preference they already had among themselves, and
+            // an edge that stays due is taken on the next turn of the loop.
+            let take_edge = match (edge_due, queue_due) {
                 (None, _) => false,
                 (Some(_), None) => true,
-                (Some(w), Some(q)) => w < q,
+                (Some((_, w)), Some(q)) => w < q,
             };
-            let Some(due_time) = (if take_wrap { wrap_due } else { queue_due }) else {
+            let Some(due_time) = (if take_edge {
+                edge_due.map(|(_, due)| due)
+            } else {
+                queue_due
+            }) else {
                 break;
             };
             let at = due_time.saturating_sub(block_start) as usize;
@@ -1007,68 +1047,73 @@ impl Engine {
                 offset = at;
             }
             self.cursor = offset;
-            if take_wrap && self.transport_loop.is_none() {
-                // **The end mark: stop here, on this sample**, as a
-                // `/transport_stop` landing on it would -- the governed group
-                // and the transport clock freeze -- and then locate to where
-                // the pass goes back to. The locate is anchored at a stopped
-                // transport, so it holds until the next play.
-                let mark = self.transport_end.expect("an end was due");
-                self.transport_rolling = false;
-                if let Some(group) = self.transport_group {
-                    self.tree.set_paused(group, true);
+            if let Some((k, _)) = edge_due.filter(|_| take_edge) {
+                let here = self.device_here();
+                let t = &mut self.transports[k];
+                if t.looping.is_none() {
+                    // **The end mark: stop here, on this sample**, as a
+                    // `/transport_stop` landing on it would -- the governed
+                    // group and the transport's clock freeze -- and then
+                    // locate to where the pass goes back to. The locate is
+                    // anchored at a stopped transport, so it holds until the
+                    // next play.
+                    let mark = t.end.expect("an end was due");
+                    t.rolling = false;
+                    if let Some(group) = t.group {
+                        self.tree.set_paused(group, true);
+                    }
+                    if t.frozen_from.is_none() {
+                        t.frozen_from = Some(offset);
+                    }
+                    if let Some(back) = mark.back {
+                        t.position =
+                            PositionAnchor::located(TransportPosition::new(back), t.at(here));
+                    }
+                    self.push_garbage(Garbage::TransportEnded { transport: k });
+                } else {
+                    // Back to the loop's start, re-anchored here so the
+                    // position goes on advancing by one per sample from the
+                    // seam. The span is half-open, so the end sample is never
+                    // played and the first sample after the last one of the
+                    // loop is its first.
+                    let start = t.looping.as_ref().map_or(0, |span| span.start);
+                    t.position = t
+                        .position
+                        .wrapped_to(TransportPosition::new(start), t.at(here));
                 }
-                if frozen_from.is_none() {
-                    frozen_from = Some(offset);
-                }
-                if let Some(back) = mark.back {
-                    self.position = PositionAnchor::located(
-                        TransportPosition::new(back),
-                        self.transport_here(),
-                    );
-                }
-                self.push_garbage(Garbage::TransportEnded);
-                continue;
-            }
-            if take_wrap {
-                // Back to the loop's start, re-anchored here so the position
-                // goes on advancing by one per sample from the seam. The span
-                // is half-open, so the end sample is never played and the
-                // first sample after the last one of the loop is its first.
-                let start = self.transport_loop.as_ref().map_or(0, |span| span.start);
-                self.position = self
-                    .position
-                    .wrapped_to(TransportPosition::new(start), self.transport_here());
                 continue;
             }
             // Vec::remove on the pre-allocated queue: memmove, no (de)alloc.
-            let mut cmds = if take_transport {
-                self.sched_transport.remove(0).cmds
-            } else {
-                self.sched.remove(0).cmds
+            let mut cmds = match transport_due.filter(|_| take_transport) {
+                Some((k, _)) => self.transports[k].sched.remove(0).cmds,
+                None => self.sched.remove(0).cmds,
             };
             for cmd in cmds.drain(..) {
                 self.apply(cmd);
             }
             self.push_garbage(Garbage::SpentBundle(cmds));
-            // The bundle may have carried a `TransportRun`. Close or open
-            // the frozen run at this exact sample. A bundle holding both a
-            // stop and a resume nets to no frozen time, which is right:
-            // they land on the same sample.
-            match (frozen_from, self.transport_rolling) {
-                (Some(from), true) => {
-                    self.frozen_total += (offset - from) as u64;
-                    frozen_from = None;
+            // The bundle may have carried a `TransportRun`, for any
+            // transport. Close or open each frozen run at this exact sample.
+            // A bundle holding both a stop and a resume nets to no frozen
+            // time, which is right: they land on the same sample.
+            for t in &mut self.transports {
+                match (t.frozen_from, t.rolling) {
+                    (Some(from), true) => {
+                        t.frozen_total += (offset - from) as u64;
+                        t.frozen_from = None;
+                    }
+                    (None, false) => t.frozen_from = Some(offset),
+                    _ => {}
                 }
-                (None, false) => frozen_from = Some(offset),
-                _ => {}
             }
         }
         self.cursor = 0;
         self.process_slice(offset, BLOCK_SIZE - offset);
-        // The block ends with the transport still stopped: credit the tail.
-        if let Some(from) = frozen_from {
-            self.frozen_total += (BLOCK_SIZE - from) as u64;
+        // The block ends with a transport still stopped: credit the tail.
+        for t in &mut self.transports {
+            if let Some(from) = t.frozen_from.take() {
+                t.frozen_total += (BLOCK_SIZE - from) as u64;
+            }
         }
 
         // Buses 0..channels are the hardware outputs.
@@ -1080,15 +1125,18 @@ impl Engine {
 
         self.now = block_end;
         // `frozen_total` was already credited to the sample inside the
-        // block-cut loop above; here the clock is only published.
-        self.transport_clock
-            .store(self.transport_now().get(), Ordering::Relaxed);
-        self.frozen_clock
-            .store(self.frozen_total, Ordering::Relaxed);
-        // Published at the block's end like the clocks, and read there too:
-        // the position at `block_end` is where the next block starts playing.
-        self.position_clock
-            .store(self.position_here().get(), Ordering::Relaxed);
+        // block-cut loop above; here the clocks are only published. The
+        // position is published at the block's end like the clocks, and read
+        // there too: the position at `block_end` is where the next block
+        // starts playing.
+        for (t, clocks) in self.transports.iter().zip(self.transport_clocks.iter()) {
+            let now = t.at(block_end);
+            clocks.clock.store(now.get(), Ordering::Relaxed);
+            clocks.frozen.store(t.frozen_total, Ordering::Relaxed);
+            clocks
+                .position
+                .store(t.position.at(now).get(), Ordering::Relaxed);
+        }
         self.sample_clock.store(block_end, Ordering::Relaxed);
         if let Some(segment) = self.ipc.as_ref().filter(|_| self.publishes_time) {
             // Audio taps first, then the clock: a reader that sees clock N
@@ -1115,15 +1163,18 @@ impl Engine {
                 let held = segment.level(bus) * self.level_release;
                 segment.set_level(bus, peak.max(held));
             }
-            // The transport clock goes out before the device clock, for the
+            // The transport clocks go out before the device clock, for the
             // same reason the taps do: a reader that sees device clock N has
             // seen everything block N published.
-            segment
-                .transport_clock()
-                .store(self.transport_now().get(), Ordering::Relaxed);
-            segment
-                .transport_position()
-                .store(self.position_here().get(), Ordering::Relaxed);
+            for (i, t) in self.transports.iter().enumerate() {
+                let now = t.at(block_end);
+                if let Some(cell) = segment.transport_clock(i) {
+                    cell.store(now.get(), Ordering::Relaxed);
+                }
+                if let Some(cell) = segment.transport_position(i) {
+                    cell.store(t.position.at(now).get(), Ordering::Relaxed);
+                }
+            }
             segment.clock().store(block_end, Ordering::Release);
         }
         self.counters
@@ -1196,6 +1247,22 @@ impl Engine {
         if frames == 0 {
             return;
         }
+        // Where every transport stands at this slice's **first** frame. The
+        // block is cut at every loop wrap, so each position advances by
+        // exactly one per sample for the whole slice and a UGen reading it
+        // only has to ramp -- no wrap arithmetic, and nothing needs to know the
+        // loop points but the engine. The tree hands each governed subtree
+        // its own transport's row; everything else reads transport 0's.
+        let device = self.now + offset as u64;
+        for (i, t) in self.transports.iter().enumerate() {
+            self.tree.set_transport_view(
+                i,
+                TransportCtx {
+                    position: t.position.at(t.at(device)).get(),
+                    rolling: t.rolling,
+                },
+            );
+        }
         let ctx = ProcessCtx {
             // The two agree at the engine boundary: a node runs at the engine
             // rate, and the per-UGen rate is derived inside the synth.
@@ -1205,18 +1272,7 @@ impl Engine {
             buffers: &self.buffers,
             offset,
             frames,
-            // Where the transport stands at this slice's **first** frame. The block is
-            // cut at every loop wrap, so the position advances by exactly one
-            // per sample for the whole slice and a UGen reading it only has to
-            // ramp -- no wrap arithmetic, and nothing needs to know the loop
-            // points but the engine.
-            transport: TransportCtx {
-                position: self
-                    .position
-                    .at(DeviceSample::new(self.now + offset as u64).to_transport(self.frozen_total))
-                    .get(),
-                rolling: self.transport_rolling,
-            },
+            transport: self.tree.transport_view(0),
         };
         self.tree.process(&ctx, &self.pool);
     }
@@ -1243,9 +1299,10 @@ impl Engine {
         // sink borrows three of our fields for the whole `match`, and the
         // classification wants `&self`. A discriminant test per command.
         let governed = match &cmd {
-            Cmd::Schedule { cmds, .. } => self.bundle_is_governed(cmds),
-            _ => false,
+            Cmd::Schedule { cmds, .. } => self.governing_transport(cmds),
+            _ => None,
         };
+        let here = self.device_here();
         {
             let mut sink = GarbageSink {
                 garbage_tx: &mut self.garbage_tx,
@@ -1256,9 +1313,12 @@ impl Engine {
                 return;
             };
             match cmd {
-                Cmd::TransportRun { rolling } => {
-                    self.transport_rolling = rolling;
-                    if let Some(group) = self.transport_group {
+                Cmd::TransportRun { transport, rolling } => {
+                    let Some(t) = self.transports.get_mut(transport) else {
+                        return;
+                    };
+                    t.rolling = rolling;
+                    if let Some(group) = t.group {
                         self.tree.set_paused(group, !rolling);
                         if rolling {
                             // **Playback comes back where the transport is, not
@@ -1271,40 +1331,49 @@ impl Engine {
                         }
                     }
                 }
-                Cmd::TransportGroup { id } => {
-                    // Thaw whatever we governed before letting it go, and
-                    // freeze the new one if we are already stopped.
-                    if let Some(previous) = self.transport_group.take() {
+                Cmd::TransportGroup { transport, id } => {
+                    let Some(t) = self.transports.get_mut(transport) else {
+                        return;
+                    };
+                    // Thaw whatever it governed before letting it go, and
+                    // freeze the new one if it is already stopped.
+                    if let Some(previous) = t.group.take() {
                         self.tree.set_paused(previous, false);
+                        self.tree.set_governing(previous, None);
                     }
-                    if id >= 0 {
-                        self.transport_group = Some(id);
-                        if !self.transport_rolling {
+                    if id >= 0 && self.tree.set_governing(id, Some(transport)) {
+                        t.group = Some(id);
+                        if !t.rolling {
                             self.tree.set_paused(id, true);
                         }
                     }
                 }
-                Cmd::TransportLocate { position } => {
+                Cmd::TransportLocate {
+                    transport,
+                    position,
+                } => {
                     // One store, at the sample the locate lands on: the
                     // position is anchored rather than accumulated, so this
                     // is the whole of a seek on the audio thread.
-                    self.position = PositionAnchor::located(
-                        TransportPosition::new(position),
-                        self.transport_here(),
-                    );
+                    if let Some(t) = self.transports.get_mut(transport) {
+                        t.position =
+                            PositionAnchor::located(TransportPosition::new(position), t.at(here));
+                    }
                 }
-                Cmd::TransportLoop { span } => {
+                Cmd::TransportLoop { transport, span } => {
                     // Re-anchored at this sample, so turning a loop on does
                     // not move the transport: it keeps playing from where it is
                     // and wraps when it first reaches the end.
-                    self.position = self.position.wrapped_to(
-                        self.position.at(self.transport_here()),
-                        self.transport_here(),
-                    );
-                    self.transport_loop = span.filter(|s| s.start < s.end);
+                    if let Some(t) = self.transports.get_mut(transport) {
+                        let now = t.at(here);
+                        t.position = t.position.wrapped_to(t.position.at(now), now);
+                        t.looping = span.filter(|s| s.start < s.end);
+                    }
                 }
-                Cmd::TransportEnd { mark } => {
-                    self.transport_end = mark;
+                Cmd::TransportEnd { transport, mark } => {
+                    if let Some(t) = self.transports.get_mut(transport) {
+                        t.end = mark;
+                    }
                 }
                 Cmd::SetBuffer { index, buffer } => {
                     if let Some(slot) = self.buffers.get_mut(index) {
@@ -1339,19 +1408,18 @@ impl Engine {
                     }
                 }
                 Cmd::Schedule { time, cmds } => {
-                    if governed {
+                    if let Some(t) = governed.and_then(|k| self.transports.get_mut(k)) {
                         // The stamp arrives on the device axis (the network
                         // thread built it against the device clock); convert
                         // here, once, where the frozen total is known.
-                        let at = DeviceSample::new(time).to_transport(self.frozen_total);
-                        if self.sched_transport.len() == self.sched_transport.capacity() {
+                        let at = t.at(time);
+                        if t.sched.len() == t.sched.capacity() {
                             sink.push(Garbage::RejectedBundle(cmds));
                         } else {
                             // Sorted insert, after equal times, exactly as the
                             // device queue does.
-                            let pos = self.sched_transport.partition_point(|b| b.time <= at);
-                            self.sched_transport
-                                .insert(pos, ScheduledBundleT { time: at, cmds });
+                            let pos = t.sched.partition_point(|b| b.time <= at);
+                            t.sched.insert(pos, ScheduledBundleT { time: at, cmds });
                         }
                     } else if self.sched.len() == self.sched.capacity() {
                         sink.push(Garbage::RejectedBundle(cmds));
@@ -1360,21 +1428,25 @@ impl Engine {
                         self.sched.insert(pos, ScheduledBundle { time, cmds });
                     }
                 }
-                Cmd::ClearSched { transport_only } => {
+                Cmd::ClearSched { only } => {
                     // `drain` keeps the queue's capacity (no dealloc here); each
                     // bundle's heap is freed on the network side.
-                    if !transport_only {
+                    //
+                    // A bare `/sched_clear` drops *every* pending bundle, the
+                    // transports' included: a governed one left behind would
+                    // fire on the next resume with nothing left to explain
+                    // it. Asked for one transport, only its queue goes.
+                    if only.is_none() {
                         for bundle in self.sched.drain(..) {
                             sink.push(Garbage::SpentBundle(bundle.cmds));
                         }
                     }
-                    // The transport queue goes either way: a bare
-                    // `/sched_clear` drops *every* pending bundle, and a
-                    // governed one left behind would fire on the next resume
-                    // with nothing left to explain it; asked for the transport
-                    // axis alone, it is the only one that goes.
-                    for bundle in self.sched_transport.drain(..) {
-                        sink.push(Garbage::SpentBundle(bundle.cmds));
+                    for (i, t) in self.transports.iter_mut().enumerate() {
+                        if only.is_none_or(|k| k == i) {
+                            for bundle in t.sched.drain(..) {
+                                sink.push(Garbage::SpentBundle(bundle.cmds));
+                            }
+                        }
                     }
                 }
                 // Named rather than left to a `_`, so the compiler still
@@ -1596,21 +1668,35 @@ impl EngineHandle {
         &self.device_epoch
     }
 
-    /// The transport clock as of the last completed block.
-    pub fn current_transport_samples(&self) -> u64 {
-        self.transport_clock.load(Ordering::Relaxed)
+    /// How many transports the engine has (`--transports`).
+    pub fn transports(&self) -> usize {
+        self.transport_clocks.len()
     }
 
-    /// Where the transport stands, as of the last completed block. Unlike the two
-    /// clocks this one jumps: a locate moves it and a loop wraps it.
-    pub fn current_transport_position(&self) -> u64 {
-        self.position_clock.load(Ordering::Relaxed)
+    /// Transport `transport`'s clock as of the last completed block; 0 past
+    /// the table.
+    pub fn current_transport_samples(&self, transport: usize) -> u64 {
+        self.transport_clocks
+            .get(transport)
+            .map_or(0, |c| c.clock.load(Ordering::Relaxed))
     }
 
-    /// Total samples the transport has spent stopped, as of the last completed
-    /// block -- the whole of the device <-> transport axis conversion.
-    pub fn current_frozen_total(&self) -> u64 {
-        self.frozen_clock.load(Ordering::Relaxed)
+    /// Where transport `transport` stands, as of the last completed block.
+    /// Unlike the two clocks this one jumps: a locate moves it and a loop
+    /// wraps it. 0 past the table.
+    pub fn current_transport_position(&self, transport: usize) -> u64 {
+        self.transport_clocks
+            .get(transport)
+            .map_or(0, |c| c.position.load(Ordering::Relaxed))
+    }
+
+    /// Total samples transport `transport` has spent stopped, as of the last
+    /// completed block -- the whole of the device <-> transport axis
+    /// conversion. 0 past the table.
+    pub fn current_frozen_total(&self, transport: usize) -> u64 {
+        self.transport_clocks
+            .get(transport)
+            .map_or(0, |c| c.frozen.load(Ordering::Relaxed))
     }
 
     /// The per-role load table, for `/server_load`.

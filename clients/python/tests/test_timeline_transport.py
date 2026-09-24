@@ -66,10 +66,11 @@ class TransportServer(Server):
         for _when, packet in self.interface.score.bundles:
             if b"/sched_atTransport" not in packet:
                 continue
-            # The int64 target sits right after the address and its type tag.
+            # The transport id and the int64 target sit right after the
+            # address and its type tag (",ihb" and its padding, 8 bytes).
             i = packet.index(b"/sched_atTransport")
-            tags = packet.index(b",hb", i)
-            sample = struct.unpack_from(">q", packet, tags + 4)[0]
+            tags = packet.index(b",ihb", i)
+            sample = struct.unpack_from(">q", packet, tags + 8 + 4)[0]
             addr = "/synth_new" if b"/synth_new" in packet else "/other"
             for known in (b"/a", b"/b"):
                 if known + b"\0" in packet:
@@ -231,7 +232,8 @@ def test_a_conductors_locate_re_plans_from_where_it_says():
 
     # A conductor's locate: the engine moved, so the server says so too.
     server.state["position_sample"] = int(1.5 * SR)
-    reply = ["/transport_query.reply", 0, 2.0, 1, 1, 0.0, 7, BASE, int(1.5 * SR), -1, -1]
+    reply = ["/transport_query.reply", 0, 2.0, 1, 1, 0.0, 7, BASE, int(1.5 * SR), 0, 0,
+             -1, -1, 0]
     player = tl._player
     player._broadcast(reply[0], reply[1:], 0.0, "test")     # a conductor's locate
 

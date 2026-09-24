@@ -8992,3 +8992,40 @@ different purposes: the multitrack edits non-destructively and opens no editor
 over what a box holds, and the audio editor has a history of its own. What makes
 an application coherent -- its rules of use -- is the application's; what the
 crate implements is what each can edit.
+
+## A server has several transports, each named first on every command
+
+*(Decided with the user, 2026-09-24.)* A server has a table of transports sized
+at boot (`--transports`, 8 by default, at most 64), each independent -- its own
+rolling state, clock, position, loop, end mark, governed group and scheduling
+queue -- because two applications on one server each play and pause their own
+nodes, and one transport would give them one playhead. They are several
+transports, not several groups under one: groups sharing a transport share its
+position, which is the thing that had to be separate.
+
+**The id is the first argument of every transport command, and it is never
+optional.** Leaving it out to mean transport 0 was the obvious compatibility
+and it does not parse: the server takes an `int32` where it wants a sample
+position, because a client sending the smaller type means the number, so a
+leading optional integer cannot be told from the argument after it --
+`/transport_end 5` is a mark at sample 5 or transport 5's mark cleared, and
+`/transport_group 100` a group or a transport. Tightening the sample arguments
+to `int64` would have made the leading integer unambiguous for these clients
+and silently wrong for a hand-written one. So every command carries it, and an
+id past the table fails rather than falling back on 0. The reply that every
+transport's pushes share, `/transport_query.reply`, carries the id last, so a
+listener tells them apart.
+
+**A node reads the transport that governs it**, and nothing in a def says which:
+binding a group tags its slot, and the walk hands a tagged subtree its own
+transport's view, so a `TransportPos` in a group bound to transport 1 follows
+transport 1. A node under no governed group reads transport 0, which keeps
+every graph written before this reading what it read. A group is governed by
+one transport at a time, since two would each freeze and thaw it. The clients
+keep one surface for it: a `Server`'s transport methods address transport 0,
+and `server.transport_at(n)` is the server addressed through transport `n`,
+which goes anywhere a server is taken as a transport.
+
+The segment's transport counters became a table of 64 rows after the header
+(ABI 12), a fixed size so it could stay in the fixed prefix; sized at run time
+it would have trailed the rings and moved every offset after it.

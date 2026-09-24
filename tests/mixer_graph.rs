@@ -170,7 +170,11 @@ fn one_box(s: &mut NrtSession, span_frames: f32, at_frames: f32) -> (i32, i32, i
     // readers' `TransportPos` the multitrack's own position rather than a number
     // that never moves -- and what makes play, stop and locate the engine's
     // rather than a client's arithmetic.
-    send(s, "/transport_group", vec![OscType::Int(900)]);
+    send(
+        s,
+        "/transport_group",
+        vec![OscType::Int(0), OscType::Int(900)],
+    );
     s.settle_for(8);
     (900, 910, 920, 930)
 }
@@ -207,7 +211,7 @@ fn a_whole_multitrack_is_one_graph_and_it_sounds() {
     one_box(&mut s, 4800.0, 0.0);
     let refused = fails(&mut s);
     assert!(refused.is_empty(), "nothing was refused: {refused:?}");
-    send(&mut s, "/transport_play", vec![]);
+    send(&mut s, "/transport_play", vec![OscType::Int(0)]);
     s.settle_for(2);
 
     let (left, right) = peaks(&mut s, 8);
@@ -225,7 +229,7 @@ fn a_mono_take_is_panned_into_the_stereo_track() {
     send_defs(&mut s, &[(1, 2)], 2);
     dc(&mut s, 0, 4800, 1.0);
     one_box(&mut s, 4800.0, 0.0);
-    send(&mut s, "/transport_play", vec![]);
+    send(&mut s, "/transport_play", vec![OscType::Int(0)]);
     s.settle_for(2);
 
     let (left, right) = peaks(&mut s, 8);
@@ -250,7 +254,7 @@ fn a_box_sounds_only_inside_its_own_window() {
     dc(&mut s, 0, 48_000, 1.0);
     // The box begins four blocks in and lasts four.
     one_box(&mut s, (4 * BLOCK) as f32, (4 * BLOCK) as f32);
-    send(&mut s, "/transport_play", vec![]);
+    send(&mut s, "/transport_play", vec![OscType::Int(0)]);
     s.settle_for(2);
 
     // Block by block rather than in fixed thirds: what has to be true is the
@@ -284,7 +288,7 @@ fn a_port_at_any_level_reaches_the_strip_it_names() {
     send_defs(&mut s, &[(1, 2)], 2);
     dc(&mut s, 0, 48_000, 1.0);
     let (multitrack, track, clip, _reader) = one_box(&mut s, 48_000.0, 0.0);
-    send(&mut s, "/transport_play", vec![]);
+    send(&mut s, "/transport_play", vec![OscType::Int(0)]);
     s.settle_for(2);
     assert!(peaks(&mut s, 8).0 > 0.2, "it starts audible");
 
@@ -367,7 +371,7 @@ fn a_moved_box_sounds_through_its_new_track_and_keeps_its_map() {
             OscType::Int(bus),
         ],
     );
-    send(&mut s, "/transport_play", vec![]);
+    send(&mut s, "/transport_play", vec![OscType::Int(0)]);
     s.settle_for(2);
     let _settling = peaks(&mut s, 40);
     let before = peaks(&mut s, 8).0;
@@ -473,7 +477,7 @@ fn a_curve_on_a_bus_drives_a_port() {
     let refused = fails(&mut s);
     assert!(refused.is_empty(), "nothing was refused: {refused:?}");
 
-    send(&mut s, "/transport_play", vec![]);
+    send(&mut s, "/transport_play", vec![OscType::Int(0)]);
     s.settle_for(2);
     let heard: Vec<f32> = (0..blocks + 2).map(|_| peaks(&mut s, 1).0).collect();
     assert!(
@@ -572,7 +576,7 @@ fn a_meter_writes_a_readable_level_to_a_control_bus() {
     let refused = fails(&mut s);
     assert!(refused.is_empty(), "nothing was refused: {refused:?}");
 
-    send(&mut s, "/transport_play", vec![]);
+    send(&mut s, "/transport_play", vec![OscType::Int(0)]);
     s.settle_for(2);
     let _sounding = peaks(&mut s, 6);
     let loud = bus_value(&mut s, 110);
@@ -640,7 +644,7 @@ fn a_track_is_metered_on_its_own_output() {
     let refused = fails(&mut s);
     assert!(refused.is_empty(), "nothing was refused: {refused:?}");
 
-    send(&mut s, "/transport_play", vec![]);
+    send(&mut s, "/transport_play", vec![OscType::Int(0)]);
     s.settle_for(2);
     let _sounding = peaks(&mut s, 8);
     assert!(
@@ -666,7 +670,7 @@ fn a_strips_output_is_a_send_with_a_gain() {
     dc(&mut s, 0, 48_000, 1.0);
     let (_, track, ..) = one_box(&mut s, (16 * BLOCK) as f32, 0.0);
     meter(&mut s, track, 980, 130, 0.0);
-    send(&mut s, "/transport_play", vec![]);
+    send(&mut s, "/transport_play", vec![OscType::Int(0)]);
     s.settle_for(2);
     let (open, open_right) = peaks(&mut s, 6);
     let metered = bus_value(&mut s, 130);
@@ -731,7 +735,7 @@ fn where_the_transport_clicks() {
     // size: a constant is the worst case and the clearest one.
     dc(&mut s, 0, 48_000, 0.8);
     one_box(&mut s, 48_000.0, 0.0);
-    send(&mut s, "/transport_play", vec![]);
+    send(&mut s, "/transport_play", vec![OscType::Int(0)]);
     s.settle_for(2);
     let _rolling = peaks(&mut s, 8);
 
@@ -748,11 +752,11 @@ fn where_the_transport_clicks() {
         |s: &mut NrtSession, blocks: usize| s.run_to_vec((blocks * BLOCK) as u64).expect("ran");
 
     let rolling = run(&mut s, 4);
-    send(&mut s, "/transport_stop", vec![]);
+    send(&mut s, "/transport_stop", vec![OscType::Int(0)]);
     s.settle_for(2);
     let mut stopping = rolling[rolling.len() - 2..].to_vec();
     stopping.extend(run(&mut s, 4));
-    send(&mut s, "/transport_play", vec![]);
+    send(&mut s, "/transport_play", vec![OscType::Int(0)]);
     s.settle_for(2);
     let mut starting = stopping[stopping.len() - 2..].to_vec();
     starting.extend(run(&mut s, 4));
@@ -839,7 +843,7 @@ fn a_curve_starts_where_it_says_it_starts() {
     let refused = fails(&mut s);
     assert!(refused.is_empty(), "nothing was refused: {refused:?}");
 
-    send(&mut s, "/transport_play", vec![]);
+    send(&mut s, "/transport_play", vec![OscType::Int(0)]);
     s.settle_for(2);
     let first = s.run_to_vec(BLOCK as u64).expect("ran");
     let peak = first.iter().step_by(2).fold(0.0f32, |m, &x| m.max(x.abs()));
@@ -915,13 +919,13 @@ fn a_thawed_strip_does_not_glide_down_from_where_it_stopped() {
     s.settle_for(4);
 
     // It played once at unity.
-    send(&mut s, "/transport_play", vec![]);
+    send(&mut s, "/transport_play", vec![OscType::Int(0)]);
     s.settle_for(2);
     let (heard, _) = peaks(&mut s, 8);
     assert!(heard > 0.5, "it played at unity first: {heard}");
 
     // Stopped, the envelope's first point goes to zero, and the multitrack rewinds.
-    send(&mut s, "/transport_stop", vec![]);
+    send(&mut s, "/transport_stop", vec![OscType::Int(0)]);
     s.settle_for(2);
     for i in 0..4 {
         send(
@@ -930,10 +934,14 @@ fn a_thawed_strip_does_not_glide_down_from_where_it_stopped() {
             vec![OscType::Int(1), OscType::Int(i), OscType::Float(0.0)],
         );
     }
-    send(&mut s, "/transport_locate", vec![OscType::Float(0.0)]);
+    send(
+        &mut s,
+        "/transport_locate",
+        vec![OscType::Int(0), OscType::Float(0.0)],
+    );
     s.settle_for(4);
 
-    send(&mut s, "/transport_play", vec![]);
+    send(&mut s, "/transport_play", vec![OscType::Int(0)]);
     s.settle_for(2);
     let (left, _) = peaks(&mut s, 4);
     assert!(
@@ -958,21 +966,24 @@ fn a_thawed_meter_does_not_report_the_pass_before_it() {
     let refused = fails(&mut s);
     assert!(refused.is_empty(), "nothing was refused: {refused:?}");
 
-    send(&mut s, "/transport_play", vec![]);
+    send(&mut s, "/transport_play", vec![OscType::Int(0)]);
     s.settle_for(2);
     let _sounding = peaks(&mut s, 8);
     assert!(bus_value(&mut s, 120) > 0.2, "it read the loud pass");
 
-    send(&mut s, "/transport_stop", vec![]);
+    send(&mut s, "/transport_stop", vec![OscType::Int(0)]);
     s.settle_for(2);
     // Past the box, where there is nothing to hear.
     send(
         &mut s,
         "/transport_locate",
-        vec![OscType::Float((8 * BLOCK) as f32 / SR as f32)],
+        vec![
+            OscType::Int(0),
+            OscType::Float((8 * BLOCK) as f32 / SR as f32),
+        ],
     );
     s.settle_for(2);
-    send(&mut s, "/transport_play", vec![]);
+    send(&mut s, "/transport_play", vec![OscType::Int(0)]);
     s.settle_for(2);
     let _silent = peaks(&mut s, 4);
     assert!(

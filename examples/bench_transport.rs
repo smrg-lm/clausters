@@ -150,9 +150,18 @@ fn main() {
         {
             let (mut engine, mut handle) = boot();
             let group = build(&mut engine, &mut handle, voices);
-            handle.send(Cmd::TransportGroup { id: group }).ok().unwrap();
             handle
-                .send(Cmd::TransportRun { rolling: true })
+                .send(Cmd::TransportGroup {
+                    transport: 0,
+                    id: group,
+                })
+                .ok()
+                .unwrap();
+            handle
+                .send(Cmd::TransportRun {
+                    transport: 0,
+                    rolling: true,
+                })
                 .ok()
                 .unwrap();
             let rolling = time_blocks(&mut engine, &mut out);
@@ -160,9 +169,18 @@ fn main() {
 
             let (mut engine, mut handle) = boot();
             let group = build(&mut engine, &mut handle, voices);
-            handle.send(Cmd::TransportGroup { id: group }).ok().unwrap();
             handle
-                .send(Cmd::TransportRun { rolling: false })
+                .send(Cmd::TransportGroup {
+                    transport: 0,
+                    id: group,
+                })
+                .ok()
+                .unwrap();
+            handle
+                .send(Cmd::TransportRun {
+                    transport: 0,
+                    rolling: false,
+                })
                 .ok()
                 .unwrap();
             let stopped = time_blocks(&mut engine, &mut out);
@@ -189,9 +207,18 @@ fn main() {
             let governed = {
                 let (mut engine, mut handle) = boot();
                 let group = build(&mut engine, &mut handle, voices);
-                handle.send(Cmd::TransportGroup { id: group }).ok().unwrap();
                 handle
-                    .send(Cmd::TransportRun { rolling: true })
+                    .send(Cmd::TransportGroup {
+                        transport: 0,
+                        id: group,
+                    })
+                    .ok()
+                    .unwrap();
+                handle
+                    .send(Cmd::TransportRun {
+                        transport: 0,
+                        rolling: true,
+                    })
                     .ok()
                     .unwrap();
                 time_with_traffic(&mut engine, &mut handle, &mut out, per_block, group, voices)

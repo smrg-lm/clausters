@@ -130,8 +130,11 @@ fn file_segments_validate_magic_and_version() {
     // made the audio-bus region a **parameter** like every other count -- it
     // had been fixed at 128 slots, which was a second place the audio-bus
     // count was decided and a cap on what could be tapped or metered -- and
-    // the default count is now 1024, so the region grew by 7168 bytes.
-    assert_eq!(SEGMENT_SIZE, 729_792 + 4096 * 32);
+    // the default count is now 1024, so the region grew by 7168 bytes. v12
+    // moved the two transport counters out of the header into a table of 64
+    // transports after it -- two words each, 1024 bytes -- and every offset
+    // after the header moved by that much.
+    assert_eq!(SEGMENT_SIZE, 729_792 + 64 * 16 + 4096 * 32);
 }
 
 /// The audio-bus region (ABI v4): the bus is the key. A reader names the audio

@@ -7537,3 +7537,13 @@ finished work, where a pending item reads as done.
   same number, which is right for a stereo take and puts a mono one on the
   left only. A mono take now gets two readers of its one channel, to the left
   bus and the right, as a mono file is heard in any editor.
+
+- ⬜ **The head clock is one per host, and a host can hold applications on
+  two transports** *(found 2026-09-24, closing the root plan's `T6`)*.
+  `/gui_headClock "transport" <id>` names which transport's position every
+  playhead in the host is drawn from, and that was enough while a server had
+  one transport. With several, a standalone host running a multitrack on
+  transport 0 and an audio editor on another would draw one of the two lines
+  from the wrong transport. What it wants is the transport per window, or per
+  view, beside the anchor a window already carries -- decided when the audio
+  editor takes a transport of its own (`crates/clausters-apps/PLAN.md`, `X7`).

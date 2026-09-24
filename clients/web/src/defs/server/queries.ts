@@ -112,6 +112,7 @@ export class ServerQueries {
             tapFrames: at(12, 0),
             maxFrame: at(13, 65536),
             maxStreamBuses: at(14, 128),
+            transports: at(15, 1),
         };
     }
 

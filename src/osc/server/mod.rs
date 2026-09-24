@@ -280,8 +280,9 @@ pub struct OscServer {
     faust_submitted: u64,
     faust_drained: u64,
     pending_syncs: Vec<PendingSync>,
-    /// The shared beat grid (`/transport_set`), once a client defines one.
-    transport: Transport,
+    /// Each transport's network-side state -- its grid, its rolling state, its
+    /// bindings -- indexed by transport id and sized at boot (`--transports`).
+    transports: Vec<Transport>,
     /// `/server_errorMode` mode: post command failures to the server console. The `/fail`
     /// OSC reply is always sent; this only gates the console logging. On by
     /// default (matches scsynth's default error-posting).

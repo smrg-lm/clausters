@@ -86,8 +86,10 @@ class TransportServer extends Server {
             const text = new TextDecoder("latin1").decode(packet);
             if (!text.includes("/sched_atTransport")) continue;
             const view = new DataView(packet.buffer, packet.byteOffset, packet.byteLength);
-            const tag = text.indexOf(",hb");
-            const sample = Number(view.getBigInt64(tag + 4));
+            // The transport id and the int64 target sit right after the
+            // address and its type tag (",ihb" and its padding, 8 bytes).
+            const tag = text.indexOf(",ihb");
+            const sample = Number(view.getBigInt64(tag + 8 + 4));
             out.push(Math.round(((sample - base) / SR) * 1e6) / 1e6);
         }
         return out.sort((a, b) => a - b);
@@ -271,7 +273,7 @@ test("a conductor's locate re-plans from where it says", async () => {
 
     // A conductor's locate: the engine moved, so the server says so too.
     server.state.positionSample = 1.5 * SR;
-    const reply = ["/transport_query.reply", 0, 2.0, 1, 1, 0.0, 7, BASE, 1.5 * SR, -1, -1];
+    const reply = ["/transport_query.reply", 0, 2.0, 1, 1, 0.0, 7, BASE, 1.5 * SR, 0, 0, -1, -1, 0];
     (tl.player as unknown as { broadcast(msg: unknown[]): void }).broadcast(reply);
     await tl.refresh();
 
@@ -301,7 +303,7 @@ test("a re-cue that fails is kept for refresh, not thrown at the console", async
     process.on("unhandledRejection", watch);
     try {
         server.state.positionSample = 1.5 * SR;
-        const reply = ["/transport_query.reply", 0, 2.0, 1, 1, 0.0, 7, BASE, 1.5 * SR, -1, -1];
+        const reply = ["/transport_query.reply", 0, 2.0, 1, 1, 0.0, 7, BASE, 1.5 * SR, 0, 0, -1, -1, 0];
         (tl.player as unknown as { broadcast(msg: unknown[]): void }).broadcast(reply);
         // A rejection with no handler is reported at the end of the turn, so
         // give the loop one before reading the count.

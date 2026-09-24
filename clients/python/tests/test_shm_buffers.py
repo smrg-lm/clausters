@@ -32,10 +32,10 @@ def test_the_segment_size_is_the_one_the_server_builds():
     audio-bus region of 1024 buses (two words each; a parameter since ABI v11,
     where it had been fixed at 128), 8 taps of 16384 samples, and 4096
     directory rows of 32 bytes (24 until ABI v10 gave each buffer a write
-    frontier) -- and it comes from the core rather than from arithmetic repeated
-    here.
+    frontier), after a table of 64 transports of two words each (ABI v12) --
+    and it comes from the core rather than from arithmetic repeated here.
     """
-    assert _native.shm_segment_size(16384, 1024, 8, 16384, 4096) == 729_792 + 4096 * 32
+    assert _native.shm_segment_size(16384, 1024, 8, 16384, 4096) == 729_792 + 64 * 16 + 4096 * 32
 
 
 def _segment(tmp_path, control_buses=4, audio_buses=8, taps=1, tap_frames=64,

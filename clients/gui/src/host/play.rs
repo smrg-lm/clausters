@@ -196,6 +196,10 @@ pub fn take_def_message() -> OscMessage {
 /// The group is created **stopped**: the transport rolls only when a hand asks
 /// it to, and a node added to a frozen group is added frozen, so a take that is
 /// prepared before the first press does not start sounding on its own.
+/// The transport the monitor plays on. Every transport command names its
+/// transport; the monitor's is the one every server has.
+pub const MONITOR_TRANSPORT: i32 = 0;
+
 pub fn take_group_messages(group: i32) -> Vec<OscMessage> {
     vec![
         OscMessage {
@@ -208,7 +212,7 @@ pub fn take_group_messages(group: i32) -> Vec<OscMessage> {
         },
         OscMessage {
             addr: "/transport_group".into(),
-            args: vec![OscType::Int(group)],
+            args: vec![OscType::Int(MONITOR_TRANSPORT), OscType::Int(group)],
         },
     ]
 }
@@ -288,14 +292,14 @@ impl Host {
         }
         self.send_sound(OscMessage {
             addr: "/transport_play".into(),
-            args: vec![],
+            args: vec![OscType::Int(MONITOR_TRANSPORT)],
         });
         // **The play cursor is the transport's position**, drawn by the host
         // every frame from the engine's own counter -- an anchor of 0 on that
         // clock is the take's own frame, since the readers play it from the
         // transport's zero. It wraps where a loop wraps and holds where a pause
         // holds, with no message per frame.
-        self.set_head_clock(HeadClock::Transport);
+        self.set_head_clock(HeadClock::Transport(MONITOR_TRANSPORT as usize));
         self.set_timeline_playhead(widget_id, 0.0);
         self.playing = Some(Monitor {
             widget: widget_id,
@@ -344,7 +348,7 @@ impl Host {
         if monitor.rolling {
             self.send_sound(OscMessage {
                 addr: "/transport_play".into(),
-                args: vec![],
+                args: vec![OscType::Int(MONITOR_TRANSPORT)],
             });
         } else {
             self.send_stop();
@@ -358,7 +362,7 @@ impl Host {
     pub fn locate(&mut self, frame: u64) {
         self.send_sound(OscMessage {
             addr: "/transport_locateSample".into(),
-            args: vec![OscType::Long(frame as i64)],
+            args: vec![OscType::Int(MONITOR_TRANSPORT), OscType::Long(frame as i64)],
         });
     }
 
@@ -368,7 +372,7 @@ impl Host {
         self.follow.stops_in_flight += 1;
         self.send_sound(OscMessage {
             addr: "/transport_stop".into(),
-            args: vec![],
+            args: vec![OscType::Int(MONITOR_TRANSPORT)],
         });
     }
 
@@ -378,8 +382,12 @@ impl Host {
         self.send_sound(OscMessage {
             addr: "/transport_end".into(),
             args: match mark {
-                Some((end, back)) => vec![OscType::Long(end as i64), OscType::Long(back as i64)],
-                None => vec![],
+                Some((end, back)) => vec![
+                    OscType::Int(MONITOR_TRANSPORT),
+                    OscType::Long(end as i64),
+                    OscType::Long(back as i64),
+                ],
+                None => vec![OscType::Int(MONITOR_TRANSPORT)],
             },
         });
     }
@@ -402,8 +410,11 @@ impl Host {
     /// without it -- the engine on its end mark, or another client -- and the
     /// monitor's readers are freed, so the next press of the space bar plays.
     /// The engine has already located the transport back, so nothing is sent
-    /// but the free.
+    /// but the free. A reply about another transport is not the monitor's.
     pub(crate) fn on_transport_state(&mut self, args: &[OscType]) {
+        if args.get(12) != Some(&OscType::Int(MONITOR_TRANSPORT)) {
+            return;
+        }
         let Some(OscType::Int(playing)) = args.get(3) else {
             return;
         };
@@ -434,8 +445,12 @@ impl Host {
         self.send_sound(OscMessage {
             addr: "/transport_loop".into(),
             args: match span {
-                Some((start, end)) => vec![OscType::Long(start as i64), OscType::Long(end as i64)],
-                None => vec![],
+                Some((start, end)) => vec![
+                    OscType::Int(MONITOR_TRANSPORT),
+                    OscType::Long(start as i64),
+                    OscType::Long(end as i64),
+                ],
+                None => vec![OscType::Int(MONITOR_TRANSPORT)],
             },
         });
     }
@@ -612,7 +627,7 @@ mod tests {
             &mut s,
             OscMessage {
                 addr: "/transport_play".into(),
-                args: vec![],
+                args: vec![OscType::Int(MONITOR_TRANSPORT)],
             },
         );
         s.settle_for(4);
@@ -639,6 +654,7 @@ mod tests {
         assert_eq!(msgs[0].addr, "/group_new");
         assert_eq!(msgs[0].args[0], OscType::Int(1001));
         assert_eq!(msgs[1].addr, "/transport_group");
-        assert_eq!(msgs[1].args[0], OscType::Int(1001));
+        assert_eq!(msgs[1].args[0], OscType::Int(MONITOR_TRANSPORT));
+        assert_eq!(msgs[1].args[1], OscType::Int(1001));
     }
 }

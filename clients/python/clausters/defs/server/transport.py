@@ -4,6 +4,13 @@ The grid is one conductor's to define (`ServerTransport.set_transport`) and
 everyone else's to join. Bound to a group it stops being advisory: the engine
 freezes and thaws that subtree, so a stop is a real pause of the sound the
 server is generating rather than a convention the clients observe.
+
+A server has several transports (its ``--transports``), each independent --
+its own grid, rolling state, position, loop, end mark and governed group. The
+methods here address transport 0 on a `Server`; `ServerTransport.transport_at`
+answers the same server addressed through another one, so anything written
+against a server's transport -- a `clausters.seq.Timeline`, a playback --
+plays on whichever it is handed.
 """
 
 from ...base import _osclib
@@ -11,15 +18,52 @@ from ...errors import CommandError
 from ..node import _target_id
 
 
+def _is_transport(transport: int):
+    """A reply matcher: whether a ``/transport_query.reply`` is about
+    ``transport`` -- the pushes of every transport share its address."""
+    def match(args) -> bool:
+        return len(args) > 12 and int(args[12]) == transport
+    return match
+
+
 class ServerTransport:
     """The transport half of `Server`; never instantiated on its own."""
+
+    #: The transport this handle addresses: 0 on a `Server`, the one it was
+    #: made for on what `transport_at` answers.
+    transport_id: int = 0
+
+    def transport_at(self, transport: int) -> "TransportView":
+        """This server, addressed through transport ``transport``.
+
+        Every transport method on what it answers -- `transport_play`,
+        `transport_state`, `transport_group`, `sched_at_transport`, a
+        ``sched_clear("transport")`` -- names that transport, and everything
+        else is this server's own, so it goes wherever a server is taken as a
+        transport: ``timeline.transport = server.transport_at(1)``. Transport 0
+        is the server itself. An id past the server's ``--transports`` fails
+        when a command is sent, not here."""
+        server = getattr(self, "_server", self)
+        if int(transport) == 0:
+            return server
+        return TransportView(server, int(transport))
+
+    def _transport_query(self, timeout):
+        """``/transport_query`` for this handle's transport, answered by the
+        reply about it and not by another transport's push."""
+        addr, args = self.request("/transport_query", self.transport_id, timeout=timeout,
+                                  expect=("/transport_query.reply", "/fail"),
+                                  match=_is_transport(self.transport_id))
+        if addr == "/fail":
+            raise CommandError(f"/transport_query failed: {args}")
+        return args
 
     def transport(self, timeout: "float | None" = None):
         """The server's shared transport grid (``/transport_query``) as
         ``(origin_sample, tempo)``, or ``None`` if none is set. The grid lets
         several clients phase-align on the master clock; join it from a clock
         with `clausters.base.clock.TempoClock.join_transport`. RT only."""
-        _, args = self.request("/transport_query", timeout=timeout, expect=("/transport_query.reply",))
+        args = self._transport_query(timeout)
         origin, tempo, defined = int(args[0]), float(args[1]), int(args[2])
         return (origin, tempo) if defined else None
 
@@ -29,7 +73,8 @@ class ServerTransport:
         second. One client (the conductor) sets it; the others
         `join_transport`. Last writer wins. Defining the grid resets the rolling
         state to stopped at position 0."""
-        addr, args = self.request("/transport_set", _osclib.Int64(int(origin_sample)), float(tempo),
+        addr, args = self.request("/transport_set", self.transport_id,
+                                  _osclib.Int64(int(origin_sample)), float(tempo),
                                   timeout=timeout, expect=("/done", "/fail"))
         if addr == "/fail":
             raise CommandError(f"/transport_set failed: {args}")
@@ -38,7 +83,7 @@ class ServerTransport:
     def transport_state(self, timeout: "float | None" = None):
         """The full shared transport state as a dict ``{origin_sample, tempo,
         playing, position, group, transport_sample, position_sample, loop,
-        end}``.
+        end, transport}``, ``transport`` being this handle's `transport_id`.
 
         **Always a dict**: the transport exists whether or not anyone has
         defined a beat grid, because rolling, stopping and saying where the
@@ -70,7 +115,7 @@ class ServerTransport:
         ``end`` is the end mark (`transport_end`) as an ``(end, back)`` pair --
         ``back`` ``None`` when the position rests on the mark -- or ``None``
         when none is set."""
-        _, args = self.request("/transport_query", timeout=timeout, expect=("/transport_query.reply",))
+        args = self._transport_query(timeout)
         defined = bool(int(args[2]))
         group = int(args[5])
         loop_start, loop_end = int(args[8]), int(args[9])
@@ -86,6 +131,7 @@ class ServerTransport:
             "position_sample": int(args[7]),
             "loop": (loop_start, loop_end) if loop_end > loop_start else None,
             "end": None if end < 0 else (end, None if back < 0 else back),
+            "transport": self.transport_id,
         }
 
     def transport_group(self, group, timeout: "float | None" = None):
@@ -104,7 +150,7 @@ class ServerTransport:
         Freeing the group unbinds the transport, and unbinding thaws whatever it
         governed, so no frozen subtree is left with nobody to resume it."""
         arg = -1 if group is None else _target_id(group)
-        addr, args = self.request("/transport_group", arg,
+        addr, args = self.request("/transport_group", self.transport_id, arg,
                                   timeout=timeout, expect=("/done", "/fail"))
         if addr == "/fail":
             raise CommandError(f"/transport_group failed: {args}")
@@ -122,7 +168,8 @@ class ServerTransport:
         group bound. ``messages`` are ``(addr, *args)`` tuples, as for
         `send_bundle`."""
         inner = _osclib.immediate_bundle(*[_osclib.message(*m) for m in messages])
-        addr, args = self.request("/sched_atTransport", _osclib.Int64(int(target)), inner,
+        addr, args = self.request("/sched_atTransport", self.transport_id,
+                                  _osclib.Int64(int(target)), inner,
                                   expect=("/done", "/fail"))
         if addr == "/fail":
             raise CommandError(f"/sched_atTransport failed: {args}")
@@ -135,7 +182,7 @@ class ServerTransport:
         to every `/server_notify` client, so all playheads following the transport roll
         together. Needs a grid defined (`set_transport`)."""
         extra = [float(position)] if position is not None else []
-        addr, args = self.request("/transport_play", *extra,
+        addr, args = self.request("/transport_play", self.transport_id, *extra,
                                   timeout=timeout, expect=("/done", "/fail"))
         if addr == "/fail":
             raise CommandError(f"/transport_play failed: {args}")
@@ -144,7 +191,8 @@ class ServerTransport:
     def transport_stop(self, timeout: "float | None" = None):
         """Stop the shared transport (``/transport_stop``); every following
         playhead halts. Broadcast to `/server_notify` clients."""
-        addr, args = self.request("/transport_stop", timeout=timeout, expect=("/done", "/fail"))
+        addr, args = self.request("/transport_stop", self.transport_id,
+                                  timeout=timeout, expect=("/done", "/fail"))
         if addr == "/fail":
             raise CommandError(f"/transport_stop failed: {args}")
         return self
@@ -157,7 +205,8 @@ class ServerTransport:
         the other on the client is how a rounding error gets into a seek. The
         beat position follows, so both readings of `transport_state` agree.
         Needs a grid defined; a negative sample clamps to 0."""
-        addr, args = self.request("/transport_locateSample", _osclib.Int64(int(sample)),
+        addr, args = self.request("/transport_locateSample", self.transport_id,
+                                  _osclib.Int64(int(sample)),
                                   timeout=timeout, expect=("/done", "/fail"))
         if addr == "/fail":
             raise CommandError(f"/transport_locateSample failed: {args}")
@@ -176,7 +225,7 @@ class ServerTransport:
         raises. What a loop toggle remembers is the client's to keep: clearing
         forgets the span."""
         args_out = () if span is None else (_osclib.Int64(int(span[0])), _osclib.Int64(int(span[1])))
-        addr, args = self.request("/transport_loop", *args_out,
+        addr, args = self.request("/transport_loop", self.transport_id, *args_out,
                                   timeout=timeout, expect=("/done", "/fail"))
         if addr == "/fail":
             raise CommandError(f"/transport_loop failed: {args}")
@@ -199,7 +248,7 @@ class ServerTransport:
         args_out = () if end is None else (
             (_osclib.Int64(int(end)),) if back is None
             else (_osclib.Int64(int(end)), _osclib.Int64(int(back))))
-        addr, args = self.request("/transport_end", *args_out,
+        addr, args = self.request("/transport_end", self.transport_id, *args_out,
                                   timeout=timeout, expect=("/done", "/fail"))
         if addr == "/fail":
             raise CommandError(f"/transport_end failed: {args}")
@@ -209,8 +258,41 @@ class ServerTransport:
         """Set the shared transport's song position (``/transport_locate``) --
         where play starts, or where it seeks to while playing. Every following
         playhead locates to it. Broadcast to `/server_notify` clients."""
-        addr, args = self.request("/transport_locate", float(position),
+        addr, args = self.request("/transport_locate", self.transport_id, float(position),
                                   timeout=timeout, expect=("/done", "/fail"))
         if addr == "/fail":
             raise CommandError(f"/transport_locate failed: {args}")
         return self
+
+
+class TransportView(ServerTransport):
+    """A `Server` addressed through one of its transports -- what
+    `ServerTransport.transport_at` answers for any transport but 0.
+
+    Its transport methods name its `transport_id`, and a
+    ``sched_clear("transport")`` clears that transport's queue alone;
+    everything else is the server's own, so it stands wherever a server is
+    taken as a transport."""
+
+    def __init__(self, server, transport: int):
+        self._server = server
+        self.transport_id = int(transport)
+
+    @property
+    def server(self):
+        """The server this view addresses."""
+        return self._server
+
+    def request(self, addr, *args, **options):
+        return self._server.request(addr, *args, **options)
+
+    def sched_clear(self, axis: "str | None" = None):
+        """The server's `sched_clear`, with ``"transport"`` meaning this
+        transport's queue."""
+        return self._server.sched_clear(axis, transport=self.transport_id)
+
+    def __getattr__(self, name):
+        return getattr(self._server, name)
+
+    def __repr__(self):
+        return f"<transport {self.transport_id} of {self._server!r}>"

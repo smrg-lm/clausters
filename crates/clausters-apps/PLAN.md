@@ -693,9 +693,16 @@ opened it.
     refuses a manual move.
   - The stop's ramp: its length, and where the position comes to rest after a
     stop (the sample the stop was asked at, or the end of the ramp).
-  - **One transport per server** today: `/transport_group` binds one group, so
-    a multitrack and an audio editor on the same server both want it. That is
-    `T6` (`PLAN.md`), taken first.
+  - **Which transport the editor takes.** `T6` shipped (2026-09-24): a server
+    has several, the multitrack plays on transport 0 and the host's monitor
+    does too for now. The editor takes another, and what reads it has to
+    follow: a node reads the transport governing its **own** group, and
+    `ae.output` sits *outside* the governed group, so under that rule it reads
+    transport 0 -- `TransportFade` there needs the editor's transport named,
+    an input carrying the id or the output group governed differently. The
+    host's head clock is one per host, so the editor's window draws from the
+    wrong transport beside a multitrack until that is per window
+    (`clients/gui/PLAN.md`, Found by use, "The head clock is one per host").
   - Whether the host's monitor goes away, or stays for a window with no
     application behind it.
   - Whether the meter is per channel, and where it sits in the window.

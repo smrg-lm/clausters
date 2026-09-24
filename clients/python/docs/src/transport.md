@@ -208,6 +208,33 @@ continues the frozen sound.
 `freeze.py` in the examples freezes a generative texture and resumes
 it, which is the way to hear the difference between continuing and restarting.
 
+## Several transports
+
+A server has several transports — 8 unless it was booted with another count
+(`ServerOptions(transports=...)`, read back as `server.query_info().transports`)
+— and each is independent: its own grid, rolling state, position, loop, end
+mark, governed group and clock. Two applications on one server, a multitrack
+and an audio editor say, each play, pause and locate their own nodes without
+moving the other's.
+
+Every transport method on a `Server` addresses **transport 0**, the one there
+always was. `server.transport_at(n)` is the same server addressed through
+transport `n`: its transport methods name that transport, and everything else
+is the server's own, so it goes wherever a server is taken as a transport.
+
+```python
+left = server                          # transport 0
+right = server.transport_at(1)         # the same server, through transport 1
+right.transport_group(other_group)     # a group has one transport
+right.transport_play()                 # rolls transport 1 alone
+timeline.transport = right             # a timeline on transport 1
+```
+
+A node reads the transport that governs it — the nearest governed group above
+it — so a reader following `transport_pos` needs no id of its own: it follows
+whichever transport its group is bound to, and transport 0 when none is.
+`transport_state()` says which transport it read in its ``transport`` entry.
+
 ## See also
 
 - [Timing models](timing-models.md) — the time reference behind beat-accurate vs sample-exact alignment.

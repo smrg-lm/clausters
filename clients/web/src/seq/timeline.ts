@@ -650,6 +650,11 @@ class ClockView {
         return this.node.player.schedAxis;
     }
 
+    /** Which of the server's transports `schedAxis` is the clock of. */
+    get schedTransport(): number {
+        return this.node.player.schedTransport;
+    }
+
     get tempo(): number {
         return this.node.timeline.map.tempoAt(this.beats());
     }
@@ -751,6 +756,7 @@ interface TreeDriver {
     destination: PlayDestination | null;
     readonly clock: TempoClock | null;
     readonly schedAxis: ((secs: number) => number) | null;
+    readonly schedTransport: number;
     rootSecs(beat: number): number;
     rootBeat(secs: number): number;
     render(node: TimelineNode, beat: number, item: unknown): void;
@@ -947,6 +953,10 @@ export class TransportPlayer implements TreeDriver {
         if (this.stamp === null) return null;
         const [baseSample, baseSecs, rate] = this.stamp;
         return (secs: number) => Math.round(baseSample + (secs - baseSecs) * rate);
+    }
+
+    get schedTransport(): number {
+        return this.server.transportId;
     }
 
     get running(): boolean {
@@ -1148,8 +1158,9 @@ export class TransportPlayer implements TreeDriver {
 
     private broadcast(msg: ResponderMessage): void {
         // /transport_query.reply originSample tempo defined playing position
-        // group transportSample positionSample ...
-        if (msg.length < 9) return;
+        // group transportSample positionSample ... transport
+        if (msg.length < 14) return;
+        if (Number(msg[13]) !== this.server.transportId) return; // another transport's
         const playing = Boolean(Number(msg[4]));
         const position = Number(msg[8]);
         this.reported = { playing, positionSample: position };
@@ -1192,6 +1203,7 @@ export class TimelinePlayer implements TreeDriver {
      * `/sched_at` under a sample timebase): there is no transport to name.
      */
     readonly schedAxis = null;
+    readonly schedTransport = 0;
     destination: PlayDestination | null = null;
     loop: [number, number] | null = null;
     mark = 0;

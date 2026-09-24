@@ -142,7 +142,15 @@ pub struct Limits {
     /// Accepted inputs per UGen when compiling a def (`--max-ugen-inputs`),
     /// clamped to [`MAX_UGEN_INPUTS`].
     pub max_ugen_inputs: usize,
+    /// Independent transports (`--transports`), each with its own governed
+    /// group, clocks, position, loop, end mark and scheduling queue. Clamped
+    /// to `1..=`[`clausters_core::shm::MAX_TRANSPORTS`]; transport 0 is the
+    /// one a server has always had.
+    pub transports: usize,
 }
+
+/// Transports a server is booted with when nobody says otherwise.
+pub const DEFAULT_TRANSPORTS: usize = 8;
 
 impl Default for Limits {
     fn default() -> Self {
@@ -153,6 +161,7 @@ impl Default for Limits {
             max_buffers: 4096,
             max_group_children: 512,
             max_ugen_inputs: MAX_UGEN_INPUTS,
+            transports: DEFAULT_TRANSPORTS,
         }
     }
 }
@@ -168,6 +177,9 @@ impl Limits {
             max_buffers: self.max_buffers,
             max_group_children: self.max_group_children.max(1),
             max_ugen_inputs: self.max_ugen_inputs.clamp(1, MAX_UGEN_INPUTS),
+            transports: self
+                .transports
+                .clamp(1, clausters_core::shm::MAX_TRANSPORTS),
         }
     }
 }

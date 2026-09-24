@@ -707,8 +707,9 @@ def test_the_playback_sends_the_crate_s_steps_and_waits_where_they_say():
     playback._run(multitrack.locate(2.0))
     (entry,) = playback.server.log
     assert entry[:2] == ("request", "/transport_locateSample")
-    assert isinstance(entry[2], _osclib.Int64), "a sample rides as 64 bits"
-    assert entry[2].value == multitrack.secs_to_samples(2.0)
+    assert entry[2] == 0, "the multitrack's transport, first"
+    assert isinstance(entry[3], _osclib.Int64), "a sample rides as 64 bits"
+    assert entry[3].value == multitrack.secs_to_samples(2.0)
 
     # Stopping at the end is the crate's switch, read back through the binding;
     # with no contents there is no end to mark, so nothing is sent.

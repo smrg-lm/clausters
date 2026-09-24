@@ -467,7 +467,12 @@ pub use time::*;
 /// `clausters_view_props` answers `{"error": reason}` for a kind it does not
 /// draw or facts that will not read, where it answered nothing -- which both
 /// clients stamped into a widget with nothing on it. **Breaking**.
-pub const CORE_ABI_VERSION: u32 = 68;
+/// **v69 a server has several transports.** `Shape` grows `transports` and
+/// `transport_stride`, appended; its two transport offsets are transport 0's,
+/// and transport `i`'s are `i * transport_stride` further on. The editing
+/// playback's transport commands carry the transport id first, as every
+/// `/transport_*` command now does. **Breaking**.
+pub const CORE_ABI_VERSION: u32 = 69;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

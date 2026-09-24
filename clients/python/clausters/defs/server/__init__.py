@@ -420,7 +420,8 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
             # transport clock, so a pause freezes the queue with the souce and
             # a locate clears it (`sched_clear("transport")`). It is asked
             # first because it is the one axis a caller states outright.
-            self._send_sched_transport(axis(when.secs() + self.latency), messages)
+            self._send_sched_transport(axis(when.secs() + self.latency), messages,
+                                       getattr(when.clock, "sched_transport", 0))
             return
 
         if getattr(self.interface, "time_mode", "unix") == "score":
@@ -487,33 +488,38 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         inner = _osclib.immediate_bundle(*[_osclib.message(*m) for m in messages])
         self.send_msg("/sched_at", _osclib.Int64(sample), inner)
 
-    def _send_sched_transport(self, sample: int, messages):
+    def _send_sched_transport(self, sample: int, messages, transport: int = 0):
         """`/sched_atTransport` without waiting for its ``/done``: a plan is
         many bundles, and a round trip each would pace the planning by the
         network (`sched_at_transport` is the waiting spelling)."""
         inner = _osclib.immediate_bundle(*[_osclib.message(*m) for m in messages])
-        self.send_msg("/sched_atTransport", _osclib.Int64(int(sample)), inner)
+        self.send_msg("/sched_atTransport", int(transport), _osclib.Int64(int(sample)), inner)
 
-    def sched_clear(self, axis: "str | None" = None):
+    def sched_clear(self, axis: "str | None" = None, transport: "int | None" = None):
         """Drop what is queued: with no ``axis`` every pending timed bundle on
         this server (``/sched_clear``, the panic button), and with
-        ``axis="transport"`` the **transport queue alone**.
+        ``axis="transport"`` **one transport's queue alone** -- ``transport``,
+        or this handle's own (0 on a server, see `transport_at`).
 
-        The scoped form is what re-cueing after a locate needs: the transport
+        The scoped form is what re-cueing after a locate needs: a transport's
         clock does not jump, so bundles queued for the position that was left
         would sound at it, while the bare form would take every other client's
         score with them. Returns ``self``."""
         if axis is None:
             self.send_msg("/sched_clear")
         elif axis == "transport":
-            self.send_msg("/sched_clear", "transport")
+            which = self.transport_id if transport is None else int(transport)
+            self.send_msg("/sched_clear", "transport", which)
         else:
             raise ValueError(f'sched_clear: axis is None or "transport", not {axis!r}')
         return self
 
-    def request(self, addr, *args, timeout: "float | None" = None, expect=None):
+    def request(self, addr, *args, timeout: "float | None" = None, expect=None, match=None):
         """Sends a message and returns the first matching reply ``(addr, args)``
-        (RT only; the interface must reply). ``expect`` filters reply addresses.
+        (RT only; the interface must reply). ``expect`` filters reply addresses,
+        and ``match``, a predicate over a reply's arguments, filters the replies
+        ``expect`` lets through -- for an answer whose address other messages
+        share, like the transport pushes.
 
         This and `_request_batch` are the two places a ``timeout`` is finally
         read, which is why they are the only two that resolve ``None`` against
@@ -534,6 +540,9 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
                 # returns before its own command ran -- a buffer written into
                 # before the alloc that was still in flight, and no error
                 # anywhere to say why.
+                continue
+            if expect is not None and raddr in expect and raddr not in ("/done", "/fail") \
+                    and match is not None and not match(rargs):
                 continue
             if expect is None or raddr in expect:
                 return raddr, rargs

@@ -463,17 +463,28 @@ impl Segment {
         self.view.clock()
     }
 
-    /// The transport clock: samples elapsed under the transport, held while it
-    /// is stopped. Monotonic -- see [`Self::transport_position`] for the one
-    /// that moves with a locate.
-    pub fn transport_clock(&self) -> &AtomicU64 {
-        self.view.transport_clock()
+    /// How many transports the engine publishes (`--transports`).
+    pub fn transports(&self) -> usize {
+        self.view.transports()
     }
 
-    /// The transport position: the sample of the *transport's axis* being played. Holds
-    /// while stopped, jumps on a locate, wraps at a loop's end.
-    pub fn transport_position(&self) -> &AtomicU64 {
-        self.view.transport_position()
+    /// Says how many transports are live; the engine's, at boot.
+    pub fn set_transports(&self, count: usize) {
+        self.view.set_transports(count);
+    }
+
+    /// Transport `transport`'s clock: samples elapsed under it, held while it
+    /// is stopped. Monotonic -- see [`Self::transport_position`] for the one
+    /// that moves with a locate. `None` past the table.
+    pub fn transport_clock(&self, transport: usize) -> Option<&AtomicU64> {
+        self.view.transport_clock(transport)
+    }
+
+    /// Transport `transport`'s position: the sample of its axis being played.
+    /// Holds while stopped, jumps on a locate, wraps at a loop's end. `None`
+    /// past the table.
+    pub fn transport_position(&self, transport: usize) -> Option<&AtomicU64> {
+        self.view.transport_position(transport)
     }
 
     /// The segment's base address and its **logical** size in bytes -- what an

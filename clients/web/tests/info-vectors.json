@@ -429,9 +429,10 @@
       "taps": 4,
       "tapFrames": 8192,
       "maxFrame": 65536,
-      "maxStreamBuses": 128
+      "maxStreamBuses": 128,
+      "transports": 8
     },
-    "line": "server 48000 Hz, 64-sample blocks, 2 out / 0 in\n  buses   1024 audio, 16384 control\n  limits  1024 nodes, 1024 buffers, 64 graph children, 64 ugen inputs\n  taps    4 x 8192 frames\n  frame   65536 bytes max\n  stream  128 buses per /bus_stream"
+    "line": "server 48000 Hz, 64-sample blocks, 2 out / 0 in\n  buses   1024 audio, 16384 control\n  limits  1024 nodes, 1024 buffers, 64 graph children, 64 ugen inputs\n  taps    4 x 8192 frames\n  frame   65536 bytes max\n  stream  128 buses per /bus_stream\n  transports 8"
   },
   {
     "kind": "server",
@@ -450,8 +451,9 @@
       "taps": 0,
       "tapFrames": 0,
       "maxFrame": 65536,
-      "maxStreamBuses": 128
+      "maxStreamBuses": 128,
+      "transports": 8
     },
-    "line": "server 48001.5 Hz (nominal 48000), 64-sample blocks, 2 out / 0 in\n  buses   1024 audio, 16384 control\n  limits  1024 nodes, 1024 buffers, 64 graph children, 64 ugen inputs\n  taps    none (no segment)\n  frame   65536 bytes max\n  stream  128 buses per /bus_stream"
+    "line": "server 48001.5 Hz (nominal 48000), 64-sample blocks, 2 out / 0 in\n  buses   1024 audio, 16384 control\n  limits  1024 nodes, 1024 buffers, 64 graph children, 64 ugen inputs\n  taps    none (no segment)\n  frame   65536 bytes max\n  stream  128 buses per /bus_stream\n  transports 8"
   }
 ]

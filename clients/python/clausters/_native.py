@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 68
+CORE_ABI_VERSION = 69
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -59,6 +59,8 @@ class ShmShape(ctypes.Structure):
         ("ring_capacity", ctypes.c_uint64),
         ("ring_prefix", ctypes.c_uint64),
         ("frame_header", ctypes.c_uint64),
+        ("transports", ctypes.c_uint64),
+        ("transport_stride", ctypes.c_uint64),
     ]
 
 

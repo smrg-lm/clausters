@@ -1210,12 +1210,7 @@ fn command_set_completion_does_not_allocate_on_the_audio_thread() {
         })
         .ok()
         .unwrap();
-    handle
-        .send(Cmd::ClearSched {
-            transport_only: false,
-        })
-        .ok()
-        .unwrap();
+    handle.send(Cmd::ClearSched { only: None }).ok().unwrap();
 
     assert_no_alloc(|| {
         for _ in 0..100 {
@@ -1899,14 +1894,46 @@ fn transport_scheduling_does_not_allocate_on_the_audio_thread() {
             .ok()
             .unwrap();
     }
-    handle.send(Cmd::TransportGroup { id: 100 }).ok().unwrap();
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportGroup {
+            transport: 0,
+            id: 100,
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
+        .ok()
+        .unwrap();
+    // A second transport governing the other group, looping, so two transport
+    // queues and a wrap all cut the same blocks.
+    handle
+        .send(Cmd::TransportGroup {
+            transport: 1,
+            id: 200,
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportLoop {
+            transport: 1,
+            span: Some(0..300),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun {
+            transport: 1,
+            rolling: true,
+        })
         .ok()
         .unwrap();
 
-    // 16 bundles at odd offsets, alternating governed and live, so both queues
-    // fill and the block is cut by their union.
+    // 16 bundles at odd offsets, alternating between the two transports'
+    // groups, so both queues fill and the block is cut by their union.
     for i in 0..16u64 {
         let id = if i % 2 == 0 { 101 } else { 201 };
         handle
@@ -1932,7 +1959,10 @@ fn transport_scheduling_does_not_allocate_on_the_audio_thread() {
     handle
         .send(Cmd::Schedule {
             time: 200,
-            cmds: vec![Cmd::TransportRun { rolling: false }],
+            cmds: vec![Cmd::TransportRun {
+                transport: 0,
+                rolling: false,
+            }],
         })
         .ok()
         .unwrap();
@@ -1946,7 +1976,10 @@ fn transport_scheduling_does_not_allocate_on_the_audio_thread() {
     // Resuming lets whatever the pause held back fall due, still without
     // allocating.
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
     assert_no_alloc(|| {

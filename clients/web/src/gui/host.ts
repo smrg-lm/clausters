@@ -739,7 +739,8 @@ export class GuiHost {
     }
 
     /**
-     * `/gui_headClock <which>` -- which counter every playhead is drawn from.
+     * `/gui_headClock <which> [transport]` -- which counter every playhead is
+     * drawn from; on `"transport"`, which transport (0 unless named).
      *
      * `"device"` (the default) is the engine's sample clock, which never stops:
      * what a host watching a live server wants, since its meters, scopes and
@@ -760,8 +761,12 @@ export class GuiHost {
      * host already has one -- its application clock -- and this names a counter,
      * not a scheduler.
      */
-    headClock(which: "device" | "transport"): void {
-        this.send("/gui_headClock", which);
+    headClock(which: "device" | "transport", transport = 0): void {
+        if (which === "transport" && transport !== 0) {
+            this.send("/gui_headClock", which, ["i", Math.trunc(transport)]);
+        } else {
+            this.send("/gui_headClock", which);
+        }
     }
 
     /**

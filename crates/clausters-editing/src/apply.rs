@@ -35,6 +35,11 @@ use serde_json::{Value, json};
 use crate::instance::{Handle, Op, Port, Ports};
 
 /// Where a node goes relative to its target -- the server's add actions.
+/// The transport a multitrack plays on: transport 0, the one every server
+/// has. Every transport command names its transport, so this is the id the
+/// multitrack's own commands carry.
+pub const MULTITRACK_TRANSPORT: i32 = 0;
+
 const ADD_TAIL: i32 = 1;
 const ROOT: i32 = 0;
 const ADD_BEFORE: i32 = 2;
@@ -173,7 +178,10 @@ impl Applier {
                         OscType::Int(ROOT),
                     ],
                 ));
-                steps.push(send("/transport_group", vec![OscType::Int(node)]));
+                steps.push(send(
+                    "/transport_group",
+                    vec![OscType::Int(MULTITRACK_TRANSPORT), OscType::Int(node)],
+                ));
                 steps.push(Step::AwaitDone {
                     command: "/transport_group".into(),
                     index: None,

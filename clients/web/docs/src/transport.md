@@ -110,6 +110,22 @@ await server.schedAtTransport(sample, [
 
 The declaration is not there to disambiguate — the classification is deterministic, and a client that bound the group knows which of its nodes are governed. It is there to be **verified**: the server compares it against its own classification and fails when they disagree, rather than playing the bundle in the wrong place. It needs a group bound.
 
+## Several transports
+
+A server has several transports — 8 unless it was booted with another count (`--transports`, read back as `(await server.queryInfo()).transports`) — and each is independent: its own grid, rolling state, position, loop, end mark, governed group and clock. Two applications on one server, a multitrack and an audio editor say, each play, pause and locate their own nodes without moving the other's.
+
+Every transport method on a `Server` addresses **transport 0**, the one there always was. `server.transportAt(n)` is the same server addressed through transport `n`: its transport methods name that transport, and everything else is the server's own, so it goes wherever a server is taken as a transport.
+
+```js
+const left = server;                        // transport 0
+const right = server.transportAt(1);        // the same server, through transport 1
+await right.transportGroup(otherGroup);     // a group has one transport
+await right.transportPlay();                // rolls transport 1 alone
+timeline.transport = right;                 // a timeline on transport 1
+```
+
+A node reads the transport that governs it — the nearest governed group above it — so a reader following `transportPos` needs no id of its own: it follows whichever transport its group is bound to, and transport 0 when none is. `transportState()` says which transport it read in its `transport` field.
+
 ## See also
 
 - [Routines and clocks](routines-and-clocks.md) — the clock the freeze holds, and the logical time it keeps.

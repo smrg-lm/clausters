@@ -64,8 +64,13 @@ fn the_buses_the_levels_and_the_taps_read_what_the_server_published() {
         .clock()
         .store(4096, std::sync::atomic::Ordering::Release);
     server
-        .transport_position()
+        .transport_position(0)
+        .unwrap()
         .store(1024, std::sync::atomic::Ordering::Release);
+    server
+        .transport_position(3)
+        .unwrap()
+        .store(77, std::sync::atomic::Ordering::Release);
     let block = [0.25f32; clausters::server::engine::BLOCK_SIZE];
     server.tap_write(0, &block);
 
@@ -80,7 +85,8 @@ fn the_buses_the_levels_and_the_taps_read_what_the_server_published() {
     assert_eq!(host.tap_of_bus(1), Some(0));
     assert_eq!(host.tap_of_bus(0), None);
     assert_eq!(host.sample_clock(), 4096);
-    assert_eq!(host.transport_position(), 1024);
+    assert_eq!(host.transport_position(0), 1024);
+    assert_eq!(host.transport_position(3), 77, "each transport its own row");
 
     let mut out = [0.0f32; 32];
     assert_eq!(

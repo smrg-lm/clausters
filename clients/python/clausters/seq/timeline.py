@@ -529,6 +529,11 @@ class _ClockView:
         return self._node.player.sched_axis
 
     @property
+    def sched_transport(self):
+        """Which of the server's transports `sched_axis` is the clock of."""
+        return self._node.player.sched_transport
+
+    @property
     def tempo(self):
         return self._node.timeline._map.tempo_at(self.beats())
 
@@ -744,6 +749,10 @@ class _TransportPlayer:
         return lambda secs: int(round(base_sample + (secs - base_secs) * rate))
 
     @property
+    def sched_transport(self):
+        return getattr(self.server, "transport_id", 0)
+
+    @property
     def server(self):
         return self.timeline._transport
 
@@ -855,8 +864,10 @@ class _TransportPlayer:
         return self
 
     def _broadcast(self, addr, args, when, src):
-        if addr != "/transport_query.reply" or len(args) < 8:
+        if addr != "/transport_query.reply" or len(args) < 13:
             return
+        if int(args[12]) != getattr(self.server, "transport_id", 0):
+            return  # another transport's
         playing, position = bool(int(args[3])), int(args[7])
         self._reported = {**self._reported, "playing": playing,
                           "position_sample": position,
@@ -946,6 +957,7 @@ class _Player:
     #: A timeline on its own clock stamps on the ordinary axis (a timetag, or
     #: `/sched_at` under a sample timebase): there is no transport to name.
     sched_axis = None
+    sched_transport = 0
 
     def __init__(self, timeline):
         self.timeline = timeline

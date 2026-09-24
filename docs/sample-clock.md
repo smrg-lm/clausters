@@ -44,16 +44,17 @@ The sample clock gives every client a common, drift-free **sample axis**, so two
 `/transport_set` is that grid, hosted on the server so any client can join it. It also carries a DAW-style **rolling state** — whether it is playing and the song position:
 
 ```text
-/transport_query                              →  /transport_query.reply  h <originSample>  d <tempo>  i <defined>  i <playing>  d <position>  i <group>  h <transportSample>  h <positionSample>  h <loopStart>  h <loopEnd>  h <endSample>  h <returnSample>
-/transport_set  h <originSample> d <tempo>    →  /done  "/transport_set"          (set the grid, stopped at 0)
-/transport_play  [d <position>]           →  /done  "/transport_play"     (start rolling)
-/transport_stop                           →  /done  "/transport_stop"
-/transport_locate  d <position>           →  /done  "/transport_locate"   (set the song position, in beats)
-/transport_locateSample  h <sample>       →  /done  "/transport_locateSample"  (the same, in frames of the trece)
-/transport_loop  [h <start> h <end>]      →  /done  "/transport_loop"     (wrap inside this span; no arguments = off)
-/transport_end  [h <end> [h <return>]]    →  /done  "/transport_end"      (stop on this sample, then locate to return; no arguments = off)
+/transport_query  i <t>                           →  /transport_query.reply  h <originSample>  d <tempo>  i <defined>  i <playing>  d <position>  i <group>  h <transportSample>  h <positionSample>  h <loopStart>  h <loopEnd>  h <endSample>  h <returnSample>  i <t>
+/transport_set  i <t> h <originSample> d <tempo>  →  /done  "/transport_set"          (set the grid, stopped at 0)
+/transport_play  i <t> [d <position>]             →  /done  "/transport_play"     (start rolling)
+/transport_stop  i <t>                            →  /done  "/transport_stop"
+/transport_locate  i <t> d <position>             →  /done  "/transport_locate"   (set the song position, in beats)
+/transport_locateSample  i <t> h <sample>         →  /done  "/transport_locateSample"  (the same, in frames)
+/transport_loop  i <t> [h <start> h <end>]        →  /done  "/transport_loop"     (wrap inside this span; no arguments = off)
+/transport_end  i <t> [h <end> [h <return>]]      →  /done  "/transport_end"      (stop on this sample, then locate to return; no arguments = off)
 ```
 
+- **A server has several transports**, `t` from 0 to its `--transports` minus one (8 by default), and every command names one first. Each is independent: its own grid, rolling state, position, loop, end mark and governed group, and its own clock — the device clock minus what *it* has spent stopped — so stopping one moves nothing about another. Transport 0 is the one there always was; a client that only ever needs one uses it.
 - `/transport_query` **reads** the grid; `defined` is 0 until a client has set one, and `group` is `-1` until one is bound.
 - `/transport_set` **sets** the grid (last writer wins), stopped at position 0. Beat `b` maps to sample `originSample + b·rate/tempo`, so a client joins by reading the grid and quantizing its routine's start onto the next beat boundary. Because the grid lives on the sample axis, the alignment is sample-exact for clients locked to the master.
 - `/transport_play`/`/transport_stop`/`/transport_locate` drive the rolling state (a conductor): play from a song position, stop, or seek. **Only the beat spellings need the grid** — `/transport_locate`, and `/transport_play` given a position, refuse until one is defined; a bare play, a stop, a `/transport_locateSample` and a `/transport_loop` need none, because they are all in samples and an editor has no tempo to declare.
@@ -61,7 +62,7 @@ The sample clock gives every client a common, drift-free **sample axis**, so two
 - **`/transport_end` stops the transport on a sample of its position** and locates it to `return`, in the engine and on that exact sample, which is how a take played without a loop stops where it ends. A loop set at the same time wins, and the stop is broadcast like any other.
 - **`/transport_locateSample` addresses that position in frames**, where `/transport_locate` addresses it in beats. Both spellings stay in step; which one to use is which one your samples are measured in — an editor's is frames, a sequencer's is beats, and converting between them on the client is how a rounding error gets into a seek.
 
-Every change is **pushed** to every `/server_notify` client as a `/transport_query.reply`, so a client with a responder on it re-aligns or rolls its playhead live — no polling. With no group bound the server stores, serves and broadcasts the transport but **schedules no audio from it** — it is shared control, not a sequencer, and each client rolls its own playhead on the shared grid. Binding a group with `/transport_group` is what changes that: the engine then freezes that subtree and the transport clock on a stop, and `transportSample` is the governed subtree's own time. See [`schemas.md`](schemas.md). The grid is in-memory (the sample counter resets on restart, so an origin only means anything within one run) and ownership is last-writer-wins.
+Every change is **pushed** to every `/server_notify` client as a `/transport_query.reply`, whose last field says which transport moved, so a client with a responder on it re-aligns or rolls its playhead live — no polling. With no group bound the server stores, serves and broadcasts the transport but **schedules no audio from it** — it is shared control, not a sequencer, and each client rolls its own playhead on the shared grid. Binding a group with `/transport_group` is what changes that: the engine then freezes that subtree and the transport clock on a stop, and `transportSample` is the governed subtree's own time. A group is governed by one transport at a time, and a node reads the position of the transport governing it — the nearest governed group above it — or transport 0's when none does. See [`schemas.md`](schemas.md). The grid is in-memory (the sample counter resets on restart, so an origin only means anything within one run) and ownership is last-writer-wins.
 
 ## Caveats
 

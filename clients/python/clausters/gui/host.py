@@ -624,8 +624,9 @@ class GuiHost:
         """
         self._send("/gui_metrics", json.dumps(dict(table)))
 
-    def head_clock(self, which: str):
-        """``/gui_headClock <which>`` -- which counter every playhead is drawn from.
+    def head_clock(self, which: str, transport: int = 0):
+        """``/gui_headClock <which> [transport]`` -- which counter every playhead
+        is drawn from; on ``"transport"``, which transport (0 unless named).
 
         ``"device"`` (the default) is the engine's sample clock, which never
         stops: what a host watching a live server wants, since its meters,
@@ -648,7 +649,10 @@ class GuiHost:
         `clausters.base.appclock.AppClock` -- and this names a counter, not a
         scheduler.
         """
-        self._send("/gui_headClock", str(which))
+        if which == "transport" and int(transport) != 0:
+            self._send("/gui_headClock", str(which), int(transport))
+        else:
+            self._send("/gui_headClock", str(which))
 
     def _stamp(self, node: dict, node_id: int, names: dict, controls: dict) -> dict:
         """A **copy** of ``node`` with a fresh id on every id-less descendant:

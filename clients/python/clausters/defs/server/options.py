@@ -53,7 +53,8 @@ class ServerOptions:
       this object agree by construction. Verify a running server with
       `Server.query_info`.
     - **Behavior** (``workers``, ``tcp``, ``ws``, ``midi``, ``persist``,
-      ``max_frame``, ``max_stream_buses``, ``max_clients``, ``pin``):
+      ``max_frame``, ``max_stream_buses``, ``max_clients``, ``transports``,
+      ``pin``):
       server-only, no client-side
       counterpart. Their default ``None`` emits **no flag**, leaving the
       server's own precedence intact (CLI flag > project config > user
@@ -134,6 +135,10 @@ class ServerOptions:
     max_stream_buses: "int | None" = None
     #: Concurrent stream clients, TCP + WebSocket (``--max-clients``).
     max_clients: "int | None" = None
+    #: Independent transports, each with its own play, pause, locate, loop
+    #: and governed group (``--transports``); the server boots 8 by default.
+    #: `ServerInfo.transports` reads back what it has.
+    transports: "int | None" = None
     #: The audio host/backend by name (``--host``): ``"jack"``, ``"alsa"``,
     #: ``"pipewire"``, ``"coreaudio"``, ``"wasapi"`` -- whatever the build
     #: has. ``None`` takes the platform's default.
@@ -208,6 +213,8 @@ class ServerOptions:
             flags += ["--max-stream-buses", str(self.max_stream_buses)]
         if self.max_clients is not None:
             flags += ["--max-clients", str(self.max_clients)]
+        if self.transports is not None:
+            flags += ["--transports", str(self.transports)]
         if self.pin is not None:
             cpus = self.pin if isinstance(self.pin, str) \
                 else ",".join(str(c) for c in self.pin)
@@ -255,6 +262,10 @@ class ServerInfo:
     #: client that draws a lot reads the number here instead of assuming one.
     #: Falls back to the historical 128 against a server too old to report it.
     max_stream_buses: int = 128
+    #: How many transports the server has (``--transports``), addressed
+    #: ``0`` to ``transports - 1`` (`Server.transport_at`). Falls back to the
+    #: one transport a server too old to report it had.
+    transports: int = 1
 
     def __str__(self) -> str:
         drift = ("" if self.actual_sample_rate == self.nominal_sample_rate
@@ -272,6 +283,7 @@ class ServerInfo:
             f"  taps    {taps}",
             f"  frame   {self.max_frame} bytes max",
             f"  stream  {self.max_stream_buses} buses per /bus_stream",
+            f"  transports {self.transports}",
         ])
 
 

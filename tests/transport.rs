@@ -156,13 +156,16 @@ fn run_blocks(engine: &mut clausters::server::engine::Engine, blocks: usize) {
 fn transport_clock_tracks_the_device_clock_while_rolling() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
     run_blocks(&mut engine, 10);
 
     let device = handle.current_samples();
-    let transport = handle.current_transport_samples();
+    let transport = handle.current_transport_samples(0);
     assert_eq!(device, (BLOCK_SIZE * 10) as u64);
     assert_eq!(transport, device, "rolling, the two advance together");
 }
@@ -171,20 +174,26 @@ fn transport_clock_tracks_the_device_clock_while_rolling() {
 fn transport_clock_freezes_while_stopped_and_the_device_clock_does_not() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
     run_blocks(&mut engine, 4);
-    let transport_at_stop = handle.current_transport_samples();
+    let transport_at_stop = handle.current_transport_samples(0);
 
     handle
-        .send(Cmd::TransportRun { rolling: false })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: false,
+        })
         .ok()
         .unwrap();
     run_blocks(&mut engine, 6);
 
     assert_eq!(
-        handle.current_transport_samples(),
+        handle.current_transport_samples(0),
         transport_at_stop,
         "stopped, the transport clock holds"
     );
@@ -199,30 +208,39 @@ fn transport_clock_freezes_while_stopped_and_the_device_clock_does_not() {
 fn resuming_continues_rather_than_restarting() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
     run_blocks(&mut engine, 4);
     handle
-        .send(Cmd::TransportRun { rolling: false })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: false,
+        })
         .ok()
         .unwrap();
     run_blocks(&mut engine, 6);
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
     run_blocks(&mut engine, 4);
 
     // 8 rolled blocks in total; the 6 frozen ones are not in the transport.
-    assert_eq!(handle.current_transport_samples(), (BLOCK_SIZE * 8) as u64);
+    assert_eq!(handle.current_transport_samples(0), (BLOCK_SIZE * 8) as u64);
 }
 
 #[test]
 fn a_transport_that_never_rolled_stays_at_zero() {
     let (mut engine, handle) = engine_pair(48_000.0, 2);
     run_blocks(&mut engine, 10);
-    assert_eq!(handle.current_transport_samples(), 0);
+    assert_eq!(handle.current_transport_samples(0), 0);
     assert_eq!(handle.current_samples(), (BLOCK_SIZE * 10) as u64);
 }
 
@@ -230,23 +248,29 @@ fn a_transport_that_never_rolled_stays_at_zero() {
 fn the_position_advances_with_the_transport_and_holds_when_it_stops() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
     run_blocks(&mut engine, 4);
     assert_eq!(
-        handle.current_transport_position(),
+        handle.current_transport_position(0),
         (BLOCK_SIZE * 4) as u64,
         "rolling from 0, the transport is where the transport clock is"
     );
 
     handle
-        .send(Cmd::TransportRun { rolling: false })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: false,
+        })
         .ok()
         .unwrap();
     run_blocks(&mut engine, 6);
     assert_eq!(
-        handle.current_transport_position(),
+        handle.current_transport_position(0),
         (BLOCK_SIZE * 4) as u64,
         "stopped, the transport stays where it was"
     );
@@ -258,21 +282,27 @@ fn the_position_advances_with_the_transport_and_holds_when_it_stops() {
 fn a_locate_moves_the_position_and_neither_clock() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
     run_blocks(&mut engine, 4);
     let device = handle.current_samples();
-    let transport = handle.current_transport_samples();
+    let transport = handle.current_transport_samples(0);
 
     handle
-        .send(Cmd::TransportLocate { position: 1_000 })
+        .send(Cmd::TransportLocate {
+            transport: 0,
+            position: 1_000,
+        })
         .ok()
         .unwrap();
     run_blocks(&mut engine, 1);
 
     assert_eq!(
-        handle.current_transport_position(),
+        handle.current_transport_position(0),
         1_000 + BLOCK_SIZE as u64,
         "located, then one block of playing from there"
     );
@@ -282,7 +312,7 @@ fn a_locate_moves_the_position_and_neither_clock() {
         "the device clock only counted the block"
     );
     assert_eq!(
-        handle.current_transport_samples(),
+        handle.current_transport_samples(0),
         transport + BLOCK_SIZE as u64,
         "and so did the transport clock: a locate is not a jump in time"
     );
@@ -293,19 +323,25 @@ fn a_locate_moves_the_position_and_neither_clock() {
 fn a_locate_while_stopped_holds_until_the_transport_rolls() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     handle
-        .send(Cmd::TransportLocate { position: 500 })
+        .send(Cmd::TransportLocate {
+            transport: 0,
+            position: 500,
+        })
         .ok()
         .unwrap();
     run_blocks(&mut engine, 3);
-    assert_eq!(handle.current_transport_position(), 500);
+    assert_eq!(handle.current_transport_position(0), 500);
 
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
     run_blocks(&mut engine, 2);
     assert_eq!(
-        handle.current_transport_position(),
+        handle.current_transport_position(0),
         500 + (BLOCK_SIZE * 2) as u64
     );
 }
@@ -318,16 +354,23 @@ fn the_position_wraps_inside_a_loop_to_the_sample() {
     // 100 samples, deliberately not a multiple of the 64-sample block.
     handle
         .send(Cmd::TransportLoop {
+            transport: 0,
             span: Some(10..110),
         })
         .ok()
         .unwrap();
     handle
-        .send(Cmd::TransportLocate { position: 10 })
+        .send(Cmd::TransportLocate {
+            transport: 0,
+            position: 10,
+        })
         .ok()
         .unwrap();
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
 
@@ -335,7 +378,7 @@ fn the_position_wraps_inside_a_loop_to_the_sample() {
     // 56 into the third pass.
     run_blocks(&mut engine, 4);
     assert_eq!(
-        handle.current_transport_position(),
+        handle.current_transport_position(0),
         10 + (256 % 100),
         "the transport is 256 samples into a 100-sample loop starting at 10"
     );
@@ -349,17 +392,23 @@ fn a_loop_of_one_block_returns_exactly_to_its_start() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     let len = BLOCK_SIZE as u64;
     handle
-        .send(Cmd::TransportLoop { span: Some(0..len) })
+        .send(Cmd::TransportLoop {
+            transport: 0,
+            span: Some(0..len),
+        })
         .ok()
         .unwrap();
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
     run_blocks(&mut engine, 1);
-    assert_eq!(handle.current_transport_position(), 0);
+    assert_eq!(handle.current_transport_position(0), 0);
     run_blocks(&mut engine, 1);
-    assert_eq!(handle.current_transport_position(), 0);
+    assert_eq!(handle.current_transport_position(0), 0);
 }
 
 /// An inverted or empty span is not a loop; taking it would make the wrap
@@ -369,17 +418,21 @@ fn an_empty_or_inverted_loop_is_not_a_loop() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     handle
         .send(Cmd::TransportLoop {
+            transport: 0,
             span: Some(100..100),
         })
         .ok()
         .unwrap();
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
     run_blocks(&mut engine, 2);
     assert_eq!(
-        handle.current_transport_position(),
+        handle.current_transport_position(0),
         (BLOCK_SIZE * 2) as u64,
         "the position ran on as if nothing had been set"
     );
@@ -391,19 +444,23 @@ fn an_empty_or_inverted_loop_is_not_a_loop() {
 fn setting_a_loop_does_not_relocate_the_transport() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
     run_blocks(&mut engine, 1);
     handle
         .send(Cmd::TransportLoop {
+            transport: 0,
             span: Some(0..1_000),
         })
         .ok()
         .unwrap();
     run_blocks(&mut engine, 1);
     assert_eq!(
-        handle.current_transport_position(),
+        handle.current_transport_position(0),
         (BLOCK_SIZE * 2) as u64,
         "still where it would have been"
     );
@@ -426,11 +483,17 @@ fn a_graph_reads_the_position_and_it_ramps_one_frame_per_sample() {
         .ok()
         .unwrap();
     handle
-        .send(Cmd::TransportLocate { position: 1_000 })
+        .send(Cmd::TransportLocate {
+            transport: 0,
+            position: 1_000,
+        })
         .ok()
         .unwrap();
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
 
@@ -467,7 +530,10 @@ fn a_stopped_transport_holds_the_position_a_graph_reads() {
         .ok()
         .unwrap();
     handle
-        .send(Cmd::TransportLocate { position: 7 })
+        .send(Cmd::TransportLocate {
+            transport: 0,
+            position: 7,
+        })
         .ok()
         .unwrap();
 
@@ -503,11 +569,17 @@ fn the_offset_input_reads_a_clip_from_its_own_first_frame() {
         .ok()
         .unwrap();
     handle
-        .send(Cmd::TransportLocate { position: 5_000 })
+        .send(Cmd::TransportLocate {
+            transport: 0,
+            position: 5_000,
+        })
         .ok()
         .unwrap();
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
 
@@ -538,11 +610,17 @@ fn a_graph_sees_the_loop_wrap_on_its_exact_sample() {
         .unwrap();
     // A 10-sample loop, so the wrap falls well inside the first block.
     handle
-        .send(Cmd::TransportLoop { span: Some(0..10) })
+        .send(Cmd::TransportLoop {
+            transport: 0,
+            span: Some(0..10),
+        })
         .ok()
         .unwrap();
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
 
@@ -577,6 +655,7 @@ fn the_transport_stops_on_its_end_mark_and_goes_back() {
     // Not block-aligned: the stop falls inside the second block.
     handle
         .send(Cmd::TransportEnd {
+            transport: 0,
             mark: Some(EndMark {
                 end: 100,
                 back: Some(10),
@@ -585,7 +664,10 @@ fn the_transport_stops_on_its_end_mark_and_goes_back() {
         .ok()
         .unwrap();
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
 
@@ -596,11 +678,11 @@ fn the_transport_stops_on_its_end_mark_and_goes_back() {
         .map(|i| if i < 100 { i as f32 } else { 10.0 })
         .collect();
     assert_eq!(seen, expected, "up to the mark, then on the return");
-    assert_eq!(handle.current_transport_samples(), 100, "stopped on it");
-    assert_eq!(handle.current_transport_position(), 10);
+    assert_eq!(handle.current_transport_samples(0), 100, "stopped on it");
+    assert_eq!(handle.current_transport_position(0), 10);
     let mut told = false;
     while let Some(g) = handle.pop_garbage() {
-        told |= matches!(g, Garbage::TransportEnded);
+        told |= matches!(g, Garbage::TransportEnded { .. });
     }
     assert!(told, "and the network side is told the pass is over");
 }
@@ -612,11 +694,15 @@ fn a_loop_wins_over_the_end_mark() {
 
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     handle
-        .send(Cmd::TransportLoop { span: Some(0..50) })
+        .send(Cmd::TransportLoop {
+            transport: 0,
+            span: Some(0..50),
+        })
         .ok()
         .unwrap();
     handle
         .send(Cmd::TransportEnd {
+            transport: 0,
             mark: Some(EndMark {
                 end: 30,
                 back: None,
@@ -625,12 +711,15 @@ fn a_loop_wins_over_the_end_mark() {
         .ok()
         .unwrap();
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
     run_blocks(&mut engine, 4);
     assert_eq!(
-        handle.current_transport_samples(),
+        handle.current_transport_samples(0),
         4 * BLOCK_SIZE as u64,
         "it never stopped"
     );
@@ -646,30 +735,46 @@ fn a_play_from_past_the_mark_stops_at_once_and_a_cleared_mark_rolls() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     handle
         .send(Cmd::TransportEnd {
+            transport: 0,
             mark: Some(EndMark { end: 5, back: None }),
         })
         .ok()
         .unwrap();
     handle
-        .send(Cmd::TransportLocate { position: 20 })
+        .send(Cmd::TransportLocate {
+            transport: 0,
+            position: 20,
+        })
         .ok()
         .unwrap();
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
     run_blocks(&mut engine, 2);
-    assert_eq!(handle.current_transport_samples(), 0, "no sample rolled");
-    assert_eq!(handle.current_transport_position(), 20);
+    assert_eq!(handle.current_transport_samples(0), 0, "no sample rolled");
+    assert_eq!(handle.current_transport_position(0), 20);
 
-    handle.send(Cmd::TransportEnd { mark: None }).ok().unwrap();
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportEnd {
+            transport: 0,
+            mark: None,
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
     run_blocks(&mut engine, 2);
     assert_eq!(
-        handle.current_transport_position(),
+        handle.current_transport_position(0),
         20 + 2 * BLOCK_SIZE as u64
     );
 }
@@ -689,7 +794,10 @@ fn frozen_time_is_counted_to_the_sample_not_to_the_block() {
 
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
 
@@ -702,14 +810,20 @@ fn frozen_time_is_counted_to_the_sample_not_to_the_block() {
         handle
             .send(Cmd::Schedule {
                 time: stop,
-                cmds: vec![Cmd::TransportRun { rolling: false }],
+                cmds: vec![Cmd::TransportRun {
+                    transport: 0,
+                    rolling: false,
+                }],
             })
             .ok()
             .unwrap();
         handle
             .send(Cmd::Schedule {
                 time: resume,
-                cmds: vec![Cmd::TransportRun { rolling: true }],
+                cmds: vec![Cmd::TransportRun {
+                    transport: 0,
+                    rolling: true,
+                }],
             })
             .ok()
             .unwrap();
@@ -719,7 +833,7 @@ fn frozen_time_is_counted_to_the_sample_not_to_the_block() {
 
     assert_eq!(handle.current_samples(), BLOCKS * block);
     assert_eq!(
-        handle.current_transport_samples(),
+        handle.current_transport_samples(0),
         BLOCKS * block - frozen,
         "the transport clock counts exactly the samples it rolled"
     );
@@ -734,9 +848,18 @@ fn stopping_freezes_the_governed_subtree_and_leaves_the_rest_alone() {
     // constant to its own audio bus (bus 0 governed, bus 1 live).
     add_constant_synth_in_new_group(&mut handle, 100, 0, 0.5);
     add_constant_synth_in_new_group(&mut handle, 200, 1, 0.25);
-    handle.send(Cmd::TransportGroup { id: 100 }).ok().unwrap();
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportGroup {
+            transport: 0,
+            id: 100,
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
 
@@ -749,7 +872,10 @@ fn stopping_freezes_the_governed_subtree_and_leaves_the_rest_alone() {
     assert!((out[1] - 0.25).abs() < 1e-6, "live synth sounds");
 
     handle
-        .send(Cmd::TransportRun { rolling: false })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: false,
+        })
         .ok()
         .unwrap();
     engine.process_block(&mut out);
@@ -757,7 +883,10 @@ fn stopping_freezes_the_governed_subtree_and_leaves_the_rest_alone() {
     assert!((out[1] - 0.25).abs() < 1e-6, "the live synth is untouched");
 
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
     engine.process_block(&mut out);
@@ -769,13 +898,25 @@ fn stopping_freezes_the_governed_subtree_and_leaves_the_rest_alone() {
 fn unbinding_while_stopped_unfreezes_the_group() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     add_constant_synth_in_new_group(&mut handle, 100, 0, 0.5);
-    handle.send(Cmd::TransportGroup { id: 100 }).ok().unwrap();
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportGroup {
+            transport: 0,
+            id: 100,
+        })
         .ok()
         .unwrap();
     handle
-        .send(Cmd::TransportRun { rolling: false })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: false,
+        })
         .ok()
         .unwrap();
 
@@ -784,7 +925,13 @@ fn unbinding_while_stopped_unfreezes_the_group() {
     assert_eq!(out[0], 0.0);
 
     // Unbinding must not leave a frozen ownerless subtree behind.
-    handle.send(Cmd::TransportGroup { id: -1 }).ok().unwrap();
+    handle
+        .send(Cmd::TransportGroup {
+            transport: 0,
+            id: -1,
+        })
+        .ok()
+        .unwrap();
     engine.process_block(&mut out);
     assert!(
         (out[0] - 0.5).abs() < 1e-6,
@@ -800,7 +947,13 @@ fn binding_while_already_stopped_freezes_immediately() {
 
     // No TransportRun at all: the transport is stopped from the start, and
     // binding must freeze the group right away, before it ever rolls.
-    handle.send(Cmd::TransportGroup { id: 100 }).ok().unwrap();
+    handle
+        .send(Cmd::TransportGroup {
+            transport: 0,
+            id: 100,
+        })
+        .ok()
+        .unwrap();
 
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];
     engine.process_block(&mut out);
@@ -817,9 +970,18 @@ fn rebinding_thaws_the_previous_group_before_taking_the_new_one() {
     add_constant_synth_in_new_group(&mut handle, 100, 0, 0.5);
     add_constant_synth_in_new_group(&mut handle, 200, 1, 0.25);
 
-    handle.send(Cmd::TransportGroup { id: 100 }).ok().unwrap();
     handle
-        .send(Cmd::TransportRun { rolling: false })
+        .send(Cmd::TransportGroup {
+            transport: 0,
+            id: 100,
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: false,
+        })
         .ok()
         .unwrap();
 
@@ -832,7 +994,13 @@ fn rebinding_thaws_the_previous_group_before_taking_the_new_one() {
     );
 
     // Rebind to group 200: this must thaw 100 before governing 200.
-    handle.send(Cmd::TransportGroup { id: 200 }).ok().unwrap();
+    handle
+        .send(Cmd::TransportGroup {
+            transport: 0,
+            id: 200,
+        })
+        .ok()
+        .unwrap();
     engine.process_block(&mut out);
     assert!(
         (out[0] - 0.5).abs() < 1e-6,
@@ -846,9 +1014,18 @@ fn rebinding_thaws_the_previous_group_before_taking_the_new_one() {
 fn a_bundle_to_a_governed_node_waits_out_the_pause() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     add_constant_synth_in_new_group(&mut handle, 100, 0, 0.0);
-    handle.send(Cmd::TransportGroup { id: 100 }).ok().unwrap();
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportGroup {
+            transport: 0,
+            id: 100,
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
 
@@ -868,14 +1045,20 @@ fn a_bundle_to_a_governed_node_waits_out_the_pause() {
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];
     engine.process_block(&mut out); // block 0
     handle
-        .send(Cmd::TransportRun { rolling: false })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: false,
+        })
         .ok()
         .unwrap();
     for _ in 0..5 {
         engine.process_block(&mut out); // 5 frozen blocks
     }
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
     engine.process_block(&mut out); // block 1 of the transport
@@ -893,9 +1076,18 @@ fn a_bundle_to_a_live_node_fires_during_the_pause() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     add_constant_synth_in_new_group(&mut handle, 100, 0, 0.0);
     add_constant_synth_in_new_group(&mut handle, 200, 1, 0.0);
-    handle.send(Cmd::TransportGroup { id: 100 }).ok().unwrap();
     handle
-        .send(Cmd::TransportRun { rolling: false })
+        .send(Cmd::TransportGroup {
+            transport: 0,
+            id: 100,
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: false,
+        })
         .ok()
         .unwrap();
 
@@ -931,9 +1123,18 @@ fn moving_a_live_node_into_the_governed_group_waits_out_the_pause() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     add_constant_synth_in_new_group(&mut handle, 100, 0, 0.0);
     add_constant_synth_in_new_group(&mut handle, 200, 1, 0.25);
-    handle.send(Cmd::TransportGroup { id: 100 }).ok().unwrap();
     handle
-        .send(Cmd::TransportRun { rolling: false })
+        .send(Cmd::TransportGroup {
+            transport: 0,
+            id: 100,
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: false,
+        })
         .ok()
         .unwrap();
 
@@ -960,7 +1161,10 @@ fn moving_a_live_node_into_the_governed_group_waits_out_the_pause() {
     );
 
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
     for _ in 0..4 {
@@ -975,7 +1179,10 @@ fn moving_a_live_node_into_the_governed_group_waits_out_the_pause() {
     // must silence it. That is what proves the move happened at all -- a move
     // does not change which bus a synth writes, only who governs it.
     handle
-        .send(Cmd::TransportRun { rolling: false })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: false,
+        })
         .ok()
         .unwrap();
     engine.process_block(&mut out);
@@ -988,9 +1195,18 @@ fn a_mixed_bundle_goes_whole_to_the_transport_queue() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     add_constant_synth_in_new_group(&mut handle, 100, 0, 0.0);
     add_constant_synth_in_new_group(&mut handle, 200, 1, 0.0);
-    handle.send(Cmd::TransportGroup { id: 100 }).ok().unwrap();
     handle
-        .send(Cmd::TransportRun { rolling: false })
+        .send(Cmd::TransportGroup {
+            transport: 0,
+            id: 100,
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: false,
+        })
         .ok()
         .unwrap();
 
@@ -1021,7 +1237,10 @@ fn a_mixed_bundle_goes_whole_to_the_transport_queue() {
     assert_eq!(out[1], 0.0, "the live half waits with the governed half");
 
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
     for _ in 0..2 {
@@ -1058,7 +1277,7 @@ fn an_ungoverned_server_never_enters_the_two_queue_path() {
     }
     assert!((out[1] - 0.25).abs() < 1e-6);
     assert!(
-        engine.transport_queue_is_empty(),
+        engine.transport_queue_is_empty(0),
         "nothing was ever governed"
     );
 }
@@ -1079,22 +1298,28 @@ fn the_segment_publishes_the_transport_clock() {
         Limits::default(),
     );
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
     run_blocks(&mut engine, 4);
     assert_eq!(
-        segment.transport_clock().load(Ordering::Acquire),
+        segment.transport_clock(0).unwrap().load(Ordering::Acquire),
         (BLOCK_SIZE * 4) as u64
     );
 
     handle
-        .send(Cmd::TransportRun { rolling: false })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: false,
+        })
         .ok()
         .unwrap();
     run_blocks(&mut engine, 4);
     assert_eq!(
-        segment.transport_clock().load(Ordering::Acquire),
+        segment.transport_clock(0).unwrap().load(Ordering::Acquire),
         (BLOCK_SIZE * 4) as u64,
         "the transport clock holds while the device clock runs on"
     );
@@ -1119,22 +1344,31 @@ fn the_segment_publishes_the_position_a_locate_moved() {
         Limits::default(),
     );
     handle
-        .send(Cmd::TransportLocate { position: 9_000 })
+        .send(Cmd::TransportLocate {
+            transport: 0,
+            position: 9_000,
+        })
         .ok()
         .unwrap();
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
     run_blocks(&mut engine, 2);
 
     assert_eq!(
-        segment.transport_position().load(Ordering::Acquire),
+        segment
+            .transport_position(0)
+            .unwrap()
+            .load(Ordering::Acquire),
         9_000 + (BLOCK_SIZE * 2) as u64,
         "the transport is where it was located, plus what has played since"
     );
     assert_eq!(
-        segment.transport_clock().load(Ordering::Acquire),
+        segment.transport_clock(0).unwrap().load(Ordering::Acquire),
         (BLOCK_SIZE * 2) as u64,
         "the clock beside it counted only the samples that elapsed"
     );
@@ -1148,9 +1382,18 @@ fn the_segment_publishes_the_position_a_locate_moved() {
 fn render_take(blocks: usize, pause: Option<(u64, u64)>) -> Vec<f32> {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     add_noise_synth_in_new_group(&mut handle, 100, 0);
-    handle.send(Cmd::TransportGroup { id: 100 }).ok().unwrap();
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportGroup {
+            transport: 0,
+            id: 100,
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
 
@@ -1173,14 +1416,20 @@ fn render_take(blocks: usize, pause: Option<(u64, u64)>) -> Vec<f32> {
         handle
             .send(Cmd::Schedule {
                 time: start,
-                cmds: vec![Cmd::TransportRun { rolling: false }],
+                cmds: vec![Cmd::TransportRun {
+                    transport: 0,
+                    rolling: false,
+                }],
             })
             .ok()
             .unwrap();
         handle
             .send(Cmd::Schedule {
                 time: end,
-                cmds: vec![Cmd::TransportRun { rolling: true }],
+                cmds: vec![Cmd::TransportRun {
+                    transport: 0,
+                    rolling: true,
+                }],
             })
             .ok()
             .unwrap();
@@ -1285,9 +1534,18 @@ fn a_frozen_subtree_silences_its_audio_bus_and_holds_its_control_bus() {
         })
         .ok()
         .unwrap();
-    handle.send(Cmd::TransportGroup { id: 100 }).ok().unwrap();
     handle
-        .send(Cmd::TransportRun { rolling: true })
+        .send(Cmd::TransportGroup {
+            transport: 0,
+            id: 100,
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: true,
+        })
         .ok()
         .unwrap();
 
@@ -1303,7 +1561,10 @@ fn a_frozen_subtree_silences_its_audio_bus_and_holds_its_control_bus() {
     );
 
     handle
-        .send(Cmd::TransportRun { rolling: false })
+        .send(Cmd::TransportRun {
+            transport: 0,
+            rolling: false,
+        })
         .ok()
         .unwrap();
     engine.process_block(&mut out);
@@ -1316,4 +1577,346 @@ fn a_frozen_subtree_silences_its_audio_bus_and_holds_its_control_bus() {
         (handle.control_buses().get(3) - 0.5).abs() < 1e-6,
         "a control bus is a value: it holds, so no mapped parameter jumps to 0"
     );
+}
+
+// ---- several transports ----
+
+/// Rolls or stops transport `transport`.
+fn run(handle: &mut clausters::server::engine::EngineHandle, transport: usize, rolling: bool) {
+    handle
+        .send(Cmd::TransportRun { transport, rolling })
+        .ok()
+        .unwrap();
+}
+
+/// Two transports on one engine keep two clocks and two positions: rolling,
+/// stopping and locating one moves nothing about the other.
+#[test]
+fn two_transports_roll_stop_and_locate_independently() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    assert_eq!(engine.transports(), clausters::dsp::DEFAULT_TRANSPORTS);
+    run(&mut handle, 0, true);
+    run_blocks(&mut engine, 3);
+    assert_eq!(handle.current_transport_samples(0), (BLOCK_SIZE * 3) as u64);
+    assert_eq!(
+        handle.current_transport_samples(1),
+        0,
+        "transport 1 never rolled"
+    );
+
+    handle
+        .send(Cmd::TransportLocate {
+            transport: 1,
+            position: 5_000,
+        })
+        .ok()
+        .unwrap();
+    run(&mut handle, 1, true);
+    run(&mut handle, 0, false);
+    run_blocks(&mut engine, 2);
+    assert_eq!(
+        handle.current_transport_position(1),
+        5_000 + (BLOCK_SIZE * 2) as u64,
+        "transport 1 rolls from where it was located"
+    );
+    assert_eq!(
+        handle.current_transport_position(0),
+        (BLOCK_SIZE * 3) as u64,
+        "transport 0 holds where it stopped, and the locate did not reach it"
+    );
+    assert_eq!(handle.current_frozen_total(0), (BLOCK_SIZE * 2) as u64);
+    assert_eq!(
+        handle.current_frozen_total(1),
+        (BLOCK_SIZE * 3) as u64,
+        "each counts only the time it spent stopped"
+    );
+}
+
+/// A stop scheduled inside a block freezes its own transport on that sample
+/// and leaves the other rolling through it.
+#[test]
+fn a_stop_mid_block_freezes_its_own_transport_to_the_sample() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    run(&mut handle, 0, true);
+    run(&mut handle, 1, true);
+    handle
+        .send(Cmd::Schedule {
+            time: 10,
+            cmds: vec![Cmd::TransportRun {
+                transport: 1,
+                rolling: false,
+            }],
+        })
+        .ok()
+        .unwrap();
+    run_blocks(&mut engine, 2);
+    assert_eq!(handle.current_transport_samples(0), (BLOCK_SIZE * 2) as u64);
+    assert_eq!(
+        handle.current_transport_samples(1),
+        10,
+        "transport 1 stopped on sample 10"
+    );
+}
+
+/// Each transport wraps inside its own loop, on its own sample.
+#[test]
+fn each_transport_wraps_inside_its_own_loop() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    for (transport, end) in [(0, 100u64), (1, 150)] {
+        handle
+            .send(Cmd::TransportLoop {
+                transport,
+                span: Some(0..end),
+            })
+            .ok()
+            .unwrap();
+        run(&mut handle, transport, true);
+    }
+    run_blocks(&mut engine, 4);
+    let played = (BLOCK_SIZE * 4) as u64;
+    assert_eq!(handle.current_transport_position(0), played % 100);
+    assert_eq!(handle.current_transport_position(1), played % 150);
+}
+
+/// A command naming a transport the engine does not have is dropped, and
+/// touches none of the ones it has.
+#[test]
+fn a_transport_past_the_table_is_ignored() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let past = engine.transports();
+    run(&mut handle, past, true);
+    handle
+        .send(Cmd::TransportLocate {
+            transport: past,
+            position: 99,
+        })
+        .ok()
+        .unwrap();
+    run_blocks(&mut engine, 1);
+    for transport in 0..past {
+        assert_eq!(handle.current_transport_samples(transport), 0);
+        assert_eq!(handle.current_transport_position(transport), 0);
+    }
+}
+
+/// The segment publishes every transport, and says how many there are.
+#[test]
+fn the_segment_publishes_each_transport() {
+    let segment = Segment::in_memory();
+    let limits = Limits {
+        transports: 3,
+        ..Limits::default()
+    };
+    let (mut engine, mut handle) = engine_pair_full(
+        48_000.0,
+        2,
+        0,
+        Some(SegArc::clone(&segment)),
+        NUM_AUDIO_BUSES,
+        NUM_CONTROL_BUSES,
+        limits,
+    );
+    assert_eq!(segment.transports(), 3);
+    handle
+        .send(Cmd::TransportLocate {
+            transport: 2,
+            position: 700,
+        })
+        .ok()
+        .unwrap();
+    run(&mut handle, 2, true);
+    run_blocks(&mut engine, 2);
+    let at = |i: usize| {
+        (
+            segment.transport_clock(i).unwrap().load(Ordering::Acquire),
+            segment
+                .transport_position(i)
+                .unwrap()
+                .load(Ordering::Acquire),
+        )
+    };
+    assert_eq!(at(0), (0, 0));
+    assert_eq!(at(1), (0, 0));
+    assert_eq!(
+        at(2),
+        ((BLOCK_SIZE * 2) as u64, 700 + (BLOCK_SIZE * 2) as u64)
+    );
+}
+
+/// A synth writing its transport's position to `bus`: what shows which
+/// transport a node reads.
+#[cfg(feature = "synth")]
+fn position_def_to(bus: i32) -> Arc<SynthDef> {
+    let json = format!(
+        r#"{{
+            "name": "position",
+            "controls": [{{"name": "offset", "default": 0.0}}],
+            "ugens": [
+                {{"kind": "TransportPos", "inputs": [{{"control": 0}}]}},
+                {{"kind": "ReplaceOut", "inputs": [{{"const": {bus}.0}}, {{"ugen": 0}}]}}
+            ]
+        }}"#
+    );
+    let spec: SynthDefSpec = serde_json::from_str(&json).unwrap();
+    Arc::new(compile(spec).unwrap())
+}
+
+/// A group under the root holding one position synth writing to `bus`.
+#[cfg(feature = "synth")]
+fn add_position_synth_in_new_group(handle: &mut EngineHandle, group_id: i32, bus: i32) {
+    handle
+        .send(Cmd::AddGroup {
+            id: group_id,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            group: Group::with_capacity(MAX_GROUP_CHILDREN),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::AddSynth {
+            id: group_id + 1,
+            target: group_id,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(position_def_to(bus), 48_000.0, SEED_STRIDE)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+}
+
+/// A node reads the transport governing it, and a node governed by none reads
+/// transport 0 -- the one a server has always had. Stopping one transport
+/// freezes its own group only.
+#[cfg(feature = "synth")]
+#[test]
+fn a_node_reads_the_transport_that_governs_it() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 4);
+    add_position_synth_in_new_group(&mut handle, 100, 0);
+    add_position_synth_in_new_group(&mut handle, 200, 1);
+    add_position_synth_in_new_group(&mut handle, 300, 2);
+    for (transport, group, position) in [(0, 100, 1_000u64), (1, 200, 5_000)] {
+        handle
+            .send(Cmd::TransportGroup {
+                transport,
+                id: group,
+            })
+            .ok()
+            .unwrap();
+        handle
+            .send(Cmd::TransportLocate {
+                transport,
+                position,
+            })
+            .ok()
+            .unwrap();
+        run(&mut handle, transport, true);
+    }
+    let mut out = vec![0.0f32; BLOCK_SIZE * 4];
+    engine.process_block(&mut out);
+    let bus =
+        |out: &[f32], b: usize| -> Vec<f32> { out.iter().skip(b).step_by(4).copied().collect() };
+    let ramp = |from: usize| -> Vec<f32> { (0..BLOCK_SIZE).map(|i| (from + i) as f32).collect() };
+    assert_eq!(bus(&out, 0), ramp(1_000), "group 100 reads transport 0");
+    assert_eq!(bus(&out, 1), ramp(5_000), "group 200 reads transport 1");
+    assert_eq!(
+        bus(&out, 2),
+        ramp(1_000),
+        "an ungoverned group reads transport 0"
+    );
+
+    run(&mut handle, 1, false);
+    engine.process_block(&mut out);
+    assert_eq!(
+        bus(&out, 0),
+        ramp(1_000 + BLOCK_SIZE),
+        "transport 0 rolls on"
+    );
+    assert!(
+        bus(&out, 1).iter().all(|s| *s == 0.0),
+        "transport 1's group is frozen"
+    );
+}
+
+/// A timed bundle waits on the queue of the transport governing its target,
+/// and only that one: stopping transport 1 holds its bundle and leaves one
+/// aimed at transport 0's group to fire.
+#[cfg(feature = "synth")]
+#[test]
+fn a_bundle_waits_on_the_transport_that_governs_its_target() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    add_constant_synth_in_new_group(&mut handle, 100, 0, 0.0);
+    add_constant_synth_in_new_group(&mut handle, 200, 1, 0.0);
+    for (transport, group) in [(0, 100), (1, 200)] {
+        handle
+            .send(Cmd::TransportGroup {
+                transport,
+                id: group,
+            })
+            .ok()
+            .unwrap();
+        run(&mut handle, transport, true);
+    }
+    for id in [101, 201] {
+        handle
+            .send(Cmd::Schedule {
+                time: (BLOCK_SIZE * 2) as u64,
+                cmds: vec![Cmd::SetControl {
+                    id,
+                    index: 0,
+                    value: 0.5,
+                }],
+            })
+            .ok()
+            .unwrap();
+    }
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    engine.process_block(&mut out);
+    assert!(!engine.transport_queue_is_empty(0));
+    assert!(!engine.transport_queue_is_empty(1));
+    run(&mut handle, 1, false);
+    for _ in 0..3 {
+        engine.process_block(&mut out);
+    }
+    assert!((out[0] - 0.5).abs() < 1e-6, "transport 0's bundle fired");
+    assert!(
+        !engine.transport_queue_is_empty(1),
+        "transport 1's waits out its pause"
+    );
+    run(&mut handle, 1, true);
+    engine.process_block(&mut out);
+    engine.process_block(&mut out);
+    assert!((out[1] - 0.5).abs() < 1e-6, "and fires on its own clock");
+}
+
+/// Binding a group to a transport takes it away from nothing else and tags
+/// only it: rebinding transport 1 to another group thaws the first.
+#[cfg(feature = "synth")]
+#[test]
+fn rebinding_one_transport_leaves_the_other_bound() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    add_constant_synth_in_new_group(&mut handle, 100, 0, 0.5);
+    add_constant_synth_in_new_group(&mut handle, 200, 1, 0.25);
+    for (transport, group) in [(0, 100), (1, 200)] {
+        handle
+            .send(Cmd::TransportGroup {
+                transport,
+                id: group,
+            })
+            .ok()
+            .unwrap();
+    }
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    engine.process_block(&mut out);
+    assert_eq!((out[0], out[1]), (0.0, 0.0), "both stopped, both frozen");
+    handle
+        .send(Cmd::TransportGroup {
+            transport: 1,
+            id: -1,
+        })
+        .ok()
+        .unwrap();
+    engine.process_block(&mut out);
+    assert_eq!(out[0], 0.0, "transport 0 still holds its group");
+    assert!((out[1] - 0.25).abs() < 1e-6, "unbinding thawed group 200");
 }

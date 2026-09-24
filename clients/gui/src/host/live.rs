@@ -445,13 +445,13 @@ pub(crate) fn demand<'a>(
 #[derive(Default)]
 pub struct StreamedBuses {
     values: Mutex<HashMap<usize, f32>>,
-    /// The two counters a playhead can be drawn from, polled rather than
-    /// mapped: the device clock from `/clock_query.reply` and the multitrack's
-    /// position from `/transport_query.reply`. They live **here** and not on
-    /// the front so that the browser answers
+    /// The counters a playhead can be drawn from, polled rather than mapped:
+    /// the device clock from `/clock_query.reply` and each transport's
+    /// position from `/transport_query.reply`, keyed by transport. They live
+    /// **here** and not on the front so that the browser answers
     /// [`BusSource::sample_clock`]/[`BusSource::transport_position`] the way
     /// the segment does, and the choice between them is made once, on the host.
-    clocks: Mutex<(f64, f64)>,
+    clocks: Mutex<(f64, HashMap<usize, f64>)>,
 }
 
 impl StreamedBuses {
@@ -465,10 +465,10 @@ impl StreamedBuses {
         self.clocks.lock().unwrap().0 = samples;
     }
 
-    /// Stores the newest transport position in the multitrack
+    /// Stores transport `transport`'s newest position
     /// (`/transport_query.reply`).
-    pub fn set_position(&self, samples: f64) {
-        self.clocks.lock().unwrap().1 = samples;
+    pub fn set_position(&self, transport: usize, samples: f64) {
+        self.clocks.lock().unwrap().1.insert(transport, samples);
     }
 }
 
@@ -486,8 +486,14 @@ impl BusSource for StreamedBuses {
         self.clocks.lock().unwrap().0
     }
 
-    fn transport_position(&self) -> f64 {
-        self.clocks.lock().unwrap().1
+    fn transport_position(&self, transport: usize) -> f64 {
+        self.clocks
+            .lock()
+            .unwrap()
+            .1
+            .get(&transport)
+            .copied()
+            .unwrap_or(0.0)
     }
 }
 
@@ -555,8 +561,8 @@ impl BusSource for StreamedSource {
         self.buses.sample_clock()
     }
 
-    fn transport_position(&self) -> f64 {
-        self.buses.transport_position()
+    fn transport_position(&self, transport: usize) -> f64 {
+        self.buses.transport_position(transport)
     }
 
     fn read_bus(&self, bus: i32, out: &mut [f32]) -> bool {

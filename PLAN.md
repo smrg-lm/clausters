@@ -435,9 +435,9 @@ Cargo feature: every build has both clocks and both queues.
   `docs/schemas.md`, `docs/sample-clock.md` and both clients' builders in the
   same pass.
 
-- ⬜ **T6 — Several transports on one server** *(made a milestone and taken
-  first by the user, 2026-09-23; it was a future direction since 2026-09-17,
-  left for when there was a case that needed it)*. The case: the audio editor gets nodes of
+- ✅ **T6 — Several transports on one server** *(done 2026-09-24; made a
+  milestone and taken first by the user, 2026-09-23; it was a future direction
+  since 2026-09-17, left for when there was a case that needed it)*. The case: the audio editor gets nodes of
   its own on the server (`crates/clausters-apps/PLAN.md`, `X7`), with its own
   play, pause and locate, and a multitrack on the same server has its own.
   `/transport_group` binds one group and the server has one transport -- one
@@ -474,6 +474,37 @@ Cargo feature: every build has both clocks and both queues.
   audio editor's output (`X7`, and the document plan's "The master freezes
   with the transport") -- sits under a parent group beside it, and is not a
   question for T6.
+
+  **Decided and shipped** *(2026-09-24)*. **The id is the first argument of
+  every transport command, always** (the user, 2026-09-24): a leading
+  *optional* id does not parse, because the server takes an `int32` where it
+  wants a sample and `/transport_end 5` would be a mark or transport 5's mark
+  cleared -- so the compatibility clause above, a command naming no transport
+  meaning 0, was dropped, and every client was moved in the same pass. The
+  reply grows the id, appended; `/sched_atTransport` and `/sched_clear
+  "transport"` take it too, and `/server_query.reply` appends the count.
+  **8 by default**, at most 64 (`--transports`, `[server] transports`). The
+  engine holds a table of `TransportState` and cuts the block by the union of
+  every transport's queue and edges; binding a group tags its slot, and the
+  walk hands a tagged subtree its own `TransportCtx` -- a node reads the
+  transport governing its nearest governed group, and transport 0 under none,
+  so no def names a transport. A group is governed by one transport at a
+  time. The segment's two counters became a 64-row transport table after the
+  header (ABI 12, core ABI 69). The clients: a `Server`'s methods address
+  transport 0, and `server.transport_at(n)` / `transportAt(n)` is the server
+  through transport `n`, which a `Timeline` takes as its `transport`
+  unchanged -- the shape `timeline.transport = server` was named for, spelled
+  `transport_at` because `transport()` is already the grid's query. The host's
+  `/gui_headClock "transport"` takes an optional id after the word, which
+  parses because the word comes first. The multitrack and the host's monitor
+  stay on transport 0. `docs/decisions.md` has the reasoning;
+  `examples/transports.py` is the manual test, two takes one per side, each on
+  its own transport.
+
+  **What it left open.** The head clock is one per host
+  (`clients/gui/PLAN.md`, Found by use), and a node outside every governed
+  group reads transport 0, which is not what `X7`'s output wants
+  (`crates/clausters-apps/PLAN.md`, `X7`, Open).
 
   **Acceptance:** two transports on one server play, pause, locate and loop
   independently, each frozen and thawed at its own sample; a node reads its

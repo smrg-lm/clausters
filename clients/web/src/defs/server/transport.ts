@@ -6,6 +6,13 @@
 // that subtree, so a stop is a real pause of the sound the server is generating
 // rather than a convention the clients observe.
 //
+// A server has several transports (its `--transports`), each independent -- its
+// own grid, rolling state, position, loop, end mark and governed group. The
+// methods here address transport 0 on a `Server`; `transportAt` answers the
+// same server addressed through another one, so anything written against a
+// server's transport -- a `Timeline`, a playback -- plays on whichever it is
+// handed.
+//
 // A mixin, composed into `Server` beside `ServerQueries` and `ServerStreams`,
 // so no attribute path moves.
 
@@ -75,20 +82,73 @@ export interface TransportState {
      * position rests on the mark -- or `null` when none is set.
      */
     end: [number, number | null] | null;
+    /** Which transport this is: the handle's `transportId`. */
+    transport: number;
 }
+
+/** A reply matcher: whether a `/transport_query.reply` is about `transport`. */
+function isTransport(transport: number) {
+    return (args: readonly unknown[]): boolean =>
+        args.length > 12 && Number(args[12]) === transport;
+}
+
+/** Where a view keeps the server it addresses. */
+const VIEWED = Symbol("viewed server");
 
 /** The shared transport grid. Composed into `Server`; never used alone. */
 export class ServerTransport {
+    /**
+     * The transport this handle addresses: 0 on a `Server`, the one it was
+     * made for on what `transportAt` answers.
+     */
+    get transportId(): number {
+        return 0;
+    }
+
+    /**
+     * This server, addressed through transport `transport`.
+     *
+     * Every transport method on what it answers -- `transportPlay`,
+     * `transportState`, `transportGroup`, `schedAtTransport`, a
+     * `schedClear("transport")` -- names that transport, and everything else
+     * is this server's own, so it goes wherever a server is taken as a
+     * transport: `timeline.transport = server.transportAt(1)`. Transport 0 is
+     * the server itself. An id past the server's `--transports` fails when a
+     * command is sent, not here.
+     */
+    transportAt(this: Server, transport: number): Server {
+        const server = ((this as unknown as Record<symbol, Server>)[VIEWED] ?? this) as Server;
+        const id = Math.trunc(transport);
+        if (id === 0) return server;
+        return new Proxy(server, {
+            get(target, prop, receiver) {
+                if (prop === "transportId") return id;
+                if (prop === VIEWED) return target;
+                return Reflect.get(target, prop, receiver);
+            },
+        });
+    }
+
+    /** `/transport_query` for this handle's transport, answered by the reply about it. */
+    async queryTransport(this: Server, timeout?: number) {
+        const msg = await this.request("/transport_query", [["i", this.transportId]], {
+            expect: ["/transport_query.reply", "/fail"],
+            match: isTransport(this.transportId),
+            timeout,
+        });
+        if (msg.addr === "/fail") {
+            throw new CommandError(`/transport_query failed: ${msg.args.join(" ")}`);
+        }
+        return msg;
+    }
+
     /**
      * The server's shared transport grid (`/transport_query`), or `null` if
      * none is set. The grid lets several clients phase-align on the master
      * sample clock.
      */
     async transport(this: Server, timeout?: number): Promise<TransportGrid | null> {
-        const msg = await this.request("/transport_query", [], {
-            expect: ["/transport_query.reply"],
-            timeout,
-        });
+        const msg = await this.queryTransport(timeout);
         if (!Number(msg.args[2])) return null;
         return {
             originSample: Number(msg.args[0]),
@@ -111,7 +171,7 @@ export class ServerTransport {
     ): Promise<Server> {
         await this.command(
             "/transport_set",
-            [["h", Math.trunc(originSample)], ["d", tempo]],
+            [["i", this.transportId], ["h", Math.trunc(originSample)], ["d", tempo]],
             timeout,
         );
         return this;
@@ -127,10 +187,7 @@ export class ServerTransport {
      * is bound, and `transportSample` is the transport clock.
      */
     async transportState(this: Server, timeout?: number): Promise<TransportState> {
-        const msg = await this.request("/transport_query", [], {
-            expect: ["/transport_query.reply"],
-            timeout,
-        });
+        const msg = await this.queryTransport(timeout);
         const defined = Boolean(Number(msg.args[2]));
         const group = Number(msg.args[5]);
         const loopStart = Number(msg.args[8]);
@@ -147,6 +204,7 @@ export class ServerTransport {
             positionSample: Number(msg.args[7]),
             loop: loopEnd > loopStart ? [loopStart, loopEnd] : null,
             end: end < 0 ? null : [end, back < 0 ? null : back],
+            transport: this.transportId,
         };
     }
 
@@ -171,7 +229,7 @@ export class ServerTransport {
         timeout?: number,
     ): Promise<Server> {
         const id = group === null ? -1 : nodeId(group);
-        await this.command("/transport_group", [["i", id]], timeout);
+        await this.command("/transport_group", [["i", this.transportId], ["i", id]], timeout);
         return this;
     }
 
@@ -194,7 +252,7 @@ export class ServerTransport {
         const inner = encodeImmediateBundle(toBundle(messages));
         await this.command(
             "/sched_atTransport",
-            [["h", Math.trunc(target)], ["b", inner]],
+            [["i", this.transportId], ["h", Math.trunc(target)], ["b", inner]],
             timeout,
         );
         return this;
@@ -212,7 +270,8 @@ export class ServerTransport {
         position?: number,
         timeout?: number,
     ): Promise<Server> {
-        const args: MsgArg[] = position === undefined ? [] : [["d", position]];
+        const args: MsgArg[] = [["i", this.transportId]];
+        if (position !== undefined) args.push(["d", position]);
         await this.command("/transport_play", args, timeout);
         return this;
     }
@@ -223,7 +282,7 @@ export class ServerTransport {
      * clients.
      */
     async transportStop(this: Server, timeout?: number): Promise<Server> {
-        await this.command("/transport_stop", [], timeout);
+        await this.command("/transport_stop", [["i", this.transportId]], timeout);
         return this;
     }
 
@@ -240,7 +299,11 @@ export class ServerTransport {
         position: number,
         timeout?: number,
     ): Promise<Server> {
-        await this.command("/transport_locate", [["d", position]], timeout);
+        await this.command(
+            "/transport_locate",
+            [["i", this.transportId], ["d", position]],
+            timeout,
+        );
         return this;
     }
 
@@ -260,7 +323,7 @@ export class ServerTransport {
     ): Promise<Server> {
         await this.command(
             "/transport_locateSample",
-            [["h", Math.trunc(sample)]],
+            [["i", this.transportId], ["h", Math.trunc(sample)]],
             timeout,
         );
         return this;
@@ -282,10 +345,8 @@ export class ServerTransport {
         span: [number, number] | null = null,
         timeout?: number,
     ): Promise<Server> {
-        const args: MsgArg[] =
-            span === null
-                ? []
-                : [["h", Math.trunc(span[0])], ["h", Math.trunc(span[1])]];
+        const args: MsgArg[] = [["i", this.transportId]];
+        if (span !== null) args.push(["h", Math.trunc(span[0])], ["h", Math.trunc(span[1])]);
         await this.command("/transport_loop", args, timeout);
         return this;
     }
@@ -308,12 +369,9 @@ export class ServerTransport {
         back: number | null = null,
         timeout?: number,
     ): Promise<Server> {
-        const args: MsgArg[] =
-            end === null
-                ? []
-                : back === null
-                  ? [["h", Math.trunc(end)]]
-                  : [["h", Math.trunc(end)], ["h", Math.trunc(back)]];
+        const args: MsgArg[] = [["i", this.transportId]];
+        if (end !== null) args.push(["h", Math.trunc(end)]);
+        if (end !== null && back !== null) args.push(["h", Math.trunc(back)]);
         await this.command("/transport_end", args, timeout);
         return this;
     }

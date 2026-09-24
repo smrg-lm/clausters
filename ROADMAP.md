@@ -271,14 +271,10 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
-- ⬜ **`T6` — several transports on one server** *(`PLAN.md`, the T track)*.
-  **Taken next**; chosen first on 2026-09-23: the audio editor's own
-  nodes need a transport of their own beside a multitrack's, and the server has
-  one. A protocol change across the server, both clients, the GUI host and the
-  books at once.
-
 - ⬜ **`X7` — the audio editor's nodes on the server**
-  *(`crates/clausters-apps/PLAN.md`, "X7")*. After `T6`, which it needs. It is
+  *(`crates/clausters-apps/PLAN.md`, "X7")*. **Taken next**, now that `T6`
+  gave it a transport of its own; two things `T6` left are its to settle (its
+  Open list). It is
   how a take being edited is heard and measured: the monitor's readers held a
   take's last sample on the output and nothing in the window showed it. Its
   GraphDef is written out in the plan for the user's review, and its declick

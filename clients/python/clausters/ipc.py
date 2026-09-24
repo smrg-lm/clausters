@@ -52,7 +52,7 @@ from .errors import (
     ServerError,
 )
 
-ABI_VERSION = 11
+ABI_VERSION = 12
 
 #: The stride between successive stochastic-UGen seeds within one render --
 #: ``SEED_STRIDE`` in ``clausters_core::rng``. A client needs it to reproduce a
@@ -192,26 +192,36 @@ class ShmClient:
         return struct.unpack_from("<Q", self.mm, self.shape.clock_offset)[0]
 
     @property
-    def transport_clock(self) -> int:
-        """Samples elapsed **under the transport**, held while it is stopped.
+    def transports(self) -> int:
+        """How many transports the server publishes (its ``--transports``)."""
+        return int(self.shape.transports)
 
-        The counterpart of `clock`, which never stops. A view drawing where the
-        the transport is reads this one; anything pacing on the device reads `clock`.
-        The two only differ while a transport with a governed group is
+    def _transport_offset(self, base: int, transport: int) -> int:
+        if not 0 <= transport < max(int(self.shape.transports), 1):
+            raise IndexError(f"no transport {transport} in this segment")
+        return base + transport * int(self.shape.transport_stride)
+
+    def transport_clock(self, transport: int = 0) -> int:
+        """Samples elapsed **under transport** ``transport``, held while it is
         stopped.
-        """
-        return struct.unpack_from("<Q", self.mm, self.shape.transport_clock_offset)[0]
 
-    @property
-    def transport_position(self) -> int:
-        """Where the transport stands, in samples of the samples.
+        The counterpart of `clock`, which never stops. Anything pacing on the
+        device reads `clock`; the two only differ while a transport with a
+        governed group is stopped.
+        """
+        at = self._transport_offset(self.shape.transport_clock_offset, transport)
+        return struct.unpack_from("<Q", self.mm, at)[0]
+
+    def transport_position(self, transport: int = 0) -> int:
+        """Where transport ``transport`` stands, in samples of its own axis.
 
         Not a clock. `transport_clock` counts what has elapsed and only goes
         forward; this says where the transport is, so it jumps to wherever
         `/transport_locate` puts it and wraps at the end of a loop. A playhead
         reads this one.
         """
-        return struct.unpack_from("<Q", self.mm, self.shape.transport_position_offset)[0]
+        at = self._transport_offset(self.shape.transport_position_offset, transport)
+        return struct.unpack_from("<Q", self.mm, at)[0]
 
     @property
     def sample_rate(self) -> float:

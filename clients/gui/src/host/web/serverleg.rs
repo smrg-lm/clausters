@@ -389,8 +389,11 @@ impl WebApp {
                 // told to read the multitrack. The browser's stand-in for the
                 // segment's own field, polled on the same tick the device
                 // clock is.
-                if let Some(OscType::Long(samples)) = msg.args.get(7) {
-                    self.buses.set_position(*samples as f64);
+                if let (Some(OscType::Long(samples)), Some(OscType::Int(transport))) =
+                    (msg.args.get(7), msg.args.get(12))
+                {
+                    self.buses
+                        .set_position((*transport).max(0) as usize, *samples as f64);
                 }
             }
             "/server_query.reply" => {

@@ -859,15 +859,22 @@ export class Server {
     ): void {
         const when = (at ?? Moment.current(clock)).at(delayBeats);
         log.debug("-> bundle at beat %s: %s", when.beat ?? when, messages);
-        const axis = (when.clock as { schedAxis?: ((secs: number) => number) | null } | null)
-            ?.schedAxis;
+        const scheduler = when.clock as {
+            schedAxis?: ((secs: number) => number) | null;
+            schedTransport?: number;
+        } | null;
+        const axis = scheduler?.schedAxis;
         if (axis) {
             // The moment's clock names the **transport** axis: a timeline
             // playing on a server transport stamps every bundle on the
             // transport clock, so a pause freezes the queue with the sound and
             // a locate clears it (`schedClear("transport")`). It is asked
             // first because it is the one axis a caller states outright.
-            this.sendSchedTransport(axis(when.secs() + this.latency), messages);
+            this.sendSchedTransport(
+                axis(when.secs() + this.latency),
+                messages,
+                scheduler?.schedTransport ?? 0,
+            );
             return;
         }
         if (this.scoring) {
@@ -921,8 +928,12 @@ export class Server {
      * bundles, and a round trip each would pace the planning by the network
      * (`schedAtTransport` is the awaiting spelling).
      */
-    private sendSchedTransport(sample: number, messages: readonly TimedMessage[]): void {
-        this.sendMsg("/sched_atTransport", ["h", Math.round(sample)], [
+    private sendSchedTransport(
+        sample: number,
+        messages: readonly TimedMessage[],
+        transport = 0,
+    ): void {
+        this.sendMsg("/sched_atTransport", ["i", transport], ["h", Math.round(sample)], [
             "b",
             encodeImmediateBundle(toBundle(messages)),
         ]);
@@ -930,17 +941,20 @@ export class Server {
 
     /**
      * Drops what is queued: with no `axis` every pending timed bundle on this
-     * server (`/sched_clear`, the panic button), and with `"transport"` the
-     * **transport queue alone**.
+     * server (`/sched_clear`, the panic button), and with `"transport"` **one
+     * transport's queue alone** -- `transport`, or this handle's own (0 on a
+     * server, see `transportAt`).
      *
-     * The scoped form is what re-cueing after a locate needs: the transport
+     * The scoped form is what re-cueing after a locate needs: a transport's
      * clock does not jump, so bundles queued for the position that was left
      * would sound at it, while the bare form would take every other client's
      * score with them.
      */
-    schedClear(axis?: "transport"): this {
+    schedClear(axis?: "transport", transport?: number): this {
         if (axis === undefined) this.sendMsg("/sched_clear");
-        else if (axis === "transport") this.sendMsg("/sched_clear", "transport");
+        else if (axis === "transport") {
+            this.sendMsg("/sched_clear", "transport", ["i", transport ?? this.transportId]);
+        }
         else throw new Error(`schedClear: the axis is "transport" or nothing, not ${axis}`);
         return this;
     }
@@ -981,7 +995,9 @@ export class Server {
      * Sends `addr` and resolves with the first reply whose address is in
      * `expect`. `cmd` additionally requires the reply's first argument to
      * name that command, which is what makes concurrent requests safe (the
-     * server echoes the command in `/done`/`/fail`).
+     * server echoes the command in `/done`/`/fail`). `match`, a predicate over
+     * a reply's arguments, filters the replies `expect` lets through -- for an
+     * answer whose address other messages share, like the transport pushes.
      */
     async request(
         addr: string,
@@ -989,13 +1005,20 @@ export class Server {
         {
             expect,
             cmd,
+            match,
             timeout,
-        }: { expect: readonly string[]; cmd?: string; timeout?: number },
+        }: {
+            expect: readonly string[];
+            cmd?: string;
+            match?: (args: OscMessage["args"]) => boolean;
+            timeout?: number;
+        },
     ): Promise<OscMessage> {
         const reply = this.awaitReply(
             (msg) =>
                 expect.includes(msg.addr) &&
-                (cmd === undefined || msg.args[0] === cmd),
+                (cmd === undefined || msg.args[0] === cmd) &&
+                (match === undefined || msg.addr === "/fail" || match(msg.args)),
             timeout,
             `reply to ${addr}`,
         );

@@ -169,26 +169,31 @@ impl SharedSegment {
         self.view.clock().load(Ordering::Relaxed)
     }
 
-    /// Samples elapsed **under the transport**, held while it is stopped.
+    /// Samples elapsed **under transport `transport`**, held while it is
+    /// stopped; 0 past the table.
     ///
     /// [`Self::sample_clock`] never stops, so anything pacing on the device
     /// reads that one. This one is monotonic too -- it holds, it never jumps --
     /// which is what a scheduler needs and what a **playhead does not**: for
-    /// where the multitrack *is*, read [`Self::transport_position`].
-    pub fn transport_clock(&self) -> u64 {
-        self.view.transport_clock().load(Ordering::Relaxed)
+    /// where the transport *is*, read [`Self::transport_position`].
+    pub fn transport_clock(&self, transport: usize) -> u64 {
+        self.view
+            .transport_clock(transport)
+            .map_or(0, |cell| cell.load(Ordering::Relaxed))
     }
 
-    /// Where the transport is **in the multitrack**, in samples of the samples --
-    /// what a playhead draws.
+    /// Where transport `transport` is, in samples of its own axis -- what a
+    /// playhead draws; 0 past the table.
     ///
     /// Not a clock: it advances with the transport clock while rolling, holds
     /// while stopped, jumps to wherever `/transport_locate` puts it and wraps
     /// at the end of a loop. Reading the clock instead gives a head that
     /// ignores every seek and every loop, which is a picture of elapsed time
     /// rather than of the multitrack.
-    pub fn transport_position(&self) -> u64 {
-        self.view.transport_position().load(Ordering::Relaxed)
+    pub fn transport_position(&self, transport: usize) -> u64 {
+        self.view
+            .transport_position(transport)
+            .map_or(0, |cell| cell.load(Ordering::Relaxed))
     }
 
     /// The device sample rate the server published, or `0.0` before it is
@@ -281,7 +286,7 @@ impl super::BusSource for SharedSegment {
         SharedSegment::sample_clock(self) as f64
     }
 
-    fn transport_position(&self) -> f64 {
-        SharedSegment::transport_position(self) as f64
+    fn transport_position(&self, transport: usize) -> f64 {
+        SharedSegment::transport_position(self, transport) as f64
     }
 }

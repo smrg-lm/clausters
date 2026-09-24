@@ -11,7 +11,7 @@
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicI32, AtomicU8, AtomicUsize, Ordering};
 
-use crate::dsp::{DoneAction, ProcessCtx, ReplyMsg, StageMask};
+use crate::dsp::{DoneAction, ProcessCtx, ReplyMsg, StageMask, TransportCtx};
 use crate::server::workers::WorkerPool;
 
 /// What the tree processes. Implemented by `synthdef::instance::UGenSynth`
@@ -275,7 +275,15 @@ struct NodeSlot {
     /// during processing (silent). A paused **group** skips its whole subtree.
     /// Cleared by `/node_run 1` (or `FreeSelfResumeNext` on the next sibling).
     paused: bool,
+    /// The transport this group is the governed group of, or
+    /// [`NO_TRANSPORT`]. Every node under it reads that transport's
+    /// [`TransportCtx`] -- the nearest tagged ancestor wins -- and a node under
+    /// none reads transport 0's.
+    transport: u16,
 }
+
+/// A slot no transport governs.
+const NO_TRANSPORT: u16 = u16::MAX;
 
 impl Default for NodeTree {
     fn default() -> Self {
@@ -313,6 +321,11 @@ pub struct NodeTree {
     /// IDs, so the drain reaches the synth without a linear lookup.
     reply_slots: Vec<AtomicUsize>,
     reply_count: AtomicUsize,
+    /// What each transport looks like in the slice being processed, indexed by
+    /// transport. Sized once by [`Self::set_transports`] and written by the
+    /// engine before every slice ([`Self::set_transport_view`]); the walk hands
+    /// a governed subtree its own row.
+    transport_views: Vec<TransportCtx>,
 }
 
 impl NodeTree {
@@ -337,6 +350,7 @@ impl NodeTree {
                 parallel: false,
             }),
             paused: false,
+            transport: NO_TRANSPORT,
         });
         Self {
             slots,
@@ -350,7 +364,68 @@ impl NodeTree {
             done_count: AtomicUsize::new(0),
             reply_slots: (0..max_nodes).map(|_| AtomicUsize::new(0)).collect(),
             reply_count: AtomicUsize::new(0),
+            transport_views: vec![TransportCtx::default(); 1],
         }
+    }
+
+    /// Sizes the per-transport views to `count` transports. At boot, off the
+    /// audio thread: it allocates.
+    pub fn set_transports(&mut self, count: usize) {
+        self.transport_views = vec![TransportCtx::default(); count.max(1)];
+    }
+
+    /// What transport `transport` looks like in the next slice. RT-safe: one
+    /// store into the pre-sized table; out of range is ignored.
+    #[inline]
+    pub fn set_transport_view(&mut self, transport: usize, view: TransportCtx) {
+        if let Some(row) = self.transport_views.get_mut(transport) {
+            *row = view;
+        }
+    }
+
+    /// Transport `transport`'s view in the current slice -- what a node under
+    /// no governed group reads for transport 0.
+    #[inline]
+    pub fn transport_view(&self, transport: usize) -> TransportCtx {
+        self.transport_views
+            .get(transport)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    /// Tags group `id` as governed by `transport`, or clears the tag with
+    /// `None`. Returns `false` for an unknown id or a synth. RT-safe: a lookup
+    /// and a store.
+    pub fn set_governing(&mut self, id: i32, transport: Option<usize>) -> bool {
+        let Some(idx) = self.find(id) else {
+            return false;
+        };
+        if self.group_of(idx).is_none() {
+            return false;
+        }
+        if let Some(slot) = self.slot_mut(idx) {
+            slot.transport = transport.map_or(NO_TRANSPORT, |t| t as u16);
+        }
+        true
+    }
+
+    /// The transport governing `id`: the tag of the nearest ancestor that
+    /// carries one, `id` itself included, or `None` when nothing above it is
+    /// governed. A walk up `parent`, bounded like [`Self::is_under`], so it is
+    /// safe on the audio thread.
+    pub fn governing(&self, id: i32) -> Option<usize> {
+        let mut idx = self.find(id)?;
+        for _ in 0..=self.slots.len() {
+            let slot = self.slot(idx)?;
+            if slot.transport != NO_TRANSPORT {
+                return Some(slot.transport as usize);
+            }
+            if slot.parent == NO_PARENT {
+                return None;
+            }
+            idx = slot.parent;
+        }
+        None
     }
 
     pub fn synth_count(&self) -> usize {
@@ -626,6 +701,7 @@ impl NodeTree {
             parent: parent_idx,
             kind,
             paused: false,
+            transport: NO_TRANSPORT,
         });
         let g = self.group_of_mut(parent_idx).unwrap();
         let pos = pos.min(g.children.len());
@@ -1094,6 +1170,17 @@ impl NodeTree {
         if slot.paused {
             return;
         }
+        // A governed group hands its subtree its own transport.
+        let governed;
+        let ctx = if slot.transport == NO_TRANSPORT {
+            ctx
+        } else {
+            governed = ProcessCtx {
+                transport: self.transport_view(slot.transport as usize),
+                ..*ctx
+            };
+            &governed
+        };
         match &mut slot.kind {
             NodeKind::Synth { node, .. } => {
                 let mut ctx = *ctx;
@@ -1131,6 +1218,16 @@ impl NodeTree {
         if slot.paused {
             return;
         }
+        let governed;
+        let ctx = if slot.transport == NO_TRANSPORT {
+            ctx
+        } else {
+            governed = ProcessCtx {
+                transport: self.transport_view(slot.transport as usize),
+                ..*ctx
+            };
+            &governed
+        };
         match &mut slot.kind {
             NodeKind::Synth { node, .. } => {
                 let mut ctx = *ctx;

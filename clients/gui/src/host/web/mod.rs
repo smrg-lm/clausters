@@ -555,13 +555,15 @@ impl WebApp {
         if wants_clock && let Some(server) = self.host.server() {
             // Which counter the line is drawn from decides which one is worth
             // a message: the position is the transport's own to report.
-            let addr = match self.host.head_clock() {
-                crate::host::HeadClock::Device => "/clock_query",
-                crate::host::HeadClock::Transport => "/transport_query",
+            let (addr, args) = match self.host.head_clock() {
+                crate::host::HeadClock::Device => ("/clock_query", vec![]),
+                crate::host::HeadClock::Transport(transport) => {
+                    ("/transport_query", vec![OscType::Int(transport as i32)])
+                }
             };
             let _ = server.send(OscMessage {
                 addr: addr.into(),
-                args: vec![],
+                args,
             });
         }
         self.advance_edge_scroll();

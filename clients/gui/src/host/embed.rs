@@ -126,8 +126,11 @@ mod tests {
             "/group_new",
             vec![OscType::Int(77), OscType::Int(1), OscType::Int(0)],
         );
-        send("/transport_group", vec![OscType::Int(77)]);
-        send("/transport_locateSample", vec![OscType::Long(12_345)]);
+        send("/transport_group", vec![OscType::Int(0), OscType::Int(77)]);
+        send(
+            "/transport_locateSample",
+            vec![OscType::Int(0), OscType::Long(12_345)],
+        );
 
         // **Waited for, not slept through.** The engine publishes once a block,
         // which is a fraction of a millisecond of work -- but the first block
@@ -136,10 +139,10 @@ mod tests {
         // fail about one run in five, which is the worst kind of red: it says
         // nothing about the code and it trains a reader to re-run.
         assert!(
-            settles(|| bus.transport_position() == 12_345.0),
+            settles(|| bus.transport_position(0) == 12_345.0),
             "located, and stopped: the multitrack stands exactly where it was put \
              (read {})",
-            bus.transport_position()
+            bus.transport_position(0)
         );
         assert!(
             bus.sample_clock() > 0.0,
@@ -147,11 +150,11 @@ mod tests {
              running all along"
         );
 
-        send("/transport_play", vec![]);
+        send("/transport_play", vec![OscType::Int(0)]);
         assert!(
-            settles(|| bus.transport_position() > 12_345.0),
+            settles(|| bus.transport_position(0) > 12_345.0),
             "and it moves once the transport rolls (read {})",
-            bus.transport_position()
+            bus.transport_position(0)
         );
     }
 

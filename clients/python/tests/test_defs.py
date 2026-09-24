@@ -483,33 +483,54 @@ def test_the_governed_group_is_a_node_or_its_id():
     group = Group(server=srv)
     iface.queue_reply("/done", "/transport_group")
     srv.transport_group(group)
-    assert iface.sent[-1] == ("/transport_group", [group.id])
+    assert iface.sent[-1] == ("/transport_group", [0, group.id]), "transport 0 first"
     iface.queue_reply("/done", "/transport_group")
     srv.transport_group(None)
-    assert iface.sent[-1] == ("/transport_group", [-1])
+    assert iface.sent[-1] == ("/transport_group", [0, -1])
 
 
 def test_the_end_mark_is_set_cleared_and_read_back():
     iface = _FakeInterface()
     srv = Server(interface=iface)
     iface.queue_reply("/done", "/transport_end")
-    sent = lambda: (iface.sent[-1][0], [a.value for a in iface.sent[-1][1]])  # noqa: E731
+    sent = lambda: (iface.sent[-1][0], [getattr(a, "value", a) for a in iface.sent[-1][1]])  # noqa: E731
     srv.transport_end(100, 10)
-    assert sent() == ("/transport_end", [100, 10]), "two int64s"
+    assert sent() == ("/transport_end", [0, 100, 10]), "transport 0, then two int64s"
     iface.queue_reply("/done", "/transport_end")
     srv.transport_end(200)
-    assert sent() == ("/transport_end", [200])
+    assert sent() == ("/transport_end", [0, 200])
     iface.queue_reply("/done", "/transport_end")
     srv.transport_end()
-    assert iface.sent[-1] == ("/transport_end", [])
+    assert iface.sent[-1] == ("/transport_end", [0])
 
     base = [0, 0.0, 0, 0, 0.0, -1, 0, 0, 0, 0]
-    iface.queue_reply("/transport_query.reply", *base, 100, 10)
+    iface.queue_reply("/transport_query.reply", *base, 100, 10, 0)
     assert srv.transport_state()["end"] == (100, 10)
-    iface.queue_reply("/transport_query.reply", *base, 200, -1)
+    iface.queue_reply("/transport_query.reply", *base, 200, -1, 0)
     assert srv.transport_state()["end"] == (200, None)
-    iface.queue_reply("/transport_query.reply", *base, -1, -1)
+    iface.queue_reply("/transport_query.reply", *base, -1, -1, 0)
     assert srv.transport_state()["end"] is None
+
+
+def test_transport_at_names_its_transport_and_reads_only_its_replies():
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    assert srv.transport_at(0) is srv, "transport 0 is the server itself"
+    two = srv.transport_at(2)
+    assert two.transport_id == 2 and two.server is srv
+    iface.queue_reply("/done", "/transport_play")
+    two.transport_play()
+    assert iface.sent[-1] == ("/transport_play", [2])
+    two.sched_clear("transport")
+    assert iface.sent[-1] == ("/sched_clear", ["transport", 2])
+
+    # Another transport's push arrives first and is not this query's answer.
+    base = [0, 0.0, 0, 1, 0.0, -1, 0, 0, 0, 0, -1, -1]
+    iface.queue_reply("/transport_query.reply", *base, 0)
+    iface.queue_reply("/transport_query.reply", *base[:5], 300, *base[6:], 2)
+    state = two.transport_state()
+    assert state["transport"] == 2 and state["group"] == 300
+    assert iface.sent[-1] == ("/transport_query", [2])
 
 
 def test_records_print_readably_and_agree_with_their_container():

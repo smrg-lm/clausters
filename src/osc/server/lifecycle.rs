@@ -46,6 +46,7 @@ impl OscServer {
             handle.control_buses().len(),
             handle.limits,
         );
+        let transports = vec![Transport::default(); handle.limits.transports];
         Ok(Self {
             socket: Some(socket),
             info,
@@ -85,7 +86,7 @@ impl OscServer {
             faust_submitted: 0,
             faust_drained: 0,
             pending_syncs: Vec::new(),
-            transport: Transport::default(),
+            transports,
             post_errors: true,
             max_frame: crate::osc::DEFAULT_MAX_FRAME,
             max_stream_buses: crate::osc::DEFAULT_MAX_STREAM_BUSES,
@@ -118,6 +119,7 @@ impl OscServer {
             handle.control_buses().len(),
             handle.limits,
         );
+        let transports = vec![Transport::default(); handle.limits.transports];
         Self {
             socket: None,
             info,
@@ -155,7 +157,7 @@ impl OscServer {
             faust_submitted: 0,
             faust_drained: 0,
             pending_syncs: Vec::new(),
-            transport: Transport::default(),
+            transports,
             post_errors: true,
             max_frame: crate::osc::DEFAULT_MAX_FRAME,
             max_stream_buses: crate::osc::DEFAULT_MAX_STREAM_BUSES,
@@ -523,14 +525,19 @@ impl OscServer {
                     // A governed group that has been freed cannot govern
                     // anything: unbind rather than leave the transport pointing
                     // at a node that no longer exists.
-                    if self.transport.group == Some(id) {
-                        self.transport.group = None;
-                        self.handle.send(Cmd::TransportGroup { id: -1 }).ok();
-                        self.broadcast_transport();
+                    if let Some(k) = self.transports.iter().position(|t| t.group == Some(id)) {
+                        self.transports[k].group = None;
+                        self.handle
+                            .send(Cmd::TransportGroup {
+                                transport: k,
+                                id: -1,
+                            })
+                            .ok();
+                        self.broadcast_transport(k);
                     }
                 }
                 Garbage::FreedBuffer(_) => {}
-                Garbage::TransportEnded => self.on_transport_ended(),
+                Garbage::TransportEnded { transport } => self.on_transport_ended(transport),
                 Garbage::SpentBundle(_) => {
                     // The executed shell of a timed bundle, or one a
                     // `/sched_clear` dropped: nothing to say, the heap is freed

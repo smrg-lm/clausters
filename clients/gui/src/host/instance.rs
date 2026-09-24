@@ -646,7 +646,7 @@ mod tests {
             .find(|m| m.addr == "/graph_new")
             .expect("the multitrack is a graph");
         assert_eq!(
-            graph.args[3], bound.args[0],
+            graph.args[3], bound.args[1],
             "the multitrack inside the transport's group"
         );
         assert_eq!(
@@ -655,7 +655,7 @@ mod tests {
                 .as_ref()
                 .and_then(MultitrackPlayback::group)
                 .map(OscType::Int),
-            Some(bound.args[0].clone())
+            Some(bound.args[1].clone())
         );
         assert!(addrs(&messages).contains(&"/graph_addSlot"));
     }

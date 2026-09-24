@@ -30,7 +30,7 @@ use clausters_document::multitrack::Multitrack;
 use clausters_document::multitrack::nodes::{self, SourceInfo};
 use serde_json::{Value, json};
 
-use crate::apply::{Applier, Endpoint, Step, steps_json};
+use crate::apply::{Applier, Endpoint, MULTITRACK_TRANSPORT, Step, steps_json};
 use crate::instance::Instance;
 
 /// **One multitrack, as it is playing.**
@@ -121,7 +121,7 @@ impl MultitrackPlayback {
             return Vec::new();
         }
         self.end_sent = want;
-        command(
+        transport_command(
             "/transport_end",
             want.map_or_else(Vec::new, |(end, back)| {
                 vec![OscType::Long(end), OscType::Long(back)]
@@ -133,7 +133,7 @@ impl MultitrackPlayback {
     /// where it stopped, so resuming is the same verb as starting.
     pub fn play(&mut self) -> Vec<Step> {
         self.rolling = true;
-        command("/transport_play", vec![])
+        transport_command("/transport_play", vec![])
     }
 
     /// **Freezes the multitrack where it stands**, every node's state intact -- and
@@ -141,7 +141,7 @@ impl MultitrackPlayback {
     /// go on claiming the last level it wrote. The mark goes with the level.
     pub fn pause(&mut self) -> Vec<Step> {
         self.rolling = false;
-        let mut steps = command("/transport_stop", vec![]);
+        let mut steps = transport_command("/transport_stop", vec![]);
         for (_, bus, channels) in self.meters() {
             steps.push(send(
                 "/bus_fill",
@@ -168,7 +168,7 @@ impl MultitrackPlayback {
     /// **Puts the transport at `secs`** of the multitrack. The readers seek in
     /// the engine, so what is sounding carries on from there.
     pub fn locate(&mut self, secs: f64) -> Vec<Step> {
-        command(
+        transport_command(
             "/transport_locateSample",
             vec![OscType::Long(self.secs_to_samples(secs))],
         )
@@ -253,6 +253,14 @@ impl MultitrackPlayback {
 }
 
 /// A command whose `/done` the rest waits for.
+/// A transport command on the multitrack's transport: [`command`] with the
+/// transport's id in front, where every transport command carries it.
+fn transport_command(addr: &str, args: Vec<OscType>) -> Vec<Step> {
+    let mut with_id = vec![OscType::Int(MULTITRACK_TRANSPORT)];
+    with_id.extend(args);
+    command(addr, with_id)
+}
+
 fn command(addr: &str, args: Vec<OscType>) -> Vec<Step> {
     vec![
         send(addr, args),
@@ -365,7 +373,7 @@ mod tests {
     /// The `/transport_end` among `steps`, as its arguments.
     fn end_mark(steps: &[Step]) -> Option<Vec<OscType>> {
         steps.iter().find_map(|step| match step {
-            Step::Send(m) if m.addr == "/transport_end" => Some(m.args.clone()),
+            Step::Send(m) if m.addr == "/transport_end" => Some(m.args[1..].to_vec()),
             _ => None,
         })
     }
@@ -442,7 +450,10 @@ mod tests {
         let steps = playback.locate(2.0);
         assert_eq!(
             steps[0],
-            send("/transport_locateSample", vec![OscType::Long(96_000)])
+            send(
+                "/transport_locateSample",
+                vec![OscType::Int(MULTITRACK_TRANSPORT), OscType::Long(96_000)]
+            )
         );
         assert!(
             matches!(steps[1], Step::AwaitDone { .. }),
@@ -484,7 +495,8 @@ mod tests {
     fn the_json_doors_answer_steps_or_an_error() {
         let mut playback = MultitrackPlayback::new(Endpoint::default());
         let answer: Value = serde_json::from_str(&answer_json(Ok(playback.locate(1.0)))).unwrap();
-        assert_eq!(answer["steps"][0]["send"]["args"][0], json!({"h": 48_000}));
+        assert_eq!(answer["steps"][0]["send"]["args"][0], json!({"i": 0}));
+        assert_eq!(answer["steps"][0]["send"]["args"][1], json!({"h": 48_000}));
         let refused: Value = serde_json::from_str(&sync_json(
             &mut playback,
             "no",

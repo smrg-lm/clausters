@@ -498,7 +498,7 @@ pub trait BusSource: Send + Sync {
         0.0
     }
 
-    /// The transport's **position in the multitrack**, in samples, when this source
+    /// Transport `transport`'s **position**, in samples, when this source
     /// carries it (`0.0` otherwise).
     ///
     /// The other counter a playhead can be drawn from, and the one an editor
@@ -507,7 +507,8 @@ pub trait BusSource: Send + Sync {
     /// field of the shared segment; the browser polls `/transport_query`.
     /// Which of the two a window draws is [`Host::head_clock`], resolved once
     /// in [`Host::playhead_clock`].
-    fn transport_position(&self) -> f64 {
+    fn transport_position(&self, transport: usize) -> f64 {
+        let _ = transport;
         0.0
     }
 }
@@ -527,10 +528,11 @@ pub enum HeadClock {
     /// all on that axis.
     #[default]
     Device,
-    /// The transport's **position**: it holds while stopped, jumps on a
-    /// locate and wraps in a loop. What an editor wants, because it is the
-    /// time of the samples rather than of the machine.
-    Transport,
+    /// A transport's **position**: it holds while stopped, jumps on a locate
+    /// and wraps in a loop. What an editor wants, because it is the time of
+    /// the samples rather than of the machine. It names which transport, since
+    /// a server has several.
+    Transport(usize),
 }
 
 // The `/gui_*` vocabulary (canonical tables in clients/gui/PLAN.md).
@@ -946,7 +948,7 @@ impl Host {
         let Some(bus) = bus else { return 0.0 };
         match self.head_clock {
             HeadClock::Device => bus.sample_clock(),
-            HeadClock::Transport => bus.transport_position(),
+            HeadClock::Transport(transport) => bus.transport_position(transport),
         }
     }
 
@@ -1672,7 +1674,9 @@ impl Host {
         diag::info!("{from}: {GUI_METRICS}: {} role(s) overlaid", table.len());
     }
 
-    /// `/gui_headClock <which>` -- draw every playhead from this counter from now on.
+    /// `/gui_headClock <which> [<int32 transport>]` -- draw every playhead from
+    /// this counter from now on; `"transport"` reads transport 0 unless it
+    /// names another.
     ///
     /// Host-wide and idless, like the typeface and the theme, and for the same
     /// reason: it says what the numbers a window is handed *mean*, and one host
@@ -1682,11 +1686,20 @@ impl Host {
     fn on_clock(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
         let which = match args.first() {
             Some(OscType::String(s)) => s.as_str(),
-            _ => return diag::warn!("{from}: {GUI_CLOCK} needs \"device\" or \"multitrack\""),
+            _ => return diag::warn!("{from}: {GUI_CLOCK} needs \"device\" or \"transport\""),
         };
         let head = match which {
             "device" => HeadClock::Device,
-            "transport" => HeadClock::Transport,
+            "transport" => match args.get(1) {
+                None => HeadClock::Transport(0),
+                Some(OscType::Int(k)) if *k >= 0 => HeadClock::Transport(*k as usize),
+                Some(other) => {
+                    return diag::warn!(
+                        "{from}: {GUI_CLOCK}: {other:?} is not a transport id; still drawing \
+                         the one it was"
+                    );
+                }
+            },
             other => {
                 return diag::warn!(
                     "{from}: {GUI_CLOCK}: no counter called {other:?}; still drawing the \
@@ -3625,15 +3638,21 @@ mod tests {
             fn sample_clock(&self) -> f64 {
                 48_000.0
             }
-            fn transport_position(&self) -> f64 {
-                1_200.0
+            fn transport_position(&self, transport: usize) -> f64 {
+                1_200.0 + transport as f64
             }
         }
         let mut host = Host::new();
         let bus = Both;
         assert_eq!(host.playhead_clock(Some(&bus as &dyn BusSource)), 48_000.0);
-        host.set_head_clock(HeadClock::Transport);
+        host.set_head_clock(HeadClock::Transport(0));
         assert_eq!(host.playhead_clock(Some(&bus as &dyn BusSource)), 1_200.0);
+        host.set_head_clock(HeadClock::Transport(3));
+        assert_eq!(
+            host.playhead_clock(Some(&bus as &dyn BusSource)),
+            1_203.0,
+            "the transport it names"
+        );
         // No source at all is the same answer either way: nothing to read.
         assert_eq!(host.playhead_clock(None), 0.0);
     }
@@ -3659,11 +3678,27 @@ mod tests {
             !host.handle_packet(clock("transport"), from()).is_empty(),
             "the open window redraws: the line it draws now means something else"
         );
-        assert_eq!(host.head_clock(), HeadClock::Transport);
+        assert_eq!(
+            host.head_clock(),
+            HeadClock::Transport(0),
+            "transport 0 unnamed"
+        );
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_CLOCK.into(),
+                args: vec![OscType::String("transport".into()), OscType::Int(2)],
+            }),
+            from(),
+        );
+        assert_eq!(
+            host.head_clock(),
+            HeadClock::Transport(2),
+            "or the one named"
+        );
 
         // A word the host does not know leaves it drawing what it was drawing.
         assert!(host.handle_packet(clock("nonsense"), from()).is_empty());
-        assert_eq!(host.head_clock(), HeadClock::Transport);
+        assert_eq!(host.head_clock(), HeadClock::Transport(2));
 
         host.handle_packet(clock("device"), from());
         assert_eq!(host.head_clock(), HeadClock::Device);
@@ -4825,7 +4860,8 @@ mod write_tests {
         assert_eq!(made.addr, "/group_new");
         let bound = received(server).expect("and bound to the transport");
         assert_eq!(bound.addr, "/transport_group");
-        assert_eq!(bound.args[0], made.args[0], "the group it just made");
+        assert_eq!(bound.args[0], OscType::Int(play::MONITOR_TRANSPORT));
+        assert_eq!(bound.args[1], made.args[0], "the group it just made");
         let OscType::Int(group) = made.args[0] else {
             panic!("a group id")
         };
@@ -4922,17 +4958,25 @@ mod write_tests {
         // the last take left it.
         let msg = received(&server).expect("the loop was cleared");
         assert_eq!(msg.addr, "/transport_loop");
-        assert!(msg.args.is_empty(), "no arguments turns looping off");
+        assert_eq!(
+            msg.args,
+            [OscType::Int(play::MONITOR_TRANSPORT)],
+            "the transport alone turns looping off"
+        );
         let msg = received(&server).expect("the end was marked");
         assert_eq!(msg.addr, "/transport_end");
         assert_eq!(
             msg.args,
-            vec![OscType::Long(16), OscType::Long(0)],
+            vec![
+                OscType::Int(play::MONITOR_TRANSPORT),
+                OscType::Long(16),
+                OscType::Long(0)
+            ],
             "the take's end, and back to the start"
         );
         let msg = received(&server).expect("the multitrack was located");
         assert_eq!(msg.addr, "/transport_locateSample");
-        assert_eq!(msg.args[0], OscType::Long(0));
+        assert_eq!(msg.args[1], OscType::Long(0));
         // A mono take is heard on both sides: its one channel, twice.
         for out in 0..2 {
             let msg = received(&server).expect("a synth was started");
@@ -4976,7 +5020,7 @@ mod write_tests {
         let (mut host, _server) = take_host(1, 16);
         let key = host.timeline_key(50).expect("the take is on a timeline");
         assert!(host.play_buffer(1, 50, 0, play::Pass::Until { end: 16, back: 0 }));
-        assert_eq!(host.head_clock(), HeadClock::Transport);
+        assert_eq!(host.head_clock(), HeadClock::Transport(0));
         assert_eq!(host.timelines().state(key).unwrap().playhead_at, 0.0);
         assert!(host.stop_playback());
         assert_eq!(host.timelines().state(key).unwrap().playhead_at, 0.0);
@@ -5012,12 +5056,16 @@ mod write_tests {
         assert_eq!(end.addr, "/transport_end");
         assert_eq!(
             end.args,
-            vec![OscType::Long(16), OscType::Long(4)],
+            vec![
+                OscType::Int(play::MONITOR_TRANSPORT),
+                OscType::Long(16),
+                OscType::Long(4)
+            ],
             "the take's end, and back to the mark"
         );
         let locate = received(&server).unwrap();
         assert_eq!(locate.addr, "/transport_locateSample");
-        assert_eq!(locate.args[0], OscType::Long(4), "from the mark");
+        assert_eq!(locate.args[1], OscType::Long(4), "from the mark");
         assert_eq!(received(&server).unwrap().addr, "/synth_new");
         assert_eq!(received(&server).unwrap().addr, "/synth_new");
         assert_eq!(received(&server).unwrap().addr, "/transport_play");
@@ -5028,7 +5076,7 @@ mod write_tests {
         assert_eq!(received(&server).unwrap().addr, "/node_free");
         let locate = received(&server).unwrap();
         assert_eq!(locate.addr, "/transport_locateSample");
-        assert_eq!(locate.args[0], OscType::Long(4), "and back at the mark");
+        assert_eq!(locate.args[1], OscType::Long(4), "and back at the mark");
     }
 
     /// **A pass the engine ended frees the readers; a stop this host sent is
@@ -5045,6 +5093,15 @@ mod write_tests {
                 OscType::Int(playing),
             ];
             args.extend([OscType::Double(0.0), OscType::Int(1)]);
+            args.extend([
+                OscType::Long(0),
+                OscType::Long(0),
+                OscType::Long(0),
+                OscType::Long(0),
+                OscType::Long(-1),
+                OscType::Long(-1),
+                OscType::Int(play::MONITOR_TRANSPORT),
+            ]);
             OscMessage {
                 addr: "/transport_query.reply".into(),
                 args,
@@ -5090,12 +5147,20 @@ mod write_tests {
         assert_eq!(msg.addr, "/transport_loop");
         assert_eq!(
             msg.args,
-            vec![OscType::Long(0), OscType::Long(16)],
+            vec![
+                OscType::Int(play::MONITOR_TRANSPORT),
+                OscType::Long(0),
+                OscType::Long(16)
+            ],
             "the whole take"
         );
         let msg = received(&server).unwrap();
         assert_eq!(msg.addr, "/transport_end");
-        assert!(msg.args.is_empty(), "and no end while it loops");
+        assert_eq!(
+            msg.args,
+            [OscType::Int(play::MONITOR_TRANSPORT)],
+            "and no end while it loops"
+        );
     }
 
     /// **With no pointer, the keys reach the window's one take** -- the first
@@ -5143,15 +5208,23 @@ mod write_tests {
         assert_eq!(msg.addr, "/transport_loop");
         assert_eq!(
             msg.args,
-            vec![OscType::Long(4), OscType::Long(12)],
+            vec![
+                OscType::Int(play::MONITOR_TRANSPORT),
+                OscType::Long(4),
+                OscType::Long(12)
+            ],
             "half-open, so the span is the selection's own bounds"
         );
         let msg = received(&server).expect("a loop has no end");
         assert_eq!(msg.addr, "/transport_end");
-        assert!(msg.args.is_empty(), "no arguments clears the mark");
+        assert_eq!(
+            msg.args,
+            [OscType::Int(play::MONITOR_TRANSPORT)],
+            "the transport alone clears the mark"
+        );
         let msg = received(&server).expect("then the locate");
         assert_eq!(msg.addr, "/transport_locateSample");
-        assert_eq!(msg.args[0], OscType::Long(4));
+        assert_eq!(msg.args[1], OscType::Long(4));
         for _ in 0..2 {
             assert_eq!(
                 received(&server).expect("and only then the readers").addr,

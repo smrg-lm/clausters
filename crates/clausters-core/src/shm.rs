@@ -26,10 +26,13 @@
 //! # Layout
 //!
 //! ```text
-//! Header (64 B) | c2s Ring | s2c Ring | control buses | audio-bus region | tap rings | buffer directory
+//! Header (64 B) | transport table | c2s Ring | s2c Ring | control buses | audio-bus region | tap rings | buffer directory
 //! ```
 //!
-//! Everything after the two rings is a **trailing region sized at run time**,
+//! The transport table is fixed at [`MAX_TRANSPORTS`] rows, of which the
+//! header's `transports` are live: a table sized at run time would have to
+//! trail the rings, and every trailing offset would move with it. Everything
+//! after the two rings is a **trailing region sized at run time**,
 //! and every offset is derived from the header rather than fixed -- which is
 //! what lets `--control-buses`, `--taps` and `--tap-frames` be options instead
 //! of recompiles. The buffer directory is the tail, and *its* row count is what
@@ -48,7 +51,7 @@ pub const MAGIC: u32 = 0x5541_4C43;
 /// versioned and refused on mismatch (the scsynth plugin-ABI lesson); what each
 /// version changed is recorded in `docs/ipc.md`, not here -- a changelog in a
 /// constant is a changelog nobody updates.
-pub const ABI_VERSION: u32 = 11;
+pub const ABI_VERSION: u32 = 12;
 
 /// The peer tag an embedder gets when it never asks for one: the single client
 /// a segment has always had.
@@ -87,6 +90,11 @@ pub const DEFAULT_AUDIO_BUS_SLOTS: usize = 1024;
 /// server asserts the two agree.
 pub const BLOCK: usize = 64;
 
+/// Rows of the transport table: the most transports a server can be booted
+/// with (`--transports`). The table is part of the fixed prefix, so this is a
+/// constant of the layout and the live count is the header's.
+pub const MAX_TRANSPORTS: usize = 64;
+
 /// Directory rows a segment gets when nobody says otherwise -- the server's own
 /// default buffer count, so a segment created with no `--max-buffers` describes
 /// every buffer it can allocate.
@@ -118,19 +126,30 @@ struct Header {
     /// may drain the inbound one: a second server that also popped it would
     /// steal half the commands, silently. See [`View::claim_control`].
     control_owner: AtomicU32,
-    /// Samples elapsed *under the transport*, frozen while it is stopped. The
-    /// sample clock above never stops, so a reader pacing on the device wants
-    /// that one -- but this one is monotonic too, which is what a scheduler
-    /// needs and what a **playhead does not**: for where the transport *is*, read
-    /// `transport_position`.
-    transport_clock: AtomicU64,
-    /// The sample the engine is playing, on the *transport's* own
-    /// axis. It advances with the clock while rolling, holds while stopped,
-    /// jumps on a locate and wraps at a loop's end. A playhead wants this one;
-    /// a scheduled bundle wants the clock above.
-    ///
-    /// This spends the last of the header's reserved space.
-    transport_position: AtomicU64,
+    /// How many rows of the transport table are live: the server's
+    /// `--transports`, written by the engine at boot. 0 until one has.
+    transports: AtomicU32,
+    _reserved: [u32; 3],
+}
+
+// The header keeps its 64 bytes: the transport count took the space the two
+// transport words left when they moved into the table.
+const _: () = assert!(size_of::<Header>() == 64);
+
+/// One transport's two numbers, published by the engine every block.
+#[repr(C)]
+struct TransportRow {
+    /// Samples elapsed *under this transport*, frozen while it is stopped. The
+    /// device clock never stops, so a reader pacing on the device wants that
+    /// one -- but this one is monotonic too, which is what a scheduler needs
+    /// and what a **playhead does not**: for where the transport *is*, read
+    /// `position`.
+    clock: AtomicU64,
+    /// The sample the engine is playing, on the transport's own axis. It
+    /// advances with the clock while rolling, holds while stopped, jumps on a
+    /// locate and wraps at a loop's end. A playhead wants this one; a
+    /// scheduled bundle wants the clock above.
+    position: AtomicU64,
 }
 
 #[repr(C)]
@@ -149,6 +168,7 @@ struct Ring {
 #[repr(C)]
 struct Layout {
     header: Header,
+    transports: [TransportRow; MAX_TRANSPORTS],
     /// Client -> server commands.
     c2s: Ring,
     /// Server -> client replies.
@@ -283,6 +303,8 @@ pub struct Shape {
     /// needs, not carry half of them and pin the other half.
     pub sample_rate_offset: u64,
     pub clock_offset: u64,
+    /// Transport 0's clock and position; transport `i`'s are `i *
+    /// transport_stride` further on.
     pub transport_clock_offset: u64,
     pub transport_position_offset: u64,
     /// Bytes of one directory row, and of one tap slot: what a foreign reader
@@ -296,6 +318,9 @@ pub struct Shape {
     pub ring_capacity: u64,
     pub ring_prefix: u64,
     pub frame_header: u64,
+    /// The live transports, and the bytes from one transport's row to the next.
+    pub transports: u64,
+    pub transport_stride: u64,
 }
 
 /// A mapped segment: the address, its length, and everything either end does
@@ -375,6 +400,8 @@ impl View {
         // because the process that creates one is not always the one that
         // serves it (an editor creates, its session serves).
         *header.control_owner.get_mut() = 0;
+        // No transport is live until an engine says how many it has.
+        *header.transports.get_mut() = 0;
         header.abi_version = ABI_VERSION;
         // Written last: a peer that sees the magic sees a full header.
         header.magic = MAGIC;
@@ -413,8 +440,12 @@ impl View {
             buffers_offset: buffers_offset as u64,
             sample_rate_offset: std::mem::offset_of!(Header, sample_rate_bits) as u64,
             clock_offset: std::mem::offset_of!(Header, sample_clock) as u64,
-            transport_clock_offset: std::mem::offset_of!(Header, transport_clock) as u64,
-            transport_position_offset: std::mem::offset_of!(Header, transport_position) as u64,
+            transport_clock_offset: (std::mem::offset_of!(Layout, transports)
+                + std::mem::offset_of!(TransportRow, clock))
+                as u64,
+            transport_position_offset: (std::mem::offset_of!(Layout, transports)
+                + std::mem::offset_of!(TransportRow, position))
+                as u64,
             buffer_row_size: size_of::<BufferRow>() as u64,
             tap_slot_size: tap_slot_size(tap_frames) as u64,
             c2s_offset: std::mem::offset_of!(Layout, c2s) as u64,
@@ -422,6 +453,9 @@ impl View {
             ring_capacity: RING_CAPACITY as u64,
             ring_prefix: std::mem::offset_of!(Ring, data) as u64,
             frame_header: FRAME_HEADER as u64,
+            transports: (header.transports.load(Ordering::Relaxed) as usize).min(MAX_TRANSPORTS)
+                as u64,
+            transport_stride: size_of::<TransportRow>() as u64,
         })
     }
 
@@ -471,16 +505,38 @@ impl View {
         &self.header().sample_clock
     }
 
-    /// Samples elapsed under the transport, held while it is stopped.
-    #[inline]
-    pub fn transport_clock(&self) -> &AtomicU64 {
-        &self.header().transport_clock
+    /// How many transports the engine publishes. Read live rather than from
+    /// the shape, because a peer may attach before the engine has said.
+    pub fn transports(&self) -> usize {
+        (self.header().transports.load(Ordering::Acquire) as usize).min(MAX_TRANSPORTS)
     }
 
-    /// Where the transport *is*: the position a playhead draws.
+    /// Says how many transports are live. For the engine, once, at boot;
+    /// clamped to the table.
+    pub fn set_transports(&self, count: usize) {
+        self.header()
+            .transports
+            .store(count.min(MAX_TRANSPORTS) as u32, Ordering::Release);
+    }
+
+    /// Samples elapsed under transport `transport`, held while it is stopped;
+    /// `None` past the table.
     #[inline]
-    pub fn transport_position(&self) -> &AtomicU64 {
-        &self.header().transport_position
+    pub fn transport_clock(&self, transport: usize) -> Option<&AtomicU64> {
+        self.layout()
+            .transports
+            .get(transport)
+            .map(|row| &row.clock)
+    }
+
+    /// Where transport `transport` *is*: the position a playhead draws; `None`
+    /// past the table.
+    #[inline]
+    pub fn transport_position(&self, transport: usize) -> Option<&AtomicU64> {
+        self.layout()
+            .transports
+            .get(transport)
+            .map(|row| &row.position)
     }
 
     // ---- the control plane's owner ----
