@@ -520,6 +520,10 @@ test("each transport rolls on its own, addressed through transportAt", {
         await assert.rejects(server.transportFollow(governed), CommandError);
         await one.transportFollow(null);
         output.free();
+        assert.equal((await one.transportState()).fade, 0, "no ramp by default");
+        await one.transportFade(240);
+        assert.equal((await one.transportState()).fade, 240);
+        await one.transportFade(0);
         await assert.rejects(server.transportAt(99).transportPlay(), CommandError);
 
         await one.transportStop();

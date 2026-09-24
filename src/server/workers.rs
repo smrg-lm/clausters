@@ -77,6 +77,8 @@ impl Job {
         transport: TransportCtx {
             position: 0,
             rolling: false,
+            fade: 0.0,
+            fade_step: 0.0,
         },
     };
 }

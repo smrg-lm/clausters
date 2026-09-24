@@ -131,6 +131,12 @@ pub enum Cmd {
         transport: usize,
         mark: Option<EndMark>,
     },
+    /// `/transport_fade`: how long a stop and a play ramp, in samples. `0`
+    /// is no ramp: a stop freezes on its sample.
+    TransportFade {
+        transport: usize,
+        samples: u64,
+    },
     /// `/node_before` / `/node_after`.
     MoveNode {
         id: i32,
@@ -335,6 +341,90 @@ struct TransportState {
     /// Where inside the current block its frozen run began, if it is stopped
     /// -- scratch for [`Engine::process_block`], `None` outside it.
     frozen_from: Option<usize>,
+    /// How long a stop and a play ramp, in samples (`/transport_fade`); `0`
+    /// is no ramp, and a stop freezes on its own sample.
+    fade_len: u64,
+    /// The declick level `TransportFade` reads: `1` rolling, `0` stopped, and
+    /// a ramp between the two across a stop's stopping phase and a play.
+    fade: Ramp,
+    /// A stop in its stopping phase: the transport still rolls, and freezes
+    /// when the ramp reaches zero.
+    stopping: Option<Stopping>,
+}
+
+/// **The declick level**, as a straight line over device samples: `from` at
+/// `start`, `to` from `start + len` on.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Ramp {
+    from: f32,
+    to: f32,
+    start: u64,
+    len: u64,
+}
+
+impl Ramp {
+    /// A level that does not move.
+    const fn level(level: f32) -> Self {
+        Self {
+            from: level,
+            to: level,
+            start: 0,
+            len: 0,
+        }
+    }
+
+    /// From the level at `device` to `to`, over `len` samples.
+    fn toward(self, device: u64, to: f32, len: u64) -> Self {
+        Self {
+            from: self.at(device),
+            to,
+            start: device,
+            len,
+        }
+    }
+
+    /// The level at device sample `device`.
+    fn at(&self, device: u64) -> f32 {
+        let done = device.saturating_sub(self.start);
+        if done >= self.len {
+            return self.to;
+        }
+        self.from + (self.to - self.from) * (done as f32 / self.len as f32)
+    }
+
+    /// How much the level moves per sample at `device`: `0` once it has
+    /// arrived.
+    fn step(&self, device: u64) -> f32 {
+        if device >= self.start + self.len {
+            0.0
+        } else {
+            (self.to - self.from) / self.len as f32
+        }
+    }
+}
+
+/// A stop ramping out: the device sample the transport freezes on, and --
+/// when the end mark stopped it -- where it goes back to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Stopping {
+    at: u64,
+    /// `Some` when the end mark caused it: the engine then reports the end,
+    /// and locates to the mark's return, if it has one.
+    ended: Option<Option<u64>>,
+}
+
+/// What a transport's next edge is, when it is due.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Edge {
+    /// Its stopping phase is over: freeze.
+    Freeze,
+    /// The loop's end: wrap.
+    Wrap,
+    /// The end mark, with no ramp: stop on it.
+    End,
+    /// Its ramp's length before the end mark: start the stopping phase, so
+    /// it freezes on the mark.
+    EndRamp,
 }
 
 impl TransportState {
@@ -349,6 +439,9 @@ impl TransportState {
             end: None,
             sched: Vec::with_capacity(SCHED_CAPACITY),
             frozen_from: None,
+            fade_len: 0,
+            fade: Ramp::level(0.0),
+            stopping: None,
         }
     }
 
@@ -357,28 +450,85 @@ impl TransportState {
         DeviceSample::new(device).to_transport(self.frozen_total)
     }
 
-    /// The device sample at which it reaches the edge that cuts a block --
-    /// the loop's end while a loop is set, the end mark otherwise -- when it
-    /// rolls and the edge is ahead of `device`. A position already at or past
-    /// the end mark is due at once: a transport never rolls past its mark. A
-    /// loop wins, since the position wraps before it could reach the mark.
-    fn edge_due(&self, device: u64) -> Option<u64> {
+    /// The device sample at which its position reaches `position`, or
+    /// `device` itself when it already has.
+    fn reaching(&self, position: u64, device: u64) -> u64 {
+        let here = self.at(device);
+        self.position
+            .reaching(TransportPosition::new(position), here)
+            .unwrap_or(here)
+            .to_device(self.frozen_total)
+            .get()
+    }
+
+    /// The edge that cuts a block next, and the device sample it is due on,
+    /// when it rolls: the end of a stopping phase first; else the loop's end
+    /// while a loop is set; else the end mark -- or, with a ramp, the ramp's
+    /// length before it, so the stopping phase ends on the mark. A position
+    /// already at or past the mark is due at once: a transport never rolls
+    /// past its mark. A loop wins, since the position wraps before it could
+    /// reach the mark.
+    fn edge_due(&self, device: u64) -> Option<(Edge, u64)> {
         if !self.rolling {
             return None;
         }
-        let here = self.at(device);
+        if let Some(stopping) = self.stopping {
+            return Some((Edge::Freeze, stopping.at.max(device)));
+        }
         if let Some(span) = &self.looping {
+            let here = self.at(device);
             return self
                 .position
                 .reaching(TransportPosition::new(span.end), here)
-                .map(|t| t.to_device(self.frozen_total).get());
+                .map(|t| (Edge::Wrap, t.to_device(self.frozen_total).get()));
         }
         let mark = self.end?;
-        let reached = self
-            .position
-            .reaching(TransportPosition::new(mark.end), here)
-            .unwrap_or(here);
-        Some(reached.to_device(self.frozen_total).get())
+        if self.fade_len == 0 {
+            return Some((Edge::End, self.reaching(mark.end, device)));
+        }
+        let ramp = mark.end.saturating_sub(self.fade_len);
+        Some((Edge::EndRamp, self.reaching(ramp, device)))
+    }
+
+    /// **A stop**: with no ramp, it freezes now; with one, the stopping phase
+    /// begins -- the level falls from where it is, over as much of the ramp as
+    /// it has left to fall, and the transport freezes when it reaches zero.
+    /// Returns whether it froze now.
+    fn stop(&mut self, device: u64) -> bool {
+        if !self.rolling || self.stopping.is_some() {
+            return false;
+        }
+        if self.fade_len == 0 {
+            self.rolling = false;
+            self.fade = Ramp::level(0.0);
+            return true;
+        }
+        let level = self.fade.at(device);
+        let len = ((level as f64 * self.fade_len as f64).round() as u64).max(1);
+        self.fade = self.fade.toward(device, 0.0, len);
+        self.stopping = Some(Stopping {
+            at: device + len,
+            ended: None,
+        });
+        false
+    }
+
+    /// **A play**: a stopping phase is called off and the level rises from
+    /// where it had fallen to; a stopped transport rolls and ramps up from
+    /// zero. Returns whether it thawed.
+    fn play(&mut self, device: u64) -> bool {
+        if self.stopping.take().is_some() {
+            let level = self.fade.at(device);
+            let len = ((1.0 - level as f64) * self.fade_len as f64).round() as u64;
+            self.fade = self.fade.toward(device, 1.0, len);
+            return false;
+        }
+        if self.rolling {
+            return false;
+        }
+        self.rolling = true;
+        self.fade = Ramp::level(0.0).toward(device, 1.0, self.fade_len);
+        true
     }
 }
 
@@ -432,6 +582,7 @@ pub(crate) fn cmd_target_nodes(cmd: &Cmd) -> [Option<i32>; 2] {
         | Cmd::TransportLocate { .. }
         | Cmd::TransportLoop { .. }
         | Cmd::TransportEnd { .. }
+        | Cmd::TransportFade { .. }
         | Cmd::SetBuffer { .. }
         | Cmd::SetControlBus { .. }
         | Cmd::SetTap { .. }
@@ -1035,7 +1186,7 @@ impl Engine {
                 .transports
                 .iter()
                 .enumerate()
-                .filter_map(|(i, t)| t.edge_due(here).map(|due| (i, due)))
+                .filter_map(|(i, t)| t.edge_due(here).map(|(edge, due)| ((i, edge), due)))
                 .min_by_key(|&(_, due)| due)
                 .filter(|&(_, due)| due <= block_end);
             // An edge ties with a bundle by yielding to it: the queues keep the
@@ -1059,39 +1210,70 @@ impl Engine {
                 offset = at;
             }
             self.cursor = offset;
-            if let Some((k, _)) = edge_due.filter(|_| take_edge) {
+            if let Some(((k, edge), _)) = edge_due.filter(|_| take_edge) {
                 let here = self.device_here();
                 let t = &mut self.transports[k];
-                if t.looping.is_none() {
+                // What freezing it on this sample leaves to do: whether the
+                // end mark caused it, and where the pass goes back to.
+                let froze = match edge {
+                    Edge::Wrap => {
+                        // Back to the loop's start, re-anchored here so the
+                        // position goes on advancing by one per sample from
+                        // the seam. The span is half-open, so the end sample
+                        // is never played and the first sample after the last
+                        // one of the loop is its first.
+                        let start = t.looping.as_ref().map_or(0, |span| span.start);
+                        t.position = t
+                            .position
+                            .wrapped_to(TransportPosition::new(start), t.at(here));
+                        None
+                    }
                     // **The end mark: stop here, on this sample**, as a
-                    // `/transport_stop` landing on it would -- the governed
-                    // group and the transport's clock freeze -- and then
-                    // locate to where the pass goes back to. The locate is
-                    // anchored at a stopped transport, so it holds until the
-                    // next play.
-                    let mark = t.end.expect("an end was due");
+                    // `/transport_stop` landing on it would.
+                    Edge::End => Some(Some(t.end.expect("an end was due").back)),
+                    // **A ramp's length before the end mark**: the stopping
+                    // phase starts here and ends on the mark, so the fade is
+                    // over when the pass is. It falls from wherever the level
+                    // is, over what is left before the mark.
+                    Edge::EndRamp => {
+                        let mark = t.end.expect("an end was due");
+                        let at = t.reaching(mark.end, here);
+                        if at > here {
+                            t.fade = t.fade.toward(here, 0.0, at - here);
+                            t.stopping = Some(Stopping {
+                                at,
+                                ended: Some(mark.back),
+                            });
+                            None
+                        } else {
+                            Some(Some(mark.back))
+                        }
+                    }
+                    Edge::Freeze => {
+                        let stopping = t.stopping.take().expect("a stop was due");
+                        Some(stopping.ended)
+                    }
+                };
+                if let Some(ended) = froze {
+                    // The governed group and the transport's clock freeze on
+                    // this sample, and the level is zero. An end then locates
+                    // to where the pass goes back to; the locate is anchored
+                    // at a stopped transport, so it holds until the next play.
                     t.rolling = false;
+                    t.fade = Ramp::level(0.0);
                     if let Some(group) = t.group {
                         self.tree.set_paused(group, true);
                     }
                     if t.frozen_from.is_none() {
                         t.frozen_from = Some(offset);
                     }
-                    if let Some(back) = mark.back {
-                        t.position =
-                            PositionAnchor::located(TransportPosition::new(back), t.at(here));
+                    if let Some(back) = ended {
+                        if let Some(back) = back {
+                            t.position =
+                                PositionAnchor::located(TransportPosition::new(back), t.at(here));
+                        }
+                        self.push_garbage(Garbage::TransportEnded { transport: k });
                     }
-                    self.push_garbage(Garbage::TransportEnded { transport: k });
-                } else {
-                    // Back to the loop's start, re-anchored here so the
-                    // position goes on advancing by one per sample from the
-                    // seam. The span is half-open, so the end sample is never
-                    // played and the first sample after the last one of the
-                    // loop is its first.
-                    let start = t.looping.as_ref().map_or(0, |span| span.start);
-                    t.position = t
-                        .position
-                        .wrapped_to(TransportPosition::new(start), t.at(here));
                 }
                 continue;
             }
@@ -1272,6 +1454,8 @@ impl Engine {
                 TransportCtx {
                     position: t.position.at(t.at(device)).get(),
                     rolling: t.rolling,
+                    fade: t.fade.at(device),
+                    fade_step: t.fade.step(device),
                 },
             );
         }
@@ -1329,7 +1513,13 @@ impl Engine {
                     let Some(t) = self.transports.get_mut(transport) else {
                         return;
                     };
-                    t.rolling = rolling;
+                    // With a ramp, a stop only starts the stopping phase and
+                    // the freeze is an edge of the block; a play during one
+                    // calls it off, and the group never froze.
+                    let flipped = if rolling { t.play(here) } else { t.stop(here) };
+                    if !flipped {
+                        return;
+                    }
                     if let Some(group) = t.group {
                         self.tree.set_paused(group, !rolling);
                         if rolling {
@@ -1396,6 +1586,13 @@ impl Engine {
                 Cmd::TransportEnd { transport, mark } => {
                     if let Some(t) = self.transports.get_mut(transport) {
                         t.end = mark;
+                    }
+                }
+                Cmd::TransportFade { transport, samples } => {
+                    // The next stop and play take it; one already ramping
+                    // keeps the line it started on.
+                    if let Some(t) = self.transports.get_mut(transport) {
+                        t.fade_len = samples;
                     }
                 }
                 Cmd::SetBuffer { index, buffer } => {

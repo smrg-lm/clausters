@@ -565,6 +565,16 @@ pub struct TransportCtx {
     /// one on a server with no group bound. It still has to hold its position
     /// rather than ramp: the transport is not moving, whoever is asking.
     pub rolling: bool,
+    /// **The declick level** at this slice's first frame: `1` while the
+    /// transport rolls, `0` while it is stopped, and a straight ramp across a
+    /// stop's stopping phase and a play (`/transport_fade`). What
+    /// `TransportFade` outputs.
+    pub fade: f32,
+    /// How much [`fade`](Self::fade) moves per sample across this slice: `0`
+    /// unless it is ramping. A ramp that ends inside the slice overshoots
+    /// here, and the reader clamps to `[0, 1]`: the engine cuts the block
+    /// where a falling one ends (the freeze), and a rising one ends at `1`.
+    pub fade_step: f32,
 }
 
 /// What a UGen (via [`UGen::done`]) asks the engine to do when it finishes --

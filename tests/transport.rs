@@ -1986,3 +1986,166 @@ fn a_following_group_reads_its_transport_and_is_not_frozen() {
         "transport 0, at 0, minus the offset of 1"
     );
 }
+
+/// A synth whose output is the transport's declick level, on bus 0.
+#[cfg(feature = "synth")]
+fn fade_def() -> Arc<SynthDef> {
+    let json = r#"{
+        "name": "fade",
+        "controls": [],
+        "ugens": [
+            {"kind": "TransportFade", "inputs": []},
+            {"kind": "ReplaceOut", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    }"#;
+    let spec: SynthDefSpec = serde_json::from_str(json).unwrap();
+    Arc::new(compile(spec).unwrap())
+}
+
+/// The declick level on bus 0, read by a synth at the root: outside every
+/// governed group, so it runs through a stop and hears the whole ramp.
+#[cfg(feature = "synth")]
+fn fade_engine(
+    fade: u64,
+) -> (
+    clausters::server::engine::Engine,
+    clausters::server::engine::EngineHandle,
+) {
+    let (engine, mut handle) = engine_pair(48_000.0, 2);
+    handle
+        .send(Cmd::AddSynth {
+            id: 100,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(fade_def(), 48_000.0, SEED_STRIDE)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportFade {
+            transport: 0,
+            samples: fade,
+        })
+        .ok()
+        .unwrap();
+    (engine, handle)
+}
+
+/// **With no ramp the level is whether the transport rolls**, and a stop
+/// freezes on its own sample as it always has.
+#[test]
+#[cfg(feature = "synth")]
+fn with_no_ramp_the_fade_is_whether_the_transport_rolls() {
+    let (mut engine, mut handle) = fade_engine(0);
+    assert!(block_of_bus_0(&mut engine).iter().all(|x| *x == 0.0));
+    run(&mut handle, 0, true);
+    assert!(block_of_bus_0(&mut engine).iter().all(|x| *x == 1.0));
+    run(&mut handle, 0, false);
+    assert!(block_of_bus_0(&mut engine).iter().all(|x| *x == 0.0));
+    assert_eq!(handle.current_transport_samples(0), BLOCK_SIZE as u64);
+}
+
+/// **A play ramps up and a stop is a stopping phase**: the level rises from
+/// zero over the ramp, and on a stop it falls over the ramp while the
+/// transport goes on rolling -- its clock and its position advance by the
+/// ramp's length, and it freezes when the level reaches zero.
+#[test]
+#[cfg(feature = "synth")]
+fn a_stop_rolls_out_its_ramp_and_then_freezes() {
+    let (mut engine, mut handle) = fade_engine(100);
+    run(&mut handle, 0, true);
+    let mut seen = block_of_bus_0(&mut engine);
+    seen.extend(block_of_bus_0(&mut engine));
+    for (i, x) in seen.iter().enumerate() {
+        let want = (i as f32 / 100.0).min(1.0);
+        assert!((x - want).abs() < 1e-5, "sample {i}: {x}, not {want}");
+    }
+
+    run(&mut handle, 0, false);
+    let mut seen = block_of_bus_0(&mut engine);
+    seen.extend(block_of_bus_0(&mut engine));
+    seen.extend(block_of_bus_0(&mut engine));
+    for (i, x) in seen.iter().enumerate() {
+        let want = (1.0 - i as f32 / 100.0).max(0.0);
+        assert!((x - want).abs() < 1e-5, "sample {i}: {x}, not {want}");
+    }
+    let stopped_at = 2 * BLOCK_SIZE as u64 + 100;
+    assert_eq!(
+        handle.current_transport_samples(0),
+        stopped_at,
+        "the clock rolled the ramp out and froze"
+    );
+    assert_eq!(
+        handle.current_transport_position(0),
+        stopped_at,
+        "and the position rests where the readers stopped reading"
+    );
+}
+
+/// **The end mark starts its ramp that long before the mark**, so the level
+/// reaches zero on the mark itself, the pass ends there and goes back, and
+/// the network side is told.
+#[test]
+#[cfg(feature = "synth")]
+fn the_end_marks_ramp_ends_on_the_mark() {
+    use clausters::server::engine::{EndMark, Garbage};
+
+    let (mut engine, mut handle) = fade_engine(50);
+    handle
+        .send(Cmd::TransportEnd {
+            transport: 0,
+            mark: Some(EndMark {
+                end: 150,
+                back: Some(10),
+            }),
+        })
+        .ok()
+        .unwrap();
+    run(&mut handle, 0, true);
+    let mut seen = Vec::new();
+    for _ in 0..4 {
+        seen.extend(block_of_bus_0(&mut engine));
+    }
+    for (i, x) in seen.iter().enumerate() {
+        let want = if i < 50 {
+            i as f32 / 50.0
+        } else if i < 100 {
+            1.0
+        } else {
+            (1.0 - (i - 100) as f32 / 50.0).max(0.0)
+        };
+        assert!((x - want).abs() < 1e-5, "sample {i}: {x}, not {want}");
+    }
+    assert_eq!(handle.current_transport_samples(0), 150, "stopped on it");
+    assert_eq!(handle.current_transport_position(0), 10, "and went back");
+    let mut told = false;
+    while let Some(g) = handle.pop_garbage() {
+        told |= matches!(g, Garbage::TransportEnded { .. });
+    }
+    assert!(told, "the pass is over");
+}
+
+/// **A play during a stopping phase calls it off**: the level rises again
+/// from where it had fallen to, and the transport never froze.
+#[test]
+#[cfg(feature = "synth")]
+fn a_play_during_the_stopping_phase_rises_from_where_it_fell() {
+    let (mut engine, mut handle) = fade_engine(128);
+    run(&mut handle, 0, true);
+    run_blocks(&mut engine, 4);
+    run(&mut handle, 0, false);
+    let falling = block_of_bus_0(&mut engine);
+    assert!((falling[63] - (1.0 - 63.0 / 128.0)).abs() < 1e-5);
+    run(&mut handle, 0, true);
+    let rising = block_of_bus_0(&mut engine);
+    let from = 1.0 - 64.0 / 128.0;
+    assert!((rising[0] - from).abs() < 1e-5, "{}", rising[0]);
+    assert!(rising.windows(2).all(|w| w[1] >= w[0]), "it only rises");
+    run_blocks(&mut engine, 2);
+    assert_eq!(
+        handle.current_transport_samples(0),
+        8 * BLOCK_SIZE as u64,
+        "and never froze"
+    );
+}

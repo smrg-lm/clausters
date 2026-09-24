@@ -2448,6 +2448,11 @@
       ]
     },
     {
+      "name": "TransportFade",
+      "arity": 0,
+      "inputs": []
+    },
+    {
       "name": "TransportPos",
       "arity": 1,
       "inputs": [

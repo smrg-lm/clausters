@@ -121,3 +121,20 @@ export const phasor = (
  */
 export const transportPos = (offset: Channel = 0.0): Ugen =>
     new Ugen("TransportPos", [offset]);
+
+/**
+ * The **transport's declick level**: 1 while it rolls, 0 while it is stopped,
+ * and a straight ramp between the two across a stop and a play, as long as
+ * `Server.transportFade` says (with none set, it is simply whether the
+ * transport rolls).
+ *
+ * An output that must not click on a stop sits **outside** the governed group,
+ * in one that follows the transport (`Server.transportFollow`), and multiplies
+ * what the readers wrote by this: with a ramp the transport keeps rolling
+ * while it falls, so the readers are still playing when it reaches zero.
+ *
+ * ```ts
+ * out(0, mul(in_(bus), transportFade()));
+ * ```
+ */
+export const transportFade = (): Ugen => new Ugen("TransportFade", []);

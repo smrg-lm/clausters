@@ -366,6 +366,9 @@ struct Transport {
     /// where it goes back to once it has. Held here for the reason the loop
     /// is: `/transport_query` reports it without asking the audio thread.
     end_mark: Option<(i64, Option<i64>)>,
+    /// How long a stop and a play ramp, in samples (`/transport_fade`): `0`
+    /// is no ramp. Held here for `/transport_query`, like the loop.
+    fade: i64,
 }
 
 /// One client's `/bus_stream` subscription: which control buses it watches and

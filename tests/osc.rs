@@ -1856,6 +1856,7 @@ fn transport_query_and_set() {
             OscType::Long(-1),
             OscType::Int(0),
             OscType::Int(-1),
+            OscType::Long(0),
         ]
     );
 
@@ -1889,6 +1890,7 @@ fn transport_query_and_set() {
             OscType::Long(-1),
             OscType::Int(0),
             OscType::Int(-1),
+            OscType::Long(0),
         ]
     );
 
@@ -2015,6 +2017,7 @@ fn transport_pushes_on_change_to_notify_clients() {
             OscType::Long(-1),
             OscType::Int(0),
             OscType::Int(-1),
+            OscType::Long(0),
         ]
     );
 
@@ -2368,6 +2371,39 @@ fn a_group_follows_a_transport_and_the_reply_says_which() {
         }
         server.send("/transport_query", vec![OscType::Int(1)]);
     }
+    server.quit();
+}
+
+/// `/transport_fade` sets a transport's ramp, the reply carries it last, and
+/// a negative one is refused.
+#[test]
+fn a_transports_ramp_is_set_and_reported() {
+    let server = TestServer::spawn();
+    server.send("/server_notify", vec![OscType::Int(1)]);
+    server.recv_until("/done");
+    server.send("/transport_fade", vec![OscType::Int(2), OscType::Long(240)]);
+    assert_eq!(
+        server.recv_until("/done").args[0],
+        OscType::String("/transport_fade".into())
+    );
+    let push = loop {
+        let reply = server.recv_until("/transport_query.reply");
+        if reply.args[12] == OscType::Int(2) {
+            break reply;
+        }
+    };
+    assert_eq!(push.args.len(), 15);
+    assert_eq!(push.args[14], OscType::Long(240), "the ramp, last");
+    server.send("/transport_query", vec![OscType::Int(0)]);
+    let other = loop {
+        let reply = server.recv_until("/transport_query.reply");
+        if reply.args[12] == OscType::Int(0) {
+            break reply;
+        }
+    };
+    assert_eq!(other.args[14], OscType::Long(0), "none by default");
+    server.send("/transport_fade", vec![OscType::Int(0), OscType::Long(-1)]);
+    server.recv_until("/fail");
     server.quit();
 }
 

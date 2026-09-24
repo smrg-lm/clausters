@@ -54,7 +54,7 @@
 //! they are modulation sources, meant to be read at control rate and to have
 //! exact corners.
 
-use crate::dsp::{ProcessCtx, UGen, at};
+use crate::dsp::{ProcessCtx, TransportCtx, UGen, at};
 
 /// The fourth-order PolyBLEP residual over `x`, the distance from the
 /// discontinuity **in samples**, for a step of height 2 (the range of every
@@ -507,6 +507,37 @@ impl UGen for TransportPos {
         for (i, s) in output.iter_mut().enumerate() {
             let played = if rolling { i as f64 * step } else { 0.0 };
             *s = (base + played - at(inputs[0], i) as f64) as f32;
+        }
+    }
+}
+
+/// **The transport's declick level**: `1` while it rolls, `0` while it is
+/// stopped, and a straight ramp between the two across a stop and a play.
+///
+/// A stop cannot fade what it has already frozen, so a transport with a ramp
+/// (`/transport_fade`) stops in two steps: its governed group goes on running
+/// and its position goes on advancing while this falls to zero, and only then
+/// does it freeze. A play thaws it and this rises from zero. So an output
+/// **outside** the governed group -- in a group that follows the transport --
+/// multiplies what the readers wrote by this, and neither edge is a step. A
+/// loop's wrap and a locate are not stops and do not move it. With no ramp
+/// set, it is simply whether the transport rolls.
+///
+/// No inputs. It reads the transport of the nearest bound group above it.
+pub struct TransportFade;
+
+impl UGen for TransportFade {
+    fn process(&mut self, ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
+        let step = if ctx.sample_rate > 0.0 {
+            ctx.full_sample_rate / ctx.sample_rate
+        } else {
+            1.0
+        };
+        let TransportCtx {
+            fade, fade_step, ..
+        } = ctx.transport;
+        for (i, s) in output.iter_mut().enumerate() {
+            *s = (fade + fade_step * i as f32 * step).clamp(0.0, 1.0);
         }
     }
 }

@@ -691,8 +691,21 @@ opened it.
     does with the state it froze with (a delay line still holding the past),
     and how an effect is moved in the chain, since an auto-sorted group
     refuses a manual move.
-  - The stop's ramp: its length, and where the position comes to rest after a
+  - ✅ The stop's ramp: its length, and where the position comes to rest after a
     stop (the sample the stop was asked at, or the end of the ramp).
+    *Decided by the user 2026-09-24, and shipped the same day*: the transport
+    rolls in full through the ramp and **the position rests at its end**,
+    where the readers stopped reading; the length is **per transport**,
+    `/transport_fade <t> <samples>`, `0` (no ramp) by default, and the editor
+    asks for its own. The end mark starts its ramp that long before the mark.
+    `TransportFade` reads the level (`docs/decisions.md`, "A stop with a ramp
+    rolls the ramp out, and rests where the readers stopped").
+  - ✅ **Where the nodes live.** *Decided by the user 2026-09-24*: as the
+    multitrack's do -- one design pattern in the repo. The defs are written
+    once in `clausters-core`, the playback that makes them is the editing
+    crate's, bound in C and wasm, held by both clients and the standalone
+    host, and the application answers the keys with what the transport is
+    asked to do.
   - **Which transport the editor takes.** `T6` shipped (2026-09-24): a server
     has several, the multitrack plays on transport 0 and the host's monitor
     does too for now. The editor takes another. What reads it outside the

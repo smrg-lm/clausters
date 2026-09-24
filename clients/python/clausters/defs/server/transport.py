@@ -83,9 +83,10 @@ class ServerTransport:
     def transport_state(self, timeout: "float | None" = None):
         """The full shared transport state as a dict ``{origin_sample, tempo,
         playing, position, group, transport_sample, position_sample, loop,
-        end, transport, follow}``, ``transport`` being this handle's
-        `transport_id` and ``follow`` the group that follows it
-        (`transport_follow`) or ``None``.
+        end, transport, follow, fade}``, ``transport`` being this handle's
+        `transport_id`, ``follow`` the group that follows it
+        (`transport_follow`) or ``None``, and ``fade`` the length of a stop's
+        and a play's ramp in samples (`transport_fade`), 0 for none.
 
         **Always a dict**: the transport exists whether or not anyone has
         defined a beat grid, because rolling, stopping and saying where the
@@ -135,6 +136,7 @@ class ServerTransport:
             "end": None if end < 0 else (end, None if back < 0 else back),
             "transport": self.transport_id,
             "follow": None if len(args) < 14 or int(args[13]) < 0 else int(args[13]),
+            "fade": int(args[14]) if len(args) > 14 else 0,
         }
 
     def transport_group(self, group, timeout: "float | None" = None):
@@ -274,6 +276,26 @@ class ServerTransport:
                                   timeout=timeout, expect=("/done", "/fail"))
         if addr == "/fail":
             raise CommandError(f"/transport_end failed: {args}")
+        return self
+
+    def transport_fade(self, samples: int, timeout: "float | None" = None):
+        """How long a stop and a play **ramp** (``/transport_fade``), in
+        samples; 0, the default, is no ramp.
+
+        With a ramp a stop is a **stopping phase**: the governed group goes on
+        running and the position goes on advancing while the ramp falls to
+        zero, and then they freeze -- the position rests where the readers
+        stopped reading. A play thaws and ramps up. What reads the ramp is
+        `clausters.defs.transport_fade`, in a group that follows the transport
+        (`transport_follow`): an output multiplies what the readers wrote by
+        it, and neither edge clicks. The end mark starts its ramp that long
+        before the mark, so the pass still ends on it; a loop's wrap and a
+        locate are not ramped."""
+        addr, args = self.request("/transport_fade", self.transport_id,
+                                  _osclib.Int64(int(samples)),
+                                  timeout=timeout, expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/transport_fade failed: {args}")
         return self
 
     def transport_locate(self, position: float, timeout: "float | None" = None):

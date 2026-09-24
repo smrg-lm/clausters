@@ -679,6 +679,9 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     ("/transport_end", |s, _, m, f| {
         s.handle_transport_end(Args::new(m), f)
     }),
+    ("/transport_fade", |s, _, m, f| {
+        s.handle_transport_fade(Args::new(m), f)
+    }),
     ("/transport_follow", |s, _, m, f| {
         s.handle_transport_follow(Args::new(m), f)
     }),

@@ -87,6 +87,7 @@ impl OscServer {
             OscType::Long(back),
             OscType::Int(k as i32),
             OscType::Int(t.follow.unwrap_or(-1)),
+            OscType::Long(t.fade),
         ]
     }
 
@@ -181,6 +182,7 @@ impl OscServer {
             group: previous.group,
             follow: previous.follow,
             end_mark: previous.end_mark,
+            fade: previous.fade,
             // Setting the grid locates the transport to 0 below, and that locate
             // records itself.
             pending_locate: None,
@@ -446,6 +448,43 @@ impl OscServer {
             from,
             "/done",
             vec![OscType::String("/transport_end".into())],
+        );
+        self.broadcast_transport(k);
+        Ok(())
+    }
+
+    /// `/transport_fade <transport:int32> <samples:int64>` -- how long a stop
+    /// and a play **ramp**, so an output reading `TransportFade` outside the
+    /// governed group declicks both. `0`, the default, is no ramp.
+    ///
+    /// With a ramp a stop is a **stopping phase**: the governed group goes on
+    /// running and the position goes on advancing while the level falls to
+    /// zero, and then they freeze -- the position rests where the readers
+    /// stopped reading. The end mark starts its ramp that long before the
+    /// mark, so the pass still ends on it. A play thaws and ramps up; one
+    /// during a stopping phase calls it off from the level it had reached. A
+    /// loop's wrap and a locate are not stops and are not ramped.
+    pub(in crate::osc::server) fn handle_transport_fade(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let k = self.transport_arg(&mut args)?;
+        let samples = args.long()?;
+        if samples < 0 {
+            return Err("a ramp is >= 0 samples".into());
+        }
+        self.transports[k].fade = samples;
+        self.handle
+            .send(Cmd::TransportFade {
+                transport: k,
+                samples: samples as u64,
+            })
+            .ok();
+        self.reply(
+            from,
+            "/done",
+            vec![OscType::String("/transport_fade".into())],
         );
         self.broadcast_transport(k);
         Ok(())

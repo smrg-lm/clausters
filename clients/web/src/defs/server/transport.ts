@@ -86,6 +86,8 @@ export interface TransportState {
     transport: number;
     /** The group that follows it (`transportFollow`), or `null`. */
     follow: number | null;
+    /** How long a stop and a play ramp, in samples (`transportFade`); 0 for none. */
+    fade: number;
 }
 
 /** A reply matcher: whether a `/transport_query.reply` is about `transport`. */
@@ -210,6 +212,7 @@ export class ServerTransport {
             follow: msg.args.length > 13 && Number(msg.args[13]) >= 0
                 ? Number(msg.args[13])
                 : null,
+            fade: msg.args.length > 14 ? Number(msg.args[14]) : 0,
         };
     }
 
@@ -400,6 +403,33 @@ export class ServerTransport {
         if (end !== null) args.push(["h", Math.trunc(end)]);
         if (end !== null && back !== null) args.push(["h", Math.trunc(back)]);
         await this.command("/transport_end", args, timeout);
+        return this;
+    }
+
+    /**
+     * How long a stop and a play **ramp** (`/transport_fade`), in samples; 0,
+     * the default, is no ramp.
+     *
+     * With a ramp a stop is a **stopping phase**: the governed group goes on
+     * running and the position goes on advancing while the ramp falls to zero,
+     * and then they freeze -- the position rests where the readers stopped
+     * reading. A play thaws and ramps up. What reads the ramp is
+     * `transportFade`, in a group that follows the transport
+     * (`transportFollow`): an output multiplies what the readers wrote by it,
+     * and neither edge clicks. The end mark starts its ramp that long before
+     * the mark, so the pass still ends on it; a loop's wrap and a locate are
+     * not ramped.
+     */
+    async transportFade(
+        this: Server,
+        samples: number,
+        timeout?: number,
+    ): Promise<Server> {
+        await this.command(
+            "/transport_fade",
+            [["i", this.transportId], ["h", Math.trunc(samples)]],
+            timeout,
+        );
         return this;
     }
 }

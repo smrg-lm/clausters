@@ -9048,3 +9048,28 @@ So the command names a window or a widget first -- required, since an integer
 may follow the word -- and a widget draws from the counter named on it or on
 its nearest ancestor, then its window's, then the host's `--clock`: the same
 nearest-ancestor rule the transports themselves follow.
+
+## A stop with a ramp rolls the ramp out, and rests where the readers stopped
+
+*2026-09-24.* A declick on a stop cannot happen after the freeze: on that
+sample the governed readers stop producing anything, so there is nothing left
+to fade. So a transport with a ramp (`/transport_fade`) stops in two steps --
+the governed group goes on running while a level that an output outside it
+reads (`TransportFade`) falls to zero, and only then does it freeze.
+
+**During the ramp the transport rolls in full**: its clock, its position and
+its queue. Two other readings were weighed and refused. Holding the clock
+while the position ran would break the one rule the position rests on, that
+it is an anchor onto that clock. Holding the position while the group ran
+would have every reader repeat one frame for the length of the ramp -- a DC
+offset fading out, which is the thing a declick is there to prevent. So a stop
+with a ramp is a stop that lands a ramp's length later, and **the position
+rests where the readers stopped reading**: a play continues from there, and
+nothing is played twice. The end mark keeps its contract by starting its ramp
+that long before the mark, so the pass still ends on it and goes back from
+there.
+
+**The length is per transport and none by default.** A stop with no ramp
+freezes on its own sample, as it always has, so a transport that asks for
+nothing -- the multitrack's, a script's -- behaves exactly as before, and an
+application whose output reads the level asks for its own.

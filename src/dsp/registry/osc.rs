@@ -138,4 +138,15 @@ pub(super) static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(TransportPos),
     ),
+    desc(
+        "TransportFade",
+        Fixed(0),
+        I_NONE,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(TransportFade),
+    ),
 ];

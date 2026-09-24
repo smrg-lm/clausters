@@ -91,6 +91,7 @@ export {
     lfSaw,
     lfTri,
     phasor,
+    transportFade,
     transportPos,
     pinkNoise,
     pulse,
