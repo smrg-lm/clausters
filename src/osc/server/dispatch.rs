@@ -661,6 +661,9 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         s.handle_via_translate(m, f);
         Ok(())
     }),
+    ("/transport_end", |s, _, m, f| {
+        s.handle_transport_end(Args::new(m), f)
+    }),
     ("/transport_group", |s, _, m, f| {
         s.handle_transport_group(Args::new(m), f)
     }),

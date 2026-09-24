@@ -358,6 +358,10 @@ struct Transport {
     /// bound, the engine enforces it -- `/transport_stop` freezes that subtree
     /// and the transport clock, `/transport_play` thaws them.
     group: Option<i32>,
+    /// The end mark (`/transport_end`): where a rolling transport stops, and
+    /// where it goes back to once it has. Held here for the reason the loop
+    /// is: `/transport_query` reports it without asking the audio thread.
+    end_mark: Option<(i64, Option<i64>)>,
 }
 
 /// One client's `/bus_stream` subscription: which control buses it watches and

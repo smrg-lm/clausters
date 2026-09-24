@@ -489,6 +489,29 @@ def test_the_governed_group_is_a_node_or_its_id():
     assert iface.sent[-1] == ("/transport_group", [-1])
 
 
+def test_the_end_mark_is_set_cleared_and_read_back():
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    iface.queue_reply("/done", "/transport_end")
+    sent = lambda: (iface.sent[-1][0], [a.value for a in iface.sent[-1][1]])  # noqa: E731
+    srv.transport_end(100, 10)
+    assert sent() == ("/transport_end", [100, 10]), "two int64s"
+    iface.queue_reply("/done", "/transport_end")
+    srv.transport_end(200)
+    assert sent() == ("/transport_end", [200])
+    iface.queue_reply("/done", "/transport_end")
+    srv.transport_end()
+    assert iface.sent[-1] == ("/transport_end", [])
+
+    base = [0, 0.0, 0, 0, 0.0, -1, 0, 0, 0, 0]
+    iface.queue_reply("/transport_query.reply", *base, 100, 10)
+    assert srv.transport_state()["end"] == (100, 10)
+    iface.queue_reply("/transport_query.reply", *base, 200, -1)
+    assert srv.transport_state()["end"] == (200, None)
+    iface.queue_reply("/transport_query.reply", *base, -1, -1)
+    assert srv.transport_state()["end"] is None
+
+
 def test_records_print_readably_and_agree_with_their_container():
     # str is the readable line, repr stays the dataclass form -- and a Tree
     # draws a synth by printing its own NodeInfo, so the two cannot drift.

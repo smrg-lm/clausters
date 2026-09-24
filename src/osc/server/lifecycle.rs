@@ -530,6 +530,7 @@ impl OscServer {
                     }
                 }
                 Garbage::FreedBuffer(_) => {}
+                Garbage::TransportEnded => self.on_transport_ended(),
                 Garbage::SpentBundle(_) => {
                     // The executed shell of a timed bundle, or one a
                     // `/sched_clear` dropped: nothing to say, the heap is freed

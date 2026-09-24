@@ -1831,9 +1831,10 @@ fn transport_query_and_set() {
     let server = TestServer::spawn();
 
     // Unset: defined flag 0, zeros. Reply is (origin, tempo, defined, playing,
-    // position, group, transportSample, positionSample, loopStart, loopEnd) --
-    // the grid, the rolling state, the governed group with the transport
-    // clock, and where the transport is with the loop it wraps in. Everything past
+    // position, group, transportSample, positionSample, loopStart, loopEnd,
+    // endSample, returnSample) -- the grid, the rolling state, the governed
+    // group with the transport clock, where the transport is with the loop it
+    // wraps in, and the end mark it stops on (-1 when none). Everything past
     // the fifth field is appended, so a client reading the original five still
     // works.
     server.send("/transport_query", vec![]);
@@ -1851,6 +1852,8 @@ fn transport_query_and_set() {
             OscType::Long(0),
             OscType::Long(0),
             OscType::Long(0),
+            OscType::Long(-1),
+            OscType::Long(-1),
         ]
     );
 
@@ -1880,6 +1883,8 @@ fn transport_query_and_set() {
             OscType::Long(0),
             OscType::Long(0),
             OscType::Long(0),
+            OscType::Long(-1),
+            OscType::Long(-1),
         ]
     );
 
@@ -1990,6 +1995,8 @@ fn transport_pushes_on_change_to_notify_clients() {
             OscType::Long(0),
             OscType::Long(0),
             OscType::Long(0),
+            OscType::Long(-1),
+            OscType::Long(-1),
         ]
     );
 
@@ -2150,6 +2157,59 @@ fn transport_loop_sets_and_clears_a_span() {
     assert_eq!(reply.args[8], OscType::Long(0));
     assert_eq!(reply.args[9], OscType::Long(0));
 
+    server.quit();
+}
+
+/// `/transport_end`: the mark rides the reply, and the engine's stop on it is
+/// broadcast like any other -- `playing` 0, the position on the return.
+#[test]
+fn transport_end_stops_on_the_mark_and_says_so() {
+    let mut server = TestServer::spawn();
+    server.send("/server_notify", vec![OscType::Int(1)]);
+    server.recv_until("/done");
+    // A governed group, since only then does the engine roll at all.
+    server.send(
+        "/group_new",
+        vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
+    );
+    server.wait_for_group_count(2);
+    server.send("/transport_group", vec![OscType::Int(100)]);
+    server.recv_until("/done");
+
+    server.send(
+        "/transport_end",
+        vec![OscType::Long(100), OscType::Long(10)],
+    );
+    assert_eq!(
+        server.recv_until("/done").args[0],
+        OscType::String("/transport_end".into())
+    );
+    let reply = server.recv_until("/transport_query.reply");
+    assert_eq!(reply.args[10], OscType::Long(100), "the mark");
+    assert_eq!(reply.args[11], OscType::Long(10), "and its return");
+
+    server.send("/transport_play", vec![]);
+    server.recv_until("/done");
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    for _ in 0..3 {
+        server.engine.process_block(&mut out);
+    }
+    // The broadcast of the play itself comes first; the stop is the one that
+    // says it is no longer playing.
+    let stopped = loop {
+        let reply = server.recv_until("/transport_query.reply");
+        if reply.args[3] == OscType::Int(0) {
+            break reply;
+        }
+    };
+    assert_eq!(stopped.args[7], OscType::Long(10), "back on the return");
+
+    // No arguments clears it.
+    server.send("/transport_end", vec![]);
+    server.recv_until("/done");
+    let reply = server.recv_until("/transport_query.reply");
+    assert_eq!(reply.args[10], OscType::Long(-1));
+    assert_eq!(reply.args[11], OscType::Long(-1));
     server.quit();
 }
 

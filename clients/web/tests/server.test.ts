@@ -466,6 +466,27 @@ test("a governed group freezes the transport clock", { skip: !hasServer }, async
     });
 });
 
+test("the end mark stops a rolling transport and goes back", { skip: !hasServer }, async () => {
+    await withServer(async (server) => {
+        const governed = new Group({ server });
+        await server.transportGroup(governed);
+        await server.transportEnd(200);
+        assert.deepEqual((await server.transportState()).end, [200, null]);
+        // A tenth of a second at 48 kHz, going back to the start.
+        await server.transportEnd(4_800, 0);
+        assert.deepEqual((await server.transportState()).end, [4_800, 0]);
+        await server.transportPlay();
+        await sleep(400);
+        const ended = await server.transportState();
+        assert.equal(ended.playing, false, "the engine stopped on the mark");
+        assert.equal(ended.positionSample, 0, "and went back");
+        await server.transportEnd();
+        assert.equal((await server.transportState()).end, null);
+        await server.transportGroup(null);
+        governed.free();
+    });
+});
+
 test("/sched_atTransport verifies the axis it is told", { skip: !hasServer }, async () => {
     await withServer(async (server) => {
         await new SynthDef("ts_hold", out(0.0, sine(control("freq", 220.0)).mul(0.0)))

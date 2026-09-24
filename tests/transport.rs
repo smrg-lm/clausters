@@ -554,6 +554,126 @@ fn a_graph_sees_the_loop_wrap_on_its_exact_sample() {
     );
 }
 
+/// **The end mark stops the transport on its exact sample** and locates it
+/// to the return: read from inside a graph, the position ramps up to the
+/// mark's last sample and then stands on the return, and the transport clock
+/// counts exactly the samples that rolled.
+#[test]
+#[cfg(feature = "synth")]
+fn the_transport_stops_on_its_end_mark_and_goes_back() {
+    use clausters::server::engine::{EndMark, Garbage};
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    handle
+        .send(Cmd::AddSynth {
+            id: 100,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(position_def(), 48_000.0, SEED_STRIDE)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+    // Not block-aligned: the stop falls inside the second block.
+    handle
+        .send(Cmd::TransportEnd {
+            mark: Some(EndMark {
+                end: 100,
+                back: Some(10),
+            }),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun { rolling: true })
+        .ok()
+        .unwrap();
+
+    let mut seen = block_of_bus_0(&mut engine);
+    seen.extend(block_of_bus_0(&mut engine));
+    seen.extend(block_of_bus_0(&mut engine));
+    let expected: Vec<f32> = (0..3 * BLOCK_SIZE)
+        .map(|i| if i < 100 { i as f32 } else { 10.0 })
+        .collect();
+    assert_eq!(seen, expected, "up to the mark, then on the return");
+    assert_eq!(handle.current_transport_samples(), 100, "stopped on it");
+    assert_eq!(handle.current_transport_position(), 10);
+    let mut told = false;
+    while let Some(g) = handle.pop_garbage() {
+        told |= matches!(g, Garbage::TransportEnded);
+    }
+    assert!(told, "and the network side is told the pass is over");
+}
+
+/// A loop wins over the mark: the position wraps before it can reach it.
+#[test]
+fn a_loop_wins_over_the_end_mark() {
+    use clausters::server::engine::EndMark;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    handle
+        .send(Cmd::TransportLoop { span: Some(0..50) })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportEnd {
+            mark: Some(EndMark {
+                end: 30,
+                back: None,
+            }),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun { rolling: true })
+        .ok()
+        .unwrap();
+    run_blocks(&mut engine, 4);
+    assert_eq!(
+        handle.current_transport_samples(),
+        4 * BLOCK_SIZE as u64,
+        "it never stopped"
+    );
+}
+
+/// The transport never rolls past its mark: a play from past it stops at
+/// once, and with no return the position rests where it was. Clearing the
+/// mark lets it roll.
+#[test]
+fn a_play_from_past_the_mark_stops_at_once_and_a_cleared_mark_rolls() {
+    use clausters::server::engine::EndMark;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    handle
+        .send(Cmd::TransportEnd {
+            mark: Some(EndMark { end: 5, back: None }),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportLocate { position: 20 })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::TransportRun { rolling: true })
+        .ok()
+        .unwrap();
+    run_blocks(&mut engine, 2);
+    assert_eq!(handle.current_transport_samples(), 0, "no sample rolled");
+    assert_eq!(handle.current_transport_position(), 20);
+
+    handle.send(Cmd::TransportEnd { mark: None }).ok().unwrap();
+    handle
+        .send(Cmd::TransportRun { rolling: true })
+        .ok()
+        .unwrap();
+    run_blocks(&mut engine, 2);
+    assert_eq!(
+        handle.current_transport_position(),
+        20 + 2 * BLOCK_SIZE as u64
+    );
+}
+
 #[test]
 fn frozen_time_is_counted_to_the_sample_not_to_the_block() {
     // A stop and a resume that both land *inside* a block, at different

@@ -6,6 +6,7 @@
 //! intensities, and why `docs/decisions.md` has an entry on it.
 
 use super::super::*;
+use crate::server::engine::EndMark;
 
 /// What the two commands that speak **beats** refuse with when no grid has been
 /// defined: `/transport_locate`, and `/transport_play` given a position.
@@ -42,6 +43,10 @@ impl OscServer {
             _ => self.handle.current_transport_position() as i64,
         };
         let (loop_start, loop_end) = t.loop_span.unwrap_or((0, 0));
+        let (end, back) = match t.end_mark {
+            Some((end, back)) => (end, back.unwrap_or(-1)),
+            None => (-1, -1),
+        };
         vec![
             OscType::Long(origin),
             OscType::Double(tempo),
@@ -53,6 +58,8 @@ impl OscServer {
             OscType::Long(position_sample),
             OscType::Long(loop_start),
             OscType::Long(loop_end),
+            OscType::Long(end),
+            OscType::Long(back),
         ]
     }
 
@@ -131,6 +138,7 @@ impl OscServer {
             // could see.
             loop_span: self.transport.loop_span,
             group: self.transport.group,
+            end_mark: self.transport.end_mark,
             // Setting the grid locates the transport to 0 below, and that locate
             // records itself.
             pending_locate: None,
@@ -325,6 +333,59 @@ impl OscServer {
         );
         self.broadcast_transport();
         Ok(())
+    }
+
+    /// `/transport_end [<end:int64> [<return:int64>]]` -- the **end mark**: the
+    /// sample of the transport's position a rolling transport stops on, and
+    /// the position it is located to once it has; **no arguments clears it**.
+    ///
+    /// The stop is the engine's, on the mark's exact sample, and it is what a
+    /// `/transport_stop` landing there would do: the governed group and the
+    /// transport clock freeze. With no `return` the position rests on the
+    /// mark. Every `/server_notify` client is told by the usual
+    /// `/transport_query.reply`, so whoever holds readers learns the pass is
+    /// over. The mark stays set, and the transport never rolls past it: a play
+    /// from at or past it stops at once. **A loop wins** -- while one is set
+    /// the position wraps and never reaches the mark.
+    pub(in crate::osc::server) fn handle_transport_end(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let mark = match args.opt_long()? {
+            None => None,
+            Some(end) => {
+                let back = args.opt_long()?;
+                if end < 0 || back.is_some_and(|b| b < 0) {
+                    return Err("an end mark and its return are >= 0".into());
+                }
+                Some((end, back))
+            }
+        };
+        self.transport.end_mark = mark;
+        self.handle
+            .send(Cmd::TransportEnd {
+                mark: mark.map(|(end, back)| EndMark {
+                    end: end as u64,
+                    back: back.map(|b| b as u64),
+                }),
+            })
+            .ok();
+        self.reply(
+            from,
+            "/done",
+            vec![OscType::String("/transport_end".into())],
+        );
+        self.broadcast_transport();
+        Ok(())
+    }
+
+    /// The engine stopped on the end mark: the mirror stops too, and every
+    /// `/server_notify` client is told, as it is of any other stop.
+    pub(in crate::osc::server) fn on_transport_ended(&mut self) {
+        self.transport.playing = false;
+        self.transport.pending_locate = None;
+        self.broadcast_transport();
     }
 
     /// `/transport_group <int32 group>` -- binds the group the transport

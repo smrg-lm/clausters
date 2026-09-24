@@ -37,7 +37,8 @@ class ServerTransport:
 
     def transport_state(self, timeout: "float | None" = None):
         """The full shared transport state as a dict ``{origin_sample, tempo,
-        playing, position, group, transport_sample, position_sample, loop}``.
+        playing, position, group, transport_sample, position_sample, loop,
+        end}``.
 
         **Always a dict**: the transport exists whether or not anyone has
         defined a beat grid, because rolling, stopping and saying where the
@@ -64,11 +65,17 @@ class ServerTransport:
         last completed block -- except right after a locate, which the server
         answers with the place it located to until a block has applied it, so a
         reply in the same breath as a locate (its own broadcast above all) never
-        reports the place the transport is leaving."""
+        reports the place the transport is leaving.
+
+        ``end`` is the end mark (`transport_end`) as an ``(end, back)`` pair --
+        ``back`` ``None`` when the position rests on the mark -- or ``None``
+        when none is set."""
         _, args = self.request("/transport_query", timeout=timeout, expect=("/transport_query.reply",))
         defined = bool(int(args[2]))
         group = int(args[5])
         loop_start, loop_end = int(args[8]), int(args[9])
+        end = int(args[10]) if len(args) > 10 else -1
+        back = int(args[11]) if len(args) > 11 else -1
         return {
             "origin_sample": int(args[0]) if defined else None,
             "tempo": float(args[1]) if defined else None,
@@ -78,6 +85,7 @@ class ServerTransport:
             "transport_sample": int(args[6]),
             "position_sample": int(args[7]),
             "loop": (loop_start, loop_end) if loop_end > loop_start else None,
+            "end": None if end < 0 else (end, None if back < 0 else back),
         }
 
     def transport_group(self, group, timeout: "float | None" = None):
@@ -172,6 +180,29 @@ class ServerTransport:
                                   timeout=timeout, expect=("/done", "/fail"))
         if addr == "/fail":
             raise CommandError(f"/transport_loop failed: {args}")
+        return self
+
+    def transport_end(self, end: "int | None" = None, back: "int | None" = None,
+                      timeout: "float | None" = None):
+        """Set (or clear, with ``None``) the transport's **end mark**
+        (``/transport_end``), in samples: where a rolling transport stops, and
+        ``back``, where it is located once it has -- ``None`` leaves it on the
+        mark.
+
+        The stop is the engine's, on the mark's exact sample, and it is a stop
+        like `transport_stop`: the governed group and the transport clock
+        freeze, and every `/server_notify` client is told. The mark stays set,
+        so the next play from ``back`` ends at the same place, and the transport
+        never rolls past it: a play from at or past the mark stops at once.
+        **A loop wins** -- while one is set the position wraps and never
+        reaches the mark."""
+        args_out = () if end is None else (
+            (_osclib.Int64(int(end)),) if back is None
+            else (_osclib.Int64(int(end)), _osclib.Int64(int(back))))
+        addr, args = self.request("/transport_end", *args_out,
+                                  timeout=timeout, expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/transport_end failed: {args}")
         return self
 
     def transport_locate(self, position: float, timeout: "float | None" = None):

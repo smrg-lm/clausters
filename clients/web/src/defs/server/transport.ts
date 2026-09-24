@@ -70,6 +70,11 @@ export interface TransportState {
      * when looping is off.
      */
     loop: [number, number] | null;
+    /**
+     * The end mark (`transportEnd`) as `[end, back]` -- `back` `null` when the
+     * position rests on the mark -- or `null` when none is set.
+     */
+    end: [number, number | null] | null;
 }
 
 /** The shared transport grid. Composed into `Server`; never used alone. */
@@ -130,6 +135,8 @@ export class ServerTransport {
         const group = Number(msg.args[5]);
         const loopStart = Number(msg.args[8]);
         const loopEnd = Number(msg.args[9]);
+        const end = msg.args.length > 10 ? Number(msg.args[10]) : -1;
+        const back = msg.args.length > 11 ? Number(msg.args[11]) : -1;
         return {
             originSample: defined ? Number(msg.args[0]) : null,
             tempo: defined ? Number(msg.args[1]) : null,
@@ -139,6 +146,7 @@ export class ServerTransport {
             transportSample: Number(msg.args[6]),
             positionSample: Number(msg.args[7]),
             loop: loopEnd > loopStart ? [loopStart, loopEnd] : null,
+            end: end < 0 ? null : [end, back < 0 ? null : back],
         };
     }
 
@@ -279,6 +287,34 @@ export class ServerTransport {
                 ? []
                 : [["h", Math.trunc(span[0])], ["h", Math.trunc(span[1])]];
         await this.command("/transport_loop", args, timeout);
+        return this;
+    }
+
+    /**
+     * Sets -- or clears, with `null` -- the transport's **end mark**
+     * (`/transport_end`), in samples: where a rolling transport stops, and
+     * `back`, where it is located once it has; `null` leaves it on the mark.
+     *
+     * The stop is the engine's, on the mark's exact sample, and it is a stop
+     * like `transportStop`: the governed group and the transport clock freeze,
+     * and every `/server_notify` client is told. The mark stays set, so the
+     * next play from `back` ends at the same place, and the transport never
+     * rolls past it: a play from at or past the mark stops at once. **A loop
+     * wins** -- while one is set the position wraps and never reaches the mark.
+     */
+    async transportEnd(
+        this: Server,
+        end: number | null = null,
+        back: number | null = null,
+        timeout?: number,
+    ): Promise<Server> {
+        const args: MsgArg[] =
+            end === null
+                ? []
+                : back === null
+                  ? [["h", Math.trunc(end)]]
+                  : [["h", Math.trunc(end)], ["h", Math.trunc(back)]];
+        await this.command("/transport_end", args, timeout);
         return this;
     }
 }

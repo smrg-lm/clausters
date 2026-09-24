@@ -575,7 +575,7 @@ impl Renderer {
                     self.translator.release_node_id(id);
                     crate::server::engine::report_rejected(id, why, "nrt render");
                 }
-                Garbage::FreedGroup { .. } | Garbage::FreedBuffer(_) => {}
+                Garbage::FreedGroup { .. } | Garbage::FreedBuffer(_) | Garbage::TransportEnded => {}
             }
         }
         // Offline there is no client to notify, but the server-owned id

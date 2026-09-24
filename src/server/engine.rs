@@ -110,6 +110,11 @@ pub enum Cmd {
     TransportLoop {
         span: Option<Range<u64>>,
     },
+    /// `/transport_end`: the end mark, where a rolling transport stops, and
+    /// where it is located once it has. `None` clears the mark.
+    TransportEnd {
+        mark: Option<EndMark>,
+    },
     /// `/node_before` / `/node_after`.
     MoveNode {
         id: i32,
@@ -246,6 +251,19 @@ pub enum Garbage {
     /// one: a clear drops what a client asked to drop, and reporting it as a
     /// rejection made a re-cue look like an overflow.
     RejectedBundle(Vec<Cmd>),
+    /// The transport reached its end mark and stopped there, so whoever
+    /// mirrors the rolling state learns it without polling. Not garbage, and
+    /// carried here for the reason a rejection is: it is the one FIFO the
+    /// network thread drains on every turn, idle ticks included.
+    TransportEnded,
+}
+
+/// Where a rolling transport stops (`end`) and where it is located once it
+/// has (`back`; `None` leaves it at `end`), both on the transport's position.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EndMark {
+    pub end: u64,
+    pub back: Option<u64>,
 }
 
 /// A timed bundle waiting in the engine's queue.
@@ -296,6 +314,7 @@ pub(crate) fn cmd_target_nodes(cmd: &Cmd) -> [Option<i32>; 2] {
         | Cmd::TransportGroup { .. }
         | Cmd::TransportLocate { .. }
         | Cmd::TransportLoop { .. }
+        | Cmd::TransportEnd { .. }
         | Cmd::SetBuffer { .. }
         | Cmd::SetControlBus { .. }
         | Cmd::SetTap { .. }
@@ -476,6 +495,8 @@ pub struct Engine {
     /// an empty or inverted span is refused before it reaches the engine, and
     /// the wrap below would not terminate over one.
     transport_loop: Option<Range<u64>>,
+    /// The end mark: where a rolling transport stops when no loop is set.
+    transport_end: Option<EndMark>,
     /// How far into the current block the engine is standing, in samples.
     /// Zero outside [`Engine::process_block`]'s cut loop; see
     /// [`Engine::transport_here`] for why anything reads it.
@@ -655,6 +676,7 @@ pub fn engine_pair_full(
         cursor: 0,
         position_clock: Arc::clone(&position_clock),
         transport_loop: None,
+        transport_end: None,
         frozen_clock: Arc::clone(&frozen_clock),
         transport_group: None,
         sched: Vec::with_capacity(SCHED_CAPACITY),
@@ -746,6 +768,23 @@ impl Engine {
         self.position
             .reaching(TransportPosition::new(span.end), here)
             .map(|t| t.to_device(self.frozen_total).get())
+    }
+
+    /// The device sample at which the transport reaches its end mark, when one
+    /// is set, the transport rolls and no loop is set -- a loop wins, since
+    /// the position wraps before it could reach the mark. A position already
+    /// at or past the mark is due at once: the transport never rolls past it.
+    fn end_due(&self) -> Option<u64> {
+        if !self.transport_rolling || self.transport_loop.is_some() {
+            return None;
+        }
+        let mark = self.transport_end?;
+        let here = self.transport_here();
+        let reached = self
+            .position
+            .reaching(TransportPosition::new(mark.end), here)
+            .unwrap_or(here);
+        Some(reached.to_device(self.frozen_total).get())
     }
 
     /// Whether the transport queue holds nothing. A server that never binds a
@@ -944,7 +983,13 @@ impl Engine {
             // what the next block's first sample plays -- and that sample is
             // the loop's start. Reading it a block late is a playhead that
             // overshoots the loop by a block, once per pass.
-            let wrap_due = self.loop_wrap_due().filter(|w| *w <= block_end);
+            //
+            // The end mark cuts the block the same way, on the same terms, and
+            // never beside a wrap: a loop that is set is the only edge.
+            let wrap_due = self
+                .loop_wrap_due()
+                .or_else(|| self.end_due())
+                .filter(|w| *w <= block_end);
             // A wrap ties with a bundle by yielding to it: the queues keep the
             // device-first preference they already had among themselves, and a
             // wrap that stays due is taken on the next turn of the loop.
@@ -962,6 +1007,29 @@ impl Engine {
                 offset = at;
             }
             self.cursor = offset;
+            if take_wrap && self.transport_loop.is_none() {
+                // **The end mark: stop here, on this sample**, as a
+                // `/transport_stop` landing on it would -- the governed group
+                // and the transport clock freeze -- and then locate to where
+                // the pass goes back to. The locate is anchored at a stopped
+                // transport, so it holds until the next play.
+                let mark = self.transport_end.expect("an end was due");
+                self.transport_rolling = false;
+                if let Some(group) = self.transport_group {
+                    self.tree.set_paused(group, true);
+                }
+                if frozen_from.is_none() {
+                    frozen_from = Some(offset);
+                }
+                if let Some(back) = mark.back {
+                    self.position = PositionAnchor::located(
+                        TransportPosition::new(back),
+                        self.transport_here(),
+                    );
+                }
+                self.push_garbage(Garbage::TransportEnded);
+                continue;
+            }
             if take_wrap {
                 // Back to the loop's start, re-anchored here so the position
                 // goes on advancing by one per sample from the seam. The span
@@ -1234,6 +1302,9 @@ impl Engine {
                         self.transport_here(),
                     );
                     self.transport_loop = span.filter(|s| s.start < s.end);
+                }
+                Cmd::TransportEnd { mark } => {
+                    self.transport_end = mark;
                 }
                 Cmd::SetBuffer { index, buffer } => {
                     if let Some(slot) = self.buffers.get_mut(index) {
