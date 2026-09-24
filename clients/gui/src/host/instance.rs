@@ -610,16 +610,16 @@ mod tests {
             addrs(&first)
         );
         let messages = drain(&mut playing);
-        let bound = messages
+        let follows = messages
             .iter()
-            .find(|m| m.addr == "/transport_group")
-            .expect("the transport's group is bound, as every endpoint binds it");
+            .find(|m| m.addr == "/transport_follow")
+            .expect("the transport's group follows it, as every endpoint's does");
         let graph = messages
             .iter()
             .find(|m| m.addr == "/graph_new")
             .expect("the multitrack is a graph");
         assert_eq!(
-            graph.args[3], bound.args[1],
+            graph.args[3], follows.args[1],
             "the multitrack inside the transport's group"
         );
         assert_eq!(
@@ -628,8 +628,20 @@ mod tests {
                 .as_ref()
                 .and_then(MultitrackPlayback::group)
                 .map(OscType::Int),
-            Some(bound.args[1].clone())
+            Some(follows.args[1].clone())
         );
+        // **What the transport governs is the tracks' group**, a slot of the
+        // multitrack's graph: the master around it goes on running.
+        let tracks = messages
+            .iter()
+            .find(|m| m.addr == "/graph_addSlot")
+            .expect("the tracks' group is the first slot");
+        assert_eq!(tracks.args[0], graph.args[1], "a slot of the multitrack");
+        let bound = messages
+            .iter()
+            .find(|m| m.addr == "/transport_group")
+            .expect("and it is governed");
+        assert_eq!(bound.args[1], tracks.args[2]);
         assert!(addrs(&messages).contains(&"/graph_addSlot"));
     }
 

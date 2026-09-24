@@ -118,8 +118,13 @@ pub const SOURCE_SLOT: &str = "source";
 pub fn clip_slot(inputs: usize) -> String {
     format!("clips.{inputs}")
 }
-/// The slot a multitrack's tracks fill.
+/// The slot a multitrack's tracks fill -- a slot of the tracks' group
+/// ([`tracks_graph`]), not of the multitrack itself.
 pub const TRACK_SLOT: &str = "tracks";
+/// **The slot the tracks' group fills**, once per multitrack: the subtree the
+/// transport governs. The master around it is not, so it goes on running
+/// while the transport is stopped.
+pub const TRANSPORT_SLOT: &str = "transport";
 /// The slot an effect chain fills. Declared and empty -- see the module docs.
 pub const FX_SLOT: &str = "fx";
 
@@ -171,6 +176,13 @@ pub fn meter_name(channels: usize) -> String {
     format!("{PREFIX}.meter.{channels}")
 }
 
+/// The name of a **track's** meter def for a strip of `channels`: the meter,
+/// closed by the transport's declick so it reads zero once a stop has frozen
+/// it ([`track_meter_def`]).
+pub fn track_meter_name(channels: usize) -> String {
+    format!("{PREFIX}.trackmeter.{channels}")
+}
+
 /// The name of the send def for `channels`.
 pub fn send_name(channels: usize) -> String {
     format!("{PREFIX}.send.{channels}")
@@ -195,6 +207,17 @@ pub fn clip_name(inputs: usize, outputs: usize) -> String {
 /// The name of the track graph for a track of `channels`.
 pub fn track_name(channels: usize) -> String {
     format!("{PREFIX}.track.{channels}")
+}
+
+/// The name of the tracks' group for a multitrack of `channels`.
+pub fn tracks_name(channels: usize) -> String {
+    format!("{PREFIX}.tracks.{channels}")
+}
+
+/// The name of the master's way out for `channels`: a send with the
+/// transport's declick.
+pub fn out_name(channels: usize) -> String {
+    format!("{PREFIX}.out.{channels}")
 }
 
 /// The name of the multitrack graph for one of `channels`.
@@ -365,6 +388,26 @@ pub fn meter_def(channels: usize) -> Result<Value, String> {
     Ok(meter_spec(&meter_name(channels), channels, MAX_CHANNELS))
 }
 
+/// **A track's meter**: [`meter_def`], closed while the transport's declick is
+/// under half.
+///
+/// A track is governed, so a stop freezes its meter with whatever it last
+/// wrote, and a meter that gets no time to fall would go on claiming that
+/// level. With the transport's ramp the track keeps running for the length of
+/// the ramp after the stop -- which is also when a client's zeroing of the
+/// bus lands -- so the meter closes itself on the way down, and the last value
+/// it writes before the freeze is zero. The master's meter is outside the
+/// governed group and falls on its own; it is [`meter_def`].
+pub fn track_meter_def(channels: usize) -> Result<Value, String> {
+    check(channels, "meter")?;
+    Ok(meter_spec_gated(
+        &track_meter_name(channels),
+        channels,
+        MAX_CHANNELS,
+        true,
+    ))
+}
+
 /// **The meter, written once**: `channels` levels read off `in0..`, each onto
 /// the control bus its `out` names, with the field's ballistics. `slots` is how
 /// many `in`/`out` pairs the def declares, at least `channels` -- the
@@ -375,6 +418,12 @@ pub fn meter_def(channels: usize) -> Result<Value, String> {
 /// ([`crate::audio_editor::meter_def`]): the same algorithm under another
 /// application's name.
 pub fn meter_spec(name: &str, channels: usize, slots: usize) -> Value {
+    meter_spec_gated(name, channels, slots, false)
+}
+
+/// [`meter_spec`], and with `gated` each level times whether the transport's
+/// declick is above half (`TransportFade > 0.5`): see [`track_meter_def`].
+fn meter_spec_gated(name: &str, channels: usize, slots: usize, gated: bool) -> Value {
     let slots = slots.max(channels);
     let mut controls = Vec::new();
     for channel in 0..slots {
@@ -387,19 +436,31 @@ pub fn meter_spec(name: &str, channels: usize, slots: usize) -> Value {
     controls.push(control("hold", 0.0));
     let (decay, hold) = (2 * slots as u32, 2 * slots as u32 + 1);
     let mut ugens = Vec::new();
+    // The gate, first when there is one: at control rate, so it is the
+    // declick's level at the start of each slice.
+    let gate = gated.then(|| {
+        ugens.push(json!({"kind": "TransportFade", "rate": "kr", "inputs": []}));
+        ugens.push(json!({"kind": "BinaryOpUGen", "op": "gt", "rate": "kr",
+                          "inputs": [{"ugen": 0}, {"const": 0.5}]}));
+        1u32
+    });
     for channel in 0..channels {
-        // Three UGens per channel, so the stride is three: the second channel's
-        // `In` is UGen 3, not UGen 2. Getting that wrong does not fail -- every
-        // index is a valid UGen -- it silently meters the wrong node, which is
-        // what a second channel reading a raw sample instead of its own level
-        // looked like.
-        let read = 3 * channel as u32;
+        // Three UGens per channel (four gated), found by where each one lands
+        // rather than by a stride: a second channel reading the first
+        // channel's node does not fail -- every index is a valid UGen -- it
+        // silently meters the wrong one.
+        let read = ugens.len() as u32;
         ugens.push(json!({"kind": "In", "inputs": [{"control": channel}]}));
         ugens.push(json!({"kind": "Meter", "inputs": [
             {"ugen": read}, {"control": decay}, {"control": hold}
         ]}));
+        let mut level = read + 1;
+        if let Some(gate) = gate {
+            ugens.push(json!({"kind": "Mul", "inputs": [{"ugen": level}, {"ugen": gate}]}));
+            level = ugens.len() as u32 - 1;
+        }
         ugens.push(json!({"kind": "OutCtl", "inputs": [
-            {"control": slots + channel}, {"ugen": read + 1}
+            {"control": slots + channel}, {"ugen": level}
         ]}));
     }
     json!({ "name": name, "controls": controls, "ugens": ugens })
@@ -436,6 +497,37 @@ pub fn send_def(channels: usize) -> Result<Value, String> {
         ]}));
     }
     Ok(json!({ "name": send_name(channels), "controls": controls, "ugens": ugens }))
+}
+
+/// **What leaves the master for the hardware**: the send, times the
+/// transport's declick level (`TransportFade`).
+///
+/// The master is outside the governed group, so it runs through a stop; with
+/// the transport's ramp (`/transport_fade`) the tracks go on playing while the
+/// level falls, and this is where it is applied -- once, after the mix, so a
+/// stop and a play fade the whole multitrack and nothing clicks. A track's
+/// own send is [`send_def`], unfaded, since it runs inside the governed group.
+pub fn out_def(channels: usize) -> Result<Value, String> {
+    check(channels, "out")?;
+    let controls = vec![
+        control("in0", 0.0),
+        control("in1", 0.0),
+        control("out0", 0.0),
+        control("out1", 0.0),
+        lagged(GAIN, 1.0),
+    ];
+    let mut ugens = vec![json!({"kind": "TransportFade", "inputs": []})];
+    let level = 1u32;
+    ugens.push(json!({"kind": "Mul", "inputs": [{"ugen": 0}, {"control": 4}]}));
+    for channel in 0..channels {
+        let read = ugens.len() as u32;
+        ugens.push(json!({"kind": "In", "inputs": [{"control": channel}]}));
+        ugens.push(json!({"kind": "Mul", "inputs": [{"ugen": read}, {"ugen": level}]}));
+        ugens.push(json!({"kind": "Out", "inputs": [
+            {"control": 2 + channel}, {"ugen": read + 1}
+        ]}));
+    }
+    Ok(json!({ "name": out_name(channels), "controls": controls, "ugens": ugens }))
 }
 
 /// **The channel strip**: `inputs` channels in, gain and mute, then the image,
@@ -713,11 +805,33 @@ pub fn track_graph(channels: usize) -> Result<Value, String> {
              "controls": {OUT_BUS: MIX_BUS}},
             {"def": clip_name(2, channels), "kind": "graph", "slot": clip_slot(2),
              "controls": {OUT_BUS: MIX_BUS}},
-            {"def": meter_name(channels), "slot": METER_SLOT,
+            {"def": track_meter_name(channels), "slot": METER_SLOT,
              "controls": meter_wiring(POST_BUS, channels)},
         ],
         "surface": surface_of(4),
         "defaults": { GAIN: 1.0, WIDTH: 1.0 }
+    }))
+}
+
+/// **The tracks' group**: every track onto the bus it is handed (`out`, the
+/// master's mix bus), and nothing else.
+///
+/// It exists for the transport. A multitrack's tracks follow it and its master
+/// does not -- the master's meter must fall on a pause and its declick must run
+/// across a stop -- so the tracks are one subtree the transport governs, and
+/// the master is around it. A slot and not a member, because the transport is
+/// bound by node id and a slot's id is the caller's; one per multitrack.
+pub fn tracks_graph(channels: usize) -> Result<Value, String> {
+    check(channels, "tracks")?;
+    Ok(json!({
+        "name": tracks_name(channels),
+        "buses": [
+            {"name": OUT_BUS, "rate": "audio", "channels": channels, "external": true},
+        ],
+        "members": [
+            {"def": track_name(channels), "kind": "graph", "slot": TRACK_SLOT,
+             "controls": {OUT_BUS: OUT_BUS}},
+        ],
     }))
 }
 
@@ -728,12 +842,17 @@ pub fn track_graph(channels: usize) -> Result<Value, String> {
 /// last fader in the chain is not a different kind of thing, and it is metered
 /// by the same slot for the same reason.
 ///
-/// **The tracks are a slot of this** rather than instances beside it, and that
-/// is not a nicety: a track's output is a bus, the master's mix bus is private
-/// to the master's instance, and a graph instantiated on its own could never
-/// name it. Containment is what lets the master hand each track the bus it
-/// writes to -- so a whole multitrack is *one* `/graph_new`, and every track, clip
-/// and reader after it is a slot added to what is already sounding.
+/// **The tracks are inside a slot of this** rather than instances beside it,
+/// and that is not a nicety: a track's output is a bus, the master's mix bus is
+/// private to the master's instance, and a graph instantiated on its own could
+/// never name it. Containment is what lets the master hand each track the bus
+/// it writes to -- so a whole multitrack is *one* `/graph_new`, and every track,
+/// clip and reader after it is a slot added to what is already sounding.
+///
+/// **The slot is the tracks' group** ([`tracks_graph`], [`TRANSPORT_SLOT`]),
+/// which is what the transport governs: a stop freezes the tracks and leaves
+/// the master strip, its meter and its way out ([`out_def`]) running, so the
+/// meter falls and the declick is heard across the stop.
 pub fn multitrack_graph(channels: usize) -> Result<Value, String> {
     check(channels, "multitrack")?;
     Ok(json!({
@@ -745,9 +864,9 @@ pub fn multitrack_graph(channels: usize) -> Result<Value, String> {
         "members": [
             {"def": strip_name(channels, channels),
              "controls": strip_wiring(MIX_BUS, channels, POST_BUS, channels)},
-            {"def": send_name(channels),
+            {"def": out_name(channels),
              "controls": strip_wiring(POST_BUS, channels, "OUT", channels)},
-            {"def": track_name(channels), "kind": "graph", "slot": TRACK_SLOT,
+            {"def": tracks_name(channels), "kind": "graph", "slot": TRANSPORT_SLOT,
              "controls": {OUT_BUS: MIX_BUS}},
             {"def": meter_name(channels), "slot": METER_SLOT,
              "controls": meter_wiring(POST_BUS, channels)},
@@ -796,7 +915,9 @@ pub fn defs_for(widths: &[(usize, usize)], master: usize) -> Result<Defs, String
         // The meter and the send are per strip width, and every track width
         // and the master's need theirs before the graph that names them.
         synth.push(meter_def(channels)?);
+        synth.push(track_meter_def(channels)?);
         synth.push(send_def(channels)?);
+        synth.push(out_def(channels)?);
         for inputs in 1..=MAX_CHANNELS {
             graph.push(clip_graph(inputs, channels)?);
         }
@@ -804,6 +925,7 @@ pub fn defs_for(widths: &[(usize, usize)], master: usize) -> Result<Defs, String
     for &channels in &tracks {
         graph.push(track_graph(channels)?);
     }
+    graph.push(tracks_graph(master)?);
     graph.push(multitrack_graph(master)?);
     Ok(Defs { synth, graph })
 }

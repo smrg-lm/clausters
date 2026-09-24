@@ -1711,11 +1711,23 @@ Every entry carries a checkbox, and one that converges into numbered milestones 
   `form` inside the multitrack document, filed under "Found by use" ("A
   composite region is `form`'s tree inside the multitrack").
 
+- ⬜ **The multitrack has no master in its view** *(the user, 2026-09-24,
+  hearing the master's freeze fixed: "No hay vúmetro de master, nunca hubo
+  mixer o pista master")*. The master is on the server -- a strip, a meter slot
+  (`mixer::METER_SLOT` on the multitrack's graph) and its way out -- and nothing
+  above it: no endpoint fills the master's meter slot, the view draws no master
+  row or mixer, and the master's gain is the playback's `gain` argument, set
+  by nobody a hand reaches. What a master is in the document (a track of its
+  own, or the multitrack's own strip), where it is drawn (a row under the
+  tracks, a mixer view) and which of its controls are automated is the design;
+  the meter is the smallest part of it, since the slot and the rule for its
+  buses are already the tracks'.
+
 ## Found by use: the running list of fixes
 
 Every entry is a checkbox, and a fixed one stays with the record of what was wrong.
 
-- ⬜ **The master freezes with the transport** *(found 2026-09-23 by the user,
+- ✅ **The master freezes with the transport** *(found 2026-09-23 by the user,
   while designing the audio editor's nodes: the master's meter, the master and
   its send must not be frozen, and neither must the master input, the input's
   own master and its meter)*. The multitrack's instance is created inside the group it binds
@@ -1729,6 +1741,19 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   under a parent that owns both. It is the shape the audio editor's nodes take
   in `crates/clausters-apps/PLAN.md`, `X7`, and the transport's stopping phase
   that `X7` needs for its declick serves this one too.
+  **Fixed 2026-09-24.** The tracks are made in a slot of the multitrack's graph
+  (`mixer::tracks_graph`, the `transport` slot), and that slot is the group the
+  transport governs; the group made at the top **follows** transport 0 and
+  holds the graph, so the master strip, its meter slot and its way out run
+  through a stop. The way out is `mt.out`, the send times `TransportFade`, and the
+  playback gives transport 0 a 5 ms ramp, so a stop and a play fade the whole
+  mix at one place and nothing clicks. A track's meter, still governed, closes
+  itself on the ramp (`mt.trackmeter`), so a frozen track reads zero rather
+  than the level it froze on. The containment stays: the master still hands
+  every track its mix bus. `tests/mixer_graph.rs` hears it, and the user heard
+  the multitrack's example play and pause with no click. The master's meter is
+  a slot nothing fills yet -- "The multitrack has no master in its view", in
+  "Future directions".
 
 - ⬜ **A box longer than its source holds the source's last sample** *(found
   2026-09-23 while measuring the audio editor's example; the user asked for it

@@ -52,6 +52,8 @@ pub struct MultitrackPlayback {
     mark: f64,
     /// The end mark last sent, in samples, so it is sent only when it moves.
     end_sent: Option<(i64, i64)>,
+    /// The transport's ramp last sent, in samples.
+    fade_sent: Option<i64>,
 }
 
 impl MultitrackPlayback {
@@ -67,6 +69,7 @@ impl MultitrackPlayback {
             content_end: 0.0,
             mark: 0.0,
             end_sent: None,
+            fade_sent: None,
         }
     }
 
@@ -86,6 +89,17 @@ impl MultitrackPlayback {
         let plan = nodes::plan(multitrack, rate, sources);
         let ops = self.instance.reconcile(&plan, gain);
         let mut steps = self.applier.apply(ops, ids)?;
+        // **The transport's ramp**, so a stop rolls the tracks out while the
+        // master's way out fades them and a play fades them in: the master is
+        // outside the governed group, and this is what it declicks across.
+        let fade = secs_to_samples(crate::audio_playback::FADE_SECS, rate);
+        if self.fade_sent != Some(fade) {
+            self.fade_sent = Some(fade);
+            steps.extend(transport_command(
+                "/transport_fade",
+                vec![OscType::Long(fade)],
+            ));
+        }
         // An edit that moves the last region moves where a pass stops.
         self.content_end = multitrack.end().0;
         steps.extend(self.end_steps());
@@ -200,6 +214,7 @@ impl MultitrackPlayback {
     /// playback holds is nodes, and nodes are not the document.
     pub fn close(&mut self, ids: &mut IdSpaces) -> Result<Vec<Step>, IdError> {
         self.rolling = false;
+        self.fade_sent = None;
         let ops = self.instance.teardown();
         self.applier.apply(ops, ids)
     }
@@ -220,9 +235,9 @@ impl MultitrackPlayback {
         self.instance.is_sounding()
     }
 
-    /// **The transport's group**, once the multitrack has made it: where an
-    /// endpoint puts anything else that has to follow the transport, as the GUI
-    /// host's take monitor does.
+    /// **The transport's group**, once the multitrack has made it: the group
+    /// that follows the transport, holding the multitrack's graph, whose
+    /// tracks' group is the one the transport governs.
     pub fn group(&self) -> Option<i32> {
         self.applier.node(crate::instance::TRANSPORT)
     }

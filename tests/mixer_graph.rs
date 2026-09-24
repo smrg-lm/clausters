@@ -22,6 +22,10 @@ use clausters_core::mixer;
 const SR: f64 = 48_000.0;
 const BLOCK: usize = 64;
 
+/// The tracks' group [`one_box`] makes: the slot of the multitrack the tracks
+/// are added to.
+const TRACKS: i32 = 905;
+
 fn session() -> NrtSession {
     NrtSession::open(&SessionConfig {
         sample_rate: SR,
@@ -133,11 +137,22 @@ fn one_box(s: &mut NrtSession, span_frames: f32, at_frames: f32) -> (i32, i32, i
             OscType::Int(0),
         ],
     );
+    // **The tracks' group**: the slot of the multitrack the tracks go in, and
+    // the one the transport governs.
     send(
         s,
         "/graph_addSlot",
         vec![
             OscType::Int(900),
+            OscType::String(mixer::TRANSPORT_SLOT.into()),
+            OscType::Int(TRACKS),
+        ],
+    );
+    send(
+        s,
+        "/graph_addSlot",
+        vec![
+            OscType::Int(TRACKS),
             OscType::String(mixer::TRACK_SLOT.into()),
             OscType::Int(910),
         ],
@@ -166,14 +181,14 @@ fn one_box(s: &mut NrtSession, span_frames: f32, at_frames: f32) -> (i32, i32, i
             OscType::Float(span_frames),
         ],
     );
-    // **The multitrack's group is the transport's**, which is what makes the
+    // **The tracks' group is the transport's**, which is what makes the
     // readers' `TransportPos` the multitrack's own position rather than a number
     // that never moves -- and what makes play, stop and locate the engine's
-    // rather than a client's arithmetic.
+    // rather than a client's arithmetic. The master around it is not governed.
     send(
         s,
         "/transport_group",
-        vec![OscType::Int(0), OscType::Int(900)],
+        vec![OscType::Int(0), OscType::Int(TRACKS)],
     );
     s.settle_for(8);
     (900, 910, 920, 930)
@@ -342,13 +357,13 @@ fn a_moved_box_sounds_through_its_new_track_and_keeps_its_map() {
     let mut s = session();
     send_defs(&mut s, &[(1, 2)], 2);
     dc(&mut s, 0, 48_000, 1.0);
-    let (multitrack, track, clip, _reader) = one_box(&mut s, 48_000.0, 0.0);
+    let (_multitrack, track, clip, _reader) = one_box(&mut s, 48_000.0, 0.0);
     let other = 911;
     send(
         &mut s,
         "/graph_addSlot",
         vec![
-            OscType::Int(multitrack),
+            OscType::Int(TRACKS),
             OscType::String(mixer::TRACK_SLOT.into()),
             OscType::Int(other),
             OscType::String(mixer::MUTE.into()),
@@ -633,7 +648,7 @@ fn a_track_is_metered_on_its_own_output() {
         &mut s,
         "/graph_addSlot",
         vec![
-            OscType::Int(multitrack),
+            OscType::Int(TRACKS),
             OscType::String(mixer::TRACK_SLOT.into()),
             OscType::Int(quiet_track),
         ],
@@ -990,5 +1005,64 @@ fn a_thawed_meter_does_not_report_the_pass_before_it() {
         bus_value(&mut s, 120) < 1e-3,
         "and it reads the silence it is playing now: {}",
         bus_value(&mut s, 120)
+    );
+}
+
+/// **A stop freezes the tracks and leaves the master running**: with the
+/// transport's ramp the hardware output fades to zero rather than stepping, a
+/// track's meter closes on the way down and reads exactly zero once frozen,
+/// and the master's meter -- outside the governed group -- falls rather than
+/// holding what it last saw.
+#[test]
+fn a_stop_fades_the_master_and_leaves_its_meter_to_fall() {
+    let mut s = session();
+    send_defs(&mut s, &[(1, 2)], 2);
+    dc(&mut s, 0, 48_000, 0.5);
+    let (multitrack, track, ..) = one_box(&mut s, 48_000.0, 0.0);
+    meter(&mut s, track, 970, 120, 0.0);
+    meter(&mut s, multitrack, 972, 124, 0.0);
+    send(
+        &mut s,
+        "/transport_fade",
+        vec![OscType::Int(0), OscType::Long(240)],
+    );
+    send(&mut s, "/transport_play", vec![OscType::Int(0)]);
+    s.settle_for(2);
+    let before = s.run_to_vec((16 * BLOCK) as u64).expect("the render ran");
+    assert!(bus_value(&mut s, 124) > 0.2, "the master reads the sum");
+
+    send(&mut s, "/transport_stop", vec![OscType::Int(0)]);
+    let refused = fails(&mut s);
+    assert!(refused.is_empty(), "nothing was refused: {refused:?}");
+    let after = s.run_to_vec((16 * BLOCK) as u64).expect("the render ran");
+    let left: Vec<f32> = before
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .chain(after.as_chunks::<2>().0)
+        .map(|f| f[0])
+        .collect();
+    let step = left
+        .windows(2)
+        .map(|w| (w[1] - w[0]).abs())
+        .fold(0.0f32, f32::max);
+    assert!(
+        step < 0.01,
+        "the stop is a ramp at the hardware, not a step: {step}"
+    );
+    assert!(
+        left[left.len() - BLOCK..].iter().all(|x| *x == 0.0),
+        "and then silence: {:?}",
+        &left[left.len() - 4..]
+    );
+    assert_eq!(
+        bus_value(&mut s, 120),
+        0.0,
+        "a frozen track's meter reads zero, not the level it froze on"
+    );
+    let _ = s.run_to_vec((1_500 * BLOCK) as u64).expect("two seconds");
+    assert!(
+        bus_value(&mut s, 124) < 0.02,
+        "the master's meter fell, since nothing froze it"
     );
 }

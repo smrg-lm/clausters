@@ -240,6 +240,18 @@ impl Applier {
                     index: None,
                 });
             }
+            Op::Govern { handle, transport } => {
+                if let Some(node) = self.node(&handle) {
+                    steps.push(send(
+                        "/transport_group",
+                        vec![OscType::Int(transport), OscType::Int(node)],
+                    ));
+                    steps.push(Step::AwaitDone {
+                        command: "/transport_group".into(),
+                        index: None,
+                    });
+                }
+            }
             Op::AudioBus { handle, channels } => {
                 let channels = channels.max(1);
                 let first = ids.alloc(Space::AudioBuses, channels)? as i32;

@@ -52,6 +52,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use clausters_core::mixer;
+
+use crate::apply::MULTITRACK_TRANSPORT;
 use clausters_document::multitrack::nodes::{
     Plan, PlannedClip, PlannedCurve, PlannedTrack, SourceInfo,
 };
@@ -182,6 +184,15 @@ pub enum Op {
         /// The transport that governs it.
         transport: i32,
     },
+    /// **Bind a node that is already made as the group transport
+    /// `transport` governs** (`/transport_group`): the multitrack's tracks'
+    /// group, a slot of its graph, so the master around it is not frozen.
+    Govern {
+        /// The group.
+        handle: Handle,
+        /// The transport that governs it.
+        transport: i32,
+    },
     /// Allocate a run of `channels` **audio** buses -- one an application
     /// passes between two graphs of its own. Given back by [`Op::FreeBus`].
     AudioBus {
@@ -308,10 +319,16 @@ pub const MULTITRACK: &str = "multitrack";
 /// written in the block it is read.
 pub const CURVES: &str = "curves";
 
-/// **The transport's group**: made at the top by every endpoint alike, bound as
-/// the transport's, and the multitrack's graph is made inside it -- so what a stop
-/// freezes is the multitrack and whatever an endpoint puts beside it in there.
+/// **The transport's group**: made at the top by every endpoint alike, it
+/// **follows** the multitrack's transport, and the multitrack's graph is made
+/// inside it -- so every node of the multitrack reads that transport, and a
+/// stop freezes only [`TRACKS`].
 pub const TRANSPORT: &str = "transport";
+
+/// **The tracks' group**: the slot of the multitrack's graph the tracks are
+/// made in, and the group the transport governs -- the tracks, their clips
+/// and their readers freeze on a stop, and the master around them does not.
+pub const TRACKS: &str = "tracks";
 
 fn track_handle(id: u64) -> Handle {
     format!("track:{id}")
@@ -508,12 +525,14 @@ impl Instance {
         let mut ops = Vec::new();
         self.defs(plan, &mut ops);
         if !self.multitrack {
-            // **The transport's group first, and the multitrack inside it**: from
-            // here the engine freezes that subtree on a stop and thaws it on a
-            // play, and every reader's position is the engine's own rather than
-            // a number kept in step by a client.
-            ops.push(Op::Transport {
+            // **The transport's group first, the multitrack inside it, and the
+            // tracks' group governed**: every node reads the transport, a stop
+            // freezes the tracks, and the master around them -- its strip, its
+            // meter and its way out -- goes on running, so its meter falls and
+            // its declick is heard across the stop.
+            ops.push(Op::Follow {
                 handle: TRANSPORT.into(),
+                transport: MULTITRACK_TRANSPORT,
             });
             ops.push(Op::Graph {
                 handle: MULTITRACK.into(),
@@ -522,6 +541,16 @@ impl Instance {
                 ports: [("gain".to_string(), Port::from(gain))]
                     .into_iter()
                     .collect(),
+            });
+            ops.push(Op::Slot {
+                handle: TRACKS.into(),
+                target: MULTITRACK.into(),
+                slot: mixer::TRANSPORT_SLOT.into(),
+                ports: Ports::new(),
+            });
+            ops.push(Op::Govern {
+                handle: TRACKS.into(),
+                transport: MULTITRACK_TRANSPORT,
             });
             self.multitrack = true;
         }
@@ -583,9 +612,10 @@ impl Instance {
         self.makings.clear();
         if std::mem::take(&mut self.multitrack) {
             // One free: everything the multitrack holds is inside the transport's
-            // group, the multitrack's graph included.
+            // group, the multitrack's graph and the tracks' group included.
             let mut under = under;
             under.push(MULTITRACK.into());
+            under.push(TRACKS.into());
             ops.push(Op::Free {
                 handle: TRANSPORT.into(),
                 forget: under,
@@ -633,8 +663,8 @@ impl Instance {
                 None => {
                     ops.push(Op::Slot {
                         handle: track_handle(id),
-                        target: MULTITRACK.into(),
-                        slot: "tracks".into(),
+                        target: TRACKS.into(),
+                        slot: mixer::TRACK_SLOT.into(),
                         ports: ports.clone(),
                     });
                     self.meter(id, track.channels.max(1), ops);

@@ -110,13 +110,6 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-- ⬜ **The master freezes with the transport**
-  *(`crates/clausters-document/PLAN.md`, Found by use)*. The master, its meter
-  and its send sit in the governed group; only the tracks should. Taken next:
-  the audio editor's structure (`X7`) is the shape -- a group that follows the
-  transport around the governed one, and a ramp on the transport for the
-  declick.
-
 - ⬜ **A box longer than its source holds the source's last sample**
   *(`crates/clausters-document/PLAN.md`, Found by use)*. A DC offset on the
   track's bus until the box's window closes; where the end is enforced (the
