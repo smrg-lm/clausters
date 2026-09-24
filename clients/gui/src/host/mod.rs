@@ -4933,21 +4933,24 @@ mod write_tests {
         let msg = received(&server).expect("the multitrack was located");
         assert_eq!(msg.addr, "/transport_locateSample");
         assert_eq!(msg.args[0], OscType::Long(0));
-        let msg = received(&server).expect("a synth was started");
-        assert_eq!(msg.addr, "/synth_new");
-        assert_eq!(msg.args[0], OscType::String(play::TAKE_DEF.into()));
-        assert_eq!(
-            msg.args[4..],
-            [
-                OscType::String("bufnum".into()),
-                OscType::Float(0.0),
-                OscType::String("chan".into()),
-                OscType::Float(0.0),
-                OscType::String("out".into()),
-                OscType::Float(0.0),
-            ],
-            "playing the buffer the widget draws"
-        );
+        // A mono take is heard on both sides: its one channel, twice.
+        for out in 0..2 {
+            let msg = received(&server).expect("a synth was started");
+            assert_eq!(msg.addr, "/synth_new");
+            assert_eq!(msg.args[0], OscType::String(play::TAKE_DEF.into()));
+            assert_eq!(
+                msg.args[4..],
+                [
+                    OscType::String("bufnum".into()),
+                    OscType::Float(0.0),
+                    OscType::String("chan".into()),
+                    OscType::Float(0.0),
+                    OscType::String("out".into()),
+                    OscType::Float(out as f32),
+                ],
+                "playing the buffer the widget draws, out on side {out}"
+            );
+        }
         // And only then does time move: the reader is a follower, so what
         // starts the sound is the transport rolling and not the /synth_new.
         let msg = received(&server).expect("the transport rolled");
@@ -4959,7 +4962,7 @@ mod write_tests {
         assert_eq!(msg.addr, "/transport_stop");
         let msg = received(&server).expect("the node was freed");
         assert_eq!(msg.addr, "/node_free");
-        assert_eq!(msg.args.len(), 1, "one reader, one node");
+        assert_eq!(msg.args.len(), 2, "both sides' readers, freed together");
         assert!(!host.stop_playback(), "stopping twice sends nothing");
         assert!(host.playing_widget().is_none());
     }
@@ -5015,6 +5018,7 @@ mod write_tests {
         let locate = received(&server).unwrap();
         assert_eq!(locate.addr, "/transport_locateSample");
         assert_eq!(locate.args[0], OscType::Long(4), "from the mark");
+        assert_eq!(received(&server).unwrap().addr, "/synth_new");
         assert_eq!(received(&server).unwrap().addr, "/synth_new");
         assert_eq!(received(&server).unwrap().addr, "/transport_play");
 
@@ -5148,10 +5152,12 @@ mod write_tests {
         let msg = received(&server).expect("then the locate");
         assert_eq!(msg.addr, "/transport_locateSample");
         assert_eq!(msg.args[0], OscType::Long(4));
-        assert_eq!(
-            received(&server).expect("and only then a reader").addr,
-            "/synth_new"
-        );
+        for _ in 0..2 {
+            assert_eq!(
+                received(&server).expect("and only then the readers").addr,
+                "/synth_new"
+            );
+        }
         assert_eq!(
             received(&server).expect("and last, time moves").addr,
             "/transport_play"
@@ -5167,8 +5173,8 @@ mod write_tests {
         let (mut host, server) = take_host(1, 16);
         assert!(host.play_buffer(1, 50, 0, play::Pass::Until { end: 16, back: 0 }));
         bound_group(&server);
-        for _ in 0..5 {
-            received(&server); // the loop, the end, the locate, the reader, the play
+        for _ in 0..6 {
+            received(&server); // the loop, the end, the locate, two readers, the play
         }
 
         assert_eq!(host.pause_playback(), Some(false), "rolling -> paused");

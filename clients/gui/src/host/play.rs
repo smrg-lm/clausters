@@ -50,8 +50,10 @@ use super::{HeadClock, Host};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Monitor {
     pub widget: i32,
-    /// The first of the readers' node ids, one per channel.
+    /// The first of the readers' node ids, one per channel -- two for a mono
+    /// take, which is heard on both sides.
     pub first: i32,
+    /// How many readers there are, which is what a stop frees.
     pub channels: usize,
     pub rolling: bool,
 }
@@ -233,20 +235,24 @@ impl Host {
             return false;
         }
         // As many readers as the contents has channels, each to the bus of the
-        // same number: channel 0 is the left output, and a mono take is one
-        // reader on it. What the device does with a bus past its own outputs is
-        // the device's business, and it is the same answer any wide graph gets.
+        // same number: channel 0 is the left output. **A mono take is heard on
+        // both sides**, as a mono file is in any editor: two readers of its one
+        // channel, to the left bus and the right -- one reader on the left
+        // alone was a take heard in one ear. What the device does with a bus
+        // past its own outputs is the device's business, and it is the same
+        // answer any wide graph gets.
         let channels = self
             .buffer_channels(def_id, widget_id)
             .unwrap_or(1)
             .clamp(1, MAX_CHANNELS);
+        let readers = if channels == 1 { 2 } else { channels };
         // Stop before rebuilding: the readers are created into the frozen
         // group, so they stand at the new position rather than racing from
         // wherever the last take left the multitrack.
         self.stop_playback();
         // The readers' ids are the host's like any node's, and come back on
         // their `/node_end` once the stop frees them.
-        let Some(first) = self.alloc_nodes(channels) else {
+        let Some(first) = self.alloc_nodes(readers) else {
             return false;
         };
         let group = self.monitor_group().unwrap_or(0);
@@ -261,12 +267,14 @@ impl Host {
             }
         }
         self.locate(start);
-        for ch in 0..channels {
+        for out in 0..readers {
+            // The channel it reads: its own, or a mono take's only one.
+            let ch = out.min(channels - 1);
             self.send_sound(OscMessage {
                 addr: "/synth_new".into(),
                 args: vec![
                     OscType::String(TAKE_DEF.into()),
-                    OscType::Int(first + ch as i32),
+                    OscType::Int(first + out as i32),
                     OscType::Int(0),     // add to head...
                     OscType::Int(group), // ...of the governed group
                     OscType::String("bufnum".into()),
@@ -274,7 +282,7 @@ impl Host {
                     OscType::String("chan".into()),
                     OscType::Float(ch as f32),
                     OscType::String("out".into()),
-                    OscType::Float(ch as f32),
+                    OscType::Float(out as f32),
                 ],
             });
         }
@@ -292,7 +300,7 @@ impl Host {
         self.playing = Some(Monitor {
             widget: widget_id,
             first,
-            channels,
+            channels: readers,
             rolling: true,
         });
         true

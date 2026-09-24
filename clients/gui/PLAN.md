@@ -7528,3 +7528,12 @@ finished work, where a pending item reads as done.
   window's **one** take, when the window has a single timeline view and it
   draws samples; a window of several views (a multitrack, its ruler, its take
   panes) is still addressed by pointing. Both fronts.
+
+- ✅ **A mono take was heard in the left ear only** *(found 2026-09-24 by the
+  user in `edit_audio.py`, who took it for a regression; it was not — the
+  monitor had played a mono take on bus 0 alone since it existed, and the
+  day's measurements show the right channel at zero throughout; fixed the same
+  day)*. The monitor starts one reader per channel, each to the bus of the
+  same number, which is right for a stereo take and puts a mono one on the
+  left only. A mono take now gets two readers of its one channel, to the left
+  bus and the right, as a mono file is heard in any editor.
