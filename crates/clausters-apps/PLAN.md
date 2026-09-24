@@ -423,7 +423,10 @@ opened it.
   sample on the output for as long as the transport rolled. It was measured at
   +0.65 after an edit left a loud last sample: a DC offset on the whole system's
   audio that nothing in the window showed. The monitor's gate now closes at the
-  buffer's end (`dcf7b90a`). The multitrack's reader has the same gap, filed on
+  buffer's end (`dcf7b90a`). It went on sounding, measured on 2026-09-24:
+  only the standalone session sent the monitor's def, so a host launched
+  against a script's server played an older copy that the server had
+  persisted to disk. Every attached link now sends it first. The multitrack's reader has the same gap, filed on
   its own (`crates/clausters-document/PLAN.md`, Found by use).
 
   **The design.** The audio editor gets **a GraphDef of its own**, new, not

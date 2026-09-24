@@ -55,10 +55,16 @@ impl Host {
     }
 
     /// **What a freshly attached link to the server that sounds is told**:
-    /// `/server_notify 1`, so a node this host made comes back on its
-    /// `/node_end`, and `/server_query`, so the spaces take the server's own
-    /// shape rather than the default one.
+    /// the take monitor's def, `/server_notify 1`, so a node this host made
+    /// comes back on its `/node_end`, and `/server_query`, so the spaces take
+    /// the server's own shape rather than the default one.
+    ///
+    /// The def goes first and goes on every link, whoever launched the server:
+    /// a def is asynchronous, so it has to be there before anything can press
+    /// the space bar -- and a server that persists defs would otherwise answer
+    /// with whatever copy an older host left on its disk.
     pub fn on_link_attached(&mut self) {
+        self.send_to_player(play::take_def_message());
         for addr in ["/server_notify", "/server_query"] {
             self.send_to_player(OscMessage {
                 addr: addr.into(),
@@ -193,6 +199,34 @@ mod tests {
         assert_eq!(host.ids().in_use(Space::Nodes), 1);
         host.on_server_reply(Leg::Server, &end(node));
         assert_eq!(host.ids().in_use(Space::Nodes), 0);
+    }
+
+    /// **A link attached by any path sends the monitor's def first.** It was
+    /// sent by the standalone session alone, so a host launched against a
+    /// script's server played the space bar through whatever copy of the def
+    /// that server had persisted -- an older one, whose gate never closed past
+    /// the end of the take.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn an_attached_link_is_sent_the_monitors_def_first() {
+        use clausters_core::osc::{OscPacket, decode_packet};
+        use std::net::UdpSocket;
+        use std::time::Duration;
+
+        let fake_server = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        fake_server
+            .set_read_timeout(Some(Duration::from_millis(500)))
+            .unwrap();
+        let leg = crate::host::ServerLeg::connect(fake_server.local_addr().unwrap()).unwrap();
+        let mut host = Host::new().with_server(leg);
+        host.on_link_attached();
+
+        let mut buf = [0u8; 8192];
+        let (len, _) = fake_server.recv_from(&mut buf).expect("a datagram");
+        let OscPacket::Message(msg) = decode_packet(&buf[..len]).unwrap() else {
+            panic!("expected a message");
+        };
+        assert_eq!(msg, play::take_def_message());
     }
 
     /// The governed group is allocated once, like any node, and bound once.

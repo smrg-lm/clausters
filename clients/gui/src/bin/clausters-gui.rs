@@ -1024,10 +1024,6 @@ fn attach_player(
         leg.target(),
         segment.display()
     );
-    // The monitor's def goes with the samples: a take is data, and what sounds
-    // it is an instrument. Sent before anything can press the space bar.
-    leg.send(clausters_gui::host::play::take_def_message())
-        .map_err(|e| e.to_string())?;
     // **The takes, by number and not by sample.** A player maps the buffer
     // directory when it starts, and these were read into it afterwards -- so it
     // is pointed at them, which is the whole message: no blob, no copy, and
