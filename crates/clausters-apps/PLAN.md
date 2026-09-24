@@ -700,7 +700,9 @@ opened it.
     application behind it.
   - Whether the meter is per channel, and where it sits in the window.
 
-- ⬜ **X8 - A pass ends where the contents do, and a loop is a switch.**
+- ✅ **X8 - A pass ends where the contents do, and a loop is a switch.**
+  *(Done 2026-09-24; the standalone half of the multitrack's switch is
+  deferred to "Future directions", below, by the user's decision.)*
   *(Asked for by the user 2026-09-24, out of the audio editor example; the
   key is the user's: "usá la tecla L, aún no vamos a hacer chrome para las
   apps y es mejor que el demo quede limpio".)* Needs `T7` (`PLAN.md`), the
@@ -736,9 +738,12 @@ opened it.
   when it moves -- bound in C and wasm and exposed as `Playback.stop_at_end` /
   `Playback.stopAtEnd` in both clients.
 
-  **Open:** how the switch is reached in the standalone host, which has no
-  client to set it -- a key, or a setting of the session; and whether a
-  selection there plays once as the audio editor's does.
+  **Decided for the standalone host** *(the user, 2026-09-24)*: the switch is
+  reached with **a key**, and it is **saved in the session**. The
+  infrastructure is here (the crate's switch), so the implementation waits for
+  the applications' window chrome in standalone — both in "Future
+  directions". Still open: whether a selection in the multitrack plays once as
+  the audio editor's does.
 
   **Acceptance:** in the audio editor, a pass with no loop stops at the take's
   end and the play cursor stands on the position cursor; a selection stops at
@@ -759,6 +764,23 @@ only for a choice with non-obvious context.
 ## Future directions (to fold into milestones as they firm up)
 
 Every entry carries a checkbox.
+
+- ⬜ **The applications' window chrome in standalone** *(recorded 2026-09-24,
+  the user: "para poder correr las aplicaciones del host en standalone se va
+  a necesitar que la ventana tenga chrome y no está implementado aún")*. A
+  standalone host runs the applications with no client beside it, so whatever
+  a script would set — a switch, a mode, a setting — has to be reachable from
+  the window itself, and today the windows have no chrome for it. The audio
+  editor's loop is a key and a status line precisely because there is none
+  (X8). What the chrome is, and which of it is the application's rather than
+  the widget's, is the design.
+
+- ⬜ **The multitrack's stop-at-end in standalone: a key, saved in the
+  session** *(decided by the user 2026-09-24; out of X8)*. The switch exists
+  (`MultitrackPlayback::set_stop_at_end`, bound in both clients); the
+  standalone host needs a key that flips it and the session to keep it, so a
+  reopened session stops where it stopped before. Waits for the chrome entry
+  above.
 
 ## Found by use: the running list of fixes
 
