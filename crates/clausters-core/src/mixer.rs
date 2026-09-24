@@ -362,14 +362,30 @@ pub fn curve_def() -> Value {
 /// falls off one signal.
 pub fn meter_def(channels: usize) -> Result<Value, String> {
     check(channels, "meter")?;
-    let controls = vec![
-        control("in0", 0.0),
-        control("in1", 0.0),
-        control("out0", 0.0),
-        control("out1", 0.0),
-        control("decay", METER_DECAY),
-        control("hold", 0.0),
-    ];
+    Ok(meter_spec(&meter_name(channels), channels, MAX_CHANNELS))
+}
+
+/// **The meter, written once**: `channels` levels read off `in0..`, each onto
+/// the control bus its `out` names, with the field's ballistics. `slots` is how
+/// many `in`/`out` pairs the def declares, at least `channels` -- the
+/// multitrack's strips declare two whatever their width, so one wiring fits
+/// both -- and the rest of the controls come after them: `decay`, then `hold`.
+///
+/// Public because it is the audio editor's meter too
+/// ([`crate::audio_editor::meter_def`]): the same algorithm under another
+/// application's name.
+pub fn meter_spec(name: &str, channels: usize, slots: usize) -> Value {
+    let slots = slots.max(channels);
+    let mut controls = Vec::new();
+    for channel in 0..slots {
+        controls.push(control(&format!("in{channel}"), 0.0));
+    }
+    for channel in 0..slots {
+        controls.push(control(&format!("out{channel}"), 0.0));
+    }
+    controls.push(control("decay", METER_DECAY));
+    controls.push(control("hold", 0.0));
+    let (decay, hold) = (2 * slots as u32, 2 * slots as u32 + 1);
     let mut ugens = Vec::new();
     for channel in 0..channels {
         // Three UGens per channel, so the stride is three: the second channel's
@@ -380,13 +396,13 @@ pub fn meter_def(channels: usize) -> Result<Value, String> {
         let read = 3 * channel as u32;
         ugens.push(json!({"kind": "In", "inputs": [{"control": channel}]}));
         ugens.push(json!({"kind": "Meter", "inputs": [
-            {"ugen": read}, {"control": 4}, {"control": 5}
+            {"ugen": read}, {"control": decay}, {"control": hold}
         ]}));
         ugens.push(json!({"kind": "OutCtl", "inputs": [
-            {"control": 2 + channel}, {"ugen": read + 1}
+            {"control": slots + channel}, {"ugen": read + 1}
         ]}));
     }
-    Ok(json!({ "name": meter_name(channels), "controls": controls, "ugens": ugens }))
+    json!({ "name": name, "controls": controls, "ugens": ugens })
 }
 
 /// **What leaves a strip**: the strip's own output bus, at a gain, onto the bus

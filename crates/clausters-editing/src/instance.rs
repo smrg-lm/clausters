@@ -159,6 +159,44 @@ pub enum Op {
         /// What to call it.
         handle: Handle,
     },
+    /// **A group at the top that follows transport `transport`**
+    /// (`/transport_follow`): its nodes read that transport and nothing
+    /// freezes them -- where an application's output goes, beside its
+    /// governed group.
+    Follow {
+        /// What to call it.
+        handle: Handle,
+        /// The transport it follows.
+        transport: i32,
+    },
+    /// **A group at the tail of `parent`, governed by transport
+    /// `transport`** (`/transport_group`): the subtree that transport freezes
+    /// and thaws. [`Op::Transport`] is the multitrack's, at the top on
+    /// transport 0; this is the same binding for an application whose
+    /// governed group sits inside one of its own.
+    Governed {
+        /// What to call it.
+        handle: Handle,
+        /// The group it is made at the tail of.
+        parent: Handle,
+        /// The transport that governs it.
+        transport: i32,
+    },
+    /// Allocate a run of `channels` **audio** buses -- one an application
+    /// passes between two graphs of its own. Given back by [`Op::FreeBus`].
+    AudioBus {
+        /// What to call it.
+        handle: Handle,
+        /// How wide.
+        channels: usize,
+    },
+    /// Pause (`run: false`) or resume a node (`/node_run`), its state kept.
+    Run {
+        /// The node.
+        handle: Handle,
+        /// Whether it runs.
+        run: bool,
+    },
     /// A plain group, immediately **before** another node.
     Group {
         /// What to call it.

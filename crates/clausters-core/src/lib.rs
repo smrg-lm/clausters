@@ -82,6 +82,7 @@
 //!   libverovio binding is the separate `clausters-notation` crate). Behind a
 //!   feature so a default core carries no XML/regex weight; compiles to wasm.
 
+pub mod audio_editor;
 pub mod builtins;
 pub mod bundle;
 pub mod bytes;

@@ -165,4 +165,6 @@ libc = "0.2"
 
 [dev-dependencies]
 assert_no_alloc = "1"
+# The audio editor's playback, heard offline (`tests/audio_editor_graph.rs`).
+clausters-editing = { path = "crates/clausters-editing" }
 serde_json = "1"

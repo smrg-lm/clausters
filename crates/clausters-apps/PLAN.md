@@ -700,6 +700,17 @@ opened it.
     asks for its own. The end mark starts its ramp that long before the mark.
     `TransportFade` reads the level (`docs/decisions.md`, "A stop with a ramp
     rolls the ramp out, and rests where the readers stopped").
+  - ✅ **The defs and the playback** *(2026-09-24)*:
+    `clausters_core::audio_editor` and
+    `clausters_editing::audio_playback::AudioEditorPlayback`, heard offline in
+    `tests/audio_editor_graph.rs`. Three things moved from the GraphDef above
+    while it was built. The names carry a dot before the width, as the
+    mixer's do (`ae.play.2`). **The editor's bus reaches both graphs as port
+    values** (`out0..` on `ae.play`, `in0..` on `ae.output`): a `/graph_new`
+    at the top is handed no external bus, since it has no parent to hand it
+    one. And **the output has one meter**, the level on control buses: the
+    mark that waits is the `meter` widget's own ballistics, which are the
+    core's. The transport is `AUDIO_EDITOR_TRANSPORT` (1) with a 5 ms ramp.
   - ✅ **Where the nodes live.** *Decided by the user 2026-09-24*: as the
     multitrack's do -- one design pattern in the repo. The defs are written
     once in `clausters-core`, the playback that makes them is the editing

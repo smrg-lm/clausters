@@ -865,6 +865,23 @@ their own `Playback`. So a session edited with no script behind it and a multitr
 edited from a script are played by the same program, and the only thing each
 endpoint writes is its socket.
 
+**The audio editor is played the same way, over defs of its own.**
+`clausters_core::audio_editor` is its node system, kept apart from the
+multitrack's (`ae` against `mt`): an `ae.play` graph per open file — one
+`ae.reader` per channel onto a private bus, whose window is the take (a gate on
+`span`, so past the end the output is exactly zero), and a pass onto the
+editor's bus — and one `ae.output` reading that bus, which meters it onto
+control buses and sends it to the hardware through a declick (`TransportFade`).
+`clausters_editing::audio_playback::AudioEditorPlayback` makes them with the
+same applier: an editor group that **follows** the editor's own transport
+(`AUDIO_EDITOR_TRANSPORT`, never the multitrack's), a group inside it that the
+transport **governs** and holds the files, and the output after it, so a stop
+freezes the readers and not the meter or the declick. The transport is given a
+ramp (`/transport_fade`), which is what lets the declick run across a stop.
+Every file but the one in focus is paused with `/node_run`, and the editor's bus
+reaches both graphs as port values, since a graph instantiated at the top has no
+parent to hand it one.
+
 **The instance projection is the one with memory, and it is a reconciler.** The
 other two are functions of a structure alone; this one is a function of the
 structure *and* of what a server already holds, because a multitrack plays itself

@@ -34,6 +34,7 @@
 //! projection that kept it would be a fourth place for it to live.
 
 pub mod apply;
+pub mod audio_playback;
 pub mod conversation;
 pub mod events;
 pub mod instance;

@@ -88,6 +88,9 @@ pub struct Applier {
     endpoint: Endpoint,
     nodes: HashMap<Handle, i32>,
     buses: HashMap<Handle, (i32, usize)>,
+    /// The buses of `buses` that are audio buses, which go back to their own
+    /// space.
+    audio: std::collections::HashSet<Handle>,
     buffers: HashMap<Handle, i32>,
     next_sync: i32,
 }
@@ -99,6 +102,7 @@ impl Applier {
             endpoint,
             nodes: HashMap::new(),
             buses: HashMap::new(),
+            audio: std::collections::HashSet::new(),
             buffers: HashMap::new(),
             next_sync: 1,
         }
@@ -186,6 +190,69 @@ impl Applier {
                     command: "/transport_group".into(),
                     index: None,
                 });
+            }
+            // A group at the top, following: `Group` and
+            // `Server.transport_follow`.
+            Op::Follow { handle, transport } => {
+                let node = alloc_node(ids)?;
+                self.nodes.insert(handle, node);
+                steps.push(send(
+                    "/group_new",
+                    vec![
+                        OscType::Int(node),
+                        OscType::Int(ADD_TAIL),
+                        OscType::Int(ROOT),
+                    ],
+                ));
+                steps.push(send(
+                    "/transport_follow",
+                    vec![OscType::Int(transport), OscType::Int(node)],
+                ));
+                steps.push(Step::AwaitDone {
+                    command: "/transport_follow".into(),
+                    index: None,
+                });
+            }
+            Op::Governed {
+                handle,
+                parent,
+                transport,
+            } => {
+                let Some(target) = self.node(&parent) else {
+                    return Ok(());
+                };
+                let node = alloc_node(ids)?;
+                self.nodes.insert(handle, node);
+                steps.push(send(
+                    "/group_new",
+                    vec![
+                        OscType::Int(node),
+                        OscType::Int(ADD_TAIL),
+                        OscType::Int(target),
+                    ],
+                ));
+                steps.push(send(
+                    "/transport_group",
+                    vec![OscType::Int(transport), OscType::Int(node)],
+                ));
+                steps.push(Step::AwaitDone {
+                    command: "/transport_group".into(),
+                    index: None,
+                });
+            }
+            Op::AudioBus { handle, channels } => {
+                let channels = channels.max(1);
+                let first = ids.alloc(Space::AudioBuses, channels)? as i32;
+                self.audio.insert(handle.clone());
+                self.buses.insert(handle, (first, channels));
+            }
+            Op::Run { handle, run } => {
+                if let Some(node) = self.node(&handle) {
+                    steps.push(send(
+                        "/node_run",
+                        vec![OscType::Int(node), OscType::Int(i32::from(run))],
+                    ));
+                }
             }
             Op::Group { handle, before } => {
                 let Some(target) = self.node(&before) else {
@@ -336,9 +403,14 @@ impl Applier {
             }
             Op::FreeBus { handle } => {
                 if let Some((first, channels)) = self.buses.remove(&handle) {
+                    let space = if self.audio.remove(&handle) {
+                        Space::AudioBuses
+                    } else {
+                        Space::ControlBuses
+                    };
                     // A refused release means the table and the spaces went out
                     // of step, which the spaces report; the bus is gone either way.
-                    let _ = ids.release(Space::ControlBuses, i64::from(first), channels);
+                    let _ = ids.release(space, i64::from(first), channels);
                 }
             }
             Op::FreeBuffer { handle } => {
