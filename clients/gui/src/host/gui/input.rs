@@ -262,7 +262,8 @@ impl App {
         // So the window is told, the way `Ctrl`+`Z` and `Ctrl`+`S` tell it, and
         // whoever edits the multitrack answers: this host's own editor, or a
         // script's.
-        self.window_verb(def_id, clausters_apps::multitrack::editor::PLAY_KEY);
+        let verb = self.host.play_verb();
+        self.window_event(def_id, verb);
         true
     }
 
@@ -317,8 +318,15 @@ impl App {
     /// that document answers it here; every other one emits it, and a script
     /// may answer.
     pub(super) fn window_verb(&mut self, def_id: i32, verb: &str) {
+        self.window_event(
+            def_id,
+            vec![clausters_core::osc::OscType::String(verb.into())],
+        );
+    }
+
+    /// A window verb with the arguments that ride beside it.
+    pub(super) fn window_event(&mut self, def_id: i32, args: Vec<clausters_core::osc::OscType>) {
         let seq = self.host.outbox.borrow_mut().stamp(def_id, def_id);
-        let args = vec![clausters_core::osc::OscType::String(verb.into())];
         let message = self.host.event_message(def_id, seq, args);
         if self.host.deliver(def_id, &message) {
             self.redraw(def_id);

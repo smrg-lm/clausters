@@ -241,6 +241,19 @@ around it — **follows** the transport instead of being governed by it:
 `transport_follow(group)` has its nodes read the transport and nothing freeze
 them.
 
+**A stop can fade.** A declick cannot run after the freeze — on that sample the
+readers stop producing anything — so `transport_fade(samples)` gives a
+transport a ramp: a stop then rolls on while the ramp falls to zero and
+freezes when it gets there, so the position rests where the readers stopped
+reading, and a play rises from zero. What reads the ramp is `transport_fade()`,
+the UGen, in the following group: an output multiplies what the readers wrote
+by it, and neither edge clicks. With no ramp set — the default — a stop freezes
+on its own sample.
+
+The applications take transports of their own: a multitrack plays on
+transport 0, the audio editor on transport 1, and the GUI host's monitor, for
+a window that draws samples with no application behind it, on transport 2.
+
 ## See also
 
 - [Timing models](timing-models.md) — the time reference behind beat-accurate vs sample-exact alignment.

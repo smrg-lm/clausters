@@ -98,6 +98,12 @@ pub enum WidgetKind {
         /// exists to show were already being said into nothing. A window that
         /// wants the pixels back turns it off.
         status: bool,
+        /// The `plays` prop: **the window's owner plays it**. The space bar
+        /// is then the window's own `play` verb, with the loop switch beside
+        /// it, whatever the pointer is over -- an application plays its take
+        /// through its own playback, and the host's monitor stays out. Off by
+        /// default.
+        plays: bool,
     },
     /// A nestable container.
     Panel {

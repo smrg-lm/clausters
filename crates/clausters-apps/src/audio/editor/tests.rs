@@ -439,3 +439,60 @@ fn ctrl_s_over_the_window_is_a_save() {
     assert_eq!(out["answer"]["seq"], 5);
     assert!(out.get("record").is_none(), "a save is no edit");
 }
+
+/// **The space bar over the window is the application's play**: with nothing
+/// placed the take plays whole and goes back to its start; a placed cursor is
+/// where it starts and goes back to; a selection plays its span; and the loop
+/// switch the host sends beside the verb makes it repeat.
+#[test]
+fn the_space_bar_asks_the_playback_for_the_pass_the_view_says() {
+    let mut editor = opened(1);
+    let whole = event(&mut editor, json!([900, 1, 0, "play", 0]));
+    assert_eq!(
+        whole["play"],
+        json!({"start": 0, "pass": {"kind": "until", "end": 100, "back": 0}, "back": 0})
+    );
+    let placed = event(&mut editor, json!([12, 2, 0, "locate", 40]));
+    assert_eq!(placed["cue"], 40, "the playback is cued on the cursor");
+    let from = event(&mut editor, json!([900, 3, 0, "play", 0]));
+    assert_eq!(from["play"]["start"], 40);
+    assert_eq!(from["play"]["back"], 40);
+    event(&mut editor, json!([12, 4, 0, "selection", 10, 20]));
+    let looped = event(&mut editor, json!([900, 5, 0, "play", 1]));
+    assert_eq!(
+        looped["play"],
+        json!({"start": 10, "pass": {"kind": "loop", "from": 10, "to": 30}, "back": 40})
+    );
+}
+
+/// **The level meter stands beside the take** once a playback says where it
+/// writes, and the window says the space bar is its own.
+#[test]
+fn the_window_carries_the_meter_and_plays_its_own_take() {
+    let mut editor = opened(2);
+    let bare = call(
+        &mut editor,
+        json!({"verb": "window", "widget": 12, "meter": 13}),
+    );
+    assert_eq!(
+        bare["children"].as_array().unwrap().len(),
+        1,
+        "nothing measures it yet"
+    );
+    assert_eq!(bare["plays"], true);
+    call(
+        &mut editor,
+        json!({"verb": "sync", "meters": {"bus": 40, "channels": 2}}),
+    );
+    let window = call(
+        &mut editor,
+        json!({"verb": "window", "widget": 12, "meter": 13}),
+    );
+    let meter = &window["children"][1];
+    assert_eq!(meter["type"], "meter");
+    assert_eq!(meter["id"], 13);
+    assert_eq!(meter["bus"], 40);
+    assert_eq!(meter["rate"], "control");
+    assert_eq!(meter["scale"], "db", "an amplitude, read in decibels");
+    assert_eq!(meter["channels"], 2);
+}

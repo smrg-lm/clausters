@@ -312,6 +312,16 @@ impl AudioEditorPlayback {
         steps
     }
 
+    /// **The position cursor moved to `frame`**: a stopped transport is
+    /// located there, so the play cursor stands on it, and a rolling one is
+    /// left alone -- moving the mark mid-pass must not move the music.
+    pub fn cue(&mut self, frame: u64) -> Vec<Step> {
+        if self.rolling {
+            return Vec::new();
+        }
+        self.locate(frame)
+    }
+
     /// Puts the transport at frame `frame` of the file in focus.
     pub fn locate(&mut self, frame: u64) -> Vec<Step> {
         let at = match self.focus.and_then(|f| self.files.get(&f)) {
@@ -365,6 +375,11 @@ impl AudioEditorPlayback {
     /// Whether the transport was last told to roll.
     pub fn rolling(&self) -> bool {
         self.rolling
+    }
+
+    /// The files it holds, in order.
+    pub fn files(&self) -> Vec<u64> {
+        self.files.keys().copied().collect()
     }
 
     /// The file that plays.
@@ -600,7 +615,8 @@ fn out_ports(outs: usize) -> Ports {
 /// - `closeFile` -- `file`
 /// - `play` -- `file`, `start`, `pass` (`{"kind": "loop", "from", "to"}` or
 ///   `{"kind": "until", "end", "back"}`)
-/// - `resume`, `pause`, `stop` (`back`), `locate` (`frame`), `close`
+/// - `resume`, `pause`, `stop` (`back`), `locate` (`frame`), `cue`
+///   (`frame`: a locate while stopped, nothing while rolling), `close`
 /// - `setRolling` -- `rolling`
 /// - `state` -- answers `{"transport", "rolling", "focus", "meters", "nodes"}`,
 ///   `meters` being `{"bus", "channels"}` or `null`
@@ -635,6 +651,7 @@ pub fn call_json(playback: &mut AudioEditorPlayback, request: &str, ids: &mut Id
         "pause" => answer(Ok(playback.pause())),
         "stop" => answer(Ok(playback.stop(int("back")))),
         "locate" => answer(Ok(playback.locate(int("frame")))),
+        "cue" => answer(Ok(playback.cue(int("frame")))),
         "close" => answer(playback.close(ids)),
         "setRolling" => {
             playback.set_rolling(
@@ -841,6 +858,22 @@ mod tests {
         assert!(addrs(&last).contains(&"/node_free".to_string()));
         assert_eq!(playback.node_count(), 0);
         assert_eq!(playback.meters(), None);
+    }
+
+    /// **A cue moves a stopped transport and leaves a rolling one alone.**
+    #[test]
+    fn a_cue_locates_only_a_stopped_transport() {
+        let mut playback = AudioEditorPlayback::new(Endpoint::default(), 1);
+        let mut ids = spaces();
+        playback
+            .sync(1, 10, 1, 100, 48_000.0, 48_000.0, &mut ids)
+            .unwrap();
+        assert_eq!(addrs(&playback.cue(40)), ["/transport_locateSample"]);
+        playback.resume();
+        assert!(
+            playback.cue(40).is_empty(),
+            "rolling: the mark moves, not the music"
+        );
     }
 
     /// **The space bar's pass, read off the view.**

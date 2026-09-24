@@ -943,6 +943,12 @@ fn waveform_press_and_drag_select_a_range() {
     // reader of it looks -- with a positive length.
     let key = host.timeline_key(50).unwrap();
     assert!(host.timelines().state(key).unwrap().sel_len > 0.0);
+    // **Letting go puts the position cursor at the selection's start**, and
+    // the owner is told where, as a click tells it.
+    let effects = g.release(&mut host, &ctx, 600.0, 150.0);
+    assert!(has_emit_tag(&effects, 50, "locate"));
+    let state = host.timelines().state(key).unwrap();
+    assert_eq!(state.cursor(), Some(state.sel_start));
 }
 
 /// **A plain drag over a waveform is the time span it has always been**, and

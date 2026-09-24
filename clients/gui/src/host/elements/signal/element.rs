@@ -421,6 +421,10 @@ impl Samples for SignalElement {
         SignalElement::source_buffer(self)
     }
 
+    fn samples_rate(&self) -> Option<f64> {
+        (self.editor.sample_rate > 0.0).then_some(self.editor.sample_rate)
+    }
+
     fn write_samples(&mut self, ch: usize, start: u64, values: &[f32]) -> bool {
         SignalElement::write_samples(self, ch, start, values)
     }

@@ -715,12 +715,15 @@ pub struct Host {
     /// node, control bus and buffer it makes, by the one policy every client
     /// allocates by ([`ids`]).
     ids: clausters_core::ids::IdSpaces,
-    /// The group the take monitor makes its readers in, once made: inside the
-    /// multitrack's transport group when a multitrack plays, or one this host bound when
-    /// none does ([`Host::monitor_group`]).
-    governed: Option<i32>,
-    /// The take the **monitor** is loaded with (see [`play`]). One take at a
-    /// time, so this is one entry and not a list.
+    /// **The take monitor's nodes** -- the audio editor's playback, the one
+    /// every endpoint holds ([`clausters_editing::audio_playback`]), on the
+    /// monitor's own transport ([`play::MONITOR_TRANSPORT`]).
+    monitor: clausters_editing::audio_playback::AudioEditorPlayback,
+    /// The engine's sample rate, from `/server_query.reply`; `0.0` until it
+    /// answers.
+    server_rate: f64,
+    /// The take the **monitor** plays, while it plays (see [`play`]). One take
+    /// at a time, so this is one entry and not a list.
     playing: Option<play::Monitor>,
     /// Whether the monitor **loops** (`L`), and what it has heard of the
     /// transport's rolling state -- how an end the engine reached on its own is
@@ -731,7 +734,7 @@ pub struct Host {
     /// ([`instance`]).
     instance: instance::Playing,
     /// Whether this host **drives the server's transport** -- whether it is the
-    /// one that bound the governed group (`play::take_group_messages`).
+    /// one that gave the session its server.
     ///
     /// It is what separates a host that owns its playback from one that is a
     /// guest on somebody else's server: a script owns its own transport, and a
@@ -853,7 +856,11 @@ impl Host {
                 clausters_core::ids::ServerShape::DEFAULT,
                 clausters_core::ids::IdShare::WHOLE,
             ),
-            governed: None,
+            monitor: clausters_editing::audio_playback::AudioEditorPlayback::new(
+                clausters_editing::apply::Endpoint::default(),
+                play::MONITOR_TRANSPORT,
+            ),
+            server_rate: 0.0,
             playing: None,
             follow: play::Follow::default(),
             instance: instance::Playing::default(),
@@ -1261,6 +1268,25 @@ impl Host {
     /// (see [`window_def_mut`](Self::window_def_mut)).
     pub fn window_def(&self, id: i32) -> Option<&Widget> {
         self.window_defs.get(&id)
+    }
+
+    /// Whether window `id`'s owner plays it (the `plays` prop): the space bar
+    /// is then the window's own verb, and the monitor stays out.
+    pub fn window_plays(&self, id: i32) -> bool {
+        matches!(
+            self.window_def(id).map(|w| &w.kind),
+            Some(WidgetKind::Window { plays: true, .. })
+        )
+    }
+
+    /// **The window's `play` verb**, as it goes out: the verb and the loop
+    /// switch (`L`) beside it, `1` or `0` -- an owner that plays its own take
+    /// reads how the pass ends from it, and one that does not ignores it.
+    pub fn play_verb(&self) -> Vec<OscType> {
+        vec![
+            OscType::String(clausters_apps::multitrack::editor::PLAY_KEY.into()),
+            OscType::Int(i32::from(self.monitor_loops())),
+        ]
     }
 
     /// The inner size window `id` asks its shell for, in **logical** pixels:
@@ -2697,6 +2723,11 @@ impl Host {
         element_with_samples(self.window_def(def_id)?.find(widget_id)?)?
             .sample_shape()
             .map(|(channels, _)| channels)
+    }
+
+    /// The rate a widget's samples were recorded at, when it was told.
+    pub(crate) fn buffer_rate(&self, def_id: i32, widget_id: i32) -> Option<f64> {
+        element_with_samples(self.window_def(def_id)?.find(widget_id)?)?.samples_rate()
     }
 
     /// The server buffer a widget's samples are in, when they are in one.
@@ -5035,21 +5066,71 @@ mod write_tests {
         (host, server)
     }
 
-    /// **A session of takes binds its monitor's group the first time it
-    /// plays**: nothing else binds the transport there. The two messages that
-    /// do, read off the fake server, answering the group they made.
-    fn bound_group(server: &UdpSocket) -> i32 {
-        let made = received(server).expect("the monitor's group is made");
-        assert_eq!(made.addr, "/group_new");
-        let bound = received(server).expect("and bound to the transport");
-        assert_eq!(bound.addr, "/transport_group");
-        assert_eq!(bound.args[0], OscType::Int(play::MONITOR_TRANSPORT));
-        assert_eq!(bound.args[1], made.args[0], "the group it just made");
-        let OscType::Int(group) = made.args[0] else {
-            panic!("a group id")
-        };
-        group
+    /// **What the server that sounds was sent, with its waits answered**:
+    /// every message the fake server got, in order, each awaited transport
+    /// command answered with its `/done` and each barrier with its reply --
+    /// what a server does, so the monitor's steps walk to the end.
+    fn exchange(host: &mut Host, server: &UdpSocket) -> Vec<OscMessage> {
+        server
+            .set_read_timeout(Some(Duration::from_millis(100)))
+            .unwrap();
+        let mut out = Vec::new();
+        while let Some(m) = received(server) {
+            let reply = match m.addr.as_str() {
+                "/server_sync" => Some(OscMessage {
+                    addr: "/server_sync.reply".into(),
+                    args: vec![m.args[0].clone()],
+                }),
+                addr if addr.starts_with("/transport_") => Some(OscMessage {
+                    addr: "/done".into(),
+                    args: vec![OscType::String(addr.into())],
+                }),
+                _ => None,
+            };
+            out.push(m);
+            if let Some(reply) = reply {
+                host.on_server_reply(instance::Leg::Server, &reply);
+            }
+        }
+        out
     }
+
+    /// The addresses among `sent`, the defs left out.
+    fn addrs(sent: &[OscMessage]) -> Vec<&str> {
+        sent.iter()
+            .map(|m| m.addr.as_str())
+            .filter(|a| *a != "/def_send")
+            .collect()
+    }
+
+    /// The one message to `addr` among `sent`.
+    fn one<'a>(sent: &'a [OscMessage], addr: &str) -> &'a OscMessage {
+        let found: Vec<&OscMessage> = sent.iter().filter(|m| m.addr == addr).collect();
+        assert_eq!(found.len(), 1, "one {addr} in {:?}", addrs(sent));
+        found[0]
+    }
+
+    /// What the monitor sends the first time it plays: the editor's
+    /// structure, on the monitor's own transport, then the take.
+    const BUILT: [&str; 8] = [
+        "/server_sync",
+        "/group_new",
+        "/transport_follow",
+        "/group_new",
+        "/transport_group",
+        "/transport_fade",
+        "/graph_new",
+        "/graph_new",
+    ];
+
+    /// What a play sends once the take is made: how the pass ends, where it
+    /// starts, and the transport rolling.
+    const PASS: [&str; 4] = [
+        "/transport_loop",
+        "/transport_end",
+        "/transport_locateSample",
+        "/transport_play",
+    ];
 
     /// The message the fake server received, or `None` if it sent nothing.
     fn received(server: &UdpSocket) -> Option<OscMessage> {
@@ -5125,7 +5206,8 @@ mod write_tests {
 
     /// **The monitor plays the samples the window is drawing** -- the same
     /// buffer, reached by the same widget lookup an edit takes, so what sounds
-    /// is what would be written.
+    /// is what would be written -- through the audio editor's nodes, on a
+    /// transport of its own.
     #[test]
     fn the_monitor_plays_a_takes_buffer_and_stops_it() {
         let (mut host, server) = take_host(1, 16);
@@ -5133,23 +5215,25 @@ mod write_tests {
             host.play_buffer(1, 50, 0, play::Pass::Until { end: 16, back: 0 }),
             "a take with a buffer plays"
         );
-        let group = bound_group(&server);
-        assert_eq!(host.governed_group(), Some(group));
-        assert!(host.owns_transport(), "binding it is what owning it means");
-        // The transport is placed before a reader exists, so the readers are
-        // created standing where the multitrack is rather than racing from wherever
-        // the last take left it.
-        let msg = received(&server).expect("the loop was cleared");
-        assert_eq!(msg.addr, "/transport_loop");
+        let sent = exchange(&mut host, &server);
+        let mut want = BUILT.to_vec();
+        want.push("/graph_addSlot");
+        want.extend(PASS);
+        assert_eq!(addrs(&sent), want);
+        for addr in [
+            "/transport_follow",
+            "/transport_group",
+            "/transport_fade",
+            "/transport_play",
+        ] {
+            assert_eq!(
+                one(&sent, addr).args[0],
+                OscType::Int(play::MONITOR_TRANSPORT),
+                "{addr} names the monitor's transport"
+            );
+        }
         assert_eq!(
-            msg.args,
-            [OscType::Int(play::MONITOR_TRANSPORT)],
-            "the transport alone turns looping off"
-        );
-        let msg = received(&server).expect("the end was marked");
-        assert_eq!(msg.addr, "/transport_end");
-        assert_eq!(
-            msg.args,
+            one(&sent, "/transport_end").args,
             vec![
                 OscType::Int(play::MONITOR_TRANSPORT),
                 OscType::Long(16),
@@ -5157,39 +5241,29 @@ mod write_tests {
             ],
             "the take's end, and back to the start"
         );
-        let msg = received(&server).expect("the multitrack was located");
-        assert_eq!(msg.addr, "/transport_locateSample");
-        assert_eq!(msg.args[1], OscType::Long(0));
-        // A mono take is heard on both sides: its one channel, twice.
-        for out in 0..2 {
-            let msg = received(&server).expect("a synth was started");
-            assert_eq!(msg.addr, "/synth_new");
-            assert_eq!(msg.args[0], OscType::String(play::TAKE_DEF.into()));
-            assert_eq!(
-                msg.args[4..],
-                [
-                    OscType::String("bufnum".into()),
-                    OscType::Float(0.0),
-                    OscType::String("chan".into()),
-                    OscType::Float(0.0),
-                    OscType::String("out".into()),
-                    OscType::Float(out as f32),
-                ],
-                "playing the buffer the widget draws, out on side {out}"
+        // A mono take is one reader, of the buffer the widget draws; its pass
+        // puts it on both sides.
+        let reader = one(&sent, "/graph_addSlot");
+        for pair in [("buf", 0.0), ("chan", 0.0), ("span", 16.0)] {
+            assert!(
+                reader
+                    .args
+                    .windows(2)
+                    .any(|w| w[0] == OscType::String(pair.0.into())
+                        && w[1] == OscType::Float(pair.1)),
+                "{} is {}: {:?}",
+                pair.0,
+                pair.1,
+                reader.args
             );
         }
-        // And only then does time move: the reader is a follower, so what
-        // starts the sound is the transport rolling and not the /synth_new.
-        let msg = received(&server).expect("the transport rolled");
-        assert_eq!(msg.addr, "/transport_play");
         assert_eq!(host.playing_widget(), Some(50));
+        let nodes = host.monitor_nodes();
 
         assert!(host.stop_playback(), "and it stops");
-        let msg = received(&server).expect("the transport stopped");
-        assert_eq!(msg.addr, "/transport_stop");
-        let msg = received(&server).expect("the node was freed");
-        assert_eq!(msg.addr, "/node_free");
-        assert_eq!(msg.args.len(), 2, "both sides' readers, freed together");
+        let sent = exchange(&mut host, &server);
+        assert_eq!(addrs(&sent), ["/transport_stop"], "the transport alone");
+        assert_eq!(host.monitor_nodes(), nodes, "the readers stay, frozen");
         assert!(!host.stop_playback(), "stopping twice sends nothing");
         assert!(host.playing_widget().is_none());
     }
@@ -5237,12 +5311,9 @@ mod write_tests {
 
         assert!(g.play_key(&mut host, &ctx, cx, cy).is_some());
         assert_eq!(host.playing_widget(), Some(50));
-        bound_group(&server);
-        assert_eq!(received(&server).unwrap().addr, "/transport_loop");
-        let end = received(&server).unwrap();
-        assert_eq!(end.addr, "/transport_end");
+        let sent = exchange(&mut host, &server);
         assert_eq!(
-            end.args,
+            one(&sent, "/transport_end").args,
             vec![
                 OscType::Int(play::MONITOR_TRANSPORT),
                 OscType::Long(16),
@@ -5250,28 +5321,22 @@ mod write_tests {
             ],
             "the take's end, and back to the mark"
         );
-        let locate = received(&server).unwrap();
-        assert_eq!(locate.addr, "/transport_locateSample");
+        let locate = one(&sent, "/transport_locateSample");
         assert_eq!(locate.args[1], OscType::Long(4), "from the mark");
-        assert_eq!(received(&server).unwrap().addr, "/synth_new");
-        assert_eq!(received(&server).unwrap().addr, "/synth_new");
-        assert_eq!(received(&server).unwrap().addr, "/transport_play");
 
         assert!(g.play_key(&mut host, &ctx, cx, cy).is_some());
         assert!(host.playing_widget().is_none(), "the second press stops");
-        assert_eq!(received(&server).unwrap().addr, "/transport_stop");
-        assert_eq!(received(&server).unwrap().addr, "/node_free");
-        let locate = received(&server).unwrap();
-        assert_eq!(locate.addr, "/transport_locateSample");
-        assert_eq!(locate.args[1], OscType::Long(4), "and back at the mark");
+        let sent = exchange(&mut host, &server);
+        assert_eq!(addrs(&sent), ["/transport_stop", "/transport_locateSample"]);
+        assert_eq!(sent[1].args[1], OscType::Long(4), "and back at the mark");
     }
 
-    /// **A pass the engine ended frees the readers; a stop this host sent is
-    /// not taken for one.** The broadcasts are full of "stopped" -- every
+    /// **A pass the engine ended is over; a stop this host sent is not taken
+    /// for one.** The broadcasts are full of "stopped" -- every
     /// command before a play says it -- so only a transition counts, and each
     /// stop the host sent cancels one.
     #[test]
-    fn an_end_the_engine_reached_frees_the_readers_and_a_hosts_stop_does_not() {
+    fn an_end_the_engine_reached_ends_the_pass_and_a_hosts_stop_does_not() {
         let state = |playing: i32| {
             let mut args = vec![
                 OscType::Long(0),
@@ -5329,11 +5394,9 @@ mod write_tests {
         drop(said);
 
         assert!(g.play_key(&mut host, &ctx, cx, cy).is_some());
-        bound_group(&server);
-        let msg = received(&server).unwrap();
-        assert_eq!(msg.addr, "/transport_loop");
+        let sent = exchange(&mut host, &server);
         assert_eq!(
-            msg.args,
+            one(&sent, "/transport_loop").args,
             vec![
                 OscType::Int(play::MONITOR_TRANSPORT),
                 OscType::Long(0),
@@ -5341,10 +5404,8 @@ mod write_tests {
             ],
             "the whole take"
         );
-        let msg = received(&server).unwrap();
-        assert_eq!(msg.addr, "/transport_end");
         assert_eq!(
-            msg.args,
+            one(&sent, "/transport_end").args,
             [OscType::Int(play::MONITOR_TRANSPORT)],
             "and no end while it loops"
         );
@@ -5360,13 +5421,13 @@ mod write_tests {
         let g = gestures::Gestures::default();
         assert!(g.ends_key(&mut host, &ctx, true, -1.0, -1.0).is_some());
         let key = host.timeline_key(50).unwrap();
-        assert_eq!(host.timelines().state(key).unwrap().cursor(), Some(16.0));
+        assert_eq!(host.timelines().state(key).unwrap().cursor(), Some(15.0));
         assert!(g.play_key(&mut host, &ctx, -1.0, -1.0).is_some());
         assert_eq!(host.playing_widget(), Some(50), "space plays it");
     }
 
     /// **Home and End put the position cursor at the ends of the take** --
-    /// frame 0 and one past the last frame, where a paste would append.
+    /// frame 0 and the last frame, the one a cursor can stand on.
     #[test]
     fn home_and_end_put_the_position_cursor_at_the_ends() {
         let (mut host, _server) = take_host(1, 16);
@@ -5377,24 +5438,20 @@ mod write_tests {
         let cursor = |host: &Host| host.timelines().state(key).unwrap().cursor();
 
         assert!(g.ends_key(&mut host, &ctx, true, cx, cy).is_some());
-        assert_eq!(cursor(&host), Some(16.0), "End: the end of the take");
+        assert_eq!(cursor(&host), Some(15.0), "End: the take's last frame");
         assert!(g.ends_key(&mut host, &ctx, false, cx, cy).is_some());
         assert_eq!(cursor(&host), Some(0.0), "Home: its start");
     }
 
-    /// **The seek and the loop are the transport's, and they go out before a
-    /// reader exists** -- so the readers are created standing where the multitrack
-    /// is rather than sliding into place from wherever the last take left it.
+    /// **The seek and the loop are the transport's**: a span plays by a loop
+    /// and a locate, and the readers are made once and follow it.
     #[test]
-    fn playing_a_span_locates_and_loops_before_the_readers_are_made() {
+    fn a_span_plays_by_the_transports_loop_and_locate() {
         let (mut host, server) = take_host(1, 16);
-        assert!(host.play_buffer(1, 50, 4, play::Pass::Loop(4, 12)));
-        bound_group(&server);
-
-        let msg = received(&server).expect("the loop went first");
-        assert_eq!(msg.addr, "/transport_loop");
+        assert!(host.play_buffer(1, 50, 4, play::Pass::Loop { from: 4, to: 12 }));
+        let sent = exchange(&mut host, &server);
         assert_eq!(
-            msg.args,
+            one(&sent, "/transport_loop").args,
             vec![
                 OscType::Int(play::MONITOR_TRANSPORT),
                 OscType::Long(4),
@@ -5402,107 +5459,117 @@ mod write_tests {
             ],
             "half-open, so the span is the selection's own bounds"
         );
-        let msg = received(&server).expect("a loop has no end");
-        assert_eq!(msg.addr, "/transport_end");
         assert_eq!(
-            msg.args,
+            one(&sent, "/transport_end").args,
             [OscType::Int(play::MONITOR_TRANSPORT)],
-            "the transport alone clears the mark"
+            "a loop has no end"
         );
-        let msg = received(&server).expect("then the locate");
-        assert_eq!(msg.addr, "/transport_locateSample");
-        assert_eq!(msg.args[1], OscType::Long(4));
-        for _ in 0..2 {
-            assert_eq!(
-                received(&server).expect("and only then the readers").addr,
-                "/synth_new"
-            );
-        }
         assert_eq!(
-            received(&server).expect("and last, time moves").addr,
-            "/transport_play"
+            one(&sent, "/transport_locateSample").args[1],
+            OscType::Long(4)
         );
+
+        // The same take again is a play and nothing else: it is made.
+        assert!(host.play_buffer(1, 50, 0, play::Pass::Loop { from: 0, to: 16 }));
+        let sent = exchange(&mut host, &server);
+        assert_eq!(addrs(&sent), PASS, "no node is made twice");
     }
 
     /// **Pausing is not stopping**: the readers stay, so resuming continues the
     /// sound rather than starting a second copy of it. The freeze is the
     /// server's -- this host sends one command and remembers nothing about where
-    /// the multitrack was.
+    /// the take was.
     #[test]
     fn pausing_keeps_the_readers_and_resuming_continues() {
         let (mut host, server) = take_host(1, 16);
         assert!(host.play_buffer(1, 50, 0, play::Pass::Until { end: 16, back: 0 }));
-        bound_group(&server);
-        for _ in 0..6 {
-            received(&server); // the loop, the end, the locate, two readers, the play
-        }
+        exchange(&mut host, &server);
 
         assert_eq!(host.pause_playback(), Some(false), "rolling -> paused");
+        let sent = exchange(&mut host, &server);
         assert_eq!(
-            received(&server)
-                .expect("one command, and it is the transport's")
-                .addr,
-            "/transport_stop"
+            addrs(&sent),
+            ["/transport_stop"],
+            "one command, the transport's"
         );
-        assert!(
-            host.monitor().is_some(),
-            "and the take is still loaded: nothing was freed"
-        );
+        assert!(host.monitor().is_some(), "and the take is still loaded");
 
         assert_eq!(host.pause_playback(), Some(true), "paused -> rolling again");
-        assert_eq!(
-            received(&server).expect("and it rolls").addr,
-            "/transport_play"
-        );
+        let sent = exchange(&mut host, &server);
+        assert_eq!(addrs(&sent), ["/transport_play"], "and it rolls");
         assert_eq!(host.playing_widget(), Some(50));
     }
 
-    /// A host that did not bind the governed group **drives no transport**: it
-    /// is a guest on somebody else's server, and a script owns its own.
+    /// A host nothing gave a server to drive **drives no transport**: it is a
+    /// guest on somebody else's server, and a script owns its own.
     #[test]
-    fn a_host_that_bound_no_group_owns_no_transport() {
+    fn a_host_given_no_server_owns_no_transport() {
         let (host, _server) = take_host(1, 16);
-        assert!(
-            !host.owns_transport(),
-            "false until something binds a group"
-        );
+        assert!(!host.owns_transport());
     }
 
     /// **A reader per channel**, which is the server's own convention: the
-    /// buffer readers are mono, so a stereo take is two nodes -- one per
-    /// channel, each to the bus of the same number. A fixed stereo def would
-    /// leave a mono take silent on the right and a wider one half unheard.
+    /// buffer readers are mono, so a stereo take is two readers -- channel
+    /// `ch` reading itself -- in one play graph, and a stop is the
+    /// transport's alone.
     #[test]
-    fn a_stereo_take_plays_a_reader_per_channel_and_stops_them_together() {
+    fn a_stereo_take_plays_a_reader_per_channel() {
         let (mut host, server) = take_host(2, 16);
         assert!(host.play_buffer(1, 50, 0, play::Pass::Until { end: 16, back: 0 }));
-        bound_group(&server);
-        received(&server).expect("/transport_loop");
-        received(&server).expect("/transport_end");
-        received(&server).expect("/transport_locateSample");
-        for ch in 0..2 {
-            let msg = received(&server).expect("a reader per channel");
-            assert_eq!(msg.addr, "/synth_new");
-            assert_eq!(
-                msg.args[6..],
-                [
-                    OscType::String("chan".into()),
-                    OscType::Float(ch as f32),
-                    OscType::String("out".into()),
-                    OscType::Float(ch as f32),
-                ],
-                "channel {ch} reads itself and goes out on its own bus"
+        let sent = exchange(&mut host, &server);
+        let readers: Vec<&OscMessage> =
+            sent.iter().filter(|m| m.addr == "/graph_addSlot").collect();
+        assert_eq!(readers.len(), 2);
+        for (ch, reader) in readers.iter().enumerate() {
+            assert!(
+                reader
+                    .args
+                    .windows(2)
+                    .any(|w| w[0] == OscType::String("chan".into())
+                        && w[1] == OscType::Float(ch as f32)),
+                "channel {ch} reads itself: {:?}",
+                reader.args
             );
         }
-        received(&server).expect("/transport_play");
         assert!(host.stop_playback());
-        received(&server).expect("/transport_stop");
-        let msg = received(&server).expect("both were freed");
-        assert_eq!(msg.addr, "/node_free");
+        assert_eq!(addrs(&exchange(&mut host, &server)), ["/transport_stop"]);
+    }
+
+    /// **A window whose owner plays it is the owner's**: the space bar is
+    /// the window's `play` verb, with the loop switch beside it, and the
+    /// monitor stays out.
+    #[test]
+    fn a_window_that_plays_its_own_take_leaves_the_monitor_out() {
+        let (mut host, _server) = take_host(1, 16);
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_SET.into(),
+                args: vec![
+                    OscType::Int(1),
+                    OscType::String("plays".into()),
+                    OscType::Int(1),
+                ],
+            }),
+            from(),
+        );
+        assert!(host.window_plays(1));
+        let ctx = gestures::GestureCtx::new(1, 800, 400);
+        let (cx, cy) = over_the_take(&host, &ctx);
+        let g = gestures::Gestures::default();
+        assert!(
+            g.play_key(&mut host, &ctx, cx, cy).is_none(),
+            "not the monitor's"
+        );
+        assert!(host.playing_widget().is_none());
         assert_eq!(
-            msg.args.len(),
-            2,
-            "in one message, so a stereo take cannot half-stop"
+            host.play_verb(),
+            vec![OscType::String("play".into()), OscType::Int(0)]
+        );
+        host.toggle_monitor_loop();
+        assert_eq!(
+            host.play_verb()[1],
+            OscType::Int(1),
+            "the loop rides beside it"
         );
     }
 

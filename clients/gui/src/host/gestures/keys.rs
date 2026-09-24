@@ -16,9 +16,9 @@
 
 use super::super::Host;
 use super::super::interact::Hit;
-use super::super::play::Pass;
 use crate::host::diag;
 use clausters_core::osc::OscType;
+use clausters_editing::audio_playback::space;
 
 use super::super::clipboard::Clip;
 use super::super::widget::element::{Key, KeyInput, Mods, SampleBlock, refusal};
@@ -199,6 +199,12 @@ impl Gestures {
         // space over a take the monitor is not holding plays that one instead,
         // so a window of several takes is driven by pointing at them. Over
         // nothing at all it is the transport that is meant, and there is one.
+        // **A window whose owner plays it is the owner's**: an application
+        // plays its take through its own playback, so the key is the window's
+        // verb and the monitor stays out.
+        if host.window_plays(ctx.def_id) {
+            return None;
+        }
         let over = hit(host, ctx, cx, cy).map(|Hit { id, .. }| id);
         if let Some(loaded) = host.monitor()
             && over.is_none_or(|id| id == loaded.widget)
@@ -216,21 +222,18 @@ impl Gestures {
         // several views (a multitrack, its ruler, its take panes) is still
         // addressed by pointing, and over nothing it is the window's own verb.
         let id = over.or_else(|| sole_take(host, ctx.def_id))?;
-        let (start, span) = start_of(host, id);
+        let (_, span) = start_of(host, id);
         let frames = host.buffer_frames(ctx.def_id, id)?;
-        // **How the pass ends is the loop switch's** (`L`). Looping, a
-        // selection repeats and so does a take with none. Not looping, the
-        // pass stops at the end of the selection or of the take, and the
-        // transport goes back to the position cursor -- where a selection's
-        // play started, when there is no cursor apart from it.
-        let pass = if host.monitor_loops() {
-            let (from, to) = span.unwrap_or((0, frames));
-            Pass::Loop(from, to)
-        } else {
-            let end = span.map_or(frames, |(_, to)| to);
-            let back = position_cursor(host, id).unwrap_or(start);
-            Pass::Until { end, back }
-        };
+        // **Where it starts and how it ends are the crate's rule**, the one an
+        // audio editor's application reads too: a selection plays its span, no
+        // selection plays from the position cursor, and the loop switch (`L`)
+        // decides whether it repeats or stops and goes back to the cursor.
+        let (start, pass) = space(
+            host.monitor_loops(),
+            span,
+            position_cursor(host, id),
+            frames,
+        );
         host.play_buffer(ctx.def_id, id, start, pass)
             .then(|| vec![GestureEffect::Redraw(ctx.def_id)])
     }
@@ -257,8 +260,9 @@ impl Gestures {
     /// makes, so the owner is told where the mark went and a play that follows
     /// starts there.
     ///
-    /// Returns `None` over anything that draws no samples, so the key falls
-    /// through to whatever else the window does with it.
+    /// Over anything that draws no samples it is the window's one take, and
+    /// `None` when there is none, so the key falls through to whatever else
+    /// the window does with it.
     pub fn ends_key(
         &self,
         host: &mut Host,
@@ -267,11 +271,19 @@ impl Gestures {
         cx: f64,
         cy: f64,
     ) -> Option<Vec<GestureEffect>> {
+        // Over something that draws no samples -- a meter beside the take --
+        // the key still means the window's one take.
         let id = hit(host, ctx, cx, cy)
             .map(|Hit { id, .. }| id)
+            .filter(|id| host.buffer_frames(ctx.def_id, *id).is_some())
             .or_else(|| sole_take(host, ctx.def_id))?;
         let frames = host.buffer_frames(ctx.def_id, id)?;
-        let pos = if to_end { frames as f64 } else { 0.0 };
+        // End is the take's last frame, the one a cursor can stand on.
+        let pos = if to_end {
+            frames.saturating_sub(1) as f64
+        } else {
+            0.0
+        };
         let mut out = Vec::new();
         super::nav::locate_at(host, &mut out, ctx, id, pos);
         Some(out)

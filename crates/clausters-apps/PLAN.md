@@ -404,7 +404,9 @@ opened it.
   about the bundle's size rather than where an application lives, over the same
   widgets.
 
-- ⬜ **X7 - The audio editor's nodes on the server.** *(Asked for by the user
+- ✅ **X7 - The audio editor's nodes on the server.** *(Done 2026-09-24,
+  heard and seen by the user in both examples; what is left is at the end of
+  this plan.)* *(Asked for by the user
   2026-09-23: the multitrack has a node design on the server, and the audio
   editor needs its own, at least to watch its amplitude on a level meter;
   the shape below is the user's, the same day.)*
@@ -686,11 +688,10 @@ opened it.
   editor's example shows the meter.
 
   **Open:**
-  - The GraphDef above, until the user has reviewed it.
-  - **The `fx` chain's details**, decided with the first effect: what a resumed effect
-    does with the state it froze with (a delay line still holding the past),
-    and how an effect is moved in the chain, since an auto-sorted group
-    refuses a manual move.
+  - ✅ The GraphDef above, until the user has reviewed it. *Built as the
+    progress entry below says, and accepted by ear and by eye (2026-09-24).*
+  - The `fx` chain: moved to "Future directions", *"Effects in preview in
+    the audio editor"*.
   - ✅ The stop's ramp: its length, and where the position comes to rest after a
     stop (the sample the stop was asked at, or the end of the ramp).
     *Decided by the user 2026-09-24, and shipped the same day*: the transport
@@ -717,16 +718,31 @@ opened it.
     crate's, bound in C and wasm, held by both clients and the standalone
     host, and the application answers the keys with what the transport is
     asked to do.
-  - **Which transport the editor takes.** `T6` shipped (2026-09-24): a server
-    has several, the multitrack plays on transport 0 and the host's monitor
-    does too for now. The editor takes another. What reads it outside the
-    governed group is settled: the editor group **follows** the editor's
-    transport (`/transport_follow`), so `ae.output` reads it without being
-    frozen, and `TransportFade` needs no id; the window names the editor's
-    transport as its head clock (`/gui_headClock`, per view).
-  - Whether the host's monitor goes away, or stays for a window with no
-    application behind it.
-  - Whether the meter is per channel, and where it sits in the window.
+  - ✅ **Which transport the editor takes.** Transport 1
+    (`AUDIO_EDITOR_TRANSPORT`); the multitrack stays on 0. The editor group
+    **follows** it (`/transport_follow`), so `ae.output` reads it without
+    being frozen, and the window names it as its head clock.
+  - ✅ **Whether the host's monitor goes away** *(2026-09-24)*: it stays, for
+    a window with no application behind it, and it **is the same playback**
+    -- the host holds an `AudioEditorPlayback` on a transport of its own
+    (`play::MONITOR_TRANSPORT`, 2), so playing a take pane never moves a
+    multitrack's position, and the old one-reader-per-channel def is gone. A
+    window whose owner plays it says `plays` and the space bar is its
+    owner's verb, the loop switch beside it; the audio editor's window says
+    so, and the editor answers with the pass (`Outcome::play`).
+  - ✅ **Whether the meter is per channel, and where it sits** *(taken as the
+    default, 2026-09-24)*: one column per channel of the editor's bus, at
+    the take's right, read in decibels off the control buses `ae.meter`
+    writes.
+  - The drawn play cursor of a take at another rate, and several files in
+    one editor: moved to "Found by use" and "Future directions".
+  - ✅ **The two cursors go together** *(the user, 2026-09-24)*: placing the
+    position cursor -- a click, Home, End -- cues a stopped transport there,
+    so the play cursor stands on it (`Outcome::cue`, the playback's `cue`,
+    and the host's monitor alike); a rolling pass is left alone. Letting go
+    of a selection puts the position cursor at its start. End is the take's
+    last frame, and Home and End reach the take when the pointer is over the
+    meter beside it.
 
 - ✅ **X8 - A pass ends where the contents do, and a loop is a switch.**
   *(Done 2026-09-24; the standalone half of the multitrack's switch is
@@ -810,7 +826,31 @@ Every entry carries a checkbox.
   reopened session stops where it stopped before. Waits for the chrome entry
   above.
 
+- ⬜ **Effects in preview in the audio editor** *(out of X7)*: a chain in
+  place on `dry`, between the readers and the pass, whose effects are heard
+  and not written; applying one to the take is a separate operation on the
+  server. The shape is decided in X7 (a linear chain on `ReplaceOut`, a bypass
+  that ramps `LinXFade2` and then pauses, removing as a separate verb); what
+  is decided with the first effect is what a resumed effect does with the
+  state it froze with (a delay line still holding the past), and how an
+  effect is moved in the chain, since an auto-sorted group refuses a manual
+  move.
+
+- ⬜ **Several files in one audio editor** *(out of X7)*. The playback holds a
+  file per open take and pauses all but the one in focus; the clients open
+  one take per editor, so what tabs or a list of open files look like, and
+  whether the files share one position or each locates to its own cursor on
+  a switch, is open.
+
 ## Found by use: the running list of fixes
 
 Every entry carries a checkbox, and a fixed one stays with the record of what was
 wrong.
+
+- ⬜ **The play cursor of a take at another rate than the engine's runs
+  ahead** *(found building X7, 2026-09-24)*. The audio editor's playback
+  converts every frame to the engine's samples and the reader scales its
+  phase, so the take is heard at its pitch and ends where it ends; the play
+  cursor is drawn from the transport's position read as frames of the take,
+  so over a 44.1 kHz take in a 48 kHz session it runs ahead by the ratio. The
+  view has to scale the position by its rate over the engine's.

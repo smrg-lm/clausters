@@ -21,7 +21,7 @@ use clausters_core::ids::{IdError, IdShare, IdSpaces, ServerShape, Space};
 use clausters_core::osc::{OscMessage, OscType};
 
 use crate::host::instance::Leg;
-use crate::host::{Host, diag, play};
+use crate::host::{Host, diag};
 
 impl Host {
     /// **Takes share `share` of every space**, keeping what is already
@@ -55,16 +55,12 @@ impl Host {
     }
 
     /// **What a freshly attached link to the server that sounds is told**:
-    /// the take monitor's def, `/server_notify 1`, so a node this host made
-    /// comes back on its `/node_end`, and `/server_query`, so the spaces take
-    /// the server's own shape rather than the default one.
-    ///
-    /// The def goes first and goes on every link, whoever launched the server:
-    /// a def is asynchronous, so it has to be there before anything can press
-    /// the space bar -- and a server that persists defs would otherwise answer
-    /// with whatever copy an older host left on its disk.
+    /// `/server_notify 1`, so a node this host made comes back on its
+    /// `/node_end`, and `/server_query`, so the spaces take the server's own
+    /// shape rather than the default one. The monitor's defs go with its first
+    /// play, sent by its playback -- so a server that persists defs never
+    /// answers with an older host's copy.
     pub fn on_link_attached(&mut self) {
-        self.send_to_player(play::take_def_message());
         for addr in ["/server_notify", "/server_query"] {
             self.send_to_player(OscMessage {
                 addr: addr.into(),
@@ -75,33 +71,6 @@ impl Host {
                 },
             });
         }
-    }
-
-    /// **Binds a group of this host's own to the server's transport** and
-    /// answers it: where the take monitor's readers are made **when no multitrack
-    /// plays**. A multitrack makes the transport's group itself, the same as it does
-    /// for every endpoint, and the monitor's group then goes inside that one
-    /// instead ([`Host::monitor_group`]).
-    ///
-    /// Only a host that owns its server's transport does this -- an editor with
-    /// its own player. A host that is a guest on a script's server leaves the
-    /// transport to the script and makes its nodes in the root group.
-    pub fn govern_transport(&mut self) -> Option<i32> {
-        if let Some(group) = self.governed {
-            return Some(group);
-        }
-        let group = self.alloc_nodes(1)?;
-        for message in play::take_group_messages(group) {
-            self.send_sound(message);
-        }
-        self.governed = Some(group);
-        self.owns_transport = true;
-        Some(group)
-    }
-
-    /// The group the transport governs, when this host bound one.
-    pub fn governed_group(&self) -> Option<i32> {
-        self.governed
     }
 
     /// **Every reply from the audio server passes here first**, from both
@@ -116,6 +85,15 @@ impl Host {
                 }
             }
             "/server_query.reply" => {
+                // The engine's rate, which a take's frames are converted to.
+                match msg.args.get(4) {
+                    Some(OscType::Double(rate)) if *rate > 0.0 => self.server_rate = *rate,
+                    Some(OscType::Float(rate)) if *rate > 0.0 => {
+                        self.server_rate = f64::from(*rate)
+                    }
+                    Some(OscType::Int(rate)) if *rate > 0 => self.server_rate = f64::from(*rate),
+                    _ => {}
+                }
                 if let Some(shape) = shape_of(&msg.args) {
                     let share = self.ids.share();
                     if let Err(e) = self.ids.reshape(shape, share) {
@@ -202,14 +180,11 @@ mod tests {
         assert_eq!(host.ids().in_use(Space::Nodes), 0);
     }
 
-    /// **A link attached by any path sends the monitor's def first.** It was
-    /// sent by the standalone session alone, so a host launched against a
-    /// script's server played the space bar through whatever copy of the def
-    /// that server had persisted -- an older one, whose gate never closed past
-    /// the end of the take.
+    /// **A link attached by any path asks to be told**: `/server_notify` first,
+    /// so a node this host makes comes back on its `/node_end`.
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
-    fn an_attached_link_is_sent_the_monitors_def_first() {
+    fn an_attached_link_is_asked_to_notify() {
         use clausters_core::osc::{OscPacket, decode_packet};
         use std::net::UdpSocket;
         use std::time::Duration;
@@ -227,16 +202,6 @@ mod tests {
         let OscPacket::Message(msg) = decode_packet(&buf[..len]).unwrap() else {
             panic!("expected a message");
         };
-        assert_eq!(msg, play::take_def_message());
-    }
-
-    /// The governed group is allocated once, like any node, and bound once.
-    #[test]
-    fn the_governed_group_is_one_of_the_hosts_nodes() {
-        let mut host = Host::new();
-        let group = host.govern_transport().unwrap();
-        assert!(host.ids().contains(Space::Nodes, i64::from(group)));
-        assert_eq!(host.govern_transport(), Some(group));
-        assert!(host.owns_transport());
+        assert_eq!(msg.addr, "/server_notify");
     }
 }

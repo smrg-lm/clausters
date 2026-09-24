@@ -1518,6 +1518,39 @@ impl JsStepRunner {
     }
 }
 
+/// **The audio editor, as it is playing**: its structure, its files and its
+/// transport, answering every verb as steps (JSON).
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = AudioEditorPlayback)]
+pub struct JsAudioEditorPlayback(clausters_editing::audio_playback::AudioEditorPlayback);
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_class = AudioEditorPlayback)]
+impl JsAudioEditorPlayback {
+    /// A playback; `chunk` is how many samples one fill carries, and
+    /// `transport` the transport it plays on -- negative for the crate's own.
+    #[wasm_bindgen(constructor)]
+    pub fn new(chunk: usize, transport: i32) -> JsAudioEditorPlayback {
+        use clausters_editing::audio_playback::{AUDIO_EDITOR_TRANSPORT, AudioEditorPlayback};
+        let transport = if transport < 0 {
+            AUDIO_EDITOR_TRANSPORT
+        } else {
+            transport
+        };
+        JsAudioEditorPlayback(AudioEditorPlayback::new(
+            clausters_editing::apply::Endpoint {
+                chunk: chunk.max(1),
+            },
+            transport,
+        ))
+    }
+
+    /// One verb, as JSON: `{"verb": ...}` in, steps or a query's answer out.
+    pub fn call(&mut self, request: &str, ids: &mut JsIdSpaces) -> String {
+        clausters_editing::audio_playback::call_json(&mut self.0, request, &mut ids.0)
+    }
+}
+
 /// **One multitrack, as it is playing**: its instance, its applier and its
 /// transport, answering every verb as steps (JSON).
 #[cfg(target_arch = "wasm32")]

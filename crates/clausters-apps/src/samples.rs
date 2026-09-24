@@ -78,6 +78,21 @@ pub struct Window<'a> {
     pub title: &'a str,
     /// The window's size, in logical pixels.
     pub size: (i64, i64),
+    /// The level meter beside the picture, once something plays the take.
+    pub meter: Option<MeterAt>,
+}
+
+/// **Where the level meter is read from**, and the id it is drawn under: the
+/// first of the control buses the playback's meter writes, one per channel of
+/// the editor's bus -- a running playback's facts, handed in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MeterAt {
+    /// The meter widget's id.
+    pub widget: i32,
+    /// The first control bus.
+    pub bus: i32,
+    /// How many channels, one column each.
+    pub channels: usize,
 }
 
 /// **The window**, as a GuiDef rooted at a `window` node.
@@ -104,13 +119,33 @@ pub fn window(w: &Window<'_>) -> Value {
         ..Waveform::default()
     });
     picture.insert("id".into(), json!(w.widget));
+    let mut children = vec![Value::Object(picture)];
+    // **The level, beside the take**: the editor's output measured before its
+    // declick, one column per channel, read off the control buses the
+    // playback's meter writes. The mark that waits is the widget's own
+    // ballistics.
+    if let Some(meter) = w.meter {
+        children.push(json!({
+            "type": "meter",
+            "id": meter.widget,
+            "bus": meter.bus,
+            "rate": "control",
+            // A control bus reads linearly unless told: this one carries an
+            // amplitude, read in decibels with its ladder.
+            "scale": "db",
+            "channels": meter.channels,
+        }));
+    }
     json!({
         "type": "window",
         "title": w.title,
         "w": w.size.0,
         "h": w.size.1,
-        "flow": "col",
-        "children": [Value::Object(picture)],
+        "flow": if w.meter.is_some() { "row" } else { "col" },
+        // **The space bar and `L` are the application's**: it plays its own
+        // take through its own playback, so the host's monitor stays out.
+        "plays": true,
+        "children": children,
     })
 }
 
@@ -158,6 +193,7 @@ mod tests {
             rate: 48_000.0,
             widget: 9,
             title: "take",
+            meter: None,
             size: (1000, 520),
         })
     }

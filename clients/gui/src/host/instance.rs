@@ -122,10 +122,9 @@ impl Playing {
     /// The playback, made the first time.
     ///
     /// **The transport is the crate's, as it is every endpoint's**: the
-    /// playback makes its group at the top, binds it and makes the multitrack inside
-    /// it. The take monitor's readers go inside that group too
-    /// ([`Host::monitor_group`]), so one transport starts, stops and locates
-    /// both.
+    /// playback makes its group at the top, binds it and makes the multitrack
+    /// inside it. The take monitor plays on a transport of its own
+    /// ([`crate::host::play`]), so playing a take never moves the multitrack.
     fn playback(&mut self) -> &mut MultitrackPlayback {
         self.multitrack
             .get_or_insert_with(|| MultitrackPlayback::new(Endpoint::default()))
@@ -256,38 +255,12 @@ impl Host {
         self.send_multitrack();
     }
 
-    /// **The group the take monitor makes its readers in**, made the first
-    /// time it is asked for.
-    ///
-    /// With a multitrack playing it is a group of the monitor's own **inside the
-    /// transport's group the multitrack made**: the server governs one group, and
-    /// what it freezes is that subtree, so the monitor follows the transport
-    /// without sharing the multitrack's group. With no multitrack -- a session of takes
-    /// -- nothing else binds the transport, and this host binds a group of its
-    /// own ([`Host::govern_transport`]).
-    pub(crate) fn monitor_group(&mut self) -> Option<i32> {
-        if let Some(group) = self.governed {
-            return Some(group);
-        }
-        let Some(transport) = self
-            .instance
-            .multitrack
-            .as_ref()
-            .and_then(MultitrackPlayback::group)
-        else {
-            return self.govern_transport();
-        };
-        let monitor = self.alloc_nodes(1)?;
-        self.send_sound(OscMessage {
-            addr: "/group_new".into(),
-            args: vec![
-                OscType::Int(monitor),
-                OscType::Int(1),         // add to the tail...
-                OscType::Int(transport), // ...of the transport's group
-            ],
-        });
-        self.governed = Some(monitor);
-        Some(monitor)
+    /// **Carries steps out on the server that sounds**, behind whatever the
+    /// multitrack's steps are still waiting on: the take monitor's, which the
+    /// same walk releases on the same replies.
+    pub(crate) fn send_sound_steps(&mut self, steps: Vec<Step>) {
+        self.instance.run.push(Server::Sound, steps);
+        self.send_multitrack();
     }
 
     /// Sends every step that may go out now, each to its server.
@@ -748,44 +721,6 @@ mod tests {
         assert_eq!(
             addrs(&ready(&mut playing)),
             ["/buffer_setRange", "/server_sync"]
-        );
-    }
-
-    /// **The take monitor goes inside the transport's group the multitrack made**,
-    /// once, behind the multitrack's own steps -- so it follows the one transport
-    /// without sharing the multitrack's group.
-    #[test]
-    fn the_take_monitor_goes_inside_the_transport_group() {
-        let mut host = Host::new();
-        let steps = host
-            .instance
-            .playback()
-            .sync(&multitrack(), 48_000.0, &sources(), 1.0, &mut host.ids)
-            .unwrap();
-        host.instance.run.push(Server::Sound, steps);
-        let transport = host
-            .instance
-            .multitrack
-            .as_ref()
-            .and_then(MultitrackPlayback::group)
-            .expect("the multitrack made its transport's group");
-        let monitor = host.monitor_group().expect("a group for the monitor");
-        assert_ne!(monitor, transport);
-        assert_eq!(host.monitor_group(), Some(monitor), "made once");
-        assert!(
-            !host.owns_transport,
-            "the multitrack bound it, not the host"
-        );
-        let sent = drain(&mut host.instance);
-        let made = sent.last().expect("the monitor's group, last");
-        assert_eq!(made.addr, "/group_new");
-        assert_eq!(
-            made.args,
-            [
-                OscType::Int(monitor),
-                OscType::Int(1),
-                OscType::Int(transport)
-            ]
         );
     }
 

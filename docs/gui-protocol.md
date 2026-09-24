@@ -365,7 +365,7 @@ catalog spells one idea several ways.
 
 | Type | Axes | Properties | Replaces |
 |---|---|---|---|
-| `window` | 0 | a root; `title`, `w`, `h`, `flow`, `margin`, `gap`, `cols`, `hug`, `status`, `theme` | `window` |
+| `window` | 0 | a root; `title`, `w`, `h`, `flow`, `margin`, `gap`, `cols`, `hug`, `status`, `plays`, `theme` | `window` |
 | `layout` | 0 | children arranged by **`flow`** — `row`, `col`, `grid`, `free` or **`stack`** (one child at a time, the one at `index`) — plus `margin`, `gap`, `cols`, `hug`, `theme` | `panel`, `box`, `stack` |
 | `plane` | 2, **locked to one scale** | a pannable, zoomable plane in content units: `axis`, `zoom`, `content_w`/`content_h`, `view_x`/`view_y`/`view_zoom`; with `boxes`/`cords`, the patcher | `scroll`, `patch` |
 | `field` | 2, **independent** | the **free-standing time ruler** of a navigation group: an `axes` pair and nothing placed on it. It was three things told apart by what was on them — a lane, a clip, this — and the first two are `multitrack` props now: a lane cannot sit in a void, so it is always inside the view that owns it | `timeruler` |
@@ -875,7 +875,7 @@ script actually names these. The catalog itself:
 
 | Type | What it is | Notable properties |
 |---|---|---|
-| `window` | A top-level window (a GuiDef root). It carries the host's **status bar** along its bottom edge unless `status` is off — see the section below | `title`, `w`, `h`, `layout`, `margin`, `gap`, `cols`, `hug`, `status`, `theme` |
+| `window` | A top-level window (a GuiDef root). It carries the host's **status bar** along its bottom edge unless `status` is off — see the section below. **`plays`** says the window's owner plays it: the space bar is then the window's own `play` verb — `/gui_event <window> <seq> <version> "play" <loop>`, the loop switch `L` riding beside it as `1` or `0` — whatever the pointer is over, and the host's own take monitor stays out. Off by default: the space bar over a take is then the monitor's, and over anything else the same verb | `title`, `w`, `h`, `layout`, `margin`, `gap`, `cols`, `hug`, `status`, `plays`, `theme` |
 | `panel` | A nestable container | `layout`, `margin`, `gap`, `cols`, `hug`, `theme` |
 | `stack` | A container showing **one child at a time**, the one at `index`: it fills the container, and the hidden pages are neither laid out nor drawn while keeping their place in the tree (so a heavy view keeps its GPU slot and its bus reads across a switch). An `index` outside the children shows nothing — a blank page, not a clamped one. Tabs, a pager and a waveform/spectrogram switch are this plus a control bound to `index` | `index`, `margin`, `hug`, `theme` |
 | `scroll` | The **2D workspace**: a container whose children live in a virtual content area seen through a panning, zooming window. General first — the default is the free plane; the constrained scroll views degenerate from it by configuration | `axis` (`both`/`x`/`y`), `zoom` (0 disables the wheel zoom), `content_w`/`content_h`, `view_x`/`view_y`/`view_zoom`, plus `layout` (default `free` here), `margin`, `gap`, `cols`, `theme` |

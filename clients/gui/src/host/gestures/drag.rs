@@ -470,6 +470,12 @@ impl Gestures {
                 // is [`Gestures::release`]'s: what this arm answers for is the
                 // *span*, which is the transport's loop and not its position.
                 transport_follows_selection(host, def_id, id, start, len, true);
+                // **A selection puts the position cursor at its start**, where
+                // its play starts and a stop goes back to -- placed as a click
+                // places it, so the owner is told.
+                if len > 0.0 {
+                    super::nav::locate_at(host, &mut out, ctx, id, start);
+                }
             }
         }
         if let Some(Drag::Element { at, .. }) = self.drag.take() {

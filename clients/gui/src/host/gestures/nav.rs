@@ -413,6 +413,12 @@ pub(super) fn locate_at(
         id,
         vec![OscType::String("locate".into()), OscType::Double(placed)],
     );
+    // **The play cursor goes with it while nothing plays**: it is the
+    // transport's position, so the monitor's transport is cued there. A window
+    // whose owner plays it cues its own, on the `"locate"` above.
+    if !host.window_plays(ctx.def_id) {
+        host.cue_monitor(id, placed.max(0.0) as u64);
+    }
     redraw_all(out, &roots);
     out.push(GestureEffect::Redraw(ctx.def_id));
 }

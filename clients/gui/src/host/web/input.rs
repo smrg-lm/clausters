@@ -378,15 +378,20 @@ impl WebApp {
         // **A multitrack is the window's, not the pointer's**, as on the desktop: its
         // readers follow the transport, so the window is told and whoever edits
         // the multitrack answers.
-        self.window_verb(def, clausters_apps::multitrack::editor::PLAY_KEY);
+        let verb = self.host.play_verb();
+        self.window_event(def, verb);
     }
 
     /// A verb addressed to the **window** rather than to anything under the
     /// cursor, built and delivered as the native front does: a host that owns
     /// the document answers it, and every other one queues it for the page.
     fn window_verb(&mut self, def: i32, verb: &str) {
+        self.window_event(def, vec![clausters_core::osc::OscType::String(verb.into())]);
+    }
+
+    /// A window verb with the arguments that ride beside it.
+    fn window_event(&mut self, def: i32, args: Vec<clausters_core::osc::OscType>) {
         let seq = self.host.outbox.borrow_mut().stamp(def, def);
-        let args = vec![clausters_core::osc::OscType::String(verb.into())];
         let message = self.host.event_message(def, seq, args);
         if self.host.deliver(def, &message) {
             self.request_redraw(def);

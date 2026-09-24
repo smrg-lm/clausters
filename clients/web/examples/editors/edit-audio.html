@@ -38,12 +38,17 @@ what only the history holds, and the oldest entries go first past it.
 
 <b>Drag</b> to select, then <b>Ctrl+X</b> to cut, <b>Ctrl+C</b> to copy,
 <b>Ctrl+V</b> to paste at the cursor and <b>Ctrl+Shift+V</b> to mix
-there. <b>Click</b> to put the position cursor down, and <b>Home</b> and
-<b>End</b> to put it at the take's start and end. <b>Space</b> plays from
+there. <b>Click</b> to put the position cursor down --
+the play cursor goes with it while nothing plays, and a selection puts both
+at its start -- and <b>Home</b> and <b>End</b> to put it at the take's first and
+last frame. <b>Space</b> plays from
 the cursor to the end of the take, or of the selection, with the play cursor
 following the sound and going back to the position cursor when the pass
 ends; a second press stops it there sooner. <b>L</b> switches the loop:
-looping, the selection -- or the whole take -- plays over and over.
+looping, the selection -- or the whole take -- plays over and over. The
+<b>meter</b> beside the take reads its level while it plays and falls when it
+stops, and neither a play nor a stop clicks: the editor sounds the take through
+nodes of its own, whose output fades in and out with the transport.
 <b>Wheel</b> to zoom in until each sample is a disc, then
 <b>Alt+drag</b> to draw. <b>Ctrl+Z</b> and <b>Ctrl+Shift+Z</b> walk the
 history. <code>editor.save()</code> -- or Ctrl+S in the window -- writes the

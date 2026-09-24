@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
+import { IdSpaces } from "../src/core/clausters_core_web.js";
 import { AudioEditor, Editing, edit, measures } from "../src/gui/editing/index.ts";
 import type { GuiHost, PropValue } from "../src/gui/host.ts";
 import type { GuiNode } from "../src/gui/guidef.ts";
@@ -41,7 +42,8 @@ class FakeHost {
         return { id };
     }
     set(): void {}
-    headClock(id: number | { readonly id: number }, name: string): void {
+    close(): void {}
+    headClock(id: number | { readonly id: number }, name: string, _transport = 0): void {
         this.clock = name;
         this.clockOf = typeof id === "number" ? id : id.id;
     }
@@ -85,9 +87,21 @@ type Sent = [string, (number | string)[]];
 class FakeServer {
     sent: Sent[] = [];
     buffers = new FakeAllocator();
+    ids = new IdSpaces(8192, 1024, 2, 16384, 4096, 0, 1);
+    /** Whether the transport rolls, as a `/transport_query` answers. */
+    playing = false;
 
     bulkChunk(): Promise<number> {
         return Promise.resolve(8192);
+    }
+    notify(): Promise<void> {
+        return Promise.resolve();
+    }
+    queryInfo(): Promise<{ nominalSampleRate: number }> {
+        return Promise.resolve({ nominalSampleRate: SR });
+    }
+    transportAt(): { transportState: () => Promise<{ playing: boolean }> } {
+        return { transportState: () => Promise.resolve({ playing: this.playing }) };
     }
     sendMsg(addr: string, ...args: unknown[]): void {
         this.sent.push([
@@ -220,7 +234,11 @@ test("a cut moves no samples", async () => {
     take.server.sent = [];
     editor.apply("/gui_event", [wid, 1, 0, "cut", 10.0, 20.0]);
     await settle();
-    assert.deepEqual(take.server.addrs(), ["/buffer_stitch"]);
+    assert.deepEqual(
+        take.server.addrs(),
+        ["/buffer_stitch", "/node_set"],
+        "the join stitched, and the readers' window set to its new length",
+    );
     assert.equal(editor.buffer.frames, 80);
     assert.equal(editor.undo(), true);
     assert.equal(editor.buffer.frames, 100);
@@ -285,7 +303,11 @@ test("a take's window is composed by the crate", async () => {
     const host = new FakeHost();
     await editor.open(host as unknown as GuiHost);
     const tree = host.trees[0]!;
-    assert.deepEqual([tree.type, tree.title, tree.flow], ["window", "take", "col"]);
+    assert.deepEqual(
+        [tree.type, tree.title, tree.flow],
+        ["window", "take", "row"],
+        "the take, and its level beside it",
+    );
     const picture = tree.children![0]! as Record<string, unknown>;
     const wid = Number(picture.id);
     assert.equal(picture.type, "signal");
@@ -304,4 +326,64 @@ test("a refused measure stack keeps the one the picture had", () => {
     assert.throws(() => (editor.layers = ["loud"]), /'loud'/);
     assert.deepEqual(editor.layers, ["rms", "peak"]);
     assert.throws(() => measures([]), /measures something/);
+});
+
+test("the take sounds through the editor's own nodes", async () => {
+    const take = new FakeBuffer(100, 2);
+    const [, host] = await opened(take);
+    const sent = take.server.addrs();
+    for (const addr of ["/transport_follow", "/transport_group", "/transport_fade"]) {
+        assert.ok(sent.includes(addr), addr);
+    }
+    const readers = take.server.sent.filter(([addr]) => addr === "/graph_addSlot");
+    assert.equal(readers.length, 2, "a reader per channel");
+    assert.equal(host.clock, "transport");
+    const window = host.trees[0] as GuiNode & { plays?: boolean };
+    assert.equal(window.plays, true, "the space bar is the editor's");
+    const meter = (window.children ?? [])[1] as Record<string, unknown>;
+    assert.equal(meter.type, "meter");
+    assert.equal(meter.rate, "control");
+    assert.equal(meter.channels, 2);
+});
+
+test("the space bar plays and a second press stops back at the cursor", async () => {
+    const take = new FakeBuffer();
+    const [editor, host, wid] = await opened(take);
+    const window = host.trees.length + 900;
+    take.server.sent = [];
+    editor.apply("/gui_event", [wid, 1, 0, "locate", 40]);
+    editor.apply("/gui_event", [window, 2, 0, "play", 0]);
+    await settle();
+    const end = take.server.sent.filter(([addr]) => addr === "/transport_end");
+    assert.deepEqual(end[end.length - 1][1].map(Number), [1, 100, 40]);
+    assert.equal(take.server.addrs()[take.server.addrs().length - 1], "/transport_play");
+    take.server.sent = [];
+    take.server.playing = true;
+    editor.apply("/gui_event", [window, 3, 0, "play", 0]);
+    await settle();
+    assert.deepEqual(take.server.addrs().slice(0, 2), ["/transport_stop", "/transport_locateSample"]);
+});
+
+test("closing the window frees the editor's nodes", async () => {
+    const take = new FakeBuffer();
+    const [editor] = await opened(take);
+    take.server.sent = [];
+    editor.close();
+    await settle();
+    assert.ok(take.server.addrs().includes("/node_free"));
+});
+
+test("placing the cursor cues a stopped transport there", async () => {
+    const take = new FakeBuffer();
+    const [editor, , wid] = await opened(take);
+    take.server.sent = [];
+    editor.apply("/gui_event", [wid, 1, 0, "locate", 40]);
+    await settle();
+    const located = take.server.sent.filter(([addr]) => addr === "/transport_locateSample");
+    assert.deepEqual(located[located.length - 1][1].map(Number), [1, 40]);
+    take.server.sent = [];
+    take.server.playing = true;
+    editor.apply("/gui_event", [wid, 2, 0, "locate", 60]);
+    await settle();
+    assert.ok(!take.server.addrs().includes("/transport_locateSample"));
 });

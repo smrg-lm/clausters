@@ -18,12 +18,22 @@ walked against, the buffer numbers the crate is handed for new takes (from this
 client's allocator, topped up before every turn), and freeing the takes the
 context hands back.
 
+**It sounds through nodes of its own**, the audio editor's (the shared
+crate's ``AudioEditorPlayback``, the object the GUI host's monitor holds too):
+one play graph per open take, all but the one played last paused, on a
+transport of the editor's own, and an output beside them that meters the take
+and declicks every play and stop on the way to the hardware. The window shows
+the level on a meter beside the take, and the space bar and ``L`` are the
+editor's -- the window says so (``plays``), so the host's monitor stays out.
+
 **Memory is spent on what the history holds.** Every take a stroke or a paste
 made is kept while an undo or a redo can still reach it, and freed when neither
 can -- the history's budget trimmed it, or an edit after an undo dropped the
 redo. ``history_bytes`` caps what only the history holds; past it the oldest
 entries go first.
 """
+
+import weakref
 
 from ... import _native
 from ..._steps import run_steps
@@ -36,6 +46,65 @@ from .samples import MEASURES, SamplesView, _plain, measures
 #: How many buffers the crate holds for new takes before a turn: a stroke or a
 #: paste takes one, a mix two.
 _SPARE = 2
+
+
+class _AudioPlayback:
+    """**What sounds the audio editors of one server** -- the shared crate's
+    playback, the steps it answers carried out on that server.
+
+    One per server, since the editors on it share one structure and one
+    transport: each open take is a file of it, and the one played last is the
+    one that sounds.
+    """
+
+    _of = weakref.WeakKeyDictionary()
+
+    @classmethod
+    def of(cls, server) -> "_AudioPlayback":
+        """The playback of ``server``, made the first time it is asked for."""
+        found = cls._of.get(server)
+        if found is None:
+            found = cls._of[server] = cls(server)
+        return found
+
+    def __init__(self, server):
+        self.server = server
+        self._native = _native.AudioEditorPlayback(chunk=server._bulk_chunk())
+        self._runner = _native.StepRunner()
+        # Node ids come back on their `/node_end`, which only a registered
+        # client hears.
+        server._ensure_recycler()
+        self._rate = None
+
+    @property
+    def rate(self) -> float:
+        """The engine's sample rate, asked once; 0 when it will not say."""
+        if self._rate is None:
+            try:
+                self._rate = float(self.server.query_info().nominal_sample_rate)
+            except (RuntimeError, OSError, TimeoutError):
+                self._rate = 0.0
+        return self._rate
+
+    def call(self, verb: str, **args) -> dict:
+        """One verb of the crate's playback, its steps carried out."""
+        answer = self._native.call(verb, self.server.ids, **args)
+        steps = answer.get("steps")
+        if steps:
+            run_steps(self.server, self._runner, steps)
+        return answer
+
+    def state(self) -> dict:
+        """``{transport, rolling, focus, meters, nodes}``."""
+        return self._native.call("state", self.server.ids)
+
+    def rolling(self) -> bool:
+        """Whether the transport rolls, as the engine answers -- a pass that
+        ended on its mark stopped without anybody here saying so."""
+        transport = int(self.state()["transport"])
+        playing = bool(self.server.transport_at(transport).transport_state()["playing"])
+        self._native.call("setRolling", self.server.ids, rolling=playing)
+        return playing
 
 
 class AudioDomain(Domain):
@@ -143,6 +212,35 @@ class AudioEditor(Editor):
         # **A private copy of the take**, and the join over it: the buffer the
         # editor was handed is written by a save and by nothing else.
         domain.run(take, opened.get("steps") or [])
+        #: What sounds the take: the server's audio editor playback, where
+        #: this editor's take is the file its join is.
+        self._playback = _AudioPlayback.of(self._server)
+        self._sound()
+
+    def _sound(self) -> None:
+        """Make what sounds be the take as it now is -- the join and its
+        length -- and tell the window where its level is read from."""
+        frames = int(self._call("parts").get("frames", 0))
+        self._playback.call(
+            "sync", file=self._display, buffer=self._display,
+            channels=max(1, int(getattr(self.structure, "channels", 1) or 1)),
+            frames=frames, takeRate=self.sample_rate, rate=self._playback.rate)
+        self._call("sync", meters=self._playback.state().get("meters"))
+
+    def _cue(self, frame: int) -> None:
+        """**The position cursor moved**: the play cursor goes with it while
+        nothing plays, and a rolling pass is left alone."""
+        self._playback.rolling()
+        self._playback.call("cue", frame=frame)
+
+    def _play(self, play: dict) -> None:
+        """**The space bar**, as the editor read it: a rolling transport stops
+        and goes back to the position cursor; a stopped one plays the pass."""
+        if self._playback.rolling():
+            self._playback.call("stop", back=int(play["back"]))
+        else:
+            self._playback.call("play", file=self._display, start=int(play["start"]),
+                                **{"pass": play["pass"]})
 
     def open(self, host=None, id: "int | None" = None):
         """Open the window, with its play cursor drawn from the transport.
@@ -154,8 +252,20 @@ class AudioEditor(Editor):
         """
         window = super().open(host, id)
         if self._host is not None and window is not None:
-            self._host.head_clock(window, "transport")
+            self._host.head_clock(window, "transport",
+                                  int(self._playback.state()["transport"]))
         return window
+
+    def _closed(self) -> bool:
+        """The window closed: the take stops being one the editor plays, and
+        the last one closed frees the editor's nodes."""
+        self._playback.call("closeFile", file=self._display)
+        return super()._closed()
+
+    def close(self):
+        """Close the window, and free what sounded the take."""
+        self._playback.call("closeFile", file=self._display)
+        return super().close()
 
     def _facts(self) -> dict:
         take = self.structure
@@ -250,6 +360,7 @@ class AudioEditor(Editor):
             stepped = self.app.stepped(turned.get("stepped") or {}, self)
             self.echo.send(outcome.get("answer"))
             self._editing.release(turned.get("freed"), turned.get("stored"))
+            self._sound()
             return stepped
         changed = self._take(outcome)
         self._editing.release(turned.get("freed"), turned.get("stored"))
@@ -278,6 +389,11 @@ class AudioEditor(Editor):
         if changed:
             self.dirty = True
             self._editing.changed()
+            self._sound()
+        if outcome.get("play") is not None:
+            self._play(outcome["play"])
+        if outcome.get("cue") is not None:
+            self._cue(int(outcome["cue"]))
         if outcome.get("locate") is not None:
             self.cursor = float(outcome["locate"])
             self.locate(self.cursor)

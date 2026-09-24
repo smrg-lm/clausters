@@ -21,6 +21,9 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
         WidgetKind::Window { status, .. } if key == "status" => {
             truthy(v).map(|b| *status = b).is_some()
         }
+        WidgetKind::Window { plays, .. } if key == "plays" => {
+            truthy(v).map(|b| *plays = b).is_some()
+        }
         WidgetKind::Window {
             layout, flow, hug, ..
         }

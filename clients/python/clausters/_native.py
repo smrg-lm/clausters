@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 69
+CORE_ABI_VERSION = 70
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -297,6 +297,15 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     ]
     lib.clausters_editing_runner_call.restype = ctypes.c_size_t
     lib.clausters_editing_playback_free.argtypes = [ctypes.c_void_p]
+    lib.clausters_editing_audio_playback_new.restype = ctypes.c_void_p
+    lib.clausters_editing_audio_playback_new.argtypes = [ctypes.c_size_t, ctypes.c_int32]
+    lib.clausters_editing_audio_playback_free.argtypes = [ctypes.c_void_p]
+    lib.clausters_editing_audio_playback_free.restype = None
+    lib.clausters_editing_audio_playback_call.argtypes = [
+        ctypes.c_void_p, u8p_early, ctypes.c_size_t, ctypes.c_void_p,
+        u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_editing_audio_playback_call.restype = ctypes.c_size_t
     lib.clausters_editing_playback_sync.argtypes = [
         ctypes.c_void_p, u8p_early, ctypes.c_size_t, ctypes.c_double,
         u8p_early, ctypes.c_size_t, ctypes.c_float, ctypes.c_void_p,
@@ -1646,6 +1655,54 @@ class MultitrackPlayback:
             return 0.0
         return float(lib().clausters_editing_playback_samples_to_secs(
             ctypes.c_void_p(self._handle), int(samples)))
+
+
+class AudioEditorPlayback:
+    """**The audio editor, as it is playing** (`clausters_editing_audio_playback_*`):
+    its structure, its open files and its own transport, answering every verb
+    as steps -- the same object the GUI host holds.
+
+    One door, `call`, for every verb the crate names: ``sync``, ``closeFile``,
+    ``play``, ``resume``, ``pause``, ``stop``, ``locate``, ``cue``, ``close``,
+    ``setRolling``, and the two queries ``state`` and ``space``. A verb that
+    changes the server answers ``{"steps": [...]}``; a query its own object.
+
+    Args:
+        chunk: how many samples one ``/buffer_setRange`` carries.
+        transport: the transport it plays on; ``None`` for the crate's own.
+    """
+
+    def __init__(self, *, chunk: int = 8192, transport: "int | None" = None):
+        self._handle = lib().clausters_editing_audio_playback_new(
+            max(1, int(chunk)), -1 if transport is None else int(transport))
+
+    def __del__(self):
+        self.free()
+
+    def free(self) -> None:
+        """Free the bookkeeping. Not the nodes: ``close`` answers the steps that
+        free those."""
+        handle, self._handle = getattr(self, "_handle", None), None
+        if handle:
+            lib().clausters_editing_audio_playback_free(ctypes.c_void_p(handle))
+
+    def call(self, verb: str, ids: "IdSpaces", **args) -> dict:
+        """One verb, allocating from ``ids``: its answer.
+
+        Raises:
+            ValueError: the crate refused it -- an unknown verb, or an id space
+                exhausted; nothing changes then.
+        """
+        if not self._handle:
+            return {"steps": []}
+        body = json.dumps({"verb": verb, **args}).encode("utf-8")
+        raw = size_then_fill(lib().clausters_editing_audio_playback_call,
+                             ctypes.c_void_p(self._handle), as_u8(body), len(body),
+                             ctypes.c_void_p(ids._handle))
+        answer = json.loads(raw.decode("utf-8")) if raw else {"steps": []}
+        if "error" in answer:
+            raise ValueError(answer["error"])
+        return answer
 
 
 class Instance:

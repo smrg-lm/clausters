@@ -112,7 +112,10 @@ already carry it.
 
 - ⬜ **The master freezes with the transport**
   *(`crates/clausters-document/PLAN.md`, Found by use)*. The master, its meter
-  and its send sit in the governed group; only the tracks should.
+  and its send sit in the governed group; only the tracks should. Taken next:
+  the audio editor's structure (`X7`) is the shape -- a group that follows the
+  transport around the governed one, and a ramp on the transport for the
+  declick.
 
 - ⬜ **A box longer than its source holds the source's last sample**
   *(`crates/clausters-document/PLAN.md`, Found by use)*. A DC offset on the
@@ -270,15 +273,6 @@ its plan; the plan is where its acceptance is read.
   "unscheduled" reads as a decision rather than an oversight.
 
 ### The near work
-
-- ⬜ **`X7` — the audio editor's nodes on the server**
-  *(`crates/clausters-apps/PLAN.md`, "X7")*. **Taken next**, now that `T6`
-  gave it a transport of its own, a way for its output to read it
-  (`/transport_follow`) and a play cursor drawn per view. It is
-  how a take being edited is heard and measured: the monitor's readers held a
-  take's last sample on the output and nothing in the window showed it. Its
-  GraphDef is written out in the plan for the user's review, and its declick
-  needs a stopping phase in the server's transport.
 
 - ⬜ **`C54` - a timeline plays what is under the cursor, and an edit reaches
   the pass that is running**, with its port **`W31`**

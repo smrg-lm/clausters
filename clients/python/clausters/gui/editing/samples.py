@@ -76,8 +76,9 @@ class SamplesView(View):
 
     def build(self, editor) -> dict:
         wid = self.widget(editor, "waveform", editor.structure)
+        meter = self.widget(editor, "meter", editor.structure)
         editor._sync_core()
-        tree = editor._call("window", widget=wid)
+        tree = editor._call("window", widget=wid, meter=meter)
         # **A script's own widgets are its objects**, so they are appended here
         # rather than composed in the crate.
         tree["children"] = [*tree.get("children", ()), *editor.extra]

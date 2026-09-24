@@ -1358,10 +1358,18 @@ export function view(
      * through the lines it kept; clicking again closes it.
      */
     status?: boolean;
+    /**
+     * **The window's owner plays it**: the space bar is then the window's own
+     * `play` verb, with the loop switch (`L`) beside it, whatever the pointer
+     * is over, and the host's own take monitor stays out -- what an
+     * application that sounds its take through its own playback says. Off by
+     * default.
+     */
+    plays?: boolean;
     } = {},
     ...children: GuiNode[]
 ): View {
-    const { title, flow, layout, margin, gap, cols, hug, status, theme, ...rest } = options;
+    const { title, flow, layout, margin, gap, cols, hug, status, plays, theme, ...rest } = options;
     return node("window", {
         ...rest,
         ...drop([
@@ -1372,6 +1380,7 @@ export function view(
             ["cols", cols],
             ["hug", flag(hug)],
             ["status", flag(status)],
+            ["plays", flag(plays)],
             ["theme", theme],
         ]),
         children: [...(options.children ?? []), ...children],

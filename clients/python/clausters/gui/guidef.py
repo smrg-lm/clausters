@@ -983,8 +983,8 @@ def signal(*, view: str | None = None, data=None, blob: int | None = None,
 def view(*children, title: str | None = None, w: int | None = None, h: int | None = None,
          flow: str | None = None, layout: str | None = None, margin: float | None = None,
          gap: float | None = None, cols: int | None = None, hug: bool | None = None,
-         status: bool | None = None, theme: dict | None = None,
-         color: str | None = None, **props) -> View:
+         status: bool | None = None, plays: bool | None = None,
+         theme: dict | None = None, color: str | None = None, **props) -> View:
     """A view's **root**: a container that becomes an OS window when nothing
     holds it, and an ordinary component when something does. It takes no id.
 
@@ -1020,6 +1020,12 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
     opens it into the window's log area, where the wheel scrolls back through
     the lines it kept; clicking again closes it.
 
+    ``plays`` says **the window's owner plays it**: the space bar is then the
+    window's own ``play`` verb, with the loop switch (``L``) beside it, whatever
+    the pointer is over, and the host's own take monitor stays out -- what an
+    application that sounds its take through its own playback says. Off by
+    default.
+
     ``theme`` is a partial color-role table (``{"role": "#rrggbb[aa]"}``, the
     same shape as the host's TOML style file) overlaying the host theme for
     the whole window -- a **theme group**. On the root it persists with a named
@@ -1031,6 +1037,8 @@ def view(*children, title: str | None = None, w: int | None = None, h: int | Non
         extra["hug"] = 1 if hug else 0
     if status is not None:
         extra["status"] = 1 if status else 0
+    if plays is not None:
+        extra["plays"] = 1 if plays else 0
     return node("window", children=children, **extra, **props)
 
 

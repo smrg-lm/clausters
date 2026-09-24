@@ -6,8 +6,11 @@ and the takes the history lets go of are freed. What each gesture does to the
 list is the crate's and is tested there.
 """
 
+import types
+
 import pytest
 
+from clausters import _native
 from clausters.gui import edit
 from clausters.gui.editing import AudioEditor, Editing, measures
 
@@ -83,9 +86,23 @@ class FakeServer:
     def __init__(self):
         self.sent: list = []
         self.buffers = FakeAllocator()
+        self.ids = _native.IdSpaces(max_nodes=8192, audio_buses=1024, outputs=2,
+                                    control_buses=16384, buffers=4096)
+        #: Whether the transport rolls, as a `/transport_query` answers.
+        self.playing = False
 
     def _bulk_chunk(self, timeout=None) -> int:
         return 8192
+
+    def _ensure_recycler(self) -> None:
+        pass
+
+    def query_info(self, timeout=None):
+        return types.SimpleNamespace(nominal_sample_rate=SR)
+
+    def transport_at(self, transport):
+        return types.SimpleNamespace(
+            transport_state=lambda: {"playing": self.playing})
 
     def send_msg(self, addr, *args):
         self.sent.append((addr, args))
@@ -186,7 +203,8 @@ def test_a_cut_moves_no_samples():
     editor, _host, wid, _context = opened(take)
     take.server.sent.clear()
     editor.apply("/gui_event", [wid, 1, 0, "cut", 10.0, 20.0])
-    assert take.server.addrs() == ["/buffer_stitch"]
+    assert take.server.addrs() == ["/buffer_stitch", "/node_set"], \
+        "the join stitched, and the readers' window set to its new length"
     assert editor.buffer.frames == 80
     assert editor.undo() is True
     assert editor.buffer.frames == 100
@@ -240,7 +258,8 @@ def test_a_takes_window_is_composed_by_the_crate():
     take = FakeBuffer(frames=8, channels=2)
     editor, host, wid, _context = opened(take, title="take")
     tree = host.trees[0]
-    assert (tree["type"], tree["title"], tree["flow"]) == ("window", "take", "col")
+    assert (tree["type"], tree["title"], tree["flow"]) == ("window", "take", "row"), \
+        "the take, and its level beside it"
     picture = tree["children"][0]
     assert picture["type"] == "signal" and picture["id"] == wid
     assert (picture["buffer"], picture["channels"]) == (editor.buffer.bufnum, 2)
@@ -262,3 +281,62 @@ def test_a_refused_measure_stack_keeps_the_one_the_picture_had():
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))
+
+
+def test_the_take_sounds_through_the_editors_own_nodes():
+    """**The editor's nodes are made with the window**: the structure on the
+    editor's transport, one play graph with a reader per channel of the join,
+    and the level meter beside the take once the playback says where it
+    writes."""
+    take = FakeBuffer(channels=2)
+    editor, host, _wid, _context = opened(take)
+    sent = take.server.addrs()
+    for addr in ("/transport_follow", "/transport_group", "/transport_fade"):
+        assert addr in sent, addr
+    readers = [args for addr, args in take.server.sent if addr == "/graph_addSlot"]
+    assert len(readers) == 2, "a reader per channel"
+    assert host.clock == "transport"
+    window = host.trees[0]
+    assert window["plays"] is True, "the space bar is the editor's"
+    meter = window["children"][1]
+    assert meter["type"] == "meter" and meter["rate"] == "control"
+    assert meter["channels"] == 2
+
+
+def test_the_space_bar_plays_and_a_second_press_stops_back_at_the_cursor():
+    take = FakeBuffer()
+    editor, _host, wid, _context = opened(take)
+    window = editor._window
+    take.server.sent.clear()
+    editor.apply("/gui_event", [wid, 1, 0, "locate", 40])
+    editor.apply("/gui_event", [int(window), 2, 0, "play", 0])
+    end = [args for addr, args in take.server.sent if addr == "/transport_end"]
+    assert [int(a.value) if hasattr(a, "value") else a for a in end[-1]] == [1, 100, 40]
+    assert take.server.addrs()[-1] == "/transport_play"
+    take.server.sent.clear()
+    take.server.playing = True
+    editor.apply("/gui_event", [int(window), 3, 0, "play", 0])
+    assert take.server.addrs()[:2] == ["/transport_stop", "/transport_locateSample"]
+
+
+def test_closing_the_window_frees_the_editors_nodes():
+    take = FakeBuffer()
+    editor, _host, _wid, _context = opened(take)
+    take.server.sent.clear()
+    editor.close()
+    assert "/node_free" in take.server.addrs()
+
+
+def test_placing_the_cursor_cues_a_stopped_transport_there():
+    """**The play cursor goes with the position cursor** while nothing plays;
+    rolling, the mark moves and the music does not."""
+    take = FakeBuffer()
+    editor, _host, wid, _context = opened(take)
+    take.server.sent.clear()
+    editor.apply("/gui_event", [wid, 1, 0, "locate", 40])
+    located = [args for addr, args in take.server.sent if addr == "/transport_locateSample"]
+    assert [a.value if hasattr(a, "value") else a for a in located[-1]] == [1, 40]
+    take.server.sent.clear()
+    take.server.playing = True
+    editor.apply("/gui_event", [wid, 2, 0, "locate", 60])
+    assert "/transport_locateSample" not in take.server.addrs()

@@ -104,9 +104,10 @@ export class SamplesView extends View<Buffer> {
 
     build(editor: Editor<Buffer>): GuiNode {
         const wid = this.widget(editor, "waveform", editor.structure);
+        const meter = this.widget(editor, "meter", editor.structure);
         const ed = editor as unknown as TakeWindow;
         ed.syncCore();
-        const tree = ed.coreCall("window", { widget: wid }) as unknown as GuiNode;
+        const tree = ed.coreCall("window", { widget: wid, meter }) as unknown as GuiNode;
         // **A page's own widgets are its objects**, so they are appended here
         // rather than composed in the crate.
         tree.children = [...(tree.children ?? []), ...editor.extra];

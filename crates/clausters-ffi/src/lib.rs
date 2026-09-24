@@ -472,7 +472,10 @@ pub use time::*;
 /// and transport `i`'s are `i * transport_stride` further on. The editing
 /// playback's transport commands carry the transport id first, as every
 /// `/transport_*` command now does. **Breaking**.
-pub const CORE_ABI_VERSION: u32 = 69;
+/// **v70 the audio editor's playback.** `clausters_editing_audio_playback_new`,
+/// `_free` and `_call`: the audio editor as it is playing, every verb through
+/// one JSON door. **Additive**, and the counter moves for v31's reason.
+pub const CORE_ABI_VERSION: u32 = 70;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

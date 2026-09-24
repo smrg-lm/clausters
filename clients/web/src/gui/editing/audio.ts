@@ -19,6 +19,14 @@
  * page's allocator, topped up before every turn), and freeing the takes the
  * context hands back.
  *
+ * **It sounds through nodes of its own**, the audio editor's (the shared
+ * crate's `AudioEditorPlayback`, the object the GUI host's monitor holds too):
+ * one play graph per open take, all but the one played last paused, on a
+ * transport of the editor's own, and an output beside them that meters the
+ * take and declicks every play and stop on the way to the hardware. The window
+ * shows the level on a meter beside the take, and the space bar and `L` are the
+ * editor's -- the window says so (`plays`), so the host's monitor stays out.
+ *
  * **Memory is spent on what the history holds.** Every take a stroke or a
  * paste made is kept while an undo or a redo can still reach it, and freed
  * when neither can. `historyBytes` caps what only the history holds; past it
@@ -31,7 +39,8 @@ import { PARTS } from "../../document.ts";
 import type { Selection } from "../../document.ts";
 import type { Answer } from "./echo.ts";
 import { Buffer } from "../../defs/buffer.ts";
-import { StepRunner } from "../../core/clausters_core_web.js";
+import { AudioEditorPlayback, StepRunner } from "../../core/clausters_core_web.js";
+import type { Server } from "../../defs/server/index.ts";
 import { resolveServer } from "../../defs/wire.ts";
 import { runSteps } from "../../steps.ts";
 import { Domain } from "./domain.ts";
@@ -55,6 +64,87 @@ interface Outcome {
     steps?: unknown[];
     locate?: number;
     selection?: unknown;
+    play?: Play;
+    cue?: number;
+}
+
+/** A press of the space bar, as the editor read it: frames of the take. */
+interface Play {
+    start: number;
+    pass: unknown;
+    back: number;
+}
+
+/**
+ * **What sounds the audio editors of one server** -- the shared crate's
+ * playback, the steps it answers carried out on that server.
+ *
+ * One per server, since the editors on it share one structure and one
+ * transport: each open take is a file of it, and the one played last is the
+ * one that sounds.
+ */
+class AudioPlayback {
+    static readonly #of = new WeakMap<Server, AudioPlayback>();
+
+    /** The playback of `server`, made the first time it is asked for. */
+    static of(server: Server): AudioPlayback {
+        let found = AudioPlayback.#of.get(server);
+        if (found === undefined) {
+            found = new AudioPlayback(server);
+            AudioPlayback.#of.set(server, found);
+        }
+        return found;
+    }
+
+    #native: AudioEditorPlayback | null = null;
+    readonly #runner = new StepRunner();
+    readonly #ready: Promise<void>;
+    /** The engine's sample rate, asked once; 0 when it will not say. */
+    rate = 0;
+
+    /** The server it plays on. */
+    readonly server: Server;
+
+    private constructor(server: Server) {
+        this.server = server;
+        this.#ready = (async () => {
+            this.#native = new AudioEditorPlayback(await server.bulkChunk(), -1);
+            // Node ids come back on their `/node_end`, which only a registered
+            // client hears.
+            await server.notify(true);
+            try {
+                this.rate = (await server.queryInfo()).nominalSampleRate;
+            } catch {
+                this.rate = 0;
+            }
+        })();
+    }
+
+    /** One verb of the crate's playback, its steps carried out. */
+    async call(verb: string, args: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+        await this.#ready;
+        const native = this.#native as AudioEditorPlayback;
+        const answer = JSON.parse(
+            native.call(JSON.stringify({ verb, ...args }), this.server.ids),
+        ) as Record<string, unknown>;
+        if (typeof answer.error === "string") throw new RangeError(answer.error);
+        const steps = answer.steps as unknown[] | undefined;
+        if (steps !== undefined && steps.length > 0) {
+            await runSteps(this.server, this.#runner, steps);
+        }
+        return answer;
+    }
+
+    /**
+     * Whether the transport rolls, as the engine answers -- a pass that ended
+     * on its mark stopped without anybody here saying so.
+     */
+    async rolling(): Promise<boolean> {
+        const transport = Number((await this.call("state")).transport);
+        const playing = (await this.server.transportAt(transport).transportState()).playing;
+        await this.call("setRolling", { rolling: playing });
+        return playing;
+    }
 }
 
 /**
@@ -143,7 +233,7 @@ export class AudioDomain extends Domain<Buffer> {
      * Run `then` once the work queued so far has landed: what a turn's answer
      * waits for, since it asks the window to read a join the steps replace.
      */
-    after(then: () => void): void {
+    after(then: () => void | Promise<void>): void {
         this.#queue(async () => then());
     }
 
@@ -184,6 +274,12 @@ export class AudioEditor extends Editor<Buffer> {
 
     /** The join the window draws. */
     private readonly display: number;
+
+    /**
+     * What sounds the take: the server's audio editor playback, where this
+     * editor's take is the file its join is.
+     */
+    private readonly playback: AudioPlayback;
 
     constructor(take: Buffer, options: AudioEditorOptions) {
         const view = new SamplesView(options.layers ?? MEASURES);
@@ -227,6 +323,50 @@ export class AudioEditor extends Editor<Buffer> {
         // **A private copy of the take**, and the join over it: the buffer the
         // editor was handed is written by a save and by nothing else.
         domain.run(take, (copied.steps as unknown[] | undefined) ?? []);
+        this.playback = AudioPlayback.of(this.server);
+        domain.after(() => this.sound());
+    }
+
+    /**
+     * Make what sounds be the take as it now is -- the join and its length --
+     * and tell the window where its level is read from.
+     */
+    private async sound(): Promise<void> {
+        const frames = Number(this.coreCall("parts").frames ?? 0);
+        await this.playback.call("sync", {
+            file: this.display,
+            buffer: this.display,
+            channels: Math.max(1, Math.trunc(this.structure.channels || 1)),
+            frames,
+            takeRate: this.sampleRate,
+            rate: this.playback.rate,
+        });
+        this.coreCall("sync", { meters: (await this.playback.call("state")).meters ?? null });
+    }
+
+    /**
+     * **The position cursor moved**: the play cursor goes with it while
+     * nothing plays, and a rolling pass is left alone.
+     */
+    private async cue(frame: number): Promise<void> {
+        await this.playback.rolling();
+        await this.playback.call("cue", { frame: Math.trunc(frame) });
+    }
+
+    /**
+     * **The space bar**, as the editor read it: a rolling transport stops and
+     * goes back to the position cursor; a stopped one plays the pass.
+     */
+    private async play(play: Play): Promise<void> {
+        if (await this.playback.rolling()) {
+            await this.playback.call("stop", { back: Math.trunc(play.back) });
+        } else {
+            await this.playback.call("play", {
+                file: this.display,
+                start: Math.trunc(play.start),
+                pass: play.pass,
+            });
+        }
     }
 
     /**
@@ -245,8 +385,28 @@ export class AudioEditor extends Editor<Buffer> {
     ): ReturnType<Editor<Buffer>["open"]> {
         await (this.domain as AudioDomain).idle();
         const handle = await super.open(host, options);
-        this.host?.headClock(handle, "transport");
+        const transport = Number((await this.playback.call("state")).transport);
+        this.host?.headClock(handle, "transport", transport);
         return handle;
+    }
+
+    /**
+     * The window closed: the take stops being one the editor plays, and the
+     * last one closed frees the editor's nodes.
+     */
+    protected override closedWindow(): boolean {
+        (this.domain as AudioDomain).after(async () => {
+            await this.playback.call("closeFile", { file: this.display });
+        });
+        return super.closedWindow();
+    }
+
+    /** Close the window, and free what sounded the take. */
+    override close(): this {
+        (this.domain as AudioDomain).after(async () => {
+            await this.playback.call("closeFile", { file: this.display });
+        });
+        return super.close();
     }
 
     /** What this page holds about the take and the window. */
@@ -370,6 +530,7 @@ export class AudioEditor extends Editor<Buffer> {
             const stepped = this.app.stepped(this.editing, turned.stepped ?? {}, this);
             this.echo.send(outcome.answer);
             this.editing.release(turned.freed, turned.stored);
+            (this.domain as AudioDomain).after(() => this.sound());
             return stepped;
         }
         const changed = this.take(outcome);
@@ -402,10 +563,16 @@ export class AudioEditor extends Editor<Buffer> {
         // turn needed one and the join stitched over the list -- or, for a save
         // from the window, the file written.
         (this.domain as AudioDomain).run(this.structure, outcome.steps ?? []);
+        const domain = this.domain as AudioDomain;
         if (changed) {
             this.dirty = true;
             this.editing.changed();
+            domain.after(() => this.sound());
         }
+        const play = outcome.play;
+        if (play !== undefined) domain.after(() => this.play(play));
+        const cue = outcome.cue;
+        if (cue !== undefined) domain.after(() => this.cue(cue));
         if (outcome.locate !== undefined) {
             this.cursor = outcome.locate;
             this.locate(this.cursor);

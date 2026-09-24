@@ -431,6 +431,93 @@ pub unsafe extern "C" fn clausters_editing_runner_call(
     }
 }
 
+/// **The audio editor, as it is playing**: its structure, its files and its
+/// transport, answering every verb as steps. Free it with
+/// [`clausters_editing_audio_playback_free`].
+pub struct FfiAudioPlayback(
+    std::sync::Mutex<clausters_editing::audio_playback::AudioEditorPlayback>,
+);
+
+/// A new audio editor playback: `chunk` is how many samples one fill carries,
+/// and `transport` the transport it plays on -- negative for the crate's own,
+/// `AUDIO_EDITOR_TRANSPORT`.
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_editing_audio_playback_new(
+    chunk: usize,
+    transport: i32,
+) -> *mut FfiAudioPlayback {
+    use clausters_editing::apply::Endpoint;
+    use clausters_editing::audio_playback::{AUDIO_EDITOR_TRANSPORT, AudioEditorPlayback};
+    let transport = if transport < 0 {
+        AUDIO_EDITOR_TRANSPORT
+    } else {
+        transport
+    };
+    Box::into_raw(Box::new(FfiAudioPlayback(std::sync::Mutex::new(
+        AudioEditorPlayback::new(
+            Endpoint {
+                chunk: chunk.max(1),
+            },
+            transport,
+        ),
+    ))))
+}
+
+/// Frees a playback created by [`clausters_editing_audio_playback_new`] (null
+/// is a no-op). The bookkeeping, not the nodes: a caller that means to stop the
+/// sound closes it first and sends what that answers.
+///
+/// # Safety
+/// `p` must be a pointer from `clausters_editing_audio_playback_new`, not yet
+/// freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_audio_playback_free(p: *mut FfiAudioPlayback) {
+    if !p.is_null() {
+        // SAFETY: caller guarantees `p` came from Box::into_raw above.
+        drop(unsafe { Box::from_raw(p) });
+    }
+}
+
+/// **One verb of the audio editor's playback**, as JSON
+/// (`clausters_editing::audio_playback::call_json`): `request` is
+/// `{"verb": ...}` and the answer is `{"steps": [...]}`, a query's own object,
+/// or `{"error": ...}`. Allocates from `ids`. Sizes with a null `out` and
+/// fills with a second call; only the call that fills changes anything.
+///
+/// # Safety
+/// `p` and `ids` null or live, `request` null or readable for `request_len`
+/// bytes, `out` null or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_editing_audio_playback_call(
+    p: *mut FfiAudioPlayback,
+    request: *const u8,
+    request_len: usize,
+    ids: *mut crate::registry::FfiIdSpaces,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from this function's own contract.
+    let Some(request) = (unsafe { crate::document::text(request, request_len) }) else {
+        return 0;
+    };
+    // SAFETY: forwarded from this function's own contract.
+    let (Some(playback), Some(spaces)) = (unsafe { p.as_ref() }, unsafe { ids.as_ref() }) else {
+        return 0;
+    };
+    let (Ok(mut held), Ok(mut spaces)) = (playback.0.lock(), spaces.0.lock()) else {
+        return 0;
+    };
+    let (mut next, mut next_ids) = (held.clone(), spaces.clone());
+    let answer = clausters_editing::audio_playback::call_json(&mut next, &request, &mut next_ids);
+    // SAFETY: forwarded from this function's own contract.
+    unsafe {
+        crate::document::fill(answer.as_bytes(), out, out_cap, || {
+            *held = next;
+            *spaces = next_ids;
+        })
+    }
+}
+
 /// **One multitrack, as it is playing**: its instance, its applier and its
 /// transport, answering every verb as steps. Free it with
 /// [`clausters_editing_playback_free`].

@@ -128,6 +128,10 @@ A node reads the transport that governs it — the nearest governed group above 
 
 What must go on running while a transport is stopped and still has to know it — an output with its meter and its declick, beside the governed group or around it — **follows** the transport instead of being governed by it: `transportFollow(group)` has its nodes read the transport and nothing freeze them.
 
+**A stop can fade.** A declick cannot run after the freeze — on that sample the readers stop producing anything — so `transportFade(samples)` gives a transport a ramp: a stop then rolls on while the ramp falls to zero and freezes when it gets there, so the position rests where the readers stopped reading, and a play rises from zero. What reads the ramp is `transportFade()`, the UGen, in the following group: an output multiplies what the readers wrote by it, and neither edge clicks. With no ramp set — the default — a stop freezes on its own sample.
+
+The applications take transports of their own: a multitrack plays on transport 0, the audio editor on transport 1, and the GUI host's monitor, for a window that draws samples with no application behind it, on transport 2.
+
 ## See also
 
 - [Routines and clocks](routines-and-clocks.md) — the clock the freeze holds, and the logical time it keeps.

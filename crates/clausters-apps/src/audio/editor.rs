@@ -24,12 +24,13 @@ use clausters_document::session::{Location, Part, Source};
 use clausters_document::view::NOT_AN_EDIT;
 use clausters_document::{Lifetime, Opaque, Range, SourceId, SourceRef};
 use clausters_editing::apply::{Step, steps_json};
+use clausters_editing::audio_playback::{Pass, space};
 use clausters_editing::conversation::{self, Answer, Conversation, Correction, Message, Turn};
 use clausters_editing::load::stitch_message;
 use clausters_editing::samples;
 use clausters_editing::sources::{Held, stitch};
 
-use crate::samples::{MEASURES, Window, measures, props, window};
+use crate::samples::{MEASURES, MeterAt, Window, measures, props, window};
 use crate::turn::{Event, Kind, Leg, Record, int, number, text};
 
 /// The most values one write carries when the caller has not said.
@@ -66,6 +67,30 @@ pub struct Outcome {
     /// The selection a sweep left, in seconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selection: Option<Value>,
+    /// **What the space bar asks of the playback**: the caller stops it,
+    /// going back to `back`, if it is rolling, and plays `start`..`pass`
+    /// otherwise -- the playback is the caller's, and so is whether it rolls.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub play: Option<Play>,
+    /// **Where the position cursor now stands**, in frames of the take: the
+    /// caller cues the playback there, so the play cursor goes with it while
+    /// nothing plays.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cue: Option<u64>,
+}
+
+/// **A press of the space bar over the take**, read off the view: where a
+/// pass starts, how it ends, and where a stop goes back to -- all frames of
+/// the take.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Play {
+    /// The frame the pass starts on.
+    pub start: u64,
+    /// How it ends: a loop, or an end mark and its return.
+    pub pass: Pass,
+    /// Where a stop goes back to: the position cursor.
+    pub back: u64,
 }
 
 /// **An audio editor**: the take it opened, the list of parts it is now, the
@@ -106,6 +131,12 @@ pub struct AudioEditor {
     size: (i64, i64),
     window: Option<i32>,
     widget: Option<i32>,
+    /// Where the position cursor stands, in frames of the take, once placed.
+    cursor: Option<u64>,
+    /// The selection, as a half-open span of frames, while there is one.
+    selection: Option<(u64, u64)>,
+    /// Where the level meter is read from, once a playback measures the take.
+    meters: Option<(i32, usize)>,
     conversation: Conversation,
 }
 
@@ -164,6 +195,9 @@ impl AudioEditor {
             size: (1000, 520),
             window: None,
             widget: None,
+            cursor: None,
+            selection: None,
+            meters: None,
             conversation: Conversation::new(version),
         };
         editor.reopen(take, frames);
@@ -465,8 +499,16 @@ impl AudioEditor {
     }
 
     /// **The window**, numbered with the take widget's id, drawing the join.
-    pub fn window(&mut self, widget: i32) -> Value {
+    ///
+    /// `meter` is the id the level meter is drawn under; the meter is there
+    /// once a playback has said where it writes ([`Self::set_meters`]).
+    pub fn window(&mut self, widget: i32, meter: Option<i32>) -> Value {
         self.widget = Some(widget);
+        let meter = meter.zip(self.meters).map(|(id, (bus, channels))| MeterAt {
+            widget: id,
+            bus,
+            channels,
+        });
         window(&Window {
             buffer: self.display,
             channels: self.channels,
@@ -476,7 +518,26 @@ impl AudioEditor {
             widget,
             title: &self.title,
             size: self.size,
+            meter,
         })
+    }
+
+    /// **Where the level is read from**: the first control bus the
+    /// playback's meter writes and how many there are, or `None`.
+    pub fn set_meters(&mut self, meters: Option<(i32, usize)>) {
+        self.meters = meters;
+    }
+
+    /// **What the space bar plays**, with the loop switch `looping`: from the
+    /// selection or the position cursor, to the end of the selection or the
+    /// take, and back to the cursor -- or over and over.
+    pub fn play(&self, looping: bool) -> Play {
+        let (start, pass) = space(looping, self.selection, self.cursor, self.length());
+        Play {
+            start,
+            pass,
+            back: self.cursor.unwrap_or(start),
+        }
     }
 
     /// **A step of the history, applied**: the list a payload states becomes
@@ -527,6 +588,16 @@ impl AudioEditor {
                 reason,
                 Vec::new(),
             ));
+            return out;
+        }
+        // **The space bar over the window is a play**, the window's own verb
+        // and the application's to read (the window says `plays`): what it
+        // asks of the playback, with the loop switch the host sends beside it.
+        if message.addr == "/gui_event" && message.is_window && message.tag == "play" {
+            out.turn = Kind::Route;
+            let looping = args.get(4).is_some_and(|v| int(v) != 0);
+            out.play = Some(self.play(looping));
+            out.answer = Some(conversation::answer(message.seq, version, None, Vec::new()));
             return out;
         }
         match self.conversation.read(&message) {
@@ -901,9 +972,16 @@ impl AudioEditor {
     fn observe(&mut self, tag: &str, values: &[Value], out: &mut Outcome) {
         match tag {
             "locate" if !values.is_empty() => {
-                out.locate = Some(self.secs_at(number(&values[0])));
+                let frame = number(&values[0]);
+                self.cursor = Some(frame.max(0.0).round() as u64);
+                out.cue = self.cursor;
+                out.locate = Some(self.secs_at(frame));
             }
             "selection" => {
+                let frame = |i: usize| values.get(i).map_or(0.0, number).max(0.0);
+                let (from, len) = (frame(0), frame(1));
+                self.selection =
+                    (len > 0.0).then(|| (from.round() as u64, (from + len).round() as u64));
                 let at = |i: usize| values.get(i).map_or(0.0, |v| self.secs_at(number(v)));
                 out.selection = Some(json!({ "start": at(0), "len": at(1) }));
             }
@@ -960,7 +1038,17 @@ struct Facts {
     h: Option<i64>,
     #[serde(deserialize_with = "present")]
     window: Option<Option<i32>>,
+    /// Where the level meter is read from: `{"bus", "channels"}`, or `null`.
+    #[serde(deserialize_with = "present")]
+    meters: Option<Option<MeterFact>>,
     version: Option<i64>,
+}
+
+/// A playback's meter, as a caller hands it over.
+#[derive(Deserialize, Clone, Copy)]
+struct MeterFact {
+    bus: i32,
+    channels: usize,
 }
 
 /// A key that is present, whatever its value -- `null` included.
@@ -1018,6 +1106,9 @@ impl AudioEditor {
         if let Some(window) = facts.window {
             self.window = window;
         }
+        if let Some(meters) = facts.meters {
+            self.meters = meters.map(|m| (m.bus, m.channels));
+        }
     }
 }
 
@@ -1054,11 +1145,14 @@ pub fn new_json(request: &str) -> Result<AudioEditor, String> {
 /// **One verb of an editor, over JSON** -- the door both clients bind.
 ///
 /// - `sync` -- any of the facts [`new_json`] reads: handed over before the
-///   verbs that read them; `buffers` are added to the ones the editor holds.
+///   verbs that read them; `buffers` are added to the ones the editor holds,
+///   and `meters` (`{"bus", "channels"}` or `null`) says where the playback's
+///   meter writes.
 ///   Answers `{"spare"}`, how many it holds now -- a turn takes one for a
 ///   stroke or a paste and two for a mix, so a caller keeps it topped up.
 /// - `layers` -- `stack`, optional: `{"layers", "measure"}` or `{"error"}`.
-/// - `window` -- `widget`: the window, as a GuiDef.
+/// - `window` -- `widget`, and `meter`, the id the level meter is drawn
+///   under: the window, as a GuiDef.
 /// - `props` -- `widget`: the correction.
 /// - `event` -- `addr`, `args`, `version`: an [`Outcome`].
 /// - `apply` -- `payload`: `{"steps"}` for a list the history handed back, or
@@ -1106,7 +1200,15 @@ pub fn call_json(editor: &mut AudioEditor, request: &str) -> String {
             }
             json!({ "layers": editor.layers(), "measure": editor.layers().join(" ") }).to_string()
         }
-        "window" => editor.window(widget).to_string(),
+        "window" => editor
+            .window(
+                widget,
+                request
+                    .get("meter")
+                    .and_then(Value::as_i64)
+                    .map(|m| m as i32),
+            )
+            .to_string(),
         "props" => Value::Object(props(widget)).to_string(),
         "open" => match editor.open() {
             Ok(steps) => json!({ "steps": steps }).to_string(),

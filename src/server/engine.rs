@@ -403,14 +403,18 @@ impl Ramp {
     }
 }
 
-/// A stop ramping out: the device sample the transport freezes on, and --
-/// when the end mark stopped it -- where it goes back to.
+/// A stop ramping out: the device sample the transport freezes on, where it
+/// goes back to once it has, and whether the end mark caused it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Stopping {
     at: u64,
-    /// `Some` when the end mark caused it: the engine then reports the end,
-    /// and locates to the mark's return, if it has one.
-    ended: Option<Option<u64>>,
+    /// Where the position is located on the freeze: the end mark's return,
+    /// or a locate that arrived during the ramp -- which lands there rather
+    /// than mid-ramp, so the fade plays what was playing and the position
+    /// rests where it was sent.
+    back: Option<u64>,
+    /// Whether the end mark caused it: the engine then reports the end.
+    ended: bool,
 }
 
 /// What a transport's next edge is, when it is due.
@@ -508,7 +512,8 @@ impl TransportState {
         self.fade = self.fade.toward(device, 0.0, len);
         self.stopping = Some(Stopping {
             at: device + len,
-            ended: None,
+            back: None,
+            ended: false,
         });
         false
     }
@@ -1230,7 +1235,7 @@ impl Engine {
                     }
                     // **The end mark: stop here, on this sample**, as a
                     // `/transport_stop` landing on it would.
-                    Edge::End => Some(Some(t.end.expect("an end was due").back)),
+                    Edge::End => Some((t.end.expect("an end was due").back, true)),
                     // **A ramp's length before the end mark**: the stopping
                     // phase starts here and ends on the mark, so the fade is
                     // over when the pass is. It falls from wherever the level
@@ -1242,19 +1247,20 @@ impl Engine {
                             t.fade = t.fade.toward(here, 0.0, at - here);
                             t.stopping = Some(Stopping {
                                 at,
-                                ended: Some(mark.back),
+                                back: mark.back,
+                                ended: true,
                             });
                             None
                         } else {
-                            Some(Some(mark.back))
+                            Some((mark.back, true))
                         }
                     }
                     Edge::Freeze => {
                         let stopping = t.stopping.take().expect("a stop was due");
-                        Some(stopping.ended)
+                        Some((stopping.back, stopping.ended))
                     }
                 };
-                if let Some(ended) = froze {
+                if let Some((back, ended)) = froze {
                     // The governed group and the transport's clock freeze on
                     // this sample, and the level is zero. An end then locates
                     // to where the pass goes back to; the locate is anchored
@@ -1267,11 +1273,11 @@ impl Engine {
                     if t.frozen_from.is_none() {
                         t.frozen_from = Some(offset);
                     }
-                    if let Some(back) = ended {
-                        if let Some(back) = back {
-                            t.position =
-                                PositionAnchor::located(TransportPosition::new(back), t.at(here));
-                        }
+                    if let Some(back) = back {
+                        t.position =
+                            PositionAnchor::located(TransportPosition::new(back), t.at(here));
+                    }
+                    if ended {
                         self.push_garbage(Garbage::TransportEnded { transport: k });
                     }
                 }
@@ -1568,9 +1574,19 @@ impl Engine {
                     // One store, at the sample the locate lands on: the
                     // position is anchored rather than accumulated, so this
                     // is the whole of a seek on the audio thread.
+                    // During a stopping phase the locate is where the
+                    // position rests once it freezes: the ramp goes on
+                    // fading what was playing.
                     if let Some(t) = self.transports.get_mut(transport) {
-                        t.position =
-                            PositionAnchor::located(TransportPosition::new(position), t.at(here));
+                        match t.stopping.as_mut() {
+                            Some(stopping) => stopping.back = Some(position),
+                            None => {
+                                t.position = PositionAnchor::located(
+                                    TransportPosition::new(position),
+                                    t.at(here),
+                                )
+                            }
+                        }
                     }
                 }
                 Cmd::TransportLoop { transport, span } => {

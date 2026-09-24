@@ -2326,6 +2326,13 @@ pub trait Samples {
         None
     }
 
+    /// **The rate the samples were recorded at**, when the element was told
+    /// (its `sample_rate`): what a player converts a frame of them to the
+    /// engine's samples with.
+    fn samples_rate(&self) -> Option<f64> {
+        None
+    }
+
     /// **Writes a run of samples into the samples**, at frame `start` of
     /// channel `ch`; returns whether it landed.
     ///

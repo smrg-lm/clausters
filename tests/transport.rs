@@ -2149,3 +2149,29 @@ fn a_play_during_the_stopping_phase_rises_from_where_it_fell() {
         "and never froze"
     );
 }
+
+/// **A locate during the stopping phase is where the position rests**: the
+/// ramp goes on fading what was playing, and the freeze lands on the locate.
+#[test]
+#[cfg(feature = "synth")]
+fn a_locate_during_the_stopping_phase_lands_on_the_freeze() {
+    let (mut engine, mut handle) = fade_engine(100);
+    run(&mut handle, 0, true);
+    run_blocks(&mut engine, 2);
+    run(&mut handle, 0, false);
+    handle
+        .send(Cmd::TransportLocate {
+            transport: 0,
+            position: 7,
+        })
+        .ok()
+        .unwrap();
+    let falling = block_of_bus_0(&mut engine);
+    assert!(falling[10] > 0.8, "still fading: {}", falling[10]);
+    run_blocks(&mut engine, 2);
+    assert_eq!(
+        handle.current_transport_position(0),
+        7,
+        "rests on the locate"
+    );
+}
