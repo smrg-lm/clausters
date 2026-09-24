@@ -469,7 +469,7 @@ opened it.
     knows its length after every edit and states it as the readers' `span`,
     and nothing past the end sounds. The per-sample check against the buffer
     that the monitor carries today is not needed.
-  - **Effects in preview**: a slot between the readers and the output, where
+  - **Effects in preview**: a chain between the readers and the output, where
     an effect is heard and not written. Applying one to the take is a separate
     operation on the server.
 
@@ -483,13 +483,17 @@ opened it.
   root (0)
   └─ editor group                  /group_new, owned by the editor; never frozen
      ├─ transport group            /transport_group on the editor's own transport (T6)
-     │  └─ ae.play2                graph: private bus dry (2); external bus out (2)
-     │     ├─ [source] slot group  /graph_addSlot, one per channel of the take
-     │     │  └─ ae.reader         chan 0 -> dry:0
+     │  ├─ ae.play2                file in focus; graph: private bus dry (2); external bus out (2)
+     │  │  ├─ [source] slot group  /graph_addSlot, one per channel of the take
+     │  │  │  └─ ae.reader         chan 0 -> dry:0
+     │  │  ├─ [source] slot group
+     │  │  │  └─ ae.reader         chan 1 -> dry:1
+     │  │  ├─ [fx] slot groups     effects in place on dry, in chain order; none by default
+     │  │  └─ ae.pass2             dry -> out
+     │  └─ ae.play1                another open file, mono; paused (/node_run 0)
      │     ├─ [source] slot group
-     │     │  └─ ae.reader         chan 1 -> dry:1
-     │     ├─ [fx] slot groups     effects in preview on dry; none by default
-     │     └─ ae.pass2             dry -> out
+     │     │  └─ ae.reader         chan 0 -> dry:0
+     │     └─ ae.pass1             dry:0 -> out:0 and out:1 (a mono file on both sides)
      └─ ae.output2                 graph: external bus in (2), the editor's bus
         ├─ ae.meter2               in -> two control buses (the level meter)
         └─ ae.declick2             in × TransportFade -> hardware out 0, 1
@@ -558,6 +562,80 @@ opened it.
      "span": [{"member": 1, "control": "span"}]}}
   ```
 
+  **The effects are a linear chain in place on `dry`** *(decided by the user,
+  2026-09-23)*. Each effect reads `dry` and replaces it (`In` ...
+  `ReplaceOut`), and a chain is several of them in the order they were added:
+  the auto-sort counts `ReplaceOut` as a read and a write, so inserts on one bus
+  keep their insertion order (`docs/auto-order.md`). **A bypass pauses the
+  effect** (`/node_run 0`). A paused node writes nothing, so `dry` carries on
+  as the effect before it left it, and the next effect reads that -- bypassing
+  one in the middle of a chain is sound. What a bypass does not do by itself:
+  switch without a click (the wet signal is replaced by the dry one between
+  two samples), keep a tail (a reverb's ring stops where it is), or forget the
+  past (a resumed delay plays what it held when paused). Those are the chain's
+  details, below.
+
+  **A bypass is a pause, and removing an effect is another operation**
+  *(weighed with the user, 2026-09-23)*. Freeing the effect's node sounds the
+  same while it is out -- the bus passes untouched and nothing runs -- but
+  bringing it back differs. A chain's order is its insertion order, so an
+  effect freed from the middle comes back last, unless every effect after it
+  is rebuilt or the server grows a positioned insert that an auto-sorted group
+  does not take today. Freeing also loses what hangs off the node: its id,
+  its ports' values, a `/graph_map` onto a curve or a control bus, and its
+  state, all of which the editor would have to keep and send again. A pause
+  keeps all of it, and costs one message each way. Freeing gives back memory
+  and nothing else, which matters for a heavy effect left out a long time (a
+  convolution reverb and its impulse response). That is **removing** the
+  effect from the chain, a separate verb in the editor, and not a bypass.
+  Neither avoids the click of switching between the processed and the direct
+  signal: that needs the ramped mix below, before the pause, either way.
+
+  **How a bypass switches without a click** *(the user, 2026-09-23)*. Every
+  effect in the chain mixes its own processed and direct signal, and the mix is
+  what ramps; the pause comes after the ramp has finished:
+
+  ```text
+  dry    = In(dry)
+  wet    = the effect over dry
+  amount = EnvGen(ASR, linear segments, gate = on)     // 0..1, reaches both exactly
+  ReplaceOut(dry, LinXFade2(dry, wet, amount * 2 - 1))
+  ```
+
+  Bypassing sets `on = 0`, waits the release time and pauses the node
+  (`/node_run 0`). Since the envelope has reached exactly 0 the output is
+  exactly `dry`, and the pause leaves no step. Enabling resumes the node and
+  sets `on = 1`. The alternatives, and why not them:
+
+  - **`Lag`** (a lagged control: one pole, scsynth's coefficient, -60 dB in
+    `time`) is asymptotic and never reaches 0 or 1, so the pause still cuts a
+    residue of 0.1% of the difference between the processed and the direct
+    signal.
+  - **`VarLag`** is the same one-pole smoother with separate rise and fall
+    times. It is not scsynth's `VarLag`, which runs a shaped segment, even
+    though the name is the same.
+  - **`Line`** and **`XLine`** are linear but run once, when the node is
+    created, so they cannot switch back and forth.
+  - **`XFade2`** is the equal-power crossfade. The processed and the direct
+    signal are correlated, so at the middle of the fade an equal-power law is
+    about 3 dB loud. **`LinXFade2`** keeps the amplitude constant, which is the
+    law for two versions of one signal.
+
+  **One `ae.play` per open file** *(the user, 2026-09-23)*. The editor works on
+  several files at once -- tabs, or a list of open files -- and only one of
+  them plays. So the transport group holds one `ae.play` instance per open file,
+  all writing the editor's bus, and **every one but the file in focus is
+  paused** (`/node_run 0` on the instance). The transport's freeze is the
+  transport group's own flag, and a child's `/node_run` flag is its own
+  (`NodeTree::set_paused` sets the one node it names), so a thaw does not wake a
+  paused file. Switching files pauses one instance and runs the other; nothing
+  is rebuilt. Copying a span from one file and pasting it into another, or into
+  a new empty file, is the editing context's: each open file is a member with
+  its own history (`crate::editing`), the clipboard is the host's, and a new
+  empty file is a member over a new take. **Open:** whether the files share the
+  editor's one position, with the editor locating to each file's own cursor on
+  a switch, or each file has a transport of its own (`T6`).
+
   **`ae.meter2`** -- the multitrack's meter, the same algorithm under the
   editor's own name: `In` per channel, `Meter` with the field's ballistics
   (`clausters_core::mixer::METER_DECAY`, `METER_HOLD`), `OutCtl` onto a
@@ -585,9 +663,12 @@ opened it.
   - **The meter reads the take before the declick**, so it shows the take and
     not the ramp. It still falls to zero on a pause, because the frozen readers
     write nothing and the bus is cleared every block.
-  - **A mono take** is one reader, and `ae.output2` wires `in1` to `in:0`, so
-    the take is heard on both sides at unity, as an audio editor plays a mono
-    file. There is no pan law, since there is no strip.
+  - **A mono take** is one reader, and its pass writes `dry:0` onto both
+    channels of the editor's bus, so the take is heard on both sides at unity,
+    as an audio editor plays a mono file. There is no pan law, since there is
+    no strip. The width is the pass's to fix and not the output's, because the
+    editor's bus is shared by every open file and they need not all be the
+    same width.
   - **`TransportFade`** is a new UGen: the level of the transport's
     declick ramp, `1` while rolling, falling to `0` across the stopping phase
     and rising from `0` on a play. The engine publishes it in
@@ -603,10 +684,10 @@ opened it.
 
   **Open:**
   - The GraphDef above, until the user has reviewed it.
-  - **How the `fx` slot is wired**: an effect in place on `dry` (reading and
-    replacing it, bypassed by pausing it) or between `dry` and a second bus
-    (bypassed by routing around it). It is decided with the first effect,
-    since an empty slot cannot be checked by ear.
+  - **The `fx` chain's details**, decided with the first effect: what a resumed effect
+    does with the state it froze with (a delay line still holding the past),
+    and how an effect is moved in the chain, since an auto-sorted group
+    refuses a manual move.
   - The stop's ramp: its length, and where the position comes to rest after a
     stop (the sample the stop was asked at, or the end of the ramp).
   - **One transport per server** today: `/transport_group` binds one group, so
