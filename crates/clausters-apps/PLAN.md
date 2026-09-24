@@ -446,9 +446,9 @@ opened it.
   - **The output is outside the transport group**, because it must not
     freeze. A paused meter falls to zero rather than holding what it last
     saw, and the declick has to run across the moment the readers stop. The
-    same holds for an **input meter**: it measures what arrives, whether the
-    transport rolls or not, so it is never frozen either (the user,
-    2026-09-23).
+    same holds for the **master input**: the input's own master, whose
+    meter measures what arrives whether the transport rolls or not, so it is
+    never frozen either (the user, 2026-09-23).
   - **Play and pause reach the nodes as the engine's state, not as a signal
     passed down the tree.** `/transport_play` and `/transport_stop` become
     `Cmd::TransportRun`, which pauses or resumes the governed group at the

@@ -1717,8 +1717,8 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
 
 - ⬜ **The master freezes with the transport** *(found 2026-09-23 by the user,
   while designing the audio editor's nodes: the master's meter, the master and
-  its send must not be frozen, and an input meter is a master meter that must
-  never freeze)*. The multitrack's instance is created inside the group it binds
+  its send must not be frozen, and neither must the master input, the input's
+  own master and its meter)*. The multitrack's instance is created inside the group it binds
   with `/transport_group` (`clausters_editing::apply`, `Op::Transport`), and the
   multitrack graph holds the master strip, the master's meter and the send to
   the hardware (`clausters_core::mixer::multitrack_graph`). So a pause freezes
