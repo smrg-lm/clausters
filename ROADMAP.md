@@ -271,8 +271,14 @@ its plan; the plan is where its acceptance is read.
 
 ### The near work
 
+- ⬜ **`T7` — the transport stops at an end mark**, with its use **`X8`**
+  *(`PLAN.md`, the T track; `crates/clausters-apps/PLAN.md`, "X8")*. Before
+  `T6`, by the user's decision (2026-09-24): it is smaller, and the audio
+  editor plays on past a take's end until it is there. `T6` then carries the
+  mark per transport.
+
 - ⬜ **`T6` — several transports on one server** *(`PLAN.md`, the T track)*.
-  **Taken first**, by the user's decision (2026-09-23): the audio editor's own
+  **Taken after `T7`**; chosen first on 2026-09-23: the audio editor's own
   nodes need a transport of their own beside a multitrack's, and the server has
   one. A protocol change across the server, both clients, the GUI host and the
   books at once.

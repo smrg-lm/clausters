@@ -700,6 +700,36 @@ opened it.
     application behind it.
   - Whether the meter is per channel, and where it sits in the window.
 
+- ⬜ **X8 - A pass ends where the contents do, and a loop is a switch.**
+  *(Asked for by the user 2026-09-24, out of the audio editor example; the
+  key is the user's: "usá la tecla L, aún no vamos a hacer chrome para las
+  apps y es mejor que el demo quede limpio".)* Needs `T7` (`PLAN.md`), the
+  transport's end mark.
+
+  **The audio editor.** Unless the editor is looping, a pass stops at the end
+  and the play cursor goes back to the position cursor: the end of the take,
+  or of the selection when there is one. The monitor sets the mark there with
+  the position cursor as its `return`, and frees its readers when the
+  transport reports the stop. **`L` switches the loop**: looping, a selection
+  plays over and over and so does a take with none. It is the editor's state,
+  not a prop of the view — no chrome, no button — and a line in the status bar
+  says which way it went.
+
+  **The multitrack, optionally.** The same end, at the end of its contents:
+  the latest start plus duration of any clip on any track. It is a setting of
+  the multitrack's playback, off by default, computed by the crate's playback
+  (`clausters_editing`) so both clients and the standalone host set the same
+  mark; an edit that moves the last clip moves the mark.
+
+  **Open:** whether the multitrack's setting gets a key, and whether a
+  selection there plays once as the audio editor's does.
+
+  **Acceptance:** in the audio editor, a pass with no loop stops at the take's
+  end and the play cursor stands on the position cursor; a selection stops at
+  its end; with `L` on, both loop; the monitor holds no reader after the stop.
+  In the multitrack with the setting on, playback stops at the last clip's end.
+  Both clients and the standalone host, and the example names `L`.
+
 ## Definition of done (per milestone)
 
 The project rule: code plus tests, a clear commit message, this file's checkbox,

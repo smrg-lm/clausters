@@ -396,6 +396,40 @@ Cargo feature: every build has both clocks and both queues.
 
   **Acceptance:** a locate while stopped moves the published position, and the graph reads the new one on play; a reader following the position renders the same samples as the same span expressed in a score and rendered in batch (T1's own technique, over a seeded def, deliberately not block-aligned); loop points wrap with no client in the loop and no discontinuity at the seam; the elapsed clock stays monotonic across a locate and `/sched_atTransport` behaves exactly as before; `tests/rt_safety.rs` stays green. **The packages move together**: `/transport_query.reply` gains the position **appended** (so a client reading only the older fields keeps working), `/transport_loop` and whatever the locate grows get their builders in both clients, and `docs/schemas.md` plus `docs/sample-clock.md` carry the two-quantity distinction — which is the part most likely to be misread, since one of them is called "the transport clock" and is not the piece's time.
 
+- ⬜ **T7 — The transport stops at an end mark** *(asked for by the user
+  2026-09-24, out of the audio editor: "al llegar al final del archivo la
+  reproducción tiene que parar y el cursor de reproducción vuelve a la posición
+  del cursor de posicionamiento"; taken before T6, which then carries it per
+  transport)*. The transport rolls until something stops it, so a take played
+  without a loop plays on past its end forever, and a multitrack past its last
+  clip. What says where a pass ends has to be the engine's, for T5's reason:
+  the server is the only thing that manages playback time, and a client
+  watching the position to send a stop would land late by its own latency.
+
+  **The shape.** `/transport_end [<int64 end> [<int64 return>]]` sets the
+  **end mark**, in samples, and with no arguments clears it. When the rolling
+  position reaches `end` the engine stops there, **on that exact sample** —
+  what a `/transport_stop` landing on it would do: the governed group and the
+  transport clock freeze — and locates to `return`, or leaves the position at
+  `end` when none was given. The change is pushed to every `/server_notify`
+  client as a `/transport_query.reply`, like any other, so whoever holds
+  readers learns the pass is over. The mark stays set, so the next play from
+  `return` ends at the same place. The transport never rolls past its mark: a
+  play from at or past it stops at once. **A loop wins**: while one is set the
+  position wraps and never reaches the mark.
+
+  **Open:** whether the reply grows two fields (`endSample`, `returnSample`,
+  appended as T5 appended the position) or the mark is only ever the client's
+  to remember; how the stop meets X7's stopping phase, whose declick ramp has
+  to start *before* the end to finish on it.
+
+  **Acceptance:** an NRT render stops at the mark's exact sample, not
+  block-aligned, and the next block reads the position at `return`; a loop set
+  over the mark wraps and never stops; a mark behind the position stops a play
+  at once; `tests/rt_safety.rs` stays green. **The packages move together**:
+  `docs/schemas.md`, `docs/sample-clock.md` and both clients' builders in the
+  same pass.
+
 - ⬜ **T6 — Several transports on one server** *(made a milestone and taken
   first by the user, 2026-09-23; it was a future direction since 2026-09-17,
   left for when there was a case that needed it)*. The case: the audio editor gets nodes of
