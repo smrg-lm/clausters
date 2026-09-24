@@ -1715,6 +1715,38 @@ Every entry carries a checkbox, and one that converges into numbered milestones 
 
 Every entry is a checkbox, and a fixed one stays with the record of what was wrong.
 
+- ⬜ **The master freezes with the transport** *(found 2026-09-23 by the user,
+  while designing the audio editor's nodes: the master's meter, the master and
+  its send must not be frozen, and an input meter is a master meter that must
+  never freeze)*. The multitrack's instance is created inside the group it binds
+  with `/transport_group` (`clausters_editing::apply`, `Op::Transport`), and the
+  multitrack graph holds the master strip, the master's meter and the send to
+  the hardware (`clausters_core::mixer::multitrack_graph`). So a pause freezes
+  them with the readers: the master's meter holds its last reading instead of
+  falling, and nothing after the tracks can ramp across a stop. **To do:** only
+  what follows the transport is governed -- the tracks, their clips and their
+  readers -- and the master, its meter and its send stay outside that group,
+  under a parent that owns both. It is the shape the audio editor's nodes take
+  in `crates/clausters-apps/PLAN.md`, `X7`, and the transport's stopping phase
+  that `X7` needs for its declick serves this one too.
+
+- ⬜ **A box longer than its source holds the source's last sample** *(found
+  2026-09-23 while measuring the audio editor's example; the user asked for it
+  to be fixed on its own, separately from the audio editor's nodes)*. The
+  multitrack's reader (`clausters_core::mixer::reader_def`) gates on the box's
+  window (`at`, `span`) and nothing else. A box whose window reaches past the
+  end of its buffer -- a take made shorter by an edit, a `span` stated longer
+  than the source -- reads past the last frame, and `BufRd` without a loop
+  clamps there, as it does in scsynth. The last sample stays on the track's bus as a
+  constant until the window closes. No UGen may leave a DC offset on the
+  output (the user's rule). **To do:** decide where the end is enforced --
+  the planner never states a `span` past what is left of the source
+  (`multitrack::nodes::plan`), or the reader's gate also closes at the buffer's
+  end -- keeping in mind that the gate runs per sample in every reader. A
+  first fix gated on `BufFrames` in the reader and was reverted the same day
+  for that per-sample cost. Test: a box of sixteen blocks over a take of four is
+  heard for four, and the rest is exactly zero.
+
 - ⬜ **A composite region is `form`'s tree inside the multitrack** *(found
   2026-09-17 by the user, while the scores phase asked which map converts the
   beats inside a region: "Un composito no existe en un multipista porque no hay

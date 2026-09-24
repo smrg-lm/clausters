@@ -110,6 +110,15 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
+- ⬜ **The master freezes with the transport**
+  *(`crates/clausters-document/PLAN.md`, Found by use)*. The master, its meter
+  and its send sit in the governed group; only the tracks should.
+
+- ⬜ **A box longer than its source holds the source's last sample**
+  *(`crates/clausters-document/PLAN.md`, Found by use)*. A DC offset on the
+  track's bus until the box's window closes; where the end is enforced (the
+  planner or the reader) is the one choice it asks.
+
 - ⬜ **The multitrack's joins do not say which takes they hold**
   *(`crates/clausters-document/PLAN.md`, Found by use)*. The history can hold
   and give back takes now; the multitrack's entries do not state theirs yet,
@@ -195,7 +204,9 @@ its plan; the plan is where its acceptance is read.
   *(`crates/clausters-apps/PLAN.md`, "X7")*. Taken before the other
   applications because it is how a take being edited is heard and measured:
   the monitor's readers held a take's last sample on the output and nothing
-  in the window showed it. It opens on whether the host's monitor goes away.
+  in the window showed it. It opens on the GraphDef, which the user reviews
+  before it is built, and it needs a stopping phase in the server's transport
+  for the declick.
 
 - ⬜ **The applications after the multitrack, `X2`-`X6`**
   *(`crates/clausters-apps/PLAN.md`, "The milestones")*. Each is written with

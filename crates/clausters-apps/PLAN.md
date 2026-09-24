@@ -406,50 +406,91 @@ opened it.
 
 - ⬜ **X7 - The audio editor's nodes on the server.** *(Asked for by the user
   2026-09-23: the multitrack has a node design on the server, and the audio
-  editor needs the same, at least to watch its amplitude on a level meter.)*
+  editor needs its own, at least to watch its amplitude on a level meter;
+  the shape below is the user's, the same day.)*
 
   **What exists.** The audio editor sounds its take through the GUI host's
   monitor (`clients/gui/src/host/play.rs`): one `clausters-gui-take` reader per
-  channel in a group bound to the transport. The host allocates the nodes and
+  channel, in a group bound to the transport. The host allocates the nodes and
   holds them until another take is played or the monitor is stopped. Nothing
   measures what the readers write, and no client knows the nodes exist. The
-  multitrack has the design this lacks: `clausters_editing::playback`
-  (`MultitrackPlayback`) holds an instance, the applier that carries it out
-  and the transport, and answers every verb as steps. Its readers and
-  meters are defs in `clausters_core::mixer`, and a strip's meter writes a
-  control bus that the host draws.
+  multitrack has what this lacks: its node system is written once in
+  `clausters_core::mixer` (GraphDefs for the multitrack, the track and the clip,
+  with meter and send slots), and `clausters_editing::playback` carries it out.
 
   **What was found without it** *(2026-09-23)*. Space over a take with no
-  selection played on past the take's end, and the reader held the take's
-  last sample on the output as long as the transport rolled. The gate is fixed
-  (`dcf7b90a`), but it was a DC offset on the whole system's audio that
-  nothing in the window showed. A meter on the editor's output shows it, and
-  the node tree the editor owns is where to look for what is still sounding.
+  selection played on past the take's end, and the reader held the take's last
+  sample on the output for as long as the transport rolled. It was measured at
+  +0.65 after an edit left a loud last sample: a DC offset on the whole system's
+  audio that nothing in the window showed. The monitor's gate now closes at the
+  buffer's end (`dcf7b90a`). The multitrack's reader has the same gap, filed on
+  its own (`crates/clausters-document/PLAN.md`, Found by use).
 
-  **What it has to do:**
+  **The design.** The audio editor gets **a GraphDef of its own**, new, not
+  the multitrack's. The two applications stay separate: what the editor plays
+  is shaped like one clip, without the clip's strip. Anything the multitrack's
+  defs need fixed is a separate fix.
 
-  - **The editor owns its nodes**, planned once in Rust like the multitrack's:
-    readers, a meter and a group bound to the transport, created when the
-    take is played and freed when the window closes. The node tree after a
-    close is the one before the open.
-  - **A level meter on what the editor plays**, drawn in the editor's window
-    and fed by a control bus a meter node writes, as a multitrack strip is.
-    It falls to zero when nothing sounds, so a constant left on the output is
-    visible as a constant.
-  - **The same nodes in both clients and in the standalone host**, since the
-    audio editor is one application (the non-divergence rule).
+  ```text
+  editor group                       not governed: never frozen
+  |- transport group                 /transport_group: frozen and thawed by the transport
+  |  `- playing                      readers, one per channel of the take
+  |     |                            -> [fx] effects in preview, not written to the file
+  |     `-> a bus the editor owns
+  `- output                          reads that bus
+     |- meter                        -> a control bus: the editor's level meter
+     |- declick                      a ramp on play, pause and stop
+     `- out                          -> the hardware
+  ```
 
-  **The two applications stay separate.** The audio editor does not become a
-  one-track multitrack. The building blocks it can share are the reader and
-  meter defs, the transport group and the applier's steps, not the multitrack
-  or its instance.
+  - **The output is outside the transport group**, because it must not
+    freeze. A paused meter falls to zero rather than holding what it last
+    saw, and the declick has to run across the moment the readers stop. The
+    same holds for an **input meter**: it measures what arrives, whether the
+    transport rolls or not, so it is never frozen either (the user,
+    2026-09-23).
+  - **Play and pause reach the nodes as the engine's state, not as a signal
+    passed down the tree.** `/transport_play` and `/transport_stop` become
+    `Cmd::TransportRun`, which pauses or resumes the governed group at the
+    exact sample (`Engine::apply`), and every UGen reads whether the transport
+    rolls from `ProcessCtx::transport`. So the output group needs no message of
+    its own, and wrapping both groups in a parent adds nothing to how the
+    state arrives. The parent is still what owns them and frees them together.
+  - **The declick needs a change in the transport.** A fade out cannot happen
+    after the freeze, because on that sample the readers stop producing
+    anything to fade. So a stop has to become a short stopping phase: the
+    governed group keeps running and the position keeps advancing while a
+    ramp that a UGen outside the group reads goes to zero, and only then is the
+    group frozen. A play thaws the group and ramps up. The loop's wrap is not a
+    stop and gets no ramp, so a loop is heard as the material joins. A locate
+    while rolling is a discontinuity, and it is correct that it is one (the
+    user, 2026-09-23).
+  - **The reader's window is the take.** The editor stitches the join, so it
+    knows its length after every edit and states it as the readers' `span`,
+    and nothing past the end sounds. The per-sample check against the buffer
+    that the monitor carries today is not needed.
+  - **Effects in preview**: a slot between the readers and the output, where
+    an effect is heard and not written. Applying one to the take is a separate
+    operation on the server.
 
-  **Open:** whether the host's monitor goes away and every take plays through
-  this, or stays as the host's for a window with no application behind it;
-  whether the meter is per channel or per take; where the meter sits in the
-  window (the editor's own layers, or the window's chrome); whether the
-  editor's playback is a separate object, as `MultitrackPlayback` is, or part
-  of `AudioEditor`.
+  **Acceptance:** past the take's end the output is exactly zero; play and
+  pause at any frame make no click, and a loop's wrap is not faded; the meter
+  shows the level while it plays and falls to zero on a pause; closing the
+  window frees every node, so the node tree after a close is the one before the
+  open; the same nodes in both clients and in the standalone host; the audio
+  editor's example shows the meter.
+
+  **Open:**
+  - The GraphDef itself: its members, buses, slots and surface. It is written
+    out and reviewed with the user before it is built (the user asked for that
+    review, 2026-09-23).
+  - The stop's ramp: its length, and where the position comes to rest after a
+    stop (the sample the stop was asked at, or the end of the ramp).
+  - **One transport per server**: `/transport_group` binds one group, so a
+    multitrack and an audio editor on the same server both want it.
+  - Whether the host's monitor goes away, or stays for a window with no
+    application behind it.
+  - Whether the meter is per channel, and where it sits in the window.
 
 ## Definition of done (per milestone)
 

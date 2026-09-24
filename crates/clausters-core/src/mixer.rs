@@ -236,9 +236,7 @@ fn lagged(name: &str, default: f32) -> Value {
 ///
 /// The window is a gate rather than a schedule for the same reason: `at` and
 /// `span` are read every block, so an edit while it sounds lands on the next
-/// block and nothing has to be re-armed. The gate also closes where the buffer
-/// ends, whatever `span` says: a reader is silent outside its source, never
-/// the source's last sample held.
+/// block and nothing has to be re-armed.
 ///
 /// # The transport is in engine samples and the buffer is in its own frames
 ///
@@ -287,21 +285,10 @@ pub fn reader_def() -> Value {
             {"kind": "BufRd", "inputs": [
                 {"control": 1}, {"control": 2}, {"ugen": 9}, {"control": 6}
             ]},
-            // 11..14: inside the buffer? A window longer than what is left of
-            // its source reads past the end, where `BufRd` clamps and holds the
-            // last sample -- a constant on the bus for as long as the transport
-            // rolls. So the gate closes at the buffer's own end too, asked of
-            // the buffer rather than told by a client, which keeps it right
-            // after an edit changes how long the take is. A looping window
-            // wraps instead and is always inside.
-            {"kind": "BufFrames", "inputs": [{"control": 1}]},
-            {"kind": "BinaryOpUGen", "op": "lt", "inputs": [{"ugen": 9}, {"ugen": 11}]},
-            {"kind": "BinaryOpUGen", "op": "max", "inputs": [{"ugen": 12}, {"control": 6}]},
-            {"kind": "Mul", "inputs": [{"ugen": 3}, {"ugen": 13}]},
-            // 15..17: gated, levelled, out.
-            {"kind": "Mul", "inputs": [{"ugen": 10}, {"ugen": 14}]},
-            {"kind": "Mul", "inputs": [{"ugen": 15}, {"control": 8}]},
-            {"kind": "Out", "inputs": [{"control": 0}, {"ugen": 16}]}
+            // 11..13: gated, levelled, out.
+            {"kind": "Mul", "inputs": [{"ugen": 10}, {"ugen": 3}]},
+            {"kind": "Mul", "inputs": [{"ugen": 11}, {"control": 8}]},
+            {"kind": "Out", "inputs": [{"control": 0}, {"ugen": 12}]}
         ]
     })
 }
