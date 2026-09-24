@@ -480,15 +480,19 @@ opened it.
   a stereo take.
 
   ```text
-  editor group                          /group_new, owned by the editor
-  |- transport group                    /transport_group on the editor's own transport (T6)
-  |  `- ae.play2        graph           buses: dry (private, 2), out (external, 2)
-  |     |- [source] ae.reader x N       one per channel -> dry:chan
-  |     |- [fx]     effects in preview  on dry (wiring open, see below)
-  |     `- ae.pass2                     dry -> out
-  `- ae.output2         graph           buses: in (external, 2)
-     |- ae.meter2                      in -> two control buses (the level meter)
-     `- ae.declick2                     in -> hardware, times the transport's ramp
+  root (0)
+  └─ editor group                  /group_new, owned by the editor; never frozen
+     ├─ transport group            /transport_group on the editor's own transport (T6)
+     │  └─ ae.play2                graph: private bus dry (2); external bus out (2)
+     │     ├─ [source] slot group  /graph_addSlot, one per channel of the take
+     │     │  └─ ae.reader         chan 0 -> dry:0
+     │     ├─ [source] slot group
+     │     │  └─ ae.reader         chan 1 -> dry:1
+     │     ├─ [fx] slot groups     effects in preview on dry; none by default
+     │     └─ ae.pass2             dry -> out
+     └─ ae.output2                 graph: external bus in (2), the editor's bus
+        ├─ ae.meter2               in -> two control buses (the level meter)
+        └─ ae.declick2             in × TransportFade -> hardware out 0, 1
   ```
 
   The bus between the two graphs is one **the editor allocates** (N audio

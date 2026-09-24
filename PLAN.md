@@ -405,6 +405,12 @@ Cargo feature: every build has both clocks and both queues.
   governed group, one transport clock (the frozen total), one position anchor,
   one loop, one transport-axis queue -- so the two would share one playhead.
 
+  **Several transports, not several groups under one.** Each transport is
+  independent -- its own play, pause, locate, position and loop -- as the
+  future direction already had it; what T6 does not do is bind more groups to
+  a single transport, which would give them one shared playhead (the user,
+  2026-09-23).
+
   **The shape** (from the future direction it replaces): a transport becomes a
   resource **addressed by id and sized at boot** (like `--taps`), so the audio
   thread never allocates. Each has its own governed group, clock, position
@@ -423,12 +429,12 @@ Cargo feature: every build has both clocks and both queues.
   server with several transports makes it hold one of them
   (`server.transport(id)`), and nothing else in the surface moves.
 
-  **Open:** how many transports a boot sizes by default; whether one
-  transport may govern more than one group (the multitrack's master, and the
-  audio editor's output, stay *outside* the governed group -- `X7` and the
-  document plan's "The master freezes with the transport" -- which needs a
-  parent group, not a second governed one); and whether the `/transport_*`
-  commands take the id as a first argument or as a new address family.
+  **Open:** how many transports a boot sizes by default, and whether the
+  `/transport_*` commands take the id as a first argument or as a new address
+  family. What stays outside a governed group -- the multitrack's master, the
+  audio editor's output (`X7`, and the document plan's "The master freezes
+  with the transport") -- sits under a parent group beside it, and is not a
+  question for T6.
 
   **Acceptance:** two transports on one server play, pause, locate and loop
   independently, each frozen and thawed at its own sample; a node reads its
