@@ -444,6 +444,63 @@ impl CmdTranslator {
         self.mirror.get(id).is_none() && !self.node_defs.contains_key(&id)
     }
 
+    /// The walk every control command shares: refuse an unknown `id`, then
+    /// run `per_node` once for each synth it targets ([`Self::control_targets`])
+    /// with that synth's def, and re-analyze a synth whose bus usage the writes
+    /// changed (`per_node` returns whether they did).
+    fn for_each_target(
+        &mut self,
+        id: i32,
+        cmds: &mut Vec<Cmd>,
+        mut per_node: impl FnMut(&mut Self, i32, &NodeDef, &mut Vec<Cmd>) -> Result<bool, String>,
+    ) -> Result<(), String> {
+        if self.node_unknown(id) {
+            return Err(format!("node {id} not found"));
+        }
+        for node in self.control_targets(id) {
+            let Some(def) = self.node_defs.get(&node).cloned() else {
+                continue;
+            };
+            if per_node(self, node, &def, cmds)? {
+                self.reanalyze_and_resort(node, cmds);
+            }
+        }
+        Ok(())
+    }
+
+    /// Writes one control: the engine command, the mirror's value, and -- an
+    /// explicit set clears any mapping on that control, as in scsynth -- the
+    /// mirror's map. Returns whether the node's bus usage changed (a control
+    /// used as a bus index, or a dropped audio map).
+    fn write_control(&mut self, node: i32, index: u32, value: f32, cmds: &mut Vec<Cmd>) -> bool {
+        cmds.push(Cmd::SetControl {
+            id: node,
+            index,
+            value,
+        });
+        let hit = self.mirror.set_control(node, index, value);
+        self.mirror.set_map(node, index, -1, false) | hit
+    }
+
+    /// Maps one control to a bus (`-1` unbinds): the engine command and the
+    /// mirror's map. Returns whether the node's bus usage changed.
+    fn map_control(
+        &mut self,
+        node: i32,
+        index: u32,
+        bus: i32,
+        audio: bool,
+        cmds: &mut Vec<Cmd>,
+    ) -> bool {
+        cmds.push(Cmd::MapControl {
+            id: node,
+            index,
+            bus,
+            audio,
+        });
+        self.mirror.set_map(node, index, bus, audio)
+    }
+
     /// `/node_map` (control bus) and `/node_mapAudio` (audio bus): bind controls to
     /// buses the synth reads at the start of every block, `bus = -1` to
     /// unbind. Same pair-wise parsing as `/node_set`; an audio map (or mapping a
@@ -458,32 +515,18 @@ impl CmdTranslator {
         let Some(OscType::Int(id)) = msg.args.first() else {
             return Err("expected: id, then control/bus pairs".into());
         };
-        if self.node_unknown(*id) {
-            return Err(format!("node {id} not found"));
-        }
-        for node in self.control_targets(*id) {
-            let Some(def) = self.node_defs.get(&node).cloned() else {
-                continue;
-            };
-            let mut usage_hit = false;
-            for pair in msg.args[1..].chunks(2) {
+        let pairs = &msg.args[1..];
+        self.for_each_target(*id, cmds, |t, node, def, cmds| {
+            let mut hit = false;
+            for pair in pairs.chunks(2) {
                 if let (Some(index), Some(bus)) =
-                    (control_key(&pair[0], &def), pair.get(1).and_then(int_value))
+                    (control_key(&pair[0], def), pair.get(1).and_then(int_value))
                 {
-                    cmds.push(Cmd::MapControl {
-                        id: node,
-                        index,
-                        bus,
-                        audio,
-                    });
-                    usage_hit |= self.mirror.set_map(node, index, bus, audio);
+                    hit |= t.map_control(node, index, bus, audio, cmds);
                 }
             }
-            if usage_hit {
-                self.reanalyze_and_resort(node, cmds);
-            }
-        }
-        Ok(())
+            Ok(hit)
+        })
     }
 
     /// `/node_setRange nodeID [ctrl numControls val...]...`: like `/node_set`, but each
@@ -497,15 +540,10 @@ impl CmdTranslator {
         let Some(OscType::Int(id)) = msg.args.first() else {
             return Err("expected: id, then (control, numControls, values...) groups".into());
         };
-        if self.node_unknown(*id) {
-            return Err(format!("node {id} not found"));
-        }
-        for node in self.control_targets(*id) {
-            let Some(def) = self.node_defs.get(&node).cloned() else {
-                continue;
-            };
-            let mut bus_control_hit = false;
-            let mut rest = &msg.args[1..];
+        let groups = &msg.args[1..];
+        self.for_each_target(*id, cmds, |t, node, def, cmds| {
+            let mut hit = false;
+            let mut rest = groups;
             while !rest.is_empty() {
                 let [ctrl, OscType::Int(count), tail @ ..] = rest else {
                     return Err("expected (control, numControls, values...) groups".into());
@@ -514,25 +552,15 @@ impl CmdTranslator {
                 if tail.len() < count {
                     return Err("fewer values than numControls".into());
                 }
-                let base = control_key(ctrl, &def).ok_or("unknown control")?;
+                let base = control_key(ctrl, def).ok_or("unknown control")?;
                 for (offset, value) in tail[..count].iter().enumerate() {
                     let value = float_value(value).ok_or("expected number values")?;
-                    let index = base + offset as u32;
-                    cmds.push(Cmd::SetControl {
-                        id: node,
-                        index,
-                        value,
-                    });
-                    bus_control_hit |= self.mirror.set_control(node, index, value);
-                    bus_control_hit |= self.mirror.set_map(node, index, -1, false);
+                    hit |= t.write_control(node, base + offset as u32, value, cmds);
                 }
                 rest = &tail[count..];
             }
-            if bus_control_hit {
-                self.reanalyze_and_resort(node, cmds);
-            }
-        }
-        Ok(())
+            Ok(hit)
+        })
     }
 
     /// `/node_fill nodeID [ctrl numControls value]...`: fills a consecutive range
@@ -542,40 +570,25 @@ impl CmdTranslator {
         let Some(OscType::Int(id)) = msg.args.first() else {
             return Err("expected: id, then (control, numControls, value) triples".into());
         };
-        if self.node_unknown(*id) {
-            return Err(format!("node {id} not found"));
-        }
-        if !msg.args[1..].len().is_multiple_of(3) {
+        let triples = &msg.args[1..];
+        if !triples.len().is_multiple_of(3) {
             return Err("expected (control, numControls, value) triples".into());
         }
-        for node in self.control_targets(*id) {
-            let Some(def) = self.node_defs.get(&node).cloned() else {
-                continue;
-            };
-            let mut bus_control_hit = false;
-            for group in msg.args[1..].chunks(3) {
+        self.for_each_target(*id, cmds, |t, node, def, cmds| {
+            let mut hit = false;
+            for group in triples.chunks(3) {
                 let [ctrl, OscType::Int(count), val] = group else {
                     return Err("expected (control, numControls, value) triples".into());
                 };
                 let count = u32::try_from(*count).map_err(|_| "numControls must be >= 0")?;
                 let value = float_value(val).ok_or("expected number value")?;
-                let base = control_key(ctrl, &def).ok_or("unknown control")?;
+                let base = control_key(ctrl, def).ok_or("unknown control")?;
                 for offset in 0..count {
-                    let index = base + offset;
-                    cmds.push(Cmd::SetControl {
-                        id: node,
-                        index,
-                        value,
-                    });
-                    bus_control_hit |= self.mirror.set_control(node, index, value);
-                    bus_control_hit |= self.mirror.set_map(node, index, -1, false);
+                    hit |= t.write_control(node, base + offset, value, cmds);
                 }
             }
-            if bus_control_hit {
-                self.reanalyze_and_resort(node, cmds);
-            }
-        }
-        Ok(())
+            Ok(hit)
+        })
     }
 
     /// `/node_mapRange` / `/node_mapAudioRange`: like `/node_map`/`/node_mapAudio`, but each group
@@ -591,41 +604,26 @@ impl CmdTranslator {
         let Some(OscType::Int(id)) = msg.args.first() else {
             return Err("expected: id, then (control, busIndex, numControls) groups".into());
         };
-        if self.node_unknown(*id) {
-            return Err(format!("node {id} not found"));
-        }
-        if !msg.args[1..].len().is_multiple_of(3) {
+        let groups = &msg.args[1..];
+        if !groups.len().is_multiple_of(3) {
             return Err("expected (control, busIndex, numControls) groups".into());
         }
-        for node in self.control_targets(*id) {
-            let Some(def) = self.node_defs.get(&node).cloned() else {
-                continue;
-            };
-            let mut usage_hit = false;
-            for group in msg.args[1..].chunks(3) {
+        self.for_each_target(*id, cmds, |t, node, def, cmds| {
+            let mut hit = false;
+            for group in groups.chunks(3) {
                 let [ctrl, OscType::Int(bus), OscType::Int(count)] = group else {
                     return Err("expected int busIndex and numControls".into());
                 };
                 let count = u32::try_from(*count).map_err(|_| "numControls must be >= 0")?;
-                let base = control_key(ctrl, &def).ok_or("unknown control")?;
+                let base = control_key(ctrl, def).ok_or("unknown control")?;
                 for offset in 0..count {
-                    let index = base + offset;
                     // -1 unbinds every control in the range; else buses advance.
                     let bus = if *bus < 0 { -1 } else { *bus + offset as i32 };
-                    cmds.push(Cmd::MapControl {
-                        id: node,
-                        index,
-                        bus,
-                        audio,
-                    });
-                    usage_hit |= self.mirror.set_map(node, index, bus, audio);
+                    hit |= t.map_control(node, base + offset, bus, audio, cmds);
                 }
             }
-            if usage_hit {
-                self.reanalyze_and_resort(node, cmds);
-            }
-        }
-        Ok(())
+            Ok(hit)
+        })
     }
 
     /// `/node_order addAction targetID nodeID...`: moves several nodes to one
@@ -827,11 +825,7 @@ impl CmdTranslator {
     /// def name, so the caller can persist the spec under it.
     #[cfg(feature = "synth")]
     pub fn d_recv(&mut self, args: &[OscType]) -> Result<String, String> {
-        let bytes: &[u8] = match args.first() {
-            Some(OscType::Blob(b)) => b,
-            Some(OscType::String(s)) => s.as_bytes(),
-            _ => return Err("expected a JSON blob or string".into()),
-        };
+        let bytes = crate::osc::args::json_payload(args)?;
         let spec: SynthDefSpec =
             serde_json::from_slice(bytes).map_err(|e| format!("invalid JSON: {e}"))?;
         let def = compile(spec)?;
@@ -881,11 +875,7 @@ impl CmdTranslator {
     /// JIT): a GraphDef only references other defs, each carrying its own
     /// compile/cache.
     pub fn d_graph(&mut self, args: &[OscType]) -> Result<String, String> {
-        let bytes: &[u8] = match args.first() {
-            Some(OscType::Blob(b)) => b,
-            Some(OscType::String(s)) => s.as_bytes(),
-            _ => return Err("expected a JSON blob or string".into()),
-        };
+        let bytes = crate::osc::args::json_payload(args)?;
         let spec: GraphDefSpec =
             serde_json::from_slice(bytes).map_err(|e| format!("invalid JSON: {e}"))?;
         spec.validate()?;
@@ -1022,35 +1012,19 @@ impl CmdTranslator {
                 if self.graph_set(*id, &msg.args[1..], cmds) {
                     return Ok(());
                 }
-                if self.node_unknown(*id) {
-                    return Err(format!("node {id} not found"));
-                }
-                for node in self.control_targets(*id) {
-                    let Some(def) = self.node_defs.get(&node).cloned() else {
-                        continue;
-                    };
-                    let mut bus_control_hit = false;
-                    for pair in msg.args[1..].chunks(2) {
+                let pairs = &msg.args[1..];
+                self.for_each_target(*id, cmds, |t, node, def, cmds| {
+                    let mut hit = false;
+                    for pair in pairs.chunks(2) {
                         if let (Some(index), Some(value)) = (
-                            control_key(&pair[0], &def),
+                            control_key(&pair[0], def),
                             pair.get(1).and_then(float_value),
                         ) {
-                            cmds.push(Cmd::SetControl {
-                                id: node,
-                                index,
-                                value,
-                            });
-                            bus_control_hit |= self.mirror.set_control(node, index, value);
-                            // An explicit set clears any mapping on that control
-                            // (scsynth); dropping an audio map changes usage.
-                            bus_control_hit |= self.mirror.set_map(node, index, -1, false);
+                            hit |= t.write_control(node, index, value, cmds);
                         }
                     }
-                    if bus_control_hit {
-                        self.reanalyze_and_resort(node, cmds);
-                    }
-                }
-                Ok(())
+                    Ok(hit)
+                })
             }
             "/node_map" => self.map_controls(msg, false, cmds),
             "/node_mapAudio" => self.map_controls(msg, true, cmds),

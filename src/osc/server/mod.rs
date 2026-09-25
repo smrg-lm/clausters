@@ -791,14 +791,6 @@ fn ugen_info(d: &crate::dsp::registry::UGenDescriptor) -> Vec<OscType> {
     args
 }
 
-fn synthdef_spec_bytes(args: &[OscType]) -> Option<&[u8]> {
-    match args.first() {
-        Some(OscType::Blob(b)) => Some(b),
-        Some(OscType::String(s)) => Some(s.as_bytes()),
-        _ => None,
-    }
-}
-
 /// Seconds between the NTP epoch (1900) and the Unix epoch (1970).
 const NTP_UNIX_OFFSET: f64 = 2_208_988_800.0;
 

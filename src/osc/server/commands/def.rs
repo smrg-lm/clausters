@@ -55,49 +55,51 @@ impl OscServer {
         let family = args.str()?.to_string();
         let rest = args.rest();
         match family.as_str() {
-            "synth" => self.handle_def_send_synth(rest, from),
+            "synth" => self.handle_def_send_json(rest, from, DefKind::Synth, "synth"),
             "faust" => self.handle_def_send_faust(rest, from),
-            "graph" => self.handle_def_send_graph(rest, from),
+            "graph" => self.handle_def_send_json(rest, from, DefKind::Graph, "graph"),
             other => Err(format!("unknown def family '{other}'")),
         }
     }
 
-    /// Installs one SynthDef spec: compiles it, gives it its name and persists
-    /// it unless the name is ephemeral. `/def_send synth`, `/def_load` and
-    /// `/def_loadDir` all install through it, so a def read from a file claims
-    /// its name like one sent over the wire.
-    fn install_synthdef(&mut self, args: &[OscType]) -> Result<String, String> {
-        let name = self.translator.d_recv(args)?;
-        self.claim_def_name(&name, DefKind::Synth);
+    /// Installs one def of a JSON family (`Synth` or `Graph`): compiles or
+    /// validates it, gives it its name and persists its spec verbatim unless
+    /// the name is ephemeral. `/def_send synth`, `/def_send graph`, `/def_load`
+    /// and `/def_loadDir` all install through it, so a def read from a file
+    /// claims its name like one sent over the wire.
+    fn install_json_def(&mut self, args: &[OscType], kind: DefKind) -> Result<String, String> {
+        let name = match kind {
+            DefKind::Graph => self.translator.d_graph(args)?,
+            _ => self.translator.d_recv(args)?,
+        };
+        self.claim_def_name(&name, kind);
         if let Some(store) = &self.store
             && !defstore::is_ephemeral(&name)
-            && let Some(spec) = synthdef_spec_bytes(args)
-            && let Err(e) = store.save_synthdef(&name, spec)
+            && let Ok(spec) = crate::osc::args::json_payload(args)
         {
-            error!("could not persist SynthDef '{name}': {e}");
+            let saved = match kind {
+                DefKind::Graph => store.save_graphdef(&name, spec),
+                _ => store.save_synthdef(&name, spec),
+            };
+            if let Err(e) = saved {
+                error!("could not persist {kind:?}Def '{name}': {e}");
+            }
         }
         Ok(name)
     }
 
-    fn handle_def_send_synth(&mut self, args: &[OscType], from: ClientId) -> Answer {
-        self.install_synthdef(args)?;
-        self.done_with(from, "/def_send", vec![OscType::String("synth".into())]);
-        Ok(())
-    }
-
-    /// `/def_send graph <json>`: load a GraphDef (validate + store), persist its
-    /// spec verbatim, and reply `/done`. Cheap -- no JIT, just validation.
-    fn handle_def_send_graph(&mut self, args: &[OscType], from: ClientId) -> Answer {
-        let name = self.translator.d_graph(args)?;
-        self.claim_def_name(&name, DefKind::Graph);
-        if let Some(store) = &self.store
-            && !defstore::is_ephemeral(&name)
-            && let Some(spec) = synthdef_spec_bytes(args)
-            && let Err(e) = store.save_graphdef(&name, spec)
-        {
-            error!("could not persist GraphDef '{name}': {e}");
-        }
-        self.done_with(from, "/def_send", vec![OscType::String("graph".into())]);
+    /// `/def_send synth <json>` and `/def_send graph <json>`: install the def
+    /// and reply `/done "/def_send" <family>`. A GraphDef is cheap -- no JIT,
+    /// just validation.
+    fn handle_def_send_json(
+        &mut self,
+        args: &[OscType],
+        from: ClientId,
+        kind: DefKind,
+        family: &str,
+    ) -> Answer {
+        self.install_json_def(args, kind)?;
+        self.done_with(from, "/def_send", vec![OscType::String(family.into())]);
         Ok(())
     }
 
@@ -160,7 +162,7 @@ impl OscServer {
     /// Shared by `/def_load` and `/def_loadDir`.
     fn load_synthdef_file(&mut self, path: &std::path::Path) -> Result<(), String> {
         let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        self.install_synthdef(&[OscType::Blob(bytes)])
+        self.install_json_def(&[OscType::Blob(bytes)], DefKind::Synth)
             .map(|_| ())
             .map_err(|e| format!("{}: {e}", path.display()))
     }

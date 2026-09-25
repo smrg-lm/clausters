@@ -374,7 +374,7 @@ fn midi_channel(channel: i32) -> Result<u8, String> {
     u8::try_from(channel).map_err(|_| "MIDI channel out of range (0-255)".to_string())
 }
 
-/// Builds the OSC message a MIDI event is realized as, fed back through
+/// Builds the OSC message a MIDI event becomes, fed back through
 /// [`CmdTranslator::translate`] for byte-identical parity with the OSC path.
 fn midi_message(addr: &str, args: Vec<OscType>) -> rosc::OscMessage {
     rosc::OscMessage {

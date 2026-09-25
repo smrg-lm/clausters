@@ -15,10 +15,10 @@
 //! instantiation a **tree**, and a tree cannot be built the way one level was:
 //! a child that fails halfway would leave its siblings standing.
 //!
-//! So it is planned and then realized. [`Planned`] is the whole tree with every
+//! So it is planned and then built. [`Planned`] is the whole tree with every
 //! fallible thing already done -- every def resolved, every synth built, every
 //! bus and node id taken -- and holds enough to hand all of it back if any part
-//! of the walk fails ([`Planned::release`]). Realizing it emits commands and
+//! of the walk fails ([`Planned::release`]). Building it emits commands and
 //! cannot fail. The all-or-nothing rule the one-level version had is therefore
 //! the same rule, over a tree: **a rejected instantiation leaves the pools
 //! exactly as it found them.**
@@ -430,7 +430,7 @@ impl CmdTranslator {
     ///
     /// Registers the instance (or, with `slot`, the slot sub-graph) and answers
     /// its group id.
-    fn realize(
+    fn build_plan(
         &mut self,
         plan: Planned,
         parent: i32,
@@ -472,7 +472,7 @@ impl CmdTranslator {
         // what makes its surface reachable when this one's ports resolve.
         let mut child_of = HashMap::new();
         for (mi, child) in children {
-            let id = self.realize(child, group_id, AddAction::Tail, None, cmds);
+            let id = self.build_plan(child, group_id, AddAction::Tail, None, cmds);
             child_of.insert(mi, id);
         }
         self.resort_from(Some(group_id), cmds);
@@ -569,14 +569,12 @@ impl CmdTranslator {
             return Err("group ID must be positive or -1".into());
         }
         let plan = self.plan_instance(name, *id, None, &HashMap::new(), 0)?;
-        let def = Arc::clone(&plan.def);
-        let group_id = self.realize(plan, *target, action, None, cmds);
+        let group_id = self.build_plan(plan, *target, action, None, cmds);
         // The def's own defaults were applied as it was built; these are the
         // caller's overrides on top of them.
         for (port, value) in Self::port_overrides(rest) {
             self.apply_surface(group_id, &port, value, cmds);
         }
-        let _ = def;
         Ok(())
     }
 
@@ -613,7 +611,7 @@ impl CmdTranslator {
         // what "wired to the same private buses" means: every one of them is
         // external as far as this sub-graph is concerned.
         let plan = self.plan_instance(&def.name, id, Some(slot), &external, 0)?;
-        let slot_id = self.realize(
+        let slot_id = self.build_plan(
             plan,
             instance,
             AddAction::Head,
@@ -932,13 +930,7 @@ impl CmdTranslator {
             return Err(format!("{instance} has no port '{port}'"));
         };
         for (node, index, _mul, _add) in targets {
-            cmds.push(Cmd::MapControl {
-                id: node,
-                index,
-                bus: *bus,
-                audio,
-            });
-            if self.mirror.set_map(node, index, *bus, audio) {
+            if self.map_control(node, index, *bus, audio, cmds) {
                 self.reanalyze_and_resort(node, cmds);
             }
         }
@@ -960,15 +952,7 @@ impl CmdTranslator {
             None => return,
         };
         for (node, index, mul, add) in targets {
-            let v = mul * value + add;
-            cmds.push(Cmd::SetControl {
-                id: node,
-                index,
-                value: v,
-            });
-            let mut hit = self.mirror.set_control(node, index, v);
-            hit |= self.mirror.set_map(node, index, -1, false);
-            if hit {
+            if self.write_control(node, index, mul * value + add, cmds) {
                 self.reanalyze_and_resort(node, cmds);
             }
         }

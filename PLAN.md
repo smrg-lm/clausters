@@ -3603,7 +3603,7 @@ should confirm before the fix.
   0.8, and the server's own TCP and WS `bind` 0.90 alike; two `ClientId` enums
   with the same carriers. The framing and the hub (slots, wake, a thread per
   connection, a frame queue) are one thing both ends could link from the core.
-- ⬜ **Writing one control is written six times** *(audit 2026-09-25)*. In
+- ✅ **Writing one control is written six times** *(audit 2026-09-25)*. In
   `osc::translate`, `/node_set`, `_setRange`, `_fill`, `_map`, `_mapRange` share
   the walk (id, unknown node, control targets, the def, the hit flag,
   re-analysis), and the three setters and the GraphDef surface
@@ -3612,6 +3612,12 @@ should confirm before the fix.
   `synthdef_spec_bytes`), `/def_send synth` and `graph` one function over two
   families, a dead `let _ = def` in `graph_new`, and the instancing step named
   `realize`.
+  **Fixed**: `for_each_target` is the walk the five control commands share,
+  `write_control` the write the three setters and `apply_surface` share, and
+  `map_control` the map the two mappers and `graph_map` share;
+  `osc::args::json_payload` is the one "blob or string"; `install_json_def`
+  installs a SynthDef or a GraphDef and `handle_def_send_json` answers both
+  families; the dead binding is gone and the step is `build_plan`.
 - ⬜ **The wire's sample blob is spelled by hand** *(audit 2026-09-25)*. Raw
   little-endian `f32` is written in about twelve places (`/buffer_getRange`,
   `_peaks`, `_export`, the streams, `clausters-editing`'s apply and samples,

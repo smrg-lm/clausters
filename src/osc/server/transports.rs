@@ -255,7 +255,7 @@ impl OscServer {
 
     /// translates every queued live-MIDI message into engine commands and
     /// ships them. Each message is self-contained (one note/control event), so
-    /// it is realized like the immediate OSC forms: `translate_midi` (which
+    /// it is handled like the immediate OSC forms: `translate_midi` (which
     /// reuses the `/synth_new`/`/node_set`/`/node_free` path and keeps the tree mirror in
     /// sync), then ship the batch. MIDI never quits the server.
     #[cfg(feature = "midi")]

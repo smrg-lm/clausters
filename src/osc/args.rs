@@ -210,6 +210,16 @@ impl<'a> Args<'a> {
     }
 }
 
+/// A def's JSON as the first argument carries it: a blob, or a string a
+/// hand-written client finds easier to send.
+pub(crate) fn json_payload(args: &[OscType]) -> Result<&[u8], String> {
+    match args.first() {
+        Some(OscType::Blob(b)) => Ok(b),
+        Some(OscType::String(s)) => Ok(s.as_bytes()),
+        _ => Err("expected a JSON blob or string".into()),
+    }
+}
+
 /// A number: `f32`, or an `Int` or a `Double` narrowed.
 pub fn float_value(arg: &OscType) -> Option<f32> {
     match arg {
