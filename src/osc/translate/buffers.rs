@@ -116,9 +116,7 @@ pub fn parse_buffer_msg(
             } else {
                 Vec::new()
             };
-            let Some(current) = mirror_buffer(mirror, index) else {
-                return Err(format!("no buffer allocated at {index}"));
-            };
+            let current = allocated(mirror, index)?;
             (
                 index,
                 NrtJob::Read {
@@ -146,9 +144,7 @@ pub fn parse_buffer_msg(
             if !header.eq_ignore_ascii_case("wav") && !header.eq_ignore_ascii_case("wave") {
                 return Err(format!("unsupported header format {header:?}"));
             }
-            let Some(buffer) = mirror_buffer(mirror, index) else {
-                return Err(format!("no buffer allocated at {index}"));
-            };
+            let buffer = allocated(mirror, index)?;
             (
                 index,
                 NrtJob::Write {
@@ -165,9 +161,7 @@ pub fn parse_buffer_msg(
             let Some(OscType::Int(index)) = args.first() else {
                 return Err("expected a buffer index".into());
             };
-            let Some(current) = mirror_buffer(mirror, *index) else {
-                return Err(format!("no buffer allocated at {index}"));
-            };
+            let current = allocated(mirror, *index)?;
             (
                 *index,
                 NrtJob::Alloc {
@@ -185,9 +179,7 @@ pub fn parse_buffer_msg(
             let Some(OscType::Int(index)) = args.first() else {
                 return Err("expected a buffer index".into());
             };
-            let Some(current) = mirror_buffer(mirror, *index) else {
-                return Err(format!("no buffer allocated at {index}"));
-            };
+            let current = allocated(mirror, *index)?;
             let rest = &args[1..];
             if rest.is_empty() || !rest.len().is_multiple_of(3) {
                 return Err("expected (start, count, value) triples".into());
@@ -235,9 +227,7 @@ pub fn parse_buffer_msg(
             let Some(OscType::Int(index)) = args.first() else {
                 return Err("expected a buffer index".into());
             };
-            let Some(current) = mirror_buffer(mirror, *index) else {
-                return Err(format!("no buffer allocated at {index}"));
-            };
+            let current = allocated(mirror, *index)?;
             let start = int_arg(args, 1).unwrap_or(0);
             let frames = int_arg(args, 2).unwrap_or(-1);
             if start < 0 {
@@ -299,9 +289,7 @@ pub fn parse_buffer_msg(
                     );
                 }
             };
-            let Some(current) = mirror_buffer(mirror, index) else {
-                return Err(format!("no buffer allocated at {index}"));
-            };
+            let current = allocated(mirror, index)?;
             let Some(source) = mirror_buffer(mirror, src) else {
                 return Err(format!("no source buffer allocated at {src}"));
             };
@@ -348,9 +336,7 @@ pub fn parse_buffer_msg(
             let Some(OscType::Int(index)) = args.first() else {
                 return Err("expected a buffer index".into());
             };
-            let Some(current) = mirror_buffer(mirror, *index) else {
-                return Err(format!("no buffer allocated at {index}"));
-            };
+            let current = allocated(mirror, *index)?;
             // The `*Channel` forms name **one** channel, before the runs,
             // because the runs are the variadic tail: with a tail there is no
             // telling a channel index from a start. Their positions are then
@@ -503,9 +489,7 @@ pub fn parse_buffer_gen(args: &[OscType], mirror: &BufferPool) -> Result<(i32, N
     if index < 0 || index as usize >= mirror.len() {
         return Err(format!("buffer index out of range: {index}"));
     }
-    let Some(current) = mirror_buffer(mirror, index) else {
-        return Err(format!("no buffer allocated at {index}"));
-    };
+    let current = allocated(mirror, index)?;
     let rest = &args[2..];
 
     let command = match cmd {
@@ -783,9 +767,17 @@ fn parse_set_runs(args: &[OscType]) -> Result<Vec<SampleWrite>, String> {
         .collect()
 }
 
-fn mirror_buffer(mirror: &BufferPool, index: i32) -> Option<Arc<Buffer>> {
+/// The buffer the mirror holds at `index`, or `None` for a negative index or
+/// an empty slot.
+pub(crate) fn mirror_buffer(mirror: &BufferPool, index: i32) -> Option<Arc<Buffer>> {
     usize::try_from(index)
         .ok()
         .and_then(|i| mirror.get(i))
         .and_then(|b| b.as_ref().map(Arc::clone))
+}
+
+/// [`mirror_buffer`] for a command that needs the buffer to be there: the one
+/// refusal every command gives for an empty slot.
+pub(crate) fn allocated(mirror: &BufferPool, index: i32) -> Result<Arc<Buffer>, String> {
+    mirror_buffer(mirror, index).ok_or_else(|| format!("no buffer allocated at {index}"))
 }

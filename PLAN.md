@@ -3552,6 +3552,9 @@ should confirm before the fix.
   `mirror_buffer`) whose optional arguments turn a wrong type into the default,
   where `Args` refuses it, and whose wording drifts ("no buffer allocated at
   N" beside "buffer N not allocated"). One reader for the wire, in `osc`.
+  *Step 1 done*: `translate::mirror_buffer` is the one lookup and
+  `translate::allocated` the one refusal ("no buffer allocated at N"); the
+  server's copy and its five "buffer N not allocated" sites go through them.
 - ⬜ **The command table repeats one closure sixty times** *(audit
   2026-09-25)*. 17 rows are `handle_buffer_cmd(addr, m, f); Ok(())` and 30 are
   `handle_via_translate(m, f); Ok(())`; two named functions make each row one

@@ -5,6 +5,7 @@
 //! queries here answer from the mirror in the same turn.
 
 use super::super::*;
+use crate::osc::translate::{allocated, mirror_buffer};
 
 impl OscServer {
     /// `/buffer_attach bufnum` -- map the shared buffer `bufnum` out of the
@@ -58,14 +59,7 @@ impl OscServer {
         let channel = args.int()?;
         let start = args.int()?;
         let frames = args.int()?;
-        if !self
-            .translator
-            .buffers
-            .get(index)
-            .is_some_and(Option::is_some)
-        {
-            return Err(format!("buffer {index} not allocated"));
-        }
+        allocated(&self.translator.buffers, index as i32)?;
         // **The overview beside the region is a reader like any other**, and
         // the only one that is this server's own: a peer wrote into the cells
         // and said where, so the summary over that span is what is stale.
@@ -140,14 +134,7 @@ impl OscServer {
         from: ClientId,
     ) -> Answer {
         let index = args.index()?;
-        if !self
-            .translator
-            .buffers
-            .get(index)
-            .is_some_and(Option::is_some)
-        {
-            return Err(format!("buffer {index} not allocated"));
-        }
+        allocated(&self.translator.buffers, index as i32)?;
         self.reply(
             from,
             "/done",
@@ -192,14 +179,7 @@ impl OscServer {
         if frames <= 0 {
             return Err(format!("frames must be positive, got {frames}"));
         }
-        if !self
-            .translator
-            .buffers
-            .get(index)
-            .is_some_and(Option::is_some)
-        {
-            return Err(format!("buffer {index} not allocated"));
-        }
+        allocated(&self.translator.buffers, index as i32)?;
         // Queued, not performed: the answer goes out when the driver has run it.
         self.offline
             .as_mut()
@@ -264,7 +244,7 @@ impl OscServer {
         let mut out = Vec::with_capacity(args.len() * 4);
         while !args.is_empty() {
             let index = args.int()?;
-            let info = self.mirror_buffer(index);
+            let info = mirror_buffer(&self.translator.buffers, index);
             // An unallocated slot answers with `frames = -1`: absence is a
             // state reported in the record, like `/node_query`'s `isGroup = -1`
             // and `/def_query`'s empty family, so one dead index does not abort
@@ -306,7 +286,7 @@ impl OscServer {
         from: ClientId,
     ) -> Answer {
         let bufnum = args.int()?;
-        let buffer = self.mirror_buffer(bufnum);
+        let buffer = mirror_buffer(&self.translator.buffers, bufnum);
         let mut out = vec![OscType::Int(bufnum)];
         out.push(OscType::Int(
             buffer.as_ref().map_or(0, |b| b.channels() as i32),
@@ -341,7 +321,7 @@ impl OscServer {
         from: ClientId,
     ) -> Answer {
         let bufnum = args.int()?;
-        let buffer = self.mirror_buffer(bufnum);
+        let buffer = mirror_buffer(&self.translator.buffers, bufnum);
         let data = buffer.as_deref();
         let mut out = vec![OscType::Int(bufnum)];
         while !args.is_empty() {
@@ -376,7 +356,7 @@ impl OscServer {
     ) -> Answer {
         let bufnum = args.int()?;
         args.expect_groups_of(2, "(start, count) pairs")?;
-        let buffer = self.mirror_buffer(bufnum);
+        let buffer = mirror_buffer(&self.translator.buffers, bufnum);
         let data = buffer.as_deref();
         let held = data.map_or(0, |b| b.len());
         let mut out = vec![OscType::Int(bufnum)];
@@ -440,9 +420,7 @@ impl OscServer {
         let bucket = args.opt_int()?.unwrap_or(256).max(1) as usize;
         let start = args.opt_int()?.unwrap_or(0).max(0) as usize;
         let asked = args.opt_int()?.unwrap_or(-1);
-        let Some(buffer) = self.mirror_buffer(bufnum) else {
-            return Err(format!("buffer {bufnum} not allocated"));
-        };
+        let buffer = allocated(&self.translator.buffers, bufnum)?;
         let frames = buffer.frames();
         // Rounded to the grid the answer is folded into: a bucket summarized
         // from part of itself would report a peak the samples do not have.
@@ -515,9 +493,7 @@ impl OscServer {
         from: ClientId,
     ) -> Answer {
         let (bufnum, path) = (args.int()?, args.str()?);
-        let Some(buffer) = self.mirror_buffer(bufnum) else {
-            return Err(format!("buffer {bufnum} not allocated"));
-        };
+        let buffer = allocated(&self.translator.buffers, bufnum)?;
         // One snapshot, then the encode: an export is a reading of the buffer
         // at a moment, and taking it in one pass keeps it from straddling a
         // recording UGen's write head more than it has to.
@@ -536,12 +512,5 @@ impl OscServer {
             ],
         );
         Ok(())
-    }
-
-    fn mirror_buffer(&self, index: i32) -> Option<Arc<crate::dsp::buffer::Buffer>> {
-        usize::try_from(index)
-            .ok()
-            .and_then(|i| self.translator.buffers.get(i))
-            .and_then(|b| b.as_ref().map(Arc::clone))
     }
 }
