@@ -16,6 +16,7 @@
 
 use super::*;
 use crate::host::frame::Owed;
+use crate::host::replies::Front;
 use crate::host::widget::element::SlotKey;
 
 /// The host's audio-server leg over a browser `WebSocket` to a `--ws` server.
@@ -216,15 +217,12 @@ impl WebApp {
         let OscPacket::Message(msg) = packet else {
             return; // bundles are not used on the reply path
         };
-        // The ids and the multitrack's waiting steps hear every reply first
-        // (`Host::on_server_reply`, which the native leg calls too).
-        // A page has one server leg and no player apart from it.
-        self.host
-            .on_server_reply(crate::host::instance::Leg::Server, &msg);
-        // A join's samples are there now: the canvases drawing it ask for them
-        // again on the draw this requests.
-        for def_id in self.host.forget_stitched(&msg) {
-            self.request_redraw(def_id);
+        // The ids, the multitrack's waiting steps and the buffer replies are
+        // read once for both fronts ([`Front::on_server_reply`]); a page has
+        // one server leg and no player apart from it. What is left is this
+        // front's own.
+        if self.on_server_reply(crate::host::instance::Leg::Server, &msg) {
+            return;
         }
         match msg.addr.as_str() {
             "/bus_stream.reply" => {
@@ -237,112 +235,6 @@ impl WebApp {
                         && *index >= 0
                     {
                         self.buses.set(*index as usize, *value);
-                    }
-                }
-            }
-            "/buffer_query.reply" => {
-                // (bufnum, frames, channels, sampleRate) per buffer.
-                for group in msg.args.chunks(4) {
-                    if let [
-                        OscType::Int(bufnum),
-                        OscType::Int(frames),
-                        OscType::Int(channels),
-                        rate,
-                    ] = group
-                    {
-                        let rate = match rate {
-                            OscType::Float(x) => *x as f64,
-                            OscType::Double(x) => *x,
-                            _ => 0.0,
-                        };
-                        // **-1 is absence, not emptiness**: the buffer is not
-                        // there yet, and is asked for again rather than drawn
-                        // as a take of no frames (`BufferFetches::on_absent`).
-                        if *frames < 0 {
-                            self.fetches.on_absent(*bufnum);
-                            continue;
-                        }
-                        let step = self.fetches.on_info(
-                            *bufnum,
-                            *frames as usize,
-                            (*channels).max(0) as usize,
-                            rate,
-                        );
-                        self.apply_fetch_step(step);
-                    }
-                }
-            }
-            "/buffer_getRange.reply" => {
-                let step = self.fetches.on_data(&msg.args);
-                self.apply_fetch_step(step);
-            }
-            // **Another peer wrote a span of samples this page is drawing.**
-            // A page holds its **own copy** -- it cannot map anything -- so the
-            // announcement names a span whose samples are not in it, and no
-            // summary over what it holds can find the edit. So the span is
-            // read back off the wire and put where the picture keeps it, which
-            // is what a mapped host gets for the price of re-summarizing.
-            "/buffer_touched" => {
-                if let [
-                    OscType::Int(bufnum),
-                    OscType::Int(channel),
-                    OscType::Int(start),
-                    OscType::Int(frames),
-                ] = msg.args.as_slice()
-                {
-                    let mut refreshed = 0;
-                    let ids = self.host.window_def_ids();
-                    for def_id in ids {
-                        if let Some(tree) = self.host.window_def_mut(def_id) {
-                            refreshed += crate::host::refresh_buffer_views(
-                                tree,
-                                *bufnum,
-                                // -1 is every channel of the span: what a
-                                // write that arrived as samples announces.
-                                usize::try_from(*channel).ok(),
-                                (*start).max(0) as u64,
-                                (*frames).max(0) as usize,
-                            );
-                        }
-                    }
-                    if refreshed == 0 {
-                        self.read_span_back(*bufnum, (*start).max(0), (*frames).max(0));
-                    }
-                }
-            }
-            // **The recording this page cannot read, reported by the server.**
-            // A page maps nothing and holds its own copy of the samples, so a
-            // take filling in the server's memory reaches it only as the
-            // overview of what was written -- min, max and energy per bucket,
-            // folded into the pyramid the picture already holds. This is the
-            // page's half of what a mapped host gets from a frontier.
-            "/buffer_stream.reply" => {
-                if let Some((bufnum, start, bucket, stats)) = crate::host::stream_report(&msg.args)
-                {
-                    self.on_stream_report(bufnum, start, bucket, &stats);
-                }
-            }
-            // **The overview of a take that is standing still**, asked for
-            // rather than pushed. Identical payload, so it folds through the
-            // same door -- and then the walk continues, because one reply
-            // carries only so many buckets.
-            "/buffer_peaks.reply" => {
-                if let Some((bufnum, start, bucket, stats)) = crate::host::stream_report(&msg.args)
-                {
-                    // **Which of the two summaries this is, told by its
-                    // bucket**: a detail grid is asked for finer than the view
-                    // it is for, and the walk asks at the view's own -- so a
-                    // reply some view asked for at that bucket and start is
-                    // that view's, and everything else is the walk's.
-                    if let Some((def_id, widget_id)) =
-                        self.fetches.detail_reply(bufnum, start, bucket)
-                    {
-                        self.place_detail(bufnum, def_id, widget_id, start, bucket, &stats);
-                    } else {
-                        self.on_stream_report(bufnum, start, bucket, &stats);
-                        if let Some(next) = self.fetches.on_peaks(bufnum, start, stats.len()) {
-                            self.send_to_server(next);
-                        }
                     }
                 }
             }
@@ -434,351 +326,6 @@ impl WebApp {
         }
     }
 
-    /// Carries out one fetch-machine step: send the next request over the WS
-    /// leg, or turn a finished buffer into view data for its widgets --
-    /// looking each widget up in the tree, like the native front, to decide
-    /// between a multichannel waveform and one STFT per channel.
-    fn apply_fetch_step(&mut self, step: FetchStep) {
-        match step {
-            FetchStep::Request(msg) => self.send_to_server(msg),
-            FetchStep::Done {
-                bufnum,
-                samples,
-                channels,
-                sample_rate,
-                wants,
-            } => {
-                let channels = channels.max(1);
-                log(&format!(
-                    "buffer {bufnum}: {} frames x {channels} channel(s) loaded into {} view(s)",
-                    samples.len() / channels,
-                    wants.len()
-                ));
-                for want in wants {
-                    if !self.canvases.contains_key(&want.def_id) {
-                        continue;
-                    }
-                    // The fetch was keyed by a widget id, and for a clip that
-                    // is the *clip's* -- a body carries none -- so the reply
-                    // resolves to the element that wanted the samples. What is
-                    // read out is the **declaration**: a slot says where the
-                    // data goes and what has to be made of it first.
-                    let Some(slot) = self
-                        .host
-                        .window_def(want.def_id)
-                        .and_then(|t| t.find(want.widget_id))
-                        .map(|w| w.bulk_target().kind.needs().slot)
-                    else {
-                        continue;
-                    };
-                    match slot {
-                        Some(SlotKind::Geometry { base_bucket }) => {
-                            let data = std::sync::Arc::new(WaveformData::from_interleaved(
-                                &samples,
-                                channels,
-                                base_bucket,
-                            ));
-                            // The same pyramid to the slot and to the element,
-                            // as everywhere else (`frame::keep_data`).
-                            if let Some(w) = self
-                                .host
-                                .window_def_mut(want.def_id)
-                                .and_then(|t| t.find_mut(want.widget_id))
-                            {
-                                frame::keep_data(w, &Loaded::Peaks(data.clone()));
-                            }
-                            self.place_bulk(want.def_id, want.widget_id, Loaded::Peaks(data));
-                        }
-                        Some(SlotKind::Texture {
-                            window_size,
-                            hop,
-                            sample_rate: declared,
-                        }) => {
-                            let rate = if declared > 0.0 {
-                                declared
-                            } else {
-                                sample_rate
-                            };
-                            let stfts = frame::stft_channels(
-                                frame::deinterleave(&samples, channels),
-                                window_size,
-                                hop,
-                                rate,
-                            );
-                            self.place_bulk(want.def_id, want.widget_id, Loaded::Stfts(stfts));
-                        }
-                        // Mesh-drawn: the samples go home to the element, which
-                        // makes of them whatever it draws from. It falls
-                        // through to the shared tail -- a body carries no editor
-                        // props, so the sample-rate fill is a no-op for it, but
-                        // the **repaint** is not.
-                        _ => {
-                            if let Some(w) = self
-                                .host
-                                .window_def_mut(want.def_id)
-                                .and_then(|t| t.find_mut(want.widget_id))
-                            {
-                                let raw = || Loaded::Raw {
-                                    samples: samples.to_vec(),
-                                    channels,
-                                };
-                                w.take_bulk_of(bufnum, raw);
-                            }
-                        }
-                    }
-                    // Let the ruler label real time when the widget knew no rate.
-                    if sample_rate > 0.0
-                        && let Some(w) = self
-                            .host
-                            .window_def_mut(want.def_id)
-                            .and_then(|t| t.find_mut(want.widget_id))
-                        && let Some(editor) = w.kind.editor_mut()
-                        && editor.sample_rate <= 0.0
-                    {
-                        editor.sample_rate = sample_rate;
-                    }
-                    // The samples just arrived, so whether this view has to
-                    // be told about its own recording is only answerable now.
-                    self.host.sync_buffer_streams();
-                    self.request_redraw(want.def_id);
-                }
-            }
-            // **A take drawn from its summary**: the shape is the answer and
-            // no samples are downloaded. Where the summary comes from is the
-            // one difference between the two cases this covers -- a take being
-            // recorded into is streamed one (the samples are silence until
-            // something writes them), and a take standing still is asked for
-            // one. The run under the eye is read back on a zoom, either way.
-            FetchStep::Empty {
-                bufnum,
-                frames,
-                channels,
-                sample_rate,
-                ask_summary,
-                wants,
-            } => {
-                let channels = channels.max(1);
-                log(&format!(
-                    "buffer {bufnum}: drawn from its summary ({frames} frames x {channels} \
-                     channel(s)); {} view(s), {}",
-                    wants.len(),
-                    if ask_summary { "asked for" } else { "streamed" }
-                ));
-                let mut bucket = None;
-                for want in wants {
-                    let Some(base_bucket) = self.summary_bucket_of(want.def_id, want.widget_id)
-                    else {
-                        continue;
-                    };
-                    bucket = bucket.or(Some(base_bucket));
-                    let data = Arc::new(crate::waveform::WaveformData::with_multi_pyramid(
-                        MultiPyramid::empty(frames, channels, base_bucket),
-                    ));
-                    if let Some(w) = self
-                        .host
-                        .window_def_mut(want.def_id)
-                        .and_then(|t| t.find_mut(want.widget_id))
-                    {
-                        crate::host::frame::keep_data(w, &Loaded::Peaks(data.clone()));
-                    }
-                    self.place_bulk(want.def_id, want.widget_id, Loaded::Peaks(data));
-                    self.host.set_timeline_total(want.widget_id, frames);
-                    if sample_rate > 0.0
-                        && let Some(w) = self
-                            .host
-                            .window_def_mut(want.def_id)
-                            .and_then(|t| t.find_mut(want.widget_id))
-                        && let Some(editor) = w.kind.editor_mut()
-                        && editor.sample_rate <= 0.0
-                    {
-                        editor.sample_rate = sample_rate;
-                    }
-                    self.host.sync_buffer_streams();
-                    self.request_redraw(want.def_id);
-                }
-                // **And then the summary itself**, when it is not being
-                // pushed: one walk per buffer, however many views drew the
-                // empty picture, at the bucket their pyramids are built on.
-                if let (true, Some(bucket)) = (ask_summary, bucket)
-                    && let Some(msg) = self.fetches.want_peaks(bufnum, bucket, channels, frames)
-                {
-                    self.send_to_server(msg);
-                }
-            }
-            FetchStep::Window {
-                bufnum,
-                want,
-                start_frame,
-                channels,
-                samples,
-            } => {
-                log(&format!(
-                    "buffer {bufnum}: {} frame(s) at {start_frame} read back for widget {}",
-                    samples.len() / channels.max(1),
-                    want.widget_id
-                ));
-                if let Some(slot) = self
-                    .canvases
-                    .get_mut(&want.def_id)
-                    .and_then(|c| c.render.as_mut())
-                    .and_then(|r| r.waveforms.get_mut(&(want.widget_id, SlotKey::SELF)))
-                {
-                    slot.view.release_data();
-                }
-                let took =
-                    self.host
-                        .window_def_mut(want.def_id)
-                        .and_then(|t| t.find_mut(want.widget_id))
-                        .is_some_and(|w| {
-                            w.bulk_target_mut().kind.as_samples_mut().is_some_and(|s| {
-                                s.set_window(start_frame as u64, channels, &samples)
-                            })
-                        });
-                if took {
-                    self.request_redraw(want.def_id);
-                }
-            }
-            // **A span another peer wrote**, read back. It goes to every view
-            // of that buffer, not only to whoever asked: the samples are the
-            // buffer's own, so any picture of it is entitled to them.
-            FetchStep::Patch {
-                bufnum,
-                start_frame,
-                channels,
-                samples,
-            } => {
-                log(&format!(
-                    "buffer {bufnum}: {} frame(s) at {start_frame} read back after an edit",
-                    samples.len() / channels.max(1),
-                ));
-                let mut redraw = Vec::new();
-                for def_id in self.host.window_def_ids() {
-                    // A pyramid a slot is holding cannot be written in place,
-                    // so the samples go first -- the same order a streamed
-                    // report takes, and for the same reason. **Only the slots
-                    // drawing this buffer**: a slot released and not refilled
-                    // draws nothing, so releasing every one of them blanks
-                    // every other take on the canvas.
-                    for widget_id in self.widgets_drawing(def_id, bufnum) {
-                        if let Some(slot) = self
-                            .canvases
-                            .get_mut(&def_id)
-                            .and_then(|c| c.render.as_mut())
-                            .and_then(|r| r.waveforms.get_mut(&(widget_id, SlotKey::SELF)))
-                        {
-                            slot.view.release_data();
-                        }
-                    }
-                    let Some(tree) = self.host.window_def_mut(def_id) else {
-                        continue;
-                    };
-                    if crate::host::patch_buffer_views(
-                        tree,
-                        bufnum,
-                        start_frame as u64,
-                        channels,
-                        &samples,
-                    ) > 0
-                    {
-                        redraw.push(def_id);
-                    }
-                }
-                for def_id in redraw {
-                    self.request_redraw(def_id);
-                }
-                if let Some(msg) = self.fetches.queued_span(bufnum) {
-                    self.send_to_server(msg);
-                }
-            }
-            FetchStep::None => {}
-        }
-    }
-
-    /// The widgets of `def_id` drawing server buffer `bufnum` -- whose GPU slots
-    /// a write to that buffer has to release before the element rewrites the
-    /// pyramid they share.
-    fn widgets_drawing(&self, def_id: i32, bufnum: i32) -> Vec<i32> {
-        self.host
-            .window_def(def_id)
-            .map(|tree| {
-                tree.descendants()
-                    .filter(|w| {
-                        w.kind
-                            .as_samples()
-                            .and_then(|s| s.source_buffer())
-                            .is_some_and(|b| b == bufnum)
-                    })
-                    .filter_map(|w| w.id)
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
-    /// **The bucket a view's summary is built at**, which is what a request for
-    /// one has to be phrased in. The element declares it with the resource it
-    /// wants; a view that declared none takes the default every signal element
-    /// summarizes at.
-    fn summary_bucket_of(&self, def_id: i32, widget_id: i32) -> Option<usize> {
-        use crate::host::widget::element::{Bulk, SlotKind};
-        let needs = self
-            .host
-            .window_def(def_id)
-            .and_then(|t| t.find(widget_id))
-            .map(|w| w.bulk_target().kind.needs())?;
-        Some(match needs.bulk {
-            Some(Bulk::Recording { base_bucket, .. }) => base_bucket,
-            _ => match needs.slot {
-                Some(SlotKind::Geometry { base_bucket }) => base_bucket,
-                _ => crate::host::elements::signal::DEFAULT_BASE_BUCKET,
-            },
-        })
-    }
-
-    /// **Reads an announced span back off the wire.** A page maps nothing, so
-    /// the samples it draws are a download and an edit somebody else made is
-    /// not in them -- no summary over what it holds can find it. The
-    /// announcement says where to look, and this asks for exactly that span,
-    /// widened to the summary's buckets so what comes back can replace what
-    /// the summary says over it.
-    fn read_span_back(&mut self, bufnum: i32, start: i32, frames: i32) {
-        let (Ok(start), Ok(frames)) = (usize::try_from(start), usize::try_from(frames)) else {
-            return;
-        };
-        let Some((channels, bucket)) = self.host.window_def_ids().into_iter().find_map(|def_id| {
-            self.host
-                .window_def(def_id)
-                .and_then(|tree| crate::host::span_to_read_back(tree, bufnum))
-        }) else {
-            // **The announcement is the second ask.** Nothing here has a
-            // picture of this buffer with a shape to put a span into -- which is
-            // what a join looks like a moment after the edit that minted it:
-            // its box named the buffer in the turn the stitch was sent, the
-            // first ask answered with no frames at all, and a take remembered
-            // as asked is never asked again. The write the server has just
-            // announced is what says the samples are there now.
-            let asked = self.host.forget_take(bufnum);
-            if asked.is_empty() {
-                return log(&format!(
-                    "buffer {bufnum} was edited by another peer; nothing here draws it"
-                ));
-            }
-            log(&format!(
-                "buffer {bufnum} was written by another peer; the views of it ask again"
-            ));
-            for def_id in asked {
-                self.request_redraw(def_id);
-            }
-            return;
-        };
-        let (start, frames) = align_span(start, frames, bucket);
-        if let Some(msg) = self
-            .fetches
-            .want_span(bufnum, start, frames, channels, SpanUse::Patch)
-        {
-            self.send_to_server(msg);
-        }
-    }
-
     /// **Asks for the spans the last frame could not draw** on this canvas: a
     /// view zoomed finer than its summary left the span it was asked for on
     /// its slot, and this turns that note into a `/buffer_getRange`.
@@ -791,146 +338,13 @@ impl WebApp {
     /// the same clock: a multitrack of a summary that never came back is asked for
     /// again rather than leaving a hole in the picture.
     pub(super) fn fetch_wanted_spans(&mut self, def_id: i32) {
-        for msg in self.fetches.tick() {
-            self.send_to_server(msg);
-        }
-        let mut asked: Vec<(i32, i32, usize, Owed)> = Vec::new();
-        if let Some(render) = self.canvases.get(&def_id).and_then(|c| c.render.as_ref()) {
-            for ((widget_id, _key), slot) in &render.waveforms {
-                let Some(owed) = slot.owed.take() else {
-                    continue;
-                };
-                let Some(el) = self
-                    .host
-                    .window_def(def_id)
-                    .and_then(|t| t.find(*widget_id))
-                    .and_then(|w| w.bulk_target().kind.as_samples())
-                else {
-                    continue;
-                };
-                let (Some(bufnum), Some((channels, _))) = (el.source_buffer(), el.sample_shape())
-                else {
-                    continue;
-                };
-                asked.push((*widget_id, bufnum, channels, owed));
-            }
-        }
-        for (widget_id, bufnum, channels, owed) in asked {
-            let msg = match owed {
-                Owed::Summary { a, b, bucket } => {
-                    self.fetches
-                        .want_detail(bufnum, def_id, widget_id, a, b - a, bucket)
-                }
-                Owed::Samples { a, b } => self.fetches.want_span(
-                    bufnum,
-                    a,
-                    b - a,
-                    channels,
-                    SpanUse::Window { def_id, widget_id },
-                ),
-            };
-            if let Some(msg) = msg {
-                self.send_to_server(msg);
-            }
-        }
+        self.ask_owed_spans(&[def_id]);
         // **A conversation with the server keeps the canvas drawing.** The tick
         // above is this canvas' frame, so a page that has asked for a take and
         // then stands still would never notice a lost reply or take the slot a
         // finished download freed: the picture would fill in when the pointer
         // happened to move.
         if self.fetches.pending() {
-            self.request_redraw(def_id);
-        }
-    }
-
-    /// **Puts a finer grid under one view**, the summary counterpart of
-    /// `place_window`: the same `/buffer_peaks` blob every other overview
-    /// arrives in, folded beside the view's own summary rather than into it,
-    /// because it is measured at a different bucket.
-    fn place_detail(
-        &mut self,
-        bufnum: i32,
-        def_id: i32,
-        widget_id: i32,
-        start: u64,
-        bucket: usize,
-        stats: &[f32],
-    ) {
-        log(&format!(
-            "buffer {bufnum}: detail of {} bucket(s) of {bucket} at {start} for widget {widget_id}",
-            stats.len() / 3
-        ));
-        if let Some(slot) = self
-            .canvases
-            .get_mut(&def_id)
-            .and_then(|c| c.render.as_mut())
-            .and_then(|r| r.waveforms.get_mut(&(widget_id, SlotKey::SELF)))
-        {
-            slot.view.release_data();
-        }
-        let took = self
-            .host
-            .window_def_mut(def_id)
-            .and_then(|t| t.find_mut(widget_id))
-            .is_some_and(|w| {
-                w.bulk_target_mut()
-                    .kind
-                    .as_samples_mut()
-                    .is_some_and(|s| s.set_detail(start, bucket, stats))
-            });
-        if took {
-            self.request_redraw(def_id);
-        }
-    }
-
-    /// Folds one `/buffer_stream.reply` into every view of that buffer and
-    /// repaints the canvases that took it.
-    ///
-    /// The slots let the samples go first, the way the mapped path does: a
-    /// pyramid a slot is holding cannot be written in place, so the element
-    /// would copy the whole take before patching the buckets that arrived.
-    pub(super) fn on_stream_report(
-        &mut self,
-        bufnum: i32,
-        start: u64,
-        bucket: usize,
-        stats: &[f32],
-    ) {
-        let mut redraw = Vec::new();
-        for def_id in self.host.window_def_ids() {
-            let holding: Vec<i32> = self
-                .host
-                .window_def(def_id)
-                .map(|tree| {
-                    tree.descendants()
-                        .filter(|w| {
-                            w.kind
-                                .as_samples()
-                                .and_then(|s| s.source_buffer())
-                                .is_some_and(|b| b == bufnum)
-                        })
-                        .filter_map(|w| w.id)
-                        .collect()
-                })
-                .unwrap_or_default();
-            for widget_id in holding {
-                if let Some(slot) = self
-                    .canvases
-                    .get_mut(&def_id)
-                    .and_then(|c| c.render.as_mut())
-                    .and_then(|r| r.waveforms.get_mut(&(widget_id, SlotKey::SELF)))
-                {
-                    slot.view.release_data();
-                }
-            }
-            let Some(tree) = self.host.window_def_mut(def_id) else {
-                continue;
-            };
-            if crate::host::stream_buffer_views(tree, bufnum, start, bucket, stats) > 0 {
-                redraw.push(def_id);
-            }
-        }
-        for def_id in redraw {
             self.request_redraw(def_id);
         }
     }
@@ -955,5 +369,61 @@ impl WebApp {
             Ok(bytes) => self.outbox.borrow_mut().push_back(bytes),
             Err(e) => log(&format!("failed to encode an outbound packet: {e}")),
         }
+    }
+}
+
+/// The browser front's side of the replies read once for both fronts: a
+/// canvas's slots live in its render state (or wait for it, while its GPU
+/// comes up), and a message leaves over the page's server leg.
+impl Front for WebApp {
+    fn host(&self) -> &Host {
+        &self.host
+    }
+
+    fn host_mut(&mut self) -> &mut Host {
+        &mut self.host
+    }
+
+    fn fetches(&mut self) -> &mut BufferFetches {
+        &mut self.fetches
+    }
+
+    fn to_server(&self, msg: OscMessage) {
+        self.send_to_server(msg);
+    }
+
+    fn redraw_window(&self, def_id: i32) {
+        self.request_redraw(def_id);
+    }
+
+    fn window_open(&self, def_id: i32) -> bool {
+        self.canvases.contains_key(&def_id)
+    }
+
+    fn place_slot(&mut self, def_id: i32, widget_id: i32, data: Loaded) -> Option<usize> {
+        self.place_bulk(def_id, widget_id, data);
+        None
+    }
+
+    fn release_slot(&mut self, def_id: i32, widget_id: i32) {
+        if let Some(slot) = self
+            .canvases
+            .get_mut(&def_id)
+            .and_then(|c| c.render.as_mut())
+            .and_then(|r| r.waveforms.get_mut(&(widget_id, SlotKey::SELF)))
+        {
+            slot.view.release_data();
+        }
+    }
+
+    fn take_owed(&self, def_id: i32) -> Vec<(i32, Owed)> {
+        let Some(render) = self.canvases.get(&def_id).and_then(|c| c.render.as_ref()) else {
+            return Vec::new();
+        };
+        render
+            .waveforms
+            .iter()
+            .filter_map(|((widget_id, _key), slot)| slot.owed.take().map(|o| (*widget_id, o)))
+            .collect()
     }
 }

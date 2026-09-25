@@ -79,6 +79,7 @@ const ABSENT_ASKS: usize = 20;
 /// A widget waiting on a server buffer fetch. What to build from the finished
 /// samples is read off the widget's kind at completion, so the machine carries
 /// no per-kind parameters.
+#[derive(Clone, Copy)]
 pub(crate) struct WaveWant {
     pub def_id: i32,
     pub widget_id: i32,

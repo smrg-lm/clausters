@@ -119,6 +119,8 @@ pub mod world;
 // the shells below.
 pub mod fetch;
 pub mod live;
+// The server's replies about buffers, read once for both fronts.
+pub mod replies;
 
 // Booting a persisted bundle over the wire -- the ordering/encoding half of the
 // browser standalone path, platform-agnostic and natively unit-tested (the

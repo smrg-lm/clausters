@@ -7616,6 +7616,13 @@ module of its own.
   `place_detail`, `read_span_back`, `apply_gesture_effects`. The host is one:
   this is the shared host's, behind the one thing a front differs in (how a
   message leaves).
+  **The replies half, 2026-09-25**: `host/replies.rs` reads the five buffer
+  replies once, as the provided methods of a `Front` trait whose required
+  half is what a front differs in -- its slots, its redraw, its way out.
+  Where the copies had drifted the stricter one won: a summary fills a slot
+  only for a view that claimed a geometry one, a rate is read in any numeric
+  kind, a mesh-drawn take resyncs the recording streams, and what a
+  placement says is `info` in both builds (a page's tests read it).
 - ⬜ **Forgetting a widget is six functions, and two call sites disagree**
   *(audit 2026-09-25)*. Bindings, voices, focus, head clocks, timeline groups
   and the monitor's files each keep state by widget id and each prune it their
