@@ -3648,7 +3648,7 @@ should confirm before the fix.
   their names and delegate) and the host's readers and writers all go through
   them. The WAV float body in `nrt` stays its own: it is a file format that
   happens to share the bytes.
-- ⬜ **Smaller duplicates** *(audit 2026-09-25)*. The sample FIFO of `Ifft` and
+- ✅ **Smaller duplicates** *(audit 2026-09-25)*. The sample FIFO of `Ifft` and
   of the convolution (one type in `dsp`); `Fft`/`Ifft`'s `window` command; the
   Faust node body in `faust/synth.rs` and `synth_web.rs` (five methods
   identical, `process` 0.92 — the web module says it *is* the native code); the
@@ -3677,6 +3677,13 @@ should confirm before the fix.
   apps' `handed`, and `clausters-midi`'s leaked buffer the caller frees —
   which is a convention of the bindings in both clients, to decide before it
   is changed.
+  **Decided**: no ABI change. The document and the apps share the protocol
+  (size-then-fill in one function), and what each keeps between the passes
+  differs for a reason — a pure read's bytes, a verb's answer keyed by its
+  request so it never runs twice. `snapshot` copied by hand and now goes
+  through `out::fill_then` like the apps; `clausters-midi` keeps the ordinary
+  allocate-and-free shape of a separate library. `docs/bindings.md` ("How a
+  C call hands bytes back") names both conventions.
 - ✅ **An `IFFT` window swap left the overlap-add at the old window's level**
   *(found 2026-09-25, folding `Fft`'s and `Ifft`'s window command into one)*.
   `Ifft` refilled its window on `/node_ugenCmd … window` but not `norm`, the

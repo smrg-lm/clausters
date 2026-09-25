@@ -245,10 +245,10 @@ pub unsafe extern "C" fn clausters_document_snapshot(
         if held.pending.is_empty() {
             held.pending = serde_json::to_vec(&held.document).unwrap_or_default();
         }
-        let n = held.pending.len();
-        if !out.is_null() && out_cap >= n {
-            // SAFETY: out is writable for out_cap >= n bytes.
-            unsafe { std::ptr::copy_nonoverlapping(held.pending.as_ptr(), out, n) };
+        let mut handed = false;
+        // SAFETY: forwarded from this function's own contract.
+        let n = unsafe { crate::out::fill_then(&held.pending, out, out_cap, || handed = true) };
+        if handed {
             held.pending = Vec::new();
         }
         n

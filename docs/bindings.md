@@ -40,6 +40,35 @@ When you add a core function and bind it, add its row. When you bind it on one
 side only, say which verdict applies. If the honest answer is "I have not
 thought about the other side", write `gap` — that is what it is for.
 
+## How a C call hands bytes back
+
+Two conventions, one per library, and every call follows its library's.
+
+**`clausters-ffi` sizes and fills, in one function.** The caller passes a buffer
+and its capacity; the call returns the byte count the answer needs and writes
+only when the answer fits, so a null or short buffer is a sizing pass and the
+caller repeats the call with a buffer that fits. Most calls simply compute the
+answer twice. Two keep it between the passes, for different reasons, and so keep
+different things:
+
+- **`clausters_document_snapshot`** is a pure read that is the size of the
+  document, so it keeps the serialized bytes rather than serializing twice. It
+  needs no key: any edit drops them.
+- **`clausters_apps_editing_call`** runs a verb that changes a history, which
+  must not run twice, so it keeps the answer *with the request* and hands it
+  over only to the same request again.
+
+A mutating call that keeps nothing commits only when the bytes are written, so
+its sizing pass changes nothing (see [the document](#the-document)).
+
+**`clausters-midi` allocates.** A writer returns a buffer Rust allocated and its
+length through an out pointer, and the caller frees it with
+`clausters_midi_free`. It is its own library with its own cdylib, and a file
+writer's answer is produced once and kept by the caller, which is the ordinary C
+shape for that.
+
+In wasm neither applies: a call returns the bytes or the string.
+
 ## Numbers, signals and measurement
 
 | C ABI (`clausters-ffi`) | wasm (`clausters-core-web`) | Note |
