@@ -11,8 +11,11 @@
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicI32, AtomicU8, AtomicUsize, Ordering};
 
+mod index;
+
 use crate::dsp::{DoneAction, ProcessCtx, ReplyMsg, StageMask, TransportCtx};
 use crate::server::workers::WorkerPool;
+use index::IdIndex;
 
 /// What the tree processes. Implemented by `synthdef::instance::UGenSynth`
 /// and, in the F fork, by `FaustSynth` -- both built off the audio thread
@@ -303,6 +306,9 @@ unsafe impl Sync for NodeTree {}
 
 pub struct NodeTree {
     slots: Vec<UnsafeCell<Option<NodeSlot>>>,
+    /// Which slot each live id is in, kept beside the slab by every write
+    /// that fills or empties a slot ([`Self::find`]).
+    index: IdIndex,
     /// Pre-allocated stack for the depth-first processing traversal.
     dfs_stack: Vec<usize>,
     /// Pre-allocated stack for recursive frees: (slot, parent node ID at the
@@ -357,8 +363,11 @@ impl NodeTree {
             transport: NO_TRANSPORT,
             governs: false,
         });
+        let mut index = IdIndex::with_capacity(max_nodes);
+        index.insert(ROOT_NODE_ID, ROOT_SLOT);
         Self {
             slots,
+            index,
             dfs_stack: Vec::with_capacity(max_nodes),
             free_stack: Vec::with_capacity(max_nodes),
             synth_count: 0,
@@ -554,11 +563,16 @@ impl NodeTree {
 
     #[inline]
     fn take_slot(&mut self, idx: usize) -> Option<NodeSlot> {
-        self.slots[idx].get_mut().take()
+        let slot = self.slots[idx].get_mut().take()?;
+        self.index.remove(slot.id);
+        Some(slot)
     }
 
+    /// The slot node `id` lives in, through the id index: constant time,
+    /// whatever the tree holds.
+    #[inline]
     fn find(&self, id: i32) -> Option<usize> {
-        (0..self.slots.len()).find(|&i| self.slot(i).is_some_and(|s| s.id == id))
+        self.index.get(id)
     }
 
     fn id_of(&self, idx: usize) -> i32 {
@@ -730,6 +744,7 @@ impl NodeTree {
             transport: NO_TRANSPORT,
             governs: false,
         });
+        self.index.insert(id, free);
         let g = self.group_of_mut(parent_idx).unwrap();
         let pos = pos.min(g.children.len());
         g.children.insert(pos, free);

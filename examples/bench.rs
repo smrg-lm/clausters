@@ -128,6 +128,8 @@ fn main() {
 
     bench_spectral();
 
+    bench_node_commands();
+
     #[cfg(feature = "faust")]
     {
         bench_ugen_vs_faust();
@@ -158,6 +160,58 @@ fn main() {
 
     if json_mode() {
         emit_json();
+    }
+}
+
+/// **What a command costs on the audio thread**, by how many nodes the tree
+/// holds: every command that names a node finds it first, so a block carrying
+/// many `/node_set` pays the lookup once per command. Measured as the extra
+/// wall time a block of `per_block` control sets adds over the same block
+/// without them, over a tree of `n` default synths, each set aimed at a node
+/// spread across the tree. The row reads microseconds per command.
+fn bench_node_commands() {
+    say!("\nper-command cost on the audio thread (/node_set, spread over the tree):");
+    for &n in &[32usize, 1000, 4000] {
+        let (mut engine, mut handle) = engine_pair(SAMPLE_RATE as f32, 2);
+        let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+        for i in 0..n {
+            let cmd = Cmd::AddSynth {
+                id: 1000 + i as i32,
+                target: 0,
+                action: AddAction::Tail,
+                synth: make_default_synth(),
+                usage: Default::default(),
+            };
+            send_cmd(&mut engine, &mut handle, &mut out, cmd);
+        }
+        engine.process_block(&mut out);
+        handle.collect_garbage();
+        let per_block = 256usize;
+        let time_blocks =
+            |engine: &mut Engine, handle: &mut EngineHandle, out: &mut [f32], sets: bool| {
+                let blocks = 2000u32;
+                let start = Instant::now();
+                for b in 0..blocks {
+                    if sets {
+                        for k in 0..per_block {
+                            let id = 1000 + ((b as usize * per_block + k) * 7919 % n) as i32;
+                            let _ = handle.send(Cmd::SetControl {
+                                id,
+                                index: 0,
+                                value: 220.0,
+                            });
+                        }
+                    }
+                    engine.process_block(out);
+                }
+                start.elapsed().as_secs_f64() / blocks as f64
+            };
+        time_blocks(&mut engine, &mut handle, &mut out, true); // warmup
+        let plain = time_blocks(&mut engine, &mut handle, &mut out, false);
+        let with_sets = time_blocks(&mut engine, &mut handle, &mut out, true);
+        let per_cmd_us = (with_sets - plain).max(0.0) / per_block as f64 * 1e6;
+        record(format!("node_set_us/{n}"), None, Some(per_cmd_us), false);
+        say!("  {n:5} nodes: {per_cmd_us:>8.3} us per /node_set");
     }
 }
 

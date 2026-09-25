@@ -3674,12 +3674,19 @@ should confirm before the fix.
   for a unit sine). `fill_cola_norm` is now the one computation, run at
   construction and again, in place, on a swap;
   `a_live_window_swap_keeps_the_round_trip_at_unity` holds it.
-- ⬜ **The engine finds a node by scanning 8192 slots** *(audit 2026-09-25,
+- ✅ **The engine finds a node by scanning 8192 slots** *(audit 2026-09-25,
   measure first)*. `NodeTree::find` is linear over `MAX_NODES`, on the audio
   thread, for every control set, map, run, free, move, done action and bundle
   classification, and `insert` scans again for a free slot. A block carrying
   many `/node_set` pays that per command. An id-to-slot table, preallocated, is
   O(1); `examples/bench.rs` says whether it matters before anything changes.
+  **Measured, then fixed**: the bench's new "per-command cost" rows read
+  0.03 / 0.2 / 0.8 us per `/node_set` over 32 / 1000 / 4000 nodes — 256 sets
+  in a block over 4000 nodes took 15% of it, and an unknown id always scanned
+  the whole slab. `node::index::IdIndex` (open addressing, sized once to twice
+  the slab, backward-shift deletion) is kept by the one insert and the one
+  `take_slot`, and `find` reads it: 0.03 / 0.05 / 0.06 us. The free-slot scan
+  on insert stays linear — it runs once per new node, not per command.
 - ⬜ **Long functions that hold several steps** *(audit 2026-09-25)*.
   `Engine::process_block` (about 340 lines: the next event, a transport edge,
   the frozen runs, time publication, counters and done actions), with "the
