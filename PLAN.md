@@ -3480,12 +3480,20 @@ should confirm before the fix.
   **Fixed**: `nrt_main` refuses an unknown `-`-prefixed argument before it
   reads the score, and `--help`/`-h` anywhere prints the usage and renders
   nothing; two tests in `main.rs` hold both.
-- ⬜ **A transport command can answer `/done` for a change the engine never
+- ✅ **A transport command can answer `/done` for a change the engine never
   got** *(audit 2026-09-25)*. `/transport_play`, `_stop`, `_loop`, `_end`,
   `_fade` and the locates send their engine command with `.ok()`: a full
   command FIFO leaves the network mirror saying one thing, the engine another,
   and the client told it worked. `_follow` and `_group` fail instead. One rule:
   a command whose engine half did not go out fails.
+  **Fixed**: every transport handler sends through `send_engine`, which fails
+  the command on a full FIFO, and sends **before** it changes its mirror, so a
+  failure leaves the mirror, the engine and the client's `/fail` agreeing that
+  nothing changed (`_follow` and `_group` used to fail with the mirror already
+  changed). `a_transport_command_the_engine_never_got_fails` fills the FIFO
+  and checks both the `/fail` and the query. The two unbinds
+  `collect_garbage` sends when a governed or followed group is freed stay
+  best-effort: no client asked for them, so there is nobody to fail to.
 - ⬜ **`/def_load` does not claim the def's name** *(audit 2026-09-25, to
   check)*. `/def_send synth` frees the name in the other def kinds
   (`claim_def_name`); `/def_load` and `/def_loadDir` do not, so a file loaded

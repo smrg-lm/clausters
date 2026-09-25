@@ -107,17 +107,27 @@ impl OscServer {
         (beats * self.info.nominal_sample_rate / t.tempo).round() as u64
     }
 
+    /// Sends the engine its half of a transport command, or fails the command.
+    ///
+    /// Every handler sends **before** it changes its mirror: a full command
+    /// FIFO then leaves the mirror, the engine and the client's `/fail` all
+    /// saying the same thing -- nothing changed.
+    fn send_engine(&mut self, cmd: Cmd) -> Answer {
+        self.handle
+            .send(cmd)
+            .map_err(|_| "command FIFO full".to_string())
+    }
+
     /// Sends the engine a locate, so the transport moves and not only the number
     /// this server broadcasts.
-    fn locate_engine(&mut self, k: usize, position: u64) {
-        self.transports[k].pending_locate =
-            Some((position, self.handle.current_transport_samples(k)));
-        self.handle
-            .send(Cmd::TransportLocate {
-                transport: k,
-                position,
-            })
-            .ok();
+    fn locate_engine(&mut self, k: usize, position: u64) -> Answer {
+        let from = self.handle.current_transport_samples(k);
+        self.send_engine(Cmd::TransportLocate {
+            transport: k,
+            position,
+        })?;
+        self.transports[k].pending_locate = Some((position, from));
+        Ok(())
     }
 
     /// Pushes the current transport state to every `/server_notify` client, so a
@@ -167,6 +177,17 @@ impl OscServer {
             return Err("originSample must be >= 0 and tempo > 0".into());
         }
         let previous = self.transports[k];
+        // Redefining the grid puts the transport back at its start, which is what
+        // "stopped at position 0" has always meant -- it just had nowhere to
+        // say it before.
+        self.locate_engine(k, 0)?;
+        // Redefining the grid stops the transport, so a bound group freezes.
+        if previous.group.is_some() {
+            self.send_engine(Cmd::TransportRun {
+                transport: k,
+                rolling: false,
+            })?;
+        }
         // Setting the grid resets the rolling state: stopped, at position 0.
         self.transports[k] = Transport {
             defined: true,
@@ -183,23 +204,9 @@ impl OscServer {
             follow: previous.follow,
             end_mark: previous.end_mark,
             fade: previous.fade,
-            // Setting the grid locates the transport to 0 below, and that locate
-            // records itself.
-            pending_locate: None,
+            // The locate to 0 above recorded itself.
+            pending_locate: self.transports[k].pending_locate,
         };
-        // Redefining the grid puts the transport back at its start, which is what
-        // "stopped at position 0" has always meant -- it just had nowhere to
-        // say it before.
-        self.locate_engine(k, 0);
-        // Redefining the grid stops the transport, so a bound group freezes.
-        if previous.group.is_some() {
-            self.handle
-                .send(Cmd::TransportRun {
-                    transport: k,
-                    rolling: false,
-                })
-                .ok();
-        }
         self.reply(
             from,
             "/done",
@@ -231,27 +238,23 @@ impl OscServer {
         if located.is_some() && !self.transports[k].defined {
             return Err(NO_GRID.into());
         }
-        if let Some(pos) = located {
-            self.transports[k].position = pos;
-        }
-        self.transports[k].playing = true;
         // A play *from* a position is a locate and then a roll, in that order:
         // the engine must be standing at the right sample before time starts
         // moving, or the first block plays from wherever it was.
         if let Some(pos) = located {
             let sample = self.beats_to_transport_samples(k, pos);
-            self.locate_engine(k, sample);
+            self.locate_engine(k, sample)?;
+            self.transports[k].position = pos;
         }
         // With a group bound this is no longer an advisory: it thaws the
         // subtree and restarts the transport clock.
         if self.transports[k].group.is_some() {
-            self.handle
-                .send(Cmd::TransportRun {
-                    transport: k,
-                    rolling: true,
-                })
-                .ok();
+            self.send_engine(Cmd::TransportRun {
+                transport: k,
+                rolling: true,
+            })?;
         }
+        self.transports[k].playing = true;
         self.reply(
             from,
             "/done",
@@ -270,15 +273,13 @@ impl OscServer {
         from: ClientId,
     ) -> Answer {
         let k = self.transport_arg(&mut args)?;
-        self.transports[k].playing = false;
         if self.transports[k].group.is_some() {
-            self.handle
-                .send(Cmd::TransportRun {
-                    transport: k,
-                    rolling: false,
-                })
-                .ok();
+            self.send_engine(Cmd::TransportRun {
+                transport: k,
+                rolling: false,
+            })?;
         }
+        self.transports[k].playing = false;
         self.reply(
             from,
             "/done",
@@ -306,9 +307,9 @@ impl OscServer {
             return Err(NO_GRID.into());
         }
         let beats = args.double()?;
-        self.transports[k].position = beats;
         let sample = self.beats_to_transport_samples(k, beats);
-        self.locate_engine(k, sample);
+        self.locate_engine(k, sample)?;
+        self.transports[k].position = beats;
         self.reply(
             from,
             "/done",
@@ -337,6 +338,7 @@ impl OscServer {
     ) -> Answer {
         let k = self.transport_arg(&mut args)?;
         let sample = args.long()?.max(0) as u64;
+        self.locate_engine(k, sample)?;
         let t = self.transports[k];
         // The beat-position field follows, so a client reading either one sees
         // the same place: they are two spellings of one position, and letting
@@ -346,7 +348,6 @@ impl OscServer {
                 true => sample as f64 * t.tempo / self.info.nominal_sample_rate,
                 false => 0.0,
             };
-        self.locate_engine(k, sample);
         self.reply(
             from,
             "/done",
@@ -390,13 +391,11 @@ impl OscServer {
                 Some((start, end))
             }
         };
+        self.send_engine(Cmd::TransportLoop {
+            transport: k,
+            span: span.map(|(s, e)| s as u64..e as u64),
+        })?;
         self.transports[k].loop_span = span;
-        self.handle
-            .send(Cmd::TransportLoop {
-                transport: k,
-                span: span.map(|(s, e)| s as u64..e as u64),
-            })
-            .ok();
         self.reply(
             from,
             "/done",
@@ -434,16 +433,14 @@ impl OscServer {
                 Some((end, back))
             }
         };
+        self.send_engine(Cmd::TransportEnd {
+            transport: k,
+            mark: mark.map(|(end, back)| EndMark {
+                end: end as u64,
+                back: back.map(|b| b as u64),
+            }),
+        })?;
         self.transports[k].end_mark = mark;
-        self.handle
-            .send(Cmd::TransportEnd {
-                transport: k,
-                mark: mark.map(|(end, back)| EndMark {
-                    end: end as u64,
-                    back: back.map(|b| b as u64),
-                }),
-            })
-            .ok();
         self.reply(
             from,
             "/done",
@@ -474,13 +471,11 @@ impl OscServer {
         if samples < 0 {
             return Err("a ramp is >= 0 samples".into());
         }
+        self.send_engine(Cmd::TransportFade {
+            transport: k,
+            samples: samples as u64,
+        })?;
         self.transports[k].fade = samples;
-        self.handle
-            .send(Cmd::TransportFade {
-                transport: k,
-                samples: samples as u64,
-            })
-            .ok();
         self.reply(
             from,
             "/done",
@@ -546,14 +541,8 @@ impl OscServer {
             }
             self.one_transport_per_group(id, None, Some(k))?;
         }
+        self.send_engine(Cmd::TransportFollow { transport: k, id })?;
         self.transports[k].follow = if id >= 0 { Some(id) } else { None };
-        if self
-            .handle
-            .send(Cmd::TransportFollow { transport: k, id })
-            .is_err()
-        {
-            return Err("command FIFO full".into());
-        }
         self.reply(
             from,
             "/done",
@@ -587,14 +576,8 @@ impl OscServer {
         if id >= 0 {
             self.one_transport_per_group(id, Some(k), None)?;
         }
+        self.send_engine(Cmd::TransportGroup { transport: k, id })?;
         self.transports[k].group = if id >= 0 { Some(id) } else { None };
-        if self
-            .handle
-            .send(Cmd::TransportGroup { transport: k, id })
-            .is_err()
-        {
-            return Err("command FIFO full".into());
-        }
         // Binding while the transport is stopped freezes the group at once, and
         // the engine's own `TransportGroup` arm does that. Binding while it
         // rolls needs nothing further.

@@ -2193,6 +2193,36 @@ fn transport_loop_sets_and_clears_a_span() {
     server.quit();
 }
 
+/// A transport command whose engine half could not be sent fails, and leaves
+/// the server's own reading where it was: nothing ticks the engine here, so the
+/// command FIFO fills and the next command finds it full.
+#[test]
+fn a_transport_command_the_engine_never_got_fails() {
+    let server = TestServer::spawn();
+    let fade = |samples| vec![OscType::Int(0), OscType::Long(samples)];
+    let mut sent = 0;
+    loop {
+        server.send("/transport_fade", fade(64));
+        let reply = server.recv();
+        if reply.addr == "/fail" {
+            assert_eq!(reply.args[0], OscType::String("/transport_fade".into()));
+            break;
+        }
+        sent += 1;
+        assert!(sent <= 4096, "the command FIFO never filled");
+    }
+    server.send(
+        "/transport_loop",
+        vec![OscType::Int(0), OscType::Long(1_000), OscType::Long(5_000)],
+    );
+    let reply = server.recv_until("/fail");
+    assert_eq!(reply.args[0], OscType::String("/transport_loop".into()));
+    server.send("/transport_query", vec![OscType::Int(0)]);
+    let reply = server.recv_until("/transport_query.reply");
+    assert_eq!(reply.args[9], OscType::Long(0), "no loop was set");
+    server.quit();
+}
+
 /// `/transport_end`: the mark rides the reply, and the engine's stop on it is
 /// broadcast like any other -- `playing` 0, the position on the return.
 #[test]
