@@ -411,3 +411,50 @@ fn a_session_given_a_path_shares_the_buffers_it_holds() {
     drop(s);
     let _ = std::fs::remove_file(&path);
 }
+
+/// A render **replaces** the buffer, and on a session that owns the samples the
+/// replacement is shared like any other install: a peer maps the rendered
+/// samples, not the allocation the render replaced.
+#[test]
+fn a_render_on_a_session_given_a_path_is_what_a_peer_maps() {
+    use clausters::server::ipc::Segment;
+
+    let frames = 256u64;
+    let expected = batch(sine_def("t"), frames);
+    let path = std::env::temp_dir().join(format!(
+        "clausters-session-shm-{}-{}",
+        std::process::id(),
+        line!()
+    ));
+    let mut cfg = session_cfg();
+    cfg.shm = Some(path.clone());
+    let mut s = NrtSession::open(&cfg).expect("open");
+    let setup = [
+        msg(
+            "/buffer_alloc",
+            vec![OscType::Int(0), OscType::Int(16), OscType::Int(1)],
+        ),
+        sine_def("t"),
+        s_new("t", 1000),
+        msg(
+            "/buffer_render",
+            vec![OscType::Int(0), OscType::Int(frames as i32)],
+        ),
+    ];
+    for m in setup {
+        assert!(s.send_msg(&m.addr, m.args).expect("encode"), "ring full");
+        s.settle_for(4);
+    }
+    wait_reply(&mut s, "/done", Some("/buffer_render")).expect("the render answers");
+
+    let peer = Segment::open(&path).expect("a peer maps the session's segment");
+    let (_, mapped) = peer.map_buffer(&path, 0).expect("and finds buffer 0");
+    assert_eq!(
+        (mapped.frames(), mapped.channels()),
+        (frames as usize, CHANNELS)
+    );
+    assert_eq!(mapped.to_vec(), expected, "the peer maps what was rendered");
+
+    drop(s);
+    let _ = std::fs::remove_file(&path);
+}

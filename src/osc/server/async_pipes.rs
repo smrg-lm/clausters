@@ -173,6 +173,8 @@ impl OscServer {
         }
     }
 
+    /// Drains finished NRT jobs: installs/clears buffers in the engine and
+    /// the mirror, and sends the async `/done cmd bufnum` / `/fail` replies.
     pub(in crate::osc::server) fn collect_nrt_results(&mut self) {
         while let Some(result) = self.nrt.try_result() {
             self.nrt_drained += 1;
@@ -194,16 +196,11 @@ impl OscServer {
             let index = result.index as usize;
             let swap = match action {
                 NrtAction::Install(buffer) => {
-                    // **Where a buffer lives is decided here, once.** With a
-                    // segment attached the samples go into a region a peer
-                    // can map by name, so an editor draws and writes them with no
-                    // message at all; with none they stay the server's own
-                    // memory, exactly as before. The copy is paid at
-                    // *allocation*, which is where the data was being built
-                    // anyway -- never per write.
-                    let buffer = self.share_buffer(index, buffer);
-                    self.translator.buffers[index] = Some(Arc::clone(&buffer));
-                    Some(Some(buffer))
+                    if let Err(e) = self.install_buffer(index, buffer) {
+                        self.fail(result.client, result.cmd, e);
+                        continue;
+                    }
+                    None
                 }
                 NrtAction::Clear => {
                     self.retire_buffer(index);
@@ -422,13 +419,18 @@ impl OscServer {
         }
     }
 
-    /// Drains finished NRT jobs: installs/clears buffers in the engine and
-    /// the mirror, and sends the async `/done cmd bufnum` / `/fail` replies.
-    /// Installs a host-built buffer at `index`: the network-side mirror and
-    /// the engine swap, exactly the `NrtAction::Install` path minus the OSC
-    /// reply. The embed `buffer_load` door: a headless host hands the server
-    /// samples it decoded itself (the browser's `/buffer_allocRead` replacement,
-    /// where there is no filesystem).
+    /// Installs a built buffer at `index`: where its samples live, the
+    /// network-side mirror and the engine swap. Every install goes through it
+    /// -- a finished `/buffer_*` job, the embed `buffer_load` door (a headless
+    /// host handing over samples it decoded itself, the browser's
+    /// `/buffer_allocRead` replacement), a peer mapping the owner's buffer.
+    ///
+    /// **Where a buffer lives is decided here, once.** On the server that owns
+    /// the samples the buffer goes into a region a peer can map by name, so an
+    /// editor draws and writes it with no message at all; anywhere else it
+    /// stays as it came -- the server's own memory, or the owner's region a
+    /// peer just mapped. The copy is paid at *allocation*, which is where the
+    /// data was being built anyway -- never per write.
     pub fn install_buffer(
         &mut self,
         index: usize,
@@ -440,6 +442,7 @@ impl OscServer {
                 self.translator.buffers.len() - 1
             ));
         }
+        let buffer = self.share_buffer(index, buffer);
         self.translator.buffers[index] = Some(Arc::clone(&buffer));
         self.handle
             .send(Cmd::SetBuffer {

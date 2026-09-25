@@ -3513,13 +3513,23 @@ should confirm before the fix.
   auto-sorted destination and allows taking a node out of one.
   `a_node_leaves_an_auto_group_by_any_move` holds it; `docs/auto-order.md`
   and `docs/schemas.md` now state the destination rule.
-- ⬜ **`install_buffer` says it is the install path and is not** *(audit
+- ✅ **`install_buffer` says it is the install path and is not** *(audit
   2026-09-25)*. Its doc and `ClaustersHeadless::buffer_load`'s say "the same
   install path as the async `/buffer_*` commands", but it skips
   `share_buffer`: on a server that owns a segment the buffer would get no
   region, row or overview. No caller reaches that today; the doc is what is
   false, and the two install paths should be one with a flag for the mapped
   peer's case.
+  **Fixed, and it was not latent**: `NrtSession::perform_render` — the body
+  of `/buffer_render` — installs through it, so on a session given a `shm`
+  path a peer kept mapping the allocation the render had replaced (a test saw
+  16 frames of one channel where 256 of two were rendered). `install_buffer`
+  now calls `share_buffer` and the finished-job arm installs through it, so
+  there is one path; no flag was needed, since `share_buffer` already hands a
+  buffer back untouched on a server that does not own the samples, which is
+  the mapped peer's case. `a_render_on_a_session_given_a_path_is_what_a_peer_maps`
+  holds it. The doc of `collect_nrt_results`, fused onto `install_buffer`,
+  went back to its function.
 - ⬜ **Twenty-odd doc comments sit on the wrong item, and labels sit in
   comments** *(audit 2026-09-25)*. Fused docs: `osc/server/mod.rs`
   (`synthdef_spec_bytes`' on `ugen_infos`, two field docs on `translator`),
