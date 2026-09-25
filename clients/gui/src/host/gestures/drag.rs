@@ -399,8 +399,8 @@ impl Gestures {
                         OscType::String("draw".into()),
                         OscType::Int(channel as i32),
                         OscType::Long(held.start as i64),
-                        OscType::Blob(samples_blob(&held.values)),
-                        OscType::Blob(samples_blob(&held.previous)),
+                        OscType::Blob(clausters_core::osc::sample_blob(&held.values)),
+                        OscType::Blob(clausters_core::osc::sample_blob(&held.previous)),
                     ],
                 );
             }
@@ -495,14 +495,4 @@ impl Gestures {
         }
         out
     }
-}
-
-/// Little-endian `f32` bytes -- the one bulk payload convention this system has,
-/// shared with `/buffer_setRange`, `/buffer_getRange.reply` and the clipboard.
-fn samples_blob(values: &[f32]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(values.len() * 4);
-    for v in values {
-        out.extend_from_slice(&v.to_le_bytes());
-    }
-    out
 }

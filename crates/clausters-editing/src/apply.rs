@@ -348,10 +348,7 @@ impl Applier {
                 if !samples.is_empty() {
                     let chunk = self.endpoint.chunk.max(1);
                     for (i, run) in samples.chunks(chunk).enumerate() {
-                        let mut blob = Vec::with_capacity(run.len() * 4);
-                        for value in run {
-                            blob.extend_from_slice(&value.to_le_bytes());
-                        }
+                        let blob = clausters_core::osc::sample_blob(run);
                         steps.push(send(
                             "/buffer_setRange",
                             vec![
@@ -550,13 +547,13 @@ pub fn arg_from_json(arg: &Value) -> Option<OscType> {
     if let Some(v) = arg.get("s") {
         return Some(OscType::String(v.as_str()?.to_string()));
     }
-    let samples = arg.get("b")?.as_array()?;
-    Some(OscType::Blob(
-        samples
-            .iter()
-            .flat_map(|v| (v.as_f64().unwrap_or(0.0) as f32).to_le_bytes())
-            .collect(),
-    ))
+    let samples: Vec<f32> = arg
+        .get("b")?
+        .as_array()?
+        .iter()
+        .map(|v| v.as_f64().unwrap_or(0.0) as f32)
+        .collect();
+    Some(OscType::Blob(clausters_core::osc::sample_blob(&samples)))
 }
 
 /// One argument in the tagged shape a client reads.
@@ -567,12 +564,7 @@ pub fn arg_json(arg: &OscType) -> Value {
         OscType::String(v) => json!({ "s": v }),
         OscType::Long(v) => json!({ "h": v }),
         OscType::Blob(bytes) => json!({
-            "b": bytes
-                .as_chunks::<4>()
-                .0
-                .iter()
-                .map(|c| f32::from_le_bytes(*c))
-                .collect::<Vec<_>>()
+            "b": clausters_core::osc::blob_samples(bytes).collect::<Vec<_>>()
         }),
         other => json!({ "s": format!("{other:?}") }),
     }
@@ -897,12 +889,7 @@ mod tests {
                     OscType::Long(1 << 40),
                     OscType::Float(0.5),
                     OscType::String("x".into()),
-                    OscType::Blob(
-                        [0.25f32, -1.0]
-                            .iter()
-                            .flat_map(|v| v.to_le_bytes())
-                            .collect(),
-                    ),
+                    OscType::Blob(clausters_core::osc::sample_blob(&[0.25, -1.0])),
                 ],
             }),
             Step::AwaitDone {

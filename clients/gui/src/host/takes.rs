@@ -292,12 +292,7 @@ pub(crate) fn stream_report(args: &[OscType]) -> Option<(i32, u64, usize, Vec<f3
         OscType::Int(frames) => *frames as i64,
         _ => return None,
     };
-    let stats: Vec<f32> = blob
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .map(|b| f32::from_le_bytes(*b))
-        .collect();
+    let stats: Vec<f32> = clausters_core::osc::blob_samples(blob).collect();
     Some((
         *bufnum,
         start.max(0) as u64,

@@ -525,10 +525,7 @@ impl Host {
             }
             return;
         }
-        let mut blob = Vec::with_capacity(values.len() * 4);
-        for v in values {
-            blob.extend_from_slice(&v.to_le_bytes());
-        }
+        let blob = clausters_core::osc::sample_blob(values);
         if let Some(server) = self.server.as_ref()
             && let Err(e) = server.send(OscMessage {
                 addr: "/buffer_setRangeChannel".into(),

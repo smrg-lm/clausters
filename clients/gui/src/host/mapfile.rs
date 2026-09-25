@@ -81,12 +81,9 @@ impl MappedFile {
     pub fn channel0_f32(&self, channels: usize) -> Vec<f32> {
         let channels = channels.max(1);
         let frames = (self.len / 4) / channels;
-        let b = self.bytes();
-        (0..frames)
-            .map(|f| {
-                let i = f * channels * 4;
-                f32::from_le_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]])
-            })
+        clausters_core::osc::blob_samples(self.bytes())
+            .step_by(channels)
+            .take(frames)
             .collect()
     }
 
@@ -126,11 +123,8 @@ mod tests {
     fn maps_raw_f32_and_deinterleaves_channel0() {
         // Interleaved stereo: L,R,L,R...
         let frames = [(0.0f32, 1.0f32), (0.25, -1.0), (0.5, 0.0)];
-        let mut bytes = Vec::new();
-        for (l, r) in frames {
-            bytes.extend_from_slice(&l.to_le_bytes());
-            bytes.extend_from_slice(&r.to_le_bytes());
-        }
+        let interleaved: Vec<f32> = frames.iter().flat_map(|(l, r)| [*l, *r]).collect();
+        let bytes = clausters_core::osc::sample_blob(&interleaved);
         let path = write_temp("stereo", &bytes);
         let map = MappedFile::open(&path).unwrap();
         assert_eq!(map.channel0_f32(2), vec![0.0, 0.25, 0.5], "channel 0 only");

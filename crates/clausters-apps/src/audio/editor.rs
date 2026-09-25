@@ -956,7 +956,7 @@ impl AudioEditor {
                     vec![
                         OscType::Int(buffer as i32),
                         OscType::Int((i * chunk) as i32),
-                        OscType::Blob(run.iter().flat_map(|v| v.to_le_bytes()).collect()),
+                        OscType::Blob(clausters_core::osc::sample_blob(run)),
                     ],
                 )
             })

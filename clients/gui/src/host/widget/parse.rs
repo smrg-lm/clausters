@@ -360,12 +360,7 @@ pub(super) fn inline_samples(
                 blob.len()
             ));
         }
-        let samples: Vec<f32> = blob
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .map(|c| f32::from_le_bytes(*c))
-            .collect();
+        let samples: Vec<f32> = clausters_core::osc::blob_samples(blob).collect();
         return Ok(samples.into());
     }
     // A `buffer` (audio-server fetch) or a `path`/`cache` (mapped local

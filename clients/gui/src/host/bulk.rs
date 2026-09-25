@@ -147,13 +147,7 @@ fn map_plot_samples(path: &Path, channels: usize) -> Option<Arc<[f32]>> {
     let map = MappedFile::open(path)
         .map_err(|e| diag::warn!("plot path {}: {e}", path.display()))
         .ok()?;
-    let mut floats: Vec<f32> = map
-        .bytes()
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .map(|c| f32::from_le_bytes(*c))
-        .collect();
+    let mut floats: Vec<f32> = clausters_core::osc::blob_samples(map.bytes()).collect();
     let channels = channels.max(1);
     floats.truncate(floats.len() / channels * channels);
     let samples: Arc<[f32]> = floats.into();

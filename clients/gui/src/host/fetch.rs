@@ -481,8 +481,8 @@ impl BufferFetches {
                 }
                 matched += 1;
                 let n = (bytes.len() / 4).min(fetch.total.saturating_sub(at));
-                for (i, word) in bytes.as_chunks::<4>().0.iter().take(n).enumerate() {
-                    fetch.samples[at + i] = f32::from_le_bytes(*word);
+                for (i, value) in clausters_core::osc::blob_samples(bytes).take(n).enumerate() {
+                    fetch.samples[at + i] = value;
                 }
                 fetch.received += n;
                 landed += n;
@@ -985,10 +985,7 @@ mod tests {
     /// One `/buffer_getRange.reply` range, in the shape the server sends it:
     /// the samples as a little-endian `f32` blob, never as float arguments.
     fn range_reply(bufnum: i32, start: usize, values: &[f32]) -> Vec<OscType> {
-        let mut blob = Vec::with_capacity(values.len() * 4);
-        for v in values {
-            blob.extend_from_slice(&v.to_le_bytes());
-        }
+        let blob = clausters_core::osc::sample_blob(values);
         vec![
             OscType::Int(bufnum),
             OscType::Int(start as i32),

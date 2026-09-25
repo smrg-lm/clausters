@@ -3618,12 +3618,18 @@ should confirm before the fix.
   `osc::args::json_payload` is the one "blob or string"; `install_json_def`
   installs a SynthDef or a GraphDef and `handle_def_send_json` answers both
   families; the dead binding is gone and the step is `build_plan`.
-- ⬜ **The wire's sample blob is spelled by hand** *(audit 2026-09-25)*. Raw
+- ✅ **The wire's sample blob is spelled by hand** *(audit 2026-09-25)*. Raw
   little-endian `f32` is written in about twelve places (`/buffer_getRange`,
   `_peaks`, `_export`, the streams, `clausters-editing`'s apply and samples,
   the audio editor, the clipboard) and read in about eleven (the translator,
   editing, the clipboard, eight in the GUI host). `clausters_core::bytes` is the
   cache format, native-endian, and not this. One pair in the core.
+  **Fixed**: `clausters_core::osc::{push_sample, sample_blob, blob_samples}`
+  write and read it, and the server, the translator, `clausters-editing`, the
+  audio editor, the clipboard (whose `encode_samples`/`decode_samples` keep
+  their names and delegate) and the host's readers and writers all go through
+  them. The WAV float body in `nrt` stays its own: it is a file format that
+  happens to share the bytes.
 - ⬜ **Smaller duplicates** *(audit 2026-09-25)*. The sample FIFO of `Ifft` and
   of the convolution (one type in `dsp`); `Fft`/`Ifft`'s `window` command; the
   Faust node body in `faust/synth.rs` and `synth_web.rs` (five methods

@@ -263,22 +263,13 @@ impl Clipboard {
 /// writing the same byte order three times is three places for it to be wrong,
 /// and the one that is wrong sounds like noise rather than failing.
 pub fn encode_samples(values: &[f32]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(values.len() * 4);
-    for value in values {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-    bytes
+    clausters_core::osc::sample_blob(values)
 }
 
 /// The inverse of [`encode_samples`]. Trailing bytes that do not make a whole
 /// `f32` are dropped rather than guessed at.
 pub fn decode_samples(bytes: &[u8]) -> Vec<f32> {
-    bytes
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .map(|c| f32::from_le_bytes(*c))
-        .collect()
+    clausters_core::osc::blob_samples(bytes).collect()
 }
 
 #[cfg(test)]

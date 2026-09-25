@@ -244,12 +244,7 @@ impl WebApp {
                 if let (Some(OscType::Int(tap)), Some(OscType::Blob(bytes))) =
                     (msg.args.first(), msg.args.get(2))
                 {
-                    let samples: Vec<f32> = bytes
-                        .as_chunks::<4>()
-                        .0
-                        .iter()
-                        .map(|c| f32::from_le_bytes(*c))
-                        .collect();
+                    let samples: Vec<f32> = clausters_core::osc::blob_samples(bytes).collect();
                     // The position the window ends at: what retention appends
                     // by, so a slow tick never stretches the history.
                     let at = match msg.args.get(1) {

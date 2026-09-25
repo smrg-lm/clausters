@@ -413,11 +413,8 @@ pub(super) fn blob_to_samples(bytes: &[u8]) -> Option<Value> {
         return None;
     }
     Some(Value::Array(
-        bytes
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .map(|c| Value::from(f32::from_le_bytes(*c)))
+        clausters_core::osc::blob_samples(bytes)
+            .map(Value::from)
             .collect(),
     ))
 }

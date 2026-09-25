@@ -6,6 +6,7 @@
 
 use super::super::*;
 use crate::osc::translate::{allocated, mirror_buffer};
+use clausters_core::osc::{push_sample, sample_blob};
 
 impl OscServer {
     /// `/buffer_attach bufnum` -- map the shared buffer `bufnum` out of the
@@ -344,8 +345,7 @@ impl OscServer {
             let end = start.saturating_add(count).min(held);
             let mut blob = Vec::with_capacity(end.saturating_sub(start) * 4);
             for i in start..end {
-                let s = data.map_or(0.0, |b| b.at(i));
-                blob.extend_from_slice(&s.to_le_bytes());
+                push_sample(&mut blob, data.map_or(0.0, |b| b.at(i)));
             }
             out.push(OscType::Int(start as i32));
             out.push(OscType::Blob(blob));
@@ -434,13 +434,7 @@ impl OscServer {
             .overviews
             .span(bufnum.max(0) as usize, first, bucket, buckets)
         {
-            Some(stats) => {
-                let mut bytes = Vec::with_capacity(stats.len() * 4);
-                for value in stats {
-                    bytes.extend_from_slice(&value.to_le_bytes());
-                }
-                bytes
-            }
+            Some(stats) => sample_blob(&stats),
             None => super::super::streams::overview_blob(&buffer, first, bucket, buckets),
         };
         self.reply(
@@ -475,11 +469,7 @@ impl OscServer {
         // One snapshot, then the encode: an export is a reading of the buffer
         // at a moment, and taking it in one pass keeps it from straddling a
         // recording UGen's write head more than it has to.
-        let samples = buffer.to_vec();
-        let mut bytes = Vec::with_capacity(samples.len() * 4);
-        for s in samples {
-            bytes.extend_from_slice(&s.to_le_bytes());
-        }
+        let bytes = sample_blob(&buffer.to_vec());
         std::fs::write(path, &bytes).map_err(|e| format!("write {path}: {e}"))?;
         self.done_with(from, "/buffer_export", vec![OscType::Int(bufnum)]);
         Ok(())

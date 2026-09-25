@@ -31,11 +31,7 @@ pub(in crate::osc::server) fn overview_blob(
         .collect();
     let sources: Vec<_> = channels.iter().collect();
     let stats = clausters_core::peaks::overview(&sources, first_frame, bucket, buckets);
-    let mut bytes = Vec::with_capacity(stats.len() * 4);
-    for value in stats {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-    bytes
+    clausters_core::osc::sample_blob(&stats)
 }
 
 impl OscServer {
@@ -320,10 +316,7 @@ impl OscServer {
             let Some(end) = segment.tap_read_latest(tap, &mut self.tap_buf) else {
                 continue;
             };
-            let mut bytes = Vec::with_capacity(frames * 4);
-            for s in &self.tap_buf {
-                bytes.extend_from_slice(&s.to_le_bytes());
-            }
+            let bytes = clausters_core::osc::sample_blob(&self.tap_buf);
             self.reply(
                 client,
                 "/bus_tapStream.reply",

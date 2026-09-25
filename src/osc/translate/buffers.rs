@@ -755,12 +755,7 @@ fn parse_set_runs(args: &[OscType]) -> Result<Vec<SampleWrite>, String> {
                     bytes.len()
                 ));
             }
-            let values = bytes
-                .as_chunks::<4>()
-                .0
-                .iter()
-                .map(|b| f32::from_le_bytes(*b))
-                .collect();
+            let values = clausters_core::osc::blob_samples(bytes).collect();
             Ok(SampleWrite::flat(at, values))
         })
         .collect()

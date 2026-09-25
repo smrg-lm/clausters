@@ -1380,10 +1380,7 @@ mod tests {
             "{one:?}"
         );
 
-        let run: Vec<u8> = [0.25f32, -0.25, 0.75]
-            .iter()
-            .flat_map(|v| v.to_le_bytes())
-            .collect();
+        let run = clausters_core::osc::sample_blob(&[0.25, -0.25, 0.75]);
         let (many, label) = owner
             .read_event(
                 50,
@@ -1421,11 +1418,8 @@ mod tests {
             None,
             "a stroke over nothing is not an edit"
         );
-        let short: Vec<u8> = 0.5f32.to_le_bytes().to_vec();
-        let long: Vec<u8> = [0.25f32, -0.25]
-            .iter()
-            .flat_map(|v| v.to_le_bytes())
-            .collect();
+        let short = clausters_core::osc::sample_blob(&[0.5]);
+        let long = clausters_core::osc::sample_blob(&[0.25, -0.25]);
         assert_eq!(
             owner.read_inverse(
                 50,

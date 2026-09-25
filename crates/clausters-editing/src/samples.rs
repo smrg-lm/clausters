@@ -152,7 +152,7 @@ pub fn write_steps(bufnum: i32, channels: u32, payload: &Value, chunk: usize) ->
     let chunk = chunk.max(1);
     let mut steps = Vec::new();
     for (i, part) in values.chunks(chunk).enumerate() {
-        let blob = part.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let blob = clausters_core::osc::sample_blob(part);
         let mut args = vec![OscType::Int(bufnum)];
         if channels > 1 {
             args.push(OscType::Int(channel as i32));

@@ -189,12 +189,7 @@ async fn fetch_bytes(url: &str) -> Result<Vec<u8>, String> {
 /// Decodes raw little-endian `f32` bytes flat (interleaved as sent) -- the
 /// multichannel views de-interleave downstream.
 fn decode_f32(bytes: &[u8]) -> Vec<f32> {
-    bytes
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .map(|b| f32::from_le_bytes(*b))
-        .collect()
+    clausters_core::osc::blob_samples(bytes).collect()
 }
 
 impl WebApp {

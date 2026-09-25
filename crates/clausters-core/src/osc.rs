@@ -119,9 +119,50 @@ pub fn message(addr: impl Into<String>, args: Vec<OscType>) -> OscMessage {
     }
 }
 
+/// Appends one sample to a **sample blob**, the shape every command that
+/// carries samples uses on the wire (`/buffer_setRange` and its reply, the
+/// streams, an export): raw little-endian `f32`s, the count being the blob's
+/// length over four. Little-endian whatever the machine, unlike the analysis
+/// caches of [`crate::bytes`], which never leave it.
+pub fn push_sample(blob: &mut Vec<u8>, value: f32) {
+    blob.extend_from_slice(&value.to_le_bytes());
+}
+
+/// `samples` as a sample blob ([`push_sample`]).
+pub fn sample_blob(samples: &[f32]) -> Vec<u8> {
+    let mut blob = Vec::with_capacity(samples.len() * 4);
+    for &value in samples {
+        push_sample(&mut blob, value);
+    }
+    blob
+}
+
+/// The samples of a sample blob ([`push_sample`]), in order. A trailing
+/// partial word is not a sample and is not read; a caller that must refuse
+/// one checks the length first.
+pub fn blob_samples(blob: &[u8]) -> impl Iterator<Item = f32> + '_ {
+    blob.as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| f32::from_le_bytes(*b))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_sample_blob_is_little_endian_and_round_trips() {
+        let samples = [0.5f32, -1.0, 0.0, f32::MIN_POSITIVE];
+        let blob = sample_blob(&samples);
+        assert_eq!(&blob[..4], &0.5f32.to_le_bytes());
+        assert_eq!(blob_samples(&blob).collect::<Vec<_>>(), samples);
+        assert_eq!(
+            blob_samples(&blob[..6]).count(),
+            1,
+            "a partial word is not read"
+        );
+    }
 
     #[test]
     fn ntp_round_trip() {
