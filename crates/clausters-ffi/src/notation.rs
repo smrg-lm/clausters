@@ -25,31 +25,7 @@ use clausters_core::notation::{
     perform, sheet_to_mei, svg_to_display_list, voice_to_mei, voice_to_sheet,
 };
 
-/// Read a pointer+length as UTF-8 (lossily), or `None` when the pointer is null.
-///
-/// # Safety
-/// `ptr` must be null or readable for `len` bytes.
-unsafe fn text<'a>(ptr: *const u8, len: usize) -> Option<std::borrow::Cow<'a, str>> {
-    if ptr.is_null() {
-        return None;
-    }
-    // SAFETY: caller guarantees `ptr` is readable for `len` bytes.
-    let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
-    Some(String::from_utf8_lossy(bytes))
-}
-
-/// Write `payload` into `out` if it fits, and return the byte count it needs.
-///
-/// # Safety
-/// `out` must be null or writable for `out_cap` bytes.
-unsafe fn fill(payload: &[u8], out: *mut u8, out_cap: usize) -> usize {
-    let n = payload.len();
-    if !out.is_null() && out_cap >= n {
-        // SAFETY: out is writable for out_cap >= n bytes.
-        unsafe { std::ptr::copy_nonoverlapping(payload.as_ptr(), out, n) };
-    }
-    n
-}
+use crate::out::{fill, text};
 
 /// Walk a verovio SVG (`svg`/`svg_len`) into a `score` display list, written as
 /// JSON to `out` (capacity `out_cap`). Returns the byte count the JSON needs, or

@@ -40,6 +40,7 @@ mod history;
 mod measure;
 #[cfg(feature = "notation")]
 pub mod notation;
+mod out;
 mod patch;
 mod registry;
 mod rng;
@@ -514,7 +515,7 @@ pub unsafe extern "C" fn clausters_session_migrate(
     out_cap: usize,
 ) -> usize {
     // SAFETY: forwarded from this function's own contract.
-    let Some(text) = (unsafe { crate::document::text(session, session_len) }) else {
+    let Some(text) = (unsafe { crate::out::text(session, session_len) }) else {
         return 0;
     };
     let Ok(written) = serde_json::from_str::<serde_json::Value>(&text) else {
@@ -522,5 +523,5 @@ pub unsafe extern "C" fn clausters_session_migrate(
     };
     let answer = clausters_document::session::migrate(written).to_string();
     // SAFETY: forwarded from this function's own contract. A pure read.
-    unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
+    unsafe { crate::out::fill(answer.as_bytes(), out, out_cap) }
 }

@@ -48,6 +48,7 @@
 
 use std::sync::Mutex;
 
+use crate::out::{fill_then, text};
 use clausters_document::{
     Against, Body, Document, Grouping, Intent, Mapping, Node, NodeId, Opaque, Rules, Selection,
     SourceId, Unit, apply as apply_intent,
@@ -70,42 +71,6 @@ impl Held {
         self.document = edited;
         self.pending = Vec::new();
     }
-}
-
-/// Read a pointer+length as UTF-8 (lossily), or `None` when the pointer is null.
-///
-/// # Safety
-/// `ptr` must be null or readable for `len` bytes.
-pub(crate) unsafe fn text<'a>(ptr: *const u8, len: usize) -> Option<std::borrow::Cow<'a, str>> {
-    if ptr.is_null() {
-        return None;
-    }
-    // SAFETY: caller guarantees `ptr` is readable for `len` bytes.
-    let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
-    Some(String::from_utf8_lossy(bytes))
-}
-
-/// Write `payload` into `out` if it fits, run `commit` only if it was written,
-/// and return the byte count it needs.
-///
-/// The commit is what makes size-then-fill safe over a mutating surface: a
-/// sizing pass (null or short `out`) changes nothing, so it can be repeated.
-///
-/// # Safety
-/// `out` must be null or writable for `out_cap` bytes.
-pub(crate) unsafe fn fill(
-    payload: &[u8],
-    out: *mut u8,
-    out_cap: usize,
-    commit: impl FnOnce(),
-) -> usize {
-    let n = payload.len();
-    if !out.is_null() && out_cap >= n {
-        // SAFETY: out is writable for out_cap >= n bytes.
-        unsafe { std::ptr::copy_nonoverlapping(payload.as_ptr(), out, n) };
-        commit();
-    }
-    n
 }
 
 /// Run `f` with the handle's contents locked.
@@ -209,7 +174,7 @@ pub unsafe extern "C" fn clausters_document_inverse(
         let bytes = serde_json::to_vec(&inverse).unwrap_or_default();
         // SAFETY: forwarded from this function's own contract. A pure read, so
         // there is nothing to commit.
-        unsafe { fill(&bytes, out, out_cap, || {}) }
+        unsafe { fill_then(&bytes, out, out_cap, || {}) }
     })
 }
 
@@ -382,7 +347,7 @@ unsafe fn edit_in_place(
         let outcome = apply_intent(&mut edited, intent, against, &Rules { quant });
         // SAFETY: forwarded from this function's own contract.
         return unsafe {
-            fill(&outcome_bytes(&outcome), out, out_cap, || {
+            fill_then(&outcome_bytes(&outcome), out, out_cap, || {
                 held.commit(edited)
             })
         };
@@ -481,7 +446,7 @@ pub unsafe extern "C" fn clausters_document_resolve(
         // SAFETY: as above. A pure read with a small payload -- no caching
         // needed, and nothing to commit.
         unsafe {
-            fill(
+            fill_then(
                 &serde_json::to_vec(&resolved).unwrap_or_default(),
                 out,
                 out_cap,
@@ -515,7 +480,7 @@ pub unsafe extern "C" fn clausters_view_not_an_edit(out: *mut u8, out_cap: usize
     };
     // SAFETY: forwarded from this function's own contract. A pure read, so
     // there is nothing to commit.
-    unsafe { fill(answer.as_bytes(), out, out_cap, || {}) }
+    unsafe { fill_then(answer.as_bytes(), out, out_cap, || {}) }
 }
 
 /// **One catalogue view's props**, as JSON -- the widget a waveform, a curve or
@@ -570,7 +535,7 @@ pub unsafe extern "C" fn clausters_view_props(
     };
     // SAFETY: forwarded from this function's own contract. A pure read, so
     // there is nothing to commit.
-    unsafe { fill(answer.as_bytes(), out, out_cap, || {}) }
+    unsafe { fill_then(answer.as_bytes(), out, out_cap, || {}) }
 }
 
 /// **The defs a multitrack of these widths is played by**, as JSON:
@@ -625,7 +590,7 @@ pub unsafe extern "C" fn clausters_mixer_defs(
     };
     // SAFETY: forwarded from this function's own contract. A pure read, so
     // there is nothing to commit.
-    unsafe { fill(answer.as_bytes(), out, out_cap, || {}) }
+    unsafe { fill_then(answer.as_bytes(), out, out_cap, || {}) }
 }
 
 /// **What to instantiate to play a multitrack**, as JSON -- the instance plan.
@@ -687,7 +652,7 @@ pub unsafe extern "C" fn clausters_multitrack_plan(
     };
     // SAFETY: forwarded from this function's own contract. A pure read, so
     // there is nothing to commit.
-    unsafe { fill(answer.as_bytes(), out, out_cap, || {}) }
+    unsafe { fill_then(answer.as_bytes(), out, out_cap, || {}) }
 }
 
 #[cfg(test)]

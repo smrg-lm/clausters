@@ -11,12 +11,8 @@
 
 /// Copies `json` into `out` when it fits, returning the size it needs.
 fn write_json(json: Vec<u8>, out: *mut u8, out_cap: usize) -> usize {
-    let n = json.len();
-    if !out.is_null() && out_cap >= n {
-        // SAFETY: out is non-null and writable for out_cap >= n bytes.
-        unsafe { std::ptr::copy_nonoverlapping(json.as_ptr(), out, n) };
-    }
-    n
+    // SAFETY: the exported callers forward their own `out`/`out_cap` contract.
+    unsafe { crate::out::fill(&json, out, out_cap) }
 }
 
 /// What one instance of a bundle needs allocated: a

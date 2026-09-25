@@ -3,7 +3,7 @@
 use super::*;
 use clausters_core::widgetids::WidgetIds;
 
-use crate::document::text;
+use crate::out::text;
 
 // --- The widget-id table (ABI v39) --------------------------------------
 //

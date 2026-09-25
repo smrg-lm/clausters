@@ -50,12 +50,8 @@ pub unsafe extern "C" fn clausters_tempomap_dump(
         return 0;
     };
     let json = serde_json::to_vec(map).unwrap_or_default();
-    let n = json.len();
-    if !out.is_null() && out_cap >= n {
-        // SAFETY: out is non-null and writable for out_cap >= n bytes.
-        unsafe { std::ptr::copy_nonoverlapping(json.as_ptr(), out, n) };
-    }
-    n
+    // SAFETY: forwarded from this function's own contract.
+    unsafe { crate::out::fill(&json, out, out_cap) }
 }
 
 /// A map read back from the JSON [`clausters_tempomap_dump`] writes. Null when

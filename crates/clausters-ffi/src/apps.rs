@@ -25,12 +25,12 @@ pub unsafe extern "C" fn clausters_apps_samples_measures(
     out_cap: usize,
 ) -> usize {
     // SAFETY: forwarded from this function's own contract.
-    let Some(request) = (unsafe { crate::document::text(request, request_len) }) else {
+    let Some(request) = (unsafe { crate::out::text(request, request_len) }) else {
         return 0;
     };
     let answer = samples::measures_json(&request);
     // SAFETY: forwarded from this function's own contract. A pure read.
-    unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
+    unsafe { crate::out::fill(answer.as_bytes(), out, out_cap) }
 }
 
 /// An editing context safe to share across the binding's threads, and the
@@ -85,7 +85,7 @@ pub unsafe extern "C" fn clausters_apps_editing_call(
         return 0;
     };
     // SAFETY: forwarded from this function's own contract.
-    let Some(request) = (unsafe { crate::document::text(request, request_len) }) else {
+    let Some(request) = (unsafe { crate::out::text(request, request_len) }) else {
         return 0;
     };
     let Ok(mut held) = handle.0.lock() else {
@@ -98,7 +98,7 @@ pub unsafe extern "C" fn clausters_apps_editing_call(
     };
     let mut handed = false;
     // SAFETY: forwarded from this function's own contract.
-    let n = unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || handed = true) };
+    let n = unsafe { crate::out::fill_then(answer.as_bytes(), out, out_cap, || handed = true) };
     if !handed {
         *pending = Some((request.into_owned(), answer));
     }

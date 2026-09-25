@@ -43,7 +43,7 @@ pub unsafe extern "C" fn clausters_editing_points_props(
     let answer = clausters_editing::points::props_json(slice, kept, held);
     // SAFETY: forwarded from this function's own contract. A pure read, so
     // there is nothing to commit.
-    unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
+    unsafe { crate::out::fill(answer.as_bytes(), out, out_cap) }
 }
 
 /// **A multitrack as the props the multitrack widget is drawn with**, as JSON.
@@ -72,15 +72,15 @@ pub unsafe extern "C" fn clausters_editing_multitrack_props(
 ) -> usize {
     // SAFETY: forwarded from this function's own contract.
     let (Some(multitrack), Some(sources)) = (
-        unsafe { crate::document::text(multitrack, multitrack_len) },
-        unsafe { crate::document::text(sources, sources_len) },
+        unsafe { crate::out::text(multitrack, multitrack_len) },
+        unsafe { crate::out::text(sources, sources_len) },
     ) else {
         return 0;
     };
     let answer = clausters_editing::multitrack::props_json(&multitrack, rate, &sources);
     // SAFETY: forwarded from this function's own contract. A pure read, so
     // there is nothing to commit.
-    unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
+    unsafe { crate::out::fill(answer.as_bytes(), out, out_cap) }
 }
 
 /// **What a gesture means, in a structure's own vocabulary** -- the edit
@@ -115,16 +115,16 @@ pub unsafe extern "C" fn clausters_editing_intake(
 ) -> usize {
     // SAFETY: forwarded from this function's own contract.
     let (Some(domain), Some(tag), Some(request)) = (
-        unsafe { crate::document::text(domain, domain_len) },
-        unsafe { crate::document::text(tag, tag_len) },
-        unsafe { crate::document::text(request, request_len) },
+        unsafe { crate::out::text(domain, domain_len) },
+        unsafe { crate::out::text(tag, tag_len) },
+        unsafe { crate::out::text(request, request_len) },
     ) else {
         return 0;
     };
     let answer = clausters_editing::intake_json(&domain, &tag, &request);
     // SAFETY: forwarded from this function's own contract. A pure read, so
     // there is nothing to commit.
-    unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
+    unsafe { crate::out::fill(answer.as_bytes(), out, out_cap) }
 }
 
 /// **What a source made of spans comes to**: the buffer a join is, resolved.
@@ -151,15 +151,14 @@ pub unsafe extern "C" fn clausters_editing_stitch(
     out_cap: usize,
 ) -> usize {
     // SAFETY: forwarded from this function's own contract.
-    let (Some(source), Some(held)) = (
-        unsafe { crate::document::text(source, source_len) },
-        unsafe { crate::document::text(held, held_len) },
-    ) else {
+    let (Some(source), Some(held)) = (unsafe { crate::out::text(source, source_len) }, unsafe {
+        crate::out::text(held, held_len)
+    }) else {
         return 0;
     };
     let answer = clausters_editing::sources::stitch_json(&source, &held);
     // SAFETY: forwarded from this function's own contract. A pure read.
-    unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
+    unsafe { crate::out::fill(answer.as_bytes(), out, out_cap) }
 }
 
 /// **A session's sources, loaded**: the steps that read every take and stitch
@@ -183,12 +182,12 @@ pub unsafe extern "C" fn clausters_editing_load(
     out_cap: usize,
 ) -> usize {
     // SAFETY: forwarded from this function's own contract.
-    let Some(request) = (unsafe { crate::document::text(request, request_len) }) else {
+    let Some(request) = (unsafe { crate::out::text(request, request_len) }) else {
         return 0;
     };
     let answer = clausters_editing::load::plan_json(&request);
     // SAFETY: forwarded from this function's own contract. A pure read.
-    unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
+    unsafe { crate::out::fill(answer.as_bytes(), out, out_cap) }
 }
 
 /// **What is sounding of a multitrack**, held across edits.
@@ -260,8 +259,8 @@ pub unsafe extern "C" fn clausters_editing_instance_reconcile(
     }
     // SAFETY: forwarded from this function's own contract.
     let (Some(multitrack), Some(sources)) = (
-        unsafe { crate::document::text(multitrack, multitrack_len) },
-        unsafe { crate::document::text(sources, sources_len) },
+        unsafe { crate::out::text(multitrack, multitrack_len) },
+        unsafe { crate::out::text(sources, sources_len) },
     ) else {
         return 0;
     };
@@ -286,7 +285,7 @@ pub unsafe extern "C" fn clausters_editing_instance_reconcile(
     );
     // SAFETY: forwarded from this function's own contract.
     unsafe {
-        crate::document::fill(answer.as_bytes(), out, out_cap, || {
+        crate::out::fill_then(answer.as_bytes(), out, out_cap, || {
             *held = next;
         })
     }
@@ -321,7 +320,7 @@ pub unsafe extern "C" fn clausters_editing_instance_teardown(
     let answer = next.teardown_json();
     // SAFETY: forwarded from this function's own contract.
     unsafe {
-        crate::document::fill(answer.as_bytes(), out, out_cap, || {
+        crate::out::fill_then(answer.as_bytes(), out, out_cap, || {
             *held = next;
         })
     }
@@ -353,7 +352,7 @@ pub unsafe extern "C" fn clausters_editing_instance_meters(
     let answer = held.meters_json();
     // SAFETY: forwarded from this function's own contract. A pure read, so
     // there is nothing to commit.
-    unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
+    unsafe { crate::out::fill(answer.as_bytes(), out, out_cap) }
 }
 
 /// **The tempo a multitrack that states none is drawn at**, in beats per
@@ -415,7 +414,7 @@ pub unsafe extern "C" fn clausters_editing_runner_call(
         return 0;
     };
     // SAFETY: forwarded from this function's own contract.
-    let Some(request) = (unsafe { crate::document::text(request, request_len) }) else {
+    let Some(request) = (unsafe { crate::out::text(request, request_len) }) else {
         return 0;
     };
     let Ok(mut held) = runner.0.lock() else {
@@ -425,7 +424,7 @@ pub unsafe extern "C" fn clausters_editing_runner_call(
     let answer = clausters_editing::run::call_json(&mut next, &request);
     // SAFETY: forwarded from this function's own contract.
     unsafe {
-        crate::document::fill(answer.as_bytes(), out, out_cap, || {
+        crate::out::fill_then(answer.as_bytes(), out, out_cap, || {
             *held = next;
         })
     }
@@ -497,7 +496,7 @@ pub unsafe extern "C" fn clausters_editing_audio_playback_call(
     out_cap: usize,
 ) -> usize {
     // SAFETY: forwarded from this function's own contract.
-    let Some(request) = (unsafe { crate::document::text(request, request_len) }) else {
+    let Some(request) = (unsafe { crate::out::text(request, request_len) }) else {
         return 0;
     };
     // SAFETY: forwarded from this function's own contract.
@@ -511,7 +510,7 @@ pub unsafe extern "C" fn clausters_editing_audio_playback_call(
     let answer = clausters_editing::audio_playback::call_json(&mut next, &request, &mut next_ids);
     // SAFETY: forwarded from this function's own contract.
     unsafe {
-        crate::document::fill(answer.as_bytes(), out, out_cap, || {
+        crate::out::fill_then(answer.as_bytes(), out, out_cap, || {
             *held = next;
             *spaces = next_ids;
         })
@@ -574,7 +573,7 @@ unsafe fn playback_verb(
     let answer = verb(&mut next);
     // SAFETY: forwarded from this function's own contract.
     unsafe {
-        crate::document::fill(answer.as_bytes(), out, out_cap, || {
+        crate::out::fill_then(answer.as_bytes(), out, out_cap, || {
             *held = next;
         })
     }
@@ -605,7 +604,7 @@ unsafe fn playback_ids_verb(
     let answer = verb(&mut next, &mut next_ids);
     // SAFETY: forwarded from this function's own contract.
     unsafe {
-        crate::document::fill(answer.as_bytes(), out, out_cap, || {
+        crate::out::fill_then(answer.as_bytes(), out, out_cap, || {
             *held = next;
             *spaces = next_ids;
         })
@@ -635,8 +634,8 @@ pub unsafe extern "C" fn clausters_editing_playback_sync(
 ) -> usize {
     // SAFETY: forwarded from this function's own contract.
     let (Some(multitrack), Some(sources)) = (
-        unsafe { crate::document::text(multitrack, multitrack_len) },
-        unsafe { crate::document::text(sources, sources_len) },
+        unsafe { crate::out::text(multitrack, multitrack_len) },
+        unsafe { crate::out::text(sources, sources_len) },
     ) else {
         return 0;
     };
@@ -915,18 +914,16 @@ pub unsafe extern "C" fn clausters_editing_conversation_read(
     out_cap: usize,
 ) -> usize {
     // SAFETY: forwarded from this function's own contract.
-    let (Some(state), Some(message)) =
-        (unsafe { crate::document::text(state, state_len) }, unsafe {
-            crate::document::text(message, message_len)
-        })
-    else {
+    let (Some(state), Some(message)) = (unsafe { crate::out::text(state, state_len) }, unsafe {
+        crate::out::text(message, message_len)
+    }) else {
         return 0;
     };
     let answer = clausters_editing::conversation::read_json(&state, &message);
     // SAFETY: forwarded from this function's own contract. The conversation's
     // state comes back in the answer rather than being kept here, so this is a
     // pure read and a sizing pass changes nothing.
-    unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
+    unsafe { crate::out::fill(answer.as_bytes(), out, out_cap) }
 }
 
 /// **What to answer the host with** -- the conversation's second decision.
@@ -950,12 +947,12 @@ pub unsafe extern "C" fn clausters_editing_conversation_answer(
     out_cap: usize,
 ) -> usize {
     // SAFETY: forwarded from this function's own contract.
-    let Some(request) = (unsafe { crate::document::text(request, request_len) }) else {
+    let Some(request) = (unsafe { crate::out::text(request, request_len) }) else {
         return 0;
     };
     let answer = clausters_editing::conversation::answer_json(&request);
     // SAFETY: forwarded from this function's own contract. A pure read.
-    unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
+    unsafe { crate::out::fill(answer.as_bytes(), out, out_cap) }
 }
 
 /// **What a multitrack calls its rows and its boxes** -- `{"rows": [...], "boxes":
@@ -978,12 +975,12 @@ pub unsafe extern "C" fn clausters_editing_multitrack_names(
     out_cap: usize,
 ) -> usize {
     // SAFETY: forwarded from this function's own contract.
-    let Some(multitrack) = (unsafe { crate::document::text(multitrack, multitrack_len) }) else {
+    let Some(multitrack) = (unsafe { crate::out::text(multitrack, multitrack_len) }) else {
         return 0;
     };
     let answer = clausters_editing::multitrack::names_json(&multitrack);
     // SAFETY: forwarded from this function's own contract. A pure read.
-    unsafe { crate::document::fill(answer.as_bytes(), out, out_cap, || {}) }
+    unsafe { crate::out::fill(answer.as_bytes(), out, out_cap) }
 }
 
 #[cfg(test)]

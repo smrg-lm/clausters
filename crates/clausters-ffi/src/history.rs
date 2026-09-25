@@ -64,7 +64,8 @@ use std::sync::Mutex;
 use clausters_document::history::{Direction, Entry, History, Step, StructureId};
 use clausters_document::{Against, Intent, Opaque, Rules, apply as apply_intent};
 
-use crate::document::{FfiDocument, fill, text, with_document};
+use crate::document::{FfiDocument, with_document};
+use crate::out::{fill_then, text};
 
 /// A history handle safe to share across the binding's threads.
 pub struct FfiHistory(Mutex<History>);
@@ -214,7 +215,7 @@ pub unsafe extern "C" fn clausters_history_apply(
             let outcome = apply_intent(&mut edited, &intent, &against, &Rules { quant });
             // SAFETY: forwarded from this function's own contract.
             return unsafe {
-                fill(&outcome_bytes(&outcome), out, out_cap, || {
+                fill_then(&outcome_bytes(&outcome), out, out_cap, || {
                     held.commit(edited)
                 })
             };
@@ -467,7 +468,7 @@ pub unsafe extern "C" fn clausters_history_walk(
     };
     // SAFETY: forwarded from this function's own contract.
     unsafe {
-        fill(
+        fill_then(
             &serde_json::to_vec(&payload).unwrap_or_default(),
             out,
             out_cap,
@@ -528,7 +529,7 @@ pub unsafe extern "C" fn clausters_history_released(
     // SAFETY: forwarded from this function's own contract. The drain is the
     // commit, so a sizing pass hands back the same answer as the fill.
     unsafe {
-        fill(
+        fill_then(
             &serde_json::to_vec(&ids).unwrap_or_default(),
             out,
             out_cap,
@@ -616,7 +617,7 @@ pub unsafe extern "C" fn clausters_history_undo_label(
 ) -> usize {
     let label = with_history(h, None, |history| history.undo_label());
     // SAFETY: caller guarantees `out` is null or writable for `out_cap`.
-    unsafe { fill(label.unwrap_or_default().as_bytes(), out, out_cap, || {}) }
+    unsafe { fill_then(label.unwrap_or_default().as_bytes(), out, out_cap, || {}) }
 }
 
 /// What a redo would be called. See [`clausters_history_undo_label`].
@@ -631,7 +632,7 @@ pub unsafe extern "C" fn clausters_history_redo_label(
 ) -> usize {
     let label = with_history(h, None, |history| history.redo_label());
     // SAFETY: caller guarantees `out` is null or writable for `out_cap`.
-    unsafe { fill(label.unwrap_or_default().as_bytes(), out, out_cap, || {}) }
+    unsafe { fill_then(label.unwrap_or_default().as_bytes(), out, out_cap, || {}) }
 }
 
 /// How many entries the history holds.
@@ -697,7 +698,7 @@ pub unsafe extern "C" fn clausters_domain_coalesce_key(
     };
     // SAFETY: forwarded from this function's own contract. A pure read, so
     // there is nothing to commit.
-    unsafe { fill(key.as_bytes(), out, out_cap, || {}) }
+    unsafe { fill_then(key.as_bytes(), out, out_cap, || {}) }
 }
 
 /// Apply one payload to a structure the crate can hold **as its own state**,
@@ -760,7 +761,7 @@ pub unsafe extern "C" fn clausters_domain_edit(
     };
     // SAFETY: forwarded from this function's own contract. A pure read, so
     // there is nothing to commit.
-    unsafe { fill(answer.as_bytes(), out, out_cap, || {}) }
+    unsafe { fill_then(answer.as_bytes(), out, out_cap, || {}) }
 }
 
 #[cfg(test)]

@@ -3648,7 +3648,9 @@ should confirm before the fix.
   found). `faust::node::FaustBody` is the Faust node body both backends'
   `FaustSynth` delegate to. `clausters_core::midi` is the one 7-bit and 14-bit widening the
   server's live input and `clausters-midi`'s clip reader share, and
-  `midi2freq` is the core's `midicps`.
+  `midi2freq` is the core's `midicps`. `clausters-ffi`'s `out` module is the one `text`,
+  `fill` and `fill_then` every file calls (the ones with another contract —
+  a nul-terminated path, an error code — keep theirs).
 - ✅ **An `IFFT` window swap left the overlap-add at the old window's level**
   *(found 2026-09-25, folding `Fft`'s and `Ifft`'s window command into one)*.
   `Ifft` refilled its window on `/node_ugenCmd … window` but not `norm`, the
