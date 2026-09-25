@@ -30,7 +30,7 @@
 //! and the same take again by locating it. A stop rolls out the transport's
 //! ramp, so the output's declick falls to zero and nothing clicks.
 
-use clausters_core::osc::{OscMessage, OscType};
+use clausters_core::osc::OscType;
 use clausters_editing::apply::Step;
 #[cfg(doc)]
 use clausters_editing::audio_playback::AudioEditorPlayback;
@@ -256,19 +256,11 @@ impl Host {
 
     /// Sets the span the monitor's transport loops inside, or clears it with
     /// `None` -- a sweep over a take while it plays. The span is half-open, so
-    /// a selection plays every frame it covers exactly once per pass.
+    /// a selection plays every frame it covers exactly once per pass, and in
+    /// the take's frames: the playback converts it, as it does a locate.
     pub fn set_loop(&mut self, span: Option<(u64, u64)>) {
-        self.send_sound(OscMessage {
-            addr: "/transport_loop".into(),
-            args: match span {
-                Some((start, end)) => vec![
-                    OscType::Int(MONITOR_TRANSPORT),
-                    OscType::Long(start as i64),
-                    OscType::Long(end as i64),
-                ],
-                None => vec![OscType::Int(MONITOR_TRANSPORT)],
-            },
-        });
+        let steps = self.monitor.set_loop(span);
+        self.run_monitor(steps);
     }
 
     /// The widget whose contents the monitor plays, if any -- whether or not

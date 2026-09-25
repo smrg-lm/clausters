@@ -7575,7 +7575,7 @@ The order is the one to take them in: what is wrong first, then what is
 duplicated, and the file is split last, so no duplicate is carried into a
 module of its own.
 
-- ⬜ **The monitor's loop is sent in the take's frames** *(audit
+- ✅ **The monitor's loop is sent in the take's frames** *(audit
   2026-09-25)*. `Host::set_loop` (`play.rs`) writes a selection straight to
   `/transport_loop` on the monitor's transport, where the positions are the
   engine's samples; every other position the monitor sends goes through
@@ -7583,6 +7583,9 @@ module of its own.
   engine's loops somewhere other than the selection drawn -- the fault fixed
   for the play cursor the same day, on the path that fix did not reach. The
   loop belongs to the playback, as the locate does.
+  **Fixed 2026-09-25**: `AudioEditorPlayback::set_loop` converts the span as
+  `locate` does, and the host's `set_loop` is that call; the host's
+  `send_sound`, whose last caller it was, went with it.
 - ⬜ **Nineteen doc comments sit on the wrong item** *(audit 2026-09-25)*. An
   item was moved or removed and its doc stayed, fused onto the next one: in
   `mod.rs` the `/gui_query` and `/gui_ack` docs are on `say`, `voice_on`'s is

@@ -247,14 +247,6 @@ impl Host {
         self.send_multitrack();
     }
 
-    /// **Sends one message to the server that sounds, in order**: behind
-    /// whatever the multitrack's steps are still waiting on, so a reader made in a
-    /// group is never sent before the group is.
-    pub(crate) fn send_sound(&mut self, message: OscMessage) {
-        self.instance.run.push(Server::Sound, [Step::Send(message)]);
-        self.send_multitrack();
-    }
-
     /// **Carries steps out on the server that sounds**, behind whatever the
     /// multitrack's steps are still waiting on: the take monitor's, which the
     /// same walk releases on the same replies.

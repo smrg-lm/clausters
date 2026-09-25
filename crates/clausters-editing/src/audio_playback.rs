@@ -331,6 +331,24 @@ impl AudioEditorPlayback {
         self.command("/transport_locateSample", vec![OscType::Long(at)])
     }
 
+    /// **Loops the transport over frames `[from, to)` of the file in focus**,
+    /// or passes straight on with `None` -- what a selection redrawn while the
+    /// file plays asks, without moving where it is. The frames are converted
+    /// as a locate's are, so a file at another rate than the engine's loops
+    /// over the span drawn.
+    pub fn set_loop(&mut self, span: Option<(u64, u64)>) -> Vec<Step> {
+        let focused = self.focus.and_then(|f| self.files.get(&f));
+        let at = |frame: u64| match focused {
+            Some(f) => self.frames_to_samples(f, frame),
+            None => frame as i64,
+        };
+        let args = match span {
+            Some((from, to)) => vec![OscType::Long(at(from)), OscType::Long(at(to))],
+            None => vec![],
+        };
+        self.command("/transport_loop", args)
+    }
+
     /// Frees everything the editor made, and the transport's marks with it.
     pub fn close(&mut self, ids: &mut IdSpaces) -> Result<Vec<Step>, IdError> {
         if self.width == 0 {
@@ -838,6 +856,41 @@ mod tests {
                 OscType::Long(48_000),
                 OscType::Long(24_000)
             ]
+        );
+    }
+
+    /// **A loop set while playing is converted as a locate is**: a selection
+    /// of a 44.1 kHz take in a 48 kHz engine loops over the span drawn, and
+    /// `None` clears it.
+    #[test]
+    fn a_loop_set_while_playing_is_in_the_engines_samples() {
+        let mut playback = AudioEditorPlayback::new(Endpoint::default(), 1);
+        let mut ids = spaces();
+        playback
+            .sync(1, 10, 1, 44_100, 44_100.0, 48_000.0, &mut ids)
+            .unwrap();
+        playback.play(
+            1,
+            0,
+            Pass::Until {
+                end: 44_100,
+                back: 0,
+            },
+        );
+        let steps = playback.set_loop(Some((22_050, 44_100)));
+        let set = sent(&steps, "/transport_loop")[0];
+        assert_eq!(
+            set.args,
+            vec![
+                OscType::Int(1),
+                OscType::Long(24_000),
+                OscType::Long(48_000)
+            ]
+        );
+        let steps = playback.set_loop(None);
+        assert_eq!(
+            sent(&steps, "/transport_loop")[0].args,
+            vec![OscType::Int(1)]
         );
     }
 
