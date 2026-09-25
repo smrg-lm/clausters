@@ -309,75 +309,12 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
     // here and its slot index is `spectral_sizes.len()` at that point.
     let mut spectral_sizes: Vec<usize> = Vec::new();
 
-    // Control types + lag times. `lagged` collects (control index, up
-    // time, optional down time) for the compile-time Lag insertion below.
-    let mut control_types = Vec::with_capacity(n_controls);
-    let mut lagged: Vec<(usize, f32, Option<f32>)> = Vec::new();
-    for (ci, c) in spec.controls.iter().enumerate() {
-        let ty = match &c.rate {
-            Some(name) => ControlType::parse(name).ok_or_else(|| {
-                format!("controls[{ci}] ({}): unknown control type '{name}'", c.name)
-            })?,
-            None => ControlType::Control,
-        };
-        if c.lag_down.is_some() && c.lag.is_none() {
-            return Err(format!(
-                "controls[{ci}] ({}): lag_down requires lag (the up time)",
-                c.name
-            ));
-        }
-        let up = c.lag.unwrap_or(0.0);
-        let down = c.lag_down;
-        if (up > 0.0 || down.is_some_and(|d| d > 0.0)) && ty != ControlType::Control {
-            return Err(format!(
-                "controls[{ci}] ({}): lag is only valid on a kr (plain) control",
-                c.name
-            ));
-        }
-        if up > 0.0 || down.is_some_and(|d| d > 0.0) {
-            lagged.push((ci, up.max(0.0), down));
-        }
-        control_types.push(ty);
-    }
+    let (control_types, lagged) = parse_controls(&spec)?;
 
     for (i, u) in spec.ugens.iter().enumerate() {
         let desc =
             lookup(&u.kind).ok_or_else(|| format!("ugens[{i}]: unknown kind '{}'", u.kind))?;
-        // Arity, and the one way a def may be short: the kind's **declared
-        // optional tail** (`UGenInput::optional`), which the fill below
-        // completes from the descriptor's defaults. A kind with no tail --
-        // which is most of them, and every operator -- still needs its inputs
-        // exactly, so a truncated `Mul` fails here rather than compiling to
-        // silence.
-        let mut fill_from = None;
-        if let Arity::Fixed(want) = desc.arity
-            && u.inputs.len() != want
-        {
-            let least = desc.required_inputs();
-            if u.inputs.len() > want || u.inputs.len() < least {
-                return Err(if least == want {
-                    format!(
-                        "ugens[{i}] ({}): expected {want} inputs, got {}",
-                        u.kind,
-                        u.inputs.len()
-                    )
-                } else {
-                    format!(
-                        "ugens[{i}] ({}): expected {least} to {want} inputs, got {}",
-                        u.kind,
-                        u.inputs.len()
-                    )
-                });
-            }
-            fill_from = Some(u.inputs.len());
-        }
-        if u.inputs.len() > MAX_UGEN_INPUTS {
-            return Err(format!(
-                "ugens[{i}] ({}): inputs ({}) exceed MAX_UGEN_INPUTS ({MAX_UGEN_INPUTS})",
-                u.kind,
-                u.inputs.len()
-            ));
-        }
+        let fill_from = check_arity(i, u, desc)?;
 
         // LocalIn/LocalOut: channel index (input 0) must be a constant so the
         // buffer can be sized and routed at compile time.
@@ -406,83 +343,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             }
         }
 
-        // Some UGens (DiskIn/DiskOut) carry a file path as a static parameter;
-        // require it at compile time so a bad def fails fast with `/fail`.
-        if desc.needs_path && u.path.as_deref().is_none_or(str::is_empty) {
-            return Err(format!(
-                "ugens[{i}] ({}): requires a non-empty path",
-                u.kind
-            ));
-        }
-        // The generic op UGens carry their operator by name; resolve it against
-        // the family's opcode table so a bad def fails fast, and keep the
-        // internal numeric index for `build` (the name never reaches the engine).
-        let mut op_index = None;
-        if let Some(family) = desc.op_family {
-            let name = u.op.as_deref().filter(|s| !s.is_empty()).ok_or_else(|| {
-                format!("ugens[{i}] ({}): requires an 'op' operator name", u.kind)
-            })?;
-            let resolved = match family {
-                OpFamily::Unary => builtins::UnaryOp::from_name(name).map(|o| o as u32),
-                OpFamily::Binary => builtins::BinaryOp::from_name(name).map(|o| o as u32),
-                OpFamily::Map => clausters_core::warp::MapOp::from_name(name).map(|o| o as u32),
-            };
-            op_index = Some(resolved.ok_or_else(|| {
-                format!(
-                    "ugens[{i}] ({}): unknown {family:?} operator '{name}'",
-                    u.kind
-                )
-            })?);
-        }
-        // The clip is `RangeMapUGen`'s other static field: a name, resolved
-        // here so a typo fails the def rather than silently trimming nothing.
-        let clip = match u.clip.as_deref().filter(|s| !s.is_empty()) {
-            None => None,
-            Some(name) => Some(
-                clausters_core::warp::Clip::from_name(name)
-                    .ok_or_else(|| format!("ugens[{i}] ({}): unknown clip '{name}'", u.kind))?
-                    as u32,
-            ),
-        };
-        let mut config = UGenConfig {
-            path: u.path.clone(),
-            looping: u.looping,
-            format: u.format.clone(),
-            op: op_index,
-            clip,
-            label: u.label.clone(),
-            fft_size: u.fft_size,
-            hop: u.hop,
-            wintype: u.wintype,
-            partitions: u.partitions,
-            mag_prog: None,
-            phase_prog: None,
-            max_delay: u.max_delay,
-        };
-        // Any kind that takes an `fft_size` (the spectral chain's FFT, the
-        // partitioned convolver) must name a supported transform size.
-        if let Some(sz) = u.fft_size
-            && !fft::supports(sz)
-        {
-            return Err(format!(
-                "ugens[{i}] ({}): unsupported fft_size {sz}; use one of {:?}",
-                u.kind,
-                fft::SUPPORTED_SIZES
-            ));
-        }
-        // `PV_Kernel` bin expressions: resolve and validate the postfix
-        // token lists now, so the RT thread only ever runs a program that
-        // passed the stack/arity checks. The parameters a program may read
-        // (`p0`...) are this UGen's inputs past the chain (input 0).
-        let n_params = u.inputs.len().saturating_sub(1);
-        if let Some(tokens) = &u.mag_expr {
-            let what = format!("ugens[{i}] ({}) mag_expr", u.kind);
-            config.mag_prog = Some(compile_pv_expr(tokens, n_params, &what)?);
-        }
-        if let Some(tokens) = &u.phase_expr {
-            let what = format!("ugens[{i}] ({}) phase_expr", u.kind);
-            config.phase_prog = Some(compile_pv_expr(tokens, n_params, &what)?);
-        }
+        let mut config = ugen_config(i, u, desc)?;
 
         let mut inputs = Vec::with_capacity(u.inputs.len());
         for (k, inp) in u.inputs.iter().enumerate() {
@@ -523,85 +384,15 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             }
         }
 
-        // Spectral chain. A `Source` (`FFT`) opens a new chain: validate
-        // its window size and record its slot. A `Filter`/`Sink` (`PV_*`/
-        // `IFFT`) must take a spectral wire as input 0 and inherits that chain's
-        // slot, window size and (if unset) window type -- so the client only
-        // specifies the size once, on the `FFT`.
-        let mut chain_slot: Option<usize> = None;
-        let mut chain_slot_b: Option<usize> = None;
-        // Resolves spectral input `k` to the chain slot it carries.
-        let chain_of =
-            |k: usize, inputs: &[InputRef], ugens: &[UGenDef]| -> Result<usize, String> {
-                // Guards the variadic spectral kinds (`PV_Kernel`), whose
-                // fixed-arity check above does not run.
-                if k >= inputs.len() {
-                    return Err(format!(
-                        "ugens[{i}] ({}): missing input {k} (the spectral chain)",
-                        u.kind
-                    ));
-                }
-                let InputRef::Wire(w) = inputs[k] else {
-                    return Err(format!(
-                        "ugens[{i}] ({}): input {k} must be the spectral chain from an earlier \
-                     FFT/PV_* UGen",
-                        u.kind
-                    ));
-                };
-                ugens[w].chain_slot.ok_or_else(|| {
-                    format!(
-                        "ugens[{i}] ({}): input {k} (ugen {w}, {}) is not a spectral chain",
-                        u.kind, ugens[w].desc.name
-                    )
-                })
-            };
-        match desc.spectral {
-            SpectralRole::None => {}
-            SpectralRole::Source => {
-                let winsize = resolve_fft_size(u.fft_size);
-                config.fft_size = Some(winsize);
-                chain_slot = Some(spectral_sizes.len());
-                spectral_sizes.push(winsize);
-            }
-            SpectralRole::Filter | SpectralRole::Sink => {
-                let slot = chain_of(0, &inputs, &ugens)?;
-                let InputRef::Wire(w) = inputs[0] else {
-                    unreachable!("chain_of validated the wire")
-                };
-                let up = &ugens[w];
-                chain_slot = Some(slot);
-                config.fft_size = Some(spectral_sizes[slot]);
-                if config.wintype.is_none() {
-                    config.wintype = up.config.wintype;
-                }
-                if config.hop.is_none() {
-                    config.hop = up.config.hop;
-                }
-            }
-            // A two-chain combiner: inputs 0 and 1 are chains of equal
-            // window size and distinct slots; the result lands in chain A, so
-            // the combiner inherits A's slot (a downstream filter/sink then
-            // reads the combined chain through it).
-            SpectralRole::Filter2 => {
-                let a = chain_of(0, &inputs, &ugens)?;
-                let b = chain_of(1, &inputs, &ugens)?;
-                if a == b {
-                    return Err(format!(
-                        "ugens[{i}] ({}): both inputs read the same spectral chain",
-                        u.kind
-                    ));
-                }
-                if spectral_sizes[a] != spectral_sizes[b] {
-                    return Err(format!(
-                        "ugens[{i}] ({}): chain window sizes differ ({} vs {})",
-                        u.kind, spectral_sizes[a], spectral_sizes[b]
-                    ));
-                }
-                chain_slot = Some(a);
-                chain_slot_b = Some(b);
-                config.fft_size = Some(spectral_sizes[a]);
-            }
-        }
+        let (chain_slot, chain_slot_b) = spectral_chain(
+            i,
+            u,
+            desc,
+            &inputs,
+            &ugens,
+            &mut spectral_sizes,
+            &mut config,
+        )?;
 
         // Output rate: the explicit `rate` field validated against the
         // kind, or the kind's default. `ugens` already holds every earlier
@@ -715,6 +506,287 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
         });
     }
 
+    let ugens = insert_lags(ugens, &lagged, n_controls, &mut constants);
+
+    Ok(SynthDef {
+        name: spec.name,
+        control_names: spec.controls.iter().map(|c| c.name.clone()).collect(),
+        control_defaults: spec.controls.iter().map(|c| c.default).collect(),
+        control_types,
+        constants,
+        ugens,
+        num_locals,
+        spectral_sizes,
+    })
+}
+
+/// The controls' types, and which are lagged: `(control index, up time,
+/// optional down time)` for the compile-time `Lag` insertion.
+#[allow(clippy::type_complexity)]
+fn parse_controls(
+    spec: &SynthDefSpec,
+) -> Result<(Vec<ControlType>, Vec<(usize, f32, Option<f32>)>), String> {
+    // Control types + lag times. `lagged` collects (control index, up
+    // time, optional down time) for the compile-time Lag insertion below.
+    let mut control_types = Vec::with_capacity(spec.controls.len());
+    let mut lagged: Vec<(usize, f32, Option<f32>)> = Vec::new();
+    for (ci, c) in spec.controls.iter().enumerate() {
+        let ty = match &c.rate {
+            Some(name) => ControlType::parse(name).ok_or_else(|| {
+                format!("controls[{ci}] ({}): unknown control type '{name}'", c.name)
+            })?,
+            None => ControlType::Control,
+        };
+        if c.lag_down.is_some() && c.lag.is_none() {
+            return Err(format!(
+                "controls[{ci}] ({}): lag_down requires lag (the up time)",
+                c.name
+            ));
+        }
+        let up = c.lag.unwrap_or(0.0);
+        let down = c.lag_down;
+        if (up > 0.0 || down.is_some_and(|d| d > 0.0)) && ty != ControlType::Control {
+            return Err(format!(
+                "controls[{ci}] ({}): lag is only valid on a kr (plain) control",
+                c.name
+            ));
+        }
+        if up > 0.0 || down.is_some_and(|d| d > 0.0) {
+            lagged.push((ci, up.max(0.0), down));
+        }
+        control_types.push(ty);
+    }
+    Ok((control_types, lagged))
+}
+
+/// UGen `i`'s place in a spectral chain, as `(chain slot, second chain
+/// slot)`. A `Source` (`FFT`) opens a chain and records its window size; a
+/// filter, sink or two-chain combiner reads the chain its input carries and
+/// inherits its window size (and, if unset, its window type and hop).
+fn spectral_chain(
+    i: usize,
+    u: &UGenSpec,
+    desc: &UGenDescriptor,
+    inputs: &[InputRef],
+    ugens: &[UGenDef],
+    spectral_sizes: &mut Vec<usize>,
+    config: &mut UGenConfig,
+) -> Result<(Option<usize>, Option<usize>), String> {
+    // Spectral chain. A `Source` (`FFT`) opens a new chain: validate
+    // its window size and record its slot. A `Filter`/`Sink` (`PV_*`/
+    // `IFFT`) must take a spectral wire as input 0 and inherits that chain's
+    // slot, window size and (if unset) window type -- so the client only
+    // specifies the size once, on the `FFT`.
+    let mut chain_slot: Option<usize> = None;
+    let mut chain_slot_b: Option<usize> = None;
+    // Resolves spectral input `k` to the chain slot it carries.
+    let chain_of = |k: usize, inputs: &[InputRef], ugens: &[UGenDef]| -> Result<usize, String> {
+        // Guards the variadic spectral kinds (`PV_Kernel`), whose
+        // fixed-arity check above does not run.
+        if k >= inputs.len() {
+            return Err(format!(
+                "ugens[{i}] ({}): missing input {k} (the spectral chain)",
+                u.kind
+            ));
+        }
+        let InputRef::Wire(w) = inputs[k] else {
+            return Err(format!(
+                "ugens[{i}] ({}): input {k} must be the spectral chain from an earlier \
+                 FFT/PV_* UGen",
+                u.kind
+            ));
+        };
+        ugens[w].chain_slot.ok_or_else(|| {
+            format!(
+                "ugens[{i}] ({}): input {k} (ugen {w}, {}) is not a spectral chain",
+                u.kind, ugens[w].desc.name
+            )
+        })
+    };
+    match desc.spectral {
+        SpectralRole::None => {}
+        SpectralRole::Source => {
+            let winsize = resolve_fft_size(u.fft_size);
+            config.fft_size = Some(winsize);
+            chain_slot = Some(spectral_sizes.len());
+            spectral_sizes.push(winsize);
+        }
+        SpectralRole::Filter | SpectralRole::Sink => {
+            let slot = chain_of(0, inputs, ugens)?;
+            let InputRef::Wire(w) = inputs[0] else {
+                unreachable!("chain_of validated the wire")
+            };
+            let up = &ugens[w];
+            chain_slot = Some(slot);
+            config.fft_size = Some(spectral_sizes[slot]);
+            if config.wintype.is_none() {
+                config.wintype = up.config.wintype;
+            }
+            if config.hop.is_none() {
+                config.hop = up.config.hop;
+            }
+        }
+        // A two-chain combiner: inputs 0 and 1 are chains of equal
+        // window size and distinct slots; the result lands in chain A, so
+        // the combiner inherits A's slot (a downstream filter/sink then
+        // reads the combined chain through it).
+        SpectralRole::Filter2 => {
+            let a = chain_of(0, inputs, ugens)?;
+            let b = chain_of(1, inputs, ugens)?;
+            if a == b {
+                return Err(format!(
+                    "ugens[{i}] ({}): both inputs read the same spectral chain",
+                    u.kind
+                ));
+            }
+            if spectral_sizes[a] != spectral_sizes[b] {
+                return Err(format!(
+                    "ugens[{i}] ({}): chain window sizes differ ({} vs {})",
+                    u.kind, spectral_sizes[a], spectral_sizes[b]
+                ));
+            }
+            chain_slot = Some(a);
+            chain_slot_b = Some(b);
+            config.fft_size = Some(spectral_sizes[a]);
+        }
+    }
+    Ok((chain_slot, chain_slot_b))
+}
+
+/// UGen `i`'s arity against its kind's. `Some(n)` when the def stopped `n`
+/// inputs in, inside the kind's declared optional tail, which the caller
+/// fills from the descriptor's defaults.
+fn check_arity(i: usize, u: &UGenSpec, desc: &UGenDescriptor) -> Result<Option<usize>, String> {
+    // Arity, and the one way a def may be short: the kind's **declared
+    // optional tail** (`UGenInput::optional`), which the fill below
+    // completes from the descriptor's defaults. A kind with no tail --
+    // which is most of them, and every operator -- still needs its inputs
+    // exactly, so a truncated `Mul` fails here rather than compiling to
+    // silence.
+    let mut fill_from = None;
+    if let Arity::Fixed(want) = desc.arity
+        && u.inputs.len() != want
+    {
+        let least = desc.required_inputs();
+        if u.inputs.len() > want || u.inputs.len() < least {
+            return Err(if least == want {
+                format!(
+                    "ugens[{i}] ({}): expected {want} inputs, got {}",
+                    u.kind,
+                    u.inputs.len()
+                )
+            } else {
+                format!(
+                    "ugens[{i}] ({}): expected {least} to {want} inputs, got {}",
+                    u.kind,
+                    u.inputs.len()
+                )
+            });
+        }
+        fill_from = Some(u.inputs.len());
+    }
+    if u.inputs.len() > MAX_UGEN_INPUTS {
+        return Err(format!(
+            "ugens[{i}] ({}): inputs ({}) exceed MAX_UGEN_INPUTS ({MAX_UGEN_INPUTS})",
+            u.kind,
+            u.inputs.len()
+        ));
+    }
+    Ok(fill_from)
+}
+
+/// UGen `i`'s static configuration: its path, its operator and clip resolved
+/// by name, its transform size checked, and its `PV_Kernel` programs
+/// compiled -- everything about it that is not a wire.
+fn ugen_config(i: usize, u: &UGenSpec, desc: &UGenDescriptor) -> Result<UGenConfig, String> {
+    // Some UGens (DiskIn/DiskOut) carry a file path as a static parameter;
+    // require it at compile time so a bad def fails fast with `/fail`.
+    if desc.needs_path && u.path.as_deref().is_none_or(str::is_empty) {
+        return Err(format!(
+            "ugens[{i}] ({}): requires a non-empty path",
+            u.kind
+        ));
+    }
+    // The generic op UGens carry their operator by name; resolve it against
+    // the family's opcode table so a bad def fails fast, and keep the
+    // internal numeric index for `build` (the name never reaches the engine).
+    let mut op_index = None;
+    if let Some(family) = desc.op_family {
+        let name =
+            u.op.as_deref().filter(|s| !s.is_empty()).ok_or_else(|| {
+                format!("ugens[{i}] ({}): requires an 'op' operator name", u.kind)
+            })?;
+        let resolved = match family {
+            OpFamily::Unary => builtins::UnaryOp::from_name(name).map(|o| o as u32),
+            OpFamily::Binary => builtins::BinaryOp::from_name(name).map(|o| o as u32),
+            OpFamily::Map => clausters_core::warp::MapOp::from_name(name).map(|o| o as u32),
+        };
+        op_index = Some(resolved.ok_or_else(|| {
+            format!(
+                "ugens[{i}] ({}): unknown {family:?} operator '{name}'",
+                u.kind
+            )
+        })?);
+    }
+    // The clip is `RangeMapUGen`'s other static field: a name, resolved
+    // here so a typo fails the def rather than silently trimming nothing.
+    let clip = match u.clip.as_deref().filter(|s| !s.is_empty()) {
+        None => None,
+        Some(name) => Some(
+            clausters_core::warp::Clip::from_name(name)
+                .ok_or_else(|| format!("ugens[{i}] ({}): unknown clip '{name}'", u.kind))?
+                as u32,
+        ),
+    };
+    let mut config = UGenConfig {
+        path: u.path.clone(),
+        looping: u.looping,
+        format: u.format.clone(),
+        op: op_index,
+        clip,
+        label: u.label.clone(),
+        fft_size: u.fft_size,
+        hop: u.hop,
+        wintype: u.wintype,
+        partitions: u.partitions,
+        mag_prog: None,
+        phase_prog: None,
+        max_delay: u.max_delay,
+    };
+    // Any kind that takes an `fft_size` (the spectral chain's FFT, the
+    // partitioned convolver) must name a supported transform size.
+    if let Some(sz) = u.fft_size
+        && !fft::supports(sz)
+    {
+        return Err(format!(
+            "ugens[{i}] ({}): unsupported fft_size {sz}; use one of {:?}",
+            u.kind,
+            fft::SUPPORTED_SIZES
+        ));
+    }
+    // `PV_Kernel` bin expressions: resolve and validate the postfix
+    // token lists now, so the RT thread only ever runs a program that
+    // passed the stack/arity checks. The parameters a program may read
+    // (`p0`...) are this UGen's inputs past the chain (input 0).
+    let n_params = u.inputs.len().saturating_sub(1);
+    if let Some(tokens) = &u.mag_expr {
+        let what = format!("ugens[{i}] ({}) mag_expr", u.kind);
+        config.mag_prog = Some(compile_pv_expr(tokens, n_params, &what)?);
+    }
+    if let Some(tokens) = &u.phase_expr {
+        let what = format!("ugens[{i}] ({}) phase_expr", u.kind);
+        config.phase_prog = Some(compile_pv_expr(tokens, n_params, &what)?);
+    }
+    Ok(config)
+}
+
+/// Compile-time lag insertion, over the compiled `ugens`.
+fn insert_lags(
+    mut ugens: Vec<UGenDef>,
+    lagged: &[(usize, f32, Option<f32>)],
+    n_controls: usize,
+    constants: &mut Vec<f32>,
+) -> Vec<UGenDef> {
     // Compile-time lag insertion: a lagged control compiles to a `Lag`
     // (or `VarLag`) UGen reading the raw control, prepended to the graph; every
     // reference to that control is rewritten to the smoother's output. Reusing
@@ -773,17 +845,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
         prefix.extend(remapped);
         ugens = prefix;
     }
-
-    Ok(SynthDef {
-        name: spec.name,
-        control_names: spec.controls.iter().map(|c| c.name.clone()).collect(),
-        control_defaults: spec.controls.iter().map(|c| c.default).collect(),
-        control_types,
-        constants,
-        ugens,
-        num_locals,
-        spectral_sizes,
-    })
+    ugens
 }
 
 /// The built-in "default" def, registered at startup:

@@ -3687,7 +3687,7 @@ should confirm before the fix.
   the slab, backward-shift deletion) is kept by the one insert and the one
   `take_slot`, and `find` reads it: 0.03 / 0.05 / 0.06 us. The free-slot scan
   on insert stays linear — it runs once per new node, not per command.
-- ⬜ **Long functions that hold several steps** *(audit 2026-09-25)*.
+- ✅ **Long functions that hold several steps** *(audit 2026-09-25)*.
   `Engine::process_block` (about 340 lines: the next event, a transport edge,
   the frozen runs, time publication, counters and done actions), with "the
   transport freezes here" written in the edge branch and again in
@@ -3704,7 +3704,14 @@ should confirm before the fix.
   now takes its audio-bus count from the session like the mapped one did. `Engine::process_block` is 72 lines of named steps —
   `next_due`, `cross_edge`, `apply_due_bundle`, `publish_block`,
   `store_counters`, `apply_done_actions`, `drain_replies`, `meter_block` —
-  with the bench's default rows within noise of before.
+  with the bench's default rows within noise of before. `synthdef::compile`
+  is 236 lines, its controls, arity, static configuration, spectral chain and
+  lag insertion each a function (`parse_controls`, `check_arity`,
+  `ugen_config`, `spectral_chain`, `insert_lags`); what stays inline is the
+  walk over the inputs and the rates, which shares the whole graph built so
+  far. The "transport freezes here" twin turned out to be one line each
+  (`set_paused` on the governed group) with different surroundings, and was
+  left.
 - ✅ **Minor** *(audit 2026-09-25)*. `/server_notify` answers a client id that
   is its position in the list, so an earlier client leaving renumbers the
   others (no client reads it); a typo "where the the transport is";
