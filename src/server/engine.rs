@@ -652,6 +652,20 @@ impl Counters {
     }
 }
 
+/// A [`GarbageSink`] over an engine's own FIFOs. A macro rather than a method
+/// because it borrows the three fields one by one, which is what leaves the
+/// tree free to be borrowed beside it; a `&mut self` method would take all of
+/// the engine.
+macro_rules! garbage_sink {
+    ($engine:expr) => {
+        GarbageSink {
+            garbage_tx: &mut $engine.garbage_tx,
+            pending_garbage: &mut $engine.pending_garbage,
+            events_tx: &mut $engine.events_tx,
+        }
+    };
+}
+
 /// Routes freed nodes to the garbage and event FIFOs. Borrows the individual
 /// engine fields so the tree (also a field) can stay mutably borrowed.
 struct GarbageSink<'a> {
@@ -679,6 +693,27 @@ impl GarbageSink<'_> {
                 self.event(id, parent_id, true);
                 self.push(Garbage::FreedGroup { id, group });
             }
+        }
+    }
+
+    /// A node went in: `/node_start` for the notify clients.
+    fn started(&mut self, id: i32, parent_id: i32, is_group: bool) {
+        let _ = self.events_tx.push(NodeEvent {
+            kind: NodeEventKind::Go,
+            id,
+            parent_id,
+            is_group,
+        });
+    }
+
+    /// The tree refused a new node: it goes back through the garbage FIFO
+    /// with the reason, never dropped on this thread.
+    fn rejected(&mut self, id: i32, kind: NodeKind, why: Reject) {
+        match kind {
+            NodeKind::Synth { node: synth, .. } => {
+                self.push(Garbage::RejectedSynth { id, synth, why });
+            }
+            NodeKind::Group(group) => self.push(Garbage::RejectedGroup { id, group, why }),
         }
     }
 
@@ -1396,11 +1431,7 @@ impl Engine {
         for k in 0..n_done {
             let id = self.tree.done_node(k);
             let action = self.tree.done_action_at(k);
-            let mut sink = GarbageSink {
-                garbage_tx: &mut self.garbage_tx,
-                pending_garbage: &mut self.pending_garbage,
-                events_tx: &mut self.events_tx,
-            };
+            let mut sink = garbage_sink!(self);
             self.tree
                 .apply_done_action(id, action, &mut |f| sink.consume(f));
         }
@@ -1480,11 +1511,7 @@ impl Engine {
     }
 
     fn push_garbage(&mut self, garbage: Garbage) {
-        let mut sink = GarbageSink {
-            garbage_tx: &mut self.garbage_tx,
-            pending_garbage: &mut self.pending_garbage,
-            events_tx: &mut self.events_tx,
-        };
+        let mut sink = garbage_sink!(self);
         sink.push(garbage);
     }
 
@@ -1506,11 +1533,7 @@ impl Engine {
         };
         let here = self.device_here();
         {
-            let mut sink = GarbageSink {
-                garbage_tx: &mut self.garbage_tx,
-                pending_garbage: &mut self.pending_garbage,
-                events_tx: &mut self.events_tx,
-            };
+            let mut sink = garbage_sink!(self);
             let Some(cmd) = apply_to_tree(&mut self.tree, &mut sink, cmd) else {
                 return;
             };
@@ -1746,20 +1769,8 @@ fn apply_to_tree(tree: &mut NodeTree, sink: &mut GarbageSink, cmd: Cmd) -> Optio
                 action,
                 &mut |f| sink.consume(f),
             ) {
-                Ok(parent_id) => {
-                    let _ = sink.events_tx.push(NodeEvent {
-                        kind: NodeEventKind::Go,
-                        id,
-                        parent_id,
-                        is_group: false,
-                    });
-                }
-                Err((NodeKind::Synth { node: synth, .. }, why)) => {
-                    sink.push(Garbage::RejectedSynth { id, synth, why });
-                }
-                Err((NodeKind::Group(group), why)) => {
-                    sink.push(Garbage::RejectedGroup { id, group, why });
-                }
+                Ok(parent_id) => sink.started(id, parent_id, false),
+                Err((kind, why)) => sink.rejected(id, kind, why),
             }
         }
         Cmd::SetUsage { id, usage } => tree.set_usage(id, usage),
@@ -1776,20 +1787,8 @@ fn apply_to_tree(tree: &mut NodeTree, sink: &mut GarbageSink, cmd: Cmd) -> Optio
             match tree.insert(id, NodeKind::Group(group), target, action, &mut |f| {
                 sink.consume(f)
             }) {
-                Ok(parent_id) => {
-                    let _ = sink.events_tx.push(NodeEvent {
-                        kind: NodeEventKind::Go,
-                        id,
-                        parent_id,
-                        is_group: true,
-                    });
-                }
-                Err((NodeKind::Synth { node: synth, .. }, why)) => {
-                    sink.push(Garbage::RejectedSynth { id, synth, why });
-                }
-                Err((NodeKind::Group(group), why)) => {
-                    sink.push(Garbage::RejectedGroup { id, group, why });
-                }
+                Ok(parent_id) => sink.started(id, parent_id, true),
+                Err((kind, why)) => sink.rejected(id, kind, why),
             }
         }
         Cmd::FreeNode { id } => {

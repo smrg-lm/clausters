@@ -3650,7 +3650,15 @@ should confirm before the fix.
   server's live input and `clausters-midi`'s clip reader share, and
   `midi2freq` is the core's `midicps`. `clausters-ffi`'s `out` module is the one `text`,
   `fill` and `fill_then` every file calls (the ones with another contract —
-  a nul-terminated path, an error code — keep theirs).
+  a nul-terminated path, an error code — keep theirs). The audio editor's defs take `control`
+  from the mixer's; both playbacks send through `apply::transport_command`;
+  the engine builds its `GarbageSink` with one `garbage_sink!` and reports an
+  insert through `started`/`rejected`. (`reader_name` is not a duplicate: the
+  two prefixes name two different defs.) *Left*: the three ways a C ABI call
+  holds a sized answer until it is fetched — the document's `pending`, the
+  apps' `handed`, and `clausters-midi`'s leaked buffer the caller frees —
+  which is a convention of the bindings in both clients, to decide before it
+  is changed.
 - ✅ **An `IFFT` window swap left the overlap-add at the old window's level**
   *(found 2026-09-25, folding `Fft`'s and `Ifft`'s window command into one)*.
   `Ifft` refilled its window on `/node_ugenCmd … window` but not `norm`, the

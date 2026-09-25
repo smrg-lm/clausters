@@ -37,7 +37,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use clausters_core::audio_editor as ae;
 use clausters_core::ids::{IdError, IdSpaces};
-use clausters_core::osc::{OscMessage, OscType};
+use clausters_core::osc::OscType;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -589,18 +589,7 @@ impl AudioEditorPlayback {
 
     /// A transport command on this playback's transport, awaited.
     fn command(&self, addr: &str, args: Vec<OscType>) -> Vec<Step> {
-        let mut with_id = vec![OscType::Int(self.transport)];
-        with_id.extend(args);
-        vec![
-            Step::Send(OscMessage {
-                addr: addr.into(),
-                args: with_id,
-            }),
-            Step::AwaitDone {
-                command: addr.into(),
-                index: None,
-            },
-        ]
+        crate::apply::transport_command(self.transport, addr, args)
     }
 }
 
@@ -727,7 +716,7 @@ mod tests {
             .collect()
     }
 
-    fn sent<'a>(steps: &'a [Step], addr: &str) -> Vec<&'a OscMessage> {
+    fn sent<'a>(steps: &'a [Step], addr: &str) -> Vec<&'a clausters_core::osc::OscMessage> {
         steps
             .iter()
             .filter_map(|step| match step {

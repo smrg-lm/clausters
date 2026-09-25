@@ -58,7 +58,7 @@
 
 use serde_json::{Value, json};
 
-use crate::mixer::meter_spec;
+use crate::mixer::{control, meter_spec};
 
 /// The prefix every def here is named with -- the audio editor's, so nothing
 /// here is taken for the multitrack's (`mt`).
@@ -135,10 +135,6 @@ fn check(channels: usize) -> Result<(), String> {
         ));
     }
     Ok(())
-}
-
-fn control(name: &str, default: f32) -> Value {
-    json!({ "name": name, "default": default })
 }
 
 /// `in0..` then `out0..`, `n` of each: the controls a per-channel copy

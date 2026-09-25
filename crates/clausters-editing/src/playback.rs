@@ -23,14 +23,14 @@
 use std::collections::HashMap;
 
 use clausters_core::ids::{IdError, IdSpaces};
-use clausters_core::osc::{OscMessage, OscType};
+use clausters_core::osc::OscType;
 use clausters_core::tempoclock::{samples_to_secs, secs_to_samples};
 use clausters_document::SourceId;
 use clausters_document::multitrack::Multitrack;
 use clausters_document::multitrack::nodes::{self, SourceInfo};
 use serde_json::{Value, json};
 
-use crate::apply::{Applier, Endpoint, MULTITRACK_TRANSPORT, Step, steps_json};
+use crate::apply::{Applier, Endpoint, MULTITRACK_TRANSPORT, Step, send, steps_json};
 use crate::instance::Instance;
 
 /// **One multitrack, as it is playing.**
@@ -273,30 +273,9 @@ impl MultitrackPlayback {
     }
 }
 
-/// A command whose `/done` the rest waits for.
-/// A transport command on the multitrack's transport: [`command`] with the
-/// transport's id in front, where every transport command carries it.
+/// A transport command on the multitrack's transport.
 fn transport_command(addr: &str, args: Vec<OscType>) -> Vec<Step> {
-    let mut with_id = vec![OscType::Int(MULTITRACK_TRANSPORT)];
-    with_id.extend(args);
-    command(addr, with_id)
-}
-
-fn command(addr: &str, args: Vec<OscType>) -> Vec<Step> {
-    vec![
-        send(addr, args),
-        Step::AwaitDone {
-            command: addr.into(),
-            index: None,
-        },
-    ]
-}
-
-fn send(addr: &str, args: Vec<OscType>) -> Step {
-    Step::Send(OscMessage {
-        addr: addr.into(),
-        args,
-    })
+    crate::apply::transport_command(MULTITRACK_TRANSPORT, addr, args)
 }
 
 /// **Steps as the JSON a client is handed**: `{"steps": [...]}`, or

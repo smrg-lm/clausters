@@ -469,11 +469,26 @@ fn alloc_node(ids: &mut IdSpaces) -> Result<i32, IdError> {
     Ok(ids.alloc(Space::Nodes, 1)? as i32)
 }
 
-fn send(addr: &str, args: Vec<OscType>) -> Step {
+pub(crate) fn send(addr: &str, args: Vec<OscType>) -> Step {
     Step::Send(OscMessage {
         addr: addr.into(),
         args,
     })
+}
+
+/// A command on `transport` whose `/done` the rest waits for: the transport's
+/// id in front, where every transport command carries it. Both playbacks
+/// drive their transport through it.
+pub(crate) fn transport_command(transport: i32, addr: &str, args: Vec<OscType>) -> Vec<Step> {
+    let mut with_id = vec![OscType::Int(transport)];
+    with_id.extend(args);
+    vec![
+        send(addr, with_id),
+        Step::AwaitDone {
+            command: addr.into(),
+            index: None,
+        },
+    ]
 }
 
 /// **The steps as JSON**, for a client that walks them in its own language.

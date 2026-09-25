@@ -238,7 +238,9 @@ fn check(channels: usize, what: &str) -> Result<(), String> {
 
 // ---- the defs ----
 
-fn control(name: &str, default: f32) -> Value {
+/// One control of a def spec, with its default. The audio editor's defs use
+/// it too.
+pub(crate) fn control(name: &str, default: f32) -> Value {
     json!({ "name": name, "default": default })
 }
 
