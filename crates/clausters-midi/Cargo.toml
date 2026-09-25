@@ -18,6 +18,8 @@ default = []
 live = ["dep:midir"]
 
 [dependencies]
+# The MIDI 1.0 -> 2.0 widening, shared with the server's live input.
+clausters-core = { path = "../clausters-core" }
 # Live MIDI I/O (virtual ports). Pure Rust over libasound on Linux.
 midir = { version = "0.11", optional = true }
 # UMP message layer for the MIDI 2.0 clip file: Channel Voice 2 (default),

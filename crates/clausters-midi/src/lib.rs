@@ -134,12 +134,8 @@ pub fn write_smf(events: &[TimedMessage], ppq: u16) -> Vec<u8> {
 // Voice 2) per event + End of Clip, words big-endian. MIDI 1.0 note velocities
 // are widened to 16 bits, so a clip carries them at full resolution.
 
-/// Widen a 7-bit value to 16 bits (bit-repeat fill, 0->0 and 127->65535) -- the
-/// same scaling the server uses for live MIDI 1.0 input.
-fn scale_7_to_16(v: u8) -> u16 {
-    let v = (v & 0x7f) as u16;
-    (v << 9) | (v << 2) | (v >> 5)
-}
+// The same widening the server applies to live MIDI 1.0 input.
+use clausters_core::midi::widen_7_to_16;
 
 /// The two UMP words of a MIDI 2.0 Channel Voice note on/off from a MIDI 1.0
 /// status byte and data. `None` for non-note status (the client's MIDI
@@ -147,7 +143,7 @@ fn scale_7_to_16(v: u8) -> u16 {
 fn note_cv2_words(status: u8, d1: u8, d2: u8) -> Option<[u32; 2]> {
     let channel = u4::new(status & 0x0f);
     let note = u7::new(d1 & 0x7f);
-    let velocity = scale_7_to_16(d2);
+    let velocity = widen_7_to_16(d2);
     match status & 0xf0 {
         0x90 if d2 != 0 => {
             let mut m = NoteOn::<[u32; 2]>::new();
@@ -661,10 +657,10 @@ mod tests {
         let bytes = write_clip(&events, 96);
         let ons = clip_note_ons(&bytes);
         assert_eq!(ons.len(), 2);
-        assert_eq!(ons[0], (0, 60, scale_7_to_16(100) as u32));
-        assert_eq!(ons[1], (96, 67, scale_7_to_16(80) as u32));
+        assert_eq!(ons[0], (0, 60, widen_7_to_16(100) as u32));
+        assert_eq!(ons[1], (96, 67, widen_7_to_16(80) as u32));
         // Velocity really is widened past 7 bits (not just `vel << 9`).
-        assert!(scale_7_to_16(100) > (100u16 << 8));
+        assert!(widen_7_to_16(100) > (100u16 << 8));
     }
 
     /// The C ABI path produces the same bytes and frees cleanly.

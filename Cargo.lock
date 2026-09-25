@@ -314,6 +314,7 @@ dependencies = [
 name = "clausters-midi"
 version = "0.11.0"
 dependencies = [
+ "clausters-core",
  "midi2",
  "midir",
  "midly",

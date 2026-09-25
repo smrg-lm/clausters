@@ -11,11 +11,12 @@
 //! would have quantized away.
 
 /// **Note on/off** -- note number (with optional microtonal fraction) to
-/// frequency in Hz. The `f32` server counterpart of the client's `midicps`
+/// frequency in Hz: the core's `midicps`, the one a client's `midicps` is, so
+/// a note played over MIDI and one a client sends land on the same pitch
 /// (12-TET, A4 = note 69 = 440 Hz).
 #[inline]
 pub fn midi2freq(note: f32) -> f32 {
-    440.0 * 2.0f32.powf((note - 69.0) / 12.0)
+    clausters_core::builtins::apply_unary(clausters_core::builtins::UnaryOp::Midicps, note)
 }
 
 /// **Note on/off** -- 16-bit velocity (0..=65535) to linear amplitude (0..=1).

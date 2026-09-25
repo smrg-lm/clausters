@@ -94,6 +94,7 @@ pub mod fft;
 pub mod ids;
 pub mod loudness;
 pub mod measure;
+pub mod midi;
 pub mod mixer;
 #[cfg(feature = "notation")]
 pub mod notation;

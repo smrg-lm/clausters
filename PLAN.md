@@ -3646,7 +3646,9 @@ should confirm before the fix.
   *Done so far*: `dsp::fifo::SampleFifo` is the one sample FIFO, and
   `window_command` the one window command (which is how the next entry was
   found). `faust::node::FaustBody` is the Faust node body both backends'
-  `FaustSynth` delegate to.
+  `FaustSynth` delegate to. `clausters_core::midi` is the one 7-bit and 14-bit widening the
+  server's live input and `clausters-midi`'s clip reader share, and
+  `midi2freq` is the core's `midicps`.
 - ✅ **An `IFFT` window swap left the overlap-add at the old window's level**
   *(found 2026-09-25, folding `Fft`'s and `Ifft`'s window command into one)*.
   `Ifft` refilled its window on `/node_ugenCmd … window` but not `norm`, the
