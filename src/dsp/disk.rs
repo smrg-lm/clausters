@@ -32,7 +32,7 @@ use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::dsp::registry::UGenConfig;
 use crate::dsp::{ProcessCtx, UGen, at};
-use crate::server::nrt::wav_format;
+use crate::server::nrt::{wav_format, write_wav_sample};
 
 /// Ring capacity in samples (~1.4 s of mono audio at 48 kHz; less per channel
 /// for multichannel reads). Absorbs disk/scheduler jitter.
@@ -378,15 +378,8 @@ fn writer_thread(
             return;
         }
     };
-    let scale = ((1u64 << (bits - 1)) - 1) as f32;
     let write_one = |writer: &mut hound::WavWriter<std::io::BufWriter<std::fs::File>>, s: f32| {
-        let r = match sample_format {
-            hound::SampleFormat::Float => writer.write_sample(s),
-            hound::SampleFormat::Int => {
-                writer.write_sample((s.clamp(-1.0, 1.0) * scale).round() as i32)
-            }
-        };
-        r.is_ok()
+        write_wav_sample(writer, sample_format, bits, s).is_ok()
     };
 
     loop {

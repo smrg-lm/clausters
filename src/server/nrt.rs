@@ -1238,10 +1238,9 @@ pub fn wav_header(
 /// Encodes interleaved `f32` samples into WAV sample bytes -- the body a
 /// [`wav_header`] describes, and nothing else.
 ///
-/// It exists so the **scaling and the clamp live in one place**: a caller
-/// streaming a recording out in pieces (a page writing to its own storage) gets
-/// the same int16 a native `DiskOut` writes, rather than a second conversion
-/// that rounds a hair differently.
+/// A caller streaming a recording out in pieces (a page writing to its own
+/// storage) gets the same integers a native `DiskOut` writes: both quantize
+/// through [`quantize`].
 pub fn encode_wav_frames(samples: &[f32], sample_format: &str) -> Result<Vec<u8>, String> {
     let (bits, format) = wav_format(sample_format)?;
     let mut out = Vec::with_capacity(samples.len() * usize::from(bits.div_ceil(8)));
@@ -1251,21 +1250,38 @@ pub fn encode_wav_frames(samples: &[f32], sample_format: &str) -> Result<Vec<u8>
                 out.extend_from_slice(&s.to_le_bytes());
             }
         }
-        (hound::SampleFormat::Int, 16) => {
-            for s in samples {
-                let v = (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
-                out.extend_from_slice(&v.to_le_bytes());
-            }
-        }
-        (hound::SampleFormat::Int, 24) => {
-            for s in samples {
-                let v = (s.clamp(-1.0, 1.0) * 8_388_607.0) as i32;
-                out.extend_from_slice(&v.to_le_bytes()[..3]);
+        (hound::SampleFormat::Int, 16 | 24) => {
+            let width = usize::from(bits / 8);
+            for &s in samples {
+                out.extend_from_slice(&quantize(s, bits).to_le_bytes()[..width]);
             }
         }
         (f, b) => return Err(format!("unsupported format {f:?}/{b}-bit")),
     }
     Ok(out)
+}
+
+/// The integer a `bits`-bit WAV stores for the sample `s`: clamped to
+/// `[-1, 1]`, scaled to the positive full scale and rounded. Every WAV writer
+/// quantizes through it, so a file and a page's piece of one hold the same
+/// bytes for the same samples.
+pub fn quantize(s: f32, bits: u16) -> i32 {
+    let scale = ((1u64 << (bits - 1)) - 1) as f32;
+    (s.clamp(-1.0, 1.0) * scale).round() as i32
+}
+
+/// Writes one sample to a WAV `writer` whose spec is `format`/`bits` -- the
+/// float as is, an integer through [`quantize`].
+pub fn write_wav_sample<W: std::io::Write + std::io::Seek>(
+    writer: &mut hound::WavWriter<W>,
+    format: hound::SampleFormat,
+    bits: u16,
+    s: f32,
+) -> Result<(), hound::Error> {
+    match format {
+        hound::SampleFormat::Float => writer.write_sample(s),
+        hound::SampleFormat::Int => writer.write_sample(quantize(s, bits)),
+    }
 }
 
 /// Maps a scsynth-style sample-format name to a hound WAV spec fragment.
@@ -1312,19 +1328,8 @@ fn write_wav(
     let samples = &held[start * buffer.channels()..(start + frames) * buffer.channels()];
 
     let mut writer = hound::WavWriter::create(path, spec).map_err(err)?;
-    match format {
-        hound::SampleFormat::Float => {
-            for &s in samples {
-                writer.write_sample(s).map_err(err)?;
-            }
-        }
-        hound::SampleFormat::Int => {
-            let scale = ((1u64 << (bits - 1)) - 1) as f32;
-            for &s in samples {
-                let q = (s.clamp(-1.0, 1.0) * scale).round() as i32;
-                writer.write_sample(q).map_err(err)?;
-            }
-        }
+    for &s in samples {
+        write_wav_sample(&mut writer, format, bits, s).map_err(err)?;
     }
     writer.finalize().map_err(err)
 }

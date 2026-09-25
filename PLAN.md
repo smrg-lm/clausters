@@ -3447,7 +3447,7 @@ fused onto the wrong item. Defects first, then what is duplicated, then
 structure. What is marked *to check* is a reading of the code that a test
 should confirm before the fix.
 
-- ⬜ **A page and a native server write different WAV bytes** *(audit
+- ✅ **A page and a native server write different WAV bytes** *(audit
   2026-09-25)*. Four WAV writers quantize an integer sample: `nrt::write_wav`,
   `render`'s file writer and `DiskOut`'s thread scale and **round**; the page's
   `/buffer_write` (`nrt::encode_wav_frames`, through `clausters-nrt-web`)
@@ -3455,6 +3455,11 @@ should confirm before the fix.
   same write differs by up to one LSB in a browser. One quantizer and one frame
   encoder for all four, and a test pinning the bytes of an int16 and an int24
   write.
+  **Fixed**: `nrt::quantize` is the one quantizer (clamp, scale, round) and
+  `nrt::write_wav_sample` the one sample writer; `write_wav`, `render_to_wav`
+  and `DiskOut` write through the second and `encode_wav_frames` through the
+  first. `a_page_encodes_the_int_bytes_a_native_write_writes` pins both
+  widths at the half-step values where the two quantizers parted.
 - ⬜ **An offline score refuses two buffer commands the live server takes**
   *(audit 2026-09-25, to check)*. `server::render` keeps its own list of the
   `/buffer_*` job addresses and lacks `/buffer_setChannel` and

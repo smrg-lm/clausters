@@ -12,7 +12,7 @@ use clausters::dsp::buffer::Buffer;
 use clausters::node::{AddAction, ROOT_NODE_ID};
 use clausters::rosc::OscType;
 use clausters::server::engine::{BLOCK_SIZE, Cmd, Engine, engine_pair};
-use clausters::server::nrt::{NrtAction, NrtJob, NrtRequest, NrtThread};
+use clausters::server::nrt::{NrtAction, NrtJob, NrtRequest, NrtThread, encode_wav_frames};
 use clausters::synthdef::SynthDefSpec;
 use clausters::synthdef::instance::UGenSynth;
 use serde_json::json;
@@ -911,6 +911,45 @@ fn wav_write_then_alloc_read_round_trips_float_exactly() {
         "float WAV must be lossless"
     );
     std::fs::remove_file(&path).ok();
+}
+
+#[test]
+fn a_page_encodes_the_int_bytes_a_native_write_writes() {
+    // 0.5 scales to 16383.5 at 16 bits and to 4194303.5 at 24: a rounding and
+    // a truncating quantizer part there.
+    let data = vec![0.5f32, -0.5, 1.0, -1.0, 0.25, 0.0];
+    for (format, pinned) in [
+        ("int16", vec![16384i32, -16384, 32767, -32767, 8192, 0]),
+        (
+            "int24",
+            vec![4194304, -4194304, 8388607, -8388607, 2097152, 0],
+        ),
+    ] {
+        let path = tmp_wav(&format!("quantize-{format}"));
+        run_nrt(NrtJob::Write {
+            path: path.clone(),
+            sample_format: format.into(),
+            buf_start: 0,
+            num_frames: -1,
+            buffer: Arc::new(Buffer::new(data.clone(), 1, data.len(), 48_000.0)),
+        })
+        .unwrap();
+        let file = std::fs::read(&path).unwrap();
+        std::fs::remove_file(&path).ok();
+
+        let page = encode_wav_frames(&data, format).unwrap();
+        assert!(file.ends_with(&page), "{format}: the page's bytes differ");
+        let width = page.len() / data.len();
+        let read: Vec<i32> = page
+            .chunks(width)
+            .map(|b| {
+                let mut w = [0u8; 4];
+                w[4 - width..].copy_from_slice(b);
+                i32::from_le_bytes(w) >> (8 * (4 - width))
+            })
+            .collect();
+        assert_eq!(read, pinned, "{format}");
+    }
 }
 
 #[test]

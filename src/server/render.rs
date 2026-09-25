@@ -28,7 +28,7 @@ use crate::server::engine::{
     BLOCK_SIZE, Cmd, DEFAULT_AUDIO_BUSES, DEFAULT_CONTROL_BUSES, Engine, EngineHandle, Garbage,
     NodeEventKind, engine_pair_full,
 };
-use crate::server::nrt::{NrtAction, run_job, wav_format};
+use crate::server::nrt::{NrtAction, run_job, wav_format, write_wav_sample};
 
 /// One score entry: the messages of a bundle, executed atomically at `time`
 /// seconds from the start of the render.
@@ -389,16 +389,9 @@ pub fn render_to_wav(
         sample_format: format,
     };
     let mut writer = hound::WavWriter::create(path, spec).map_err(err)?;
-    let scale = ((1u64 << (bits - 1)) - 1) as f32;
     let stats = render(score, cfg, |chunk| {
         for &s in chunk {
-            match format {
-                hound::SampleFormat::Float => writer.write_sample(s),
-                hound::SampleFormat::Int => {
-                    writer.write_sample((s.clamp(-1.0, 1.0) * scale).round() as i32)
-                }
-            }
-            .map_err(err)?;
+            write_wav_sample(&mut writer, format, bits, s).map_err(err)?;
         }
         Ok(())
     })?;
