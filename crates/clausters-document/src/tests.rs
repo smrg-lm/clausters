@@ -1,4 +1,4 @@
-//! O1's acceptance, plus the derivations the client already relies on.
+//! The document's shape, plus the derivations the client already relies on.
 //!
 //! What is checked here is deliberately narrow: this milestone is the *shape*,
 //! so the tests say that the shape survives a round trip, that what this build

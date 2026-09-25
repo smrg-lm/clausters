@@ -16,7 +16,7 @@ from ..expr import SynthExpr
 _BINOP_UGEN = {"add": "Add", "sub": "Sub", "mul": "Mul", "div": "Div"}
 
 #: Every other operator/method selector composes a generic ``BinaryOpUGen``/
-#: ``UnaryOpUGen`` whose ``op`` is the operator **name** (S3) -- the same name
+#: ``UnaryOpUGen`` whose ``op`` is the operator **name** -- the same name
 #: the server's `clausters_core::builtins` table resolves, and the same op the
 #: value side (`clausters.base.builtins`) computes, so a graph op and an off-RT
 #: value agree. The selector *is* the wire name (no numeric index crosses the
@@ -158,7 +158,7 @@ class Ugen(_Node):
     ``rate`` is the optional output calculation rate (``"ir"``/``"kr"``/
     ``"ar"``/``"dr"``); ``None`` lets the server pick the kind's default (``ar``
     for signal UGens). Set it fluently with `at_rate`. ``op`` is the operator
-    **name** carried by the generic ``BinaryOpUGen``/``UnaryOpUGen`` (S3), e.g.
+    **name** carried by the generic ``BinaryOpUGen``/``UnaryOpUGen``, e.g.
     ``"mul"`` / ``"midicps"``; ``None`` for every other kind. ``label`` is the
     string tag the side-effect UGens carry -- ``send_reply``'s command name and
     ``poll``'s label; ``None`` for every other kind. ``static`` is a dict of any

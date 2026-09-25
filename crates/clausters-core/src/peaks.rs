@@ -1672,7 +1672,7 @@ mod update_tests {
 
     /// A cache written before the mean square joined keeps min/max current and
     /// stays without a measure: an invented one would read as silence measured,
-    /// which is the distinction A1 drew and this must not undo.
+    /// which is a distinction the cache keeps and this must not undo.
     #[test]
     fn a_pyramid_without_a_measure_does_not_gain_one() {
         let mut samples = ramp(1000);

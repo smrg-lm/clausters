@@ -1,4 +1,4 @@
-//! M13: parallel processing of `/group_parallel` groups. The central claim
+//! Parallel processing of `/group_parallel` groups. The central claim
 //! under test: parallel execution is **bit-identical** to sequential
 //! execution -- stages only batch children with pairwise disjoint bus
 //! usage, so worker interleaving can never change a sample.
@@ -165,8 +165,8 @@ fn torture_graph() -> Vec<OscMessage> {
         "/group_parallel",
         vec![OscType::Int(100), OscType::Int(1)],
     ));
-    // Dependency-correct insertion order (M12 could do this; here it is
-    // explicit so the test only exercises M13).
+    // Dependency-correct insertion order (an auto-sorted group could do this;
+    // here it is explicit so the test only exercises the parallel stages).
     m.push(s_new("src16", 1001, 100, &[]));
     m.push(s_new("src17", 1002, 100, &[]));
     m.push(s_new("src18", 1003, 100, &[]));

@@ -86,7 +86,7 @@ fn audio_thread_does_not_allocate() {
     assert_eq!(handle.collect_garbage(), 33);
 }
 
-/// Same guardian for the M11 mapping path: reading a control bus and sampling
+/// Same guardian for the bus-mapping path: reading a control bus and sampling
 /// an audio bus into mapped controls at the start of every block must not
 /// allocate -- `map_control` only flips entries in a pre-allocated table.
 #[test]
@@ -143,7 +143,7 @@ fn mapped_controls_do_not_allocate_on_the_audio_thread() {
     });
 }
 
-/// Same guardian for the scheduler (M6): enqueuing timed bundles, splitting
+/// Same guardian for the scheduler: enqueuing timed bundles, splitting
 /// blocks at their offsets and executing them must not allocate -- the spent
 /// `Vec` shells leave through the garbage FIFO with their capacity intact.
 #[test]
@@ -195,7 +195,7 @@ fn scheduled_bundles_do_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 16);
 }
 
-/// Same guardian for the buffer path (M5): installing, replacing and freeing
+/// Same guardian for the buffer path: installing, replacing and freeing
 /// pool buffers, and `PlayBuf` reading them, must not allocate on the audio
 /// thread -- swapped-out buffers leave as garbage, never dropped there.
 #[test]
@@ -375,7 +375,7 @@ fn a_stitched_buffer_does_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 2);
 }
 
-/// The S5 table oscillators and waveshaper (`Osc`/`VOsc`/`Shaper`) read the
+/// The table oscillators and waveshaper (`Osc`/`VOsc`/`Shaper`) read the
 /// wavetable pool on the audio thread the same way `PlayBuf` does -- pointer
 /// lookups and interpolation, never an allocation. The buffers themselves are
 /// generated on the NRT thread (`/buffer_gen`), so the audio thread only reads.
@@ -452,7 +452,7 @@ fn table_oscillators_do_not_allocate_on_the_audio_thread() {
     });
 }
 
-/// Same guardian for the frequency-domain chain (S8): the `FFT` input buffer,
+/// Same guardian for the frequency-domain chain: the `FFT` input buffer,
 /// the `IFFT` overlap-add tail and the synth-private `SpectralChain` frame are
 /// all allocated at build time (network side); the per-hop forward and inverse
 /// transforms run in pre-allocated scratch, so the whole chain -- including the
@@ -466,7 +466,7 @@ fn spectral_chain_does_not_allocate_on_the_audio_thread() {
 
     // Sine -> FFT -> PV_BrickWall -> PV_MagAbove -> PV_Kernel -> IFFT -> Out.
     // A 512-point window with a 128-sample hop, so a transform fires every
-    // other block. The `PV_Kernel` runs both bin-expression programs (M29) --
+    // other block. The `PV_Kernel` runs both bin-expression programs --
     // its pre-allocated eval stack and the polar phase path included.
     let spec: SynthDefSpec = serde_json::from_str(
         r#"{
@@ -561,7 +561,7 @@ fn local_feedback_does_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 1);
 }
 
-/// The rate substrate (S1): the `ir` init pass and the demand pull path must
+/// The rate substrate: the `ir` init pass and the demand pull path must
 /// not allocate on the audio thread. `Rand.ir` runs its init once on the first
 /// block; `Demand`/`Dseq` step the sub-list every block. Both live entirely in
 /// `UGenSynth::process`, so this guards the `step` closure and init skip.
@@ -616,7 +616,7 @@ fn rate_substrate_does_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 1);
 }
 
-/// The demand family (U8): every source and both drivers, nested three deep,
+/// The demand family: every source and both drivers, nested three deep,
 /// pulled and reset every block. The recursion runs on the audio thread -- this
 /// is what says it never allocates a frame of it -- and driving all fourteen
 /// rows from one def also checks each one's arity against the registry.
@@ -705,7 +705,7 @@ fn demand_family_does_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 1);
 }
 
-/// Typed controls (S2): the trigger reset, the compile-inserted `Lag`, the
+/// Typed controls: the trigger reset, the compile-inserted `Lag`, the
 /// scalar `/node_set` reject and ordinary sets must all stay allocation-free on
 /// the audio thread. The def mixes a `tr`, a lagged `kr` and an `ir` control.
 #[test]
@@ -785,7 +785,7 @@ fn typed_controls_do_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 1);
 }
 
-/// Operator UGens (S3): the generic `UnaryOpUGen`/`BinaryOpUGen` selected by an
+/// Operator UGens: the generic `UnaryOpUGen`/`BinaryOpUGen` selected by an
 /// opcode index and the fused `MulAdd`/`Sum3`/`Sum4` must stay allocation-free
 /// on the audio thread. They only call `clausters_core::builtins`, which writes
 /// into caller-provided slices, so there is nothing to allocate -- this guards
@@ -841,7 +841,7 @@ fn operator_ugens_do_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 1);
 }
 
-/// Same guardian for the Faust path (F3): inserting, processing, recontrolling
+/// Same guardian for the Faust path: inserting, processing, recontrolling
 /// and freeing `FaustSynth`s must not allocate on the audio thread. This
 /// guards our wrapper (staging copies, zone stores, garbage routing) --
 /// `compute` itself is JIT code whose C-side mallocs, if any, would bypass
@@ -990,7 +990,7 @@ fn envgen_free_self_does_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 16);
 }
 
-/// S4: the relative done actions (sibling resolution + free/pause) and `/node_run`
+/// The relative done actions (sibling resolution + free/pause) and `/node_run`
 /// (pause/resume toggle) run on the audio thread -- during the done drain and
 /// the command apply -- and must not allocate. The scene fires a
 /// `freeSelfAndNext` inside a group and toggles the group's run flag.
@@ -1062,7 +1062,7 @@ fn relative_done_actions_and_n_run_do_not_allocate() {
     });
 }
 
-/// M13: the conductor side of parallel dispatch -- stage partition (bitops),
+/// The conductor side of parallel dispatch -- stage partition (bitops),
 /// the publish/steal/wait protocol (atomics, bounded spins, at worst an
 /// `unpark` syscall) -- must not allocate either. The workers run the same
 /// `process` code path verified above; their threads are spawned (and
@@ -1129,7 +1129,7 @@ fn parallel_dispatch_does_not_allocate() {
     });
 }
 
-/// OSC command-set completion (S6): the new commands that reach the audio
+/// OSC command-set completion: the new commands that reach the audio
 /// thread must stay allocation-free. `Cmd::MoveNode` with `Place::Head`/`Tail`
 /// (`/group_head`/`/group_tail`/`/node_order`), a `/node_ugenCmd` payload routed to a UGen
 /// instance, and `Cmd::ClearSched` draining the timed-bundle queue to the
@@ -1227,7 +1227,7 @@ fn command_set_completion_does_not_allocate_on_the_audio_thread() {
     });
 }
 
-/// S7: live input feeds `process_block` at block start by popping a lock-free
+/// Live input feeds `process_block` at block start by popping a lock-free
 /// ring into the input buses -- no allocation on the audio thread. Push frames,
 /// then process under the alloc guard.
 #[test]
@@ -1271,7 +1271,7 @@ fn hardware_input_path_does_not_allocate() {
     });
 }
 
-/// S9: the side-effect UGens buffer triggers and the engine drains them into
+/// The side-effect UGens buffer triggers and the engine drains them into
 /// the reply FIFO every block -- all on the audio thread, with no allocation.
 /// An `Impulse` fires the three reply UGens repeatedly; the FIFO is never
 /// popped here (no network thread), so it fills and drops, which must also not
@@ -1353,7 +1353,7 @@ fn tap_writes_do_not_allocate_on_the_audio_thread() {
     });
 }
 
-/// The phase family (U1): every one of them is a pure accumulator plus
+/// The phase family: every one of them is a pure accumulator plus
 /// arithmetic, so none should touch the allocator. `Phasor` is included because
 /// it carries trigger state, and the `LF*` shapes because they latch their
 /// initial phase on the first block -- a lazily built table there would show up
@@ -1418,7 +1418,7 @@ fn phase_ugens_do_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 1);
 }
 
-/// The filter core (U2): the state-variable rows and the one-pole family. The
+/// The filter core: the state-variable rows and the one-pole family. The
 /// coefficient path is the thing worth guarding -- it computes a `tan` and a
 /// reciprocal per block, and a lazily built table or a `Vec` of interpolated
 /// coefficients there would allocate on the audio thread. Both parameter paths
@@ -1481,7 +1481,7 @@ fn filter_ugens_do_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 1);
 }
 
-/// The delay core (U3): the line is allocated in `build`, on the network
+/// The delay core: the line is allocated in `build`, on the network
 /// thread, and never resized -- which is exactly the claim worth a guard, since
 /// a `Vec` that grew to accommodate a longer delay would allocate here. All
 /// three interpolations and both feedback forms are exercised, with a modulated
@@ -1546,7 +1546,7 @@ fn delay_ugens_do_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 1);
 }
 
-/// The one-segment ramps and the node-control set (U4). Two claims: `Line`
+/// The one-segment ramps and the node-control set. Two claims: `Line`
 /// deriving its step on the first sample keeps that state in the UGen and
 /// touches no heap, and the `DoneQuery` path -- the synth reading one UGen's
 /// done flag on behalf of another -- adds no allocation to the block either. The
@@ -1606,7 +1606,7 @@ fn ramp_and_node_control_ugens_do_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 1);
 }
 
-/// The trigger family (U5). The interesting claim is not that a comparator
+/// The trigger family. The interesting claim is not that a comparator
 /// allocates -- it cannot -- but that the *counters* do not: `Stepper`,
 /// `PulseCount` and `Timer` all hold running state, and `Decay` recomputes a
 /// transcendental whose scalar fast path must not reach for a buffer. The
@@ -1691,7 +1691,7 @@ fn trigger_ugens_do_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 1);
 }
 
-/// The noise family (U6). Nothing here has a buffer to grow, so the claim is
+/// The noise family. Nothing here has a buffer to grow, so the claim is
 /// narrow -- but `PinkNoise` carries a dice table, `LFNoise*` a per-segment
 /// state machine and `Dust` a per-sample division, and the scene is what would
 /// catch any of them reaching for the heap later.
@@ -1760,7 +1760,7 @@ fn noise_ugens_do_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 1);
 }
 
-/// The pan family (U7). None of these holds a buffer either, so what the scene
+/// The pan family. None of these holds a buffer either, so what the scene
 /// is really guarding is the shape of the code: eleven rows share one
 /// polynomial and one two-by-two product, and every one of them runs its law
 /// per sample when its parameter is audio rate. That per-sample path is where a

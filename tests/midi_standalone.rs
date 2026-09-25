@@ -1,4 +1,4 @@
-//! M19: MIDI-standalone operation -- a server boots from a data directory with
+//! MIDI-standalone operation -- a server boots from a data directory with
 //! its defs, MIDI bindings and boot preset already in place, playable with no
 //! OSC programming. End-to-end across two real `OscServer` instances on one
 //! data dir (no audio device, no MIDI transport): session 1 sets things up

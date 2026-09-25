@@ -356,7 +356,7 @@ mod tests {
     }
 
     /// The face is proportional, and that is measured per character -- the seam
-    /// K9 left: a width is asked for where the string is, never in a layout.
+    /// The rule: a width is asked for where the string is, never in a layout.
     #[test]
     fn advances_differ_per_character() {
         let Some(mut a) = loaded() else { return };

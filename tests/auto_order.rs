@@ -1,4 +1,4 @@
-//! M12: auto-sorted groups -- bus-connection analysis, `/group_sortMode`,
+//! Auto-sorted groups -- bus-connection analysis, `/group_sortMode`,
 //! `/group_queryTree`, `/group_dumpGraph`. Real UDP round-trips against a manually
 //! ticked engine (no audio device), like `tests/osc.rs`.
 
@@ -222,7 +222,7 @@ fn n_mapa_adds_a_read_edge_and_resorts() {
     // `src` writes bus 16; `default` reads no bus statically, so an auto group
     // leaves the two in insertion order. Mapping default's freq to bus 16 with
     // /node_mapAudio makes it read that bus -- a writer-before-reader edge that must
-    // re-sort src ahead of it (M11 feeding the M12/M13 analysis).
+    // re-sort src ahead of it (a bus map feeding the bus analysis).
     let server = Server::spawn();
     server.d_recv(&src_def());
     server.send(

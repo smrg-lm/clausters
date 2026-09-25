@@ -313,8 +313,6 @@ pub fn lanes(multitrack: &Multitrack) -> Vec<Value> {
     out
 }
 
-/// The boxes as the widget's flat septuples: name, lane, at, duration, the
-/// frame of its source its own zero reads, label, buffer.
 /// **The spans each join on screen is made of**, as the widget's flat
 /// `box source start frames rate` quintuples: the take each span reads, the
 /// frame of it the span starts at, how many frames of **the join** it

@@ -5,7 +5,7 @@
 //! beside it is an arrangement built with `clausters.multitrack`, as that
 //! module writes it (`gen-multitrack-vector.py` writes the file, and it is
 //! committed). Nothing in CI runs the Python client's call sites, so without a
-//! crossing like this one the two halves of O21 could drift until a user found
+//! crossing like this one the Python and Rust halves could drift until a user found
 //! out with a session that would not open.
 //!
 //! When the format changes on purpose: re-run the generator and commit whatever
@@ -215,7 +215,7 @@ fn the_multitrack_inside_the_session_is_the_same_multitrack() {
 
 #[test]
 fn the_session_carries_two_views_of_one_multitrack_and_they_disagree_on_purpose() {
-    // The prerequisite `O23` asked for, crossing: screen state written by the
+    // Screen state crossing both clients: written by the
     // Python client, parsed here, and read back by the web client. What makes
     // it worth a vector is that a view is *not* the multitrack -- a reader that
     // dropped the field would open the same music and lose the window.

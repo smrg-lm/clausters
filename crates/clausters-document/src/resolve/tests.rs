@@ -1,4 +1,4 @@
-//! O9's acceptance: a selection made on a clip's body resolves to the right
+//! A selection made on a clip's body resolves to the right
 //! span of the take underneath it, trim and offset included.
 
 use super::*;
@@ -60,7 +60,7 @@ fn one_clip() -> Document {
 
 #[test]
 fn a_selection_on_a_clips_body_resolves_through_its_trim_and_its_offset() {
-    // O9's acceptance. The selection covers the second beat *of the clip*,
+    // The selection covers the second beat *of the clip*,
     // which is beat 3 of the timeline and frame 528 000 of the take. Both terms
     // matter and getting either wrong is silent.
     let document = one_clip();

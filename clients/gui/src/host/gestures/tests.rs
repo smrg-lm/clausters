@@ -2905,7 +2905,7 @@ fn a_declined_press_falls_through_to_the_plane() {
     crate::unregister("test_pad");
 }
 
-/// D1: a sample is a grabbable point. The whole route in one test -- press the
+/// A sample is a grabbable point. The whole route in one test -- press the
 /// disc, drag it, and one intent leaves on release carrying both the value it
 /// reached and the one it came from, so the owner can apply it and invert it
 /// without remembering anything.
@@ -2963,7 +2963,7 @@ fn a_dragged_sample_leaves_as_one_absolute_intent() {
         "the edit is still in flight"
     );
 
-    // And the acknowledgement is what lets go of it -- O3's *drop every pending
+    // And the acknowledgement is what lets go of it -- the rule *drop every pending
     // at or below the stamp*, with the drawing finally following the outbox.
     let seq = match &effects[..] {
         [.., crate::host::gestures::GestureEffect::Emit { seq, .. }] => *seq,
@@ -3027,7 +3027,7 @@ fn grabbing_a_sample_declines_when_they_are_not_drawn() {
     );
 }
 
-/// D2: the draw mode. A stroke writes every sample it passes -- including the
+/// The draw mode. A stroke writes every sample it passes -- including the
 /// ones *between* two motion events, which is what makes it a stroke and not a
 /// comb -- and leaves as one intent carrying both runs.
 #[test]

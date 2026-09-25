@@ -71,7 +71,7 @@
 //!   a 75 % overlap; blocks end at `round(0.4*rate) + j*round(0.1*rate)`
 //!   samples, which is exact at every rate divisible by ten.
 //! - **The loudness range samples the short-term loudness 10 times a second**,
-//!   the minimum Tech 3342 has required since 2016 (V3). libebur128 still takes
+//!   the minimum Tech 3342 has required since 2016. libebur128 still takes
 //!   one short-term value a second, which the 2011 text allowed.
 //! - **Readings before a window is full** see the silence before the meter was
 //!   reset -- a live meter's view, and libebur128's. The integrated loudness and

@@ -1,4 +1,4 @@
-//! O5's acceptance: a run of gestures inverts back to the starting document
+//! A run of gestures inverts back to the starting document
 //! exactly, a redo re-emits the intent the gesture first sent, and what comes
 //! back from an owner never enters the log.
 
@@ -52,7 +52,7 @@ fn run(document: &mut Document, intents: Vec<Intent>) {
 
 #[test]
 fn a_run_of_gestures_inverts_back_to_where_it_started() {
-    // O5's acceptance, and the reason the vocabulary is absolute: the inverse
+    // The reason the vocabulary is absolute: the inverse
     // of an edit that states a value is the edit that states the previous one,
     // so undo needs no second path at all.
     let mut d = doc();
@@ -443,7 +443,7 @@ fn clearing_forgets_everything_and_releases_what_was_spilled() {
 
 #[test]
 fn a_history_holding_a_document_and_a_curve_undoes_them_in_one_order() {
-    // O16's acceptance, and the whole reason the pile carries no vocabulary: an
+    // The whole reason the pile carries no vocabulary: an
     // application composing a multitrack and a curve has one history, and the
     // interleaved order is the pile. Nothing here routes by anything but the
     // structure each leg names.
@@ -551,7 +551,7 @@ fn the_arrangements_own_door_still_records_through_the_generic_one() {
     assert_eq!(log.len(), 1);
 }
 
-/// The shape `O20` is for: a stroke over a *placed* take is one gesture with a
+/// A stroke over a *placed* take is one gesture with a
 /// leg in each domain -- the tree's, which says the samples moved, and the
 /// samples' own, which says what they now hold and what they held. One entry,
 /// undone in one step, and consistent at every point in between.

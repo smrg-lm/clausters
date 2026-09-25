@@ -178,6 +178,7 @@ pub struct OscServer {
     handle: EngineHandle,
     /// Def tables, node->def mirror and message->command translation, shared
     /// with the NRT renderer (see [`crate::osc::translate`]).
+    ///
     /// Owns the network-side buffer mirror (`translator.buffers`), updated
     /// when NRT results are installed: serves `/buffer_query` and gives `/buffer_read`,
     /// `/buffer_write` and `/buffer_zero` the current contents/shape, and a Faust
@@ -692,9 +693,6 @@ impl OscServer {
     }
 }
 
-/// The raw `SynthDefSpec` JSON of a `/def_send synth` message (blob or string form),
-/// for persisting it verbatim. Mirrors the argument parsing in
-/// [`CmdTranslator::d_recv`].
 /// The `/ugen_query.reply` argument vectors for a `/ugen_query`: the whole catalog
 /// when `names` is empty, otherwise one per requested kind -- an unknown one
 /// coming back with an empty rate set and no inputs, so a batch never fails

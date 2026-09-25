@@ -1,4 +1,4 @@
-//! The delay core (U3): `DelayN/L/C`, `CombN/L/C`, `AllpassN/L/C`.
+//! The delay core: `DelayN/L/C`, `CombN/L/C`, `AllpassN/L/C`.
 //!
 //! Each family is asserted by the property that *defines* it rather than by a
 //! stored buffer: a pure delay places an impulse at an exact frame, a

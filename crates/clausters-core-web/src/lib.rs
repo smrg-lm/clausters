@@ -2,20 +2,20 @@
 //! `clausters-core`, the browser sibling of `clausters-ffi`'s C door and the
 //! core twin of `crates/clausters-web` (the whole-server shell).
 //!
-//! W0 exposes the OSC codec: the web client encodes and decodes through the
+//! It exposes the OSC codec: the web client encodes and decodes through the
 //! same `clausters_core::osc` the server and every other client use, so the
 //! bytes are identical by construction (the parity vectors in
-//! `clients/web/tests/` hold this against the Python client). W1 adds the
+//! `clients/web/tests/` hold this against the Python client). It exposes the
 //! **registry** -- the id-allocation model behind node ids, buses and buffers,
-//! the same door `clausters-ffi` opens for Python. W3 adds the sequencing
+//! the same door `clausters-ffi` opens for Python. It exposes the sequencing
 //! layer's core: the beat-ordered **queue**, the beat/second/sample
 //! arithmetic, **bundle assembly** with a timetag, the seeded value stream,
-//! the builtins and the pitch space, and the sample-clock model. W10 adds the
+//! the builtins and the pitch space, and the sample-clock model. And it exposes the
 //! **data paths' analysis** -- the stereo-field measurements and the peak
 //! pyramid -- so a page that reads buses, taps and buffers measures them with
 //! the same functions the GUI host measures with. Only measurements: what a
 //! *drawing* needs of them (a pixel row, a display window, a decibel curve)
-//! stays in the host, which is the one thing that draws (W26).
+//! stays in the host, which is the one thing that draws.
 //! Always the same shape: the logic lives in `clausters-core`, natively tested; this
 //! shell only converts values at the JS boundary, and only on the wasm target.
 //!
@@ -597,7 +597,7 @@ pub fn graph_bus_reserved(audio_buses: usize, control_buses: usize) -> Vec<u32> 
 
 // ---- musical time: the clock's arithmetic, and its queue ----
 //
-// The W3 doors. Every one of them is `clausters-core`'s own function reached
+// Every door here is `clausters-core`'s own function reached
 // from JS, the same way `clausters-ffi` reaches it from Python: the sequencing
 // layer computes no time of its own in either language, so a beat resolves to
 // the same second, and a second to the same sample, in the client and in the
@@ -1224,7 +1224,7 @@ impl JsSampleClockModel {
 
 // ---- the component bundle ----
 //
-// W4's mount, opened to the page: a persisted bundle is a template, and the
+// The bundle mount, opened to the page: a persisted bundle is a template, and the
 // page turns it into N non-colliding instances. The pass itself is
 // `clausters_core::bundle` -- pure, natively tested, and the same one the native
 // `--standalone` leg runs -- so these three are only the JSON boundary. The
@@ -1271,12 +1271,12 @@ pub fn bundle_validate(request: &str) -> Result<(), JsError> {
 
 // ---- the data paths' analysis ----
 //
-// W10's doors: what a page measures from the data it reads off the server --
+// What a page measures from the data it reads off the server --
 // control buses, tap windows, buffer samples. Every one of them is a
 // measurement of the *signal*, and it is the same function the GUI host
 // measures with, so a figure a script reports and a figure a widget draws are
 // one number rather than two implementations of it. Nothing of the *screen*
-// belongs here (W26): a display window, a trigger's framing, a decibel curve
+// belongs here: a display window, a trigger's framing, a decibel curve
 // and a row of pixel columns are drawing, and the host is what draws. Nothing
 // here keeps state except the peak pyramid, which is a cache by definition.
 
@@ -3133,7 +3133,7 @@ pub fn item_id(element_id: &str) -> f64 {
     clausters_core::notation::item_id(element_id).map_or(-1.0, |id| id as f64)
 }
 
-// ---- MIDI files (W9) --------------------------------------------------------
+// ---- MIDI files --------------------------------------------------------
 //
 // A page has no filesystem and no virtual OS port, but it does have a score to
 // write: `MidiServer` over an NRT interface accumulates `(beat, message)` and

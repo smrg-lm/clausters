@@ -1,4 +1,4 @@
-//! Triggers and control (U5): the UGens that read a rising edge, plus the two
+//! Triggers and control: the UGens that read a rising edge, plus the two
 //! envelope followers.
 //!
 //! Most of these are state machines, so the asserts are about *when* something

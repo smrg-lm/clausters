@@ -1,4 +1,4 @@
-//! M14: the IPC segment -- ring transport, data plane, versioning, and the
+//! The IPC segment -- ring transport, data plane, versioning, and the
 //! embedded C ABI render (with `--features embed`).
 
 #![cfg(feature = "synth")]
@@ -210,7 +210,7 @@ fn tap_rings_write_read_and_wrap() {
     assert_eq!(segment.tap_read_latest(1, &mut out), None);
 }
 
-/// M31(b): two independent clients over **one** segment.
+/// Two independent clients over **one** segment.
 ///
 /// The regression this exists for: every ring packet used to arrive as a single
 /// `ClientId::Ring`, so `/bus_stream` -- "one subscription per client, replaced
@@ -525,7 +525,7 @@ fn embed_render_returns_flat_samples() {
 
 /// **The samples a peer maps, and the three things that make it safe.**
 ///
-/// A pool buffer's samples live in a region beside the segment (S19), so a
+/// A pool buffer's samples live in a region beside the segment, so a
 /// local peer draws and edits them with no message at all. What this pins is
 /// not the speed but the rules: a peer finds the buffer by *number*, writes
 /// cells the server reads back, and a freed buffer's mapping stays valid while
@@ -587,7 +587,7 @@ fn a_peer_maps_a_buffer_by_number_and_writes_what_the_server_reads() {
 /// the ring reaches the pool, and a peer with nothing but the segment's path
 /// maps the samples by number.
 ///
-/// This is the property S19 exists for -- the editor's samples stop being
+/// This is the property shared buffers exist for -- the editor's samples stop being
 /// messages -- and it is asserted the only way that means anything: the peer
 /// writes a sample, and the server's own buffer reads it back.
 #[test]

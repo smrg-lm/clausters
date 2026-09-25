@@ -1,6 +1,6 @@
 //! Dedicated Faust compiler thread.
 //!
-//! JIT compilation takes ~10 ms per def (measured in F0) and the libfaust
+//! JIT compilation takes ~10 ms per def and the libfaust
 //! lib context is global and not thread-safe, so all compilation runs on one
 //! dedicated thread that serializes requests naturally. The network thread
 //! submits [`CompileRequest`]s and drains [`CompileResult`]s on its own

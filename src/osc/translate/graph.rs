@@ -883,10 +883,6 @@ impl CmdTranslator {
         self.graph_add_slot(*instance, slot, *id, rest, cmds)
     }
 
-    /// Writes a surface-port value to its resolved member controls, scaled per
-    /// target (`mul`*v + `add`), mirroring each write and re-sorting if a
-    /// target turns out to be a bus-index control. `group` may be an instance
-    /// (shared surface) or a voice sub-group (voice surface).
     /// `/graph_map instanceID port bus [audio]`: **drive a port from a bus**
     /// instead of from a value.
     ///
@@ -937,6 +933,10 @@ impl CmdTranslator {
         Ok(())
     }
 
+    /// Writes a surface-port value to its resolved member controls, scaled per
+    /// target (`mul`*v + `add`), mirroring each write and re-sorting if a
+    /// target turns out to be a bus-index control. `group` may be an instance
+    /// (shared surface) or a voice sub-group (voice surface).
     fn apply_surface(&mut self, group: i32, port: &str, value: f32, cmds: &mut Vec<Cmd>) {
         let targets = self
             .graph_instances

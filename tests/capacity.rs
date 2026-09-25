@@ -1,4 +1,4 @@
-//! M10: bounded-memory audit -- every preallocated structure has a defined,
+//! Bounded-memory audit -- every preallocated structure has a defined,
 //! non-fatal behavior when it fills (the table lives in
 //! `docs/architecture.md`). These tests overflow each one on purpose and
 //! assert the engine neither panics, nor blocks, nor stops processing.
@@ -18,7 +18,7 @@ use clausters::synthdef::{compile, default_spec};
 
 const SR: f32 = 48_000.0;
 
-/// An engine sized by explicit boot-time [`Limits`] (S7), the RT counterpart of
+/// An engine sized by explicit boot-time [`Limits`], the RT counterpart of
 /// launching with `--max-nodes`/`--max-buffers`/`--max-graph-children`.
 fn engine_with_limits(limits: Limits) -> (Engine, EngineHandle) {
     engine_pair_full(SR, 2, 0, None, 128, 1024, limits)
@@ -174,7 +174,7 @@ fn full_group_rejects_extra_children() {
     assert_eq!(handle.collect_garbage(), 300 - 256);
 }
 
-/// S7: the node slab is boot-time configurable. A small `--max-nodes` overflows
+/// The node slab is boot-time configurable. A small `--max-nodes` overflows
 /// exactly at its capacity, root included -- same graceful rejection as the
 /// default 1024, just sooner.
 #[test]
@@ -194,7 +194,7 @@ fn small_max_nodes_overflows_predictably() {
     tick(&mut engine, 2); // still processing
 }
 
-/// S7: `--max-graph-children` sizes each non-root group. A group built with a
+/// `--max-graph-children` sizes each non-root group. A group built with a
 /// small child capacity rejects the extra children, exactly like the default.
 #[test]
 fn custom_group_child_cap_rejects_extra() {
@@ -221,7 +221,7 @@ fn custom_group_child_cap_rejects_extra() {
     assert_eq!(handle.collect_garbage(), 20 - 8);
 }
 
-/// The cache-line alignment of `Block` (M10) is a compile-time guarantee.
+/// The cache-line alignment of `Block` is a compile-time guarantee.
 #[test]
 fn blocks_are_cache_line_aligned() {
     use clausters::dsp::{BLOCK_SIZE as B, Block};

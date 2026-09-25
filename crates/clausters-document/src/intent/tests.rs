@@ -1,4 +1,4 @@
-//! O2's acceptance: the vocabulary is absolute, applying is idempotent, and
+//! The vocabulary is absolute, applying is idempotent, and
 //! every outcome names an effective value -- including a refusal, which is the
 //! previous value handed back rather than an error.
 
@@ -416,7 +416,7 @@ fn a_nested_node_is_reached_wherever_it_sits() {
     assert_eq!(d.root.members()[0].node.members()[0].offset, 7.0);
 }
 
-// ---- O4: the version, and staleness ----
+// ---- the version, and staleness ----
 
 /// A vector node at a known generation, for the destructive-edit cases.
 fn samples(generation: u64) -> Document {
@@ -453,7 +453,7 @@ fn an_edit_made_against_the_current_version_applies() {
 
 #[test]
 fn an_edit_made_against_a_superseded_version_is_refused_and_hands_back_the_present_value() {
-    // O4's acceptance. The editor saw version 0; something else moved the
+    // The editor saw version 0; something else moved the
     // document; the edit is reported as stale rather than applied blind, and
     // what comes back is what the document says now -- which is all the caller
     // needs to re-sync, since adopting the effective value is what it does with

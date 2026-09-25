@@ -1,4 +1,4 @@
-//! M11: `/node_map` and `/node_mapAudio` -- buses as a live source of node parameters.
+//! `/node_map` and `/node_mapAudio` -- buses as a live source of node parameters.
 //! Engine-level, no audio device: commands go in through the FIFO, audio comes
 //! out of `process_block`, and a zero-crossing estimate does the listening.
 

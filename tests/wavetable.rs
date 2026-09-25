@@ -1,4 +1,4 @@
-//! S5 tests: the wavetable format, the `/buffer_gen` generators (`sine1`/`cheby`),
+//! The wavetable format, the `/buffer_gen` generators (`sine1`/`cheby`),
 //! and the table oscillators (`Osc`, `Shaper`) reading them through the engine.
 
 #![cfg(feature = "synth")]

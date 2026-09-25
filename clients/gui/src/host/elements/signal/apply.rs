@@ -302,7 +302,7 @@ mod data_tests {
 
     /// The mapped half: an owner says *it moved where it lives*, and the
     /// element forgets what it resolved so the loader asks again. This is the
-    /// door D1 turned out to need and did not have.
+    /// door the grabbable sample turned out to need and did not have.
     #[test]
     fn a_mapped_source_can_be_told_to_read_itself_again() {
         use crate::host::widget::element::Element;

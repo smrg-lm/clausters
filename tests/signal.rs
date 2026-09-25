@@ -1,4 +1,4 @@
-//! The measurement harness's own tests (U0).
+//! The measurement harness's own tests.
 //!
 //! Every helper in `tests/common/signal.rs` is driven here with a signal whose
 //! answer is known in closed form, so a broken *measurement* fails in this
@@ -119,7 +119,7 @@ fn spectral_slope_reads_zero_for_white_and_minus_three_for_pink() {
     let s = spectral_slope_db_per_octave(&white, SR, 100.0, 12_800.0);
     assert!(s.abs() < 0.3, "white noise slope {s} dB/oct");
 
-    // Voss-style approximation is U6's job; here a cascade of one-poles
+    // Voss-style approximation is the noise UGens' job; here a cascade of one-poles
     // shaped to -3 dB/oct is enough to prove the *estimator* reads it.
     let pink = pinken(&white, SR);
     let s = spectral_slope_db_per_octave(&pink, SR, 100.0, 12_800.0);

@@ -3530,7 +3530,7 @@ should confirm before the fix.
   the mapped peer's case. `a_render_on_a_session_given_a_path_is_what_a_peer_maps`
   holds it. The doc of `collect_nrt_results`, fused onto `install_buffer`,
   went back to its function.
-- ⬜ **Twenty-odd doc comments sit on the wrong item, and labels sit in
+- ✅ **Twenty-odd doc comments sit on the wrong item, and labels sit in
   comments** *(audit 2026-09-25)*. Fused docs: `osc/server/mod.rs`
   (`synthdef_spec_bytes`' on `ugen_infos`, two field docs on `translator`),
   `async_pipes.rs` (`collect_nrt_results`' on `install_buffer`),
@@ -3542,6 +3542,13 @@ should confirm before the fix.
   `clausters-document`'s tests ("O9's acceptance"), `clausters-core-web`'s
   sections ("W3"), `clausters-web`/`-nrt-web` ("the B track"), `T2`, `S19`,
   `F0`, `A1`, `K6` — beside note names a scan also matches.
+  **Fixed**: each fused doc went back to its item (two had lost theirs —
+  `synthdef_spec_bytes` and the boxes' flat form were already gone — and were
+  dropped), and the labels were rewritten out of about 180 comment lines in
+  the server, the crates, the host, the Python client and the tests, naming
+  what the label stood for where the sentence needed it. What stays is
+  `tests/subjects.rs` and `tests/common/bench.rs`, whose `U1`…`U8` are the
+  keys of their subject table and not prose.
 - ✅ **Two argument readers, two policies** *(audit 2026-09-25)*.
   `osc::server::Args` exists so a handler stops destructuring `msg.args` with
   its own wording, and about fifteen still do (the three streams, `/bus_tap`,

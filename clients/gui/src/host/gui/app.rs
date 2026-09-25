@@ -118,7 +118,7 @@ pub(super) struct App {
     pub(super) notified: bool,
     /// The write frontier last **drawn**, per `(def_id, widget_id)`: how far
     /// the samples of that view had been written when its summary was last
-    /// refreshed. What moves it is a recording (the server's S20), and the
+    /// refreshed. What moves it is a recording, and the
     /// difference is exactly the span to re-read.
     pub(super) frontiers: HashMap<(i32, i32), u64>,
     /// Next scheduled re-query of the server's node tree (the `/node_set` poll).

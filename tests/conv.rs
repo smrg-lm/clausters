@@ -1,4 +1,4 @@
-//! M28 tests: the partitioned convolver -- a golden comparison against direct
+//! The partitioned convolver -- a golden comparison against direct
 //! time-domain convolution, the reported intrinsic latency, and a kernel swap
 //! crossfade -- driven through the real engine, plus the `prepare_partconv`
 //! buffer layout.

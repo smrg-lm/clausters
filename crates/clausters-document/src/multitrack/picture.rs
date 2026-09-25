@@ -1164,8 +1164,6 @@ mod tests {
         ));
     }
 
-    /// A name that is no automation's id is dropped rather than minted: a
-    /// curve is declared by whoever holds the multitrack.
     /// **A trim of the left edge slides the window over the source.** That is
     /// what makes an edge drag a trim and not a squeeze, so a report whose
     /// `start` moved is saying the box reads from somewhere else now -- and
@@ -1464,6 +1462,8 @@ mod tests {
         assert!(multitrack.tracks[0].name.is_none(), "and not what it holds");
     }
 
+    /// A name that is no automation's id is dropped rather than minted: a
+    /// curve is declared by whoever holds the multitrack.
     #[test]
     fn a_curve_the_multitrack_never_declared_is_not_made_by_dragging_it() {
         let multitrack = multitrack();

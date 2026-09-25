@@ -1,4 +1,4 @@
-//! B1: the pulled-mode server (`ClaustersHeadless`) -- no device, no sockets,
+//! The pulled-mode server (`ClaustersHeadless`) -- no device, no sockets,
 //! no threads; the test is the host, driving `process_block` and the ring
 //! from one thread, exactly the way the browser's AudioWorklet does.
 
@@ -225,7 +225,7 @@ fn quit_is_reported_not_enacted() {
     assert!(server.quit_requested());
 }
 
-// ---- B6 step 1: a serving turn drains what fits ----
+// ---- a serving turn drains what fits ----
 
 #[test]
 fn a_burst_of_buffer_jobs_is_spread_over_turns() {
@@ -328,7 +328,7 @@ fn nothing_runs_before_its_turn() {
     assert!(replies(&server).iter().any(|m| m.addr == "/done"));
 }
 
-// ---- B6 step 2a: a long take is loaded in chunks ----
+// ---- a long take is loaded in chunks ----
 
 /// Reads the first `count` samples of buffer `index` back through
 /// `/buffer_get`, as a client would.
@@ -415,7 +415,7 @@ fn a_chunk_past_the_end_is_refused() {
     assert!(server.buffer_load_chunk(999, 0, &[0.0; 1]).is_err());
 }
 
-// ---- B6 step 2b: the jobs the host does better leave ----
+// ---- the jobs the host does better leave ----
 
 #[test]
 fn a_soundfile_read_leaves_and_comes_back_installed() {

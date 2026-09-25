@@ -2251,7 +2251,7 @@ mod tests {
     }
 
     /// Zooming a frequency x axis reveals **finer** round frequencies inside
-    /// the window and drops everything outside it -- the property L8 fixed for
+    /// the window and drops everything outside it -- the property already fixed for
     /// every other axis, now that this one navigates too. The vertical twin
     /// has had it since the spectrogram's frequency window; this is the same
     /// rule read across the strip instead of up it.

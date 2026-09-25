@@ -1102,6 +1102,16 @@ impl Engine {
         }
     }
 
+    /// Stops this engine publishing **time** into the segment -- the clocks,
+    /// the taps and the per-bus levels (see `publishes_time`).
+    ///
+    /// What it keeps publishing is the samples and the control buses, which
+    /// are the data plane proper: state a peer reads and writes, rather than a
+    /// report of where a device is.
+    pub fn silence_time_publication(&mut self) {
+        self.publishes_time = false;
+    }
+
     /// Applies what has arrived **without advancing time**: the two steps
     /// [`Self::process_block`] begins with, and none of the rest.
     ///
@@ -1116,16 +1126,6 @@ impl Engine {
     ///
     /// Same RT discipline as `process_block`: no allocation, no locking. It
     /// is safe to call from the audio thread, and nothing there needs to.
-    /// Stops this engine publishing **time** into the segment -- the clocks,
-    /// the taps and the per-bus levels (see `publishes_time`).
-    ///
-    /// What it keeps publishing is the samples and the control buses, which
-    /// are the data plane proper: state a peer reads and writes, rather than a
-    /// report of where a device is.
-    pub fn silence_time_publication(&mut self) {
-        self.publishes_time = false;
-    }
-
     pub fn drain(&mut self) {
         self.drain_commands();
         self.flush_pending_garbage();

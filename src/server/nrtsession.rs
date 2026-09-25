@@ -62,7 +62,7 @@ pub struct SessionConfig {
     pub limits: Limits,
     /// Where to put the segment, when this session's samples are to be
     /// **shared**: a path makes it a mapped file, so a second process can read
-    /// the directory and map every buffer this session holds (S19). `None` is
+    /// the directory and map every buffer this session holds. `None` is
     /// the ordinary in-process session, whose segment lives on the heap.
     ///
     /// It is here rather than assumed because it is a *deployment* choice: an

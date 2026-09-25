@@ -19,7 +19,7 @@
 //! handed back to `apply` like any other. That is what the absolute vocabulary
 //! is for -- an edit states the resulting value, so the edit that states the
 //! *previous* value is its inverse, and the document already knows how to
-//! compute it (the same reader O4's staleness check uses).
+//! compute it (the same reader the staleness check uses).
 //!
 //! # Forward and backward are not the same kind of thing
 //!

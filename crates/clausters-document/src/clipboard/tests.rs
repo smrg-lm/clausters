@@ -1,4 +1,4 @@
-//! O7's acceptance: a sample block copied in one window pastes in another, and
+//! A sample block copied in one window pastes in another, and
 //! a block carries its sample rate without being resampled in transit.
 
 use super::*;
@@ -26,7 +26,7 @@ fn cross(clipboard: &Clipboard, blobs: Vec<Vec<u8>>) -> (Clipboard, Vec<Vec<u8>>
 
 #[test]
 fn a_sample_block_copied_in_one_window_pastes_in_another() {
-    // O7's acceptance. Nothing is re-encoded on the way: the structure names a
+    // Nothing is re-encoded on the way: the structure names a
     // blob by index and the samples travel beside it as the bytes they already
     // were.
     let taken: Vec<f32> = (0..2048).map(|i| (i as f32 / 2048.0) - 0.5).collect();
@@ -153,7 +153,7 @@ fn a_generators_configuration_crosses_the_clipboard_unread() {
 
 #[test]
 fn a_plain_string_still_reads_as_a_clipboard() {
-    // K6's host-wide clipboard was a `String`, and the flat notes block still
+    // The host-wide clipboard was once a `String`, and the flat notes block still
     // travels that way. It is a kind now, not a special case.
     let clipboard = Clipboard::parse("0.0 1.0 60 100 0");
     assert_eq!(clipboard.kind(), "text");

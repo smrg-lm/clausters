@@ -1,4 +1,4 @@
-//! C0: the server's native operators must agree with `clausters_core` -- the
+//! The server's native operators must agree with `clausters_core` -- the
 //! shared crate is the single source of truth, so a client computing with the
 //! core matches the server by construction. These tests drive the real
 //! `UGen::process` path and compare it to direct core calls.
@@ -66,7 +66,7 @@ fn binary_ops_match_the_core_bit_for_bit() {
     }
 }
 
-/// S3: the generic `BinaryOpUGen` (built from an opcode index) must match the
+/// The generic `BinaryOpUGen` (built from an opcode index) must match the
 /// core over the *whole* opcode table, driven through the real UGen path.
 #[test]
 fn binary_op_ugen_matches_the_core_over_the_table() {
@@ -94,7 +94,7 @@ fn binary_op_ugen_matches_the_core_over_the_table() {
     assert!(op >= 35, "expected the full binary table, stopped at {op}");
 }
 
-/// S3: `UnaryOpUGen` over the whole unary opcode table, through the UGen path.
+/// `UnaryOpUGen` over the whole unary opcode table, through the UGen path.
 #[test]
 fn unary_op_ugen_matches_the_core_over_the_table() {
     let buses = Buses::new(ControlBuses::new(1024), 128);
@@ -115,7 +115,7 @@ fn unary_op_ugen_matches_the_core_over_the_table() {
     assert!(op >= 37, "expected the full unary table, stopped at {op}");
 }
 
-/// S3: the fused UGens equal the same expression composed from core operators.
+/// The fused UGens equal the same expression composed from core operators.
 #[test]
 fn fused_ugens_match_the_core_composition() {
     let buses = Buses::new(ControlBuses::new(1024), 128);

@@ -97,8 +97,8 @@ impl OscServer {
     /// beat grid on the *device* axis, which is what lets several clients
     /// phase-align on one running server. The transport's own axis starts at its
     /// own 0 by definition, so a song position in beats is just
-    /// `b * rate / tempo`. Keeping the two apart is also what keeps the open
-    /// T2 (whose subject is that origin) out of this conversion.
+    /// `b * rate / tempo`. Keeping the two apart also keeps the open question
+    /// of that origin out of this conversion.
     fn beats_to_transport_samples(&self, k: usize, beats: f64) -> u64 {
         let t = self.transports[k];
         if !t.defined || t.tempo <= 0.0 || !beats.is_finite() || beats <= 0.0 {

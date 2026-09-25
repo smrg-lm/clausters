@@ -1,4 +1,4 @@
-//! M17: standard channel-voice MIDI actuates nodes and their input controls.
+//! Standard channel-voice MIDI actuates nodes and their input controls.
 //! The central claim: a MIDI-driven voice is **byte-identical** to the
 //! equivalent OSC one -- `translate_midi` synthesizes the same `/synth_new`/
 //! `/node_set`/`/node_free` the OSC path would, so the mirrored node state matches.
@@ -227,7 +227,7 @@ fn unbind_frees_sounding_voices() {
     assert!(t.midi.voices.is_empty());
 }
 
-// ---- M19: a persisted binding survives restore and is immediately playable ----
+// ---- a persisted binding survives restore and is immediately playable ----
 
 #[test]
 fn binding_persists_restores_and_plays() {

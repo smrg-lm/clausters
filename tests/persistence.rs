@@ -69,7 +69,7 @@ fn synthdef_specs_round_trip_through_disk() {
     assert!(store.load_synthdef_specs().is_empty());
 }
 
-// ---- M19: persisted MIDI bindings + boot preset ----
+// ---- persisted MIDI bindings + boot preset ----
 
 #[test]
 fn midi_bindings_round_trip_through_disk() {

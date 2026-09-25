@@ -122,7 +122,7 @@ impl SharedBuffers {
 
     /// **How far buffer `bufnum` has been written**, in frames -- the number a
     /// picture of a recording needs and cannot get any other way, since the
-    /// samples arrive with nothing said about them (the server's S20).
+    /// samples arrive with nothing said about them.
     ///
     /// Zero for samples that arrived whole, which is every take read from a
     /// file: nothing wrote it here.

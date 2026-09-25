@@ -224,7 +224,7 @@ impl SharedSegment {
     }
 
     /// **How far pool buffer `bufnum` has been written**, in frames: the
-    /// frontier its writing UGens publish once per block (the server's S20).
+    /// frontier its writing UGens publish once per block.
     ///
     /// Zero for samples nothing recorded into, which is every take that
     /// arrived whole. It is a hint and not a promise: several writers may

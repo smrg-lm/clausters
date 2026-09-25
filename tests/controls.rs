@@ -1,4 +1,4 @@
-//! Typed-control tests (S2): trigger (`tr`) controls fire for one block,
+//! Typed-control tests: trigger (`tr`) controls fire for one block,
 //! lagged controls smooth a step, scalar (`ir`) controls freeze under `/node_set`,
 //! plus the compiler validation for control types and lag.
 
@@ -92,8 +92,8 @@ fn scalar_control_freezes_under_n_set() {
 
 #[test]
 fn ir_control_may_feed_an_ir_ugen_but_kr_may_not() {
-    // Rand.ir requires ir inputs; an ir control now qualifies (S2 pairs it
-    // with S1's ir rate), while a plain kr control does not.
+    // Rand.ir requires ir inputs; an ir control qualifies (the typed controls
+    // pair it with the ir rate), while a plain kr control does not.
     let ok = r#"{
         "name": "ok",
         "controls": [{"name": "lo", "default": 0.0, "rate": "ir"}],

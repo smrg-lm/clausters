@@ -609,9 +609,6 @@ pub fn map_slice(
 mod tests {
     use super::*;
 
-    /// The reference values are SuperCollider's, computed in sclang and
-    /// rounded -- the family exists to agree with it, so the agreement is
-    /// asserted rather than described.
     /// **Every map is still the pair of primitives it is documented as**, bit
     /// for bit. Preparing the bounds once moved the formulas behind
     /// [`Read`]/[`Write`], so this is what says the table still wires each op
@@ -689,6 +686,9 @@ mod tests {
         }
     }
 
+    /// The reference values are SuperCollider's, computed in sclang and
+    /// rounded -- the family exists to agree with it, so the agreement is
+    /// asserted rather than described.
     #[test]
     fn the_four_range_maps_agree_with_sclang() {
         let c = Clip::MinMax;

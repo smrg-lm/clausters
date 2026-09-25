@@ -34,7 +34,7 @@
 //! payload identical on both passes, which is the hazard `log` records from the
 //! other side. The two rules here:
 //!
-//! - **A mutating call commits only when the bytes are written** (O11's rule,
+//! - **A mutating call commits only when the bytes are written** (the history's rule,
 //!   unchanged), so a sizing pass is free of consequence and a run of them is
 //!   idempotent. This is now cheap as well as safe, because what a mutating
 //!   call returns is the *outcome* -- a few hundred bytes -- and no longer the

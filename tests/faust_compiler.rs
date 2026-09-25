@@ -1,4 +1,4 @@
-//! F1 tests: the dedicated Faust compiler thread and the `/def_send faust` OSC
+//! The dedicated Faust compiler thread and the `/def_send faust` OSC
 //! round-trip with async replies. Gated behind the `faust` feature.
 //! Tests wait on explicit completion signals (result channel, reply socket),
 //! never on sleeps.
@@ -10,7 +10,7 @@ use std::time::Duration;
 use clausters::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
 
 /// Stdlib-free sine at 440 Hz: keeps the test independent of the Faust
-/// library search path (stdlib imports are exercised from F2 on).
+/// library search path (stdlib imports are exercised in `faust_json.rs`).
 const SINE_SRC: &str = r#"
 wrap(x) = x - floor(x);
 phasor = (+(440.0/48000.0) : wrap) ~ _;

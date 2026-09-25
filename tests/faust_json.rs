@@ -1,7 +1,7 @@
-//! F2 tests: the JSON -> Box API interpreter. Gated behind the `faust`
+//! The JSON -> Box API interpreter. Gated behind the `faust`
 //! feature: `cargo test --features faust --test faust_json`.
 //!
-//! Covers: the JSON sine graph built from primitives (parity with the F0
+//! Covers: the JSON sine graph built from primitives (parity with the
 //! smoke test), the `faust` escape hatch into the stdlib (`os.osc`), stdlib
 //! imports from raw source (the `-I` path), validation errors with the
 //! offending JSON node path, and a kitchen-sink graph that touches every op
@@ -85,7 +85,7 @@ fn estimated_freq(buf: &[f32]) -> f32 {
     signal::zero_crossing_freq(buf, SR)
 }
 
-/// The F0 smoke graph, now as JSON: `sin(2pi*phasor(freq)) * 0.2` with
+/// The smoke test's graph, now as JSON: `sin(2pi*phasor(freq)) * 0.2` with
 /// `phasor = (+(freq/SR) : wrap) ~ _` and `wrap = _ <: _ - floor(_)`.
 fn sine_graph() -> Value {
     let freq = json!({
@@ -154,14 +154,14 @@ fn faust_op_embeds_stdlib_source_as_a_composable_box() {
 
 #[test]
 fn raw_source_defs_resolve_stdlib_imports() {
-    // F1 deliberately avoided imports; the `-I` stdlib path added in F2
-    // covers `createCDSPFactoryFromString` too.
+    // The `-I` stdlib path covers `createCDSPFactoryFromString` too, not only
+    // the box builders.
     let src = "import(\"stdfaust.lib\"); process = os.osc(440) * 0.2;";
     compile("ssine", CompilePayload::Source(src.into()))
         .expect("raw source with stdlib import must compile");
 }
 
-/// F5: a `waveform` standing in for (size, init) of `rdtable`, read by a
+/// A `waveform` standing in for (size, init) of `rdtable`, read by a
 /// wrapping integer counter -- the output must walk the table verbatim.
 #[test]
 fn waveform_rdtable_cycles_through_the_table() {
@@ -185,7 +185,7 @@ fn waveform_rdtable_cycles_through_the_table() {
     }
 }
 
-/// F5's real use case: a wavetable oscillator whose table the client computed
+/// The real use case: a wavetable oscillator whose table the client computed
 /// numerically (here a 64-point sine) instead of serializing Faust source.
 #[test]
 fn computed_wavetable_oscillator_plays_at_440() {

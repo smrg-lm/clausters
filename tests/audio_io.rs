@@ -1,4 +1,4 @@
-//! S7: live hardware input. The device input path can't run in the sandbox, so
+//! Live hardware input. The device input path can't run in the sandbox, so
 //! these exercise the engine seam directly: a ring feeds interleaved input
 //! frames into the input buses (`channels..channels + input_channels`), and an
 //! `In` UGen reading that bus proves the round-trip end to end.

@@ -1,4 +1,4 @@
-//! The filter core (U2).
+//! The filter core.
 //!
 //! The two-pole rows are asserted against the **analytic transfer function of
 //! the structure they implement**, evaluated in `f64` -- never against a stored

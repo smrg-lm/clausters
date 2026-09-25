@@ -1,4 +1,4 @@
-//! O6's acceptance: a selection survives a round trip in every variant, and the
+//! A selection survives a round trip in every variant, and the
 //! two-number form scripts already read keeps working.
 
 use super::*;

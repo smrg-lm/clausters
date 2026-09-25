@@ -7,7 +7,7 @@ scratch, which is why only `fft` names a size.
 
 from .graph import Ugen
 
-# ---- frequency-domain chain: FFT / PV_* / IFFT (S8) ----
+# ---- frequency-domain chain: FFT / PV_* / IFFT ----
 # `fft` opens a spectral chain, the `pv_*` filters transform the frame in place,
 # and `ifft` resynthesises audio. Wire them in order (fft -> pv_* -> ... -> ifft).
 # The frame is synth-private scratch (no buffer to allocate); only `fft` names

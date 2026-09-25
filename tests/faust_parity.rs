@@ -1,4 +1,4 @@
-//! F4 golden tests: a UGen graph and its Faust equivalent render side by
+//! Golden tests: a UGen graph and its Faust equivalent render side by
 //! side in the same engine and must agree. Gated behind the `faust` feature:
 //! `cargo test --features faust --test faust_parity`.
 //!

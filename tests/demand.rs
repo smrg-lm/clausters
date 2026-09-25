@@ -1,4 +1,4 @@
-//! The demand family (U8): the pull protocol, the sources and the drivers.
+//! The demand family: the pull protocol, the sources and the drivers.
 //!
 //! Two harnesses, because the family has two things to check. [`Values`] drives
 //! a source directly through the [`DemandInputs`] trait -- that is where a

@@ -1,5 +1,5 @@
 //! `EnvGen`: segment-based envelopes with SC shape curves, gate-driven sustain
-//! at the release node, and `doneAction` freeing, plus U4's `Line`/`XLine` --
+//! at the release node, and `doneAction` freeing, plus `Line`/`XLine` --
 //! which are that same segment engine with the header filled in -- and the
 //! node-control set. The engine renders offline; the envelope's output goes to
 //! bus 0 so `render` can read it back.
@@ -413,7 +413,7 @@ fn done_action_free_group_frees_the_enclosing_group() {
     );
 }
 
-// ---- S4: /node_run resume + the relative done actions through the real chain ----
+// ---- /node_run resume + the relative done actions through the real chain ----
 
 /// A plain synth that sums a constant `dc` into bus 0 every block (no envelope,
 /// no done action) -- a marker to hear whether a node ran.
@@ -531,7 +531,7 @@ fn n_run_pauses_and_resumes_a_whole_group() {
     assert_eq!(handle.counters().synths.load(Ordering::Relaxed), 1);
 }
 
-// ---- Line / XLine: the one-segment envelopes (U4) ----
+// ---- Line / XLine: the one-segment envelopes ----
 
 /// A `Line` (or `XLine`) written to bus 0, at the given rate. `done_action` is
 /// an input like `EnvGen`'s.
@@ -715,7 +715,7 @@ fn line_carries_the_whole_done_action_set() {
     );
 }
 
-// ---- FreeSelf / PauseSelf / Done / FreeSelfWhenDone (U4) ----
+// ---- FreeSelf / PauseSelf / Done / FreeSelfWhenDone ----
 
 /// A node-control UGen fed by control 0, its output written to bus 0 so the
 /// pass-through is observable.

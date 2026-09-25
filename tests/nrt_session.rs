@@ -1,4 +1,4 @@
-//! S13: the NRT server taking operations on demand.
+//! The NRT server taking operations on demand.
 //!
 //! The claim under test is the one the mode is defined by, and it is not a
 //! claim about time: **determinism here is of process**. An interactive session

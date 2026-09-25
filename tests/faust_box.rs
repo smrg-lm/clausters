@@ -2,7 +2,7 @@
 //! `faust_signal.rs`. Gated behind the `faust` feature:
 //! `cargo test --features faust --test faust_box`.
 //!
-//! The split across the box suites: `faust_smoke.rs` is the F0 latency probe
+//! The split across the box suites: `faust_smoke.rs` is the latency probe
 //! (one sine through the Box API), `faust_json.rs` covers the JSON -> Box
 //! interpreter, and this file covers Box API *semantics* built directly with
 //! FFI calls -- `rec` feedback, `CDSPToBoxes` fragment arity, the CSE

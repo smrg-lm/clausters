@@ -1,4 +1,4 @@
-//! F3 tests: `FaustSynth` in the node tree. Gated behind the `faust`
+//! `FaustSynth` in the node tree. Gated behind the `faust`
 //! feature: `cargo test --features faust --test faust_synth`.
 //!
 //! Engine-level tests drive the same command FIFO the network thread uses
@@ -214,7 +214,7 @@ fn n_map_drives_a_faust_zone_from_a_control_bus() {
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
     handle.send(add_faust(1000, &def, &[])).ok().unwrap();
 
-    // Map the `freq` zone to control bus 5: M11 unifies UGen and Faust
+    // Map the `freq` zone to control bus 5: `/node_map` unifies UGen and Faust
     // parameters under the same bus mapping.
     let freq = def.control_index("freq").unwrap();
     handle
@@ -436,7 +436,7 @@ mod osc {
         assert_eq!(done.args[1], OscType::String("faust".into()));
         assert_eq!(done.args[2], OscType::String("fsine".into()));
 
-        // M30: /def_query reports the compiled def's parameter surface, which for
+        // /def_query reports the compiled def's parameter surface, which for
         // a FaustDef carries its declared range (init/min/max/step) after the
         // shared (name, default, rate) triple. The reserved out/in bus controls
         // are engine plumbing and stay out of it.

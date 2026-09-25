@@ -382,10 +382,10 @@ pub use time::*;
 /// minting correction's half that is a fact about the multitrack. **Additive**, and
 /// the counter moves for v31's reason.
 /// **v55 the superseded readers go, and the format is askable.** The four
-/// doors `O26` and `O27` replaced -- `clausters_multitrack_picture` and the
+/// superseded doors -- `clausters_multitrack_picture` and the
 /// three `clausters_multitrack_read*` -- are **removed**: the view is
 /// `clausters_editing_multitrack_props` and the reading is
-/// `clausters_editing_intake`, both clients have called those since `O29`, and
+/// `clausters_editing_intake`, both clients call those instead, and
 /// a door that answers half of what its replacement answers is a door that
 /// invites the wrong call. `clausters_session_format` arrives in their place,
 /// so a client can ask what format the crate writes instead of only knowing.

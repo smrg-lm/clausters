@@ -37,7 +37,7 @@
 //!   another.
 //!
 //! **What is still not here is a second field.** The stack is inside the one
-//! element for the reason A2 recorded: every view of a signal paints its field
+//! element for a recorded reason: every view of a signal paints its field
 //! before it draws, so two elements on one rectangle are not layers -- the
 //! second is a lid. One body, one axis, one ruler, one selection, one playhead,
 //! one upload, and this list.

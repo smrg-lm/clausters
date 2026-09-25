@@ -1,6 +1,6 @@
-//! O11's acceptance: a run of gestures applied across the ABI inverts back to
+//! A run of gestures applied across the ABI inverts back to
 //! the starting document exactly, through the crate's history rather than one
-//! the caller keeps. Since O16 the history holds structures rather than one
+//! the caller keeps. The history holds structures rather than one
 //! document, so a walk hands the payloads back with the structure each belongs
 //! to and the caller applies them -- which is what `walk` below does, and what
 //! a binding does.
@@ -36,7 +36,7 @@ impl Drop for Held {
     }
 }
 
-/// The same, for the document the log edits. Since O12 the tree stays in Rust
+/// The same, for the document the log edits. The tree stays in Rust
 /// and only the intent and the outcome cross, so a test holds a pointer and
 /// reads the tree back with `snapshot` when it wants to assert on it.
 struct Doc(*mut FfiDocument);
@@ -182,7 +182,7 @@ fn place(node: u64, offset: f64) -> String {
 
 #[test]
 fn a_run_of_gestures_inverts_back_to_where_it_started() {
-    // O11's acceptance. The log lives in Rust with its spill store; what
+    // The log lives in Rust with its spill store; what
     // crosses is the document and the pointer.
     let log = Held::new();
     let doc = Doc::new(DOC);
@@ -392,7 +392,7 @@ fn a_null_handle_is_answered_rather_than_a_crash() {
     let n =
         unsafe { clausters_history_walk(null, UNDO.as_ptr(), UNDO.len(), std::ptr::null_mut(), 0) };
     assert_eq!(n, 2, "`{{}}`: there is nothing to undo on no history");
-    // And the mirror: no document either, which since O12 is the other handle
+    // And the mirror: no document either, which is the other handle
     // a caller can get wrong.
     let no_doc: *mut FfiDocument = std::ptr::null_mut();
     let intent = place(2, 1.0);
@@ -518,7 +518,7 @@ fn a_buffer_too_small_is_a_size_query_and_not_a_half_done_edit() {
 
 #[test]
 fn a_second_domain_shares_the_pile_and_comes_back_addressed_to_itself() {
-    // O16's acceptance across the ABI. A curve is not a document, so this
+    // Across the ABI: a curve is not a document, so this
     // surface cannot apply its edits -- the caller does, and hands over the
     // pair. What the history gives back is the leg with the structure on it,
     // which is all a caller needs to route it to the reader that knows the
@@ -578,7 +578,7 @@ fn a_structure_another_history_minted_is_refused() {
 
 #[test]
 fn a_transaction_crosses_as_one_entry_with_several_legs() {
-    // O17 across the ABI. The crate reaches one document and no curve, so a
+    // Across the ABI: the crate reaches one document and no curve, so a
     // gesture over both is applied by the caller and recorded whole -- one
     // call, because half a transaction is worse than none.
     let log = Held::new();
@@ -661,7 +661,7 @@ fn an_inverse_the_document_cannot_describe_is_answered_with_zero() {
 
 #[test]
 fn the_non_invertible_the_deleted_and_the_saved_cross_too() {
-    // O18's three, over the ABI. A leg with no `backward` is recorded, marked
+    // The three legs, over the ABI. A leg with no `backward` is recorded, marked
     // and walked past in both directions, with the walk naming it.
     let log = Held::new();
     let domain = "points";

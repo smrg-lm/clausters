@@ -2,7 +2,7 @@
 //! clip's automation body.
 //!
 //! **One element, two placements**, which is the whole reason it is the leaf
-//! K5 was designed against. On its own it draws a framed field over its own
+//! the clip bodies were designed against. On its own it draws a framed field over its own
 //! `[0, duration]` domain; as a clip's [`Curve`](BodyRole::Curve) body it is
 //! handed the container's axis ([`Ctx::time`]) and draws bare against it, over
 //! the clip's span. The mapping is one object either way ([`bpf::Axes`]), so a

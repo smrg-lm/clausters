@@ -42,7 +42,7 @@ impl TestServer {
         Self::spawn_with(engine_pair(48_000.0, 2))
     }
 
-    /// A server over an engine built with explicit boot-time [`Limits`] (S7),
+    /// A server over an engine built with explicit boot-time [`Limits`],
     /// to check `/server_query` reports the configured capacities.
     fn spawn_with_limits(limits: Limits) -> Self {
         Self::spawn_with(engine_pair_full(48_000.0, 2, 0, None, 128, 1024, limits))
@@ -145,7 +145,7 @@ impl TestServer {
         panic!("the server never answered /server_sync.reply");
     }
 
-    /// Collects the `addr` replies of a multi-reply query (M30's `/def_query`,
+    /// Collects the `addr` replies of a multi-reply query (`/def_query`,
     /// `/ugen_query`) until the batch's `/done` terminator arrives.
     fn recv_batch(&self, addr: &str, cmd: &str) -> Vec<OscMessage> {
         let mut out = Vec::new();
@@ -1580,7 +1580,7 @@ fn notify_bad_argument_fails() {
     server.quit();
 }
 
-// --- S9: side-effect UGens (SendTrig/SendReply/Poll), no Out required ---
+// --- side-effect UGens (SendTrig/SendReply/Poll), no Out required ---
 
 /// A def whose only UGen is `SendTrig` (no `Out`) compiles, runs, and replies
 /// `/node_trigger nodeID id value` to a `/server_notify` client when its trigger control fires.
@@ -1785,7 +1785,7 @@ fn bundle_contents_execute() {
     server.quit();
 }
 
-/// M8/M21: `/clock_query` exposes the engine's sample counter, the actual sample
+/// `/clock_query` exposes the engine's sample counter, the actual sample
 /// rate and the server's OSC/NTP time captured with the counter -- the anchor a
 /// client needs to place its clock on the server's sample axis.
 #[test]
@@ -1823,7 +1823,7 @@ fn clock_reports_the_engine_sample_counter() {
     server.quit();
 }
 
-/// M22: `/transport_set` is the shared beat grid for phase alignment -- a query
+/// `/transport_set` is the shared beat grid for phase alignment -- a query
 /// reports "undefined" until a client sets it, then echoes it back; bad args
 /// fail and leave the previous grid intact.
 #[test]
@@ -1985,8 +1985,8 @@ fn transport_play_stop_locate() {
 }
 
 /// A `/server_notify` client is pushed the new grid as a `/transport_query.reply` whenever
-/// the transport is set, so its responders re-align without polling (M22
-/// push-on-change paired with client responders).
+/// the transport is set, so its responders re-align without polling
+/// (push-on-change paired with client responders).
 #[test]
 fn transport_pushes_on_change_to_notify_clients() {
     let server = TestServer::spawn();
@@ -2492,7 +2492,7 @@ fn the_transport_drives_playback_in_samples_with_no_grid() {
     server.quit();
 }
 
-/// M8: `/sched_at` argument validation and per-message translation failures.
+/// `/sched_at` argument validation and per-message translation failures.
 #[test]
 fn sched_rejects_bad_arguments() {
     let server = TestServer::spawn();
@@ -2556,7 +2556,7 @@ fn sched_rejects_bad_arguments() {
     server.quit();
 }
 
-/// M8: an `Int` target is tolerated and the blob may be a bundle -- all its
+/// An `Int` target is tolerated and the blob may be a bundle -- all its
 /// leaf messages fire as one atomic instant (inner timetags are ignored).
 #[test]
 fn sched_accepts_int_targets_and_bundle_blobs() {
@@ -2591,7 +2591,7 @@ fn sched_accepts_int_targets_and_bundle_blobs() {
     server.quit();
 }
 
-// ---- TCP transport (server track M / client C8) ----
+// ---- TCP transport ----
 
 /// A length-prefixed OSC client over TCP: a 4-byte big-endian length then the
 /// OSC bytes, the same framing the server's `osc::tcp` speaks both ways.
@@ -2711,7 +2711,7 @@ fn tcp_replies_route_to_the_originating_connection() {
     );
 }
 
-/// M25: the stream transports carry frames well past the UDP datagram cap --
+/// The stream transports carry frames well past the UDP datagram cap --
 /// a ~200 KB `/buffer_gen env` request (10k breakpoints) goes in as one frame, and
 /// the whole 40k-sample buffer comes back in one equally large `/buffer_getRange.reply`
 /// reply to a single `/buffer_getRange`, no chunking either way.
@@ -2806,7 +2806,7 @@ fn sync_waits_for_an_async_buffer_alloc() {
     panic!("never received /server_sync.reply");
 }
 
-// ---- S6: OSC command-set completion ----
+// ---- OSC command-set completion ----
 
 impl TestServer {
     /// The ordered synth child IDs of a group, read from `/group_queryTree` (each
@@ -3462,9 +3462,9 @@ fn load_rows(reply: &OscMessage) -> Vec<(String, i32, f64, i64)> {
         .collect()
 }
 
-/// S7: `/server_query.reply` reports the boot-time pool capacities and I/O
+/// `/server_query.reply` reports the boot-time pool capacities and I/O
 /// channels so a client can size its own allocators from the server. The first
-/// six fields stay stable; the S7 fields are appended.
+/// six fields stay stable; the limits fields are appended after them.
 #[test]
 fn server_info_reports_configured_limits() {
     let limits = Limits {
@@ -3498,7 +3498,7 @@ fn server_info_reports_configured_limits() {
     // No segment in this harness: the tap region reports empty.
     assert_eq!(ints[11], 0, "taps");
     assert_eq!(ints[12], 0, "tap_frames");
-    // M25: the stream-transport frame ceiling, for clients to size bulk
+    // The stream-transport frame ceiling, for clients to size bulk
     // requests from.
     assert_eq!(ints[13], 16 * 1024 * 1024, "max_frame");
     // The `/bus_stream` ceiling, per carrier: this client is a datagram one,
@@ -3518,7 +3518,7 @@ fn server_info_reports_configured_limits() {
     server.quit();
 }
 
-/// S7: `--max-ugen-inputs` is enforced when a def is received; a def whose UGen
+/// `--max-ugen-inputs` is enforced when a def is received; a def whose UGen
 /// asks for more inputs than the configured limit is rejected with `/fail`.
 #[test]
 fn d_recv_rejects_over_max_ugen_inputs() {
@@ -3544,7 +3544,7 @@ fn d_recv_rejects_over_max_ugen_inputs() {
     server.quit();
 }
 
-// --- M30: the introspection verbs (/def_query, /ugen_query; /buffer_query's listing
+// --- the introspection verbs (/def_query, /ugen_query; /buffer_query's listing
 //     form lives in tests/buffers.rs beside the other buffer coverage) ---
 
 /// `/def_query` with no argument lists every loaded def with its control

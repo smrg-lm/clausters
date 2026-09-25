@@ -1,4 +1,4 @@
-//! O8's acceptance: the format round-trips whole, a generator's blob survives
+//! The format round-trips whole, a generator's blob survives
 //! unread in both directions, and a session saved mid-edit reopens with the
 //! edit still open.
 
@@ -120,7 +120,7 @@ fn a_session_round_trips_whole() {
 
 #[test]
 fn a_generators_blob_survives_both_directions_unread() {
-    // O8's acceptance, and the rule the whole crate runs on: a generator is
+    // The rule the whole crate runs on: a generator is
     // code in the language of whoever wrote it, so the format's job is to not
     // lose it rather than to understand it.
     let session = saved();
@@ -191,7 +191,7 @@ fn mid_edit() -> Session {
 
 #[test]
 fn a_session_saved_mid_edit_reopens_with_the_edit_still_open() {
-    // O8's acceptance. A save never blocks on a confirmation, so the format has
+    // A save never blocks on a confirmation, so the format has
     // to be able to say *this is a working copy of that, and nobody has decided
     // yet*.
     let mut session = mid_edit();

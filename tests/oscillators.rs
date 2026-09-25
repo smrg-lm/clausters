@@ -1,4 +1,4 @@
-//! The phase family (U1): `Saw`, `Pulse`, the `LF*` shapes and `Phasor`.
+//! The phase family: `Saw`, `Pulse`, the `LF*` shapes and `Phasor`.
 //!
 //! The asserts are measurements, per the rules in the `audio-testing` skill:
 //! frequency from the rendered signal, amplitude from its extremes, and -- for

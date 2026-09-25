@@ -947,7 +947,7 @@ fn freeing_a_window_drops_the_edits_it_had_in_flight() {
 
 #[test]
 fn redefining_a_window_drops_the_edits_it_had_in_flight() {
-    // Found while writing the owner's side of O4: a redefine replaces the
+    // Found while writing the owner's side of the version check: a redefine replaces the
     // whole tree, so an edit in flight against the old one has nothing to
     // resolve to -- its widget may be gone, or its id may now belong to
     // something else. The owner answers nothing for it, so without this the
@@ -1293,7 +1293,7 @@ fn a_tree_built_in_rust_defines_what_the_document_defines() {
 }
 
 /// A registered element reaches the host through the Rust door with nothing
-/// added to the builder -- the K1 seam and the K2 builder meeting, which is
+/// added to the builder -- the host's seam and the builder meeting, which is
 /// the case a program embedding the crate actually has.
 #[test]
 fn a_registered_element_defines_through_the_rust_door() {

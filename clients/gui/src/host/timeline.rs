@@ -1266,7 +1266,7 @@ impl Host {
     /// (`Gestures::tick`): *at constant zoom, the window goes where the writing
     /// is*. They differ only in the trigger -- content arriving here, a standing
     /// cursor there -- and are two copies of one rule for now; unifying them is
-    /// recorded as open in `clients/gui/PLAN.md` (G32d).
+    /// recorded as open in `clients/gui/PLAN.md`.
     pub(super) fn follow_timeline_end(&mut self, id: i32, effects: &mut Vec<HostEffect>) {
         let Some(key) = self.timeline_key(id) else {
             return;

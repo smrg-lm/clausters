@@ -1,4 +1,4 @@
-//! Calculation-rate tests (S1): one per rate -- `ar` (per sample), `kr` (once
+//! Calculation-rate tests: one per rate -- `ar` (per sample), `kr` (once
 //! per block), `ir` (once at init, then frozen), `dr` (pulled on demand) -- plus
 //! the compiler's rate-coercion validation.
 
@@ -38,7 +38,7 @@ fn render(json: &str, blocks: usize) -> Vec<f32> {
 }
 
 /// Renders `blocks` blocks, cut into slices of `split` frames -- what a
-/// scheduled bundle does to a block (M6). The audio bus is read once per whole
+/// scheduled bundle does to a block. The audio bus is read once per whole
 /// block, so the result is directly comparable with [`render`]'s.
 fn render_split(json: &str, blocks: usize, split: usize) -> Vec<f32> {
     let def = compile(serde_json::from_str::<SynthDefSpec>(json).unwrap()).unwrap();
@@ -345,7 +345,7 @@ fn rejects_demand_wire_into_a_normal_input() {
 
 #[test]
 fn a_driver_accepts_a_plain_value_as_its_source() {
-    // U8 loosened this: with `Duty` pulling two of its four inputs, "the source
+    // The demand family loosened this: with `Duty` pulling two of its four inputs, "the source
     // slot must be a dr wire" stopped being a rule the family shares, and a
     // stream that is really a constant is well defined -- it holds.
     let json = r#"{"name":"x","ugens":[

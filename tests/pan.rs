@@ -1,4 +1,4 @@
-//! Panning, the stereo field and selection (U7).
+//! Panning, the stereo field and selection.
 //!
 //! Every claim here is checked against the **closed form of the law actually
 //! implemented**, never against a recorded buffer and never against scsynth's

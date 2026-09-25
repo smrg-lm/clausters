@@ -1,4 +1,4 @@
-//! NRT golden tests (M7): scenes render offline and must match the
+//! NRT golden tests: scenes render offline and must match the
 //! reference WAVs in `tests/golden/`, plus independent signal asserts so a
 //! stale golden cannot silently bless a broken render.
 //!
@@ -423,7 +423,7 @@ fn zero_length_score_is_an_error() {
     assert!(err.contains("empty render"), "got: {err}");
 }
 
-/// M31(a): a score writes its own samples. The `/buffer_*` family is legal in
+/// A score writes its own samples. The `/buffer_*` family is legal in
 /// a score and completes synchronously before time advances, so the write half
 /// composes with the rest without a barrier -- `PlayBuf` reads back exactly what
 /// `/buffer_setRange` laid down.

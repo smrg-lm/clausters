@@ -1,4 +1,4 @@
-//! S8 tests: the frequency-domain (`fr`) chain -- an `FFT`->`IFFT` round trip
+//! The frequency-domain (`fr`) chain -- an `FFT`->`IFFT` round trip
 //! reconstructs a tone, and a `PV_*` filter attenuates a band -- driven through
 //! the real engine (`process_block`), plus a `/node_ugenCmd` window swap.
 
@@ -251,7 +251,7 @@ fn compiler_validates_the_chain() {
 }
 
 /// `/node_ugenCmd <ugen> window <wintype>` swaps an `FFT`'s analysis window live (the
-/// first consumer of the S6 typed per-UGen command surface). Here we drive the
+/// first consumer of the typed per-UGen command surface). Here we drive the
 /// UGen's `command` directly to confirm the selector wiring.
 #[test]
 fn u_cmd_swaps_the_fft_window() {
@@ -282,7 +282,7 @@ fn u_cmd_swaps_the_fft_window() {
     });
 }
 
-/// S11 hop-phase stagger: the node id shifts *when* a chain's first frame
+/// The hop-phase stagger: the node id shifts *when* a chain's first frame
 /// fires (a deterministic sub-hop, block-quantized offset), without touching
 /// the reconstruction itself. Two identical passthrough chains under different
 /// node ids start `stagger` samples apart but agree sample-for-sample in the
@@ -334,7 +334,7 @@ fn hop_stagger_shifts_only_the_first_frame() {
     assert_eq!(staggered, again);
 }
 
-// ---- M27: the curated PV set ----
+// ---- the curated PV set ----
 
 /// `PV_MagClip` limits loud bins to the threshold but is transparent when the
 /// threshold clears every magnitude: same def, huge vs tiny threshold.
@@ -600,7 +600,7 @@ fn pv_binshift_moves_the_tone() {
     );
 }
 
-/// M29 `PV_Kernel`: a bin-expression program reproducing a curated op renders
+/// `PV_Kernel`: a bin-expression program reproducing a curated op renders
 /// **sample-identically** to the built-in row -- the mechanism's acceptance
 /// test. Here `mag * (mag >= p0)` (a spectral gate) against `PV_MagAbove`.
 #[test]

@@ -1,4 +1,4 @@
-//! M5 tests: the buffer pool, the NRT thread (alloc / WAV read / write /
+//! The buffer pool, the NRT thread (alloc / WAV read / write /
 //! zero / free, in submission order) and the `PlayBuf`/`BufRd` UGens, plus
 //! the `/buffer_*` OSC round trip with a manually ticked engine.
 
@@ -1310,7 +1310,7 @@ mod osc {
             ]
         );
 
-        // M30: with no argument, /buffer_query lists the allocated buffers in the
+        // With no argument, /buffer_query lists the allocated buffers in the
         // same four-arg shape -- how a patcher discovers buffers it never
         // allocated itself (the pool outlives any one client).
         send("/buffer_query", vec![]);
@@ -1500,7 +1500,7 @@ mod osc {
         server_thread.join().unwrap().unwrap();
     }
 
-    /// M31(a): the read -> edit -> write cycle an editor view needs. What a
+    /// The read -> edit -> write cycle an editor view needs. What a
     /// client writes with `/buffer_set`/`/buffer_setRange` is exactly what
     /// `/buffer_getRange` reads back, and the engine plays the edited samples.
     #[test]
@@ -1996,7 +1996,7 @@ fn bufwr_writes_at_its_phase_and_passes_the_signal_on() {
     );
 }
 
-/// **A delay over a pool buffer**, the other half of S14's acceptance: the same
+/// **A delay over a pool buffer**, the other half of the buffer delays: the same
 /// circular-line arithmetic the private family uses, over samples somebody else
 /// can also read.
 #[test]
@@ -2117,7 +2117,7 @@ fn a_buffer_comb_repeats_and_decays() {
 /// **A write no longer erases what a recorder put there while it was queued.**
 ///
 /// This is the defect the in-place write closes, and it only became reachable
-/// when buffers became writable (S14): a `RecordBuf` or a `BufWr` writes the
+/// when buffers became writable: a `RecordBuf` or a `BufWr` writes the
 /// pool buffer from the audio thread, and a command that laid its samples into
 /// a *copy* and installed it whole discarded everything recorded since the copy
 /// was taken. Nothing warned; the samples were simply gone.

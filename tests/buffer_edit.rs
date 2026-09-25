@@ -1,4 +1,4 @@
-//! S12: the destructive edit verbs on the wire -- `/buffer_gain` and
+//! The destructive edit verbs on the wire -- `/buffer_gain` and
 //! `/buffer_reverse`.
 //!
 //! The arithmetic itself is `clausters_core::edit`'s and is unit-tested there;

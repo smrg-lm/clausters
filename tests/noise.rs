@@ -1,4 +1,4 @@
-//! Noise (U6): the stochastic sources.
+//! Noise: the stochastic sources.
 //!
 //! A random signal cannot be asserted sample by sample, so the claims here are
 //! about **distributions and spectra**, per the rules in the `audio-testing`

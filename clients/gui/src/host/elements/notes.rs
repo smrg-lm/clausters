@@ -1116,9 +1116,9 @@ impl Notes {
     /// A roll is the editor of things that have a **pitch**: that is what its
     /// grid is a grid of. The other items a timeline holds have none -- an OSC
     /// message, raw MIDI bytes -- so they are drawn below it as markers, which
-    /// is the decision this widget was built with (`G24a`: *"OSC events (which
+    /// is the decision this widget was built with (*"OSC events (which
     /// have no pitch) draw as flags in a separate lane below it"*) and the one
-    /// the dedicated view recorded again (`G24c`: *"display-only for now: the
+    /// the dedicated view recorded again (*"display-only for now: the
     /// `(time, label)` marker is a lossy view of the message, so writing it
     /// back would drop the args"*).
     ///

@@ -1,4 +1,4 @@
-//! S15: the three buffer commands S6 declared shipped and did not ship --
+//! The three buffer commands once declared shipped that had not shipped --
 //! `/buffer_fill`, `/buffer_readChannel` and `/buffer_allocReadChannel`.
 //!
 //! The fill is the writing family's member and addresses samples **flat and

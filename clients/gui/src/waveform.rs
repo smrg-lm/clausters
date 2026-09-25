@@ -38,7 +38,7 @@ use crate::viewport::{Axis, Unit, View};
 
 /// Where a channel's raw samples are -- **owned here, or read where they live**.
 ///
-/// The distinction is the whole of H7: a take the host has mapped is the
+/// The distinction is the whole point: a take the host has mapped is the
 /// server's own memory, and a picture of it has no business holding a second
 /// copy. A page has no mapping and keeps the owned form, which is also what a
 /// fetched buffer, an inline blob and a test all produce.
@@ -320,7 +320,7 @@ impl WaveformData {
     /// A multichannel view over samples the host **maps**: one
     /// [`peaks::Source`] per channel, each summarized where it lies.
     ///
-    /// This is the editor's own case since H7 -- the take is the server's
+    /// This is the editor's own case -- the take is the server's
     /// memory, the picture reads it, and the only thing allocated here is the
     /// summary. Building it streams through a bounded window, so opening a
     /// ten-minute take costs its pyramid and a kilobyte.

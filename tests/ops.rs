@@ -1,4 +1,4 @@
-//! Operator-UGen tests (S3): the generic `BinaryOpUGen`/`UnaryOpUGen` selected
+//! Operator-UGen tests: the generic `BinaryOpUGen`/`UnaryOpUGen` selected
 //! by a core opcode index, the fused `MulAdd`/`Sum3`/`Sum4`, and the compiler's
 //! `op`-index validation. The bit-for-bit agreement with `clausters_core` over
 //! the whole opcode table lives in `tests/core_parity.rs`; here we drive the
@@ -182,7 +182,7 @@ fn rejects_wrong_arity_for_op_ugen() {
     assert!(compile_err(json).contains("expected 1 inputs"));
 }
 
-/// The operators deferred when S3 landed (U0): they must resolve by name
+/// The operators deferred when the named ops landed: they must resolve by name
 /// through the real compile+render path, not only in the core's unit tests.
 #[test]
 fn deferred_s3_operators_resolve_and_compute() {

@@ -849,7 +849,7 @@ mod through_a_history {
 
     #[test]
     fn a_region_moved_between_tracks_undoes_in_one_step() {
-        // O22's acceptance. One intent, so one entry -- and the undo puts the
+        // One intent, so one entry -- and the undo puts the
         // region back on the lane it came from, not merely at the beat it came
         // from.
         let mut multitrack = multitrack();

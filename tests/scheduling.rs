@@ -1,4 +1,4 @@
-//! M6 tests: sample-accurate scheduling of timed bundles. Engine-level
+//! Sample-accurate scheduling of timed bundles. Engine-level
 //! tests assert exactness to the sample (DC signals make the edges visible);
 //! the OSC test covers NTP timetag -> sample conversion against a live
 //! server with a manually ticked engine.
@@ -616,7 +616,7 @@ mod osc {
         server_thread.join().unwrap().unwrap();
     }
 
-    /// M8: `/sched_at` carries an *absolute* sample target, so unlike the NTP
+    /// `/sched_at` carries an *absolute* sample target, so unlike the NTP
     /// test above there is no wall-clock neighborhood to allow for -- the
     /// note must start on that exact frame. This precision is the point of
     /// scheduling on the sample clock.
