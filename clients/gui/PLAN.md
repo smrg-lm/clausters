@@ -7642,13 +7642,19 @@ module of its own.
   the timeline's stays its own (a group sync runs it too), the voices' says
   so to the server, and the monitor's now also forgets a take it was
   playing that is gone.
-- ⬜ **Five walks find the views of a buffer** *(audit 2026-09-25)*.
+- ✅ **Five walks find the views of a buffer** *(audit 2026-09-25)*.
   `refresh_buffer_views`, `patch_buffer_views`, `stream_buffer_views`,
   `write_buffer_views` and `forget_take_views` are one recursion -- every
   samples element drawing buffer N, do one thing, count -- written five times;
   `collect_stream_wants` and `span_to_read_back` are the same walk read-only.
   And `buffer_of`, `buffer_frames`, `buffer_channels` and `buffer_rate` look
   the same element up four times to read four facts of it.
+  **Fixed 2026-09-25**: one recursion, `samples_views`, and `buffer_views`
+  over it for the pictures of one buffer; each pass is a closure at its call
+  site. `Host::samples_of` is the one lookup, `play_buffer` reads the buffer,
+  shape and rate off it once, and `buffer_channels` and `buffer_rate` are
+  gone (`buffer_of` and `buffer_frames` stay, for the gestures that ask one
+  fact).
 - ⬜ **A definition installs a tree by two copies of the same steps**
   *(audit 2026-09-25)*. `define_node`'s window branch and its in-window
   branch each build, reconcile, resolve the style, resync the bus taps, the

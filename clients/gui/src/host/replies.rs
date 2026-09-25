@@ -404,7 +404,10 @@ pub(crate) trait Front {
             let Some(tree) = self.host_mut().window_def_mut(def_id) else {
                 continue;
             };
-            if super::patch_buffer_views(tree, bufnum, start_frame as u64, channels, samples) > 0 {
+            if super::buffer_views(tree, bufnum, &mut |el| {
+                el.patch_span(start_frame as u64, channels, samples)
+            }) > 0
+            {
                 redraw.push(def_id);
             }
         }
@@ -466,7 +469,16 @@ pub(crate) trait Front {
             let Some(tree) = self.host_mut().window_def_mut(def_id) else {
                 continue;
             };
-            if super::stream_buffer_views(tree, bufnum, start, bucket, stats) > 0 {
+            // **How far it is written travels with the report**, as it does with
+            // a frontier: the element decides what to do with it (drawing only
+            // that far is the `fills` prop's answer, not this walk's).
+            let took = super::buffer_views(tree, bufnum, &mut |el| {
+                let wrote = el.write_buckets(start, bucket, stats);
+                let channels = el.sample_shape().map_or(1, |(ch, _)| ch.max(1));
+                let frames = (stats.len() / (channels * 3)) as u64 * bucket as u64;
+                el.set_written(start + frames) || wrote
+            });
+            if took > 0 {
                 redraw.push(def_id);
             }
         }
@@ -496,7 +508,10 @@ pub(crate) trait Front {
             let Some(tree) = self.host_mut().window_def_mut(def_id) else {
                 continue;
             };
-            if super::refresh_buffer_views(tree, bufnum, channel, start, frames) > 0 {
+            if super::buffer_views(tree, bufnum, &mut |el| {
+                el.resummarize(channel, start, frames)
+            }) > 0
+            {
                 touched.push(def_id);
             }
         }

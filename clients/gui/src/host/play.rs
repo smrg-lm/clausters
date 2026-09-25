@@ -86,21 +86,26 @@ impl Host {
     /// be written. The take is synced first -- the buffer a join is now and
     /// its length -- so an edit made since the last play is what plays.
     pub fn play_buffer(&mut self, def_id: i32, widget_id: i32, start: u64, pass: Pass) -> bool {
-        let Some(bufnum) = self.buffer_of(def_id, widget_id) else {
+        // The take is looked up once, and everything the readers need is read
+        // off it: the buffer, its shape and the rate it was recorded at.
+        let Some(samples) = self.samples_of(def_id, widget_id) else {
             return false;
         };
+        let Some(bufnum) = samples.source_buffer() else {
+            return false;
+        };
+        let (channels, frames) = samples.sample_shape().unwrap_or((1, 0));
+        let recorded = samples.samples_rate();
         if self.player().is_none() {
             diag::warn!("nothing to play this take through: no audio server");
             return false;
         }
-        let channels = self.buffer_channels(def_id, widget_id).unwrap_or(1);
-        let frames = self.buffer_frames(def_id, widget_id).unwrap_or(0);
         let engine = if self.server_rate > 0.0 {
             self.server_rate
         } else {
             48_000.0
         };
-        let take = self.buffer_rate(def_id, widget_id).unwrap_or(engine);
+        let take = recorded.unwrap_or(engine);
         let synced = self.monitor.sync(
             widget_id as u64,
             bufnum,

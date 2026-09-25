@@ -1229,7 +1229,7 @@ impl Host {
     pub fn forget_take(&mut self, bufnum: i32) -> Vec<i32> {
         let mut touched = Vec::new();
         for (def_id, tree) in &mut self.window_defs {
-            if forget_take_views(tree, bufnum) > 0 {
+            if samples_views(tree, &mut |el| el.forget_take(bufnum)) > 0 {
                 touched.push(*def_id);
             }
         }
@@ -2666,9 +2666,7 @@ impl Host {
         len: usize,
     ) -> Result<(), String> {
         let Some((channels, frames)) = self
-            .window_def(def_id)
-            .and_then(|t| t.find(widget_id))
-            .and_then(element_with_samples)
+            .samples_of(def_id, widget_id)
             .and_then(widget::element::Samples::sample_shape)
         else {
             return Err("this widget is not drawing any samples".into());
@@ -2711,28 +2709,24 @@ impl Host {
     /// and a stroke that reaches it would carry a frame the buffer does not
     /// have -- which the owner refuses, taking the whole stroke with it.
     pub(crate) fn buffer_frames(&self, def_id: i32, widget_id: i32) -> Option<u64> {
-        element_with_samples(self.window_def(def_id)?.find(widget_id)?)?
+        self.samples_of(def_id, widget_id)?
             .sample_shape()
             .map(|(_, frames)| frames)
     }
 
-    /// How many channels of samples a widget draws, if it draws any -- what the
-    /// monitor starts one reader per.
-    pub(crate) fn buffer_channels(&self, def_id: i32, widget_id: i32) -> Option<usize> {
-        element_with_samples(self.window_def(def_id)?.find(widget_id)?)?
-            .sample_shape()
-            .map(|(channels, _)| channels)
-    }
-
-    /// The rate a widget's samples were recorded at, when it was told.
-    pub(crate) fn buffer_rate(&self, def_id: i32, widget_id: i32) -> Option<f64> {
-        element_with_samples(self.window_def(def_id)?.find(widget_id)?)?.samples_rate()
+    /// **The samples a widget draws**, when it draws any -- the element to ask
+    /// a take's shape, buffer and rate of, looked up once.
+    pub(crate) fn samples_of(
+        &self,
+        def_id: i32,
+        widget_id: i32,
+    ) -> Option<&dyn widget::element::Samples> {
+        element_with_samples(self.window_def(def_id)?.find(widget_id)?)
     }
 
     /// The server buffer a widget's samples are in, when they are in one.
     fn buffer_of(&self, def_id: i32, widget_id: i32) -> Option<i32> {
-        element_with_samples(self.window_def(def_id)?.find(widget_id)?)
-            .and_then(widget::element::Samples::source_buffer)
+        self.samples_of(def_id, widget_id)?.source_buffer()
     }
 
     /// **Carries a destructive edit through to the samples**: the server's
@@ -2780,7 +2774,9 @@ impl Host {
             take.write_channel(channel, start, values);
             self.announce_write(bufnum, channel, start, values.len());
             if let Some(tree) = self.window_def_mut(def_id) {
-                write_buffer_views(tree, bufnum, channel, start, values);
+                buffer_views(tree, bufnum, &mut |el| {
+                    el.write_samples(channel, start, values)
+                });
             }
             return;
         }
@@ -2805,7 +2801,10 @@ impl Host {
         let Some(tree) = self.window_def_mut(def_id) else {
             return;
         };
-        if write_buffer_views(tree, bufnum, channel, start, values) == 0 {
+        if buffer_views(tree, bufnum, &mut |el| {
+            el.write_samples(channel, start, values)
+        }) == 0
+        {
             diag::warn!("the picture refused a write the samples accepted -- they will disagree");
         }
     }
@@ -3540,73 +3539,43 @@ fn element_with_samples(widget: &widget::Widget) -> Option<&dyn widget::element:
         .find(|s| s.sample_shape().is_some())
 }
 
-/// Re-reads the summary of a span in **every element in this tree drawing
-/// server buffer `bufnum`**, returning how many did.
+/// **Asks every element of this tree that holds samples to do `apply`**,
+/// answering how many did.
 ///
-/// The sibling of [`write_buffer_views`] for a write this host did not make:
-/// another peer stored into the shared cells and announced the span
-/// (`/buffer_touched`), so the samples are already the new ones and only the
-/// summary over them is stale.
-pub(crate) fn refresh_buffer_views(
+/// The one walk every pass over the pictures of a take goes through: a write,
+/// a re-summary, a span read back, a stream report, a take forgotten. Most of
+/// them want the pictures of one buffer, which is [`buffer_views`]; the take
+/// forgotten asks every element, because one that draws several takes (a
+/// multitrack) names none of them as its own.
+pub(crate) fn samples_views(
     widget: &mut widget::Widget,
-    bufnum: i32,
-    channel: Option<usize>,
-    start: u64,
-    frames: usize,
+    apply: &mut dyn FnMut(&mut dyn widget::element::Samples) -> bool,
 ) -> usize {
-    let mut refreshed = 0;
+    let mut did = 0;
     if let Some(el) = widget.kind.as_samples_mut()
-        && el.source_buffer() == Some(bufnum)
-        && el.resummarize(channel, start, frames)
+        && apply(el)
     {
-        refreshed += 1;
+        did += 1;
     }
     for child in &mut widget.children {
-        refreshed += refresh_buffer_views(child, bufnum, channel, start, frames);
+        did += samples_views(child, apply);
     }
-    refreshed
+    did
 }
 
-/// **Tells every element of this tree that asked for take `bufnum` to forget
-/// it**, returning how many had.
-fn forget_take_views(widget: &mut widget::Widget, bufnum: i32) -> usize {
-    let mut forgot = 0;
-    if let Some(el) = widget.kind.as_samples_mut()
-        && el.forget_take(bufnum)
-    {
-        forgot += 1;
-    }
-    for child in &mut widget.children {
-        forgot += forget_take_views(child, bufnum);
-    }
-    forgot
-}
-
-/// **Puts a span another peer wrote into every element of this tree drawing
-/// server buffer `bufnum`**, returning how many took it.
+/// [`samples_views`] over **the elements drawing server buffer `bufnum`**.
 ///
-/// [`refresh_buffer_views`]' sibling for a host that cannot re-read the
-/// samples: it holds its own copy, so the span had to be read back off the
-/// wire, and what arrives is the buffer's own samples -- which is why this
-/// names no widget. Whoever draws that buffer is entitled to them.
-pub(crate) fn patch_buffer_views(
+/// The buffer is the identity: two widgets are two pictures of one buffer
+/// exactly when they name the same buffer, and nothing else in the tree relates
+/// them -- a clip and an editor of the same take are not parent and child.
+pub(crate) fn buffer_views(
     widget: &mut widget::Widget,
     bufnum: i32,
-    start: u64,
-    channels: usize,
-    samples: &[f32],
+    apply: &mut dyn FnMut(&mut dyn widget::element::Samples) -> bool,
 ) -> usize {
-    let mut patched = 0;
-    if let Some(el) = widget.kind.as_samples_mut()
-        && el.source_buffer() == Some(bufnum)
-        && el.patch_span(start, channels, samples)
-    {
-        patched += 1;
-    }
-    for child in &mut widget.children {
-        patched += patch_buffer_views(child, bufnum, start, channels, samples);
-    }
-    patched
+    samples_views(widget, &mut |el| {
+        el.source_buffer() == Some(bufnum) && apply(el)
+    })
 }
 
 /// **The shape of the request that reads an announced span back**, as
@@ -3614,7 +3583,7 @@ pub(crate) fn patch_buffer_views(
 /// `bufnum`.
 ///
 /// One element is enough because the answer serves them all
-/// ([`patch_buffer_views`]), and no widget id comes back with it for the same
+/// ([`replies::Front::place_patch`]), and no widget id comes back with it for the same
 /// reason: what the walk is for is the shape of the request, which only an
 /// element knows.
 pub(crate) fn span_to_read_back(widget: &widget::Widget, bufnum: i32) -> Option<(usize, usize)> {
@@ -3684,69 +3653,6 @@ fn collect_stream_wants(widget: &widget::Widget, buffers: &mut Vec<i32>, bucket:
     for child in &widget.children {
         collect_stream_wants(child, buffers, bucket);
     }
-}
-
-/// Folds a stream report into **every element in this tree drawing server
-/// buffer `bufnum`**, returning how many took it.
-///
-/// The buffer is the identity here for the same reason it is for a write: two
-/// widgets are two pictures of one buffer exactly when they name the same
-/// buffer. What arrives is the overview of frames the writer added, so every
-/// picture of that buffer is told at once and each one answers for itself --
-/// a mapped view says no, since it reads the samples where they lie.
-pub(crate) fn stream_buffer_views(
-    widget: &mut widget::Widget,
-    bufnum: i32,
-    start_frame: u64,
-    bucket: usize,
-    stats: &[f32],
-) -> usize {
-    let mut wrote = 0;
-    if let Some(el) = widget.kind.as_samples_mut()
-        && el.source_buffer() == Some(bufnum)
-    {
-        if el.write_buckets(start_frame, bucket, stats) {
-            wrote += 1;
-        }
-        // **How far it is written travels with the report**, as it does with a
-        // frontier: the element decides what to do with it (drawing only that
-        // far is the `fills` prop's answer, not this walk's).
-        let channels = el.sample_shape().map_or(1, |(ch, _)| ch.max(1));
-        let frames = (stats.len() / (channels * 3)) as u64 * bucket as u64;
-        if el.set_written(start_frame + frames) {
-            wrote += 1;
-        }
-    }
-    for child in &mut widget.children {
-        wrote += stream_buffer_views(child, bufnum, start_frame, bucket, stats);
-    }
-    wrote
-}
-
-/// Writes a run of samples into **every element in this tree drawing server
-/// buffer `bufnum`**, returning how many took it.
-///
-/// The buffer is the identity: two widgets are two pictures of one buffer
-/// exactly when they name the same buffer, and nothing else in the tree relates
-/// them -- a clip and an editor of the same take are not parent and child.
-fn write_buffer_views(
-    widget: &mut widget::Widget,
-    bufnum: i32,
-    channel: usize,
-    start: u64,
-    values: &[f32],
-) -> usize {
-    let mut wrote = 0;
-    if let Some(el) = widget.kind.as_samples_mut()
-        && el.source_buffer() == Some(bufnum)
-        && el.write_samples(channel, start, values)
-    {
-        wrote += 1;
-    }
-    for child in &mut widget.children {
-        wrote += write_buffer_views(child, bufnum, channel, start, values);
-    }
-    wrote
 }
 
 #[cfg(test)]
