@@ -7586,7 +7586,7 @@ module of its own.
   **Fixed 2026-09-25**: `AudioEditorPlayback::set_loop` converts the span as
   `locate` does, and the host's `set_loop` is that call; the host's
   `send_sound`, whose last caller it was, went with it.
-- ⬜ **Nineteen doc comments sit on the wrong item** *(audit 2026-09-25)*. An
+- ✅ **Nineteen doc comments sit on the wrong item** *(audit 2026-09-25)*. An
   item was moved or removed and its doc stayed, fused onto the next one: in
   `mod.rs` the `/gui_query` and `/gui_ack` docs are on `say`, `voice_on`'s is
   on `element_midi`, `send_to_player`'s is on `sync_bus_watches`,
@@ -7596,6 +7596,14 @@ module of its own.
   `elements/multitrack/{mod,draw}.rs`, `widget/element.rs` (two),
   `widget/props.rs` and `gui/app.rs`. rustdoc renders each as one paragraph
   that describes two things, and nothing lints it.
+  **Fixed 2026-09-25**: each doc moved onto the item it describes where that
+  item is still there (`on_query`, `on_ack`, `voice_on`, `blob_args`,
+  `json_arg`, a fetch test, `long_at`, `want`, `sample_shape`, `live`,
+  `boxes_on_screen`, `needs`, `bulk`, `write_samples`, `key_pressed`,
+  `to_key`, `set_selection`, `locate_timeline`, `locate_at`, `EditorProps`),
+  and dropped where it is not (a marquee the container owns now, a stray line
+  of `send_to_player`'s). One link the same pass found broken,
+  `Host::playhead_clock`, names `head_clock_of` and `head_clocks`.
 - ⬜ **The two fronts each dispatch the buffer replies** *(audit 2026-09-25)*.
   `gui/serverleg.rs` and `web/serverleg.rs` both match `/buffer_query.reply`,
   `/buffer_getRange.reply`, `/buffer_touched`, `/buffer_stream.reply` and

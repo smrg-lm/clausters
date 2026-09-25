@@ -490,13 +490,13 @@ pub struct SignalElement {
     /// -- recomputed at the element's mutation points (parse, a bulk load
     /// landing samples, a `/gui_set` touching what it reads), never per frame.
     pub analysis: Option<Arc<crate::host::graphics::signal::plot::PlotSpectrum>>,
+    /// **The loudness layer**: its scale, its guides and what it has measured.
+    /// Inert until a measure asks for it.
+    pub loudness: LoudnessLayer,
     /// What a **live** presentation has accumulated from its forward-only
     /// source: the rolling history, the triggered window, the analysis states,
     /// the rolling transform. Advanced once per tick ([`Self::tick`]) and only
     /// drawn afterwards, so a repaint never advances anything.
-    /// **The loudness layer**: its scale, its guides and what it has measured.
-    /// Inert until a measure asks for it.
-    pub loudness: LoudnessLayer,
     pub live: LiveState,
     /// Whether the element's **claimed GPU slot** has content it has not handed
     /// the frame yet ([`Self::fill`]). True on a fresh element and at every

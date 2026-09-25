@@ -2233,13 +2233,6 @@ pub trait Samples {
         0
     }
 
-    /// **A bulk resource this element asked for has arrived.** Returns whether
-    /// it was taken, so a loader can log what it resolved for nobody.
-    ///
-    /// The element places the data itself, in whatever shape it draws from --
-    /// which is the half of the bulk seam that cannot be a declaration: what
-    /// comes back is a pyramid, a set of analyses or a run of samples, and only
-    /// the element knows what it is for.
     /// **One of the [`Needs::takes`] arrived**, named by its buffer number.
     ///
     /// The plural door: an element drawing several server buffers is handed
@@ -2272,6 +2265,13 @@ pub trait Samples {
         false
     }
 
+    /// **A bulk resource this element asked for has arrived.** Returns whether
+    /// it was taken, so a loader can log what it resolved for nobody.
+    ///
+    /// The element places the data itself, in whatever shape it draws from --
+    /// which is the half of the bulk seam that cannot be a declaration: what
+    /// comes back is a pyramid, a set of analyses or a run of samples, and only
+    /// the element knows what it is for.
     fn bulk(&mut self, _data: Loaded) -> bool {
         false
     }
@@ -2333,15 +2333,6 @@ pub trait Samples {
         None
     }
 
-    /// **Writes a run of samples into the samples**, at frame `start` of
-    /// channel `ch`; returns whether it landed.
-    ///
-    /// The element writes rather than the host because only it knows which form
-    /// its samples are in -- a pyramid, inline samples, or both -- and a host
-    /// that patched one form left every view holding the other showing the
-    /// samples as it was before the stroke. What is written stays the
-    /// element's own picture; the *samples* is the server's buffer, and the
-    /// host sends that write itself.
     /// **Re-reads the summary of a span** of samples this element draws
     /// where it lies, returning whether it did. The default is not to: an
     /// element holding its own samples has nothing to re-read.
@@ -2357,6 +2348,15 @@ pub trait Samples {
         false
     }
 
+    /// **Writes a run of samples into the samples**, at frame `start` of
+    /// channel `ch`; returns whether it landed.
+    ///
+    /// The element writes rather than the host because only it knows which form
+    /// its samples are in -- a pyramid, inline samples, or both -- and a host
+    /// that patched one form left every view holding the other showing the
+    /// samples as it was before the stroke. What is written stays the
+    /// element's own picture; the *samples* is the server's buffer, and the
+    /// host sends that write itself.
     fn write_samples(&mut self, _ch: usize, _start: u64, _values: &[f32]) -> bool {
         false
     }

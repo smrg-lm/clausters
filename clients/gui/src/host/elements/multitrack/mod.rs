@@ -453,6 +453,13 @@ impl Element for Multitrack {
         Natural::default()
     }
 
+    /// **The takes its clips are windows onto**, by server buffer number, and
+    /// the buses its meters read.
+    ///
+    /// The plural of the one source a picture asks for: this element holds
+    /// boxes, and every one of them is a window onto samples the server has.
+    /// Named once each, because the fetch is keyed by buffer and two clips over
+    /// one recording are one download.
     fn needs(&self) -> Needs {
         // **A join asks for the takes it reads, not for itself**: its spans
         // are drawn from those, so its own buffer would be a second download
@@ -568,12 +575,6 @@ impl OnAxis for Multitrack {
         true
     }
 
-    /// **The takes its clips are windows onto**, by server buffer number.
-    ///
-    /// The plural of the one source a picture asks for: this element holds
-    /// boxes, and every one of them is a window onto samples the server has.
-    /// Named once each, because the fetch is keyed by buffer and two clips over
-    /// one recording are one download.
     /// **What a lane's header asks for, left of the axis.**
     ///
     /// It is the group's answer and not this widget's: the layout stamps the

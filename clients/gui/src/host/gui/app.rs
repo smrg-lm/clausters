@@ -955,10 +955,19 @@ impl App {
     }
 }
 
-/// Translates a winit key into the platform-neutral [`HostKey`] the focus reads,
-/// or `None` for one nothing focusable answers (the global shortcuts then run).
-/// A printable character (including Space) inserts; the named editing keys and
-/// Tab map one-to-one.
+/// Whether this is the space bar, however the shell spelled it.
+///
+/// It arrives as `Named(Space)` under a chord and as the character it typed
+/// otherwise ([`key_pressed`]), and a match on one of the two is a key that
+/// works only with a modifier held -- which is to say not at all.
+fn is_space(key: &Key) -> bool {
+    match key {
+        Key::Named(NamedKey::Space) => true,
+        Key::Character(c) => c == " ",
+        _ => false,
+    }
+}
+
 /// **The key a chord was pressed on, and the text everything else produced.**
 ///
 /// winit's `logical_key` is the key *with modifiers applied*, which is right
@@ -987,19 +996,6 @@ impl App {
 /// A press with no text (an arrow, Escape) or whose text is a control
 /// character (Enter's `\r`, Tab's `\t`, Backspace) falls back to
 /// `logical_key`, where those are the named keys the editing verbs match on.
-/// Whether this is the space bar, however the shell spelled it.
-///
-/// It arrives as `Named(Space)` under a chord and as the character it typed
-/// otherwise ([`key_pressed`]), and a match on one of the two is a key that
-/// works only with a modifier held -- which is to say not at all.
-fn is_space(key: &Key) -> bool {
-    match key {
-        Key::Named(NamedKey::Space) => true,
-        Key::Character(c) => c == " ",
-        _ => false,
-    }
-}
-
 fn key_pressed(event: &winit::event::KeyEvent, chord: bool) -> Key {
     #[cfg(any(
         target_os = "windows",
@@ -1025,6 +1021,10 @@ fn key_pressed(event: &winit::event::KeyEvent, chord: bool) -> Key {
     event.logical_key.clone()
 }
 
+/// Translates a winit key into the platform-neutral [`HostKey`] the focus reads,
+/// or `None` for one nothing focusable answers (the global shortcuts then run).
+/// A printable character (including Space) inserts; the named editing keys and
+/// Tab map one-to-one.
 pub(super) fn to_key(key: &Key) -> Option<HostKey> {
     match key {
         Key::Named(NamedKey::Backspace) => Some(HostKey::Backspace),

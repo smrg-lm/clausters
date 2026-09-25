@@ -102,21 +102,6 @@ pub(super) fn freq_nav_ids(tree: &Widget) -> Vec<i32> {
         .collect()
 }
 
-/// Writes the selection spanning samples `a..b` (any order, clamped to the
-/// timeline) into view `id`'s navigation group -- every member follows -- and
-/// emits **one** `"selection" start len` event, carrying the interacted
-/// member's id.
-///
-/// `value` is the sweep's second axis, already ordered and clamped to the
-/// element's domain ([`timeline::value_span`](crate::host::timeline::value_span)),
-/// or `None` for a sweep on one axis. It is written to the **widget** rather
-/// than to the group (the group is one time axis over views that measure
-/// different things vertically) and it rides on the same event, appended: a
-/// selection that is only a span is exactly the two numbers this has always
-/// sent, so a reader of the old form keeps working and one that understands the
-/// second axis is told when there is one. Passing `None` clears any range the
-/// widget carried -- a new sweep replaces the old selection whole, rather than
-/// leaving a restriction from a gesture the hand has finished with.
 /// Hands the element the run the hand is holding, or takes it back.
 ///
 /// Returns whether the element is one that can hold one -- a press that cannot
@@ -229,6 +214,21 @@ pub(super) fn sweep_element(
     super::element::swept(host, ctx, at, from, to).band
 }
 
+/// Writes the selection spanning samples `a..b` (any order, clamped to the
+/// timeline) into view `id`'s navigation group -- every member follows -- and
+/// emits **one** `"selection" start len` event, carrying the interacted
+/// member's id.
+///
+/// `value` is the sweep's second axis, already ordered and clamped to the
+/// element's domain ([`timeline::value_span`](crate::host::timeline::value_span)),
+/// or `None` for a sweep on one axis. It is written to the **widget** rather
+/// than to the group (the group is one time axis over views that measure
+/// different things vertically) and it rides on the same event, appended: a
+/// selection that is only a span is exactly the two numbers this has always
+/// sent, so a reader of the old form keeps working and one that understands the
+/// second axis is told when there is one. Passing `None` clears any range the
+/// widget carried -- a new sweep replaces the old selection whole, rather than
+/// leaving a restriction from a gesture the hand has finished with.
 pub(super) fn set_selection(
     host: &mut Host,
     out: &mut Vec<GestureEffect>,
@@ -304,10 +304,6 @@ pub(super) fn transport_follows_selection(
     host.set_loop((len > 0.0).then(|| (start, start + len as u64)));
 }
 
-/// Places the **position cursor**: the timeline position under the pointer
-/// becomes the group's, drawn at once on every lane so the click lands where
-/// you see it, and leaves as `/gui_event <id> "locate" <position>` -- where the
-/// owner starts a playback from and where a paste of its own would land.
 /// **The marker a press at `cx` landed on**, over the strip it was drawn in --
 /// asked of the group's *current* window, since the axis may have moved since
 /// the markers were set.
@@ -362,9 +358,6 @@ pub(super) fn set_markers(
     out.push(GestureEffect::Redraw(def_id));
 }
 
-/// The transport's cursor at an **exact** position, rather than at the one a
-/// pixel names: what a click on a marker means, since a marker is the moment it
-/// was placed at and not the pixel it is drawn on.
 /// **Where a key gesture acts**, in the units of the axis widget `id` is on, or
 /// `None` where it is on no navigation group and nowhere a cut or a paste could
 /// land.
@@ -386,6 +379,9 @@ pub(super) fn cursor_of(host: &Host, ctx: &GestureCtx, id: i32) -> Option<f64> {
     state.head_at(ctx.clocks.at(Some(id)))
 }
 
+/// The transport's cursor at an **exact** position, rather than at the one a
+/// pixel names: what a click on a marker means, since a marker is the moment it
+/// was placed at and not the pixel it is drawn on.
 pub(super) fn locate_at(
     host: &mut Host,
     out: &mut Vec<GestureEffect>,
@@ -423,6 +419,10 @@ pub(super) fn locate_at(
     out.push(GestureEffect::Redraw(ctx.def_id));
 }
 
+/// Places the **position cursor**: the timeline position under the pointer
+/// becomes the group's, drawn at once on every lane so the click lands where
+/// you see it, and leaves as `/gui_event <id> "locate" <position>` -- where the
+/// owner starts a playback from and where a paste of its own would land.
 pub(super) fn locate_timeline(
     host: &mut Host,
     out: &mut Vec<GestureEffect>,

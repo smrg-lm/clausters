@@ -507,8 +507,8 @@ pub trait BusSource: Send + Sync {
     /// wants: it holds while the transport is stopped, jumps wherever a locate
     /// puts it and wraps at a loop's end, all in the engine. Natively it is a
     /// field of the shared segment; the browser polls `/transport_query`.
-    /// Which of the two a window draws is [`Host::head_clock`], resolved once
-    /// in [`Host::playhead_clock`].
+    /// Which of the two a view draws is [`Host::head_clock_of`], read once a
+    /// frame in [`Host::head_clocks`].
     fn transport_position(&self, transport: usize) -> f64 {
         let _ = transport;
         0.0
@@ -2167,18 +2167,6 @@ impl Host {
         }
     }
 
-    /// `/gui_query <id>` -- reply `/gui_info <id> <type> <k> <v> ...`.
-    /// `/gui_ack <seq> <docVersion> [<source> <generation>...] [<reason>]` -- the
-    /// owner reports how far it has processed and what state that left.
-    ///
-    /// One rule and no branch: retire every pending edit at or below `seq`. The
-    /// values the owner pushed arrive as ordinary `/gui_set`s in the same
-    /// bundle, so *applied*, *applied transformed* and *refused* need no
-    /// distinction here -- the state is whatever was pushed, and a refusal is
-    /// the previous value.
-    ///
-    /// Trailing pairs are source generations, which is the only thing that can
-    /// say a destructive edit changed samples whose identity did not move. A
     /// **Says one line on window `def_id`'s status bar** (see [`status`]).
     ///
     /// `&self` rather than `&mut self` because the two things that say
@@ -2932,6 +2920,17 @@ impl Host {
         self.sound_multitrack();
     }
 
+    /// `/gui_ack <seq> <docVersion> [<source> <generation>...] [<reason>]` -- the
+    /// owner reports how far it has processed and what state that left.
+    ///
+    /// One rule and no branch: retire every pending edit at or below `seq`. The
+    /// values the owner pushed arrive as ordinary `/gui_set`s in the same
+    /// bundle, so *applied*, *applied transformed* and *refused* need no
+    /// distinction here -- the state is whatever was pushed, and a refusal is
+    /// the previous value.
+    ///
+    /// Trailing pairs are source generations, which is the only thing that can
+    /// say a destructive edit changed samples whose identity did not move. A
     /// trailing string is a reason, informational and read by nothing in the
     /// mechanism.
     fn on_ack(&mut self, args: &[OscType]) {
@@ -2966,6 +2965,7 @@ impl Host {
         self.settle(acked);
     }
 
+    /// `/gui_query <id>` -- reply `/gui_info <id> <type> <k> <v> ...`.
     fn on_query(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
         let Some(id) = int_arg(args, 0) else {
             return diag::warn!("{from}: {GUI_QUERY} needs an integer id");
@@ -3137,16 +3137,6 @@ impl Host {
         }
     }
 
-    /// Starts a host-managed voice for a widget that **declared one**
-    /// ([`Element::voice`](widget::element::Element::voice)): allocates an
-    /// explicit node id, sends the `/synth_new` and records the `(pitch, node)`
-    /// pair so the release can gate it. A re-press of an already-sounding
-    /// pitch releases the old voice first. Bookkeeping happens even with no
-    /// server attached, so the logic is testable without a transport.
-    ///
-    /// It is the host's because only the host has a leg to the audio server;
-    /// *when* to sound is the element's, and arrives as a
-    /// [`Voice`](widget::element::Voice) beside what it reported.
     /// Delivers a live MIDI note to the element `widget_id`, returning the
     /// message arguments it reported (empty when it consumed the note
     /// silently, `None` when it is not an element or reads no MIDI).
@@ -3166,6 +3156,16 @@ impl Host {
         Some(el.midi(note, playhead)?.into_messages())
     }
 
+    /// Starts a host-managed voice for a widget that **declared one**
+    /// ([`Element::voice`](widget::element::Element::voice)): allocates an
+    /// explicit node id, sends the `/synth_new` and records the `(pitch, node)`
+    /// pair so the release can gate it. A re-press of an already-sounding
+    /// pitch releases the old voice first. Bookkeeping happens even with no
+    /// server attached, so the logic is testable without a transport.
+    ///
+    /// It is the host's because only the host has a leg to the audio server;
+    /// *when* to sound is the element's, and arrives as a
+    /// [`Voice`](widget::element::Voice) beside what it reported.
     pub fn voice_on(&mut self, def_id: i32, widget_id: i32, pitch: i32, velocity: i32) {
         let Some(spec) = self
             .window_def(def_id)
@@ -3238,7 +3238,6 @@ impl Host {
         }
     }
 
-    /// Sends one message out the audio-server leg, if one is attached.
     /// Re-diffs the audio buses the open documents read against the ones the
     /// server is recording, and asks it to start or stop the difference
     /// (`/bus_tap bus 1` / `/bus_tap bus 0`). Watches are counted server-side, so two
@@ -3400,8 +3399,6 @@ impl Host {
     }
 }
 
-/// Collects the trailing OSC blob arguments of a `/gui_def` (the bulk data, e.g.
-/// waveform samples) into a list a `Widget` can index by `"blob"`.
 /// `/bus_tap bus watch`: what the host sends the audio server to start or stop
 /// recording an audio bus. The bus is the whole address -- the server picks and
 /// publishes where the samples land.
@@ -3425,6 +3422,8 @@ fn collect_audio_buses(tree: &Widget, out: &mut Vec<i32>) {
     }
 }
 
+/// Collects the trailing OSC blob arguments of a `/gui_def` (the bulk data, e.g.
+/// waveform samples) into a list a `Widget` can index by `"blob"`.
 fn blob_args(args: &[OscType]) -> Vec<Vec<u8>> {
     args.iter()
         .filter_map(|a| match a {
@@ -3451,8 +3450,6 @@ fn string_arg(args: &[OscType], i: usize) -> Option<&str> {
     }
 }
 
-/// The i-th argument as JSON bytes: a string or a blob (both accepted, as
-/// `/def_send synth` accepts a SynthDef either way).
 /// One argument read as a JSON **object** -- what the two host-wide tables
 /// cross as, the way every other structured value on this wire does.
 fn json_table(args: &[OscType], i: usize) -> Option<serde_json::Map<String, serde_json::Value>> {
@@ -3463,6 +3460,8 @@ fn json_table(args: &[OscType], i: usize) -> Option<serde_json::Map<String, serd
     }
 }
 
+/// The i-th argument as JSON bytes: a string or a blob (both accepted, as
+/// `/def_send synth` accepts a SynthDef either way).
 fn json_arg(args: &[OscType], i: usize) -> Option<&[u8]> {
     match args.get(i) {
         Some(OscType::String(s)) => Some(s.as_bytes()),

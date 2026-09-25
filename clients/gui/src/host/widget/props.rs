@@ -267,56 +267,6 @@ fn normalized_window(start: f64, len: f64, headroom: f64) -> (f64, f64) {
     axis.span()
 }
 
-/// The editor chrome both heavy views share: the time-ruler (x) mode and the
-/// vertical (y) ruler unit -- each independently switchable off, each drawn in
-/// its own strip beside the body -- the sample rate placing the time labels
-/// (0 = unknown), the beat grid of the `beats` ruler (`tempo` in beats per
-/// second -- the client `Clock` convention -- `beat_at` the beat position of
-/// buffer sample 0, `quant` the beats per bar), the `bit_depth` the `bits`
-/// amplitude unit quantizes to, a `[sel_start, sel_len)` selection in sample
-/// units (`sel_len <= 0` = none; drawn as an overlay, dragged with the
-/// pointer, round-tripped as a `"selection"` event / `/gui_set`), and the
-/// playhead origin `playhead_at` -- the engine sample-clock value that maps to
-/// buffer sample 0 (negative = no playhead; the line then tracks
-/// `sample_clock - playhead_at` with zero messages natively) -- and the
-/// **vertical view window** `y_start`/`y_len` in normalized display units
-/// (`0, 1` = the full axis, the default): the visible slice of the amplitude
-/// axis (waveform) or of the frequency display axis (spectrogram), zoomed and
-/// panned with the pointer on the y-ruler strip, settable via `/gui_set` and
-/// reported live as a `"view_y"` event (a non-positive `y_len` resets to the
-/// full axis).
-///
-/// `x_start`/`x_len` are the **horizontal** window of an element that owns its
-/// own x axis -- a navigable spectrum, whose x measures frequency rather than
-/// the window's time -- in the same normalized display units and with the same
-/// rule (`0, 1` = the whole axis, a non-positive length resets to it), reported
-/// as a `"view_x"` event. They arrive on the wire as the x axis' own
-/// `view_start`/`view_len` (`axes.x.start`/`len`), which is the same *question*
-/// a timeline member's window answers and the reason it is not a second pair of
-/// names; what differs is who owns the answer. On a member of a navigation
-/// group those keys never reach here -- the group model takes them, in samples
-/// (see `host::timeline`) -- so exactly one of the two readings is ever live for
-/// a given widget. Over a frequency axis this pair is the window that was
-/// **asked** for and not necessarily the one on the screen: the analysis has a
-/// resolution, and
-/// [`SignalElement::freq_window`](crate::host::elements::signal::SignalElement::freq_window)
-/// opens the request wherever it is finer than the bins are where it sits.
-///
-/// `link` is the widget's **navigation group** (see `host::timeline`): every
-/// timeline view declaring the same link id shares one horizontal view,
-/// selection and playhead -- a gesture or `/gui_set` on any member applies to
-/// all of them. Without a `link` the widget navigates alone. The selection and
-/// playhead fields here are the **def-time seed** of that group and nothing
-/// more: once the group exists it holds those values, every reader takes them
-/// from it, and these fields no longer move. Only the y axis stays per-widget.
-///
-/// `offset` is the widget's **placement** on its group's shared timeline (in
-/// timeline sample units): the view's own data sample 0 sits at timeline
-/// position `offset`, so a clip starting late draws shifted right and lengthens
-/// its group's timeline to `offset + data_len`. It is per-member (unlike the
-/// group-wide `link`/`sel_*`/`view_*`), but a change still re-clamps the group
-/// window and repaints every member, so it routes through the group model too.
-/// All members are at `offset = 0` until a multitrack layout places them.
 /// **A labelled point on the time axis** -- a cue, a section, a rehearsal
 /// letter: three fields and nothing else, because that is what a marker is.
 ///
@@ -395,6 +345,56 @@ pub fn markers_json(markers: &[Marker]) -> Value {
     Value::Array(out)
 }
 
+/// The editor chrome both heavy views share: the time-ruler (x) mode and the
+/// vertical (y) ruler unit -- each independently switchable off, each drawn in
+/// its own strip beside the body -- the sample rate placing the time labels
+/// (0 = unknown), the beat grid of the `beats` ruler (`tempo` in beats per
+/// second -- the client `Clock` convention -- `beat_at` the beat position of
+/// buffer sample 0, `quant` the beats per bar), the `bit_depth` the `bits`
+/// amplitude unit quantizes to, a `[sel_start, sel_len)` selection in sample
+/// units (`sel_len <= 0` = none; drawn as an overlay, dragged with the
+/// pointer, round-tripped as a `"selection"` event / `/gui_set`), and the
+/// playhead origin `playhead_at` -- the engine sample-clock value that maps to
+/// buffer sample 0 (negative = no playhead; the line then tracks
+/// `sample_clock - playhead_at` with zero messages natively) -- and the
+/// **vertical view window** `y_start`/`y_len` in normalized display units
+/// (`0, 1` = the full axis, the default): the visible slice of the amplitude
+/// axis (waveform) or of the frequency display axis (spectrogram), zoomed and
+/// panned with the pointer on the y-ruler strip, settable via `/gui_set` and
+/// reported live as a `"view_y"` event (a non-positive `y_len` resets to the
+/// full axis).
+///
+/// `x_start`/`x_len` are the **horizontal** window of an element that owns its
+/// own x axis -- a navigable spectrum, whose x measures frequency rather than
+/// the window's time -- in the same normalized display units and with the same
+/// rule (`0, 1` = the whole axis, a non-positive length resets to it), reported
+/// as a `"view_x"` event. They arrive on the wire as the x axis' own
+/// `view_start`/`view_len` (`axes.x.start`/`len`), which is the same *question*
+/// a timeline member's window answers and the reason it is not a second pair of
+/// names; what differs is who owns the answer. On a member of a navigation
+/// group those keys never reach here -- the group model takes them, in samples
+/// (see `host::timeline`) -- so exactly one of the two readings is ever live for
+/// a given widget. Over a frequency axis this pair is the window that was
+/// **asked** for and not necessarily the one on the screen: the analysis has a
+/// resolution, and
+/// [`SignalElement::freq_window`](crate::host::elements::signal::SignalElement::freq_window)
+/// opens the request wherever it is finer than the bins are where it sits.
+///
+/// `link` is the widget's **navigation group** (see `host::timeline`): every
+/// timeline view declaring the same link id shares one horizontal view,
+/// selection and playhead -- a gesture or `/gui_set` on any member applies to
+/// all of them. Without a `link` the widget navigates alone. The selection and
+/// playhead fields here are the **def-time seed** of that group and nothing
+/// more: once the group exists it holds those values, every reader takes them
+/// from it, and these fields no longer move. Only the y axis stays per-widget.
+///
+/// `offset` is the widget's **placement** on its group's shared timeline (in
+/// timeline sample units): the view's own data sample 0 sits at timeline
+/// position `offset`, so a clip starting late draws shifted right and lengthens
+/// its group's timeline to `offset + data_len`. It is per-member (unlike the
+/// group-wide `link`/`sel_*`/`view_*`), but a change still re-clamps the group
+/// window and repaints every member, so it routes through the group model too.
+/// All members are at `offset = 0` until a multitrack layout places them.
 #[derive(Debug, Clone)]
 pub struct EditorProps {
     pub ruler: Ruler,

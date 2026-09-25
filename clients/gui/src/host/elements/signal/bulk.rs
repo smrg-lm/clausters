@@ -30,14 +30,6 @@ use super::{SignalElement, Source};
 use crate::host::widget::element::{Bulk, Loaded};
 
 impl SignalElement {
-    /// The bulk resource this element wants, in the form it draws from, or
-    /// `None` when it needs nothing loaded -- it has its samples inline, it
-    /// reads a bus, or it named no resource at all.
-    ///
-    /// The precedence is the one the source has always had -- **cache, then
-    /// path, then buffer** -- a prebuilt summary being cheaper than the raw
-    /// samples, and a server buffer being the one thing the host has to ask
-    /// another process for.
     /// Forgets what this element resolved, so the next pass asks for it again
     /// -- the mapped half of "the samples are now these".
     ///
@@ -82,6 +74,14 @@ impl SignalElement {
         self.want()
     }
 
+    /// The bulk resource this element wants, in the form it draws from, or
+    /// `None` when it needs nothing loaded -- it has its samples inline, it
+    /// reads a bus, or it named no resource at all.
+    ///
+    /// The precedence is the one the source has always had -- **cache, then
+    /// path, then buffer** -- a prebuilt summary being cheaper than the raw
+    /// samples, and a server buffer being the one thing the host has to ask
+    /// another process for.
     pub fn want(&self) -> Option<Bulk> {
         let Source::Data(data) = &self.source else {
             return None; // a bus is fed forward-only; there is nothing to load
@@ -198,6 +198,13 @@ impl SignalElement {
         })
     }
 
+    /// **How much of this element's samples exists**, in frames, or `None` when
+    /// all of it does -- the drawing's half of the `fills` prop, asked wherever
+    /// a picture of the samples is built.
+    pub fn written_frames(&self) -> Option<u64> {
+        self.fills.then_some(self.written)
+    }
+
     /// **The shape of the samples this element holds** -- `(channels, frames)`
     /// per channel -- whichever form it arrived in: a resolved pyramid (a take)
     /// or the inline samples (a plotted sequence). `None` when it holds
@@ -206,13 +213,6 @@ impl SignalElement {
     /// It is the shape and not the samples because the one caller is a
     /// **write**, which has to know what it may address before it addresses it:
     /// handing out the data to measure it would be a copy of a take per stroke.
-    /// **How much of this element's samples exists**, in frames, or `None` when
-    /// all of it does -- the drawing's half of the `fills` prop, asked wherever
-    /// a picture of the samples is built.
-    pub fn written_frames(&self) -> Option<u64> {
-        self.fills.then_some(self.written)
-    }
-
     pub fn sample_shape(&self) -> Option<(usize, u64)> {
         let data = self.source.data()?;
         if let Some(body) = &data.body {

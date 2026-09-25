@@ -42,13 +42,6 @@ impl Multitrack {
         })
     }
 
-    /// **Where each box is on screen, and the slice of its own span it shows** --
-    /// the geometry the drawing and the texture pass both read, so a picture
-    /// drawn on the mesh and one uploaded to the GPU land on the same pixels.
-    ///
-    /// A box whose lane is gone, whose lane is scrolled off, or which is off
-    /// the window is absent rather than reported at zero size: what a caller
-    /// wants is what it can draw.
     /// **A join, drawn from the takes it reads**, one span at a time.
     ///
     /// Each span is a run of one take, and it occupies the stretch of the box
@@ -101,6 +94,13 @@ impl Multitrack {
         }
     }
 
+    /// **Where each box is on screen, and the slice of its own span it shows** --
+    /// the geometry the drawing and the texture pass both read, so a picture
+    /// drawn on the mesh and one uploaded to the GPU land on the same pixels.
+    ///
+    /// A box whose lane is gone, whose lane is scrolled off, or which is off
+    /// the window is absent rather than reported at zero size: what a caller
+    /// wants is what it can draw.
     pub(super) fn boxes_on_screen(
         &self,
         rect: Rect,

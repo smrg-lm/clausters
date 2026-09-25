@@ -282,9 +282,6 @@ impl Notes {
         }
     }
 
-    /// Starts a marquee at `time`, dropping whatever the last sweep selected:
-    /// the shared selection collapses to the press and the drag sweeps from
-    /// there.
     /// Inserts a note at `start`/`pitch` for the live-MIDI leg and the Ctrl+add
     /// gesture, returning its index.
     fn insert(&mut self, note: notes::Note) -> usize {

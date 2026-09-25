@@ -59,7 +59,6 @@ fn float_at(args: &[OscType], n: usize) -> Option<f32> {
     }
 }
 
-/// A sample position: a long, or an int from a client that had no long to hand.
 /// **Which channel a destructive payload addressed** -- argument 1 of both
 /// `"sample"` and `"draw"`, 0 for a payload that names none.
 ///
@@ -84,6 +83,7 @@ fn truthy_at(args: &[OscType], n: usize) -> bool {
     }
 }
 
+/// A sample position: a long, or an int from a client that had no long to hand.
 fn long_at(args: &[OscType], n: usize) -> Option<u64> {
     match args.get(n) {
         Some(OscType::Long(v)) if *v >= 0 => Some(*v as u64),

@@ -1033,10 +1033,6 @@ mod tests {
         assert_eq!(ids, vec![10, 11]);
     }
 
-    /// A range that comes back empty ends the download. The server clamps a
-    /// read to what the buffer holds, so a buffer that shrank between the
-    /// query and the read answers with nothing -- and re-asking for the same
-    /// chunk would spin forever against a server that is already right.
     /// **A span is read like a buffer and lands as a window**: the chunks walk
     /// the run and nothing outside it, and what comes back is addressed to the
     /// one view that asked.
@@ -1089,6 +1085,10 @@ mod tests {
         assert!(samples.iter().all(|s| *s == 0.5));
     }
 
+    /// A range that comes back empty ends the download. The server clamps a
+    /// read to what the buffer holds, so a buffer that shrank between the
+    /// query and the read answers with nothing -- and re-asking for the same
+    /// chunk would spin forever against a server that is already right.
     #[test]
     fn a_range_that_carries_nothing_finishes_the_download() {
         let mut fetches = BufferFetches::default();
