@@ -122,8 +122,12 @@
       // It is booted **on** the audio server's engine, so a bound widget's
       // `/node_set` reaches the node that server holds -- what the script's
       // twin gets from `session.gui()`, which points the host it boots at that
-      // session's server.
-      let host = await new GuiHost({ engine: (await audio()).engine }).boot();
+      // session's server. So it waits for that engine, which waits for the
+      // first click: booting it at load would hold the whole module on an
+      // AudioContext the page may not start yet, and no button would be wired.
+      let host = null;
+      const guiHost = async () =>
+        (host ??= await new GuiHost({ engine: (await audio()).engine }).boot());
 
       const panel = () => gui.view(
         { title: "a tone", w: 520, h: 300, layout: "col", margin: 8.0, gap: 8.0 },
@@ -187,12 +191,13 @@
       // takes its canvas with it, because `open` gives every view one of its
       // own. A page that wanted the three side by side would just not close.
       let win = null;
-      const open = (tree, blobs = []) => {
+      const open = async (tree, blobs = []) => {
+        const shown = await guiHost();
         if (win) {
-          win.canvas.remove();
+          win.canvas?.remove();
           win.close();
         }
-        win = host.open(tree, { blobs });
+        win = shown.open(tree, { blobs });
         return win;
       };
 
@@ -205,7 +210,7 @@
       document.getElementById("panel").onclick = async () => {
         await audio();
         playing();
-        const w = open(panel());
+        const w = await open(panel());
         // The bound control: its value never passes through this script.
         w.widget("freq").bind("/node_set", voice.id, "freq");
         // The scripted controls: the event comes here, and this code decides.
@@ -228,13 +233,13 @@
       document.getElementById("meters").onclick = async () => {
         await audio();
         const bus = Bus.control(1, { server });
-        const w = open(meters(bus.index));
+        const w = await open(meters(bus.index));
         w.widget("level").bind("/bus_set", bus.index);
         say(`meters: the knob writes bus ${bus.index}; the host streams it back`);
       };
 
-      document.getElementById("views").onclick = () => {
-        const w = open(views(), [gui.samplesToBlob(samples)]);
+      document.getElementById("views").onclick = async () => {
+        const w = await open(views(), [gui.samplesToBlob(samples)]);
         w.widget("env").onEvent((tag, ...points) => {
           if (tag === "points") say(`envelope edited: ${points.length / 4} points`);
         });
@@ -245,7 +250,7 @@
       document.getElementById("remote").onclick = async () => {
         const url = document.getElementById("ws").value;
         try {
-            host.stop();
+            host?.stop();
             host = await new GuiHost({ transport: "ws", url }).attach();
             win = null;
             say(`driving the native host at ${url} -- open a demo`);
