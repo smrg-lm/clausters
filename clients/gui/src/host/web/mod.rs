@@ -255,9 +255,9 @@ struct WebApp {
     /// The server's sample rate (from `/clock_query.reply`, requested when the leg
     /// connects); `0.0` until known -- window sizing then assumes 48 kHz.
     server_rate: f64,
-    /// The animation tick: the `setInterval` id and its closure, kept alive
-    /// while the current def has live widgets (meter/scope/canvas).
-    tick: Option<(i32, Closure<dyn FnMut()>)>,
+    /// The animation tick, running while the current def has live widgets
+    /// (meter/scope/canvas).
+    tick: Option<Interval>,
     /// How long the last tick was, for whatever advances in time.
     tick_clock: live::TickClock,
     /// Whether the first streamed `/bus_stream.reply` snapshot was logged (one line as
@@ -472,15 +472,17 @@ impl WebApp {
                     closure.as_ref().unchecked_ref(),
                     live::STREAM_PERIOD_MS,
                 ) {
-                    Ok(id) => self.tick = Some((id, closure)),
+                    Ok(id) => {
+                        self.tick = Some(Interval {
+                            window,
+                            id,
+                            _closure: closure,
+                        })
+                    }
                     Err(e) => log(&format!("cannot start the animation tick: {e:?}")),
                 }
             }
-            (false, true) => {
-                if let Some((id, _closure)) = self.tick.take() {
-                    window.clear_interval_with_handle(id);
-                }
-            }
+            (false, true) => self.tick = None,
             _ => {}
         }
     }
@@ -751,6 +753,23 @@ impl WebApp {
 /// independent as two pages, and neither has to partition an id range against
 /// the other. The GPU was already per canvas (`Gpu::new` builds one per
 /// `CanvasSlot`), so instances add no devices.
+/// A running `setInterval` and the closure it calls. Dropping it clears the
+/// interval before the closure goes: an instance closed with its tick running
+/// would otherwise leave the browser calling a freed closure every period,
+/// each call a thrown error, until the page stops answering.
+struct Interval {
+    window: web_sys::Window,
+    id: i32,
+    /// Held, never read: what the interval calls until it is cleared.
+    _closure: Closure<dyn FnMut()>,
+}
+
+impl Drop for Interval {
+    fn drop(&mut self) {
+        self.window.clear_interval_with_handle(self.id);
+    }
+}
+
 struct WebHosts {
     apps: HashMap<HostId, WebApp>,
     /// Whether the loop resumed. A window can only be created after it, and an

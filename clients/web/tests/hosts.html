@@ -56,7 +56,8 @@
         - a gesture on one emits a `/gui_event` in that host's outbox only;
         - each host's audio leg reaches its own engine, so a bound widget
           drives its own node and leaves the sibling's untouched;
-        - closing one leaves the other drawing and answering.
+        - closing one leaves the other drawing and answering, and leaves no
+          timer of its own running.
 
       The hosts are driven as raw OSC rather than through `GuiHost`, because
       the TS client resolves the *page's* host and what is under test is the
@@ -270,9 +271,27 @@
         log(`A's knob drove A's engine ${beforeA} -> ${afterA}, B's stayed ${afterB}`);
 
         // Closing one instance leaves the other whole: still answering, still
-        // drawing, still driving its own engine.
+        // drawing, still driving its own engine. And it leaves nothing of its
+        // own running: a timer that outlives the instance calls a freed
+        // closure every period, each call an error thrown into nothing that
+        // catches it, until the page stops answering. Those errors never
+        // reach this function, so they are counted where they land.
+        // The close lands mid-drag, which is when a host runs its frame tick
+        // on an otherwise still window.
+        let leaked = 0;
+        const count = () => { leaked++; };
+        window.addEventListener("error", count);
+        pointer(a.canvas, "pointerdown", dialA, 100 * scale, 1);
+        await sleep(60);
+        pointer(a.canvas, "pointermove", dialA, 80 * scale, 1);
+        await sleep(60);
         a.bridge.close();
         await sleep(400);
+        pointer(a.canvas, "pointerup", dialA, 80 * scale, 0);
+        window.removeEventListener("error", count);
+        if (leaked > 0) {
+          throw new Error(`closing host A left ${leaked} uncaught error(s) behind it`);
+        }
         if (Math.abs(valueOf(await query(b.bridge, 1003, b.seen)) - 0.8) > 1e-3) {
           throw new Error("closing host A disturbed host B");
         }
