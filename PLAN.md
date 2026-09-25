@@ -2485,6 +2485,14 @@ where it came from).
   server with several transports makes it hold one of them
   (`server.transport(id)`) with nothing else in the surface moving.
 
+- ⬜ **Two node trees kept in step by hand** *(the server audit,
+  2026-09-25)*. The network's `TreeMirror` and the engine's `NodeTree` implement the
+  same semantics (insert by add action, move, free all, deep free, the ancestor
+  walk), and `dispatch.rs` says one rule is "kept in step with
+  `Engine::bundle_is_governed` by hand". Two threads, two sets of rules, so two
+  implementations are defensible; nothing checks them against each other. A
+  test driving both with one sequence of operations is the cheap guard.
+
 ## Found by use: the running list of fixes
 
 These are not milestones and they are not future directions. They are what
@@ -3430,3 +3438,146 @@ finished work, where a pending item reads as done.
   in all seven places, and the other four "realizes" (the MIDI actuation twice
   in `docs/architecture.md`, a MIDI voice and scsynth's filters in
   `docs/schemas.md`) say **translates** and **implements**.
+
+The entries below are one audit of the server and the shared crates
+*(2026-09-25, asked by the user after the GUI host's)*: `src/` and
+`crates/*`, read for defects, redundancy and fixes narrower than their rule,
+with a near-duplicate scan over every function and a scan for doc comments
+fused onto the wrong item. Defects first, then what is duplicated, then
+structure. What is marked *to check* is a reading of the code that a test
+should confirm before the fix.
+
+- ⬜ **A page and a native server write different WAV bytes** *(audit
+  2026-09-25)*. Four WAV writers quantize an integer sample: `nrt::write_wav`,
+  `render`'s file writer and `DiskOut`'s thread scale and **round**; the page's
+  `/buffer_write` (`nrt::encode_wav_frames`, through `clausters-nrt-web`)
+  **truncates** (`as i16`, and 24-bit by `8_388_607.0` without a round). The
+  same write differs by up to one LSB in a browser. One quantizer and one frame
+  encoder for all four, and a test pinning the bytes of an int16 and an int24
+  write.
+- ⬜ **An offline score refuses two buffer commands the live server takes**
+  *(audit 2026-09-25, to check)*. `server::render` keeps its own list of the
+  `/buffer_*` job addresses and lacks `/buffer_setChannel` and
+  `/buffer_setRangeChannel`, which `parse_buffer_msg` and the live dispatch
+  accept; offline they fall to the translator and fail as unschedulable. The
+  set of job addresses is one list the dispatch table and the renderer both
+  read.
+- ⬜ **`clausters --nrt` takes any unknown argument for a path** *(audit
+  2026-09-25)*. `nrt_main` pushes every argument it does not know into the
+  paths, so `--help` after a score renders a WAV named `--help` — the stray
+  file that once reached `main` — and a misspelled flag becomes a file. An
+  unknown `-`-prefixed argument refuses with the usage, and `--help` prints it.
+- ⬜ **A transport command can answer `/done` for a change the engine never
+  got** *(audit 2026-09-25)*. `/transport_play`, `_stop`, `_loop`, `_end`,
+  `_fade` and the locates send their engine command with `.ok()`: a full
+  command FIFO leaves the network mirror saying one thing, the engine another,
+  and the client told it worked. `_follow` and `_group` fail instead. One rule:
+  a command whose engine half did not go out fails.
+- ⬜ **`/def_load` does not claim the def's name** *(audit 2026-09-25, to
+  check)*. `/def_send synth` frees the name in the other def kinds
+  (`claim_def_name`); `/def_load` and `/def_loadDir` do not, so a file loaded
+  under a GraphDef's or a FaustDef's name leaves both — what `claim_def_name`
+  exists to prevent — and they persist an ephemeral name without asking.
+- ⬜ **`/node_before` and `/node_after` move by a rule of their own** *(audit
+  2026-09-25)*. They inline the move instead of `move_one`, and refuse when
+  the node's or the target's *current* parent is auto-sorted, where
+  `/node_order` and `/group_head` refuse only an auto-sorted *destination*.
+  One move, one rule.
+- ⬜ **`install_buffer` says it is the install path and is not** *(audit
+  2026-09-25)*. Its doc and `ClaustersHeadless::buffer_load`'s say "the same
+  install path as the async `/buffer_*` commands", but it skips
+  `share_buffer`: on a server that owns a segment the buffer would get no
+  region, row or overview. No caller reaches that today; the doc is what is
+  false, and the two install paths should be one with a flag for the mapped
+  peer's case.
+- ⬜ **Twenty-odd doc comments sit on the wrong item, and labels sit in
+  comments** *(audit 2026-09-25)*. Fused docs: `osc/server/mod.rs`
+  (`synthdef_spec_bytes`' on `ugen_infos`, two field docs on `translator`),
+  `async_pipes.rs` (`collect_nrt_results`' on `install_buffer`),
+  `osc/translate/graph.rs` (`apply_surface`'s on `graph_map`),
+  `server/engine.rs` (on `silence_time_publication`), `clausters-editing`
+  `multitrack.rs` (the boxes' on `segments`), `clausters-document`
+  `multitrack/picture.rs` and `clausters-core` `warp.rs` (test docs). Roadmap
+  labels in comments, which `CLAUDE.md` forbids: about fifty lines —
+  `clausters-document`'s tests ("O9's acceptance"), `clausters-core-web`'s
+  sections ("W3"), `clausters-web`/`-nrt-web` ("the B track"), `T2`, `S19`,
+  `F0`, `A1`, `K6` — beside note names a scan also matches.
+- ⬜ **Two argument readers, two policies** *(audit 2026-09-25)*.
+  `osc::server::Args` exists so a handler stops destructuring `msg.args` with
+  its own wording, and about fifteen still do (the three streams, `/bus_tap`,
+  `/buffer_gen`, `/def_free`, the `/sched_*`, `/server_sync`, `_notify`,
+  `_dumpOsc`, `_verbosity`) — the same set whose table rows return `()` and
+  fail on their own. `osc::translate` has a second reader set (`int_arg`,
+  `string_arg`, `float_value`, `int_value`, and `buffers.rs`' `float_arg` and
+  `mirror_buffer`) whose optional arguments turn a wrong type into the default,
+  where `Args` refuses it, and whose wording drifts ("no buffer allocated at
+  N" beside "buffer N not allocated"). One reader for the wire, in `osc`.
+- ⬜ **The command table repeats one closure sixty times** *(audit
+  2026-09-25)*. 17 rows are `handle_buffer_cmd(addr, m, f); Ok(())` and 30 are
+  `handle_via_translate(m, f); Ok(())`; two named functions make each row one
+  line. Beside it, 34 `/done` replies are built by hand (10 in `transport.rs`,
+  each followed by the same broadcast), "every notify client" is looped by hand
+  seven times (two of them "but the writer"), and "send every command, stop on
+  a full FIFO" three times.
+- ⬜ **The server's lifecycle is written twice** *(audit 2026-09-25)*.
+  `OscServer::bind` and `::headless` spell the same forty-five-field struct;
+  `run` and `step` repeat the subscription pump; `drain_tcp` and `drain_ws` are
+  one loop over two hubs and both inline `collect_async`; `bind` recomputes the
+  loopback wake target `wake_target()` already is. The three subscriptions
+  (`/bus_stream`, `/bus_tapStream`, `/buffer_stream`) repeat their parse,
+  replace-per-client, pacing and pump, and a comment in `handle_bus_tap_stream`
+  restates `tap_window_cap`'s doc.
+- ⬜ **Four stream-transport implementations** *(audit 2026-09-25)*. TCP and
+  WebSocket in `src/osc` and again in `clients/gui/src/host`: `next_frame` 0.97
+  alike, `local_addr` identical, `write_frame`, `reply`, the connection loop
+  0.8, and the server's own TCP and WS `bind` 0.90 alike; two `ClientId` enums
+  with the same carriers. The framing and the hub (slots, wake, a thread per
+  connection, a frame queue) are one thing both ends could link from the core.
+- ⬜ **Writing one control is written six times** *(audit 2026-09-25)*. In
+  `osc::translate`, `/node_set`, `_setRange`, `_fill`, `_map`, `_mapRange` share
+  the walk (id, unknown node, control targets, the def, the hit flag,
+  re-analysis), and the three setters and the GraphDef surface
+  (`apply_surface`) share the write (`SetControl`, mirror, clear the map).
+  Also here: "blob or string as JSON" three times (`d_recv`, `d_graph`,
+  `synthdef_spec_bytes`), `/def_send synth` and `graph` one function over two
+  families, a dead `let _ = def` in `graph_new`, and the instancing step named
+  `realize`.
+- ⬜ **The wire's sample blob is spelled by hand** *(audit 2026-09-25)*. Raw
+  little-endian `f32` is written in about twelve places (`/buffer_getRange`,
+  `_peaks`, `_export`, the streams, `clausters-editing`'s apply and samples,
+  the audio editor, the clipboard) and read in about eleven (the translator,
+  editing, the clipboard, eight in the GUI host). `clausters_core::bytes` is the
+  cache format, native-endian, and not this. One pair in the core.
+- ⬜ **Smaller duplicates** *(audit 2026-09-25)*. The sample FIFO of `Ifft` and
+  of the convolution (one type in `dsp`); `Fft`/`Ifft`'s `window` command; the
+  Faust node body in `faust/synth.rs` and `synth_web.rs` (five methods
+  identical, `process` 0.92 — the web module says it *is* the native code); the
+  MIDI 7-to-16-bit widening in `src/midi` and `clausters-midi`, and
+  `midi2freq` beside the core's `midi_to_hz`; `clausters-ffi`'s `text` and
+  `fill` copied into `notation.rs` and `fill` re-inlined in eight files, with
+  two ways of holding a sized answer until it is fetched, while
+  `clausters-midi` hands bytes out by leaking a `Vec` (a third convention);
+  `audio_editor.rs` and `mixer.rs` repeating `control` and `reader_name`; the
+  two playbacks in `clausters-editing` building transport commands each their
+  own way; the engine building its `GarbageSink` by hand three times and
+  handling `AddSynth`'s and `AddGroup`'s insert result with the same lines.
+- ⬜ **The engine finds a node by scanning 8192 slots** *(audit 2026-09-25,
+  measure first)*. `NodeTree::find` is linear over `MAX_NODES`, on the audio
+  thread, for every control set, map, run, free, move, done action and bundle
+  classification, and `insert` scans again for a free slot. A block carrying
+  many `/node_set` pays that per command. An id-to-slot table, preallocated, is
+  O(1); `examples/bench.rs` says whether it matters before anything changes.
+- ⬜ **Long functions that hold several steps** *(audit 2026-09-25)*.
+  `Engine::process_block` (about 340 lines: the next event, a transport edge,
+  the frozen runs, time publication, counters and done actions), with "the
+  transport freezes here" written in the edge branch and again in
+  `TransportRun`'s stop; `synthdef::compile` (about 510); `realtime_main`
+  (about 500, thirty flags parsed with the same two lines each, `nrt_main`
+  holding a helper the other does not use); `ipc::Segment`'s eight
+  telescoping constructors. Named steps, and no behaviour changes.
+- ⬜ **Minor** *(audit 2026-09-25)*. `/server_notify` answers a client id that
+  is its position in the list, so an earlier client leaving renumbers the
+  others (no client reads it); a typo "where the the transport is";
+  `/buffer_peaks` defaults its bucket to a literal 256 beside `BASE_BUCKET`;
+  `MAX_NODES` and `Limits::default().max_nodes` kept equal by a comment; a
+  few docs starting lowercase and one "realized" in prose.

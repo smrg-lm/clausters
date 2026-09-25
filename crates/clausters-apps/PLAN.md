@@ -874,3 +874,11 @@ wrong.
   loop plays, with the playback's `set_loop`, bound for both clients; and
   in a window that plays itself the host's sweep should not touch the
   monitor's loop.
+
+- ⬜ **Each editor writes the conversation's turn again** *(audit 2026-09-25,
+  with the server's)*. `audio/editor.rs::event` and `multitrack/editor.rs::event`
+  build the same conversation `Message` from the event and map
+  `Turn::{Nothing, Closed, Step, Stale, Route}` onto an `Outcome` with
+  `conversation::answer`, differing only in who owns a widget, the resync and
+  the route. The score editor would be a third copy: one
+  `conversation::turn(event, version, window, owns, route, resync)`.
