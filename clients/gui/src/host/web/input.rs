@@ -11,41 +11,7 @@
 use super::*;
 use crate::host::gestures::{Wheel, WheelDelta};
 use crate::host::widget::element::SlotKey;
-
-/// Translates a winit key into the platform-neutral [`HostKey`] the focus reads
-/// (the browser front's twin of the native `to_key`), or `None` for a key
-/// nothing focusable answers.
-fn to_key(key: &Key) -> Option<HostKey> {
-    match key {
-        Key::Named(NamedKey::Backspace) => Some(HostKey::Backspace),
-        Key::Named(NamedKey::Delete) => Some(HostKey::Delete),
-        Key::Named(NamedKey::ArrowLeft) => Some(HostKey::Left),
-        Key::Named(NamedKey::ArrowRight) => Some(HostKey::Right),
-        Key::Named(NamedKey::ArrowUp) => Some(HostKey::Up),
-        Key::Named(NamedKey::ArrowDown) => Some(HostKey::Down),
-        Key::Named(NamedKey::Home) => Some(HostKey::Home),
-        Key::Named(NamedKey::End) => Some(HostKey::End),
-        Key::Named(NamedKey::Enter) => Some(HostKey::Enter),
-        Key::Named(NamedKey::Space) => Some(HostKey::Char(' ')),
-        Key::Named(NamedKey::Tab) => Some(HostKey::Tab),
-        Key::Character(s) => s
-            .chars()
-            .next()
-            .filter(|c| !c.is_control())
-            .map(HostKey::Char),
-        _ => None,
-    }
-}
-
-/// Whether this is the space bar, however the shell spelled it: `Named(Space)`
-/// or the character it typed (the native front's `is_space`).
-fn is_space(key: &Key) -> bool {
-    match key {
-        Key::Named(NamedKey::Space) => true,
-        Key::Character(c) => c == " ",
-        _ => false,
-    }
-}
+use crate::host::winit_keys::{is_space, to_key};
 
 impl WebApp {
     /// Snapshots the gesture context for one canvas: its framebuffer size, its

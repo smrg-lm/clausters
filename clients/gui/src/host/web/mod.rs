@@ -50,7 +50,7 @@ use super::gestures::{ClipVerb, GestureCtx, GestureEffect, Gestures};
 use super::live::{self, StreamedBuses, StreamedTaps};
 use super::paint::Painter;
 use super::widget::Widget;
-use super::widget::element::{Key as HostKey, Live, Loaded, SlotKind};
+use super::widget::element::{Live, Loaded, SlotKind};
 use super::{BusSource, ClientId, Host, HostEffect, ServerLink};
 
 mod bridge;
@@ -485,23 +485,6 @@ impl WebApp {
         }
     }
 
-    /// Registers what a fill turned out to be worth with the widget's
-    /// navigation axis, which has to know how long it is or the visible window
-    /// falls back to a span the size of the body in *samples* and the whole
-    /// picture draws as one stretched column.
-    ///
-    /// A **rolling** extent goes through the live setter: a retained axis
-    /// slides, so it follows the newest column until someone navigates it and
-    /// then holds where they left it.
-    pub(super) fn apply_extents(&mut self, extents: Vec<(i32, frame::Extent)>) {
-        for (id, extent) in extents {
-            match extent {
-                frame::Extent::Stored(total) => self.host.set_timeline_total(id, total),
-                frame::Extent::Rolling(total) => self.host.set_live_timeline_total(id, total),
-            }
-        }
-    }
-
     /// One animation tick: push a fresh streamed-bus sample into every scope's
     /// rolling history and refresh the audio-rate scopes' triggered windows
     /// from the `/bus_tapStream.reply` store (time-based, exactly like the native tick),
@@ -558,7 +541,7 @@ impl WebApp {
                 }
             }
         }
-        self.apply_extents(extents);
+        self.host.apply_extents(extents);
         // A visible playhead needs the engine clock: poll it once per tick (the
         // browser's stand-in for the shm header's sample clock) -- once for the
         // page, however many canvases show one.

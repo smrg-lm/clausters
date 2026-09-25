@@ -28,7 +28,8 @@ use crate::host::paint::Painter;
 #[cfg(feature = "midi")]
 use crate::host::timeline::group_key;
 use crate::host::widget::Widget;
-use crate::host::widget::element::{Key as HostKey, Live};
+use crate::host::widget::element::Live;
+use crate::host::winit_keys::{is_space, to_key};
 use crate::host::world::World;
 use crate::host::{BusSource, ClientId, Host, HostEffect};
 use crate::view::Renderers;
@@ -260,24 +261,7 @@ impl App {
                 &mut extents,
             );
         }
-        self.apply_extents(extents);
-    }
-
-    /// Registers what a fill turned out to be worth with the widget's
-    /// navigation axis, which has to know how long it is or the visible window
-    /// falls back to a span the size of the body in *samples* and the whole
-    /// picture draws as one stretched column.
-    ///
-    /// A **rolling** extent goes through the live setter: a retained axis
-    /// slides, so it follows the newest column until someone navigates it and
-    /// then holds where they left it.
-    pub(super) fn apply_extents(&mut self, extents: Vec<(i32, frame::Extent)>) {
-        for (id, extent) in extents {
-            match extent {
-                frame::Extent::Stored(total) => self.host.set_timeline_total(id, total),
-                frame::Extent::Rolling(total) => self.host.set_live_timeline_total(id, total),
-            }
-        }
+        self.host.apply_extents(extents);
     }
 
     /// Whether window `def_id` should repaint continuously: it has a `canvas`
@@ -955,19 +939,6 @@ impl App {
     }
 }
 
-/// Whether this is the space bar, however the shell spelled it.
-///
-/// It arrives as `Named(Space)` under a chord and as the character it typed
-/// otherwise ([`key_pressed`]), and a match on one of the two is a key that
-/// works only with a modifier held -- which is to say not at all.
-fn is_space(key: &Key) -> bool {
-    match key {
-        Key::Named(NamedKey::Space) => true,
-        Key::Character(c) => c == " ",
-        _ => false,
-    }
-}
-
 /// **The key a chord was pressed on, and the text everything else produced.**
 ///
 /// winit's `logical_key` is the key *with modifiers applied*, which is right
@@ -1019,54 +990,4 @@ fn key_pressed(event: &winit::event::KeyEvent, chord: bool) -> Key {
         return Key::Character(text.clone());
     }
     event.logical_key.clone()
-}
-
-/// Translates a winit key into the platform-neutral [`HostKey`] the focus reads,
-/// or `None` for one nothing focusable answers (the global shortcuts then run).
-/// A printable character (including Space) inserts; the named editing keys and
-/// Tab map one-to-one.
-pub(super) fn to_key(key: &Key) -> Option<HostKey> {
-    match key {
-        Key::Named(NamedKey::Backspace) => Some(HostKey::Backspace),
-        Key::Named(NamedKey::Delete) => Some(HostKey::Delete),
-        Key::Named(NamedKey::ArrowLeft) => Some(HostKey::Left),
-        Key::Named(NamedKey::ArrowRight) => Some(HostKey::Right),
-        Key::Named(NamedKey::ArrowUp) => Some(HostKey::Up),
-        Key::Named(NamedKey::ArrowDown) => Some(HostKey::Down),
-        Key::Named(NamedKey::Home) => Some(HostKey::Home),
-        Key::Named(NamedKey::End) => Some(HostKey::End),
-        Key::Named(NamedKey::Enter) => Some(HostKey::Enter),
-        Key::Named(NamedKey::Space) => Some(HostKey::Char(' ')),
-        Key::Named(NamedKey::Tab) => Some(HostKey::Tab),
-        Key::Character(s) => s
-            .chars()
-            .next()
-            .filter(|c| !c.is_control())
-            .map(HostKey::Char),
-        _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// **The space bar arrives as the character it typed**, not as
-    /// `NamedKey::Space`, whenever no chord is held -- which is every time
-    /// anybody presses it to play something.
-    ///
-    /// The window's arm matched only the named spelling, so the key did
-    /// nothing at all: no monitor, no transport, and nothing in the log to say
-    /// a key had been declined. Found 2026-09-08 by the user, pressing space at
-    /// a session that had just been given readers.
-    #[test]
-    fn the_space_bar_is_recognized_by_both_spellings() {
-        assert!(is_space(&Key::Named(NamedKey::Space)));
-        assert!(
-            is_space(&Key::Character(" ".into())),
-            "what a press produces"
-        );
-        assert!(!is_space(&Key::Character("s".into())));
-        assert!(!is_space(&Key::Named(NamedKey::Enter)));
-    }
 }

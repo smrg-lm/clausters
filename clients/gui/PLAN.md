@@ -7604,7 +7604,7 @@ module of its own.
   and dropped where it is not (a marquee the container owns now, a stray line
   of `send_to_player`'s). One link the same pass found broken,
   `Host::playhead_clock`, names `head_clock_of` and `head_clocks`.
-- ⬜ **The two fronts each dispatch the buffer replies** *(audit 2026-09-25)*.
+- ✅ **The two fronts each dispatch the buffer replies** *(audit 2026-09-25)*.
   `gui/serverleg.rs` and `web/serverleg.rs` both match `/buffer_query.reply`,
   `/buffer_getRange.reply`, `/buffer_touched`, `/buffer_stream.reply` and
   `/buffer_peaks.reply`, with bodies copied and already apart: the rate of a
@@ -7623,6 +7623,13 @@ module of its own.
   only for a view that claimed a geometry one, a rate is read in any numeric
   kind, a mesh-drawn take resyncs the recording streams, and what a
   placement says is `info` in both builds (a page's tests read it).
+  **The rest, the same day**: `apply_extents` is a `Host` method, and the
+  winit key mapping (`to_key`, `is_space`) is `host/winit_keys.rs`, read by
+  both shells. `apply_gesture_effects`, `on_press`, `on_wheel`,
+  `advance_edge_scroll` and `play_key` stay per front: they share a shape,
+  but each arm is the platform's (a socket or a page's queue, a blur or
+  nothing) and what they share is already the host's (`event_message`,
+  `deliver`, the gesture machine).
 - ⬜ **Forgetting a widget is six functions, and two call sites disagree**
   *(audit 2026-09-25)*. Bindings, voices, focus, head clocks, timeline groups
   and the monitor's files each keep state by widget id and each prune it their

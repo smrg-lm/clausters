@@ -594,6 +594,23 @@ impl Host {
         }
     }
 
+    /// Registers what a fill turned out to be worth with each widget's
+    /// navigation axis, which has to know how long it is or the visible window
+    /// falls back to a span the size of the body in *samples* and the whole
+    /// picture draws as one stretched column.
+    ///
+    /// A **rolling** extent goes through the live setter: a retained axis
+    /// slides, so it follows the newest column until someone navigates it and
+    /// then holds where they left it.
+    pub(crate) fn apply_extents(&mut self, extents: Vec<(i32, super::frame::Extent)>) {
+        for (id, extent) in extents {
+            match extent {
+                super::frame::Extent::Stored(total) => self.set_timeline_total(id, total),
+                super::frame::Extent::Rolling(total) => self.set_live_timeline_total(id, total),
+            }
+        }
+    }
+
     /// The distinct window roots showing any member of group `key` -- the
     /// windows a group mutation must repaint.
     fn timeline_roots(&self, key: GroupKey) -> Vec<i32> {

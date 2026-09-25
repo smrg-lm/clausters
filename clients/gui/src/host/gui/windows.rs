@@ -248,7 +248,7 @@ impl App {
                 &mut extents,
             );
         }
-        self.apply_extents(extents);
+        self.host.apply_extents(extents);
         // Register each loaded view's data extent with its navigation group
         // (the group timeline spans the longest member).
         // **The widget's own picture registers its extent**, not a body's: the

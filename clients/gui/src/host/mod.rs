@@ -121,6 +121,8 @@ pub mod fetch;
 pub mod live;
 // The server's replies about buffers, read once for both fronts.
 pub mod replies;
+// The winit key both shells read, mapped once.
+pub mod winit_keys;
 
 // Booting a persisted bundle over the wire -- the ordering/encoding half of the
 // browser standalone path, platform-agnostic and natively unit-tested (the

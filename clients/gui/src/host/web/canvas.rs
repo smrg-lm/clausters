@@ -362,7 +362,7 @@ impl WebApp {
             &mut render.spectrograms,
             &mut extents,
         );
-        self.apply_extents(extents);
+        self.host.apply_extents(extents);
     }
 
     /// Renders one canvas' def through the shared frame path. The live inputs
@@ -381,7 +381,7 @@ impl WebApp {
             (self.canvases.get_mut(&def), self.host.window_def_mut(def))
         {
             let extents = refresh_slots(slot, tree);
-            self.apply_extents(extents);
+            self.host.apply_extents(extents);
         }
         let server_attached = self.host.server().is_some();
         let focused = self
