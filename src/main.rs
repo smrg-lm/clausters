@@ -144,6 +144,30 @@ fn main() {
     }
 }
 
+/// The value after `flag`, or the refusal that says what it needed.
+fn flag_value<'a>(
+    flag: &str,
+    what: &str,
+    it: &mut std::slice::Iter<'a, String>,
+) -> Result<&'a String, String> {
+    it.next()
+        .ok_or_else(|| format!("{flag} needs {what}\n{USAGE}"))
+}
+
+/// The value after `flag`, parsed as a `T`.
+fn flag_parse<T: std::str::FromStr>(
+    flag: &str,
+    what: &str,
+    it: &mut std::slice::Iter<'_, String>,
+) -> Result<T, String>
+where
+    T::Err: std::fmt::Display,
+{
+    flag_value(flag, what, it)?
+        .parse()
+        .map_err(|e| format!("{flag}: {e}"))
+}
+
 fn parse_workers(value: &str) -> Result<usize, String> {
     value.parse().map_err(|e| format!("--workers: {e}"))
 }
@@ -213,31 +237,14 @@ fn nrt_main(args: &[String]) -> Result<(), String> {
     let mut paths = Vec::new();
     let mut it = args.iter();
     while let Some(arg) = it.next() {
-        let mut value = |name: &str| {
-            it.next()
-                .cloned()
-                .ok_or_else(|| format!("{name} needs a value\n{USAGE}"))
-        };
         match arg.as_str() {
-            "--rate" => {
-                cfg.sample_rate = value("--rate")?
-                    .parse()
-                    .map_err(|e| format!("--rate: {e}"))?;
+            "--rate" => cfg.sample_rate = flag_parse("--rate", "a value", &mut it)?,
+            "--channels" => cfg.channels = flag_parse("--channels", "a value", &mut it)?,
+            "--format" => format = flag_value("--format", "a value", &mut it)?.clone(),
+            "--seed" => cfg.seed = Some(flag_parse("--seed", "a value", &mut it)?),
+            "--workers" => {
+                cfg.workers = parse_workers(flag_value("--workers", "a value", &mut it)?)?
             }
-            "--channels" => {
-                cfg.channels = value("--channels")?
-                    .parse()
-                    .map_err(|e| format!("--channels: {e}"))?;
-            }
-            "--format" => format = value("--format")?,
-            "--seed" => {
-                cfg.seed = Some(
-                    value("--seed")?
-                        .parse()
-                        .map_err(|e| format!("--seed: {e}"))?,
-                );
-            }
-            "--workers" => cfg.workers = parse_workers(&value("--workers")?)?,
             "--stats" => stats_json = true,
             "--help" | "-h" => {
                 println!("{USAGE}");
@@ -398,8 +405,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--port" => {
-                let value = it.next().ok_or(format!("--port needs a port\n{USAGE}"))?;
-                base_port = value.parse().map_err(|e| format!("--port: {e}"))?;
+                base_port = flag_parse("--port", "a port", &mut it)?;
             }
             "--udp" => {
                 // Optional bind, like --tcp; bare, UDP stays on the base port.
@@ -412,24 +418,13 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             }
             "--no-tcp" => cli_tcp = Some(PortChoice::Off),
             "--max-frame" => {
-                let value = it
-                    .next()
-                    .ok_or(format!("--max-frame needs a byte count\n{USAGE}"))?;
-                max_frame = value.parse().map_err(|e| format!("--max-frame: {e}"))?;
+                max_frame = flag_parse("--max-frame", "a byte count", &mut it)?;
             }
             "--max-clients" => {
-                let value = it
-                    .next()
-                    .ok_or(format!("--max-clients needs a count\n{USAGE}"))?;
-                max_clients = value.parse().map_err(|e| format!("--max-clients: {e}"))?;
+                max_clients = flag_parse("--max-clients", "a count", &mut it)?;
             }
             "--max-stream-buses" => {
-                let value = it
-                    .next()
-                    .ok_or(format!("--max-stream-buses needs a count\n{USAGE}"))?;
-                max_stream_buses = value
-                    .parse()
-                    .map_err(|e| format!("--max-stream-buses: {e}"))?;
+                max_stream_buses = flag_parse("--max-stream-buses", "a count", &mut it)?;
             }
             "--ws" => {
                 // Optional bind; bare, it follows the base port offset by
@@ -450,131 +445,75 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 midi_setting = Some(setting);
             }
             "--workers" => {
-                let value = it
-                    .next()
-                    .ok_or(format!("--workers needs a value\n{USAGE}"))?;
+                let value = flag_value("--workers", "a value", &mut it)?;
                 workers = parse_workers(value)?;
             }
             "--shm" => {
-                let value = it.next().ok_or(format!("--shm needs a path\n{USAGE}"))?;
+                let value = flag_value("--shm", "a path", &mut it)?;
                 shm_path = Some(value.clone());
             }
             "--data-dir" => {
-                let value = it
-                    .next()
-                    .ok_or(format!("--data-dir needs a path\n{USAGE}"))?;
+                let value = flag_value("--data-dir", "a path", &mut it)?;
                 data_dir = Some(value.clone());
             }
             "--no-persist" => no_persist = true,
             "--prune-defs" => prune_defs = true,
             "--sample-rate" => {
-                let value = it
-                    .next()
-                    .ok_or(format!("--sample-rate needs a value\n{USAGE}"))?;
-                let hz: u32 = value.parse().map_err(|e| format!("--sample-rate: {e}"))?;
+                let hz: u32 = flag_parse("--sample-rate", "a value", &mut it)?;
                 // 0 = follow the device default; otherwise impose the rate.
                 sample_rate = (hz != 0).then_some(hz);
             }
             "--audio-buses" => {
-                let value = it
-                    .next()
-                    .ok_or(format!("--audio-buses needs a value\n{USAGE}"))?;
+                let value = flag_value("--audio-buses", "a value", &mut it)?;
                 audio_buses = power_of_two("--audio-buses", value)?;
             }
             "--control-buses" => {
-                let value = it
-                    .next()
-                    .ok_or(format!("--control-buses needs a value\n{USAGE}"))?;
+                let value = flag_value("--control-buses", "a value", &mut it)?;
                 control_buses = power_of_two("--control-buses", value)?;
             }
             "--taps" => {
-                let value = it.next().ok_or(format!("--taps needs a value\n{USAGE}"))?;
-                taps = value.parse().map_err(|e| format!("--taps: {e}"))?;
+                taps = flag_parse("--taps", "a value", &mut it)?;
             }
             "--tap-frames" => {
-                let value = it
-                    .next()
-                    .ok_or(format!("--tap-frames needs a value\n{USAGE}"))?;
-                tap_frames = value.parse().map_err(|e| format!("--tap-frames: {e}"))?;
+                tap_frames = flag_parse("--tap-frames", "a value", &mut it)?;
             }
             "--host" => {
-                devices.host = Some(
-                    it.next()
-                        .ok_or(format!("--host needs a name\n{USAGE}"))?
-                        .clone(),
-                );
+                devices.host = Some(flag_value("--host", "a name", &mut it)?.clone());
             }
             "--device" => {
-                devices.output = Some(
-                    it.next()
-                        .ok_or(format!("--device needs a name\n{USAGE}"))?
-                        .clone(),
-                );
+                devices.output = Some(flag_value("--device", "a name", &mut it)?.clone());
             }
             "--input-device" => {
-                devices.input = Some(
-                    it.next()
-                        .ok_or(format!("--input-device needs a name\n{USAGE}"))?
-                        .clone(),
-                );
+                devices.input = Some(flag_value("--input-device", "a name", &mut it)?.clone());
             }
             "--client-name" => {
-                devices.client_name = Some(
-                    it.next()
-                        .ok_or(format!("--client-name needs a name\n{USAGE}"))?
-                        .clone(),
-                );
+                devices.client_name = Some(flag_value("--client-name", "a name", &mut it)?.clone());
             }
             "--list-devices" => list_devices = true,
             "--outputs" => {
-                let value = it
-                    .next()
-                    .ok_or(format!("--outputs needs a value\n{USAGE}"))?;
-                outputs = Some(value.parse().map_err(|e| format!("--outputs: {e}"))?);
+                outputs = Some(flag_parse("--outputs", "a value", &mut it)?);
             }
             "--inputs" => {
-                let value = it
-                    .next()
-                    .ok_or(format!("--inputs needs a value\n{USAGE}"))?;
-                inputs = value.parse().map_err(|e| format!("--inputs: {e}"))?;
+                inputs = flag_parse("--inputs", "a value", &mut it)?;
             }
             "--max-nodes" => {
-                let value = it
-                    .next()
-                    .ok_or(format!("--max-nodes needs a value\n{USAGE}"))?;
-                limits.max_nodes = value.parse().map_err(|e| format!("--max-nodes: {e}"))?;
+                limits.max_nodes = flag_parse("--max-nodes", "a value", &mut it)?;
             }
             "--max-buffers" => {
-                let value = it
-                    .next()
-                    .ok_or(format!("--max-buffers needs a value\n{USAGE}"))?;
-                limits.max_buffers = value.parse().map_err(|e| format!("--max-buffers: {e}"))?;
+                limits.max_buffers = flag_parse("--max-buffers", "a value", &mut it)?;
             }
             "--max-graph-children" => {
-                let value = it
-                    .next()
-                    .ok_or(format!("--max-graph-children needs a value\n{USAGE}"))?;
-                limits.max_group_children = value
-                    .parse()
-                    .map_err(|e| format!("--max-graph-children: {e}"))?;
+                limits.max_group_children = flag_parse("--max-graph-children", "a value", &mut it)?;
             }
             "--max-ugen-inputs" => {
-                let value = it
-                    .next()
-                    .ok_or(format!("--max-ugen-inputs needs a value\n{USAGE}"))?;
-                limits.max_ugen_inputs = value
-                    .parse()
-                    .map_err(|e| format!("--max-ugen-inputs: {e}"))?;
+                limits.max_ugen_inputs = flag_parse("--max-ugen-inputs", "a value", &mut it)?;
             }
             "--transports" => {
-                let value = it
-                    .next()
-                    .ok_or(format!("--transports needs a value\n{USAGE}"))?;
-                limits.transports = value.parse().map_err(|e| format!("--transports: {e}"))?;
+                limits.transports = flag_parse("--transports", "a value", &mut it)?;
             }
             #[cfg(feature = "rtprio")]
             "--pin" => {
-                let value = it.next().ok_or(format!("--pin needs a value\n{USAGE}"))?;
+                let value = flag_value("--pin", "a value", &mut it)?;
                 let cpus: Result<Vec<usize>, _> =
                     value.split(',').map(|c| c.trim().parse()).collect();
                 pin = cpus.map_err(|e| format!("--pin: {e}"))?;
