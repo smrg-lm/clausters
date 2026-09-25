@@ -239,6 +239,15 @@ fn nrt_main(args: &[String]) -> Result<(), String> {
             }
             "--workers" => cfg.workers = parse_workers(&value("--workers")?)?,
             "--stats" => stats_json = true,
+            "--help" | "-h" => {
+                println!("{USAGE}");
+                return Ok(());
+            }
+            // A flag this does not know is a mistake, not a file name: taken
+            // for the output path, `--help` once rendered a WAV called that.
+            other if other.starts_with('-') => {
+                return Err(format!("unknown option {other}\n{USAGE}"));
+            }
             other => paths.push(other.to_string()),
         }
     }
@@ -798,4 +807,24 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(not(feature = "realtime"))]
 fn realtime_main(_args: &[String]) -> Result<(), String> {
     Err("built without the `realtime` feature: no audio backend (try --nrt)".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::nrt_main;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|a| a.to_string()).collect()
+    }
+
+    #[test]
+    fn an_unknown_flag_is_refused_before_anything_is_read() {
+        let err = nrt_main(&args(&["score.osc", "out.wav", "--rte", "44100"])).unwrap_err();
+        assert!(err.starts_with("unknown option --rte"), "{err}");
+    }
+
+    #[test]
+    fn help_after_the_paths_prints_the_usage_and_renders_nothing() {
+        nrt_main(&args(&["no-such-score.osc", "out.wav", "--help"])).unwrap();
+    }
 }

@@ -3472,11 +3472,14 @@ should confirm before the fix.
   list, the renderer matches on it, and two tests hold the command table to it
   in both directions (a job with no row, a row the parse takes that the list
   lacks).
-- ⬜ **`clausters --nrt` takes any unknown argument for a path** *(audit
+- ✅ **`clausters --nrt` takes any unknown argument for a path** *(audit
   2026-09-25)*. `nrt_main` pushes every argument it does not know into the
   paths, so `--help` after a score renders a WAV named `--help` — the stray
   file that once reached `main` — and a misspelled flag becomes a file. An
   unknown `-`-prefixed argument refuses with the usage, and `--help` prints it.
+  **Fixed**: `nrt_main` refuses an unknown `-`-prefixed argument before it
+  reads the score, and `--help`/`-h` anywhere prints the usage and renders
+  nothing; two tests in `main.rs` hold both.
 - ⬜ **A transport command can answer `/done` for a change the engine never
   got** *(audit 2026-09-25)*. `/transport_play`, `_stop`, `_loop`, `_end`,
   `_fade` and the locates send their engine command with `.ok()`: a full
