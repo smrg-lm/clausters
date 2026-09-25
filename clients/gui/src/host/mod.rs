@@ -1039,9 +1039,28 @@ impl Host {
             window: read(window),
             widgets: HashMap::new(),
         };
-        // Nothing named below the window: every widget reads its counter, and
-        // the tree is not walked.
-        if self.head_clocks.keys().all(|id| *id == def_id) {
+        // **A view of a take reads a transport in its own frames.** A
+        // transport counts the engine's samples, and a take recorded at
+        // another rate is read faster or slower to sound at its pitch, so the
+        // frame it is at is the position times its rate over the engine's.
+        // Without this a 44.1 kHz take in a 48 kHz session draws its line
+        // ahead of what is heard, and ever further from where it was located.
+        // The reading is rounded to the take's frame, which is what a position
+        // cursor stands on.
+        // The device clock is left alone: a view anchored on it names its own
+        // anchor, in the engine's samples.
+        let engine = self.server_rate;
+        let scale = |w: &Widget, head: HeadClock| match (head, w.kind.as_samples()) {
+            (HeadClock::Transport(_), Some(samples)) if engine > 0.0 => {
+                samples.samples_rate().map_or(1.0, |rate| rate / engine)
+            }
+            _ => 1.0,
+        };
+        // Nothing named below the window and no rate to convert: every widget
+        // reads its counter, and the tree is not walked.
+        if self.head_clocks.keys().all(|id| *id == def_id)
+            && (window == HeadClock::Device || engine <= 0.0)
+        {
             return clocks;
         }
         fn walk(
@@ -1050,16 +1069,17 @@ impl Host {
             window: HeadClock,
             named: &HashMap<i32, HeadClock>,
             out: &mut HashMap<i32, f64>,
-            read: &dyn Fn(HeadClock) -> f64,
+            read: &dyn Fn(&Widget, HeadClock) -> f64,
+            scale: &dyn Fn(&Widget, HeadClock) -> f64,
         ) {
             let here = w.id.and_then(|i| named.get(&i).copied()).unwrap_or(above);
             if let Some(id) = w.id
-                && here != window
+                && (here != window || scale(w, here) != 1.0)
             {
-                out.insert(id, read(here));
+                out.insert(id, read(w, here));
             }
             for c in &w.children {
-                walk(c, here, window, named, out, read);
+                walk(c, here, window, named, out, read, scale);
             }
         }
         if let Some(tree) = self.window_defs.get(&def_id) {
@@ -1069,7 +1089,15 @@ impl Host {
                 window,
                 &self.head_clocks,
                 &mut clocks.widgets,
-                &read,
+                &|w, head| match scale(w, head) {
+                    1.0 => read(head),
+                    // A whole frame: a locate sent the frame as the nearest
+                    // engine sample, so scaled back it lands up to half a
+                    // frame off, and at a zoom that draws samples the line
+                    // stands beside the one it was put on.
+                    s => (read(head) * s).round(),
+                },
+                &scale,
             );
         }
         clocks
@@ -3858,6 +3886,62 @@ mod tests {
             from(),
         );
         assert_eq!(host.transports_drawn(1), [3]);
+    }
+
+    /// **A take at another rate than the engine's reads a transport as its
+    /// own frames.** The transport counts the engine's samples and the take is
+    /// read faster or slower to sound at its pitch, so 44.1 kHz under 48 kHz
+    /// draws its line at the position times 44.1 over 48 -- on the take's view
+    /// only, and not on the device clock, whose anchor is the engine's.
+    #[test]
+    fn a_take_at_another_rate_reads_the_transport_as_its_own_frames() {
+        struct At;
+        impl BusSource for At {
+            fn control(&self, _index: usize) -> f32 {
+                0.0
+            }
+            fn sample_clock(&self) -> f64 {
+                96_000.0
+            }
+            fn transport_position(&self, _transport: usize) -> f64 {
+                48_000.0
+            }
+        }
+        const TAKES: &str = r#"{"type":"window","children":[
+            {"id":10,"type":"signal","data":[0.0,0.0],
+                "axes":{"x":{"sample_rate":44100.0}}},
+            {"id":11,"type":"signal","data":[0.0,0.0],
+                "axes":{"x":{"sample_rate":48000.0}}},
+            {"id":12,"type":"knob"}
+        ]}"#;
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, TAKES), from());
+        host.set_head_clock_of(1, HeadClock::Transport(2));
+        let clocks = |host: &Host| host.head_clocks(1, Some(&At as &dyn BusSource));
+        assert_eq!(clocks(&host).at(Some(10)), 48_000.0, "no engine rate yet");
+
+        host.server_rate = 48_000.0;
+        let read = clocks(&host);
+        assert_eq!(read.at(Some(10)), 44_100.0, "a second of the take");
+        assert_eq!(read.at(Some(11)), 48_000.0, "the engine's rate");
+        assert_eq!(read.at(Some(12)), 48_000.0, "no samples of its own");
+
+        // A locate of frame 25_021 sent the nearest engine sample, 27_234,
+        // which scales back to 25_021.24: the line stands on the frame.
+        struct Located;
+        impl BusSource for Located {
+            fn control(&self, _index: usize) -> f32 {
+                0.0
+            }
+            fn transport_position(&self, _transport: usize) -> f64 {
+                (25_021.0_f64 * 48_000.0 / 44_100.0).round()
+            }
+        }
+        let located = host.head_clocks(1, Some(&Located as &dyn BusSource));
+        assert_eq!(located.at(Some(10)), 25_021.0);
+
+        host.set_head_clock_of(1, HeadClock::Device);
+        assert_eq!(clocks(&host).at(Some(10)), 96_000.0, "the device clock");
     }
 
     /// **A client says which counter a window's or a view's playheads read**,

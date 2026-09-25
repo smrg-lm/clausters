@@ -847,10 +847,18 @@ Every entry carries a checkbox.
 Every entry carries a checkbox, and a fixed one stays with the record of what was
 wrong.
 
-- ⬜ **The play cursor of a take at another rate than the engine's runs
+- ✅ **The play cursor of a take at another rate than the engine's runs
   ahead** *(found building X7, 2026-09-24)*. The audio editor's playback
   converts every frame to the engine's samples and the reader scales its
   phase, so the take is heard at its pitch and ends where it ends; the play
   cursor is drawn from the transport's position read as frames of the take,
   so over a 44.1 kHz take in a 48 kHz session it runs ahead by the ratio. The
   view has to scale the position by its rate over the engine's.
+  **Fixed 2026-09-25**: `Host::head_clocks` — the one place a playhead's
+  reading is resolved, for both fronts and whoever plays — reads a transport
+  on a view that declares its samples' rate as that view's own frames, the
+  position times its rate over the engine's. The device clock is left alone,
+  since an anchor on it is in the engine's samples. The reading is rounded to a
+  whole frame: a locate sends the frame as the nearest engine sample, and
+  scaled back unrounded it stood a fraction of a frame beside the position
+  cursor at a zoom that draws samples.
