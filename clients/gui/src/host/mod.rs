@@ -24,10 +24,12 @@
 //! `standalone` feature pulls the full `clausters` crate, for the in-process
 //! embedded server (`embed`).
 //!
-//! That front now carries UDP and TCP ([`tcp`]) together on one port, plus an
-//! opt-in WebSocket leg ([`ws`]) -- all behind one [`ClientId`] and
-//! reply seam, which is the seam's whole point: each carrier was added without
-//! touching the protocol or this command loop, and the next one should be too.
+//! That front now carries UDP and TCP (`clausters_net::tcp`) together on one
+//! port, plus an opt-in WebSocket leg (`clausters_net::ws`) -- all behind one
+//! [`ClientId`] and reply seam, which is the seam's whole point: each carrier
+//! was added without touching the protocol or this command loop, and the next
+//! one should be too. The two stream carriers are the audio server's own crate,
+//! which the browser build does not link.
 //! The client leg ([`client::ServerLeg`]) reuses that same encode door, so the
 //! gui talks to the audio server with one encoder, not a parallel one.
 
