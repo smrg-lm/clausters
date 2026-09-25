@@ -27,6 +27,8 @@
 //! keep growing (binding to the script with a transform, say) without changing
 //! the protocol.
 
+use super::wire::int_arg;
+use super::{ClientId, GUI_BIND, HostEffect, diag};
 use clausters_core::osc::{OscMessage, OscType};
 use serde_json::Value;
 
@@ -203,6 +205,101 @@ fn osc_to_json(v: &OscType) -> Option<Value> {
         OscType::Double(x) => Some(Value::from(*x)),
         OscType::String(s) => Some(Value::from(s.clone())),
         _ => None,
+    }
+}
+
+impl super::Host {
+    /// `/gui_bind <id> "server" <addr> <prefix...>` -- forward this widget's value
+    /// straight to the audio server on every change, bypassing the script (the
+    /// low-latency interactive path). With no target (`/gui_bind <id>`) the
+    /// binding is removed and the `/gui_event` path restored.
+    pub(super) fn on_bind(&mut self, args: &[OscType], from: ClientId) {
+        let Some(id) = int_arg(args, 0) else {
+            return diag::warn!("{from}: {GUI_BIND} needs an integer id");
+        };
+        if args.len() <= 1 {
+            if self.bindings.remove(&id).is_some() {
+                diag::info!("{from}: {GUI_BIND} {id}: unbound (events restored)");
+            } else {
+                diag::warn!("{from}: {GUI_BIND} {id}: no binding to remove");
+            }
+            return;
+        }
+        let binding = match Binding::parse(&args[1..]) {
+            Ok(b) => b,
+            Err(e) => return diag::warn!("{from}: {GUI_BIND} {id}: {e}"),
+        };
+        match &binding {
+            Binding::Server { addr, prefix } => {
+                if self.server.is_none() {
+                    diag::warn!(
+                        "{from}: {GUI_BIND} {id}: no audio server attached (--server); the \
+                         binding will swallow the value but cannot forward it"
+                    );
+                }
+                diag::info!("{from}: {GUI_BIND} {id} -> audio server {addr} {prefix:?}");
+            }
+            Binding::Widget {
+                id: target,
+                prop: key,
+            } => diag::info!("{from}: {GUI_BIND} {id} -> widget {target} {key}"),
+        }
+        self.bindings.insert(id, binding);
+    }
+
+    /// Forwards `widget_id`'s `value` to wherever it is bound, returning whether
+    /// the binding handled it. When it returns `true` the caller must **not**
+    /// also emit a `/gui_event` -- bypassing the script is the whole point. A
+    /// widget bound to an audio server that is not attached still returns
+    /// `true` (the value is swallowed, not sent to the script); the missing
+    /// `--server` was already warned about at bind time.
+    pub fn forward(
+        &mut self,
+        widget_id: i32,
+        value: OscType,
+        effects: &mut Vec<HostEffect>,
+    ) -> bool {
+        self.forward_args(widget_id, vec![value], effects)
+    }
+
+    /// [`forward`](Self::forward) for a **flat list** of values -- the edit-back
+    /// payload of an editor widget (a `bpf`'s breakpoint list today, a drawn
+    /// buffer region later): a bound editor sends `addr prefix... values...` to
+    /// the audio server, or the payload's JSON carrier to another widget's
+    /// prop, bypassing the script exactly as a bound knob does.
+    pub fn forward_args(
+        &mut self,
+        widget_id: i32,
+        values: Vec<OscType>,
+        effects: &mut Vec<HostEffect>,
+    ) -> bool {
+        let Some(binding) = self.bindings.get(&widget_id) else {
+            return false;
+        };
+        // Bound to another widget: the value lands on that widget's prop, as
+        // the one apply a `/gui_set` would perform. It never re-enters this
+        // path, so a binding fires an apply and never another binding.
+        if let Binding::Widget { .. } = binding {
+            if let Some((target, key, value)) = binding.prop(&values)
+                && !self.set_props(target, vec![(key.clone(), value)], effects)
+            {
+                diag::warn!("{GUI_BIND} {widget_id}: no widget {target} to set {key:?} on");
+            }
+            return true;
+        }
+        if let Some(msg) = binding.message_args(values)
+            && let Some(server) = self.server.as_ref()
+            && let Err(e) = server.send(msg)
+        {
+            diag::warn!("{GUI_BIND} {widget_id}: failed to forward to the audio server: {e}");
+        }
+        true
+    }
+
+    /// Whether widget `id` currently has a binding (its value goes to the audio
+    /// server, not the script).
+    pub fn is_bound(&self, id: i32) -> bool {
+        self.bindings.contains_key(&id)
     }
 }
 

@@ -46,7 +46,7 @@
 //! just did, in the same sense a selection is what this window is holding, and
 //! the document is explicit that neither is part of what is edited.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 use clausters_core::osc::OscType;
 
@@ -54,6 +54,7 @@ use super::font;
 use super::layout::Rect;
 use super::metrics::Metrics;
 use super::widget::{Widget, WidgetKind};
+use super::wire::string_arg;
 
 /// How many lines one window keeps. Past it the oldest is dropped: this is a
 /// window's recent history, not a transcript -- a session's transcript is the
@@ -112,8 +113,8 @@ impl Line {
             _ => "value".to_string(),
         };
         if verb == "refused" {
-            let what = arg_str(args.get(1)).unwrap_or_default();
-            let why = arg_str(args.get(2)).unwrap_or_default();
+            let what = string_arg(args, 1).unwrap_or_default();
+            let why = string_arg(args, 2).unwrap_or_default();
             let text = match (what.is_empty(), why.is_empty()) {
                 (true, true) => "refused".to_string(),
                 (false, true) => format!("refused {what}"),
@@ -185,14 +186,6 @@ impl Line {
             verb: verb.to_string(),
             text,
         }
-    }
-}
-
-/// The string an argument is, when it is one.
-fn arg_str(arg: Option<&OscType>) -> Option<&str> {
-    match arg {
-        Some(OscType::String(s)) => Some(s.as_str()),
-        _ => None,
     }
 }
 
@@ -411,6 +404,65 @@ pub fn content(tree: &Widget, status: Option<&Status>, area: Rect, m: &Metrics) 
     match bar(tree, status, area, m) {
         Some(band) => Rect::new(area.x, area.y, area.w, (area.h - band.h).max(0.0)),
         None => area,
+    }
+}
+
+impl super::Host {
+    /// **Says one line on window `def_id`'s status bar** (see this module).
+    ///
+    /// `&self` rather than `&mut self` because the two things that say
+    /// anything -- an edit going out, and the answer coming back -- both hold
+    /// the widget tree while they do it. It is the same `RefCell` reasoning as
+    /// [`outbox`](Self::outbox), and for the same reason: the alternative is
+    /// each front keeping its own copy of the log, which is two logs.
+    pub fn say(&self, def_id: i32, line: Line) {
+        self.status
+            .borrow_mut()
+            .entry(def_id)
+            .or_default()
+            .say(line);
+    }
+
+    /// Every window's status, for a front about to draw one. The `Ref` is held
+    /// by the caller for the length of the frame it feeds.
+    pub(crate) fn statuses(&self) -> std::cell::Ref<'_, HashMap<i32, Status>> {
+        self.status.borrow()
+    }
+
+    /// **Scrolls window `def_id`'s open status log** by `lines` (positive is
+    /// back through it), answering whether it moved -- which is what tells a
+    /// front whether to repaint.
+    ///
+    /// The band is measured here rather than passed in, so the clamp is
+    /// against the lines actually on screen and not against a caller's guess.
+    pub fn scroll_status(&self, def_id: i32, fb_w: u32, fb_h: u32, lines: isize) -> bool {
+        let Some(band) = self.status_bar_rect(def_id, fb_w, fb_h) else {
+            return false;
+        };
+        let visible = Status::visible_lines(band, self.metrics_for(def_id));
+        self.status
+            .borrow_mut()
+            .entry(def_id)
+            .or_default()
+            .scroll_by(lines, visible)
+    }
+
+    /// Whether window `def_id`'s status bar is opened into its log area.
+    pub fn status_open(&self, def_id: i32) -> bool {
+        self.status
+            .borrow()
+            .get(&def_id)
+            .is_some_and(Status::is_open)
+    }
+
+    /// Opens or closes window `def_id`'s status bar, answering whether that
+    /// moved anything -- which is what tells a front whether to repaint.
+    pub fn set_status_open(&self, def_id: i32, open: bool) -> bool {
+        self.status
+            .borrow_mut()
+            .entry(def_id)
+            .or_default()
+            .set_open(open)
     }
 }
 

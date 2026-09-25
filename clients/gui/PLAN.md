@@ -7678,10 +7678,19 @@ module of its own.
   checked and are not a defect: the editor learns every join a turn mints
   (`MultitrackEditor::learn`), and `set_segments` only adds the session's
   own when the window opens.
-- ⬜ **`host/mod.rs` holds every concern of the host** *(audit 2026-09-25)*.
+- ✅ **`host/mod.rs` holds every concern of the host** *(audit 2026-09-25)*.
   3760 lines of code and 1990 of tests in one `impl Host`: the protocol
   dispatch, the definition path, the owner's answer, the buffer views, the
   head clocks, focus, status, bindings, voices, subscriptions and the OSC
   argument helpers. Split by concern after the entries above, each module
   with its tests; the OSC argument helpers join the ones in `status.rs` and
   `gui/serverleg.rs` rather than becoming a fourth set.
+  **Fixed 2026-09-25**: `mod.rs` is 1313 lines -- the `Host`, its links, its
+  windows' sizes and the `/gui_*` vocabulary -- and the rest is one file per
+  concern: `wire.rs`, `define.rs`, `set.rs`, `answer.rs`, `takes.rs`,
+  `clocks.rs`, with bindings, voices and the status bar's methods beside
+  their own modules (`bind.rs`, `voices.rs`, `status.rs`). The tests follow
+  the crate's idiom (`widget/tests.rs`): `tests.rs` for the protocol and
+  `write_tests.rs` for strokes and the monitor. The argument helpers are
+  `wire.rs`'s: `status.rs`'s `arg_str` is its `string_arg` now, and
+  `gui/serverleg.rs`'s `float_arg` went with the replies.
