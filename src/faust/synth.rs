@@ -30,11 +30,12 @@ use std::ptr::NonNull;
 use std::sync::Arc;
 
 use crate::dsp::buffer::BufferPool;
-use crate::dsp::{Block, NUM_AUDIO_BUSES, ProcessCtx};
+use crate::dsp::{NUM_AUDIO_BUSES, ProcessCtx};
 use crate::faust::factory::FaustFactory;
 use crate::faust::ffi;
+use crate::faust::node::FaustBody;
 use crate::faust::soundfile::SoundfileData;
-use crate::node::{ControlMap, SynthNode};
+use crate::node::SynthNode;
 
 pub use crate::faust::ParamSpec;
 
@@ -104,20 +105,10 @@ impl FaustDef {
 /// and control conventions.
 pub struct FaustSynth {
     /// Keeps the factory alive for as long as this instance exists.
-    def: Arc<FaustDef>,
+    _def: Arc<FaustDef>,
     dsp: NonNull<ffi::llvm_dsp>,
-    /// Parameter zones inside the instance, aligned with `def.params`.
-    zones: Vec<*mut f32>,
-    /// Bus mappings parallel to `zones` (`/node_map`/`/node_mapAudio`). The reserved
-    /// `out`/`in` routing controls are not mappable.
-    maps: Vec<ControlMap>,
-    out_bus: usize,
-    in_bus: usize,
-    in_bufs: Vec<Block>,
-    out_bufs: Vec<Block>,
-    /// Scratch pointer arrays for `compute`, refreshed every block.
-    in_ptrs: Vec<*mut f32>,
-    out_ptrs: Vec<*mut f32>,
+    /// Everything around `compute`, over the instance's zones.
+    body: FaustBody,
     /// Backing memory for the instance's `soundfile` zones (one per declared
     /// `soundfile`). Kept alive for the instance's lifetime; the DSP holds raw
     /// pointers into it. Dropped after `deleteCDSPInstance` (see `Drop`).
@@ -148,19 +139,11 @@ impl FaustSynth {
             def.params.len(),
             "instance UI must match the def probe"
         );
-        let (num_inputs, num_outputs) = (def.num_inputs, def.num_outputs);
-        let maps = vec![ControlMap::UNMAPPED; ui.zones.len()];
+        let body = FaustBody::new(ui.zones, def.num_inputs, def.num_outputs);
         Ok(Self {
-            def,
+            _def: def,
             dsp,
-            zones: ui.zones,
-            maps,
-            out_bus: 0,
-            in_bus: 0,
-            in_bufs: vec![Block::SILENCE; num_inputs],
-            out_bufs: vec![Block::SILENCE; num_outputs],
-            in_ptrs: vec![std::ptr::null_mut(); num_inputs],
-            out_ptrs: vec![std::ptr::null_mut(); num_outputs],
+            body,
             _soundfiles: ui.soundfiles,
         })
     }
@@ -168,75 +151,18 @@ impl FaustSynth {
 
 impl SynthNode for FaustSynth {
     fn process(&mut self, ctx: &mut ProcessCtx) {
-        // Scheduled bundles may split the block: only the
-        // `offset..offset+frames` range of the buses belongs to this call.
-        let (offset, frames) = (ctx.offset, ctx.frames);
-        // Pull bus-mapped parameters into their zones before `compute`
-        // reads them: a control bus, or one frame of an audio bus
-        // (control-rate, `/node_mapAudio`). Zones are scalar, so audio mappings are
-        // always sampled -- Faust has no audio-rate parameter.
-        for i in 0..self.maps.len() {
-            let m = self.maps[i];
-            if m.bus >= 0 {
-                let v = if m.audio {
-                    ctx.buses.audio((m.bus as usize).min(NUM_AUDIO_BUSES - 1))[offset]
-                } else {
-                    ctx.buses.control.get(m.bus as usize)
-                };
-                unsafe { self.zones[i].write(v) };
-            }
-        }
-        for i in 0..self.in_bufs.len() {
-            let bus = (self.in_bus + i).min(NUM_AUDIO_BUSES - 1);
-            self.in_bufs[i].0[..frames]
-                .copy_from_slice(&ctx.buses.audio(bus)[offset..offset + frames]);
-            self.in_ptrs[i] = self.in_bufs[i].0.as_mut_ptr();
-        }
-        for i in 0..self.out_bufs.len() {
-            self.out_ptrs[i] = self.out_bufs[i].0.as_mut_ptr();
-        }
-        unsafe {
-            ffi::computeCDSPInstance(
-                self.dsp.as_ptr(),
-                frames as i32,
-                self.in_ptrs.as_mut_ptr(),
-                self.out_ptrs.as_mut_ptr(),
-            );
-        }
-        for (i, buf) in self.out_bufs.iter().enumerate() {
-            let bus = (self.out_bus + i).min(NUM_AUDIO_BUSES - 1);
-            // SAFETY: stage disjointness -- no other thread touches
-            // this bus while we sum into it.
-            for (d, s) in unsafe { ctx.buses.audio_mut(bus) }[offset..offset + frames]
-                .iter_mut()
-                .zip(&buf.0[..frames])
-            {
-                *d += s;
-            }
-        }
+        let dsp = self.dsp.as_ptr();
+        self.body.process(ctx, |frames, inputs, outputs| unsafe {
+            ffi::computeCDSPInstance(dsp, frames, inputs, outputs);
+        });
     }
 
     fn set_control(&mut self, index: u32, value: f32) {
-        let i = index as usize;
-        // An explicit set overrides and clears any mapping (scsynth).
-        if let Some(m) = self.maps.get_mut(i) {
-            m.bus = -1;
-        }
-        if let Some(zone) = self.zones.get(i) {
-            unsafe { zone.write(value) };
-        } else if i == self.zones.len() {
-            self.out_bus = clamp_first_bus(value, self.def.num_outputs);
-        } else if i == self.zones.len() + 1 {
-            self.in_bus = clamp_first_bus(value, self.def.num_inputs);
-        }
-        // anything else is ignored, like scsynth
+        self.body.set_control(index, value);
     }
 
     fn map_control(&mut self, index: u32, bus: i32, audio: bool) {
-        // Only the parameter zones are mappable; `out`/`in` routing is not.
-        if let Some(m) = self.maps.get_mut(index as usize) {
-            *m = ControlMap { bus, audio };
-        }
+        self.body.map_control(index, bus, audio);
     }
 
     /// The whole JIT instance counts as one UGen in `/server_status.reply`.
@@ -252,13 +178,6 @@ impl Drop for FaustSynth {
     fn drop(&mut self) {
         unsafe { ffi::deleteCDSPInstance(self.dsp.as_ptr()) };
     }
-}
-
-/// Clamps a bus control value so the synth's whole channel span stays inside
-/// the audio buses.
-fn clamp_first_bus(value: f32, width: usize) -> usize {
-    let max_first = NUM_AUDIO_BUSES - width.max(1);
-    (value.max(0.0) as usize).min(max_first)
 }
 
 /// Output of one `buildUserInterface` walk: parameter specs and the matching

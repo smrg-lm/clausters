@@ -9,10 +9,9 @@
 //! `docs/decisions.md`, "The page's Faust is a second wasm module linked into
 //! the engine's own memory".
 //!
-//! Everything above the call is the native code: the controls are the def's UI
-//! parameters in declaration order followed by the reserved `out` and `in`
-//! buses, `/node_set` is an aligned store into a zone, inputs are copied out
-//! before outputs are summed into the buses, and the node counts as one UGen.
+//! Everything around the call is the native node's own code, shared rather
+//! than copied: [`FaustBody`] (`faust::node`) holds the zones, their bus maps
+//! and the staging buffers, and both backends' `FaustSynth` delegate to it.
 //!
 //! # What the host must have done first
 //!
@@ -27,11 +26,12 @@
 use std::sync::Arc;
 
 use crate::dsp::buffer::BufferPool;
-use crate::dsp::{Block, NUM_AUDIO_BUSES, ProcessCtx};
+use crate::dsp::{NUM_AUDIO_BUSES, ProcessCtx};
 use crate::faust::ffi;
 use crate::faust::json_ui::{DefLayout, SoundfileSlot};
+use crate::faust::node::FaustBody;
 use crate::faust::soundfile::SoundfileData;
-use crate::node::{ControlMap, SynthNode};
+use crate::node::SynthNode;
 
 pub use crate::faust::ParamSpec;
 
@@ -156,18 +156,8 @@ pub struct FaustSynth {
     /// The DSP struct itself. `f64` elements so the allocation is 8-byte
     /// aligned, which is what the widest field Faust emits needs.
     dsp: Vec<f64>,
-    /// Parameter zones inside `dsp`, aligned with `def.params`.
-    zones: Vec<*mut f32>,
-    /// Bus mappings parallel to `zones` (`/node_map`/`/node_mapAudio`). The
-    /// reserved `out`/`in` routing controls are not mappable.
-    maps: Vec<ControlMap>,
-    out_bus: usize,
-    in_bus: usize,
-    in_bufs: Vec<Block>,
-    out_bufs: Vec<Block>,
-    /// Scratch pointer arrays for `compute`, refreshed every block.
-    in_ptrs: Vec<*mut f32>,
-    out_ptrs: Vec<*mut f32>,
+    /// Everything around `compute`, over the zones inside `dsp`.
+    body: FaustBody,
     /// Backing memory for the instance's `soundfile` fields, one per declared
     /// `soundfile`. Kept alive for the instance's life: the DSP holds raw
     /// pointers into it.
@@ -216,19 +206,11 @@ impl FaustSynth {
             .iter()
             .map(|o| unsafe { base.add(*o) } as *mut f32)
             .collect();
-        let (num_inputs, num_outputs) = (def.num_inputs, def.num_outputs);
-        let maps = vec![ControlMap::UNMAPPED; zones.len()];
+        let body = FaustBody::new(zones, def.num_inputs, def.num_outputs);
         Ok(Self {
             def,
             dsp,
-            zones,
-            maps,
-            out_bus: 0,
-            in_bus: 0,
-            in_bufs: vec![Block::SILENCE; num_inputs],
-            out_bufs: vec![Block::SILENCE; num_outputs],
-            in_ptrs: vec![std::ptr::null_mut(); num_inputs],
-            out_ptrs: vec![std::ptr::null_mut(); num_outputs],
+            body,
             _soundfiles: soundfiles,
         })
     }
@@ -236,84 +218,22 @@ impl FaustSynth {
 
 impl SynthNode for FaustSynth {
     fn process(&mut self, ctx: &mut ProcessCtx) {
-        // Scheduled bundles may split the block: only the
-        // `offset..offset+frames` range of the buses belongs to this call.
-        let (offset, frames) = (ctx.offset, ctx.frames);
-        // Pull bus-mapped parameters into their zones before `compute` reads
-        // them: a control bus, or one frame of an audio bus (control-rate,
-        // `/node_mapAudio`). Zones are scalar, so audio mappings are always
-        // sampled -- Faust has no audio-rate parameter.
-        for i in 0..self.maps.len() {
-            let m = self.maps[i];
-            if m.bus >= 0 {
-                let v = if m.audio {
-                    ctx.buses.audio((m.bus as usize).min(NUM_AUDIO_BUSES - 1))[offset]
-                } else {
-                    ctx.buses.control.get(m.bus as usize)
-                };
-                unsafe { self.zones[i].write(v) };
-            }
-        }
-        for i in 0..self.in_bufs.len() {
-            let bus = (self.in_bus + i).min(NUM_AUDIO_BUSES - 1);
-            self.in_bufs[i].0[..frames]
-                .copy_from_slice(&ctx.buses.audio(bus)[offset..offset + frames]);
-            self.in_ptrs[i] = self.in_bufs[i].0.as_mut_ptr();
-        }
-        for i in 0..self.out_bufs.len() {
-            self.out_ptrs[i] = self.out_bufs[i].0.as_mut_ptr();
-        }
-        (self.def.compute)(
-            self.dsp.as_mut_ptr() as *mut u8,
-            frames as i32,
-            self.in_ptrs.as_mut_ptr(),
-            self.out_ptrs.as_mut_ptr(),
-        );
-        for (i, buf) in self.out_bufs.iter().enumerate() {
-            let bus = (self.out_bus + i).min(NUM_AUDIO_BUSES - 1);
-            // SAFETY: stage disjointness -- no other thread touches this bus
-            // while we sum into it.
-            for (d, s) in unsafe { ctx.buses.audio_mut(bus) }[offset..offset + frames]
-                .iter_mut()
-                .zip(&buf.0[..frames])
-            {
-                *d += s;
-            }
-        }
+        let (compute, dsp) = (self.def.compute, self.dsp.as_mut_ptr() as *mut u8);
+        self.body.process(ctx, |frames, inputs, outputs| {
+            compute(dsp, frames, inputs, outputs)
+        });
     }
 
     fn set_control(&mut self, index: u32, value: f32) {
-        let i = index as usize;
-        // An explicit set overrides and clears any mapping (scsynth).
-        if let Some(m) = self.maps.get_mut(i) {
-            m.bus = -1;
-        }
-        if let Some(zone) = self.zones.get(i) {
-            unsafe { zone.write(value) };
-        } else if i == self.zones.len() {
-            self.out_bus = clamp_first_bus(value, self.def.num_outputs);
-        } else if i == self.zones.len() + 1 {
-            self.in_bus = clamp_first_bus(value, self.def.num_inputs);
-        }
-        // anything else is ignored, like scsynth
+        self.body.set_control(index, value);
     }
 
     fn map_control(&mut self, index: u32, bus: i32, audio: bool) {
-        // Only the parameter zones are mappable; `out`/`in` routing is not.
-        if let Some(m) = self.maps.get_mut(index as usize) {
-            *m = ControlMap { bus, audio };
-        }
+        self.body.map_control(index, bus, audio);
     }
 
     /// The whole instance counts as one UGen in `/server_status.reply`.
     fn ugen_count(&self) -> usize {
         1
     }
-}
-
-/// Clamps a bus control value so the synth's whole channel span stays inside
-/// the audio buses.
-fn clamp_first_bus(value: f32, width: usize) -> usize {
-    let max_first = NUM_AUDIO_BUSES - width.max(1);
-    (value.max(0.0) as usize).min(max_first)
 }

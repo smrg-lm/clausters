@@ -3645,7 +3645,8 @@ should confirm before the fix.
   handling `AddSynth`'s and `AddGroup`'s insert result with the same lines.
   *Done so far*: `dsp::fifo::SampleFifo` is the one sample FIFO, and
   `window_command` the one window command (which is how the next entry was
-  found).
+  found). `faust::node::FaustBody` is the Faust node body both backends'
+  `FaustSynth` delegate to.
 - ✅ **An `IFFT` window swap left the overlap-add at the old window's level**
   *(found 2026-09-25, folding `Fft`'s and `Ifft`'s window command into one)*.
   `Ifft` refilled its window on `/node_ugenCmd … window` but not `norm`, the

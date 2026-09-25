@@ -56,6 +56,7 @@ pub mod compiler;
 #[path = "compiler_web.rs"]
 pub mod compiler;
 
+pub mod node;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod synth;
 #[cfg(target_arch = "wasm32")]
