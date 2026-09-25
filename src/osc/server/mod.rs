@@ -368,28 +368,57 @@ struct Transport {
     fade: i64,
 }
 
+/// How often a subscription is served, and when it is next due. The three
+/// subscriptions (`/bus_stream`, `/bus_tapStream`, `/buffer_stream`) pace
+/// alike, so they share this.
+#[derive(Clone, Copy)]
+struct Pace {
+    period: Duration,
+    /// In [`OscServer::mono_secs`] seconds (wall or sample time).
+    next_due: f64,
+}
+
+impl Pace {
+    /// A pace of `period_ms`, clamped to [`MIN_STREAM_PERIOD`], first due one
+    /// period after `now` -- the subscription answers its first snapshot
+    /// itself.
+    fn start(period_ms: i32, now: f64) -> Self {
+        let period = Duration::from_millis(period_ms.max(0) as u64).max(MIN_STREAM_PERIOD);
+        Pace {
+            period,
+            next_due: now + period.as_secs_f64(),
+        }
+    }
+
+    /// Whether it is due at `now`; if so it is rebased on `now`, so a stall
+    /// is followed by one snapshot and not a catch-up burst.
+    fn due(&mut self, now: f64) -> bool {
+        if now < self.next_due {
+            return false;
+        }
+        self.next_due = now + self.period.as_secs_f64();
+        true
+    }
+}
+
 /// One client's `/bus_stream` subscription: which control buses it watches and
 /// when its next `/bus_set` snapshot is due.
 struct BusStream {
     client: ClientId,
-    period: Duration,
+    pace: Pace,
     buses: Vec<i32>,
-    /// In [`OscServer::mono_secs`] seconds (wall or sample time).
-    next_due: f64,
 }
 
 /// One client's `/bus_tapStream` subscription: which audio taps it watches, the
 /// window size of each `/bus_tapStream.reply` snapshot, and when the next one is due.
 struct TapStream {
     client: ClientId,
-    period: Duration,
+    pace: Pace,
     /// Snapshot window in samples (<= [`MAX_TAP_WINDOW`], <= half the tap ring).
     frames: usize,
     /// The audio buses this subscription watches. It holds a watch on each for
     /// its lifetime, so a streaming client never issues `/bus_tap` itself.
     buses: Vec<i32>,
-    /// In [`OscServer::mono_secs`] seconds (wall or sample time).
-    next_due: f64,
 }
 
 /// One client's `/buffer_stream` subscription: which buffers it watches, how
@@ -400,14 +429,12 @@ struct TapStream {
 /// needs and is two orders of magnitude smaller than the audio.
 struct BufferStream {
     client: ClientId,
-    period: Duration,
+    pace: Pace,
     /// The buffers this subscription watches, each with the frame its last
     /// report ended at -- so a report carries what is new and nothing else.
     buffers: Vec<(i32, u64)>,
     /// Samples per bucket, the pyramid's own level-0 granularity.
     bucket: usize,
-    /// In [`OscServer::mono_secs`] seconds (wall or sample time).
-    next_due: f64,
 }
 
 /// A `/server_sync` waiting for the async pipelines to drain up to its targets.
@@ -774,6 +801,19 @@ fn synthdef_spec_bytes(args: &[OscType]) -> Option<&[u8]> {
 
 /// Seconds between the NTP epoch (1900) and the Unix epoch (1970).
 const NTP_UNIX_OFFSET: f64 = 2_208_988_800.0;
+
+/// `addr` with an unspecified bind address read as loopback on the same port:
+/// where a wake datagram to this server is aimed, since a datagram has to be
+/// aimed somewhere reachable.
+fn loopback(mut addr: SocketAddr) -> SocketAddr {
+    if addr.ip().is_unspecified() {
+        addr.set_ip(match addr {
+            SocketAddr::V4(_) => std::net::Ipv4Addr::LOCALHOST.into(),
+            SocketAddr::V6(_) => std::net::Ipv6Addr::LOCALHOST.into(),
+        });
+    }
+    addr
+}
 
 /// The current wall-clock instant as an OSC/NTP timetag (seconds since 1900 in
 /// a 32-bit count, plus a 32-bit binary fraction) -- the inverse of the NTP->Unix

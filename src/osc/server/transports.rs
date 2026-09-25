@@ -8,6 +8,9 @@
 
 use super::*;
 
+/// One stream frame as a hub hands it over: the connection's id and its bytes.
+type Frame = (u64, Vec<u8>);
+
 impl OscServer {
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
         self.udp()?.local_addr()
@@ -26,14 +29,7 @@ impl OscServer {
     /// address read as loopback on the same port, since a datagram has to be
     /// aimed somewhere reachable.
     pub(in crate::osc::server) fn wake_target(&self) -> io::Result<SocketAddr> {
-        let mut target = self.udp()?.local_addr()?;
-        if target.ip().is_unspecified() {
-            target.set_ip(match target {
-                SocketAddr::V4(_) => std::net::Ipv4Addr::LOCALHOST.into(),
-                SocketAddr::V6(_) => std::net::Ipv6Addr::LOCALHOST.into(),
-            });
-        }
-        Ok(target)
+        Ok(loopback(self.udp()?.local_addr()?))
     }
 
     /// Starts accepting length-prefixed OSC over TCP on `addr` (server track M /
@@ -213,32 +209,14 @@ impl OscServer {
     /// as UDP (`decode_packet`); TCP bytes are untrusted. Replies route back to
     /// the originating connection via [`ClientId::Tcp`].
     pub(in crate::osc::server) fn drain_tcp(&mut self) -> Flow {
-        loop {
-            // Scope the `&mut self.tcp` borrow so `handle_packet(&mut self)` and
-            // its replies (which read `self.tcp`) can run.
-            let next = match &mut self.tcp {
-                Some(hub) => hub.next_frame(),
-                None => return Flow::Continue,
-            };
-            let Some((id, bytes)) = next else {
-                return Flow::Continue;
-            };
-            let packet = match crate::osc::decode_packet(&bytes) {
-                Ok(packet) => packet,
-                Err(e) => {
-                    warn!("malformed OSC packet from tcp client {id}: {e}");
-                    continue;
-                }
-            };
-            let flow = self.handle_packet(packet, ClientId::Tcp(id));
-            self.collect_garbage();
-            self.collect_nrt_results();
-            #[cfg(feature = "faust")]
-            self.collect_faust_results();
-            if let Flow::Quit = flow {
-                return Flow::Quit;
-            }
-        }
+        self.drain_stream(|s| s.tcp.as_mut()?.next_frame(), ClientId::Tcp, "tcp")
+    }
+
+    /// Handles every complete WebSocket frame currently queued, as
+    /// [`Self::drain_tcp`] does; replies route back via [`ClientId::Ws`].
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(in crate::osc::server) fn drain_ws(&mut self) -> Flow {
+        self.drain_stream(|s| s.ws.as_mut()?.next_frame(), ClientId::Ws, "ws")
     }
 
     /// No WebSocket hub exists on wasm32; the stub keeps the run loop's shape.
@@ -247,37 +225,32 @@ impl OscServer {
         Flow::Continue
     }
 
-    /// Handles every complete WebSocket frame currently queued. Same validation
-    /// path as UDP (`decode_packet`); WebSocket bytes are untrusted. Replies
-    /// route back to the originating connection via [`ClientId::Ws`].
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(in crate::osc::server) fn drain_ws(&mut self) -> Flow {
-        loop {
-            // Scope the `&mut self.ws` borrow so `handle_packet(&mut self)` and
-            // its replies (which read `self.ws`) can run.
-            let next = match &mut self.ws {
-                Some(hub) => hub.next_frame(),
-                None => return Flow::Continue,
-            };
-            let Some((id, bytes)) = next else {
-                return Flow::Continue;
-            };
+    /// The loop both stream fronts drain with: take a frame from the hub
+    /// `next` reads, decode it, handle it as `client(id)`, and collect what
+    /// it finished before the next one.
+    fn drain_stream(
+        &mut self,
+        next: fn(&mut Self) -> Option<Frame>,
+        client: fn(u64) -> ClientId,
+        carrier: &str,
+    ) -> Flow {
+        // `next` borrows the hub only for the call, so `handle_packet(&mut
+        // self)` and its replies (which read the hub) can run.
+        while let Some((id, bytes)) = next(self) {
             let packet = match crate::osc::decode_packet(&bytes) {
                 Ok(packet) => packet,
                 Err(e) => {
-                    warn!("malformed OSC packet from ws client {id}: {e}");
+                    warn!("malformed OSC packet from {carrier} client {id}: {e}");
                     continue;
                 }
             };
-            let flow = self.handle_packet(packet, ClientId::Ws(id));
-            self.collect_garbage();
-            self.collect_nrt_results();
-            #[cfg(feature = "faust")]
-            self.collect_faust_results();
+            let flow = self.handle_packet(packet, client(id));
+            self.collect_async();
             if let Flow::Quit = flow {
                 return Flow::Quit;
             }
         }
+        Flow::Continue
     }
 
     /// translates every queued live-MIDI message into engine commands and

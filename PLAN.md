@@ -3580,7 +3580,7 @@ should confirm before the fix.
   acknowledgement plus the broadcast, `notify`/`notify_but` are the one loop
   over the notify clients, and `send_all` the one "every command, or a full
   FIFO".
-- ⬜ **The server's lifecycle is written twice** *(audit 2026-09-25)*.
+- ✅ **The server's lifecycle is written twice** *(audit 2026-09-25)*.
   `OscServer::bind` and `::headless` spell the same forty-five-field struct;
   `run` and `step` repeat the subscription pump; `drain_tcp` and `drain_ws` are
   one loop over two hubs and both inline `collect_async`; `bind` recomputes the
@@ -3588,6 +3588,15 @@ should confirm before the fix.
   (`/bus_stream`, `/bus_tapStream`, `/buffer_stream`) repeat their parse,
   replace-per-client, pacing and pump, and a comment in `handle_bus_tap_stream`
   restates `tap_window_cap`'s doc.
+  **Fixed**: `OscServer::build` is the one struct literal, `bind` and
+  `headless` differ only in the socket, runner, clock and budget they hand it;
+  `loopback` is the one wake-address rule; `pump_subscriptions` ends both a
+  `run` turn and a `step`; `drain_stream` is the one loop over a stream hub,
+  collecting through `collect_async`; the three subscriptions pace through one
+  `Pace`; and the comment in `handle_bus_tap_stream` points at
+  `tap_window_cap` instead of restating it. The subscriptions' parse and
+  replace-per-client stay per command — they read different arguments and
+  hold different watches.
 - ⬜ **Four stream-transport implementations** *(audit 2026-09-25)*. TCP and
   WebSocket in `src/osc` and again in `clients/gui/src/host`: `next_frame` 0.97
   alike, `local_addr` identical, `write_frame`, `reply`, the connection loop

@@ -28,72 +28,18 @@ impl OscServer {
         socket.set_read_timeout(Some(GC_INTERVAL))?;
         // The async workers end that wait the moment a result lands, so the
         // interval above is housekeeping and not the latency of a reply.
-        let mut wake_target = socket.local_addr()?;
-        if wake_target.ip().is_unspecified() {
-            wake_target.set_ip(match wake_target {
-                SocketAddr::V4(_) => std::net::Ipv4Addr::LOCALHOST.into(),
-                SocketAddr::V6(_) => std::net::Ipv6Addr::LOCALHOST.into(),
-            });
-        }
-        let waker = crate::osc::wake::Waker::to(wake_target).ok();
+        let waker = crate::osc::wake::Waker::to(loopback(socket.local_addr()?)).ok();
         // The async threads account their work in the same table the engine
         // does, which is what makes `/server_load` one reading of the server
         // rather than one of the audio thread (`server::meters`).
-        let meters = Arc::clone(handle.meters());
-        let translator = CmdTranslator::with_limits(
-            handle.sample_rate,
-            handle.audio_buses,
-            handle.control_buses().len(),
-            handle.limits,
-        );
-        let transports = vec![Transport::default(); handle.limits.transports];
-        Ok(Self {
-            socket: Some(socket),
-            info,
-            handle,
-            translator,
-            budget: ServeBudget::UNLIMITED,
-            nrt: NrtRunner::spawn(waker.clone(), Arc::clone(&meters)),
-            clients: Vec::new(),
-            streams: Vec::new(),
-            tap_streams: Vec::new(),
-            buffer_streams: Vec::new(),
-            tap_rings: Vec::new(),
-            tap_refs: Vec::new(),
-            tap_buf: Vec::new(),
-            clock: TimeSource::Wall {
-                epoch: Instant::now(),
-            },
-            ipc: None,
-            segment: None,
-            shm_path: None,
-            owns_samples: false,
-            shared_buffers: Vec::new(),
-            overviews: Default::default(),
-            tcp: None,
-            #[cfg(not(target_arch = "wasm32"))]
-            ws: None,
-            #[cfg(feature = "midi")]
-            midi: None,
-            store: None,
-            prune_dead_defs: false,
-            recv_buf: vec![0; RECV_BUF_SIZE],
-            #[cfg(feature = "faust")]
-            faust_compiler: CompilerThread::spawn(waker, Arc::clone(&meters)),
-            nrt_submitted: 0,
-            nrt_in_flight: Default::default(),
-            nrt_drained: 0,
-            faust_submitted: 0,
-            faust_drained: 0,
-            pending_syncs: Vec::new(),
-            transports,
-            post_errors: true,
-            max_frame: crate::osc::DEFAULT_MAX_FRAME,
-            max_stream_buses: crate::osc::DEFAULT_MAX_STREAM_BUSES,
-            max_clients: crate::osc::DEFAULT_MAX_CLIENTS,
-            client_slots: None,
-            offline: None,
-        })
+        let nrt = NrtRunner::spawn(waker.clone(), Arc::clone(handle.meters()));
+        let clock = TimeSource::Wall {
+            epoch: Instant::now(),
+        };
+        let mut server = Self::build(info, handle, nrt, clock, waker);
+        server.socket = Some(socket);
+        server.budget = ServeBudget::UNLIMITED;
+        Ok(server)
     }
 
     /// A server with **no socket front** -- the pulled mode. Commands and
@@ -111,6 +57,28 @@ impl OscServer {
     /// wall-clocked client's bundle timetags still land correctly; pass the
     /// current time for live use, or any fixed origin for deterministic runs.
     pub fn headless(info: ServerInfo, handle: EngineHandle, unix_epoch: f64) -> Self {
+        Self::build(
+            info,
+            handle,
+            NrtRunner::inline(),
+            TimeSource::Sample { unix_epoch },
+            None,
+        )
+    }
+
+    /// What [`Self::bind`] and [`Self::headless`] share: everything but the
+    /// socket, the NRT runner, the clock and the budget. `waker` is what the
+    /// async workers wake the loop with; a headless server has no loop to
+    /// wake.
+    fn build(
+        info: ServerInfo,
+        handle: EngineHandle,
+        nrt: NrtRunner,
+        clock: TimeSource,
+        #[cfg_attr(not(feature = "faust"), allow(unused_variables))] waker: Option<
+            crate::osc::wake::Waker,
+        >,
+    ) -> Self {
         #[cfg(feature = "faust")]
         let meters = Arc::clone(handle.meters());
         let translator = CmdTranslator::with_limits(
@@ -125,7 +93,7 @@ impl OscServer {
             info,
             handle,
             translator,
-            nrt: NrtRunner::inline(),
+            nrt,
             budget: ServeBudget::default(),
             clients: Vec::new(),
             streams: Vec::new(),
@@ -134,7 +102,7 @@ impl OscServer {
             tap_rings: Vec::new(),
             tap_refs: Vec::new(),
             tap_buf: Vec::new(),
-            clock: TimeSource::Sample { unix_epoch },
+            clock,
             ipc: None,
             segment: None,
             shm_path: None,
@@ -150,7 +118,7 @@ impl OscServer {
             prune_dead_defs: false,
             recv_buf: vec![0; RECV_BUF_SIZE],
             #[cfg(feature = "faust")]
-            faust_compiler: CompilerThread::spawn(None, meters),
+            faust_compiler: CompilerThread::spawn(waker, meters),
             nrt_submitted: 0,
             nrt_in_flight: Default::default(),
             nrt_drained: 0,
@@ -337,11 +305,7 @@ impl OscServer {
             }
             self.drain_midi();
             self.prune_disconnected();
-            self.pump_streams();
-            self.pump_tap_streams();
-            self.pump_buffer_streams();
-            let now = self.mono_secs();
-            self.overviews.flush(now);
+            self.pump_subscriptions();
             self.meter_net(busy);
             let socket = self.socket.as_ref().expect("run() checked the socket");
             let (len, from) = match socket.recv_from(&mut self.recv_buf) {
@@ -417,14 +381,21 @@ impl OscServer {
         // becomes several turns instead of one long one. In thread mode this is
         // a no-op -- the thread is the pump.
         self.nrt.pump(self.budget.nrt_jobs);
+        self.pump_subscriptions();
+        self.collect_async();
+        self.meter_net(busy);
+        false
+    }
+
+    /// Serves every subscription that is due -- the three streams, and the
+    /// overviews a write left stale. One turn of [`Self::run`] and of
+    /// [`Self::step`] both end their serving with it.
+    fn pump_subscriptions(&mut self) {
         self.pump_streams();
         self.pump_tap_streams();
         self.pump_buffer_streams();
         let now = self.mono_secs();
         self.overviews.flush(now);
-        self.collect_async();
-        self.meter_net(busy);
-        false
     }
 
     /// Closes a `Role::Net` bracket. A turn is metered in pieces because the
@@ -666,9 +637,9 @@ impl OscServer {
         let timeout = self
             .streams
             .iter()
-            .map(|s| s.period)
-            .chain(self.tap_streams.iter().map(|s| s.period))
-            .chain(self.buffer_streams.iter().map(|s| s.period))
+            .map(|s| s.pace.period)
+            .chain(self.tap_streams.iter().map(|s| s.pace.period))
+            .chain(self.buffer_streams.iter().map(|s| s.pace.period))
             .chain(notify)
             .min()
             .map_or(GC_INTERVAL, |p| p.min(GC_INTERVAL));

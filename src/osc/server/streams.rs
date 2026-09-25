@@ -67,12 +67,10 @@ impl OscServer {
         self.streams.retain(|s| s.client != from);
         self.done(from, "/bus_stream");
         if period_ms > 0 && !buses.is_empty() {
-            let period = Duration::from_millis(period_ms as u64).max(MIN_STREAM_PERIOD);
             self.streams.push(BusStream {
                 client: from,
-                period,
+                pace: Pace::start(period_ms, self.mono_secs()),
                 buses,
-                next_due: self.mono_secs() + period.as_secs_f64(),
             });
             // The immediate snapshot: the client paints without waiting a period.
             let args = self.stream_args(self.streams.len() - 1);
@@ -92,15 +90,12 @@ impl OscServer {
         }
         let now = self.mono_secs();
         for i in 0..self.streams.len() {
-            if now < self.streams[i].next_due {
+            if !self.streams[i].pace.due(now) {
                 continue;
             }
             let client = self.streams[i].client;
             let args = self.stream_args(i);
             self.reply(client, "/bus_stream.reply", args);
-            // Rebase on `now` (no catch-up bursts after a stall).
-            let period = self.streams[i].period;
-            self.streams[i].next_due = now + period.as_secs_f64();
         }
     }
 
@@ -231,20 +226,9 @@ impl OscServer {
         if buses.len() > MAX_STREAM_TAPS {
             return Err(format!("at most {MAX_STREAM_TAPS} buses per subscription"));
         }
-        // Clamp, don't fail, the window: to the client's transport bound and
-        // to half the tap ring (the tear-free bound of `tap_read_latest`). A
-        // stream client may fill a whole frame (minus the OSC envelope); a
-        // datagram-bounded one keeps the 32 KB blob cap.
-        //
-        // **The ring's budget is per serving turn, not per reply**, and that is
-        // the one carrier where the difference bites: one turn pushes a
-        // snapshot per bus into the same 64 KB buffer, so a two-bus
-        // subscription that asked for the whole of it had its second snapshot
-        // dropped -- every turn, always the same bus, and silently, since a
-        // full ring is backpressure rather than an error. A stereo meter in a
-        // page then measured one channel and the silence where the other never
-        // arrived. So the ring's cap is divided by the buses the subscription
-        // lists; a datagram is one packet per bus and keeps the whole of it.
+        // Clamp, don't fail, the window: to what the carrier takes
+        // (`tap_window_cap`) and to half the tap ring (the tear-free bound of
+        // `tap_read_latest`).
         let transport_cap = tap_window_cap(from, self.max_frame, buses.len());
         let frames = frames.max(1) as usize;
         let frames = frames.min(transport_cap).min(segment.tap_frames() / 2);
@@ -266,13 +250,11 @@ impl OscServer {
         self.drop_tap_streams(|s| s.client == from);
         self.done(from, "/bus_tapStream");
         if !wanted.is_empty() {
-            let period = Duration::from_millis(period_ms as u64).max(MIN_STREAM_PERIOD);
             self.tap_streams.push(TapStream {
                 client: from,
-                period,
+                pace: Pace::start(period_ms, self.mono_secs()),
                 frames,
                 buses,
-                next_due: self.mono_secs() + period.as_secs_f64(),
             });
             // The immediate snapshot: the client paints without waiting a
             // period (taps that have not yet filled a window send nothing).
@@ -309,13 +291,10 @@ impl OscServer {
         }
         let now = self.mono_secs();
         for i in 0..self.tap_streams.len() {
-            if now < self.tap_streams[i].next_due {
+            if !self.tap_streams[i].pace.due(now) {
                 continue;
             }
             self.send_tap_snapshots(i);
-            // Rebase on `now` (no catch-up bursts after a stall).
-            let period = self.tap_streams[i].period;
-            self.tap_streams[i].next_due = now + period.as_secs_f64();
         }
     }
 
@@ -405,13 +384,11 @@ impl OscServer {
         self.buffer_streams.retain(|s| s.client != from);
         self.done(from, "/buffer_stream");
         if period_ms > 0 && !buffers.is_empty() {
-            let period = Duration::from_millis(period_ms as u64).max(MIN_STREAM_PERIOD);
             self.buffer_streams.push(BufferStream {
                 client: from,
-                period,
+                pace: Pace::start(period_ms, self.mono_secs()),
                 buffers,
                 bucket,
-                next_due: self.mono_secs() + period.as_secs_f64(),
             });
         }
         self.retune_timeout();
@@ -426,12 +403,10 @@ impl OscServer {
         }
         let now = self.mono_secs();
         for i in 0..self.buffer_streams.len() {
-            if now < self.buffer_streams[i].next_due {
+            if !self.buffer_streams[i].pace.due(now) {
                 continue;
             }
             self.send_buffer_overviews(i);
-            let period = self.buffer_streams[i].period;
-            self.buffer_streams[i].next_due = now + period.as_secs_f64();
         }
     }
 
