@@ -1631,27 +1631,11 @@ impl Host {
         );
         // A window root becomes a renderable typed document; the front opens it.
         if node.kind == "window" {
-            match Widget::from_node(id, &node, blobs) {
-                Ok(mut tree) => {
-                    // **A def says what to look like, not what to destroy.**
-                    // The window's old tree is walked beside the new one and
-                    // everything the host itself put on a widget that survived
-                    // -- its window on the axis, its selection, its layer -- is
-                    // carried across, which is why a clip appearing in one lane
-                    // no longer takes the zoom of every other lane with it.
-                    if let Some(held) = self.window_defs.get(&id) {
-                        widget::reconcile::reconcile(held, &mut tree, &node, id, &was);
-                    }
-                    // Theme groups and per-widget accents resolve here -- at
-                    // the mutation point, never per frame.
-                    widget::resolve_style(&mut tree, &Arc::new(self.theme.clone()));
+            let held = self.window_defs.get(&id);
+            match self.build_tree(id, &node, blobs, held, &was) {
+                Ok(tree) => {
                     self.window_defs.insert(id, tree);
-                    self.sync_bus_watches();
-                    self.sync_buffer_streams();
-                    // The def's timeline views (re)join their navigation
-                    // groups; rebuild semantics for state confined to this def.
-                    self.sync_timeline_groups(Some(id));
-                    effects.push(HostEffect::OpenWindow(id));
+                    self.tree_changed(id, effects);
                 }
                 Err(e) => diag::warn!("{from}: {GUI_DEF} {id}: cannot build window: {e}"),
             }
@@ -1668,34 +1652,17 @@ impl Host {
             // selection of every other lane with it. Splicing the subtree keeps
             // all of that, because everything outside it is the same object it
             // was.
-            match Widget::from_node(id, &node, blobs) {
-                Ok(mut subtree) => {
-                    if let Some(tree) = self.window_defs.get(&root)
-                        && let Some(held) = tree.find(id)
-                    {
-                        widget::reconcile::reconcile(held, &mut subtree, &node, id, &was);
-                    }
-                    widget::resolve_style(&mut subtree, &Arc::new(self.theme.clone()));
+            let held = self.window_defs.get(&root).and_then(|tree| tree.find(id));
+            match self.build_tree(id, &node, blobs, held, &was) {
+                Ok(subtree) => {
                     if let Some(tree) = self.window_defs.get_mut(&root)
                         && let Some(held) = tree.find_mut(id)
                     {
                         *held = subtree;
-                        self.sync_bus_watches();
-                        self.sync_buffer_streams();
-                        self.sync_timeline_groups(Some(root));
                         // **The window is brought up to the tree, not merely
-                        // repainted.** A `Redraw` asks the front for another
-                        // frame of what it already measured, and a subtree that
-                        // changed shape has not been measured at all -- its new
-                        // widgets came out with no size, drew nothing and could
-                        // not be hit, which reads as a window that stopped
-                        // working. `OpenWindow` on an open window keeps the
-                        // shell (the surface, the cursor, the gestures) and
-                        // rebuilds the def's state over the tree as it now is --
-                        // and the tree as it now is holds every widget outside
-                        // this subtree, unchanged, with the zoom and the scroll
-                        // it had.
-                        effects.push(HostEffect::OpenWindow(root));
+                        // repainted** ([`Self::tree_changed`]): a subtree that
+                        // changed shape has not been measured at all.
+                        self.tree_changed(root, effects);
                     } else {
                         diag::warn!(
                             "{from}: {GUI_DEF} {id}: no widget by that id in the \
@@ -1725,6 +1692,59 @@ impl Host {
                 Err(e) => diag::warn!("{from}: {GUI_DEF} {id}: cannot save \"{name}\": {e}"),
             }
         }
+    }
+
+    /// **Builds widget `id`'s tree from `node`**, the way both a window and a
+    /// widget inside one are defined: what the host put on every widget of
+    /// `held` that survives is carried across, and the style is resolved.
+    ///
+    /// **A def says what to look like, not what to destroy.** The old tree is
+    /// walked beside the new one and everything the host itself put on a
+    /// widget that survived -- its window on the axis, its selection, its
+    /// layer -- is carried across, which is why a clip appearing in one lane
+    /// no longer takes the zoom of every other lane with it. Theme groups and
+    /// per-widget accents resolve here -- at the mutation point, never per
+    /// frame.
+    fn build_tree(
+        &self,
+        id: i32,
+        node: &GuiNode,
+        blobs: &[Vec<u8>],
+        held: Option<&Widget>,
+        was: &HashMap<i32, String>,
+    ) -> Result<Widget, String> {
+        let mut tree = Widget::from_node(id, node, blobs).map_err(|e| e.to_string())?;
+        if let Some(held) = held {
+            widget::reconcile::reconcile(held, &mut tree, node, id, was);
+        }
+        widget::resolve_style(&mut tree, &Arc::new(self.theme.clone()));
+        Ok(tree)
+    }
+
+    /// **Window `window`'s tree changed shape**: what the server records for
+    /// it and the navigation groups its views join are brought in step, and
+    /// the front is asked to bring the window up to the tree.
+    ///
+    /// `OpenWindow` and not `Redraw`, even for a window that is open: a
+    /// `Redraw` asks the front for another frame of what it already measured,
+    /// and new widgets that were never measured come out with no size, draw
+    /// nothing and cannot be hit -- a window that reads as having stopped
+    /// working. `OpenWindow` on an open window keeps the shell (the surface,
+    /// the cursor, the gestures) and rebuilds the def's state over the tree as
+    /// it now is, which holds every widget outside a spliced subtree
+    /// unchanged, with the zoom and the scroll it had.
+    fn tree_changed(&mut self, window: i32, effects: &mut Vec<HostEffect>) {
+        self.sync_subscriptions();
+        self.sync_timeline_groups(Some(window));
+        effects.push(HostEffect::OpenWindow(window));
+    }
+
+    /// **What the server records and streams for the open trees**, re-diffed:
+    /// the bus taps the views read and the recordings they follow. Run
+    /// wherever what is drawn can have changed.
+    fn sync_subscriptions(&mut self) {
+        self.sync_bus_watches();
+        self.sync_buffer_streams();
     }
 
     /// `/gui_load <name>` -- load a persisted GuiDef and instantiate it (build its
@@ -1811,7 +1831,7 @@ impl Host {
         // The base moved under the resolved references: a group's colors are
         // its own table over the inherited one, so they are re-resolved rather
         // than kept.
-        let base = std::sync::Arc::new(self.theme.clone());
+        let base = Arc::new(self.theme.clone());
         for id in self.window_def_ids() {
             if let Some(tree) = self.window_def_mut(id) {
                 widget::resolve_style(tree, &base);
@@ -2140,8 +2160,7 @@ impl Host {
             self.status.borrow_mut().remove(&id);
             effects.push(HostEffect::CloseWindow(id));
         }
-        self.sync_bus_watches();
-        self.sync_buffer_streams();
+        self.sync_subscriptions();
         self.forget_gone();
         if removed > 0 {
             diag::info!("{from}: {GUI_FREE} {id}: freed {removed} widget(s)");

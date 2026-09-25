@@ -7655,12 +7655,17 @@ module of its own.
   shape and rate off it once, and `buffer_channels` and `buffer_rate` are
   gone (`buffer_of` and `buffer_frames` stay, for the gestures that ask one
   fact).
-- ⬜ **A definition installs a tree by two copies of the same steps**
+- ✅ **A definition installs a tree by two copies of the same steps**
   *(audit 2026-09-25)*. `define_node`'s window branch and its in-window
   branch each build, reconcile, resolve the style, resync the bus taps, the
   buffer stream and the timeline groups, and reopen. The bus-tap and stream
   resyncs are paired at four call sites, and the theme is cloned into a new
   `Arc` at every one of four style resolutions.
+  **Fixed 2026-09-25**: `build_tree` builds, reconciles and styles for both
+  branches, `tree_changed` resyncs and reopens, and `sync_subscriptions` is
+  the pair. The theme's copy stays: `Host::theme` is a public field a
+  launcher writes, so an `Arc` kept beside it would go stale, and a method
+  that made the copy cannot be called where `set_props` holds the tree.
 - ⬜ **The owner's answer repeats itself** *(audit 2026-09-25)*.
   `answer_tree`'s undo and redo branches are the same fifteen lines; six
   settles build the same `Acked` from a version. `answer_multitrack` hands the
