@@ -23,7 +23,7 @@ use rosc::{OscMessage, OscPacket, OscTime, OscType};
 use crate::dsp::{Limits, NUM_AUDIO_BUSES};
 #[cfg(feature = "faust")]
 use crate::osc::translate::parse_def_send_faust;
-use crate::osc::translate::{CmdTranslator, parse_buffer_gen, parse_buffer_msg};
+use crate::osc::translate::{BUFFER_JOBS, CmdTranslator, parse_buffer_gen, parse_buffer_msg};
 use crate::server::engine::{
     BLOCK_SIZE, Cmd, DEFAULT_AUDIO_BUSES, DEFAULT_CONTROL_BUSES, Engine, EngineHandle, Garbage,
     NodeEventKind, engine_pair_full,
@@ -459,22 +459,7 @@ impl Renderer {
                 }
             }
             "/def_free" => self.translator.d_free(&msg.args),
-            "/buffer_alloc"
-            | "/buffer_allocRead"
-            | "/buffer_read"
-            | "/buffer_write"
-            | "/buffer_zero"
-            | "/buffer_gen"
-            | "/buffer_set"
-            | "/buffer_setRange"
-            | "/buffer_gain"
-            | "/buffer_mix"
-            | "/buffer_reverse"
-            | "/buffer_fill"
-            | "/buffer_readChannel"
-            | "/buffer_allocReadChannel"
-            | "/buffer_stitch"
-            | "/buffer_free" => {
+            addr if BUFFER_JOBS.contains(&addr) => {
                 let (index, job) = if msg.addr == "/buffer_gen" {
                     parse_buffer_gen(&msg.args, &self.translator.buffers)?
                 } else {

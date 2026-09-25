@@ -747,4 +747,34 @@ mod tests {
         addrs.dedup();
         assert_eq!(before, addrs.len(), "a command is listed twice");
     }
+
+    /// The offline renderer runs the commands of `BUFFER_JOBS` and the live
+    /// server the rows of this table: a job in the list with no row would be
+    /// offline-only.
+    #[test]
+    fn every_buffer_job_has_a_row() {
+        for job in crate::osc::translate::BUFFER_JOBS {
+            assert!(
+                COMMANDS.iter().any(|(addr, _)| addr == job),
+                "{job} is a buffer job with no row in the command table"
+            );
+        }
+    }
+
+    /// And the other way: a row the parse takes for a job is in the list, or
+    /// the renderer would refuse it.
+    #[test]
+    fn every_parsed_buffer_command_is_a_buffer_job() {
+        use crate::osc::translate::{BUFFER_JOBS, parse_buffer_msg};
+        for (addr, _) in COMMANDS.iter().filter(|(a, _)| a.starts_with("/buffer_")) {
+            let parsed = match parse_buffer_msg(addr, &[], &Vec::new(), 48_000.0) {
+                Ok(_) => true,
+                Err(e) => !e.contains("is not a buffer command"),
+            };
+            assert!(
+                !parsed || BUFFER_JOBS.contains(addr),
+                "{addr} parses as a buffer job and is missing from BUFFER_JOBS"
+            );
+        }
+    }
 }

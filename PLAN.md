@@ -3460,13 +3460,18 @@ should confirm before the fix.
   and `DiskOut` write through the second and `encode_wav_frames` through the
   first. `a_page_encodes_the_int_bytes_a_native_write_writes` pins both
   widths at the half-step values where the two quantizers parted.
-- ⬜ **An offline score refuses two buffer commands the live server takes**
+- ✅ **An NRT score refuses two buffer commands the live server takes**
   *(audit 2026-09-25, to check)*. `server::render` keeps its own list of the
   `/buffer_*` job addresses and lacks `/buffer_setChannel` and
   `/buffer_setRangeChannel`, which `parse_buffer_msg` and the live dispatch
   accept; offline they fall to the translator and fail as unschedulable. The
   set of job addresses is one list the dispatch table and the renderer both
   read.
+  **Fixed**, confirmed first by a score that failed with `/buffer_setChannel
+  cannot be scheduled in a timed bundle`: `translate::BUFFER_JOBS` is the one
+  list, the renderer matches on it, and two tests hold the command table to it
+  in both directions (a job with no row, a row the parse takes that the list
+  lacks).
 - ⬜ **`clausters --nrt` takes any unknown argument for a path** *(audit
   2026-09-25)*. `nrt_main` pushes every argument it does not know into the
   paths, so `--help` after a score renders a WAV named `--help` — the stray

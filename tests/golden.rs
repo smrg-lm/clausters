@@ -495,6 +495,49 @@ fn a_score_writes_samples_and_plays_them_back() {
     );
 }
 
+/// Every buffer command the live server runs as a job is one an NRT score can
+/// carry: the `*Channel` writes were once missing from the renderer's list and
+/// failed there as unschedulable.
+#[test]
+fn a_score_writes_one_channel_of_a_buffer() {
+    let blob = |v: &[f32]| OscType::Blob(v.iter().flat_map(|s| s.to_le_bytes()).collect());
+    let score = Score::new([
+        (
+            0.0,
+            vec![
+                msg(
+                    "/buffer_alloc",
+                    vec![OscType::Int(0), OscType::Int(4), OscType::Int(2)],
+                ),
+                msg(
+                    "/buffer_setChannel",
+                    vec![
+                        OscType::Int(0),
+                        OscType::Int(1),
+                        OscType::Int(0),
+                        OscType::Float(0.5),
+                    ],
+                ),
+                msg(
+                    "/buffer_setRangeChannel",
+                    vec![
+                        OscType::Int(0),
+                        OscType::Int(0),
+                        OscType::Int(0),
+                        blob(&[0.25, -0.25]),
+                    ],
+                ),
+            ],
+        ),
+        (
+            8.0 / 48000.0,
+            vec![msg("/node_free", vec![OscType::Int(1)])],
+        ),
+    ])
+    .unwrap();
+    render_to_vec(&score, &RenderConfig::default()).unwrap();
+}
+
 #[test]
 fn unsupported_command_in_score_is_an_error() {
     let score = Score::new([

@@ -8,6 +8,31 @@
 use super::*;
 use crate::server::nrt::{EditOp, SampleWrite};
 
+/// Every `/buffer_*` command that is one NRT job: what [`parse_buffer_msg`]
+/// parses, plus `/buffer_gen` ([`parse_buffer_gen`]). The live server runs each
+/// on its NRT thread and the offline renderer runs each in place; the renderer
+/// matches on this list, and a test holds the live command table to it.
+pub const BUFFER_JOBS: &[&str] = &[
+    "/buffer_alloc",
+    "/buffer_allocRead",
+    "/buffer_allocReadChannel",
+    "/buffer_fill",
+    "/buffer_free",
+    "/buffer_gain",
+    "/buffer_gen",
+    "/buffer_mix",
+    "/buffer_read",
+    "/buffer_readChannel",
+    "/buffer_reverse",
+    "/buffer_set",
+    "/buffer_setChannel",
+    "/buffer_setRange",
+    "/buffer_setRangeChannel",
+    "/buffer_stitch",
+    "/buffer_write",
+    "/buffer_zero",
+];
+
 /// Parses one `/buffer_*` command (except the synchronous `/buffer_query`) into the
 /// buffer index and the NRT job that performs it. `mirror` is the
 /// network-side pool: commands that keep or reuse the current contents
