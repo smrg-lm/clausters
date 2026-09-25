@@ -1168,8 +1168,8 @@ impl Host {
     }
 
     /// Drops group states and data extents whose widgets no longer exist (after
-    /// a `/gui_free` or a redefining `/gui_def`) -- the timeline sibling of
-    /// `prune_bindings`.
+    /// a `/gui_free` or a redefining `/gui_def`) -- the timeline's part of
+    /// `Host::forget_gone`, and run by a group sync on its own.
     pub(super) fn prune_timeline_groups(&mut self) {
         let members = self.timeline_members();
         self.timelines

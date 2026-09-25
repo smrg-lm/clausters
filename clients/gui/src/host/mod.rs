@@ -1706,12 +1706,10 @@ impl Host {
                 Err(e) => diag::warn!("{from}: {GUI_DEF} {id}: cannot build widget: {e}"),
             }
         }
-        // A redefine frees the old subtree first; drop any binding whose widget
-        // did not survive into the new tree, and release its live voices.
+        // A redefine frees the old subtree first: what the host kept for a
+        // widget that did not survive into the new tree goes with it.
         if outcome.replaced {
-            self.prune_bindings();
-            self.prune_voices();
-            self.prune_focus();
+            self.forget_gone();
         }
         // Inline `bind` props register a binding declaratively, so a saved GuiDef
         // carries its own bindings (the standalone path) and a live script may
@@ -1902,19 +1900,6 @@ impl Host {
             .iter()
             .find(|(_, tree)| tree.find(id).is_some())
             .map(|(def, _)| *def)
-    }
-
-    /// Drops the counters named on ids no window holds any more.
-    fn prune_head_clocks(&mut self) {
-        let stale: Vec<i32> = self
-            .head_clocks
-            .keys()
-            .copied()
-            .filter(|id| !self.window_defs.contains_key(id) && !self.registry.contains(*id))
-            .collect();
-        for id in stale {
-            self.head_clocks.remove(&id);
-        }
     }
 
     /// `/gui_set <id> <k> <v> ...` -- update one live widget's properties, in the
@@ -2157,13 +2142,7 @@ impl Host {
         }
         self.sync_bus_watches();
         self.sync_buffer_streams();
-        // A freed widget can no longer forward (its subtree is gone), its
-        // timeline group state goes with it, and its live voices are released.
-        self.prune_bindings();
-        self.prune_voices();
-        self.prune_timeline_groups();
-        self.prune_focus();
-        self.prune_head_clocks();
+        self.forget_gone();
         if removed > 0 {
             diag::info!("{from}: {GUI_FREE} {id}: freed {removed} widget(s)");
         } else {
@@ -3125,22 +3104,6 @@ impl Host {
         self.bindings.contains_key(&id)
     }
 
-    /// Drops bindings whose widget no longer exists (after a `/gui_free` or a
-    /// redefining `/gui_def`), so a freed id cannot keep forwarding.
-    fn prune_bindings(&mut self) {
-        self.bindings.retain(|id, _| self.registry.contains(*id));
-    }
-
-    /// Clears the focus if the focused widget was freed or redefined away, so
-    /// keystrokes never reach a widget that no longer exists.
-    fn prune_focus(&mut self) {
-        if let Some((_, id)) = self.focused
-            && !self.registry.contains(id)
-        {
-            self.focused = None;
-        }
-    }
-
     /// Delivers a live MIDI note to the element `widget_id`, returning the
     /// message arguments it reported (empty when it consumed the note
     /// silently, `None` when it is not an element or reads no MIDI).
@@ -3223,9 +3186,33 @@ impl Host {
         self.voices.get(&widget_id).map_or(&[], Vec::as_slice)
     }
 
-    /// Releases every live voice of widgets that no longer exist (after a
-    /// `/gui_free` or a redefining `/gui_def`) -- a freed piano must not leave
-    /// keys sounding.
+    /// **Forgets what the host kept for widgets that are gone**, after a
+    /// `/gui_free` or a redefining `/gui_def` -- one pass, so the two cannot
+    /// disagree about what a missing widget leaves behind.
+    ///
+    /// Everything the host keeps by widget id: a binding (a freed id must not
+    /// keep forwarding), the focus (keystrokes must not reach a widget that is
+    /// not there), the counter a playhead was named to read, the navigation
+    /// group's state and extents, the monitor's nodes for a take nobody draws,
+    /// and the live voices of a piano -- which must not leave keys sounding.
+    fn forget_gone(&mut self) {
+        let registry = &self.registry;
+        let windows = &self.window_defs;
+        self.bindings.retain(|id, _| registry.contains(*id));
+        self.head_clocks
+            .retain(|id, _| windows.contains_key(id) || registry.contains(*id));
+        if let Some((_, id)) = self.focused
+            && !self.registry.contains(id)
+        {
+            self.focused = None;
+        }
+        self.prune_timeline_groups();
+        self.prune_monitor();
+        self.prune_voices();
+    }
+
+    /// Releases every live voice of widgets that no longer exist -- the part
+    /// of [`Self::forget_gone`] that has to say so to the server.
     fn prune_voices(&mut self) {
         let stale: Vec<i32> = self
             .voices
@@ -3889,6 +3876,37 @@ mod tests {
             from(),
         );
         assert_eq!(host.transports_drawn(1), [3]);
+    }
+
+    /// **A redefine forgets what a removed widget left, as a free does.** The
+    /// two used to prune different sets: a clock named on a widget that a
+    /// redefine dropped stayed named, and a transport stayed polled for it.
+    #[test]
+    fn a_redefine_forgets_a_removed_widget_like_a_free() {
+        let mut host = Host::new();
+        host.handle_packet(
+            def_msg(
+                1,
+                r#"{"type":"window","children":[{"id":20,"type":"knob"},{"id":21,"type":"knob"}]}"#,
+            ),
+            from(),
+        );
+        host.set_head_clock_of(20, HeadClock::Transport(4));
+        host.focus(1, 20);
+        assert_eq!(host.transports_drawn(1), [4]);
+        host.handle_packet(
+            def_msg(
+                1,
+                r#"{"type":"window","children":[{"id":21,"type":"knob"}]}"#,
+            ),
+            from(),
+        );
+        assert!(
+            host.transports_drawn(1).is_empty(),
+            "the clock went with it"
+        );
+        assert!(!host.head_clocks.contains_key(&20));
+        assert_eq!(host.focused(), None, "and so did the focus");
     }
 
     /// **A take at another rate than the engine's reads a transport as its

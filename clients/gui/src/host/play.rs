@@ -101,7 +101,6 @@ impl Host {
             48_000.0
         };
         let take = self.buffer_rate(def_id, widget_id).unwrap_or(engine);
-        self.prune_monitor();
         let synced = self.monitor.sync(
             widget_id as u64,
             bufnum,
@@ -199,8 +198,15 @@ impl Host {
         self.send_sound_steps(steps);
     }
 
-    /// Frees what the monitor made for takes no window draws any more.
-    fn prune_monitor(&mut self) {
+    /// Frees what the monitor made for takes no window draws any more, and
+    /// forgets a take it was playing that is gone.
+    pub(super) fn prune_monitor(&mut self) {
+        if self
+            .playing
+            .is_some_and(|m| !self.registry.contains(m.widget))
+        {
+            self.playing = None;
+        }
         let gone: Vec<u64> = self
             .monitor
             .files()

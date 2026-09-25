@@ -7630,13 +7630,18 @@ module of its own.
   but each arm is the platform's (a socket or a page's queue, a blur or
   nothing) and what they share is already the host's (`event_message`,
   `deliver`, the gesture machine).
-- ⬜ **Forgetting a widget is six functions, and two call sites disagree**
+- ✅ **Forgetting a widget is six functions, and two call sites disagree**
   *(audit 2026-09-25)*. Bindings, voices, focus, head clocks, timeline groups
   and the monitor's files each keep state by widget id and each prune it their
   own way (`prune_*`). `/gui_free` prunes five; a redefine that replaced
   widgets prunes three, so a clock named on a widget a redefine removed stays;
   the monitor prunes only when it next plays. One "these ids are gone" pass,
   called from both.
+  **Fixed 2026-09-25**: `Host::forget_gone` is that pass, run by a free and
+  by a redefine that replaced widgets. The one-line prunes are inside it;
+  the timeline's stays its own (a group sync runs it too), the voices' says
+  so to the server, and the monitor's now also forgets a take it was
+  playing that is gone.
 - ⬜ **Five walks find the views of a buffer** *(audit 2026-09-25)*.
   `refresh_buffer_views`, `patch_buffer_views`, `stream_buffer_views`,
   `write_buffer_views` and `forget_take_views` are one recursion -- every
