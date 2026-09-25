@@ -74,6 +74,7 @@ mod ugen {
     use super::layout;
     use super::{DEFAULT_PARTITIONS, MAX_PARTITIONS};
     use crate::dsp::buffer::Buffer;
+    use crate::dsp::fifo::SampleFifo;
     use crate::dsp::registry::UGenConfig;
     use crate::dsp::spectral::resolve_fft_size;
     use crate::dsp::{ProcessCtx, UGen, at};
@@ -116,11 +117,8 @@ mod ugen {
         time: Vec<f32>,
         /// Old-kernel output held during a swap hop's crossfade.
         fade: Vec<f32>,
-        /// Finalized output samples, a ring drained one per input sample.
-        fifo: Vec<f32>,
-        fifo_head: usize,
-        fifo_tail: usize,
-        fifo_len: usize,
+        /// Finalized output samples, drained one per input sample.
+        fifo: SampleFifo,
         /// The kernel buffer index in use (rounded input 1); `-1` before any.
         kernel_buf: i32,
     }
@@ -148,32 +146,9 @@ mod ugen {
                 tmp: vec![0.0; n],
                 time: vec![0.0; n],
                 fade: vec![0.0; part],
-                fifo: vec![0.0; 4 * n],
-                fifo_head: 0,
-                fifo_tail: 0,
-                fifo_len: 0,
+                fifo: SampleFifo::new(4 * n),
                 kernel_buf: -1,
             }
-        }
-
-        #[inline]
-        fn fifo_push(&mut self, v: f32) {
-            if self.fifo_len < self.fifo.len() {
-                self.fifo[self.fifo_tail] = v;
-                self.fifo_tail = (self.fifo_tail + 1) % self.fifo.len();
-                self.fifo_len += 1;
-            }
-        }
-
-        #[inline]
-        fn fifo_pop(&mut self) -> f32 {
-            if self.fifo_len == 0 {
-                return 0.0;
-            }
-            let v = self.fifo[self.fifo_head];
-            self.fifo_head = (self.fifo_head + 1) % self.fifo.len();
-            self.fifo_len -= 1;
-            v
         }
 
         /// `acc += spectrum * kernel` over one packed frame (DC and Nyquist are
@@ -291,7 +266,7 @@ mod ugen {
                 // Pop before pushing: the hop fired while consuming sample
                 // t = L-1 must reach the output at t = L, keeping the
                 // intrinsic latency exactly the reported `part` samples.
-                *o = self.fifo_pop();
+                *o = self.fifo.pop();
                 self.inbuf[self.write] = at(input, j);
                 self.write = (self.write + 1) % self.n;
                 self.since_hop += 1;
@@ -376,11 +351,11 @@ mod ugen {
                         for k in 0..self.part {
                             let t = (k as f32 + 0.5) / self.part as f32;
                             let v = self.fade[k] * (1.0 - t) + self.time[self.part + k] * t;
-                            self.fifo_push(v);
+                            self.fifo.push(v);
                         }
                     } else {
                         for k in 0..self.part {
-                            self.fifo_push(self.time[self.part + k]);
+                            self.fifo.push(self.time[self.part + k]);
                         }
                     }
                 }
@@ -390,11 +365,11 @@ mod ugen {
                     if faded {
                         for k in 0..self.part {
                             let t = (k as f32 + 0.5) / self.part as f32;
-                            self.fifo_push(self.fade[k] * (1.0 - t));
+                            self.fifo.push(self.fade[k] * (1.0 - t));
                         }
                     } else {
                         for _ in 0..self.part {
-                            self.fifo_push(0.0);
+                            self.fifo.push(0.0);
                         }
                     }
                 }

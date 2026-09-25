@@ -3643,6 +3643,17 @@ should confirm before the fix.
   two playbacks in `clausters-editing` building transport commands each their
   own way; the engine building its `GarbageSink` by hand three times and
   handling `AddSynth`'s and `AddGroup`'s insert result with the same lines.
+  *Done so far*: `dsp::fifo::SampleFifo` is the one sample FIFO, and
+  `window_command` the one window command (which is how the next entry was
+  found).
+- ✅ **An `IFFT` window swap left the overlap-add at the old window's level**
+  *(found 2026-09-25, folding `Fft`'s and `Ifft`'s window command into one)*.
+  `Ifft` refilled its window on `/node_ugenCmd … window` but not `norm`, the
+  COLA denominator computed from the window at construction, so a live swap
+  from Hann to rectangular at a 50% hop reconstructed at about +9 dB (RMS 2.05
+  for a unit sine). `fill_cola_norm` is now the one computation, run at
+  construction and again, in place, on a swap;
+  `a_live_window_swap_keeps_the_round_trip_at_unity` holds it.
 - ⬜ **The engine finds a node by scanning 8192 slots** *(audit 2026-09-25,
   measure first)*. `NodeTree::find` is linear over `MAX_NODES`, on the audio
   thread, for every control set, map, run, free, move, done action and bundle

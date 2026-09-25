@@ -31,6 +31,8 @@ pub mod conv;
 pub mod delay;
 #[cfg(feature = "synth")]
 pub mod demand;
+#[cfg(feature = "synth")]
+pub mod fifo;
 // Streaming disk I/O, in two implementations of one surface. Natively each
 // UGen owns a background file thread and races the audio thread through a
 // lock-free ring. In a page there is neither a thread nor a filesystem the

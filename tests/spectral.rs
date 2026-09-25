@@ -82,6 +82,49 @@ fn fft_ifft_round_trip_reconstructs_a_tone() {
     );
 }
 
+/// Swapping the window of both ends live keeps the round trip at unity: the
+/// synthesis side's overlap-add denominator is the window's, so it follows the
+/// swap. A rectangular window at a 50% hop overlaps twice where Hann's power
+/// sums to one, so a denominator left at Hann's doubles the level.
+#[test]
+fn a_live_window_swap_keeps_the_round_trip_at_unity() {
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    let synth = spec_synth(json!({
+        "name": "swap",
+        "ugens": [
+            {"kind": "Sine", "inputs": [{"const": 440.0}]},
+            {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}],
+             "fft_size": 512, "hop": 0.5, "wintype": 0},
+            {"kind": "IFFT", "inputs": [{"ugen": 1}], "wintype": 0},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 2}]}
+        ]
+    }));
+    handle.send(add_synth(1, synth)).ok().unwrap();
+    render_channel(&mut engine, 100);
+    let mut args = [0.0f32; 8];
+    args[0] = -1.0; // Window::Rectangular
+    for ugen_index in [1, 2] {
+        handle
+            .send(Cmd::UGenCommand {
+                id: 1,
+                ugen_index,
+                command: UGenCmd {
+                    selector: ugen_cmd_selector("window"),
+                    args,
+                    num_args: 1,
+                },
+            })
+            .ok()
+            .unwrap();
+    }
+    let sig = render_channel(&mut engine, 300);
+    let out_rms = rms(&sig, 4000, 18000);
+    assert!(
+        (out_rms - std::f32::consts::FRAC_1_SQRT_2).abs() < 0.08,
+        "RMS after the swap {out_rms}, expected ~0.707"
+    );
+}
+
 /// A high tone through `FFT` -> `PV_BrickWall` (low pass) -> `IFFT` is removed,
 /// while the same chain without the filter passes it -- the PV filter attenuates
 /// its band.

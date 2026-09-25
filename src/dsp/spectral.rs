@@ -47,6 +47,7 @@ use clausters_core::fft;
 use clausters_core::pvprog::{BinCtx, PvOp, PvProgram};
 use clausters_core::window::Window;
 
+use crate::dsp::fifo::SampleFifo;
 use crate::dsp::registry::UGenConfig;
 use crate::dsp::{BLOCK_SIZE, MAX_UGEN_INPUTS, ProcessCtx, UGen, UGenCmd, at, ugen_cmd_selector};
 
@@ -221,13 +222,7 @@ impl UGen for Fft {
 
     fn command(&mut self, cmd: &UGenCmd) {
         // `/node_ugenCmd <node> <ugen> window <wintype>`: swap the analysis window.
-        if cmd.selector == ugen_cmd_selector("window") && cmd.num_args >= 1 {
-            let kind = Window::from_wintype(cmd.args[0] as i32);
-            if kind != self.window_kind {
-                self.window_kind = kind;
-                kind.fill(&mut self.window);
-            }
-        }
+        window_command(cmd, &mut self.window_kind, &mut self.window);
     }
 }
 
@@ -251,11 +246,8 @@ pub struct Ifft {
     norm: Vec<f32>,
     /// Time-domain scratch for the inverse transform.
     time: Vec<f32>,
-    /// Finalized samples awaiting output, a ring drained `frames` per slice.
-    fifo: Vec<f32>,
-    fifo_head: usize,
-    fifo_tail: usize,
-    fifo_len: usize,
+    /// Finalized samples awaiting output, drained `frames` per slice.
+    fifo: SampleFifo,
     /// Absolute output position of `olabuf[0]`, modulo the hop -- the phase into
     /// [`norm`](Self::norm), tracked so the COLA denominator stays aligned even
     /// if a frame's `advance` is not a multiple of the hop.
@@ -269,22 +261,11 @@ impl Ifft {
         let window_kind = Window::from_wintype(config.wintype.unwrap_or(0));
         let mut window = vec![0.0; winsize];
         window_kind.fill(&mut window);
-        // Steady-state window-power sum per hop phase (the exact COLA
-        // denominator once the overlap is full). Guarded against a zero phase so
-        // the division is always safe.
         let mut norm = vec![0.0f32; hop_size];
-        for (r, slot) in norm.iter_mut().enumerate() {
-            let mut s = 0.0;
-            let mut k = r;
-            while k < winsize {
-                s += window[k] * window[k];
-                k += hop_size;
-            }
-            *slot = if s > 1e-9 { s } else { 1.0 };
-        }
+        fill_cola_norm(&window, &mut norm);
         // The FIFO holds at most a couple of hops' worth of finalized samples
         // between the frame that produces them and the slices that drain them.
-        let fifo = vec![0.0; 4 * winsize];
+        let fifo = SampleFifo::new(4 * winsize);
         Self {
             winsize,
             hop_size,
@@ -294,31 +275,8 @@ impl Ifft {
             norm,
             time: vec![0.0; winsize],
             fifo,
-            fifo_head: 0,
-            fifo_tail: 0,
-            fifo_len: 0,
             phase: 0,
         }
-    }
-
-    #[inline]
-    fn fifo_push(&mut self, v: f32) {
-        if self.fifo_len < self.fifo.len() {
-            self.fifo[self.fifo_tail] = v;
-            self.fifo_tail = (self.fifo_tail + 1) % self.fifo.len();
-            self.fifo_len += 1;
-        }
-    }
-
-    #[inline]
-    fn fifo_pop(&mut self) -> f32 {
-        if self.fifo_len == 0 {
-            return 0.0;
-        }
-        let v = self.fifo[self.fifo_head];
-        self.fifo_head = (self.fifo_head + 1) % self.fifo.len();
-        self.fifo_len -= 1;
-        v
     }
 }
 
@@ -350,7 +308,7 @@ impl UGen for Ifft {
             // the hop, so phase 0 stays aligned to `norm[0]`.
             for k in 0..advance {
                 let r = (self.phase + k) % self.hop_size;
-                self.fifo_push(self.olabuf[k] / self.norm[r]);
+                self.fifo.push(self.olabuf[k] / self.norm[r]);
             }
             self.phase = (self.phase + advance) % self.hop_size;
             // Shift the tail left by `advance`, zeroing the vacated end.
@@ -361,18 +319,50 @@ impl UGen for Ifft {
             }
         }
         for o in output.iter_mut() {
-            *o = self.fifo_pop();
+            *o = self.fifo.pop();
         }
     }
 
     fn command(&mut self, cmd: &UGenCmd) {
-        if cmd.selector == ugen_cmd_selector("window") && cmd.num_args >= 1 {
-            let kind = Window::from_wintype(cmd.args[0] as i32);
-            if kind != self.window_kind {
-                self.window_kind = kind;
-                kind.fill(&mut self.window);
-            }
+        // The synthesis window swaps as the analysis one does, and the COLA
+        // denominator is the window's: it follows, or the reconstruction's
+        // level would stay the old window's.
+        if window_command(cmd, &mut self.window_kind, &mut self.window) {
+            fill_cola_norm(&self.window, &mut self.norm);
         }
+    }
+}
+
+/// `/node_ugenCmd <node> <ugen> window <wintype>`, the command `Fft` and
+/// `Ifft` share: refill `window` when the type changes. Returns whether it
+/// did. Runs on the audio thread, so it only writes in place.
+fn window_command(cmd: &UGenCmd, kind: &mut Window, window: &mut [f32]) -> bool {
+    if cmd.selector != ugen_cmd_selector("window") || cmd.num_args < 1 {
+        return false;
+    }
+    let wanted = Window::from_wintype(cmd.args[0] as i32);
+    if wanted == *kind {
+        return false;
+    }
+    *kind = wanted;
+    wanted.fill(window);
+    true
+}
+
+/// The steady-state window-power sum per hop phase -- the exact COLA
+/// denominator once the overlap is full -- written into `norm`, one slot per
+/// phase of the hop. Guarded against a zero phase so the division is always
+/// safe. In place, so a window swap on the audio thread can refill it.
+fn fill_cola_norm(window: &[f32], norm: &mut [f32]) {
+    let hop = norm.len();
+    for (r, slot) in norm.iter_mut().enumerate() {
+        let mut s = 0.0;
+        let mut k = r;
+        while k < window.len() {
+            s += window[k] * window[k];
+            k += hop;
+        }
+        *slot = if s > 1e-9 { s } else { 1.0 };
     }
 }
 
