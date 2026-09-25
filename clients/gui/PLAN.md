@@ -7565,3 +7565,77 @@ finished work, where a pending item reads as done.
   knows which views draw a moving line and from which counter, a frame could
   repaint only those -- a change to the drawing pipeline rather than to the
   protocol, and a design of its own.
+
+The entries below are one audit of the host's orchestration layer
+*(2026-09-25, asked by the user once `host/mod.rs` reached 5748 lines)*:
+`mod.rs`, `play.rs`, `instance.rs`, `document.rs`, `gestures/` and the two
+fronts, read for redundancy and for fixes narrower than the rule they fixed.
+The renderers (`elements/`, `graphics/`, `widget/`) were searched, not read.
+The order is the one to take them in: what is wrong first, then what is
+duplicated, and the file is split last, so no duplicate is carried into a
+module of its own.
+
+- ⬜ **The monitor's loop is sent in the take's frames** *(audit
+  2026-09-25)*. `Host::set_loop` (`play.rs`) writes a selection straight to
+  `/transport_loop` on the monitor's transport, where the positions are the
+  engine's samples; every other position the monitor sends goes through
+  `AudioEditorPlayback`, which converts. A take at another rate than the
+  engine's loops somewhere other than the selection drawn -- the fault fixed
+  for the play cursor the same day, on the path that fix did not reach. The
+  loop belongs to the playback, as the locate does.
+- ⬜ **Nineteen doc comments sit on the wrong item** *(audit 2026-09-25)*. An
+  item was moved or removed and its doc stayed, fused onto the next one: in
+  `mod.rs` the `/gui_query` and `/gui_ack` docs are on `say`, `voice_on`'s is
+  on `element_midi`, `send_to_player`'s is on `sync_bus_watches`,
+  `blob_args`' is on `watch_msg` and `json_arg`'s is on `json_table`; the
+  rest are in `fetch.rs`, `document.rs`, `gestures/nav.rs` (three),
+  `elements/notes.rs`, `elements/signal/bulk.rs` (two), `elements/signal/mod.rs`,
+  `elements/multitrack/{mod,draw}.rs`, `widget/element.rs` (two),
+  `widget/props.rs` and `gui/app.rs`. rustdoc renders each as one paragraph
+  that describes two things, and nothing lints it.
+- ⬜ **The two fronts each dispatch the buffer replies** *(audit 2026-09-25)*.
+  `gui/serverleg.rs` and `web/serverleg.rs` both match `/buffer_query.reply`,
+  `/buffer_getRange.reply`, `/buffer_touched`, `/buffer_stream.reply` and
+  `/buffer_peaks.reply`, with bodies copied and already apart: the rate of a
+  `/buffer_query.reply` is read by two different functions (only one takes an
+  `Int`), and `/buffer_touched` is a method in one front and inline in the
+  other. Beside them, ten functions exist in both fronts at a similarity of
+  0.7 or more -- `apply_extents`, `widgets_drawing`, `is_space` (identical),
+  `summary_bucket_of`, `to_key`, `on_stream_report`, `fetch_wanted_spans`,
+  `place_detail`, `read_span_back`, `apply_gesture_effects`. The host is one:
+  this is the shared host's, behind the one thing a front differs in (how a
+  message leaves).
+- ⬜ **Forgetting a widget is six functions, and two call sites disagree**
+  *(audit 2026-09-25)*. Bindings, voices, focus, head clocks, timeline groups
+  and the monitor's files each keep state by widget id and each prune it their
+  own way (`prune_*`). `/gui_free` prunes five; a redefine that replaced
+  widgets prunes three, so a clock named on a widget a redefine removed stays;
+  the monitor prunes only when it next plays. One "these ids are gone" pass,
+  called from both.
+- ⬜ **Five walks find the views of a buffer** *(audit 2026-09-25)*.
+  `refresh_buffer_views`, `patch_buffer_views`, `stream_buffer_views`,
+  `write_buffer_views` and `forget_take_views` are one recursion -- every
+  samples element drawing buffer N, do one thing, count -- written five times;
+  `collect_stream_wants` and `span_to_read_back` are the same walk read-only.
+  And `buffer_of`, `buffer_frames`, `buffer_channels` and `buffer_rate` look
+  the same element up four times to read four facts of it.
+- ⬜ **A definition installs a tree by two copies of the same steps**
+  *(audit 2026-09-25)*. `define_node`'s window branch and its in-window
+  branch each build, reconcile, resolve the style, resync the bus taps, the
+  buffer stream and the timeline groups, and reopen. The bus-tap and stream
+  resyncs are paired at four call sites, and the theme is cloned into a new
+  `Arc` at every one of four style resolutions.
+- ⬜ **The owner's answer repeats itself** *(audit 2026-09-25)*.
+  `answer_tree`'s undo and redo branches are the same fifteen lines; six
+  settles build the same `Acked` from a version. `answer_multitrack` hands the
+  editor its multitrack, source table and lengths twice in one turn, and
+  `document.rs` does it a third way that also hands the segments -- which the
+  two in `mod.rs` do not, so a turn may run on stale segments (to be checked,
+  not assumed). One "bring the editor up to the owner" method.
+- ⬜ **`host/mod.rs` holds every concern of the host** *(audit 2026-09-25)*.
+  3760 lines of code and 1990 of tests in one `impl Host`: the protocol
+  dispatch, the definition path, the owner's answer, the buffer views, the
+  head clocks, focus, status, bindings, voices, subscriptions and the OSC
+  argument helpers. Split by concern after the entries above, each module
+  with its tests; the OSC argument helpers join the ones in `status.rs` and
+  `gui/serverleg.rs` rather than becoming a fourth set.
