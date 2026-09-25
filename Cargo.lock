@@ -221,6 +221,7 @@ version = "0.11.0"
 dependencies = [
  "assert_no_alloc",
  "clausters-core",
+ "clausters-document",
  "clausters-editing",
  "cpal",
  "hound",

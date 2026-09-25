@@ -48,6 +48,13 @@ pub struct SourceInfo {
     pub buffer: i32,
     /// How many channels it has, which is what decides the clip's wiring.
     pub channels: usize,
+    /// **How long the source lasts**, in its own seconds, when the caller
+    /// knows: a window that reaches past it is cut there, so a reader never
+    /// reads past the last frame -- where `BufRd` would hold that frame on the
+    /// track as a constant for as long as the box stays open. `None` cuts
+    /// nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration: Option<f64>,
 }
 
 /// One reader: one channel of one box.
@@ -340,12 +347,24 @@ pub fn plan(
             };
             let at = frames(region.position.get());
             let end = frames(region.position.get() + region.length.get());
+            // **The window ends where the source does**, when it does not
+            // loop: what is left of the source past the window's start, read
+            // at the box's playrate, is as long as the box may sound. Cut here
+            // rather than in the reader's gate, which runs every sample of
+            // every reader.
+            let mut span = (end - at).max(0.0);
+            if let Some(duration) = info.duration
+                && !*looping
+                && *playrate > 0.0
+            {
+                span = span.min(frames((duration - window.start).max(0.0) / *playrate));
+            }
             let readers = (0..info.channels.max(1))
                 .map(|channel| PlannedReader {
                     channel,
                     buffer: info.buffer,
                     at,
-                    span: (end - at).max(0.0),
+                    span,
                     // The window's own start is in the source's **seconds**,
                     // the unit a recording measures in and no tempo scales --
                     // the same one `picture::Box::start` reports and both
@@ -413,6 +432,7 @@ mod tests {
                 SourceInfo {
                     buffer: 10,
                     channels: 1,
+                    duration: None,
                 },
             ),
             (
@@ -420,6 +440,7 @@ mod tests {
                 SourceInfo {
                     buffer: 11,
                     channels: 2,
+                    duration: None,
                 },
             ),
         ])
@@ -468,6 +489,56 @@ mod tests {
         assert_eq!(
             clips[0].readers[0].start, 0.0,
             "and the window's own start is in the source's seconds, crossed by the reader"
+        );
+    }
+
+    /// **A box longer than its source sounds only as long as the source
+    /// does**: a reader never reads past the last frame, where the frame would
+    /// be held on the track. What is left past the window's start is read at
+    /// the box's playrate; a looping box is not cut, and a source whose length
+    /// nobody said is not either.
+    #[test]
+    fn a_box_longer_than_its_source_ends_where_the_source_does() {
+        let mut stated = sources();
+        stated.get_mut(&SourceId(1)).unwrap().duration = Some(0.5);
+        let span = |multitrack: &Multitrack, sources: &HashMap<SourceId, SourceInfo>| {
+            plan(multitrack, 48_000.0, sources).tracks[0].clips[0].readers[0].span
+        };
+        let with = |start: f64, rate: f64, loops: bool| {
+            let mut multitrack = multitrack();
+            let Content::Window {
+                window,
+                playrate,
+                looping,
+                ..
+            } = &mut multitrack.tracks[0].lanes[0].regions[0].content
+            else {
+                panic!("a window");
+            };
+            window.start = start;
+            *playrate = rate;
+            *looping = loops;
+            multitrack
+        };
+        assert_eq!(
+            span(&multitrack(), &stated),
+            0.5 * 48_000.0,
+            "the source's half second"
+        );
+        assert_eq!(
+            span(&with(0.25, 0.5, false), &stated),
+            0.5 * 48_000.0,
+            "a quarter second left, at half speed"
+        );
+        assert_eq!(
+            span(&with(0.0, 1.0, true), &stated),
+            2.0 * 48_000.0,
+            "a loop is not cut"
+        );
+        assert_eq!(
+            span(&multitrack(), &sources()),
+            2.0 * 48_000.0,
+            "and a source of no stated length is not either"
         );
     }
 
@@ -614,6 +685,7 @@ mod json_tests {
             SourceInfo {
                 buffer: 7,
                 channels: 1,
+                duration: None,
             },
         )]);
         let plan = plan(&multitrack, 48_000.0, &table);
@@ -769,6 +841,7 @@ mod curve_tests {
             SourceInfo {
                 buffer: 5,
                 channels: 1,
+                duration: None,
             },
         )]);
         let plan = plan(&multitrack, 48_000.0, &table);

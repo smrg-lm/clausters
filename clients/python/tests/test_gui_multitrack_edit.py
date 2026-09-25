@@ -719,3 +719,18 @@ def test_the_playback_sends_the_crate_s_steps_and_waits_where_they_say():
     playback.stop_at_end = True
     assert playback.stop_at_end
     assert playback.server.log == [], "no contents, nothing to mark"
+
+
+def test_the_source_table_says_how_long_a_source_is_when_its_buffer_does():
+    """A box longer than its source is cut where the source ends, and only the
+    client that loaded the samples knows how long they are: a buffer that
+    states its frames and its rate gives the table a duration, and a bare
+    number gives none."""
+    from types import SimpleNamespace
+
+    from clausters.gui.editing.multitrack import Sources
+    table = Sources({1: SimpleNamespace(bufnum=7, channels=1, frames=24_000,
+                                        sample_rate=48_000.0),
+                     2: 8}).table()
+    assert table[1]["duration"] == 0.5
+    assert "duration" not in table[2]

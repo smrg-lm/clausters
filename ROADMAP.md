@@ -110,11 +110,6 @@ Each is small, owned by its plan, and blocked by nothing.
 A fix that lands leaves no line here, because its plan's checkbox and the commit
 already carry it.
 
-- ⬜ **A box longer than its source holds the source's last sample**
-  *(`crates/clausters-document/PLAN.md`, Found by use)*. A DC offset on the
-  track's bus until the box's window closes; where the end is enforced (the
-  planner or the reader) is the one choice it asks.
-
 - ⬜ **The multitrack's joins do not say which takes they hold**
   *(`crates/clausters-document/PLAN.md`, Found by use)*. The history can hold
   and give back takes now; the multitrack's entries do not state theirs yet,

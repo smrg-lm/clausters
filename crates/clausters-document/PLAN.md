@@ -1755,7 +1755,7 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   a slot nothing fills yet -- "The multitrack has no master in its view", in
   "Future directions".
 
-- ⬜ **A box longer than its source holds the source's last sample** *(found
+- ✅ **A box longer than its source holds the source's last sample** *(found
   2026-09-23 while measuring the audio editor's example; the user asked for it
   to be fixed on its own, separately from the audio editor's nodes)*. The
   multitrack's reader (`clausters_core::mixer::reader_def`) gates on the box's
@@ -1771,6 +1771,14 @@ Every entry is a checkbox, and a fixed one stays with the record of what was wro
   first fix gated on `BufFrames` in the reader and was reverted the same day
   for that per-sample cost. Test: a box of sixteen blocks over a take of four is
   heard for four, and the rest is exactly zero.
+  **Fixed 2026-09-24, in the planner.** A source's entry in the table says how
+  long it lasts (`SourceInfo::duration`, in its own seconds, optional), and
+  `plan` cuts a box that does not loop at what is left of its source past the
+  window's start, read at its playrate; the reader is untouched. Every endpoint
+  states it: the standalone host from a take's frames and rate, both clients
+  from the buffer they hold (`Sources.table`). A source whose length nobody
+  states is not cut. `tests/multitrack_playback.rs` is the test above, through
+  the playback.
 
 - ⬜ **A composite region is `form`'s tree inside the multitrack** *(found
   2026-09-17 by the user, while the scores phase asked which map converts the

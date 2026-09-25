@@ -307,6 +307,11 @@ impl Host {
                     SourceInfo {
                         buffer: take.bufnum,
                         channels: take.channels.unwrap_or(1).max(1) as usize,
+                        // Frames at the take's own rate, or the session's
+                        // when the table did not say.
+                        duration: take
+                            .frames
+                            .map(|frames| frames as f64 / take.rate.unwrap_or(look.rate)),
                     },
                 )
             })
@@ -516,6 +521,7 @@ mod tests {
             SourceInfo {
                 buffer: 7,
                 channels: 2,
+                duration: None,
             },
         )]
         .into_iter()

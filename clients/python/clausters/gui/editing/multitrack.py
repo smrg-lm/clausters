@@ -87,8 +87,8 @@ class Sources:
         """The table as a **join** and a **picture** read it: source id ->
         ``{"buffer", "channels", "frames", "rate"}``.
 
-        `table` plus two facts about the samples themselves, which a plan does
-        not need and these do. The **length**, which a join needs: a part that
+        `table` plus the two facts its duration is made of, as numbers of
+        their own. The **length**, which a join needs: a part that
         names no range contributes the whole of its source, and only whoever
         loaded it knows how much that is. And the **rate they were written
         at**, which a picture needs: a box is placed and drawn in the session's
@@ -115,7 +115,10 @@ class Sources:
 
     def table(self) -> dict:
         """The whole table as the instance plan reads it: source id ->
-        ``{"buffer": n, "channels": n}``.
+        ``{"buffer": n, "channels": n}``, and ``"duration"`` in seconds when
+        the buffer says how long it is and at what rate -- a box longer than
+        its source is then cut where the source ends, rather than holding its
+        last frame on the track.
 
         The one fact about a multitrack that is not in the multitrack, handed to the crate
         so it can say which slot a box goes in -- a mono take is panned into its
@@ -130,8 +133,12 @@ class Sources:
                 continue
             held = self.buffers[source]
             channels = getattr(held, "channels", 1)
-            out[int(source)] = {"buffer": bufnum,
-                                "channels": max(1, int(channels or 1))}
+            entry = {"buffer": bufnum, "channels": max(1, int(channels or 1))}
+            frames = getattr(held, "frames", 0) or 0
+            rate = getattr(held, "sample_rate", 0) or 0
+            if frames > 0 and rate > 0:
+                entry["duration"] = float(frames) / float(rate)
+            out[int(source)] = entry
         return out
 
     def source(self, bufnum: int):

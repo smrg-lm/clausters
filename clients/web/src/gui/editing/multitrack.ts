@@ -109,7 +109,10 @@ export class Sources {
 
     /**
      * The whole table as the instance plan reads it: source id ->
-     * `{ buffer, channels }`.
+     * `{ buffer, channels }`, and `duration` in seconds when the buffer says
+     * how long it is and at what rate -- a box longer than its source is then
+     * cut where the source ends, rather than holding its last frame on the
+     * track.
      *
      * The one fact about a multitrack that is not in the multitrack, handed to the crate
      * so it can say which slot a box goes in -- a mono take is panned into its
@@ -117,20 +120,24 @@ export class Sources {
      * width and nothing else. A source nobody loaded is left out, and a box
      * over it is simply not playing yet.
      */
-    table(): Record<string, { buffer: number; channels: number }> {
-        const out: Record<string, { buffer: number; channels: number }> = {};
+    table(): Record<string, { buffer: number; channels: number; duration?: number }> {
+        const out: Record<string, { buffer: number; channels: number; duration?: number }> = {};
         for (const source of this.buffers.keys()) {
             const bufnum = this.bufnum(source);
             if (bufnum < 0) continue;
             const held = this.buffers.get(source);
-            const channels =
+            const fact = (key: string, fallback: number): number =>
                 typeof held === "object" && held !== null
-                    ? Number((held as { channels?: unknown }).channels ?? 1)
-                    : 1;
-            out[String(source)] = {
+                    ? Number((held as Record<string, unknown>)[key] ?? fallback)
+                    : fallback;
+            const entry: { buffer: number; channels: number; duration?: number } = {
                 buffer: bufnum,
-                channels: Math.max(1, Math.trunc(channels || 1)),
+                channels: Math.max(1, Math.trunc(fact("channels", 1) || 1)),
             };
+            const frames = fact("frames", 0) || 0;
+            const rate = fact("sampleRate", 0) || 0;
+            if (frames > 0 && rate > 0) entry.duration = frames / rate;
+            out[String(source)] = entry;
         }
         return out;
     }
@@ -139,8 +146,8 @@ export class Sources {
      * The table as a **join** and a **picture** read it: source id ->
      * `{ buffer, channels, frames, rate }`.
      *
-     * {@link Sources.table} plus two facts about the samples themselves, which
-     * a plan does not need and these do. The **length**, which a join needs: a
+     * {@link Sources.table} plus the two facts its duration is made of, as
+     * numbers of their own. The **length**, which a join needs: a
      * part that names no range contributes the whole of its source, and only
      * whoever loaded it knows how much that is. And the **rate they were
      * written at**, which a picture needs: a box is placed and drawn in the

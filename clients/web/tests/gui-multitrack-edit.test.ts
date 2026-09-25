@@ -19,6 +19,7 @@ import { multitrackPlan, MultitrackPlayback, StepRunner } from "../src/core/clau
 import {
     MultitrackEditor, MultitrackView, Playback, edit,
 } from "../src/gui/editing/index.ts";
+import { Sources } from "../src/gui/editing/multitrack.ts";
 import { Automation, Content, Lane, Multitrack, Region, Tempo, Track } from "../src/multitrack.ts";
 
 await loadCore();
@@ -804,3 +805,16 @@ test("the playback sends the crate's steps and waits where they say", async () =
     assert.equal(log.length, 0, "no contents, nothing to mark");
 });
 
+
+test("the source table says how long a source is when its buffer does", () => {
+    // A box longer than its source is cut where the source ends, and only the
+    // client that loaded the samples knows how long they are: a buffer that
+    // states its frames and its rate gives the table a duration, and a bare
+    // number gives none.
+    const table = new Sources([
+        [1, { bufnum: 7, channels: 1, frames: 24_000, sampleRate: 48_000 }],
+        [2, 8],
+    ]).table();
+    assert.equal(table["1"].duration, 0.5);
+    assert.equal(table["2"].duration, undefined);
+});

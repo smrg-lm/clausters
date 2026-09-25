@@ -1261,6 +1261,7 @@ mod tests {
                 SourceInfo {
                     buffer: 12,
                     channels: 1,
+                    duration: None,
                 },
             ),
             (
@@ -1268,6 +1269,7 @@ mod tests {
                 SourceInfo {
                     buffer: 13,
                     channels: 2,
+                    duration: None,
                 },
             ),
         ]
