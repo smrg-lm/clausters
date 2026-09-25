@@ -337,12 +337,12 @@ impl Interpolator {
     }
 
     /// **What a reader produces between two samples**, which is not the same
-    /// question as [`at`](Self::at) and is deliberately a different function.
+    /// question as [`phase_at`](Self::phase_at) and is deliberately a different function.
     ///
     /// A reader crossing a buffer at some rate lands between frames every
     /// sample and has to answer in the time of one multiply-add, so it reads
     /// **linearly** -- `PlayBuf` and `BufRd` both do, and so does anything else
-    /// that plays samples at a rate. [`at`](Self::at) is the *signal* those
+    /// that plays samples at a rate. [`phase_at`](Self::phase_at) is the *signal* those
     /// samples are of, which takes a twelve-tap filter and is what a drawing
     /// shows as the curve **through** them.
     ///
