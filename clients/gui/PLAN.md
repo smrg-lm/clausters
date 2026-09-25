@@ -7666,13 +7666,18 @@ module of its own.
   the pair. The theme's copy stays: `Host::theme` is a public field a
   launcher writes, so an `Arc` kept beside it would go stale, and a method
   that made the copy cannot be called where `set_props` holds the tree.
-- ⬜ **The owner's answer repeats itself** *(audit 2026-09-25)*.
+- ✅ **The owner's answer repeats itself** *(audit 2026-09-25)*.
   `answer_tree`'s undo and redo branches are the same fifteen lines; six
   settles build the same `Acked` from a version. `answer_multitrack` hands the
   editor its multitrack, source table and lengths twice in one turn, and
   `document.rs` does it a third way that also hands the segments -- which the
   two in `mod.rs` do not, so a turn may run on stale segments (to be checked,
   not assumed). One "bring the editor up to the owner" method.
+  **Fixed 2026-09-25**: `Owner::sync_editor` is that method, `settle_at` the
+  self-answered settle, and undo and redo one branch. The segments were
+  checked and are not a defect: the editor learns every join a turn mints
+  (`MultitrackEditor::learn`), and `set_segments` only adds the session's
+  own when the window opens.
 - ⬜ **`host/mod.rs` holds every concern of the host** *(audit 2026-09-25)*.
   3760 lines of code and 1990 of tests in one `impl Host`: the protocol
   dispatch, the definition path, the owner's answer, the buffer views, the

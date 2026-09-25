@@ -546,6 +546,24 @@ impl Owner {
         self.editor_member
     }
 
+    /// **Brings the multitrack editor up to what the owner holds**: the
+    /// multitrack, which buffer each source is in and how long each take is --
+    /// what a client hands its editor before every call (`_sync_core`), and
+    /// what a turn and the settle after it are answered against. Nothing
+    /// without an editor.
+    pub fn sync_editor(&mut self) {
+        let (multitrack, table, lengths) = (
+            self.multitrack.clone(),
+            self.buffer_table(),
+            self.buffer_lengths(),
+        );
+        if let Some(editor) = self.editor_mut() {
+            editor.set_multitrack(multitrack);
+            editor.set_sources(table);
+            editor.set_lengths(lengths);
+        }
+    }
+
     /// **The joins the session holds**, by source: the segments each is made
     /// of, which the multitrack editor reads through when a hand joins a box
     /// that is itself a join.

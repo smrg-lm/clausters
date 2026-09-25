@@ -2355,31 +2355,16 @@ impl Host {
         // addressed to the window (`keys::history`), so they are read before
         // anything looks for a node binding.
         match args.first() {
-            Some(OscType::String(tag)) if tag == "undo" => {
-                let applied = owner.undo();
-                let moved = !applied.is_empty();
+            Some(OscType::String(tag)) if tag == "undo" || tag == "redo" => {
+                let applied = if tag == "undo" {
+                    owner.undo()
+                } else {
+                    owner.redo()
+                };
                 self.adopt(def_id, &applied);
                 self.replay_writes(def_id, &applied);
-                if moved {
-                    self.settle(ack::Acked {
-                        seq,
-                        doc_version: applied.last().map_or(0, |a| a.version as i64),
-                        ..Default::default()
-                    });
-                }
-                return true;
-            }
-            Some(OscType::String(tag)) if tag == "redo" => {
-                let applied = owner.redo();
-                let moved = !applied.is_empty();
-                self.adopt(def_id, &applied);
-                self.replay_writes(def_id, &applied);
-                if moved {
-                    self.settle(ack::Acked {
-                        seq,
-                        doc_version: applied.last().map_or(0, |a| a.version as i64),
-                        ..Default::default()
-                    });
+                if let Some(last) = applied.last() {
+                    self.settle_at(seq, last.version as i64);
                 }
                 return true;
             }
@@ -2398,11 +2383,7 @@ impl Host {
                 let intents = owner.read_events(widget_id, args);
                 let applied = owner.apply_all(&intents, &against);
                 self.adopt(def_id, &applied);
-                self.settle(ack::Acked {
-                    seq,
-                    doc_version: applied.last().map_or(0, |a| a.version as i64),
-                    ..Default::default()
-                });
+                self.settle_at(seq, applied.last().map_or(0, |a| a.version as i64));
                 return true;
             }
             _ => {}
@@ -2431,11 +2412,7 @@ impl Host {
             // to the samples rather than keeping a stroke nobody stored.
             diag::warn!("refusing to write {} sample(s): {why}", values.len());
             let version = self.owner.as_ref().map_or(0, |o| o.document.version as i64);
-            self.settle(ack::Acked {
-                seq,
-                doc_version: version,
-                ..Default::default()
-            });
+            self.settle_at(seq, version);
             return true;
         }
         let against = clausters_document::Against::default();
@@ -2454,12 +2431,18 @@ impl Host {
             self.write_buffer_samples(def_id, widget_id, channel, start, &values);
         }
         self.adopt(def_id, &[applied]);
+        self.settle_at(seq, version as i64);
+        true
+    }
+
+    /// [`Self::settle`] for an answer this host gave itself: everything up to
+    /// `seq`, at document version `version`, with no reason to say.
+    fn settle_at(&mut self, seq: i32, version: i64) {
         self.settle(ack::Acked {
             seq,
-            doc_version: version as i64,
+            doc_version: version,
             ..Default::default()
         });
-        true
     }
 
     /// **A gesture on the multitrack's window, answered by the multitrack editor.**
@@ -2477,17 +2460,10 @@ impl Host {
         let Some(owner) = self.owner.as_mut() else {
             return false;
         };
-        let multitrack = owner.multitrack.clone();
-        let (table, lengths) = (owner.buffer_table(), owner.buffer_lengths());
         let Some(member) = owner.editor_member() else {
             return false;
         };
-        let Some(editor) = owner.editor_mut() else {
-            return false;
-        };
-        editor.set_multitrack(multitrack);
-        editor.set_sources(table);
-        editor.set_lengths(lengths);
+        owner.sync_editor();
         // **The message a client would have received**, whole: its stamp, and
         // the version the host was drawing when the hand made the edit -- which
         // is what lets the conversation refuse one that a route the hand never
@@ -2571,18 +2547,9 @@ impl Host {
             // clip's props: `source=-1` until the box was moved to another
             // track, whose turn starts by handing the table over again). A
             // client's editor is handed it before every call (`_sync_core`).
-            let (version, multitrack, table, lengths) = (
-                owner.editing.version(),
-                owner.multitrack.clone(),
-                owner.buffer_table(),
-                owner.buffer_lengths(),
-            );
-            let settled = owner.editor_mut().map(|editor| {
-                editor.set_multitrack(multitrack);
-                editor.set_sources(table);
-                editor.set_lengths(lengths);
-                editor.settle(version)
-            });
+            owner.sync_editor();
+            let version = owner.editing.version();
+            let settled = owner.editor_mut().map(|editor| editor.settle(version));
             if let Some(settled) = settled {
                 self.tell(settled);
             }
