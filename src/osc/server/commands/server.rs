@@ -13,18 +13,17 @@ impl OscServer {
     /// the server's stderr. Replies `/done`.
     pub(in crate::osc::server) fn handle_server_dump_osc(
         &mut self,
-        msg: &OscMessage,
+        mut args: Args,
         from: ClientId,
-    ) {
-        let on = matches!(msg.args.first(), Some(OscType::Int(n)) if *n != 0);
-        match crate::logging::set_osc_dump(on) {
-            Ok(()) => self.reply(
-                from,
-                "/done",
-                vec![OscType::String("/server_dumpOsc".into())],
-            ),
-            Err(e) => self.fail(from, "/server_dumpOsc", e),
-        }
+    ) -> Answer {
+        let on = args.opt_int()?.unwrap_or(0) != 0;
+        crate::logging::set_osc_dump(on)?;
+        self.reply(
+            from,
+            "/done",
+            vec![OscType::String("/server_dumpOsc".into())],
+        );
+        Ok(())
     }
 
     /// `/server_verbosity level`: the client retunes the server's log level live.
@@ -34,22 +33,20 @@ impl OscServer {
     /// without restarting; the initial level comes from `-v`/`RUST_LOG`.)
     pub(in crate::osc::server) fn handle_server_verbosity(
         &mut self,
-        msg: &OscMessage,
+        mut args: Args,
         from: ClientId,
-    ) {
-        let result = match msg.args.first() {
-            Some(OscType::Int(n)) => crate::logging::set_verbosity(*n as i8),
-            Some(OscType::String(s)) => crate::logging::set_base(s),
-            _ => Err("expected an int level or a string filter directive".to_string()),
-        };
-        match result {
-            Ok(()) => self.reply(
-                from,
-                "/done",
-                vec![OscType::String("/server_verbosity".into())],
-            ),
-            Err(e) => self.fail(from, "/server_verbosity", e),
+    ) -> Answer {
+        match args.one()? {
+            OscType::Int(n) => crate::logging::set_verbosity(*n as i8)?,
+            OscType::String(s) => crate::logging::set_base(s)?,
+            _ => return Err("expected an int level or a string filter directive".into()),
         }
+        self.reply(
+            from,
+            "/done",
+            vec![OscType::String("/server_verbosity".into())],
+        );
+        Ok(())
     }
 
     pub(in crate::osc::server) fn send_server_status(&mut self, to: ClientId) {
@@ -244,11 +241,11 @@ impl OscServer {
 
     pub(in crate::osc::server) fn handle_server_notify(
         &mut self,
-        msg: &OscMessage,
+        mut args: Args,
         from: ClientId,
-    ) {
-        match msg.args.first() {
-            Some(OscType::Int(1)) => {
+    ) -> Answer {
+        match args.int()? {
+            1 => {
                 let id = match self.clients.iter().position(|c| *c == from) {
                     Some(i) => i + 1,
                     None => {
@@ -269,7 +266,7 @@ impl OscServer {
                     ],
                 );
             }
-            Some(OscType::Int(0)) => {
+            0 => {
                 self.clients.retain(|c| *c != from);
                 // And the last one hands the idle tick back.
                 self.retune_timeout();
@@ -279,7 +276,8 @@ impl OscServer {
                     vec![OscType::String("/server_notify".into())],
                 );
             }
-            _ => self.fail(from, "/server_notify", "expected int argument 0 or 1"),
+            other => return Err(format!("expected 0 or 1, got {other}")),
         }
+        Ok(())
     }
 }

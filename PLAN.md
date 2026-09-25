@@ -3542,7 +3542,7 @@ should confirm before the fix.
   `clausters-document`'s tests ("O9's acceptance"), `clausters-core-web`'s
   sections ("W3"), `clausters-web`/`-nrt-web` ("the B track"), `T2`, `S19`,
   `F0`, `A1`, `K6` — beside note names a scan also matches.
-- ⬜ **Two argument readers, two policies** *(audit 2026-09-25)*.
+- ✅ **Two argument readers, two policies** *(audit 2026-09-25)*.
   `osc::server::Args` exists so a handler stops destructuring `msg.args` with
   its own wording, and about fifteen still do (the three streams, `/bus_tap`,
   `/buffer_gen`, `/def_free`, the `/sched_*`, `/server_sync`, `_notify`,
@@ -3561,6 +3561,11 @@ should confirm before the fix.
   `string_arg` and `float_arg` are gone, so a wrong-typed optional argument of
   a `/buffer_*` job or `/midi_bind` is refused instead of read as its default
   (`a_wrong_optional_argument_is_refused_by_its_number`).
+  *Step 3 done, closing it*: the handlers that destructured `msg.args` and
+  failed on their own — the three subscriptions, `/bus_tap`, `/buffer_gen`,
+  `/def_free`, the three `/sched_*`, `/server_sync`, `_notify`, `_dumpOsc`,
+  `_verbosity` and the three `/def_send` families — read through `Args` and
+  return `Answer`, so the dispatcher is the one place that sends `/fail`.
 - ⬜ **The command table repeats one closure sixty times** *(audit
   2026-09-25)*. 17 rows are `handle_buffer_cmd(addr, m, f); Ok(())` and 30 are
   `handle_via_translate(m, f); Ok(())`; two named functions make each row one

@@ -119,34 +119,15 @@ impl OscServer {
     /// sample -- nested bundle timetags inside the blob are **ignored**, one
     /// `/sched_at` is one instant. Past targets run at the start of the next
     /// block, like late NTP bundles.
-    fn handle_sched_at(&mut self, msg: &OscMessage, from: ClientId) {
-        let target = match msg.args.first() {
-            Some(OscType::Long(t)) => *t,
-            // Tolerated for hand-written clients; real targets outgrow i32
-            // in under 13 hours at 48 kHz.
-            Some(OscType::Int(t)) => *t as i64,
-            _ => {
-                return self.fail(
-                    from,
-                    "/sched_at",
-                    "expected (int64 sampleTarget, blob packet)",
-                );
-            }
-        };
+    fn handle_sched_at(&mut self, mut args: Args, from: ClientId) -> Answer {
+        // An `Int` is tolerated for hand-written clients; real targets outgrow
+        // i32 in under 13 hours at 48 kHz.
+        let target = args.long()?;
         if target < 0 {
-            return self.fail(from, "/sched_at", "sample target must be >= 0");
+            return Err("sample target must be >= 0".into());
         }
-        let Some(OscType::Blob(blob)) = msg.args.get(1) else {
-            return self.fail(
-                from,
-                "/sched_at",
-                "expected (int64 sampleTarget, blob packet)",
-            );
-        };
-        let packet = match crate::osc::decode_packet(blob) {
-            Ok(packet) => packet,
-            Err(e) => return self.fail(from, "/sched_at", format!("bad packet blob: {e}")),
-        };
+        let packet =
+            crate::osc::decode_packet(args.blob()?).map_err(|e| format!("bad packet blob: {e}"))?;
         let mut cmds = Vec::new();
         self.sched_leaves(&packet, target, &mut cmds, from);
         if !cmds.is_empty()
@@ -158,8 +139,9 @@ impl OscServer {
                 })
                 .is_err()
         {
-            self.fail(from, "/sched_at", "command FIFO full");
+            return Err("command FIFO full".into());
         }
+        Ok(())
     }
 
     /// Translates every leaf message of a `/sched_at` blob, like
@@ -198,30 +180,19 @@ impl OscServer {
     /// plan after a locate asks for -- a transport clock does not jump, so
     /// bundles queued for the position left behind would sound at it, and
     /// clearing everything would take every other client's score with them.
-    fn handle_sched_clear(&mut self, msg: &OscMessage, from: ClientId) {
-        const ADDR: &str = "/sched_clear";
-        let only = match msg.args.first() {
+    fn handle_sched_clear(&mut self, mut args: Args, from: ClientId) -> Answer {
+        let only = match args.opt_str()? {
             None => None,
-            Some(OscType::String(axis)) if axis == "transport" => {
-                let mut args = Args::new(msg);
-                let _ = args.one();
-                match self.transport_arg(&mut args) {
-                    Ok(k) => Some(k),
-                    Err(why) => return self.fail(from, ADDR, why),
-                }
-            }
+            Some("transport") => Some(self.transport_arg(&mut args)?),
             Some(_) => {
-                return self.fail(
-                    from,
-                    ADDR,
-                    "expected no argument or \"transport\" and a transport id",
-                );
+                return Err("expected no argument or \"transport\" and a transport id".into());
             }
         };
         if self.handle.send(Cmd::ClearSched { only }).is_err() {
-            return self.fail(from, ADDR, "command FIFO full");
+            return Err("command FIFO full".into());
         }
-        self.reply(from, "/done", vec![OscType::String(ADDR.into())]);
+        self.reply(from, "/done", vec![OscType::String("/sched_clear".into())]);
+        Ok(())
     }
 
     /// `/sched_atTransport <int32 transport> <int64 target> <blob packet>` -- like
@@ -235,39 +206,24 @@ impl OscServer {
     /// server compares the declaration against its own classification and fails
     /// when they disagree, instead of playing the bundle in the wrong place,
     /// which is what a silently mismatched axis would do.
-    fn handle_sched_at_transport(&mut self, msg: &OscMessage, from: ClientId) {
-        const ADDR: &str = "/sched_atTransport";
-        const SHAPE: &str = "expected (int32 transport, int64 sampleTarget, blob packet)";
-        let mut args = Args::new(msg);
-        let k = match self.transport_arg(&mut args) {
-            Ok(k) => k,
-            Err(why) => return self.fail(from, ADDR, why),
-        };
+    fn handle_sched_at_transport(&mut self, mut args: Args, from: ClientId) -> Answer {
+        let k = self.transport_arg(&mut args)?;
         let Some(group) = self.transports[k].group else {
-            return self.fail(from, ADDR, "no group bound");
+            return Err("no group bound".into());
         };
-        let target = match msg.args.get(1) {
-            Some(OscType::Long(v)) => *v,
-            Some(OscType::Int(v)) => *v as i64,
-            _ => return self.fail(from, ADDR, SHAPE),
-        };
+        let target = args.long()?;
         if target < 0 {
-            return self.fail(from, ADDR, "sample target must be >= 0");
+            return Err("sample target must be >= 0".into());
         }
-        let Some(OscType::Blob(blob)) = msg.args.get(2) else {
-            return self.fail(from, ADDR, SHAPE);
-        };
-        let packet = match crate::osc::decode_packet(blob) {
-            Ok(packet) => packet,
-            Err(e) => return self.fail(from, ADDR, format!("bad packet blob: {e}")),
-        };
+        let packet =
+            crate::osc::decode_packet(args.blob()?).map_err(|e| format!("bad packet blob: {e}"))?;
         let mut cmds = Vec::new();
         self.sched_leaves(&packet, target, &mut cmds, from);
         if cmds.is_empty() {
-            return;
+            return Ok(());
         }
         if !self.packet_targets_group(&cmds, group) {
-            return self.fail(from, ADDR, "packet is not governed by the transport");
+            return Err("packet is not governed by the transport".into());
         }
         // The engine's queue speaks the device axis and converts on arrival, so
         // hand it the device time this transport target corresponds to and let
@@ -279,10 +235,14 @@ impl OscServer {
             .send(Cmd::Schedule { time: device, cmds })
             .is_err()
         {
-            self.fail(from, ADDR, "command FIFO full");
-        } else {
-            self.reply(from, "/done", vec![OscType::String(ADDR.into())]);
+            return Err("command FIFO full".into());
         }
+        self.reply(
+            from,
+            "/done",
+            vec![OscType::String("/sched_atTransport".into())],
+        );
+        Ok(())
     }
 
     /// The network-side twin of the engine's bundle classifier: whether any
@@ -374,8 +334,7 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         Ok(())
     }),
     ("/buffer_gen", |s, _, m, f| {
-        s.handle_buffer_gen(m, f);
-        Ok(())
+        s.handle_buffer_gen(Args::new(m), f)
     }),
     ("/buffer_get", |s, _, m, f| {
         s.handle_buffer_get(Args::new(m), f)
@@ -432,8 +391,7 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         Ok(())
     }),
     ("/buffer_stream", |s, _, m, f| {
-        s.handle_buffer_stream(m, f);
-        Ok(())
+        s.handle_buffer_stream(Args::new(m), f)
     }),
     ("/buffer_touch", |s, _, m, f| {
         s.handle_buffer_touch(Args::new(m), f)
@@ -456,25 +414,17 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         s.handle_bus_set_range(Args::new(m))
     }),
     ("/bus_stream", |s, _, m, f| {
-        s.handle_bus_stream(m, f);
-        Ok(())
+        s.handle_bus_stream(Args::new(m), f)
     }),
-    ("/bus_tap", |s, _, m, f| {
-        s.handle_bus_tap(m, f);
-        Ok(())
-    }),
+    ("/bus_tap", |s, _, m, f| s.handle_bus_tap(Args::new(m), f)),
     ("/bus_tapStream", |s, _, m, f| {
-        s.handle_bus_tap_stream(m, f);
-        Ok(())
+        s.handle_bus_tap_stream(Args::new(m), f)
     }),
     ("/clock_query", |s, _, _, f| {
         s.handle_clock_query(f);
         Ok(())
     }),
-    ("/def_free", |s, _, m, f| {
-        s.handle_def_free(m, f);
-        Ok(())
-    }),
+    ("/def_free", |s, _, m, f| s.handle_def_free(Args::new(m), f)),
     ("/def_load", |s, _, m, f| s.handle_def_load(Args::new(m), f)),
     ("/def_loadDir", |s, _, m, f| {
         s.handle_def_load_dir(Args::new(m), f)
@@ -617,24 +567,18 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         s.handle_via_translate(m, f);
         Ok(())
     }),
-    ("/sched_at", |s, _, m, f| {
-        s.handle_sched_at(m, f);
-        Ok(())
-    }),
+    ("/sched_at", |s, _, m, f| s.handle_sched_at(Args::new(m), f)),
     ("/sched_atTransport", |s, _, m, f| {
-        s.handle_sched_at_transport(m, f);
-        Ok(())
+        s.handle_sched_at_transport(Args::new(m), f)
     }),
     ("/sched_clear", |s, _, m, f| {
-        s.handle_sched_clear(m, f);
-        Ok(())
+        s.handle_sched_clear(Args::new(m), f)
     }),
     ("/server_cmd", |s, _, m, f| {
         s.handle_server_cmd(Args::new(m), f)
     }),
     ("/server_dumpOsc", |s, _, m, f| {
-        s.handle_server_dump_osc(m, f);
-        Ok(())
+        s.handle_server_dump_osc(Args::new(m), f)
     }),
     ("/server_errorMode", |s, _, m, _| {
         s.handle_server_error_mode(Args::new(m))
@@ -644,8 +588,7 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         Ok(())
     }),
     ("/server_notify", |s, _, m, f| {
-        s.handle_server_notify(m, f);
-        Ok(())
+        s.handle_server_notify(Args::new(m), f)
     }),
     ("/server_query", |s, _, _, f| {
         s.send_server_query(f);
@@ -656,12 +599,10 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         Ok(())
     }),
     ("/server_sync", |s, _, m, f| {
-        s.handle_server_sync(m, f);
-        Ok(())
+        s.handle_server_sync(Args::new(m), f)
     }),
     ("/server_verbosity", |s, _, m, f| {
-        s.handle_server_verbosity(m, f);
-        Ok(())
+        s.handle_server_verbosity(Args::new(m), f)
     }),
     ("/synth_forgetId", |s, _, m, f| {
         s.handle_synth_forget_id(Args::new(m), f)

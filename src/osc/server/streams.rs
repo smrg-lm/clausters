@@ -48,32 +48,26 @@ impl OscServer {
     /// immediately and the rest from the run loop. Not schedulable in timed
     /// bundles. Subscriptions die with their TCP/WS connection; UDP and ring
     /// clients cancel explicitly (same posture as `/server_notify`).
-    pub(in crate::osc::server) fn handle_bus_stream(&mut self, msg: &OscMessage, from: ClientId) {
-        let Some(OscType::Int(period_ms)) = msg.args.first() else {
-            return self.fail(from, "/bus_stream", "expected int periodMs");
-        };
-        let mut buses = Vec::with_capacity(msg.args.len().saturating_sub(1));
-        for arg in &msg.args[1..] {
-            let OscType::Int(index) = arg else {
-                return self.fail(from, "/bus_stream", "expected int bus indices");
-            };
-            if *index < 0 {
-                return self.fail(from, "/bus_stream", "bus index must be non-negative");
-            }
-            buses.push(*index);
+    pub(in crate::osc::server) fn handle_bus_stream(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let period_ms = args.int()?;
+        let mut buses = Vec::with_capacity(args.len());
+        while !args.is_empty() {
+            buses.push(args.index()? as i32);
         }
         let cap = self.stream_bus_cap(from);
         if buses.len() > cap {
-            return self.fail(
-                from,
-                "/bus_stream",
-                format!("at most {cap} bus indices per subscription on this carrier"),
-            );
+            return Err(format!(
+                "at most {cap} bus indices per subscription on this carrier"
+            ));
         }
         self.streams.retain(|s| s.client != from);
         self.reply(from, "/done", vec![OscType::String("/bus_stream".into())]);
-        if *period_ms > 0 && !buses.is_empty() {
-            let period = Duration::from_millis(*period_ms as u64).max(MIN_STREAM_PERIOD);
+        if period_ms > 0 && !buses.is_empty() {
+            let period = Duration::from_millis(period_ms as u64).max(MIN_STREAM_PERIOD);
             self.streams.push(BusStream {
                 client: from,
                 period,
@@ -85,6 +79,7 @@ impl OscServer {
             self.reply(from, "/bus_stream.reply", args);
         }
         self.retune_timeout();
+        Ok(())
     }
 
     /// Sends every due stream its `/bus_stream.reply` snapshot. Called once per run-loop
@@ -181,35 +176,26 @@ impl OscServer {
     /// stop frees it. No ack (the same posture as `/node_map`: it only flips
     /// routing state); sequence with `/server_sync` when needed. Fails without a tap
     /// region (server started with `--taps 0`) or when every ring is taken.
-    pub(in crate::osc::server) fn handle_bus_tap(&mut self, msg: &OscMessage, from: ClientId) {
-        let (Some(OscType::Int(bus)), Some(OscType::Int(watch))) =
-            (msg.args.first(), msg.args.get(1))
-        else {
-            return self.fail(from, "/bus_tap", "expected int bus, int watch");
-        };
+    pub(in crate::osc::server) fn handle_bus_tap(
+        &mut self,
+        mut args: Args,
+        _from: ClientId,
+    ) -> Answer {
+        let (bus, watch) = (args.int()?, args.int()?);
         // Both directions answer the same way about an impossible request, so
         // a client learns it cannot watch anything from the first call.
         if self.handle.segment().is_none() {
-            return self.fail(
-                from,
-                "/bus_tap",
-                "no tap region (server started with --taps 0)",
-            );
+            return Err("no tap region (server started with --taps 0)".into());
         }
         let audio_buses = self.handle.audio_buses;
-        if *bus < 0 || *bus as usize >= audio_buses {
-            return self.fail(
-                from,
-                "/bus_tap",
-                format!("bus must be in range 0..{audio_buses}"),
-            );
+        if bus < 0 || bus as usize >= audio_buses {
+            return Err(format!("bus must be in range 0..{audio_buses}"));
         }
-        if *watch == 0 {
-            return self.release_bus(*bus);
+        if watch == 0 {
+            self.release_bus(bus);
+            return Ok(());
         }
-        if let Err(why) = self.watch_bus(*bus) {
-            self.fail(from, "/bus_tap", why);
-        }
+        self.watch_bus(bus)
     }
 
     /// `/bus_tapStream periodMs frames bus...`: subscribes this client to a
@@ -226,42 +212,24 @@ impl OscServer {
     /// `/bus_stream`.
     pub(in crate::osc::server) fn handle_bus_tap_stream(
         &mut self,
-        msg: &OscMessage,
+        mut args: Args,
         from: ClientId,
-    ) {
-        let (Some(OscType::Int(period_ms)), Some(OscType::Int(frames))) =
-            (msg.args.first(), msg.args.get(1))
-        else {
-            return self.fail(from, "/bus_tapStream", "expected int periodMs, int frames");
-        };
+    ) -> Answer {
+        let (period_ms, frames) = (args.int()?, args.int()?);
         let Some(segment) = self.handle.segment() else {
-            return self.fail(
-                from,
-                "/bus_tapStream",
-                "no tap region (server started with --taps 0)",
-            );
+            return Err("no tap region (server started with --taps 0)".into());
         };
         let audio_buses = self.handle.audio_buses;
-        let mut buses = Vec::with_capacity(msg.args.len().saturating_sub(2));
-        for arg in &msg.args[2..] {
-            let OscType::Int(bus) = arg else {
-                return self.fail(from, "/bus_tapStream", "expected int bus indices");
-            };
-            if *bus < 0 || *bus as usize >= audio_buses {
-                return self.fail(
-                    from,
-                    "/bus_tapStream",
-                    format!("bus out of range 0..{audio_buses}"),
-                );
+        let mut buses = Vec::with_capacity(args.len());
+        while !args.is_empty() {
+            let bus = args.index()?;
+            if bus >= audio_buses {
+                return Err(format!("bus out of range 0..{audio_buses}"));
             }
-            buses.push(*bus);
+            buses.push(bus as i32);
         }
         if buses.len() > MAX_STREAM_TAPS {
-            return self.fail(
-                from,
-                "/bus_tapStream",
-                format!("at most {MAX_STREAM_TAPS} buses per subscription"),
-            );
+            return Err(format!("at most {MAX_STREAM_TAPS} buses per subscription"));
         }
         // Clamp, don't fail, the window: to the client's transport bound and
         // to half the tap ring (the tear-free bound of `tap_read_latest`). A
@@ -278,11 +246,11 @@ impl OscServer {
         // arrived. So the ring's cap is divided by the buses the subscription
         // lists; a datagram is one packet per bus and keeps the whole of it.
         let transport_cap = tap_window_cap(from, self.max_frame, buses.len());
-        let frames = (*frames).max(1) as usize;
+        let frames = frames.max(1) as usize;
         let frames = frames.min(transport_cap).min(segment.tap_frames() / 2);
         // The new subscription's watches are taken before the old one's are
         // dropped, so re-subscribing to the same bus never stops recording it.
-        let wanted = if *period_ms > 0 {
+        let wanted = if period_ms > 0 {
             buses.clone()
         } else {
             Vec::new()
@@ -292,7 +260,7 @@ impl OscServer {
                 for taken in wanted.iter().take_while(|b| *b != bus) {
                     self.release_bus(*taken);
                 }
-                return self.fail(from, "/bus_tapStream", why);
+                return Err(why);
             }
         }
         self.drop_tap_streams(|s| s.client == from);
@@ -302,7 +270,7 @@ impl OscServer {
             vec![OscType::String("/bus_tapStream".into())],
         );
         if !wanted.is_empty() {
-            let period = Duration::from_millis(*period_ms as u64).max(MIN_STREAM_PERIOD);
+            let period = Duration::from_millis(period_ms as u64).max(MIN_STREAM_PERIOD);
             self.tap_streams.push(TapStream {
                 client: from,
                 period,
@@ -315,6 +283,7 @@ impl OscServer {
             self.send_tap_snapshots(self.tap_streams.len() - 1);
         }
         self.retune_timeout();
+        Ok(())
     }
 
     /// Removes the tap subscriptions matching `doomed` and releases the watch
@@ -413,22 +382,13 @@ impl OscServer {
     /// TCP/WebSocket connection, and it is not schedulable in a bundle.
     pub(in crate::osc::server) fn handle_buffer_stream(
         &mut self,
-        msg: &OscMessage,
+        mut args: Args,
         from: ClientId,
-    ) {
-        let (Some(OscType::Int(period_ms)), Some(OscType::Int(bucket))) =
-            (msg.args.first(), msg.args.get(1))
-        else {
-            return self.fail(from, "/buffer_stream", "expected int periodMs, int bucket");
-        };
-        let mut buffers = Vec::with_capacity(msg.args.len().saturating_sub(2));
-        for arg in &msg.args[2..] {
-            let OscType::Int(bufnum) = arg else {
-                return self.fail(from, "/buffer_stream", "expected int buffer numbers");
-            };
-            if *bufnum < 0 {
-                return self.fail(from, "/buffer_stream", "buffer number must be non-negative");
-            }
+    ) -> Answer {
+        let (period_ms, bucket) = (args.int()?, args.int()?);
+        let mut buffers = Vec::with_capacity(args.len());
+        while !args.is_empty() {
+            let bufnum = args.index()?;
             // The frontier a report starts from is where the buffer *is* now:
             // a subscription is a watch on what happens next, not a request
             // for the overview of what is already there (that is a fetch, and
@@ -436,26 +396,24 @@ impl OscServer {
             let from_frame = self
                 .handle
                 .segment()
-                .and_then(|seg| seg.buffer_frontier(*bufnum as usize))
+                .and_then(|seg| seg.buffer_frontier(bufnum))
                 .unwrap_or(0);
-            buffers.push((*bufnum, from_frame));
+            buffers.push((bufnum as i32, from_frame));
         }
         if buffers.len() > MAX_STREAM_BUFFERS {
-            return self.fail(
-                from,
-                "/buffer_stream",
-                format!("at most {MAX_STREAM_BUFFERS} buffers per subscription"),
-            );
+            return Err(format!(
+                "at most {MAX_STREAM_BUFFERS} buffers per subscription"
+            ));
         }
-        let bucket = (*bucket).max(1) as usize;
+        let bucket = bucket.max(1) as usize;
         self.buffer_streams.retain(|s| s.client != from);
         self.reply(
             from,
             "/done",
             vec![OscType::String("/buffer_stream".into())],
         );
-        if *period_ms > 0 && !buffers.is_empty() {
-            let period = Duration::from_millis(*period_ms as u64).max(MIN_STREAM_PERIOD);
+        if period_ms > 0 && !buffers.is_empty() {
+            let period = Duration::from_millis(period_ms as u64).max(MIN_STREAM_PERIOD);
             self.buffer_streams.push(BufferStream {
                 client: from,
                 period,
@@ -465,6 +423,7 @@ impl OscServer {
             });
         }
         self.retune_timeout();
+        Ok(())
     }
 
     /// Sends every due buffer stream what its samples grew since the last

@@ -58,9 +58,8 @@ impl OscServer {
             "synth" => self.handle_def_send_synth(rest, from),
             "faust" => self.handle_def_send_faust(rest, from),
             "graph" => self.handle_def_send_graph(rest, from),
-            other => return Err(format!("unknown def family '{other}'")),
+            other => Err(format!("unknown def family '{other}'")),
         }
-        Ok(())
     }
 
     /// Installs one SynthDef spec: compiles it, gives it its name and persists
@@ -80,54 +79,50 @@ impl OscServer {
         Ok(name)
     }
 
-    fn handle_def_send_synth(&mut self, args: &[OscType], from: ClientId) {
-        match self.install_synthdef(args) {
-            Ok(_) => {
-                self.reply(
-                    from,
-                    "/done",
-                    vec![
-                        OscType::String("/def_send".into()),
-                        OscType::String("synth".into()),
-                    ],
-                );
-            }
-            Err(e) => self.fail(from, "/def_send", e),
-        }
+    fn handle_def_send_synth(&mut self, args: &[OscType], from: ClientId) -> Answer {
+        self.install_synthdef(args)?;
+        self.reply(
+            from,
+            "/done",
+            vec![
+                OscType::String("/def_send".into()),
+                OscType::String("synth".into()),
+            ],
+        );
+        Ok(())
     }
 
     /// `/def_send graph <json>`: load a GraphDef (validate + store), persist its
     /// spec verbatim, and reply `/done`. Cheap -- no JIT, just validation.
-    fn handle_def_send_graph(&mut self, args: &[OscType], from: ClientId) {
-        match self.translator.d_graph(args) {
-            Ok(name) => {
-                self.claim_def_name(&name, DefKind::Graph);
-                if let Some(store) = &self.store
-                    && !defstore::is_ephemeral(&name)
-                    && let Some(spec) = synthdef_spec_bytes(args)
-                    && let Err(e) = store.save_graphdef(&name, spec)
-                {
-                    error!("could not persist GraphDef '{name}': {e}");
-                }
-                self.reply(
-                    from,
-                    "/done",
-                    vec![
-                        OscType::String("/def_send".into()),
-                        OscType::String("graph".into()),
-                    ],
-                );
-            }
-            Err(e) => self.fail(from, "/def_send", e),
+    fn handle_def_send_graph(&mut self, args: &[OscType], from: ClientId) -> Answer {
+        let name = self.translator.d_graph(args)?;
+        self.claim_def_name(&name, DefKind::Graph);
+        if let Some(store) = &self.store
+            && !defstore::is_ephemeral(&name)
+            && let Some(spec) = synthdef_spec_bytes(args)
+            && let Err(e) = store.save_graphdef(&name, spec)
+        {
+            error!("could not persist GraphDef '{name}': {e}");
         }
+        self.reply(
+            from,
+            "/done",
+            vec![
+                OscType::String("/def_send".into()),
+                OscType::String("graph".into()),
+            ],
+        );
+        Ok(())
     }
 
-    pub(in crate::osc::server) fn handle_def_free(&mut self, msg: &OscMessage, from: ClientId) {
-        if let Err(e) = self.translator.d_free(&msg.args) {
-            return self.fail(from, "/def_free", e);
-        }
+    pub(in crate::osc::server) fn handle_def_free(
+        &mut self,
+        args: Args,
+        _from: ClientId,
+    ) -> Answer {
+        self.translator.d_free(args.rest())?;
         if let Some(store) = &self.store {
-            for arg in &msg.args {
+            for arg in args.rest() {
                 if let OscType::String(name) = arg {
                     store.remove_synthdef(name);
                     store.remove_graphdef(name);
@@ -136,6 +131,7 @@ impl OscServer {
                 }
             }
         }
+        Ok(())
     }
 
     /// `/def_load path`: loads a SynthDef from a JSON spec file on disk (the

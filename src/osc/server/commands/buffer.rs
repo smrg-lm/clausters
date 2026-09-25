@@ -217,12 +217,14 @@ impl OscServer {
     /// `/buffer_gen bufnum cmd ...`: fills a buffer through the wavetable/generator
     /// path (see [`parse_buffer_gen`]). Async on the NRT queue, in submission order
     /// with the other `/buffer_*` commands, replying `/done`/`/fail` like them.
-    pub(in crate::osc::server) fn handle_buffer_gen(&mut self, msg: &OscMessage, from: ClientId) {
-        let (index, job) = match parse_buffer_gen(&msg.args, &self.translator.buffers) {
-            Ok(parsed) => parsed,
-            Err(e) => return self.fail(from, "/buffer_gen", e),
-        };
+    pub(in crate::osc::server) fn handle_buffer_gen(
+        &mut self,
+        args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let (index, job) = parse_buffer_gen(args.rest(), &self.translator.buffers)?;
         self.submit_nrt("/buffer_gen", index, from, job);
+        Ok(())
     }
 
     /// `/buffer_query bufnum...` -> `/buffer_query.reply` with (bufnum, frames, channels,

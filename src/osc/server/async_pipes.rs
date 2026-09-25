@@ -77,11 +77,8 @@ impl OscServer {
         &mut self,
         args: &[OscType],
         from: ClientId,
-    ) {
-        let (name, def) = match crate::osc::translate::parse_def_send_faust(args) {
-            Ok(pair) => pair,
-            Err(e) => return self.fail(from, "/def_send", e),
-        };
+    ) -> Answer {
+        let (name, def) = crate::osc::translate::parse_def_send_faust(args)?;
         let payload = CompilePayload::classify(def);
         self.claim_def_name(&name, DefKind::Faust);
         // A live faust /def_send always compiles fresh from the given def and, with
@@ -119,19 +116,19 @@ impl OscServer {
             cache,
         };
         if self.faust_compiler.submit(request).is_err() {
-            self.fail(from, "/def_send", "compiler thread is down");
-        } else {
-            self.faust_submitted += 1;
+            return Err("compiler thread is down".into());
         }
+        self.faust_submitted += 1;
+        Ok(())
     }
 
     #[cfg(not(feature = "faust"))]
     pub(in crate::osc::server) fn handle_def_send_faust(
         &mut self,
         _args: &[OscType],
-        from: ClientId,
-    ) {
-        self.fail(from, "/def_send", "server built without faust support");
+        _from: ClientId,
+    ) -> Answer {
+        Err("server built without faust support".into())
     }
 
     /// `/server_sync id`: the async barrier (scsynth semantics). Records the current
@@ -139,11 +136,12 @@ impl OscServer {
     /// async pipelines (NRT buffers, Faust compiles) have drained up to them --
     /// i.e. every async command received before this `/server_sync` has finished.
     /// Each pipeline completes FIFO, so the counters are a sufficient barrier.
-    pub(in crate::osc::server) fn handle_server_sync(&mut self, msg: &OscMessage, from: ClientId) {
-        let id = match msg.args.first() {
-            Some(OscType::Int(id)) => *id,
-            _ => return self.fail(from, "/server_sync", "expected an int id"),
-        };
+    pub(in crate::osc::server) fn handle_server_sync(
+        &mut self,
+        mut args: Args,
+        from: ClientId,
+    ) -> Answer {
+        let id = args.int()?;
         self.pending_syncs.push(PendingSync {
             client: from,
             id,
@@ -151,6 +149,7 @@ impl OscServer {
             faust_target: self.faust_submitted,
         });
         self.resolve_syncs(); // answer at once if nothing is outstanding
+        Ok(())
     }
 
     /// Answers every pending `/server_sync` whose target counts have been reached.

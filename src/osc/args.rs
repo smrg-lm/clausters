@@ -125,6 +125,13 @@ impl<'a> Args<'a> {
         }
     }
 
+    pub(crate) fn blob(&mut self) -> Result<&'a [u8], String> {
+        match self.next("a blob")? {
+            OscType::Blob(b) => Ok(b),
+            other => Err(self.wrong("a blob", other)),
+        }
+    }
+
     /// A 64-bit integer, accepting a 32-bit one: a sample position fits in an
     /// `Int` until it does not, and a client that sends the smaller type means
     /// the number.
