@@ -96,6 +96,7 @@ impl OscServer {
             nrt,
             budget: ServeBudget::default(),
             clients: Vec::new(),
+            next_notify_id: 1,
             streams: Vec::new(),
             tap_streams: Vec::new(),
             buffer_streams: Vec::new(),
@@ -671,7 +672,7 @@ impl OscServer {
         self.streams.retain(|s| !gone.contains(&s.client));
         self.drop_tap_streams(|s| gone.contains(&s.client));
         self.buffer_streams.retain(|s| !gone.contains(&s.client));
-        self.clients.retain(|c| !gone.contains(c));
+        self.clients.retain(|(c, _)| !gone.contains(c));
         self.retune_timeout();
     }
 }

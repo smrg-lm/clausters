@@ -269,8 +269,8 @@ pub enum Location {
     /// whole point -- fragments put back in an order their source does not have
     /// is exactly what cannot be said as a window.
     ///
-    /// A realized join is [`crate::multitrack::picture`]'s source like any
-    /// other; what realizes it is the caller's (`/buffer_stitch` over pool
+    /// A built join is [`crate::multitrack::picture`]'s source like any
+    /// other; what builds it is the caller's (`/buffer_stitch` over pool
     /// buffers today, a prebuffered stream once a part may name a file -- root
     /// `PLAN.md`). **This statement does not change when that does**, which is
     /// why the recipe is here and not in a call a client remembers making.

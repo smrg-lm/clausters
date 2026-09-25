@@ -3,8 +3,8 @@
 //! A join owns no samples: it is spans of the takes the table already holds
 //! ([`Location::Segments`]), and `clausters-document` says in so many words
 //! that it does not build one -- *"this crate holds source ids rather than
-//! sources: whoever has the samples fills it in when it realizes the join"*.
-//! **This is the reading of that recipe**, so that whoever realizes it does not
+//! sources: whoever has the samples fills it in when it builds the join"*.
+//! **This is the reading of that recipe**, so that whoever builds it does not
 //! read it again.
 //!
 //! It was read three times before this module: at **open** in the GUI host

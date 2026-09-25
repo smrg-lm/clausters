@@ -157,11 +157,11 @@ pub const DEFAULT_TRANSPORTS: usize = 8;
 impl Default for Limits {
     fn default() -> Self {
         Self {
-            // Kept in sync with `node::MAX_NODES` / `node::MAX_GROUP_CHILDREN`
-            // / `buffer::NUM_BUFFERS`; those consts stay the documented default.
-            max_nodes: 8192,
-            max_buffers: 4096,
-            max_group_children: 512,
+            // The documented defaults are those consts; these read them rather
+            // than a second copy of their values.
+            max_nodes: crate::node::MAX_NODES,
+            max_buffers: buffer::NUM_BUFFERS,
+            max_group_children: crate::node::MAX_GROUP_CHILDREN,
             max_ugen_inputs: MAX_UGEN_INPUTS,
             transports: DEFAULT_TRANSPORTS,
         }

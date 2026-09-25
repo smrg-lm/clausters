@@ -836,7 +836,7 @@ pub fn read_join(
                 // **Left unstated, and that is the honest answer.** How wide a
                 // join is depends on the takes it is over, and this crate holds
                 // source ids rather than sources: whoever has the samples fills
-                // it in when it realizes the join.
+                // it in when it builds the join.
                 channels: None,
                 frames: Some(frames(total)),
                 sample_rate: Some(rate),

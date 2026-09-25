@@ -77,7 +77,7 @@ impl CmdTranslator {
         Ok(Some(instance))
     }
 
-    /// re-establish a persisted binding at startup, re-instantiating its
+    /// Re-establish a persisted binding at startup, re-instantiating its
     /// shared GraphDef instance if needed. Mirrors `/midi_bind` but takes the
     /// stored config directly (no re-issued OSC).
     pub fn restore_binding(
@@ -168,7 +168,7 @@ impl CmdTranslator {
         Ok(())
     }
 
-    /// actuate nodes from a standard channel-voice MIDI message. Reuses
+    /// Actuate nodes from a standard channel-voice MIDI message. Reuses
     /// the OSC path by synthesizing the equivalent `/synth_new`/`/node_set`/`/node_free`,
     /// so a MIDI-driven voice is byte-identical to the OSC one. Unbound
     /// channels and unmapped expressive messages are silently ignored (a

@@ -790,7 +790,7 @@ pub struct Engine {
     /// Pre-allocated: insertion and removal never allocate.
     sched: Vec<ScheduledBundle>,
     sample_clock: Arc<AtomicU64>,
-    /// block-accurate mirror of the sample clock into the IPC segment
+    /// Block-accurate mirror of the sample clock into the IPC segment
     /// (one extra Release store per block); the Arc pins the mapping.
     ipc: Option<Arc<Segment>>,
     /// Which audio bus each segment tap ring records (`-1` = off), indexed by

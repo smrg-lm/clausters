@@ -2206,6 +2206,10 @@ fn the_headers_automation_toggle_answers_where_it_is_drawn() {
     );
 }
 
+/// **A press on the axis' own ruler leaves the focus alone.** The position
+/// cursor is placed on the ruler and nowhere else, so dropping the focus there
+/// would take the view's keys away with every mark a reader puts down -- point
+/// at a box, place the cursor, split. A ruler takes no focus of its own (it is
 /// chrome, not a sink) and it takes none away from what it rules.
 #[test]
 fn the_ruler_of_the_focused_view_does_not_take_its_focus_away() {

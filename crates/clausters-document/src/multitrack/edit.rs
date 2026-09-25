@@ -218,7 +218,7 @@ pub enum MultitrackIntent {
         /// and a multitrack is not: the edit happens while the thing is open, so
         /// the sentence has to reach a client the same way a split's minted
         /// name does -- by being told, not by being derived. A client applying
-        /// this learns *there is a source N made of these spans*, realizes it,
+        /// this learns *there is a source N made of these spans*, builds it,
         /// and writes it into its table; a client that opens the saved session
         /// reads the same statement out of the file.
         ///

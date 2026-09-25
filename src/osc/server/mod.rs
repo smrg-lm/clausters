@@ -189,8 +189,12 @@ pub struct OscServer {
     /// Only the headless/pulled server reads it; the native run loop has a
     /// thread of its own and drains without a ceiling.
     budget: ServeBudget,
-    /// Clients registered via `/server_notify 1`; the client ID is index + 1.
-    clients: Vec<ClientId>,
+    /// Clients registered via `/server_notify 1`, each with the id its
+    /// `/done` answered. The id is the client's for as long as it stays
+    /// registered: another client leaving does not renumber it.
+    clients: Vec<(ClientId, i32)>,
+    /// The id the next registration is answered with, from 1.
+    next_notify_id: i32,
     /// Active `/bus_stream` subscriptions, at most one per client: the network
     /// counterpart of the shared-memory control-bus segment, for clients (a
     /// browser) that cannot map it. Pumped by the run loop.
@@ -214,7 +218,7 @@ pub struct OscServer {
     recv_buf: Vec<u8>,
     /// Where streams and timetags read time from (see [`TimeSource`]).
     clock: TimeSource,
-    /// the shared-memory / in-process ring endpoint, when attached.
+    /// The shared-memory / in-process ring endpoint, when attached.
     ipc: Option<crate::server::ipc::IpcPeer>,
     /// The segment itself, whether or not this server serves its rings. A
     /// server that attached to somebody else's segment reads the samples out
@@ -310,7 +314,7 @@ pub struct OscServer {
     offline: Option<Vec<OfflineRender>>,
 }
 
-/// The shared transport: a DAW-style **rolling state** (play / stop / where the
+/// The shared transport: a DAW-style **rolling state** (play / stop / where
 /// the transport is), plus an optional beat grid clients read to phase-align on the
 /// master sample clock. The server stores and **broadcasts** all of it
 /// (in-memory; resets on restart); with a group bound the engine also enforces
@@ -603,7 +607,7 @@ impl OscServer {
 
     /// Sends `addr` to every `/server_notify` client.
     fn notify(&self, addr: &str, args: Vec<OscType>) {
-        for client in &self.clients {
+        for (client, _) in &self.clients {
             self.reply(*client, addr, args.clone());
         }
     }
@@ -611,7 +615,7 @@ impl OscServer {
     /// Sends `addr` to every `/server_notify` client but `writer`, the one
     /// that caused it and already knows.
     fn notify_but(&self, writer: ClientId, addr: &str, args: Vec<OscType>) {
-        for client in self.clients.iter().filter(|c| **c != writer) {
+        for (client, _) in self.clients.iter().filter(|(c, _)| *c != writer) {
             self.reply(*client, addr, args.clone());
         }
     }

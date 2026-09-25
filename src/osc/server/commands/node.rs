@@ -22,7 +22,7 @@ impl OscServer {
         self.send_all(cmds)
     }
 
-    /// write the current MIDI bindings to disk after a mutation, if
+    /// Write the current MIDI bindings to disk after a mutation, if
     /// persistence is on. Best-effort; a write error is logged, never fatal.
     pub(in crate::osc::server) fn persist_bindings(&self) {
         if let Some(store) = &self.store

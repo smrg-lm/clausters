@@ -158,7 +158,7 @@ pub struct MidiBinding {
     pub cc: HashMap<u8, String>,
     /// Program number -> instrument def name (program change re-selects it).
     pub programs: HashMap<u8, String>,
-    /// when the instrument is a **GraphDef**, the shared instance group
+    /// When the instrument is a **GraphDef**, the shared instance group
     /// spawned at bind time. A note then spawns a per-voice sub-graph
     /// (`/graph_newVoice`) inside it instead of a plain `/synth_new`. Runtime only --
     /// not persisted (it is re-instantiated on restore).

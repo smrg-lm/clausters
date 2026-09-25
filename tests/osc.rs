@@ -1391,6 +1391,37 @@ fn b_export_dumps_raw_samples_to_a_local_file() {
     server.quit();
 }
 
+/// A `/server_notify` id is the client's for as long as it stays registered:
+/// an earlier client leaving does not renumber the ones after it.
+#[test]
+fn a_notify_id_survives_an_earlier_client_leaving() {
+    let server = TestServer::spawn();
+    let first = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+    first
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    let notify = |on: i32| {
+        encoder::encode(&OscPacket::Message(OscMessage {
+            addr: "/server_notify".into(),
+            args: vec![OscType::Int(on)],
+        }))
+        .unwrap()
+    };
+    first.send_to(&notify(1), server.addr).unwrap();
+    let mut buf = [0u8; 1024];
+    first.recv_from(&mut buf).unwrap();
+
+    server.send("/server_notify", vec![OscType::Int(1)]);
+    let id = server.recv_until("/done").args[1].clone();
+    assert_eq!(id, OscType::Int(2));
+
+    first.send_to(&notify(0), server.addr).unwrap();
+    first.recv_from(&mut buf).unwrap();
+    server.send("/server_notify", vec![OscType::Int(1)]);
+    assert_eq!(server.recv_until("/done").args[1], id, "still the same id");
+    server.quit();
+}
+
 /// A peer that edits shared samples writes into the cells and sends nothing,
 /// so `/buffer_touch` is how every *other* client learns the span changed.
 #[test]

@@ -2339,8 +2339,8 @@ mod window_verb_tests {
     /// The defect this pins (found 2026-09-13 by the user, on a standalone
     /// host): a join mints a source -- spans of the takes the table already
     /// holds -- and the document says plainly that it does not build one:
-    /// *"whoever has the samples fills it in when it realizes the join"*. The
-    /// Python client realizes it at edit time; this host realized it only when
+    /// *"whoever has the samples fills it in when it builds the join"*. The
+    /// Python client builds it at edit time; this host built it only when
     /// a session was **opened**, so a join made while one was open was built by
     /// nobody. The box then named a source with no buffer, which is a box that
     /// draws empty, plays nothing and -- since an edge stops at the source's

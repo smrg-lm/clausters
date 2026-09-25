@@ -4,6 +4,7 @@
 //! thread ([`super::super::async_pipes`]) and answers `/done` later; the
 //! queries here answer from the mirror in the same turn.
 
+use super::super::overviews::BASE_BUCKET;
 use super::super::*;
 use crate::osc::translate::{allocated, mirror_buffer};
 use clausters_core::osc::{push_sample, sample_blob};
@@ -395,7 +396,7 @@ impl OscServer {
         from: ClientId,
     ) -> Answer {
         let bufnum = args.int()?;
-        let bucket = args.opt_int()?.unwrap_or(256).max(1) as usize;
+        let bucket = args.opt_int()?.unwrap_or(BASE_BUCKET as i32).max(1) as usize;
         let start = args.opt_int()?.unwrap_or(0).max(0) as usize;
         let asked = args.opt_int()?.unwrap_or(-1);
         let buffer = allocated(&self.translator.buffers, bufnum)?;

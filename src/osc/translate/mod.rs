@@ -195,10 +195,10 @@ pub struct CmdTranslator {
     /// (installed by the server). Read when building a Faust instance so its
     /// `soundfile` zones can be filled from a server buffer.
     pub buffers: BufferPool,
-    /// per-channel MIDI bindings and the live voice table. Channel-voice
+    /// Per-channel MIDI bindings and the live voice table. Channel-voice
     /// messages actuate nodes through [`Self::translate_midi`].
     pub midi: MidiBindings,
-    /// loaded GraphDefs by name, the live instances by their group id,
+    /// Loaded GraphDefs by name, the live instances by their group id,
     /// and the private-bus allocators they draw from.
     pub graph_defs: HashMap<String, Arc<GraphDefSpec>>,
     pub graph_instances: HashMap<i32, GraphInstance>,

@@ -3688,9 +3688,17 @@ should confirm before the fix.
   (about 500, thirty flags parsed with the same two lines each, `nrt_main`
   holding a helper the other does not use); `ipc::Segment`'s eight
   telescoping constructors. Named steps, and no behaviour changes.
-- ⬜ **Minor** *(audit 2026-09-25)*. `/server_notify` answers a client id that
+- ✅ **Minor** *(audit 2026-09-25)*. `/server_notify` answers a client id that
   is its position in the list, so an earlier client leaving renumbers the
   others (no client reads it); a typo "where the the transport is";
   `/buffer_peaks` defaults its bucket to a literal 256 beside `BASE_BUCKET`;
   `MAX_NODES` and `Limits::default().max_nodes` kept equal by a comment; a
   few docs starting lowercase and one "realized" in prose.
+  **Fixed**: a notify client keeps the id it was answered with
+  (`a_notify_id_survives_an_earlier_client_leaving`); the typo; `/buffer_peaks`
+  defaults to `BASE_BUCKET`; `Limits::default()` reads `MAX_NODES`,
+  `MAX_GROUP_CHILDREN` and `NUM_BUFFERS` instead of copying them; the
+  lowercase sentence starts; "realize" for a join is "build" in the four
+  places that said it, the quoted document comment included. One doc in the
+  host's gesture tests had lost its first four lines in the host split and
+  has them back.

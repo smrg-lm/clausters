@@ -135,7 +135,7 @@ impl OscServer {
         self.reply(to, "/server_query.reply", args);
     }
 
-    /// the sample-clock query. Replies `/clock_query.reply` with the engine's
+    /// The sample-clock query. Replies `/clock_query.reply` with the engine's
     /// sample counter (int64 `h`), the actual sample rate (double `d`) and the
     /// server's OSC/NTP time captured with the counter (timetag `t`). The
     /// `(osc_time, sample)` pair is the master-clock **anchor**: a client maps
@@ -231,21 +231,23 @@ impl OscServer {
     ) -> Answer {
         match args.int()? {
             1 => {
-                let id = match self.clients.iter().position(|c| *c == from) {
-                    Some(i) => i + 1,
+                let id = match self.clients.iter().find(|(c, _)| *c == from) {
+                    Some((_, id)) => *id,
                     None => {
-                        self.clients.push(from);
+                        let id = self.next_notify_id;
+                        self.next_notify_id += 1;
+                        self.clients.push((from, id));
                         // The first subscriber shortens the loop's tick: a
                         // node event comes from the audio thread, which cannot
                         // wake it (`NOTIFY_INTERVAL`).
                         self.retune_timeout();
-                        self.clients.len()
+                        id
                     }
                 };
-                self.done_with(from, "/server_notify", vec![OscType::Int(id as i32)]);
+                self.done_with(from, "/server_notify", vec![OscType::Int(id)]);
             }
             0 => {
-                self.clients.retain(|c| *c != from);
+                self.clients.retain(|(c, _)| *c != from);
                 // And the last one hands the idle tick back.
                 self.retune_timeout();
                 self.done(from, "/server_notify");

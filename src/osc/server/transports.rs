@@ -62,7 +62,7 @@ impl OscServer {
         Ok(bound)
     }
 
-    /// opens a virtual MIDI input port named `port_name`. The `midir`
+    /// Opens a virtual MIDI input port named `port_name`. The `midir`
     /// input thread wakes the loop with a zero-length UDP datagram (same
     /// mechanism as TCP), so MIDI messages are served without waiting for the
     /// GC tick. See [`crate::midi::live`].
@@ -75,7 +75,7 @@ impl OscServer {
         Ok(())
     }
 
-    /// attaches the ring endpoint of an IPC segment. The run loop then
+    /// Attaches the ring endpoint of an IPC segment. The run loop then
     /// drains it on every iteration; to keep ring latency low without a
     /// cross-process semaphore (v1 trade-off), the socket timeout -- the
     /// loop's tick -- is shortened.
@@ -165,7 +165,7 @@ impl OscServer {
         Err("sharing samples needs a Unix segment".into())
     }
 
-    /// handles every packet waiting in the attached ring. Same
+    /// Handles every packet waiting in the attached ring. Same
     /// validation path as UDP (`decode_packet`); ring bytes are untrusted.
     pub(in crate::osc::server) fn drain_ring(&mut self) -> Flow {
         self.drain_ring_limited(usize::MAX)
@@ -253,7 +253,7 @@ impl OscServer {
         Flow::Continue
     }
 
-    /// translates every queued live-MIDI message into engine commands and
+    /// Translates every queued live-MIDI message into engine commands and
     /// ships them. Each message is self-contained (one note/control event), so
     /// it is handled like the immediate OSC forms: `translate_midi` (which
     /// reuses the `/synth_new`/`/node_set`/`/node_free` path and keeps the tree mirror in
