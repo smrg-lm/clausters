@@ -3137,6 +3137,45 @@ fn d_load_reads_a_synthdef_from_disk() {
     server.quit();
 }
 
+/// A def read from a file takes its name from whatever kind held it, as one
+/// sent over the wire does: one name, one def.
+#[test]
+fn d_load_claims_the_name_from_a_graphdef() {
+    let server = TestServer::spawn();
+    let source = r#"{
+        "name": "claim_src",
+        "controls": [{"name": "out", "default": 0.0}],
+        "ugens": [{"kind": "Out", "inputs": [{"control": 0}, {"const": 0.0}]}]
+    }"#;
+    let graph = r#"{"name": "claimed", "members": [{"def": "claim_src"}]}"#;
+    for (family, def) in [("synth", source), ("graph", graph)] {
+        server.send(
+            "/def_send",
+            vec![OscType::String(family.into()), OscType::String(def.into())],
+        );
+        server.recv_until("/done");
+    }
+    let path = std::env::temp_dir().join(format!("clausters_d_claim_{}.json", std::process::id()));
+    std::fs::write(&path, source.replace("claim_src", "claimed")).unwrap();
+    server.send(
+        "/def_load",
+        vec![OscType::String(path.to_string_lossy().into())],
+    );
+    server.recv_until("/done");
+    std::fs::remove_file(&path).ok();
+
+    // The listing names a def once per kind that holds it; a query by name
+    // would answer the first kind found and hide the second.
+    server.send("/def_query", vec![]);
+    let infos = server.recv_batch("/def_query.reply", "/def_query");
+    let held = infos
+        .iter()
+        .filter(|m| m.args[0] == OscType::String("claimed".into()))
+        .count();
+    assert_eq!(held, 1, "the GraphDef still holds the name");
+    server.quit();
+}
+
 #[test]
 fn d_load_missing_file_fails() {
     let server = TestServer::spawn();

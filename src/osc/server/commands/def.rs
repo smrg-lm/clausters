@@ -63,17 +63,26 @@ impl OscServer {
         Ok(())
     }
 
+    /// Installs one SynthDef spec: compiles it, gives it its name and persists
+    /// it unless the name is ephemeral. `/def_send synth`, `/def_load` and
+    /// `/def_loadDir` all install through it, so a def read from a file claims
+    /// its name like one sent over the wire.
+    fn install_synthdef(&mut self, args: &[OscType]) -> Result<String, String> {
+        let name = self.translator.d_recv(args)?;
+        self.claim_def_name(&name, DefKind::Synth);
+        if let Some(store) = &self.store
+            && !defstore::is_ephemeral(&name)
+            && let Some(spec) = synthdef_spec_bytes(args)
+            && let Err(e) = store.save_synthdef(&name, spec)
+        {
+            error!("could not persist SynthDef '{name}': {e}");
+        }
+        Ok(name)
+    }
+
     fn handle_def_send_synth(&mut self, args: &[OscType], from: ClientId) {
-        match self.translator.d_recv(args) {
-            Ok(name) => {
-                self.claim_def_name(&name, DefKind::Synth);
-                if let Some(store) = &self.store
-                    && !defstore::is_ephemeral(&name)
-                    && let Some(spec) = synthdef_spec_bytes(args)
-                    && let Err(e) = store.save_synthdef(&name, spec)
-                {
-                    error!("could not persist SynthDef '{name}': {e}");
-                }
+        match self.install_synthdef(args) {
+            Ok(_) => {
                 self.reply(
                     from,
                     "/done",
@@ -165,21 +174,13 @@ impl OscServer {
         Ok(())
     }
 
-    /// Reads one SynthDef spec file, compiles it through the `/def_send synth` path and
-    /// persists it under its name. Shared by `/def_load` and `/def_loadDir`.
+    /// Reads one SynthDef spec file and installs it as `/def_send synth` does.
+    /// Shared by `/def_load` and `/def_loadDir`.
     fn load_synthdef_file(&mut self, path: &std::path::Path) -> Result<(), String> {
         let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        let args = [OscType::Blob(bytes.clone())];
-        let name = self
-            .translator
-            .d_recv(&args)
-            .map_err(|e| format!("{}: {e}", path.display()))?;
-        if let Some(store) = &self.store
-            && let Err(e) = store.save_synthdef(&name, &bytes)
-        {
-            error!("could not persist SynthDef '{name}': {e}");
-        }
-        Ok(())
+        self.install_synthdef(&[OscType::Blob(bytes)])
+            .map(|_| ())
+            .map_err(|e| format!("{}: {e}", path.display()))
     }
 
     /// `/def_query [name...]` -> one `/def_query.reply` per def, then `/done "/def_query"`

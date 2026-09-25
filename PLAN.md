@@ -3494,11 +3494,16 @@ should confirm before the fix.
   and checks both the `/fail` and the query. The two unbinds
   `collect_garbage` sends when a governed or followed group is freed stay
   best-effort: no client asked for them, so there is nobody to fail to.
-- ⬜ **`/def_load` does not claim the def's name** *(audit 2026-09-25, to
+- ✅ **`/def_load` does not claim the def's name** *(audit 2026-09-25, to
   check)*. `/def_send synth` frees the name in the other def kinds
   (`claim_def_name`); `/def_load` and `/def_loadDir` do not, so a file loaded
   under a GraphDef's or a FaustDef's name leaves both — what `claim_def_name`
   exists to prevent — and they persist an ephemeral name without asking.
+  **Fixed**, confirmed first by a listing that named the def twice:
+  `install_synthdef` is the one install (compile, claim, persist unless
+  ephemeral) that `/def_send synth` and the file loads share.
+  `d_load_claims_the_name_from_a_graphdef` counts the name in the listing — a
+  query by name answers the first kind found and could not see the second.
 - ⬜ **`/node_before` and `/node_after` move by a rule of their own** *(audit
   2026-09-25)*. They inline the move instead of `move_one`, and refuse when
   the node's or the target's *current* parent is auto-sorted, where
