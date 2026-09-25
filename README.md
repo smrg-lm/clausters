@@ -24,8 +24,9 @@ The project is a workspace with several coordinated parts:
   library and embeddable in-process through a C ABI.
 - **`crates/`** — the shared native core (`clausters-core`/`clausters-ffi`:
   numeric builtins, seeded noise and clock math compiled once for server and
-  clients) and `clausters-midi` (Standard MIDI File / MIDI 2.0 clip writing and
-  live virtual-port output).
+  clients), `clausters-midi` (Standard MIDI File / MIDI 2.0 clip writing and
+  live virtual-port output) and `clausters-net` (the TCP and WebSocket
+  carriers the server and the GUI host both serve OSC on).
 - **[`clients/python`](clients/python/README.md)** — the reference client, a
   selective port of SuperCollider's class library covering both def formats:
   patterns and events, routines and clocks, responders, live and offline

@@ -3604,12 +3604,23 @@ should confirm before the fix.
   `tap_window_cap` instead of restating it. The subscriptions' parse and
   replace-per-client stay per command — they read different arguments and
   hold different watches.
-- ⬜ **Four stream-transport implementations** *(audit 2026-09-25)*. TCP and
+- ✅ **Four stream-transport implementations** *(audit 2026-09-25)*. TCP and
   WebSocket in `src/osc` and again in `clients/gui/src/host`: `next_frame` 0.97
   alike, `local_addr` identical, `write_frame`, `reply`, the connection loop
   0.8, and the server's own TCP and WS `bind` 0.90 alike; two `ClientId` enums
   with the same carriers. The framing and the hub (slots, wake, a thread per
   connection, a frame queue) are one thing both ends could link from the core.
+  **Fixed**: `crates/clausters-net` holds both carriers once -- the framing,
+  the acceptor and connection threads, `ClientSlots`, the `Waker`, one generic
+  `Hub` over a `Conn` reply handle, and a sink seam the GUI's windowed front
+  feeds its event-loop proxy through. The host gains what only the server had:
+  the client ceiling, the TCP reply write timeout, the bounded headless queue,
+  and a dropped connection on a failed TCP reply. Not a network dependency of
+  `clausters-core`. Found on the way: a TCP connection closed for a bad frame
+  prefix stayed open to its client until the loop drained the disconnect,
+  because the write half kept the socket alive; the reader now shuts it down.
+  The two `ClientId` enums stay two -- beside TCP and WS, one has the ring and
+  the other the page, which is what each front actually serves.
 - ✅ **Writing one control is written six times** *(audit 2026-09-25)*. In
   `osc::translate`, `/node_set`, `_setRange`, `_fill`, `_map`, `_mapRange` share
   the walk (id, unknown node, control targets, the def, the hit flag,

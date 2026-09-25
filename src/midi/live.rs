@@ -6,7 +6,7 @@
 //! kernel, `aconnect`, a DAW) drives the engine. (Network MIDI is a separate
 //! idea, deliberately out of scope here.)
 //!
-//! Threading mirrors the TCP transport ([`crate::osc::tcp`]): `midir` runs the
+//! Threading mirrors the TCP transport ([`clausters_net::tcp`]): `midir` runs the
 //! input callback on **its own thread**, which decodes each MIDI 1.0 message
 //! ([`super::parse_midi1`], widening to the internal high-resolution form) and
 //! hands it to the single-threaded command loop over an

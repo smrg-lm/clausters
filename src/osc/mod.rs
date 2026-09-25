@@ -5,13 +5,8 @@ pub(crate) mod args;
 pub mod graph;
 pub mod graphdef;
 pub mod server;
-pub mod tcp;
 pub mod translate;
 pub mod wake;
-// The WebSocket hub rides tungstenite, which cannot build for wasm32 (and an
-// in-page engine has no use for a socket server front) -- native only.
-#[cfg(not(target_arch = "wasm32"))]
-pub mod ws;
 
 use std::net::SocketAddr;
 
@@ -20,13 +15,13 @@ use rosc::OscPacket;
 /// Where a request came from and where its replies go: the OSC
 /// *encoding* is transport-independent, so client identity is too. `Udp` is
 /// a remote socket; `Tcp(id)` is a connected TCP client (the per-connection id
-/// from `tcp`); `Ring(peer)` is one of the shared-memory / in-process ring
+/// from `clausters_net::tcp`); `Ring(peer)` is one of the shared-memory / in-process ring
 /// clients of `server::ipc`, by the tag its frames carry.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum ClientId {
     Udp(SocketAddr),
     Tcp(u64),
-    /// A connected WebSocket client (the per-connection id from `ws`).
+    /// A connected WebSocket client (the per-connection id from `clausters_net::ws`).
     Ws(u64),
     /// A client on the shared-memory / in-process ring, by the peer tag its
     /// frames carry (`server::ipc`). One segment serves several -- a script and
@@ -56,55 +51,10 @@ pub use clausters_core::osc::DEFAULT_MAX_FRAME;
 /// the core for the same reason (see the constant's own docs).
 pub use clausters_core::osc::DEFAULT_MAX_STREAM_BUSES;
 
-/// Default ceiling for concurrent stream clients (TCP + WebSocket combined,
-/// `--max-clients`). Each connection costs a thread and queue slots, so the
-/// count is bounded like every other boot-time pool -- a DoS guard in the
-/// spirit of scsynth's `maxLogins`, sized generously for the target
-/// deployments (a session rarely holds more than a handful of clients). UDP
-/// is connectionless and unaffected.
-pub const DEFAULT_MAX_CLIENTS: usize = 64;
-
-/// Live stream-client slots, shared by the TCP and WebSocket acceptors so the
-/// `--max-clients` ceiling bounds both fronts together. An acceptor takes a
-/// slot per connection ([`try_acquire`](Self::try_acquire)) and the returned
-/// guard gives it back when the connection's thread exits.
-pub struct ClientSlots {
-    live: std::sync::atomic::AtomicUsize,
-    max: usize,
-}
-
-impl ClientSlots {
-    pub fn new(max: usize) -> Self {
-        Self {
-            live: std::sync::atomic::AtomicUsize::new(0),
-            max,
-        }
-    }
-
-    /// Claims a slot, or `None` when the ceiling is reached (the acceptor
-    /// drops the connection). The guard releases the slot on drop, covering
-    /// every exit path of a connection thread.
-    pub fn try_acquire(self: &std::sync::Arc<Self>) -> Option<SlotGuard> {
-        use std::sync::atomic::Ordering;
-        self.live
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                (n < self.max).then_some(n + 1)
-            })
-            .ok()
-            .map(|_| SlotGuard(std::sync::Arc::clone(self)))
-    }
-}
-
-/// Releases its [`ClientSlots`] slot on drop.
-pub struct SlotGuard(std::sync::Arc<ClientSlots>);
-
-impl Drop for SlotGuard {
-    fn drop(&mut self) {
-        self.0
-            .live
-            .fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
-    }
-}
+/// The stream carriers' client ceiling: its default, sized in the transport
+/// crate, and the slots the TCP and WebSocket acceptors share so
+/// `--max-clients` bounds both fronts together.
+pub use clausters_net::{ClientSlots, DEFAULT_MAX_CLIENTS};
 
 /// Decodes one OSC packet -- the single decode entry point every transport
 /// funnels through (UDP datagrams and IPC ring contents alike), so decoding and

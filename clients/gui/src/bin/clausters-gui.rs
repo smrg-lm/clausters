@@ -546,11 +546,15 @@ fn run(args: &[String]) -> Result<(), String> {
             tracing::warn!("--shm has no effect headless (meters need a window)");
         }
         // The TCP/WS legs' readers wake the serve loop through its own UDP
-        // socket.
+        // socket, and share one client ceiling.
+        let slots = std::sync::Arc::new(clausters_net::ClientSlots::new(
+            clausters_net::DEFAULT_MAX_CLIENTS,
+        ));
         let hub = match tcp_bind {
             Some(bind) => {
                 let hub =
-                    transport::bind_tcp(&socket, bind, max_frame).map_err(|e| e.to_string())?;
+                    transport::bind_tcp(&socket, bind, max_frame, std::sync::Arc::clone(&slots))
+                        .map_err(|e| e.to_string())?;
                 tracing::info!(
                     "clausters-gui host listening on tcp://{} (script -> host)",
                     hub.local_addr()
@@ -562,7 +566,8 @@ fn run(args: &[String]) -> Result<(), String> {
         let ws_hub = match ws_bind {
             Some(bind) => {
                 let hub =
-                    transport::bind_ws(&socket, bind, max_frame).map_err(|e| e.to_string())?;
+                    transport::bind_ws(&socket, bind, max_frame, std::sync::Arc::clone(&slots))
+                        .map_err(|e| e.to_string())?;
                 tracing::info!(
                     "clausters-gui host listening on ws://{} (script -> host, browser-reachable)",
                     hub.local_addr()

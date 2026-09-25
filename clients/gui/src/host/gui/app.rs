@@ -4,11 +4,14 @@
 //! bound-vs-event delivery door, the animation tick and the shared-frame render.
 
 use std::collections::HashMap;
-use std::net::{TcpStream, UdpSocket};
+use std::net::UdpSocket;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use clausters_core::osc::{OscMessage, OscPacket, encode};
+use clausters_net::Conn;
+use clausters_net::tcp::TcpConn;
+use clausters_net::ws::WsConn;
 use tracing::warn;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
@@ -89,13 +92,12 @@ pub(super) struct App {
     pub(super) shm: Option<Arc<dyn BusSource>>,
     pub(super) windows: HashMap<i32, WindowState>,
     pub(super) by_winit: HashMap<WindowId, i32>,
-    /// TCP write halves by connection id (the script front's stream carrier);
+    /// TCP reply handles by connection id (the script front's stream carrier);
     /// registered on `TcpConnected`, pruned on `TcpDisconnected`.
-    pub(super) tcp_conns: HashMap<u64, TcpStream>,
-    /// WebSocket reply channels by connection id (each connection's thread
-    /// writes them; the raw handle force-drops a slow consumer); registered
-    /// on `WsConnected`, pruned on `WsDisconnected`.
-    pub(super) ws_conns: HashMap<u64, (std::sync::mpsc::SyncSender<Vec<u8>>, TcpStream)>,
+    pub(super) tcp_conns: HashMap<u64, TcpConn>,
+    /// WebSocket reply handles by connection id; registered on `WsConnected`,
+    /// pruned on `WsDisconnected`.
+    pub(super) ws_conns: HashMap<u64, WsConn>,
     /// Window opens requested before the first `resumed`, flushed on resume.
     pub(super) pending: Vec<(i32, ClientId)>,
     pub(super) resumed: bool,
@@ -319,18 +321,19 @@ impl App {
                     warn!("failed to send {addr} to {to}: {e}");
                 }
             }
+            // Back on the originating connection, or nowhere if it has since
+            // closed (its Disconnected event prunes it); a client that stopped
+            // reading is dropped rather than waited for.
             ClientId::Tcp(id) => {
-                // Length-prefixed on the originating connection; dropped if it
-                // has since closed (TcpDisconnected prunes it).
-                if let Some(stream) = self.tcp_conns.get(&id)
-                    && let Err(e) = crate::host::tcp::write_frame(stream, &bytes)
-                {
-                    warn!("failed to send {addr} to tcp client {id}: {e}");
+                if let Some(conn) = self.tcp_conns.get(&id) {
+                    conn.reply(id, &bytes);
                 }
             }
-            // Queued to the originating connection's thread, which writes it
-            // as one binary message (WsDisconnected prunes it).
-            ClientId::Ws(id) => crate::host::ws::reply(&self.ws_conns, id, &bytes),
+            ClientId::Ws(id) => {
+                if let Some(conn) = self.ws_conns.get(&id) {
+                    conn.reply(id, &bytes);
+                }
+            }
             // The wasm front never reaches the native event loop.
             ClientId::Web => warn!("reply {addr} to a web client on the native front"),
         }
@@ -508,8 +511,8 @@ impl ApplicationHandler<UserEvent> for App {
                 let effects = self.host.handle_packet(packet, from);
                 self.apply(event_loop, from, effects);
             }
-            UserEvent::TcpConnected { id, stream } => {
-                self.tcp_conns.insert(id, stream);
+            UserEvent::TcpConnected { id, conn } => {
+                self.tcp_conns.insert(id, conn);
             }
             UserEvent::TcpOsc { id, bytes } => {
                 let packet = match clausters_core::osc::decode_packet(&bytes) {
@@ -523,8 +526,8 @@ impl ApplicationHandler<UserEvent> for App {
             UserEvent::TcpDisconnected { id } => {
                 self.tcp_conns.remove(&id);
             }
-            UserEvent::WsConnected { id, reply, raw } => {
-                self.ws_conns.insert(id, (reply, raw));
+            UserEvent::WsConnected { id, conn } => {
+                self.ws_conns.insert(id, conn);
             }
             UserEvent::WsOsc { id, bytes } => {
                 let packet = match clausters_core::osc::decode_packet(&bytes) {

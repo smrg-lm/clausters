@@ -153,11 +153,7 @@ pub mod client;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod store;
 #[cfg(not(target_arch = "wasm32"))]
-pub mod tcp;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod transport;
-#[cfg(not(target_arch = "wasm32"))]
-pub mod ws;
 
 // Reading the audio server's shared-memory segment for zero-message meters and
 // scopes: the native [`BusSource`]. Unix-only, as the server's segment is.

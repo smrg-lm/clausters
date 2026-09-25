@@ -41,7 +41,8 @@ impl OscServer {
         // Reader threads wake the loop by pinging the UDP socket.
         let wake_target = self.wake_target()?;
         let slots = self.client_slots();
-        let hub = crate::osc::tcp::TcpHub::bind(addr, wake_target, self.max_frame, slots)?;
+        let waker = clausters_net::Waker::to(wake_target)?;
+        let hub = clausters_net::tcp::hub(addr, waker, self.max_frame, slots)?;
         let bound = hub.local_addr();
         self.tcp = Some(hub);
         Ok(bound)
@@ -56,7 +57,8 @@ impl OscServer {
     pub fn listen_ws(&mut self, addr: impl ToSocketAddrs) -> io::Result<SocketAddr> {
         let wake_target = self.wake_target()?;
         let slots = self.client_slots();
-        let hub = crate::osc::ws::WsHub::bind(addr, wake_target, self.max_frame, slots)?;
+        let waker = clausters_net::Waker::to(wake_target)?;
+        let hub = clausters_net::ws::hub(addr, waker, self.max_frame, slots)?;
         let bound = hub.local_addr();
         self.ws = Some(hub);
         Ok(bound)

@@ -223,6 +223,7 @@ dependencies = [
  "clausters-core",
  "clausters-document",
  "clausters-editing",
+ "clausters-net",
  "cpal",
  "hound",
  "libc",
@@ -235,7 +236,6 @@ dependencies = [
  "symphonia",
  "tracing",
  "tracing-subscriber",
- "tungstenite",
 ]
 
 [[package]]
@@ -318,6 +318,14 @@ dependencies = [
  "midi2",
  "midir",
  "midly",
+]
+
+[[package]]
+name = "clausters-net"
+version = "0.11.0"
+dependencies = [
+ "tracing",
+ "tungstenite",
 ]
 
 [[package]]

@@ -41,6 +41,7 @@ use crate::faust::compiler::{CacheJob, CompilePayload, CompileRequest, CompilerT
 use crate::node::MAX_NODES;
 use crate::osc::ClientId;
 use crate::osc::translate::{CmdTranslator, control_key, parse_buffer_gen, parse_buffer_msg};
+use clausters_net::loopback;
 
 use crate::server::clock_axis::TransportSample;
 use crate::server::defstore::{self, DefKind, DefStore};
@@ -244,14 +245,14 @@ pub struct OscServer {
     #[cfg_attr(not(unix), allow(dead_code))]
     overviews: overviews::Overviews,
     /// TCP transport, when `listen_tcp` was called: accepts length-prefixed OSC
-    /// connections multiplexed into the same loop. See [`crate::osc::tcp`].
-    tcp: Option<crate::osc::tcp::TcpHub>,
+    /// connections multiplexed into the same loop. See [`clausters_net::tcp`].
+    tcp: Option<clausters_net::tcp::TcpHub>,
     /// WebSocket transport, when `listen_ws` was called: the same OSC encoding
     /// over WebSocket binary messages, reachable from a browser. Multiplexed
-    /// into the same loop as TCP. See [`crate::osc::ws`]. Native only: on
+    /// into the same loop as TCP. See [`clausters_net::ws`]. Native only: on
     /// wasm32 the engine lives in the page and is fed through the ring.
     #[cfg(not(target_arch = "wasm32"))]
-    ws: Option<crate::osc::ws::WsHub>,
+    ws: Option<clausters_net::ws::WsHub>,
     /// Live MIDI input, when `listen_midi` was called: a virtual ALSA port
     /// whose decoded messages the loop drains. See [`crate::midi::live`].
     #[cfg(feature = "midi")]
@@ -795,19 +796,6 @@ fn ugen_info(d: &crate::dsp::registry::UGenDescriptor) -> Vec<OscType> {
 
 /// Seconds between the NTP epoch (1900) and the Unix epoch (1970).
 const NTP_UNIX_OFFSET: f64 = 2_208_988_800.0;
-
-/// `addr` with an unspecified bind address read as loopback on the same port:
-/// where a wake datagram to this server is aimed, since a datagram has to be
-/// aimed somewhere reachable.
-fn loopback(mut addr: SocketAddr) -> SocketAddr {
-    if addr.ip().is_unspecified() {
-        addr.set_ip(match addr {
-            SocketAddr::V4(_) => std::net::Ipv4Addr::LOCALHOST.into(),
-            SocketAddr::V6(_) => std::net::Ipv6Addr::LOCALHOST.into(),
-        });
-    }
-    addr
-}
 
 /// The current wall-clock instant as an OSC/NTP timetag (seconds since 1900 in
 /// a 32-bit count, plus a 32-bit binary fraction) -- the inverse of the NTP->Unix

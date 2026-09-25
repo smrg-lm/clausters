@@ -3,9 +3,9 @@
 //!
 //! Three carriers behind the one [`ClientId`] seam, mirroring the audio
 //! server's own: **UDP** (a datagram per packet), **TCP** (length-prefixed
-//! frames, [`super::tcp`], on by default -- the command plane for payloads a
+//! frames, [`clausters_net::tcp`], on by default -- the command plane for payloads a
 //! datagram cannot carry, a whole `/gui_def` tree first among them) and
-//! **WebSocket** ([`super::ws`], opt-in with `--ws` -- one OSC packet per
+//! **WebSocket** ([`clausters_net::ws`], opt-in with `--ws` -- one OSC packet per
 //! binary message, the browser's carrier into a native host). Every inbound
 //! byte string decodes through the single shared
 //! [`clausters_core::osc::decode_packet`] door, is handed to [`Host`], and the
@@ -20,8 +20,12 @@ use std::net::{SocketAddr, UdpSocket};
 
 use clausters_core::osc::{OscMessage, OscPacket, encode};
 
-use super::tcp::TcpHub;
-use super::ws::WsHub;
+use std::sync::Arc;
+
+use clausters_net::tcp::TcpHub;
+use clausters_net::ws::WsHub;
+use clausters_net::{ClientSlots, Waker};
+
 use super::{ClientId, Host, HostEffect};
 
 /// The default port for the GUI host's server front (UDP and TCP alike).
@@ -31,9 +35,15 @@ pub const DEFAULT_PORT: u16 = 57210;
 
 /// Binds the script front's TCP leg at `bind` for the headless loop: the
 /// hub's reader threads wake `socket` (the front's own UDP socket) with a
-/// zero-length datagram whenever a frame is queued.
-pub fn bind_tcp(socket: &UdpSocket, bind: SocketAddr, max_frame: usize) -> io::Result<TcpHub> {
-    TcpHub::bind(bind, wake_target(socket)?, max_frame)
+/// zero-length datagram whenever a frame is queued. `slots` is the client
+/// ceiling the TCP and WebSocket legs share.
+pub fn bind_tcp(
+    socket: &UdpSocket,
+    bind: SocketAddr,
+    max_frame: usize,
+    slots: Arc<ClientSlots>,
+) -> io::Result<TcpHub> {
+    clausters_net::tcp::hub(bind, waker(socket)?, max_frame, slots)
 }
 
 /// Binds the script front's WebSocket leg at `bind` for the headless loop --
@@ -41,19 +51,17 @@ pub fn bind_tcp(socket: &UdpSocket, bind: SocketAddr, max_frame: usize) -> io::R
 /// server's `--ws`, the flag defaults to loopback and an interface is named to
 /// widen it (a browser on another machine is a decision, not a side effect of
 /// asking for the carrier).
-pub fn bind_ws(socket: &UdpSocket, bind: SocketAddr, max_frame: usize) -> io::Result<WsHub> {
-    WsHub::bind(bind, wake_target(socket)?, max_frame)
+pub fn bind_ws(
+    socket: &UdpSocket,
+    bind: SocketAddr,
+    max_frame: usize,
+    slots: Arc<ClientSlots>,
+) -> io::Result<WsHub> {
+    clausters_net::ws::hub(bind, waker(socket)?, max_frame, slots)
 }
 
-fn wake_target(socket: &UdpSocket) -> io::Result<SocketAddr> {
-    let mut wake_target = socket.local_addr()?;
-    if wake_target.ip().is_unspecified() {
-        wake_target.set_ip(match wake_target {
-            SocketAddr::V4(_) => std::net::Ipv4Addr::LOCALHOST.into(),
-            SocketAddr::V6(_) => std::net::Ipv6Addr::LOCALHOST.into(),
-        });
-    }
-    Ok(wake_target)
+fn waker(socket: &UdpSocket) -> io::Result<Waker> {
+    Waker::to(clausters_net::loopback(socket.local_addr()?))
 }
 
 /// Runs the **headless** server front until an unrecoverable socket error:

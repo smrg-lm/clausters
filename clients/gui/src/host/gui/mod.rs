@@ -32,10 +32,13 @@ mod midi;
 mod serverleg;
 mod windows;
 
-use std::net::{Ipv4Addr, SocketAddr, TcpStream, UdpSocket};
+use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::Arc;
 use std::time::Duration;
 
+use clausters_net::tcp::TcpConn;
+use clausters_net::ws::WsConn;
+use clausters_net::{ClientSlots, Event};
 use tracing::{info, warn};
 use winit::event_loop::{ControlFlow, EventLoop, EventLoopProxy};
 
@@ -63,23 +66,18 @@ pub enum UserEvent {
     /// One OSC datagram from a script and where it came from (decoded on the main
     /// thread, through the single shared door, to keep all logic on one thread).
     Osc { from: SocketAddr, bytes: Vec<u8> },
-    /// A new TCP connection on the script front: its id and the write
-    /// half its replies go out through. The reader threads feed the event loop
+    /// A new TCP connection on the script front: its id and the handle its
+    /// replies go out through. The reader threads feed the event loop
     /// directly (no wake datagram needed -- the proxy *is* the wake).
-    TcpConnected { id: u64, stream: TcpStream },
+    TcpConnected { id: u64, conn: TcpConn },
     /// One framed OSC packet from TCP connection `id`.
     TcpOsc { id: u64, bytes: Vec<u8> },
     /// TCP connection `id` closed; its write half is dropped.
     TcpDisconnected { id: u64 },
-    /// A new WebSocket connection on the script front (`--ws`): its id, the
-    /// channel its replies are queued through (the connection thread writes
-    /// them -- a tungstenite socket owns both halves) and the raw handle an
-    /// overflowing reply force-drops it with.
-    WsConnected {
-        id: u64,
-        reply: std::sync::mpsc::SyncSender<Vec<u8>>,
-        raw: TcpStream,
-    },
+    /// A new WebSocket connection on the script front (`--ws`): its id and
+    /// the handle its replies are queued through (the connection thread
+    /// writes them -- a WebSocket owns both halves of its socket).
+    WsConnected { id: u64, conn: WsConn },
     /// One OSC packet (a binary message) from WebSocket connection `id`.
     WsOsc { id: u64, bytes: Vec<u8> },
     /// WebSocket connection `id` closed; its reply channel is dropped.
@@ -125,16 +123,16 @@ pub fn run(
         .name("clausters-gui-osc".into())
         .spawn(move || transport_loop(recv_socket, script_proxy))
         .map_err(|e| e.to_string())?;
+    // The stream legs share one client ceiling, like the audio server's.
+    let slots = Arc::new(ClientSlots::new(clausters_net::DEFAULT_MAX_CLIENTS));
     // The framed TCP leg of the same front, straight into the event loop.
     if let Some((bind, max_frame)) = tcp {
         let tcp_proxy = proxy.clone();
-        let bound = super::tcp::bind_with_sink(bind, max_frame, move |event| {
+        let bound = clausters_net::tcp::bind(bind, max_frame, Arc::clone(&slots), move |event| {
             let user_event = match event {
-                super::tcp::TcpEvent::Connected(id, stream) => {
-                    UserEvent::TcpConnected { id, stream }
-                }
-                super::tcp::TcpEvent::Frame(id, bytes) => UserEvent::TcpOsc { id, bytes },
-                super::tcp::TcpEvent::Disconnected(id) => UserEvent::TcpDisconnected { id },
+                Event::Connected(id, conn) => UserEvent::TcpConnected { id, conn },
+                Event::Frame(id, bytes) => UserEvent::TcpOsc { id, bytes },
+                Event::Disconnected(id) => UserEvent::TcpDisconnected { id },
             };
             tcp_proxy.send_event(user_event).is_ok()
         })
@@ -145,13 +143,11 @@ pub fn run(
     // the connection threads feed the event loop through its proxy.
     if let Some((bind, max_frame)) = ws {
         let ws_proxy = proxy.clone();
-        let bound = super::ws::bind_with_sink(bind, max_frame, move |event| {
+        let bound = clausters_net::ws::bind(bind, max_frame, Arc::clone(&slots), move |event| {
             let user_event = match event {
-                super::ws::WsEvent::Connected(id, reply, raw) => {
-                    UserEvent::WsConnected { id, reply, raw }
-                }
-                super::ws::WsEvent::Frame(id, bytes) => UserEvent::WsOsc { id, bytes },
-                super::ws::WsEvent::Disconnected(id) => UserEvent::WsDisconnected { id },
+                Event::Connected(id, conn) => UserEvent::WsConnected { id, conn },
+                Event::Frame(id, bytes) => UserEvent::WsOsc { id, bytes },
+                Event::Disconnected(id) => UserEvent::WsDisconnected { id },
             };
             ws_proxy.send_event(user_event).is_ok()
         })
