@@ -864,12 +864,13 @@ wrong.
   cursor at a zoom that draws samples.
 
 - ⬜ **A looping selection does not follow a new selection** *(the user,
-  2026-09-25)*. Before X7 the audio editor's window played through the
-  host's monitor, and a sweep moved the monitor's loop live
-  (`transport_follows_selection`). Since X7 the window plays its own take
-  (`plays`) on the editor's transport, and the sweep still sets the loop of
-  the monitor's -- which is not sounding. The editor's `selection` arm keeps
-  the span for the next play and tells the playback nothing. It has to
-  answer a new selection, while a loop plays, with the playback's
-  `set_loop`, bound for both clients; and the host has to leave the
-  monitor's loop alone in a window that plays itself.
+  2026-09-25)*. Redrawing the selection while it loops leaves the loop on
+  the old span. It was never otherwise in the audio editor opened from a
+  client: the live follow (`transport_follows_selection`) is the host
+  monitor's, and it acts only in a host that owns the transport -- a
+  standalone session (`bin/clausters-gui.rs`) -- while the editor's
+  `selection` arm, before X7 and after it, keeps the span for the next play
+  and tells the playback nothing. It has to answer a new selection, while a
+  loop plays, with the playback's `set_loop`, bound for both clients; and
+  in a window that plays itself the host's sweep should not touch the
+  monitor's loop.
