@@ -363,6 +363,45 @@ fn manual_moves_fail_inside_auto_groups() {
     server.quit();
 }
 
+/// A move is refused by its **destination** only, whichever command spells
+/// it: taking a node out of an auto group is not ordering inside it, and
+/// `/node_after` allows it as `/group_tail` does.
+#[test]
+fn a_node_leaves_an_auto_group_by_any_move() {
+    let server = Server::spawn();
+    for (id, target) in [(100, 0), (200, 0)] {
+        server.send(
+            "/group_new",
+            vec![OscType::Int(id), OscType::Int(1), OscType::Int(target)],
+        );
+    }
+    server.send("/group_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
+    for (id, group) in [(1001, 100), (1002, 100), (1003, 100), (2001, 200)] {
+        server.send(
+            "/synth_new",
+            vec![
+                OscType::String("default".into()),
+                OscType::Int(id),
+                OscType::Int(1),
+                OscType::Int(group),
+            ],
+        );
+    }
+    server.send("/node_after", vec![OscType::Int(1001), OscType::Int(2001)]);
+    server.wait_for_order(200, &[2001, 1001]);
+    server.send("/group_tail", vec![OscType::Int(200), OscType::Int(1002)]);
+    server.wait_for_order(200, &[2001, 1001, 1002]);
+    // Into the auto group is still refused, by either spelling.
+    for (addr, args) in [("/node_before", [2001, 1003]), ("/group_head", [100, 2001])] {
+        server.send(addr, args.map(OscType::Int).to_vec());
+        assert_eq!(
+            server.recv_until("/fail").args[0],
+            OscType::String(addr.into())
+        );
+    }
+    server.quit();
+}
+
 #[test]
 fn g_sort_mode_rejects_missing_or_non_groups() {
     let server = Server::spawn();

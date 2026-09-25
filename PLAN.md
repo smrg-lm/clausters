@@ -3504,11 +3504,15 @@ should confirm before the fix.
   ephemeral) that `/def_send synth` and the file loads share.
   `d_load_claims_the_name_from_a_graphdef` counts the name in the listing — a
   query by name answers the first kind found and could not see the second.
-- ⬜ **`/node_before` and `/node_after` move by a rule of their own** *(audit
+- ✅ **`/node_before` and `/node_after` move by a rule of their own** *(audit
   2026-09-25)*. They inline the move instead of `move_one`, and refuse when
   the node's or the target's *current* parent is auto-sorted, where
   `/node_order` and `/group_head` refuse only an auto-sorted *destination*.
   One move, one rule.
+  **Fixed**: both go through `move_one`, so every move verb refuses an
+  auto-sorted destination and allows taking a node out of one.
+  `a_node_leaves_an_auto_group_by_any_move` holds it; `docs/auto-order.md`
+  and `docs/schemas.md` now state the destination rule.
 - ⬜ **`install_buffer` says it is the install path and is not** *(audit
   2026-09-25)*. Its doc and `ClaustersHeadless::buffer_load`'s say "the same
   install path as the async `/buffer_*` commands", but it skips

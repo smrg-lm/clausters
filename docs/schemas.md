@@ -121,7 +121,7 @@ The clients build this as a label you pass at creation: `Group("mixer")` / `Grou
 
 Execution order within a group is the child order, and these commands rewrite it. `/node_before id target` / `/node_after id target` move a node just before/after a sibling (any number of `id target` pairs). `/group_head group id` / `/group_tail group id` move a node to the **head/tail** of a group (pairs of `group id`). `/node_order addAction target id...` moves **several** nodes to one place at once, keeping their listed order: `addAction` selects `0` head of the target group, `1` tail, `2` before the target node, `3` after it.
 
-All of these are disabled inside an **auto-sorted group** (`/group_sortMode … 1`): there the execution order is recomputed from the bus-connection DAG, so a manual move replies `/fail` — use auto-sort, or a manually-ordered group, but not both. (This is why `/node_order` earns its place only in manual groups: it is a batch `/node_before`/`/node_after`/`/group_head`/`/group_tail`.)
+All of these are disabled into an **auto-sorted group** (`/group_sortMode … 1`): there the execution order is recomputed from the bus-connection DAG, so a manual move whose destination is one replies `/fail` (moving a node out of one is allowed) — use auto-sort, or a manually-ordered group, but not both. (This is why `/node_order` earns its place only in manual groups: it is a batch `/node_before`/`/node_after`/`/group_head`/`/group_tail`.)
 
 ### Control buses (`/bus_set`, `/bus_setRange`, `/bus_fill`, `/bus_get`, `/bus_getRange`, `/bus_stream`)
 

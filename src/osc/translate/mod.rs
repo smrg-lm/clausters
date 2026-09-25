@@ -679,7 +679,8 @@ impl CmdTranslator {
         Ok(())
     }
 
-    /// One node move shared by `/node_order`, `/group_head` and `/group_tail`: rejects
+    /// One node move shared by `/node_order`, `/node_before`, `/node_after`,
+    /// `/group_head` and `/group_tail`: rejects
     /// moving into an auto-sorted group, emits the `Cmd::MoveNode`, and re-sorts
     /// the affected auto ancestors. `target` is a sibling (Before/After) or the
     /// destination group (Head/Tail).
@@ -1111,32 +1112,7 @@ impl CmdTranslator {
                     let [OscType::Int(id), OscType::Int(target)] = pair else {
                         return Err("expected int (nodeID, targetID) pairs".into());
                     };
-                    // Manual ordering is the auto group's job.
-                    for node in [*id, *target] {
-                        if self
-                            .mirror
-                            .parent(node)
-                            .is_some_and(|p| self.mirror.is_auto_group(p))
-                        {
-                            return Err(format!(
-                                "node {node} is in an auto-sorted group (/group_sortMode): manual moves are disabled there"
-                            ));
-                        }
-                    }
-                    cmds.push(Cmd::MoveNode {
-                        id: *id,
-                        target: *target,
-                        place,
-                    });
-                    // Reparenting can change the bus usage of auto ancestors.
-                    if let Some((old_parent, new_parent)) =
-                        self.mirror.move_node(*id, *target, place)
-                    {
-                        self.resort_from(Some(old_parent), cmds);
-                        if new_parent != old_parent {
-                            self.resort_from(Some(new_parent), cmds);
-                        }
-                    }
+                    self.move_one(*id, *target, place, cmds)?;
                 }
                 Ok(())
             }
