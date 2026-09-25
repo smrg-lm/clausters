@@ -3701,7 +3701,10 @@ should confirm before the fix.
   created with, so `Segment`'s eight constructors are six (`in_memory`,
   `in_memory_sized`, `create`, `create_sized`, `open_or_create`, `open`) and
   no caller passes four bare counts in a row; a session's in-memory segment
-  now takes its audio-bus count from the session like the mapped one did.
+  now takes its audio-bus count from the session like the mapped one did. `Engine::process_block` is 72 lines of named steps —
+  `next_due`, `cross_edge`, `apply_due_bundle`, `publish_block`,
+  `store_counters`, `apply_done_actions`, `drain_replies`, `meter_block` —
+  with the bench's default rows within noise of before.
 - ✅ **Minor** *(audit 2026-09-25)*. `/server_notify` answers a client id that
   is its position in the list, so an earlier client leaving renumbers the
   others (no client reads it); a typo "where the the transport is";

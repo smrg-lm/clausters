@@ -417,6 +417,17 @@ struct Stopping {
     ended: bool,
 }
 
+/// What cuts a block next ([`Engine::next_due`]).
+#[derive(Clone, Copy, Debug)]
+enum Due {
+    /// Transport `k` reaches an edge.
+    Edge(usize, Edge),
+    /// A bundle of transport `k`'s queue.
+    Transport(usize),
+    /// A bundle of the device queue.
+    Device,
+}
+
 /// What a transport's next edge is, when it is due.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Edge {
@@ -1171,175 +1182,17 @@ impl Engine {
         for t in &mut self.transports {
             t.frozen_from = if t.rolling { None } else { Some(0) };
         }
-        loop {
-            let device_due = self.sched.first().map(|b| b.time);
-            // The earliest entry of any rolling transport's queue. A
-            // transport entry's device time only exists while it rolls: a
-            // stopped transport can never reach it. Read afresh on every
-            // iteration, because a bundle applied below may have carried a
-            // `TransportRun` -- a stop scheduled mid-block freezes that queue
-            // from that sample on, which is the wanted behaviour. Ties between
-            // transports go to the lower id.
-            let transport_due = self
-                .transports
-                .iter()
-                .enumerate()
-                .filter(|(_, t)| t.rolling)
-                .filter_map(|(i, t)| {
-                    t.sched
-                        .first()
-                        .map(|b| (i, b.time.to_device(t.frozen_total).get()))
-                })
-                .min_by_key(|&(_, due)| due);
-            let take_transport = match (device_due, transport_due) {
-                (_, None) => false,
-                (None, Some(_)) => true,
-                // Ties go to the device queue: a fixed preference, because
-                // cross-queue enqueue order is not recoverable at fire time
-                // (a transport entry's device time is not fixed when it is
-                // enqueued). Device-first is the right side, since it makes
-                // an empty transport queue indistinguishable from a single
-                // queue over the device axis.
-                (Some(d), Some((_, t))) => t < d,
-            };
-            let queue_due = if take_transport {
-                transport_due.map(|(_, due)| due)
-            } else {
-                device_due
-            };
-            let queue_due = queue_due.filter(|t| *t < block_end);
-            // A transport's edge -- its loop's end, or its end mark -- is the
-            // third thing that cuts a block, and it is cut for the same reason
-            // the other two are: the wrap or the stop lands on an exact
-            // sample. Cutting there is also what keeps each position *linear
-            // inside every slice*, so a reader following it ramps by one per
-            // sample and never has to know a loop exists.
-            //
-            // `<= block_end`, where a bundle is `<`: a bundle at the boundary
-            // belongs to the next block, but a wrap there belongs to *this*
-            // one, because the position published at the end of a block is
-            // what the next block's first sample plays -- and that sample is
-            // the loop's start. Reading it a block late is a playhead that
-            // overshoots the loop by a block, once per pass.
-            let here = block_start + offset as u64;
-            let edge_due = self
-                .transports
-                .iter()
-                .enumerate()
-                .filter_map(|(i, t)| t.edge_due(here).map(|(edge, due)| ((i, edge), due)))
-                .min_by_key(|&(_, due)| due)
-                .filter(|&(_, due)| due <= block_end);
-            // An edge ties with a bundle by yielding to it: the queues keep the
-            // device-first preference they already had among themselves, and
-            // an edge that stays due is taken on the next turn of the loop.
-            let take_edge = match (edge_due, queue_due) {
-                (None, _) => false,
-                (Some(_), None) => true,
-                (Some((_, w)), Some(q)) => w < q,
-            };
-            let Some(due_time) = (if take_edge {
-                edge_due.map(|(_, due)| due)
-            } else {
-                queue_due
-            }) else {
-                break;
-            };
+        while let Some((due_time, due)) = self.next_due(block_start, offset, block_end) {
             let at = due_time.saturating_sub(block_start) as usize;
             if at > offset {
                 self.process_slice(offset, at - offset);
                 offset = at;
             }
             self.cursor = offset;
-            if let Some(((k, edge), _)) = edge_due.filter(|_| take_edge) {
-                let here = self.device_here();
-                let t = &mut self.transports[k];
-                // What freezing it on this sample leaves to do: whether the
-                // end mark caused it, and where the pass goes back to.
-                let froze = match edge {
-                    Edge::Wrap => {
-                        // Back to the loop's start, re-anchored here so the
-                        // position goes on advancing by one per sample from
-                        // the seam. The span is half-open, so the end sample
-                        // is never played and the first sample after the last
-                        // one of the loop is its first.
-                        let start = t.looping.as_ref().map_or(0, |span| span.start);
-                        t.position = t
-                            .position
-                            .wrapped_to(TransportPosition::new(start), t.at(here));
-                        None
-                    }
-                    // **The end mark: stop here, on this sample**, as a
-                    // `/transport_stop` landing on it would.
-                    Edge::End => Some((t.end.expect("an end was due").back, true)),
-                    // **A ramp's length before the end mark**: the stopping
-                    // phase starts here and ends on the mark, so the fade is
-                    // over when the pass is. It falls from wherever the level
-                    // is, over what is left before the mark.
-                    Edge::EndRamp => {
-                        let mark = t.end.expect("an end was due");
-                        let at = t.reaching(mark.end, here);
-                        if at > here {
-                            t.fade = t.fade.toward(here, 0.0, at - here);
-                            t.stopping = Some(Stopping {
-                                at,
-                                back: mark.back,
-                                ended: true,
-                            });
-                            None
-                        } else {
-                            Some((mark.back, true))
-                        }
-                    }
-                    Edge::Freeze => {
-                        let stopping = t.stopping.take().expect("a stop was due");
-                        Some((stopping.back, stopping.ended))
-                    }
-                };
-                if let Some((back, ended)) = froze {
-                    // The governed group and the transport's clock freeze on
-                    // this sample, and the level is zero. An end then locates
-                    // to where the pass goes back to; the locate is anchored
-                    // at a stopped transport, so it holds until the next play.
-                    t.rolling = false;
-                    t.fade = Ramp::level(0.0);
-                    if let Some(group) = t.group {
-                        self.tree.set_paused(group, true);
-                    }
-                    if t.frozen_from.is_none() {
-                        t.frozen_from = Some(offset);
-                    }
-                    if let Some(back) = back {
-                        t.position =
-                            PositionAnchor::located(TransportPosition::new(back), t.at(here));
-                    }
-                    if ended {
-                        self.push_garbage(Garbage::TransportEnded { transport: k });
-                    }
-                }
-                continue;
-            }
-            // Vec::remove on the pre-allocated queue: memmove, no (de)alloc.
-            let mut cmds = match transport_due.filter(|_| take_transport) {
-                Some((k, _)) => self.transports[k].sched.remove(0).cmds,
-                None => self.sched.remove(0).cmds,
-            };
-            for cmd in cmds.drain(..) {
-                self.apply(cmd);
-            }
-            self.push_garbage(Garbage::SpentBundle(cmds));
-            // The bundle may have carried a `TransportRun`, for any
-            // transport. Close or open each frozen run at this exact sample.
-            // A bundle holding both a stop and a resume nets to no frozen
-            // time, which is right: they land on the same sample.
-            for t in &mut self.transports {
-                match (t.frozen_from, t.rolling) {
-                    (Some(from), true) => {
-                        t.frozen_total += (offset - from) as u64;
-                        t.frozen_from = None;
-                    }
-                    (None, false) => t.frozen_from = Some(offset),
-                    _ => {}
-                }
+            match due {
+                Due::Edge(k, edge) => self.cross_edge(k, edge, offset),
+                Due::Transport(k) => self.apply_due_bundle(Some(k), offset),
+                Due::Device => self.apply_due_bundle(None, offset),
             }
         }
         self.cursor = 0;
@@ -1358,6 +1211,196 @@ impl Engine {
             }
         }
 
+        self.publish_block(block_end);
+        self.store_counters();
+        self.apply_done_actions();
+        self.drain_replies();
+        self.meter_block(meter_start);
+    }
+
+    /// What cuts the block next, and at which device sample: the earliest of
+    /// the device queue, every rolling transport's queue, and every
+    /// transport's edge, each taken only inside `block_end`.
+    fn next_due(&self, block_start: u64, offset: usize, block_end: u64) -> Option<(u64, Due)> {
+        let device_due = self.sched.first().map(|b| b.time);
+        // The earliest entry of any rolling transport's queue. A
+        // transport entry's device time only exists while it rolls: a
+        // stopped transport can never reach it. Read afresh on every
+        // iteration, because a bundle applied below may have carried a
+        // `TransportRun` -- a stop scheduled mid-block freezes that queue
+        // from that sample on, which is the wanted behaviour. Ties between
+        // transports go to the lower id.
+        let transport_due = self
+            .transports
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.rolling)
+            .filter_map(|(i, t)| {
+                t.sched
+                    .first()
+                    .map(|b| (i, b.time.to_device(t.frozen_total).get()))
+            })
+            .min_by_key(|&(_, due)| due);
+        let take_transport = match (device_due, transport_due) {
+            (_, None) => false,
+            (None, Some(_)) => true,
+            // Ties go to the device queue: a fixed preference, because
+            // cross-queue enqueue order is not recoverable at fire time
+            // (a transport entry's device time is not fixed when it is
+            // enqueued). Device-first is the right side, since it makes
+            // an empty transport queue indistinguishable from a single
+            // queue over the device axis.
+            (Some(d), Some((_, t))) => t < d,
+        };
+        let queue_due = if take_transport {
+            transport_due.map(|(_, due)| due)
+        } else {
+            device_due
+        };
+        let queue_due = queue_due.filter(|t| *t < block_end);
+        // A transport's edge -- its loop's end, or its end mark -- is the
+        // third thing that cuts a block, and it is cut for the same reason
+        // the other two are: the wrap or the stop lands on an exact
+        // sample. Cutting there is also what keeps each position *linear
+        // inside every slice*, so a reader following it ramps by one per
+        // sample and never has to know a loop exists.
+        //
+        // `<= block_end`, where a bundle is `<`: a bundle at the boundary
+        // belongs to the next block, but a wrap there belongs to *this*
+        // one, because the position published at the end of a block is
+        // what the next block's first sample plays -- and that sample is
+        // the loop's start. Reading it a block late is a playhead that
+        // overshoots the loop by a block, once per pass.
+        let here = block_start + offset as u64;
+        let edge_due = self
+            .transports
+            .iter()
+            .enumerate()
+            .filter_map(|(i, t)| t.edge_due(here).map(|(edge, due)| ((i, edge), due)))
+            .min_by_key(|&(_, due)| due)
+            .filter(|&(_, due)| due <= block_end);
+        // An edge ties with a bundle by yielding to it: the queues keep the
+        // device-first preference they already had among themselves, and
+        // an edge that stays due is taken on the next turn of the loop.
+        let take_edge = match (edge_due, queue_due) {
+            (None, _) => false,
+            (Some(_), None) => true,
+            (Some((_, w)), Some(q)) => w < q,
+        };
+        if take_edge {
+            return edge_due.map(|((k, edge), due)| (due, Due::Edge(k, edge)));
+        }
+        let due = queue_due?;
+        Some(match transport_due.filter(|_| take_transport) {
+            Some((k, _)) => (due, Due::Transport(k)),
+            None => (due, Due::Device),
+        })
+    }
+
+    /// Transport `k` reaches `edge` on sample `offset` of the block: a wrap,
+    /// the end mark, the start of the end mark's ramp, or the freeze a
+    /// stopping phase ends in.
+    fn cross_edge(&mut self, k: usize, edge: Edge, offset: usize) {
+        let here = self.device_here();
+        let t = &mut self.transports[k];
+        // What freezing it on this sample leaves to do: whether the
+        // end mark caused it, and where the pass goes back to.
+        let froze = match edge {
+            Edge::Wrap => {
+                // Back to the loop's start, re-anchored here so the
+                // position goes on advancing by one per sample from
+                // the seam. The span is half-open, so the end sample
+                // is never played and the first sample after the last
+                // one of the loop is its first.
+                let start = t.looping.as_ref().map_or(0, |span| span.start);
+                t.position = t
+                    .position
+                    .wrapped_to(TransportPosition::new(start), t.at(here));
+                None
+            }
+            // **The end mark: stop here, on this sample**, as a
+            // `/transport_stop` landing on it would.
+            Edge::End => Some((t.end.expect("an end was due").back, true)),
+            // **A ramp's length before the end mark**: the stopping
+            // phase starts here and ends on the mark, so the fade is
+            // over when the pass is. It falls from wherever the level
+            // is, over what is left before the mark.
+            Edge::EndRamp => {
+                let mark = t.end.expect("an end was due");
+                let at = t.reaching(mark.end, here);
+                if at > here {
+                    t.fade = t.fade.toward(here, 0.0, at - here);
+                    t.stopping = Some(Stopping {
+                        at,
+                        back: mark.back,
+                        ended: true,
+                    });
+                    None
+                } else {
+                    Some((mark.back, true))
+                }
+            }
+            Edge::Freeze => {
+                let stopping = t.stopping.take().expect("a stop was due");
+                Some((stopping.back, stopping.ended))
+            }
+        };
+        if let Some((back, ended)) = froze {
+            // The governed group and the transport's clock freeze on
+            // this sample, and the level is zero. An end then locates
+            // to where the pass goes back to; the locate is anchored
+            // at a stopped transport, so it holds until the next play.
+            t.rolling = false;
+            t.fade = Ramp::level(0.0);
+            if let Some(group) = t.group {
+                self.tree.set_paused(group, true);
+            }
+            if t.frozen_from.is_none() {
+                t.frozen_from = Some(offset);
+            }
+            if let Some(back) = back {
+                t.position = PositionAnchor::located(TransportPosition::new(back), t.at(here));
+            }
+            if ended {
+                self.push_garbage(Garbage::TransportEnded { transport: k });
+            }
+        }
+    }
+
+    /// The bundle due on sample `offset`, from `transport`'s queue or the
+    /// device's, applied -- then every transport's frozen run opened or
+    /// closed on that sample, since the bundle may have stopped or started
+    /// one.
+    fn apply_due_bundle(&mut self, transport: Option<usize>, offset: usize) {
+        // Vec::remove on the pre-allocated queue: memmove, no (de)alloc.
+        let mut cmds = match transport {
+            Some(k) => self.transports[k].sched.remove(0).cmds,
+            None => self.sched.remove(0).cmds,
+        };
+        for cmd in cmds.drain(..) {
+            self.apply(cmd);
+        }
+        self.push_garbage(Garbage::SpentBundle(cmds));
+        // The bundle may have carried a `TransportRun`, for any
+        // transport. Close or open each frozen run at this exact sample.
+        // A bundle holding both a stop and a resume nets to no frozen
+        // time, which is right: they land on the same sample.
+        for t in &mut self.transports {
+            match (t.frozen_from, t.rolling) {
+                (Some(from), true) => {
+                    t.frozen_total += (offset - from) as u64;
+                    t.frozen_from = None;
+                }
+                (None, false) => t.frozen_from = Some(offset),
+                _ => {}
+            }
+        }
+    }
+
+    /// Publishes the block that ends at `block_end`: the engine's own clocks,
+    /// and -- when this engine publishes time -- the taps, the per-bus levels
+    /// and the clocks of the shared segment.
+    fn publish_block(&mut self, block_end: u64) {
         self.now = block_end;
         // `frozen_total` was already credited to the sample inside the
         // block-cut loop above; here the clocks are only published. The
@@ -1412,6 +1455,10 @@ impl Engine {
             }
             segment.clock().store(block_end, Ordering::Release);
         }
+    }
+
+    /// The node counts `/server_status` reads.
+    fn store_counters(&self) {
         self.counters
             .synths
             .store(self.tree.synth_count() as u32, Ordering::Relaxed);
@@ -1421,7 +1468,9 @@ impl Engine {
         self.counters
             .groups
             .store(self.tree.group_count() as u32, Ordering::Relaxed);
+    }
 
+    fn apply_done_actions(&mut self) {
         // Apply the freeing done actions collected during this block's walk
         // (`PauseSelf` was applied inline in the tree). Read id + action and act
         // one at a time so the tree is never borrowed twice at once; a `free` of
@@ -1435,7 +1484,9 @@ impl Engine {
             self.tree
                 .apply_done_action(id, action, &mut |f| sink.consume(f));
         }
+    }
 
+    fn drain_replies(&mut self) {
         // Drain the side-effect replies buffered this block (`SendReply`/
         // `SendTrig`/`Poll`) into the reply FIFO for the network thread to
         // turn into OSC. Disjoint field borrows: the tree walk reads the synths,
@@ -1445,7 +1496,10 @@ impl Engine {
         tree.drain_replies(&mut |msg| {
             let _ = reply_tx.push(msg);
         });
+    }
 
+    /// Closes the block's CPU meter, begun at `meter_start`.
+    fn meter_block(&mut self, meter_start: crate::server::meters::Stamp) {
         // CPU meter end: this block's wall time as a fraction of its real-time
         // budget (`BLOCK_SIZE / sample_rate`). Only meaningful when the caller
         // is paced by an audio device; NRT renders just measure render speed.
