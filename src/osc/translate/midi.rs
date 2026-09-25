@@ -7,6 +7,7 @@
 //! MIDI path and the OSC path build byte-identical commands.
 
 use super::*;
+use crate::osc::args::Args;
 
 impl CmdTranslator {
     /// `/midi_bind channel instrument [target] [addAction] [gate]`: bind a MIDI
@@ -19,18 +20,14 @@ impl CmdTranslator {
         msg: &rosc::OscMessage,
         cmds: &mut Vec<Cmd>,
     ) -> Result<(), String> {
-        let [
-            OscType::Int(channel),
-            OscType::String(instrument),
-            rest @ ..,
-        ] = msg.args.as_slice()
-        else {
+        let [OscType::Int(channel), OscType::String(instrument), ..] = msg.args.as_slice() else {
             return Err("expected: channel, instrument [, target, addAction, gate]".into());
         };
         let channel = midi_channel(*channel)?;
-        let target = int_arg(rest, 0).unwrap_or(0);
-        let action = int_arg(rest, 1).unwrap_or(0);
-        let gate = int_arg(rest, 2).unwrap_or(0) != 0;
+        let mut tail = Args::after(&msg.args, 2);
+        let target = tail.opt_int()?.unwrap_or(0);
+        let action = tail.opt_int()?.unwrap_or(0);
+        let gate = tail.opt_int()?.unwrap_or(0) != 0;
         if AddAction::from_i32(action).is_none() {
             return Err("add action must be 0-4".into());
         }

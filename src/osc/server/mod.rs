@@ -40,9 +40,7 @@ use crate::dsp::ReplyKind;
 use crate::faust::compiler::{CacheJob, CompilePayload, CompileRequest, CompilerThread};
 use crate::node::MAX_NODES;
 use crate::osc::ClientId;
-use crate::osc::translate::{
-    CmdTranslator, control_key, float_value, parse_buffer_gen, parse_buffer_msg,
-};
+use crate::osc::translate::{CmdTranslator, control_key, parse_buffer_gen, parse_buffer_msg};
 
 use crate::server::clock_axis::TransportSample;
 use crate::server::defstore::{self, DefKind, DefStore};
@@ -50,7 +48,6 @@ use crate::server::engine::cmd_target_nodes;
 use crate::server::engine::{Cmd, EngineHandle, Garbage, NodeEventKind, report_rejected};
 use crate::server::nrt::{NrtAction, NrtJob, NrtRequest, NrtRunner};
 
-mod args;
 mod async_pipes;
 mod commands;
 mod dispatch;
@@ -67,7 +64,7 @@ pub fn commands() -> Vec<&'static str> {
     dispatch::COMMANDS.iter().map(|(addr, _)| *addr).collect()
 }
 
-use args::{Answer, Args};
+use crate::osc::args::{Answer, Args};
 
 /// Default scsynth port.
 pub const DEFAULT_PORT: u16 = 57110;

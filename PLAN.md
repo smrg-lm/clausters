@@ -3555,6 +3555,12 @@ should confirm before the fix.
   *Step 1 done*: `translate::mirror_buffer` is the one lookup and
   `translate::allocated` the one refusal ("no buffer allocated at N"); the
   server's copy and its five "buffer N not allocated" sites go through them.
+  *Step 2 done*: `Args` moved to `osc::args` for both sides, with
+  `Args::after` for a tail past a destructured prefix (numbering from the
+  message's first argument) and `opt_float`/`opt_str`; `int_arg`,
+  `string_arg` and `float_arg` are gone, so a wrong-typed optional argument of
+  a `/buffer_*` job or `/midi_bind` is refused instead of read as its default
+  (`a_wrong_optional_argument_is_refused_by_its_number`).
 - ⬜ **The command table repeats one closure sixty times** *(audit
   2026-09-25)*. 17 rows are `handle_buffer_cmd(addr, m, f); Ok(())` and 30 are
   `handle_via_translate(m, f); Ok(())`; two named functions make each row one

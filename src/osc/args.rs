@@ -15,17 +15,21 @@
 //! Handlers never name their own address either: the dispatcher fails with the
 //! address it matched, so a handler and its table row cannot drift into
 //! disagreeing about what the command is called.
+//!
+//! It is the one reader for the wire: the server's handlers and the
+//! translator's parses (which the offline renderer shares) both read through
+//! it, so an argument of the wrong type is refused the same way everywhere --
+//! an optional one included, where saying nothing and saying it wrong are
+//! different answers.
 
 use rosc::{OscMessage, OscType};
-
-use super::float_value;
 
 /// A cursor over one message's arguments.
 ///
 /// Reading advances it, so a handler's sequence of reads *is* its signature;
 /// [`Args::rest`] hands back whatever a fixed prefix did not consume, which is
 /// how the commands with a trailing list are written.
-pub(in crate::osc::server) struct Args<'a> {
+pub(crate) struct Args<'a> {
     args: &'a [OscType],
     at: usize,
 }
@@ -33,26 +37,33 @@ pub(in crate::osc::server) struct Args<'a> {
 /// What a handler returns: `Ok` if it answered, `Err` with the reason if the
 /// arguments made no sense. `OscServer::handle_message` turns the `Err` into
 /// `/fail` -- the one place in the server that does.
-pub(in crate::osc::server) type Answer = Result<(), String>;
+pub(crate) type Answer = Result<(), String>;
 
 impl<'a> Args<'a> {
-    pub(in crate::osc::server) fn new(msg: &'a OscMessage) -> Self {
+    pub(crate) fn new(msg: &'a OscMessage) -> Self {
         Args {
             args: &msg.args,
             at: 0,
         }
     }
 
+    /// A cursor past the first `n` arguments -- a command's optional tail,
+    /// after a fixed prefix the caller destructured with its own usage line.
+    /// It numbers the arguments from the message's first, as a client counts.
+    pub(crate) fn after(args: &'a [OscType], n: usize) -> Self {
+        Args { args, at: n }
+    }
+
     /// The arguments not yet read.
-    pub(in crate::osc::server) fn rest(&self) -> &'a [OscType] {
+    pub(crate) fn rest(&self) -> &'a [OscType] {
         &self.args[self.at.min(self.args.len())..]
     }
 
-    pub(in crate::osc::server) fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.rest().is_empty()
     }
 
-    pub(in crate::osc::server) fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.rest().len()
     }
 
@@ -76,11 +87,11 @@ impl<'a> Args<'a> {
     /// The next argument, whatever it is: the escape hatch for a reader the
     /// handler has to do itself because it needs context this type has no
     /// business knowing -- resolving a control name against a def, say.
-    pub(in crate::osc::server) fn one(&mut self) -> Result<&'a OscType, String> {
+    pub(crate) fn one(&mut self) -> Result<&'a OscType, String> {
         self.next("an argument")
     }
 
-    pub(in crate::osc::server) fn int(&mut self) -> Result<i32, String> {
+    pub(crate) fn int(&mut self) -> Result<i32, String> {
         match self.next("an integer")? {
             OscType::Int(n) => Ok(*n),
             other => Err(self.wrong("an integer", other)),
@@ -90,7 +101,7 @@ impl<'a> Args<'a> {
     /// A non-negative integer, as the index it is about to be used as. The two
     /// refusals a caller would otherwise write separately -- not an integer,
     /// and negative -- are one read.
-    pub(in crate::osc::server) fn index(&mut self) -> Result<usize, String> {
+    pub(crate) fn index(&mut self) -> Result<usize, String> {
         let n = self.int()?;
         usize::try_from(n).map_err(|_| {
             format!(
@@ -102,12 +113,12 @@ impl<'a> Args<'a> {
 
     /// A number: `f32`, or an `Int` widened, since a client that sends `1`
     /// where a float belongs means the number and not a type error.
-    pub(in crate::osc::server) fn float(&mut self) -> Result<f32, String> {
+    pub(crate) fn float(&mut self) -> Result<f32, String> {
         let arg = self.next("a number")?;
         float_value(arg).ok_or_else(|| self.wrong("a number", arg))
     }
 
-    pub(in crate::osc::server) fn str(&mut self) -> Result<&'a str, String> {
+    pub(crate) fn str(&mut self) -> Result<&'a str, String> {
         match self.next("a string")? {
             OscType::String(s) => Ok(s),
             other => Err(self.wrong("a string", other)),
@@ -117,7 +128,7 @@ impl<'a> Args<'a> {
     /// A 64-bit integer, accepting a 32-bit one: a sample position fits in an
     /// `Int` until it does not, and a client that sends the smaller type means
     /// the number.
-    pub(in crate::osc::server) fn long(&mut self) -> Result<i64, String> {
+    pub(crate) fn long(&mut self) -> Result<i64, String> {
         match self.next("a 64-bit integer")? {
             OscType::Long(n) => Ok(*n),
             OscType::Int(n) => Ok(*n as i64),
@@ -127,7 +138,7 @@ impl<'a> Args<'a> {
 
     /// A double, accepting a float, for the same reason [`Args::long`] accepts
     /// an `Int`.
-    pub(in crate::osc::server) fn double(&mut self) -> Result<f64, String> {
+    pub(crate) fn double(&mut self) -> Result<f64, String> {
         match self.next("a double")? {
             OscType::Double(v) => Ok(*v),
             OscType::Float(v) => Ok(*v as f64),
@@ -139,16 +150,34 @@ impl<'a> Args<'a> {
     /// wrong type is still an error -- the shape of a command whose arguments
     /// all have defaults, where saying nothing and saying it wrong are
     /// different answers.
-    pub(in crate::osc::server) fn opt_int(&mut self) -> Result<Option<i32>, String> {
+    pub(crate) fn opt_int(&mut self) -> Result<Option<i32>, String> {
         if self.is_empty() {
             return Ok(None);
         }
         self.int().map(Some)
     }
 
+    /// An optional trailing number: absent is `Ok(None)`, present but not a
+    /// number is still an error.
+    pub(crate) fn opt_float(&mut self) -> Result<Option<f32>, String> {
+        if self.is_empty() {
+            return Ok(None);
+        }
+        self.float().map(Some)
+    }
+
+    /// An optional trailing string: absent is `Ok(None)`, present but of the
+    /// wrong type is still an error.
+    pub(crate) fn opt_str(&mut self) -> Result<Option<&'a str>, String> {
+        if self.is_empty() {
+            return Ok(None);
+        }
+        self.str().map(Some)
+    }
+
     /// An optional trailing 64-bit integer: absent is `Ok(None)`, present but
     /// of the wrong type is still an error.
-    pub(in crate::osc::server) fn opt_long(&mut self) -> Result<Option<i64>, String> {
+    pub(crate) fn opt_long(&mut self) -> Result<Option<i64>, String> {
         if self.is_empty() {
             return Ok(None);
         }
@@ -157,7 +186,7 @@ impl<'a> Args<'a> {
 
     /// An optional trailing double: absent is `Ok(None)`, present but of the
     /// wrong type is still an error.
-    pub(in crate::osc::server) fn opt_double(&mut self) -> Result<Option<f64>, String> {
+    pub(crate) fn opt_double(&mut self) -> Result<Option<f64>, String> {
         if self.is_empty() {
             return Ok(None);
         }
@@ -165,12 +194,22 @@ impl<'a> Args<'a> {
     }
 
     /// Requires the remaining arguments to divide into groups of `n`.
-    pub(in crate::osc::server) fn expect_groups_of(&self, n: usize, what: &str) -> Answer {
+    pub(crate) fn expect_groups_of(&self, n: usize, what: &str) -> Answer {
         let left = self.len();
         if left == 0 || !left.is_multiple_of(n) {
             return Err(format!("expected {what}, got {left} arguments"));
         }
         Ok(())
+    }
+}
+
+/// A number: `f32`, or an `Int` or a `Double` narrowed.
+pub fn float_value(arg: &OscType) -> Option<f32> {
+    match arg {
+        OscType::Float(f) => Some(*f),
+        OscType::Int(i) => Some(*i as f32),
+        OscType::Double(d) => Some(*d as f32),
+        _ => None,
     }
 }
 

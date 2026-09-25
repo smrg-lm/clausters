@@ -620,6 +620,24 @@ fn set_error(
     }
 }
 
+/// An optional argument of the wrong type is refused, not read as its
+/// default: a channel count sent as a string is a mistake the client should
+/// hear about, and a buffer of one channel is not what it asked for.
+#[test]
+fn a_wrong_optional_argument_is_refused_by_its_number() {
+    let empty: clausters::dsp::buffer::BufferPool = vec![None];
+    let err = set_error(
+        "/buffer_alloc",
+        vec![
+            OscType::Int(0),
+            OscType::Int(64),
+            OscType::String("2".into()),
+        ],
+        &empty,
+    );
+    assert_eq!(err, "expected an integer as argument 3, got a string");
+}
+
 #[test]
 fn set_writes_runs_in_place_keeping_the_shape() {
     let mirror = mirror_of(Arc::new(Buffer::zeroed(8, 2, 44_100.0)));

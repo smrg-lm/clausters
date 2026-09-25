@@ -6,6 +6,7 @@
 //! contents it reads from the network-side pool mirror.
 
 use super::*;
+use crate::osc::args::Args;
 use crate::server::nrt::{EditOp, SampleWrite};
 
 /// Every `/buffer_*` command that is one NRT job: what [`parse_buffer_msg`]
@@ -52,7 +53,8 @@ pub fn parse_buffer_msg(
                 [OscType::Int(index), OscType::Int(frames), ..] => (*index, *frames),
                 _ => return Err("expected: bufnum, frames [, channels, sampleRate]".into()),
             };
-            let channels = int_arg(args, 2).unwrap_or(1);
+            let mut tail = Args::after(args, 2);
+            let channels = tail.opt_int()?.unwrap_or(1);
             if frames <= 0 || channels <= 0 {
                 return Err("frames and channels must be positive".into());
             }
@@ -60,7 +62,8 @@ pub fn parse_buffer_msg(
             // server's: a buffer an editor fills with frames of a 44.1 kHz take
             // holds 44.1 kHz samples wherever it is allocated, and every reader
             // takes its rate off the buffer. Zero or absent is the server's.
-            let sample_rate = float_arg(args, 3)
+            let sample_rate = tail
+                .opt_float()?
                 .map(f64::from)
                 .filter(|r| *r > 0.0)
                 .unwrap_or(default_sample_rate);
@@ -90,12 +93,13 @@ pub fn parse_buffer_msg(
             } else {
                 Vec::new()
             };
+            let mut tail = Args::after(args, 2);
             (
                 index,
                 NrtJob::AllocRead {
                     path,
-                    file_start: int_arg(args, 2).unwrap_or(0).max(0) as usize,
-                    num_frames: int_arg(args, 3).unwrap_or(0) as i64,
+                    file_start: tail.opt_int()?.unwrap_or(0).max(0) as usize,
+                    num_frames: tail.opt_int()?.unwrap_or(0) as i64,
                     channels,
                 },
             )
@@ -117,13 +121,14 @@ pub fn parse_buffer_msg(
                 Vec::new()
             };
             let current = allocated(mirror, index)?;
+            let mut tail = Args::after(args, 2);
             (
                 index,
                 NrtJob::Read {
                     path,
-                    file_start: int_arg(args, 2).unwrap_or(0).max(0) as usize,
-                    num_frames: int_arg(args, 3).unwrap_or(-1) as i64,
-                    buf_start: int_arg(args, 4).unwrap_or(0).max(0) as usize,
+                    file_start: tail.opt_int()?.unwrap_or(0).max(0) as usize,
+                    num_frames: tail.opt_int()?.unwrap_or(-1) as i64,
+                    buf_start: tail.opt_int()?.unwrap_or(0).max(0) as usize,
                     current,
                     channels,
                 },
@@ -140,7 +145,8 @@ pub fn parse_buffer_msg(
                     );
                 }
             };
-            let header = string_arg(args, 2).unwrap_or("wav");
+            let mut tail = Args::after(args, 2);
+            let header = tail.opt_str()?.unwrap_or("wav");
             if !header.eq_ignore_ascii_case("wav") && !header.eq_ignore_ascii_case("wave") {
                 return Err(format!("unsupported header format {header:?}"));
             }
@@ -149,9 +155,9 @@ pub fn parse_buffer_msg(
                 index,
                 NrtJob::Write {
                     path,
-                    sample_format: string_arg(args, 3).unwrap_or("int16").to_string(),
-                    num_frames: int_arg(args, 4).unwrap_or(-1) as i64,
-                    buf_start: int_arg(args, 5).unwrap_or(0).max(0) as usize,
+                    sample_format: tail.opt_str()?.unwrap_or("int16").to_string(),
+                    num_frames: tail.opt_int()?.unwrap_or(-1) as i64,
+                    buf_start: tail.opt_int()?.unwrap_or(0).max(0) as usize,
                     buffer,
                 },
             )
@@ -195,7 +201,7 @@ pub fn parse_buffer_msg(
                     OscType::Int(i) if i >= 0 => i as usize,
                     _ => return Err("a fill's count must be a non-negative int".into()),
                 };
-                let Some(value) = float_arg(triple, 2) else {
+                let Some(value) = float_value(&triple[2]) else {
                     return Err("a fill's value must be a float or an int".into());
                 };
                 // Past the end fails rather than clamping, like every write
@@ -228,8 +234,9 @@ pub fn parse_buffer_msg(
                 return Err("expected a buffer index".into());
             };
             let current = allocated(mirror, *index)?;
-            let start = int_arg(args, 1).unwrap_or(0);
-            let frames = int_arg(args, 2).unwrap_or(-1);
+            let mut tail = Args::after(args, 1);
+            let start = tail.opt_int()?.unwrap_or(0);
+            let frames = tail.opt_int()?.unwrap_or(-1);
             if start < 0 {
                 return Err(format!("start frame must not be negative, got {start}"));
             }
@@ -244,17 +251,18 @@ pub fn parse_buffer_msg(
             let op = if addr == "/buffer_reverse" {
                 EditOp::Reverse { start, frames }
             } else {
-                let from = float_arg(args, 3)
-                    .ok_or("expected a starting gain (float or int)".to_string())?;
+                let from = tail.float()?;
                 // One value is a constant gain: the common case says itself.
-                let to = float_arg(args, 4).unwrap_or(from);
+                let to = tail.opt_float()?.unwrap_or(from);
                 EditOp::Gain {
                     start,
                     frames,
                     from,
                     to,
-                    shape: int_arg(args, 5).unwrap_or(clausters_core::envshape::SHAPE_LINEAR),
-                    curve: float_arg(args, 6).unwrap_or(0.0),
+                    shape: tail
+                        .opt_int()?
+                        .unwrap_or(clausters_core::envshape::SHAPE_LINEAR),
+                    curve: tail.opt_float()?.unwrap_or(0.0),
                 }
             };
             // Bounds are the core's to judge, but a failure here is a `/fail`
@@ -297,7 +305,8 @@ pub fn parse_buffer_msg(
                 return Err("start frames must not be negative".into());
             }
             let (start, src_start) = (start as usize, src_start as usize);
-            let frames = match int_arg(args, 4).unwrap_or(-1) {
+            let mut tail = Args::after(args, 4);
+            let frames = match tail.opt_int()?.unwrap_or(-1) {
                 n if n < 0 => current
                     .frames()
                     .saturating_sub(start)
@@ -311,7 +320,7 @@ pub fn parse_buffer_msg(
                     "{frames} frames do not fit: buffer {index} from {start}, buffer {src} from {src_start}"
                 ));
             }
-            let gain = float_arg(args, 5).unwrap_or(1.0);
+            let gain = tail.opt_float()?.unwrap_or(1.0);
             (
                 index,
                 NrtJob::Edit {
@@ -715,16 +724,6 @@ fn channel_list(args: &[OscType], from: usize, usage: &str) -> Result<Vec<usize>
         }
     }
     Ok(out)
-}
-
-/// An arg that may be sent as a float or as an int -- a client writing `1` for
-/// unity gain means 1.0, and refusing that would be pedantry on the wire.
-fn float_arg(args: &[OscType], n: usize) -> Option<f32> {
-    match args.get(n) {
-        Some(OscType::Float(f)) => Some(*f),
-        Some(OscType::Int(i)) => Some(*i as f32),
-        _ => None,
-    }
 }
 
 /// `/buffer_setRange`'s `(start, blob)...` tail: each run's samples ride as one

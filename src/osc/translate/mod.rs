@@ -1292,29 +1292,7 @@ pub fn control_key(arg: &OscType, def: &NodeDef) -> Option<u32> {
     }
 }
 
-/// Optional trailing int argument (scsynth buffer commands have several).
-pub fn int_arg(args: &[OscType], n: usize) -> Option<i32> {
-    match args.get(n) {
-        Some(OscType::Int(i)) => Some(*i),
-        _ => None,
-    }
-}
-
-pub fn string_arg(args: &[OscType], n: usize) -> Option<&str> {
-    match args.get(n) {
-        Some(OscType::String(s)) => Some(s.as_str()),
-        _ => None,
-    }
-}
-
-pub fn float_value(arg: &OscType) -> Option<f32> {
-    match arg {
-        OscType::Float(f) => Some(*f),
-        OscType::Int(i) => Some(*i as f32),
-        OscType::Double(d) => Some(*d as f32),
-        _ => None,
-    }
-}
+pub use crate::osc::args::float_value;
 
 /// A bus index argument (`/node_map`/`/node_mapAudio`): a plain int, `-1` to unbind.
 pub fn int_value(arg: &OscType) -> Option<i32> {

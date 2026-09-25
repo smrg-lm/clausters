@@ -1,6 +1,7 @@
 //! OSC layer: UDP/TCP server, parsing with rosc and translation into engine
 //! commands.
 
+pub(crate) mod args;
 pub mod graph;
 pub mod graphdef;
 pub mod server;
