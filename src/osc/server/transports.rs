@@ -294,11 +294,8 @@ impl OscServer {
                 warn!("midi: {e}");
                 continue;
             }
-            for cmd in cmds.drain(..) {
-                if self.handle.send(cmd).is_err() {
-                    warn!("midi: command FIFO full");
-                    break;
-                }
+            if let Err(e) = self.send_all(cmds.drain(..)) {
+                warn!("midi: {e}");
             }
         }
         self.collect_garbage();

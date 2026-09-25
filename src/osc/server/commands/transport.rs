@@ -130,14 +130,19 @@ impl OscServer {
         Ok(())
     }
 
+    /// Acknowledges a command that changed transport `k` and tells every
+    /// `/server_notify` client, in that order: the asker hears `/done` first.
+    fn changed(&self, from: ClientId, cmd: &str, k: usize) -> Answer {
+        self.done(from, cmd);
+        self.broadcast_transport(k);
+        Ok(())
+    }
+
     /// Pushes the current transport state to every `/server_notify` client, so a
     /// responder on `/transport_query.reply` re-aligns or rolls its playhead live when
     /// the conductor changes the grid, plays, stops or locates -- no polling.
     pub(in crate::osc::server) fn broadcast_transport(&self, k: usize) {
-        let push = self.transport_reply_args(k);
-        for client in &self.clients {
-            self.reply(*client, "/transport_query.reply", push.clone());
-        }
+        self.notify("/transport_query.reply", self.transport_reply_args(k));
     }
 
     /// `/transport_query <transport:int32>` -- reads one transport's beat
@@ -207,13 +212,7 @@ impl OscServer {
             // The locate to 0 above recorded itself.
             pending_locate: self.transports[k].pending_locate,
         };
-        self.reply(
-            from,
-            "/done",
-            vec![OscType::String("/transport_set".into())],
-        );
-        self.broadcast_transport(k);
-        Ok(())
+        self.changed(from, "/transport_set", k)
     }
 
     /// `/transport_play <transport:int32> [position:double]` -- start the transport rolling. With a
@@ -255,13 +254,7 @@ impl OscServer {
             })?;
         }
         self.transports[k].playing = true;
-        self.reply(
-            from,
-            "/done",
-            vec![OscType::String("/transport_play".into())],
-        );
-        self.broadcast_transport(k);
-        Ok(())
+        self.changed(from, "/transport_play", k)
     }
 
     /// `/transport_stop <transport:int32>` -- stop the transport. Every
@@ -280,13 +273,7 @@ impl OscServer {
             })?;
         }
         self.transports[k].playing = false;
-        self.reply(
-            from,
-            "/done",
-            vec![OscType::String("/transport_stop".into())],
-        );
-        self.broadcast_transport(k);
-        Ok(())
+        self.changed(from, "/transport_stop", k)
     }
 
     /// `/transport_locate <transport:int32> <position:double>` -- set the song position **in
@@ -310,13 +297,7 @@ impl OscServer {
         let sample = self.beats_to_transport_samples(k, beats);
         self.locate_engine(k, sample)?;
         self.transports[k].position = beats;
-        self.reply(
-            from,
-            "/done",
-            vec![OscType::String("/transport_locate".into())],
-        );
-        self.broadcast_transport(k);
-        Ok(())
+        self.changed(from, "/transport_locate", k)
     }
 
     /// `/transport_locateSample <transport:int32> <sample:int64>` -- locate on the transport's own
@@ -348,13 +329,7 @@ impl OscServer {
                 true => sample as f64 * t.tempo / self.info.nominal_sample_rate,
                 false => 0.0,
             };
-        self.reply(
-            from,
-            "/done",
-            vec![OscType::String("/transport_locateSample".into())],
-        );
-        self.broadcast_transport(k);
-        Ok(())
+        self.changed(from, "/transport_locateSample", k)
     }
 
     /// `/transport_loop <transport:int32> [<start:int64> <end:int64>]` -- the span of the transport's axis
@@ -396,13 +371,7 @@ impl OscServer {
             span: span.map(|(s, e)| s as u64..e as u64),
         })?;
         self.transports[k].loop_span = span;
-        self.reply(
-            from,
-            "/done",
-            vec![OscType::String("/transport_loop".into())],
-        );
-        self.broadcast_transport(k);
-        Ok(())
+        self.changed(from, "/transport_loop", k)
     }
 
     /// `/transport_end <transport:int32> [<end:int64> [<return:int64>]]` -- the **end mark**: the
@@ -441,13 +410,7 @@ impl OscServer {
             }),
         })?;
         self.transports[k].end_mark = mark;
-        self.reply(
-            from,
-            "/done",
-            vec![OscType::String("/transport_end".into())],
-        );
-        self.broadcast_transport(k);
-        Ok(())
+        self.changed(from, "/transport_end", k)
     }
 
     /// `/transport_fade <transport:int32> <samples:int64>` -- how long a stop
@@ -476,13 +439,7 @@ impl OscServer {
             samples: samples as u64,
         })?;
         self.transports[k].fade = samples;
-        self.reply(
-            from,
-            "/done",
-            vec![OscType::String("/transport_fade".into())],
-        );
-        self.broadcast_transport(k);
-        Ok(())
+        self.changed(from, "/transport_fade", k)
     }
 
     /// The engine stopped transport `k` on its end mark: the mirror stops
@@ -543,13 +500,7 @@ impl OscServer {
         }
         self.send_engine(Cmd::TransportFollow { transport: k, id })?;
         self.transports[k].follow = if id >= 0 { Some(id) } else { None };
-        self.reply(
-            from,
-            "/done",
-            vec![OscType::String("/transport_follow".into())],
-        );
-        self.broadcast_transport(k);
-        Ok(())
+        self.changed(from, "/transport_follow", k)
     }
 
     /// `/transport_group <int32 transport> <int32 group>` -- binds the group the transport
@@ -581,12 +532,6 @@ impl OscServer {
         // Binding while the transport is stopped freezes the group at once, and
         // the engine's own `TransportGroup` arm does that. Binding while it
         // rolls needs nothing further.
-        self.reply(
-            from,
-            "/done",
-            vec![OscType::String("/transport_group".into())],
-        );
-        self.broadcast_transport(k);
-        Ok(())
+        self.changed(from, "/transport_group", k)
     }
 }

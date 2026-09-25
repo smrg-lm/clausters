@@ -533,13 +533,10 @@ impl OscServer {
     /// or `/fail`, to the client that asked.
     pub fn finish_offline_render(&mut self, req: OfflineRender, outcome: Result<(), String>) {
         match outcome {
-            Ok(()) => self.reply(
+            Ok(()) => self.done_with(
                 req.client,
-                "/done",
-                vec![
-                    OscType::String("/buffer_render".into()),
-                    OscType::Int(req.index as i32),
-                ],
+                "/buffer_render",
+                vec![OscType::Int(req.index as i32)],
             ),
             Err(e) => self.fail(req.client, "/buffer_render", &e),
         }
@@ -574,6 +571,46 @@ impl OscServer {
             "/fail",
             vec![OscType::String(cmd.into()), OscType::String(why)],
         );
+    }
+
+    /// Sends `addr` to every `/server_notify` client.
+    fn notify(&self, addr: &str, args: Vec<OscType>) {
+        for client in &self.clients {
+            self.reply(*client, addr, args.clone());
+        }
+    }
+
+    /// Sends `addr` to every `/server_notify` client but `writer`, the one
+    /// that caused it and already knows.
+    fn notify_but(&self, writer: ClientId, addr: &str, args: Vec<OscType>) {
+        for client in self.clients.iter().filter(|c| **c != writer) {
+            self.reply(*client, addr, args.clone());
+        }
+    }
+
+    /// Sends the engine every command in `cmds`, stopping at the first a full
+    /// FIFO refuses.
+    fn send_all(&mut self, cmds: impl IntoIterator<Item = Cmd>) -> Result<(), String> {
+        for cmd in cmds {
+            if self.handle.send(cmd).is_err() {
+                return Err("command FIFO full".into());
+            }
+        }
+        Ok(())
+    }
+
+    /// `/done <cmd>`: the acknowledgement of a command that finished.
+    fn done(&self, to: ClientId, cmd: &str) {
+        self.done_with(to, cmd, Vec::new());
+    }
+
+    /// `/done <cmd> <tail...>`, for an acknowledgement that also says what the
+    /// command made or which one it was.
+    fn done_with(&self, to: ClientId, cmd: &str, tail: Vec<OscType>) {
+        let mut args = Vec::with_capacity(1 + tail.len());
+        args.push(OscType::String(cmd.into()));
+        args.extend(tail);
+        self.reply(to, "/done", args);
     }
 
     fn reply(&self, to: ClientId, addr: &str, args: Vec<OscType>) {

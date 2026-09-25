@@ -81,14 +81,7 @@ impl OscServer {
 
     fn handle_def_send_synth(&mut self, args: &[OscType], from: ClientId) -> Answer {
         self.install_synthdef(args)?;
-        self.reply(
-            from,
-            "/done",
-            vec![
-                OscType::String("/def_send".into()),
-                OscType::String("synth".into()),
-            ],
-        );
+        self.done_with(from, "/def_send", vec![OscType::String("synth".into())]);
         Ok(())
     }
 
@@ -104,14 +97,7 @@ impl OscServer {
         {
             error!("could not persist GraphDef '{name}': {e}");
         }
-        self.reply(
-            from,
-            "/done",
-            vec![
-                OscType::String("/def_send".into()),
-                OscType::String("graph".into()),
-            ],
-        );
+        self.done_with(from, "/def_send", vec![OscType::String("graph".into())]);
         Ok(())
     }
 
@@ -144,7 +130,7 @@ impl OscServer {
     ) -> Answer {
         let path = args.str()?;
         self.load_synthdef_file(std::path::Path::new(path))?;
-        self.reply(from, "/done", vec![OscType::String("/def_load".into())]);
+        self.done(from, "/def_load");
         Ok(())
     }
 
@@ -166,7 +152,7 @@ impl OscServer {
                 return Err(e);
             }
         }
-        self.reply(from, "/done", vec![OscType::String("/def_loadDir".into())]);
+        self.done(from, "/def_loadDir");
         Ok(())
     }
 
@@ -199,7 +185,7 @@ impl OscServer {
         for info in self.translator.def_info(requested) {
             self.reply(from, "/def_query.reply", info);
         }
-        self.reply(from, "/done", vec![OscType::String("/def_query".into())]);
+        self.done(from, "/def_query");
         Ok(())
     }
 }

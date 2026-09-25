@@ -95,7 +95,7 @@ impl OscServer {
         // The one command that answers by ending the loop, so it cannot be a
         // table row like the others.
         if msg.addr == "/server_quit" {
-            self.reply(from, "/done", vec![OscType::String("/server_quit".into())]);
+            self.done(from, "/server_quit");
             return Flow::Quit;
         }
         match COMMANDS.binary_search_by_key(&msg.addr.as_str(), |(addr, _)| addr) {
@@ -191,7 +191,7 @@ impl OscServer {
         if self.handle.send(Cmd::ClearSched { only }).is_err() {
             return Err("command FIFO full".into());
         }
-        self.reply(from, "/done", vec![OscType::String("/sched_clear".into())]);
+        self.done(from, "/sched_clear");
         Ok(())
     }
 
@@ -237,11 +237,7 @@ impl OscServer {
         {
             return Err("command FIFO full".into());
         }
-        self.reply(
-            from,
-            "/done",
-            vec![OscType::String("/sched_atTransport".into())],
-        );
+        self.done(from, "/sched_atTransport");
         Ok(())
     }
 
@@ -300,18 +296,9 @@ type Command = fn(&mut OscServer, &'static str, &OscMessage, ClientId) -> Answer
 ///
 /// `/server_quit` is deliberately not here; see [`OscServer::handle_message`].
 pub(super) static COMMANDS: &[(&str, Command)] = &[
-    ("/buffer_alloc", |s, addr, m, f| {
-        s.handle_buffer_cmd(addr, m, f);
-        Ok(())
-    }),
-    ("/buffer_allocRead", |s, addr, m, f| {
-        s.handle_buffer_cmd(addr, m, f);
-        Ok(())
-    }),
-    ("/buffer_allocReadChannel", |s, addr, m, f| {
-        s.handle_buffer_cmd(addr, m, f);
-        Ok(())
-    }),
+    ("/buffer_alloc", OscServer::handle_buffer_cmd),
+    ("/buffer_allocRead", OscServer::handle_buffer_cmd),
+    ("/buffer_allocReadChannel", OscServer::handle_buffer_cmd),
     ("/buffer_attach", |s, _, m, f| {
         s.handle_buffer_attach(Args::new(m), f)
     }),
@@ -321,18 +308,9 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     ("/buffer_export", |s, _, m, f| {
         s.handle_buffer_export(Args::new(m), f)
     }),
-    ("/buffer_fill", |s, addr, m, f| {
-        s.handle_buffer_cmd(addr, m, f);
-        Ok(())
-    }),
-    ("/buffer_free", |s, addr, m, f| {
-        s.handle_buffer_cmd(addr, m, f);
-        Ok(())
-    }),
-    ("/buffer_gain", |s, addr, m, f| {
-        s.handle_buffer_cmd(addr, m, f);
-        Ok(())
-    }),
+    ("/buffer_fill", OscServer::handle_buffer_cmd),
+    ("/buffer_free", OscServer::handle_buffer_cmd),
+    ("/buffer_gain", OscServer::handle_buffer_cmd),
     ("/buffer_gen", |s, _, m, f| {
         s.handle_buffer_gen(Args::new(m), f)
     }),
@@ -342,10 +320,7 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     ("/buffer_getRange", |s, _, m, f| {
         s.handle_buffer_get_range(Args::new(m), f)
     }),
-    ("/buffer_mix", |s, addr, m, f| {
-        s.handle_buffer_cmd(addr, m, f);
-        Ok(())
-    }),
+    ("/buffer_mix", OscServer::handle_buffer_cmd),
     ("/buffer_parts", |s, _, m, f| {
         s.handle_buffer_parts(Args::new(m), f)
     }),
@@ -355,55 +330,25 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     ("/buffer_query", |s, _, m, f| {
         s.handle_buffer_query(Args::new(m), f)
     }),
-    ("/buffer_read", |s, addr, m, f| {
-        s.handle_buffer_cmd(addr, m, f);
-        Ok(())
-    }),
-    ("/buffer_readChannel", |s, addr, m, f| {
-        s.handle_buffer_cmd(addr, m, f);
-        Ok(())
-    }),
+    ("/buffer_read", OscServer::handle_buffer_cmd),
+    ("/buffer_readChannel", OscServer::handle_buffer_cmd),
     ("/buffer_render", |s, _, m, f| {
         s.handle_buffer_render(Args::new(m), f)
     }),
-    ("/buffer_reverse", |s, addr, m, f| {
-        s.handle_buffer_cmd(addr, m, f);
-        Ok(())
-    }),
-    ("/buffer_set", |s, addr, m, f| {
-        s.handle_buffer_cmd(addr, m, f);
-        Ok(())
-    }),
-    ("/buffer_setChannel", |s, addr, m, f| {
-        s.handle_buffer_cmd(addr, m, f);
-        Ok(())
-    }),
-    ("/buffer_setRange", |s, addr, m, f| {
-        s.handle_buffer_cmd(addr, m, f);
-        Ok(())
-    }),
-    ("/buffer_setRangeChannel", |s, addr, m, f| {
-        s.handle_buffer_cmd(addr, m, f);
-        Ok(())
-    }),
-    ("/buffer_stitch", |s, addr, m, f| {
-        s.handle_buffer_cmd(addr, m, f);
-        Ok(())
-    }),
+    ("/buffer_reverse", OscServer::handle_buffer_cmd),
+    ("/buffer_set", OscServer::handle_buffer_cmd),
+    ("/buffer_setChannel", OscServer::handle_buffer_cmd),
+    ("/buffer_setRange", OscServer::handle_buffer_cmd),
+    ("/buffer_setRangeChannel", OscServer::handle_buffer_cmd),
+    ("/buffer_stitch", OscServer::handle_buffer_cmd),
     ("/buffer_stream", |s, _, m, f| {
         s.handle_buffer_stream(Args::new(m), f)
     }),
     ("/buffer_touch", |s, _, m, f| {
         s.handle_buffer_touch(Args::new(m), f)
     }),
-    ("/buffer_write", |s, addr, m, f| {
-        s.handle_buffer_cmd(addr, m, f);
-        Ok(())
-    }),
-    ("/buffer_zero", |s, addr, m, f| {
-        s.handle_buffer_cmd(addr, m, f);
-        Ok(())
-    }),
+    ("/buffer_write", OscServer::handle_buffer_cmd),
+    ("/buffer_zero", OscServer::handle_buffer_cmd),
     ("/bus_fill", |s, _, m, _| s.handle_bus_fill(Args::new(m))),
     ("/bus_get", |s, _, m, f| s.handle_bus_get(Args::new(m), f)),
     ("/bus_getRange", |s, _, m, f| {
@@ -433,140 +378,62 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
         s.handle_def_query(Args::new(m), f)
     }),
     ("/def_send", |s, _, m, f| s.handle_def_send(Args::new(m), f)),
-    ("/graph_addSlot", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
-    ("/graph_map", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
-    ("/graph_moveSlot", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
-    ("/graph_new", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
-    ("/graph_newVoice", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
-    ("/group_deepFree", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
+    ("/graph_addSlot", OscServer::handle_via_translate),
+    ("/graph_map", OscServer::handle_via_translate),
+    ("/graph_moveSlot", OscServer::handle_via_translate),
+    ("/graph_new", OscServer::handle_via_translate),
+    ("/graph_newVoice", OscServer::handle_via_translate),
+    ("/group_deepFree", OscServer::handle_via_translate),
     ("/group_dumpGraph", |s, _, m, f| {
         s.handle_group_dump_graph(Args::new(m), f)
     }),
-    ("/group_freeAll", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
-    ("/group_head", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
-    ("/group_name", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
-    ("/group_new", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
-    ("/group_parallel", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
+    ("/group_freeAll", OscServer::handle_via_translate),
+    ("/group_head", OscServer::handle_via_translate),
+    ("/group_name", OscServer::handle_via_translate),
+    ("/group_new", OscServer::handle_via_translate),
+    ("/group_parallel", OscServer::handle_via_translate),
     ("/group_query", |s, _, m, f| {
         s.handle_group_query(Args::new(m), f)
     }),
     ("/group_queryTree", |s, _, m, f| {
         s.handle_group_query_tree(Args::new(m), f)
     }),
-    ("/group_sortMode", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
-    ("/group_tail", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
-    ("/midi_bind", |s, _, m, f| {
-        s.handle_via_translate(m, f);
+    ("/group_sortMode", OscServer::handle_via_translate),
+    ("/group_tail", OscServer::handle_via_translate),
+    ("/midi_bind", |s, addr, m, f| {
+        s.handle_via_translate(addr, m, f)?;
         s.persist_bindings();
         Ok(())
     }),
-    ("/midi_map", |s, _, m, f| {
-        s.handle_via_translate(m, f);
+    ("/midi_map", |s, addr, m, f| {
+        s.handle_via_translate(addr, m, f)?;
         s.persist_bindings();
         Ok(())
     }),
-    ("/midi_unbind", |s, _, m, f| {
-        s.handle_via_translate(m, f);
+    ("/midi_unbind", |s, addr, m, f| {
+        s.handle_via_translate(addr, m, f)?;
         s.persist_bindings();
         Ok(())
     }),
-    ("/node_after", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
-    ("/node_before", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
-    ("/node_fill", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
-    ("/node_free", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
-    ("/node_map", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
-    ("/node_mapAudio", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
-    ("/node_mapAudioRange", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
-    ("/node_mapRange", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
-    ("/node_order", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
+    ("/node_after", OscServer::handle_via_translate),
+    ("/node_before", OscServer::handle_via_translate),
+    ("/node_fill", OscServer::handle_via_translate),
+    ("/node_free", OscServer::handle_via_translate),
+    ("/node_map", OscServer::handle_via_translate),
+    ("/node_mapAudio", OscServer::handle_via_translate),
+    ("/node_mapAudioRange", OscServer::handle_via_translate),
+    ("/node_mapRange", OscServer::handle_via_translate),
+    ("/node_order", OscServer::handle_via_translate),
     ("/node_query", |s, _, m, f| {
         s.handle_node_query(Args::new(m), f)
     }),
-    ("/node_run", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
-    ("/node_set", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
-    ("/node_setRange", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
+    ("/node_run", OscServer::handle_via_translate),
+    ("/node_set", OscServer::handle_via_translate),
+    ("/node_setRange", OscServer::handle_via_translate),
     ("/node_trace", |s, _, m, _| {
         s.handle_node_trace(Args::new(m))
     }),
-    ("/node_ugenCmd", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
+    ("/node_ugenCmd", OscServer::handle_via_translate),
     ("/sched_at", |s, _, m, f| s.handle_sched_at(Args::new(m), f)),
     ("/sched_atTransport", |s, _, m, f| {
         s.handle_sched_at_transport(Args::new(m), f)
@@ -613,10 +480,7 @@ pub(super) static COMMANDS: &[(&str, Command)] = &[
     ("/synth_getRange", |s, addr, m, f| {
         s.handle_synth_get(Args::new(m), f, addr.ends_with("Range"))
     }),
-    ("/synth_new", |s, _, m, f| {
-        s.handle_via_translate(m, f);
-        Ok(())
-    }),
+    ("/synth_new", OscServer::handle_via_translate),
     ("/transport_end", |s, _, m, f| {
         s.handle_transport_end(Args::new(m), f)
     }),

@@ -24,11 +24,10 @@ impl OscServer {
                         .insert(result.name.clone(), Arc::new(def));
                     // No client on a startup reload: nothing to answer.
                     if let Some(client) = result.client {
-                        self.reply(
+                        self.done_with(
                             client,
-                            "/done",
+                            "/def_send",
                             vec![
-                                OscType::String("/def_send".into()),
                                 OscType::String("faust".into()),
                                 OscType::String(result.name),
                             ],
@@ -242,14 +241,7 @@ impl OscServer {
                 self.fail(result.client, result.cmd, "command FIFO full");
                 continue;
             }
-            self.reply(
-                result.client,
-                "/done",
-                vec![
-                    OscType::String(result.cmd.into()),
-                    OscType::Int(result.index),
-                ],
-            );
+            self.done_with(result.client, result.cmd, vec![OscType::Int(result.index)]);
         }
         self.resolve_syncs();
     }

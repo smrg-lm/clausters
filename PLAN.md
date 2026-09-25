@@ -3566,13 +3566,20 @@ should confirm before the fix.
   `/def_free`, the three `/sched_*`, `/server_sync`, `_notify`, `_dumpOsc`,
   `_verbosity` and the three `/def_send` families — read through `Args` and
   return `Answer`, so the dispatcher is the one place that sends `/fail`.
-- ⬜ **The command table repeats one closure sixty times** *(audit
+- ✅ **The command table repeats one closure sixty times** *(audit
   2026-09-25)*. 17 rows are `handle_buffer_cmd(addr, m, f); Ok(())` and 30 are
   `handle_via_translate(m, f); Ok(())`; two named functions make each row one
   line. Beside it, 34 `/done` replies are built by hand (10 in `transport.rs`,
   each followed by the same broadcast), "every notify client" is looped by hand
   seven times (two of them "but the writer"), and "send every command, stop on
   a full FIFO" three times.
+  **Fixed**: `handle_buffer_cmd` and `handle_via_translate` have a row's
+  signature and return `Answer`, so 44 rows name them directly (the three
+  MIDI rows now persist their bindings only when the translate succeeded);
+  `done`/`done_with` build every `/done`, transport's `changed` is the
+  acknowledgement plus the broadcast, `notify`/`notify_but` are the one loop
+  over the notify clients, and `send_all` the one "every command, or a full
+  FIFO".
 - ⬜ **The server's lifecycle is written twice** *(audit 2026-09-25)*.
   `OscServer::bind` and `::headless` spell the same forty-five-field struct;
   `run` and `step` repeat the subscription pump; `drain_tcp` and `drain_ws` are

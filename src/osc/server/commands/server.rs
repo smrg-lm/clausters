@@ -18,11 +18,7 @@ impl OscServer {
     ) -> Answer {
         let on = args.opt_int()?.unwrap_or(0) != 0;
         crate::logging::set_osc_dump(on)?;
-        self.reply(
-            from,
-            "/done",
-            vec![OscType::String("/server_dumpOsc".into())],
-        );
+        self.done(from, "/server_dumpOsc");
         Ok(())
     }
 
@@ -41,11 +37,7 @@ impl OscServer {
             OscType::String(s) => crate::logging::set_base(s)?,
             _ => return Err("expected an int level or a string filter directive".into()),
         }
-        self.reply(
-            from,
-            "/done",
-            vec![OscType::String("/server_verbosity".into())],
-        );
+        self.done(from, "/server_verbosity");
         Ok(())
     }
 
@@ -198,14 +190,7 @@ impl OscServer {
         from: ClientId,
     ) -> Answer {
         match args.str()? {
-            "ping" => self.reply(
-                from,
-                "/done",
-                vec![
-                    OscType::String("/server_cmd".into()),
-                    OscType::String("ping".into()),
-                ],
-            ),
+            "ping" => self.done_with(from, "/server_cmd", vec![OscType::String("ping".into())]),
             other => return Err(format!("unknown server command {other:?}")),
         }
         Ok(())
@@ -235,7 +220,7 @@ impl OscServer {
         for info in ugen_infos(&names) {
             self.reply(from, "/ugen_query.reply", info);
         }
-        self.reply(from, "/done", vec![OscType::String("/ugen_query".into())]);
+        self.done(from, "/ugen_query");
         Ok(())
     }
 
@@ -257,24 +242,13 @@ impl OscServer {
                         self.clients.len()
                     }
                 };
-                self.reply(
-                    from,
-                    "/done",
-                    vec![
-                        OscType::String("/server_notify".into()),
-                        OscType::Int(id as i32),
-                    ],
-                );
+                self.done_with(from, "/server_notify", vec![OscType::Int(id as i32)]);
             }
             0 => {
                 self.clients.retain(|c| *c != from);
                 // And the last one hands the idle tick back.
                 self.retune_timeout();
-                self.reply(
-                    from,
-                    "/done",
-                    vec![OscType::String("/server_notify".into())],
-                );
+                self.done(from, "/server_notify");
             }
             other => return Err(format!("expected 0 or 1, got {other}")),
         }

@@ -312,11 +312,8 @@ impl OscServer {
     /// Ships commands produced during the boot reload (binding restore / boot
     /// preset) to the engine. A full FIFO at boot is logged, not fatal.
     fn ship_boot_cmds(&mut self, cmds: Vec<Cmd>) {
-        for cmd in cmds {
-            if self.handle.send(cmd).is_err() {
-                warn!("command FIFO full during boot reload");
-                break;
-            }
+        if let Err(e) = self.send_all(cmds) {
+            warn!("{e} during boot reload");
         }
     }
 
@@ -577,9 +574,7 @@ impl OscServer {
                         OscType::String(format!("engine rejected node {id}: {}", why.as_str())),
                         OscType::Int(id),
                     ];
-                    for client in &self.clients {
-                        self.reply(*client, "/fail", args.clone());
-                    }
+                    self.notify("/fail", args);
                 }
             }
         }
@@ -614,9 +609,7 @@ impl OscServer {
                 OscType::Int(ev.is_group as i32),
                 OscType::String(name),
             ];
-            for client in &self.clients {
-                self.reply(*client, addr, args.clone());
-            }
+            self.notify(addr, args);
         }
         // Side-effect replies: `SendTrig`/`SendReply` reply to `/server_notify`
         // clients; `Poll` posts to the server console and, when its trigid is
@@ -632,9 +625,7 @@ impl OscServer {
                     let mut args = vec![OscType::Int(msg.node_id), OscType::Int(msg.id)];
                     args.extend(msg.values().iter().map(|v| OscType::Float(*v)));
                     let addr = msg.name().to_string();
-                    for client in &self.clients {
-                        self.reply(*client, &addr, args.clone());
-                    }
+                    self.notify(&addr, args);
                 }
                 ReplyKind::Poll => {
                     let value = msg.values().first().copied().unwrap_or(0.0);
@@ -655,9 +646,7 @@ impl OscServer {
             OscType::Int(trig_id),
             OscType::Float(value),
         ];
-        for client in &self.clients {
-            self.reply(*client, "/node_trigger", args.clone());
-        }
+        self.notify("/node_trigger", args);
     }
 
     /// Retunes the socket read timeout -- the run loop's idle tick -- to the

@@ -25,14 +25,7 @@ impl OscServer {
     ) -> Answer {
         let index = args.index()?;
         self.attach_shared_buffer(index)?;
-        self.reply(
-            from,
-            "/done",
-            vec![
-                OscType::String("/buffer_attach".into()),
-                OscType::Int(index as i32),
-            ],
-        );
+        self.done_with(from, "/buffer_attach", vec![OscType::Int(index as i32)]);
         Ok(())
     }
 
@@ -78,11 +71,7 @@ impl OscServer {
             OscType::Int(start),
             OscType::Int(frames),
         ];
-        for client in self.clients.clone() {
-            if client != from {
-                self.reply(client, "/buffer_touched", payload.clone());
-            }
-        }
+        self.notify_but(from, "/buffer_touched", payload);
         Ok(())
     }
 
@@ -115,11 +104,7 @@ impl OscServer {
             OscType::Int(start),
             OscType::Int(frames),
         ];
-        for client in self.clients.clone() {
-            if client != from {
-                self.reply(client, "/buffer_touched", payload.clone());
-            }
-        }
+        self.notify_but(from, "/buffer_touched", payload);
     }
 
     /// `/buffer_close bufnum`: closes a soundfile a streaming buffer left open
@@ -135,14 +120,7 @@ impl OscServer {
     ) -> Answer {
         let index = args.index()?;
         allocated(&self.translator.buffers, index as i32)?;
-        self.reply(
-            from,
-            "/done",
-            vec![
-                OscType::String("/buffer_close".into()),
-                OscType::Int(index as i32),
-            ],
-        );
+        self.done_with(from, "/buffer_close", vec![OscType::Int(index as i32)]);
         Ok(())
     }
 
@@ -201,17 +179,15 @@ impl OscServer {
         cmd: &'static str,
         msg: &OscMessage,
         from: ClientId,
-    ) {
-        let (index, job) = match parse_buffer_msg(
+    ) -> Answer {
+        let (index, job) = parse_buffer_msg(
             cmd,
             &msg.args,
             &self.translator.buffers,
             self.info.nominal_sample_rate,
-        ) {
-            Ok(parsed) => parsed,
-            Err(e) => return self.fail(from, cmd, e),
-        };
+        )?;
         self.submit_nrt(cmd, index, from, job);
+        Ok(())
     }
 
     /// `/buffer_gen bufnum cmd ...`: fills a buffer through the wavetable/generator
@@ -505,14 +481,7 @@ impl OscServer {
             bytes.extend_from_slice(&s.to_le_bytes());
         }
         std::fs::write(path, &bytes).map_err(|e| format!("write {path}: {e}"))?;
-        self.reply(
-            from,
-            "/done",
-            vec![
-                OscType::String("/buffer_export".into()),
-                OscType::Int(bufnum),
-            ],
-        );
+        self.done_with(from, "/buffer_export", vec![OscType::Int(bufnum)]);
         Ok(())
     }
 }

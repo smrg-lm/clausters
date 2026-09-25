@@ -65,7 +65,7 @@ impl OscServer {
             ));
         }
         self.streams.retain(|s| s.client != from);
-        self.reply(from, "/done", vec![OscType::String("/bus_stream".into())]);
+        self.done(from, "/bus_stream");
         if period_ms > 0 && !buses.is_empty() {
             let period = Duration::from_millis(period_ms as u64).max(MIN_STREAM_PERIOD);
             self.streams.push(BusStream {
@@ -264,11 +264,7 @@ impl OscServer {
             }
         }
         self.drop_tap_streams(|s| s.client == from);
-        self.reply(
-            from,
-            "/done",
-            vec![OscType::String("/bus_tapStream".into())],
-        );
+        self.done(from, "/bus_tapStream");
         if !wanted.is_empty() {
             let period = Duration::from_millis(period_ms as u64).max(MIN_STREAM_PERIOD);
             self.tap_streams.push(TapStream {
@@ -407,11 +403,7 @@ impl OscServer {
         }
         let bucket = bucket.max(1) as usize;
         self.buffer_streams.retain(|s| s.client != from);
-        self.reply(
-            from,
-            "/done",
-            vec![OscType::String("/buffer_stream".into())],
-        );
+        self.done(from, "/buffer_stream");
         if period_ms > 0 && !buffers.is_empty() {
             let period = Duration::from_millis(period_ms as u64).max(MIN_STREAM_PERIOD);
             self.buffer_streams.push(BufferStream {

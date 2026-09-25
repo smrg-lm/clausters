@@ -13,18 +13,13 @@ impl OscServer {
     /// ship the whole batch.
     pub(in crate::osc::server) fn handle_via_translate(
         &mut self,
+        _addr: &'static str,
         msg: &OscMessage,
-        from: ClientId,
-    ) {
+        _from: ClientId,
+    ) -> Answer {
         let mut cmds = Vec::new();
-        if let Err(e) = self.translator.translate(msg, &mut cmds) {
-            return self.fail(from, &msg.addr, e);
-        }
-        for cmd in cmds {
-            if self.handle.send(cmd).is_err() {
-                return self.fail(from, &msg.addr, "command FIFO full");
-            }
-        }
+        self.translator.translate(msg, &mut cmds)?;
+        self.send_all(cmds)
     }
 
     /// write the current MIDI bindings to disk after a mutation, if
@@ -187,11 +182,7 @@ impl OscServer {
                 return Err(format!("synth {id} not found"));
             }
         }
-        self.reply(
-            from,
-            "/done",
-            vec![OscType::String("/synth_forgetId".into())],
-        );
+        self.done(from, "/synth_forgetId");
         Ok(())
     }
 
