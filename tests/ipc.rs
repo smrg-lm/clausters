@@ -15,7 +15,7 @@ use clausters::clausters_core::rng::SEED_STRIDE;
 use clausters::osc::server::{OscServer, ServerInfo};
 use clausters::rosc::{OscMessage, OscPacket, OscType, encoder};
 use clausters::server::engine::{BLOCK_SIZE, engine_pair_full};
-use clausters::server::ipc::{IpcPeer, Role, SEGMENT_SIZE, Segment};
+use clausters::server::ipc::{IpcPeer, Regions, Role, SEGMENT_SIZE, Segment};
 
 const SR: f32 = 48_000.0;
 
@@ -142,7 +142,12 @@ fn file_segments_validate_magic_and_version() {
 /// block level (the meter's number), so no ring index reaches an API.
 #[test]
 fn the_bus_region_maps_buses_to_taps_and_holds_their_levels() {
-    let segment = Segment::in_memory_full(8, clausters::dsp::NUM_AUDIO_BUSES, 2, 256);
+    let segment = Segment::in_memory_sized(Regions {
+        control_buses: 8,
+        audio_buses: clausters::dsp::NUM_AUDIO_BUSES,
+        taps: 2,
+        tap_frames: 256,
+    });
     let buses = segment.audio_buses();
     assert!(buses > 0);
 
@@ -176,7 +181,12 @@ fn the_bus_region_maps_buses_to_taps_and_holds_their_levels() {
 #[test]
 fn tap_rings_write_read_and_wrap() {
     // A tiny ring (256 samples = 4 blocks) so the wrap is exercised fast.
-    let segment = Segment::in_memory_full(8, clausters::dsp::NUM_AUDIO_BUSES, 2, 256);
+    let segment = Segment::in_memory_sized(Regions {
+        control_buses: 8,
+        audio_buses: clausters::dsp::NUM_AUDIO_BUSES,
+        taps: 2,
+        tap_frames: 256,
+    });
     assert_eq!(segment.taps(), 2);
     assert_eq!(segment.tap_frames(), 256);
 
@@ -815,9 +825,16 @@ fn the_overview_beside_a_region_follows_the_writes() {
     ));
     let _ = std::fs::remove_file(&path);
 
-    let (segment, _) =
-        Segment::open_or_create_full(&path, 1024, clausters::dsp::NUM_AUDIO_BUSES, 2, 1024)
-            .unwrap();
+    let (segment, _) = Segment::open_or_create(
+        &path,
+        Regions {
+            control_buses: 1024,
+            audio_buses: clausters::dsp::NUM_AUDIO_BUSES,
+            taps: 2,
+            tap_frames: 1024,
+        },
+    )
+    .unwrap();
     assert!(segment.claim_control());
     let (mut server, mut engine) = shared_server(&segment, Some(path.clone()));
     let client = IpcPeer::new(Arc::clone(&segment), Role::Client);
@@ -945,9 +962,16 @@ fn a_second_server_attaches_to_the_buffers_and_owns_none_of_them() {
 
     // The owner: it creates the segment, claims the command plane, and puts
     // every buffer it installs into a region beside it.
-    let (owner_segment, created) =
-        Segment::open_or_create_full(&path, 1024, clausters::dsp::NUM_AUDIO_BUSES, 2, 1024)
-            .unwrap();
+    let (owner_segment, created) = Segment::open_or_create(
+        &path,
+        Regions {
+            control_buses: 1024,
+            audio_buses: clausters::dsp::NUM_AUDIO_BUSES,
+            taps: 2,
+            tap_frames: 1024,
+        },
+    )
+    .unwrap();
     assert!(created, "nothing was there, so it was created");
     assert!(owner_segment.claim_control(), "the first server in owns it");
     let owner = shared_server(&owner_segment, Some(path.clone()));
@@ -975,9 +999,16 @@ fn a_second_server_attaches_to_the_buffers_and_owns_none_of_them() {
     // The player: it attaches to what is there. **It gets no claim**, because
     // the rings are SPSC and draining them from two processes would lose half
     // the commands to whichever popped first.
-    let (player_segment, created) =
-        Segment::open_or_create_full(&path, 1024, clausters::dsp::NUM_AUDIO_BUSES, 2, 1024)
-            .unwrap();
+    let (player_segment, created) = Segment::open_or_create(
+        &path,
+        Regions {
+            control_buses: 1024,
+            audio_buses: clausters::dsp::NUM_AUDIO_BUSES,
+            taps: 2,
+            tap_frames: 1024,
+        },
+    )
+    .unwrap();
     assert!(
         !created,
         "a segment that exists is adopted, never truncated"
@@ -1024,14 +1055,30 @@ fn a_dead_owners_claim_is_taken_over() {
         line!()
     ));
     let _ = std::fs::remove_file(&path);
-    let (segment, _) =
-        Segment::open_or_create_full(&path, 64, clausters::dsp::NUM_AUDIO_BUSES, 0, 1024).unwrap();
+    let (segment, _) = Segment::open_or_create(
+        &path,
+        Regions {
+            control_buses: 64,
+            audio_buses: clausters::dsp::NUM_AUDIO_BUSES,
+            taps: 0,
+            tap_frames: 1024,
+        },
+    )
+    .unwrap();
     assert!(segment.claim_control());
     assert_eq!(segment.control_owner(), Some(std::process::id()));
     // A live holder refuses whoever asks second, this process included: one
     // ring pair, one drainer.
-    let (twin, _) =
-        Segment::open_or_create_full(&path, 64, clausters::dsp::NUM_AUDIO_BUSES, 0, 1024).unwrap();
+    let (twin, _) = Segment::open_or_create(
+        &path,
+        Regions {
+            control_buses: 64,
+            audio_buses: clausters::dsp::NUM_AUDIO_BUSES,
+            taps: 0,
+            tap_frames: 1024,
+        },
+    )
+    .unwrap();
     assert!(!twin.claim_control());
     segment.release_control();
     assert_eq!(segment.control_owner(), None);
@@ -1121,9 +1168,16 @@ fn a_session_owns_the_buffers_and_a_player_attaches_to_them() {
     take.set_at(9, 0.25);
 
     // The player: a server that attached, mapping what the session owns.
-    let (player_segment, created) =
-        Segment::open_or_create_full(&path, 1024, clausters::dsp::NUM_AUDIO_BUSES, 2, 1024)
-            .unwrap();
+    let (player_segment, created) = Segment::open_or_create(
+        &path,
+        Regions {
+            control_buses: 1024,
+            audio_buses: clausters::dsp::NUM_AUDIO_BUSES,
+            taps: 2,
+            tap_frames: 1024,
+        },
+    )
+    .unwrap();
     assert!(!created);
     assert!(!player_segment.claim_control());
     let (mut player, _engine) = shared_server(&player_segment, None);
@@ -1181,7 +1235,16 @@ fn a_dead_owners_segment_is_swept_and_a_live_one_is_left_alone() {
     let live = dir.join("live");
     let unclaimed = dir.join("unclaimed");
     for path in [&dead, &live, &unclaimed] {
-        Segment::create_full(path, 1024, clausters::dsp::NUM_AUDIO_BUSES, 2, 1024).unwrap();
+        Segment::create_sized(
+            path,
+            Regions {
+                control_buses: 1024,
+                audio_buses: clausters::dsp::NUM_AUDIO_BUSES,
+                taps: 2,
+                tap_frames: 1024,
+            },
+        )
+        .unwrap();
     }
     std::fs::write(&take, [0u8; 64]).unwrap();
 
@@ -1209,7 +1272,16 @@ fn a_dead_owners_segment_is_swept_and_a_live_one_is_left_alone() {
     // The path a caller is about to open is never swept, which is what keeps
     // adopting a killed owner's samples by name working.
     let orphan = dir.join("orphan");
-    Segment::create_full(&orphan, 1024, clausters::dsp::NUM_AUDIO_BUSES, 2, 1024).unwrap();
+    Segment::create_sized(
+        &orphan,
+        Regions {
+            control_buses: 1024,
+            audio_buses: clausters::dsp::NUM_AUDIO_BUSES,
+            taps: 2,
+            tap_frames: 1024,
+        },
+    )
+    .unwrap();
     assert!(
         Segment::open(&orphan)
             .unwrap()
@@ -1222,9 +1294,16 @@ fn a_dead_owners_segment_is_swept_and_a_live_one_is_left_alone() {
     // And the sweep is where a segment is created, so the collection happens
     // without anybody remembering to ask for it.
     let fresh = dir.join("fresh");
-    let (_, created) =
-        Segment::open_or_create_full(&fresh, 1024, clausters::dsp::NUM_AUDIO_BUSES, 2, 1024)
-            .unwrap();
+    let (_, created) = Segment::open_or_create(
+        &fresh,
+        Regions {
+            control_buses: 1024,
+            audio_buses: clausters::dsp::NUM_AUDIO_BUSES,
+            taps: 2,
+            tap_frames: 1024,
+        },
+    )
+    .unwrap();
     assert!(created);
     assert!(
         !orphan.exists(),

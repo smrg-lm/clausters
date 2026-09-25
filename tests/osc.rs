@@ -28,7 +28,7 @@ fn range_samples(arg: &OscType) -> Vec<f32> {
     }
 }
 use clausters::server::engine::{BLOCK_SIZE, Engine, engine_pair, engine_pair_full};
-use clausters::server::ipc::Segment;
+use clausters::server::ipc::{Regions, Segment};
 
 struct TestServer {
     addr: SocketAddr,
@@ -883,7 +883,12 @@ fn buffer_stream_reports_a_recording_with_no_segment_behind_it() {
 /// `f32` blob), audible content, cancel, and the /fail cases.
 #[test]
 fn buffer_stream_reports_the_overview_of_what_was_recorded() {
-    let segment = Segment::in_memory_full(1024, clausters::dsp::NUM_AUDIO_BUSES, 0, 0);
+    let segment = Segment::in_memory_sized(Regions {
+        control_buses: 1024,
+        audio_buses: clausters::dsp::NUM_AUDIO_BUSES,
+        taps: 0,
+        tap_frames: 0,
+    });
     let mut server = TestServer::spawn_with(engine_pair_full(
         48_000.0,
         2,
@@ -984,7 +989,12 @@ fn buffer_stream_reports_the_overview_of_what_was_recorded() {
 
 #[test]
 fn tap_and_tap_stream_snapshot_audio() {
-    let segment = Segment::in_memory_full(1024, clausters::dsp::NUM_AUDIO_BUSES, 2, 4096);
+    let segment = Segment::in_memory_sized(Regions {
+        control_buses: 1024,
+        audio_buses: clausters::dsp::NUM_AUDIO_BUSES,
+        taps: 2,
+        tap_frames: 4096,
+    });
     let mut server = TestServer::spawn_with(engine_pair_full(
         48_000.0,
         2,
@@ -1080,7 +1090,12 @@ fn tap_and_tap_stream_snapshot_audio() {
 /// readers of one bus all see it.
 #[test]
 fn bus_levels_are_published_for_every_bus_and_held_with_a_decay() {
-    let segment = Segment::in_memory_full(1024, clausters::dsp::NUM_AUDIO_BUSES, 2, 4096);
+    let segment = Segment::in_memory_sized(Regions {
+        control_buses: 1024,
+        audio_buses: clausters::dsp::NUM_AUDIO_BUSES,
+        taps: 2,
+        tap_frames: 4096,
+    });
     let mut server = TestServer::spawn_with(engine_pair_full(
         48_000.0,
         2,

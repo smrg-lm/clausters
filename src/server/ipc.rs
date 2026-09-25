@@ -216,97 +216,94 @@ pub struct Segment {
 unsafe impl Send for Segment {}
 unsafe impl Sync for Segment {}
 
-impl Segment {
-    /// A heap-backed segment for the in-process (embed) transport, with the
-    /// default control-bus and tap counts.
-    pub fn in_memory() -> Arc<Self> {
-        Self::in_memory_with(NUM_CONTROL_BUSES)
-    }
+/// How big each region of a segment is: what a server asks for when it
+/// creates one (`--control-buses`, `--taps`, `--tap-frames`), and what an
+/// existing segment's header already says. The default is every compiled
+/// default.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Regions {
+    pub control_buses: usize,
+    pub audio_buses: usize,
+    pub taps: usize,
+    pub tap_frames: usize,
+}
 
-    /// A heap-backed segment carrying `control_buses` control slots and the
-    /// default tap region.
-    pub fn in_memory_with(control_buses: usize) -> Arc<Self> {
-        Self::in_memory_full(
-            control_buses,
-            NUM_AUDIO_BUSES,
-            DEFAULT_TAPS,
-            DEFAULT_TAP_FRAMES,
+impl Default for Regions {
+    fn default() -> Self {
+        Regions {
+            control_buses: NUM_CONTROL_BUSES,
+            audio_buses: NUM_AUDIO_BUSES,
+            taps: DEFAULT_TAPS,
+            tap_frames: DEFAULT_TAP_FRAMES,
+        }
+    }
+}
+
+impl Regions {
+    /// The bytes a segment of these regions takes.
+    fn size(&self) -> usize {
+        check_tap_params(self.taps, self.tap_frames);
+        shm::segment_size(
+            self.control_buses,
+            self.audio_buses,
+            self.taps,
+            self.tap_frames,
+            DEFAULT_BUFFERS,
         )
     }
 
-    /// A heap-backed segment with every region sized explicitly.
-    pub fn in_memory_full(
-        control_buses: usize,
-        audio_buses: usize,
-        taps: usize,
-        tap_frames: usize,
-    ) -> Arc<Self> {
-        check_tap_params(taps, tap_frames);
-        let size = shm::segment_size(
-            control_buses,
-            audio_buses,
-            taps,
-            tap_frames,
-            DEFAULT_BUFFERS,
-        );
+    /// A view laid out as these regions over `len` bytes at `ptr`.
+    ///
+    /// # Safety
+    /// `ptr` must be valid, 16-aligned and writable for `len` bytes, `len` at
+    /// least [`Self::size`], for as long as the view lives.
+    unsafe fn init(&self, ptr: *mut u8, len: usize) -> View {
+        // SAFETY: forwarded from this function's own contract.
+        unsafe {
+            View::init(
+                ptr,
+                len,
+                self.control_buses,
+                self.audio_buses,
+                self.taps,
+                self.tap_frames,
+            )
+        }
+    }
+}
+
+impl Segment {
+    /// A heap-backed segment for the in-process (embed) transport, with every
+    /// region at its default size.
+    pub fn in_memory() -> Arc<Self> {
+        Self::in_memory_sized(Regions::default())
+    }
+
+    /// A heap-backed segment with its regions sized as `regions`.
+    pub fn in_memory_sized(regions: Regions) -> Arc<Self> {
+        let size = regions.size();
         let mut words = vec![0u128; size.div_ceil(16)].into_boxed_slice();
         // SAFETY: the allocation is at least `size` bytes and 16-aligned, and
         // the box below keeps it alive for as long as the view.
-        let view = unsafe {
-            View::init(
-                words.as_mut_ptr() as *mut u8,
-                size,
-                control_buses,
-                audio_buses,
-                taps,
-                tap_frames,
-            )
-        };
+        let view = unsafe { regions.init(words.as_mut_ptr() as *mut u8, size) };
         Arc::new(Self {
             view,
             _backing: Backing::Heap(words),
         })
     }
 
-    /// Creates (or truncates) the segment file and maps it shared, with the
-    /// default control-bus and tap counts. Put it on a memory filesystem --
+    /// Creates (or truncates) the segment file and maps it shared, with every
+    /// region at its default size. Put it on a memory filesystem --
     /// `/dev/shm/...` on Linux -- to avoid disk writes.
     #[cfg(unix)]
     pub fn create(path: &Path) -> io::Result<Arc<Self>> {
-        Self::create_with(path, NUM_CONTROL_BUSES)
+        Self::create_sized(path, Regions::default())
     }
 
-    /// Like [`create`](Self::create), sizing the control-bus region to
-    /// `control_buses` (`--control-buses`).
+    /// Like [`create`](Self::create), with the regions sized as `regions`.
     #[cfg(unix)]
-    pub fn create_with(path: &Path, control_buses: usize) -> io::Result<Arc<Self>> {
-        Self::create_full(
-            path,
-            control_buses,
-            NUM_AUDIO_BUSES,
-            DEFAULT_TAPS,
-            DEFAULT_TAP_FRAMES,
-        )
-    }
-
-    /// Like [`create`](Self::create), with every region sized explicitly
-    /// (`--control-buses`, `--taps`, `--tap-frames`).
-    #[cfg(unix)]
-    pub fn create_full(
-        path: &Path,
-        control_buses: usize,
-        audio_buses: usize,
-        taps: usize,
-        tap_frames: usize,
-    ) -> io::Result<Arc<Self>> {
-        check_tap_params(taps, tap_frames);
-        let size = shm::segment_size(
-            control_buses,
-            audio_buses,
-            taps,
-            tap_frames,
-            DEFAULT_BUFFERS,
-        );
+    pub fn create_sized(path: &Path, regions: Regions) -> io::Result<Arc<Self>> {
+        let size = regions.size();
         let file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -315,8 +312,8 @@ impl Segment {
             .open(path)?;
         file.set_len(size as u64)?;
         let (ptr, len) = Self::map_file(&file, size)?;
-        // SAFETY: the mapping we just made, sized for the counts given.
-        let view = unsafe { View::init(ptr, len, control_buses, audio_buses, taps, tap_frames) };
+        // SAFETY: the mapping we just made, sized for these regions.
+        let view = unsafe { regions.init(ptr, len) };
         Ok(Arc::new(Self {
             view,
             _backing: Backing::Mapped { ptr, len },
@@ -326,7 +323,7 @@ impl Segment {
     /// **Attaches to the segment at `path`, creating one only when there is
     /// none.** The door a server takes.
     ///
-    /// [`create_full`](Self::create_full) truncates, which was right while a
+    /// [`create_sized`](Self::create_sized) truncates, which was right while a
     /// segment was one server's own transport and is wrong now that it indexes
     /// the **samples**: the process most likely to be restarted -- the one
     /// holding the audio device -- would wipe what everybody else is editing.
@@ -346,13 +343,7 @@ impl Segment {
     /// vanishes -- the arrangement this exists for starts the owner first (see
     /// `docs/ipc.md`).
     #[cfg(unix)]
-    pub fn open_or_create_full(
-        path: &Path,
-        control_buses: usize,
-        audio_buses: usize,
-        taps: usize,
-        tap_frames: usize,
-    ) -> io::Result<(Arc<Self>, bool)> {
+    pub fn open_or_create(path: &Path, regions: Regions) -> io::Result<(Arc<Self>, bool)> {
         match Self::open(path) {
             Ok(seg) => Ok((seg, false)),
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
@@ -370,8 +361,7 @@ impl Segment {
                         );
                     }
                 }
-                Self::create_full(path, control_buses, audio_buses, taps, tap_frames)
-                    .map(|seg| (seg, true))
+                Self::create_sized(path, regions).map(|seg| (seg, true))
             }
             Err(e) => Err(e),
         }

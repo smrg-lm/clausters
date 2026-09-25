@@ -41,9 +41,7 @@ use crate::osc::server::{OscServer, ServerInfo};
 use crate::server::engine::{
     BLOCK_SIZE, DEFAULT_AUDIO_BUSES, DEFAULT_CONTROL_BUSES, Engine, engine_pair_full,
 };
-#[cfg(unix)]
-use crate::server::ipc::{DEFAULT_TAP_FRAMES, DEFAULT_TAPS};
-use crate::server::ipc::{IpcPeer, Role, Segment};
+use crate::server::ipc::{IpcPeer, Regions, Role, Segment};
 
 /// How a session is opened. The defaults match the batch renderer's, so an
 /// operation and a score of the same samples start from the same server.
@@ -133,6 +131,14 @@ impl NrtSession {
         // A path makes the segment a file, which is the whole difference
         // between a session nobody else can see and one whose buffers a peer
         // maps by name.
+        // The ordinary tap region either way: a session writes none, but the
+        // process that attaches to its segment has a device, and its scopes
+        // and meters need the rings.
+        let regions = Regions {
+            control_buses: cfg.control_buses,
+            audio_buses: cfg.audio_buses,
+            ..Regions::default()
+        };
         let segment = match &cfg.shm {
             #[cfg(not(unix))]
             Some(path) => {
@@ -150,14 +156,7 @@ impl NrtSession {
                 // never writes one: the process that attaches to this segment
                 // *does* have a device, and its scopes and meters need the
                 // rings to be there.
-                let (segment, created) = Segment::open_or_create_full(
-                    path,
-                    cfg.control_buses,
-                    cfg.audio_buses,
-                    DEFAULT_TAPS,
-                    DEFAULT_TAP_FRAMES,
-                )
-                .map_err(|e| {
+                let (segment, created) = Segment::open_or_create(path, regions).map_err(|e| {
                     format!("cannot open the shared segment at {}: {e}", path.display())
                 })?;
                 // A session is driven through the ring, so it has to be the
@@ -175,7 +174,7 @@ impl NrtSession {
                 owned_segment = created.then(|| path.clone());
                 segment
             }
-            None => Segment::in_memory_with(cfg.control_buses),
+            None => Segment::in_memory_sized(regions),
         };
         let (mut engine, handle) = engine_pair_full(
             cfg.sample_rate as f32,

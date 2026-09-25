@@ -17,7 +17,7 @@
 use std::sync::Arc;
 
 use clausters::dsp::region::Region;
-use clausters::server::ipc::Segment;
+use clausters::server::ipc::{Regions, Segment};
 use clausters_gui::host::mapped::SharedBuffers;
 use clausters_gui::host::shm::SharedSegment;
 
@@ -54,8 +54,16 @@ fn the_host_reads_the_segment_the_server_wrote() {
 fn the_buses_the_levels_and_the_taps_read_what_the_server_published() {
     let path = scratch("planes");
     let _ = std::fs::remove_file(&path);
-    let server =
-        Segment::create_full(&path, 8, clausters::dsp::NUM_AUDIO_BUSES, 2, 256).expect("segment");
+    let server = Segment::create_sized(
+        &path,
+        Regions {
+            control_buses: 8,
+            audio_buses: clausters::dsp::NUM_AUDIO_BUSES,
+            taps: 2,
+            tap_frames: 256,
+        },
+    )
+    .expect("segment");
     server.set_sample_rate(44_100.0);
     server.view().set_control(2, -0.75);
     server.set_level(1, 0.5);
@@ -113,7 +121,16 @@ fn a_foreign_or_stale_segment_is_refused() {
     std::fs::write(&path, b"short").expect("write");
     assert!(SharedSegment::open(&path).is_err(), "not a segment at all");
 
-    Segment::create_full(&path, 8, clausters::dsp::NUM_AUDIO_BUSES, 0, 256).expect("segment");
+    Segment::create_sized(
+        &path,
+        Regions {
+            control_buses: 8,
+            audio_buses: clausters::dsp::NUM_AUDIO_BUSES,
+            taps: 0,
+            tap_frames: 256,
+        },
+    )
+    .expect("segment");
     assert!(SharedSegment::open(&path).is_ok());
     // Corrupt the version field (the header's second word).
     let mut bytes = std::fs::read(&path).expect("read");

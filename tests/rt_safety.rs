@@ -1325,9 +1325,14 @@ fn reply_ugens_do_not_allocate_on_the_audio_thread() {
 fn tap_writes_do_not_allocate_on_the_audio_thread() {
     use clausters::dsp::Limits;
     use clausters::server::engine::engine_pair_full;
-    use clausters::server::ipc::Segment;
+    use clausters::server::ipc::{Regions, Segment};
 
-    let segment = Segment::in_memory_full(1024, clausters::dsp::NUM_AUDIO_BUSES, 2, 4096);
+    let segment = Segment::in_memory_sized(Regions {
+        control_buses: 1024,
+        audio_buses: clausters::dsp::NUM_AUDIO_BUSES,
+        taps: 2,
+        tap_frames: 4096,
+    });
     let (mut engine, mut handle) =
         engine_pair_full(48_000.0, 2, 0, Some(segment), 128, 1024, Limits::default());
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];

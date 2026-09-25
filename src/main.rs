@@ -313,7 +313,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     use clausters::dsp::Limits;
     use clausters::server::defstore::{DefStore, resolve_data_dir};
     use clausters::server::engine::{DEFAULT_AUDIO_BUSES, DEFAULT_CONTROL_BUSES};
-    use clausters::server::ipc::{IpcPeer, Role, Segment};
+    use clausters::server::ipc::{IpcPeer, Regions, Role, Segment};
 
     // The config file (`[server]` of the user and project layers) supplies the
     // defaults; the CLI flags below override them, and a still-unset field falls
@@ -569,15 +569,15 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // only when it is not: the segment indexes the buffers now, so a server
     // that truncated it on the way in would take somebody's take with it.
     let mut segment_created = false;
+    let regions = Regions {
+        control_buses,
+        audio_buses,
+        taps,
+        tap_frames,
+    };
     let segment = match &shm_path {
         Some(path) => {
-            let (seg, created) = Segment::open_or_create_full(
-                std::path::Path::new(path),
-                control_buses,
-                audio_buses,
-                taps,
-                tap_frames,
-            )?;
+            let (seg, created) = Segment::open_or_create(std::path::Path::new(path), regions)?;
             if !created {
                 // The shape of a segment belongs to whoever created it: a
                 // server that attaches adopts the header's counts rather than
@@ -594,12 +594,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             segment_created = created;
             Some(seg)
         }
-        None if taps > 0 => Some(Segment::in_memory_full(
-            control_buses,
-            audio_buses,
-            taps,
-            tap_frames,
-        )),
+        None if taps > 0 => Some(Segment::in_memory_sized(regions)),
         None => None,
     };
     // `rtprio` builds promote the audio callback to real-time scheduling,

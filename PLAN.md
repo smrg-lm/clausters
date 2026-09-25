@@ -3697,7 +3697,11 @@ should confirm before the fix.
   telescoping constructors. Named steps, and no behaviour changes.
   *Done so far*: `flag_value`/`flag_parse` read a flag's value for both
   `realtime_main` and `nrt_main`, which is twenty-odd pairs of lines each
-  one call.
+  one call. `ipc::Regions` names the four region sizes a segment is
+  created with, so `Segment`'s eight constructors are six (`in_memory`,
+  `in_memory_sized`, `create`, `create_sized`, `open_or_create`, `open`) and
+  no caller passes four bare counts in a row; a session's in-memory segment
+  now takes its audio-bus count from the session like the mapped one did.
 - ✅ **Minor** *(audit 2026-09-25)*. `/server_notify` answers a client id that
   is its position in the list, so an earlier client leaving renumbers the
   others (no client reads it); a typo "where the the transport is";
