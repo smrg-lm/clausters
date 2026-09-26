@@ -606,6 +606,14 @@ impl OscServer {
                         self.notify_trigger(msg.node_id, msg.id, value);
                     }
                 }
+                ReplyKind::Fault => {
+                    warn!(
+                        target: crate::logging::OSC_TARGET,
+                        "node {}: {}",
+                        msg.node_id,
+                        crate::dsp::describe_fault(&msg)
+                    );
+                }
             }
         }
     }

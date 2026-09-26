@@ -177,8 +177,10 @@ def conv(source, kernel, *, fft_size=1024, partitions=16) -> Ugen:
 
     ``fft_size`` is the transform size (a supported power of two); the
     partition length -- and the intrinsic latency -- is ``fft_size / 2``
-    samples. ``partitions`` caps the kernel length this instance accepts
-    (its pre-allocated state). Moving ``kernel`` to a *different* prepared
+    samples. ``partitions`` is the most partitions a kernel may have (its
+    pre-allocated state, up to 256): a longer kernel plays silence and is
+    reported -- the server logs it, an offline render fails -- rather than
+    being cut short. Moving ``kernel`` to a *different* prepared
     buffer crossfades over one partition; regenerating the same buffer
     switches hard."""
     return Ugen(

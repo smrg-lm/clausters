@@ -443,7 +443,7 @@ This makes growth **by the tail** non-breaking and does nothing for an input ins
 | `PV_MagShift` | chain, stretch, shift | the same remap applied to the magnitude envelope only, over the frame's original phases |
 | `PV_Kernel` | chain, p0, p1, … | applies user-written **bin expressions** to every bin of each fresh frame: static fields `mag_expr`/`phase_expr` are postfix token lists mapping one bin's values to its new magnitude / phase; the variadic `p0…` inputs are parameters the expressions read, sampled at the hop — see the bin-expression note below |
 | `IFFT` | chain | closes a spectral chain: inverse-transforms each fresh frame and overlap-adds it back to audio; `fft_size`/`wintype` are inherited from the chain's `FFT` (given only on the `FFT`) |
-| `Conv` | source, kernel | partitioned convolution against a **prepared** kernel buffer (`/buffer_gen prepare_partconv`); static fields `fft_size` (transform size; the partition — and intrinsic latency — is `fft_size/2`) and `partitions` (the longest kernel accepted, default 16); see the convolution note below |
+| `Conv` | source, kernel | partitioned convolution against a **prepared** kernel buffer (`/buffer_gen prepare_partconv`); static fields `fft_size` (transform size; the partition — and intrinsic latency — is `fft_size/2`) and `partitions` (the longest kernel accepted, in partitions, 1–256, default 16 — a longer kernel is refused, not cut); see the convolution note below |
 
 **Envelopes (`EnvGen`).** `EnvGen` plays a breakpoint envelope, modelled on SuperCollider's. Its inputs are five fixed signals followed by a flat **envelope array**: `gate, level_scale, level_bias, time_scale, done_action`, then `initLevel, numSegments, releaseNode, loopNode`, then four values **per segment** — `target, duration, shape, curve`. The output is `envelope · level_scale + level_bias`; `time_scale` stretches every segment's duration. A rising `gate` (re)triggers from `initLevel`; while the gate is held the envelope **sustains** at `releaseNode` (an index into the levels — hold that level until release); when the gate falls it plays the segments from `releaseNode` on. A gate found **already closed on the node's very first sample** also counts as a release: a live note-on and its note-off can both apply before the node's first block, and the envelope then plays the release from `initLevel` and finishes (so the `doneAction` still frees the node) instead of sustaining forever on a closed gate. `releaseNode < 0` disables the sustain, so the envelope plays straight through (a one-shot). With a `loopNode` (an index `< releaseNode`), the held phase **cycles** the segments in `[loopNode, releaseNode)` instead of holding a single level, carrying the level at the release node back as the loop's start; the release still plays out from `releaseNode` when the gate falls. `loopNode < 0` disables looping. The **shape** numbers are `0` step, `1` linear, `2` exponential (needs same-sign, non-zero levels), `3` sine, `4` welch, `5` custom-curvature (bent by the `curve` value: 0 linear, positive starts slow, negative starts fast), `6` squared, `7` cubed, `8` hold. When the last segment finishes the UGen applies its `done_action` — scsynth's full set (0–15), with the freeing done on the audio thread through the garbage FIFO, never a blocking free:
 
@@ -575,7 +575,9 @@ a self-contained audio UGen — one name covering what scsynth splits into
 irBufnum` partitions the IR in `irBufnum` (channel 0) into blocks of
 `fftSize/2`, transforms each once on the NRT queue, and writes
 `[L, P, P × fftSize packed spectra]` into the target (size it as
-`2 + P·fftSize` frames). The audio thread only ever multiplies against the
+`2 + P·fftSize` frames). The whole response is prepared or none of it: a
+target smaller than that, an empty source, or a response over 256 partitions
+(use a larger `fftSize`) fails the command with `/fail`. The audio thread only ever multiplies against the
 ready spectra, and its per-block cost is **flat**: the partition products are
 spread across the hop's blocks, so a long reverb tail does not spike the hop
 block. Intrinsic latency is one partition (`fftSize/2` samples), reported by
@@ -583,8 +585,12 @@ the node (the first consumer of the latency hook; no delay compensation yet).
 Moving the `kernel` input to a *different* prepared buffer crossfades over one
 partition (scsynth's `Convolution2L` behavior); regenerating the same buffer
 index switches hard — use a fresh buffer when the transition matters. An
-unprepared, missing or mismatched (`L` differs) kernel plays silence; the
-input history keeps running, so a valid kernel resumes cleanly.
+unprepared or missing kernel plays silence; the input history keeps running,
+so a valid kernel resumes cleanly. A kernel the `Conv` cannot use **whole** —
+prepared at another `fftSize`, or with more partitions than its `partitions`
+holds — also plays silence rather than a response cut short, and says so once:
+the live server logs a warning naming the buffer and both numbers, and an
+offline render fails with it.
 
 Analysis and resynthesis use the same window (Hann by default), and the
 overlap-add is **window-normalized** (divided by the steady-state window-overlap

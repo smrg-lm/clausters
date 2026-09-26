@@ -42,6 +42,48 @@
 //! `Convolution2L` behavior, one frame). Replacing the *contents* of the same
 //! buffer index instead is a hard switch with no crossfade: allocate the new
 //! IR in a fresh buffer and move the input when the transition matters.
+//!
+//! **A kernel is used whole or not at all.** One prepared at another FFT size,
+//! or with more partitions than the instance's FDL holds, plays silence
+//! rather than a response cut to fit, and is reported once as a
+//! [`ReplyKind::Fault`](crate::dsp::ReplyKind) (see [`fault`]): the live
+//! server logs it and an offline render fails with it.
+
+/// The faults a `Conv` reports (a [`ReplyKind::Fault`](crate::dsp::ReplyKind)
+/// whose id is one of these): a kernel it cannot convolve with exactly, so
+/// it plays silence rather than a wrong result.
+pub mod fault {
+    /// The kernel was prepared at another FFT size. Values: `[buffer, the
+    /// kernel's partition length, this Conv's]`.
+    pub const PARTITION: i32 = 1;
+    /// The kernel has more partitions than this Conv holds -- convolving with
+    /// the ones that fit would cut the response short. Values: `[buffer, the
+    /// kernel's partitions, this Conv's capacity]`.
+    pub const TOO_LONG: i32 = 2;
+}
+
+/// The sentence for a `Conv` fault, built on the network thread.
+pub fn describe_fault(code: i32, values: &[f32]) -> String {
+    let v = |i: usize| values.get(i).copied().unwrap_or(0.0) as i64;
+    match code {
+        fault::PARTITION => format!(
+            "Conv: kernel buffer {} was prepared with {}-sample partitions and this Conv uses {}; \
+             it plays silence (prepare the kernel at the Conv's fft_size)",
+            v(0),
+            v(1),
+            v(2)
+        ),
+        fault::TOO_LONG => format!(
+            "Conv: kernel buffer {} has {} partitions and this Conv holds {}; \
+             it plays silence (give the Conv partitions >= {})",
+            v(0),
+            v(1),
+            v(2),
+            v(1)
+        ),
+        _ => format!("Conv: fault {code} {values:?}"),
+    }
+}
 
 /// Default maximum partition count when the def omits `partitions`: with the
 /// default `fft_size` (1024, so `L = 512`), 16 partitions cover ~170 ms of IR
@@ -71,13 +113,12 @@ pub mod layout {
 mod ugen {
     use std::sync::atomic::AtomicU32;
 
-    use super::layout;
-    use super::{DEFAULT_PARTITIONS, MAX_PARTITIONS};
+    use super::{DEFAULT_PARTITIONS, MAX_PARTITIONS, fault, layout};
     use crate::dsp::buffer::Buffer;
     use crate::dsp::fifo::SampleFifo;
     use crate::dsp::registry::UGenConfig;
     use crate::dsp::spectral::resolve_fft_size;
-    use crate::dsp::{ProcessCtx, UGen, at};
+    use crate::dsp::{ProcessCtx, ReplyKind, ReplyMsg, UGen, at};
     use clausters_core::fft;
 
     /// Uniformly partitioned overlap-save convolver. Inputs: `[in, kernel]` -- the
@@ -85,8 +126,9 @@ mod ugen {
     /// prepare_partconv`). Static config: `fft_size` (the transform size `N`; the
     /// partition is `L = N/2`) and `partitions` (the FDL capacity -- the longest
     /// kernel this instance accepts). A kernel whose own `L` differs from the
-    /// instance's, or an unprepared/missing buffer, plays silence (the input
-    /// history keeps running, so a valid kernel resumes cleanly).
+    /// instance's or that is longer than it holds, or an unprepared/missing
+    /// buffer, plays silence (the input history keeps running, so a valid
+    /// kernel resumes cleanly); the first two are reported as a fault.
     pub struct Conv {
         /// Partition length `L` (the hop, and the intrinsic latency).
         part: usize,
@@ -121,6 +163,22 @@ mod ugen {
         fifo: SampleFifo,
         /// The kernel buffer index in use (rounded input 1); `-1` before any.
         kernel_buf: i32,
+        /// A fault waiting for the synth to drain it.
+        pending: Option<ReplyMsg>,
+        /// The last fault reported, as `(buffer, code)`, so a kernel that
+        /// stays wrong is reported once; cleared when a kernel is valid.
+        reported: Option<(i32, i32)>,
+    }
+
+    /// Why a buffer is not a kernel this `Conv` can use.
+    enum Unusable {
+        /// Not a prepared kernel at all (unallocated, unprepared, short):
+        /// silence, and nothing to report -- a kernel still being prepared
+        /// looks like this for a moment.
+        Absent,
+        /// A prepared kernel this instance cannot convolve with exactly:
+        /// `(code, the kernel's number, this Conv's)`.
+        Fault(i32, usize, usize),
     }
 
     impl Conv {
@@ -148,6 +206,8 @@ mod ugen {
                 fade: vec![0.0; part],
                 fifo: SampleFifo::new(4 * n),
                 kernel_buf: -1,
+                pending: None,
+                reported: None,
             }
         }
 
@@ -182,17 +242,54 @@ mod ugen {
         }
 
         /// Validates a pool buffer as a prepared kernel for this instance:
-        /// matching partition length, a sane partition count, and enough data.
-        /// Returns the partition count in use (clamped to the FDL capacity).
-        fn kernel_parts(&self, data: &[AtomicU32]) -> Option<usize> {
-            if data.len() < layout::HEADER || Buffer::load(&data[0]) != self.part as f32 {
-                return None;
+        /// matching partition length, a partition count it can hold, and
+        /// enough data. Returns the kernel's partition count. A kernel longer
+        /// than the FDL is refused, never cut to fit: convolving with its
+        /// first partitions would be a shorter response than the one given.
+        fn kernel_parts(&self, data: &[AtomicU32]) -> Result<usize, Unusable> {
+            if data.len() < layout::HEADER {
+                return Err(Unusable::Absent);
             }
+            let part = Buffer::load(&data[0]);
             let parts = Buffer::load(&data[1]) as usize;
-            if parts == 0 || data.len() < layout::frames(self.n, parts) {
-                return None;
+            if part <= 0.0 || parts == 0 || data.len() < layout::frames(2 * part as usize, parts) {
+                return Err(Unusable::Absent);
             }
-            Some(parts.min(self.max_parts))
+            if part != self.part as f32 {
+                return Err(Unusable::Fault(fault::PARTITION, part as usize, self.part));
+            }
+            if parts > self.max_parts {
+                return Err(Unusable::Fault(fault::TOO_LONG, parts, self.max_parts));
+            }
+            Ok(parts)
+        }
+
+        /// Resolves buffer `index` as a kernel, queuing a fault the first
+        /// time it is one this instance cannot use exactly.
+        fn resolve<'a>(
+            &mut self,
+            ctx: &ProcessCtx<'a>,
+            index: i32,
+        ) -> Option<(&'a [AtomicU32], usize)> {
+            let data = pool_data(ctx, index)?;
+            match self.kernel_parts(data) {
+                Ok(parts) => {
+                    self.reported = None;
+                    Some((data, parts))
+                }
+                Err(Unusable::Fault(code, got, want)) => {
+                    if self.reported != Some((index, code)) {
+                        self.reported = Some((index, code));
+                        let mut msg = ReplyMsg::new(ReplyKind::Fault, code, "Conv");
+                        msg.push_value(index as f32);
+                        msg.push_value(got as f32);
+                        msg.push_value(want as f32);
+                        self.pending = Some(msg);
+                    }
+                    None
+                }
+                Err(Unusable::Absent) => None,
+            }
         }
     }
 
@@ -215,17 +312,27 @@ mod ugen {
             self.part
         }
 
+        fn is_reply(&self) -> bool {
+            true
+        }
+
+        fn drain_replies(&mut self, node_id: i32, sink: &mut dyn FnMut(ReplyMsg)) {
+            if let Some(mut msg) = self.pending.take() {
+                msg.node_id = node_id;
+                sink(msg);
+            }
+        }
+
         fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
             let input = inputs[0];
             let kernel_buf = at(inputs[1], 0).round() as i32;
             // Resolve the requested kernel once per slice; `None` plays silence
             // but keeps the input history running. On a pending swap, also
             // resolve the outgoing kernel so its output can be crossfaded out.
-            let kernel = pool_data(ctx, kernel_buf)
-                .and_then(|d| self.kernel_parts(d).map(|parts| (d, parts)));
+            let kernel = self.resolve(ctx, kernel_buf);
             let old_kernel = if kernel_buf != self.kernel_buf {
                 pool_data(ctx, self.kernel_buf)
-                    .and_then(|d| self.kernel_parts(d).map(|parts| (d, parts)))
+                    .and_then(|d| self.kernel_parts(d).ok().map(|parts| (d, parts)))
             } else {
                 None
             };

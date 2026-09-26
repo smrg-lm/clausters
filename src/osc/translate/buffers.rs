@@ -575,10 +575,33 @@ pub fn parse_buffer_gen(args: &[OscType], mirror: &BufferPool) -> Result<(i32, N
             let Some(src) = mirror_buffer(mirror, *src_buf) else {
                 return Err(format!("no source buffer allocated at {src_buf}"));
             };
-            GenCommand::PreparePartConv {
-                src,
-                fft_size: *fft_size as usize,
+            // The whole impulse response is prepared or nothing is: a kernel
+            // cut to fit its buffer, or to what a Conv can hold, would
+            // convolve with a shorter response than the one given.
+            let fft_size = *fft_size as usize;
+            let ir_frames = src.len() / src.channels().max(1);
+            if ir_frames == 0 {
+                return Err(format!(
+                    "prepare_partconv: source buffer {src_buf} is empty"
+                ));
             }
+            let parts = ir_frames.div_ceil(fft_size / 2);
+            if parts > crate::dsp::conv::MAX_PARTITIONS {
+                return Err(format!(
+                    "prepare_partconv: {ir_frames} frames at fftSize {fft_size} are {parts} \
+                     partitions, over the {} a Conv holds; use a larger fftSize",
+                    crate::dsp::conv::MAX_PARTITIONS
+                ));
+            }
+            let needed = crate::dsp::conv::layout::frames(fft_size, parts);
+            if current.len() < needed {
+                return Err(format!(
+                    "prepare_partconv: {ir_frames} frames at fftSize {fft_size} need a \
+                     {needed}-sample buffer, and buffer {index} holds {}",
+                    current.len()
+                ));
+            }
+            GenCommand::PreparePartConv { src, fft_size }
         }
         "env" => {
             // env level0 [level time shape curve]...

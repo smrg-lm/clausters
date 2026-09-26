@@ -942,6 +942,21 @@ pub enum ReplyKind {
     Reply,
     /// `Poll` -- a console line `label: value`, plus a `/node_trigger` when its trigid >= 0.
     Poll,
+    /// A UGen refusing what it was given -- a configuration it cannot honour
+    /// exactly, so it plays silence instead of a wrong result. The name is
+    /// the UGen's kind, the id a fault code of that kind and the values its
+    /// numbers; [`describe_fault`] turns them into a sentence on the network
+    /// thread. The live server logs it; an offline render fails with it.
+    Fault,
+}
+
+/// The sentence for a [`ReplyKind::Fault`], built off the audio thread from
+/// the kind, the code and the values the UGen could carry inline.
+pub fn describe_fault(msg: &ReplyMsg) -> String {
+    match msg.name() {
+        "Conv" => conv::describe_fault(msg.id, msg.values()),
+        name => format!("{name}: fault {} {:?}", msg.id, msg.values()),
+    }
 }
 
 /// A side-effect message a UGen emits on a trigger (`SendReply`/`SendTrig`/

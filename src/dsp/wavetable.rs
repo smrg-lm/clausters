@@ -86,8 +86,9 @@ pub enum GenCommand {
     /// `L = fftSize/2` samples, each zero-padded to `fftSize` and
     /// forward-transformed **here, off the audio thread** -- the RT side only
     /// ever multiplies against the ready spectra. Layout in
-    /// `dsp::conv::layout`; the partition count is capped by the target
-    /// buffer's capacity. A multichannel source contributes channel 0.
+    /// `dsp::conv::layout`. The whole response is prepared or none of it:
+    /// `/buffer_gen` refuses a target too small for it. A multichannel
+    /// source contributes channel 0.
     PreparePartConv {
         src: std::sync::Arc<Buffer>,
         fft_size: usize,
@@ -387,9 +388,10 @@ pub fn wt_interp(table: &[AtomicU32], k: usize, frac: f32) -> f32 {
 /// `prepare_partconv`: the impulse response in `src` (channel 0) partitioned
 /// and forward-transformed into the [`crate::dsp::conv::layout`] a `Conv`
 /// UGen reads: `[L, P, P * fft_size packed spectra]`, `L = fft_size / 2`.
-/// The partition count is what fits both the source and the target capacity
-/// (`len` samples); a target too small for even one partition yields an
-/// all-zero (invalid) kernel, which `Conv` plays as silence.
+/// The whole response is prepared or none of it: a target (`len` samples)
+/// too small for every partition yields an all-zero (invalid) kernel, which
+/// `Conv` plays as silence, never a kernel cut short. `/buffer_gen` refuses
+/// that target before it gets here.
 fn prepare_partconv(src: &Buffer, fft_size: usize, len: usize) -> Vec<f32> {
     use crate::dsp::conv::layout;
 
@@ -397,10 +399,9 @@ fn prepare_partconv(src: &Buffer, fft_size: usize, len: usize) -> Vec<f32> {
     let part = fft_size / 2;
     let channels = src.channels().max(1);
     let ir_len = src.len() / channels;
-    let parts_src = ir_len.div_ceil(part.max(1));
+    let parts = ir_len.div_ceil(part.max(1));
     let parts_cap = len.saturating_sub(layout::HEADER) / fft_size;
-    let parts = parts_src.min(parts_cap);
-    if part == 0 || parts == 0 {
+    if part == 0 || parts == 0 || parts > parts_cap {
         return data;
     }
     data[0] = part as f32;

@@ -222,8 +222,10 @@ export interface ConvOptions {
  * products are spread across the hop).
  *
  * `fftSize` is the transform size; the partition length -- and the intrinsic
- * latency -- is `fftSize / 2` samples. `partitions` caps the kernel length
- * this instance accepts (its pre-allocated state). Moving `kernel` to a
+ * latency -- is `fftSize / 2` samples. `partitions` is the most partitions a
+ * kernel may have (its pre-allocated state, up to 256): a longer kernel plays
+ * silence and is reported -- the server logs it, an offline render fails --
+ * rather than being cut short. Moving `kernel` to a
  * *different* prepared buffer crossfades over one partition; regenerating the
  * same buffer switches hard.
  */

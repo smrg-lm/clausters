@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use rosc::{OscMessage, OscPacket, OscTime, OscType};
 
-use crate::dsp::{Limits, NUM_AUDIO_BUSES};
+use crate::dsp::{Limits, NUM_AUDIO_BUSES, ReplyKind};
 #[cfg(feature = "faust")]
 use crate::osc::translate::parse_def_send_faust;
 use crate::osc::translate::{BUFFER_JOBS, CmdTranslator, parse_buffer_gen, parse_buffer_msg};
@@ -422,6 +422,19 @@ impl Renderer {
         sink: &mut impl FnMut(&[f32]) -> Result<(), String>,
     ) -> Result<(), String> {
         self.engine.process_block(&mut self.block);
+        // A UGen that refused what it was given plays silence; offline, where
+        // nobody reads a log, that would be a wrong file with no error, so the
+        // render stops on it. The other replies have no one to reach.
+        while let Some(msg) = self.handle.pop_reply() {
+            if msg.kind == ReplyKind::Fault {
+                return Err(format!(
+                    "at {:.6}s, node {}: {}",
+                    self.now as f64 / self.sample_rate,
+                    msg.node_id,
+                    crate::dsp::describe_fault(&msg)
+                ));
+            }
+        }
         // The last block is truncated to the requested length.
         let frames = (total - self.now).min(BLOCK_SIZE as u64) as usize;
         sink(&self.block[..frames * self.channels])?;
