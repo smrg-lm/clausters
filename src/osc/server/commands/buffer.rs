@@ -200,7 +200,13 @@ impl OscServer {
         args: Args,
         from: ClientId,
     ) -> Answer {
-        let (index, job) = parse_buffer_gen(args.rest(), &self.translator.buffers)?;
+        let (index, job) = parse_buffer_gen(
+            args.rest(),
+            &self.translator.buffers,
+            // The rate the engine runs at, which a partition's span of
+            // samples is measured in -- not the one that was asked for.
+            self.info.actual_sample_rate,
+        )?;
         self.submit_nrt("/buffer_gen", index, from, job);
         Ok(())
     }

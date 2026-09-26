@@ -406,7 +406,11 @@ export class Buffer {
 
     /**
      * Fills this buffer through `/buffer_gen` (the wavetable/generator commands:
-     * `"env"`, `"sine1"`/`"sine2"`/`"sine3"`, `"cheby"`, `"copy"`).
+     * `"env"`, `"sine1"`/`"sine2"`/`"sine3"`, `"cheby"`, `"copy"`, and
+     * `"prepare_partconv"` with `fftSize, irBufnum` -- the partitioned-kernel
+     * preparation the `conv` UGen reads; size the target with
+     * `partconvFrames`, and give it an impulse response at the server's
+     * sample rate -- the server converts no rates).
      *
      * `args` follow each command's own shape -- the wavetable generators take
      * an integer flag word first, then their values. They are tagged by the

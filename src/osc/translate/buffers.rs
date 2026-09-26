@@ -487,8 +487,14 @@ pub fn parse_buffer_msg(
 /// `sine3`/`cheby`) or `copy`; the flag int and the trailing floats are pulled
 /// per command. Needs an allocated buffer (its shape drives generation), read
 /// from `mirror` -- so a `/buffer_gen` right after a `/buffer_alloc` needs a `/server_sync`
-/// between them, exactly like `/buffer_read`.
-pub fn parse_buffer_gen(args: &[OscType], mirror: &BufferPool) -> Result<(i32, NrtJob), String> {
+/// between them, exactly like `/buffer_read`. `sample_rate` is the server's,
+/// which a generator whose output is tied to it (`prepare_partconv`) checks
+/// its source against.
+pub fn parse_buffer_gen(
+    args: &[OscType],
+    mirror: &BufferPool,
+    sample_rate: f64,
+) -> Result<(i32, NrtJob), String> {
     use crate::dsp::wavetable::{EnvSegment, GenCommand, GenFlags};
 
     let (index, cmd) = match args {
@@ -578,6 +584,18 @@ pub fn parse_buffer_gen(args: &[OscType], mirror: &BufferPool) -> Result<(i32, N
             // The whole impulse response is prepared or nothing is: a kernel
             // cut to fit its buffer, or to what a Conv can hold, would
             // convolve with a shorter response than the one given.
+            // A partition is a span of samples: an impulse response recorded
+            // at another rate would convolve as a response stretched or
+            // squeezed in time and in frequency. The server does not convert
+            // rates, so it is refused rather than used as if it matched.
+            let ir_rate = src.sample_rate();
+            if (ir_rate - sample_rate).abs() > 1e-6 * sample_rate {
+                return Err(format!(
+                    "prepare_partconv: source buffer {src_buf} is at {ir_rate} Hz and the \
+                     server at {sample_rate} Hz; resample the impulse response to \
+                     {sample_rate} Hz first"
+                ));
+            }
             let fft_size = *fft_size as usize;
             let ir_frames = src.len() / src.channels().max(1);
             if ir_frames == 0 {

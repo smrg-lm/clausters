@@ -384,7 +384,8 @@ class Buffer:
         ``"env"``, ``"sine1"``/``"sine2"``/``"sine3"``, ``"cheby"``, ``"copy"``,
         and ``"prepare_partconv" fft_size ir_bufnum`` -- the partitioned-kernel
         preparation the `conv` UGen reads; size the target with
-        `clausters.defs.partconv_frames`).
+        `clausters.defs.partconv_frames`, and give it an impulse response at
+        the server's sample rate -- the server converts no rates).
         Like `alloc`: NRT scores at time 0; RT ``wait=True`` blocks on
         ``/done``, ``wait=False`` is fire-and-forget."""
         srv = self._server()

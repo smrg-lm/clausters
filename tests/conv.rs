@@ -345,6 +345,18 @@ fn msg(addr: &str, args: Vec<OscType>) -> OscMessage {
 /// buffer of `kernel_frames` prepared from it at 512, and a tone through a
 /// `Conv` holding `partitions`.
 fn render_conv(ir_frames: i32, kernel_frames: i32, partitions: usize) -> Result<(), String> {
+    render_conv_from(
+        msg(
+            "/buffer_alloc",
+            vec![OscType::Int(0), OscType::Int(ir_frames), OscType::Int(1)],
+        ),
+        kernel_frames,
+        partitions,
+    )
+}
+
+/// [`render_conv`] with the IR loaded into buffer 0 by `load`.
+fn render_conv_from(load: OscMessage, kernel_frames: i32, partitions: usize) -> Result<(), String> {
     let def = serde_json::to_vec(
         &serde_json::from_value::<SynthDefSpec>(json!({
             "name": "c",
@@ -362,10 +374,7 @@ fn render_conv(ir_frames: i32, kernel_frames: i32, partitions: usize) -> Result<
         (
             0.0,
             vec![
-                msg(
-                    "/buffer_alloc",
-                    vec![OscType::Int(0), OscType::Int(ir_frames), OscType::Int(1)],
-                ),
+                load,
                 msg(
                     "/buffer_alloc",
                     vec![
@@ -430,4 +439,55 @@ fn offline_a_kernel_that_cannot_be_used_whole_fails_the_render() {
     // 256 partitions is the most a Conv holds; one frame more is refused.
     let err = render_conv(256 * 256 + 1, layout::frames(512, 257) as i32, 4).unwrap_err();
     assert!(err.contains("over the 256 a Conv holds"), "{err}");
+}
+
+/// A mono 16-bit WAV of `frames` of a decaying click at `rate`, in the
+/// system temp directory.
+fn ir_wav(rate: u32, frames: usize) -> std::path::PathBuf {
+    let path = std::env::temp_dir().join(format!(
+        "clausters-conv-ir-{rate}-{}.wav",
+        std::process::id()
+    ));
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: rate,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut w = hound::WavWriter::create(&path, spec).unwrap();
+    for k in 0..frames {
+        w.write_sample((8000.0 * (-(k as f32) / 100.0).exp()) as i16)
+            .unwrap();
+    }
+    w.finalize().unwrap();
+    path
+}
+
+/// An impulse response recorded at another rate is refused: a partition is a
+/// span of samples, so used as if it matched it would convolve as a response
+/// stretched in time and shifted in frequency. The server converts no rates.
+#[test]
+fn prepare_partconv_refuses_an_impulse_response_at_another_rate() {
+    let whole = layout::frames(512, 4) as i32;
+    let read = |path: &std::path::Path| {
+        msg(
+            "/buffer_allocRead",
+            vec![
+                OscType::Int(0),
+                OscType::String(path.to_str().unwrap().into()),
+            ],
+        )
+    };
+    let same = ir_wav(48_000, 1000);
+    let other = ir_wav(44_100, 1000);
+    let fine = render_conv_from(read(&same), whole, 4);
+    let err = render_conv_from(read(&other), whole, 4);
+    let _ = std::fs::remove_file(&same);
+    let _ = std::fs::remove_file(&other);
+    assert!(fine.is_ok(), "{fine:?}");
+    let err = err.unwrap_err();
+    assert!(
+        err.contains("is at 44100 Hz and the server at 48000 Hz"),
+        "{err}"
+    );
 }

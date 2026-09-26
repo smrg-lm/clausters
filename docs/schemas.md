@@ -577,7 +577,9 @@ irBufnum` partitions the IR in `irBufnum` (channel 0) into blocks of
 `[L, P, P × fftSize packed spectra]` into the target (size it as
 `2 + P·fftSize` frames). The whole response is prepared or none of it: a
 target smaller than that, an empty source, or a response over 256 partitions
-(use a larger `fftSize`) fails the command with `/fail`. The audio thread only ever multiplies against the
+(use a larger `fftSize`) fails the command with `/fail`. So does an impulse
+response at another sample rate than the server's: a partition is a span of
+samples, and the server converts no rates, so resample the IR first. The audio thread only ever multiplies against the
 ready spectra, and its per-block cost is **flat**: the partition products are
 spread across the hop's blocks, so a long reverb tail does not spike the hop
 block. Intrinsic latency is one partition (`fftSize/2` samples), reported by

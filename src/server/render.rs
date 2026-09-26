@@ -474,7 +474,7 @@ impl Renderer {
             "/def_free" => self.translator.d_free(&msg.args),
             addr if BUFFER_JOBS.contains(&addr) => {
                 let (index, job) = if msg.addr == "/buffer_gen" {
-                    parse_buffer_gen(&msg.args, &self.translator.buffers)?
+                    parse_buffer_gen(&msg.args, &self.translator.buffers, self.sample_rate)?
                 } else {
                     parse_buffer_msg(
                         msg.addr.as_str(),
