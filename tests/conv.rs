@@ -148,8 +148,9 @@ fn conv_matches_direct_convolution() {
         let err = (got[latency + t] - e).abs();
         max_err = max_err.max(err);
     }
+    // f32 transforms against an f64 sum: rounding, and nothing else.
     assert!(
-        max_err < 5e-3,
+        max_err < 5e-6,
         "partitioned vs direct convolution: max error {max_err}"
     );
     // And it is not vacuous: the reference has real energy.
@@ -181,13 +182,23 @@ fn conv_reports_its_latency() {
     assert_eq!(plain.latency(), 0);
 }
 
-/// A kernel swap: moving the `kernel` input to another prepared buffer takes
-/// effect (a unit delta kernel vs a half-gain one), the output stays finite
-/// throughout, and the transition crossfades within one partition.
+/// A kernel swap, exactly: the output is the old kernel's convolution, then
+/// one hop of `L` samples fading linearly from the old to the new (`t = (k +
+/// 0.5) / L`), then the new kernel's -- here a unit delta and a half one, so
+/// the three pieces are the input, delayed by `L`, at gain 1, a ramp, and
+/// 0.5.
 #[test]
-fn kernel_swap_crossfades() {
+fn kernel_swap_crossfades_exactly() {
     let fft_size = 512usize;
+    let part = fft_size / 2;
+    let sig = lcg_samples(16_384, 4242);
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    set_buffer(
+        &mut engine,
+        &mut handle,
+        0,
+        Buffer::new(sig.clone(), 1, sig.len(), SR as f64),
+    );
     set_buffer(&mut engine, &mut handle, 1, prepare(&[1.0], fft_size));
     set_buffer(&mut engine, &mut handle, 2, prepare(&[0.5], fft_size));
 
@@ -195,15 +206,15 @@ fn kernel_swap_crossfades() {
         "name": "swap",
         "controls": [{"name": "kern", "default": 1.0}],
         "ugens": [
-            {"kind": "Sine", "inputs": [{"const": 330.0}]},
-            {"kind": "Mul", "inputs": [{"ugen": 0}, {"const": 0.4}]},
-            {"kind": "Conv", "inputs": [{"ugen": 1}, {"control": 0}], "fft_size": 512},
-            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 2}]}
+            {"kind": "PlayBuf",
+             "inputs": [{"const": 0.0}, {"const": 0.0}, {"const": 1.0}, {"const": 0.0},
+                        {"const": 0.0}, {"const": 0.0}, {"const": 0.0}]},
+            {"kind": "Conv", "inputs": [{"ugen": 0}, {"control": 0}], "fft_size": 512},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
         ]
     }));
     handle.send(add_synth(1, synth)).ok().unwrap();
-
-    let before = render_channel(&mut engine, 100); // 6400 samples, kernel 1
+    let mut got = render_channel(&mut engine, 100); // 6400 samples on kernel 1
     handle
         .send(Cmd::SetControl {
             id: 1,
@@ -212,22 +223,107 @@ fn kernel_swap_crossfades() {
         })
         .ok()
         .unwrap();
-    let after = render_channel(&mut engine, 100); // kernel 2 (half gain)
+    got.extend(render_channel(&mut engine, 100));
 
-    let r_before = rms(&before, 2000, 6400);
-    let r_after = rms(&after, 2000, 6400);
-    let expected = 0.4 * std::f32::consts::FRAC_1_SQRT_2;
+    // The swap lands on the first hop boundary the change can reach; find
+    // it, then hold every sample to the three pieces.
+    let x = |t: usize| sig[t - part];
+    let expect = |m: usize, t: usize| {
+        let (start, end) = (m * part, (m + 1) * part);
+        if t < start {
+            x(t)
+        } else if t < end {
+            let tau = ((t - start) as f32 + 0.5) / part as f32;
+            x(t) * (1.0 - tau) + 0.5 * x(t) * tau
+        } else {
+            0.5 * x(t)
+        }
+    };
+    let err = |m: usize| {
+        (part..got.len())
+            .map(|t| (got[t] - expect(m, t)).abs())
+            .fold(0.0f32, f32::max)
+    };
+    let (m, worst) = (6400 / part..6400 / part + 3)
+        .map(|m| (m, err(m)))
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .unwrap();
     assert!(
-        (r_before - expected).abs() < 0.02,
-        "delta kernel is a passthrough: {r_before} vs {expected}"
+        worst < 1e-5,
+        "no exact swap: best hop {m}, max error {worst}"
     );
     assert!(
-        (r_after - expected * 0.5).abs() < 0.02,
-        "half-gain kernel halves the level: {r_after}"
+        m * part >= 6400 && m * part < 6400 + 2 * part,
+        "the swap lands within a hop of the change, not at {}",
+        m * part
     );
-    for (i, x) in before.iter().chain(after.iter()).enumerate() {
-        assert!(x.is_finite(), "non-finite sample at {i}");
+}
+
+/// The convolution is exact however the engine slices its blocks: a synth
+/// started at sample 13 with a timed bundle every 97 samples convolves just
+/// as the golden does, one partition late.
+#[test]
+fn conv_is_exact_across_split_blocks() {
+    const START: usize = 13;
+    let fft_size = 512usize;
+    let latency = fft_size / 2;
+    let sig = lcg_samples(8192, 777);
+    let ir: Vec<f32> = lcg_samples(700, 31).iter().map(|x| x * 0.05).collect();
+
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    set_buffer(
+        &mut engine,
+        &mut handle,
+        0,
+        Buffer::new(sig.clone(), 1, sig.len(), SR as f64),
+    );
+    set_buffer(&mut engine, &mut handle, 1, prepare(&ir, fft_size));
+    // Each `set_buffer` ran one block: the engine is at sample 128.
+    let base = 2 * BLOCK_SIZE as u64;
+    let synth = spec_synth(json!({
+        "name": "convolve",
+        "ugens": [
+            {"kind": "PlayBuf",
+             "inputs": [{"const": 0.0}, {"const": 0.0}, {"const": 1.0}, {"const": 0.0},
+                        {"const": 0.0}, {"const": 0.0}, {"const": 0.0}]},
+            {"kind": "Conv", "inputs": [{"ugen": 0}, {"const": 1.0}],
+             "fft_size": 512, "partitions": 3},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
+        ]
+    }));
+    handle
+        .send(Cmd::Schedule {
+            time: base + START as u64,
+            cmds: vec![add_synth(1, synth)],
+        })
+        .ok()
+        .unwrap();
+    for k in 0..60u64 {
+        handle
+            .send(Cmd::Schedule {
+                time: base + 200 + 97 * k,
+                cmds: vec![],
+            })
+            .ok()
+            .unwrap();
     }
+    let got = render_channel(&mut engine, 100);
+
+    let mut max_err = 0.0f32;
+    for (t, &g) in got.iter().enumerate() {
+        let want = t.checked_sub(START + latency).map_or(0.0, |n| {
+            let mut acc = 0.0f64;
+            for (j, &h) in ir.iter().enumerate().take(n + 1) {
+                acc += h as f64 * sig[n - j] as f64;
+            }
+            acc as f32
+        });
+        max_err = max_err.max((g - want).abs());
+    }
+    assert!(
+        max_err < 5e-6,
+        "split-block convolution: max error {max_err}"
+    );
 }
 
 /// `prepare_partconv` writes the documented layout: `[L, P]`, then packed
