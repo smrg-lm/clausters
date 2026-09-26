@@ -164,11 +164,10 @@ impl Paint {
         }])
     }
 
-    /// **The level scale**: green up to the alignment level, a blend into
-    /// amber, amber held, and red from the hot end -- a statement, not a
-    /// gradient, since the last six decibels are where a peak that grows any
-    /// further clips. The amber is a **band**, so a column using its headroom
-    /// reads amber all the way rather than arriving at it just as it turns red.
+    /// **The level scale**: green up to the alignment level, then a blend at
+    /// every step -- into amber, reached at `METER_AMBER_DB` so a column using
+    /// its headroom reads amber, and on into red, reached at the hot end and
+    /// held to the top, where a peak that grows any further clips.
     pub fn scale(scale: Scale, theme: &crate::host::theme::Theme) -> Self {
         let (warn, hot) = (scale.warn.clamp(0.0, 1.0), scale.hot.clamp(0.0, 1.0));
         let amber = scale.amber.clamp(warn, hot);
@@ -176,7 +175,7 @@ impl Paint {
         Paint(vec![
             stop(0.0, theme.meter_low, Shape::Step),
             stop(warn, theme.meter_low, Shape::Lin),
-            stop(amber, theme.meter_mid, Shape::Step),
+            stop(amber, theme.meter_mid, Shape::Lin),
             stop(hot, theme.meter_high, Shape::Step),
         ])
     }
@@ -191,34 +190,22 @@ impl Paint {
         theme: &crate::host::theme::Theme,
     ) -> Self {
         let o = origin.clamp(0.0, 1.0);
-        let up = Paint::scale(above, theme);
-        let down = Paint::scale(below, theme);
-        // Below the zero the scale runs downwards: a distance `d` is the
-        // height `o - d * o`, and each band ends where the next one begins,
-        // so the stops are read top-down and each takes the colour of the band
-        // under it -- the blend runs from the amber at its lower end up to the
-        // green at the zero's side.
-        let mut stops = vec![Stop {
-            at: 0.0,
-            color: down.color(1.0),
-            shape: Shape::Step,
-        }];
-        let bounds: Vec<f32> = down.0.iter().skip(1).map(|s| s.at).collect();
-        for (i, &d) in bounds.iter().enumerate().rev() {
-            let at = o - d * o;
-            let (color, shape) = match i {
-                // The alignment level's edge: green from here up to the zero.
-                0 => (down.0[0].color, Shape::Step),
-                // The amber's lower edge: the blend, from amber up to green.
-                1 => (down.0[2].color, Shape::Lin),
-                // The hot end's edge: amber held above it.
-                _ => (down.0[2].color, Shape::Step),
-            };
-            stops.push(Stop { at, color, shape });
-        }
-        stops.extend(up.0.iter().map(|s| Stop {
+        // Below the zero a distance `d` is the height `o - d * o`, so the
+        // scale is read top-down: red at the bottom, blending up through amber
+        // into the green that reaches the zero.
+        let depth = |d: f32| o - d.clamp(0.0, 1.0) * o;
+        let (warn, hot) = (below.warn.clamp(0.0, 1.0), below.hot.clamp(0.0, 1.0));
+        let amber = below.amber.clamp(warn, hot);
+        let stop = |at, color, shape| Stop { at, color, shape };
+        let mut stops = vec![
+            stop(0.0, theme.meter_high, Shape::Step),
+            stop(depth(hot), theme.meter_high, Shape::Lin),
+            stop(depth(amber), theme.meter_mid, Shape::Lin),
+            stop(depth(warn), theme.meter_low, Shape::Step),
+        ];
+        stops.extend(Paint::scale(above, theme).0.into_iter().map(|s| Stop {
             at: o + s.at * (1.0 - o),
-            ..*s
+            ..s
         }));
         stops.sort_by(|a, b| a.at.total_cmp(&b.at));
         Paint(stops)
@@ -946,9 +933,8 @@ mod tests {
         assert_eq!(Zones::parse(&json!({"a": 1})), None);
     }
 
-    /// **The level scale is stops too, and reads as it always did**: green to
-    /// the alignment level, a straight blend into amber, amber held, red from
-    /// the hot end.
+    /// **The level scale is stops too**: green to the alignment level, a
+    /// straight blend into amber and another into red, red from the hot end.
     #[test]
     fn the_level_scale_is_stops_and_reads_as_before() {
         let theme = Theme::default();
@@ -963,9 +949,10 @@ mod tests {
                 "half way is half of each"
             );
         }
-        assert_eq!(
+        assert_ne!(
             paint.color((scale.amber + scale.hot) * 0.5),
-            theme.meter_mid
+            theme.meter_mid,
+            "amber blends on into red"
         );
         assert_eq!(paint.color(1.0), theme.meter_high);
         // Drawn in a handful of quads, not a band per row.
@@ -1272,10 +1259,10 @@ mod tests {
             "{db:?}"
         );
 
-        // **The amber is a band, not the end of a ramp.** A column at -12 dB is
-        // using its headroom, which is the thing the colour exists to say, and
-        // it read as green with a cast on it while the only ramp ran from -18
-        // to -6.
+        // **Every step is a blend, reached at its own mark.** A column at -12
+        // dB is using its headroom and reads amber, and it blends on into red,
+        // which it reaches at -6 and holds to the top: the last six decibels
+        // are where a peak that grows any further clips.
         let theme = crate::host::theme::Theme::default();
         let at = |db_level: f32| {
             column_color(
@@ -1285,14 +1272,13 @@ mod tests {
             )
         };
         assert_eq!(at(measure::METER_AMBER_DB), theme.meter_mid);
-        assert_eq!(
-            at(-9.0),
-            theme.meter_mid,
-            "amber all the way to the hot end"
-        );
-        // **And the red is a band too**: the last six decibels are where a peak
-        // that grows any further clips, which is a statement and not a
-        // gradient. A ramp there left the column amber at -6 and red only at 0.
+        let between = at(-9.0);
+        for ((got, mid), high) in between.iter().zip(theme.meter_mid).zip(theme.meter_high) {
+            assert!(
+                (got - (mid + high) * 0.5).abs() < 1e-5,
+                "half way from -12 to -6 is half way from amber to red: {between:?}"
+            );
+        }
         assert_eq!(at(measure::METER_HOT_DB), theme.meter_high, "red at -6");
         assert_eq!(at(-3.0), theme.meter_high);
         assert_eq!(at(0.0), theme.meter_high);
@@ -1316,13 +1302,10 @@ mod tests {
                 .all(|(a, b)| (a - b).abs() < 1e-5),
             "and red at the top: {top:?}"
         );
-        // The one ramp left is the green-to-amber edge, between the alignment
-        // level and the amber band: the bands are bands, and only the edge
-        // between them is a gradient.
         let edge = column_color(&theme, db, (db.warn + db.amber) * 0.5);
         assert!(
             edge != theme.meter_low && edge != theme.meter_mid,
-            "the edge into the amber is a ramp: {edge:?}"
+            "the step into the amber is a blend: {edge:?}"
         );
     }
 

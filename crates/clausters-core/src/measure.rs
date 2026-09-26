@@ -366,19 +366,20 @@ pub const METER_WARN_DB: f32 = -18.0;
 /// **Where a meter's column is fully amber**, in decibels below full scale.
 ///
 /// The third mark, and the one that makes the other two readable. Green ends at
-/// the alignment level ([`METER_WARN_DB`]) and red begins in the last six
+/// the alignment level ([`METER_WARN_DB`]) and red is reached at the last six
 /// ([`METER_HOT_DB`]); a single ramp between them would spend the whole span
 /// between -18 and -6 getting there, so a signal at -12 -- which is a signal
 /// **using its headroom**, the thing the colour exists to say -- still read as
-/// green with a cast on it. So the amber is reached here and held until the
-/// red: the bands are bands, and only the edges between them are ramps.
+/// green with a cast on it. So the column blends from green into amber and is
+/// fully amber here, then blends on into red: every step is a blend, and each
+/// colour is reached at its own mark.
 pub const METER_AMBER_DB: f32 = -12.0;
 
 /// **Where a meter is warning**, in decibels below full scale.
 ///
 /// The last six decibels before full scale: not clipping, which is a fact the
 /// meter states by reaching the top, but the span where a peak that grows any
-/// further will. A scale coloured at these two marks is read as three bands
+/// further will. A scale coloured at these marks is read as three colours
 /// without anybody reading a number -- which is the whole use of a meter at a
 /// glance and the reason the two live here and not in a painter.
 pub const METER_HOT_DB: f32 = -6.0;

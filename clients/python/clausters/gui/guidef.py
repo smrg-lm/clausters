@@ -1755,7 +1755,8 @@ def meter(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
     a theme role (``"meter_low"``, ``"meter_mid"``, ``"meter_high"``), which
     follows the theme. ``[(-1, "#d04040"), (0, "#40c060")]`` colours a signed
     value by its sign, and ``[(-60, "meter_low"), (-18, "meter_low", "lin"),
-    (-12, "meter_mid"), (-6, "meter_high")]`` is the level scale itself.
+    (-12, "meter_mid", "lin"), (-6, "meter_high")]`` is the level scale
+    itself.
 
     The meter is **thin**: it asks for one narrow column per channel and its
     ladder's strip, and stays elastic on the height, since a level is read by
