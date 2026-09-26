@@ -144,6 +144,15 @@ on each one; none of them is being taken by this file.
   construction, and the verb's shape follows that answer.
 
 
+- ⬜ **A render inside the client's own process loses what the server logged**
+  (`PLAN.md`, Found by use). A render in a separate process reaches the client
+  now; the embedded one (Python's `render()` without a `path`) and the page's
+  wasm one have no logger, so a warning or a `Poll` is lost in both clients.
+  **The decision:** the carrier -- warnings on `RenderStats` or a log
+  callback -- either of which moves the C ABI and the wasm entry point
+  together.
+
+
 ## 3. Tests and reviews pending
 
 Nothing here is a change to the tree. Each is somebody running something and

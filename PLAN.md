@@ -3744,3 +3744,20 @@ should confirm before the fix.
   places that said it, the quoted document comment included. One doc in the
   host's gesture tests had lost its first four lines in the host split and
   has them back.
+- ⬜ **A render inside the client's own process loses what the server
+  logged** *(found 2026-09-26 while making a UGen's faults and a `Poll` reach
+  whoever they are for)*. A render in a separate process now reaches the
+  client: `clausters --nrt` logs to stderr and Python forwards each line to its
+  `clausters.render` logger. A render inside the client's own process does
+  not: Python's `render()` without a `path` goes through the embedded library,
+  and the web client renders with the wasm engine in the page, and neither has
+  a logger installed, so a warning such as a synth the engine rejected is lost.
+  A fault is not lost, since it fails the render in both, but a `Poll` and
+  every warning are. Both clients are the same here, so it is a gap and not a
+  divergence.
+
+  **The decision** is the carrier: a list of warnings on the render's result
+  (`RenderStats`), which moves the C ABI (`clausters_render`) and the wasm
+  entry point together, and so `CORE_ABI_VERSION`; or a log callback the host
+  installs, which moves the same two surfaces differently. The warnings on the
+  result are the smaller change and the one both clients can read the same way.

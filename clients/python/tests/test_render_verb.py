@@ -244,3 +244,30 @@ def test_the_file_path_reports_its_seed_too(tmp_path):
     # The same seed through the file writer gives the same audio back.
     again = score(fresh.seed)
     assert read_soundfile(again.path).samples == read_soundfile(fresh.path).samples
+
+
+def test_a_file_render_forwards_what_the_renderer_logged(tmp_path, monkeypatch, caplog):
+    """A render that finished may still have said something -- a node the
+    engine rejected -- and it said it on the renderer's stderr: each line
+    reaches the ``clausters.render`` logger at the level the server logged
+    it, without the colour codes."""
+    import importlib
+    import json
+    import logging
+    import subprocess
+
+    from clausters import _cli
+
+    module = importlib.import_module("clausters.render")
+    stats = {"frames": 4800, "events": 4, "channels": 1, "sampleRate": 48000,
+             "seed": 1, "peak": [0.1], "rms": [0.07]}
+    stderr = ("\x1b[2m2026-09-26T22:02:06.497957Z\x1b[0m \x1b[33m WARN\x1b[0m "
+              "nrt render rejected node 1000: the id is already a node\n")
+    monkeypatch.setattr(_cli, "server_path", lambda: "clausters")
+    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: subprocess.CompletedProcess(
+        argv, 0, stdout=json.dumps(stats) + "\n", stderr=stderr))
+    with caplog.at_level(logging.DEBUG, logger="clausters"):
+        module.render_to_file(b"", tmp_path / "o.wav", 48000.0, 1, 0, None, "float")
+    assert [(r.name, r.levelno, r.getMessage()) for r in caplog.records] == [
+        ("clausters.render", logging.WARNING,
+         "nrt render rejected node 1000: the id is already a node")]
