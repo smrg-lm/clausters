@@ -44,7 +44,7 @@ pub fn fraction(value: f32, min: f32, max: f32) -> f32 {
 /// strip drawn in decibels and a widget drawn over a plain amplitude range put
 /// the same two levels at different heights, and both are then read the same
 /// way: green is headroom, amber is using it, red is about to run out.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Scale {
     /// Where the alignment level falls, as a fraction of the height: green
     /// below it, and the ramp to amber begins.
@@ -126,6 +126,167 @@ pub fn column_color(theme: &crate::host::theme::Theme, scale: Scale, height: f32
     }
 }
 
+/// **How a column is coloured**, as the drawing needs it: every height already
+/// a fraction of the column and every colour already resolved against the
+/// theme. What a widget *asks for* is [`Zones`]; this is what that becomes on a
+/// given axis.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Paint {
+    /// The graded level scale -- green, amber, red -- by height from the floor.
+    Scale(Scale),
+    /// The same scale **by distance from a zero** at `origin`, each side
+    /// graded over its own reach: a signed value that runs out at both ends.
+    Mirrored {
+        origin: f32,
+        below: Scale,
+        above: Scale,
+    },
+    /// Bands with edges: each colour from its height up to the next one's, the
+    /// first also covering everything under it. Sorted by height.
+    Zones(Vec<(f32, Color)>),
+}
+
+impl Paint {
+    /// The colour a column has at `height`.
+    pub fn color(&self, theme: &crate::host::theme::Theme, height: f32) -> Color {
+        match self {
+            Paint::Scale(scale) => column_color(theme, *scale, height),
+            Paint::Mirrored {
+                origin,
+                below,
+                above,
+            } => {
+                if height >= *origin {
+                    let reach = (1.0 - origin).max(1e-6);
+                    column_color(theme, *above, (height - origin) / reach)
+                } else {
+                    column_color(theme, *below, (origin - height) / origin.max(1e-6))
+                }
+            }
+            Paint::Zones(zones) => zones
+                .iter()
+                .rev()
+                .find(|z| height >= z.0)
+                .or(zones.first())
+                .map_or(theme.meter_low, |z| z.1),
+        }
+    }
+}
+
+/// **What a meter's colours are**, as a widget states them (the `zones` prop).
+///
+/// A level meter is coloured by where its column is: green is headroom, amber
+/// is using it, red is about to run out. That reading belongs to a level, so it
+/// is the default only where the meter measures one -- a decibel axis, or a
+/// plain range that does not cross zero. A range across zero is a signed
+/// value, and its default is one colour.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum Zones {
+    /// Whatever the axis calls for: the level scale, or one colour on a range
+    /// across zero.
+    #[default]
+    Auto,
+    /// The level scale on any axis; on a range across zero it is graded by
+    /// distance from the zero, the same on both sides.
+    On,
+    /// One colour, the level scale's lowest.
+    Off,
+    /// The widget's own: each colour from its value up to the next one's, in
+    /// the axis' units -- decibels on a decibel axis, the value itself on a
+    /// plain one. Below the first value the first colour holds.
+    Stops(Vec<(f32, ZoneColor)>),
+}
+
+/// A zone's colour: a fixed one, or a theme role, which follows the theme the
+/// meter is drawn in.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ZoneColor {
+    Rgba(Color),
+    Role(String),
+}
+
+impl ZoneColor {
+    /// `#rrggbb[aa]`, or the name of a theme role; `None` for anything else.
+    pub fn parse(text: &str) -> Option<Self> {
+        if text.starts_with('#') {
+            crate::host::theme::parse_hex(text).map(ZoneColor::Rgba)
+        } else {
+            crate::host::theme::Theme::default()
+                .get(text)
+                .map(|_| ZoneColor::Role(text.to_string()))
+        }
+    }
+
+    fn resolve(&self, theme: &crate::host::theme::Theme) -> Color {
+        match self {
+            ZoneColor::Rgba(color) => *color,
+            ZoneColor::Role(name) => theme.get(name).unwrap_or(theme.meter_low),
+        }
+    }
+}
+
+impl Zones {
+    /// The `zones` prop: a boolean (`true`/`false`, or `1`/`0` as the clients
+    /// send a flag), or an array of `[value, colour]` pairs -- as JSON, or as
+    /// the JSON text a `/gui_set` carries. `None` for anything else, including
+    /// a pair whose colour is neither a hex nor a theme role.
+    pub fn parse(v: &serde_json::Value) -> Option<Self> {
+        use serde_json::Value;
+        match v {
+            Value::Bool(on) => Some(if *on { Zones::On } else { Zones::Off }),
+            Value::Number(n) => Some(if n.as_f64()? != 0.0 {
+                Zones::On
+            } else {
+                Zones::Off
+            }),
+            Value::String(text) => match text.as_str() {
+                "auto" | "" => Some(Zones::Auto),
+                "on" | "true" => Some(Zones::On),
+                "off" | "false" => Some(Zones::Off),
+                json => Self::parse(&serde_json::from_str(json).ok()?),
+            },
+            Value::Array(pairs) => {
+                let mut stops = pairs
+                    .iter()
+                    .map(|pair| {
+                        let pair = pair.as_array()?;
+                        let value = pair.first()?.as_f64()? as f32;
+                        let color = ZoneColor::parse(pair.get(1)?.as_str()?)?;
+                        Some((value, color))
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                if stops.is_empty() {
+                    return None;
+                }
+                stops.sort_by(|a, b| a.0.total_cmp(&b.0));
+                Some(Zones::Stops(stops))
+            }
+            _ => None,
+        }
+    }
+
+    /// What these zones are on `axis`, drawn in `theme`.
+    pub fn paint(&self, axis: MeterAxis, theme: &crate::host::theme::Theme) -> Paint {
+        let solid = || Paint::Zones(vec![(0.0, theme.meter_low)]);
+        match (self, axis) {
+            (Zones::Auto, axis) if axis.centred() => solid(),
+            (Zones::Off, _) => solid(),
+            (Zones::On, MeterAxis::Linear { min, max }) if axis.centred() => Paint::Mirrored {
+                origin: axis.origin(),
+                below: Scale::amplitude(0.0, -min),
+                above: Scale::amplitude(0.0, max),
+            },
+            (Zones::Auto | Zones::On, axis) => Paint::Scale(axis.scale()),
+            (Zones::Stops(stops), axis) => Paint::Zones(
+                stops
+                    .iter()
+                    .map(|(value, color)| (axis.fraction_of(*value), color.resolve(theme)))
+                    .collect(),
+            ),
+        }
+    }
+}
+
 /// **One meter column**, and the only place this host draws one: the well, the
 /// column standing in it up to `fill`, and the held peak as a hairline at
 /// `mark` (a hairline rather than a second column, because it is the same axis
@@ -145,13 +306,13 @@ pub fn draw_column(
     mark: f32,
     scale: Scale,
 ) {
-    draw_column_from(mesh, m, theme, cell, 0.0, fill, mark, scale);
+    draw_column_from(mesh, m, theme, cell, 0.0, fill, mark, &Paint::Scale(scale));
 }
 
-/// [`draw_column`] standing on `origin` rather than on the floor: the column
-/// runs from `origin` to `fill`, up or down. A meter whose range crosses zero
-/// stands on the zero, so a value below it reads as a column below it rather
-/// than as a shorter one above the floor.
+/// [`draw_column`] standing on `origin` rather than on the floor, and coloured
+/// by any [`Paint`]: the column runs from `origin` to `fill`, up or down. A
+/// meter whose range crosses zero stands on the zero, so a value below it
+/// reads as a column below it rather than as a shorter one above the floor.
 #[allow(clippy::too_many_arguments)] // draw_column's six, and where it stands
 pub fn draw_column_from(
     mesh: &mut crate::host::paint::Mesh,
@@ -161,7 +322,7 @@ pub fn draw_column_from(
     origin: f32,
     fill: f32,
     mark: f32,
-    scale: Scale,
+    paint: &Paint,
 ) {
     if cell.w <= 0.0 || cell.h <= 0.0 {
         return;
@@ -170,20 +331,38 @@ pub fn draw_column_from(
     let origin = origin.clamp(0.0, 1.0);
     let fill = fill.clamp(0.0, 1.0);
     let (from, to) = (origin.min(fill), origin.max(fill));
+    let mut span = |low: f32, high: f32, color: Color| {
+        let h = cell.h * (high - low);
+        mesh.rect(
+            Rect::new(cell.x, cell.y + cell.h * (1.0 - low) - h, cell.w, h),
+            color,
+        );
+    };
     if to > from {
-        // The gradient in bands, one per device row at most: a column in a
-        // header is a few dozen pixels tall, so this is a handful of quads and
-        // never finer than the screen can show.
-        let bands = (cell.h.ceil() as usize).clamp(1, 48);
-        let step = (to - from) / bands as f32;
-        for band in 0..bands {
-            let low = from + band as f32 * step;
-            let color = column_color(theme, scale, low + step * 0.5);
-            let h = cell.h * step;
-            mesh.rect(
-                Rect::new(cell.x, cell.y + cell.h * (1.0 - low) - h, cell.w, h),
-                color,
-            );
+        match paint {
+            // A graded scale in bands, one per device row at most: a column in
+            // a header is a few dozen pixels tall, so this is a handful of
+            // quads and never finer than the screen can show.
+            Paint::Scale(_) | Paint::Mirrored { .. } => {
+                let bands = (cell.h.ceil() as usize).clamp(1, 48);
+                let step = (to - from) / bands as f32;
+                for band in 0..bands {
+                    let low = from + band as f32 * step;
+                    span(low, low + step, paint.color(theme, low + step * 0.5));
+                }
+            }
+            // Zones have edges, and an edge is drawn where it is rather than
+            // where the nearest band happens to end.
+            Paint::Zones(zones) => {
+                for (i, &(start, color)) in zones.iter().enumerate() {
+                    let low = if i == 0 { 0.0 } else { start };
+                    let high = zones.get(i + 1).map_or(1.0, |z| z.0);
+                    let (low, high) = (low.max(from), high.min(to));
+                    if high > low {
+                        span(low, high, color);
+                    }
+                }
+            }
         }
     }
     if mark > 0.0 {
@@ -574,6 +753,7 @@ mod tests {
                     readout: true,
                     label: None,
                     ruler,
+                    zones: &Zones::Auto,
                 },
             );
         };
@@ -611,6 +791,7 @@ mod tests {
                     readout,
                     label: None,
                     ruler: None,
+                    zones: &Zones::Auto,
                 },
             );
         };
@@ -623,6 +804,129 @@ mod tests {
             "the glyphs and their plate are gone: {} vs {}",
             bare.vertex_count(),
             numbered.vertex_count()
+        );
+    }
+
+    /// **The `zones` prop reads a flag or a list.** A boolean and the `1`/`0`
+    /// the clients send a flag as; the words; an array of `[value, colour]`
+    /// pairs, sorted by value, as JSON or as the JSON text a `/gui_set`
+    /// carries; and nothing else -- a colour that is neither a hex nor a theme
+    /// role refuses the whole list rather than drawing a zone in a colour
+    /// nobody asked for.
+    #[test]
+    fn zones_read_a_flag_or_a_list() {
+        use serde_json::json;
+        assert_eq!(Zones::parse(&json!(true)), Some(Zones::On));
+        assert_eq!(Zones::parse(&json!(0)), Some(Zones::Off));
+        assert_eq!(Zones::parse(&json!("auto")), Some(Zones::Auto));
+        let list = json!([[0.5, "meter_high"], [-1, "#40c060"]]);
+        let want = Some(Zones::Stops(vec![
+            (
+                -1.0,
+                ZoneColor::Rgba(crate::host::theme::parse_hex("#40c060").unwrap()),
+            ),
+            (0.5, ZoneColor::Role("meter_high".into())),
+        ]));
+        assert_eq!(Zones::parse(&list), want, "sorted by value");
+        assert_eq!(Zones::parse(&json!(list.to_string())), want, "and as text");
+        assert_eq!(Zones::parse(&json!([[0, "no_such_role"]])), None);
+        assert_eq!(Zones::parse(&json!([[0, "#zz0000"]])), None);
+        assert_eq!(Zones::parse(&json!([])), None);
+        assert_eq!(Zones::parse(&json!({"a": 1})), None);
+    }
+
+    /// **The default follows the axis.** A level is graded; a range across
+    /// zero is one colour unless asked, and asked it is graded by distance
+    /// from the zero, the same on both sides; off is one colour anywhere.
+    #[test]
+    fn the_default_zones_follow_the_axis() {
+        let theme = Theme::default();
+        let db = MeterAxis::Decibels { floor_db: -60.0 };
+        let level = MeterAxis::Linear { min: 0.0, max: 1.0 };
+        let signed = MeterAxis::Linear {
+            min: -1.0,
+            max: 1.0,
+        };
+        let solid = Paint::Zones(vec![(0.0, theme.meter_low)]);
+        assert_eq!(Zones::Auto.paint(db, &theme), Paint::Scale(db.scale()));
+        assert_eq!(
+            Zones::Auto.paint(level, &theme),
+            Paint::Scale(level.scale())
+        );
+        assert_eq!(Zones::Auto.paint(signed, &theme), solid);
+        assert_eq!(Zones::Off.paint(db, &theme), solid);
+        let mirrored = Zones::On.paint(signed, &theme);
+        assert!(matches!(mirrored, Paint::Mirrored { .. }), "{mirrored:?}");
+        for d in [0.05f32, 0.2, 0.35, 0.49] {
+            assert_eq!(
+                mirrored.color(&theme, 0.5 + d),
+                mirrored.color(&theme, 0.5 - d),
+                "the same distance either side of zero is the same colour ({d})"
+            );
+        }
+        assert_eq!(
+            mirrored.color(&theme, 0.5),
+            theme.meter_low,
+            "green at zero"
+        );
+        assert_eq!(mirrored.color(&theme, 0.0), theme.meter_high, "red at -1");
+        assert_eq!(mirrored.color(&theme, 1.0), theme.meter_high, "and at +1");
+    }
+
+    /// **A zone is written in the axis' units** and drawn with its edges where
+    /// they are: decibels on a decibel axis, the signed value on a range
+    /// across zero, and the first colour under the first value.
+    #[test]
+    fn zones_are_placed_in_the_axis_units() {
+        let theme = Theme::default();
+        let red = crate::host::theme::parse_hex("#d04040").unwrap();
+        let green = crate::host::theme::parse_hex("#40c060").unwrap();
+        let by_sign = Zones::Stops(vec![
+            (-1.0, ZoneColor::Rgba(red)),
+            (0.0, ZoneColor::Rgba(green)),
+        ]);
+        let signed = MeterAxis::Linear {
+            min: -1.0,
+            max: 1.0,
+        };
+        let paint = by_sign.paint(signed, &theme);
+        assert_eq!(paint, Paint::Zones(vec![(0.0, red), (0.5, green)]));
+        assert_eq!(paint.color(&theme, 0.25), red);
+        assert_eq!(paint.color(&theme, 0.75), green);
+        let db = MeterAxis::Decibels { floor_db: -60.0 };
+        let hot = Zones::Stops(vec![
+            (-60.0, ZoneColor::Role("meter_low".into())),
+            (-6.0, ZoneColor::Role("meter_high".into())),
+        ]);
+        let Paint::Zones(zones) = hot.paint(db, &theme) else {
+            panic!("stops are zones");
+        };
+        assert!(
+            (zones[1].0 - 0.9).abs() < 1e-5,
+            "-6 dB of 60 is nine tenths"
+        );
+        assert_eq!(zones[1].1, theme.meter_high, "a role follows the theme");
+
+        // Drawn: a column from the zero down to -0.5 is one red span, with its
+        // edge at the zero and not at the nearest band.
+        let m = Metrics::default();
+        let cell = Rect::new(0.0, 0.0, 8.0, 100.0);
+        let mut mesh = Mesh::new();
+        draw_column(&mut mesh, &m, &theme, cell, 0.0, 0.0, Scale::decibels());
+        let well = mesh.vertex_count();
+        mesh.clear();
+        draw_column_from(&mut mesh, &m, &theme, cell, 0.5, 0.25, 0.0, &paint);
+        let (lo, hi) = mesh
+            .positions()
+            .skip(well as usize)
+            .fold((f32::MAX, f32::MIN), |(lo, hi), (_, y)| {
+                (lo.min(y), hi.max(y))
+            });
+        assert_eq!((lo, hi), (50.0, 75.0));
+        assert_eq!(
+            mesh.vertex_count() - well,
+            well,
+            "one span, as many vertices as the well's one rect"
         );
     }
 
@@ -650,6 +954,7 @@ mod tests {
                     readout: false,
                     label: None,
                     ruler: None,
+                    zones: &Zones::Auto,
                 },
             );
             mesh.vertex_count()
@@ -880,7 +1185,7 @@ mod tests {
             0.5,
             0.5,
             0.0,
-            Scale::decibels(),
+            &Paint::Scale(Scale::decibels()),
         );
         assert_eq!(
             mesh.vertex_count(),
@@ -896,7 +1201,7 @@ mod tests {
             0.5,
             0.25,
             0.0,
-            Scale::decibels(),
+            &Paint::Scale(Scale::decibels()),
         );
         let (lo, hi) = mesh
             .positions()
@@ -962,6 +1267,17 @@ impl MeterAxis {
     /// amplitude has been, and a value below zero is not a quiet one.
     pub fn centred(self) -> bool {
         matches!(self, MeterAxis::Linear { min, max } if min < 0.0 && max > 0.0)
+    }
+
+    /// Where a value **in the axis' own units** falls: decibels on a decibel
+    /// axis (what a zone is written in), the value itself on a plain one.
+    /// [`fraction`](Self::fraction) takes a level, which on a decibel axis is
+    /// an amplitude.
+    pub fn fraction_of(self, value: f32) -> f32 {
+        match self {
+            MeterAxis::Decibels { floor_db } => measure::meter_fraction_db(value, floor_db),
+            MeterAxis::Linear { min, max } => fraction(value, min, max),
+        }
     }
 
     /// Where a column stands, as a fraction of the height: the floor, or the
@@ -1034,6 +1350,8 @@ pub(crate) struct MeterView<'a> {
     pub label: Option<&'a str>,
     /// Which side the numbers fall on, or `None` for a meter with no ladder.
     pub ruler: Option<crate::host::ruler::Side>,
+    /// What the columns are coloured by.
+    pub zones: &'a Zones,
 }
 
 /// **The share of a meter's height the clip lamp takes.** A lamp is a mark over
@@ -1128,7 +1446,7 @@ pub(crate) fn draw_meter_view(d: &mut Draw, rect: Rect, view: &MeterView) {
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
     }
-    let scale = view.axis.scale();
+    let paint = view.zones.paint(view.axis, d.theme);
     let n = view.channels.len();
     let gaps = (n - 1) as f32 * m.divider_w;
     let column = ((body.w - gaps) / n as f32).max(1.0);
@@ -1149,7 +1467,7 @@ pub(crate) fn draw_meter_view(d: &mut Draw, rect: Rect, view: &MeterView) {
             view.axis.origin(),
             view.axis.fraction(ch.level),
             mark,
-            scale,
+            &paint,
         );
         if let Some(lamp) = lamp {
             draw_lamp(

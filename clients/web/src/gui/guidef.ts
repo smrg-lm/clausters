@@ -2220,6 +2220,23 @@ export function plot(
  * `rate: "control"`: an audio meter reads the published sample peak and stays a
  * sample meter whatever it is told.
  *
+ * **A range across zero is a signed value, not a level.** With `min` below zero
+ * and `max` above it, the column stands on the zero and runs up or down from
+ * it, there is no peak mark, and the reading at its foot is the channel
+ * furthest from zero, sign and all.
+ *
+ * **The colours** are `zones`. By default a level is graded -- green is
+ * headroom, amber is using it, red is about to run out -- and a range across
+ * zero is one colour. `zones: true` grades any meter, a range across zero by
+ * distance from the zero, the same on both sides; `zones: false` is one
+ * colour. A list of `[value, colour]` pairs sets the zones yourself: each
+ * colour holds from its value up to the next one's, in the axis' own units
+ * (decibels on a decibel meter, the value itself on a plain one), and the
+ * first also covers everything below it. A colour is `"#rrggbb"` or the name
+ * of a theme role (`"meter_low"`, `"meter_mid"`, `"meter_high"`), which follows
+ * the theme. `[[-1, "#d04040"], [0, "#40c060"]]` colours a signed value by its
+ * sign.
+ *
  * The meter is **thin**: it asks for one narrow column per channel and its
  * ladder's strip, and stays elastic on the height, since a level is read by how
  * far up it goes. `w` widens it like any other widget.
@@ -2240,6 +2257,7 @@ export function meter(
         peak?: "sample" | "true";
         min?: number;
         max?: number;
+        zones?: boolean | Array<[number, string]>;
         label?: string;
     } = {},
 ): GuiNode {
@@ -2257,6 +2275,7 @@ export function meter(
         peak,
         min,
         max,
+        zones,
         label: text,
         ...rest
     } = options;
@@ -2277,6 +2296,12 @@ export function meter(
             ["peak", peak],
             ["min", min],
             ["max", max],
+            [
+                "zones",
+                typeof zones === "boolean"
+                    ? flag(zones)
+                    : zones?.map(([value, color]) => [value, color]),
+            ],
             ["label", text],
         ]),
     });

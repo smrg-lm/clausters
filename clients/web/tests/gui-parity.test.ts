@@ -176,6 +176,7 @@ const trees: Record<string, () => GuiNode> = {
                 dbCeil: 0.0, freqScale: "bark", averaging: 0.5, peakHold: true,
             }),
             nodetree({ id: 6, group: 0, controls: true }),
+            meter(11, { id: 7, rate: "control", min: -1.0, max: 1.0, zones: true }),
         ),
 
     bpf_points: () =>

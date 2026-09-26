@@ -320,6 +320,15 @@
           "id": 6,
           "group": 0,
           "controls": 1
+        },
+        {
+          "type": "meter",
+          "id": 7,
+          "bus": 11,
+          "rate": "control",
+          "min": -1.0,
+          "max": 1.0,
+          "zones": 1
         }
       ]
     }

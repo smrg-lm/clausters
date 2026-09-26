@@ -1678,7 +1678,9 @@ def meter(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
           ruler: "bool | str | None" = None, readout: bool | None = None,
           peak: str | None = None,
           min: float | None = None,
-          max: float | None = None, label: str | None = None, color: str | None = None,
+          max: float | None = None,
+          zones: "bool | list[tuple[float, str]] | None" = None,
+          label: str | None = None, color: str | None = None,
           id: int | None = None, **props) -> View:
     """A level ``meter`` on ``bus``, read from the audio server's shared-memory
     segment each frame (zero OSC messages; the host must be started with
@@ -1734,6 +1736,23 @@ def meter(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
     ``rate="control"``: an audio meter reads the published sample peak and
     stays a sample meter whatever it is told.
 
+    **A range across zero is a signed value, not a level.** With ``min`` below
+    zero and ``max`` above it, the column stands on the zero and runs up or
+    down from it, there is no peak mark, and the reading at its foot is the
+    channel furthest from zero, sign and all.
+
+    **The colours** are ``zones``. By default a level is graded -- green is
+    headroom, amber is using it, red is about to run out -- and a range across
+    zero is one colour. ``zones=True`` grades any meter, a range across zero by
+    distance from the zero, the same on both sides; ``zones=False`` is one
+    colour. A list of ``(value, colour)`` pairs sets the zones yourself: each
+    colour holds from its value up to the next one's, in the axis' own units
+    (decibels on a decibel meter, the value itself on a plain one), and the
+    first also covers everything below it. A colour is ``"#rrggbb"`` or the
+    name of a theme role (``"meter_low"``, ``"meter_mid"``, ``"meter_high"``),
+    which follows the theme. ``[(-1, "#d04040"), (0, "#40c060")]`` colours a
+    signed value by its sign.
+
     The meter is **thin**: it asks for one narrow column per channel and its
     ladder's strip, and stays elastic on the height, since a level is read by
     how far up it goes. ``w`` widens it like any other widget.
@@ -1743,6 +1762,10 @@ def meter(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
                        min=min, max=max, label=label, color=color)
     if readout is not None:
         extra["readout"] = 1 if readout else 0
+    if isinstance(zones, bool):
+        extra["zones"] = 1 if zones else 0
+    elif zones is not None:
+        extra["zones"] = [[float(value), color] for value, color in zones]
     extra.update(_strips(ruler=ruler))
     return node("meter", bus=bus, rate=rate, **extra, **props, id=id)
 

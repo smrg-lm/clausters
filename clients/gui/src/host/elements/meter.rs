@@ -38,7 +38,7 @@
 use clausters_core::measure::{Ballistics, CLIP_CEILING, ClipLatch, floor_db_for_bits};
 use serde_json::{Map, Value};
 
-use crate::host::graphics::meters::{self, ChannelRead, MeterAxis, MeterView};
+use crate::host::graphics::meters::{self, ChannelRead, MeterAxis, MeterView, Zones};
 use crate::host::paint::Draw;
 use crate::host::ruler::Side;
 use crate::host::widget::element::{Claim, Ctx, Element, Input, Live, Needs};
@@ -88,6 +88,8 @@ pub struct Meter {
     /// **What the level on the bus is** -- the largest sample, or the true peak
     /// of the reconstructed signal a `TruePeak` UGen writes.
     pub peak: Peak,
+    /// What the columns are coloured by (the `zones` prop).
+    pub zones: Zones,
     pub label: Option<String>,
     /// What each channel reads, advanced once per tick. The element's own, so
     /// a window that repaints twice does not fall twice.
@@ -186,6 +188,10 @@ fn from_props(props: &Map<String, Value>) -> Meter {
             .get("peak")
             .and_then(Value::as_str)
             .and_then(Peak::parse)
+            .unwrap_or_default(),
+        zones: props
+            .get("zones")
+            .and_then(Zones::parse)
             .unwrap_or_default(),
         label: parse::label(props),
         state: vec![ChannelState::default(); channels],
@@ -343,6 +349,13 @@ impl Element for Meter {
                 }
                 None => false,
             },
+            "zones" => match Zones::parse(v) {
+                Some(zones) => {
+                    self.zones = zones;
+                    true
+                }
+                None => false,
+            },
             "label" => parse::set_label(&mut self.label, v),
             _ => false,
         }
@@ -396,6 +409,7 @@ impl Element for Meter {
                 readout: self.readout,
                 label: self.label.as_deref(),
                 ruler: self.ruler,
+                zones: &self.zones,
             },
         );
     }
@@ -449,6 +463,23 @@ mod tests {
 
     fn props(json: &str) -> Map<String, Value> {
         serde_json::from_str(json).unwrap()
+    }
+
+    /// **`zones` is a prop and a `/gui_set`.** Read at build, replaced by a
+    /// set that parses, and a set that does not is refused and leaves what
+    /// was there.
+    #[test]
+    fn zones_are_read_and_set() {
+        let mut m = from_props(&props(r#"{"rate":"control","min":-1,"max":1,"zones":1}"#));
+        assert_eq!(m.zones, Zones::On);
+        assert!(m.set("zones", &Value::String(r#"[[0,"meter_mid"]]"#.into())));
+        assert!(matches!(m.zones, Zones::Stops(ref s) if s.len() == 1));
+        assert!(!m.set("zones", &Value::String("[[0, 7]]".into())));
+        assert!(
+            matches!(m.zones, Zones::Stops(_)),
+            "a refused set keeps the zones"
+        );
+        assert_eq!(from_props(&props("{}")).zones, Zones::Auto);
     }
 
     /// A source whose two tables answer differently, so a read that went to the

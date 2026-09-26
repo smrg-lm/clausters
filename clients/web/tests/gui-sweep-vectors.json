@@ -890,6 +890,35 @@
  },
  {
   "builder": "meter",
+  "option": "zones",
+  "value": [
+   [
+    -1.0,
+    "#d04040"
+   ],
+   [
+    0.0,
+    "meter_low"
+   ]
+  ],
+  "tree": {
+   "type": "meter",
+   "bus": 0,
+   "rate": "audio",
+   "zones": [
+    [
+     -1.0,
+     "#d04040"
+    ],
+    [
+     0.0,
+     "meter_low"
+    ]
+   ]
+  }
+ },
+ {
+  "builder": "meter",
   "option": "label",
   "value": "q",
   "tree": {
@@ -4976,6 +5005,15 @@
  },
  {
   "builder": "view",
+  "option": "plays",
+  "value": true,
+  "tree": {
+   "type": "window",
+   "plays": 1
+  }
+ },
+ {
+  "builder": "view",
   "option": "theme",
   "value": {
    "accent": "#ff8800"
@@ -5576,6 +5614,15 @@
   "tree": {
    "type": "window",
    "status": 1
+  }
+ },
+ {
+  "builder": "window",
+  "option": "plays",
+  "value": true,
+  "tree": {
+   "type": "window",
+   "plays": 1
   }
  },
  {

@@ -128,6 +128,7 @@ def cases():
                        db_ceil=0.0, freq_scale="bark", averaging=0.5,
                        peak_hold=True),
             g.nodetree(id=6, group=0, controls=True),
+            g.meter(11, id=7, rate="control", min=-1.0, max=1.0, zones=True),
             title="live", layout="col",
         ),
     ))
@@ -286,6 +287,7 @@ PER_BUILDER = {
     ("multitrack", "layers"): [["env", "a", "", -1.0, 1.0], ["fx", "a"]],
     ("multitrack", "points"): [["gain", 0.0, 1.0], ["gain", 1.0, 0.0, 5, 4.0],
                                ["env", 0.5, 0.25]],
+    ("meter", "zones"): [[-1.0, "#d04040"], [0.0, "meter_low"]],
 }
 
 #: The payload options, whose value is a shape rather than a scalar. Every one
