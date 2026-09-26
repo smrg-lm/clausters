@@ -104,7 +104,7 @@ impl OscServer {
         if !t.defined || t.tempo <= 0.0 || !beats.is_finite() || beats <= 0.0 {
             return 0;
         }
-        (beats * self.info.nominal_sample_rate / t.tempo).round() as u64
+        (beats * self.info.actual_sample_rate / t.tempo).round() as u64
     }
 
     /// Sends the engine its half of a transport command, or fails the command.
@@ -325,8 +325,8 @@ impl OscServer {
         // the same place: they are two spellings of one position, and letting
         // them disagree is the two-owner problem in miniature.
         self.transports[k].position =
-            match t.defined && t.tempo > 0.0 && self.info.nominal_sample_rate > 0.0 {
-                true => sample as f64 * t.tempo / self.info.nominal_sample_rate,
+            match t.defined && t.tempo > 0.0 && self.info.actual_sample_rate > 0.0 {
+                true => sample as f64 * t.tempo / self.info.actual_sample_rate,
                 false => 0.0,
             };
         self.changed(from, "/transport_locateSample", k)

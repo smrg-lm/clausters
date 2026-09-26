@@ -141,7 +141,12 @@ const MAX_TAP_WINDOW: usize = 8192;
 /// Information reported in `/server_status.reply` that does not come from the
 /// engine counters.
 pub struct ServerInfo {
+    /// The rate that was asked for. Reported, and nothing else: when the
+    /// device could not honour it, no sample is at this rate.
     pub nominal_sample_rate: f64,
+    /// The rate the device, and so the engine, runs at. Everything counted in
+    /// the engine's samples -- a buffer it allocates, a beat on a transport,
+    /// a kernel's partitions -- is converted at this one.
     pub actual_sample_rate: f64,
 }
 

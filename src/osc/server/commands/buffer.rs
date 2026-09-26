@@ -186,7 +186,8 @@ impl OscServer {
             cmd,
             &msg.args,
             &self.translator.buffers,
-            self.info.nominal_sample_rate,
+            // What a buffer allocated here is sampled at: the engine's rate.
+            self.info.actual_sample_rate,
         )?;
         self.submit_nrt(cmd, index, from, job);
         Ok(())
