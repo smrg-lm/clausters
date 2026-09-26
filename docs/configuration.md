@@ -181,7 +181,11 @@ server off 57110 opens `clausters:<port>` rather than a second `clausters`.
   same table goes on cascading over the wire: a GuiDef container may scope a
   further overlay to its subtree (a **theme group**, the `theme` prop) and any
   widget may re-seed its accent with the `color` prop — see [the GUI
-  protocol](gui-protocol.md). The `[gui.metrics]` table is the sizing
+  protocol](gui-protocol.md). A color reaches the screen **as written**: the
+  host draws into a plain (non-sRGB) surface in a window and in every browser,
+  so `#3dc770` is those three bytes on screen everywhere, and a blend or a
+  gradient between two colors is taken on the written values. The
+  `[gui.metrics]` table is the sizing
   counterpart: the same partial-overlay semantics over the host's **size roles**
   (spacings, control thicknesses, the chrome strips, the text scales), whose
   defaults are generated from one quantized scale over the font cell. Its

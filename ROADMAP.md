@@ -121,13 +121,6 @@ already carry it.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-- ⬜ **The same theme is two sets of colours, one per build**
-  (`clients/gui/PLAN.md`, Found by use). The native surface is sRGB and the
-  page's is not, and no shader corrects for it, so every colour, blend and
-  gradient differs between a window and a tab.
-  **The decision:** a non-sRGB surface natively, reading the theme as a page
-  does, or sRGB surfaces in both and a theme stated in linear terms.
-
 - ⬜ **The page suite is one browser, and the second one found a defect it had
   been passing over** (`clients/web/PLAN.md`, Found by use). Chrome and Firefox
   disagree about what an API **refuses**, so a page that is wrong everywhere

@@ -70,9 +70,17 @@ impl Gpu {
             })
             .await
             .map_err(|e| format!("cannot create the GPU device: {e}"))?;
-        let config = surface
+        let mut config = surface
             .get_default_config(&adapter, size.width.max(1), size.height.max(1))
             .ok_or_else(|| "the surface is unsupported by this GPU adapter".to_string())?;
+        let offered = surface.get_capabilities(&adapter).formats;
+        match plain_format(config.format, &offered) {
+            Some(format) => config.format = format,
+            None => crate::host::diag::warn!(
+                "the window surface offers only sRGB formats ({offered:?}); \
+                 colours will draw lighter than the theme says"
+            ),
+        }
         surface.configure(&device, &config);
         // What the adapter actually offers for this format: an unsupported
         // count is a warning and a single-sampled pass, never a failure to
@@ -198,3 +206,64 @@ const NO_ADAPTER_HINT: &str = "on the web this means neither WebGPU nor WebGL2 i
      or try another browser";
 #[cfg(not(target_arch = "wasm32"))]
 const NO_ADAPTER_HINT: &str = "no Vulkan/Metal/DX12 device was found; check the GPU drivers";
+
+/// **The surface format the theme's numbers reach the screen through as they
+/// are**: `default` without its sRGB suffix if the surface offers that, else
+/// the first plain format it offers, else `None`.
+///
+/// No shader here corrects gamma, so an sRGB surface reads every colour as
+/// linear and brightens it on write -- and which one a platform hands back
+/// first is its own choice: Vulkan's is sRGB, a page's WebGPU canvas is not,
+/// and the WebGL2 contexts of two browsers offer sRGB first and then resolve
+/// it differently. One host is one picture, so the plain format is asked for
+/// wherever the surface offers one, which is every surface measured.
+fn plain_format(
+    default: wgpu::TextureFormat,
+    offered: &[wgpu::TextureFormat],
+) -> Option<wgpu::TextureFormat> {
+    let plain = default.remove_srgb_suffix();
+    offered
+        .iter()
+        .copied()
+        .find(|f| *f == plain)
+        .or_else(|| offered.iter().copied().find(|f| !f.is_srgb()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::plain_format;
+    use wgpu::TextureFormat as F;
+
+    /// What the three surfaces measured offer: a Vulkan window, and a WebGL2
+    /// canvas in both browsers. Each takes the plain twin of its default.
+    #[test]
+    fn a_surface_takes_the_plain_twin_of_its_default() {
+        let vulkan = [
+            F::Bgra8UnormSrgb,
+            F::Rgba8UnormSrgb,
+            F::Rgba16Unorm,
+            F::Rgb10a2Unorm,
+            F::Bgra8Unorm,
+            F::Rgba8Unorm,
+        ];
+        assert_eq!(
+            plain_format(F::Bgra8UnormSrgb, &vulkan),
+            Some(F::Bgra8Unorm)
+        );
+        let webgl = [F::Rgba8UnormSrgb, F::Rgba8Unorm, F::Rgba16Float];
+        assert_eq!(plain_format(F::Rgba8UnormSrgb, &webgl), Some(F::Rgba8Unorm));
+        let webgpu = [F::Rgba8Unorm, F::Bgra8Unorm, F::Rgba16Float];
+        assert_eq!(plain_format(F::Rgba8Unorm, &webgpu), Some(F::Rgba8Unorm));
+    }
+
+    /// A surface with no plain twin of its default falls back to any plain
+    /// format, and one with none at all says so.
+    #[test]
+    fn a_surface_with_no_twin_takes_any_plain_format_or_none() {
+        assert_eq!(
+            plain_format(F::Bgra8UnormSrgb, &[F::Bgra8UnormSrgb, F::Rgba16Float]),
+            Some(F::Rgba16Float)
+        );
+        assert_eq!(plain_format(F::Bgra8UnormSrgb, &[F::Bgra8UnormSrgb]), None);
+    }
+}
