@@ -816,7 +816,14 @@ fn assert_delayed_copy(
 /// input, delayed.
 #[test]
 fn a_round_trip_is_exact_with_any_window_and_hop() {
-    for (wintype, hop) in [(0, 0.5), (4, 0.25), (1, 0.5), (3, 0.25), (-1, 0.5)] {
+    for (wintype, hop) in [
+        (0, 0.5),
+        (4, 0.25),
+        (1, 0.5),
+        (2, 0.5),
+        (3, 0.25),
+        (-1, 0.5),
+    ] {
         let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
         let synth = spec_synth(json!({
             "name": "roundtrip",

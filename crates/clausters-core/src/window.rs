@@ -75,7 +75,7 @@ impl Window {
                 Window::Hann => 0.5 - 0.5 * (2.0 * PI * x / nf).cos(),
                 Window::Sine => (PI * x / nf).sin(),
                 Window::Welch => {
-                    let t = (x - 0.5 * (nf - 1.0)) / (0.5 * (nf - 1.0));
+                    let t = (x - 0.5 * nf) / (0.5 * nf);
                     1.0 - t * t
                 }
                 Window::Hamming => 0.54 - 0.46 * (2.0 * PI * x / nf).cos(),
@@ -103,6 +103,34 @@ mod tests {
         for &v in &w {
             assert!((0.0..=1.0).contains(&v));
         }
+    }
+
+    /// Every window is periodic in its length -- `w[i] == w[n - i]`, zero or
+    /// minimal at 0 and peaking at `n / 2` -- the DFT-even form the module
+    /// promises, which is what makes a window's spectrum the one analysis
+    /// assumes.
+    #[test]
+    fn every_window_is_periodic() {
+        for kind in [
+            Window::Rectangular,
+            Window::Hann,
+            Window::Sine,
+            Window::Welch,
+            Window::Hamming,
+            Window::Blackman,
+        ] {
+            let mut w = [0.0f32; 64];
+            kind.fill(&mut w);
+            for i in 1..32 {
+                assert!((w[i] - w[64 - i]).abs() < 1e-6, "{kind:?} at {i}");
+            }
+            let peak = w.iter().copied().fold(f32::MIN, f32::max);
+            assert_eq!(w[32], peak, "{kind:?} peaks at n / 2");
+        }
+        let mut welch = [0.0f32; 64];
+        Window::Welch.fill(&mut welch);
+        assert_eq!((welch[0], welch[32]), (0.0, 1.0));
+        assert!((welch[16] - 0.75).abs() < 1e-6);
     }
 
     #[test]
