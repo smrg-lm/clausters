@@ -918,3 +918,83 @@ fn compiler_holds_a_chain_to_its_ffts_hop_and_window() {
     assert!(sink(json!({"hop": 0.5})).is_err());
     assert!(sink(json!({"wintype": 4, "hop": 0.25})).is_ok());
 }
+
+/// A round trip is exact however the engine slices its blocks, and its latency
+/// is exactly one window. Any timed bundle -- for any node -- cuts the block
+/// for every synth, and a synth may start mid-block: the chain has to frame
+/// its input every `hop` samples regardless, or the overlap-add misplaces
+/// frames and scales them wrongly. A hop that is not a whole number of blocks
+/// (0.3 of 1024 is 307 samples) is framed just as exactly.
+#[test]
+fn a_round_trip_is_exact_across_split_blocks_and_any_hop() {
+    const START: u64 = 13;
+    for hop in [0.5, 0.3, 0.25, 1.0 / 16.0] {
+        let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+        let synth = spec_synth(json!({
+            "name": "roundtrip",
+            "ugens": [
+                {"kind": "Sine", "inputs": [{"const": 440.0}]},
+                {"kind": "Mul", "inputs": [{"ugen": 0}, {"const": 0.5}]},
+                {"kind": "FFT", "inputs": [{"ugen": 1}, {"const": 1.0}],
+                 "fft_size": 1024, "hop": hop},
+                {"kind": "IFFT", "inputs": [{"ugen": 2}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 3}]}
+            ]
+        }));
+        handle
+            .send(Cmd::Schedule {
+                time: START,
+                cmds: vec![add_synth(1, synth)],
+            })
+            .ok()
+            .unwrap();
+        // Empty bundles at an offset that walks through every block phase.
+        for k in 0..150u64 {
+            handle
+                .send(Cmd::Schedule {
+                    time: 200 + 97 * k,
+                    cmds: vec![],
+                })
+                .ok()
+                .unwrap();
+        }
+        let sig = render_channel(&mut engine, 250);
+        let lag = assert_delayed_copy(
+            &sig,
+            |n| {
+                n.checked_sub(START as usize)
+                    .map_or(0.0, |local| tone(440.0, 0.5, local))
+            },
+            2048 + START as usize,
+            4096,
+            15000,
+            1e-4,
+        );
+        assert_eq!(lag, 1024, "hop {hop}: latency is one window");
+    }
+}
+
+/// A hop is a fraction of the window in (0, 1] and at least one block long;
+/// anything else fails the def instead of running at a hop other than the one
+/// asked for.
+#[test]
+fn compiler_rejects_a_hop_out_of_range() {
+    let compile = |fft_size: usize, hop: f32| {
+        clausters::synthdef::compile(
+            serde_json::from_value(json!({"name": "hop", "ugens": [
+                {"kind": "Sine", "inputs": [{"const": 440.0}]},
+                {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}],
+                 "fft_size": fft_size, "hop": hop},
+                {"kind": "IFFT", "inputs": [{"ugen": 1}]}
+            ]}))
+            .unwrap(),
+        )
+    };
+    assert!(compile(256, 0.125).is_err(), "32 samples, under a block");
+    assert!(compile(256, 0.25).is_ok(), "64 samples, one block");
+    assert!(compile(1024, 0.0).is_err());
+    assert!(compile(1024, -0.5).is_err());
+    assert!(compile(1024, 1.5).is_err());
+    assert!(compile(1024, 1.0).is_ok());
+    assert!(compile(1024, 0.3).is_ok(), "307 samples, not a whole block");
+}

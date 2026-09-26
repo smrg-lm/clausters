@@ -21,11 +21,18 @@
 //! compile-assigned *slot* the synth resolves for each of them (see
 //! `synthdef::instance`); the wire between the UGens only enforces ordering.
 //!
-//! The [`SpectralChain::advance`] field carries how many input samples the last
-//! hop covered, so `Ifft` overlap-adds and emits exactly that many samples per
-//! frame -- keeping analysis and resynthesis in lockstep regardless of how the
-//! hop size relates to the block size (the hop is effectively quantized up to
-//! the processing slice, as scsynth computes its FFT at block granularity).
+//! ## Framing is sample-exact
+//!
+//! The engine cuts a block at every timed event -- of any node -- and a synth
+//! may start mid-block, so the slices a chain sees have any length. `Fft`
+//! therefore counts its own input samples and takes a frame at **exactly**
+//! every `hop` samples, at the sample the hop closes on, whatever slice that
+//! falls in; [`SpectralChain::pos`] carries where that frame ends. `Ifft`
+//! overlap-adds each frame at that position and reads its output a fixed
+//! window behind, so the round trip is the input delayed by exactly one window
+//! -- for any hop, not only whole blocks, and however the blocks were cut. A
+//! hop is at least one block ([`MIN_HOP`]), which keeps it to at most one
+//! frame per slice.
 //!
 //! The transforms and the windows are the single-sourced
 //! [`clausters_core::fft`] / [`clausters_core::window`], shared with the clients
@@ -47,7 +54,6 @@ use clausters_core::fft;
 use clausters_core::pvprog::{BinCtx, PvOp, PvProgram};
 use clausters_core::window::Window;
 
-use crate::dsp::fifo::SampleFifo;
 use crate::dsp::registry::UGenConfig;
 use crate::dsp::{BLOCK_SIZE, MAX_UGEN_INPUTS, ProcessCtx, UGen, UGenCmd, at, ugen_cmd_selector};
 
@@ -67,10 +73,18 @@ pub fn resolve_fft_size(requested: Option<usize>) -> usize {
 }
 
 /// Resolves a def's hop fraction to the hop in samples the chain runs at.
+/// A hop the compiler would reject is clamped into range, so a built UGen
+/// always has a legal one.
 pub fn resolve_hop(winsize: usize, hop: Option<f32>) -> usize {
     let frac = hop.unwrap_or(0.5);
-    ((winsize as f32 * frac).round() as usize).clamp(1, winsize)
+    ((winsize as f32 * frac).round() as usize).clamp(MIN_HOP, winsize)
 }
+
+/// The shortest hop, in samples: one block. A slice is never longer than a
+/// block, so a hop this long closes at most once per slice -- and the chain
+/// carries one frame per slice. The compiler rejects a shorter one rather
+/// than letting it be lengthened silently.
+pub const MIN_HOP: usize = BLOCK_SIZE;
 
 /// The synth-private spectral frame shared by one `FFT`->`PV_*`->`IFFT` chain.
 /// Persistent across blocks (like the feedback `locals`); allocated once at
@@ -83,9 +97,10 @@ pub struct SpectralChain {
     /// True on the processing slice where `FFT` wrote a fresh frame; the
     /// `PV_*`/`IFFT` UGens act only then. `FFT` clears it each slice.
     pub ready: bool,
-    /// Input samples the fresh frame advanced past the previous one (the hop).
-    /// `IFFT` overlap-adds and emits this many samples for the frame.
-    pub advance: usize,
+    /// Where the fresh frame ends, in samples of the synth's own input since
+    /// it started: the frame is the `winsize` samples before `pos`. `IFFT`
+    /// overlap-adds it there.
+    pub pos: u64,
     /// The frame's transform size.
     pub winsize: usize,
 }
@@ -95,7 +110,7 @@ impl SpectralChain {
         Self {
             frame: vec![0.0; winsize],
             ready: false,
-            advance: 0,
+            pos: 0,
             winsize,
         }
     }
@@ -119,19 +134,19 @@ pub struct Fft {
     /// Sliding input, a circular buffer of the last `winsize` samples.
     inbuf: Vec<f32>,
     write: usize,
-    /// Samples seen since start (gates the first frame until the buffer fills).
-    filled: usize,
-    /// Samples accumulated since the last emitted frame.
-    since_hop: usize,
-    /// Hop-phase stagger: samples still to elapse before this instance
-    /// may emit its *first* frame. Set once from the node id in
+    /// Input samples seen since the synth started.
+    pos: u64,
+    /// The input position the next frame ends at: the first is one window
+    /// in (plus the stagger), every later one a hop after the previous.
+    ///
+    /// The hop-phase stagger is set once from the node id in
     /// [`UGen::set_node_id`] -- a deterministic sub-hop offset (a block
     /// multiple) so chains instantiated on the same block spread their
     /// transform spikes across blocks instead of stacking them on one. Only
-    /// the first fire shifts; the per-hop cadence and the analysis discipline
-    /// are untouched, and the same node id yields the same offset (RT and NRT
-    /// renders of one score stay sample-identical).
-    stagger: usize,
+    /// the first frame moves; the cadence after it is the hop, and the same
+    /// node id yields the same offset (RT and NRT renders of one score stay
+    /// sample-identical).
+    next_frame: u64,
     /// De-circularized, windowed frame handed to the forward transform.
     scratch: Vec<f32>,
 }
@@ -150,9 +165,8 @@ impl Fft {
             window,
             inbuf: vec![0.0; winsize],
             write: 0,
-            filled: 0,
-            since_hop: 0,
-            stagger: 0,
+            pos: 0,
+            next_frame: winsize as u64,
             scratch: vec![0.0; winsize],
         }
     }
@@ -174,35 +188,26 @@ impl UGen for Fft {
         chain.ready = false;
         let input = inputs[0];
         let active = inputs.get(1).map(|a| at(a, 0)).unwrap_or(1.0) > 0.0;
-        let frames = input.len();
-        // Push this slice's samples into the sliding input buffer.
         for &s in input {
             self.inbuf[self.write] = if active { s } else { 0.0 };
             self.write = (self.write + 1) % self.winsize;
-        }
-        self.filled = (self.filled + frames).min(self.winsize);
-        self.since_hop += frames;
-        // Emit at most one frame per slice (the hop is quantized up to the
-        // slice length; scsynth likewise transforms at block granularity).
-        if active
-            && self.stagger == 0
-            && self.filled >= self.winsize
-            && self.since_hop >= self.hop_size
-        {
-            // De-circularize: `write` points at the oldest sample.
-            for k in 0..self.winsize {
-                let s = self.inbuf[(self.write + k) % self.winsize];
-                self.scratch[k] = s * self.window[k];
+            self.pos += 1;
+            // The frame is taken at the sample its hop closes on, wherever
+            // that falls in the slice. The hop is at least a block, so this
+            // happens at most once per slice.
+            if self.pos == self.next_frame {
+                self.next_frame += self.hop_size as u64;
+                if active {
+                    // De-circularize: `write` points at the oldest sample.
+                    for k in 0..self.winsize {
+                        let s = self.inbuf[(self.write + k) % self.winsize];
+                        self.scratch[k] = s * self.window[k];
+                    }
+                    fft::rfft_into(&self.scratch, &mut chain.frame);
+                    chain.pos = self.pos;
+                    chain.ready = true;
+                }
             }
-            fft::rfft_into(&self.scratch, &mut chain.frame);
-            chain.advance = self.since_hop;
-            chain.ready = true;
-            self.since_hop = 0;
-        } else if self.filled >= self.winsize {
-            // Count the stagger down only once the window is full and only on
-            // slices that did not fire: it defers the *first* frame by whole
-            // elapsed slices past the fill point (see the field docs).
-            self.stagger = self.stagger.saturating_sub(frames);
         }
         // The wire only orders the chain; carry the slot marker for debugging.
         if let Some(o) = output.first_mut() {
@@ -216,8 +221,9 @@ impl UGen for Fft {
         // block cannot stack (at most one frame per slice already), so it
         // keeps offset 0.
         let blocks_per_hop = self.hop_size / BLOCK_SIZE;
-        if blocks_per_hop > 1 {
-            self.stagger = (id.unsigned_abs() as usize % blocks_per_hop) * BLOCK_SIZE;
+        if blocks_per_hop > 1 && self.pos == 0 {
+            let stagger = (id.unsigned_abs() as usize % blocks_per_hop) * BLOCK_SIZE;
+            self.next_frame = (self.winsize + stagger) as u64;
         }
     }
 
@@ -230,15 +236,23 @@ impl UGen for Fft {
 /// Inverse-transforms each fresh spectral frame and overlap-adds it back to
 /// audio. Input: `[chain]` -- the chain wire, which only carries ordering (the
 /// live frame is the synth-private [`SpectralChain`] the synth passes in). The
-/// window size and type are static config; the synthesis window matches the
-/// analysis window for correct overlap-add.
+/// window size, hop and type are the chain's; the synthesis window matches
+/// the analysis window for correct overlap-add.
+///
+/// The output is the input position one window behind the synth's own time:
+/// by then every frame that covers that position has been added (the last
+/// one ends there), so each sample leaves complete, and the latency is
+/// exactly `winsize` however the blocks were sliced.
 pub struct Ifft {
     winsize: usize,
     hop_size: usize,
     window_kind: Window,
     window: Vec<f32>,
-    /// Overlap-add tail: `olabuf[k]` accumulates the windowed reconstruction.
-    olabuf: Vec<f32>,
+    /// Overlap-add accumulator indexed by input position (modulo its length,
+    /// two windows: a frame writes up to one window ahead of the position
+    /// being read, never onto one not read yet). A slot is cleared as it is
+    /// read.
+    ring: Vec<f32>,
     /// The steady-state overlap-add normalization (COLA), one value per hop
     /// phase: `norm[r] = sum_i window[r + i*hop]^2` over the frames that overlap
     /// output phase `r`. Precomputed at build (constant per render), so dividing
@@ -247,12 +261,12 @@ pub struct Ifft {
     norm: Vec<f32>,
     /// Time-domain scratch for the inverse transform.
     time: Vec<f32>,
-    /// Finalized samples awaiting output, drained `frames` per slice.
-    fifo: SampleFifo,
-    /// Absolute output position of `olabuf[0]`, modulo the hop -- the phase into
-    /// [`norm`](Self::norm), tracked so the COLA denominator stays aligned even
-    /// if a frame's `advance` is not a multiple of the hop.
-    phase: usize,
+    /// Samples output since the synth started -- the same clock the chain's
+    /// [`SpectralChain::pos`] counts in.
+    now: u64,
+    /// Where the first frame starts: the origin of the hop phase `norm` is
+    /// indexed by. `None` until a frame arrives.
+    origin: Option<u64>,
 }
 
 impl Ifft {
@@ -264,19 +278,16 @@ impl Ifft {
         window_kind.fill(&mut window);
         let mut norm = vec![0.0f32; hop_size];
         fill_cola_norm(&window, &mut norm);
-        // The FIFO holds at most a couple of hops' worth of finalized samples
-        // between the frame that produces them and the slices that drain them.
-        let fifo = SampleFifo::new(4 * winsize);
         Self {
             winsize,
             hop_size,
             window_kind,
             window,
-            olabuf: vec![0.0; winsize],
+            ring: vec![0.0; 2 * winsize],
             norm,
             time: vec![0.0; winsize],
-            fifo,
-            phase: 0,
+            now: 0,
+            origin: None,
         }
     }
 }
@@ -293,35 +304,42 @@ impl UGen for Ifft {
         output: &mut [f32],
         chain: &mut SpectralChain,
     ) {
+        let len = self.ring.len() as u64;
         if chain.ready {
-            let advance = chain.advance.min(self.winsize);
             fft::irfft_into(&chain.frame, &mut self.time);
-            // Overlap-add the windowed reconstruction into the tail.
+            // Overlap-add the windowed reconstruction where the frame sits.
+            // It only reaches positions at or after `pos - winsize`, which no
+            // output earlier in this slice reads.
+            let start = chain.pos - self.winsize as u64;
+            self.origin.get_or_insert(start);
             for k in 0..self.winsize {
-                self.olabuf[k] += self.time[k] * self.window[k];
-            }
-            // The first `advance` samples are final (no later frame overlaps
-            // them): normalize by the steady-state COLA denominator for the
-            // sample's hop phase and emit them. Dividing by the *full* overlap
-            // sum (not a running partial one) means an incompletely overlapped
-            // startup or a spectrally modified frame fades cleanly instead of
-            // blowing up where the window is small. `advance` is a multiple of
-            // the hop, so phase 0 stays aligned to `norm[0]`.
-            for k in 0..advance {
-                let r = (self.phase + k) % self.hop_size;
-                self.fifo.push(self.olabuf[k] / self.norm[r]);
-            }
-            self.phase = (self.phase + advance) % self.hop_size;
-            // Shift the tail left by `advance`, zeroing the vacated end.
-            let keep = self.winsize.saturating_sub(advance);
-            self.olabuf.copy_within(advance.., 0);
-            for k in keep..self.winsize {
-                self.olabuf[k] = 0.0;
+                let slot = ((start + k as u64) % len) as usize;
+                self.ring[slot] += self.time[k] * self.window[k];
             }
         }
         for o in output.iter_mut() {
-            *o = self.fifo.pop();
+            // Position `now - winsize` is complete: the last frame covering
+            // it ends at `now` at the latest. Normalize by the steady-state
+            // COLA denominator for its hop phase. Dividing by the *full*
+            // overlap sum (not a running partial one) means an incompletely
+            // overlapped startup or a spectrally modified frame fades cleanly
+            // instead of blowing up where the window is small.
+            *o = match (self.now.checked_sub(self.winsize as u64), self.origin) {
+                (Some(j), Some(origin)) if j >= origin => {
+                    let slot = (j % len) as usize;
+                    let r = ((j - origin) % self.hop_size as u64) as usize;
+                    let v = self.ring[slot] / self.norm[r];
+                    self.ring[slot] = 0.0;
+                    v
+                }
+                _ => 0.0,
+            };
+            self.now += 1;
         }
+    }
+
+    fn latency(&self) -> usize {
+        self.winsize
     }
 
     fn command(&mut self, cmd: &UGenCmd) {

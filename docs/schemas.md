@@ -426,7 +426,7 @@ This makes growth **by the tail** non-breaking and does nothing for an input ins
 | `SendTrig` | trig, id, value | on each trigger of `trig`, sends `/node_trigger nodeID id value` to `/server_notify` clients; output is silence — see the side-effect note below |
 | `SendReply` | trig, reply_id, value0, value1, … | on each trigger of `trig`, sends a custom OSC message `cmdName nodeID reply_id value…` (the `cmdName` is a static `label` field, default `/reply`); output is silence |
 | `Poll` | trig, signal, trig_id | on each trigger of `trig`, posts `label: value` (the `signal` value) to the server console (a static `label` field) and, when `trig_id ≥ 0`, also sends `/node_trigger nodeID trig_id value`; passes `signal` through as its output |
-| `FFT` | source, active | opens a spectral chain: windows `source` and transforms it to a spectral frame once per hop (`active > 0` runs, `≤ 0` holds); static fields `fft_size` (default 1024), `hop` (fraction, default 0.5), `wintype` (default 0 = Hann); the window is also settable live via `/node_ugenCmd` — see the FFT-chain note below |
+| `FFT` | source, active | opens a spectral chain: windows `source` and transforms it to a spectral frame once per hop (`active > 0` runs, `≤ 0` holds); static fields `fft_size` (default 1024), `hop` (fraction of the window in (0, 1], at least one 64-sample block; default 0.5), `wintype` (default 0 = Hann); the window is also settable live via `/node_ugenCmd` — see the FFT-chain note below |
 | `PV_MagAbove` | chain, threshold | passes only bins whose magnitude is **above** `threshold`, zeroing the rest; `chain` is the wire from an earlier `FFT`/`PV_*` |
 | `PV_MagBelow` | chain, threshold | passes only bins whose magnitude is **below** `threshold` |
 | `PV_BrickWall` | chain, wipe | brick-wall band limit: `wipe > 0` zeroes the top fraction of bins (low pass), `wipe < 0` the bottom (high pass), `0` passes everything (`wipe` in −1..1) |
@@ -589,7 +589,9 @@ input history keeps running, so a valid kernel resumes cleanly.
 Analysis and resynthesis use the same window (Hann by default), and the
 overlap-add is **window-normalized** (divided by the steady-state window-overlap
 denominator, COLA), so a plain `FFT`→`IFFT` reconstructs the signal at unity
-gain, delayed by the transform latency (one window). The window type is settable live per instance
+gain, delayed by exactly one window. A frame is taken at exactly every hop of
+the synth's own input, whatever slices a timed event cuts the block into, so
+any hop in range reconstructs exactly, not only whole blocks. The window type is settable live per instance
 with `/node_ugenCmd <nodeID> <ugenIndex> window <wintype>` (`-1` rectangular, `0` Hann,
 `1` sine, `2` Welch, `3` Hamming, `4` Blackman) — the first consumer of the typed
 per-UGen command surface.

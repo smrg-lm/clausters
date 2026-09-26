@@ -36,7 +36,7 @@ use clausters_core::{builtins, pvprog};
 use crate::dsp::registry::{
     Arity, ExecMode, OpFamily, SpectralRole, UGenConfig, UGenDescriptor, lookup,
 };
-use crate::dsp::spectral::{resolve_fft_size, resolve_hop};
+use crate::dsp::spectral::{MIN_HOP, resolve_fft_size, resolve_hop};
 use crate::dsp::{MAX_UGEN_INPUTS, Rate};
 use clausters_core::fft;
 use clausters_core::window::Window;
@@ -614,6 +614,22 @@ fn spectral_chain(
         SpectralRole::Source => {
             let winsize = resolve_fft_size(u.fft_size);
             config.fft_size = Some(winsize);
+            // A hop is a fraction of the window in (0, 1], at least one block
+            // long: shorter would close twice in one slice, longer would leave
+            // gaps no frame covers. Rejected rather than moved into range, so
+            // a chain never runs at a hop other than the one it was given.
+            if let Some(hop) = config.hop {
+                let samples = (winsize as f32 * hop).round();
+                if !(hop > 0.0 && hop <= 1.0) || samples < MIN_HOP as f32 {
+                    return Err(format!(
+                        "ugens[{i}] ({}): hop {hop} of a {winsize}-sample window is out \
+                         of range; it must be in (0, 1] and at least {MIN_HOP} samples \
+                         ({:.4} here)",
+                        u.kind,
+                        MIN_HOP as f32 / winsize as f32
+                    ));
+                }
+            }
             chain_slot = Some(chains.len());
             chains.push(ChainShape {
                 winsize,

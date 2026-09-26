@@ -16,7 +16,10 @@ import type { PvOperand } from "../pv_expr.ts";
 export interface FftOptions {
     /** The window size, a power of two: 256/512/1024/2048/4096. */
     fftSize?: number;
-    /** The fraction of the window between frames. */
+    /**
+     * The fraction of the window between frames: in (0, 1], and at least one
+     * 64-sample block (0.25 of 256).
+     */
     hop?: number;
     /** The window shape. */
     wintype?: number;
