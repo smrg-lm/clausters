@@ -998,3 +998,92 @@ fn compiler_rejects_a_hop_out_of_range() {
     assert!(compile(1024, 1.0).is_ok());
     assert!(compile(1024, 0.3).is_ok(), "307 samples, not a whole block");
 }
+
+/// `active` gates what the chain analyses: the output is the gated input,
+/// exactly, one window late -- through the switch off and the switch back on
+/// alike. The gate moves at the exact sample of a timed `/node_set`.
+#[test]
+fn active_gates_the_input_exactly_on_both_edges() {
+    const OFF: u64 = 9000;
+    const ON: u64 = 15_037;
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    let synth = spec_synth(json!({
+        "name": "gated",
+        "controls": [{"name": "active", "default": 1.0}],
+        "ugens": [
+            {"kind": "Sine", "inputs": [{"const": 440.0}]},
+            {"kind": "Mul", "inputs": [{"ugen": 0}, {"const": 0.5}]},
+            {"kind": "FFT", "inputs": [{"ugen": 1}, {"control": 0}],
+             "fft_size": 1024, "hop": 0.25},
+            {"kind": "IFFT", "inputs": [{"ugen": 2}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 3}]}
+        ]
+    }));
+    handle.send(add_synth(1, synth)).ok().unwrap();
+    for (time, value) in [(OFF, 0.0), (ON, 1.0)] {
+        handle
+            .send(Cmd::Schedule {
+                time,
+                cmds: vec![Cmd::SetControl {
+                    id: 1,
+                    index: 0,
+                    value,
+                }],
+            })
+            .ok()
+            .unwrap();
+    }
+    let sig = render_channel(&mut engine, 400);
+    let gated = |n: usize| {
+        let on = !(OFF as usize..ON as usize).contains(&n);
+        if on { tone(440.0, 0.5, n) } else { 0.0 }
+    };
+    let lag = assert_delayed_copy(&sig, gated, 1024, 4096, 24_000, 1e-4);
+    assert_eq!(lag, 1024);
+}
+
+/// A chain gated off lends a combiner silence, not the last frame it took:
+/// `PV_Add` of a tone and a second tone whose chain is switched off is the
+/// first tone plus the second one gated, exactly.
+#[test]
+fn a_gated_chain_lends_a_combiner_silence() {
+    const OFF: u64 = 9000;
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    let synth = spec_synth(json!({
+        "name": "gated_b",
+        "controls": [{"name": "active", "default": 1.0}],
+        "ugens": [
+            {"kind": "Sine", "inputs": [{"const": 440.0}]},
+            {"kind": "Mul", "inputs": [{"ugen": 0}, {"const": 0.25}]},
+            {"kind": "Sine", "inputs": [{"const": 700.0}]},
+            {"kind": "Mul", "inputs": [{"ugen": 2}, {"const": 0.25}]},
+            {"kind": "FFT", "inputs": [{"ugen": 1}, {"const": 1.0}], "fft_size": 1024},
+            {"kind": "FFT", "inputs": [{"ugen": 3}, {"control": 0}], "fft_size": 1024},
+            {"kind": "PV_Add", "inputs": [{"ugen": 4}, {"ugen": 5}]},
+            {"kind": "IFFT", "inputs": [{"ugen": 6}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 7}]}
+        ]
+    }));
+    handle.send(add_synth(1, synth)).ok().unwrap();
+    handle
+        .send(Cmd::Schedule {
+            time: OFF,
+            cmds: vec![Cmd::SetControl {
+                id: 1,
+                index: 0,
+                value: 0.0,
+            }],
+        })
+        .ok()
+        .unwrap();
+    let sig = render_channel(&mut engine, 400);
+    let sum = |n: usize| {
+        let b = if n < OFF as usize {
+            tone(700.0, 0.25, n)
+        } else {
+            0.0
+        };
+        tone(440.0, 0.25, n) + b
+    };
+    assert_delayed_copy(&sig, sum, 1024, 4096, 24_000, 1e-4);
+}

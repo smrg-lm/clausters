@@ -16,9 +16,12 @@ from .graph import Ugen
 
 def fft(source, active=1.0, *, fft_size=1024, hop=0.5, wintype=0) -> Ugen:
     """Opens a spectral chain: windows ``source`` (an audio signal) and
-    transforms it to a spectral frame once per **hop**. ``active > 0`` runs the
-    transform, ``<= 0`` holds. ``fft_size`` is the window size (a power of two:
-    256/512/1024/2048/4096), ``hop`` the fraction of the window between frames
+    transforms it to a spectral frame once per **hop**. ``active`` gates the
+    input, per sample: ``<= 0`` is analysed as silence, so the round trip is
+    the gated input exactly, and a frame whose whole window was gated is not
+    taken -- the chain does no work while it stays off. ``fft_size`` is the
+    window size (a power of two: 256/512/1024/2048/4096), ``hop`` the
+    fraction of the window between frames
     (in (0, 1], and at least one 64-sample block: 0.25 of 256),
     ``wintype`` the window (a `clausters._native.Window`: 0 Hann, 1 sine, ...).
     These size the transform, so they are static fields given **only here** -- the

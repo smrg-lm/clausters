@@ -118,8 +118,12 @@ impl SpectralChain {
 
 /// Windows an audio input and transforms it to a spectral frame once per hop.
 ///
-/// Inputs: `[in, active]` -- the audio signal and a control that gates the
-/// transform (`> 0` on, `<= 0` off, holding the last frame). The window size,
+/// Inputs: `[in, active]` -- the audio signal and a gate on it, read per
+/// sample. `active <= 0` gates the input to silence, so the chain analyses
+/// the gated signal and a plain round trip is exactly that signal, one window
+/// late, through both edges. A frame whose whole window was gated holds
+/// nothing but silence, so it is not taken: the chain does no work while it
+/// stays off, and its frame reads as silence to anything that combines it. The window size,
 /// hop and window type are static per-UGen config, not signal inputs, because
 /// they size the pre-allocated scratch. The window type is also settable live
 /// through `/node_ugenCmd` (selector `window`), the first real consumer of the
@@ -147,6 +151,13 @@ pub struct Fft {
     /// node id yields the same offset (RT and NRT renders of one score stay
     /// sample-identical).
     next_frame: u64,
+    /// The input position just past the last sample `active` let through: a
+    /// frame ending at `p` holds any of the signal only if this is past
+    /// `p - winsize`.
+    live_until: u64,
+    /// Whether the chain's frame has been cleared since the last frame taken,
+    /// so a run of skipped frames clears it once.
+    frame_cleared: bool,
     /// De-circularized, windowed frame handed to the forward transform.
     scratch: Vec<f32>,
 }
@@ -167,6 +178,8 @@ impl Fft {
             write: 0,
             pos: 0,
             next_frame: winsize as u64,
+            live_until: 0,
+            frame_cleared: true,
             scratch: vec![0.0; winsize],
         }
     }
@@ -187,17 +200,31 @@ impl UGen for Fft {
     ) {
         chain.ready = false;
         let input = inputs[0];
-        let active = inputs.get(1).map(|a| at(a, 0)).unwrap_or(1.0) > 0.0;
-        for &s in input {
+        let gate = inputs.get(1).copied();
+        for (j, &s) in input.iter().enumerate() {
+            let active = gate.is_none_or(|g| at(g, j) > 0.0);
             self.inbuf[self.write] = if active { s } else { 0.0 };
             self.write = (self.write + 1) % self.winsize;
             self.pos += 1;
+            if active {
+                self.live_until = self.pos;
+            }
             // The frame is taken at the sample its hop closes on, wherever
             // that falls in the slice. The hop is at least a block, so this
             // happens at most once per slice.
             if self.pos == self.next_frame {
                 self.next_frame += self.hop_size as u64;
-                if active {
+                let live = self.live_until + self.winsize as u64 > self.pos;
+                if !live {
+                    // Nothing but gated silence in the window: skip the
+                    // transform, and let a combiner reading this chain read
+                    // the silence it holds rather than the last frame taken.
+                    if !self.frame_cleared {
+                        chain.frame.fill(0.0);
+                        self.frame_cleared = true;
+                    }
+                } else {
+                    self.frame_cleared = false;
                     // De-circularize: `write` points at the oldest sample.
                     for k in 0..self.winsize {
                         let s = self.inbuf[(self.write + k) % self.winsize];
