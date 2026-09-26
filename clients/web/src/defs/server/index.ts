@@ -1292,8 +1292,9 @@ export class Server {
 
     /**
      * Registers (or drops) this client for the server's pushes -- `/node_end`
-     * node deaths, `/node_trigger` triggers, the transport broadcasts. Registering is
-     * what lets the node-id registry recycle.
+     * node deaths, `/node_trigger` triggers, `/node_fault` refusals, the
+     * transport broadcasts. Registering is what lets the node-id registry
+     * recycle, and what brings a UGen's refusal to this client's console.
      */
     async notify(flag = true, timeout?: number): Promise<void> {
         if (this.scoring) return; // no pushes to register for, and no ids to recycle
@@ -1312,7 +1313,28 @@ export class Server {
             );
             return;
         }
-        if (flag) this.recycleNodeIds();
+        if (flag) {
+            this.recycleNodeIds();
+            this.reportFaults();
+        }
+    }
+
+    private faults: OscFunc | null = null;
+
+    /**
+     * Warns on each `/node_fault nodeID kind code sentence` the server pushes:
+     * a UGen refused what it was given (a convolution kernel it cannot use
+     * whole, a combiner over two windows) and plays silence. The server's
+     * console is not where a page's user looks, so its sentence is warned
+     * here.
+     */
+    private reportFaults(): void {
+        if (this.faults) return;
+        this.faults = new OscFunc(
+            (msg) => console.warn(`clausters: node ${msg[1]}: ${msg[4]}`),
+            "/node_fault",
+            { recv: this.receiver },
+        );
     }
 
     private recycling: OscFunc | null = null;
@@ -1486,6 +1508,8 @@ export class Server {
         this.releaseSampleClock();   // the reader every locked clock shared
         this.recycling?.free();
         this.recycling = null;
+        this.faults?.free();
+        this.faults = null;
         this.recv?.remove(this.listener);
         this.recv?.stop();
         // Let go of a carrier this handle opened, so the handle is a handle

@@ -946,7 +946,9 @@ pub enum ReplyKind {
     /// exactly, so it plays silence instead of a wrong result. The name is
     /// the UGen's kind, the id a fault code of that kind and the values its
     /// numbers; [`describe_fault`] turns them into a sentence on the network
-    /// thread. The live server logs it; an offline render fails with it.
+    /// thread. The live server logs it and sends `/node_fault nodeID kind
+    /// code sentence` to every `/server_notify` client; an offline render
+    /// fails with it.
     Fault,
 }
 

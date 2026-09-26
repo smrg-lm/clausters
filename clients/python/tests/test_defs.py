@@ -156,6 +156,21 @@ def test_the_audio_space_starts_above_the_servers_own_outputs():
     assert AudioBusAllocator(_spaces(outputs=6)).alloc(1).index == 6
 
 
+def test_a_node_fault_is_logged_as_a_warning(caplog):
+    """A UGen that refuses what it was given plays silence and the server
+    tells its clients with ``/node_fault``: the client logs the server's
+    sentence as a warning, where a script's user sees it."""
+    import logging
+
+    srv = Server(interface=_FakeInterface())
+    sentence = ("Conv: kernel buffer 1 has 4 partitions and this Conv holds 2; "
+                "it plays silence (give the Conv partitions >= 4)")
+    with caplog.at_level(logging.WARNING, logger="clausters"):
+        srv._on_notice("/node_fault", [1000, "Conv", 2, sentence])
+    assert [r.levelno for r in caplog.records] == [logging.WARNING]
+    assert caplog.records[0].getMessage() == f"node 1000: {sentence}"
+
+
 def test_splitting_a_share_keeps_what_is_held_and_gives_away_the_second_half():
     """A launcher that starts a second client on this server splits its ids:
     the handle keeps the first half and every id it holds, and hands out the

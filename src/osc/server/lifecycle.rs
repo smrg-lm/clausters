@@ -607,11 +607,23 @@ impl OscServer {
                     }
                 }
                 ReplyKind::Fault => {
+                    // Logged here, and told to the clients: the UGen is
+                    // playing silence because of something a client set up,
+                    // and the server's console is not where that client looks.
+                    let sentence = crate::dsp::describe_fault(&msg);
                     warn!(
                         target: crate::logging::OSC_TARGET,
-                        "node {}: {}",
-                        msg.node_id,
-                        crate::dsp::describe_fault(&msg)
+                        "node {}: {sentence}",
+                        msg.node_id
+                    );
+                    self.notify(
+                        "/node_fault",
+                        vec![
+                            OscType::Int(msg.node_id),
+                            OscType::String(msg.name().to_string()),
+                            OscType::Int(msg.id),
+                            OscType::String(sentence),
+                        ],
                     );
                 }
             }

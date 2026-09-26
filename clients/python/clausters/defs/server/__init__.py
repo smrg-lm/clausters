@@ -637,32 +637,43 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         self.buffers = BufferAllocator(self.ids)
 
     def _ensure_recycler(self):
-        """Starts the ``/node_end`` listener once per server handle: a dedicated
-        `OscReceiver` registered with ``/server_notify 1`` **from its own socket**, so
-        the server's node-lifecycle pushes land here whatever transport the
+        """Starts the notification listener once per server handle: a
+        dedicated `OscReceiver` registered with ``/server_notify 1`` **from its
+        own socket**, so the server's pushes land here whatever transport the
         command path uses (UDP, TCP, WS -- notify registration is per source).
-        Ids outside the client range (the server's auto/MIDI ranges, other
-        clients) are ignored by `NodeIdAllocator.free`. Score
-        (NRT) interfaces skip this: their registry is unbounded and an offline
-        score has no live notifications."""
+        What it does with them is `_on_notice`. Score (NRT) interfaces skip
+        this: their registry is unbounded and an offline score has no live
+        notifications -- an offline render fails on a fault instead."""
         if self._recycler is not None or \
                 getattr(self.interface, "time_mode", "unix") == "score":
             return
         from ...base._oscinterface import OscReceiver
 
-        def on_node_end(addr, args, when, src):
-            if addr == "/node_end" and args:
-                self.nodes.free(int(args[0]))
-            elif addr == "/fail" and len(args) >= 3 and isinstance(args[2], int):
-                # An engine rejection (duplicate id / full table) is async:
-                # the node never existed, so no /node_end will come -- reconcile
-                # the in-flight id here instead of losing it.
-                self.nodes.free(int(args[2]))
-
         recv = OscReceiver().start()
-        recv.add(on_node_end)
+        recv.add(self._on_notice)
         recv.send(self.target, "/server_notify", 1)
         self._recycler = recv
+
+    def _on_notice(self, addr, args, when=None, src=None):
+        """One notification from the server.
+
+        - ``/node_end``: the node's id returns to the registry. Ids outside the
+          client range (the server's auto/MIDI ranges, other clients) are
+          ignored by `NodeIdAllocator.free`.
+        - ``/fail`` of a node: an engine rejection (duplicate id, full table)
+          is async and the node never existed, so no ``/node_end`` will come --
+          the in-flight id is reconciled here instead of lost.
+        - ``/node_fault``: a UGen refused what it was given and plays silence
+          (a convolution kernel it cannot use whole, a combiner over two
+          windows). The server's sentence is logged as a warning, since the
+          server's console is not where a script looks.
+        """
+        if addr == "/node_end" and args:
+            self.nodes.free(int(args[0]))
+        elif addr == "/fail" and len(args) >= 3 and isinstance(args[2], int):
+            self.nodes.free(int(args[2]))
+        elif addr == "/node_fault" and len(args) >= 4:
+            log.warning("node %s: %s", args[0], args[3])
 
     # ---- buffers ----
 
@@ -720,6 +731,13 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
     # ---- server control ----
 
     def notify(self, flag: bool = True, timeout: "float | None" = None):
+        """Registers (or drops) this handle's command socket for the server's
+        pushes (``/server_notify``) -- ``/node_end`` node deaths,
+        ``/node_trigger`` triggers, ``/node_fault`` refusals, the transport
+        broadcasts -- for a responder of your own to read. The handle already
+        listens on a socket of its own once it allocates a node: that is what
+        recycles node ids and warns each ``/node_fault`` on the
+        ``clausters.server`` logger."""
         return self.request("/server_notify", 1 if flag else 0, timeout=timeout, expect=("/done",))
 
     def status(self, timeout: "float | None" = None) -> ServerStatus:

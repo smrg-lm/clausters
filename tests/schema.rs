@@ -29,6 +29,7 @@ const NOT_COMMANDS: &[&str] = &[
     "/node_start",
     "/node_end",
     "/node_trigger",
+    "/node_fault",
     "/node_move",
     "/node_off",
     "/node_on",

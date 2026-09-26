@@ -38,7 +38,8 @@ import { GraphDef } from "../src/defs/graphdef.ts";
 import * as sig from "../src/defs/signals.ts";
 import { CommandError } from "../src/errors.ts";
 import {
-    control, DoneAction, Env, envGen, out, rlpf, saw, sine,
+    control, conv, DoneAction, Env, envGen, out, partconvFrames, rlpf, saw, sine,
+    whiteNoise,
 } from "../src/defs/ugens/index.ts";
 
 const here = new URL(".", import.meta.url);
@@ -261,6 +262,35 @@ test("a node id returns to the registry when its /node_end arrives", {
         await server.sync();
         for (let i = 0; i < 40 && server.nodes.inUse > 0; i++) await sleep(25);
         assert.equal(server.nodes.inUse, 0, "the /node_end recycled the id");
+    });
+});
+
+test("a UGen's refusal reaches the console as a warning", {
+    skip: !hasServer,
+}, async () => {
+    await withServer(async (server) => {
+        // A kernel of four partitions into a Conv that holds two: the server
+        // plays silence and pushes /node_fault, which the client warns.
+        const warned: string[] = [];
+        const original = console.warn;
+        console.warn = (...line: unknown[]) => void warned.push(line.join(" "));
+        try {
+            const ir = await Buffer.alloc(1000, 1, { server });
+            const kernel = await Buffer.alloc(partconvFrames(1000, 512), 1, { server });
+            await kernel.gen("prepare_partconv", [["i", 512], ["i", ir.bufnum]]);
+            await new SynthDef(
+                "ts_conv",
+                out(0.0, conv(whiteNoise(), kernel.bufnum, { fftSize: 512, partitions: 2 })),
+            ).send(server);
+            new Synth("ts_conv", undefined, { server });
+            for (let i = 0; i < 80 && warned.length === 0; i++) await sleep(25);
+        } finally {
+            console.warn = original;
+        }
+        assert.ok(
+            warned.some((w) => w.includes("has 4 partitions and this Conv holds 2")),
+            warned.join("\n"),
+        );
     });
 });
 
