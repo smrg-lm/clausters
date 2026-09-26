@@ -3102,7 +3102,7 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
 
 ## Found by use: the running list of fixes
 
-- ⬜ **`panels/host.html` promises a native host changes nothing, and its
+- ✅ **`panels/host.html` promises a native host changes nothing, and its
   bound widgets and meters stop working there** *(found 2026-09-26, checking
   the WebSocket leg by hand)*. The page's comment says that with
   `transport: "ws"` "nothing below this line would change". The scripted
@@ -3116,6 +3116,12 @@ Python counterpart under another spelling or is a page's own (`ANY_PEER`,
   the host (the page's `Server` over WebSocket, the host with `--server`), or
   keep the tab's engine and have the page say that bound widgets and meters
   need the page's own host.
+  **Fixed** by sharing a real server: "drive a native host" attaches the
+  page's `Server` to a `clausters --ws` over WebSocket, sends the def there and
+  then attaches the host, which is started with `--server` at that server and
+  `--shm` at its segment -- a native host reads meters and scopes out of the
+  segment, not over `/bus_stream`, which is the browser's path. The page's
+  comment gives the two command lines.
 
 - ✅ **`edit(curve)` could not be told the value range** *(found 2026-09-21;
   the finding and the reasoning are one entry in `clients/python/PLAN.md`,

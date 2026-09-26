@@ -52,7 +52,8 @@
       <button id="panel">panel</button>
       <button id="meters">meters</button>
       <button id="views">views</button>
-      <input id="ws" value="ws://127.0.0.1:57220" />
+      <input id="ws" value="ws://127.0.0.1:57220" title="the native GUI host" />
+      <input id="server" value="ws://127.0.0.1:57120" title="the audio server it plays through" />
       <button id="remote">drive a native host</button>
     </div>
     <div id="note">building a GUI from TypeScript...</div>
@@ -65,6 +66,19 @@
       `clausters-gui --ws` host: the carrier is the one line that names one, and
       the verb follows it -- `boot()` over this page's own host, `attach()` over
       a socket, since a tab starts no process on another machine.
+
+      A native host cannot reach the engine in this tab, and a bound widget or a
+      meter talks to the audio server without this script in between. So the
+      native path shares a real server: the page attaches its `Server` to it
+      over WebSocket and the host is started pointing at the same one, and at
+      its shared-memory segment, which is where a native host reads its meters
+      and scopes from --
+
+        clausters --ws --shm /tmp/clausters.shm
+        clausters-gui --ws --server 127.0.0.1:57110 --shm /tmp/clausters.shm
+
+      -- and "drive a native host" moves both sides over at once. The two
+      addresses in the bar are the host's WebSocket and the server's.
 
       - panel:  a tone's controls. `freq` is **bound** -- its value goes
         straight from the host to the engine, with no round trip through this
@@ -92,7 +106,8 @@
       const note = document.getElementById("note");
       const say = (text) => { note.textContent = text; };
 
-      // The audio side: one engine in this tab, one `Server` over it. The
+      // The audio side: one engine in this tab, one `Server` over it -- until
+      // a native host is driven, when it is a real server both share. The
       // AudioContext starts suspended under the autoplay policy and the
       // engine only runs (and answers) while it does, so the server is opened
       // on the first click rather than at load -- every button goes through
@@ -100,15 +115,18 @@
       let server = null;
       let voice = null;
 
+      // A tone whose cutoff a knob sweeps and whose pitch a bound one does.
+      const tone = () => {
+        const freq = control("freq", 220.0);
+        const amp = control("amp", 0.2);
+        const cutoff = control("cutoff", 2000.0);
+        return new SynthDef("gui_tone", out(0.0, lpf(saw(freq), cutoff).mul(amp)));
+      };
+
       async function audio() {
         if (!server) {
           server = await new Server().boot();
-          // A tone whose cutoff a knob sweeps and whose pitch a bound one does.
-          const freq = control("freq", 220.0);
-          const amp = control("amp", 0.2);
-          const cutoff = control("cutoff", 2000.0);
-          await new SynthDef(
-            "gui_tone", out(0.0, lpf(saw(freq), cutoff).mul(amp))).send(server);
+          await tone().send(server);
         }
         return server;
       }
@@ -246,20 +264,31 @@
         say("views: zoom with the wheel, drag to select -- both lanes move as one");
       };
 
-      // The same client against a native host: only the carrier changes.
+      // The same client against a native host: only the carriers change. The
+      // server goes first, so the host is attached only once there is one it
+      // can play through; a tone still sounding on the tab's engine is freed
+      // there, and the next demo starts it on the shared server.
       document.getElementById("remote").onclick = async () => {
         const url = document.getElementById("ws").value;
+        const serverUrl = document.getElementById("server").value;
+        let shared;
         try {
-            // The panel still sounds in this tab, so the engine comes up
-            // first, as it does for every other demo.
-            await audio();
-            host?.stop();
-            host = await new GuiHost({ transport: "ws", url }).attach();
-            win = null;
-            say(`driving the native host at ${url} -- open a demo`);
+            shared = await new Server({ transport: "ws", url: serverUrl }).attach();
+            await tone().send(shared);
         } catch (error) {
-            say(`could not reach ${url}: ${error}`);
+            return say(`could not reach the server at ${serverUrl}: ${error}`);
         }
+        try {
+            const native = await new GuiHost({ transport: "ws", url }).attach();
+            host?.stop();
+            host = native;
+        } catch (error) {
+            return say(`could not reach the host at ${url}: ${error}`);
+        }
+        if (voice) { voice.free(); voice = null; }
+        server = shared;
+        win = null;
+        say(`driving the native host at ${url}, playing through ${serverUrl} -- open a demo`);
       };
 
       say("ready: press play (the autoplay gesture), then open a demo");

@@ -121,14 +121,6 @@ already carry it.
 Same size of work, except the shape depends on an answer. The decision is named
 on each one; none of them is being taken by this file.
 
-- ⬜ **`panels/host.html` promises a native host changes nothing, and its
-  bound widgets and meters stop working there** (`clients/web/PLAN.md`, Found
-  by use). Over WebSocket the scripted controls come back and work; `freq`'s
-  `/node_set` and the meters go to the host's own audio-server leg, and the
-  engine they need is in the tab.
-  **The decision:** share one real audio server between the page and the host,
-  or keep the tab's engine and say on the page what only its own host can do.
-
 - ⬜ **The page suite is one browser, and the second one found a defect it had
   been passing over** (`clients/web/PLAN.md`, Found by use). Chrome and Firefox
   disagree about what an API **refuses**, so a page that is wrong everywhere
