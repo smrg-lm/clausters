@@ -235,7 +235,7 @@ pub struct RenderStats {
     /// What the render logged at `info` and above, in order -- a node the
     /// engine rejected, a `Poll`'s line. A render with no logger of its own
     /// (the embed ABI, the wasm entry point) hands these to its caller; see
-    /// [`render_log`](super::render_log).
+    /// [`render_log`].
     pub log: Vec<LogLine>,
 }
 
