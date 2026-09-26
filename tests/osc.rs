@@ -2765,6 +2765,13 @@ fn tcp_replies_route_to_the_originating_connection() {
 fn tcp_carries_frames_larger_than_a_datagram() {
     let (tcp_addr, _join, _engine) = spawn_tcp_server();
     let mut client = TcpClient::connect(tcp_addr);
+    // Encoding, decoding and generating 40k floats in a debug build takes most
+    // of a second here and over two on a loaded CI runner, so the usual 2 s
+    // reply bound is a coin toss. The bound only catches a hang.
+    client
+        .stream
+        .set_read_timeout(Some(Duration::from_secs(20)))
+        .unwrap();
 
     const N: usize = 40_000;
     const SEGS: usize = 10_000;
