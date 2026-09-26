@@ -424,15 +424,26 @@ impl Renderer {
         self.engine.process_block(&mut self.block);
         // A UGen that refused what it was given plays silence; offline, where
         // nobody reads a log, that would be a wrong file with no error, so the
-        // render stops on it. The other replies have no one to reach.
+        // render stops on it. A `Poll` posts its line exactly as the live
+        // server does; the replies meant for clients have no one to reach.
         while let Some(msg) = self.handle.pop_reply() {
-            if msg.kind == ReplyKind::Fault {
-                return Err(format!(
-                    "at {:.6}s, node {}: {}",
-                    self.now as f64 / self.sample_rate,
-                    msg.node_id,
-                    crate::dsp::describe_fault(&msg)
-                ));
+            match msg.kind {
+                ReplyKind::Fault => {
+                    return Err(format!(
+                        "at {:.6}s, node {}: {}",
+                        self.now as f64 / self.sample_rate,
+                        msg.node_id,
+                        crate::dsp::describe_fault(&msg)
+                    ));
+                }
+                ReplyKind::Poll => {
+                    tracing::info!(
+                        target: crate::logging::OSC_TARGET,
+                        "{}",
+                        crate::dsp::poll_line(&msg)
+                    );
+                }
+                ReplyKind::Trig | ReplyKind::Reply => {}
             }
         }
         // The last block is truncated to the requested length.

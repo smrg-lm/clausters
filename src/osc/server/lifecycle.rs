@@ -600,9 +600,9 @@ impl OscServer {
                     self.notify(&addr, args);
                 }
                 ReplyKind::Poll => {
-                    let value = msg.values().first().copied().unwrap_or(0.0);
-                    info!(target: crate::logging::OSC_TARGET, "{}: {value}", msg.name());
+                    info!(target: crate::logging::OSC_TARGET, "{}", crate::dsp::poll_line(&msg));
                     if msg.id >= 0 {
+                        let value = msg.values().first().copied().unwrap_or(0.0);
                         self.notify_trigger(msg.node_id, msg.id, value);
                     }
                 }

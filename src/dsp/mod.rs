@@ -950,6 +950,17 @@ pub enum ReplyKind {
     Fault,
 }
 
+/// The console line a [`ReplyKind::Poll`] posts: `label: value`. One function
+/// for the live server and the offline render, so a `Poll` reads the same in
+/// both.
+pub fn poll_line(msg: &ReplyMsg) -> String {
+    format!(
+        "{}: {}",
+        msg.name(),
+        msg.values().first().copied().unwrap_or(0.0)
+    )
+}
+
 /// The sentence for a [`ReplyKind::Fault`], built off the audio thread from
 /// the kind, the code and the values the UGen could carry inline.
 pub fn describe_fault(msg: &ReplyMsg) -> String {
