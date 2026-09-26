@@ -237,6 +237,15 @@ export function abi_version(): number;
 export function faustJobs(score: Uint8Array): string;
 
 /**
+ * What the last [`render`] logged at `info` and above -- a node the engine
+ * rejected, a `Poll`'s line -- as the embed ABI's `clausters_render_log`
+ * gives it: one line per entry, `LEVEL<TAB>message`, the level one of
+ * `ERROR`, `WARN`, `INFO`; empty after a failed render. A page has no logger
+ * for the engine to print to, so the client hands these to the console.
+ */
+export function last_render_log(): string;
+
+/**
  * The seed the last [`render`] on this thread used -- how a caller gets back
  * to a take it liked. Separate from `render`'s return because the JS face
  * returns a bare `Float32Array`; a stats object is the shape to grow into if
@@ -259,7 +268,8 @@ export function linkFaust(name: string, compute: number, init: number, json: str
 /**
  * JS face: `render(scoreBytes, sampleRate, channels, seed?) -> Float32Array`,
  * throwing a `JsError` with the render's message on failure. The seed the
- * render used is read back with [`last_render_seed`].
+ * render used is read back with [`last_render_seed`], and what it logged
+ * with [`last_render_log`].
  */
 export function render(score: Uint8Array, sample_rate: number, channels: number, seed?: bigint | null): Float32Array;
 
@@ -271,6 +281,7 @@ export interface InitOutput {
     readonly __wbg_webserver_free: (a: number, b: number) => void;
     readonly __indirect_function_table: WebAssembly.Table;
     readonly faustJobs: (a: number, b: number) => [number, number, number, number];
+    readonly last_render_log: () => [number, number];
     readonly linkFaust: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly render: (a: number, b: number, c: number, d: number, e: number, f: bigint) => [number, number, number, number];
     readonly webserver_block_frames: (a: number) => number;
@@ -345,6 +356,7 @@ export interface InitOutput {
     readonly clausters_free_samples: (a: number, b: bigint) => void;
     readonly clausters_read_soundfile: (a: number, b: bigint, c: bigint, d: number, e: number, f: number, g: number, h: number) => number;
     readonly clausters_render: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => number;
+    readonly clausters_render_log: (a: number, b: number) => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __externref_table_dealloc: (a: number) => void;

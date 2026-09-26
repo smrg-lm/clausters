@@ -72,6 +72,10 @@ fn write_error(msg: &str, buf: *mut u8, cap: usize) {
 /// `out_seed`; free the buffer with [`clausters_free_samples`]. On failure
 /// returns NULL and writes a human-readable message into (`err`, `err_cap`).
 ///
+/// What the render logged -- a node the engine rejected, a `Poll`'s line --
+/// is read afterwards with [`clausters_render_log`]: this process has no
+/// logger of its own to print it.
+///
 /// # Safety
 /// `score`/`score_len` must describe a readable byte range; `seed` must be
 /// NULL or point to a readable `u64`; `out_frames`, `out_events` and
@@ -116,6 +120,12 @@ pub unsafe extern "C" fn clausters_render(
         };
         render_to_vec(&score, &cfg)
     });
+    LAST_RENDER_LOG.with(|log| {
+        *log.borrow_mut() = match &result {
+            Ok((_, stats)) => crate::server::render_log::encode(&stats.log),
+            Err(_) => String::new(),
+        }
+    });
     match result {
         Ok((samples, stats)) => {
             // SAFETY: caller contract.
@@ -134,6 +144,36 @@ pub unsafe extern "C" fn clausters_render(
             std::ptr::null_mut()
         }
     }
+}
+
+thread_local! {
+    /// What the last [`clausters_render`] on this thread logged, encoded.
+    static LAST_RENDER_LOG: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
+/// What the last [`clausters_render`] on the calling thread logged at `info`
+/// and above: UTF-8 text, one line per entry, `LEVEL<TAB>message` with the
+/// level one of `ERROR`, `WARN`, `INFO` (empty after a failed render, whose
+/// error says what went wrong). Copies up to `cap` bytes into `buf` (no
+/// terminator) and returns the **full** length, so a call with `cap` 0 sizes
+/// the buffer for the next.
+///
+/// A separate call rather than more out pointers on `clausters_render`, so
+/// the render's own signature -- and every caller of it -- stays as it was.
+///
+/// # Safety
+/// `buf` must be NULL or writable for `cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_render_log(buf: *mut u8, cap: usize) -> usize {
+    LAST_RENDER_LOG.with(|log| {
+        let log = log.borrow();
+        let n = log.len().min(cap);
+        if !buf.is_null() && n > 0 {
+            // SAFETY: caller contract.
+            unsafe { std::ptr::copy_nonoverlapping(log.as_ptr(), buf, n) };
+        }
+        log.len()
+    })
 }
 
 /// Frees a buffer returned by [`clausters_render`]. `samples` is

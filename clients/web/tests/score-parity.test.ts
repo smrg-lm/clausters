@@ -117,6 +117,29 @@ test("an offline session renders the score it wrote", async () => {
     );
 });
 
+test("what a render logged reaches the console", async () => {
+    // The engine in the page has no logger of its own: a node it rejected --
+    // here the same id twice -- is warned on the console, as the reference
+    // client logs it.
+    const session = await Session.nrt();
+    const server = session.server;
+    server.sendMsg("/synth_new", ["s", "default"], ["i", 1000], ["i", 0], ["i", 0]);
+    server.sendMsg("/synth_new", ["s", "default"], ["i", 1000], ["i", 0], ["i", 0]);
+    server.sendBundleAfter(0.05, [["/node_free", ["i", 1000]]]);
+    const warned: string[] = [];
+    const original = console.warn;
+    console.warn = (...line: unknown[]) => void warned.push(line.join(" "));
+    try {
+        await session.render({ channels: 1 });
+    } finally {
+        console.warn = original;
+    }
+    assert.ok(
+        warned.some((w) => w.includes("rejected node 1000")),
+        warned.join("\n"),
+    );
+});
+
 test("the seed is the take, and handing it back replays it", async () => {
     // Noise, so the seed has something to govern: two takes of this differ
     // unless one is asked to repeat the other.

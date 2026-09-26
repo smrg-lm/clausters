@@ -41,6 +41,7 @@ from array import array
 from typing import NamedTuple
 
 from . import _libpath, _native
+from .log import render_line
 from .errors import (
     AbiMismatchError,
     CommandRingFull,
@@ -52,7 +53,7 @@ from .errors import (
     ServerError,
 )
 
-ABI_VERSION = 12
+ABI_VERSION = 13
 
 #: The stride between successive stochastic-UGen seeds within one render --
 #: ``SEED_STRIDE`` in ``clausters_core::rng``. A client needs it to reproduce a
@@ -429,6 +430,9 @@ def _load(path: str | None = None) -> ctypes.CDLL:
     ]
     _require(lib, "clausters_free_samples", "embed").argtypes = [
         ctypes.POINTER(ctypes.c_float), ctypes.c_uint64]
+    log_fn = _require(lib, "clausters_render_log", "embed")
+    log_fn.restype = ctypes.c_size_t
+    log_fn.argtypes = [ctypes.c_char_p, ctypes.c_size_t]
     read_fn = _require(lib, "clausters_read_soundfile", "embed")
     read_fn.restype = ctypes.POINTER(ctypes.c_float)
     read_fn.argtypes = [
@@ -484,6 +488,10 @@ def render(score: bytes, sample_rate: float = 48000.0, channels: int = 2,
     a fresh one, so the same score is a new take every time; the seed actually
     used is the fourth element of the result, and passing it back replays that
     take exactly.
+
+    What the render logged -- a node the engine rejected, a `Poll`'s line --
+    goes to the ``clausters.render`` logger at its level, since the library
+    has no logger of its own to print it.
     """
     lib = _load(lib_path)
     frames = ctypes.c_uint64(0)
@@ -497,6 +505,13 @@ def render(score: bytes, sample_rate: float = 48000.0, channels: int = 2,
                                err, len(err))
     if not ptr:
         raise RenderError(err.value.decode() or "render failed")
+    size = lib.clausters_render_log(None, 0)
+    if size:
+        text = ctypes.create_string_buffer(size)
+        lib.clausters_render_log(text, size)
+        for line in text.raw[:size].decode("utf-8", "replace").splitlines():
+            level, _, message = line.partition("\t")
+            render_line(level, message)
     total = frames.value * channels
     samples = array("f", ctypes.cast(ptr, ctypes.POINTER(ctypes.c_float * total)).contents)
     lib.clausters_free_samples(ptr, total)

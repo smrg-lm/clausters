@@ -29,6 +29,7 @@ use crate::server::engine::{
     NodeEventKind, engine_pair_full,
 };
 use crate::server::nrt::{NrtAction, run_job, wav_format, write_wav_sample};
+use crate::server::render_log::{self, LogLine};
 
 /// One score entry: the messages of a bundle, executed atomically at `time`
 /// seconds from the start of the render.
@@ -231,6 +232,11 @@ pub struct RenderStats {
     /// score, you like the take, and this is how you get it back. Feed it to
     /// `RenderConfig::seed` (`--seed`, `seed=`) and the render repeats.
     pub seed: u64,
+    /// What the render logged at `info` and above, in order -- a node the
+    /// engine rejected, a `Poll`'s line. A render with no logger of its own
+    /// (the embed ABI, the wasm entry point) hands these to its caller; see
+    /// [`render_log`](super::render_log).
+    pub log: Vec<LogLine>,
 }
 
 /// Renders a score, handing each processed chunk (interleaved, at most one
@@ -240,6 +246,16 @@ pub struct RenderStats {
 /// [`crate::dsp::denormals`]) -- the same mode the real-time callback runs
 /// in, so the offline render stays sample-identical to a live take.
 pub fn render(
+    score: &Score,
+    cfg: &RenderConfig,
+    sink: impl FnMut(&[f32]) -> Result<(), String>,
+) -> Result<RenderStats, String> {
+    let (result, log) = render_log::during(|| render_logged(score, cfg, sink));
+    result.map(|stats| RenderStats { log, ..stats })
+}
+
+/// [`render`] without the log kept.
+fn render_logged(
     score: &Score,
     cfg: &RenderConfig,
     mut sink: impl FnMut(&[f32]) -> Result<(), String>,
@@ -358,6 +374,7 @@ pub fn render(
                 }
             })
             .collect(),
+        log: Vec::new(),
     })
 }
 

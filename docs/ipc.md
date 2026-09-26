@@ -65,6 +65,7 @@ An attached server maps every live row at startup, and a buffer the owner alloca
 | 10 | a **write frontier** in each buffer directory row: how far that buffer has been written, published by the writing UGens once per block and read by a peer drawing a recording as it fills. A row grew from 24 to 32 bytes, which moves nothing before the directory — it is the tail — but changes the row size every reader divides by |
 | 11 | the **audio-bus region** sized by `--audio-buses`, where it had been fixed at 128 slots |
 | 12 | **several transports**: the header's two transport counters became the **transport table** after it — 64 rows of clock and position — and their words hold the live transport count. Every region after the header moved by the table's 1 024 bytes; a reader that takes its offsets from the shape (`transport_clock_offset`, `transport_position_offset` and the new `transport_stride`) finds transport 0 where those two offsets say |
+| 13 | the **embed C ABI**, not the segment: `clausters_render_log`, what the last `clausters_render` on the calling thread logged at `info` and above (a node the engine rejected, a `Poll`'s line), for a process with no logger of its own. Additive for an old caller, but a binding that reads it cannot load a library without it, so the counter moves and a stale copy is refused by name rather than failing at a missing symbol |
 
 ### One definition, and the readers that follow it
 
@@ -104,11 +105,16 @@ uint32_t clausters_abi_version(void);
 
 // The synchronous "scientific" call: render a binary score (the --nrt
 // format) and return interleaved float32 samples. NULL on error.
+// `seed` NULL draws a fresh take; the seed used comes back in `out_seed`.
 float *clausters_render(const uint8_t *score, size_t len,
                         double sample_rate, uint32_t channels,
-                        uint32_t workers, uint64_t *out_frames,
-                        uint8_t *err, size_t err_cap);
+                        uint32_t workers, const uint64_t *seed,
+                        uint64_t *out_frames, uint64_t *out_events,
+                        uint64_t *out_seed, uint8_t *err, size_t err_cap);
 void clausters_free_samples(float *ptr, uint64_t samples);
+// What the last render on this thread logged: one `LEVEL<TAB>message` line
+// per entry. Copies up to `cap` bytes and returns the full length.
+size_t clausters_render_log(uint8_t *buf, size_t cap);
 
 // A full live server in this process (audio device + engine + network
 // loop); commands are OSC packets delivered by function call.

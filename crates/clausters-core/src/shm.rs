@@ -51,7 +51,7 @@ pub const MAGIC: u32 = 0x5541_4C43;
 /// versioned and refused on mismatch (the scsynth plugin-ABI lesson); what each
 /// version changed is recorded in `docs/ipc.md`, not here -- a changelog in a
 /// constant is a changelog nobody updates.
-pub const ABI_VERSION: u32 = 12;
+pub const ABI_VERSION: u32 = 13;
 
 /// The peer tag an embedder gets when it never asks for one: the single client
 /// a segment has always had.

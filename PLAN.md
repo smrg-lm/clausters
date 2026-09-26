@@ -3744,9 +3744,9 @@ should confirm before the fix.
   places that said it, the quoted document comment included. One doc in the
   host's gesture tests had lost its first four lines in the host split and
   has them back.
-- ⬜ **A render inside the client's own process loses what the server
+- ✅ **A render inside the client's own process loses what the server
   logged** *(found 2026-09-26 while making a UGen's faults and a `Poll` reach
-  whoever they are for)*. A render in a separate process now reaches the
+  whoever they are for; fixed the same day)*. A render in a separate process now reaches the
   client: `clausters --nrt` logs to stderr and Python forwards each line to its
   `clausters.render` logger. A render inside the client's own process does
   not: Python's `render()` without a `path` goes through the embedded library,
@@ -3761,3 +3761,20 @@ should confirm before the fix.
   entry point together, and so `CORE_ABI_VERSION`; or a log callback the host
   installs, which moves the same two surfaces differently. The warnings on the
   result are the smaller change and the one both clients can read the same way.
+
+  **What shipped.** The warnings on the result, carried the way the render's
+  seed already was. While a render runs, `server::render_log::during` puts a
+  subscriber in front of whatever was there that keeps each event at `info`
+  and above and passes every event on, so the CLI prints exactly as before;
+  the lines ride out on `RenderStats::log` (at most a thousand, then a count of
+  what was dropped). Both in-process carriers hand them over the same way, as
+  a second call after the render rather than more out pointers on it:
+  `clausters_render_log(buf, cap)` on the embed ABI and `last_render_log()` on
+  the wasm entry point, one `LEVEL<TAB>message` line each. The render's own
+  signature did not move; the counter did (`ABI_VERSION` 13, the embed ABI,
+  not `CORE_ABI_VERSION` as guessed above), because a binding that reads the
+  log cannot load a library without it and a stale copy should be refused by
+  name. Python logs each line on `clausters.render` at its level through one
+  `render_line`, which the `--nrt` stderr path now uses too; the web client
+  sends `ERROR`/`WARN` to `console.error`/`console.warn` and `INFO` to
+  `console.debug`, shown only when asked, as Python's `info` is.

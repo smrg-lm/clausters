@@ -12,6 +12,7 @@ pub mod meters;
 pub mod nrt;
 pub mod nrtsession;
 pub mod render;
+pub mod render_log;
 #[cfg(feature = "rtprio")]
 pub mod rt;
 pub mod workers;

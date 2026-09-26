@@ -221,3 +221,58 @@ fn an_offline_poll_posts_its_line() {
     let text = String::from_utf8(log.0.lock().unwrap().clone()).unwrap();
     assert!(text.contains("level: 0.25"), "{text}");
 }
+
+/// A render keeps what it logged at `info` and above and hands it back on its
+/// stats -- the one way a render in a process with no logger of its own (the
+/// embed ABI, the page) can tell its caller that the engine rejected a node,
+/// or what a `Poll` said.
+#[test]
+fn a_render_hands_back_what_it_logged() {
+    let poll = def(json!([
+        {"kind": "Impulse", "inputs": [{"const": 10.0}]},
+        {"kind": "Poll",
+         "inputs": [{"ugen": 0}, {"const": 0.25}, {"const": -1.0}],
+         "label": "level"}
+    ]));
+    let synth = |id: i32| {
+        msg(
+            "/synth_new",
+            vec![
+                OscType::String("d".into()),
+                OscType::Int(id),
+                OscType::Int(0),
+                OscType::Int(0),
+            ],
+        )
+    };
+    let events = vec![
+        (
+            0.0,
+            vec![
+                msg("/def_send", vec![OscType::String("synth".into()), poll]),
+                synth(100),
+                // The same id again: the engine rejects it.
+                synth(100),
+            ],
+        ),
+        (0.05, vec![msg("/node_free", vec![OscType::Int(100)])]),
+    ];
+    let cfg = RenderConfig {
+        sample_rate: SR as f64,
+        channels: 1,
+        ..RenderConfig::default()
+    };
+    let (_, stats) = render_to_vec(&Score::new(events).unwrap(), &cfg).unwrap();
+    let has = |level: tracing::Level, text: &str| {
+        stats
+            .log
+            .iter()
+            .any(|l| l.level == level && l.message.contains(text))
+    };
+    assert!(
+        has(tracing::Level::WARN, "rejected node 100"),
+        "{:?}",
+        stats.log
+    );
+    assert!(has(tracing::Level::INFO, "level: 0.25"), "{:?}", stats.log);
+}

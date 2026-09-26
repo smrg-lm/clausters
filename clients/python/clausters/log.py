@@ -124,3 +124,19 @@ def _armed_by_environment() -> None:
 
 
 _armed_by_environment()
+
+
+#: The server's log levels, as the `logging` level each one is logged at here.
+LEVELS = {"ERROR": logging.ERROR, "WARN": logging.WARNING, "INFO": logging.INFO,
+          "DEBUG": logging.DEBUG, "TRACE": logging.DEBUG}
+
+
+def render_line(level: str, message: str) -> None:
+    """Logs one line an offline render logged on the ``clausters.render``
+    logger, at the level the server logged it (a name it does not know goes as
+    a warning: the renderer says nothing it expects to be ignored). Both ways a
+    render reaches this package come through here -- the ``--nrt`` process's
+    stderr and the embedded library's `clausters_render_log` -- so the two
+    read the same."""
+    logging.getLogger("clausters.render").log(
+        LEVELS.get(level.strip(), logging.WARNING), "%s", message)

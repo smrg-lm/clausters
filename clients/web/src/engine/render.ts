@@ -42,6 +42,8 @@ export type EngineModule = {
         seed?: bigint | null,
     ) => Float32Array;
     last_render_seed: () => bigint;
+    /** What the last render logged, one `LEVEL<TAB>message` line per entry. */
+    last_render_log: () => string;
     /** The Faust defs a score sends, as JSON -- see `prepareFaust`. */
     faustJobs: (score: Uint8Array) => string;
     /** Adopts a def this side has compiled and linked, under its score name. */
@@ -125,7 +127,28 @@ export async function renderScoreBytes(
         channels,
         seed === undefined ? entropySeed() : BigInt(seed),
     );
+    consoleRenderLog(engine.last_render_log());
     return { samples, seed: engine.last_render_seed() };
+}
+
+/**
+ * Hands what a render logged -- a node the engine rejected, a `Poll`'s line --
+ * to the console at its level: the engine in a page has no logger of its own
+ * to print it. `ERROR` and `WARN` go to `console.error`/`console.warn`, `INFO`
+ * to `console.debug`, which a browser shows only when asked -- as the
+ * reference client logs it at `info`, which Python shows only when asked.
+ */
+export function consoleRenderLog(text: string): void {
+    for (const line of text.split("\n")) {
+        if (!line) continue;
+        const tab = line.indexOf("\t");
+        const level = tab < 0 ? "WARN" : line.slice(0, tab);
+        const message = `clausters: ${tab < 0 ? line : line.slice(tab + 1)}`;
+        if (level === "ERROR") console.error(message);
+        else if (level === "INFO" || level === "DEBUG" || level === "TRACE") {
+            console.debug(message);
+        } else console.warn(message);
+    }
 }
 
 /**

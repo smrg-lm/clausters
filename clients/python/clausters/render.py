@@ -50,6 +50,11 @@ A render with no ``seed`` draws a fresh one, so anything with a stochastic
 UGen in it is a new take every call; ``stats.seed`` reports the one used, and
 handing it back replays that take exactly.
 
+What a render logged -- a node the engine rejected, a `Poll`'s line -- goes to
+the ``clausters.render`` logger at its level, whichever renderer ran it. A
+UGen that refuses what it was given (a convolution kernel it cannot use whole)
+fails the render with the reason instead.
+
 ```python
 from clausters import render
 from clausters.defs import sine
@@ -61,16 +66,13 @@ render(multitrack, until=64.0, path="take.wav")    # an arrangement, bounced
 ```
 """
 
-import logging
 import re
 from array import array
 from dataclasses import dataclass, field
 
 from .base.main import main
 from .defs.node import Group, Synth
-from .log import log as _package_log
-
-log = _package_log.getChild("render")
+from .log import LEVELS, render_line
 
 __all__ = ["render", "bounce_def", "RenderStats", "read_soundfile",
            "render_to_file", "channels", "interleave", "MAX_BOUNCED_EVENTS"]
@@ -445,25 +447,19 @@ def _start_element(element, session, clock, at):
 #: The colour codes the server's log writes even into a pipe.
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
-#: The server's log levels, as the `logging` level each one is forwarded at.
-_LEVELS = {"ERROR": logging.ERROR, "WARN": logging.WARNING, "INFO": logging.INFO,
-           "DEBUG": logging.DEBUG, "TRACE": logging.DEBUG}
-
-
 def _forward_log(stderr: str) -> None:
-    """Hands each line the offline renderer logged to this package's
-    ``clausters.render`` logger, at the level the server logged it. A line is
-    ``<timestamp> <LEVEL> <message>``; one that is not goes as a warning, since
-    the renderer writes nothing to stderr it expects to be ignored."""
+    """Hands each line the ``--nrt`` process logged to `render_line`. A line
+    is ``<timestamp> <LEVEL> <message>``; one of another shape goes whole, as
+    a warning."""
     for raw in stderr.splitlines():
         line = _ANSI.sub("", raw).strip()
         if not line:
             continue
         parts = line.split(None, 2)
-        if len(parts) == 3 and parts[1] in _LEVELS:
-            log.log(_LEVELS[parts[1]], "%s", parts[2])
+        if len(parts) == 3 and parts[1] in LEVELS:
+            render_line(parts[1], parts[2])
         else:
-            log.warning("%s", line)
+            render_line("", line)
 
 
 def render_score(score: bytes, sample_rate: float = 48_000.0, channels: int = 2,

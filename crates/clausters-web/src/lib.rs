@@ -48,7 +48,7 @@ fn render_score(
     sample_rate: f64,
     channels: u32,
     seed: Option<u64>,
-) -> Result<(Vec<f32>, u64), String> {
+) -> Result<(Vec<f32>, u64, String), String> {
     let score = Score::from_bytes(score)?;
     let cfg = RenderConfig {
         sample_rate,
@@ -59,23 +59,28 @@ fn render_score(
         // render takes the defaults.
         ..RenderConfig::default()
     };
-    render_to_vec(&score, &cfg).map(|(samples, stats)| (samples, stats.seed))
+    render_to_vec(&score, &cfg).map(|(samples, stats)| {
+        let log = clausters::server::render_log::encode(&stats.log);
+        (samples, stats.seed, log)
+    })
 }
 
-/// Native face of [`render`], for the in-crate tests.
+/// Native face of [`render`], for the in-crate tests: the samples, the seed
+/// and the log (what the wasm face hands out through `last_render_log`).
 #[cfg(not(target_arch = "wasm32"))]
 pub fn render(
     score: &[u8],
     sample_rate: f64,
     channels: u32,
     seed: Option<u64>,
-) -> Result<(Vec<f32>, u64), String> {
+) -> Result<(Vec<f32>, u64, String), String> {
     render_score(score, sample_rate, channels, seed)
 }
 
 /// JS face: `render(scoreBytes, sampleRate, channels, seed?) -> Float32Array`,
 /// throwing a `JsError` with the render's message on failure. The seed the
-/// render used is read back with [`last_render_seed`].
+/// render used is read back with [`last_render_seed`], and what it logged
+/// with [`last_render_log`].
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub fn render(
@@ -84,8 +89,15 @@ pub fn render(
     channels: u32,
     seed: Option<u64>,
 ) -> Result<Vec<f32>, JsError> {
-    render_score(score, sample_rate, channels, seed)
-        .map(|(samples, seed)| {
+    let result = render_score(score, sample_rate, channels, seed);
+    LAST_LOG.with(|l| {
+        *l.borrow_mut() = match &result {
+            Ok((_, _, log)) => log.clone(),
+            Err(_) => String::new(),
+        }
+    });
+    result
+        .map(|(samples, seed, _)| {
             LAST_SEED.with(|s| s.set(seed));
             samples
         })
@@ -95,6 +107,18 @@ pub fn render(
 #[cfg(target_arch = "wasm32")]
 thread_local! {
     static LAST_SEED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static LAST_LOG: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
+/// What the last [`render`] logged at `info` and above -- a node the engine
+/// rejected, a `Poll`'s line -- as the embed ABI's `clausters_render_log`
+/// gives it: one line per entry, `LEVEL<TAB>message`, the level one of
+/// `ERROR`, `WARN`, `INFO`; empty after a failed render. A page has no logger
+/// for the engine to print to, so the client hands these to the console.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn last_render_log() -> String {
+    LAST_LOG.with(|l| l.borrow().clone())
 }
 
 /// The Faust defs a score sends, as a JSON array of
@@ -668,13 +692,13 @@ mod tests {
     /// default-def note comes out with signal in it.
     #[test]
     fn shell_renders_a_score() {
-        let (out, seed) = super::render(&tiny_score(), 48000.0, 2, None).unwrap();
+        let (out, seed, _) = super::render(&tiny_score(), 48000.0, 2, None).unwrap();
         assert_eq!(out.len(), 2 * 48000);
         let rms = (out.iter().map(|x| x * x).sum::<f32>() / out.len() as f32).sqrt();
         assert!(rms > 0.05, "audible signal expected, rms = {rms}");
         assert!(out.iter().all(|x| x.is_finite()));
         // Whatever the shell picked, it says which: a take is repeatable.
-        let (again, _) = super::render(&tiny_score(), 48000.0, 2, Some(seed)).unwrap();
+        let (again, _, _) = super::render(&tiny_score(), 48000.0, 2, Some(seed)).unwrap();
         assert_eq!(out, again);
     }
 

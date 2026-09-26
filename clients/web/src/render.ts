@@ -27,6 +27,11 @@
 // channel and event counts, per-channel peak and RMS, the seed the take used,
 // and the samples themselves (interleaved `Float32Array`).
 //
+// What a render logged -- a node the engine rejected, a `Poll`'s line -- goes
+// to the console at its level (`INFO` to `console.debug`). A UGen that refuses
+// what it was given (a convolution kernel it cannot use whole) fails the
+// render with the reason instead.
+//
 // **Where this client stops, and why.** The reference client's verb also
 // writes a file, through the server's own `--nrt` renderer: it hands a score to
 // a process that streams straight to disk, so a long bounce never builds

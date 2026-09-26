@@ -271,3 +271,28 @@ def test_a_file_render_forwards_what_the_renderer_logged(tmp_path, monkeypatch, 
     assert [(r.name, r.levelno, r.getMessage()) for r in caplog.records] == [
         ("clausters.render", logging.WARNING,
          "nrt render rejected node 1000: the id is already a node")]
+
+
+def test_an_embedded_render_logs_what_it_logged(caplog):
+    """The embedded library has no logger of its own: what a render inside
+    this process logged -- a node the engine rejected -- reaches the
+    ``clausters.render`` logger at its level, as the ``--nrt`` process's
+    stderr does."""
+    import logging
+
+    from clausters import Session
+    from clausters.defs import SynthDef, out, sine
+
+    _embed_or_skip()
+    session = Session.nrt()
+    server = session.server
+    SynthDef("t", out(0.0, sine(440.0) * 0.1)).send(server)
+    # The same node id twice: the engine rejects the second.
+    server.send_msg("/synth_new", "t", 1000, 0, 0)
+    server.send_msg("/synth_new", "t", 1000, 0, 0)
+    server.interface.send_bundle(None, 0.05, ("/node_free", 1000))
+    with caplog.at_level(logging.WARNING, logger="clausters"):
+        session.render(sample_rate=SR, channels=1)
+    assert [(r.name, r.levelno) for r in caplog.records
+            if "rejected node 1000" in r.getMessage()] == [
+        ("clausters.render", logging.WARNING)]
