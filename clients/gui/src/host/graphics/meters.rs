@@ -145,19 +145,39 @@ pub fn draw_column(
     mark: f32,
     scale: Scale,
 ) {
+    draw_column_from(mesh, m, theme, cell, 0.0, fill, mark, scale);
+}
+
+/// [`draw_column`] standing on `origin` rather than on the floor: the column
+/// runs from `origin` to `fill`, up or down. A meter whose range crosses zero
+/// stands on the zero, so a value below it reads as a column below it rather
+/// than as a shorter one above the floor.
+#[allow(clippy::too_many_arguments)] // draw_column's six, and where it stands
+pub fn draw_column_from(
+    mesh: &mut crate::host::paint::Mesh,
+    m: &crate::host::metrics::Metrics,
+    theme: &crate::host::theme::Theme,
+    cell: Rect,
+    origin: f32,
+    fill: f32,
+    mark: f32,
+    scale: Scale,
+) {
     if cell.w <= 0.0 || cell.h <= 0.0 {
         return;
     }
     mesh.rect(cell, theme.meter_field);
+    let origin = origin.clamp(0.0, 1.0);
     let fill = fill.clamp(0.0, 1.0);
-    if fill > 0.0 {
+    let (from, to) = (origin.min(fill), origin.max(fill));
+    if to > from {
         // The gradient in bands, one per device row at most: a column in a
         // header is a few dozen pixels tall, so this is a handful of quads and
         // never finer than the screen can show.
         let bands = (cell.h.ceil() as usize).clamp(1, 48);
-        let step = fill / bands as f32;
+        let step = (to - from) / bands as f32;
         for band in 0..bands {
-            let low = band as f32 * step;
+            let low = from + band as f32 * step;
             let color = column_color(theme, scale, low + step * 0.5);
             let h = cell.h * step;
             mesh.rect(
@@ -606,6 +626,43 @@ mod tests {
         );
     }
 
+    /// **A centred meter has no held peak.** The mark a level meter keeps is
+    /// the loudest an amplitude has been; on a signed value it was the
+    /// magnitude, drawn above the zero for a value below it. The same view
+    /// with a mark and without one draws the same, and a level meter still
+    /// draws its mark.
+    #[test]
+    fn a_centred_meter_draws_no_mark() {
+        let m = Metrics::default();
+        let theme = Theme::default();
+        let draw_with = |axis, mark| {
+            let mut mesh = Mesh::new();
+            draw_meter_view(
+                &mut Draw::new(&mut mesh, &m, &theme),
+                Rect::new(0.0, 0.0, 60.0, 160.0),
+                &MeterView {
+                    channels: &[ChannelRead {
+                        level: -0.5,
+                        mark,
+                        clipped: None,
+                    }],
+                    axis,
+                    readout: false,
+                    label: None,
+                    ruler: None,
+                },
+            );
+            mesh.vertex_count()
+        };
+        let signed = MeterAxis::Linear {
+            min: -1.0,
+            max: 1.0,
+        };
+        assert_eq!(draw_with(signed, 0.8), draw_with(signed, 0.0));
+        let level = MeterAxis::Linear { min: 0.0, max: 1.0 };
+        assert!(draw_with(level, 0.8) > draw_with(level, 0.0));
+    }
+
     #[test]
     fn meter_emits_fill_geometry() {
         let mut m = Mesh::new();
@@ -786,6 +843,73 @@ mod tests {
         );
     }
 
+    /// **A range across zero is a signed value, not a level.** Its column
+    /// stands on the zero; a range that starts at or above zero, and a
+    /// decibel axis, stand on the floor as before.
+    #[test]
+    fn a_range_across_zero_stands_on_the_zero() {
+        let signed = MeterAxis::Linear {
+            min: -1.0,
+            max: 1.0,
+        };
+        assert!(signed.centred());
+        assert_eq!(signed.origin(), 0.5);
+        let level = MeterAxis::Linear { min: 0.0, max: 1.0 };
+        assert!(!level.centred());
+        assert_eq!(level.origin(), 0.0);
+        assert!(!MeterAxis::Decibels { floor_db: -60.0 }.centred());
+    }
+
+    /// **A value below zero is a column below it.** At zero there is nothing
+    /// but the well; at -0.5 on a -1..1 axis the column fills the quarter under
+    /// the middle and nothing above it.
+    #[test]
+    fn a_centred_column_runs_down_from_the_zero() {
+        let m = Metrics::default();
+        let theme = crate::host::theme::Theme::default();
+        let cell = Rect::new(0.0, 0.0, 8.0, 100.0);
+        let mut mesh = crate::host::paint::Mesh::new();
+        draw_column(&mut mesh, &m, &theme, cell, 0.0, 0.0, Scale::decibels());
+        let well = mesh.vertex_count();
+        mesh.clear();
+        draw_column_from(
+            &mut mesh,
+            &m,
+            &theme,
+            cell,
+            0.5,
+            0.5,
+            0.0,
+            Scale::decibels(),
+        );
+        assert_eq!(
+            mesh.vertex_count(),
+            well,
+            "a value at zero draws only the well"
+        );
+        mesh.clear();
+        draw_column_from(
+            &mut mesh,
+            &m,
+            &theme,
+            cell,
+            0.5,
+            0.25,
+            0.0,
+            Scale::decibels(),
+        );
+        let (lo, hi) = mesh
+            .positions()
+            .skip(well as usize)
+            .fold((f32::MAX, f32::MIN), |(lo, hi), (_, y)| {
+                (lo.min(y), hi.max(y))
+            });
+        assert!(
+            (lo - 50.0).abs() < 1e-3 && (hi - 75.0).abs() < 1e-3,
+            "the column spans the zero down to -0.5: y {lo}..{hi}"
+        );
+    }
+
     /// **A column is drawn against its own empty space**, so the well is always
     /// there and the mark is drawn over it even when nothing is sounding.
     #[test]
@@ -829,6 +953,24 @@ impl MeterAxis {
         match self {
             MeterAxis::Decibels { floor_db } => measure::meter_fraction(value, floor_db),
             MeterAxis::Linear { min, max } => fraction(value, min, max),
+        }
+    }
+
+    /// **Whether the axis has a zero in the middle**: a plain range that
+    /// crosses it, which is a signed value rather than a level. Its column
+    /// stands on the zero and it has no held peak -- a peak is the loudest an
+    /// amplitude has been, and a value below zero is not a quiet one.
+    pub fn centred(self) -> bool {
+        matches!(self, MeterAxis::Linear { min, max } if min < 0.0 && max > 0.0)
+    }
+
+    /// Where a column stands, as a fraction of the height: the floor, or the
+    /// zero of a [`centred`](Self::centred) axis.
+    pub fn origin(self) -> f32 {
+        if self.centred() {
+            self.fraction(0.0)
+        } else {
+            0.0
         }
     }
 
@@ -994,13 +1136,19 @@ pub(crate) fn draw_meter_view(d: &mut Draw, rect: Rect, view: &MeterView) {
         let x = body.x + i as f32 * (column + m.divider_w);
         let cell = Rect::new(x, body.y, column, body.h);
         let (mesh, m, theme) = d.parts();
-        draw_column(
+        let mark = if view.axis.centred() {
+            0.0
+        } else {
+            view.axis.fraction(ch.mark)
+        };
+        draw_column_from(
             mesh,
             m,
             theme,
             cell,
+            view.axis.origin(),
             view.axis.fraction(ch.level),
-            view.axis.fraction(ch.mark),
+            mark,
             scale,
         );
         if let Some(lamp) = lamp {
@@ -1036,12 +1184,19 @@ pub(crate) fn draw_meter_view(d: &mut Draw, rect: Rect, view: &MeterView) {
         draw_lamp_number(d, body, worst);
     }
     // The reading is the loudest channel's: one number for the widget, which is
-    // the question a glance asks of a stereo pair.
+    // the question a glance asks of a stereo pair. On a centred axis that is
+    // the one furthest from zero, sign and all.
     if let Some(top) = value {
-        let loudest = view
-            .channels
-            .iter()
-            .fold(0.0f32, |acc, ch| acc.max(ch.level));
+        let loudest = if view.axis.centred() {
+            view.channels
+                .iter()
+                .map(|ch| ch.level)
+                .fold(0.0f32, |acc, v| if v.abs() > acc.abs() { v } else { acc })
+        } else {
+            view.channels
+                .iter()
+                .fold(0.0f32, |acc, ch| acc.max(ch.level))
+        };
         let text = view.axis.readout(loudest);
         let (mesh, m, theme) = d.parts();
         let w = font::width(&text, m.caption_scale).min(body.w);
