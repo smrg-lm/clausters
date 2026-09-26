@@ -247,10 +247,10 @@ theme_roles! {
     /// (`clausters_core::measure::METER_WARN_DB`): the level a mix works at.
     meter_low = [0.24, 0.78, 0.44, 1.0];
     /// Its column from the alignment level to the hot end
-    /// (`clausters_core::measure::METER_HOT_DB`): headroom being used. Blended
-    /// into from the green and reached at `METER_AMBER_DB`, so a column at -12
-    /// dB reads amber rather than green with a cast on it, then blended on
-    /// into the red.
+    /// (`clausters_core::measure::METER_HOT_DB`): headroom being used. Held
+    /// across the middle of that span, with a short blend
+    /// (`METER_BLEND_DB`) at each end, so a column at -12 dB reads amber
+    /// rather than a yellow-green on its way to red.
     meter_mid = [0.95, 0.80, 0.25, 1.0];
     /// Its column from the hot end (`clausters_core::measure::METER_HOT_DB`)
     /// to the top: the last decibels, where a peak that grows any further

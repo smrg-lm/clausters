@@ -47,15 +47,29 @@ pub fn fraction(value: f32, min: f32, max: f32) -> f32 {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Scale {
     /// Where the alignment level falls, as a fraction of the height: green
-    /// below it, and the ramp to amber begins.
+    /// below it, and the blend into amber begins.
     pub warn: f32,
-    /// Where the column is **fully** amber, and stays so up to `hot`.
+    /// Where the column is **fully** amber, [`measure::METER_BLEND_DB`] above
+    /// the alignment level.
     pub amber: f32,
-    /// Where the hot end falls: the ramp to red begins.
+    /// Where the amber ends and the blend into red begins,
+    /// [`measure::METER_BLEND_DB`] below the hot end.
+    pub fade: f32,
+    /// Where the hot end falls: fully red from here up.
     pub hot: f32,
 }
 
 impl Scale {
+    /// The four marks in order and inside the column: an axis too short for
+    /// the blends collapses them rather than letting one run backwards.
+    fn marks(self) -> [f32; 4] {
+        let warn = self.warn.clamp(0.0, 1.0);
+        let hot = self.hot.clamp(warn, 1.0);
+        let amber = self.amber.clamp(warn, hot);
+        let fade = self.fade.clamp(amber, hot);
+        [warn, amber, fade, hot]
+    }
+
     /// The decibel strip, from [`measure::METER_FLOOR_DB`] up to full scale --
     /// what a channel's meter stands on.
     pub fn decibels() -> Self {
@@ -66,10 +80,12 @@ impl Scale {
     /// the widget's own floor, which may be the dynamic range of a resolution
     /// rather than the mixing strip's sixty.
     pub fn decibels_from(floor_db: f32) -> Self {
+        let at = |db| measure::meter_fraction_db(db, floor_db);
         Self {
-            warn: measure::meter_fraction_db(measure::METER_WARN_DB, floor_db),
-            amber: measure::meter_fraction_db(measure::METER_AMBER_DB, floor_db),
-            hot: measure::meter_fraction_db(measure::METER_HOT_DB, floor_db),
+            warn: at(measure::METER_WARN_DB),
+            amber: at(measure::METER_WARN_DB + measure::METER_BLEND_DB),
+            fade: at(measure::METER_HOT_DB - measure::METER_BLEND_DB),
+            hot: at(measure::METER_HOT_DB),
         }
     }
 
@@ -80,7 +96,8 @@ impl Scale {
         let at = |db| fraction(measure::amplitude_of_db(db), min, max);
         Self {
             warn: at(measure::METER_WARN_DB),
-            amber: at(measure::METER_AMBER_DB),
+            amber: at(measure::METER_WARN_DB + measure::METER_BLEND_DB),
+            fade: at(measure::METER_HOT_DB - measure::METER_BLEND_DB),
             hot: at(measure::METER_HOT_DB),
         }
     }
@@ -164,18 +181,18 @@ impl Paint {
         }])
     }
 
-    /// **The level scale**: green up to the alignment level, then a blend at
-    /// every step -- into amber, reached at `METER_AMBER_DB` so a column using
-    /// its headroom reads amber, and on into red, reached at the hot end and
-    /// held to the top, where a peak that grows any further clips.
+    /// **The level scale**: green up to the alignment level, a short blend
+    /// into amber, amber held across the middle so a column using its
+    /// headroom reads amber, a short blend into red, and red from the hot end
+    /// to the top, where a peak that grows any further clips.
     pub fn scale(scale: Scale, theme: &crate::host::theme::Theme) -> Self {
-        let (warn, hot) = (scale.warn.clamp(0.0, 1.0), scale.hot.clamp(0.0, 1.0));
-        let amber = scale.amber.clamp(warn, hot);
+        let [warn, amber, fade, hot] = scale.marks();
         let stop = |at, color, shape| Stop { at, color, shape };
         Paint(vec![
             stop(0.0, theme.meter_low, Shape::Step),
             stop(warn, theme.meter_low, Shape::Lin),
-            stop(amber, theme.meter_mid, Shape::Lin),
+            stop(amber, theme.meter_mid, Shape::Step),
+            stop(fade, theme.meter_mid, Shape::Lin),
             stop(hot, theme.meter_high, Shape::Step),
         ])
     }
@@ -191,15 +208,15 @@ impl Paint {
     ) -> Self {
         let o = origin.clamp(0.0, 1.0);
         // Below the zero a distance `d` is the height `o - d * o`, so the
-        // scale is read top-down: red at the bottom, blending up through amber
-        // into the green that reaches the zero.
-        let depth = |d: f32| o - d.clamp(0.0, 1.0) * o;
-        let (warn, hot) = (below.warn.clamp(0.0, 1.0), below.hot.clamp(0.0, 1.0));
-        let amber = below.amber.clamp(warn, hot);
+        // scale is read top-down: red at the bottom, blending up into the
+        // amber, and out of it into the green that reaches the zero.
+        let depth = |d: f32| o - d * o;
+        let [warn, amber, fade, hot] = below.marks();
         let stop = |at, color, shape| Stop { at, color, shape };
         let mut stops = vec![
             stop(0.0, theme.meter_high, Shape::Step),
             stop(depth(hot), theme.meter_high, Shape::Lin),
+            stop(depth(fade), theme.meter_mid, Shape::Step),
             stop(depth(amber), theme.meter_mid, Shape::Lin),
             stop(depth(warn), theme.meter_low, Shape::Step),
         ];
@@ -934,9 +951,10 @@ mod tests {
     }
 
     /// **The level scale is stops too**: green to the alignment level, a
-    /// straight blend into amber and another into red, red from the hot end.
+    /// short blend into amber, amber held, a short blend into red, red from
+    /// the hot end.
     #[test]
-    fn the_level_scale_is_stops_and_reads_as_before() {
+    fn the_level_scale_is_stops() {
         let theme = Theme::default();
         let scale = Scale::decibels();
         let paint = Paint::scale(scale, &theme);
@@ -949,10 +967,14 @@ mod tests {
                 "half way is half of each"
             );
         }
+        assert_eq!(
+            paint.color((scale.amber + scale.fade) * 0.5),
+            theme.meter_mid
+        );
         assert_ne!(
-            paint.color((scale.amber + scale.hot) * 0.5),
+            paint.color((scale.fade + scale.hot) * 0.5),
             theme.meter_mid,
-            "amber blends on into red"
+            "amber blends into red"
         );
         assert_eq!(paint.color(1.0), theme.meter_high);
         // Drawn in a handful of quads, not a band per row.
@@ -968,8 +990,8 @@ mod tests {
             scale,
         );
         assert!(
-            mesh.vertex_count() <= 6 * 5,
-            "{} vertices",
+            mesh.vertex_count() <= 6 * 6,
+            "the well and five spans, not a band per row: {}",
             mesh.vertex_count()
         );
     }
@@ -1255,14 +1277,13 @@ mod tests {
             db.warn
         );
         assert!(
-            db.warn < db.amber && db.amber < db.hot && db.hot < 1.0,
+            db.warn < db.amber && db.amber < db.fade && db.fade < db.hot && db.hot < 1.0,
             "{db:?}"
         );
 
-        // **Every step is a blend, reached at its own mark.** A column at -12
-        // dB is using its headroom and reads amber, and it blends on into red,
-        // which it reaches at -6 and holds to the top: the last six decibels
-        // are where a peak that grows any further clips.
+        // **Each colour has its band, and the changes between them are
+        // short.** Amber is held from -17 to -7, so a column at -12 is plainly
+        // amber; the blends take one decibel each; red is reached at -6.
         let theme = crate::host::theme::Theme::default();
         let at = |db_level: f32| {
             column_color(
@@ -1271,14 +1292,24 @@ mod tests {
                 measure::meter_fraction_db(db_level, measure::METER_FLOOR_DB),
             )
         };
-        assert_eq!(at(measure::METER_AMBER_DB), theme.meter_mid);
-        let between = at(-9.0);
-        for ((got, mid), high) in between.iter().zip(theme.meter_mid).zip(theme.meter_high) {
-            assert!(
-                (got - (mid + high) * 0.5).abs() < 1e-5,
-                "half way from -12 to -6 is half way from amber to red: {between:?}"
-            );
+        let half = |a: Color, b: Color, got: Color| {
+            got.iter()
+                .zip(a)
+                .zip(b)
+                .all(|((g, a), b)| (g - (a + b) * 0.5).abs() < 1e-5)
+        };
+        assert_eq!(at(-19.0), theme.meter_low);
+        assert!(
+            half(theme.meter_low, theme.meter_mid, at(-17.5)),
+            "the blend into amber"
+        );
+        for level in [-17.0, -12.0, -7.0] {
+            assert_eq!(at(level), theme.meter_mid, "amber at {level}");
         }
+        assert!(
+            half(theme.meter_mid, theme.meter_high, at(-6.5)),
+            "the blend into red"
+        );
         assert_eq!(at(measure::METER_HOT_DB), theme.meter_high, "red at -6");
         assert_eq!(at(-3.0), theme.meter_high);
         assert_eq!(at(0.0), theme.meter_high);

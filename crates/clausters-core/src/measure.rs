@@ -363,17 +363,18 @@ pub fn meter_fraction_db(db: f32, floor_db: f32) -> f32 {
 /// a level that is *working*, and the colour says so.
 pub const METER_WARN_DB: f32 = -18.0;
 
-/// **Where a meter's column is fully amber**, in decibels below full scale.
+/// **How wide a meter's blend from one colour to the next is**, in decibels.
 ///
-/// The third mark, and the one that makes the other two readable. Green ends at
-/// the alignment level ([`METER_WARN_DB`]) and red is reached at the last six
-/// ([`METER_HOT_DB`]); a single ramp between them would spend the whole span
-/// between -18 and -6 getting there, so a signal at -12 -- which is a signal
-/// **using its headroom**, the thing the colour exists to say -- still read as
-/// green with a cast on it. So the column blends from green into amber and is
-/// fully amber here, then blends on into red: every step is a blend, and each
-/// colour is reached at its own mark.
-pub const METER_AMBER_DB: f32 = -12.0;
+/// Green ends at the alignment level ([`METER_WARN_DB`]) and red is reached at
+/// the hot end ([`METER_HOT_DB`]). A blend spanning the whole distance between
+/// them left amber a single point at -12, so a signal **using its headroom**
+/// -- the thing the colour exists to say -- read as a muddy yellow-green on its
+/// way to red. So each change of colour takes this one decibel and no more,
+/// and a colour reads steady right past the mark it changes at: green blends
+/// into amber just above the alignment level, amber is held from -17 to -7
+/// dBFS, and it blends into red just below the hot end, so red is reached at
+/// -6 as before.
+pub const METER_BLEND_DB: f32 = 1.0;
 
 /// **Where a meter is warning**, in decibels below full scale.
 ///
