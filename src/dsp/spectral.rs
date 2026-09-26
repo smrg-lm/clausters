@@ -66,7 +66,8 @@ pub fn resolve_fft_size(requested: Option<usize>) -> usize {
     }
 }
 
-fn resolve_hop(winsize: usize, hop: Option<f32>) -> usize {
+/// Resolves a def's hop fraction to the hop in samples the chain runs at.
+pub fn resolve_hop(winsize: usize, hop: Option<f32>) -> usize {
     let frac = hop.unwrap_or(0.5);
     ((winsize as f32 * frac).round() as usize).clamp(1, winsize)
 }

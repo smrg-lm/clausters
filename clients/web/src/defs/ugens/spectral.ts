@@ -79,8 +79,8 @@ export const pvMagClip = (chain: Channel, threshold: Channel): Ugen =>
 
 /**
  * Two-chain combiner: per-bin complex sum. Both inputs must be spectral
- * chains of the same `fftSize` (and distinct); the result lands in chain A,
- * which the combiner's output carries onward.
+ * chains of the same `fftSize`, `hop` and `wintype` (and distinct); the
+ * result lands in chain A, which the combiner's output carries onward.
  */
 export const pvAdd = (chainA: Channel, chainB: Channel): Ugen =>
     new Ugen("PV_Add", [chainA, chainB]);

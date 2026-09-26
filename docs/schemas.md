@@ -522,15 +522,19 @@ feeds `IFFT` — exactly like scsynth's chain. A def may of course also feed
 The chain is **not** block-rate: `FFT`/`PV_*` are control rate (`kr`, a per-block
 ready marker on the wire) and only do work on hop boundaries; `IFFT` is audio
 rate. The window size is a **static** field (`fft_size`, a power of two in
-256/512/1024/2048/4096) given **only on the `FFT`** — the compiler propagates it
-(and the window type) to the rest of the chain, so `PV_*`/`IFFT` need no size. An
-unsupported size, or a `PV_*`/`IFFT` whose first input is not a spectral chain,
-fails the def with `/fail`.
+256/512/1024/2048/4096) given **only on the `FFT`** — the compiler propagates it,
+the hop and the window type to the rest of the chain, so `PV_*`/`IFFT` need none
+of them. The resynthesis is exact only at the analysis hop with the analysis
+window, so a `PV_*`/`IFFT` that repeats a `hop` or `wintype` other than its
+chain's fails the def. An unsupported size, or a `PV_*`/`IFFT` whose first
+input is not a spectral chain, fails the def with `/fail`.
 
 A **two-chain combiner** (`PV_Add`/`PV_Mul`/`PV_Min`/`PV_Max`/`PV_MagMul`/
 `PV_CopyPhase`) takes **two** chain inputs — both must be spectral chains, of
-the **same `fft_size`**, and **distinct** (the same chain on both sides fails
-the def). The result lands in **chain A** (input 0): the combiner's output wire
+the **same `fft_size`, hop and window**, and **distinct** (the same chain on
+both sides fails the def). The combined frame is resynthesized as chain A's, so
+a chain B analysed at another hop or with another window would come back at the
+wrong level. The result lands in **chain A** (input 0): the combiner's output wire
 carries chain A onward, and whatever `PV_*`/`IFFT` follows reads the combined
 frame. It acts on the blocks where chain A has a fresh frame, reading chain B's
 latest frame. The operator is a property of the *name*; all six are one

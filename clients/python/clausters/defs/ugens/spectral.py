@@ -63,8 +63,8 @@ def pv_mag_clip(chain, threshold) -> Ugen:
 
 def pv_add(chain_a, chain_b) -> Ugen:
     """Two-chain combiner: per-bin complex sum. Both inputs must be spectral
-    chains of the same ``fft_size`` (and distinct); the result lands in chain A,
-    which the combiner's output carries onward."""
+    chains of the same ``fft_size``, ``hop`` and ``wintype`` (and distinct); the
+    result lands in chain A, which the combiner's output carries onward."""
     return Ugen("PV_Add", [chain_a, chain_b])
 
 

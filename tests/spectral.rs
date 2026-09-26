@@ -778,3 +778,143 @@ fn compiler_validates_kernel_programs() {
         "phase_expr": ["phase"]});
     assert!(compile(ok).is_ok());
 }
+
+/// The input a tone test feeds its chain: `amp * sin(2 pi f n / SR)`.
+fn tone(freq: f32, amp: f32, n: usize) -> f32 {
+    amp * (std::f32::consts::TAU * freq * n as f32 / SR).sin()
+}
+
+/// Asserts `out` is `input` delayed by some lag up to `max_lag`, sample for
+/// sample over `from..to`, and returns the lag. An unmodified chain is an
+/// identity up to its latency, so nothing looser than rounding may separate
+/// the two: a level error, a modulation or a misplaced frame all show here.
+fn assert_delayed_copy(
+    out: &[f32],
+    input: impl Fn(usize) -> f32,
+    max_lag: usize,
+    from: usize,
+    to: usize,
+    tol: f32,
+) -> usize {
+    let err = |lag: usize| {
+        (from..to)
+            .map(|n| (out[n] - input(n - lag)).abs())
+            .fold(0.0f32, f32::max)
+    };
+    let (lag, worst) = (0..=max_lag.min(from))
+        .map(|lag| (lag, err(lag)))
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .unwrap();
+    assert!(
+        worst < tol,
+        "not a delayed copy: best lag {lag}, max error {worst}"
+    );
+    lag
+}
+
+/// An `FFT` -> `IFFT` round trip with a non-default window and hop is the
+/// input, delayed.
+#[test]
+fn a_round_trip_is_exact_with_any_window_and_hop() {
+    for (wintype, hop) in [(0, 0.5), (4, 0.25), (1, 0.5), (3, 0.25), (-1, 0.5)] {
+        let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+        let synth = spec_synth(json!({
+            "name": "roundtrip",
+            "ugens": [
+                {"kind": "Sine", "inputs": [{"const": 440.0}]},
+                {"kind": "Mul", "inputs": [{"ugen": 0}, {"const": 0.5}]},
+                {"kind": "FFT", "inputs": [{"ugen": 1}, {"const": 1.0}],
+                 "fft_size": 1024, "hop": hop, "wintype": wintype},
+                {"kind": "IFFT", "inputs": [{"ugen": 2}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 3}]}
+            ]
+        }));
+        handle.send(add_synth(1, synth)).ok().unwrap();
+        let sig = render_channel(&mut engine, 200);
+        assert_delayed_copy(&sig, |n| tone(440.0, 0.5, n), 2048, 4096, 12000, 1e-4);
+    }
+}
+
+/// A two-chain combiner resynthesizes with its chains' window and hop, not the
+/// defaults: `PV_Add` of a tone and silence is the tone, delayed, whatever
+/// window and hop the chains were analysed with.
+#[test]
+fn a_combiner_keeps_its_chains_window_and_hop() {
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    let synth = spec_synth(json!({
+        "name": "combined",
+        "ugens": [
+            {"kind": "Sine", "inputs": [{"const": 440.0}]},
+            {"kind": "Mul", "inputs": [{"ugen": 0}, {"const": 0.5}]},
+            {"kind": "FFT", "inputs": [{"ugen": 1}, {"const": 1.0}],
+             "fft_size": 1024, "hop": 0.25, "wintype": 4},
+            {"kind": "FFT", "inputs": [{"const": 0.0}, {"const": 1.0}],
+             "fft_size": 1024, "hop": 0.25, "wintype": 4},
+            {"kind": "PV_Add", "inputs": [{"ugen": 2}, {"ugen": 3}]},
+            {"kind": "IFFT", "inputs": [{"ugen": 4}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 5}]}
+        ]
+    }));
+    handle.send(add_synth(1, synth)).ok().unwrap();
+    let sig = render_channel(&mut engine, 200);
+    assert_delayed_copy(&sig, |n| tone(440.0, 0.5, n), 2048, 4096, 12000, 1e-4);
+}
+
+/// The compiler holds every UGen on a chain to its `FFT`'s hop and window: a
+/// combiner over two chains that differ in either, and a filter or `IFFT` that
+/// names another, are errors rather than a resynthesis at the wrong level.
+#[test]
+fn compiler_holds_a_chain_to_its_ffts_hop_and_window() {
+    let compile = |ugens: Value| {
+        clausters::synthdef::compile(
+            serde_json::from_value(json!({"name": "bad", "ugens": ugens})).unwrap(),
+        )
+    };
+    let pair = |b: Value| {
+        compile(json!([
+            {"kind": "Sine", "inputs": [{"const": 440.0}]},
+            {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 512},
+            b,
+            {"kind": "PV_Add", "inputs": [{"ugen": 1}, {"ugen": 2}]},
+            {"kind": "IFFT", "inputs": [{"ugen": 3}]}
+        ]))
+    };
+    // Hops differ; windows differ; both the same (the defaults, spelled out).
+    assert!(
+        pair(
+            json!({"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}],
+                    "fft_size": 512, "hop": 0.25})
+        )
+        .is_err()
+    );
+    assert!(
+        pair(
+            json!({"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}],
+                    "fft_size": 512, "wintype": 1})
+        )
+        .is_err()
+    );
+    assert!(
+        pair(
+            json!({"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}],
+                    "fft_size": 512, "hop": 0.5, "wintype": 0})
+        )
+        .is_ok()
+    );
+    // An IFFT naming a window or hop other than its chain's.
+    let sink = |extra: Value| {
+        let mut ifft = json!({"kind": "IFFT", "inputs": [{"ugen": 1}]});
+        for (k, v) in extra.as_object().unwrap() {
+            ifft[k] = v.clone();
+        }
+        compile(json!([
+            {"kind": "Sine", "inputs": [{"const": 440.0}]},
+            {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}],
+             "fft_size": 512, "hop": 0.25, "wintype": 4},
+            ifft
+        ]))
+    };
+    assert!(sink(json!({"wintype": 0})).is_err());
+    assert!(sink(json!({"hop": 0.5})).is_err());
+    assert!(sink(json!({"wintype": 4, "hop": 0.25})).is_ok());
+}

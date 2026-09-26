@@ -36,9 +36,10 @@ use clausters_core::{builtins, pvprog};
 use crate::dsp::registry::{
     Arity, ExecMode, OpFamily, SpectralRole, UGenConfig, UGenDescriptor, lookup,
 };
-use crate::dsp::spectral::resolve_fft_size;
+use crate::dsp::spectral::{resolve_fft_size, resolve_hop};
 use crate::dsp::{MAX_UGEN_INPUTS, Rate};
 use clausters_core::fft;
+use clausters_core::window::Window;
 
 // ---- wire format (serde) ----
 
@@ -305,9 +306,9 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
     // channel's LocalIn to precede its LocalOut (the one-block-delay contract).
     let mut num_locals = 0usize;
     let mut localin_channels = std::collections::HashSet::new();
-    // Spectral chains: each `FFT` opens one; its window size is recorded
-    // here and its slot index is `spectral_sizes.len()` at that point.
-    let mut spectral_sizes: Vec<usize> = Vec::new();
+    // Spectral chains: each `FFT` opens one; its window size, hop and window
+    // are recorded here and its slot index is `chains.len()` at that point.
+    let mut chains: Vec<ChainShape> = Vec::new();
 
     let (control_types, lagged) = parse_controls(&spec)?;
 
@@ -384,15 +385,8 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             }
         }
 
-        let (chain_slot, chain_slot_b) = spectral_chain(
-            i,
-            u,
-            desc,
-            &inputs,
-            &ugens,
-            &mut spectral_sizes,
-            &mut config,
-        )?;
+        let (chain_slot, chain_slot_b) =
+            spectral_chain(i, u, desc, &inputs, &ugens, &mut chains, &mut config)?;
 
         // Output rate: the explicit `rate` field validated against the
         // kind, or the kind's default. `ugens` already holds every earlier
@@ -516,7 +510,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
         constants,
         ugens,
         num_locals,
-        spectral_sizes,
+        spectral_sizes: chains.iter().map(|c| c.winsize).collect(),
     })
 }
 
@@ -559,24 +553,36 @@ fn parse_controls(
     Ok((control_types, lagged))
 }
 
+/// A spectral chain's window size, and its hop and window as the `FFT` that
+/// opened it gave them (`None` is the default). The resynthesis is exact only when the `IFFT`
+/// overlap-adds at the analysis hop with the analysis window, so every UGen
+/// on the chain takes these from the chain -- never from the wire it happens
+/// to read, which for a two-chain combiner carries neither.
+#[derive(Clone, Copy)]
+struct ChainShape {
+    winsize: usize,
+    hop: Option<f32>,
+    wintype: Option<i32>,
+}
+
 /// UGen `i`'s place in a spectral chain, as `(chain slot, second chain
-/// slot)`. A `Source` (`FFT`) opens a chain and records its window size; a
-/// filter, sink or two-chain combiner reads the chain its input carries and
-/// inherits its window size (and, if unset, its window type and hop).
+/// slot)`. A `Source` (`FFT`) opens a chain and records its window size, hop
+/// and window; a filter, sink or two-chain combiner reads the chain its input
+/// carries and takes all three from it.
 fn spectral_chain(
     i: usize,
     u: &UGenSpec,
     desc: &UGenDescriptor,
     inputs: &[InputRef],
     ugens: &[UGenDef],
-    spectral_sizes: &mut Vec<usize>,
+    chains: &mut Vec<ChainShape>,
     config: &mut UGenConfig,
 ) -> Result<(Option<usize>, Option<usize>), String> {
     // Spectral chain. A `Source` (`FFT`) opens a new chain: validate
     // its window size and record its slot. A `Filter`/`Sink` (`PV_*`/
-    // `IFFT`) must take a spectral wire as input 0 and inherits that chain's
-    // slot, window size and (if unset) window type -- so the client only
-    // specifies the size once, on the `FFT`.
+    // `IFFT`) must take a spectral wire as input 0 and takes that chain's
+    // slot, window size, hop and window type -- so the client only specifies
+    // them once, on the `FFT`. One given again downstream must agree.
     let mut chain_slot: Option<usize> = None;
     let mut chain_slot_b: Option<usize> = None;
     // Resolves spectral input `k` to the chain slot it carries.
@@ -608,23 +614,17 @@ fn spectral_chain(
         SpectralRole::Source => {
             let winsize = resolve_fft_size(u.fft_size);
             config.fft_size = Some(winsize);
-            chain_slot = Some(spectral_sizes.len());
-            spectral_sizes.push(winsize);
+            chain_slot = Some(chains.len());
+            chains.push(ChainShape {
+                winsize,
+                hop: config.hop,
+                wintype: config.wintype,
+            });
         }
         SpectralRole::Filter | SpectralRole::Sink => {
             let slot = chain_of(0, inputs, ugens)?;
-            let InputRef::Wire(w) = inputs[0] else {
-                unreachable!("chain_of validated the wire")
-            };
-            let up = &ugens[w];
             chain_slot = Some(slot);
-            config.fft_size = Some(spectral_sizes[slot]);
-            if config.wintype.is_none() {
-                config.wintype = up.config.wintype;
-            }
-            if config.hop.is_none() {
-                config.hop = up.config.hop;
-            }
+            take_chain_shape(i, u, chains[slot], config)?;
         }
         // A two-chain combiner: inputs 0 and 1 are chains of equal
         // window size and distinct slots; the result lands in chain A, so
@@ -639,18 +639,80 @@ fn spectral_chain(
                     u.kind
                 ));
             }
-            if spectral_sizes[a] != spectral_sizes[b] {
+            let (sa, sb) = (chains[a], chains[b]);
+            if sa.winsize != sb.winsize {
                 return Err(format!(
                     "ugens[{i}] ({}): chain window sizes differ ({} vs {})",
-                    u.kind, spectral_sizes[a], spectral_sizes[b]
+                    u.kind, sa.winsize, sb.winsize
+                ));
+            }
+            // The two frames are combined bin by bin and resynthesized as
+            // chain A's: B has to be analysed at the same cadence and with the
+            // same window, or the overlap-add scales and spaces its share
+            // wrongly.
+            let winsize = sa.winsize;
+            if resolve_hop(winsize, sa.hop) != resolve_hop(winsize, sb.hop) {
+                return Err(format!(
+                    "ugens[{i}] ({}): chain hops differ ({} vs {} samples)",
+                    u.kind,
+                    resolve_hop(winsize, sa.hop),
+                    resolve_hop(winsize, sb.hop)
+                ));
+            }
+            if window_of(sa.wintype) != window_of(sb.wintype) {
+                return Err(format!(
+                    "ugens[{i}] ({}): chain windows differ ({:?} vs {:?})",
+                    u.kind,
+                    window_of(sa.wintype),
+                    window_of(sb.wintype)
                 ));
             }
             chain_slot = Some(a);
             chain_slot_b = Some(b);
-            config.fft_size = Some(spectral_sizes[a]);
+            take_chain_shape(i, u, sa, config)?;
         }
     }
     Ok((chain_slot, chain_slot_b))
+}
+
+/// The window a def's `wintype` names, with the default for an unset one.
+fn window_of(wintype: Option<i32>) -> Window {
+    Window::from_wintype(wintype.unwrap_or(0))
+}
+
+/// Gives a UGen on a chain the chain's size, hop and window. A hop or window
+/// the def repeats on the UGen must be the chain's: a synthesis window or hop
+/// other than the analysis one resynthesizes at the wrong level.
+fn take_chain_shape(
+    i: usize,
+    u: &UGenSpec,
+    shape: ChainShape,
+    config: &mut UGenConfig,
+) -> Result<(), String> {
+    let winsize = shape.winsize;
+    if let Some(hop) = config.hop
+        && resolve_hop(winsize, Some(hop)) != resolve_hop(winsize, shape.hop)
+    {
+        return Err(format!(
+            "ugens[{i}] ({}): hop {hop} differs from its chain's FFT ({} samples); \
+             give it only on the FFT",
+            u.kind,
+            resolve_hop(winsize, shape.hop)
+        ));
+    }
+    if config.wintype.is_some() && window_of(config.wintype) != window_of(shape.wintype) {
+        return Err(format!(
+            "ugens[{i}] ({}): window {:?} differs from its chain's FFT ({:?}); \
+             give it only on the FFT",
+            u.kind,
+            window_of(config.wintype),
+            window_of(shape.wintype)
+        ));
+    }
+    config.fft_size = Some(winsize);
+    config.hop = shape.hop;
+    config.wintype = shape.wintype;
+    Ok(())
 }
 
 /// UGen `i`'s arity against its kind's. `Some(n)` when the def stopped `n`
