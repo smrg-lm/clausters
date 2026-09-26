@@ -26,7 +26,7 @@
 //! [`PartRun`] and reads the whole block out of it; the per-sample path is
 //! what a frame outside the run falls back to, which is the seam, a jump, a
 //! modulated rate or a phase running backwards. That is `dsp::buf`'s
-//! [`Reader`](crate::dsp::buf) and not this module, because a reader is what
+//! `Reader` and not this module, because a reader is what
 //! knows it is advancing.
 //!
 //! The lookup it saves was two questions, and a run answers both once: *which
