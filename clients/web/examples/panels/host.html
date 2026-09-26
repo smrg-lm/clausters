@@ -250,6 +250,9 @@
       document.getElementById("remote").onclick = async () => {
         const url = document.getElementById("ws").value;
         try {
+            // The panel still sounds in this tab, so the engine comes up
+            // first, as it does for every other demo.
+            await audio();
             host?.stop();
             host = await new GuiHost({ transport: "ws", url }).attach();
             win = null;
