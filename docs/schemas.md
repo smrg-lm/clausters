@@ -426,7 +426,7 @@ This makes growth **by the tail** non-breaking and does nothing for an input ins
 | `SendTrig` | trig, id, value | on each trigger of `trig`, sends `/node_trigger nodeID id value` to `/server_notify` clients; output is silence — see the side-effect note below |
 | `SendReply` | trig, reply_id, value0, value1, … | on each trigger of `trig`, sends a custom OSC message `cmdName nodeID reply_id value…` (the `cmdName` is a static `label` field, default `/reply`); output is silence |
 | `Poll` | trig, signal, trig_id | on each trigger of `trig`, posts `label: value` (the `signal` value) to the server console (a static `label` field) and, when `trig_id ≥ 0`, also sends `/node_trigger nodeID trig_id value`; passes `signal` through as its output |
-| `FFT` | source, active | opens a spectral chain: windows `source` and transforms it to a spectral frame once per hop (`active`, read per sample, gates the input: `≤ 0` is analysed as silence, so the round trip is the gated input exactly, and a frame whose whole window was gated is not taken — the chain does no work while it stays off, and reads as silence to a combiner); static fields `fft_size` (default 1024), `hop` (fraction of the window in (0, 1], at least one 64-sample block; default 0.5), `wintype` (default 0 = Hann); the window is also settable live via `/node_ugenCmd` — see the FFT-chain note below |
+| `FFT` | source, active | opens a spectral chain: windows `source` and transforms it to a spectral frame once per hop (`active`, read per sample, gates the input: `≤ 0` is analysed as silence, so the round trip is the gated input exactly, and a frame whose whole window was gated is not taken — the chain does no work while it stays off, and reads as silence to a combiner); static fields `fft_size` (default 1024), `hop` (fraction of the window in (0, 1], at least one 64-sample block; default 0.5), `wintype` (default 0 = Hann); the chain's window is also settable live via `/node_ugenCmd` to the `FFT` — see the FFT-chain note below |
 | `PV_MagAbove` | chain, threshold | passes only bins whose magnitude is **above** `threshold`, zeroing the rest; `chain` is the wire from an earlier `FFT`/`PV_*` |
 | `PV_MagBelow` | chain, threshold | passes only bins whose magnitude is **below** `threshold` |
 | `PV_BrickWall` | chain, wipe | brick-wall band limit: `wipe > 0` zeroes the top fraction of bins (low pass), `wipe < 0` the bottom (high pass), `0` passes everything (`wipe` in −1..1) |
@@ -599,10 +599,19 @@ overlap-add is **window-normalized** (divided by the steady-state window-overlap
 denominator, COLA), so a plain `FFT`→`IFFT` reconstructs the signal at unity
 gain, delayed by exactly one window. A frame is taken at exactly every hop of
 the synth's own input, whatever slices a timed event cuts the block into, so
-any hop in range reconstructs exactly, not only whole blocks. The window type is settable live per instance
-with `/node_ugenCmd <nodeID> <ugenIndex> window <wintype>` (`-1` rectangular, `0` Hann,
-`1` sine, `2` Welch, `3` Hamming, `4` Blackman) — the first consumer of the typed
-per-UGen command surface.
+any hop in range reconstructs exactly, not only whole blocks.
+
+The window is settable live with `/node_ugenCmd <nodeID> <ugenIndex> window
+<wintype>` (`-1` rectangular, `0` Hann, `1` sine, `2` Welch, `3` Hamming, `4`
+Blackman) addressed to the chain's **`FFT`** — the first consumer of the typed
+per-UGen command surface. The window is the chain's: the `IFFT` follows it frame
+by frame (a `window` command sent to the `IFFT` does nothing), and the change
+takes effect at a frame, at most once per window length — a second one within a
+window waits. The samples covered by frames on both sides of the change are
+normalized by the windows those frames actually used, so a round trip stays
+exact through it. A **combiner**'s two chains must change together (both
+`FFT`s in one bundle): while their windows differ it writes silence into chain A
+and reports the mismatch once, as a `Conv` does a kernel it cannot use.
 
 **Where the frame lives (deviation from scsynth).** scsynth threads the frame
 through a client-allocated buffer whose bins the audio thread mutates in place.
@@ -1048,7 +1057,7 @@ Note that these control the **server's own** logs (on the server's stderr); the 
 Two extension commands carry out-of-band instructions that are neither node nor bus state. Both are **typed and discoverable** — the deliberate replacement for scsynth's untyped `/server_cmd`/`/node_ugenCmd` argument blobs (a command *name* plus validated typed args, errors naming the offending field, like `compile`).
 
 - `/server_cmd <name> args...` — a **server-wide** command. `name` selects a handler; the built-in `ping` replies `/done /server_cmd ping` (it proves the surface). An unknown name replies `/fail /server_cmd "unknown server command …"`. New server commands register here.
-- `/node_ugenCmd <nodeID> <ugenIndex> <name> args...` — a command addressed to **one UGen instance** inside a synth. It validates the node is a UGen synth and `ugenIndex` is in range (a Faust synth is one opaque block, not a UGen graph, so it is rejected), packs the numeric args inline (up to 8, so nothing heap-allocated crosses to the audio thread), and routes them to that UGen on the audio thread; the command name is hashed to a stable selector both sides agree on. The first real consumer is the FFT chain: `/node_ugenCmd <nodeID> <ugenIndex> window <wintype>` swaps an `FFT`/`IFFT`'s analysis/synthesis window live (see the FFT-chain note above). A UGen that does not recognize the command name ignores it, so a `/node_ugenCmd` to a valid target is otherwise accepted silently.
+- `/node_ugenCmd <nodeID> <ugenIndex> <name> args...` — a command addressed to **one UGen instance** inside a synth. It validates the node is a UGen synth and `ugenIndex` is in range (a Faust synth is one opaque block, not a UGen graph, so it is rejected), packs the numeric args inline (up to 8, so nothing heap-allocated crosses to the audio thread), and routes them to that UGen on the audio thread; the command name is hashed to a stable selector both sides agree on. The first real consumer is the FFT chain: `/node_ugenCmd <nodeID> <ugenIndex> window <wintype>` sent to an `FFT` changes its chain's window live, analysis and synthesis both (see the FFT-chain note above). A UGen that does not recognize the command name ignores it, so a `/node_ugenCmd` to a valid target is otherwise accepted silently.
 
 ## Persisting defs across restarts
 

@@ -55,7 +55,10 @@ use clausters_core::pvprog::{BinCtx, PvOp, PvProgram};
 use clausters_core::window::Window;
 
 use crate::dsp::registry::UGenConfig;
-use crate::dsp::{BLOCK_SIZE, MAX_UGEN_INPUTS, ProcessCtx, UGen, UGenCmd, at, ugen_cmd_selector};
+use crate::dsp::{
+    BLOCK_SIZE, MAX_UGEN_INPUTS, ProcessCtx, ReplyKind, ReplyMsg, UGen, UGenCmd, at,
+    ugen_cmd_selector,
+};
 
 /// Default FFT window size when a `FFT`/`IFFT` def omits it. A power of two in
 /// [`fft::SUPPORTED_SIZES`].
@@ -103,6 +106,16 @@ pub struct SpectralChain {
     pub pos: u64,
     /// The frame's transform size.
     pub winsize: usize,
+    /// The window the chain analyses and resynthesizes with -- the chain's,
+    /// not either end's: `FFT` changes it, and `IFFT` follows.
+    pub window: Window,
+    /// The frame end position the current window took effect at (0: from
+    /// the start). A frame ending at or after it used `window`, one before
+    /// it `prev_window`. Changes are at least a window apart, so no span one
+    /// window long ever holds frames of more than these two.
+    pub window_from: u64,
+    /// The window in force before `window_from`.
+    pub prev_window: Window,
 }
 
 impl SpectralChain {
@@ -112,6 +125,9 @@ impl SpectralChain {
             ready: false,
             pos: 0,
             winsize,
+            window: Window::default(),
+            window_from: 0,
+            prev_window: Window::default(),
         }
     }
 }
@@ -123,18 +139,26 @@ impl SpectralChain {
 /// the gated signal and a plain round trip is exactly that signal, one window
 /// late, through both edges. A frame whose whole window was gated holds
 /// nothing but silence, so it is not taken: the chain does no work while it
-/// stays off, and its frame reads as silence to anything that combines it. The window size,
-/// hop and window type are static per-UGen config, not signal inputs, because
-/// they size the pre-allocated scratch. The window type is also settable live
-/// through `/node_ugenCmd` (selector `window`), the first real consumer of the
-/// typed per-UGen command surface.
+/// stays off, and its frame reads as silence to anything that combines it.
+///
+/// The window size, hop and window type are static per-UGen config, not
+/// signal inputs, because they size the pre-allocated scratch. The window is
+/// also settable live through `/node_ugenCmd` (selector `window`), and it is
+/// the chain's: the change is recorded on the [`SpectralChain`], `IFFT`
+/// follows it, and it takes effect at a frame, at most once per window length
+/// (a later one waits), so the overlap-add can normalize the frames on both
+/// sides of it exactly.
 pub struct Fft {
     winsize: usize,
     hop_size: usize,
     window_kind: Window,
-    /// Analysis window coefficients (`winsize`); rebuilt when `/node_ugenCmd` changes
-    /// the window type -- off any hop, so still allocation-free per block.
+    /// Analysis window coefficients (`winsize`); refilled in place when a
+    /// window change takes effect, so still allocation-free per block.
     window: Vec<f32>,
+    /// A window asked for by `/node_ugenCmd` and not yet in force.
+    pending_window: Option<Window>,
+    /// The frame end position the current window took effect at.
+    window_from: u64,
     /// Sliding input, a circular buffer of the last `winsize` samples.
     inbuf: Vec<f32>,
     write: usize,
@@ -174,6 +198,8 @@ impl Fft {
             hop_size,
             window_kind,
             window,
+            pending_window: None,
+            window_from: 0,
             inbuf: vec![0.0; winsize],
             write: 0,
             pos: 0,
@@ -199,6 +225,10 @@ impl UGen for Fft {
         chain: &mut SpectralChain,
     ) {
         chain.ready = false;
+        if self.pos == 0 {
+            chain.window = self.window_kind;
+            chain.prev_window = self.window_kind;
+        }
         let input = inputs[0];
         let gate = inputs.get(1).copied();
         for (j, &s) in input.iter().enumerate() {
@@ -214,6 +244,21 @@ impl UGen for Fft {
             // happens at most once per slice.
             if self.pos == self.next_frame {
                 self.next_frame += self.hop_size as u64;
+                // A window change takes effect at a frame, and not within a
+                // window of the last one: every sample is then covered by
+                // frames of at most two windows, which the overlap-add
+                // normalizes exactly.
+                if let Some(wanted) = self.pending_window
+                    && (self.window_from == 0 || self.pos >= self.window_from + self.winsize as u64)
+                {
+                    self.pending_window = None;
+                    chain.prev_window = self.window_kind;
+                    self.window_kind = wanted;
+                    wanted.fill(&mut self.window);
+                    self.window_from = self.pos;
+                    chain.window = wanted;
+                    chain.window_from = self.pos;
+                }
                 let live = self.live_until + self.winsize as u64 > self.pos;
                 if !live {
                     // Nothing but gated silence in the window: skip the
@@ -255,16 +300,23 @@ impl UGen for Fft {
     }
 
     fn command(&mut self, cmd: &UGenCmd) {
-        // `/node_ugenCmd <node> <ugen> window <wintype>`: swap the analysis window.
-        window_command(cmd, &mut self.window_kind, &mut self.window);
+        // `/node_ugenCmd <node> <ugen> window <wintype>`: change the chain's
+        // window, at the next frame it may take effect at.
+        if cmd.selector != ugen_cmd_selector("window") || cmd.num_args < 1 {
+            return;
+        }
+        let wanted = Window::from_wintype(cmd.args[0] as i32);
+        self.pending_window = (wanted != self.window_kind).then_some(wanted);
     }
 }
 
 /// Inverse-transforms each fresh spectral frame and overlap-adds it back to
 /// audio. Input: `[chain]` -- the chain wire, which only carries ordering (the
 /// live frame is the synth-private [`SpectralChain`] the synth passes in). The
-/// window size, hop and type are the chain's; the synthesis window matches
-/// the analysis window for correct overlap-add.
+/// window size, hop and type are the chain's; the synthesis window is the
+/// chain's too, frame by frame, so it matches the analysis window through a
+/// live change. A `window` command addressed to `IFFT` does nothing: the
+/// window is changed at the chain's `FFT`.
 ///
 /// The output is the input position one window behind the synth's own time:
 /// by then every frame that covers that position has been added (the last
@@ -275,6 +327,12 @@ pub struct Ifft {
     hop_size: usize,
     window_kind: Window,
     window: Vec<f32>,
+    /// The window before the chain's last change, and its `norm`: the
+    /// samples whose frames straddle the change are normalized with both.
+    prev_window: Vec<f32>,
+    prev_norm: Vec<f32>,
+    /// The chain's `window_from` this `IFFT` has followed.
+    window_from: u64,
     /// Overlap-add accumulator indexed by input position (modulo its length,
     /// two windows: a frame writes up to one window ahead of the position
     /// being read, never onto one not read yet). A slot is cleared as it is
@@ -309,7 +367,10 @@ impl Ifft {
             winsize,
             hop_size,
             window_kind,
+            prev_window: window.clone(),
+            prev_norm: norm.clone(),
             window,
+            window_from: 0,
             ring: vec![0.0; 2 * winsize],
             norm,
             time: vec![0.0; winsize],
@@ -332,6 +393,18 @@ impl UGen for Ifft {
         chain: &mut SpectralChain,
     ) {
         let len = self.ring.len() as u64;
+        if chain.window_from != self.window_from {
+            // The chain's window changed at a frame: frames from there on
+            // were analysed with the new one, so they are resynthesized and
+            // normalized with it, and the old one is kept for the samples
+            // that frames on both sides cover.
+            self.prev_window.copy_from_slice(&self.window);
+            self.prev_norm.copy_from_slice(&self.norm);
+            self.window_kind = chain.window;
+            self.window_kind.fill(&mut self.window);
+            fill_cola_norm(&self.window, &mut self.norm);
+            self.window_from = chain.window_from;
+        }
         if chain.ready {
             fft::irfft_into(&chain.frame, &mut self.time);
             // Overlap-add the windowed reconstruction where the frame sits.
@@ -346,16 +419,16 @@ impl UGen for Ifft {
         }
         for o in output.iter_mut() {
             // Position `now - winsize` is complete: the last frame covering
-            // it ends at `now` at the latest. Normalize by the steady-state
-            // COLA denominator for its hop phase. Dividing by the *full*
+            // it ends at `now` at the latest. Normalize by the COLA
+            // denominator of the frames on the grid that cover it -- taken or
+            // not, and before the first one too. Dividing by that *full*
             // overlap sum (not a running partial one) means an incompletely
             // overlapped startup or a spectrally modified frame fades cleanly
             // instead of blowing up where the window is small.
             *o = match (self.now.checked_sub(self.winsize as u64), self.origin) {
                 (Some(j), Some(origin)) if j >= origin => {
                     let slot = (j % len) as usize;
-                    let r = ((j - origin) % self.hop_size as u64) as usize;
-                    let v = self.ring[slot] / self.norm[r];
+                    let v = self.ring[slot] / self.norm_at(j, origin);
                     self.ring[slot] = 0.0;
                     v
                 }
@@ -368,31 +441,40 @@ impl UGen for Ifft {
     fn latency(&self) -> usize {
         self.winsize
     }
-
-    fn command(&mut self, cmd: &UGenCmd) {
-        // The synthesis window swaps as the analysis one does, and the COLA
-        // denominator is the window's: it follows, or the reconstruction's
-        // level would stay the old window's.
-        if window_command(cmd, &mut self.window_kind, &mut self.window) {
-            fill_cola_norm(&self.window, &mut self.norm);
-        }
-    }
 }
 
-/// `/node_ugenCmd <node> <ugen> window <wintype>`, the command `Fft` and
-/// `Ifft` share: refill `window` when the type changes. Returns whether it
-/// did. Runs on the audio thread, so it only writes in place.
-fn window_command(cmd: &UGenCmd, kind: &mut Window, window: &mut [f32]) -> bool {
-    if cmd.selector != ugen_cmd_selector("window") || cmd.num_args < 1 {
-        return false;
+impl Ifft {
+    /// The overlap-add denominator at input position `j`: the sum of the
+    /// squared windows of the grid frames covering it (ends in `(j, j +
+    /// winsize]`), each with the window it was analysed with. Away from a
+    /// window change every such frame used one window, and the precomputed
+    /// per-phase sum is that sum; across one, it is added up frame by frame.
+    fn norm_at(&self, j: u64, origin: u64) -> f32 {
+        let (w, hop) = (self.winsize as u64, self.hop_size as u64);
+        let r = ((j - origin) % hop) as usize;
+        let from = self.window_from;
+        if from == 0 || j + 1 >= from {
+            return self.norm[r];
+        }
+        if j + w < from {
+            return self.prev_norm[r];
+        }
+        // Frame ends sit on `origin + w + k*hop`; the first one past `j`.
+        let first = j + 1 + (origin + w + hop * (j / hop + 1) - (j + 1)) % hop;
+        let mut sum = 0.0f32;
+        let mut end = first;
+        while end <= j + w {
+            let k = (j + w - end) as usize;
+            let c = if end >= from {
+                self.window[k]
+            } else {
+                self.prev_window[k]
+            };
+            sum += c * c;
+            end += hop;
+        }
+        if sum > 1e-9 { sum } else { 1.0 }
     }
-    let wanted = Window::from_wintype(cmd.args[0] as i32);
-    if wanted == *kind {
-        return false;
-    }
-    *kind = wanted;
-    wanted.fill(window);
-    true
 }
 
 /// The steady-state window-power sum per hop phase -- the exact COLA
@@ -556,19 +638,67 @@ pub enum CombineOp {
     CopyPhase,
 }
 
+impl CombineOp {
+    /// The name the operator is registered under.
+    fn name(self) -> &'static str {
+        match self {
+            CombineOp::Add => "PV_Add",
+            CombineOp::Mul => "PV_Mul",
+            CombineOp::Min => "PV_Min",
+            CombineOp::Max => "PV_Max",
+            CombineOp::MagMul => "PV_MagMul",
+            CombineOp::CopyPhase => "PV_CopyPhase",
+        }
+    }
+}
+
+/// The fault a combiner reports (a [`ReplyKind::Fault`] whose id is this):
+/// its two chains are analysed with different windows. Values: the two
+/// windows' `wintype`s, chain A's first.
+pub const FAULT_WINDOWS_DIFFER: i32 = 1;
+
+/// The sentence for a spectral UGen's fault, built on the network thread.
+pub fn describe_fault(msg: &ReplyMsg) -> String {
+    let window =
+        |i: usize| Window::from_wintype(msg.values().get(i).copied().unwrap_or(0.0) as i32);
+    match msg.id {
+        FAULT_WINDOWS_DIFFER => format!(
+            "{}: its chains are analysed with different windows ({:?} and {:?}); \
+             it plays silence until they match (change both FFTs' window in one bundle)",
+            msg.name(),
+            window(0),
+            window(1)
+        ),
+        code => format!("{}: fault {code} {:?}", msg.name(), msg.values()),
+    }
+}
+
 /// A two-chain spectral combiner (`SpectralRole::Filter2`): inputs
 /// `[chain_a, chain_b]`, the result written into chain A bin by bin. It acts
 /// on the slices where **A** has a fresh frame, reading B's *latest* frame
 /// (the frame is persistent chain state; two same-config `FFT`s in one synth
 /// hop on the same blocks anyway, it staggering included -- the offset is
 /// per-node, not per-UGen).
+///
+/// The compiler holds the two chains to one window; a live change to one of
+/// them alone breaks that, and B's share would be resynthesized with A's
+/// window. So while the two differ the combiner writes silence into chain A
+/// and reports it once.
 pub struct PvCombine {
     op: CombineOp,
+    /// A fault waiting for the synth to drain it.
+    pending: Option<ReplyMsg>,
+    /// Whether the current mismatch has been reported.
+    reported: bool,
 }
 
 impl PvCombine {
     pub fn new(op: CombineOp) -> Self {
-        Self { op }
+        Self {
+            op,
+            pending: None,
+            reported: false,
+        }
     }
 }
 
@@ -585,7 +715,17 @@ impl UGen for PvCombine {
         a: &mut SpectralChain,
         b: &mut SpectralChain,
     ) {
-        if a.ready {
+        if a.ready && a.window != b.window {
+            a.frame.fill(0.0);
+            if !self.reported {
+                self.reported = true;
+                let mut msg = ReplyMsg::new(ReplyKind::Fault, FAULT_WINDOWS_DIFFER, self.op.name());
+                msg.push_value(a.window.wintype() as f32);
+                msg.push_value(b.window.wintype() as f32);
+                self.pending = Some(msg);
+            }
+        } else if a.ready {
+            self.reported = false;
             let half = a.winsize / 2;
             for k in 0..=half {
                 let (ar, ai) = get_bin(&a.frame, k, half);
@@ -620,6 +760,17 @@ impl UGen for PvCombine {
         }
         if let Some(o) = output.first_mut() {
             *o = if a.ready { 1.0 } else { 0.0 };
+        }
+    }
+
+    fn is_reply(&self) -> bool {
+        true
+    }
+
+    fn drain_replies(&mut self, node_id: i32, sink: &mut dyn FnMut(ReplyMsg)) {
+        if let Some(mut msg) = self.pending.take() {
+            msg.node_id = node_id;
+            sink(msg);
         }
     }
 }

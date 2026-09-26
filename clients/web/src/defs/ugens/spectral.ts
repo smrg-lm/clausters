@@ -28,13 +28,13 @@ export interface FftOptions {
 /**
  * Opens a spectral chain: windows `source` (an audio signal) and transforms
  * it to a spectral frame once per **hop**. `active` gates the input, per
- * sample: `<= 0` is analysed as silence, so the round trip is the gated
- * input exactly, and a frame whose whole window was gated is not taken --
- * the chain does no work while it stays off. The options size the
- * transform, so they are static fields given
- * **only here** -- the server propagates them to the rest of the chain. The
- * window is also settable live with `Server.uCmd`. Feed the result to a `pv*`
- * filter or `ifft`.
+ * sample: `<= 0` is analysed as silence, so the round trip is the gated input
+ * exactly, and a frame whose whole window was gated is not taken -- the chain
+ * does no work while it stays off. The options size the transform, so they
+ * are static fields given **only here** -- the server propagates them to the
+ * rest of the chain. The chain's window is also settable live with
+ * `Server.uCmd` addressed to this `fft` (the `ifft` follows it). Feed the
+ * result to a `pv*` filter or `ifft`.
  */
 export const fft = (
     source: Channel,

@@ -955,6 +955,8 @@ pub enum ReplyKind {
 pub fn describe_fault(msg: &ReplyMsg) -> String {
     match msg.name() {
         "Conv" => conv::describe_fault(msg.id, msg.values()),
+        #[cfg(feature = "synth")]
+        name if name.starts_with("PV_") => spectral::describe_fault(msg),
         name => format!("{name}: fault {} {:?}", msg.id, msg.values()),
     }
 }

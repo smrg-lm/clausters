@@ -1087,3 +1087,105 @@ fn a_gated_chain_lends_a_combiner_silence() {
     };
     assert_delayed_copy(&sig, sum, 1024, 4096, 24_000, 1e-4);
 }
+
+/// A `window` command for UGen `ugen` of node 1, timed at `time`.
+fn window_at(time: u64, ugen: u32, wintype: f32) -> Cmd {
+    let mut args = [0.0f32; 8];
+    args[0] = wintype;
+    Cmd::Schedule {
+        time,
+        cmds: vec![Cmd::UGenCommand {
+            id: 1,
+            ugen_index: ugen,
+            command: UGenCmd {
+                selector: ugen_cmd_selector("window"),
+                args,
+                num_args: 1,
+            },
+        }],
+    }
+}
+
+/// A live window change is the chain's: sent to the `FFT` alone, the `IFFT`
+/// follows it frame by frame, and the samples whose frames straddle the
+/// change -- some analysed with the old window, some with the new -- are
+/// normalized by what those frames actually used. The round trip stays the
+/// input, exactly, through the change. Two changes closer than a window apart
+/// are too: the second waits until the first is a window old.
+#[test]
+fn a_live_window_change_keeps_the_round_trip_exact() {
+    for changes in [
+        vec![(9000u64, 4.0f32)],
+        vec![(9000, 4.0), (9300, 1.0), (16_001, -1.0)],
+    ] {
+        let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+        let synth = spec_synth(json!({
+            "name": "change",
+            "ugens": [
+                {"kind": "Sine", "inputs": [{"const": 440.0}]},
+                {"kind": "Mul", "inputs": [{"ugen": 0}, {"const": 0.5}]},
+                {"kind": "FFT", "inputs": [{"ugen": 1}, {"const": 1.0}],
+                 "fft_size": 1024, "hop": 0.25},
+                {"kind": "IFFT", "inputs": [{"ugen": 2}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 3}]}
+            ]
+        }));
+        handle.send(add_synth(1, synth)).ok().unwrap();
+        for &(time, wintype) in &changes {
+            handle.send(window_at(time, 2, wintype)).ok().unwrap();
+        }
+        let sig = render_channel(&mut engine, 450);
+        let lag = assert_delayed_copy(&sig, |n| tone(440.0, 0.5, n), 1024, 4096, 27_000, 1e-4);
+        assert_eq!(lag, 1024, "changes {changes:?}");
+    }
+}
+
+/// A combiner whose two chains are analysed with different windows refuses:
+/// silence, and one fault naming both windows. Changed together, in one
+/// bundle, the two chains stay one window and the sum stays exact.
+#[test]
+fn a_combiner_refuses_chains_whose_windows_differ() {
+    let build = || {
+        spec_synth(json!({
+            "name": "pair",
+            "ugens": [
+                {"kind": "Sine", "inputs": [{"const": 440.0}]},
+                {"kind": "Mul", "inputs": [{"ugen": 0}, {"const": 0.25}]},
+                {"kind": "Sine", "inputs": [{"const": 700.0}]},
+                {"kind": "Mul", "inputs": [{"ugen": 2}, {"const": 0.25}]},
+                {"kind": "FFT", "inputs": [{"ugen": 1}, {"const": 1.0}], "fft_size": 1024},
+                {"kind": "FFT", "inputs": [{"ugen": 3}, {"const": 1.0}], "fft_size": 1024},
+                {"kind": "PV_Add", "inputs": [{"ugen": 4}, {"ugen": 5}]},
+                {"kind": "IFFT", "inputs": [{"ugen": 6}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 7}]}
+            ]
+        }))
+    };
+    let sum = |n: usize| tone(440.0, 0.25, n) + tone(700.0, 0.25, n);
+
+    // Both chains change together: still the exact sum.
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    handle.send(add_synth(1, build())).ok().unwrap();
+    handle.send(window_at(9000, 4, 1.0)).ok().unwrap();
+    handle.send(window_at(9000, 5, 1.0)).ok().unwrap();
+    let sig = render_channel(&mut engine, 400);
+    assert_delayed_copy(&sig, sum, 1024, 4096, 24_000, 1e-4);
+    assert!(std::iter::from_fn(|| handle.pop_reply()).next().is_none());
+
+    // Only chain A changes: from the change on, silence and one fault.
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    handle.send(add_synth(1, build())).ok().unwrap();
+    handle.send(window_at(9000, 4, 1.0)).ok().unwrap();
+    let sig = render_channel(&mut engine, 400);
+    assert_delayed_copy(&sig, sum, 1024, 4096, 8000, 1e-4);
+    assert!(
+        sig[9000 + 1024 + 1024..].iter().all(|&x| x == 0.0),
+        "refused: silence once no frame from before the change is left"
+    );
+    let faults: Vec<_> = std::iter::from_fn(|| handle.pop_reply()).collect();
+    assert_eq!(faults.len(), 1, "reported once");
+    assert_eq!(faults[0].kind, clausters::dsp::ReplyKind::Fault);
+    assert_eq!(faults[0].name(), "PV_Add");
+    let text = clausters::dsp::describe_fault(&faults[0]);
+    assert!(text.contains("Sine") && text.contains("Hann"), "{text}");
+}

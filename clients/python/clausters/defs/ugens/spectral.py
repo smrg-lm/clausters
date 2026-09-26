@@ -20,13 +20,14 @@ def fft(source, active=1.0, *, fft_size=1024, hop=0.5, wintype=0) -> Ugen:
     input, per sample: ``<= 0`` is analysed as silence, so the round trip is
     the gated input exactly, and a frame whose whole window was gated is not
     taken -- the chain does no work while it stays off. ``fft_size`` is the
-    window size (a power of two: 256/512/1024/2048/4096), ``hop`` the
-    fraction of the window between frames
-    (in (0, 1], and at least one 64-sample block: 0.25 of 256),
-    ``wintype`` the window (a `clausters._native.Window`: 0 Hann, 1 sine, ...).
-    These size the transform, so they are static fields given **only here** -- the
-    server propagates them to the rest of the chain. The window is also settable
-    live with `Server.u_cmd`. Feed the result to a ``pv_*`` filter or `ifft`."""
+    window size (a power of two: 256/512/1024/2048/4096), ``hop`` the fraction
+    of the window between frames (in (0, 1], and at least one 64-sample block:
+    0.25 of 256), ``wintype`` the window (a `clausters._native.Window`: 0 Hann,
+    1 sine, ...). These size the transform, so they are static fields given
+    **only here** -- the server propagates them to the rest of the chain. The
+    chain's window is also settable live with `Server.u_cmd` addressed to this
+    ``fft`` (the `ifft` follows it). Feed the result to a ``pv_*`` filter or
+    `ifft`."""
     return Ugen(
         "FFT", [source, active],
         static={"fft_size": int(fft_size), "hop": float(hop), "wintype": int(wintype)},
