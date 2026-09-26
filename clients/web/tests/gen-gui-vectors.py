@@ -287,7 +287,8 @@ PER_BUILDER = {
     ("multitrack", "layers"): [["env", "a", "", -1.0, 1.0], ["fx", "a"]],
     ("multitrack", "points"): [["gain", 0.0, 1.0], ["gain", 1.0, 0.0, 5, 4.0],
                                ["env", 0.5, 0.25]],
-    ("meter", "zones"): [[-1.0, "#d04040"], [0.0, "meter_low"]],
+    ("meter", "zones"): [[-1.0, "#d04040"], [-0.5, "meter_low", "lin"],
+                         [0.0, "meter_mid", -3.0]],
 }
 
 #: The payload options, whose value is a shape rather than a scalar. Every one

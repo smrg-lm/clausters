@@ -261,6 +261,17 @@ impl Mesh {
             .map(|v| v[5])
     }
 
+    /// The `(y, colour)` of every accumulated flat vertex -- what a test asks
+    /// to see a gradient in the batch itself.
+    #[cfg(test)]
+    pub(crate) fn colors_by_y(&self) -> impl Iterator<Item = (f32, Color)> + '_ {
+        self.verts
+            .as_chunks::<FLOATS_PER_VERTEX>()
+            .0
+            .iter()
+            .map(|v| (v[1], [v[2], v[3], v[4], v[5]]))
+    }
+
     /// The `(x, y)` of every accumulated vertex, for bounds/layout tests --
     /// the flat geometry's and, where a face is drawing them, the glyphs'.
     #[cfg(test)]
@@ -449,6 +460,36 @@ impl Mesh {
             ],
             color,
         );
+    }
+
+    /// A square-cornered rectangle whose colour runs from `top` at its upper
+    /// edge to `bottom` at its lower one: two triangles with a colour per
+    /// vertex, which the rasterizer interpolates -- a gradient for the cost of
+    /// one quad, on the colours as written, since the surface is plain. The
+    /// clip rectangle cuts it where it would cut a flat one, and a cut edge
+    /// takes the colour the gradient has there.
+    pub fn vgradient(&mut self, r: Rect, top: Color, bottom: Color) {
+        let (mut x0, mut y0, mut x1, mut y1) = (r.x, r.y, r.x + r.w, r.y + r.h);
+        if let Some(clip) = self.clip {
+            x0 = x0.max(clip.x);
+            y0 = y0.max(clip.y);
+            x1 = x1.min(clip.x + clip.w);
+            y1 = y1.min(clip.y + clip.h);
+        }
+        if x1 <= x0 || y1 <= y0 || r.h <= 0.0 {
+            return;
+        }
+        let at = |y: f32| -> Color {
+            let t = (y - r.y) / r.h;
+            std::array::from_fn(|i| top[i] + (bottom[i] - top[i]) * t)
+        };
+        let (upper, lower) = (at(y0), at(y1));
+        self.vertex([x0, y1], lower);
+        self.vertex([x1, y1], lower);
+        self.vertex([x1, y0], upper);
+        self.vertex([x0, y1], lower);
+        self.vertex([x1, y0], upper);
+        self.vertex([x0, y0], upper);
     }
 
     /// An axis-aligned rectangle with `radius`-rounded corners, tessellated
@@ -990,6 +1031,38 @@ impl Painter {
 
 #[cfg(test)]
 mod tests {
+
+    /// **A gradient is one quad, and a clip cuts it at its own colour.** Two
+    /// triangles with the top colour above and the bottom colour below, and a
+    /// clip through the middle leaves an edge the colour the gradient has
+    /// there rather than either end's.
+    #[test]
+    fn a_vertical_gradient_is_one_quad_cut_at_its_own_colour() {
+        let mut mesh = Mesh::new();
+        let r = crate::host::layout::Rect::new(0.0, 0.0, 10.0, 100.0);
+        mesh.vgradient(r, [1.0, 0.0, 0.0, 1.0], [0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(mesh.vertex_count(), 6);
+        for (y, c) in mesh.colors_by_y() {
+            let want = if y == 0.0 {
+                [1.0, 0.0, 0.0, 1.0]
+            } else {
+                [0.0, 0.0, 1.0, 1.0]
+            };
+            assert_eq!(c, want, "at y {y}");
+        }
+        mesh.clear();
+        mesh.set_clip(Some(crate::host::layout::Rect::new(0.0, 25.0, 10.0, 50.0)));
+        mesh.vgradient(r, [1.0, 0.0, 0.0, 1.0], [0.0, 0.0, 1.0, 1.0]);
+        for (y, c) in mesh.colors_by_y() {
+            let t = y / 100.0;
+            assert!(
+                (c[0] - (1.0 - t)).abs() < 1e-6 && (c[2] - t).abs() < 1e-6,
+                "at y {y}: {c:?}"
+            );
+            assert!((25.0..=75.0).contains(&y));
+        }
+    }
+
     use super::*;
 
     #[test]

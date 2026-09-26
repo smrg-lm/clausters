@@ -94,84 +94,183 @@ impl Scale {
 /// would say only "loud", while a fixed scale says *how* loud by where the
 /// colour changes.
 pub fn column_color(theme: &crate::host::theme::Theme, scale: Scale, height: f32) -> Color {
-    let mix = |a: Color, b: Color, t: f32| -> Color {
-        let t = t.clamp(0.0, 1.0);
-        [
-            a[0] + (b[0] - a[0]) * t,
-            a[1] + (b[1] - a[1]) * t,
-            a[2] + (b[2] - a[2]) * t,
-            a[3] + (b[3] - a[3]) * t,
-        ]
-    };
-    let (warn, hot) = (scale.warn.clamp(0.0, 1.0), scale.hot.clamp(0.0, 1.0));
-    let amber = scale.amber.clamp(warn, hot);
-    if height <= warn {
-        theme.meter_low
-    } else if height >= hot {
-        // **The red band.** The last six decibels are where a peak that grows
-        // any further clips, and that is a statement, not a gradient: a ramp
-        // from the hot end to the top left the column amber at -6 and red only
-        // at 0, which says the opposite of what the mark means.
-        theme.meter_high
-    } else if height >= amber {
-        // The amber **band**: a column using its headroom reads amber all the
-        // way, rather than arriving at it just as it turns red.
-        theme.meter_mid
-    } else {
-        mix(
-            theme.meter_low,
-            theme.meter_mid,
-            (height - warn) / (amber - warn).max(1e-6),
-        )
+    Paint::scale(scale, theme).color(height)
+}
+
+/// **How a colour passes to the next one**, from a stop up to the stop above.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Shape {
+    /// It does not: the colour holds to the next stop, which is an edge.
+    Step,
+    /// A straight blend of the two colours, as written.
+    Lin,
+    /// A blend bent by `curve`, the same bend a `knob`'s travel and an
+    /// envelope segment take (`clausters_core::warp`): negative spends most of
+    /// the change early, positive late.
+    Curve(f32),
+}
+
+impl Shape {
+    /// `"step"`, `"lin"`/`"linear"`, or a curve amount; `None` for anything
+    /// else.
+    pub fn parse(v: &serde_json::Value) -> Option<Self> {
+        match v {
+            serde_json::Value::String(name) => match name.as_str() {
+                "step" => Some(Shape::Step),
+                "lin" | "linear" => Some(Shape::Lin),
+                _ => None,
+            },
+            serde_json::Value::Number(n) => Some(Shape::Curve(n.as_f64()? as f32)),
+            _ => None,
+        }
     }
-}
 
-/// **How a column is coloured**, as the drawing needs it: every height already
-/// a fraction of the column and every colour already resolved against the
-/// theme. What a widget *asks for* is [`Zones`]; this is what that becomes on a
-/// given axis.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Paint {
-    /// The graded level scale -- green, amber, red -- by height from the floor.
-    Scale(Scale),
-    /// The same scale **by distance from a zero** at `origin`, each side
-    /// graded over its own reach: a signed value that runs out at both ends.
-    Mirrored {
-        origin: f32,
-        below: Scale,
-        above: Scale,
-    },
-    /// Bands with edges: each colour from its height up to the next one's, the
-    /// first also covering everything under it. Sorted by height.
-    Zones(Vec<(f32, Color)>),
-}
-
-impl Paint {
-    /// The colour a column has at `height`.
-    pub fn color(&self, theme: &crate::host::theme::Theme, height: f32) -> Color {
+    /// How far along the blend the colour is at `t` of the way to the next
+    /// stop.
+    fn weight(self, t: f32) -> f32 {
+        let t = t.clamp(0.0, 1.0);
         match self {
-            Paint::Scale(scale) => column_color(theme, *scale, height),
-            Paint::Mirrored {
-                origin,
-                below,
-                above,
-            } => {
-                if height >= *origin {
-                    let reach = (1.0 - origin).max(1e-6);
-                    column_color(theme, *above, (height - origin) / reach)
-                } else {
-                    column_color(theme, *below, (origin - height) / origin.max(1e-6))
-                }
-            }
-            Paint::Zones(zones) => zones
-                .iter()
-                .rev()
-                .find(|z| height >= z.0)
-                .or(zones.first())
-                .map_or(theme.meter_low, |z| z.1),
+            Shape::Step => 0.0,
+            Shape::Lin => t,
+            Shape::Curve(curve) => clausters_core::warp::curve_value(t, 0.0, 1.0, curve),
         }
     }
 }
+
+/// One stop of a [`Paint`]: a height, the colour there, and how it passes to
+/// the next stop's.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Stop {
+    pub at: f32,
+    pub color: Color,
+    pub shape: Shape,
+}
+
+/// **How a column is coloured**, as the drawing needs it: stops at heights
+/// (fractions of the column), sorted, each colour already resolved against the
+/// theme. Below the first stop its colour holds. What a widget *asks for* is
+/// [`Zones`]; this is what that becomes on a given axis -- and the level
+/// scale is one of these too, rather than a second way of colouring.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Paint(pub Vec<Stop>);
+
+impl Paint {
+    /// One colour, the whole height.
+    pub fn solid(color: Color) -> Self {
+        Paint(vec![Stop {
+            at: 0.0,
+            color,
+            shape: Shape::Step,
+        }])
+    }
+
+    /// **The level scale**: green up to the alignment level, a blend into
+    /// amber, amber held, and red from the hot end -- a statement, not a
+    /// gradient, since the last six decibels are where a peak that grows any
+    /// further clips. The amber is a **band**, so a column using its headroom
+    /// reads amber all the way rather than arriving at it just as it turns red.
+    pub fn scale(scale: Scale, theme: &crate::host::theme::Theme) -> Self {
+        let (warn, hot) = (scale.warn.clamp(0.0, 1.0), scale.hot.clamp(0.0, 1.0));
+        let amber = scale.amber.clamp(warn, hot);
+        let stop = |at, color, shape| Stop { at, color, shape };
+        Paint(vec![
+            stop(0.0, theme.meter_low, Shape::Step),
+            stop(warn, theme.meter_low, Shape::Lin),
+            stop(amber, theme.meter_mid, Shape::Step),
+            stop(hot, theme.meter_high, Shape::Step),
+        ])
+    }
+
+    /// The level scale **by distance from a zero** at `origin`, each side over
+    /// its own reach: `above` from the zero up, `below` mirrored from the zero
+    /// down, so the same distance either way is the same colour.
+    pub fn mirrored(
+        origin: f32,
+        below: Scale,
+        above: Scale,
+        theme: &crate::host::theme::Theme,
+    ) -> Self {
+        let o = origin.clamp(0.0, 1.0);
+        let up = Paint::scale(above, theme);
+        let down = Paint::scale(below, theme);
+        // Below the zero the scale runs downwards: a distance `d` is the
+        // height `o - d * o`, and each band ends where the next one begins,
+        // so the stops are read top-down and each takes the colour of the band
+        // under it -- the blend runs from the amber at its lower end up to the
+        // green at the zero's side.
+        let mut stops = vec![Stop {
+            at: 0.0,
+            color: down.color(1.0),
+            shape: Shape::Step,
+        }];
+        let bounds: Vec<f32> = down.0.iter().skip(1).map(|s| s.at).collect();
+        for (i, &d) in bounds.iter().enumerate().rev() {
+            let at = o - d * o;
+            let (color, shape) = match i {
+                // The alignment level's edge: green from here up to the zero.
+                0 => (down.0[0].color, Shape::Step),
+                // The amber's lower edge: the blend, from amber up to green.
+                1 => (down.0[2].color, Shape::Lin),
+                // The hot end's edge: amber held above it.
+                _ => (down.0[2].color, Shape::Step),
+            };
+            stops.push(Stop { at, color, shape });
+        }
+        stops.extend(up.0.iter().map(|s| Stop {
+            at: o + s.at * (1.0 - o),
+            ..*s
+        }));
+        stops.sort_by(|a, b| a.at.total_cmp(&b.at));
+        Paint(stops)
+    }
+
+    /// The colour at `height`.
+    pub fn color(&self, height: f32) -> Color {
+        let Some(first) = self.0.first() else {
+            return [0.0; 4];
+        };
+        let Some(i) = self.0.iter().rposition(|s| height >= s.at) else {
+            return first.color;
+        };
+        let here = self.0[i];
+        match self.0.get(i + 1) {
+            Some(next) if here.shape != Shape::Step => {
+                let t = (height - here.at) / (next.at - here.at).max(1e-6);
+                let w = here.shape.weight(t);
+                std::array::from_fn(|k| here.color[k] + (next.color[k] - here.color[k]) * w)
+            }
+            _ => here.color,
+        }
+    }
+
+    /// The spans a column from `from` to `to` is drawn in: `(low, high,
+    /// shape)` with the colour at each end read off [`color`](Self::color).
+    /// An edge is where a stop is, never where a band happened to end.
+    fn spans(&self, from: f32, to: f32) -> Vec<(f32, f32, Shape)> {
+        let mut out = Vec::new();
+        let first = self.0.first().map_or(1.0, |s| s.at);
+        if first > from {
+            out.push((from, first.min(to), Shape::Step));
+        }
+        for (i, stop) in self.0.iter().enumerate() {
+            let high = self.0.get(i + 1).map_or(1.0, |s| s.at);
+            let (low, high) = (stop.at.max(from), high.min(to));
+            if high > low {
+                let shape = if i + 1 < self.0.len() {
+                    stop.shape
+                } else {
+                    Shape::Step
+                };
+                out.push((low, high, shape));
+            }
+        }
+        out
+    }
+}
+
+/// How many pieces a bent blend is drawn in: each is a straight blend, and a
+/// column is thin, so a handful is a curve.
+const CURVE_PIECES: usize = 8;
 
 /// **What a meter's colours are**, as a widget states them (the `zones` prop).
 ///
@@ -191,10 +290,11 @@ pub enum Zones {
     On,
     /// One colour, the level scale's lowest.
     Off,
-    /// The widget's own: each colour from its value up to the next one's, in
-    /// the axis' units -- decibels on a decibel axis, the value itself on a
-    /// plain one. Below the first value the first colour holds.
-    Stops(Vec<(f32, ZoneColor)>),
+    /// The widget's own stops, in the axis' units -- decibels on a decibel
+    /// axis, the value itself on a plain one: each colour from its value up
+    /// to the next one's, passing to it by its [`Shape`]. Below the first
+    /// value the first colour holds.
+    Stops(Vec<(f32, ZoneColor, Shape)>),
 }
 
 /// A zone's colour: a fixed one, or a theme role, which follows the theme the
@@ -227,9 +327,10 @@ impl ZoneColor {
 
 impl Zones {
     /// The `zones` prop: a boolean (`true`/`false`, or `1`/`0` as the clients
-    /// send a flag), or an array of `[value, colour]` pairs -- as JSON, or as
-    /// the JSON text a `/gui_set` carries. `None` for anything else, including
-    /// a pair whose colour is neither a hex nor a theme role.
+    /// send a flag), or an array of `[value, colour]` or `[value, colour,
+    /// shape]` stops -- as JSON, or as the JSON text a `/gui_set` carries.
+    /// `None` for anything else, including a stop whose colour is neither a
+    /// hex nor a theme role or whose shape is not one.
     pub fn parse(v: &serde_json::Value) -> Option<Self> {
         use serde_json::Value;
         match v {
@@ -245,14 +346,21 @@ impl Zones {
                 "off" | "false" => Some(Zones::Off),
                 json => Self::parse(&serde_json::from_str(json).ok()?),
             },
-            Value::Array(pairs) => {
-                let mut stops = pairs
+            Value::Array(entries) => {
+                let mut stops = entries
                     .iter()
-                    .map(|pair| {
-                        let pair = pair.as_array()?;
-                        let value = pair.first()?.as_f64()? as f32;
-                        let color = ZoneColor::parse(pair.get(1)?.as_str()?)?;
-                        Some((value, color))
+                    .map(|entry| {
+                        let entry = entry.as_array()?;
+                        if entry.len() > 3 {
+                            return None;
+                        }
+                        let value = entry.first()?.as_f64()? as f32;
+                        let color = ZoneColor::parse(entry.get(1)?.as_str()?)?;
+                        let shape = match entry.get(2) {
+                            Some(shape) => Shape::parse(shape)?,
+                            None => Shape::Step,
+                        };
+                        Some((value, color, shape))
                     })
                     .collect::<Option<Vec<_>>>()?;
                 if stops.is_empty() {
@@ -267,20 +375,24 @@ impl Zones {
 
     /// What these zones are on `axis`, drawn in `theme`.
     pub fn paint(&self, axis: MeterAxis, theme: &crate::host::theme::Theme) -> Paint {
-        let solid = || Paint::Zones(vec![(0.0, theme.meter_low)]);
         match (self, axis) {
-            (Zones::Auto, axis) if axis.centred() => solid(),
-            (Zones::Off, _) => solid(),
-            (Zones::On, MeterAxis::Linear { min, max }) if axis.centred() => Paint::Mirrored {
-                origin: axis.origin(),
-                below: Scale::amplitude(0.0, -min),
-                above: Scale::amplitude(0.0, max),
-            },
-            (Zones::Auto | Zones::On, axis) => Paint::Scale(axis.scale()),
-            (Zones::Stops(stops), axis) => Paint::Zones(
+            (Zones::Auto, axis) if axis.centred() => Paint::solid(theme.meter_low),
+            (Zones::Off, _) => Paint::solid(theme.meter_low),
+            (Zones::On, MeterAxis::Linear { min, max }) if axis.centred() => Paint::mirrored(
+                axis.origin(),
+                Scale::amplitude(0.0, -min),
+                Scale::amplitude(0.0, max),
+                theme,
+            ),
+            (Zones::Auto | Zones::On, axis) => Paint::scale(axis.scale(), theme),
+            (Zones::Stops(stops), axis) => Paint(
                 stops
                     .iter()
-                    .map(|(value, color)| (axis.fraction_of(*value), color.resolve(theme)))
+                    .map(|(value, color, shape)| Stop {
+                        at: axis.fraction_of(*value),
+                        color: color.resolve(theme),
+                        shape: *shape,
+                    })
                     .collect(),
             ),
         }
@@ -306,13 +418,19 @@ pub fn draw_column(
     mark: f32,
     scale: Scale,
 ) {
-    draw_column_from(mesh, m, theme, cell, 0.0, fill, mark, &Paint::Scale(scale));
+    let paint = Paint::scale(scale, theme);
+    draw_column_from(mesh, m, theme, cell, 0.0, fill, mark, &paint);
 }
 
 /// [`draw_column`] standing on `origin` rather than on the floor, and coloured
 /// by any [`Paint`]: the column runs from `origin` to `fill`, up or down. A
 /// meter whose range crosses zero stands on the zero, so a value below it
 /// reads as a column below it rather than as a shorter one above the floor.
+///
+/// **A span is one quad.** A held colour is a flat one, a straight blend is
+/// one quad with a colour at each end that the rasterizer interpolates, and a
+/// bent blend is [`CURVE_PIECES`] of those -- so a graded column is a handful
+/// of quads however tall it is, and every edge lands on its stop.
 #[allow(clippy::too_many_arguments)] // draw_column's six, and where it stands
 pub fn draw_column_from(
     mesh: &mut crate::host::paint::Mesh,
@@ -331,35 +449,23 @@ pub fn draw_column_from(
     let origin = origin.clamp(0.0, 1.0);
     let fill = fill.clamp(0.0, 1.0);
     let (from, to) = (origin.min(fill), origin.max(fill));
-    let mut span = |low: f32, high: f32, color: Color| {
-        let h = cell.h * (high - low);
-        mesh.rect(
-            Rect::new(cell.x, cell.y + cell.h * (1.0 - low) - h, cell.w, h),
-            color,
+    let y = |height: f32| cell.y + cell.h * (1.0 - height);
+    let mut blend = |low: f32, high: f32| {
+        mesh.vgradient(
+            Rect::new(cell.x, y(high), cell.w, y(low) - y(high)),
+            paint.color(high - 1e-6),
+            paint.color(low),
         );
     };
     if to > from {
-        match paint {
-            // A graded scale in bands, one per device row at most: a column in
-            // a header is a few dozen pixels tall, so this is a handful of
-            // quads and never finer than the screen can show.
-            Paint::Scale(_) | Paint::Mirrored { .. } => {
-                let bands = (cell.h.ceil() as usize).clamp(1, 48);
-                let step = (to - from) / bands as f32;
-                for band in 0..bands {
-                    let low = from + band as f32 * step;
-                    span(low, low + step, paint.color(theme, low + step * 0.5));
-                }
-            }
-            // Zones have edges, and an edge is drawn where it is rather than
-            // where the nearest band happens to end.
-            Paint::Zones(zones) => {
-                for (i, &(start, color)) in zones.iter().enumerate() {
-                    let low = if i == 0 { 0.0 } else { start };
-                    let high = zones.get(i + 1).map_or(1.0, |z| z.0);
-                    let (low, high) = (low.max(from), high.min(to));
-                    if high > low {
-                        span(low, high, color);
+        for (low, high, shape) in paint.spans(from, to) {
+            match shape {
+                Shape::Step | Shape::Lin => blend(low, high),
+                Shape::Curve(_) => {
+                    let step = (high - low) / CURVE_PIECES as f32;
+                    for piece in 0..CURVE_PIECES {
+                        let at = low + piece as f32 * step;
+                        blend(at, at + step);
                     }
                 }
             }
@@ -809,30 +915,100 @@ mod tests {
 
     /// **The `zones` prop reads a flag or a list.** A boolean and the `1`/`0`
     /// the clients send a flag as; the words; an array of `[value, colour]`
-    /// pairs, sorted by value, as JSON or as the JSON text a `/gui_set`
-    /// carries; and nothing else -- a colour that is neither a hex nor a theme
-    /// role refuses the whole list rather than drawing a zone in a colour
-    /// nobody asked for.
+    /// or `[value, colour, shape]` stops, sorted by value, as JSON or as the
+    /// JSON text a `/gui_set` carries; and nothing else -- a colour that is
+    /// neither a hex nor a theme role, or a shape that is not one, refuses the
+    /// whole list rather than drawing a zone nobody asked for.
     #[test]
     fn zones_read_a_flag_or_a_list() {
         use serde_json::json;
         assert_eq!(Zones::parse(&json!(true)), Some(Zones::On));
         assert_eq!(Zones::parse(&json!(0)), Some(Zones::Off));
         assert_eq!(Zones::parse(&json!("auto")), Some(Zones::Auto));
-        let list = json!([[0.5, "meter_high"], [-1, "#40c060"]]);
+        let list = json!([
+            [0.5, "meter_high"],
+            [-1, "#40c060", "lin"],
+            [0, "meter_mid", -3]
+        ]);
+        let green = crate::host::theme::parse_hex("#40c060").unwrap();
         let want = Some(Zones::Stops(vec![
-            (
-                -1.0,
-                ZoneColor::Rgba(crate::host::theme::parse_hex("#40c060").unwrap()),
-            ),
-            (0.5, ZoneColor::Role("meter_high".into())),
+            (-1.0, ZoneColor::Rgba(green), Shape::Lin),
+            (0.0, ZoneColor::Role("meter_mid".into()), Shape::Curve(-3.0)),
+            (0.5, ZoneColor::Role("meter_high".into()), Shape::Step),
         ]));
         assert_eq!(Zones::parse(&list), want, "sorted by value");
         assert_eq!(Zones::parse(&json!(list.to_string())), want, "and as text");
         assert_eq!(Zones::parse(&json!([[0, "no_such_role"]])), None);
         assert_eq!(Zones::parse(&json!([[0, "#zz0000"]])), None);
+        assert_eq!(Zones::parse(&json!([[0, "meter_low", "smooth"]])), None);
+        assert_eq!(Zones::parse(&json!([[0, "meter_low", "lin", 1]])), None);
         assert_eq!(Zones::parse(&json!([])), None);
         assert_eq!(Zones::parse(&json!({"a": 1})), None);
+    }
+
+    /// **The level scale is stops too, and reads as it always did**: green to
+    /// the alignment level, a straight blend into amber, amber held, red from
+    /// the hot end.
+    #[test]
+    fn the_level_scale_is_stops_and_reads_as_before() {
+        let theme = Theme::default();
+        let scale = Scale::decibels();
+        let paint = Paint::scale(scale, &theme);
+        assert_eq!(paint.color(scale.warn * 0.5), theme.meter_low);
+        let mid = (scale.warn + scale.amber) * 0.5;
+        let blend = paint.color(mid);
+        for ((got, low), mid) in blend.iter().zip(theme.meter_low).zip(theme.meter_mid) {
+            assert!(
+                (got - (low + mid) * 0.5).abs() < 1e-5,
+                "half way is half of each"
+            );
+        }
+        assert_eq!(
+            paint.color((scale.amber + scale.hot) * 0.5),
+            theme.meter_mid
+        );
+        assert_eq!(paint.color(1.0), theme.meter_high);
+        // Drawn in a handful of quads, not a band per row.
+        let m = Metrics::default();
+        let mut mesh = Mesh::new();
+        draw_column(
+            &mut mesh,
+            &m,
+            &theme,
+            Rect::new(0.0, 0.0, 8.0, 400.0),
+            1.0,
+            0.0,
+            scale,
+        );
+        assert!(
+            mesh.vertex_count() <= 6 * 5,
+            "{} vertices",
+            mesh.vertex_count()
+        );
+    }
+
+    /// **A bend is the core's curve.** A negative amount spends most of the
+    /// change early, so half way along the colour is past half way.
+    #[test]
+    fn a_curved_stop_bends_the_blend() {
+        let (a, b) = ([0.0, 0.0, 0.0, 1.0], [1.0, 1.0, 1.0, 1.0]);
+        let bent = |shape| {
+            Paint(vec![
+                Stop {
+                    at: 0.0,
+                    color: a,
+                    shape,
+                },
+                Stop {
+                    at: 1.0,
+                    color: b,
+                    shape: Shape::Step,
+                },
+            ])
+        };
+        assert!((bent(Shape::Lin).color(0.5)[0] - 0.5).abs() < 1e-6);
+        assert!(bent(Shape::Curve(-4.0)).color(0.5)[0] > 0.8);
+        assert!(bent(Shape::Curve(4.0)).color(0.5)[0] < 0.2);
     }
 
     /// **The default follows the axis.** A level is graded; a range across
@@ -847,30 +1023,30 @@ mod tests {
             min: -1.0,
             max: 1.0,
         };
-        let solid = Paint::Zones(vec![(0.0, theme.meter_low)]);
-        assert_eq!(Zones::Auto.paint(db, &theme), Paint::Scale(db.scale()));
+        let solid = Paint::solid(theme.meter_low);
+        assert_eq!(
+            Zones::Auto.paint(db, &theme),
+            Paint::scale(db.scale(), &theme)
+        );
         assert_eq!(
             Zones::Auto.paint(level, &theme),
-            Paint::Scale(level.scale())
+            Paint::scale(level.scale(), &theme)
         );
         assert_eq!(Zones::Auto.paint(signed, &theme), solid);
         assert_eq!(Zones::Off.paint(db, &theme), solid);
         let mirrored = Zones::On.paint(signed, &theme);
-        assert!(matches!(mirrored, Paint::Mirrored { .. }), "{mirrored:?}");
-        for d in [0.05f32, 0.2, 0.35, 0.49] {
-            assert_eq!(
-                mirrored.color(&theme, 0.5 + d),
-                mirrored.color(&theme, 0.5 - d),
-                "the same distance either side of zero is the same colour ({d})"
-            );
+        for d in [0.01f32, 0.05, 0.2, 0.3, 0.35, 0.45, 0.49] {
+            let (up, down) = (mirrored.color(0.5 + d), mirrored.color(0.5 - d));
+            for (u, w) in up.iter().zip(down) {
+                assert!(
+                    (u - w).abs() < 1e-4,
+                    "the same distance either side of zero is the same colour ({d}): {up:?} {down:?}"
+                );
+            }
         }
-        assert_eq!(
-            mirrored.color(&theme, 0.5),
-            theme.meter_low,
-            "green at zero"
-        );
-        assert_eq!(mirrored.color(&theme, 0.0), theme.meter_high, "red at -1");
-        assert_eq!(mirrored.color(&theme, 1.0), theme.meter_high, "and at +1");
+        assert_eq!(mirrored.color(0.5), theme.meter_low, "green at zero");
+        assert_eq!(mirrored.color(0.0), theme.meter_high, "red at -1");
+        assert_eq!(mirrored.color(1.0), theme.meter_high, "and at +1");
     }
 
     /// **A zone is written in the axis' units** and drawn with its edges where
@@ -882,32 +1058,29 @@ mod tests {
         let red = crate::host::theme::parse_hex("#d04040").unwrap();
         let green = crate::host::theme::parse_hex("#40c060").unwrap();
         let by_sign = Zones::Stops(vec![
-            (-1.0, ZoneColor::Rgba(red)),
-            (0.0, ZoneColor::Rgba(green)),
+            (-1.0, ZoneColor::Rgba(red), Shape::Step),
+            (0.0, ZoneColor::Rgba(green), Shape::Step),
         ]);
         let signed = MeterAxis::Linear {
             min: -1.0,
             max: 1.0,
         };
         let paint = by_sign.paint(signed, &theme);
-        assert_eq!(paint, Paint::Zones(vec![(0.0, red), (0.5, green)]));
-        assert_eq!(paint.color(&theme, 0.25), red);
-        assert_eq!(paint.color(&theme, 0.75), green);
+        assert_eq!(paint.color(0.25), red);
+        assert_eq!(paint.color(0.75), green);
         let db = MeterAxis::Decibels { floor_db: -60.0 };
         let hot = Zones::Stops(vec![
-            (-60.0, ZoneColor::Role("meter_low".into())),
-            (-6.0, ZoneColor::Role("meter_high".into())),
+            (-60.0, ZoneColor::Role("meter_low".into()), Shape::Step),
+            (-6.0, ZoneColor::Role("meter_high".into()), Shape::Step),
         ]);
-        let Paint::Zones(zones) = hot.paint(db, &theme) else {
-            panic!("stops are zones");
-        };
+        let stops = hot.paint(db, &theme).0;
         assert!(
-            (zones[1].0 - 0.9).abs() < 1e-5,
+            (stops[1].at - 0.9).abs() < 1e-5,
             "-6 dB of 60 is nine tenths"
         );
-        assert_eq!(zones[1].1, theme.meter_high, "a role follows the theme");
+        assert_eq!(stops[1].color, theme.meter_high, "a role follows the theme");
 
-        // Drawn: a column from the zero down to -0.5 is one red span, with its
+        // Drawn: a column from the zero down to -0.5 is one red quad, with its
         // edge at the zero and not at the nearest band.
         let m = Metrics::default();
         let cell = Rect::new(0.0, 0.0, 8.0, 100.0);
@@ -926,7 +1099,12 @@ mod tests {
         assert_eq!(
             mesh.vertex_count() - well,
             well,
-            "one span, as many vertices as the well's one rect"
+            "one quad, as many vertices as the well"
+        );
+        assert!(
+            mesh.colors_by_y()
+                .skip(well as usize)
+                .all(|(_, c)| c == red)
         );
     }
 
@@ -1185,7 +1363,7 @@ mod tests {
             0.5,
             0.5,
             0.0,
-            &Paint::Scale(Scale::decibels()),
+            &Paint::scale(Scale::decibels(), &theme),
         );
         assert_eq!(
             mesh.vertex_count(),
@@ -1201,7 +1379,7 @@ mod tests {
             0.5,
             0.25,
             0.0,
-            &Paint::Scale(Scale::decibels()),
+            &Paint::scale(Scale::decibels(), &theme),
         );
         let (lo, hi) = mesh
             .positions()

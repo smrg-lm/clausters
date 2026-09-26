@@ -1679,7 +1679,7 @@ def meter(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
           peak: str | None = None,
           min: float | None = None,
           max: float | None = None,
-          zones: "bool | list[tuple[float, str]] | None" = None,
+          zones: "bool | list[tuple[float, str] | tuple[float, str, str | float]] | None" = None,
           label: str | None = None, color: str | None = None,
           id: int | None = None, **props) -> View:
     """A level ``meter`` on ``bus``, read from the audio server's shared-memory
@@ -1745,13 +1745,17 @@ def meter(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
     headroom, amber is using it, red is about to run out -- and a range across
     zero is one colour. ``zones=True`` grades any meter, a range across zero by
     distance from the zero, the same on both sides; ``zones=False`` is one
-    colour. A list of ``(value, colour)`` pairs sets the zones yourself: each
-    colour holds from its value up to the next one's, in the axis' own units
-    (decibels on a decibel meter, the value itself on a plain one), and the
-    first also covers everything below it. A colour is ``"#rrggbb"`` or the
-    name of a theme role (``"meter_low"``, ``"meter_mid"``, ``"meter_high"``),
-    which follows the theme. ``[(-1, "#d04040"), (0, "#40c060")]`` colours a
-    signed value by its sign.
+    colour. A list of ``(value, colour)`` or ``(value, colour, shape)`` stops
+    sets the zones yourself, in the axis' own units (decibels on a decibel
+    meter, the value itself on a plain one): each colour starts at its value
+    and the first also covers everything below it. ``shape`` is how the colour
+    passes to the next stop's: ``"step"`` (the default) holds it to an edge,
+    ``"lin"`` blends straight across, and a number bends the blend the way a
+    knob's ``curve`` bends its travel. A colour is ``"#rrggbb"`` or the name of
+    a theme role (``"meter_low"``, ``"meter_mid"``, ``"meter_high"``), which
+    follows the theme. ``[(-1, "#d04040"), (0, "#40c060")]`` colours a signed
+    value by its sign, and ``[(-60, "meter_low"), (-18, "meter_low", "lin"),
+    (-12, "meter_mid"), (-6, "meter_high")]`` is the level scale itself.
 
     The meter is **thin**: it asks for one narrow column per channel and its
     ladder's strip, and stays elastic on the height, since a level is read by
@@ -1765,7 +1769,7 @@ def meter(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
     if isinstance(zones, bool):
         extra["zones"] = 1 if zones else 0
     elif zones is not None:
-        extra["zones"] = [[float(value), color] for value, color in zones]
+        extra["zones"] = [[float(stop[0]), *stop[1:]] for stop in zones]
     extra.update(_strips(ruler=ruler))
     return node("meter", bus=bus, rate=rate, **extra, **props, id=id)
 

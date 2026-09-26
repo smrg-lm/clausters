@@ -231,14 +231,16 @@ def test_the_id_is_never_positional():
     assert guidef.panel(guidef.button())["children"][0]["type"] == "button"
 
 
-def test_a_meters_zones_are_a_flag_or_a_list_of_pairs():
-    """`zones` rides as the flag every boolean prop rides as, or as the pairs
-    the host reads, each value a float so both clients write the same JSON."""
+def test_a_meters_zones_are_a_flag_or_a_list_of_stops():
+    """`zones` rides as the flag every boolean prop rides as, or as the stops
+    the host reads -- a value, a colour and an optional shape -- each value a
+    float so both clients write the same JSON."""
     from clausters.gui import guidef
     assert guidef.meter(0, zones=True)["zones"] == 1
     assert guidef.meter(0, zones=False)["zones"] == 0
-    assert guidef.meter(0, zones=[(-1, "#d04040"), (0, "meter_low")])["zones"] == [
-        [-1.0, "#d04040"], [0.0, "meter_low"]]
+    assert guidef.meter(0, zones=[(-1, "#d04040"), (0, "meter_low", "lin"),
+                                  (0.5, "meter_mid", -3.0)])["zones"] == [
+        [-1.0, "#d04040"], [0.0, "meter_low", "lin"], [0.5, "meter_mid", -3.0]]
     assert "zones" not in guidef.meter(0)
 
 
