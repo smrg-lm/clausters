@@ -4520,6 +4520,13 @@ work, where a pending item reads as done.)*
   (`clients/gui/PLAN.md`, Future directions), where the user's full
   specification is written down.
 
+  **The audio half is verified, 2026-09-27, by the user, by ear** in
+  `editors/edit_multitrack`: a clip dragged so the playing line lands inside it
+  sounds at once from the frame the line is at, one dropped just ahead sounds
+  when the line reaches it, and one dragged away from the line goes quiet --
+  the server's transport doing it, as `O24` designed. What keeps this entry
+  open is the events half, whose by-ear pass waits on `X3` (see `C54`).
+
 - ✅ **Half the editors a hand can use have no history, because they edit
   through the raw event** *(found 2026-09-07 by the user, by eye, in
   `editors/pianoroll` and then `editors/bpf`: "ctrl+z / ctrl+shift+z no hace
