@@ -163,12 +163,6 @@ a person saw it work.
   count as proof. **Related:** it is filed here rather than in section 4 because
   the milestone's *code* is done; what is left is somebody watching it fail.
 
-- ⬜ **The npm half of a release has never run before the tag that publishes
-  it** *(root `PLAN.md`, Found by use)*. The split is in the tree: `build-web`
-  builds and packs the web package with no event guard. What is left is a dry
-  run on a pushed `main`, watched through `build-web` — the first time the
-  wasm-vendor composite runs on Actions.
-
 
 ## 4. Milestones left hanging
 

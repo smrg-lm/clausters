@@ -3384,7 +3384,7 @@ finished work, where a pending item reads as done.
   already reads the settled epoch, and the routine's first note now lands
   **500.0 ms** before the second (was about 420).
 
-- ⬜ **The npm half of a release has never run before the tag that publishes
+- ✅ **The npm half of a release has never run before the tag that publishes
   it** *(found 2026-09-21, reviewing the tree)*. The
   dry run (`gh workflow run release.yml`) proves `verify` and the wheel's
   `build`, and skips every job guarded by `github.event_name == 'push'` — and
@@ -3414,6 +3414,18 @@ finished work, where a pending item reads as done.
   joined it. What is left is the proof: a `gh workflow run release.yml` on a
   pushed `main`, watched through `build-web`, with the wasm-vendor composite
   building on a cold cache for the first time.
+
+  **Proved 2026-09-26, and the first dry run found what this entry feared.**
+  The wasm-vendor composite failed on its first cold run:
+  `build-faust-wasm.sh` configured cmake without the backend and target lists
+  upstream's `make wasmlib` passes on a fresh tree, so `WASM_BACKEND` was
+  empty and the bindings stopped at `wasm_dynamic_dsp_aux.hh` not found. The
+  maintainer's clone had passed for weeks because its `CMakeCache.txt` still
+  held the lists from a configure through Faust's Makefile. The recipe now
+  passes `build/backends/regular.cmake` and `build/targets/regular.cmake`; a
+  fresh clone of the pin builds locally and the web suite passes with its
+  artifact, and the next dry run went green through `build-web` (verovio built
+  cold too, `check-package` "publishable", an 11.1 MB tarball of 674 files).
 
 - ✅ **Milestone labels and a retired verb are still in published code and
   docs** *(found 2026-09-21, the same review)*. Labels, which mean nothing to a
