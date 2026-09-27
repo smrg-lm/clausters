@@ -135,7 +135,15 @@ echo "== configuring (pin $FAUST_SHA)"
 build="$src/build"
 faustdir="$build/faustdir"
 mkdir -p "$faustdir"
-cmake -S "$build" -B "$faustdir" \
+# The backend and target lists are the ones upstream's own `make wasmlib`
+# configures a fresh tree with (build/Makefile, target `cmake`). Without them
+# WASM_BACKEND is empty, the wasm generator's directory never reaches the
+# include path, and the bindings stop at `wasm_dynamic_dsp_aux.hh` not found --
+# but only on a clean clone: a tree once configured through the Makefile keeps
+# the lists in its CMakeCache, which is how this passed on a laptop for weeks
+# and failed on its first run in CI.
+cmake -C "$build/backends/regular.cmake" -C "$build/targets/regular.cmake" \
+    -S "$build" -B "$faustdir" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_LINK_DEPENDS_USE_LINKER=OFF >/dev/null
 
