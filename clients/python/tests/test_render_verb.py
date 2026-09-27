@@ -87,14 +87,33 @@ def test_render_bounces_a_channel_list_on_its_own_channels():
 
 def test_render_bounces_an_event_pattern():
     _embed_or_skip()
-    # Three notes, dur 0.5 at tempo 1 (beats == seconds): the last release
-    # lands at 1.0 + 0.5 * 0.8 = 1.4 s.
+    # Three notes, dur 0.5 at tempo 1 (beats == seconds): the last gate closes
+    # at 1.0 + 0.5 * 0.8 = 1.4 s, and the default tail runs one second past it.
     _st1 = render(
         Pbind(instrument="default", degree=Pseq([0, 2, 4]), dur=0.5),
         sample_rate=SR)
     samples, frames = _st1.samples, _st1.frames
-    assert abs(frames - 1.4 * SR) <= 4096
+    assert abs(frames - 2.4 * SR) <= 4096
     assert len(samples) == frames * 2
+
+
+def test_a_bounce_renders_the_last_notes_release():
+    _embed_or_skip()
+    pattern = Pbind(instrument="default", degree=Pseq([0, 4, 7]), dur=0.25)
+    cut = render(pattern, tail=0, sample_rate=SR)
+    # With no tail the take stops on the gate closing on the last note, mid
+    # release: the last sample is a step, not silence.
+    assert abs(cut.frames - 0.7 * SR) <= 1
+    assert abs(cut.samples[-2]) > 0.01
+    whole = render(pattern, sample_rate=SR)
+    # The default tail is a second past that gate, and the release is over.
+    assert abs(whole.frames - 1.7 * SR) <= 1
+    assert max(abs(v) for v in whole.samples[-int(0.05 * SR) * 2:]) == 0.0
+
+
+def test_a_tail_is_a_duration():
+    with pytest.raises(ValueError, match="negative"):
+        render(Pbind(instrument="default", degree=Pseq([0]), dur=0.25), tail=-1)
 
 
 def test_render_needs_until_for_an_endless_pattern():
@@ -103,9 +122,9 @@ def test_render_needs_until_for_an_endless_pattern():
         Pbind(instrument="default", freq=Pwhite(200.0, 800.0), dur=0.25),
         until=2.0, sample_rate=SR)
     samples, frames = _st2.samples, _st2.frames
-    # Drained at beat 2.0: the last event starts by then, nothing beyond its
-    # release survives.
-    assert 2.0 * SR <= frames <= 2.5 * SR
+    # Drained at beat 2.0: the last event starts by then, and the take ends a
+    # tail after the gate that closes it.
+    assert 3.0 * SR <= frames <= 3.5 * SR
 
 
 def test_render_plays_on_the_clock_it_is_given():
@@ -118,8 +137,9 @@ def test_render_plays_on_the_clock_it_is_given():
     session.clock.set_tempo(2.0)                 # two beats a second
     stats = render(Pbind(instrument="default", degree=Pseq([0, 2, 4]), dur=1.0),
                    clock=session.clock, sample_rate=SR)
-    # The last note starts at beat 2 (second 1.0) and releases 0.8 beats later.
-    assert abs(stats.frames - 1.4 * SR) <= 4096
+    # The last note starts at beat 2 (second 1.0) and its gate closes 0.8 beats
+    # later; the tail is seconds, whatever the tempo.
+    assert abs(stats.frames - 2.4 * SR) <= 4096
 
 
 def test_render_refuses_a_clock_not_on_logical_time():
@@ -163,7 +183,7 @@ def test_render_bounces_a_timeline():
     tl.add(1.0, Event(degree=4, dur=0.5))
     _st3 = render(tl, sample_rate=SR)
     samples, frames = _st3.samples, _st3.frames
-    assert abs(frames - 1.4 * SR) <= 4096
+    assert abs(frames - 2.4 * SR) <= 4096
 
 
 def test_render_bounces_an_arrangement_element():
@@ -185,7 +205,7 @@ def test_render_bounces_a_generator():
 
     _st5 = render(gen, sample_rate=SR)
     samples, frames = _st5.samples, _st5.frames
-    assert abs(frames - 0.9 * SR) <= 4096   # second note at 0.5 + release 0.4
+    assert abs(frames - 1.9 * SR) <= 4096   # second gate at 0.5 + 0.4, and the tail
 
 
 def test_render_rejects_a_live_destination_for_a_pattern():

@@ -133,6 +133,12 @@ being already generated, *is* playable. The full story is in
   pattern would never drain; pass `until=beats` to bounce a fixed length. With
   none, an event pattern is refused after a million events rather than rendered
   forever, and a value pattern is bounded the same way by `count`.
+- **A bounce ends a `tail` after its last event.** The last event of a bounced
+  pattern is the gate closing on its final note, so a take that stopped there
+  would cut the release and end on a click. `render` goes on `tail` seconds
+  past it — one by default — and `tail=0` ends on the event. How long is yours
+  to say, since only you know what the last event set going; a def's length is
+  its `dur`, and a binary score still ends on its own last bundle.
 - **`play(def)` blocks until the server confirms** (the `/done` of the def
   send). Fine interactively; inside a routine, send the def asynchronously
   first (`d.send(server, wait=False)`) and instance it with

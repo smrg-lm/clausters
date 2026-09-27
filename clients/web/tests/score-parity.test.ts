@@ -196,11 +196,32 @@ test("a pattern bounces offline, and `until` is what bounds an endless one", asy
         { channels: 1, until: 2.0 },
     );
     assert.ok(endless.frames > 0);
-    // Two beats of quarter notes, plus the last note's own sustain -- bounded
-    // by the drain, not by the pattern, which has no end.
+    // Two beats of quarter notes, plus the last note's own sustain and the
+    // tail -- bounded by the drain, not by the pattern, which has no end.
     assert.ok(
         endless.duration > 2.0 && endless.duration < 3.5,
         `the bound did not hold: ${endless.duration}s`,
+    );
+});
+
+test("a bounce renders the last note's release", async () => {
+    const pattern = () => new Pbind({ instrument: "default", degree: new Pseq([0, 4, 7]), dur: 0.25 });
+    const cut = await render(pattern(), { tail: 0 });
+    // With no tail the take stops on the gate closing on the last note, mid
+    // release: the last sample is a step, not silence.
+    assert.ok(Math.abs(cut.frames - 0.7 * 48_000) <= 1, `${cut.frames} frames`);
+    assert.ok(Math.abs(cut.samples.at(-2)!) > 0.01, "the cut take ends on a step");
+    const whole = await render(pattern());
+    // The default tail is a second past that gate, and the release is over.
+    assert.ok(Math.abs(whole.frames - 1.7 * 48_000) <= 1, `${whole.frames} frames`);
+    const end = whole.samples.slice(-Math.round(0.05 * 48_000) * 2);
+    assert.equal(Math.max(...Array.from(end, Math.abs)), 0);
+});
+
+test("a tail is a duration", async () => {
+    await assert.rejects(
+        render(new Pbind({ instrument: "default", degree: new Pseq([0]), dur: 0.25 }), { tail: -1 }),
+        /negative/,
     );
 });
 
@@ -240,8 +261,9 @@ test("a render plays on the clock it is given", async () => {
         new Pbind({ instrument: "default", degree: new Pseq([0, 2, 4]), dur: 1.0 }),
         { clock: session.clock },
     );
-    // The last note starts at beat 2 (second 1.0) and releases 0.8 beats later.
-    assert.ok(Math.abs(stats.frames - 1.4 * 48_000) <= 4096, `${stats.frames} frames`);
+    // The last note starts at beat 2 (second 1.0) and its gate closes 0.8 beats
+    // later; the tail is seconds, whatever the tempo.
+    assert.ok(Math.abs(stats.frames - 2.4 * 48_000) <= 4096, `${stats.frames} frames`);
 });
 
 test("a render refuses a clock not on logical time", async () => {

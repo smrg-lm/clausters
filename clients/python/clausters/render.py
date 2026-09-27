@@ -191,7 +191,7 @@ def _measure(samples, chans: int):
 def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
            ports=None, dur: float = 1.0, controls=None, defs=(),
            until: float | None = None, count: int | None = None,
-           sample_rate: float = 48_000.0, channels: int = 2,
+           tail: float = 1.0, sample_rate: float = 48_000.0, channels: int = 2,
            workers: int = 0, path=None, seed: int | None = None):
     """Render ``obj`` -- offline to a `RenderStats`, or onto a live
     ``destination`` when it has one to sound on.
@@ -227,6 +227,15 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
             `MAX_BOUNCED_EVENTS` events).
         count: how many values a value pattern generates -- required for an
             endless one, which otherwise raises after `MAX_BOUNCED_EVENTS`.
+        tail: seconds the offline bounce goes on **after its last event**, so
+            what that event set going is heard to its end -- the last note's
+            release, an echo. A bounce otherwise stops on the last event, which
+            for a pattern is the gate closing on its final note: the release
+            is never rendered and the take ends on a step. The server cannot
+            know how long a tail should be, so it is yours to say; ``0`` ends
+            on the last event. A def or expression is not affected (``dur``
+            is its length), nor is a binary score, which says its own length
+            with its last bundle.
         sample_rate: offline render rate, in Hz.
         channels: interleaved output channel count of the offline render --
             the outputs the offline server has, not a property of what is
@@ -270,14 +279,14 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
             return render_element(obj, destination, clock, at=at, quant=quant,
                                   ports=ports)
         return _bounce(lambda session, on: _start_element(obj, session, on, at),
-                       clock, until, sample_rate, channels, path, seed, defs)
+                       clock, until, tail, sample_rate, channels, path, seed, defs)
 
     if isinstance(obj, Timeline):
         if destination is not None:
             return obj.play(at=at, quant=quant, destination=destination)
         return _bounce(
             lambda session, on: obj.play(at=at, destination=session.server),
-            clock, until, sample_rate, channels, path, seed, defs)
+            clock, until, tail, sample_rate, channels, path, seed, defs)
 
     if isinstance(obj, Pattern) and not isinstance(obj, EventPattern):
         if destination is not None:
@@ -311,10 +320,10 @@ def render(obj, *, destination=None, clock=None, at: float = 0.0, quant=None,
     if isinstance(playable, EventPattern):
         return _bounce(
             lambda session, on: playable.play(on, session.server),
-            clock, until, sample_rate, channels, path, seed, defs,
+            clock, until, tail, sample_rate, channels, path, seed, defs,
             guard="event pattern")
     return _bounce(lambda session, on: playable.play(on),
-                   clock, until, sample_rate, channels, path, seed, defs)
+                   clock, until, tail, sample_rate, channels, path, seed, defs)
 
 
 def _values(pattern, count):
@@ -390,8 +399,8 @@ def bounce_def(obj, dur, controls, defs, sample_rate, channels, seed=None,
 
 # ---- the offline bounce ----
 
-def _bounce(start, clock, until, sample_rate, channels, path, seed, defs=(),
-            guard=None):
+def _bounce(start, clock, until, tail, sample_rate, channels, path, seed,
+            defs=(), guard=None):
     """An offline session: ``start(session, clock)`` schedules the source on
     the clock it plays on and the session's server, and the drained score
     renders to samples.
@@ -403,6 +412,10 @@ def _bounce(start, clock, until, sample_rate, channels, path, seed, defs=(),
 
     ``guard`` names what an unbounded render is refused for after
     `MAX_BOUNCED_EVENTS` events.
+
+    The score ends on an **empty closing bundle** ``tail`` seconds after its
+    last one -- the renderer ends a score on its last bundle, and a bundle with
+    nothing in it is how a length is said without doing anything.
     """
     from .base.timebase import LogicalTimebase
     from .session import Session
@@ -434,6 +447,11 @@ def _bounce(start, clock, until, sample_rate, channels, path, seed, defs=(),
                 f"render: the {guard} did not end after {MAX_BOUNCED_EVENTS} "
                 f"events -- pass until= to bound it"
             ) from exc
+    if tail < 0:
+        raise ValueError(f"tail is a duration, and {tail} is negative")
+    end = session.server.interface.score.end
+    if end is not None and tail > 0:
+        session.server.interface.send_bundle(session.server.target, end + float(tail))
     return session.server.render(sample_rate=sample_rate, channels=channels,
                                  path=path, seed=seed)
 

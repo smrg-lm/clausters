@@ -68,6 +68,7 @@ import { Group, Synth } from "./defs/node.ts";
 import type { Controls } from "./defs/node.ts";
 import { SynthDef } from "./defs/synthdef.ts";
 import type { TempoClock } from "./base/clock.ts";
+import type { ScoreConnection } from "./base/connection.ts";
 import { LogicalTimebase } from "./base/timebase.ts";
 import { EventPattern, Pattern } from "./seq/pattern.ts";
 import type { Event } from "./seq/event.ts";
@@ -196,6 +197,17 @@ export interface RenderVerbOptions extends RenderOptions {
      * one, which otherwise throws after `MAX_BOUNCED_EVENTS`.
      */
     count?: number;
+    /**
+     * Seconds the offline bounce goes on **after its last event**, so what that
+     * event set going is heard to its end -- the last note's release, an echo.
+     * A bounce otherwise stops on the last event, which for a pattern is the
+     * gate closing on its final note: the release is never rendered and the
+     * take ends on a step. The server cannot know how long a tail should be,
+     * so it is yours to say; `0` ends on the last event. Default `1.0`. A def
+     * or expression is not affected (`dur` is its length), nor is a binary
+     * score, which says its own length with its last bundle.
+     */
+    tail?: number;
 }
 
 /** Anything `render` knows how to turn into samples. */
@@ -226,7 +238,7 @@ export async function render(
     options: RenderVerbOptions = {},
 ): Promise<RenderStats | unknown[]> {
     const {
-        dur = 1.0, controls, defs = [], until, count, clock, ...cfg
+        dur = 1.0, controls, defs = [], until, count, tail = 1.0, clock, ...cfg
     } = options;
 
     if (obj instanceof Uint8Array) return renderScore(obj, cfg);
@@ -243,14 +255,14 @@ export async function render(
         return bounce(
             (session) =>
                 obj.play({ destination: session.server as unknown as PlayDestination }),
-            { clock, until, defs, ...cfg },
+            { clock, until, tail, defs, ...cfg },
         );
     }
 
     if (obj instanceof EventPattern) {
         return bounce(
             (session, on) => obj.play(session.server, { clock: on }),
-            { clock, until, defs, guard: "event pattern", ...cfg },
+            { clock, until, tail, defs, guard: "event pattern", ...cfg },
         );
     }
 
@@ -265,7 +277,7 @@ export async function render(
         );
     }
     return bounce((_session, on) => playable.play(on), {
-        clock, until, defs, ...cfg,
+        clock, until, tail, defs, ...cfg,
     });
 }
 
@@ -336,12 +348,17 @@ export async function bounceDef(
  *
  * `guard` names what an unbounded render is refused for after
  * `MAX_BOUNCED_EVENTS` events.
+ *
+ * The score ends on an **empty closing bundle** `tail` seconds after its last
+ * one -- the renderer ends a score on its last bundle, and a bundle with
+ * nothing in it is how a length is said without doing anything.
  */
 async function bounce(
     start: (session: import("./session.ts").Session, clock: TempoClock) => unknown,
-    { clock, until, defs = [], guard, ...cfg }: RenderOptions & {
+    { clock, until, tail = 1.0, defs = [], guard, ...cfg }: RenderOptions & {
         clock?: TempoClock;
         until?: number;
+        tail?: number;
         defs?: readonly (SynthDef | FaustDef | GraphDef)[];
         guard?: string;
     },
@@ -378,6 +395,10 @@ async function bounce(
             );
         }
     });
+    if (tail < 0) throw new RangeError(`tail is a duration, and ${tail} is negative`);
+    const connection = session.server.connection as ScoreConnection;
+    const end = connection.score.end;
+    if (end !== null && tail > 0) connection.addBundle(end + tail, []);
     return session.server.render(cfg);
 }
 

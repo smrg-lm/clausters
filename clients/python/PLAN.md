@@ -3573,7 +3573,7 @@ work, where a pending item reads as done.)*
   definition too, so a re-open shows the score as edited rather than as
   engraved.
 
-- ⬜ **`render()` cuts every take's release, in both clients** *(found
+- ✅ **`render()` cuts every take's release, in both clients** *(found
   2026-08-28, measuring the first and last sample of every WAV the examples
   write, after a listener asked whether the test synths click)*. The free
   verb, on a pattern:
@@ -3604,6 +3604,14 @@ work, where a pending item reads as done.)*
   `clients/web/examples/buffers/offline-render.html` is where it still shows:
   the page renders through the free verb where its script renders through
   `session.render()`, so its downloadable take still ends on the step.
+
+  **Fixed 2026-09-27, by the first of the three**, decided by the user: the
+  server cannot know what the caller means the take to hold, so the length is
+  the caller's to say. `render(..., tail=1.0)` in both clients closes a
+  bounce's score with an empty bundle `tail` seconds after its last one; `0`
+  ends on the event. A def keeps `dur` and a binary score keeps the scsynth
+  rule. (The page named above had already moved to `session.render()`, which
+  renders the score as written, and keeps its own closing bundle.)
 
 - ✅ **`OscEvent` and `MidiEvent` are not events, and the name promises a
   conversion that does not exist** *(found 2026-08-29 by the user, reading the

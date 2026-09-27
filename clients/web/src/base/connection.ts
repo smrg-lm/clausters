@@ -311,6 +311,14 @@ export class Score {
         return this.bundles.length;
     }
 
+    /**
+     * The time of the latest bundle, in seconds -- where a render of this score
+     * ends -- or `null` for an empty score.
+     */
+    get end(): number | null {
+        return this.bundles.length === 0 ? null : Math.max(...this.bundles.map((b) => b.at));
+    }
+
     /** Adds one already-encoded bundle, stamped at `at` seconds. */
     add(at: number, packet: Uint8Array): void {
         this.bundles.push({ at, packet });

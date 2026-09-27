@@ -464,6 +464,12 @@ class OscScore:
     def add(self, time_seconds, packet_bytes):
         self.bundles.append((time_seconds, packet_bytes))
 
+    @property
+    def end(self) -> "float | None":
+        """The time of the latest bundle, in seconds -- where a render of this
+        score ends -- or ``None`` for an empty score."""
+        return max((t for t, _ in self.bundles), default=None)
+
     def bytes(self) -> bytes:
         ordered = sorted(self.bundles, key=lambda b: b[0])
         return _osclib.score(*[pkt for _, pkt in ordered])
