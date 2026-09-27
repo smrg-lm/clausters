@@ -1195,9 +1195,13 @@ fn parse_notes(props: &serde_json::Map<String, Value>) -> Vec<Note> {
                 c[1].as_f64()?.max(0.0),
                 c[2].as_f64()? as f32,
             );
+            // A velocity or a channel is a number wherever it came from: a
+            // sender that holds its list as floats (the document's catalogue
+            // does) writes `90.0`, which read as an integer only and fell to
+            // the default, so every note drew and reported velocity 100.
             if stride == 5 {
-                n.velocity = c[3].as_i64().unwrap_or(100) as i32;
-                n.channel = c[4].as_i64().unwrap_or(0) as i32;
+                n.velocity = c[3].as_f64().map_or(100, |v| v.round() as i32);
+                n.channel = c[4].as_f64().map_or(0, |v| v.round() as i32);
             }
             Some(n)
         })
@@ -1310,6 +1314,13 @@ mod tests {
         assert_eq!(r.notes.len(), 1);
         assert_eq!((r.notes[0].velocity, r.notes[0].channel), (90, 2));
         assert_eq!(r.osc.len(), 1);
+        // The same note written as floats, as the catalogue serializes it.
+        let floats = roll(r#"{"notes":[0.0,100.0,60.0,90.0,2.0]}"#);
+        assert_eq!(
+            (floats.notes[0].velocity, floats.notes[0].channel),
+            (90, 2),
+            "a float velocity is the same velocity"
+        );
         assert!(r.osc_lane, "markers open their lane");
         assert!(r.midi_in);
         assert_eq!(r.snap, 25.0);

@@ -363,9 +363,10 @@ opened it.
   provisional…"); and an application inside
   another (`crates/clausters-document/PLAN.md`, Future directions), which is what
   would let a notes editor stand inside a multitrack or a script's window.
-  And a defect of today's write-back that this milestone inherits rather than
-  patches: an edit in the roll rewrites every note's amplitude ("A roll's edit
-  sends every note at its velocity's amplitude", Found by use).
+  And a defect of today's write-back, fixed in the host because the host's
+  reading survives this milestone: an edit in the roll rewrote every note's
+  amplitude ("A roll's edit sends every note at its velocity's amplitude",
+  Found by use).
 
 - ⬜ **X4 - The points editor: whether it is one.** *(Undecided; the user,
   2026-09-14, is in doubt: it may be good for it to have undo, and perhaps chrome
@@ -886,7 +887,7 @@ wrong.
   the route. The score editor would be a third copy: one
   `conversation::turn(event, version, window, owns, route, resync)`.
 
-- ⬜ **A roll's edit sends every note at its velocity's amplitude** *(found
+- ✅ **A roll's edit sends every note at its velocity's amplitude** *(found
   2026-09-27 by the user, by ear, in `editors/edit_notes` with its timeline
   looping: after one drag the whole melody came back much louder and the high
   note saturated the speakers)*. The server's own log (`RUST_LOG=clausters::osc=trace`)
@@ -910,4 +911,15 @@ wrong.
   (`clients/python/PLAN.md`), since any edit in that window changes the level of
   what the pass plays. The pass itself was checked without the roll -- edits
   from another thread, and the server's output recorded.
+
+  **Fixed 2026-09-27, in the host.** The document's catalogue holds a roll's
+  quintuples as `Vec<f64>` and serializes the velocity as `12.0`; the host read
+  it with `as_i64()`, which refuses a float, and fell to its default of 100 --
+  on every note, and the channel to 0 the same way. So the roll drew every note
+  at 100 and the first drag reported 100 for all of them, and the crate's
+  intake, seeing each velocity differ from the one it projected (0.1 * 127 ->
+  12), wrote `velocity 100` and its amplitude onto every note. The host now
+  reads both as numbers and rounds them; the intake was right, and compares the
+  integer it projected with the integer that comes back, so an untouched note
+  keeps the amplitude its author wrote.
 
