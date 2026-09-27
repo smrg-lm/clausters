@@ -363,6 +363,9 @@ opened it.
   provisional…"); and an application inside
   another (`crates/clausters-document/PLAN.md`, Future directions), which is what
   would let a notes editor stand inside a multitrack or a script's window.
+  And a defect of today's write-back that this milestone inherits rather than
+  patches: an edit in the roll rewrites every note's amplitude ("A roll's edit
+  sends every note at its velocity's amplitude", Found by use).
 
 - ⬜ **X4 - The points editor: whether it is one.** *(Undecided; the user,
   2026-09-14, is in doubt: it may be good for it to have undo, and perhaps chrome
@@ -882,3 +885,29 @@ wrong.
   `conversation::answer`, differing only in who owns a widget, the resync and
   the route. The score editor would be a third copy: one
   `conversation::turn(event, version, window, owns, route, resync)`.
+
+- ⬜ **A roll's edit sends every note at its velocity's amplitude** *(found
+  2026-09-27 by the user, by ear, in `editors/edit_notes` with its timeline
+  looping: after one drag the whole melody came back much louder and the high
+  note saturated the speakers)*. The server's own log (`RUST_LOG=clausters::osc=trace`)
+  settles what reached it: before the edit every note arrived with the
+  author's `amp` (0.1, and 0.4 on the last one); after it, **every** note --
+  not only the one that was moved -- arrived as `amp 0.78740156`, `velocity 100`,
+  which is 100/127, about +18 dB. Nothing was duplicated: one `/synth_new` and
+  one `gate 0` per note, from one pass.
+
+  So the write-back rebuilt every note from what the roll can say (start,
+  length, pitch, velocity, channel) and the amplitude the author wrote was
+  replaced by the roll's velocity. Where exactly is not pinned down: an offline
+  replay of `NotesDomain.project` with a hand-built `notes` payload, before and
+  after the timeline had played, kept every `amp`, so the difference is in what
+  the live host reports, in the crate's `events` reading of it, or in how an
+  `Event` turns a `velocity` into an `amp` -- one of the three seams this
+  milestone exists to settle. It is left for `X3` on purpose: patching today's
+  `NotesDomain`/`NotesEditor` would be work on the part it replaces.
+
+  **What it blocks:** `C54`'s by-ear acceptance over `editors/edit_notes`
+  (`clients/python/PLAN.md`), since any edit in that window changes the level of
+  what the pass plays. The pass itself was checked without the roll -- edits
+  from another thread, and the server's output recorded.
+

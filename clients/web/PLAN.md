@@ -1969,6 +1969,10 @@ that `C54` asks of the Python example -- a clip dragged onto the line enters
 from the frame the line is at, one dragged away goes quiet as the hand lifts it
 -- plus the same three unit tests, and `./build.sh && ./test.sh` green.
 
+**Where it stands, 2026-09-27:** the port landed with `C54`'s `Timeline` half,
+in the same commit and with the same eleven tests; what both still wait on is
+written in `C54` ("Where it stands").
+
 
 ## Parity gaps carried from the Python client
 
