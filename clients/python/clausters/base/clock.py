@@ -134,6 +134,8 @@ class TempoClock:
         #: A queued routine on a clock nobody drives never runs and says
         #: nothing, which looks exactly like silence -- see `_warn_if_undriven`.
         self._driven = False
+        #: Whether a play onto this clock, stopped, has been said once.
+        self._said_stopped = False
         self._exit_hook = False
         self._transport = None        # joined shared beat grid, set by join_transport()
         #: The timebase reading at which `freeze` stopped the beat, or ``None``
@@ -685,6 +687,30 @@ class TempoClock:
             return
         self._exit_hook = True
         atexit.register(self._warn_if_undriven)
+
+    def _ready_to_play(self):
+        """This clock, made ready for an ambient play to sound on it.
+
+        **A play sounds.** A live clock nobody has started yet is started here
+        -- the guarantee the default clock already gives, extended to the clock
+        of a session that was activated and never started, where a play used
+        to schedule onto a clock that was not running, return a healthy
+        handle, and never sound. Two clocks are left as they are: an offline
+        one, which its render drives, and one stopped on purpose, which keeps
+        its place until the session starts again -- and there a play says
+        once, now, that it is queued rather than sounding."""
+        if isinstance(self.timebase, LogicalTimebase) or self._running:
+            return self
+        if not self._driven:
+            return self.start()
+        if not self._said_stopped:
+            self._said_stopped = True
+            print(
+                "clausters: played onto a stopped clock -- it is queued, and sounds "
+                "when the clock starts again (session.start())",
+                file=sys.stderr,
+            )
+        return self
 
     def _warn_if_undriven(self):
         if self._driven or self._queue.peek_time() is None:

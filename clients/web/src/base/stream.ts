@@ -102,7 +102,7 @@ export abstract class Stream {
      * `new Routine(f).play()` needs no session, no clock and no server.
      */
     play(clock?: TempoClock, quant?: number): this {
-        const target = clock ?? resolveClock();
+        const target = main.playClock(clock);
         this.clock = target; // known from scheduling, not only from waking
         target.play(this, quant);
         return this;
@@ -283,15 +283,6 @@ export class Routine extends Stream {
     }
 }
 
-/**
- * The clock an ambient play schedules on -- the running routine's, else the
- * active session's, else the default session's, created and started here on
- * first use (never at import: a page that only draws must not start a clock
- * by loading a module).
- */
-function resolveClock(): TempoClock {
-    return main.resolveClock() ?? main.getDefaultClock();
-}
 
 
 /**

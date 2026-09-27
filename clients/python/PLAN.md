@@ -2647,7 +2647,7 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   - **One stands, and is its own entry now**: "A clock read from inside its
     own routine answers the physical beat", below.
 
-- ⬜ **A play onto a stopped clock is silent, and says nothing** *(found
+- ✅ **A play onto a stopped clock is silent, and says nothing** *(found
   2026-09-05 by the user, pressing a button that did nothing)*.
   `editors/edit_notes` opened a session with `activate()` and never started it,
   so `play(timeline)` built a `Playhead`, scheduled the scan on a clock that was
@@ -2667,6 +2667,16 @@ there too — the id share, the blob bulk path, per-instance hosts and pools, an
   leave it and have `TempoClock.play`/`Playhead.play` say once that the clock is
   stopped. Whichever it is lands in both clients, since it is one resolution
   rule in two languages.
+
+  **Fixed 2026-09-27, by the first answer**, chosen by the user: an ambient
+  play starts the live clock it resolves when nobody has started it, as the
+  default clock always was. One door in each client (`main.play_clock` /
+  `main.playClock`), which the free verb, `Stream.play` and `EventPattern.play`
+  go through. A clock stopped on purpose stays stopped and the play says so
+  once; an offline clock is left to its render; a clock handed in is taken as
+  it is. By then `play(timeline)` no longer reached the trap -- `Playhead` was
+  gone and a timeline starts its own clock -- but a pattern and a routine still
+  did.
 
 - ✅ **A composed signal window goes mute after the multitrack redefines**
   *(found 2026-09-04, by hand, running `examples/editors/composed.py` in the

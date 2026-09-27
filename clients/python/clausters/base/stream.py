@@ -189,7 +189,7 @@ class Routine(Stream):
         """
         from .main import main
 
-        clock = clock or main.resolve_clock() or main.get_default_clock()
+        clock = main.play_clock(clock)
         self.clock = clock          # known from scheduling, not only from waking
         clock.play(self, quant)
         return self

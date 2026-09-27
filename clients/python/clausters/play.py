@@ -107,11 +107,11 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
     if isinstance(playable, dict):
         return Event(playable).play(main.resolve_server(server))
     if isinstance(playable, (Routine, Stream)):
-        clock = clock or main.resolve_clock() or main.get_default_clock()
+        clock = main.play_clock(clock)
         return playable.play(clock, quant)
     if inspect.isgenerator(playable) or inspect.isgeneratorfunction(playable):
         routine = _as_routine(playable)
-        clock = clock or main.resolve_clock() or main.get_default_clock()
+        clock = main.play_clock(clock)
         return routine.play(clock, quant)
     if isinstance(playable, EventPattern):
         return playable.play(clock, main.resolve_server(server), quant)

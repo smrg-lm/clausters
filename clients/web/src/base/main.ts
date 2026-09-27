@@ -182,6 +182,18 @@ export class Main extends Environment {
     }
 
     /**
+     * The clock a play schedules on, **ready to sound**: `clock` if given, else
+     * `resolveClock`'s answer, else the default clock -- and a resolved clock
+     * that was never started is started (see `TempoClock.readyToPlay`). A clock
+     * handed in is taken as it is: scheduling first and starting later is a
+     * caller's to choose.
+     */
+    playClock(clock?: TempoClock | null): TempoClock {
+        if (clock) return clock;
+        return (this.resolveClock() ?? this.getDefaultClock()).readyToPlay();
+    }
+
+    /**
      * The default session's clock, created (tempo 1.0) on first use and,
      * unless told otherwise, started so what is played on it fires in real
      * time. This is what an ambient `Routine`/`Pattern` play uses when no

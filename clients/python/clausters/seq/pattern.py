@@ -80,7 +80,7 @@ class EventPattern(Pattern):
 
         server = main.resolve_server(server)
         if clock is None:
-            clock = main.resolve_clock() or main.get_default_clock()
+            clock = main.play_clock()
         return EventStreamPlayer(self, server).play(clock, quant)
 
 

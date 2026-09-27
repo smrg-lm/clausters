@@ -111,7 +111,7 @@ export function play(playable: Playable, options: PlayOptions = {}): unknown {
         return playable.play(destinationFor(server));
     }
     if (playable instanceof Stream) {
-        return playable.play(clock ?? ambientClock(), quant);
+        return playable.play(main.playClock(clock), quant);
     }
     if (playable instanceof EventPattern) {
         return playable.play(destinationFor(server), { clock, quant }) as EventStreamPlayer;
@@ -124,7 +124,7 @@ export function play(playable: Playable, options: PlayOptions = {}): unknown {
         );
     }
     if (isGenerator(playable) || isGeneratorFunction(playable)) {
-        return asRoutine(playable).play(clock ?? ambientClock(), quant);
+        return asRoutine(playable).play(main.playClock(clock), quant);
     }
     if (
         playable instanceof SynthDef
@@ -171,11 +171,6 @@ export function play(playable: Playable, options: PlayOptions = {}): unknown {
 /** The ambient server as an event destination. */
 function destinationFor(server?: Server): EventDestination {
     return main.resolveServer(server) as unknown as EventDestination;
-}
-
-/** The clock an ambient play schedules on, created and started on first use. */
-function ambientClock(): TempoClock {
-    return main.resolveClock() ?? main.getDefaultClock();
 }
 
 function isGenerator(value: unknown): value is Generator<number | undefined, unknown, unknown> {

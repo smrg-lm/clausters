@@ -95,6 +95,64 @@ def test_get_default_clock_belongs_to_default_session(clean_default):
     assert main.get_default_clock(start=False) is clock   # created once
 
 
+class _Activated:
+    """A session that was activated and never started: all `resolve_clock`
+    reads of it is its clock."""
+
+    def __init__(self, clock):
+        self.clock = clock
+
+    def __getattr__(self, name):
+        # Everything else -- the random context a routine derives -- is the
+        # default session's.
+        return getattr(main, name)
+
+
+@pytest.fixture
+def activated(clean_default):
+    """An activated session whose live clock nobody has started."""
+    clock = TempoClock()
+    previous, main.current_session = main.current_session, _Activated(clock)
+    yield clock
+    main.current_session = previous
+    clock.stop()
+
+
+def test_a_play_starts_a_live_clock_nobody_started(activated):
+    # The trap: activating a session made its clock the ambient one in whatever
+    # state it was in, so a play scheduled onto a clock that never ran.
+    assert not activated._running
+    play(lambda: (yield 0.1))
+    assert activated._running
+
+
+def test_a_play_leaves_a_clock_stopped_on_purpose_and_says_so_once(activated, capsys):
+    activated.start()
+    activated.stop()
+    assert main.play_clock() is activated
+    assert not activated._running
+    main.play_clock()
+    err = capsys.readouterr().err
+    assert err.count("played onto a stopped clock") == 1
+
+
+def test_a_play_leaves_an_offline_clock_to_its_render(clean_default):
+    clock = TempoClock(timebase=LogicalTimebase())
+    previous, main.current_session = main.current_session, _Activated(clock)
+    try:
+        assert main.play_clock() is clock
+        assert not clock._running
+    finally:
+        main.current_session = previous
+
+
+def test_a_clock_handed_to_play_is_taken_as_it_is(clean_default):
+    # Scheduling first and starting later is the caller's to choose.
+    clock = TempoClock()
+    assert main.play_clock(clock) is clock
+    assert not clock._running
+
+
 def test_routine_play_resolves_the_default_clock(clean_default):
     """A bare ``Routine(f).play()`` needs no session, no server and no clock of
     its own: it lands on the default session's, created and started on demand."""

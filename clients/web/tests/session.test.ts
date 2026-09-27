@@ -330,6 +330,60 @@ test("a bare Routine.play() creates and starts the default session's clock", () 
         assert.ok(woke >= 1, "started, so the routine has run its first wake");
     }));
 
+/** Whether a clock is running -- a private field, read for the test's sake. */
+const running = (clock: TempoClock): boolean => (clock as unknown as { running: boolean }).running;
+
+test("a play starts a live clock nobody started", () =>
+    withCleanDefault(async () => {
+        // The trap: activating a session made its clock the ambient one in
+        // whatever state it was in, so a play scheduled onto a clock that never
+        // ran.
+        const { session } = await fakeSession();
+        session.activate();
+        assert.ok(!running(session.clock));
+        play(function* () {
+            yield 0.1;
+        });
+        assert.ok(running(session.clock));
+        session.close();
+    }));
+
+test("a play leaves a clock stopped on purpose, and says so once", () =>
+    withCleanDefault(async () => {
+        const { session } = await fakeSession();
+        session.activate();
+        session.clock.start();
+        session.clock.stop();
+        const said: string[] = [];
+        const warn = console.warn;
+        console.warn = (line: string) => said.push(line);
+        try {
+            assert.equal(main.playClock(), session.clock);
+            assert.ok(!running(session.clock));
+            main.playClock();
+        } finally {
+            console.warn = warn;
+        }
+        assert.equal(said.filter((line) => line.includes("played onto a stopped clock")).length, 1);
+        session.close();
+    }));
+
+test("a play leaves an offline clock to its render", () =>
+    withCleanDefault(async () => {
+        const session = (await Session.nrt()).activate();
+        assert.equal(main.playClock(), session.clock);
+        assert.ok(!running(session.clock));
+        session.close();
+    }));
+
+test("a clock handed to play is taken as it is", () =>
+    withCleanDefault(() => {
+        // Scheduling first and starting later is the caller's to choose.
+        const clock = new TempoClock(1.0, { ticker: manualTicker() });
+        assert.equal(main.playClock(clock), clock);
+        assert.ok(!running(clock));
+    }));
+
 test("two sessions are two random contexts", () =>
     withCleanDefault(async () => {
         const a = await fakeSession();

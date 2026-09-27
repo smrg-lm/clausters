@@ -165,6 +165,17 @@ class Main(Environment):
             return sess.clock
         return self.default_clock
 
+    def play_clock(self, clock=None):
+        """The clock a play schedules on, **ready to sound**: ``clock`` if
+        given, else `resolve_clock`'s answer, else the default clock -- and a
+        resolved clock that was never started is started (see
+        `clausters.base.clock.TempoClock._ready_to_play`). A clock handed in is
+        taken as it is: scheduling first and starting later is a caller's to
+        choose."""
+        if clock is not None:
+            return clock
+        return (self.resolve_clock() or self.get_default_clock())._ready_to_play()
+
     def get_default_clock(self, start: bool = True):
         """The default session's clock, created (tempo 1.0) on first use and,
         when ``start`` is set, started so a routine or pattern played on it fires

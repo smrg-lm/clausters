@@ -375,6 +375,8 @@ export class TempoClock {
      * drives a clock that is started and not halted.
      */
     private halted = false;
+    /** Whether a play onto this clock, stopped, has been said once. */
+    private saidStopped = false;
     /**
      * The beat a `locate` made from inside this clock's own wake moved to, so
      * the waking routine is requeued from there (see `wake`).
@@ -1078,6 +1080,35 @@ export class TempoClock {
      * queued: `stop`/`start` is a transport, not a reset -- `clear` is the
      * reset.
      */
+    /**
+     * This clock, made ready for an ambient play to sound on it.
+     *
+     * **A play sounds.** A live clock nobody has started yet is started here --
+     * the guarantee the default clock already gives, extended to the clock of a
+     * session that was activated and never started, where a play used to
+     * schedule onto a clock that was not running, return a healthy handle, and
+     * never sound. Two clocks are left as they are: an offline one, which its
+     * render drives, and one stopped on purpose, which keeps its place until
+     * the session starts again -- and there a play says once, now, that it is
+     * queued rather than sounding.
+     *
+     * @internal
+     */
+    readyToPlay(): this {
+        if (this.timebase instanceof LogicalTimebase || this.running) return this;
+        // `stop` keeps the origins, so a clock that has never run is the one
+        // that has none.
+        if (this.monoStart === null) return this.start();
+        if (!this.saidStopped) {
+            this.saidStopped = true;
+            console.warn(
+                "clausters: played onto a stopped clock -- it is queued, and sounds when "
+                    + "the clock starts again (session.start())",
+            );
+        }
+        return this;
+    }
+
     stop(): this {
         if (this.timebase instanceof LogicalTimebase) {
             this.logicalBeat = this.beats();
