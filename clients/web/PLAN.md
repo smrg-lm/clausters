@@ -4635,3 +4635,15 @@ sound.
   reads off an imported namespace — the second half is what catches
   `doc.ARRANGEMENT`, which no import names. On the old pages it reports the
   three this entry found.
+
+- ⬜ **The offline score and its carrier are named apart from Python's**
+  *(found 2026-09-27, listing every class named after a score)*. The page's
+  `Score` (`src/base/connection.ts`) is Python's `OscScore` — the same
+  accumulated bundles, the same binary it serializes to — and its
+  `ScoreConnection` is Python's `OscNrtInterface`; both are exported from the
+  package under the names that differ (`src/index.ts`). A divergence of
+  surface, so the fix is a rename to Python's names, with the TSDoc, the web
+  book and any page or test that spells them. `Score` with no prefix is
+  notation's in both clients (the engraver's editable score) and stays so.
+  **Related:** the server's own `Score` (root `PLAN.md`, Found by use, "The
+  render's score is named `Score`, and the clients call it `OscScore`").

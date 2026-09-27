@@ -3790,3 +3790,15 @@ should confirm before the fix.
   `render_line`, which the `--nrt` stderr path now uses too; the web client
   sends `ERROR`/`WARN` to `console.error`/`console.warn` and `INFO` to
   `console.debug`, shown only when asked, as Python's `info` is.
+
+- ⬜ **The render's score is named `Score`, and the clients call it
+  `OscScore`** *(found 2026-09-27, listing every class named after a score)*.
+  `src/server/render.rs` reads the binary an offline render runs into `Score`,
+  a list of `ScoreEvent`s (the messages of one bundle at a time in seconds).
+  The Python client names the same thing `OscScore`, and `Score` with no prefix
+  is notation's across the project (the engraver's editable score in
+  `clausters_core::notation` and both clients). So the server's type becomes
+  **`OscScore`**; `ScoreEvent` stays, since inside the render nothing else
+  it could be confused with lives. **Related:** the web client's copy of the
+  same divergence (`clients/web/PLAN.md`, Found by use, "The offline score and
+  its carrier are named apart from Python's").
