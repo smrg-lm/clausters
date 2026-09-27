@@ -9,7 +9,10 @@ itself.
 
 What to do in the window: **drag a note** to move it, **drag its edge** to
 resize, **Ctrl+click** to add or remove one, and **Ctrl+Z** to step back. The
-notes are the timeline's, so playing it after an edit plays what was drawn.
+notes are the timeline's, so playing it after an edit plays what was drawn --
+and so does editing it while it plays: a note moved ahead of the line sounds
+where it lands, one moved behind the line is not played again, and the notes
+already passed are not played twice.
 
 **The lane under the grid is the timeline's OSC markers**, and it is edited the
 same way: drag one to move it, Ctrl+click one to remove it, Ctrl+Z to step back.

@@ -27,13 +27,13 @@ tl.remove(b)
 The **random access by time** is the point:
 
 ```python
-tl.index_at(1.5)      # the cursor of the first item at or after beat 1.5
+tl.index_at(1.5)      # the index of the first item at or after beat 1.5
 tl.range(1.0, 3.0)    # the (beat, item) pairs in the half-open window [1.0, 3.0)
 tl.at(2.0)            # the items exactly at beat 2.0
 tl.duration()         # its logical length, in its beats
 ```
 
-`index_at` is the seek primitive — it is what `play(at=…)` and `locate` use to start at an arbitrary point, which a forward-only routine could never do.
+Starting at an arbitrary point — `play(at=…)`, `locate` — is a question this structure can answer, and a forward-only routine never could: what plays next from a beat is the first item at or after it.
 
 ### Its tempo is its own
 
@@ -90,6 +90,8 @@ A pass **ends on its own** when nothing is left to play: `playing` goes False, `
 The clock it plays on belongs to **the session it sounds in**: it is made there, on that session's timebase, the first time the timeline plays in it, and made again — at the position the timeline stopped at — when it plays in another. So a live session on its server's sample clock plays its timelines sample-exact, and an offline session renders them. A timeline sounding in one session is refused in another until it is stopped.
 
 **What is sounding when a timeline moves.** A locate, a stop or a loop's wrap does not cut what already started: notes keep their own releases. What comes next is decided by what the contents are — a discrete item (an event, a message, a routine) plays from the **next onset**, and one whose onset the new position has passed is not recovered.
+
+**Editing it while it plays.** A pass is located by **time**, not by a place in the list, and every edit — `add`, `remove`, `move`, `clear`, `replace`, `quantize` — reaches the pass that is running. So an item added ahead of the line sounds when the line reaches it, one removed or moved away before then does not, and one whose onset the line has already passed is not recovered: the same rule as a locate, applied to the edit. An edit behind the line shifts nothing — the pass neither plays again what it just played nor skips what comes next. A child timeline follows its entry: moved while it plays, it goes on from where it landed; removed, it goes quiet. Edits may come from another thread, such as the event loop an editor's gestures arrive on.
 
 ## Timelines in timelines
 
@@ -150,6 +152,8 @@ The verbs do not change: `play`, `pause`, `stop` and `locate` are the transport'
 | `refresh()` | Ask the server where the transport is, and keep it. |
 
 **A conductor drives every follower**, and the mode is the whole of the following: a play, a stop or a locate somebody else sent arrives as a `/transport_query.reply` broadcast, and the plan is written again from where it says. Every follower reads the **one** position the engine holds, so they are in lockstep by construction rather than by each estimating its own. `conductor.py` ([Examples](examples.md)) puts two followers on one transport.
+
+**An edit is heard from the next play or locate.** A plan on the transport is written whole when it is cued, so an edit made while it rolls does not reach the queue already written, unlike a timeline on its own clock.
 
 **What the mode refuses**, because it would be a second answer to a question the engine already answers: a `quant` (the start is the transport's — locate where you want it and roll), a `loop` (the wrap is the engine's, and a timeline's events would have to be re-cued on every one of them), and a **forward-only item** — a routine or a pattern cannot be planned from a position, so it is refused by name. All three are the client-clock mode's.
 
