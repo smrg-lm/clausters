@@ -277,6 +277,18 @@ class TempoClock:
         inverse of `beats2secs`; native core, server-matching)."""
         return self._map.beats_at(secs)
 
+    def _woken_for(self) -> float:
+        """Now, on this clock's monotonic axis -- or, from inside a routine
+        this clock is waking, the instant that wake is for."""
+        from .main import main
+
+        routine = main.current_routine
+        if getattr(routine, "clock", None) is self:
+            beat = getattr(routine, "_logical_beat", None)
+            if beat is not None:
+                return self._mono_start + self.beats2secs(float(beat))
+        return self._now()
+
     def beats(self) -> float:
         """The clock's current beat.
 
@@ -335,7 +347,11 @@ class TempoClock:
           the server's and does not), and timetags follow the origins;
         - a frozen clock stays frozen, at ``beat``;
         - from inside a routine on this clock, that routine's beat jumps and
-          its next ``yield`` counts from ``beat``.
+          its next ``yield`` counts from ``beat`` -- and ``beat`` falls on the
+          instant the routine was woken for, not on however late the code got
+          to run: the rule `beats` answers by there. A loop that locates back
+          to its start on every pass would otherwise start each pass a wake's
+          lateness after the last, and drift.
 
         Offline it is the same operation on the run's `LogicalTimebase`.
         Returns ``self``.
@@ -351,7 +367,7 @@ class TempoClock:
                     now = self._frozen_at if self._frozen_at is not None else tb.now()
                     self._mono_start = now - secs
             elif self._running and self._mono_start is not None:
-                now = self._frozen_at if self._frozen_at is not None else self._now()
+                now = self._frozen_at if self._frozen_at is not None else self._woken_for()
                 self._mono_start = now - secs
                 self._unix_start = time.time() - (self._now() - now) - secs
             self._logical_beat = beat

@@ -436,6 +436,18 @@ export class TempoClock {
     }
 
     /**
+     * `now`, on this clock's timebase -- or, from inside a routine this clock
+     * is waking, the instant that wake is for.
+     */
+    private wokenFor(now: number): number {
+        const routine = currentRoutine();
+        if (routine !== null && routine.clock === this && this.monoStart !== null) {
+            return this.monoStart + this.beats2secs(routine.logicalBeat);
+        }
+        return now;
+    }
+
+    /**
      * The clock's current beat.
      *
      * **Inside a routine this clock is waking, the routine's logical beat**:
@@ -489,7 +501,11 @@ export class TempoClock {
      *   the server's and does not), and timetags follow the origins;
      * - a frozen clock stays frozen, at `beat`;
      * - from inside a routine on this clock, that routine's beat jumps and its
-     *   next `yield` counts from `beat`.
+     *   next `yield` counts from `beat` -- and `beat` falls on the instant the
+     *   routine was woken for, not on however late the code got to run: the
+     *   rule `beats` answers by there. A loop that locates back to its start on
+     *   every pass would otherwise start each pass a wake's lateness after the
+     *   last, and drift.
      *
      * Offline it is the same operation on the run's `LogicalTimebase`.
      */
@@ -502,7 +518,7 @@ export class TempoClock {
             }
         } else if (this.running && this.monoStart !== null) {
             const nowTb = timebase.now();
-            const at = this.frozenAt ?? nowTb;
+            const at = this.frozenAt ?? this.wokenFor(nowTb);
             this.monoStart = at - secs;
             this.unixStart = Date.now() / 1000 - (nowTb - at) - secs;
         }
