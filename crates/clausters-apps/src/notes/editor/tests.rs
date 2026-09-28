@@ -109,3 +109,18 @@ fn the_space_bar_over_the_window_asks_for_a_play() {
     assert_eq!(out.play, Some(json!({"looping": false})));
     assert!(e.window(40)["plays"].as_bool().unwrap());
 }
+
+/// **A click on the ruler places the position cursor**, as a beat of the
+/// sequence, and edits nothing; the roll's play cursor is anchored so the
+/// transport's position is where it is drawn.
+#[test]
+fn a_locate_places_the_cursor_on_a_beat_and_edits_nothing() {
+    let mut e = editor(shared());
+    let out = e.event(&gesture("locate", vec![json!(150.0)]), 1);
+    // 100 samples a beat: one beat a second at a rate of 100.
+    assert_eq!(out.locate, Some(1.5));
+    assert!(!out.changed);
+    assert!(out.record.is_none());
+    let roll = &e.window(40)["children"][0];
+    assert_eq!(roll["axes"]["x"]["playhead_at"], 0.0);
+}

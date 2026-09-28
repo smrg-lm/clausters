@@ -36,6 +36,8 @@ class FakeHost:
         #: What `subscribe` was handed -- an open editor's `apply`.
         self.subscribed: list = []
         self.closed: list = []
+        #: What `head_clock` was told: ``(id, which, transport)``.
+        self.clocks: list = []
 
     def alloc_id(self) -> int:
         self.next += 1
@@ -57,6 +59,9 @@ class FakeHost:
 
     def close(self, id):
         self.closed.append(id)
+
+    def head_clock(self, id, which, transport=0):
+        self.clocks.append((id, which, transport))
 
     def _set_closed_handler(self, id, func):
         self.on_closed = (id, func)
@@ -529,3 +534,20 @@ def test_the_notes_editor_plays_on_its_own_transport_and_hears_an_edit():
     assert server.lane() == [0, 150], "the note moved to beat 3 is heard where it lands"
     editor.stop()
     assert "/transport_locateSample" in [addr for addr, _ in server.sent]
+
+
+def test_the_roll_draws_its_play_cursor_from_its_transport_and_a_locate_cues_it():
+    server = _PlayingServer()
+    seq = EventSequence([(0.0, SeqEvent(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    editor = NotesEditor(seq, sample_rate=SR, server=server)
+    host, wid = opened(editor)
+    transport = editor._playback.transport_id
+    assert host.clocks == [(901, "transport", transport)]
+    assert host.trees[0]["children"][0]["axes"]["x"]["playhead_at"] == 0.0
+    placed = []
+    editor.on_locate = placed.append
+    server.sent.clear()
+    # One beat of the roll's axis.
+    editor.apply("/gui_event", [wid, 1, 0, "locate", BEAT])
+    assert editor.cursor == 1.0 and placed == [1.0]
+    assert [addr for addr, _ in server.sent] == ["/transport_locateSample"]

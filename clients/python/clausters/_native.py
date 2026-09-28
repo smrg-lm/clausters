@@ -1781,8 +1781,8 @@ class NotesPlayback:
     """**The notes editor, as it is playing**
     (`clausters_editing_notes_playback_*`): a sequence's events as the data of
     an event lane on a transport of its own, every verb answering steps --
-    ``play``, ``update``, ``resume``, ``pause``, ``stop``, ``close``,
-    ``setRolling`` and the query ``state``.
+    ``play``, ``update``, ``resume``, ``pause``, ``stop``, ``cue``,
+    ``close``, ``setRolling`` and the query ``state``.
 
     Args:
         transport: the transport it plays on; ``None`` for the crate's own.

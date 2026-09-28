@@ -37,6 +37,8 @@ const BEAT = SR / TEMPO;
 class FakeHost {
     acks: [number, [number, Record<string, PropValue>][], string | undefined][] = [];
     trees: GuiNode[] = [];
+    /** What `headClock` was told: `[id, which, transport]`. */
+    clocks: [number, string, number][] = [];
     private next = 20_000;
 
     allocId(): number {
@@ -51,6 +53,9 @@ class FakeHost {
         return { id };
     }
     set(): void {}
+    headClock(id: { id: number }, which: string, transport = 0): void {
+        this.clocks.push([id.id, which, transport]);
+    }
     onMessage(): () => void {
         return () => {};
     }
@@ -564,4 +569,25 @@ test("the notes editor plays on its own transport and hears an edit", async () =
     assert.deepEqual(server.lane(), [0, 150], "the note moved to beat 3 is heard where it lands");
     await editor.stop();
     assert.ok(server.sent.map(([addr]) => addr).includes("/transport_locateSample"));
+});
+
+test("the roll draws its play cursor from its transport and a locate cues it", async () => {
+    const server = new PlayingServer();
+    const seq = new EventSequence([[0.0, new SeqEvent({ midinote: 60, dur: 1.0 })]],
+        { tempoMap: new TempoMap(TEMPO) });
+    const editor = new NotesEditor(seq, { sampleRate: SR, server });
+    const { host, wid } = await opened(editor);
+    assert.equal(host.clocks.length, 1);
+    assert.deepEqual(host.clocks[0]!.slice(0, 2), [901, "transport"]);
+    const roll = (host.trees[0]!.children as GuiNode[])[0] as unknown as { axes: { x: { playhead_at: number } } };
+    assert.equal(roll.axes.x.playhead_at, 0);
+    const placed: number[] = [];
+    editor.onLocate = (beat) => placed.push(beat);
+    server.sent = [];
+    // One beat of the roll's axis.
+    editor.apply("/gui_event", [wid, 1, 0, "locate", BEAT]);
+    await editor.settled();
+    assert.equal(editor.cursor, 1);
+    assert.deepEqual(placed, [1]);
+    assert.deepEqual(server.sent.map(([addr]) => addr), ["/transport_locateSample"]);
 });

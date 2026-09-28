@@ -41,6 +41,11 @@ pub struct Outcome {
     /// pressed over the window.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub play: Option<Value>,
+    /// Where the position cursor was placed, as a beat of the sequence -- a
+    /// click on the roll's ruler. Not an edit: the caller cues a stopped
+    /// playback there, and a play starts from it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locate: Option<f64>,
 }
 
 turn::turned!(Outcome);
@@ -166,6 +171,15 @@ impl NotesEditor {
         values: &[Value],
         out: &mut Outcome,
     ) -> (Option<String>, Vec<Correction>) {
+        if tag == "locate" {
+            // A click on the ruler: the reader put the position cursor there,
+            // on the axis's sample, which the sequence's tempo map reads as a
+            // beat. It is not a seek -- the playhead is never placed.
+            if let Some(units) = values.first().and_then(Value::as_f64) {
+                out.locate = Some(Axis::of(&self.held(), self.rate).beat(units.max(0.0)));
+            }
+            return (None, Vec::new());
+        }
         if !matches!(tag, "notes" | "osc") {
             return (None, Vec::new());
         }

@@ -1073,6 +1073,22 @@ wrong.
   transport, an edit is the lane's new data (`update`), and nothing asks for
   the transport's clock.
 
+- ✅ **The roll has no play cursor, and its ruler places nothing** *(the
+  user, 2026-09-28, trying `X3.9`: "El roll no tiene cursor de reproducción
+  o no funciona, no se puede posicionar, no hay cursor que avance con el
+  tiempo")*. `X3.7` and `X3.8` gave the notes editor a window and a playback
+  and never joined the two: the roll's axis anchored no playhead, the editor
+  asked the host for no clock, and a click on the ruler reached the crate as
+  a tag it did not read, so no cursor was kept and a play always started
+  from the top. The audio editor had all three.
+  **Fixed 2026-09-28**: the roll anchors its playhead at 0 and the editor
+  asks for the notes transport's position when it opens (both clients, and
+  the standalone host's roll window); the ruler's `locate` is the outcome's
+  `locate`, a beat of the sequence, which the editor keeps as its cursor and
+  cues a stopped transport on (`NotesPlayback::cue`). The standalone host's
+  roll also plays now -- the space bar, a cue, an edit heard from either
+  window -- where before it drew and edited only.
+
 - ✅ **The play cursor of a take at another rate than the engine's runs
   ahead** *(found building X7, 2026-09-24)*. The audio editor's playback
   converts every frame to the engine's samples and the reader scales its

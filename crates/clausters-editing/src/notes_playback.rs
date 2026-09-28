@@ -314,6 +314,17 @@ impl NotesPlayback {
         steps
     }
 
+    /// **The position cursor moved to beat `at`**: a stopped transport is
+    /// located there, so the play cursor goes with it; a rolling pass is left
+    /// alone, since the cursor is where the reader is and not a seek.
+    pub fn cue(&mut self, sequence: &EventSequence, at: f64, rate: f64) -> Vec<Step> {
+        if self.rolling {
+            return Vec::new();
+        }
+        let sample = (map(sequence).secs_at(at.max(0.0)) * rate).round() as i64;
+        self.command("/transport_locateSample", vec![OscType::Long(sample)])
+    }
+
     /// Frees what the playback made: the lane (its notes released), the
     /// transport's end mark and the groups.
     pub fn close(&mut self, ids: &mut IdSpaces) -> Result<Vec<Step>, IdError> {
@@ -345,6 +356,7 @@ impl NotesPlayback {
 /// - `play` -- `from` (a beat), `rate`
 /// - `update` -- `rate`
 /// - `resume`, `pause`, `stop` (`back`, a beat; `rate`), `close`
+/// - `cue` -- `at` (a beat), `rate`
 /// - `setRolling` -- `rolling`
 /// - `state` -- `{"transport", "rolling"}`
 pub fn call_json(
@@ -366,6 +378,7 @@ pub fn call_json(
         "resume" => answer(Ok(playback.resume())),
         "pause" => answer(Ok(playback.pause())),
         "stop" => answer(Ok(playback.stop(sequence, number("back", 0.0), rate))),
+        "cue" => answer(Ok(playback.cue(sequence, number("at", 0.0), rate))),
         "close" => answer(playback.close(ids)),
         "setRolling" => {
             playback.set_rolling(

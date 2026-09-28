@@ -1830,6 +1830,28 @@ mod window_verb_tests {
             serde_json::json!(67.0),
             "the session's sequence, which the box reads"
         );
+
+        // A click on the roll's ruler places its cursor, one beat in at the
+        // session's rate, and the space bar over its window plays the notes.
+        let rate = host.owner.as_ref().unwrap().units_per_second;
+        let seq = host.outbox.borrow_mut().stamp(roll, widget);
+        assert!(host.answer_own(
+            roll,
+            widget,
+            seq,
+            &[OscType::String("locate".into()), OscType::Double(rate)]
+        ));
+        let seq = host.outbox.borrow_mut().stamp(roll, roll);
+        assert!(host.answer_own(roll, roll, seq, &[OscType::String("play".into())]));
+        let asked = &host.exchange.asked;
+        assert!(
+            asked.contains(&serde_json::json!(["notes cue", 1.0])),
+            "{asked:?}"
+        );
+        assert!(
+            asked.contains(&serde_json::json!(["notes play"])),
+            "{asked:?}"
+        );
     }
 
     /// **The transport row and the space bar are the editor's**: a click on a

@@ -57,6 +57,12 @@ pub fn props(
     });
     out.insert("note_ids".into(), json!(drawn.note_ids));
     out.remove("type");
+    // **The play cursor is the transport's position**: anchored at 0, the
+    // counter the window's playheads read (the playback's transport) puts the
+    // line on the sample the lane is playing, stopped or rolling.
+    if let Some(Value::Object(x)) = out.get_mut("axes").and_then(|axes| axes.get_mut("x")) {
+        x.insert("playhead_at".into(), json!(0.0));
+    }
     out
 }
 

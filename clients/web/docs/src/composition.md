@@ -58,6 +58,8 @@ why the curve row below names three unrelated types:
 | an `EventSequence`, or a `Timeline` rendered into one | `NotesEditor` | a `pianoroll` | `events` |
 | a `Multitrack` | `MultitrackEditor` | a `multitrack` | `clips`/`lanes` |
 
+**An `EventSequence` opens in the notes editor**, `editing.NotesEditor`, and is edited **in place**: it holds the very sequence the page's handle names, so there is nothing to write back. **It plays what it edits**, on a transport of its own, so playing it never moves a multitrack: `await editor.play()` (from the position cursor, or a beat given), `pause()`, `resume()`, `stop()`, and the space bar over the window. An edit while it plays is heard at once -- the transport's event lane takes the sequence again and plays on from where the position is -- and a note already sounding ends as it would have. The roll's play cursor is that transport's position, stopped or rolling, and a click on its ruler places the **position cursor**: a stopped transport is cued there, and the next play starts from it.
+
 **A `Buffer` opens in the audio editor**, `editing.AudioEditor`.
 It writes nothing it was handed while it edits. Its window draws a **join** the editor owns, and
 every edit -- a cut, a paste, a mix (Ctrl+Shift+V), a pencil stroke -- leaves a

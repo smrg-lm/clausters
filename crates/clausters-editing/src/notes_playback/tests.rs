@@ -159,6 +159,22 @@ fn a_stop_goes_back_and_a_close_frees_the_lane() {
     assert!(playback.close(&mut ids).unwrap().is_empty(), "once");
 }
 
+/// **A cue locates a stopped transport on the beat's sample** and leaves a
+/// rolling one alone.
+#[test]
+fn a_cue_locates_a_stopped_transport_and_leaves_a_rolling_one() {
+    let mut playback = NotesPlayback::new(NOTES_EDITOR_TRANSPORT);
+    let cued = playback.cue(&sequence(), 3.0, SR);
+    assert_eq!(addrs(&cued), ["/transport_locateSample"]);
+    // Two beats a second at 100 samples a second: beat 3 is sample 150.
+    let Step::Send(locate) = &cued[0] else {
+        panic!("a send");
+    };
+    assert!(matches!(locate.args.last(), Some(OscType::Long(150))));
+    playback.play(&sequence(), 0.0, SR, &mut ids()).unwrap();
+    assert!(playback.cue(&sequence(), 1.0, SR).is_empty());
+}
+
 /// The door answers steps, and names the verbs it has.
 #[test]
 fn the_door_answers_steps() {

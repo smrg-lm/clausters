@@ -447,6 +447,20 @@ impl Host {
             origin,
         );
         self.pending_effects.extend(effects);
+        // **The play cursor is the notes transport's position**, as a
+        // client's notes editor asks for it when it opens.
+        let effects = self.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_CLOCK.into(),
+                args: vec![
+                    OscType::Int(def_id),
+                    OscType::String("transport".into()),
+                    OscType::Int(clausters_editing::notes_playback::NOTES_EDITOR_TRANSPORT),
+                ],
+            }),
+            origin,
+        );
+        self.pending_effects.extend(effects);
     }
 
     /// **A gesture on a roll's window**, answered by its notes editor: the turn
@@ -459,7 +473,7 @@ impl Host {
         let Some(owner) = self.owner.as_mut() else {
             return false;
         };
-        let Some(&(_, member)) = owner.rolls.get(&def_id) else {
+        let Some(&(source, member)) = owner.rolls.get(&def_id) else {
             return false;
         };
         let Some(turned) = owner.editing.event(
@@ -501,6 +515,12 @@ impl Host {
         }
         if outcome.changed {
             self.sound_multitrack();
+        }
+        if let Some(beat) = outcome.locate {
+            self.cue_notes(source, beat);
+        }
+        if outcome.play.is_some() {
+            self.roll_notes(source);
         }
         true
     }

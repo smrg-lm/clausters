@@ -44,6 +44,7 @@ use clausters_core::osc::{OscMessage, OscType};
 use clausters_document::SourceId;
 use clausters_document::multitrack::nodes::SourceInfo;
 use clausters_editing::apply::{Endpoint, Step};
+use clausters_editing::notes_playback::{NOTES_EDITOR_TRANSPORT, NotesPlayback};
 use clausters_editing::playback::MultitrackPlayback;
 use clausters_editing::run::{Reply, Runner, Server};
 
@@ -85,6 +86,13 @@ pub struct Playing {
     /// endpoint holds it. Made on the first sync, and it makes the transport's
     /// group itself.
     multitrack: Option<MultitrackPlayback>,
+    /// What plays a roll's window on the notes editor's own transport, made
+    /// the first time one is played -- as a client's notes editor has it.
+    notes: Option<NotesPlayback>,
+    /// The source whose sequence the notes lane holds: the roll played last.
+    notes_played: Option<SourceId>,
+    /// Each roll's position cursor, as a beat of its sequence.
+    notes_cursor: HashMap<SourceId, f64>,
     /// The steps not carried out yet, across both servers -- the crate's walk.
     run: Runner,
 }
@@ -330,6 +338,9 @@ impl Host {
         if !steps.is_empty() {
             self.instance.run.push(Server::Sound, steps);
         }
+        // A roll played on its own hears the edit too, from whichever window
+        // made it: the multitrack's history is the roll's.
+        self.update_notes();
         self.send_multitrack();
         self.tell_meters();
         diag::debug!("sound_multitrack: {} node(s)", self.instance.nodes());
@@ -487,6 +498,92 @@ impl Host {
     /// Whether the multitrack is rolling.
     pub fn multitrack_rolling(&self) -> bool {
         self.instance.rolling()
+    }
+
+    /// **The space bar over the roll of `source`**: a sounding sequence
+    /// pauses, a silent one plays from the roll's position cursor -- what a
+    /// client's notes editor does with the same key.
+    pub fn roll_notes(&mut self, source: SourceId) {
+        #[cfg(test)]
+        self.exchange.asked.push(serde_json::json!(["notes play"]));
+        let Some(owner) = self.owner.as_ref() else {
+            return;
+        };
+        let Some(shared) = owner.sequences.get(&source).cloned() else {
+            return;
+        };
+        if self.player().is_none() {
+            return;
+        }
+        let rate = owner.multitrack_look().rate;
+        let from = self
+            .instance
+            .notes_cursor
+            .get(&source)
+            .copied()
+            .unwrap_or(0.0);
+        let playback = self
+            .instance
+            .notes
+            .get_or_insert_with(|| NotesPlayback::new(NOTES_EDITOR_TRANSPORT));
+        let sequence = shared.lock().unwrap_or_else(|e| e.into_inner());
+        let steps = if playback.rolling() {
+            Ok(playback.pause())
+        } else {
+            self.instance.notes_played = Some(source);
+            playback.play(&sequence, from, rate, &mut self.ids)
+        };
+        drop(sequence);
+        match steps {
+            Ok(steps) => self.instance.run.push(Server::Sound, steps),
+            Err(e) => diag::warn!("the notes cannot be played: {e}"),
+        }
+        self.send_multitrack();
+    }
+
+    /// **The roll of `source` placed its position cursor at `beat`**: kept as
+    /// where its next play starts, and a stopped transport is cued there.
+    pub fn cue_notes(&mut self, source: SourceId, beat: f64) {
+        #[cfg(test)]
+        self.exchange
+            .asked
+            .push(serde_json::json!(["notes cue", beat]));
+        self.instance.notes_cursor.insert(source, beat);
+        let Some(owner) = self.owner.as_ref() else {
+            return;
+        };
+        let (Some(shared), Some(playback)) = (
+            owner.sequences.get(&source).cloned(),
+            self.instance.notes.as_mut(),
+        ) else {
+            return;
+        };
+        let rate = owner.multitrack_look().rate;
+        let steps = playback.cue(
+            &shared.lock().unwrap_or_else(|e| e.into_inner()),
+            beat,
+            rate,
+        );
+        self.instance.run.push(Server::Sound, steps);
+        self.send_multitrack();
+    }
+
+    /// **A sequence changed**: when it is the one the notes lane holds, the
+    /// lane takes it again and the server plays it on from where it is.
+    pub fn update_notes(&mut self) {
+        let (Some(owner), Some(source)) = (self.owner.as_ref(), self.instance.notes_played) else {
+            return;
+        };
+        let (Some(shared), Some(playback)) = (
+            owner.sequences.get(&source).cloned(),
+            self.instance.notes.as_mut(),
+        ) else {
+            return;
+        };
+        let rate = owner.multitrack_look().rate;
+        let steps = playback.update(&shared.lock().unwrap_or_else(|e| e.into_inner()), rate);
+        self.instance.run.push(Server::Sound, steps);
+        self.send_multitrack();
     }
 }
 

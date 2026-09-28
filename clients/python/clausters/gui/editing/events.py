@@ -156,6 +156,30 @@ class NotesEditor(Editor):
                    editable=self.editable, title=self.title,
                    w=int(self.size[0]), h=int(self.size[1]))
 
+    def open(self, host=None, id: "int | None" = None):
+        """Open the window, with its play cursor drawn from the transport.
+
+        The roll anchors the play cursor at 0, and the counter that makes that
+        the sequence's own sample is the position of the transport the notes
+        editor plays on -- stopped or rolling, the line is where the lane is.
+        With no server to play on there is no position, and no line."""
+        window = super().open(host, id)
+        if self._host is not None and window is not None:
+            try:
+                transport = self._playback.transport_id
+            except RuntimeError:
+                return window
+            self._host.head_clock(window, "transport", transport)
+        return window
+
+    def locate(self, at: float) -> None:
+        """The position cursor was placed at beat ``at``: a stopped transport
+        is cued there, so the play cursor goes with it and the next play starts
+        from the mark; a rolling pass is left alone."""
+        if self._server is None or self._elsewhere is not None:
+            return
+        self._playback.call("cue", self.structure, at=float(at))
+
     # ---- playing it ----
 
     @property
@@ -273,6 +297,13 @@ class NotesEditor(Editor):
             self.dirty = True
             self._editing.changed()
             self._update()
+        if outcome.get("locate") is not None:
+            self.cursor = float(outcome["locate"])
+            # The roll plays on a transport of its own, so the mark is its own
+            # too: a multitrack it was opened from keeps its cursor.
+            self.locate(self.cursor)
+            if callable(self.on_locate):
+                self.on_locate(self.cursor)
         if outcome.get("play") is not None:
             # The space bar: a sounding sequence pauses, a silent one plays.
             if self.playing:

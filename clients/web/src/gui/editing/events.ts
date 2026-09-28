@@ -50,6 +50,7 @@ interface Outcome {
     changed?: boolean;
     answer?: Answer;
     play?: { looping: boolean };
+    locate?: number;
 }
 
 /**
@@ -224,6 +225,41 @@ export class NotesEditor extends Editor<EventSequence> {
         });
     }
 
+    /**
+     * Opens the window, with its play cursor drawn from the transport.
+     *
+     * The roll anchors the play cursor at 0, and the counter that makes that
+     * the sequence's own sample is the position of the transport the notes
+     * editor plays on -- stopped or rolling, the line is where the lane is.
+     * With no server to play on there is no position, and no line.
+     */
+    override async open(
+        host?: Parameters<Editor<EventSequence>["open"]>[0],
+        options: Parameters<Editor<EventSequence>["open"]>[1] = {},
+    ): ReturnType<Editor<EventSequence>["open"]> {
+        const handle = await super.open(host, options);
+        let transport: number;
+        try {
+            transport = this.#playback.transport;
+        } catch {
+            return handle;
+        }
+        this.host?.headClock(handle, "transport", transport);
+        return handle;
+    }
+
+    /**
+     * The position cursor was placed at beat `at`: a stopped transport is
+     * cued there, so the play cursor goes with it and the next play starts
+     * from the mark; a rolling pass is left alone.
+     */
+    override locate(at: number): void {
+        if (this.#server === null || this.#elsewhere !== null) return;
+        const playback = this.#playback;
+        this.#work = this.#work.then(() => playback.call("cue", this.structure, { at }));
+        this.#work.catch(() => {});
+    }
+
     // ---- playing it ----
 
     get #playback(): NotesPlayback {
@@ -365,6 +401,13 @@ export class NotesEditor extends Editor<EventSequence> {
             this.dirty = true;
             this.editing.changed();
             this.#update();
+        }
+        if (outcome.locate !== undefined) {
+            this.cursor = outcome.locate;
+            // The roll plays on a transport of its own, so the mark is its own
+            // too: a multitrack it was opened from keeps its cursor.
+            this.locate(this.cursor);
+            this.onLocate?.(this.cursor);
         }
         if (outcome.play !== undefined) {
             // The space bar: a sounding sequence pauses, a silent one plays.
