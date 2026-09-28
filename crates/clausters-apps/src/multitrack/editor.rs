@@ -35,11 +35,11 @@ use clausters_document::multitrack::Multitrack;
 use clausters_document::multitrack::edit::MULTITRACK;
 use clausters_document::view::NOT_AN_EDIT;
 use clausters_document::{Opaque, SourceId, domain};
-use clausters_editing::conversation::{self, Answer, Conversation, Correction, Message, Turn};
+use clausters_editing::conversation::{self, Answer, Conversation, Correction};
 use clausters_editing::multitrack::{self as projection, Look};
 
 use super::{Meter, Transport, TransportIds, Window};
-use crate::turn::{int, number, text};
+use crate::turn::{self, Converse, int, number};
 
 pub use crate::turn::{Event, Kind, Leg, Record};
 
@@ -80,6 +80,42 @@ pub struct Outcome {
     /// verb of its own rather than by a hand on the ruler (which is `locate`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor: Option<f64>,
+}
+
+turn::turned!(Outcome);
+
+impl Converse for MultitrackEditor {
+    type Outcome = Outcome;
+
+    fn conversation(&mut self) -> &mut Conversation {
+        &mut self.conversation
+    }
+
+    fn window_id(&self) -> Option<i32> {
+        self.window
+    }
+
+    fn closed(&mut self) {
+        self.window = None;
+    }
+
+    fn owns(&self, widget: i64, tag: &str) -> bool {
+        i32::try_from(widget).is_ok_and(|w| self.answers(w, tag))
+    }
+
+    fn resync(&mut self, widget: i64) -> Vec<Correction> {
+        MultitrackEditor::resync(self, widget)
+    }
+
+    fn route(
+        &mut self,
+        widget: i64,
+        tag: &str,
+        values: &[Value],
+        out: &mut Outcome,
+    ) -> (Option<String>, Vec<Correction>) {
+        self.gesture(widget, tag, values, out)
+    }
 }
 
 /// **What a turn asks the transport to do.** The editor decides what a button,
@@ -378,61 +414,9 @@ impl MultitrackEditor {
         }
     }
 
-    /// **One message from the host**, read and answered.
+    /// **One message from the host**, read and answered ([`turn::turn`]).
     pub fn event(&mut self, event: &Event, version: i64) -> Outcome {
-        let args = &event.args;
-        let widget = args.first().map_or(0, int);
-        let tag = args.get(3).map(text).unwrap_or_default();
-        let message = Message {
-            addr: event.addr.clone(),
-            argc: args.len(),
-            widget,
-            seq: args.get(1).map_or(0, int),
-            against: args.get(2).map_or(0, int),
-            owns: i32::try_from(widget).is_ok_and(|w| self.answers(w, &tag)),
-            tag,
-            version,
-            is_window: self.window.is_some()
-                && (args.is_empty() || i64::from(self.window.unwrap_or_default()) == widget),
-        };
-        let mut out = Outcome {
-            version,
-            ..Outcome::default()
-        };
-        match self.conversation.read(&message) {
-            Turn::Nothing => {}
-            Turn::Closed => {
-                out.turn = Kind::Closed;
-                self.window = None;
-            }
-            Turn::Step { seq, redo } => {
-                out.turn = Kind::Step;
-                out.seq = seq;
-                out.redo = redo;
-            }
-            Turn::Stale {
-                widget,
-                seq,
-                reason,
-            } => {
-                out.turn = Kind::Stale;
-                let corrections = self.resync(widget);
-                out.answer = Some(conversation::answer(
-                    seq,
-                    version,
-                    Some(reason),
-                    corrections,
-                ));
-            }
-            Turn::Route { widget, seq } => {
-                out.turn = Kind::Route;
-                let values = args.get(4..).unwrap_or_default();
-                let (reason, corrections) = self.route(widget, &message.tag, values, &mut out);
-                self.conversation.applied(out.version);
-                out.answer = Some(conversation::answer(seq, out.version, reason, corrections));
-            }
-        }
-        out
+        turn::turn(self, event, version)
     }
 
     /// **One payload of a history step**, applied to the multitrack -- the inverse
@@ -562,7 +546,7 @@ impl MultitrackEditor {
 
     /// One gesture onto the multitrack: screen state, the editor's own, or an edit.
     /// Answers the reason and the corrections the acknowledgement carries.
-    fn route(
+    fn gesture(
         &mut self,
         widget: i64,
         tag: &str,

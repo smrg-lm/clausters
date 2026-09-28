@@ -9,6 +9,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use clausters_editing::conversation::{self, Answer, Conversation, Correction, Message, Turn};
+
 /// What kind of turn a message came to.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -87,4 +89,146 @@ pub(crate) fn text(value: &Value) -> String {
         Value::String(s) => s.clone(),
         other => other.to_string(),
     }
+}
+
+/// The fields every editor's outcome shares, so [`turn`] can fill them whatever
+/// else an editor's own outcome carries.
+pub trait Turned: Default {
+    /// Starts an outcome at `version`.
+    fn at(version: i64) -> Self;
+    /// What kind of turn it was.
+    fn set_turn(&mut self, turn: Kind);
+    /// What the host is sent.
+    fn set_answer(&mut self, answer: Answer);
+    /// The stamp and the direction of a walk through the history.
+    fn set_step(&mut self, seq: i64, redo: bool);
+    /// The version after the turn -- moved by a route that edited.
+    fn version(&self) -> i64;
+}
+
+/// Implements [`Turned`] for an outcome with the usual field names.
+macro_rules! turned {
+    ($outcome:ty) => {
+        impl crate::turn::Turned for $outcome {
+            fn at(version: i64) -> Self {
+                Self {
+                    version,
+                    ..Self::default()
+                }
+            }
+            fn set_turn(&mut self, turn: crate::turn::Kind) {
+                self.turn = turn;
+            }
+            fn set_answer(&mut self, answer: clausters_editing::conversation::Answer) {
+                self.answer = Some(answer);
+            }
+            fn set_step(&mut self, seq: i64, redo: bool) {
+                self.seq = seq;
+                self.redo = redo;
+            }
+            fn version(&self) -> i64 {
+                self.version
+            }
+        }
+    };
+}
+pub(crate) use turned;
+
+/// **What an editor answers for, in one conversation turn.** Everything a turn
+/// does that is not the editor's own -- reading the message, the history walk,
+/// the refusal of a stale gesture, the acknowledgement -- is [`turn`]'s; these
+/// are the parts that differ from one application to the next.
+pub trait Converse {
+    /// The editor's outcome.
+    type Outcome: Turned;
+    /// The conversation it keeps.
+    fn conversation(&mut self) -> &mut Conversation;
+    /// Its window, when it has one open.
+    fn window_id(&self) -> Option<i32>;
+    /// Its window closed.
+    fn closed(&mut self);
+    /// Whether `widget` is one of its own for a gesture with this tag.
+    fn owns(&self, widget: i64, tag: &str) -> bool;
+    /// The corrections that put `widget` back as the structure has it.
+    fn resync(&mut self, widget: i64) -> Vec<Correction>;
+    /// One gesture read in the structure's own vocabulary: the reason it was
+    /// refused, if it was, and the corrections the acknowledgement carries.
+    /// What else it did goes on `out`.
+    fn route(
+        &mut self,
+        widget: i64,
+        tag: &str,
+        values: &[Value],
+        out: &mut Self::Outcome,
+    ) -> (Option<String>, Vec<Correction>);
+    /// A verb of the window itself -- a save, a play -- answered before the
+    /// conversation reads the message; `true` when it was one.
+    fn window_verb(
+        &mut self,
+        _message: &Message,
+        _args: &[Value],
+        _out: &mut Self::Outcome,
+    ) -> bool {
+        false
+    }
+}
+
+/// **One turn of an editor's conversation**: the message the host sent, read
+/// and answered, the gesture in it handed to the editor's
+/// [`Converse::route`].
+pub fn turn<E: Converse>(editor: &mut E, event: &Event, version: i64) -> E::Outcome {
+    let args = &event.args;
+    let widget = args.first().map_or(0, int);
+    let tag = args.get(3).map(text).unwrap_or_default();
+    let window = editor.window_id();
+    let message = Message {
+        addr: event.addr.clone(),
+        argc: args.len(),
+        widget,
+        seq: args.get(1).map_or(0, int),
+        against: args.get(2).map_or(0, int),
+        owns: editor.owns(widget, &tag),
+        tag,
+        version,
+        is_window: window.is_some()
+            && (args.is_empty() || i64::from(window.unwrap_or_default()) == widget),
+    };
+    let mut out = E::Outcome::at(version);
+    if editor.window_verb(&message, args, &mut out) {
+        return out;
+    }
+    match editor.conversation().read(&message) {
+        Turn::Nothing => {}
+        Turn::Closed => {
+            out.set_turn(Kind::Closed);
+            editor.closed();
+        }
+        Turn::Step { seq, redo } => {
+            out.set_turn(Kind::Step);
+            out.set_step(seq, redo);
+        }
+        Turn::Stale {
+            widget,
+            seq,
+            reason,
+        } => {
+            out.set_turn(Kind::Stale);
+            let corrections = editor.resync(widget);
+            out.set_answer(conversation::answer(
+                seq,
+                version,
+                Some(reason),
+                corrections,
+            ));
+        }
+        Turn::Route { widget, seq } => {
+            out.set_turn(Kind::Route);
+            let values = args.get(4..).unwrap_or_default();
+            let (reason, corrections) = editor.route(widget, &message.tag, values, &mut out);
+            let after = out.version();
+            editor.conversation().applied(after);
+            out.set_answer(conversation::answer(seq, after, reason, corrections));
+        }
+    }
+    out
 }

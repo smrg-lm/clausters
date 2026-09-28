@@ -465,7 +465,7 @@ opened it.
     `sheet_from_timeline` reads a sequence. A tempo ramp goes to a file as the
     step at its breakpoint. `renderEvents` is asynchronous in the web client,
     whose offline session is.)*
-  - ⬜ **X3.4 - The shared conversation turn** ("Each editor writes the
+  - ✅ **X3.4 - The shared conversation turn** ("Each editor writes the
     conversation's turn again", Found by use): the notes editor would be its
     third copy.
   - ⬜ **X3.5 - `clausters_editing`**: the projection and the intake with ids,
@@ -1019,13 +1019,21 @@ wrong.
   in a window that plays itself the host's sweep should not touch the
   monitor's loop.
 
-- ⬜ **Each editor writes the conversation's turn again** *(audit 2026-09-25,
+- ✅ **Each editor writes the conversation's turn again** *(audit 2026-09-25,
   with the server's)*. `audio/editor.rs::event` and `multitrack/editor.rs::event`
   build the same conversation `Message` from the event and map
   `Turn::{Nothing, Closed, Step, Stale, Route}` onto an `Outcome` with
   `conversation::answer`, differing only in who owns a widget, the resync and
   the route. The score editor would be a third copy: one
   `conversation::turn(event, version, window, owns, route, resync)`.
+
+  **Fixed 2026-09-27, before the notes editor would have been the third copy
+  (`X3.4`).** `turn::turn` reads the message and answers every turn but the
+  gesture, which it hands to the editor through the `Converse` trait: the
+  conversation, the window, who owns a widget, the resync, the route, and a
+  window verb answered before the conversation (the audio editor's save and
+  play). `turn::Turned` fills the fields every outcome shares. Both editors
+  are the one call now.
 
 - ✅ **A roll's edit sends every note at its velocity's amplitude** *(found
   2026-09-27 by the user, by ear, in `editors/edit_notes` with its timeline

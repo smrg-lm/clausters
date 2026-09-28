@@ -25,13 +25,13 @@ use clausters_document::view::NOT_AN_EDIT;
 use clausters_document::{Lifetime, Opaque, Range, SourceId, SourceRef};
 use clausters_editing::apply::{Step, steps_json};
 use clausters_editing::audio_playback::{Pass, space};
-use clausters_editing::conversation::{self, Answer, Conversation, Correction, Message, Turn};
+use clausters_editing::conversation::{self, Answer, Conversation, Correction, Message};
 use clausters_editing::load::stitch_message;
 use clausters_editing::samples;
 use clausters_editing::sources::{Held, stitch};
 
 use crate::samples::{MEASURES, MeterAt, Window, measures, props, window};
-use crate::turn::{Event, Kind, Leg, Record, int, number, text};
+use crate::turn::{self, Converse, Event, Kind, Leg, Record, int, number, text};
 
 /// The most values one write carries when the caller has not said.
 pub const DEFAULT_CHUNK: usize = 8192;
@@ -77,6 +77,84 @@ pub struct Outcome {
     /// nothing plays.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cue: Option<u64>,
+}
+
+turn::turned!(Outcome);
+
+impl Converse for AudioEditor {
+    type Outcome = Outcome;
+
+    fn conversation(&mut self) -> &mut Conversation {
+        &mut self.conversation
+    }
+
+    fn window_id(&self) -> Option<i32> {
+        self.window
+    }
+
+    fn closed(&mut self) {
+        self.window = None;
+    }
+
+    fn owns(&self, widget: i64, _tag: &str) -> bool {
+        self.widget.is_some_and(|w| i64::from(w) == widget)
+    }
+
+    fn resync(&mut self, widget: i64) -> Vec<Correction> {
+        resync(widget)
+    }
+
+    fn route(
+        &mut self,
+        widget: i64,
+        tag: &str,
+        values: &[Value],
+        out: &mut Outcome,
+    ) -> (Option<String>, Vec<Correction>) {
+        self.gesture(widget, tag, values, out)
+    }
+
+    fn window_verb(&mut self, message: &Message, args: &[Value], out: &mut Outcome) -> bool {
+        if message.addr != "/gui_event" || !message.is_window {
+            return false;
+        }
+        // **Ctrl+S over the window is a save**, the window's own verb: it names
+        // no widget, changes nothing the history holds, and is answered with
+        // the steps that write the file.
+        if message.tag == "save" {
+            out.turn = Kind::Route;
+            let reason = match self.save(None, "float") {
+                Ok(steps) => {
+                    out.steps = Some(steps);
+                    None
+                }
+                Err(why) => Some(why),
+            };
+            out.answer = Some(conversation::answer(
+                message.seq,
+                out.version,
+                reason,
+                Vec::new(),
+            ));
+            return true;
+        }
+        // **The space bar over the window is a play**, the window's own verb
+        // and the application's to read (the window says `plays`): what it
+        // asks of the playback, with the loop switch the host sends beside it.
+        if message.tag == "play" {
+            out.turn = Kind::Route;
+            let looping = args.get(4).is_some_and(|v| int(v) != 0);
+            out.play = Some(self.play(looping));
+            out.answer = Some(conversation::answer(
+                message.seq,
+                out.version,
+                None,
+                Vec::new(),
+            ));
+            return true;
+        }
+        false
+    }
 }
 
 /// **A press of the space bar over the take**, read off the view: where a
@@ -550,89 +628,9 @@ impl AudioEditor {
         Some(steps_json(&steps))
     }
 
-    /// **One message from the host**, read and answered.
+    /// **One message from the host**, read and answered ([`turn::turn`]).
     pub fn event(&mut self, event: &Event, version: i64) -> Outcome {
-        let args = &event.args;
-        let widget = args.first().map_or(0, int);
-        let message = Message {
-            addr: event.addr.clone(),
-            argc: args.len(),
-            widget,
-            seq: args.get(1).map_or(0, int),
-            against: args.get(2).map_or(0, int),
-            owns: self.widget.is_some_and(|w| i64::from(w) == widget),
-            tag: args.get(3).map(text).unwrap_or_default(),
-            version,
-            is_window: self.window.is_some()
-                && (args.is_empty() || i64::from(self.window.unwrap_or_default()) == widget),
-        };
-        let mut out = Outcome {
-            version,
-            ..Outcome::default()
-        };
-        // **Ctrl+S over the window is a save**, the window's own verb: it names
-        // no widget, changes nothing the history holds, and is answered with
-        // the steps that write the file.
-        if message.addr == "/gui_event" && message.is_window && message.tag == "save" {
-            out.turn = Kind::Route;
-            let reason = match self.save(None, "float") {
-                Ok(steps) => {
-                    out.steps = Some(steps);
-                    None
-                }
-                Err(why) => Some(why),
-            };
-            out.answer = Some(conversation::answer(
-                message.seq,
-                version,
-                reason,
-                Vec::new(),
-            ));
-            return out;
-        }
-        // **The space bar over the window is a play**, the window's own verb
-        // and the application's to read (the window says `plays`): what it
-        // asks of the playback, with the loop switch the host sends beside it.
-        if message.addr == "/gui_event" && message.is_window && message.tag == "play" {
-            out.turn = Kind::Route;
-            let looping = args.get(4).is_some_and(|v| int(v) != 0);
-            out.play = Some(self.play(looping));
-            out.answer = Some(conversation::answer(message.seq, version, None, Vec::new()));
-            return out;
-        }
-        match self.conversation.read(&message) {
-            Turn::Nothing => {}
-            Turn::Closed => {
-                out.turn = Kind::Closed;
-                self.window = None;
-            }
-            Turn::Step { seq, redo } => {
-                out.turn = Kind::Step;
-                out.seq = seq;
-                out.redo = redo;
-            }
-            Turn::Stale {
-                widget,
-                seq,
-                reason,
-            } => {
-                out.turn = Kind::Stale;
-                out.answer = Some(conversation::answer(
-                    seq,
-                    version,
-                    Some(reason),
-                    resync(widget),
-                ));
-            }
-            Turn::Route { widget, seq } => {
-                out.turn = Kind::Route;
-                let values = args.get(4..).unwrap_or_default();
-                let (reason, corrections) = self.route(widget, &message.tag, values, &mut out);
-                self.conversation.applied(out.version);
-                out.answer = Some(conversation::answer(seq, out.version, reason, corrections));
-            }
-        }
-        out
+        turn::turn(self, event, version)
     }
 
     /// **Every widget of the window, corrected** -- what a history step leaves
@@ -653,7 +651,7 @@ impl AudioEditor {
 
     /// One gesture onto the take. Answers the reason and the corrections the
     /// acknowledgement carries.
-    fn route(
+    fn gesture(
         &mut self,
         widget: i64,
         tag: &str,
