@@ -348,11 +348,128 @@ opened it.
   `src/gui/editing/events.ts`), over the host's `notes` element (the largest
   element after the multitrack and the signal family).
 
-  **The question it opens is the one `O26` left:** the events view is shaped out of
-  the **client's own objects** — a `Timeline` of `OscItem`/`MidiItem`, read through
-  the client's `_pitch`, `_velocity` and `_label_of` — which is why it did not move
-  with the other projections (`crates/clausters-document/PLAN.md`, `O26`). What the
-  crate edits, then, is the first thing to settle, and it is not settled here.
+  **The question it opened is the one `O26` left:** the events view is shaped out
+  of the **client's own objects** — a `Timeline` of `OscItem`/`MidiItem`, read
+  through the client's `_pitch`, `_velocity` and `_label_of` — which is why it did
+  not move with the other projections (`crates/clausters-document/PLAN.md`, `O26`).
+  **Settled with the user 2026-09-27**, as follows.
+
+  **The principle: a roll is a plane of events, time on X and a domain on Y.** It
+  behaves as the multitrack does, and what changes is the domain of the data: a
+  note is a region (a start, a length, an identity of its own); the Y axis is a
+  *value* of the event where the multitrack's is a containment (the track); a
+  track's automation is the roll's CC, bend and pressure lanes; a region's
+  automation is a note's own expression (MPE), drawn inside the box; a region's
+  gain is the velocity, drawn **inside the rectangle** (the velocity lane goes);
+  a source several regions point at is an `EventSequence` several regions share.
+  What is shared is the gesture machine, not the element: what `(dx, dy)` means
+  is the domain's, so the `multitrack` and `notes` elements stay two.
+
+  **The Y domain is data**: the key it reads and writes, a scale (linear, log,
+  categorical), a ruler, a grid and a quantum. MIDI note first; then **Hz** — the
+  same magnitude in another coordinate, drawn on the log scale the spectrogram
+  already has (`freq_scale`, `display_to_hz`), the "analog score" whose precedent
+  is Xenakis's UPIC; then n-TET, a drum map, any numeric control. An expression
+  whose target is the Y key is drawn in the plane as a trajectory (a glissando in
+  Hz, an MPE per-note bend); the others go normalized inside the box. Events
+  without the Y key go to another lane (raw OSC as marks, CC as curves).
+
+  **Decisions:**
+
+  - **What the roll edits is the document's, in Rust**, with an id per event:
+    the **`EventSequence`**. A `Timeline`, a `.mid`, a recording and the
+    multitrack's notes region all open into it.
+  - **The editor edits the rendered object, with no copy.** The client object is
+    a handle over the Rust structure; there is no mirror and no write-back onto
+    the source `Timeline`, and the editor sounds with **its own playback**.
+  - **A `Timeline` has two states that coexist and are not reconciled.** Before
+    it plays it is client code (playables, generators, nesting, a tempo curve);
+    after, concrete data. **`render_events`** is the one-way change between them
+    (`timeline.render_events(...)`, `pattern.render_events(...)`): no timeline is
+    rebuilt from its values, no callable from its result. So **`edit(timeline)`
+    changes behaviour**: it renders the timeline and opens the sequence — said in
+    the books and in `edit_notes`.
+  - **An event becomes concrete data when it plays**: a client object becomes a
+    data value (a node, a buffer number). The time is not lost: the data keeps
+    its times in **beats** and carries the flattened tempo map, as a `.mid` does.
+  - **`Event` and its semantics go to `clausters-core`**, and the client `Event`
+    stays a dictionary that calls them: key families (pitch `freq` / `midinote`
+    / `degree` + `alter` + `scale` + `octave` + `root`; level `amp` / `velocity`
+    / `db`; length `sustain` / `dur` / `legato` / `stretch`; MIDI `channel`,
+    `program`; the notation keys), **coherence between keys** (editing `freq`
+    updates `midinote` and back), a `type` (`note`, `rest`, `midi` with
+    `midicmd`, `osc`), and a render per destination (`/synth_new` and its release;
+    MIDI messages; an OSC message to another application).
+  - **`MidiItem` and `OscItem` become `Event`s of their `type`**, not a class
+    hierarchy — what the roll edits and what a rendered timeline holds.
+  - **A degree is altered by its own key, `alter`**, in semitones (real, for
+    microtones; 0 by default; reserved, never sent to a synth) — MusicXML's name,
+    since `accidental` is already notation's (the courtesy sign). Core gets
+    `degree_to_midinote(degree, alter, octave, root, scale)` and its inverse
+    `midinote_to_degree(midinote, octave, root, scale, spelling) -> (degree,
+    alter)`, which coherence uses when the roll moves a note written by degree;
+    `spelling` picks sharp or flat. A fractional SuperCollider-style degree and a
+    `(degree, alter)` tuple are accepted as input and normalized to the two
+    keys, so pattern arithmetic stays on integers. Today's `degree_to_midinote`
+    drops the fraction and truncates negatives toward zero; that is fixed here.
+
+  **The conversions pivot on `Event`:** `Timeline` → sequence (rendering, one
+  way, in the clients over the Rust type); `.mid` both ways in `clausters-midi`
+  (which only writes today: note on/off pairing, CC to curves, tempo); live MIDI
+  through a recorder in `clausters-midi`; `Score` ↔ sequence through
+  `notation::interp::Note`, which already carries `pitch`, `amp`, `sustain`,
+  `spelling` and `marks`; and Event → OSC for a synth in the core. `MidiScore`
+  and `OscScore` stay what is compiled from a sequence for a file or an offline
+  render, not what is edited.
+
+  **The steps**, each closing with its commit, in this order because each is
+  written on the one before:
+
+  - ✅ **X3.0 - Before the editor.** The float velocity the host read as 100
+    ("A roll's edit sends every note at its velocity's amplitude", Found by use),
+    and a timeline on a server transport hearing an edit (`C54`). Left: `C54`'s
+    by-ear pass over `editors/edit_notes`, which is the user's.
+  - ⬜ **X3.1 - `Event` in the core**: families, coherence, `alter`, `type`,
+    render per destination; the C and wasm doors; both clients delegate and
+    delete their own derivation (`midinote()`, `freq()`, `sustain()`, velocity ↔
+    amp exist twice today, `seq/event.py`, `seq/event.ts`); parity vectors.
+  - ⬜ **X3.2 - `EventSequence` in the document**, replacing today's
+    `events::Events` (opaque `{at, data}`, identity by position): events with
+    ids, beats and the tempo map, curve lanes with the existing `Automation` on
+    a beat axis, a note's expression as `Automation` relative to its start (so
+    M35 is provided for), unknown keys kept, a `Session` source a region can
+    point at. The handle in both clients: a playable, written to `.mid`, opened
+    by `edit`.
+  - ⬜ **X3.3 - The conversions**: `render_events`; `.mid` (write from the
+    sequence; read); `Score` ↔ sequence.
+  - ⬜ **X3.4 - The shared conversation turn** ("Each editor writes the
+    conversation's turn again", Found by use): the notes editor would be its
+    third copy.
+  - ⬜ **X3.5 - `clausters_editing`**: the projection and the intake with ids,
+    and the Y domain as data.
+  - ⬜ **X3.6 - The `notes` element**: ids on the wire (the end of identity by
+    order: deleting note *k* hands note *k+1* the data of *k*), the velocity
+    inside the note, the axis with a domain (MIDI note).
+  - ⬜ **X3.7 - `clausters-apps::notes`**: the window, the conversation with the
+    edit vocabulary by id (move through the domain, trim, split, join, quantize,
+    transpose, level, add, delete, duplicate), a member of `Editing`, the doors,
+    both clients as handles, the standalone host. `edit(timeline)` with its new
+    behaviour, the books, `edit_notes` rewritten. `NotesDomain`, `NotesView`,
+    `NotesEditor`, the whole-list intake and each client's note reading
+    (`_pitch`, `_length`, `_velocity`) are deleted.
+  - ⬜ **X3.8 - Its own playback**: a transport of its own (as
+    `AUDIO_EDITOR_TRANSPORT`), the Event → OSC render in Rust on
+    `/sched_atTransport`, an edit re-planned while it sounds (`/sched_clear
+    "transport" <id>` already exists), and a MIDI destination.
+  - ⬜ **X3.9 - The notes region in the multitrack**: an `EventSequence` source
+    through `Content::Window`, drawn in the box and edited in the roll opened on
+    it (unlike audio, `X1.10`, here the two interoperate), sounding on the
+    multitrack's transport; a source shared by several regions changes in all,
+    and making it unique is the pending clone verb (`clients/python/PLAN.md`,
+    Future directions).
+  - ⬜ **X3.10 - Recording** into an `EventSequence` (`clausters-midi`).
+  - ⬜ **X3.11 - CC lanes and per-note expression**, with M35.
+  - ⬜ **X3.12 - The Hz domain.**
 
   **Related:** the examples that edit notes through the raw event and have no
   history (`clients/python/PLAN.md`, "Half the editors a hand can use have no
