@@ -97,7 +97,7 @@ fn a_roll_fits_its_pitch_window_to_the_notes_it_holds() {
     assert_eq!(props["axes"]["x"]["unit"], "beats");
     assert_eq!(props["axes"]["y"]["min"], 56.0, "the lowest, less the pad");
     assert_eq!(props["axes"]["y"]["max"], 76.0, "the highest, plus it");
-    assert!(props.get("notes_editable").is_none(), "editable by default");
+    assert!(props.get("editable").is_none(), "editable by default");
 }
 
 #[test]
@@ -137,7 +137,10 @@ fn a_roll_over_a_generator_refuses_the_press_before_it_happens() {
         editable: false,
         ..Roll::default()
     });
-    assert_eq!(props["notes_editable"], false);
+    // The key the `notes` element reads: `notes_editable` is a clip's, and a
+    // roll given it went on offering the drag.
+    assert_eq!(props["editable"], false);
+    assert!(props.get("notes_editable").is_none());
 }
 
 #[test]
@@ -156,7 +159,7 @@ fn the_door_names_the_view_and_says_why_it_draws_nothing() {
     assert_eq!(asked["type"], "curve");
     let roll = props("pianoroll", &json!({"notes": [0.0, 1.0, 60.0, 100.0, 0.0]})).unwrap();
     assert!(
-        roll.get("notes_editable").is_none(),
+        roll.get("editable").is_none(),
         "a caller that says nothing means yes"
     );
     let other = props("multitrack", &json!({})).unwrap_err();

@@ -1032,6 +1032,15 @@ wrong.
   in a window that plays itself the host's sweep should not touch the
   monitor's loop.
 
+- ✅ **A roll over a rendering was offered the drag it could not keep**
+  *(found 2026-09-27, writing the notes editor's window over the catalogue's
+  roll)*. `catalogue::pianoroll` marked a roll that cannot be edited with
+  `notes_editable: false`, which is the **clip's** prop for the notes layer
+  inside a box; the `notes` element standing on its own reads `editable`, and
+  read nothing, so a roll over what a generator produced offered every drag
+  and the owner unwound it after. Fixed the same day: the catalogue writes
+  `editable`.
+
 - ✅ **Each editor writes the conversation's turn again** *(audit 2026-09-25,
   with the server's)*. `audio/editor.rs::event` and `multitrack/editor.rs::event`
   build the same conversation `Message` from the event and map

@@ -248,8 +248,10 @@ pub fn pianoroll(roll: &Roll) -> Map<String, Value> {
     if !roll.osc.is_empty() {
         props.insert("osc".into(), json!(roll.osc));
     }
+    // The element's own word. `notes_editable` is a clip's, for the notes
+    // layer inside a box; a roll standing on its own reads `editable`.
     if !roll.editable {
-        props.insert("notes_editable".into(), json!(false));
+        props.insert("editable".into(), json!(false));
     }
     let mut x = Map::new();
     x.insert(
