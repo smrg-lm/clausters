@@ -140,7 +140,9 @@ test("the control tail carries the derived pitch and the custom keys", () => {
     const args = new Event({ instrument: "sine", degree: 0, amp: 0.3, cutoff: 800 })
         .controlArgs()
         .map(([tag, value]) => `${tag}:${String(value)}`);
-    assert.deepEqual(args.slice(0, 4), ["s:freq", "f:261.62554931640625", "s:amp", "f:0.3"]);
+    // Middle C in equal temperament, in f64: the core's exact pair, which is
+    // what lets a moved freq and midinote stay the same note.
+    assert.deepEqual(args.slice(0, 4), ["s:freq", "f:261.6255653005986", "s:amp", "f:0.3"]);
     assert.ok(args.includes("s:cutoff"), "an unreserved numeric key is a control");
     assert.ok(!args.some((a) => a.includes("legato")), "a reserved key is not");
 });

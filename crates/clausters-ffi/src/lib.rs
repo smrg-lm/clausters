@@ -36,6 +36,7 @@ mod clocksync;
 mod document;
 mod editing;
 mod envshape;
+mod event;
 mod history;
 mod measure;
 #[cfg(feature = "notation")]
@@ -60,6 +61,7 @@ pub use builtins::*;
 pub use bundle::*;
 pub use clocksync::*;
 pub use document::*;
+pub use event::*;
 pub use history::*;
 pub use measure::*;
 pub use patch::*;
@@ -476,7 +478,12 @@ pub use time::*;
 /// **v70 the audio editor's playback.** `clausters_editing_audio_playback_new`,
 /// `_free` and `_call`: the audio editor as it is playing, every verb through
 /// one JSON door. **Additive**, and the counter moves for v31's reason.
-pub const CORE_ABI_VERSION: u32 = 70;
+/// **v71 an event's keys are the core's.** `clausters_core_degree_to_midinote`
+/// takes `alter` after `degree` and reads a fractional degree as an
+/// alteration; the `clausters_core_pitch_*`, `_level_*`, `_split_degree`,
+/// `_midinote_to_degree`, `_event_delta` and `_event_sustain` doors are new.
+/// **Breaking**.
+pub const CORE_ABI_VERSION: u32 = 71;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

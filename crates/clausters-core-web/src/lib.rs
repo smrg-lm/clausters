@@ -1139,13 +1139,137 @@ pub fn map(
     ) as f64)
 }
 
+// ---- an event's keys ----
+//
+// `clausters_core::event`, with each family crossing as the C ABI carries it:
+// `[freq, midinote, degree, alter, octave, root]` and `[amp, velocity, db]`,
+// NaN for a key the event does not hold, a key named by its index (`6` the
+// scale). An edit returns the rewritten family rather than writing in place.
+
 /// JS face: scale degree -> MIDI note number in the pitch space
-/// `octave`/`root`, with floored octave wrapping (sclang semantics). An empty
+/// `octave`/`root`, with floored octave wrapping (sclang semantics), `alter`
+/// semitones added and a fractional degree read as an alteration. An empty
 /// `scale` yields middle C.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
-pub fn degree_to_midinote(degree: f64, octave: f64, root: f64, scale: &[f32]) -> f64 {
-    builtins::degree_to_midinote(degree, octave, root, scale)
+pub fn degree_to_midinote(degree: f64, alter: f64, octave: f64, root: f64, scale: &[f32]) -> f64 {
+    clausters_core::event::degree_to_midinote(degree, alter, octave, root, scale)
+}
+
+/// JS face: MIDI note -> `[degree, alter]`; `spelling` below zero is flat.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn midinote_to_degree(
+    midinote: f64,
+    octave: f64,
+    root: f64,
+    scale: &[f32],
+    spelling: i32,
+) -> Vec<f64> {
+    let (degree, alter) = clausters_core::event::midinote_to_degree(
+        midinote,
+        octave,
+        root,
+        scale,
+        clausters_core::event::Spelling::from_i32(spelling),
+    );
+    vec![degree, alter]
+}
+
+/// JS face: a SuperCollider degree as `[degree, alter]`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn split_degree(degree: f64) -> Vec<f64> {
+    let (whole, alter) = clausters_core::event::split_degree(degree);
+    vec![whole, alter]
+}
+
+#[cfg(target_arch = "wasm32")]
+fn keys<const N: usize>(values: &[f64]) -> [f64; N] {
+    let mut out = [f64::NAN; N];
+    for (slot, v) in out.iter_mut().zip(values) {
+        *slot = *v;
+    }
+    out
+}
+
+/// JS face: `[midinote, freq]` the pitch keys sound.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn pitch_resolve(pitch: &[f64], scale: &[f32]) -> Vec<f64> {
+    let pitch = clausters_core::event::Pitch::from_array(keys(pitch));
+    vec![pitch.midinote(scale), pitch.freq(scale)]
+}
+
+/// JS face: the pitch keys with key `key` (its index) written to `value` and
+/// the others the event holds rewritten to the same note.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn pitch_set(
+    pitch: &[f64],
+    key: u32,
+    value: f64,
+    scale: &[f32],
+    spelling: i32,
+) -> Result<Vec<f64>, JsError> {
+    let key = clausters_core::event::PitchKey::from_index(key)
+        .ok_or_else(|| JsError::new(&format!("no pitch key {key}")))?;
+    let mut p = clausters_core::event::Pitch::from_array(keys(pitch));
+    p.set(
+        key,
+        value,
+        scale,
+        clausters_core::event::Spelling::from_i32(spelling),
+    );
+    Ok(p.to_array().to_vec())
+}
+
+/// JS face: `[amp, velocity]` the level keys sound at.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn level_resolve(level: &[f64]) -> Vec<f64> {
+    let level = clausters_core::event::Level::from_array(keys(level));
+    vec![level.amp(), level.velocity()]
+}
+
+/// JS face: the level keys with key `key` (its index) written to `value` and
+/// the others the event holds rewritten.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn level_set(level: &[f64], key: u32, value: f64) -> Result<Vec<f64>, JsError> {
+    let key = clausters_core::event::LevelKey::from_index(key)
+        .ok_or_else(|| JsError::new(&format!("no level key {key}")))?;
+    let mut l = clausters_core::event::Level::from_array(keys(level));
+    l.set(key, value);
+    Ok(l.to_array().to_vec())
+}
+
+/// JS face: a MIDI velocity as its linear amplitude.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn amp_of_velocity(velocity: f64) -> f64 {
+    clausters_core::event::amp_of_velocity(velocity)
+}
+
+/// JS face: a linear amplitude as a note-on's velocity (1..127).
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn velocity_of_amp(amp: f64) -> f64 {
+    clausters_core::event::velocity_of_amp(amp)
+}
+
+/// JS face: beats to the next event (`delta` NaN when not stated).
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn event_delta(dur: f64, stretch: f64, delta: f64) -> f64 {
+    clausters_core::event::delta(dur, stretch, (!delta.is_nan()).then_some(delta))
+}
+
+/// JS face: beats the event sounds (`sustain` NaN when not stated).
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn event_sustain(dur: f64, legato: f64, stretch: f64, sustain: f64) -> f64 {
+    clausters_core::event::sustain(dur, legato, stretch, (!sustain.is_nan()).then_some(sustain))
 }
 
 // ---- the sample-clock model ----

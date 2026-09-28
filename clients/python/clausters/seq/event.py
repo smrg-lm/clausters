@@ -16,7 +16,6 @@ global ``has_gate`` default left False.
 """
 
 from .. import _native
-from ..base.builtins import cpsmidi, midicps
 from ..defs.node import Node
 
 #: Keys that drive timing/structure and are never sent as synth controls.
@@ -24,7 +23,7 @@ from ..defs.node import Node
 _RESERVED = {
     "type", "instrument", "dur", "legato", "stretch", "sustain", "delta",
     "add_action", "target", "group", "server", "has_gate",
-    "midinote", "degree", "octave", "root", "scale", "node",
+    "midinote", "degree", "alter", "octave", "root", "scale", "node", "db",
     # What the note says on a page. None of it is a synth control, and a
     # `bool` is an `int` in Python -- so a `tie=True` that was not reserved
     # would be sent as a control ``1.0`` and ignored in silence.
@@ -63,6 +62,17 @@ DEFAULTS = {
     "scale": (0, 2, 4, 5, 7, 9, 11),  # major
 }
 
+#: The two key families whose keys are spellings of one quantity, and the
+#: order a caller's keys are written in when an event is built: lowest first,
+#: so where a caller states two spellings the last one -- ``freq``, ``amp`` --
+#: is the one the others follow, SuperCollider's precedence.
+_PITCH_ORDER = ("scale", "root", "octave", "degree", "alter", "midinote", "freq")
+_LEVEL_ORDER = ("db", "velocity", "amp")
+_PITCH = frozenset(_PITCH_ORDER)
+_LEVEL = frozenset(_LEVEL_ORDER)
+#: The pitch keys an edit to another pitch key can rewrite.
+_SPELLINGS = ("freq", "midinote", "degree")
+
 
 class Event(dict):
     """A note event: a ``dict`` of parameters that knows how to play itself.
@@ -78,9 +88,24 @@ class Event(dict):
 
     The derived quantities compute the values actually used: `midinote` and
     `freq` resolve pitch (an explicit ``freq`` wins, else ``midinote``, else
-    ``degree`` within ``octave``/``root``/``scale``), `delta` is the beats to
-    the next event and `sustain` the beats the synth sounds. `play` renders the
-    event on a destination -- a `Server` or a MIDI destination.
+    ``degree`` altered by ``alter`` within ``octave``/``root``/``scale``),
+    `amp` and `velocity` the level (an explicit ``amp`` wins, else
+    ``velocity``, else ``db``), `delta` is the beats to the next event and
+    `sustain` the beats the synth sounds. `play` renders the event on a
+    destination -- a `Server` or a MIDI destination. The rules are the shared
+    core's, so every client's event sounds the same.
+
+    **A family's keys stay coherent.** ``freq``, ``midinote`` and ``degree`` +
+    ``alter`` are spellings of one pitch, and ``amp``, ``velocity`` and ``db``
+    of one level: writing one of them rewrites the others the event holds, so
+    a note moved by ``midinote`` does not go on sounding the ``freq`` it was
+    written with. A key the event does not hold is not added. Built with two
+    spellings of one family, the event takes ``freq`` over ``midinote`` over
+    the degree, and ``amp`` over ``velocity`` over ``db``.
+
+    **A degree is altered by ``alter``**, in semitones (real, so a microtone
+    is one too). SuperCollider's fraction (``degree=1.1`` for degree 1 sharp)
+    and a pair (``degree=(1, 1)``) are both read as the two keys.
 
     An event may also carry what the note is **on a page** (`NOTATION_KEYS`):
     ``articulations``, ``dynamic``, ``ornament``, ``grace``, ``stem``,
@@ -92,55 +117,112 @@ class Event(dict):
     """
 
     def __init__(self, *args, **kwargs):
-        merged = dict(DEFAULTS)
-        merged.update(dict(*args, **kwargs))
-        super().__init__(merged)
+        given = dict(*args, **kwargs)
+        super().__init__(DEFAULTS)
+        for key, value in given.items():
+            if key not in _PITCH and key not in _LEVEL:
+                dict.__setitem__(self, key, value)
+        for key in _PITCH_ORDER:
+            if key in given:
+                self[key] = given[key]
+        for key in _LEVEL_ORDER:
+            if key in given:
+                self[key] = given[key]
+
+    # ---- writing a key ----
+
+    def __setitem__(self, key, value):
+        if value is None:
+            dict.__setitem__(self, key, value)
+        elif key in _PITCH:
+            self._set_pitch(key, value)
+        elif key in _LEVEL:
+            self._set_level(key, value)
+        else:
+            dict.__setitem__(self, key, value)
+
+    def update(self, *args, **kwargs):
+        """Writes each key as ``event[key] = value`` does, so a family stays
+        coherent."""
+        for key, value in dict(*args, **kwargs).items():
+            self[key] = value
+
+    def _pitch_keys(self):
+        return [self.get(k) for k in _native.PITCH_KEYS[:6]]
+
+    def _set_pitch(self, key, value):
+        if key == "degree" and isinstance(value, (tuple, list)):
+            degree, alter = value
+            self._set_pitch("degree", degree)
+            self._set_pitch("alter", alter)
+            return
+        if key == "scale":
+            dict.__setitem__(self, key, value)
+        held = any(self.get(k) is not None for k in _SPELLINGS if k != key)
+        if not held:
+            # Nothing else spells this pitch, so nothing follows: only a
+            # fractional degree has to be split.
+            if (key == "degree" and isinstance(value, (int, float))
+                    and float(value) != int(float(value))):
+                degree, alter = _native.split_degree(float(value))
+                dict.__setitem__(self, "degree", degree)
+                dict.__setitem__(self, "alter", alter)
+            elif key != "scale":
+                dict.__setitem__(self, key, value)
+            return
+        keys = _native.pitch_set(self._pitch_keys(), key,
+                                 0.0 if key == "scale" else float(value),
+                                 self.get("scale") or (), self.get("spelling"))
+        for name, v in zip(_native.PITCH_KEYS, keys):
+            if v is not None:
+                dict.__setitem__(self, name, v)
+
+    def _set_level(self, key, value):
+        keys = _native.level_set([self.get(k) for k in _native.LEVEL_KEYS], key,
+                                 float(value))
+        for name, v in zip(_native.LEVEL_KEYS, keys):
+            if v is not None:
+                dict.__setitem__(self, name, v)
 
     # ---- derived quantities ----
 
     def midinote(self) -> float:
         """The MIDI note number this event sounds (the value `freq` derives
-        from). An explicit `freq` (Hz) is inverted via `cpsmidi`; otherwise it
-        comes from `midinote`, or `degree`/`octave`/`root`/`scale`."""
-        if self.get("freq") is not None:
-            return float(cpsmidi(float(self["freq"])))
-        midinote = self.get("midinote")
-        if midinote is None:
-            degree = self.get("degree")
-            if degree is None:
-                return 60.0
-            # Pitch-space resolution is the core's shared rule (floored octave
-            # wrapping), so every client's Event resolves degrees identically.
-            return _native.degree_to_midinote(
-                float(degree), float(self["octave"]), float(self["root"]), self["scale"]
-            )
-        return float(midinote)
+        from): an explicit ``freq`` inverted, else ``midinote``, else ``degree``
+        altered by ``alter`` within ``octave``/``root``/``scale``, else middle
+        C."""
+        return _native.pitch_resolve(self._pitch_keys(), self.get("scale") or ())[0]
 
     def freq(self) -> float:
         """The frequency in Hz this event sounds: an explicit ``freq`` if given,
-        otherwise `midinote` converted through the native ``midicps``."""
-        if self.get("freq") is not None:
-            return float(self["freq"])
-        return float(midicps(self.midinote()))
+        otherwise `midinote` in equal temperament."""
+        return _native.pitch_resolve(self._pitch_keys(), self.get("scale") or ())[1]
+
+    def amp(self) -> float:
+        """The linear amplitude this event sounds at: an explicit ``amp``, else
+        its ``velocity``, else its ``db``."""
+        return _native.level_resolve([self.get(k) for k in _native.LEVEL_KEYS])[0]
+
+    def velocity(self) -> int:
+        """The velocity a note-on of this event carries (1..127): an explicit
+        ``velocity``, else its amplitude's."""
+        return int(_native.level_resolve([self.get(k) for k in _native.LEVEL_KEYS])[1])
 
     def delta(self) -> float:
         """Beats until the next event: an explicit ``delta`` key if given,
         otherwise ``dur * stretch``. As in SuperCollider, the key overrides the
         calculation when it is present."""
-        d = self.get("delta")
-        return float(d) if d is not None else float(self["dur"]) * float(self["stretch"])
+        return _native.event_delta(self["dur"], self["stretch"], self.get("delta"))
 
     def sustain(self) -> float:
         """Beats the synth sounds: an explicit ``sustain`` key if given,
         otherwise ``dur * legato * stretch``. As in SuperCollider, the key
         overrides the calculation when it is present."""
-        s = self.get("sustain")
-        if s is not None:
-            return float(s)
-        return float(self["dur"]) * float(self["legato"]) * float(self["stretch"])
+        return _native.event_sustain(self["dur"], self["legato"], self["stretch"],
+                                     self.get("sustain"))
 
     def _control_args(self) -> list:
-        args = ["freq", self.freq(), "amp", float(self["amp"])]
+        args = ["freq", self.freq(), "amp", self.amp()]
         if self.get("out") is not None:
             args += ["out", float(self["out"])]
         # any extra numeric keys (custom controls) are sent verbatim

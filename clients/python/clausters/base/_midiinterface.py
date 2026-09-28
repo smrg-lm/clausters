@@ -153,7 +153,8 @@ class MidiServer:
     `Pbind` played on a clock with this as the
     destination renders each `Event` as a note
     on/off pair, handed to the held interface (NRT score or live port). Note
-    number from `event.midinote()`, velocity from `amp` (0..1 -> 0..127)."""
+    number from `event.midinote()`, velocity from `event.velocity()` -- an
+    explicit ``velocity``, else the amplitude's, never 0, which is a note-off."""
 
     def __init__(self, interface=None, channel: int = 0, ppq: int = 480):
         self.interface = interface if interface is not None else MidiNrtInterface()
@@ -170,8 +171,7 @@ class MidiServer:
             return None
         beat = Moment.current().beat
         note = int(round(event.midinote())) & 0x7F
-        amp = max(0.0, min(1.0, float(event.get("amp", 0.0))))
-        velocity = int(round(amp * 127)) & 0x7F
+        velocity = event.velocity()
         ch = self.channel
         self.interface.emit(beat, bytes((0x90 | ch, note, velocity)))
         self.interface.emit(beat + event.sustain(), bytes((0x80 | ch, note, 0)))

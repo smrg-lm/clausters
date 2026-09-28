@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 70
+CORE_ABI_VERSION = 71
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -427,8 +427,37 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_core_unix_to_ntp.argtypes = [ctypes.c_double]
     lib.clausters_core_degree_to_midinote.restype = ctypes.c_double
     lib.clausters_core_degree_to_midinote.argtypes = [
-        ctypes.c_double, ctypes.c_double, ctypes.c_double, f32p, ctypes.c_size_t,
+        ctypes.c_double, ctypes.c_double, ctypes.c_double, ctypes.c_double, f32p,
+        ctypes.c_size_t,
     ]
+    # An event's keys (ABI v71): a family crosses as a fixed f64 array, NaN
+    # for a key the event does not hold.
+    d64p = ctypes.POINTER(ctypes.c_double)
+    lib.clausters_core_midinote_to_degree.restype = ctypes.c_int32
+    lib.clausters_core_midinote_to_degree.argtypes = [
+        ctypes.c_double, ctypes.c_double, ctypes.c_double, f32p, ctypes.c_size_t,
+        ctypes.c_int32, d64p,
+    ]
+    lib.clausters_core_split_degree.restype = ctypes.c_int32
+    lib.clausters_core_split_degree.argtypes = [ctypes.c_double, d64p]
+    lib.clausters_core_pitch_resolve.restype = ctypes.c_int32
+    lib.clausters_core_pitch_resolve.argtypes = [d64p, f32p, ctypes.c_size_t, d64p]
+    lib.clausters_core_pitch_set.restype = ctypes.c_int32
+    lib.clausters_core_pitch_set.argtypes = [
+        d64p, ctypes.c_uint32, ctypes.c_double, f32p, ctypes.c_size_t, ctypes.c_int32,
+    ]
+    lib.clausters_core_level_resolve.restype = ctypes.c_int32
+    lib.clausters_core_level_resolve.argtypes = [d64p, d64p]
+    lib.clausters_core_level_set.restype = ctypes.c_int32
+    lib.clausters_core_level_set.argtypes = [d64p, ctypes.c_uint32, ctypes.c_double]
+    for name in ("amp_of_velocity", "velocity_of_amp"):
+        fn = getattr(lib, f"clausters_core_{name}")
+        fn.restype = ctypes.c_double
+        fn.argtypes = [ctypes.c_double]
+    lib.clausters_core_event_delta.restype = ctypes.c_double
+    lib.clausters_core_event_delta.argtypes = [ctypes.c_double] * 3
+    lib.clausters_core_event_sustain.restype = ctypes.c_double
+    lib.clausters_core_event_sustain.argtypes = [ctypes.c_double] * 4
     # The shared-memory segment (ABI v21): a peer maps the file itself and asks
     # here for every offset, for the directory's seqlock and for the ring
     # framing -- the numbers this binding used to transcribe.
@@ -2825,15 +2854,117 @@ def unix_to_ntp(unix_secs: float) -> int:
     return lib().clausters_core_unix_to_ntp(float(unix_secs))
 
 
-def degree_to_midinote(degree: float, octave: float, root: float, scale) -> float:
+def degree_to_midinote(degree: float, alter: float, octave: float, root: float,
+                       scale) -> float:
     """Scale-degree -> MIDI note number in the ``octave``/``root`` pitch space,
     wrapping degrees past the scale length with octave carry (floored division,
-    sclang semantics) -- computed in the shared core so every client's `Event`
-    resolves pitch identically."""
+    sclang semantics), with ``alter`` semitones added and a fractional degree
+    read as SuperCollider writes an alteration -- computed in the shared core
+    so every client's `Event` resolves pitch identically."""
     a, _ = _as_array(scale)
     return lib().clausters_core_degree_to_midinote(
-        float(degree), float(octave), float(root), _ptr(a), len(a)
+        float(degree), float(alter), float(octave), float(root), _ptr(a), len(a)
     )
+
+
+_NAN = float("nan")
+
+
+def _spelling(spelling) -> int:
+    return -1 if spelling == "flat" else 0
+
+
+def _keys(values, n):
+    """A family's keys as the door carries them: ``None`` is NaN."""
+    return (ctypes.c_double * n)(*(_NAN if v is None else float(v) for v in values))
+
+
+def _held(keys):
+    """The keys back, NaN as ``None``."""
+    return [None if v != v else v for v in keys]
+
+
+def midinote_to_degree(midinote: float, octave: float, root: float, scale,
+                       spelling=None) -> tuple:
+    """MIDI note -> ``(degree, alter)`` in the pitch space: a note on the scale
+    is its degree unaltered, one between two degrees is the one below raised,
+    or the one above lowered when ``spelling`` is ``"flat"``."""
+    a, _ = _as_array(scale)
+    out = (ctypes.c_double * 2)()
+    lib().clausters_core_midinote_to_degree(float(midinote), float(octave), float(root),
+                                            _ptr(a), len(a), _spelling(spelling), out)
+    return out[0], out[1]
+
+
+def split_degree(degree: float) -> tuple:
+    """A SuperCollider degree as ``(degree, alter)``: ``1.1`` is ``(1, 1)``."""
+    out = (ctypes.c_double * 2)()
+    lib().clausters_core_split_degree(float(degree), out)
+    return out[0], out[1]
+
+
+#: The pitch keys in the order the core carries them; ``scale`` is the
+#: seventh, passed beside them.
+PITCH_KEYS = ("freq", "midinote", "degree", "alter", "octave", "root", "scale")
+#: The level keys in the order the core carries them.
+LEVEL_KEYS = ("amp", "velocity", "db")
+
+
+def pitch_resolve(keys, scale) -> tuple:
+    """``(midinote, freq)`` the six pitch keys (``None`` where not held) sound."""
+    a, _ = _as_array(scale)
+    out = (ctypes.c_double * 2)()
+    lib().clausters_core_pitch_resolve(_keys(keys, 6), _ptr(a), len(a), out)
+    return out[0], out[1]
+
+
+def pitch_set(keys, key: str, value: float, scale, spelling=None) -> list:
+    """The six pitch keys with ``key`` written to ``value`` and every other key
+    held (not ``None``) rewritten to the same note."""
+    a, _ = _as_array(scale)
+    buf = _keys(keys, 6)
+    lib().clausters_core_pitch_set(buf, PITCH_KEYS.index(key), float(value), _ptr(a),
+                                   len(a), _spelling(spelling))
+    return _held(buf)
+
+
+def level_resolve(keys) -> tuple:
+    """``(amp, velocity)`` the three level keys (``None`` where not held) sound
+    at."""
+    out = (ctypes.c_double * 2)()
+    lib().clausters_core_level_resolve(_keys(keys, 3), out)
+    return out[0], out[1]
+
+
+def level_set(keys, key: str, value: float) -> list:
+    """The three level keys with ``key`` written to ``value`` and every other
+    key held rewritten."""
+    buf = _keys(keys, 3)
+    lib().clausters_core_level_set(buf, LEVEL_KEYS.index(key), float(value))
+    return _held(buf)
+
+
+def amp_of_velocity(velocity: float) -> float:
+    """A MIDI velocity as the linear amplitude that goes with it."""
+    return lib().clausters_core_amp_of_velocity(float(velocity))
+
+
+def velocity_of_amp(amp: float) -> float:
+    """A linear amplitude as the velocity a note-on carries (1..127)."""
+    return lib().clausters_core_velocity_of_amp(float(amp))
+
+
+def event_delta(dur: float, stretch: float, delta=None) -> float:
+    """Beats to the next event: ``delta`` when given, else ``dur * stretch``."""
+    return lib().clausters_core_event_delta(float(dur), float(stretch),
+                                            _NAN if delta is None else float(delta))
+
+
+def event_sustain(dur: float, legato: float, stretch: float, sustain=None) -> float:
+    """Beats the event sounds: ``sustain`` when given, else
+    ``dur * legato * stretch``."""
+    return lib().clausters_core_event_sustain(float(dur), float(legato), float(stretch),
+                                              _NAN if sustain is None else float(sustain))
 
 
 # ---- seeded value stream (the sequencing layer's RNG) ----

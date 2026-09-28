@@ -19,6 +19,11 @@
 //!   mirror Faust's Signal API (`crate::faust::signals` in the server) using
 //!   the same formula. Bit-exactness is guaranteed only for the ops the server
 //!   computes natively, not against Faust's own LLVM codegen.
+//! - [`event`] -- what an event's keys mean: the pitch, level and length it
+//!   sounds (`freq` / `midinote` / `degree` + `alter`; `amp` / `velocity` /
+//!   `db`; `delta`, `sustain`), and the coherence that rewrites a family's
+//!   other keys when one is edited. Rules over values, never a held event, so
+//!   every client's `Event` stays its own map.
 //! - [`rng`] -- the seeded white-noise generator, identical to the server's
 //!   `dsp::noise`, so a client can reproduce a noise stream sample for sample.
 //! - [`tempomap`] -- the beat<->second time map under a tempo that
@@ -90,6 +95,7 @@ pub mod clocksync;
 pub mod config;
 pub mod edit;
 pub mod envshape;
+pub mod event;
 pub mod fft;
 pub mod ids;
 pub mod loudness;

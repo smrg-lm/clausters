@@ -276,13 +276,16 @@ export const exprange = (x: Num, lo = 0.01, hi = 1): Num =>
 
 /**
  * Scale degree -> MIDI note number in the pitch space `octave`/`root`, with
- * floored octave wrapping (sclang semantics). An empty `scale` yields middle
- * C. The rule is the core's, so every client resolves a degree identically.
+ * floored octave wrapping (sclang semantics), `alter` semitones added and a
+ * fractional degree read as SuperCollider writes an alteration. An empty
+ * `scale` yields middle C. The rule is the core's, so every client resolves a
+ * degree identically.
  */
 export const degreeToMidinote = (
     degree: number,
+    alter: number,
     octave: number,
     root: number,
     scale: readonly number[],
 ): number =>
-    coreDegreeToMidinote(degree, octave, root, Float32Array.from(scale));
+    coreDegreeToMidinote(degree, alter, octave, root, Float32Array.from(scale));

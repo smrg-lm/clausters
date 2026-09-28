@@ -76,7 +76,8 @@ interface Vectors {
         unix: number; anchorUnix: number; anchorSample: number; rate: number; sample: number;
     }[];
     degreeToMidinote: {
-        degree: number; octave: number; root: number; scale: number[]; midinote: number;
+        degree: number; alter: number; octave: number; root: number; scale: number[];
+        midinote: number;
     }[];
     unary: { op: string; x: number; y: number | string }[];
     binary: { op: string; a: number; b: number; y: number | string }[];
@@ -237,7 +238,7 @@ test("timetags and sample targets match", () => {
 test("the pitch space resolves degrees identically", () => {
     for (const c of v.degreeToMidinote) {
         assert.equal(
-            degreeToMidinote(c.degree, c.octave, c.root, c.scale),
+            degreeToMidinote(c.degree, c.alter, c.octave, c.root, c.scale),
             c.midinote,
         );
     }

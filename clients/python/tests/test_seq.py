@@ -128,6 +128,41 @@ def test_event_pitch_from_midinote_and_degree():
     assert Event(degree=0).freq() == pytest.approx(midicps(60.0))
 
 
+def test_an_edited_pitch_key_rewrites_the_ones_the_event_holds():
+    # The defect this closes: a moved midinote under an explicit freq kept
+    # sounding the freq, since freq wins.
+    e = Event(freq=440.0, midinote=69)
+    e["midinote"] = 72
+    assert e.freq() == pytest.approx(midicps(72.0), rel=1e-6)
+    assert "degree" not in e, "a key the event does not hold is not added"
+
+    e = Event(degree=2, midinote=64)
+    e["midinote"] = 66                      # F#: degree 3 raised
+    assert (e["degree"], e["alter"]) == (3, 1)
+    e["spelling"] = "flat"
+    e["midinote"] = 66                      # Gb: degree 4 lowered
+    assert (e["degree"], e["alter"]) == (4, -1)
+
+
+def test_a_degree_is_altered_by_alter_and_read_from_supercolliders_fraction():
+    assert Event(degree=1, alter=1).midinote() == 63
+    assert Event(degree=1.1).midinote() == 63           # SuperCollider's 1s
+    assert Event(degree=0.9).midinote() == 61           # 1b
+    assert Event(degree=-1.1).midinote() == 58          # truncated to 0 before
+    assert Event(degree=(1, 1)) == Event(degree=1, alter=1)
+    assert Event(degree=1.1)["degree"] == 1 and Event(degree=1.1)["alter"] == 1
+    assert Event(degree=1, alter=0.5).midinote() == 62.5
+
+
+def test_level_keys_resolve_and_stay_coherent():
+    assert Event(velocity=100).amp() == pytest.approx(100 / 127)
+    assert Event(velocity=100, amp=0.5).velocity() == 64, "amp wins"
+    e = Event(velocity=100)
+    e["amp"] = 0.25
+    assert e["velocity"] == 32
+    assert Event(amp=0.0).velocity() == 1, "a note-on is never a note-off"
+
+
 def test_event_and_pbind_accept_a_dict_like_kwargs():
     # The dict form of the constructor is equivalent to kwargs (as in Synth's
     # controls), and keywords win when both are given.

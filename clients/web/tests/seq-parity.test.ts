@@ -14,6 +14,7 @@ import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
 import { Bpf, Env, envGenArgs } from "../src/defs/ugens/index.ts";
+import { Event } from "../src/seq/event.ts";
 
 const here = new URL(".", import.meta.url);
 
@@ -28,9 +29,44 @@ interface CurveVector {
     release_node?: number | null;
 }
 
+interface EventVector {
+    name: string;
+    props: Record<string, unknown>;
+    edits: [string, unknown][];
+    keys: Record<string, number>;
+    midinote: number;
+    freq: number;
+    amp: number;
+    velocity: number;
+    delta: number;
+    sustain: number;
+}
+
 const vectors = JSON.parse(
     await readFile(new URL("./seq-vectors.json", here), "utf8"),
-) as { curves: CurveVector[] };
+) as { curves: CurveVector[]; events: EventVector[] };
+
+/** The family keys the reference pins, read off a TS event. */
+const FAMILY = ["freq", "midinote", "degree", "alter", "octave", "root", "amp", "velocity", "db"];
+
+for (const vector of vectors.events) {
+    test(`event '${vector.name}' holds and sounds what the reference does`, () => {
+        const event = new Event(vector.props);
+        for (const [key, value] of vector.edits) event.set({ [key]: value });
+        const keys: Record<string, number> = {};
+        for (const key of FAMILY) {
+            const value = event.get(key);
+            if (value !== undefined && value !== null) keys[key] = value as number;
+        }
+        assert.deepEqual(keys, vector.keys);
+        assert.equal(event.midinote(), vector.midinote);
+        assert.equal(event.freq(), vector.freq);
+        assert.equal(event.amp(), vector.amp);
+        assert.equal(event.velocity(), vector.velocity);
+        assert.equal(event.delta(), vector.delta);
+        assert.equal(event.sustain(), vector.sustain);
+    });
+}
 
 /** The reference curves, rebuilt independently through the TS surface. */
 const built: Record<string, Bpf | Env> = {

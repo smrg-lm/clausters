@@ -105,6 +105,21 @@ In wasm neither applies: a call returns the bytes or the string.
 | `clausters_core_ntp_timetag` | — | `n/a` — wasm packs the timetag inside the bundle encoders (`osc_encode_bundle` from Unix seconds, `osc_encode_score_bundle` from render seconds); nothing on that side holds a raw NTP value |
 | `clausters_core_degree_to_midinote` | `degree_to_midinote` | |
 
+## An event's keys
+
+| C ABI | wasm | Note |
+|---|---|---|
+| `clausters_core_midinote_to_degree` | `midinote_to_degree` | `idiom` — C writes `[degree, alter]` into an out array; wasm returns it |
+| `clausters_core_split_degree` | `split_degree` | `idiom` — the same out array against a returned pair |
+| `clausters_core_pitch_resolve` | `pitch_resolve` | `idiom` — the same out array against a returned pair |
+| `clausters_core_pitch_set` | `pitch_set` | `idiom` — C rewrites the six keys in place; wasm returns them rewritten |
+| `clausters_core_level_resolve` | `level_resolve` | `idiom` — the same out array against a returned pair |
+| `clausters_core_level_set` | `level_set` | `idiom` — C rewrites the three keys in place; wasm returns them rewritten |
+| `clausters_core_amp_of_velocity` | `amp_of_velocity` | |
+| `clausters_core_velocity_of_amp` | `velocity_of_amp` | |
+| `clausters_core_event_delta` | `event_delta` | |
+| `clausters_core_event_sustain` | `event_sustain` | |
+
 ## Randomness
 
 | C ABI | wasm | Note |

@@ -50,17 +50,21 @@ QUANTS = [
     (2.3, 1.0), (5.0, 0.0), (-1.5, 4.0), (10.0, 3.0),
 ]
 
-# (degree, octave, root, scale) -- the pitch space Events resolve in.
+# (degree, alter, octave, root, scale) -- the pitch space Events resolve in.
 MAJOR = [0, 2, 4, 5, 7, 9, 11]
 MINOR = [0, 2, 3, 5, 7, 8, 10]
 DEGREES = [
-    (0.0, 5.0, 0.0, MAJOR),
-    (7.0, 5.0, 0.0, MAJOR),
-    (-1.0, 5.0, 0.0, MAJOR),
-    (3.0, 5.0, 2.0, MAJOR),
-    (2.0, 4.0, 0.0, MINOR),
-    (13.0, 6.0, -3.0, MINOR),
-    (3.0, 5.0, 0.0, []),
+    (0.0, 0.0, 5.0, 0.0, MAJOR),
+    (7.0, 0.0, 5.0, 0.0, MAJOR),
+    (-1.0, 0.0, 5.0, 0.0, MAJOR),
+    (3.0, 0.0, 5.0, 2.0, MAJOR),
+    (2.0, 0.0, 4.0, 0.0, MINOR),
+    (13.0, 0.0, 6.0, -3.0, MINOR),
+    (3.0, 0.0, 5.0, 0.0, []),
+    (1.0, 1.0, 5.0, 0.0, MAJOR),
+    (1.1, 0.0, 5.0, 0.0, MAJOR),
+    (-1.1, 0.0, 5.0, 0.0, MAJOR),
+    (2.0, 0.5, 5.0, 0.0, MINOR),
 ]
 
 UNARY = ["midicps", "cpsmidi", "midiratio", "ratiomidi", "dbamp", "ampdb",
@@ -227,9 +231,9 @@ def main():
             for (u, au, asm, r) in ANCHORS
         ],
         "degreeToMidinote": [
-            {"degree": d, "octave": o, "root": r, "scale": s,
-             "midinote": _native.degree_to_midinote(d, o, r, s)}
-            for (d, o, r, s) in DEGREES
+            {"degree": d, "alter": a, "octave": o, "root": r, "scale": s,
+             "midinote": _native.degree_to_midinote(d, a, o, r, s)}
+            for (d, a, o, r, s) in DEGREES
         ],
         # The op *names* are the core's own (`UnaryOp::name`), which is what
         # the TS door takes; the Python client spells its functions the same.

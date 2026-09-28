@@ -14,7 +14,15 @@
 // released by its gate, so it ramps out without a click even with the global
 // `hasGate` default left false.
 
-import { cpsmidi, degreeToMidinote, midicps } from "../base/builtins.ts";
+import {
+    event_delta as coreDelta,
+    event_sustain as coreSustain,
+    level_resolve as coreLevelResolve,
+    level_set as coreLevelSet,
+    pitch_resolve as corePitchResolve,
+    pitch_set as corePitchSet,
+    split_degree as coreSplitDegree,
+} from "../core/clausters_core_web.js";
 import { main } from "../base/main.ts";
 import type { OscArg } from "../base/osc.ts";
 
@@ -25,7 +33,7 @@ import type { OscArg } from "../base/osc.ts";
 const RESERVED = new Set([
     "type", "instrument", "dur", "legato", "stretch", "sustain", "delta",
     "addAction", "target", "group", "server", "hasGate",
-    "midinote", "degree", "octave", "root", "scale", "node",
+    "midinote", "degree", "alter", "octave", "root", "scale", "node", "db",
     // What the note says on a page. None of it is a synth control.
     "articulations", "dynamic", "ornament", "grace", "stem",
     "spelling", "accidental", "tie",
@@ -73,6 +81,22 @@ export const DEFAULTS: EventProps = {
 };
 
 /**
+ * The pitch keys in the order the core carries them; `scale` is the seventh,
+ * passed beside them. Also the order a caller's keys are written in when an
+ * event is built, lowest first: where a caller states two spellings, the last
+ * one -- `freq` -- is the one the others follow.
+ */
+const PITCH_KEYS = ["freq", "midinote", "degree", "alter", "octave", "root", "scale"];
+const PITCH_ORDER = ["scale", "root", "octave", "degree", "alter", "midinote", "freq"];
+/** The level keys in the order the core carries them, and their build order. */
+const LEVEL_KEYS = ["amp", "velocity", "db"];
+const LEVEL_ORDER = ["db", "velocity", "amp"];
+/** The pitch keys an edit to another pitch key can rewrite. */
+const SPELLINGS = ["freq", "midinote", "degree"];
+
+const held = (value: unknown): boolean => value !== undefined && value !== null;
+
+/**
  * An event's parameters. Unknown keys are simply stored; the numeric ones
  * that are not reserved are forwarded to the synth as controls.
  */
@@ -98,8 +122,23 @@ export interface EventDestination {
  *
  * The derived quantities compute the values actually used: `midinote` and
  * `freq` resolve pitch (an explicit `freq` wins, else `midinote`, else
- * `degree` within `octave`/`root`/`scale`), `delta` is the beats to the next
- * event and `sustain` the beats the synth sounds.
+ * `degree` altered by `alter` within `octave`/`root`/`scale`), `amp` and
+ * `velocity` the level (an explicit `amp` wins, else `velocity`, else `db`),
+ * `delta` is the beats to the next event and `sustain` the beats the synth
+ * sounds. The rules are the shared core's, so every client's event sounds the
+ * same.
+ *
+ * **A family's keys stay coherent.** `freq`, `midinote` and `degree` +
+ * `alter` are spellings of one pitch, and `amp`, `velocity` and `db` of one
+ * level: writing one of them rewrites the others the event holds, so a note
+ * moved by `midinote` does not go on sounding the `freq` it was written with.
+ * A key the event does not hold is not added. Built with two spellings of one
+ * family, the event takes `freq` over `midinote` over the degree, and `amp`
+ * over `velocity` over `db`.
+ *
+ * **A degree is altered by `alter`**, in semitones (real, so a microtone is
+ * one too). SuperCollider's fraction (`degree: 1.1` for degree 1 sharp) and a
+ * pair (`degree: [1, 1]`) are both read as the two keys.
  *
  * An event may also carry what the note is **on a page**
  * ({@link NOTATION_KEYS}): `articulations`, `dynamic`, `ornament`, `grace`,
@@ -112,7 +151,15 @@ export class Event {
     readonly props: EventProps;
 
     constructor(props: EventProps = {}) {
-        this.props = { ...DEFAULTS, ...props };
+        this.props = { ...DEFAULTS };
+        for (const [key, value] of Object.entries(props)) {
+            if (!PITCH_KEYS.includes(key) && !LEVEL_KEYS.includes(key)) {
+                this.props[key] = value;
+            }
+        }
+        for (const key of [...PITCH_ORDER, ...LEVEL_ORDER]) {
+            if (key in props) this.setKey(key, props[key]);
+        }
     }
 
     /** One parameter, or `undefined` when it is not set. */
@@ -120,9 +167,12 @@ export class Event {
         return this.props[key];
     }
 
-    /** Sets parameters, as `play` writes its derived quantities back. */
+    /**
+     * Sets parameters, each as its family's coherence writes it -- as `play`
+     * writes its derived quantities back.
+     */
     set(props: EventProps): this {
-        Object.assign(this.props, props);
+        for (const [key, value] of Object.entries(props)) this.setKey(key, value);
         return this;
     }
 
@@ -130,34 +180,108 @@ export class Event {
         return Number(this.props[key]);
     }
 
+    private setKey(key: string, value: unknown): void {
+        if (!held(value)) {
+            this.props[key] = value;
+        } else if (PITCH_KEYS.includes(key)) {
+            this.setPitch(key, value);
+        } else if (LEVEL_KEYS.includes(key)) {
+            this.setLevel(key, Number(value));
+        } else {
+            this.props[key] = value;
+        }
+    }
+
+    private pitchKeys(): Float64Array {
+        return Float64Array.from(
+            PITCH_KEYS.slice(0, 6),
+            (k) => (held(this.props[k]) ? Number(this.props[k]) : NaN),
+        );
+    }
+
+    private scale(): Float32Array {
+        return Float32Array.from((this.props.scale as number[] | undefined) ?? []);
+    }
+
+    private setPitch(key: string, value: unknown): void {
+        if (key === "degree" && Array.isArray(value)) {
+            this.setPitch("degree", value[0]);
+            this.setPitch("alter", value[1]);
+            return;
+        }
+        if (key === "scale") this.props.scale = value;
+        const others = SPELLINGS.some((k) => k !== key && held(this.props[k]));
+        if (!others) {
+            // Nothing else spells this pitch, so nothing follows: only a
+            // fractional degree has to be split.
+            if (key === "degree" && typeof value === "number" && !Number.isInteger(value)) {
+                const [degree, alter] = coreSplitDegree(value);
+                this.props.degree = degree;
+                this.props.alter = alter;
+            } else if (key !== "scale") {
+                this.props[key] = value;
+            }
+            return;
+        }
+        const keys = corePitchSet(
+            this.pitchKeys(),
+            PITCH_KEYS.indexOf(key),
+            key === "scale" ? 0 : Number(value),
+            this.scale(),
+            this.props.spelling === "flat" ? -1 : 0,
+        );
+        keys.forEach((v, i) => {
+            if (!Number.isNaN(v)) this.props[PITCH_KEYS[i]] = v;
+        });
+    }
+
+    private levelKeys(): Float64Array {
+        return Float64Array.from(
+            LEVEL_KEYS,
+            (k) => (held(this.props[k]) ? Number(this.props[k]) : NaN),
+        );
+    }
+
+    private setLevel(key: string, value: number): void {
+        const keys = coreLevelSet(this.levelKeys(), LEVEL_KEYS.indexOf(key), value);
+        keys.forEach((v, i) => {
+            if (!Number.isNaN(v)) this.props[LEVEL_KEYS[i]] = v;
+        });
+    }
+
     // ---- derived quantities ----
 
     /**
-     * The MIDI note number this event sounds. An explicit `freq` (Hz) is
-     * inverted through `cpsmidi`; otherwise it comes from `midinote`, or from
-     * `degree` within `octave`/`root`/`scale`.
+     * The MIDI note number this event sounds: an explicit `freq` inverted,
+     * else `midinote`, else `degree` altered by `alter` within
+     * `octave`/`root`/`scale`, else middle C.
      */
     midinote(): number {
-        if (this.props.freq !== undefined) return cpsmidi(this.num("freq"));
-        if (this.props.midinote !== undefined) return this.num("midinote");
-        if (this.props.degree === undefined) return 60;
-        // Pitch-space resolution is the core's shared rule (floored octave
-        // wrapping), so every client's Event resolves degrees identically.
-        return degreeToMidinote(
-            this.num("degree"),
-            this.num("octave"),
-            this.num("root"),
-            (this.props.scale as number[]) ?? [],
-        );
+        return corePitchResolve(this.pitchKeys(), this.scale())[0];
     }
 
     /**
      * The frequency in Hz this event sounds: an explicit `freq` if given,
-     * otherwise `midinote` converted through the core's `midicps`.
+     * otherwise `midinote` in equal temperament.
      */
     freq(): number {
-        if (this.props.freq !== undefined) return this.num("freq");
-        return midicps(this.midinote());
+        return corePitchResolve(this.pitchKeys(), this.scale())[1];
+    }
+
+    /**
+     * The linear amplitude this event sounds at: an explicit `amp`, else its
+     * `velocity`, else its `db`.
+     */
+    amp(): number {
+        return coreLevelResolve(this.levelKeys())[0];
+    }
+
+    /**
+     * The velocity a note-on of this event carries (1..127): an explicit
+     * `velocity`, else its amplitude's.
+     */
+    velocity(): number {
+        return coreLevelResolve(this.levelKeys())[1];
     }
 
     /**
@@ -165,8 +289,8 @@ export class Event {
      * `dur * stretch`. As in SuperCollider, the key overrides the calculation.
      */
     delta(): number {
-        if (this.props.delta !== undefined) return this.num("delta");
-        return this.num("dur") * this.num("stretch");
+        const delta = this.props.delta;
+        return coreDelta(this.num("dur"), this.num("stretch"), held(delta) ? Number(delta) : NaN);
     }
 
     /**
@@ -174,8 +298,13 @@ export class Event {
      * `dur * legato * stretch`.
      */
     sustain(): number {
-        if (this.props.sustain !== undefined) return this.num("sustain");
-        return this.num("dur") * this.num("legato") * this.num("stretch");
+        const sustain = this.props.sustain;
+        return coreSustain(
+            this.num("dur"),
+            this.num("legato"),
+            this.num("stretch"),
+            held(sustain) ? Number(sustain) : NaN,
+        );
     }
 
     /**
@@ -195,7 +324,7 @@ export class Event {
     controlArgs(): OscArg[] {
         const args: OscArg[] = [
             ["s", "freq"], ["f", this.freq()],
-            ["s", "amp"], ["f", this.num("amp")],
+            ["s", "amp"], ["f", this.amp()],
         ];
         if (this.props.out !== undefined) {
             args.push(["s", "out"], ["f", this.num("out")]);

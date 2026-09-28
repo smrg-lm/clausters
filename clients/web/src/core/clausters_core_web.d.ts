@@ -982,6 +982,11 @@ export class WidgetIds {
 }
 
 /**
+ * JS face: a MIDI velocity as its linear amplitude.
+ */
+export function amp_of_velocity(velocity: number): number;
+
+/**
  * The 0-based bar index `beats` falls in on a grid of `quant` beats per bar.
  */
 export function bar(beats: number, quant: number): number;
@@ -1088,10 +1093,11 @@ export function curveAxis(values: Float64Array, kept_lo?: number | null, kept_hi
 
 /**
  * JS face: scale degree -> MIDI note number in the pitch space
- * `octave`/`root`, with floored octave wrapping (sclang semantics). An empty
+ * `octave`/`root`, with floored octave wrapping (sclang semantics), `alter`
+ * semitones added and a fractional degree read as an alteration. An empty
  * `scale` yields middle C.
  */
-export function degree_to_midinote(degree: number, octave: number, root: number, scale: Float32Array): number;
+export function degree_to_midinote(degree: number, alter: number, octave: number, root: number, scale: Float32Array): number;
 
 /**
  * What makes two of a **domain's** edits *the same thing done the same way* --
@@ -1187,6 +1193,16 @@ export function editingStitch(source: string, held: string): string;
 export function engraveOptions(scale: number, page_width: number, extra?: string | null): string;
 
 /**
+ * JS face: beats to the next event (`delta` NaN when not stated).
+ */
+export function event_delta(dur: number, stretch: number, delta: number): number;
+
+/**
+ * JS face: beats the event sounds (`sustain` NaN when not stated).
+ */
+export function event_sustain(dur: number, legato: number, stretch: number, sustain: number): number;
+
+/**
  * JS face: the `[audio, control]` widths GraphDef instances reserve at the
  * top of bus spaces of these sizes.
  *
@@ -1229,6 +1245,17 @@ export function interpretation(): string;
  * selection and a model verb.
  */
 export function itemId(element_id: string): number;
+
+/**
+ * JS face: `[amp, velocity]` the level keys sound at.
+ */
+export function level_resolve(level: Float64Array): Float64Array;
+
+/**
+ * JS face: the level keys with key `key` (its index) written to `value` and
+ * the others the event holds rewritten.
+ */
+export function level_set(level: Float64Array, key: number, value: number): Float64Array;
 
 /**
  * JS face: the **Lissajous / goniometer** projection of a stereo pair, as
@@ -1288,6 +1315,11 @@ export function midiWriteClip(ticks: Uint32Array, msgs: Uint8Array, ppq: number)
  * JS face: `midiWriteSmf(Uint32Array, Uint8Array, ppq) -> Uint8Array`.
  */
 export function midiWriteSmf(ticks: Uint32Array, msgs: Uint8Array, ppq: number): Uint8Array;
+
+/**
+ * JS face: MIDI note -> `[degree, alter]`; `spelling` below zero is flat.
+ */
+export function midinote_to_degree(midinote: number, octave: number, root: number, scale: Float32Array, spelling: number): Float64Array;
 
 /**
  * **The defs a multitrack of these widths is played by** -- `{"synth": [...],
@@ -1405,6 +1437,17 @@ export function osc_encode_score_bundle(secs: number, messages: Array<any>): Uin
 export function patchCompile(patch: string): string;
 
 /**
+ * JS face: `[midinote, freq]` the pitch keys sound.
+ */
+export function pitch_resolve(pitch: Float64Array, scale: Float32Array): Float64Array;
+
+/**
+ * JS face: the pitch keys with key `key` (its index) written to `value` and
+ * the others the event holds rewritten to the same note.
+ */
+export function pitch_set(pitch: Float64Array, key: number, value: number, scale: Float32Array, spelling: number): Float64Array;
+
+/**
  * JS face: **the props a break-point curve is drawn with**, as a JSON string --
  * `{"points": [...], "min": .., "max": .., "duration": ..}`.
  *
@@ -1519,6 +1562,11 @@ export function sheetPerform(sheet: string, interp: string): string;
 export function sheetToMei(sheet: string): string;
 
 /**
+ * JS face: a SuperCollider degree as `[degree, alter]`.
+ */
+export function split_degree(degree: number): Float64Array;
+
+/**
  * Walk a verovio SVG into a `score` display list, as JSON.
  *
  * The one-shot path: a page that only draws a score engraves once and walks
@@ -1556,6 +1604,11 @@ export function unix_to_ntp(unix_secs: number): bigint;
  * (`anchor_unix`, `anchor_sample`) and the measured `rate`.
  */
 export function unix_to_sample(unix_secs: number, anchor_unix: number, anchor_sample: number, rate: number): number;
+
+/**
+ * JS face: a linear amplitude as a note-on's velocity (1..127).
+ */
+export function velocity_of_amp(amp: number): number;
 
 /**
  * **The tags a view reports that are not edits**, as a JSON array of strings.
@@ -1645,7 +1698,7 @@ export interface InitOutput {
     readonly conversationRead: (a: number, b: number, c: number, d: number) => [number, number];
     readonly correlation: (a: number, b: number, c: number, d: number) => number;
     readonly curveAxis: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
-    readonly degree_to_midinote: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly degree_to_midinote: (a: number, b: number, c: number, d: number, e: number, f: number) => number;
     readonly document_apply: (a: number, b: number, c: number) => [number, number, number, number];
     readonly document_coalesceKey: (a: number, b: number) => [number, number];
     readonly document_inverse: (a: number, b: number, c: number) => [number, number, number, number];
@@ -1662,6 +1715,8 @@ export interface InitOutput {
     readonly editingcore_call: (a: number, b: number, c: number) => [number, number];
     readonly editingcore_new: () => number;
     readonly engraveOptions: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly event_delta: (a: number, b: number, c: number) => number;
+    readonly event_sustain: (a: number, b: number, c: number, d: number) => number;
     readonly graph_bus_reserved: (a: number, b: number) => [number, number];
     readonly history_apply: (a: number, b: bigint, c: number, d: number, e: number) => [number, number, number, number];
     readonly history_canRedo: (a: number) => number;
@@ -1696,6 +1751,8 @@ export interface InitOutput {
     readonly instance_teardown: (a: number) => [number, number];
     readonly interpretation: () => [number, number, number, number];
     readonly itemId: (a: number, b: number) => number;
+    readonly level_resolve: (a: number, b: number) => [number, number];
+    readonly level_set: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly lissajous: (a: number, b: number, c: number, d: number) => [number, number];
     readonly loudness: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly map: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
@@ -1703,6 +1760,7 @@ export interface InitOutput {
     readonly mel_to_hz: (a: number) => number;
     readonly midiWriteClip: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly midiWriteSmf: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly midinote_to_degree: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly mixerDefs: (a: number, b: number, c: number) => [number, number];
     readonly multitrackNames: (a: number, b: number) => [number, number];
     readonly multitrackPlan: (a: number, b: number, c: number, d: number, e: number) => [number, number];
@@ -1731,6 +1789,8 @@ export interface InitOutput {
     readonly osc_encode_message: (a: number, b: number, c: any) => [number, number, number, number];
     readonly osc_encode_score_bundle: (a: number, b: any) => [number, number, number, number];
     readonly patchCompile: (a: number, b: number) => [number, number, number, number];
+    readonly pitch_resolve: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly pitch_set: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
     readonly pointsProps: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
     readonly pyramid_baseBucket: (a: number) => number;
     readonly pyramid_build: (a: number, b: number, c: number, d: number) => number;
@@ -1799,6 +1859,7 @@ export interface InitOutput {
     readonly sheetOps: () => [number, number, number, number];
     readonly sheetPerform: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly sheetToMei: (a: number, b: number) => [number, number, number, number];
+    readonly split_degree: (a: number) => [number, number];
     readonly steprunner_call: (a: number, b: number, c: number) => [number, number];
     readonly steprunner_new: () => number;
     readonly svgToDisplayList: (a: number, b: number) => [number, number, number, number];
@@ -1843,6 +1904,8 @@ export interface InitOutput {
     readonly widgetids_retire: (a: number, b: number) => [number, number];
     readonly widgetids_unbounded: (a: number) => number;
     readonly widgetids_contains: (a: number, b: number) => number;
+    readonly amp_of_velocity: (a: number) => number;
+    readonly velocity_of_amp: (a: number) => number;
     readonly tempomap_isEmpty: (a: number) => number;
     readonly widgetids_inUse: (a: number) => number;
     readonly clausters_midi_abi_version: () => number;

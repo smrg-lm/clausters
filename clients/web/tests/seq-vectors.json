@@ -160,5 +160,359 @@
       "duration": 0.6100000000000001,
       "release_node": 2
     }
+  ],
+  "events": [
+    {
+      "name": "freq_wins",
+      "props": {
+        "freq": 440.0,
+        "midinote": 60
+      },
+      "edits": [],
+      "keys": {
+        "freq": 440.0,
+        "midinote": 69.0,
+        "octave": 5.0,
+        "root": 0.0,
+        "amp": 0.1
+      },
+      "midinote": 69.0,
+      "freq": 440.0,
+      "amp": 0.1,
+      "velocity": 13,
+      "delta": 1.0,
+      "sustain": 0.8
+    },
+    {
+      "name": "midinote_moves_freq",
+      "props": {
+        "freq": 440.0,
+        "midinote": 69
+      },
+      "edits": [
+        [
+          "midinote",
+          72
+        ]
+      ],
+      "keys": {
+        "freq": 523.2511306011972,
+        "midinote": 72.0,
+        "octave": 5.0,
+        "root": 0.0,
+        "amp": 0.1
+      },
+      "midinote": 72.0,
+      "freq": 523.2511306011972,
+      "amp": 0.1,
+      "velocity": 13,
+      "delta": 1.0,
+      "sustain": 0.8
+    },
+    {
+      "name": "degree_fraction",
+      "props": {
+        "degree": 1.1
+      },
+      "edits": [],
+      "keys": {
+        "degree": 1.0,
+        "alter": 1.0,
+        "octave": 5.0,
+        "root": 0.0,
+        "amp": 0.1
+      },
+      "midinote": 63.0,
+      "freq": 311.1269837220809,
+      "amp": 0.1,
+      "velocity": 13,
+      "delta": 1.0,
+      "sustain": 0.8
+    },
+    {
+      "name": "degree_pair",
+      "props": {
+        "degree": [
+          1,
+          1
+        ]
+      },
+      "edits": [],
+      "keys": {
+        "degree": 1.0,
+        "alter": 1.0,
+        "octave": 5.0,
+        "root": 0.0,
+        "amp": 0.1
+      },
+      "midinote": 63.0,
+      "freq": 311.1269837220809,
+      "amp": 0.1,
+      "velocity": 13,
+      "delta": 1.0,
+      "sustain": 0.8
+    },
+    {
+      "name": "negative_fraction",
+      "props": {
+        "degree": -1.1
+      },
+      "edits": [],
+      "keys": {
+        "degree": -1.0,
+        "alter": -1.0,
+        "octave": 5.0,
+        "root": 0.0,
+        "amp": 0.1
+      },
+      "midinote": 58.0,
+      "freq": 233.08188075904496,
+      "amp": 0.1,
+      "velocity": 13,
+      "delta": 1.0,
+      "sustain": 0.8
+    },
+    {
+      "name": "moved_by_degree_sharp",
+      "props": {
+        "degree": 2,
+        "midinote": 64
+      },
+      "edits": [
+        [
+          "midinote",
+          66
+        ]
+      ],
+      "keys": {
+        "midinote": 66.0,
+        "degree": 3.0,
+        "alter": 1.0,
+        "octave": 5.0,
+        "root": 0.0,
+        "amp": 0.1
+      },
+      "midinote": 66.0,
+      "freq": 369.9944227116344,
+      "amp": 0.1,
+      "velocity": 13,
+      "delta": 1.0,
+      "sustain": 0.8
+    },
+    {
+      "name": "moved_by_degree_flat",
+      "props": {
+        "degree": 2,
+        "midinote": 64,
+        "spelling": "flat"
+      },
+      "edits": [
+        [
+          "midinote",
+          66
+        ]
+      ],
+      "keys": {
+        "midinote": 66.0,
+        "degree": 4.0,
+        "alter": -1.0,
+        "octave": 5.0,
+        "root": 0.0,
+        "amp": 0.1
+      },
+      "midinote": 66.0,
+      "freq": 369.9944227116344,
+      "amp": 0.1,
+      "velocity": 13,
+      "delta": 1.0,
+      "sustain": 0.8
+    },
+    {
+      "name": "octave_under_degree",
+      "props": {
+        "degree": 0,
+        "midinote": 60
+      },
+      "edits": [
+        [
+          "octave",
+          4
+        ]
+      ],
+      "keys": {
+        "midinote": 48.0,
+        "degree": 0.0,
+        "octave": 4.0,
+        "root": 0.0,
+        "amp": 0.1
+      },
+      "midinote": 48.0,
+      "freq": 130.8127826502993,
+      "amp": 0.1,
+      "velocity": 13,
+      "delta": 1.0,
+      "sustain": 0.8
+    },
+    {
+      "name": "microtone",
+      "props": {
+        "degree": 1,
+        "alter": 0.5
+      },
+      "edits": [],
+      "keys": {
+        "degree": 1.0,
+        "alter": 0.5,
+        "octave": 5.0,
+        "root": 0.0,
+        "amp": 0.1
+      },
+      "midinote": 62.5,
+      "freq": 302.2698024407796,
+      "amp": 0.1,
+      "velocity": 13,
+      "delta": 1.0,
+      "sustain": 0.8
+    },
+    {
+      "name": "velocity_sets_amp",
+      "props": {
+        "velocity": 100
+      },
+      "edits": [],
+      "keys": {
+        "octave": 5.0,
+        "root": 0.0,
+        "amp": 0.7874015748031497,
+        "velocity": 100.0
+      },
+      "midinote": 60.0,
+      "freq": 261.6255653005986,
+      "amp": 0.7874015748031497,
+      "velocity": 100,
+      "delta": 1.0,
+      "sustain": 0.8
+    },
+    {
+      "name": "amp_wins",
+      "props": {
+        "velocity": 100,
+        "amp": 0.5
+      },
+      "edits": [],
+      "keys": {
+        "octave": 5.0,
+        "root": 0.0,
+        "amp": 0.5,
+        "velocity": 64.0
+      },
+      "midinote": 60.0,
+      "freq": 261.6255653005986,
+      "amp": 0.5,
+      "velocity": 64,
+      "delta": 1.0,
+      "sustain": 0.8
+    },
+    {
+      "name": "amp_moves_velocity",
+      "props": {
+        "velocity": 100
+      },
+      "edits": [
+        [
+          "amp",
+          0.25
+        ]
+      ],
+      "keys": {
+        "octave": 5.0,
+        "root": 0.0,
+        "amp": 0.25,
+        "velocity": 32.0
+      },
+      "midinote": 60.0,
+      "freq": 261.6255653005986,
+      "amp": 0.25,
+      "velocity": 32,
+      "delta": 1.0,
+      "sustain": 0.8
+    },
+    {
+      "name": "db",
+      "props": {
+        "db": -12.0
+      },
+      "edits": [],
+      "keys": {
+        "octave": 5.0,
+        "root": 0.0,
+        "amp": 0.25118863582611084,
+        "db": -12.0
+      },
+      "midinote": 60.0,
+      "freq": 261.6255653005986,
+      "amp": 0.25118863582611084,
+      "velocity": 32,
+      "delta": 1.0,
+      "sustain": 0.8
+    },
+    {
+      "name": "silent_note_on",
+      "props": {
+        "amp": 0.0
+      },
+      "edits": [],
+      "keys": {
+        "octave": 5.0,
+        "root": 0.0,
+        "amp": 0.0
+      },
+      "midinote": 60.0,
+      "freq": 261.6255653005986,
+      "amp": 0.0,
+      "velocity": 1,
+      "delta": 1.0,
+      "sustain": 0.8
+    },
+    {
+      "name": "length",
+      "props": {
+        "dur": 0.5,
+        "legato": 0.5,
+        "stretch": 2.0
+      },
+      "edits": [],
+      "keys": {
+        "octave": 5.0,
+        "root": 0.0,
+        "amp": 0.1
+      },
+      "midinote": 60.0,
+      "freq": 261.6255653005986,
+      "amp": 0.1,
+      "velocity": 13,
+      "delta": 1.0,
+      "sustain": 0.5
+    },
+    {
+      "name": "explicit_length",
+      "props": {
+        "dur": 0.5,
+        "delta": 2.0,
+        "sustain": 0.4
+      },
+      "edits": [],
+      "keys": {
+        "octave": 5.0,
+        "root": 0.0,
+        "amp": 0.1
+      },
+      "midinote": 60.0,
+      "freq": 261.6255653005986,
+      "amp": 0.1,
+      "velocity": 13,
+      "delta": 2.0,
+      "sustain": 0.4
+    }
   ]
 }

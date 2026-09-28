@@ -156,7 +156,7 @@ mod tests {
         assert_eq!(clausters_core_quant_delay(3.5, 4.0), 0.5);
         let major = [0.0f32, 2.0, 4.0, 5.0, 7.0, 9.0, 11.0];
         assert_eq!(
-            unsafe { clausters_core_degree_to_midinote(-1.0, 5.0, 0.0, major.as_ptr(), 7) },
+            unsafe { clausters_core_degree_to_midinote(-1.0, 0.0, 5.0, 0.0, major.as_ptr(), 7) },
             59.0
         );
     }

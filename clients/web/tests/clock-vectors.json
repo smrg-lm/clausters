@@ -1310,6 +1310,7 @@
  "degreeToMidinote": [
   {
    "degree": 0.0,
+   "alter": 0.0,
    "octave": 5.0,
    "root": 0.0,
    "scale": [
@@ -1325,6 +1326,7 @@
   },
   {
    "degree": 7.0,
+   "alter": 0.0,
    "octave": 5.0,
    "root": 0.0,
    "scale": [
@@ -1340,6 +1342,7 @@
   },
   {
    "degree": -1.0,
+   "alter": 0.0,
    "octave": 5.0,
    "root": 0.0,
    "scale": [
@@ -1355,6 +1358,7 @@
   },
   {
    "degree": 3.0,
+   "alter": 0.0,
    "octave": 5.0,
    "root": 2.0,
    "scale": [
@@ -1370,6 +1374,7 @@
   },
   {
    "degree": 2.0,
+   "alter": 0.0,
    "octave": 4.0,
    "root": 0.0,
    "scale": [
@@ -1385,6 +1390,7 @@
   },
   {
    "degree": 13.0,
+   "alter": 0.0,
    "octave": 6.0,
    "root": -3.0,
    "scale": [
@@ -1400,10 +1406,75 @@
   },
   {
    "degree": 3.0,
+   "alter": 0.0,
    "octave": 5.0,
    "root": 0.0,
    "scale": [],
    "midinote": 60.0
+  },
+  {
+   "degree": 1.0,
+   "alter": 1.0,
+   "octave": 5.0,
+   "root": 0.0,
+   "scale": [
+    0,
+    2,
+    4,
+    5,
+    7,
+    9,
+    11
+   ],
+   "midinote": 63.0
+  },
+  {
+   "degree": 1.1,
+   "alter": 0.0,
+   "octave": 5.0,
+   "root": 0.0,
+   "scale": [
+    0,
+    2,
+    4,
+    5,
+    7,
+    9,
+    11
+   ],
+   "midinote": 63.0
+  },
+  {
+   "degree": -1.1,
+   "alter": 0.0,
+   "octave": 5.0,
+   "root": 0.0,
+   "scale": [
+    0,
+    2,
+    4,
+    5,
+    7,
+    9,
+    11
+   ],
+   "midinote": 58.0
+  },
+  {
+   "degree": 2.0,
+   "alter": 0.5,
+   "octave": 5.0,
+   "root": 0.0,
+   "scale": [
+    0,
+    2,
+    3,
+    5,
+    7,
+    8,
+    10
+   ],
+   "midinote": 63.5
   }
  ],
  "unary": [
