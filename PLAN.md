@@ -522,6 +522,71 @@ Cargo feature: every build has both clocks and both queues.
   `docs/sample-clock.md`, both clients' builders and the GUI host's head
   clock, in the same pass.
 
+- ⬜ **T8 — The transport plays event lanes** *(opened 2026-09-28 by the
+  user, out of the notes editor: "Pianoroll con midi/osc events debería correr
+  con el transport del servidor, de lo contrario estaríamos duplicando
+  funcionalidad. Pianoroll contiene datos concretos de la misma manera que los
+  clips de audio.")*. A take plays on the transport because its reader
+  *follows* the position — a `BufRd` on `TransportPos` seeks on a locate,
+  wraps on a loop and holds on a stop, with nothing sent per pass. A sequence
+  of notes is data of the same kind and plays by other means today: the notes
+  editor's playback (`crates/clausters-apps/PLAN.md`, `X3.8`) stamps every
+  event on the transport's *clock* with `/sched_atTransport`, and the crate
+  plans it again on every play, every locate and every edit — the transport's
+  own work, done a second time outside it, and wrong across a loop, since the
+  clock does not wrap. The notes regions of a multitrack (`X3.9`) would have
+  been a third copy. Taken before `X3.9` sounds.
+
+  **Why not on the audio thread, like a reader.** A node is built on the
+  network thread (`Cmd::AddSynth` carries a `Box<dyn SynthNode>`), because the
+  audio thread never allocates. A lane fires notes, and a note is a node, so it
+  cannot be read out of a buffer by a UGen the way samples are.
+
+  **The shape.** An **event lane** is a server resource bound to one
+  transport and holding the events as data, in that transport's samples:
+  **notes** — start, end, the def, its controls, the target and how it is
+  released (`gate 0` or a free) — and **messages** — a position and an OSC
+  message. A note is first-class rather than two messages because a lane plays
+  again and again: its start and its release name one node, and that node's id
+  is the server's to mint on each pass, never a number in the data. The
+  **network thread feeds it**: on each turn it reads where the transport
+  stands (it applies every locate, loop and end mark itself, and the engine
+  publishes the position once per block) and schedules onto that transport's
+  queue what of the lane falls within a lookahead ahead of the position, built
+  into commands the way any bundle is — so what reaches the audio thread is
+  exactly what `/sched_atTransport` delivers today, and the RT rules do not
+  move. A locate, a change of loop, a wrap and a new lane drop what the lane
+  queued and feed again from where the position is; across a loop the feed
+  follows the wrap. What a lane queues is tagged with it, so a client's own
+  `/sched_atTransport` bundles on the same transport are left standing, and a
+  `/sched_clear "transport"` does not empty a lane for good. A stop freezes the
+  queue and the governed group as it does now; a locate or a stop that goes
+  back to a mark releases the notes sounding, as a DAW does on a jump; an edit
+  keeps the release of every note already sounding.
+
+  **What leaves the crate.** The notes editor's playback becomes the lane's
+  data and the transport's verbs: `NotesPlayback`'s replan, the clock the
+  client queries before every play, and the client's `_replan` go. The
+  multitrack renders the notes of its boxes (`placed_notes`, in seconds of the
+  multitrack) into one lane on its transport, sent again on every edit.
+
+  **Open:** the commands' names and the data's wire form (JSON, as a def is
+  sent, or a blob the core writes); the lookahead and the tick that keeps it
+  fed — the loop polls at 10 ms while a client is subscribed and at 100 ms
+  otherwise, and a rolling lane needs the first; how an NRT render feeds a
+  lane, in step with its own blocks; whether a lane plays MIDI out once the
+  server has a MIDI output.
+
+  **Acceptance:** in an NRT render, a lane's notes start and end on their
+  exact samples through a locate, a loop wrapped with no client in the loop,
+  and an edit mid-pass; a note sounding at a locate is released; a client's
+  `/sched_atTransport` bundle on the same transport sounds while the lane is
+  fed and fed again; the notes editor plays, pauses, loops and locates with no
+  message from the client but the lane's data and the transport's verbs;
+  `tests/rt_safety.rs` stays green. **The packages move together**:
+  `docs/schemas.md`, `docs/sample-clock.md`, both clients' builders, and the
+  crate's playbacks moved onto it in the same pass.
+
 Open, not blocking:
 
 - ⬜ **T2 — `/transport_set`'s grid origin on the transport axis.** With a group

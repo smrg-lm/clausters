@@ -524,6 +524,11 @@ opened it.
     multitrack's transport; a source shared by several regions changes in all,
     and making it unique is the pending clone verb (`clients/python/PLAN.md`,
     Future directions).
+    *(Drawn and edited 2026-09-28: a region over a sequence source draws the
+    notes its window reads, a notes editor over the same handle edits what it
+    draws, and a session's table holds one (`Source.events`). **Sounding waits
+    on `T8`** (`PLAN.md`), the event lane on the transport; the standalone
+    host is left as well.)*
   - ⬜ **X3.10 - Recording** into an `EventSequence` (`clausters-midi`).
   - ⬜ **X3.11 - CC lanes and per-note expression**, with M35.
   - ⬜ **X3.12 - The Hz domain.**
@@ -1024,6 +1029,18 @@ Every entry carries a checkbox.
 
 Every entry carries a checkbox, and a fixed one stays with the record of what was
 wrong.
+
+- ⬜ **The notes editor's playback does the transport's work** *(found
+  2026-09-28, writing `X3.9`'s sound; the user: "Pianoroll con midi/osc events
+  debería correr con el transport del servidor, de lo contrario estaríamos
+  duplicando funcionalidad")*. `X3.8` stamps every event on the transport's
+  clock (`/sched_atTransport`) and plans again from the crate on every play,
+  locate and edit, with the client querying the clock first: a second
+  implementation of what the transport does for a take, and wrong across a
+  loop, since the clock does not wrap. A roll holds concrete data as a clip of
+  audio does, so it plays on the server's transport: `PLAN.md`, `T8`, the
+  event lane, which the notes editor and the multitrack's notes regions move
+  onto. `clausters_editing::notes_playback` is what goes.
 
 - ✅ **The play cursor of a take at another rate than the engine's runs
   ahead** *(found building X7, 2026-09-24)*. The audio editor's playback

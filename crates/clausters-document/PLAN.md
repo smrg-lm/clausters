@@ -1275,7 +1275,7 @@ against, not work: what turned into work is in them, named.*
   | What the hand places | How it is written | How it sounds |
   |---|---|---|
   | an **audio file** | `Content::Window` over `SegmentSource::Samples`, with the session's `Source` table saying where | a `BufRd` on `TransportPos`, gated to the region's span, `playrate` scaling the phase and the fades an envelope over it |
-  | a **sequence of events** (MIDI, notes) | `Content::Window` over `SegmentSource::Node` - a window onto a node this document holds, which is what keeps a cut of notes a window and not a copy | voices fired on `/sched_atTransport`, re-cued on a locate |
+  | a **sequence of events** (MIDI, notes) | `Content::Window` over `SegmentSource::Node` - a window onto a node this document holds, which is what keeps a cut of notes a window and not a copy | an **event lane** on the transport (`PLAN.md`, `T8`): the notes as data the server feeds onto the transport's queue ahead of its position, so a locate, a loop and a stop are the transport's and no client re-cues *(was "voices fired on `/sched_atTransport`, re-cued on a locate", corrected 2026-09-28: that is the transport's work done a second time outside it)* |
   | a **processing chain** | a **GraphDef** named in the track's `config`, plus the bus its output goes to | `/graph_new`, which is already an auto-sorted group with its private buses allocated and wired |
 
   **The multitrack editor waits on a widget that owns the arrangement**
