@@ -429,8 +429,20 @@ pub fn in_rect<P: Placements + ?Sized>(
         .collect()
 }
 
+/// **A row, snapped to `step`**: the nearest multiple of it, or the row as it
+/// is when `step` is 0 -- a lane's tracks and a roll's semitones are whole
+/// rows, and a roll in hertz has none, since its axis is continuous.
+pub fn snap_row(row: f32, step: f32) -> f32 {
+    if step > 0.0 {
+        (row / step).round() * step
+    } else {
+        row
+    }
+}
+
 /// Move a block of boxes rigidly from a press-time snapshot: `orig` is
-/// `(index, offset, row)` per selected box, `dt`/`dr` the drag deltas.
+/// `(index, offset, row)` per selected box, `dt`/`dr` the drag deltas, and
+/// `step` what a row snaps to ([`snap_row`]).
 ///
 /// The deltas are clamped **as one** -- no offset below zero, no tail past
 /// `limit`, no row outside `rows` -- so the block stops at an edge instead of
@@ -441,6 +453,7 @@ pub fn move_block<P: Placements + ?Sized>(
     dt: f64,
     dr: f32,
     rows: (f32, f32),
+    step: f32,
     limit: Limit,
 ) {
     if orig.is_empty() {
@@ -469,11 +482,11 @@ pub fn move_block<P: Placements + ?Sized>(
     let (min_r, max_r) = orig
         .iter()
         .fold((f32::INFINITY, f32::NEG_INFINITY), |(a, b), (_, _, r)| {
-            (a.min(r.round()), b.max(r.round()))
+            (a.min(snap_row(*r, step)), b.max(snap_row(*r, step)))
         });
     // A block already wider than the window cannot move rigidly across rows.
     let dr = if lo - min_r <= hi - max_r {
-        dr.round().clamp(lo - min_r, hi - max_r)
+        snap_row(dr, step).clamp(lo - min_r, hi - max_r)
     } else {
         0.0
     };
@@ -487,7 +500,7 @@ pub fn move_block<P: Placements + ?Sized>(
                     ..b
                 },
             );
-            p.set_row(*i, (r.round() + dr).clamp(lo, hi));
+            p.set_row(*i, (snap_row(*r, step) + dr).clamp(lo, hi));
         }
     }
 }

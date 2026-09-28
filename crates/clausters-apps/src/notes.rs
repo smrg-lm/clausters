@@ -57,6 +57,14 @@ pub fn props(
     });
     out.insert("note_ids".into(), json!(drawn.note_ids));
     out.remove("type");
+    if domain.ruler == "hz" {
+        let notes: Vec<f64> = out
+            .get("notes")
+            .and_then(Value::as_array)
+            .map(|n| n.iter().filter_map(Value::as_f64).collect())
+            .unwrap_or_default();
+        hz_axis(&mut out, &notes, domain);
+    }
     // **The play cursor is the transport's position**: anchored at 0, the
     // counter the window's playheads read (the playback's transport) puts the
     // line on the sample the lane is playing, stopped or rolling.
@@ -64,6 +72,34 @@ pub fn props(
         x.insert("playhead_at".into(), json!(0.0));
     }
     out
+}
+
+/// **The Y axis of a roll in hertz**: the unit the host reads its notes and
+/// its compass in, and the window fitted to the notes as a MIDI roll's is --
+/// in pitch, where the air around them is semitones, and then in hertz. With
+/// no notes it is the domain's own window.
+fn hz_axis(props: &mut Map<String, Value>, notes: &[f64], domain: &YDomain) {
+    use clausters_core::scale::{hz_to_midi, midi_to_hz};
+
+    let (min, max) = if notes.is_empty() {
+        (domain.min, domain.max)
+    } else {
+        let pitches: Vec<f64> = notes
+            .as_chunks::<5>()
+            .0
+            .iter()
+            .flat_map(|n| [n[0], n[1], hz_to_midi(n[2].max(1e-3)), n[3], n[4]])
+            .collect();
+        let (low, high) = catalogue::pitch_window(&pitches);
+        (midi_to_hz(low), midi_to_hz(high))
+    };
+    let axes = props
+        .entry("axes")
+        .or_insert_with(|| json!({}))
+        .as_object_mut();
+    if let Some(axes) = axes {
+        axes.insert("y".into(), json!({"unit": "hz", "min": min, "max": max}));
+    }
 }
 
 /// **What the roll is corrected with** after the sequence changed: the notes,

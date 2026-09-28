@@ -37,6 +37,17 @@ its own -- and an edit while it plays is heard at once: a note moved ahead of
 the line sounds where it lands, and a note already sounding ends as it would
 have.
 
+<b>Click the ruler under the grid</b> to place the position cursor: the play
+line goes there, and the next play starts from it. While it plays, the line is
+where the transport is.
+
+<b>A second roll shows the same notes in hertz</b> -- the same sequence, the
+roll's vertical axis a frequency on a log scale, ruled in round frequencies. A
+note is where it is in the first roll, an octave is the same height, and a drag
+there moves it continuously, writing its <code>freq</code>: the MIDI note it
+was written with follows, and the first roll redraws it between the keys. An
+edit in either roll is one history.
+
 <b>The lane under the grid is the sequence's OSC markers</b>, edited the same
 way: drag one to move it, Ctrl+click one to remove it. A marker is matched by
 its <b>label</b>, the address it sends, so the message survives the drag. Adding
@@ -50,6 +61,7 @@ leaves every other note its own.</div>
 
       <button id="run">open the roll</button>
       <div id="stage"></div>
+      <div id="hertz"></div>
       <button id="play" disabled>play the notes</button>
       <button id="read" disabled>what the roll never drew</button>
       <pre id="log"></pre>
@@ -97,7 +109,8 @@ leaves every other note its own.</div>
           }
           const extra = Object.fromEntries(
             Object.entries(item.props).filter(([k]) => ["instrument", "amp", "velocity"].includes(k)));
-          log(`  #${id} ${beat.toFixed(2)}  midinote ${item.midinote()}   ${JSON.stringify(extra)}`);
+          log(`  #${id} ${beat.toFixed(2)}  midinote ${item.midinote().toFixed(1)}`
+            + `  freq ${item.freq().toFixed(1)}   ${JSON.stringify(extra)}`);
         }
       }
 
@@ -117,6 +130,16 @@ leaves every other note its own.</div>
           stage: $("stage"),
         });
         notes = editor.sequence;
+
+        // The same notes, in hertz: a second editor over the very same
+        // sequence, whose vertical axis is the frequency -- the same pitch in
+        // another coordinate.
+        await gui.edit(notes, {
+          sampleRate: (await session.server.queryInfo()).nominalSampleRate,
+          yAxis: "hz",
+          title: "notes in hertz",
+          stage: $("hertz"),
+        });
         log("edit the notes; press play to hear them as they stand");
 
         $("play").disabled = false;

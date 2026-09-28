@@ -71,7 +71,9 @@ def edit(structure, *, sample_rate: float = 0.0,
             makes a composed window undo across several structures in one
             order). A curve also takes ``min``/``max``, the value axis it is
             drawn against -- without them the axis is derived from the data with
-            headroom, so the field's floor sits below the lowest value.
+            headroom, so the field's floor sits below the lowest value. A
+            sequence (or a timeline, rendered into one) takes ``y_axis``, the
+            roll's vertical axis: ``"midi"`` or ``"hz"``.
 
     Returns:
         The editor, **open**. It is the handle the window is addressed by --

@@ -16,6 +16,17 @@ of its own -- and an edit while it plays is heard at once: a note moved ahead
 of the line sounds where it lands, and a note already sounding ends as it
 would have.
 
+**Click the ruler under the grid** to place the position cursor: the play line
+goes there, and the next play starts from it. While it plays, the line is
+where the transport is.
+
+**A second window shows the same notes in hertz** -- the same sequence, the
+roll's vertical axis a frequency on a log scale, ruled in round frequencies. A
+note is where it is in the first window, an octave is the same height, and a
+drag there moves it continuously, writing its ``freq``: the MIDI note it was
+written with follows, and the first window redraws it between the keys. An
+edit in either window is one history.
+
 **The lane under the grid is the sequence's OSC markers**, and it is edited the
 same way: drag one to move it, Ctrl+click one to remove it. A marker is matched
 by its **label**, the address it sends, so the message survives the drag. Adding
@@ -76,6 +87,17 @@ editor = edit(timeline,
               title="notes")
 notes = editor.sequence        # what the roll edits, in place
 
+# %% [markdown]
+# ## The same notes, in hertz
+#
+# A second editor over the very same sequence, whose vertical axis is the
+# frequency: the same pitch in another coordinate.
+
+# %%
+hertz = edit(notes,
+             sample_rate=session.server.query_info().nominal_sample_rate,
+             y_axis="hz", title="notes in hertz")
+
 
 # %% [markdown]
 # ## Play what was drawn
@@ -105,7 +127,8 @@ def read_back():
             continue
         extra = {k: v for k, v in dict(item).items()
                  if k in ("instrument", "amp", "velocity")}
-        print(f"  #{id:<3} {beat:5.2f}  midinote {item.midinote():5.1f}   {extra}")
+        print(f"  #{id:<3} {beat:5.2f}  midinote {item.midinote():5.1f}"
+              f"  freq {item.freq():7.1f}   {extra}")
 
 
 # %%

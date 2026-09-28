@@ -69,6 +69,12 @@ export interface EditOptions {
      * `sequence` then holds; the timeline is not changed.
      */
     until?: number;
+    /**
+     * **A sequence's own** (or a timeline's, rendered into one), ignored by
+     * every other structure: the roll's vertical axis, `"midi"` or `"hz"`
+     * ({@link NotesEditor}).
+     */
+    yAxis?: "midi" | "hz";
     /** The element the window's canvas takes the box of. Absent: one of its own. */
     stage?: Stage | null;
     /**

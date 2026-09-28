@@ -138,8 +138,11 @@ export class NotesDomain extends Domain<EventSequence> {
 /** The roll: one `notes` widget, composed by the crate. */
 export class NotesView extends View<EventSequence> {
     build(editor: Editor<EventSequence>): GuiNode {
-        const wid = this.widget(editor, "notes", editor.structure);
         const ed = editor as NotesEditor;
+        // The axis names which roll of the sequence this is: a roll in hertz
+        // is another picture of it, and a window beside one in MIDI notes
+        // must not draw on its widget.
+        const wid = this.widget(editor, "notes", editor.structure, ed.yAxis);
         ed.syncCore();
         const tree = ed.coreCall("window", { widget: wid }) as unknown as GuiNode;
         // **A page's own widgets are its objects**, so they are appended here
@@ -162,6 +165,8 @@ export class NotesEditor extends Editor<EventSequence> {
     private readonly member: number;
     /** Whether a hand may edit the notes (`false` for a rendering). */
     readonly editable: boolean;
+    /** The roll's vertical axis, `"midi"` or `"hz"`. */
+    readonly yAxis: "midi" | "hz";
     /** The server it plays on, resolved when it first plays. */
     #server: Server | null;
     /** The playback work in flight, chained so each lands in order. */
@@ -173,6 +178,7 @@ export class NotesEditor extends Editor<EventSequence> {
         const domain = new NotesDomain();
         super(sequence, { title: "Notes", ...options, domain, view: new NotesView() });
         this.editable = options.editable ?? true;
+        this.yAxis = options.yAxis ?? "midi";
         this.#server = options.server ?? null;
         const opened = this.editing.openNotes(
             `sequence:${keyOfSequence(sequence)}`,
@@ -180,6 +186,7 @@ export class NotesEditor extends Editor<EventSequence> {
             {
                 rate: this.sampleRate,
                 editable: this.editable,
+                domain: this.yAxis,
                 title: this.title,
                 w: this.size[0],
                 h: this.size[1],
@@ -426,6 +433,12 @@ export class NotesEditor extends Editor<EventSequence> {
 export interface NotesEditorOptions extends GenericEditorOptions<EventSequence> {
     /** `false` for a roll a hand may look at and not edit: the notes of a rendering. */
     editable?: boolean;
+    /**
+     * What the roll's vertical axis is: `"midi"`, MIDI notes on the keys,
+     * snapped to semitones; or `"hz"`, frequency on a log scale, ruled in
+     * hertz, where a note moves continuously and writes its `freq`.
+     */
+    yAxis?: "midi" | "hz";
     /** The server it plays on; absent, the ambient one when it first plays. */
     server?: Server | null;
 }

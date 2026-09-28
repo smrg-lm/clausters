@@ -591,3 +591,20 @@ test("the roll draws its play cursor from its transport and a locate cues it", a
     assert.deepEqual(placed, [1]);
     assert.deepEqual(server.sent.map(([addr]) => addr), ["/transport_locateSample"]);
 });
+
+test("a roll in hertz draws and edits frequencies", async () => {
+    const seq = new EventSequence([[0.0, new SeqEvent({ midinote: 60, dur: 1.0 })]],
+        { tempoMap: new TempoMap(TEMPO) });
+    const editor = new NotesEditor(seq, { sampleRate: SR, yAxis: "hz" });
+    const { host, wid } = await opened(editor);
+    const roll = (host.trees[0]!.children as GuiNode[])[0] as unknown as {
+        axes: { y: { unit: string } };
+        notes: number[];
+    };
+    assert.equal(roll.axes.y.unit, "hz");
+    assert.ok(Math.abs(roll.notes[2]! - 261.6256) < 1e-3, "middle C, in hertz");
+    editor.apply("/gui_event", [wid, 1, 0, "notes", 1, 0.0, BEAT * 0.8, 300.0, 100, 0]);
+    const moved = [...seq][0]![1];
+    assert.ok(Math.abs(Number(moved.get("freq")) - 300.0) < 1e-3);
+    assert.ok(Math.abs(Number(moved.get("midinote")) - 62.37) < 0.01, "the MIDI note follows the frequency");
+});

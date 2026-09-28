@@ -71,11 +71,34 @@ pub struct NotesEditor {
 struct Opened {
     rate: f64,
     editable: bool,
-    domain: Option<YDomain>,
+    domain: Option<Domain>,
     title: String,
     w: i64,
     h: i64,
     version: i64,
+}
+
+/// The Y domain a caller names: a word -- `"midi"`, or `"hz"` over the range
+/// of a piano -- or the whole [`YDomain`].
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Domain {
+    Named(String),
+    Full(YDomain),
+}
+
+impl Domain {
+    fn resolve(self) -> Option<YDomain> {
+        match self {
+            Domain::Full(domain) => Some(domain),
+            Domain::Named(name) => match name.as_str() {
+                "midi" => Some(YDomain::midi()),
+                // A1 to C8 -- the range of the MIDI roll's compass.
+                "hz" => Some(YDomain::hz(27.5, 4186.0)),
+                _ => None,
+            },
+        }
+    }
 }
 
 impl Default for Opened {
@@ -295,7 +318,7 @@ pub fn new_json(sequence: Shared, request: &str) -> NotesEditor {
     let opened: Opened = serde_json::from_str(request).unwrap_or_default();
     let mut editor = NotesEditor::new(sequence, opened.rate, opened.version);
     editor.editable = opened.editable;
-    if let Some(domain) = opened.domain {
+    if let Some(domain) = opened.domain.and_then(Domain::resolve) {
         editor.domain = domain;
     }
     editor.title = opened.title;
@@ -350,7 +373,8 @@ pub fn call_json(editor: &mut NotesEditor, request: &str) -> String {
             }
             if let Some(domain) = request
                 .get("domain")
-                .and_then(|d| serde_json::from_value(d.clone()).ok())
+                .and_then(|d| serde_json::from_value::<Domain>(d.clone()).ok())
+                .and_then(Domain::resolve)
             {
                 editor.domain = domain;
             }

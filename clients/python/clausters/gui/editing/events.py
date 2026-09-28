@@ -46,7 +46,10 @@ class NotesView(View):
     """The roll: one ``notes`` widget, composed by the crate."""
 
     def build(self, editor) -> dict:
-        wid = self.widget(editor, "notes", editor.structure)
+        # The axis names which roll of the sequence this is: a roll in hertz is
+        # another picture of it, and a window beside one in MIDI notes must not
+        # draw on its widget.
+        wid = self.widget(editor, "notes", editor.structure, editor.y_axis)
         editor._sync_core()
         tree = editor._call("window", widget=wid)
         # **A script's own widgets are its objects**, so they are appended here
@@ -116,24 +119,31 @@ class NotesEditor(Editor):
         sample_rate: the rate the roll's axis counts in.
         editable: ``False`` for a roll a hand may look at and not edit -- the
             notes of a rendering.
+        y_axis: what the roll's vertical axis is: ``"midi"``, MIDI notes on
+            the keys, snapped to semitones; or ``"hz"``, frequency on a log
+            scale, ruled in hertz, where a note moves continuously and writes
+            its ``freq``.
         title: the window's title.
         server: the `clausters.defs.Server` it plays on; ``None`` resolves the
             ambient one when it first plays.
     """
 
     def __init__(self, sequence, *, sample_rate: float, editable: bool = True,
-                 title: str = "Notes", server=None, **options):
+                 y_axis: str = "midi", title: str = "Notes", server=None,
+                 **options):
         domain = NotesDomain()
         super().__init__(sequence, sample_rate=sample_rate, domain=domain,
                          view=NotesView(), title=title, **options)
         self.editable = bool(editable)
+        #: The roll's vertical axis, ``"midi"`` or ``"hz"``.
+        self.y_axis = str(y_axis)
         self._server = server
         #: The timeline a play to a destination of its own (a MIDI port) runs.
         self._elsewhere = None
         self._member, self._structure_id = self._editing.open_notes(
             f"sequence:{id(sequence)}", sequence,
             {"rate": self.sample_rate, "editable": self.editable,
-             "title": self.title, "w": int(self.size[0]), "h": int(self.size[1])},
+             "domain": self.y_axis, "title": self.title, "w": int(self.size[0]), "h": int(self.size[1])},
             domain)
 
     @property

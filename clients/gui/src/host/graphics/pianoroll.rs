@@ -360,6 +360,105 @@ pub fn draw_keyboard(d: &mut Draw, gutter: Rect, lo: f32, hi: f32) {
     mesh.border(gutter, m.divider_w, theme.frame);
 }
 
+// --- A roll in hertz ---------------------------------------------------------
+//
+// **A frequency on a log scale is a pitch on a linear one**: `midinote = 69 +
+// 12 * log2(hz / 440)`. So a roll whose Y domain is hertz keeps every row,
+// band and hit-test above in the MIDI coordinate -- where a note an octave up
+// is twelve rows up either way -- and only what labels the axis changes: a
+// ruler of round frequencies instead of the keys, and lines at those
+// frequencies instead of the semitone rows. The conversion sits at the wire
+// (the element reads and reports hertz), and the rows are continuous there,
+// since a frequency has no semitone to snap to.
+
+/// The pitch coordinate the hertz ruler is laid over, lowest and highest:
+/// about 1 Hz to 84 kHz, so any window a roll shows is inside it. It is a
+/// fixed frame because the ruler's log mapping is stated over a whole axis
+/// (`ruler::hz_ticks`), and the roll's window is a slice of it.
+const HZ_FLOOR: f64 = -36.0;
+const HZ_CEIL: f64 = 159.0;
+
+/// The round frequencies to mark over the pitch window `[lo, hi]` of a strip
+/// `height` pixels tall, each as the pitch it sits at and its label when it
+/// has room for one -- the spectrogram's own ruler, over the roll's window.
+pub fn hz_ticks(lo: f32, hi: f32, height: f32, m: &Metrics) -> Vec<(f32, Option<String>)> {
+    let span = HZ_CEIL - HZ_FLOOR;
+    let (bottom, top) = (f64::from(lo) - 0.5, f64::from(hi) + 0.5);
+    let nyquist = scale::midi_to_hz(HZ_CEIL);
+    let floor = scale::midi_to_hz(HZ_FLOOR) / nyquist;
+    crate::host::ruler::hz_ticks(
+        nyquist,
+        crate::spectrogram::FreqScale::Log,
+        floor,
+        f64::from(height),
+        (bottom - HZ_FLOOR) / span,
+        (top - bottom) / span,
+        m,
+    )
+    .into_iter()
+    .map(|tick| ((bottom + tick.frac * (top - bottom)) as f32, tick.label))
+    .collect()
+}
+
+/// The grid of a roll in hertz: a line at each round frequency, brighter where
+/// it is labelled. `lo`/`hi` are the visible pitch window, as for the keys.
+pub fn draw_hz_grid(d: &mut Draw, grid: Rect, lo: f32, hi: f32) {
+    let ticks = hz_ticks(lo, hi, grid.h, d.parts().1);
+    let (mesh, m, theme) = d.parts();
+    if grid.w <= 0.0 || grid.h <= 0.0 {
+        return;
+    }
+    mesh.rect(grid, theme.lane);
+    for (pitch, label) in ticks {
+        let y = row_center(pitch, lo, hi, grid);
+        if y < grid.y || y > grid.y + grid.h {
+            continue;
+        }
+        let line = if label.is_some() {
+            theme.frame
+        } else {
+            theme.grid_line
+        };
+        mesh.rect(Rect::new(grid.x, y, grid.w, m.divider_w), line);
+    }
+    mesh.border(grid, m.divider_w, theme.frame);
+}
+
+/// The ruler of a roll in hertz, in the gutter the keys take otherwise: a tick
+/// at each round frequency and its label beside it.
+pub fn draw_hz_ruler(d: &mut Draw, gutter: Rect, lo: f32, hi: f32) {
+    let ticks = hz_ticks(lo, hi, gutter.h, d.parts().1);
+    let (mesh, m, theme) = d.parts();
+    if gutter.w <= 0.0 || gutter.h <= 0.0 {
+        return;
+    }
+    mesh.rect(gutter, theme.lane_alt);
+    let text_h = font::height(m.micro_scale);
+    for (pitch, label) in ticks {
+        let y = row_center(pitch, lo, hi, gutter);
+        if y < gutter.y || y > gutter.y + gutter.h {
+            continue;
+        }
+        let len = if label.is_some() { 6.0 } else { 3.0 };
+        mesh.rect(
+            Rect::new(gutter.x + gutter.w - len, y, len, m.divider_w),
+            theme.ruler_text,
+        );
+        if let Some(label) = label {
+            let top = (y - text_h * 0.5).clamp(gutter.y, gutter.y + gutter.h - text_h);
+            font::text(
+                mesh,
+                &label,
+                gutter.x + 2.0,
+                top,
+                m.micro_scale,
+                theme.ruler_text,
+            );
+        }
+    }
+    mesh.border(gutter, m.divider_w, theme.frame);
+}
+
 /// Draw the OSC lane: a flag at each marker's time, with its label.
 pub fn draw_osc_lane(d: &mut Draw, lane: Rect, nav: &View, offset: f64, marks: &[OscMark]) {
     let (mesh, m, theme) = d.parts();

@@ -511,7 +511,7 @@ impl Multitrack {
                     );
                 let rows = (0.0, self.lanes.len().saturating_sub(1) as f32);
                 let block = std::mem::take(&mut self.block);
-                boxes::move_block(self, &block, dt, dr, rows, None);
+                boxes::move_block(self, &block, dt, dr, rows, 1.0, None);
                 self.block = block;
             }
             // **An edge is one clip's**, and it trims: the placement and the

@@ -124,3 +124,56 @@ fn a_locate_places_the_cursor_on_a_beat_and_edits_nothing() {
     let roll = &e.window(40)["children"][0];
     assert_eq!(roll["axes"]["x"]["playhead_at"], 0.0);
 }
+
+/// **A roll in hertz** is told its unit and a window in hertz around its
+/// notes, draws each note at its frequency, and a note reported at a new
+/// frequency is that frequency -- with the MIDI note it was written with
+/// following it, through the pitch family's coherence.
+#[test]
+fn a_roll_in_hertz_draws_and_edits_frequencies() {
+    let sequence = shared();
+    let mut e = new_json(
+        sequence.clone(),
+        r#"{"rate": 100.0, "version": 1, "domain": "hz"}"#,
+    );
+    let tree = e.window(40);
+    call_json(&mut e, r#"{"verb": "sync", "window": 39}"#);
+    let roll = &tree["children"][0];
+    assert_eq!(roll["axes"]["y"]["unit"], "hz");
+    let (min, max) = (
+        roll["axes"]["y"]["min"].as_f64().unwrap(),
+        roll["axes"]["y"]["max"].as_f64().unwrap(),
+    );
+    assert!(min < 261.63 && max > 329.63, "{min} {max}");
+    let y = roll["notes"][2].as_f64().unwrap();
+    assert!((y - 261.6256).abs() < 1e-3, "middle C in hertz: {y}");
+
+    // The first note to 300 Hz, the second as it was.
+    let out = e.event(
+        &gesture(
+            "notes",
+            vec![
+                json!(1),
+                json!(0.0),
+                json!(100.0),
+                json!(300.0),
+                json!(13.0),
+                json!(0.0),
+                json!(2),
+                json!(100.0),
+                json!(100.0),
+                json!(329.6276),
+                json!(51.0),
+                json!(0.0),
+            ],
+        ),
+        1,
+    );
+    assert!(out.changed);
+    let held = sequence.lock().unwrap();
+    let first = &held.get(1).unwrap().data.0;
+    assert!((first["freq"].as_f64().unwrap() - 300.0).abs() < 1e-6);
+    let midinote = first["midinote"].as_f64().unwrap();
+    assert!((midinote - 62.37).abs() < 0.01, "{midinote}");
+    assert_eq!(held.get(2).unwrap().data.0["midinote"], json!(64));
+}

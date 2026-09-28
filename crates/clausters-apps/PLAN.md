@@ -559,7 +559,16 @@ opened it.
       host open a notes editor over it in the multitrack's context.
   - ⬜ **X3.10 - Recording** into an `EventSequence` (`clausters-midi`).
   - ⬜ **X3.11 - CC lanes and per-note expression**, with M35.
-  - ⬜ **X3.12 - The Hz domain.**
+  - ✅ **X3.12 - The Hz domain.**
+    *(Shipped 2026-09-28: the `notes` element reads `axes.y.unit` `"hz"` --
+    its notes, their report and its compass in hertz, converted at the wire
+    to the pitch its rows are, since a log frequency is a linear pitch; the
+    axis ruled by the spectrogram's own `ruler::hz_ticks` in place of the
+    keys, and a drag that snaps to nothing (`boxes::snap_row` with a step of
+    0). The crate's roll sends the unit and a window in hertz fitted to the
+    notes, and a named domain (`"midi"`, `"hz"`) opens it; both clients'
+    `NotesEditor` and `edit` take `y_axis` / `yAxis`. A trajectory in the
+    plane -- a glissando, a per-note bend -- is expression, `X3.11`.)*
 
   **Related:** the examples that edit notes through the raw event and have no
   history (`clients/python/PLAN.md`, "Half the editors a hand can use have no
@@ -1072,6 +1081,20 @@ wrong.
   **Fixed 2026-09-28 by `T8`**: the playback is an event lane on its
   transport, an edit is the lane's new data (`update`), and nothing asks for
   the transport's clock.
+
+- ⬜ **Two windows of one role over one structure draw on one widget**
+  *(found 2026-09-28, extending `edit_notes` with a roll in hertz beside the
+  one in MIDI notes: "gui_def: widget id 1000 already in use, skipping")*. A
+  view names its widgets by `(structure, role, key)` in the core's registry
+  (`Application.id_for`), deliberately without the drawer, so that two views
+  of one thing agree about which widget draws which part of it. Two editors
+  opened over the same structure -- `edit(seq)` twice, which the history
+  supports, one pile per context -- then ask for the same id, and the host
+  skips the second window's widget. The hertz roll is keyed by its axis, so
+  the pair in `edit_notes` works; two rolls in one axis still collide, and so
+  would any editor opened twice over one structure, since every view names
+  its widgets through that one door. Open: whether the window belongs in the name,
+  or a second editor over a structure is refused and hands back the first.
 
 - ✅ **The roll has no play cursor, and its ruler places nothing** *(the
   user, 2026-09-28, trying `X3.9`: "El roll no tiene cursor de reproducción

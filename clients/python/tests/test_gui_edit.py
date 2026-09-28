@@ -551,3 +551,16 @@ def test_the_roll_draws_its_play_cursor_from_its_transport_and_a_locate_cues_it(
     editor.apply("/gui_event", [wid, 1, 0, "locate", BEAT])
     assert editor.cursor == 1.0 and placed == [1.0]
     assert [addr for addr, _ in server.sent] == ["/transport_locateSample"]
+
+
+def test_a_roll_in_hertz_draws_and_edits_frequencies():
+    seq = EventSequence([(0.0, SeqEvent(midinote=60, dur=1.0))], tempo_map=TempoMap(TEMPO))
+    editor = NotesEditor(seq, sample_rate=SR, y_axis="hz")
+    host, wid = opened(editor)
+    roll = host.trees[0]["children"][0]
+    assert roll["axes"]["y"]["unit"] == "hz"
+    assert abs(roll["notes"][2] - 261.6256) < 1e-3, "middle C, in hertz"
+    editor.apply("/gui_event", [wid, 1, 0, "notes", 1, 0.0, BEAT * 0.8, 300.0, 100, 0])
+    moved = list(seq)[0][1]
+    assert abs(moved["freq"] - 300.0) < 1e-3
+    assert abs(moved["midinote"] - 62.37) < 0.01, "the MIDI note follows the frequency"

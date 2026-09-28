@@ -39,7 +39,7 @@ use crate::host::widget::element::{
     BodyRole, Claim, Ctx, Element, Events, Input, Key, KeyInput, MidiNote, Needs, OnAxis, Swept,
     Take, TimeSpace,
 };
-use crate::host::widget::parse::{self, label, number, number_f64, set_f, set_label, truthy};
+use crate::host::widget::parse::{self, label, number, number_f64, set_label, truthy};
 use crate::host::widget::{EditorProps, GestureMap, Ruler};
 use crate::host::{font, ruler};
 use crate::viewport::View;
@@ -139,7 +139,7 @@ pub(crate) fn from_props(props: &Map<String, Value>) -> Notes {
     let osc = parse_osc(props);
     let mut notes = parse_notes(props);
     let ids = set_ids(&mut notes, props.get("note_ids"));
-    Notes {
+    let mut roll = Notes {
         notes,
         ids,
         // The OSC lane shows when there are markers or it is explicitly asked
@@ -160,10 +160,65 @@ pub(crate) fn from_props(props: &Map<String, Value>) -> Notes {
         held: Vec::new(),
         step: 0.0,
         editable: props.get("editable").and_then(truthy).unwrap_or(true),
+    };
+    // What arrived is in the domain's unit, and the rows are pitches: a roll in
+    // hertz reads its notes and its compass through the one conversion.
+    if roll.hz() {
+        for i in 0..roll.notes.len() {
+            roll.notes[i].pitch = roll.row_of(f64::from(roll.notes[i].pitch));
+        }
+        if props.contains_key("min") {
+            roll.min = roll.row_of(f64::from(roll.min));
+        }
+        if props.contains_key("max") {
+            roll.max = roll.row_of(f64::from(roll.max));
+        }
     }
+    roll
 }
 
 impl Notes {
+    /// Whether the Y domain is **hertz** (`axes.y.unit` of `"hz"`): the axis is
+    /// then read and reported in hertz, ruled in round frequencies, and a
+    /// pitch snaps to nothing. Every other roll is in MIDI notes.
+    fn hz(&self) -> bool {
+        self.editor.ruler_y == crate::host::widget::RulerY::Hz
+    }
+
+    /// The row a value of the domain sits on: the value itself for MIDI
+    /// notes, the pitch a frequency is for hertz ([`pianoroll`]'s note on why
+    /// that is the same axis).
+    fn row_of(&self, value: f64) -> f32 {
+        if self.hz() {
+            clausters_core::scale::hz_to_midi(value.max(1e-3)) as f32
+        } else {
+            value as f32
+        }
+    }
+
+    /// The value of the domain a row is -- what is reported.
+    fn value_of(&self, row: f32) -> f32 {
+        if self.hz() {
+            clausters_core::scale::midi_to_hz(f64::from(row)) as f32
+        } else {
+            row
+        }
+    }
+
+    /// The notes as the wire has them, each pitch in the domain's unit.
+    fn wire_notes(&self) -> Vec<Note> {
+        let mut out = self.notes.clone();
+        for note in &mut out {
+            note.pitch = self.value_of(note.pitch);
+        }
+        out
+    }
+
+    /// What a pitch snaps to: a semitone, or nothing on a continuous axis.
+    fn step(&self) -> f32 {
+        if self.hz() { 0.0 } else { 1.0 }
+    }
+
     /// The regions this placement is split into -- the same call the drawing and
     /// the hit-test both make, so a note is grabbed by the pixels it is
     /// painted on.
@@ -227,7 +282,7 @@ impl Notes {
             }
             args.push(OscType::Float(n.start as f32));
             args.push(OscType::Float(n.dur as f32));
-            args.push(OscType::Float(n.pitch));
+            args.push(OscType::Float(self.value_of(n.pitch)));
             args.push(OscType::Int(n.velocity));
             args.push(OscType::Int(n.channel));
         }
@@ -313,6 +368,9 @@ impl Element for Notes {
             }
             "notes" => {
                 self.notes = parse_notes(&parse::as_array_props("notes", v));
+                for i in 0..self.notes.len() {
+                    self.notes[i].pitch = self.row_of(f64::from(self.notes[i].pitch));
+                }
                 // The indices would dangle over the new list. The ids go with
                 // them: a new list names its own, in the `note_ids` beside it.
                 self.selected.clear();
@@ -328,8 +386,8 @@ impl Element for Notes {
                 self.osc = parse_osc(&parse::as_array_props("osc", v));
                 true
             }
-            "min" => set_f(&mut self.min, v),
-            "max" => set_f(&mut self.max, v),
+            "min" => v.as_f64().map(|x| self.min = self.row_of(x)).is_some(),
+            "max" => v.as_f64().map(|x| self.max = self.row_of(x)).is_some(),
             "snap" => v.as_f64().map(|x| self.snap = x.max(0.0)).is_some(),
             "osc_lane" => truthy(v).map(|b| self.osc_lane = b).is_some(),
             "midi_in" => truthy(v).map(|b| self.midi_in = b).is_some(),
@@ -351,7 +409,11 @@ impl Element for Notes {
         let r = self.regions(ctx.rect, ctx.indent, ctx.metrics);
         let nav = self.view(ctx.time);
         let (lo, hi) = self.pitch_window();
-        pianoroll::draw_grid_background(d, r.grid, lo, hi);
+        if self.hz() {
+            pianoroll::draw_hz_grid(d, r.grid, lo, hi);
+        } else {
+            pianoroll::draw_grid_background(d, r.grid, lo, hi);
+        }
         pianoroll::draw_notes(
             d,
             r.grid,
@@ -364,7 +426,11 @@ impl Element for Notes {
             true,
             &self.selected,
         );
-        pianoroll::draw_keyboard(d, r.keyboard, lo, hi);
+        if self.hz() {
+            pianoroll::draw_hz_ruler(d, r.keyboard, lo, hi);
+        } else {
+            pianoroll::draw_keyboard(d, r.keyboard, lo, hi);
+        }
         if self.osc_lane {
             pianoroll::draw_osc_lane(d, r.osc, &nav, 0.0, &self.osc);
         }
@@ -395,7 +461,7 @@ impl Element for Notes {
         vec![
             (
                 "notes".into(),
-                Value::from(notes::notes_json(&self.notes).to_string()),
+                Value::from(notes::notes_json(&self.wire_notes()).to_string()),
             ),
             (
                 "note_ids".into(),
@@ -593,7 +659,17 @@ impl Element for Notes {
                         if let Some(n) = self.notes.get_mut(index) {
                             n.dur = orig_dur;
                         }
-                        notes::move_note(&mut self.notes, index, start, pitch, lo, hi, bounds);
+                        let step = self.step();
+                        notes::move_note(
+                            &mut self.notes,
+                            index,
+                            start,
+                            pitch,
+                            lo,
+                            hi,
+                            step,
+                            bounds,
+                        );
                     }
                     other => notes::resize_note(&mut self.notes, index, other, time, bounds),
                 }
@@ -612,7 +688,8 @@ impl Element for Notes {
                     None => 0.0,
                 };
                 let dp = pianoroll::y_to_pitch(at.1 as f32, lo, hi, r.grid) - press_pitch;
-                notes::move_notes_from(&mut self.notes, &orig, dt, dp, lo, hi, limit);
+                let step = self.step();
+                notes::move_notes_from(&mut self.notes, &orig, dt, dp, lo, hi, step, limit);
                 Events::none()
             }
             Some(Drag::Level { press_y, orig }) => {
@@ -940,7 +1017,7 @@ impl Notes {
             return;
         };
         let (lo, hi) = self.pitch_window();
-        let pitch = pianoroll::y_to_pitch(cy as f32, lo, hi, grid).round() as i32;
+        let row = pianoroll::y_to_pitch(cy as f32, lo, hi, grid);
         let s = nav.start + nav.len * ((cx - grid.x as f64) / grid.w.max(1.0) as f64);
         let time = match self.editor.ruler {
             Ruler::Samples => ruler::readout_samples(s),
@@ -955,7 +1032,12 @@ impl Notes {
             ),
             _ => ruler::readout_time(s, rate, nav.len / rate / grid.w.max(1.0) as f64),
         };
-        let text = format!("{}  {time}", clausters_core::scale::note_name(pitch));
+        let value = if self.hz() {
+            format!("{:.1} Hz", self.value_of(row))
+        } else {
+            clausters_core::scale::note_name(row.round() as i32)
+        };
+        let text = format!("{value}  {time}");
         // Right-aligned **inside the grid**: a roll drawn as a clip's body is
         // as wide as the clip, so a read-out placed at its own width alone
         // starts left of the box and is read over whatever is drawn there. It
@@ -1017,9 +1099,11 @@ impl Notes {
                 // the length until release.
                 None if !is_body => {
                     let time = snap_to(self.time_at(h.grid, &h.nav, at.0), self.snap).max(0.0);
-                    let pitch = pianoroll::y_to_pitch(at.1 as f32, h.lo, h.hi, h.grid)
-                        .round()
-                        .clamp(h.lo, h.hi);
+                    let pitch = boxes::snap_row(
+                        pianoroll::y_to_pitch(at.1 as f32, h.lo, h.hi, h.grid),
+                        self.step(),
+                    )
+                    .clamp(h.lo, h.hi);
                     let dur = self.default_dur(&h.nav);
                     let index = self.insert(notes::Note::new(time, dur, pitch));
                     self.drag = Some(Drag::Note {
@@ -1370,6 +1454,62 @@ mod tests {
         assert_eq!(msgs[0][0], OscType::String("notes".into()));
         assert_eq!(msgs[0].len(), 1 + 5, "the tag plus a quintuple per note");
         assert!(r.drag.is_none());
+    }
+
+    /// **A roll in hertz reads, draws and reports hertz**, and a pitch moves
+    /// continuously: its rows are the pitches the frequencies are, so the
+    /// note is where a MIDI roll would draw it, and a drag snaps to nothing.
+    #[test]
+    fn a_roll_in_hertz_reads_and_reports_hertz_and_moves_continuously() {
+        let m = Metrics::default();
+        let mut r =
+            roll(r#"{"notes":[0.0,100.0,440.0,100,0],"min":110.0,"max":1760.0,"ruler_y":"hz"}"#);
+        assert!((r.notes[0].pitch - 69.0).abs() < 1e-4, "{:?}", r.notes[0]);
+        assert!((r.min - 45.0).abs() < 1e-4 && (r.max - 93.0).abs() < 1e-4);
+        let info = r.info();
+        let wire: Vec<f64> = serde_json::from_str(info[0].1.as_str().unwrap()).unwrap();
+        assert!(
+            (wire[2] - 440.0).abs() < 1e-2,
+            "a query answers hertz: {wire:?}"
+        );
+
+        let at = (x_of(&r, &m, 50.0, 1000.0), y_of(&r, &m, 69.0));
+        r.press(at, &input(&m, rect(), axis(1000.0)));
+        let to = (at.0, y_of(&r, &m, 69.5));
+        r.drag(to, &input(&m, rect(), axis(1000.0)));
+        let pitch = r.notes[0].pitch;
+        assert!(
+            (pitch - 69.5).abs() < 0.1,
+            "not snapped to a semitone: {pitch}"
+        );
+        let msgs = r
+            .release(to, true, &input(&m, rect(), axis(1000.0)))
+            .into_messages();
+        let OscType::Float(hz) = msgs[0][3] else {
+            panic!("a float pitch: {:?}", msgs[0]);
+        };
+        let expected = clausters_core::scale::midi_to_hz(f64::from(pitch));
+        assert!(
+            (f64::from(hz) - expected).abs() < 1e-2,
+            "reported in hertz: {hz}"
+        );
+    }
+
+    /// The hertz ruler marks round frequencies over the roll's window, each
+    /// where its pitch is.
+    #[test]
+    fn the_hertz_ruler_marks_round_frequencies_at_their_pitches() {
+        let ticks = pianoroll::hz_ticks(45.0, 93.0, 400.0, &Metrics::default());
+        let labelled: Vec<_> = ticks.iter().filter(|(_, l)| l.is_some()).collect();
+        assert!(!labelled.is_empty());
+        for (pitch, label) in &labelled {
+            assert!((44.5..=93.5).contains(pitch), "{pitch} {label:?}");
+        }
+        assert!(
+            ticks.iter().any(|(p, l)| l.as_deref() == Some("200")
+                && (f64::from(*p) - clausters_core::scale::hz_to_midi(200.0)).abs() < 0.01),
+            "200 Hz is marked at its pitch: {ticks:?}"
+        );
     }
 
     /// **A roll given ids names every note in its report**, the id first: a
