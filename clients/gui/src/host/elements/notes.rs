@@ -1,6 +1,6 @@
-//! `notes` -- the editor-grade piano roll: a keyboard gutter, a note grid, a
-//! velocity lane and an OSC lane, placed on a navigation group's shared time
-//! axis.
+//! `notes` -- the editor-grade piano roll: a keyboard gutter, a note grid and an
+//! OSC lane, placed on a navigation group's shared time axis. A note's velocity
+//! is drawn inside it, as its fill, and edited on it: Shift and a vertical drag.
 //!
 //! **The leaf that is placed on somebody else's axis and edits what is drawn on
 //! it**, which is why it is the last but one of the port. Everything it draws
@@ -63,7 +63,9 @@ pub struct Notes {
     min: f32,
     max: f32,
     snap: f64,
-    velocity_lane: bool,
+    /// Whether the notes carry the ids of the events they draw (`note_ids`),
+    /// and so whether a report names each one.
+    ids: bool,
     osc_lane: bool,
     midi_in: bool,
     label: Option<String>,
@@ -105,11 +107,10 @@ enum Drag {
         press_pitch: f32,
         orig: Vec<(usize, f64, f32)>,
     },
-    /// One velocity bar following the cursor's height.
-    Velocity { index: usize },
-    /// Every selected velocity nudged by one delta from a press snapshot.
-    VelocityBlock {
-        press_velocity: i32,
+    /// Velocities nudged by the vertical distance from the press, one step a
+    /// pixel: the grabbed note's, or every selected one's when it is selected.
+    Level {
+        press_y: f64,
         orig: Vec<(usize, i32)>,
     },
 }
@@ -118,7 +119,6 @@ enum Drag {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Region {
     Grid,
-    Velocity,
     Osc,
     /// The time-ruler strip, or anything else on the axis: it reads a time and
     /// nothing else.
@@ -137,12 +137,13 @@ pub(super) fn build(
 /// builds one through the same door rather than by naming fields.
 pub(crate) fn from_props(props: &Map<String, Value>) -> Notes {
     let osc = parse_osc(props);
+    let mut notes = parse_notes(props);
+    let ids = set_ids(&mut notes, props.get("note_ids"));
     Notes {
-        notes: parse_notes(props),
-        // The velocity lane is on by default; the OSC lane shows when there
-        // are markers or it is explicitly asked for (so an empty lane can still
-        // be opened to author them).
-        velocity_lane: props.get("velocity").and_then(truthy).unwrap_or(true),
+        notes,
+        ids,
+        // The OSC lane shows when there are markers or it is explicitly asked
+        // for (so an empty lane can still be opened to author them).
         osc_lane: props
             .get("osc_lane")
             .and_then(truthy)
@@ -171,7 +172,6 @@ impl Notes {
             rect,
             self.editor.ruler != Ruler::Off,
             self.osc_lane,
-            self.velocity_lane,
             indent,
             m,
         )
@@ -207,10 +207,24 @@ impl Notes {
 
     /// The `"notes"` edit-back payload: the tag plus the flat `start dur pitch
     /// velocity channel` quintuple list -- the wire form the roll and the clip
-    /// share, in the owner's own units.
+    /// share, in the owner's own units -- or, for a roll whose notes carry ids,
+    /// sextuples with the id first (0 for a note the hand made).
     fn notes_event(&self) -> Events {
         let mut args = vec![OscType::String("notes".into())];
+        // A split or a paste copies a note whole, id included: the note that
+        // repeats an earlier one's id is a new one, and says so with 0.
+        let mut named = std::collections::HashSet::new();
         for n in &self.notes {
+            if self.ids {
+                let id = if n.id != 0 && named.insert(n.id) {
+                    n.id
+                } else {
+                    0
+                };
+                // An id is at most 2^53 on a wire that carries JSON numbers,
+                // and a double names every integer up to there.
+                args.push(OscType::Double(id as f64));
+            }
             args.push(OscType::Float(n.start as f32));
             args.push(OscType::Float(n.dur as f32));
             args.push(OscType::Float(n.pitch));
@@ -236,32 +250,11 @@ impl Notes {
             // marker the pointer is nearest is nobody's question here.
             return Hit {
                 region: Region::Osc,
-                rect: r.osc,
                 grid: r.grid,
                 nav,
                 lo,
                 hi,
                 note: None,
-            };
-        }
-        if self.velocity_lane && r.velocity.contains(at.0, at.1) {
-            // A velocity press picks the note whose bar it is nearest; it rides
-            // as a body hit so one arm reads the index either way.
-            let note =
-                nearest(r.velocity, &nav, self.notes.iter().map(|n| n.start), fx).map(|index| {
-                    pianoroll::NoteHit {
-                        index,
-                        part: boxes::Part::Body,
-                    }
-                });
-            return Hit {
-                region: Region::Velocity,
-                rect: r.velocity,
-                grid: r.grid,
-                nav,
-                lo,
-                hi,
-                note,
             };
         }
         let region = if r.grid.contains(at.0, at.1) {
@@ -271,7 +264,6 @@ impl Notes {
         };
         Hit {
             region,
-            rect: r.grid,
             grid: r.grid,
             nav,
             lo,
@@ -302,26 +294,11 @@ impl Notes {
 /// Where a press landed and what it landed on.
 struct Hit {
     region: Region,
-    /// The region's own rectangle -- what a velocity drag maps the cursor's
-    /// height through.
-    rect: Rect,
     grid: Rect,
     nav: View,
     lo: f32,
     hi: f32,
     note: Option<pianoroll::NoteHit>,
-}
-
-/// The index of the element whose time is nearest the cursor x, within a small
-/// pixel tolerance -- the picker both strips under the grid use.
-fn nearest(lane: Rect, nav: &View, times: impl Iterator<Item = f64>, x: f32) -> Option<usize> {
-    let to_x = |s: f64| lane.x + ((s - nav.start) / nav.len.max(1.0) * lane.w as f64) as f32;
-    times
-        .enumerate()
-        .map(|(i, s)| (i, (to_x(s) - x).abs()))
-        .filter(|(_, d)| *d <= 6.0)
-        .min_by(|a, b| a.1.total_cmp(&b.1))
-        .map(|(i, _)| i)
 }
 
 impl Element for Notes {
@@ -336,9 +313,15 @@ impl Element for Notes {
             }
             "notes" => {
                 self.notes = parse_notes(&parse::as_array_props("notes", v));
-                // The indices would dangle over the new list.
+                // The indices would dangle over the new list. The ids go with
+                // them: a new list names its own, in the `note_ids` beside it.
                 self.selected.clear();
                 self.held.clear();
+                true
+            }
+            "note_ids" => {
+                let ids = parse::as_array_props("note_ids", v);
+                self.ids = set_ids(&mut self.notes, ids.get("note_ids"));
                 true
             }
             "osc" => {
@@ -348,7 +331,6 @@ impl Element for Notes {
             "min" => set_f(&mut self.min, v),
             "max" => set_f(&mut self.max, v),
             "snap" => v.as_f64().map(|x| self.snap = x.max(0.0)).is_some(),
-            "velocity" => truthy(v).map(|b| self.velocity_lane = b).is_some(),
             "osc_lane" => truthy(v).map(|b| self.osc_lane = b).is_some(),
             "midi_in" => truthy(v).map(|b| self.midi_in = b).is_some(),
             "label" => set_label(&mut self.label, v),
@@ -386,9 +368,6 @@ impl Element for Notes {
         if self.osc_lane {
             pianoroll::draw_osc_lane(d, r.osc, &nav, 0.0, &self.osc);
         }
-        if self.velocity_lane {
-            pianoroll::draw_velocity_lane(d, r.velocity, &nav, 0.0, &self.notes);
-        }
         if let Some(text) = &self.label {
             let (mesh, m, theme) = d.parts();
             font::text(
@@ -417,6 +396,12 @@ impl Element for Notes {
             (
                 "notes".into(),
                 Value::from(notes::notes_json(&self.notes).to_string()),
+            ),
+            (
+                "note_ids".into(),
+                Value::from(
+                    Value::from(self.notes.iter().map(|n| n.id).collect::<Vec<_>>()).to_string(),
+                ),
             ),
             (
                 "osc".into(),
@@ -528,8 +513,8 @@ impl Element for Notes {
         }
     }
 
-    /// **The roll's own contents are its notes** -- a note's rectangle, and the
-    /// velocity bar that belongs to one. The grid between them is the
+    /// **The roll's own contents are its notes** -- a note's rectangle. The
+    /// grid between them is the
     /// container's, which is what leaves a clip's empty roll to the clip's own
     /// move.
     ///
@@ -542,7 +527,7 @@ impl Element for Notes {
             return false;
         }
         let h = self.hit(at, input);
-        matches!(h.region, Region::Grid | Region::Velocity) && h.note.is_some()
+        h.region == Region::Grid && h.note.is_some()
     }
 
     fn press(&mut self, at: (f64, f64), input: &Input) -> Claim {
@@ -551,7 +536,7 @@ impl Element for Notes {
         // consumed so nothing behind it turns a refused edit into a selection,
         // and it says why -- a refusal with nothing attached teaches *sometimes
         // it does not work* rather than *not here*.
-        if !self.editable && matches!(h.region, Region::Grid | Region::Velocity) {
+        if !self.editable && h.region == Region::Grid {
             return Claim::Take(Take {
                 events: Events::refused(
                     "notes",
@@ -566,7 +551,6 @@ impl Element for Notes {
         let is_body = input.time.is_some() && !self.navigable_placement(input);
         match h.region {
             Region::Grid => self.press_grid(&h, at, input, is_body),
-            Region::Velocity => self.press_velocity(&h, at),
             Region::Osc => self.press_osc(&h, at, input),
             // The ruler strip and the slack beside the body: a time and nothing
             // else, so the sweep is time-only.
@@ -631,19 +615,8 @@ impl Element for Notes {
                 notes::move_notes_from(&mut self.notes, &orig, dt, dp, lo, hi, limit);
                 Events::none()
             }
-            Some(Drag::Velocity { index }) => {
-                notes::set_velocity(
-                    &mut self.notes,
-                    index,
-                    pianoroll::velocity_at(r.velocity, at.1),
-                );
-                Events::none()
-            }
-            Some(Drag::VelocityBlock {
-                press_velocity,
-                orig,
-            }) => {
-                let dv = pianoroll::velocity_at(r.velocity, at.1) - press_velocity;
+            Some(Drag::Level { press_y, orig }) => {
+                let dv = ((press_y - at.1) / f64::from(input.scale.max(0.1))).round() as i32;
                 notes::nudge_velocities_from(&mut self.notes, &orig, dv);
                 Events::none()
             }
@@ -775,6 +748,7 @@ impl Element for Notes {
                 None => self.step,
             };
             let index = self.insert(notes::Note {
+                id: 0,
                 start,
                 dur,
                 pitch: note.pitch as f32,
@@ -1002,6 +976,28 @@ impl Notes {
     /// Ctrl adds or removes one, a note moves or resizes (a **selected** note
     /// moves the whole selection), and empty grid sweeps the marquee.
     fn press_grid(&mut self, h: &Hit, at: (f64, f64), input: &Input, is_body: bool) -> Claim {
+        // **Shift and a vertical drag is the velocity**, drawn inside the note
+        // it belongs to rather than in a lane of its own: the grabbed note's,
+        // or the whole selection's when the grabbed note is in it.
+        if input.mods.shift {
+            let Some(nh) = h.note else {
+                return Claim::Decline;
+            };
+            let which: Vec<usize> = if self.selected.contains(&nh.index) {
+                self.selected.clone()
+            } else {
+                vec![nh.index]
+            };
+            let orig = which
+                .iter()
+                .filter_map(|&i| self.notes.get(i).map(|n| (i, n.velocity)))
+                .collect();
+            self.drag = Some(Drag::Level {
+                press_y: at.1,
+                orig,
+            });
+            return Claim::take();
+        }
         if input.mods.alt {
             let Some(nh) = h.note else {
                 return Claim::Decline;
@@ -1084,31 +1080,6 @@ impl Notes {
             orig_dur,
         });
         Claim::take().edge_scrolling()
-    }
-
-    /// A press on the velocity lane: over a **selected** note the whole
-    /// selection nudges together (relative, from a snapshot); over an
-    /// unselected one the single bar follows the cursor.
-    fn press_velocity(&mut self, h: &Hit, at: (f64, f64)) -> Claim {
-        let Some(nh) = h.note else {
-            return Claim::Decline;
-        };
-        if self.selected.contains(&nh.index) {
-            let orig: Vec<_> = self
-                .selected
-                .iter()
-                .filter_map(|&i| self.notes.get(i).map(|n| (i, n.velocity)))
-                .collect();
-            if !orig.is_empty() {
-                self.drag = Some(Drag::VelocityBlock {
-                    press_velocity: pianoroll::velocity_at(h.rect, at.1),
-                    orig,
-                });
-                return Claim::take();
-            }
-        }
-        self.drag = Some(Drag::Velocity { index: nh.index });
-        Claim::take()
     }
 
     /// A press on the **markers lane**, which shows and does not write.
@@ -1208,6 +1179,20 @@ fn parse_notes(props: &serde_json::Map<String, Value>) -> Vec<Note> {
         .collect()
 }
 
+/// Names each note by the id its owner gave it: `ids` is the `note_ids` list,
+/// in the order of the notes. Answers whether the notes now carry ids, which
+/// is whether a report names them. A list shorter than the notes leaves the
+/// rest unnamed.
+fn set_ids(notes: &mut [Note], ids: Option<&Value>) -> bool {
+    let Some(Value::Array(ids)) = ids else {
+        return false;
+    };
+    for (note, id) in notes.iter_mut().zip(ids) {
+        note.id = id.as_f64().map_or(0, |v| v.max(0.0) as u64);
+    }
+    true
+}
+
 /// Parse a `pianoroll`'s `osc` prop -- a flat `[time, label, time, label, ...]`
 /// list of OSC markers (the label a short address/tag, an empty string
 /// meaning none). A trailing partial pair is dropped.
@@ -1301,7 +1286,7 @@ mod tests {
     fn parses_defaults_and_the_wire_lists() {
         let r = roll("{}");
         assert_eq!((r.min, r.max), (PITCH_MIN, PITCH_MAX));
-        assert!(r.velocity_lane && !r.osc_lane && !r.midi_in);
+        assert!(!r.osc_lane && !r.midi_in && !r.ids);
         assert_eq!(r.snap, 0.0);
         assert!(r.notes.is_empty() && r.osc.is_empty());
 
@@ -1341,8 +1326,6 @@ mod tests {
         assert!(r.set("osc", &Value::from("[5.0,\"a\"]")));
         assert_eq!(r.osc.len(), 1);
         assert!(r.set("snap", &Value::from(50.0)));
-        assert!(r.set("velocity", &Value::from(0)));
-        assert!(!r.velocity_lane);
         // The editor chrome is the element's too, so its keys apply here.
         assert!(r.set("ruler", &Value::from("beats")));
         assert!(!r.set("nonesuch", &Value::from(1)));
@@ -1387,6 +1370,56 @@ mod tests {
         assert_eq!(msgs[0][0], OscType::String("notes".into()));
         assert_eq!(msgs[0].len(), 1 + 5, "the tag plus a quintuple per note");
         assert!(r.drag.is_none());
+    }
+
+    /// **A roll given ids names every note in its report**, the id first: a
+    /// note the owner named keeps its id, and one the hand made -- or a copy
+    /// that repeats an id, as a split's second half does -- is 0.
+    #[test]
+    fn a_roll_with_ids_reports_each_note_by_its_id() {
+        let m = Metrics::default();
+        let mut r = roll(
+            r#"{"notes":[0.0,100.0,60.0,100,0,200.0,100.0,64.0,90,1],"note_ids":[7,9],
+                "min":48,"max":72}"#,
+        );
+        assert!(r.ids);
+        assert_eq!((r.notes[0].id, r.notes[1].id), (7, 9));
+        let copy = r.notes[1];
+        r.notes.push(copy);
+        let msgs = r.notes_event().into_messages();
+        assert_eq!(msgs[0].len(), 1 + 3 * 6, "the tag plus a sextuple per note");
+        assert_eq!(msgs[0][1], OscType::Double(7.0));
+        assert_eq!(msgs[0][7], OscType::Double(9.0));
+        assert_eq!(msgs[0][13], OscType::Double(0.0), "the copy is a new note");
+        // A new list drops the ids until its own arrive.
+        assert!(r.set("notes", &Value::from("[0.0,10.0,60.0,100,0]")));
+        assert_eq!(r.notes[0].id, 0);
+        assert!(r.set("note_ids", &Value::from("[3]")));
+        assert_eq!(r.notes[0].id, 3);
+        let _ = m;
+    }
+
+    /// **Shift and a vertical drag is a note's velocity**, drawn in the note
+    /// rather than in a lane: one step a pixel, the grabbed note's alone when
+    /// it is not selected, and one edit at the release.
+    #[test]
+    fn shift_and_a_vertical_drag_sets_the_velocity_on_the_note() {
+        let m = Metrics::default();
+        let mut r =
+            roll(r#"{"notes":[0.0,100.0,60.0,100,0,200.0,100.0,64.0,100,0],"min":48,"max":72}"#);
+        let at = (x_of(&r, &m, 50.0, 1000.0), y_of(&r, &m, 60.0));
+        let mut shifted = input(&m, rect(), axis(1000.0));
+        shifted.mods.shift = true;
+        assert!(matches!(r.press(at, &shifted), Claim::Take(_)));
+        let events = r.drag((at.0, at.1 - 20.0), &shifted);
+        assert!(events.is_empty());
+        assert_eq!(r.notes[0].velocity, 120);
+        assert_eq!(r.notes[1].velocity, 100, "only the grabbed note");
+        assert_eq!(r.notes[0].pitch, 60.0, "and it does not move");
+        r.drag((at.0, at.1 + 200.0), &shifted);
+        assert_eq!(r.notes[0].velocity, 1, "never a note-off");
+        let msgs = r.release(at, true, &shifted).into_messages();
+        assert_eq!(msgs[0][0], OscType::String("notes".into()));
     }
 
     /// **A note drag is measured against the axis it is handed each step**, not

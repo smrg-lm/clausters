@@ -449,8 +449,8 @@
               "max": 84
             }
           },
-          "velocity": 1,
-          "osc_lane": 1
+          "osc_lane": 1,
+          "velocity": true
         },
         {
           "type": "keys",

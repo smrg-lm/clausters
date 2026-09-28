@@ -154,7 +154,6 @@ fn the_axis_of_a_roll_is_the_grid_it_draws_its_notes_in() {
         rect,
         true,
         false,
-        true,
         pianoroll::KEYBOARD_W,
         host.metrics_for(1),
     );

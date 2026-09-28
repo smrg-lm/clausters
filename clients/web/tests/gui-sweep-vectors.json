@@ -1592,15 +1592,6 @@
  },
  {
   "builder": "notes",
-  "option": "velocity",
-  "value": true,
-  "tree": {
-   "type": "notes",
-   "velocity": 1
-  }
- },
- {
-  "builder": "notes",
   "option": "osc_lane",
   "value": true,
   "tree": {
@@ -2362,15 +2353,6 @@
   "tree": {
    "type": "notes",
    "snap": 3.5
-  }
- },
- {
-  "builder": "pianoroll",
-  "option": "velocity",
-  "value": true,
-  "tree": {
-   "type": "notes",
-   "velocity": 1
   }
  },
  {

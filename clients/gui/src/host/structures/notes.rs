@@ -23,9 +23,12 @@ pub use super::boxes::{Limit, selection_after_removal, toggle_selected};
 /// One note: its `start`/`dur` in timeline sample units (relative to the owning
 /// region's offset), `pitch` as a MIDI note number (kept `f32` so a clip can map
 /// it over an arbitrary `[min, max]` range), and the MIDI `velocity` (`0..127`)
-/// and `channel` (`0..15`) that make it a real MIDI note.
+/// and `channel` (`0..15`) that make it a real MIDI note. `id` is the
+/// identity of the event it draws, as its owner named it (`note_ids`), and 0
+/// for a note that names none -- one the hand made, or a roll given no ids.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Note {
+    pub id: u64,
     pub start: f64,
     pub dur: f64,
     pub pitch: f32,
@@ -67,6 +70,7 @@ impl Note {
     /// `(start, dur, pitch)` triple's reading.
     pub fn new(start: f64, dur: f64, pitch: f32) -> Self {
         Note {
+            id: 0,
             start,
             dur,
             pitch,
@@ -197,13 +201,6 @@ pub fn resize_note(notes: &mut [Note], index: usize, part: Part, t: f64, bounds:
     notes.set_placement(index, placed);
 }
 
-/// Set the velocity (clamped `0..127`) of the note at `index`.
-pub fn set_velocity(notes: &mut [Note], index: usize, velocity: i32) {
-    if let Some(n) = notes.get_mut(index) {
-        n.velocity = velocity.clamp(0, 127);
-    }
-}
-
 /// Insert a note, returning its index (appended; the list is not kept sorted --
 /// draw order is insertion order, matching the clip's).
 pub fn insert_note(notes: &mut Vec<Note>, note: Note) -> usize {
@@ -260,12 +257,13 @@ pub fn remove_notes(notes: &mut Vec<Note>, indices: &[usize]) {
 
 /// Nudge a block of velocities relatively from a press-time snapshot: `orig`
 /// is `(index, velocity)` per selected note, `dv` the common delta -- each note
-/// clamps to `0..127` on its own (a saturated bar stays put, the rest keep
+/// clamps to `1..127` on its own (a saturated bar stays put, the rest keep
 /// moving, and reversing restores the original spread).
 pub fn nudge_velocities_from(notes: &mut [Note], orig: &[(usize, i32)], dv: i32) {
     for (i, v) in orig {
         if let Some(n) = notes.get_mut(*i) {
-            n.velocity = (v + dv).clamp(0, 127);
+            // Never 0: a note-on at velocity 0 is the note-off.
+            n.velocity = (v + dv).clamp(1, 127);
         }
     }
 }

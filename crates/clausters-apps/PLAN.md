@@ -476,9 +476,16 @@ opened it.
     first, each changed key written through the core's coherence, id 0 a new
     note). The whole-list `events` intake stays for today's roll until X3.7
     deletes it.)*
-  - ⬜ **X3.6 - The `notes` element**: ids on the wire (the end of identity by
+  - ✅ **X3.6 - The `notes` element**: ids on the wire (the end of identity by
     order: deleting note *k* hands note *k+1* the data of *k*), the velocity
     inside the note, the axis with a domain (MIDI note).
+    *(Shipped 2026-09-27: `note_ids` beside `notes`, a report of sextuples
+    with the id first when a roll has them, a copied note (a split's second
+    half, a paste) reported as new; the velocity drawn as the note's fill and
+    set with Shift and a vertical drag, and the velocity lane gone, with its
+    `velocity` option in both clients' `pianoroll`. The axis stays MIDI notes,
+    which is the domain the host already drew; a domain the host reads
+    arrives with the Hz one, X3.12.)*
   - ⬜ **X3.7 - `clausters-apps::notes`**: the window, the conversation with the
     edit vocabulary by id (move through the domain, trim, split, join, quantize,
     transpose, level, add, delete, duplicate), a member of `Editing`, the doors,

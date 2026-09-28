@@ -975,7 +975,8 @@ time × pitch rectangle become the selected set (Alt+click toggles one note in
 or out; Delete/Backspace removes the set; dragging a selected note moves the
 block rigidly, its clamp computed as one so an edge stops the block instead of
 folding it; the velocity lane nudges the set relatively, each note saturating
-on its own). The set itself is **native view state**, not a wire prop: it lives
+on its own -- the lane went on 2026-09-27, and Shift with a vertical drag on a
+note nudges the set the same way, the velocity drawn inside the note). The set itself is **native view state**, not a wire prop: it lives
 in the widget state, clears when the script replaces `notes` (the indices would
 dangle), and every block edit reaches the script as the same flat `"notes"`
 payload — the wire did not grow, so every client consumes block edits with the

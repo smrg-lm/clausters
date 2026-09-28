@@ -2595,8 +2595,10 @@ export function bpf(
  * the flag is a lossy view of one (its address as a label, its arguments not
  * drawn), so there is nothing there a hand could write. Add one with
  * `timeline.add(beat, OscItem(addr, ...))` and it appears. An edit flows
- * back as a flat `"notes"` event. `midiIn` arms live MIDI painting in the
- * native host.
+ * back as a flat `"notes"` event -- with `noteIds`, the id of each note's event
+ * in the order of `notes`, as sextuples naming every note first (`0` for a note
+ * the hand made). A note's velocity is drawn as its fill and set with Shift and
+ * a vertical drag. `midiIn` arms live MIDI painting in the native host.
  *
  * **A plain drag over the grid sweeps the notes** the rectangle covered -- the
  * rectangles the notes *are*, the same gesture a patcher's canvas has over its
@@ -2611,14 +2613,14 @@ export function pianoroll(
         min?: number;
         max?: number;
         snap?: number;
-        velocity?: boolean;
+        noteIds?: readonly number[];
         oscLane?: boolean;
         midiIn?: boolean;
         label?: string;
     } = {},
 ): GuiNode {
     const {
-        notes, osc, min, max, snap, velocity, oscLane, midiIn,
+        notes, osc, min, max, snap, noteIds, oscLane, midiIn,
         label: text, ...timeline
     } = options;
     return node("notes", {
@@ -2627,7 +2629,7 @@ export function pianoroll(
             ["notes", held(notes, flatNotes)],
             ["osc", held(osc, flatOsc)],
             ["snap", snap],
-            ["velocity", flag(velocity)],
+            ["note_ids", noteIds === undefined ? undefined : [...noteIds]],
             ["osc_lane", flag(oscLane)],
             ["midi_in", flag(midiIn)],
             ["label", text],

@@ -2581,7 +2581,7 @@ def timeruler(*, h: float = 20.0, autofit: bool | None = None, cursor: float | N
     return node("field", id=id, h=h, **extra, **props)
 
 def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | None = None,
-              snap: float | None = None, velocity: bool | None = None,
+              snap: float | None = None, note_ids=None,
               osc_lane: bool | None = None, midi_in: bool | None = None, link: int | None = None,
               autofit: bool | None = None,
               ruler: str | None = None, sample_rate: float | None = None,
@@ -2594,7 +2594,7 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
               y_start: float | None = None, y_len: float | None = None, label: str | None = None,
               color: str | None = None, markers=None, axes: dict | None = None, id: int | None = None, **props) -> View:
     """The dedicated editor-grade ``pianoroll`` view: a piano keyboard gutter, a
-    note grid, an optional velocity lane and an OSC lane -- the timeline
+    note grid and an OSC lane -- the timeline
     sibling of the compact roll a `multitrack` draws inside a box, drawing the **same notes** with
     the same geometry (they share the host's ``pianoroll`` primitives), plus
     editing, rulers and navigation.
@@ -2605,7 +2605,13 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
       velocity, channel)`` MIDI notes: times in timeline samples, ``pitch`` a MIDI
       note number drawn over the ``[min, max]`` window (default the 88-key range
       21-108), ``velocity`` ``0..127`` (default 100), ``channel`` ``0..15``. The
-      notes are the MIDI messages the roll represents.
+      notes are the MIDI messages the roll represents, each drawn with its
+      velocity as its fill.
+    - ``note_ids`` -- the id of each note's event, in the order of ``notes``,
+      for a roll whose owner names its notes (an `clausters.seq.EventSequence`
+      does). With them, a ``"notes"`` report names every note first: the flat
+      ``id start dur pitch velocity channel`` sextuples, ``0`` for a note the
+      hand made.
     - ``osc`` -- an iterable of ``(time, label)`` (or bare ``time``) markers, one
       per OSC or raw-MIDI timeline item, drawn as flags in a lane below the grid --
       the messages the roll carries alongside the notes. **The lane is
@@ -2627,8 +2633,8 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
 
     Editing (native gestures; the browser keeps display + ``/gui_set`` parity):
     drag a note to move it in time/pitch, drag an edge to resize it, Ctrl+click to
-    add a note or remove the one under the cursor; drag in the velocity lane to
-    set a note's velocity; Ctrl+click the OSC lane to add/remove an event, drag
+    add a note or remove the one under the cursor; Shift+drag a note up or down to
+    set its velocity (the selection's, when the note is selected); Ctrl+click the OSC lane to add/remove an event, drag
     one to move it. ``snap`` is the drag grid in timeline samples (``0`` = whole
     samples). An edit flows back as a flat ``"notes"`` event (``start dur pitch
     velocity channel ...``) or ``"osc"`` event (``time label ...``) -- the edit-back
@@ -2646,7 +2652,7 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
     ``playhead_loop_start``/``playhead_loop_len`` wrap the sweep inside a
     region); ``y_start``/``y_len`` are the
     vertical pitch window (normalized ``0..1`` over ``[min, max]``) for pitch
-    zoom/pan. ``velocity=False`` hides the velocity lane; ``osc_lane=True`` opens
+    zoom/pan. ``osc_lane=True`` opens
     the OSC lane even with no events (to author them). ``midi_in=True`` arms
     **live MIDI painting** in the native host: it opens a virtual MIDI input
     port ("clausters-gui") and paints incoming notes into this roll -- at the
@@ -2667,8 +2673,8 @@ def pianoroll(*, notes=None, osc=None, min: float | None = None, max: float | No
         playhead=playhead, cursor=cursor, playhead_loop_start=playhead_loop_start,
         playhead_loop_len=playhead_loop_len, autofit=autofit,
         y_start=y_start, y_len=y_len))
-    if velocity is not None:
-        extra["velocity"] = 1 if velocity else 0
+    if note_ids is not None:
+        extra["note_ids"] = [int(i) for i in note_ids]
     if osc_lane is not None:
         extra["osc_lane"] = 1 if osc_lane else 0
     if midi_in is not None:

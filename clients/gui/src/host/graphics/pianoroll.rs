@@ -44,8 +44,6 @@ use crate::viewport::View;
 /// (`crate::host::timeline::group_indent`), which is this when the roll is alone on
 /// its axis and wider when it shares one with a lane.
 pub const KEYBOARD_W: f32 = 44.0;
-/// The velocity lane height, device pixels.
-pub const VELOCITY_H: f32 = 52.0;
 /// The OSC lane height, device pixels.
 pub const OSC_H: f32 = 16.0;
 /// The smallest note bar height (a note never collapses below this even when a
@@ -53,7 +51,7 @@ pub const OSC_H: f32 = 16.0;
 const NOTE_MIN_H: f32 = 2.0;
 
 /// The regions of a `pianoroll` widget rect: the keyboard gutter (left), the
-/// note grid, and the optional OSC / velocity / time-ruler strips stacked at the
+/// note grid, and the optional OSC / time-ruler strips stacked at the
 /// bottom. The renderer and the hit-test both call this, so a note occupies the
 /// same pixels either way.
 #[derive(Clone, Copy, Debug)]
@@ -61,41 +59,30 @@ pub struct Regions {
     pub keyboard: Rect,
     pub grid: Rect,
     pub osc: Rect,
-    pub velocity: Rect,
     pub ruler: Rect,
 }
 
-/// Split a widget rect into its piano-roll regions. `osc`/`velocity` reserve
-/// their strips only when on; `ruler_on` reserves the bottom time strip.
+/// Split a widget rect into its piano-roll regions. `osc` reserves its strip
+/// only when on; `ruler_on` reserves the bottom time strip.
 /// `indent` is the group's shared gutter -- the keyboard fills it, so the grid
 /// starts where every other member of the axis starts its body.
-pub fn regions(
-    rect: Rect,
-    ruler_on: bool,
-    osc_on: bool,
-    vel_on: bool,
-    indent: f32,
-    m: &Metrics,
-) -> Regions {
+pub fn regions(rect: Rect, ruler_on: bool, osc_on: bool, indent: f32, m: &Metrics) -> Regions {
     let kw = indent.min(rect.w);
     let rh = if ruler_on { m.ruler_h.min(rect.h) } else { 0.0 };
-    let vh = if vel_on { VELOCITY_H } else { 0.0 };
     let oh = if osc_on { OSC_H } else { 0.0 };
-    // Reserve from the bottom up: ruler, velocity, osc, then the grid.
+    // Reserve from the bottom up: ruler, osc, then the grid.
     let inner_h = (rect.h - rh).max(0.0);
     let body_x = rect.x + kw;
     let body_w = (rect.w - kw).max(0.0);
-    let grid_h = (inner_h - vh - oh).max(0.0);
+    let grid_h = (inner_h - oh).max(0.0);
     let grid = Rect::new(body_x, rect.y, body_w, grid_h);
     let osc = Rect::new(body_x, rect.y + grid_h, body_w, oh);
-    let velocity = Rect::new(body_x, rect.y + grid_h + oh, body_w, vh);
     let ruler = Rect::new(body_x, rect.y + inner_h, body_w, rh);
     let keyboard = Rect::new(rect.x, rect.y, kw, grid_h);
     Regions {
         keyboard,
         grid,
         osc,
-        velocity,
         ruler,
     }
 }
@@ -373,27 +360,6 @@ pub fn draw_keyboard(d: &mut Draw, gutter: Rect, lo: f32, hi: f32) {
     mesh.border(gutter, m.divider_w, theme.frame);
 }
 
-/// Draw the velocity lane: one bar per note at the note's start, its height the
-/// velocity fraction. Shares the grid's time axis so a bar sits under its note.
-pub fn draw_velocity_lane(d: &mut Draw, lane: Rect, nav: &View, offset: f64, notes: &[Note]) {
-    let (mesh, m, theme) = d.parts();
-    if lane.w <= 0.0 || lane.h <= 0.0 {
-        return;
-    }
-    mesh.rect(lane, theme.lane_alt);
-    let (x_lo, x_hi) = (lane.x, lane.x + lane.w);
-    for n in notes {
-        let x = to_x(offset + n.start, nav, lane) as f32;
-        if x < x_lo || x > x_hi {
-            continue;
-        }
-        let frac = (n.velocity as f32 / 127.0).clamp(0.0, 1.0);
-        let bh = lane.h * frac;
-        mesh.rect(Rect::new(x, lane.y + lane.h - bh, 2.0, bh), theme.velocity);
-    }
-    mesh.border(lane, m.divider_w, theme.frame);
-}
-
 /// Draw the OSC lane: a flag at each marker's time, with its label.
 pub fn draw_osc_lane(d: &mut Draw, lane: Rect, nav: &View, offset: f64, marks: &[OscMark]) {
     let (mesh, m, theme) = d.parts();
@@ -480,14 +446,6 @@ pub fn time_at(grid: Rect, nav: &View, offset: f64, x: f32) -> f64 {
     s - offset
 }
 
-/// The 0..127 velocity a cursor height maps to within the velocity lane
-/// (lane bottom = 0, lane top = 127; clamped) -- the inverse of the lane's bar
-/// drawing, shared by the single-bar and block velocity drags.
-pub fn velocity_at(lane: Rect, y: f64) -> i32 {
-    let frac = ((lane.y + lane.h - y as f32) / lane.h.max(1.0)).clamp(0.0, 1.0);
-    (frac * 127.0).round() as i32
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -506,27 +464,16 @@ mod tests {
     }
 
     #[test]
-    fn velocity_at_maps_lane_height_to_0_127() {
-        let lane = Rect::new(0.0, 100.0, 400.0, 60.0);
-        assert_eq!(velocity_at(lane, 160.0), 0); // lane bottom
-        assert_eq!(velocity_at(lane, 100.0), 127); // lane top
-        assert_eq!(velocity_at(lane, 130.0), 64); // midway, rounded
-        assert_eq!(velocity_at(lane, 500.0), 0); // below: clamped
-        assert_eq!(velocity_at(lane, 0.0), 127); // above: clamped
-    }
-
-    #[test]
     fn regions_reserve_only_enabled_strips() {
         let r = Rect::new(0.0, 0.0, 500.0, 400.0);
-        let full = regions(r, true, true, true, KEYBOARD_W, &Metrics::default());
+        let full = regions(r, true, true, KEYBOARD_W, &Metrics::default());
         assert_eq!(full.keyboard.w, KEYBOARD_W);
-        assert!(full.ruler.h > 0.0 && full.osc.h == OSC_H && full.velocity.h == VELOCITY_H);
+        assert!(full.ruler.h > 0.0 && full.osc.h == OSC_H);
         // The grid takes what the strips leave.
-        assert!((full.grid.h - (400.0 - full.ruler.h - OSC_H - VELOCITY_H)).abs() < 1e-3);
-        let bare = regions(r, false, false, false, KEYBOARD_W, &Metrics::default());
+        assert!((full.grid.h - (400.0 - full.ruler.h - OSC_H)).abs() < 1e-3);
+        let bare = regions(r, false, false, KEYBOARD_W, &Metrics::default());
         assert_eq!(bare.ruler.h, 0.0);
         assert_eq!(bare.osc.h, 0.0);
-        assert_eq!(bare.velocity.h, 0.0);
         assert!((bare.grid.h - 400.0).abs() < 1e-3);
     }
 
