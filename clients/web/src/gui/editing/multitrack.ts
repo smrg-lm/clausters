@@ -42,6 +42,7 @@ import { type Part, stitchSent } from "../../defs/buffer.ts";
 import { Domain } from "./domain.ts";
 import { Editor } from "./editor.ts";
 import { keyOf } from "./context.ts";
+import { NotesEditor } from "./events.ts";
 import type { GenericEditorOptions } from "./editor.ts";
 import { Playback } from "./playback.ts";
 import { View } from "./view.ts";
@@ -476,6 +477,8 @@ interface Outcome {
     selection?: Record<string, unknown>;
     transport?: TransportVerb;
     cursor?: number;
+    /** The source whose roll a double click on a box of notes asked for. */
+    open?: number;
 }
 
 /** What a turn asks the transport to do. */
@@ -687,8 +690,41 @@ export class MultitrackEditor extends Editor<Multitrack> {
         }
         if (outcome.cursor !== undefined) this.cursor = outcome.cursor;
         if (outcome.transport !== undefined) this.transported = this.transport(outcome.transport);
+        if (outcome.open !== undefined) this.openRoll(outcome.open);
         this.echo.send(outcome.answer);
         return changed;
+    }
+
+    /** The rolls a double click opened, by source. */
+    readonly rolls = new Map<number, NotesEditor>();
+
+    /**
+     * **Opens the roll over source `source`**, a sequence among this editor's
+     * `sources` -- what a double click on a box of notes asks for.
+     *
+     * The notes editor opens in this multitrack's window set and editing
+     * context, so it is one undo order with the multitrack, and an edit in the
+     * roll redraws every box over that sequence and is heard from the
+     * transport's lane. A roll already open over the sequence is left as it
+     * is. Returns the `NotesEditor`, or `null` when the source is not a
+     * sequence.
+     */
+    openRoll(source: number): NotesEditor | null {
+        const sequence = this.bridge.sources.sequences().get(Math.trunc(source));
+        if (sequence === undefined) return null;
+        const open = this.rolls.get(Math.trunc(source));
+        if (open !== undefined && !open.closed) return open;
+        const roll = new NotesEditor(sequence, {
+            sampleRate: this.bridge.rate,
+            server: this.playback?.server,
+            app: this.app,
+            context: this.editing,
+            title: `${this.title}: notes`,
+        });
+        this.rolls.set(Math.trunc(source), roll);
+        const host = this.host;
+        if (host !== null) void roll.open(host);
+        return roll;
     }
 
     /** Draw what a history walk left behind: every widget corrected, the host told once. */

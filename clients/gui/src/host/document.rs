@@ -174,6 +174,14 @@ pub struct Owner {
     /// for it ([`Owner::open_editor`]): a member of [`Owner::editing`] under the
     /// multitrack's key, so it is the same structure in the order as the multitrack.
     editor_member: Option<MemberId>,
+    /// **The session's sequences of events**, one handle each, shared with
+    /// the multitrack editor (its boxes draw them and its playback's lane
+    /// plays them) and with any roll a double click opens: an edit in either
+    /// is in the one sequence, and a save writes it back.
+    pub sequences: HashMap<clausters_document::SourceId, clausters_apps::notes::Shared>,
+    /// **The rolls a double click opened**, by the window each is in: the
+    /// source it edits and its member of [`Owner::editing`].
+    pub rolls: HashMap<i32, (clausters_document::SourceId, MemberId)>,
 }
 
 /// What applying an edit left behind, for the caller to draw and answer with.
@@ -235,6 +243,8 @@ impl Owner {
             headers: HashMap::new(),
             multitrack_widget: None,
             editor_member: None,
+            sequences: HashMap::new(),
+            rolls: HashMap::new(),
         }
     }
 
@@ -254,6 +264,14 @@ impl Owner {
     pub fn from_session(session: Session) -> Self {
         let mut owner = Self::new(session.document.clone());
         owner.multitrack = session.multitrack.clone();
+        for (id, source) in &session.sources {
+            if let clausters_document::session::Location::Events { sequence } = &source.location {
+                owner.sequences.insert(
+                    *id,
+                    std::sync::Arc::new(std::sync::Mutex::new((**sequence).clone())),
+                );
+            }
+        }
         owner.session = Some(session);
         owner
     }
@@ -355,9 +373,10 @@ impl Owner {
 
     /// Writes the session back, with the document as it now stands.
     ///
-    /// The sources travel unchanged: what an editing session edits is the
-    /// arrangement and the samples, and where the samples *lives* is the
-    /// session's own bookkeeping, which this host has no business rewriting.
+    /// The sources travel unchanged -- where samples live is the session's own
+    /// bookkeeping, which this host has no business rewriting -- except a
+    /// sequence of events, which is in the file and is written as it now
+    /// stands.
     pub fn save(&self, path: impl AsRef<std::path::Path>) -> Result<(), String> {
         let mut session = self
             .session
@@ -365,6 +384,15 @@ impl Owner {
             .unwrap_or_else(|| Session::new(self.document.clone()));
         session.document = self.document.clone();
         session.multitrack = self.multitrack.clone();
+        // A sequence is in the file, so what an editor did to it is written.
+        for (id, shared) in &self.sequences {
+            if let Some(source) = session.sources.get_mut(id) {
+                let sequence = shared.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                source.location = clausters_document::session::Location::Events {
+                    sequence: Box::new(sequence),
+                };
+            }
+        }
         let text = serde_json::to_string_pretty(&session).map_err(|e| e.to_string())?;
         std::fs::write(path.as_ref(), text).map_err(|e| format!("{}: {e}", path.as_ref().display()))
     }
@@ -503,6 +531,9 @@ impl Owner {
         editor.set_sources(self.buffer_table());
         editor.set_lengths(self.buffer_lengths());
         editor.set_segments(self.segments());
+        for (id, sequence) in &self.sequences {
+            editor.bind_sequence(*id, sequence.clone());
+        }
         let def = editor.window(window + 1, window + 2);
         editor.set_window(Some(window));
         // **One editor over the multitrack**: opening the window again replaces the
@@ -1704,6 +1735,101 @@ mod window_verb_tests {
     /// multitrack's widget in it.
     fn composed(owner: &mut Owner, def_id: i32) -> (Value, i32) {
         (owner.open_editor(def_id, "t", (1000, 640)), def_id + 1)
+    }
+
+    /// **A double click on a box of notes opens its roll in a window of its
+    /// own**, over the session's very sequence: the host asks its front for the
+    /// window, and a note dragged in it is in the sequence the multitrack's box
+    /// reads.
+    #[test]
+    fn a_double_click_on_a_box_of_notes_opens_its_roll() {
+        use clausters_document::events::{Event, EventSequence};
+        use clausters_document::multitrack::{Content, Multitrack, Region, Track};
+        use clausters_document::{
+            Lifetime, Second, SegmentRef, SegmentSource, SourceId, SourceRef,
+        };
+
+        let source = SourceId(5);
+        let mut track = Track::new(NodeId(10), NodeId(11));
+        track.lanes[0].place(Region::new(
+            NodeId(20),
+            Second(0.0),
+            Second(4.0),
+            Content::window(SegmentRef {
+                source: SegmentSource::Samples(SourceRef {
+                    source,
+                    lifetime: Lifetime::Session,
+                    generation: 0,
+                    range: None,
+                }),
+                start: 0.0,
+                duration: 4.0,
+            }),
+        ));
+        let multitrack = Multitrack {
+            tracks: vec![track],
+            ..Multitrack::default()
+        };
+        let sequence =
+            std::sync::Arc::new(std::sync::Mutex::new(EventSequence::new(vec![Event::new(
+                0.0,
+                serde_json::json!({"midinote": 60, "sustain": 1.0}),
+            )])));
+        let def_id = 1;
+        let doc = Document::new(aggregate(1, Value::Null, Vec::new()));
+        let mut owner = Owner::new(doc).with_units_per_beat(100.0);
+        owner.multitrack = multitrack;
+        owner.sequences.insert(source, sequence.clone());
+        let (def, view) = composed(&mut owner, def_id);
+        let mut host = Host::new();
+        let origin = crate::host::ClientId::Udp(std::net::SocketAddr::from((
+            std::net::Ipv4Addr::LOCALHOST,
+            9000,
+        )));
+        host.handle_packet(
+            crate::host::OscPacket::Message(crate::host::OscMessage {
+                addr: "/gui_def".into(),
+                args: vec![OscType::Int(def_id), OscType::String(def.to_string())],
+            }),
+            origin,
+        );
+        host.owner = Some(owner);
+
+        let seq = host.outbox.borrow_mut().stamp(def_id, view);
+        assert!(host.answer_own(
+            def_id,
+            view,
+            seq,
+            &[OscType::String("open".into()), OscType::String("20".into())]
+        ));
+        let opened = host.take_effects();
+        let Some(roll) = opened.iter().find_map(|effect| match effect {
+            crate::host::HostEffect::OpenWindow(id) => Some(*id),
+            _ => None,
+        }) else {
+            panic!("the host asks for the roll's window: {opened:?}");
+        };
+        assert!(host.owner.as_ref().unwrap().rolls.contains_key(&roll));
+
+        // A note dragged in the roll: its id, where it now starts, its length,
+        // its pitch, velocity and channel.
+        let widget = roll + 1;
+        let seq = host.outbox.borrow_mut().stamp(roll, widget);
+        let moved: Vec<OscType> = vec![
+            OscType::String("notes".into()),
+            OscType::Int(1),
+            OscType::Double(0.0),
+            OscType::Double(100.0),
+            OscType::Double(67.0),
+            OscType::Double(100.0),
+            OscType::Double(0.0),
+        ];
+        assert!(host.answer_own(roll, widget, seq, &moved));
+        assert_eq!(
+            sequence.lock().unwrap().get(1).unwrap().data.0["midinote"],
+            serde_json::json!(67.0),
+            "the session's sequence, which the box reads"
+        );
     }
 
     /// **The transport row and the space bar are the editor's**: a click on a

@@ -518,7 +518,7 @@ opened it.
     plays through the client's clock (`play(destination=MidiServer)`), the
     server having no MIDI output; an edit is heard there from the next play.
     A blob in a step that is not samples -- a bundle -- now travels as hex.)*
-  - ⬜ **X3.9 - The notes region in the multitrack**: an `EventSequence` source
+  - ✅ **X3.9 - The notes region in the multitrack**: an `EventSequence` source
     through `Content::Window`, drawn in the box and edited in the roll opened on
     it (unlike audio, `X1.10`, here the two interoperate), sounding on the
     multitrack's transport; a source shared by several regions changes in all,
@@ -530,28 +530,33 @@ opened it.
     one event lane on the multitrack's transport (`PLAN.md`, `T8`), outside
     the tracks' strips: a note's own `out`, with the track's mute and solo and
     the box's mute deciding what is placed.)*
-    **Left, before the tick** *(listed 2026-09-28)*:
-    - ⬜ **The examples show a notes region**, in the ones that already exist
+    **Left, before the tick** *(listed 2026-09-28, all done the same day)*:
+    - ✅ **The examples show a notes region**, in the ones that already exist
       rather than a new one (the user: an application's parts go in its own
       examples, or they scatter): `edit_multitrack` gains a track of notes, an
       `EventSequence` among its `sources`, drawn in its box and sounding from
       the transport's lane, in both clients with the same calls.
-    - ⬜ **The roll and the box over one sequence, by hand**: the same example
-      opens `edit(sequence, context=...)` in the multitrack's context, so an
-      edit in the roll redraws the box and is heard from the lane. Tested in
-      the crate and in the drawing; the whole path through real windows is
-      not.
-    - ⬜ **The session keeps it**: `edit_multitrack` saves the sequence with
+    - ✅ **The roll and the box over one sequence, by hand**: the same example
+      opens the roll by a double click on the keys box (below), in the
+      multitrack's context, so an edit in the roll redraws the box and is
+      heard from the lane. Tested in the crate, the drawing, both clients and
+      the host; the pass through real windows is the owed ear and eye check.
+    - ✅ **The session keeps it**: `edit_multitrack` saves the sequence with
       `Source.events`, and `load_multitrack` reopens it with
       `{**session.load(), **session.sequences()}`, in both clients.
-    - ⬜ **The standalone host** (`clausters-gui --session`) binds the
-      session's sequences: today it hands the multitrack none, so a notes
-      region draws empty and silent there.
-    - ⬜ **Decision: does a double click on a notes box open the roll?** The
-      crate enters no box ("a box is not entered to be edited", `X1.10`'s
-      rule for audio), so the example opens the roll from the script. Opening
-      it from the box would be the one exception to that rule, and is the
-      user's to decide.
+    - ✅ **The standalone host** (`clausters-gui --session`) binds the
+      session's sequences: its owner holds one handle per sequence, the
+      multitrack editor draws them, the playback's lane plays them, a save
+      writes them back, and a double click opens the roll in a window of its
+      own (the host leaves the window as an effect its front opens,
+      `Host::take_effects`).
+    - ✅ **Decision: does a double click on a notes box open the roll?**
+      *Yes* (the user, 2026-09-28: "doble clic abre roll"). The one
+      exception to `X1.10`, which still holds for a box of samples: the host
+      reports `open <box>` for a box that draws a roll, the multitrack editor
+      answers `Outcome::open` with the source when it is a bound sequence,
+      and each client's editor (`open_roll` / `openRoll`) and the standalone
+      host open a notes editor over it in the multitrack's context.
   - ⬜ **X3.10 - Recording** into an `EventSequence` (`clausters-midi`).
   - ⬜ **X3.11 - CC lanes and per-note expression**, with M35.
   - ⬜ **X3.12 - The Hz domain.**

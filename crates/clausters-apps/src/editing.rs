@@ -1143,6 +1143,16 @@ mod tests {
         let text = serde_json::to_string(&corrected.answer).unwrap();
         assert!(text.contains("67"), "box 12 draws the moved note: {text}");
 
+        // A double click on box 12 asks for the roll over source 1.
+        let opened = editing
+            .event(multitrack, &event(40, 2, "open", vec![json!("12")]))
+            .unwrap();
+        let Outcome::Multitrack(outcome) = &opened.outcome else {
+            panic!("the multitrack's outcome");
+        };
+        assert_eq!(outcome.open, Some(1));
+        assert!(!opened.outcome.changed(), "and nothing is edited");
+
         // A member that is not a multitrack binds nothing.
         assert_eq!(editing.bind_sequence(notes, SourceId(1), sequence), "{}");
     }

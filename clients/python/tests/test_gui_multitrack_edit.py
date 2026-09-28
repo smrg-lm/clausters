@@ -191,6 +191,29 @@ def test_a_region_over_a_sequence_draws_its_notes():
     assert drawn[1][1:4] == [pytest.approx(SR), pytest.approx(0.5 * SR), 64.0]
 
 
+def test_a_double_click_on_a_box_of_notes_opens_its_roll():
+    """The roll opens over the very sequence the box reads, in the
+    multitrack's context, so the two are one undo order; a box of samples
+    opens nothing."""
+    from clausters.gui.editing import NotesEditor
+    from clausters.seq import EventSequence
+    from clausters.seq.event import Event
+
+    notes = EventSequence([(0.0, Event(midinote=60, sustain=0.5))])
+    ed = MultitrackEditor(multitrack(), sample_rate=SR, sources={1: notes})
+    ed.draw()
+    wid = next(iter(ed.view.widgets))
+    ed._route([wid, "open", "12"])
+    roll = ed.rolls[1]
+    assert isinstance(roll, NotesEditor) and roll.structure is notes
+    assert roll._editing is ed._editing, "one context, one undo order"
+
+    audio = MultitrackEditor(multitrack(), sample_rate=SR, sources={1: 7})
+    audio.draw()
+    audio._route([next(iter(audio.view.widgets)), "open", "12"])
+    assert audio.rolls == {}
+
+
 def test_a_tempo_moves_no_box():
     """The multitrack is in seconds: a box is drawn at its seconds times the
     rate, and a tempo the multitrack holds is a ruler's to read."""

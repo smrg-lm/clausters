@@ -11,9 +11,11 @@ names them. This opens that file the way any program would.
   and stitches the join from the takes it is made of, once they are there. What
   is read and in what order is the shared crate's, so this is the same load
   ``clausters-gui --session`` runs.
-- **Editing** is `edit`, with the loaded buffers as its sources. The last box is
-  the join: play it and it sounds the glide's first half and then the saw's
-  second, the parts the file states.
+- **Editing** is `edit`, with the loaded buffers and the session's sequences as
+  its sources (`Session.sequences`). The join plays the glide's first half and
+  then the saw's second, the parts the file states; the box on the keys track
+  plays the notes the file holds, as the roll left them if a save came after an
+  edit -- double click it to open the roll again.
 
 **What it needs:** run ``edit_multitrack.py`` once first, which saves
 ``clients/python/examples/out/edit_multitrack.json`` and its takes. A display
@@ -40,12 +42,16 @@ saved = SavedSession.open("clients/python/examples/out/edit_multitrack.json")
 
 for id, source in sorted(saved.sources.items()):
     print(f"  source {id}: {source.location['at']}")
+# A sequence is read back as the handle the table holds: the notes it has.
+for id, sequence in saved.sequences().items():
+    print(f"  source {id} holds {len(sequence)} events")
 
 # %% [markdown]
 # ## Load
 #
 # A buffer per source, keyed by source id. A relative path is read against the
-# folder the session was opened from.
+# folder the session was opened from. A sequence takes no buffer: it is in the
+# file, and `Session.sequences` hands it over.
 
 # %%
 session = Session.live(latency=0.1)
@@ -66,7 +72,8 @@ for id, source in saved.sources.items():
 rate = next(source.sample_rate for source in saved.sources.values()
             if source.sample_rate)
 session.gui()
-editor = edit(saved.multitrack, sample_rate=rate, server=server, sources=buffers,
+editor = edit(saved.multitrack, sample_rate=rate, server=server,
+              sources={**buffers, **saved.sequences()},
               title="reopened", width=1000, height=560)
 
 # %%

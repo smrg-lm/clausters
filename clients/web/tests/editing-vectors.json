@@ -330,6 +330,7 @@
         1.0
       ],
       "loops": "",
+      "notes": [],
       "points": [
         "4",
         0.0,
@@ -482,6 +483,7 @@
         1.0
       ],
       "loops": "",
+      "notes": [],
       "points": [
         "4",
         0.0,
@@ -650,6 +652,7 @@
         1.0
       ],
       "loops": "",
+      "notes": [],
       "points": [
         "4",
         0.0,
@@ -2615,6 +2618,7 @@
                   "link": 10000,
                   "loops": "",
                   "meters": [],
+                  "notes": [],
                   "playhead_at": 0.0,
                   "points": [],
                   "rates": [],
@@ -2981,6 +2985,7 @@
                   "link": 10000,
                   "loops": "",
                   "meters": [],
+                  "notes": [],
                   "playhead_at": 0.0,
                   "points": [],
                   "rates": [],
@@ -3120,6 +3125,7 @@
                   "link": 10000,
                   "loops": "",
                   "meters": [],
+                  "notes": [],
                   "playhead_at": 0.0,
                   "points": [],
                   "rates": [],

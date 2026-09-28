@@ -379,6 +379,20 @@ impl Multitrack {
         let Some((clip, part)) = self.clip_at(input, at) else {
             return Claim::Decline;
         };
+        // **A double click on a box of notes asks for its roll**, reported as
+        // `open <box>` for the owner to open over the box's sequence. The one
+        // box a double click opens: a box of samples is a press like any
+        // other, since the multitrack edits no take, while the roll and the
+        // box over one sequence edit the same notes.
+        if input.clicks >= 2 && self.rolls.contains_key(&self.clips[clip].name) {
+            return Claim::Take(Take {
+                events: Events::message(vec![
+                    OscType::String("open".into()),
+                    OscType::String(self.clips[clip].name.clone()),
+                ]),
+                ..Take::default()
+            });
+        }
         // **Alt adds or removes that one**, the same key that adds a note to a
         // roll's selection. A plain click selects it alone, and that is decided
         // on release (see [`Element::release`]): a press is not yet a gesture.

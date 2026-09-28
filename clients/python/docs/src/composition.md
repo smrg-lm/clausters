@@ -574,9 +574,10 @@ its tempo map. The table holds the handle itself, so a save writes what an
 editor did to it. `session.sequences()` hands the handles back, and with what
 `load` answers it is the whole table a multitrack editor is opened with:
 `edit(session.multitrack, sources={**session.load(), **session.sequences()})`.
-Such a box draws the notes it reads, and a notes editor opened over the same
-sequence edits what the box draws — both hold one sequence, and nothing is
-copied.
+Such a box draws the notes it reads and plays them from the transport's event
+lane, and **a double click on it opens its roll** — a notes editor over the
+same sequence, in the multitrack's undo order, which edits what the box draws:
+both hold one sequence, and nothing is copied.
 
 Three questions a save asks the table, and each has an answer rather than an
 exception: `session.volatile()` is what is not written down anywhere,

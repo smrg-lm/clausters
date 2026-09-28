@@ -20,10 +20,13 @@
 //! made where the samples are, and a placed cursor cues a transport.
 //! [`Outcome`] names each, and the caller carries them out.
 //!
-//! **A box is not entered to be edited.** The multitrack edits
+//! **A box of samples is not entered to be edited.** The multitrack edits
 //! non-destructively -- where things are, never the samples they read -- so
-//! nothing here opens an editor over a box's contents: an audio editor is
-//! another application, with a history of its own.
+//! nothing here opens an editor over a take: an audio editor is another
+//! application, with a history of its own. **A box of notes is the one
+//! exception**: a double click on one asks for the roll over the sequence it
+//! reads ([`Outcome::open`]), since the roll and the box edit the same notes
+//! and the edit is one history.
 
 use std::collections::{HashMap, HashSet};
 
@@ -80,6 +83,11 @@ pub struct Outcome {
     /// verb of its own rather than by a hand on the ruler (which is `locate`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor: Option<f64>,
+    /// **The source whose roll a double click asked for**: a box over a bound
+    /// sequence, which the caller opens a notes editor over, in this editor's
+    /// context. The one box the multitrack opens: it edits no take.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub open: Option<u64>,
 }
 
 turn::turned!(Outcome);
@@ -604,6 +612,19 @@ impl MultitrackEditor {
                 out.transport = Some(self.stopped());
                 return (None, Vec::new());
             }
+        }
+        // **A double click on a box of notes asks for its roll.** Nothing is
+        // edited here: the caller opens a notes editor over the sequence the
+        // box reads, and what that editor does is what reaches a history.
+        if tag == "open" {
+            let named = values.first().map(crate::turn::text).unwrap_or_default();
+            out.open = clausters_document::multitrack::picture::boxes(&self.multitrack)
+                .into_iter()
+                .find(|b| b.region.0.to_string() == named)
+                .and_then(|b| b.source)
+                .filter(|source| self.sequences.contains_key(source))
+                .map(|source| source.0);
+            return (None, Vec::new());
         }
         if NOT_AN_EDIT.contains(&tag) {
             self.observe(tag, values, out);

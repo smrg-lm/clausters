@@ -17,7 +17,7 @@ import test from "node:test";
 import { loadCore } from "../src/base/core.ts";
 import { multitrackPlan, MultitrackPlayback, StepRunner } from "../src/core/clausters_core_web.js";
 import {
-    MultitrackEditor, MultitrackView, Playback, edit,
+    MultitrackEditor, MultitrackView, NotesEditor, Playback, edit,
 } from "../src/gui/editing/index.ts";
 import { Sources } from "../src/gui/editing/multitrack.ts";
 import { Automation, Content, Lane, Multitrack, Region, Tempo, Track } from "../src/multitrack.ts";
@@ -836,4 +836,26 @@ test("the source table says how long a source is when its buffer does", () => {
     ]).table();
     assert.equal(table["1"].duration, 0.5);
     assert.equal(table["2"].duration, undefined);
+});
+
+test("a double click on a box of notes opens its roll", () => {
+    // The roll opens over the very sequence the box reads, in the
+    // multitrack's context, so the two are one undo order; a box of samples
+    // opens nothing.
+    const notes = new EventSequence([[0.0, new SeqEvent({ midinote: 60, sustain: 0.5 })]]);
+    const ed = new MultitrackEditor(multitrack(), { sampleRate: SR, sources: { 1: notes } });
+    ed.draw();
+    const wid = [...ed.view!.widgets.keys()][0];
+    (ed as unknown as { route(args: unknown[]): boolean }).route([wid, "open", "12"]);
+    const roll = ed.rolls.get(1);
+    assert.ok(roll instanceof NotesEditor && roll.structure === notes);
+    const contextOf = (e: object) => (e as unknown as { editing: unknown }).editing;
+    assert.equal(contextOf(roll), contextOf(ed), "one context, one undo order");
+
+    const audio = editor(multitrack());
+    audio.draw();
+    (audio as unknown as { route(args: unknown[]): boolean }).route([
+        [...audio.view!.widgets.keys()][0], "open", "12",
+    ]);
+    assert.equal(audio.rolls.size, 0);
 });

@@ -372,6 +372,8 @@ class MultitrackEditor(Editor):
         for source, sequence in bridge.sources.sequences().items():
             self._editing.bind_sequence(self._member, source, sequence)
         self._shown = None
+        #: The rolls a double click opened, by source.
+        self.rolls = {}
         #: The transport row's ids, once the window has numbered them.
         self._controls = None
         if server is not None:
@@ -457,8 +459,37 @@ class MultitrackEditor(Editor):
             self.cursor = float(outcome["cursor"])
         if outcome.get("transport") is not None:
             self._transport(outcome["transport"])
+        if outcome.get("open") is not None:
+            self.open_roll(int(outcome["open"]))
         self.echo.send(outcome.get("answer"))
         return changed
+
+    def open_roll(self, source: int):
+        """**Open the roll over source ``source``**, a sequence among this
+        editor's `sources` -- what a double click on a box of notes asks for.
+
+        The notes editor opens in this multitrack's window set and editing
+        context, so it is one undo order with the multitrack, and an edit in
+        the roll redraws every box over that sequence and is heard from the
+        transport's lane. A roll already open over the sequence is left as it
+        is. Returns the `clausters.gui.editing.NotesEditor`, or ``None`` when
+        the source is not a sequence."""
+        sequence = self.bridge.sources.sequences().get(int(source))
+        if sequence is None:
+            return None
+        open_roll = self.rolls.get(int(source))
+        if open_roll is not None and open_roll._window is not None:
+            return open_roll
+        from .events import NotesEditor
+
+        server = None if self.playback is None else self.playback.server
+        roll = NotesEditor(sequence, sample_rate=self.bridge.rate, server=server,
+                           app=self.app, context=self._editing,
+                           title=f"{self.title}: notes")
+        self.rolls[int(source)] = roll
+        if self._host is not None:
+            roll.open(self._host)
+        return roll
 
     def reflect_step(self) -> None:
         """Draw what a history walk left behind: every widget corrected, and the

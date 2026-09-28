@@ -2265,3 +2265,39 @@ fn the_notes_are_replaced_by_a_set() {
     assert!(mt.rolls.contains_key("c"), "the box the new list names");
     assert!(!mt.rolls.contains_key("b"), "and the old one is gone");
 }
+
+/// **A double click on a box of notes asks for its roll**, and a double click
+/// on a box of samples is a press like any other: the multitrack opens no take.
+#[test]
+fn a_double_click_opens_a_box_of_notes_and_no_take() {
+    let m = crate::host::metrics::Metrics::default();
+    let rect = Rect::new(0.0, 0.0, 800.0, 200.0);
+    let len = 1000.0;
+    let mut mt = from_props(&props(
+        r#"{"lanes": ["noise", "", 100, 0, 0, 1, 1, "tone", "", 100, 0, 0, 1, 1],
+            "clips": ["a", "noise", 0, 500, 0, "", 0, "b", "tone", 500, 500, 0, "", -1],
+            "notes": ["b", 0.0, 100.0, 60.0, 100.0, 0.0]}"#,
+    ));
+    let twice = Input {
+        clicks: 2,
+        ..input(&m, rect, len)
+    };
+    let at = xy(&mt, &m, rect, 750.0, len, 1);
+    let Claim::Take(take) = mt.press(at, &twice) else {
+        panic!("the box of notes is taken");
+    };
+    assert_eq!(
+        take.events.into_messages(),
+        vec![vec![
+            OscType::String("open".into()),
+            OscType::String("b".into())
+        ]]
+    );
+    let at = xy(&mt, &m, rect, 250.0, len, 0);
+    if let Claim::Take(take) = mt.press(at, &twice) {
+        assert!(
+            take.events.into_messages().is_empty(),
+            "a box of samples opens nothing"
+        );
+    }
+}

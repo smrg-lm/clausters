@@ -116,6 +116,13 @@ impl Host {
         if self
             .owner
             .as_ref()
+            .is_some_and(|o| o.rolls.contains_key(&def_id))
+        {
+            return self.answer_roll(def_id, message);
+        }
+        if self
+            .owner
+            .as_ref()
             .is_some_and(|o| o.draws_multitrack() && o.editor().is_some())
             && self.answer_multitrack(def_id, message)
         {
@@ -316,6 +323,9 @@ impl Host {
             Some(TransportVerb::Cue { secs }) => self.cue_multitrack(secs),
             None => {}
         }
+        if let Some(source) = outcome.open {
+            self.open_roll(source);
+        }
         if let Some(answer) = outcome.answer {
             self.tell(answer);
         }
@@ -369,6 +379,128 @@ impl Host {
         }
         if let Some(answer) = answer {
             self.tell(answer);
+        }
+        true
+    }
+
+    /// **Opens the roll over source `source`** -- a sequence of the session --
+    /// in a window of its own: a notes editor in the owner's editing context
+    /// over the very sequence the multitrack's boxes read, so an edit in it
+    /// redraws them and is heard from the transport's lane, and an undo in
+    /// either window walks one history. What a client's multitrack editor does
+    /// on the same double click (`open_roll`), done here for a session this
+    /// host plays with nobody behind it. A roll already open is left as it is.
+    pub(super) fn open_roll(&mut self, source: u64) {
+        use clausters_apps::editing::Member;
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        /// Where the rolls' windows are numbered: past the multitrack's own
+        /// window and its chrome, ten ids apiece.
+        const ROLLS: i32 = 1000;
+
+        let Some(owner) = self.owner.as_mut() else {
+            return;
+        };
+        let id = clausters_document::SourceId(source);
+        let def_id = ROLLS + 10 * i32::try_from(source).unwrap_or(0);
+        if owner.rolls.contains_key(&def_id) && self.window_defs.contains_key(&def_id) {
+            return;
+        }
+        let Some(shared) = owner.sequences.get(&id).cloned() else {
+            return;
+        };
+        let key = format!("sequence:{source}");
+        let request = serde_json::json!({
+            "rate": owner.units_per_second,
+            "title": format!("notes {source}"),
+            "w": 1000,
+            "h": 520,
+        })
+        .to_string();
+        let opened: serde_json::Value =
+            serde_json::from_str(&owner.editing.open_notes(&key, shared, &request))
+                .unwrap_or_default();
+        let Some(member) = opened["member"]
+            .as_u64()
+            .map(|m| m as clausters_apps::editing::MemberId)
+        else {
+            return;
+        };
+        let def = match owner.editing.member_mut(member) {
+            Some(Member::Notes(editor)) => {
+                let def = editor.window(def_id + 1);
+                clausters_apps::notes::editor::call_json(
+                    editor,
+                    &serde_json::json!({"verb": "sync", "window": def_id}).to_string(),
+                );
+                def
+            }
+            _ => return,
+        };
+        owner.rolls.insert(def_id, (id, member));
+        let origin = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)));
+        let effects = self.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_DEF.into(),
+                args: vec![OscType::Int(def_id), OscType::String(def.to_string())],
+            }),
+            origin,
+        );
+        self.pending_effects.extend(effects);
+    }
+
+    /// **A gesture on a roll's window**, answered by its notes editor: the turn
+    /// is the editing context's, the multitrack's window is corrected with what
+    /// the edit moved, and the transport's lane takes the sequence again.
+    pub(super) fn answer_roll(&mut self, def_id: i32, message: &OscMessage) -> bool {
+        use clausters_apps::editing::Outcome;
+        use clausters_apps::turn::{Event, Kind};
+
+        let Some(owner) = self.owner.as_mut() else {
+            return false;
+        };
+        let Some(&(_, member)) = owner.rolls.get(&def_id) else {
+            return false;
+        };
+        let Some(turned) = owner.editing.event(
+            member,
+            &Event {
+                addr: message.addr.clone(),
+                args: message
+                    .args
+                    .iter()
+                    .map(document::multitrack::atom)
+                    .collect(),
+            },
+        ) else {
+            return false;
+        };
+        let Outcome::Notes(outcome) = turned.outcome else {
+            return false;
+        };
+        if outcome.turn == Kind::Closed {
+            owner.rolls.remove(&def_id);
+            return true;
+        }
+        if outcome.turn == Kind::Step {
+            // The history is one with the multitrack's, so a step here may be
+            // the multitrack's own: carried out as that window's step is.
+            let multitrack = owner
+                .multitrack_widget()
+                .and_then(|widget| self.registry.root_of(widget))
+                .unwrap_or(def_id);
+            self.step_multitrack(multitrack, turned.stepped, outcome.answer);
+            self.sound_multitrack();
+            return true;
+        }
+        for corrected in turned.corrections {
+            self.tell(corrected.answer);
+        }
+        if let Some(answer) = outcome.answer {
+            self.tell(answer);
+        }
+        if outcome.changed {
+            self.sound_multitrack();
         }
         true
     }

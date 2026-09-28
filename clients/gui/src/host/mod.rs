@@ -818,6 +818,11 @@ pub struct Host {
     /// A widget draws from its own entry or its nearest ancestor's
     /// ([`Host::head_clocks`]); an entry goes when its widget is freed.
     head_clocks: HashMap<i32, HeadClock>,
+    /// **What this host did on its own and a front still has to carry out**:
+    /// a window it opened in answer to a gesture -- the roll a double click on
+    /// a box of notes asks for. Drained by the front ([`Host::take_effects`]),
+    /// which is the side that can make a window.
+    pending_effects: Vec<HostEffect>,
 }
 
 impl Default for Host {
@@ -869,7 +874,20 @@ impl Host {
             follow_block: 0.0,
             resolved_metrics: HashMap::new(),
             focused: None,
+            pending_effects: Vec::new(),
         }
+    }
+
+    /// **The effects this host produced on its own** since the last call -- a
+    /// window opened in answer to a gesture -- for the front to carry out as
+    /// it carries out those of a packet.
+    pub fn take_effects(&mut self) -> Vec<HostEffect> {
+        std::mem::take(&mut self.pending_effects)
+    }
+
+    /// Whether [`Self::take_effects`] has anything to hand over.
+    pub fn has_effects(&self) -> bool {
+        !self.pending_effects.is_empty()
     }
 
     /// The widget currently holding the keyboard focus, as `(def_id,

@@ -14,6 +14,18 @@ use crate::host::widget::element::SlotKey;
 use crate::host::winit_keys::{is_space, to_key};
 
 impl WebApp {
+    /// **Hands the loop what the host did on its own** -- a window it opened
+    /// in answer to a gesture -- since opening a canvas needs the event loop,
+    /// which a gesture's handler does not hold.
+    fn post_host_effects(&self) {
+        if !self.host.has_effects() {
+            return;
+        }
+        if let Some(proxy) = super::web_proxy() {
+            let _ = proxy.send_event(super::HostEvent::To(self.id, super::WebEvent::HostEffects));
+        }
+    }
+
     /// Snapshots the gesture context for one canvas: its framebuffer size, its
     /// modifier keys, and the heavy views' row counts (channel splits
     /// live in this front's GPU slots, so they are copied out here) -- the
@@ -84,6 +96,7 @@ impl WebApp {
                     let message = self.host.event_message(widget_id, seq, args);
                     if self.host.deliver(def_id, &message) {
                         self.request_redraw(def_id);
+                        self.post_host_effects();
                         continue;
                     }
                     self.queue(message);
@@ -361,6 +374,7 @@ impl WebApp {
         let message = self.host.event_message(def, seq, args);
         if self.host.deliver(def, &message) {
             self.request_redraw(def);
+            self.post_host_effects();
         } else {
             self.queue(message);
         }

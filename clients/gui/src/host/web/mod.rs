@@ -167,6 +167,9 @@ enum WebEvent {
     /// The animation tick (a `setInterval` at ~30 fps while the window has live
     /// widgets): advance the scope histories and repaint.
     Tick,
+    /// The host did something on its own -- opened a window in answer to a
+    /// gesture -- and its effects wait to be carried out ([`Host::take_effects`]).
+    HostEffects,
     /// A `fetch` of a waveform/plot URL completed and decoded (the browser's
     /// bulk path: `path`/`cache` resolve against the page origin).
     BulkReady {
@@ -303,7 +306,14 @@ impl WebApp {
             Ok(p) => p,
             Err(e) => return log(&format!("malformed OSC packet from the page: {e}")),
         };
-        for effect in self.host.handle_packet(packet, ClientId::Web) {
+        let effects = self.host.handle_packet(packet, ClientId::Web);
+        self.apply_effects(event_loop, effects);
+    }
+
+    /// Carries out what the host asks of this front: open or redraw a window,
+    /// queue a reply for the page to drain.
+    fn apply_effects(&mut self, event_loop: &ActiveEventLoop, effects: Vec<HostEffect>) {
+        for effect in effects {
             match effect {
                 HostEffect::Reply(msg) => self.queue(msg),
                 HostEffect::OpenWindow(id) => {
@@ -714,6 +724,10 @@ impl WebApp {
             WebEvent::ServerInbound(bytes) => self.on_server_inbound(&bytes),
             WebEvent::SyncStreams => self.sync_streams(),
             WebEvent::Tick => self.on_tick(),
+            WebEvent::HostEffects => {
+                let effects = self.host.take_effects();
+                self.apply_effects(event_loop, effects);
+            }
             WebEvent::BulkReady {
                 def_id,
                 widget_id,

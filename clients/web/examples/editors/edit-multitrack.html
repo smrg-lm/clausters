@@ -19,8 +19,8 @@
   </head>
   <body>
     <main>
-      <div id="note"><code>edit(multitrack)</code>: a multitrack of audio, drawn,
-edited and played.
+      <div id="note"><code>edit(multitrack)</code>: a multitrack of audio and notes,
+drawn, edited and played.
 
 The fourth structure, and the one that holds the other three: a
 <code>Multitrack</code> -- the document the three applications share -- opened with
@@ -54,10 +54,19 @@ automation. <b>rewind</b>, <b>play/pause</b> and
 <b>stop</b> are the window's own row: stop goes back to the mark, and rewind
 puts the mark itself back at the top.
 
-<b>Double click a box</b> to enter it: what a box holds is a structure like any
-other, so entering one opens the take in the sample editor -- on the multitrack's own
-undo order, so <b>Ctrl+Z</b> walks a stroke drawn inside a box and a box dragged
-on the stack as one history.
+<b>Double click the box on the keys track</b> to open its <b>roll</b>. That box
+holds notes -- an <code>EventSequence</code> -- and the roll opens over the very
+same sequence, in the multitrack's undo order: drag a note there and the box
+redraws it, play and it is heard where it now is, and <b>Ctrl+Z</b> in either
+window walks one history. A box of samples opens nothing on a double click: the
+multitrack edits where things are, never a take.
+
+<b>The keys track is notes.</b> Its box is a window onto an
+<code>EventSequence</code> given among the <code>sources</code> like a buffer: it
+draws the notes its window reads and plays them from the transport's own event
+lane, so a locate, a loop and a stop are the transport's. A note sounds through
+its own output, outside the track's strip; the track's mute and solo decide
+whether it plays at all.
 
 <b>Watch the meters</b> while it plays: the strip in each track's header is one
 column per channel, in decibels, over what that track produces <i>after</i> its
@@ -85,8 +94,8 @@ there.</div>
 
     <!--
       The web sibling of clients/python/examples/editors/edit_multitrack.py,
-      call for call: the same five takes rendered offline, the same multitrack
-      written plainly, and the same one `edit` over it.
+      call for call: the same five takes rendered offline, the same sequence of
+      notes, the same multitrack written plainly, and the same one `edit` over it.
 
       The platform's differences are the usual two: the host is the wasm one in
       this tab and draws into an element, and nothing is pumped. And one more:
@@ -106,6 +115,7 @@ there.</div>
       import {
         Automation, Content, Lane, Multitrack, Region, Track,
       } from "../../dist/multitrack.js";
+      import { Event, EventSequence } from "../../dist/seq/index.js";
 
       const $ = (id) => document.getElementById(id);
       const log = (line) => { $("log").textContent += line + "\n"; };
@@ -178,6 +188,16 @@ there.</div>
           { sampleRate: SR, server });
         await server.sync();
 
+        // ---- a sequence of notes ----
+        // The one source that is not samples: events with ids, in beats -- one
+        // beat a second here, since it states no tempo map. It is **held, not
+        // copied**: the box over it and the roll a double click opens read this
+        // very object.
+        const keys = new EventSequence(
+          [[0.0, 60], [0.5, 64], [1.0, 67], [1.5, 72]].map(
+            ([beat, note]) => [beat, new Event({ midinote: note, sustain: 0.4, amp: 0.2 })]),
+        );
+
         // ---- the multitrack ----
         // A **source id** is what the document names -- never a path and never a
         // buffer number -- because a multitrack must open in a program that has no
@@ -217,6 +237,12 @@ there.</div>
             id: 14, name: "bass", level: 0.7,
             lanes: [new Lane({ id: 15, regions: [box(23, 4.0, 3, "saw")] })],
           }),
+          // **A box of notes** is a box like any other: a window onto source 7,
+          // which is the sequence above rather than a take.
+          new Track({
+            id: 16, name: "keys",
+            lanes: [new Lane({ id: 17, regions: [box(26, 12.0, 7, "keys")] })],
+          }),
         ];
 
         // ---- one verb ----
@@ -228,6 +254,8 @@ there.</div>
         await session.gui();
         const sources = {};
         for (const [id, take] of Object.entries(SOURCES)) sources[id] = bufs[take];
+        // ...and the sequence the keys box reads.
+        sources[7] = keys;
         const editor = await gui.edit(multitrack, {
           sampleRate: SR, server, sources,
           title: "multitrack", width: 1000, height: 560, stage: $("stage"),

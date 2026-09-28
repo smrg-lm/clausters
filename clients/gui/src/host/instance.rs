@@ -319,6 +319,17 @@ impl Host {
             Ok(steps) => self.instance.run.push(Server::Sound, steps),
             Err(e) => diag::warn!("the multitrack cannot be played: {e}"),
         }
+        // **The notes regions play from the transport's event lane**: what the
+        // boxes over the session's sequences read, placed by the editor that
+        // is bound to them.
+        let placed = owner
+            .editor()
+            .map(clausters_apps::multitrack::editor::MultitrackEditor::placed_notes)
+            .unwrap_or_default();
+        let steps = self.instance.playback().notes(&placed);
+        if !steps.is_empty() {
+            self.instance.run.push(Server::Sound, steps);
+        }
         self.send_multitrack();
         self.tell_meters();
         diag::debug!("sound_multitrack: {} node(s)", self.instance.nodes());

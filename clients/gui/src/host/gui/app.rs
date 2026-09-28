@@ -567,6 +567,13 @@ impl ApplicationHandler<UserEvent> for App {
         // background thread, but the embed ring is polled here on the main thread.
         self.drain_embed_replies();
 
+        // **What the host did on its own**: a window it opened in answer to a
+        // gesture -- the roll a double click on a box of notes asks for.
+        let effects = self.host.take_effects();
+        if !effects.is_empty() {
+            self.apply(event_loop, super::PLACEHOLDER_ORIGIN, effects);
+        }
+
         // A clip drag held against a lane's edge scrolls the view under a
         // standing cursor, so it needs the frame tick exactly as an animated
         // window does -- and it must run before the repaint below.

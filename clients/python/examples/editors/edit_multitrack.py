@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""``edit(multitrack)``: a multitrack of audio, drawn, edited and played.
+"""``edit(multitrack)``: a multitrack of audio and notes, drawn, edited and played.
 
 The fourth structure, and the one that holds the other three: a
 `clausters.multitrack.Multitrack` -- the document the three applications share --
@@ -36,17 +36,25 @@ What to do in the window:
   starting over; stop goes back to the mark rather than to the top; and rewind
   puts the **mark** back at the top, which is the cursor's verb and not the
   transport's.
-- **Double click a box** to enter it: what a box holds is a structure like any
-  other, so entering one opens the take in the sample editor -- on the **multitrack's**
-  own undo order, so `Ctrl`+`Z` walks a stroke drawn inside a box and a box
-  dragged on the stack as one history.
+- **Double click the box on the keys track** to open its **roll**. That box
+  holds notes -- an `EventSequence` -- and the roll opens over the very same
+  sequence, in the multitrack's undo order: drag a note there and the box redraws
+  it, play and it is heard where it now is, and `Ctrl`+`Z` in either window walks
+  one history. A box of samples opens nothing on a double click: the multitrack
+  edits where things are, never a take.
 - **Watch the meters** while it plays: the strip in each track's header is one
   column per channel, in decibels, over what that track produces *after* its
   clips, its curves and its fader -- with the peak it reached held beside it.
 
 **The takes are rendered here and the multitrack is written plainly**, which is all
-this file is: six buffers, three tracks, six boxes and two curves. Everything
-after that is `edit`.
+this file is: six buffers, a sequence of notes, four tracks, seven boxes and two
+curves. Everything after that is `edit`.
+
+**The keys track is notes.** Its box is a window onto an `EventSequence` given
+among the `sources` like a buffer: it draws the notes its window reads and plays
+them from the transport's own event lane, so a locate, a loop and a stop are the
+transport's. A note sounds through its own output, outside the track's strip; the
+track's mute and solo decide whether it plays at all.
 
 **The last box is loud on purpose**, so the meter has something to fill: it
 reaches full scale and the top of the column is red, where the boxes before it
@@ -63,7 +71,8 @@ crossfaded at the seam, which is what a comping pass cut by hand is. It plays as
 finds the span it lands in once and reads it like a plain buffer from there.
 
 **The multitrack is also written down as a session** (``examples/out/``): its takes as
-files, the join as its parts, and the multitrack that names them. So
+files, the join as its parts, the notes in the file itself, and the multitrack that
+names them. So
 ``clausters-gui --session clients/python/examples/out/edit_multitrack.json``
 opens the standalone editor on exactly this material, with no Python behind it.
 
@@ -81,6 +90,8 @@ from clausters.gui import edit
 from clausters.multitrack import (Automation, Content, Lane, Multitrack, Region,
                                   Source, Track)
 from clausters.multitrack import Session as SavedSession
+from clausters.seq import EventSequence
+from clausters.seq.event import Event
 
 SR = 48_000.0
 TAKE_DUR = 2.0
@@ -138,6 +149,18 @@ BUFS["comp"] = Buffer.stitch(
 server.sync()
 
 # %% [markdown]
+# ## A sequence of notes
+# The one source that is not samples: events with ids, in beats -- one beat a
+# second here, since it states no tempo map. It is **held, not copied**: the box
+# over it, the roll a double click opens and the session below all read this very
+# object.
+
+# %%
+KEYS = EventSequence([(beat, Event(midinote=note, sustain=0.4, amp=0.2))
+                      for beat, note in [(0.0, 60), (0.5, 64), (1.0, 67),
+                                         (1.5, 72)]])
+
+# %% [markdown]
 # ## The multitrack
 # Three tracks, one lane each, five boxes. A **source id** is what the document
 # names -- never a path and never a buffer number -- because a multitrack must open in
@@ -191,6 +214,10 @@ multitrack = Multitrack(tracks=[
     #: sounds like is the multitrack's, so it is saved with it and reopens as it was.
     Track(id=14, name="bass", level=0.7,
           lanes=[Lane(id=15, regions=[box(23, 4.0, 3, "saw")])]),
+    #: **A box of notes** is a box like any other: a window onto source 7, which
+    #: is the sequence above rather than a take.
+    Track(id=16, name="keys",
+          lanes=[Lane(id=17, regions=[box(26, 12.0, 7, "keys")])]),
 ])
 
 # %% [markdown]
@@ -239,6 +266,10 @@ saved.sources[ID["comp"]] = Source(location={"at": "segments", "parts": [
     part("saw", HALF, HALF, fade_in=FADE),
 ]}).shaped(1, 2 * HALF, SR)
 
+#: **The notes are in the file itself**: a sequence is data the size of a score,
+#: and the table holds the handle, so a save writes what the roll did to it.
+saved.sources[7] = Source.events(KEYS)
+
 print(f"wrote {saved.save(os.path.join(OUT, 'edit_multitrack.json'))}")
 
 # %% [markdown]
@@ -254,9 +285,11 @@ print(f"wrote {saved.save(os.path.join(OUT, 'edit_multitrack.json'))}")
 # %%
 session.gui()          # the host wired to this session's server
 editor = edit(multitrack, sample_rate=SR, server=server,
-              #: Which buffer each source was read into: a multitrack names a
-              #: source, and only whoever loaded it holds the take.
-              sources={id: BUFS[take] for id, take in SOURCES.items()},
+              #: Which buffer each source was read into -- a multitrack names a
+              #: source, and only whoever loaded it holds the take -- and the
+              #: sequence the keys box reads.
+              sources={**{id: BUFS[take] for id, take in SOURCES.items()},
+                       7: KEYS},
               title="multitrack", width=1000, height=560)
 
 # %%
