@@ -468,8 +468,14 @@ opened it.
   - ✅ **X3.4 - The shared conversation turn** ("Each editor writes the
     conversation's turn again", Found by use): the notes editor would be its
     third copy.
-  - ⬜ **X3.5 - `clausters_editing`**: the projection and the intake with ids,
+  - ✅ **X3.5 - `clausters_editing`**: the projection and the intake with ids,
     and the Y domain as data.
+    *(Shipped 2026-09-27: `clausters_editing::notes` -- `YDomain` (key, scale,
+    ruler, window, quantum; `midi()` and `hz()`), `project` (quintuples, a
+    parallel `note_ids`, the marker lane) and `intake` (sextuples with the id
+    first, each changed key written through the core's coherence, id 0 a new
+    note). The whole-list `events` intake stays for today's roll until X3.7
+    deletes it.)*
   - ⬜ **X3.6 - The `notes` element**: ids on the wire (the end of identity by
     order: deleting note *k* hands note *k+1* the data of *k*), the velocity
     inside the note, the axis with a domain (MIDI note).

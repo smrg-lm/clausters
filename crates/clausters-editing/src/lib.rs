@@ -41,6 +41,7 @@ pub mod instance;
 pub mod intake;
 pub mod load;
 pub mod multitrack;
+pub mod notes;
 pub mod playback;
 pub mod points;
 pub mod run;
