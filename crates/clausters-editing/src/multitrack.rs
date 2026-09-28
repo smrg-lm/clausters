@@ -115,6 +115,14 @@ pub trait Buffers {
     /// exists to prevent.
     fn source(&self, bufnum: i64) -> Option<SourceId>;
 
+    /// **The event sequence `source` is**, when it is one this caller holds --
+    /// a notes region's source -- as it stands now. Defaulted to none: a
+    /// caller that holds no sequence states none, and a box over one it does
+    /// not hold draws empty.
+    fn sequence(&self, _source: SourceId) -> Option<clausters_document::EventSequence> {
+        None
+    }
+
     /// **The segments a source is made of**, when it is a join this caller
     /// knows -- a take and a span of it, per part -- or `None` for a take.
     ///
@@ -601,6 +609,52 @@ pub fn props(multitrack: &Multitrack, look: &Look<'_>) -> Map<String, Value> {
     out.insert("loops".into(), json!(loops(multitrack)));
     out.insert("rates".into(), Value::Array(rates(multitrack, look)));
     out.insert("segments".into(), Value::Array(segments(multitrack, look)));
+    out.insert("notes".into(), Value::Array(notes(multitrack, look)));
+    out
+}
+
+/// **The notes each box over a sequence draws**, as the flat `box start dur
+/// pitch velocity channel` sextuples the widget takes: every note of the
+/// sequence the box's window reads, placed in the box's own frames -- the
+/// window's start is a second of the sequence (through its own tempo map),
+/// read at the box's playrate. A note that starts outside the window is not
+/// the box's; one that runs past its end is drawn to where it ends.
+pub fn notes(multitrack: &Multitrack, look: &Look<'_>) -> Vec<Value> {
+    let domain = crate::notes::YDomain::midi();
+    let mut out = Vec::new();
+    for box_ in picture::boxes(multitrack) {
+        let Some(sequence) = box_.source.and_then(|s| look.sources.sequence(s)) else {
+            continue;
+        };
+        let axis = crate::notes::Axis::of(&sequence, 1.0);
+        let rate = if box_.playrate > 0.0 {
+            box_.playrate
+        } else {
+            1.0
+        };
+        let name = box_.region.0.to_string();
+        for event in &sequence.events {
+            let keys = event.keys();
+            let Some(pitch) = domain.value(&keys) else {
+                continue;
+            };
+            let from = (axis.units(event.at.0) - box_.start) / rate;
+            if from < 0.0 || from >= box_.length.0 {
+                continue;
+            }
+            let sustain = clausters_core::event::render::sustain_of(&keys).max(0.0);
+            let to = (axis.units(event.at.0 + sustain) - box_.start) / rate;
+            let level = clausters_core::event::render::level_of(&keys);
+            out.extend([
+                json!(name),
+                json!(from * look.rate),
+                json!((to - from) * look.rate),
+                json!(pitch),
+                json!(level.velocity()),
+                json!(keys.get("channel").and_then(Value::as_f64).unwrap_or(0.0)),
+            ]);
+        }
+    }
     out
 }
 
@@ -996,6 +1050,95 @@ mod tests {
         let mut multitrack = Multitrack::default();
         multitrack.tracks.push(track);
         multitrack
+    }
+
+    /// **A box over a sequence draws the notes its window reads**, in its own
+    /// frames: the window's start is a second of the sequence, a note before
+    /// it or past the box's end is not the box's, and the box is named by the
+    /// region the notes belong to.
+    #[test]
+    fn a_box_over_a_sequence_draws_its_notes() {
+        struct One(SourceId, clausters_document::EventSequence);
+        impl Buffers for One {
+            fn bufnum(&self, _source: SourceId) -> i64 {
+                -1
+            }
+            fn taken(&self) -> Vec<SourceId> {
+                vec![self.0]
+            }
+            fn source(&self, _bufnum: i64) -> Option<SourceId> {
+                None
+            }
+            fn sequence(&self, source: SourceId) -> Option<clausters_document::EventSequence> {
+                (source == self.0).then(|| self.1.clone())
+            }
+        }
+        let source = SourceId(9);
+        let note = |at: f64, midinote: f64| {
+            clausters_document::events::Event::new(
+                at,
+                json!({"midinote": midinote, "sustain": 0.5, "velocity": 90}),
+            )
+        };
+        // One beat a second, since the sequence states no tempo map.
+        let sequence = clausters_document::EventSequence::new(vec![
+            note(0.0, 48.0),
+            note(1.0, 60.0),
+            note(2.5, 64.0),
+            note(5.0, 72.0),
+        ]);
+        let mut multitrack = multitrack();
+        let region = &mut multitrack.tracks[0].lanes[0].regions[0];
+        region.content = Content::Window {
+            window: SegmentRef {
+                source: SegmentSource::Samples(SourceRef {
+                    source,
+                    lifetime: Lifetime::Session,
+                    generation: 0,
+                    range: None,
+                }),
+                start: 1.0,
+                duration: 4.0,
+            },
+            playrate: 1.0,
+            args: Opaque::none(),
+            looping: false,
+        };
+        let held = One(source, sequence);
+        let look = Look {
+            rate: 1000.0,
+            sources: &held,
+        };
+        assert_eq!(
+            notes(&multitrack, &look),
+            vec![
+                json!("3"),
+                json!(0.0),
+                json!(500.0),
+                json!(60.0),
+                json!(90.0),
+                json!(0.0),
+                json!("3"),
+                json!(1500.0),
+                json!(500.0),
+                json!(64.0),
+                json!(90.0),
+                json!(0.0),
+            ],
+            "the two notes from the window's start to the box's end"
+        );
+
+        // A caller that holds no sequence draws the box empty.
+        let empty = Held {
+            buffers: HashMap::new(),
+            lengths: HashMap::new(),
+            rates: HashMap::new(),
+        };
+        let look = Look {
+            rate: 1000.0,
+            sources: &empty,
+        };
+        assert!(notes(&multitrack, &look).is_empty());
     }
 
     /// **A box over a source written at another rate says so, and its window

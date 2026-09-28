@@ -567,6 +567,17 @@ promised samples. A path inside the session's own folder is written relative, so
 the pair of files moves together; one outside it stays absolute, because a
 session never claims to own your file.
 
+**A sequence of events is a source too**, held in the file rather than beside
+it: `Source.events(notes)` puts an `EventSequence` in the table, and a region
+whose window names that source is a window onto its beats, in seconds through
+its tempo map. The table holds the handle itself, so a save writes what an
+editor did to it. `session.sequences()` hands the handles back, and with what
+`load` answers it is the whole table a multitrack editor is opened with:
+`edit(session.multitrack, sources={**session.load(), **session.sequences()})`.
+Such a box draws the notes it reads, and a notes editor opened over the same
+sequence edits what the box draws — both hold one sequence, and nothing is
+copied.
+
 Three questions a save asks the table, and each has an answer rather than an
 exception: `session.volatile()` is what is not written down anywhere,
 `session.open_edits()` is what is still undecided, and `session.dangling()` is

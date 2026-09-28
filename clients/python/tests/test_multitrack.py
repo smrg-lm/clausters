@@ -271,6 +271,25 @@ def test_a_source_only_a_region_names_is_reported_missing():
     assert session.dangling() == [701]
 
 
+def test_a_sequence_of_events_is_a_source_held_in_the_file():
+    # The events are written into the file and read back as a sequence,
+    # the handle itself held by the table, so a save writes what an editor did.
+    from clausters.seq import EventSequence
+    from clausters.seq.event import Event
+
+    notes = EventSequence([(1.0, Event(midinote=60, sustain=0.5))])
+    session = Session(sources={900: Source.events(notes)})
+    notes.add(2.0, Event(midinote=64, sustain=0.5))
+    written = session.write()
+    location = written["sources"]["900"]["location"]
+    assert location["at"] == "events" and len(location["sequence"]["events"]) == 2
+    back = Session.read(written)
+    assert back.sources[900].sequence.data() == notes.data()
+    assert back.write() == written
+    assert session.volatile() == [], "its events are in the file"
+    assert session.sequences() == {900: notes}, "the handle itself"
+
+
 def test_a_frozen_source_keeps_what_the_table_said():
     # A multitrack opened with no way to read its files must still write back every
     # location it was given -- without this it would save with every source

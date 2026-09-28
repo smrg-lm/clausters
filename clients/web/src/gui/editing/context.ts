@@ -302,6 +302,18 @@ export class Editing {
     }
 
     /**
+     * **Bind a multitrack member's `source` to `sequence`** -- an
+     * `EventSequence` -- so a region over it draws the sequence's notes;
+     * answers the member's corrected picture.
+     */
+    bindSequence(member: number, source: number, sequence: EventSequence): Record<string, unknown> {
+        if (this.#core === null) throw new Error("clausters: this context is closed");
+        return JSON.parse(
+            this.#core.bindSequence(sequence.seq, JSON.stringify({ member, source })),
+        ) as Record<string, unknown>;
+    }
+
+    /**
      * This structure's identity in the order, joining it as an **external
      * member** on first ask, with **what can put an edit back onto it**.
      *

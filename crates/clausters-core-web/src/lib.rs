@@ -1593,6 +1593,15 @@ impl JsEditing {
             .unwrap_or_default();
         self.0.open_notes(&key, sequence.0.clone(), request)
     }
+
+    /// Binds a multitrack member's source to `sequence`, so a region over it
+    /// draws the sequence's notes -- the C ABI's
+    /// `clausters_apps_editing_bind_sequence`. `request` is `{"member",
+    /// "source"}`; the answer is the member's corrected picture, or `{}`.
+    #[wasm_bindgen(js_name = bindSequence)]
+    pub fn bind_sequence(&mut self, sequence: &JsEventSequence, request: &str) -> String {
+        self.0.bind_sequence_json(sequence.0.clone(), request)
+    }
 }
 
 #[cfg(target_arch = "wasm32")]

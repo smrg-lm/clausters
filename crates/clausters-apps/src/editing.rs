@@ -952,6 +952,42 @@ impl Editing {
     }
 }
 
+impl Editing {
+    /// **Binds a multitrack member's source to a sequence** shared with the
+    /// caller: a region over `source` draws the sequence's notes, and a notes
+    /// editor opened over the same handle edits what that region draws. The
+    /// answer is the member's picture corrected with it (the `Answer` a
+    /// correction is), or `{}` when `member` is not a multitrack.
+    pub fn bind_sequence(
+        &mut self,
+        member: MemberId,
+        source: SourceId,
+        sequence: Shared,
+    ) -> String {
+        let version = self.version;
+        match self.member_mut(member) {
+            Some(Member::Multitrack(editor)) => {
+                editor.bind_sequence(source, sequence);
+                to_json(&editor.resync_all(version))
+            }
+            _ => "{}".into(),
+        }
+    }
+
+    /// [`Self::bind_sequence`] off a `{"member", "source"}` request: the one
+    /// door every binding's sequence handle binds through.
+    pub fn bind_sequence_json(&mut self, sequence: Shared, request: &str) -> String {
+        let request = serde_json::from_str::<Value>(request).unwrap_or_default();
+        let number = |key: &str| request.get(key).and_then(Value::as_u64);
+        match (number("member"), number("source")) {
+            (Some(member), Some(source)) => {
+                self.bind_sequence(member as MemberId, SourceId(source), sequence)
+            }
+            _ => "{}".into(),
+        }
+    }
+}
+
 /// A member taken in, as the door answers it: its number and the structure it
 /// is in the order.
 fn joined(editing: &mut Editing, key: &str, member: Member) -> String {
@@ -1052,6 +1088,63 @@ mod tests {
             sequence.lock().unwrap().get(1).unwrap().data.0["midinote"],
             json!(67.0)
         );
+    }
+
+    /// **A region over a bound sequence draws what a notes editor edits**: the
+    /// binding answers the multitrack's picture with the note in box 12, and an
+    /// edit in the roll opened on the same handle corrects that picture.
+    #[test]
+    fn a_region_over_a_bound_sequence_follows_the_roll() {
+        use clausters_document::EventSequence;
+        use clausters_document::events::Event as SeqEvent;
+        use std::sync::{Arc, Mutex};
+
+        let sequence = Arc::new(Mutex::new(EventSequence::new(vec![SeqEvent::new(
+            0.0,
+            json!({"midinote": 60, "sustain": 1.0}),
+        )])));
+        let mut editing = Editing::new();
+        let multitrack = editing.join("multitrack", a_multitrack());
+        let bound: Value =
+            serde_json::from_str(&editing.bind_sequence(multitrack, SourceId(1), sequence.clone()))
+                .unwrap();
+        let text = bound.to_string();
+        assert!(
+            text.contains("notes"),
+            "the picture carries the notes: {text}"
+        );
+
+        let opened: Value = serde_json::from_str(&editing.open_notes(
+            "seq",
+            sequence.clone(),
+            r#"{"rate": 100.0}"#,
+        ))
+        .unwrap();
+        let notes = opened["member"].as_u64().unwrap() as MemberId;
+        call_json(
+            &mut editing,
+            &json!({"verb": "member", "member": notes, "call": {"verb": "window", "widget": 60}})
+                .to_string(),
+        );
+        let moved = vec![
+            json!(1),
+            json!(0.0),
+            json!(100.0),
+            json!(67.0),
+            json!(100.0),
+            json!(0.0),
+        ];
+        let turned = editing.event(notes, &event(60, 1, "notes", moved)).unwrap();
+        let corrected = turned
+            .corrections
+            .iter()
+            .find(|c| c.member == multitrack)
+            .expect("the multitrack is corrected");
+        let text = serde_json::to_string(&corrected.answer).unwrap();
+        assert!(text.contains("67"), "box 12 draws the moved note: {text}");
+
+        // A member that is not a multitrack binds nothing.
+        assert_eq!(editing.bind_sequence(notes, SourceId(1), sequence), "{}");
     }
 
     /// A multitrack of one track holding box 12, drawn by widget 40 in window 39.

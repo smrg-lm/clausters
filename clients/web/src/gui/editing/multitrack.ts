@@ -32,6 +32,7 @@
 import { MULTITRACK, editingStitch } from "../../document.ts";
 import type { RecordedLeg, Selection } from "../../document.ts";
 import { Multitrack } from "../../multitrack.ts";
+import { EventSequence } from "../../seq/sequence.ts";
 import type { Answer } from "./echo.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { GuiHost, PropValue } from "../host.ts";
@@ -177,6 +178,20 @@ export class Sources {
                 frames: Math.max(0, Math.trunc(frames || 0)),
                 rate: Math.max(0, rate || 0),
             };
+        }
+        return out;
+    }
+
+    /**
+     * The sources that are **event sequences**: source id -> `EventSequence`.
+     * A region over one draws its notes, and a notes editor opened over the
+     * same sequence edits what that region draws; it has no buffer, so the
+     * tables above leave it out.
+     */
+    sequences(): Map<number, EventSequence> {
+        const out = new Map<number, EventSequence>();
+        for (const [source, held] of this.buffers) {
+            if (held instanceof EventSequence) out.set(source, held);
         }
         return out;
     }
@@ -482,7 +497,7 @@ function plain(value: unknown): unknown {
 
 /** What {@link MultitrackEditor} is built with, beside a generic editor's. */
 export interface MultitrackEditorOptions extends GenericEditorOptions<Multitrack> {
-    /** Which server buffer each source was read into. */
+    /** Which server buffer each source was read into, or the `EventSequence` it is. */
     sources?:
         | Sources
         | Iterable<readonly [number, number | object]>
@@ -557,6 +572,9 @@ export class MultitrackEditor extends Editor<Multitrack> {
         }, multitrack, domain);
         this.member = opened.member;
         this.structureId = opened.identity;
+        for (const [source, sequence] of bridge.sources.sequences()) {
+            this.editing.bindSequence(this.member, source, sequence);
+        }
         if (server !== undefined) {
             this.playback = new Playback(this, { server, host: this.host });
         }

@@ -18,6 +18,8 @@ import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
 import { SESSION_FORMAT } from "../src/document.ts";
+import { Event as SeqEvent } from "../src/seq/event.ts";
+import { EventSequence } from "../src/seq/sequence.ts";
 
 import { Multitrack, Content, Fade, FrozenSource, Lane, LaneView, Region,
          Session, Source, Span, Tempo, Track, TrackView,
@@ -225,6 +227,25 @@ test("a source table written there reads as sources here", async () => {
     assert.equal(take?.sampleRate, 48000);
     // Carried and never interpreted: what produced these samples.
     assert.deepEqual(session.source(200)?.provenance, { def: "sines" });
+});
+
+test("a sequence of events is a source held in the file", async () => {
+    // The events are written into the file and read back as a sequence, the
+    // handle itself held by the table, so a save writes what an editor did.
+    await loadCore();
+    const notes = new EventSequence([[1.0, new SeqEvent({ midinote: 60, sustain: 0.5 })]]);
+    const session = new Session();
+    session.sources.set(900, Source.events(notes));
+    notes.add(2.0, new SeqEvent({ midinote: 64, sustain: 0.5 }));
+    const written = session.write();
+    const location = ((written.sources as Record<string, Record<string, unknown>>)["900"]
+        .location) as { at: string; sequence: { events: unknown[] } };
+    assert.ok(location.at === "events" && location.sequence.events.length === 2);
+    const back = Session.read(written);
+    assert.deepEqual(back.source(900)?.sequence?.data(), notes.data());
+    assert.deepEqual(back.write(), written);
+    assert.deepEqual(session.volatile(), [], "its events are in the file");
+    assert.equal(session.sequences().get(900), notes, "the handle itself");
 });
 
 test("a save that cannot promise everything says which part", async () => {

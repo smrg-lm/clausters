@@ -794,7 +794,8 @@ class Source:
     a working copy of that, and the person has not decided yet*.
     """
 
-    #: ``{"at": "file", "path": ...}`` or ``{"at": "volatile"}``. A relative path
+    #: ``{"at": "file", "path": ...}``, ``{"at": "volatile"}`` or ``{"at":
+    #: "events"}`` (the events are `sequence`). A relative path
     #: is resolved against the session's own folder, which is what makes a
     #: session directory movable; an absolute one names the user's own file,
     #: which a session must never copy or rewrite.
@@ -814,6 +815,11 @@ class Source:
     #: open over these samples.
     editing: "dict | None" = None
     extra: dict = field(default_factory=dict)
+    #: **The events, when the source is a sequence of them**: the
+    #: `clausters.seq.EventSequence` itself, held rather than copied, so what an
+    #: editor does to it is what the next save writes. Left out of equality:
+    #: a handle is compared by what it holds, which `write` says.
+    sequence: "object | None" = field(default=None, compare=False)
 
     @classmethod
     def file(cls, path: str, lifetime: str = "session") -> "Source":
@@ -827,6 +833,13 @@ class Source:
         blocked by it, but a reader that finds one knows the samples are not
         there and opens that element unresolved rather than pretending."""
         return cls(location={"at": "volatile"}, lifetime=lifetime)
+
+    @classmethod
+    def events(cls, sequence, lifetime: str = "session") -> "Source":
+        """A sequence of events -- a `clausters.seq.EventSequence` -- held in
+        the session file itself. A region over it is a window onto its beats
+        (in seconds, through its tempo map), and it draws the notes."""
+        return cls(location={"at": "events"}, lifetime=lifetime, sequence=sequence)
 
     def shaped(self, channels: int, frames: int, sample_rate: float) -> "Source":
         """Its shape, for a caller that knows it."""
@@ -842,8 +855,9 @@ class Source:
 
     @property
     def is_resolvable(self) -> bool:
-        """Whether the samples are somewhere a reader could find them."""
-        return bool(self.path)
+        """Whether the samples are somewhere a reader could find them. A
+        sequence is in the file itself, so it always is."""
+        return self.sequence is not None or bool(self.path)
 
     @property
     def is_being_edited(self) -> bool:
@@ -852,7 +866,10 @@ class Source:
         return bool(self.editing) and not self.editing.get("confirmed", False)
 
     def write(self) -> dict:
-        out: dict = {"location": self.location, "lifetime": self.lifetime,
+        location = self.location
+        if self.sequence is not None:
+            location = {"at": "events", "sequence": self.sequence.data()}
+        out: dict = {"location": location, "lifetime": self.lifetime,
                      "generation": self.generation}
         for name in ("channels", "frames", "sample_rate", "provenance", "editing"):
             value = getattr(self, name)
@@ -865,8 +882,15 @@ class Source:
     def read(cls, written: dict) -> "Source":
         known = ("location", "lifetime", "generation", "channels", "frames",
                  "sample_rate", "provenance", "editing")
+        location = dict(written.get("location") or {"at": "volatile"})
+        sequence = None
+        if location.get("at") == "events":
+            from .seq.sequence import EventSequence
+
+            sequence = EventSequence.from_data(location.pop("sequence", {}))
         return cls(
-            location=dict(written.get("location") or {"at": "volatile"}),
+            location=location,
+            sequence=sequence,
             lifetime=str(written.get("lifetime", "session")),
             generation=int(written.get("generation", 0) or 0),
             channels=written.get("channels"),
@@ -1210,6 +1234,13 @@ class Session:
         """The source a reference names, if the table has it."""
         return self.sources.get(int(id))
 
+    def sequences(self) -> dict:
+        """The sources that are sequences of events: source id ->
+        `clausters.seq.EventSequence`, the handles the table holds. With what
+        `load` answers, the whole table a multitrack editor is opened with."""
+        return {int(id): s.sequence for id, s in self.sources.items()
+                if s.sequence is not None}
+
     def volatile(self) -> list:
         """Sources whose samples are not written down anywhere -- what a save
         consults before promising the file is complete."""
@@ -1276,7 +1307,8 @@ class Session:
             timeout: how long each read may take.
 
         Returns:
-            Source id -> `clausters.Buffer`, for every source that loaded. A
+            Source id -> `clausters.Buffer`, for every source that loaded (a
+            sequence of events takes none: `sequences` hands those over). A
             source that cannot -- a volatile one, one the table does not hold,
             a join over a take that did not load -- is left out and named in
             a warning.

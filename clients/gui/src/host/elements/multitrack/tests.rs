@@ -2249,3 +2249,19 @@ fn an_edge_stops_where_the_samples_do_at_the_sources_own_rate() {
         "the whole take, in the multitrack's samples: {dur}"
     );
 }
+
+/// **The notes are set like every other list**: a roll opened on a box's
+/// sequence edits it, and what the box draws comes back as this prop.
+#[test]
+fn the_notes_are_replaced_by_a_set() {
+    let mut mt = from_props(&props(
+        r#"{"clips": ["b", "one", 0, 48000, 0, "", -1],
+            "notes": ["b", 0.0, 4800.0, 60.0, 100.0, 0.0]}"#,
+    ));
+    assert!(mt.apply_prop(
+        "notes",
+        &Value::String(r#"["c", 0.0, 4800.0, 64.0, 90.0, 0.0]"#.into())
+    ));
+    assert!(mt.rolls.contains_key("c"), "the box the new list names");
+    assert!(!mt.rolls.contains_key("b"), "and the old one is gone");
+}

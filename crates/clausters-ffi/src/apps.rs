@@ -158,6 +158,50 @@ pub unsafe extern "C" fn clausters_apps_editing_open_notes(
     n
 }
 
+/// **Binds a multitrack member's source to a sequence handle**:
+/// `{"member", "source"}` into [`Editing::bind_sequence`], so a region over
+/// that source draws the handle's notes. Answers the member's corrected
+/// picture, or `{}`; the output protocol is `clausters_apps_editing_call`'s.
+///
+/// # Safety
+/// `e` and `sequence` must be live handles, `request` readable for
+/// `request_len` bytes, and `out` null or writable for `out_cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_apps_editing_bind_sequence(
+    e: *mut FfiEditing,
+    sequence: *mut crate::document::FfiEventSequence,
+    request: *const u8,
+    request_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: caller guarantees both are live or null.
+    let (Some(handle), Some(sequence)) = (unsafe { e.as_ref() }, unsafe { sequence.as_ref() })
+    else {
+        return 0;
+    };
+    // SAFETY: forwarded from this function's own contract.
+    let Some(request) = (unsafe { crate::out::text(request, request_len) }) else {
+        return 0;
+    };
+    let Ok(mut held) = handle.0.lock() else {
+        return 0;
+    };
+    let (editing, pending) = &mut *held;
+    let asked = format!("bindSequence {request}");
+    let answer = match pending.take() {
+        Some((was, answer)) if was == asked => answer,
+        _ => editing.bind_sequence_json(sequence.0.clone(), &request),
+    };
+    let mut handed = false;
+    // SAFETY: forwarded from this function's own contract.
+    let n = unsafe { crate::out::fill_then(answer.as_bytes(), out, out_cap, || handed = true) };
+    if !handed {
+        *pending = Some((asked, answer));
+    }
+    n
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

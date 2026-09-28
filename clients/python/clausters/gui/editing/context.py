@@ -132,6 +132,12 @@ class Editing:
         self._structures.setdefault(id(sequence), (sequence, member, identity))
         return member, identity
 
+    def bind_sequence(self, member: int, source: int, sequence) -> dict:
+        """**Bind a multitrack member's ``source`` to ``sequence``** -- a
+        `clausters.seq.EventSequence` -- so a region over it draws the
+        sequence's notes; answers the member's corrected picture."""
+        return self.core.bind_sequence(sequence._seq, int(member), int(source))
+
     def identity(self, structure, domain: str, applier=None) -> int:
         """This structure's identity in the order, joining it as an **external
         member** on first ask, with **what can put an edit back onto it**.

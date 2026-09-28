@@ -77,6 +77,7 @@ import type { Server } from "./defs/server/index.ts";
 import { resolveServer } from "./defs/wire.ts";
 import { FIRST_VERSION, SESSION_FORMAT, editingLoad } from "./document.ts";
 import * as opfs from "./engine/opfs.ts";
+import { EventSequence } from "./seq/sequence.ts";
 import { runSteps } from "./steps.ts";
 
 /** Whatever a newer writer wrote and this build has no field for. */
@@ -964,7 +965,8 @@ export class Multitrack {
  */
 export class Source {
     /**
-     * `{at: "file", path}` or `{at: "volatile"}`. A relative path is resolved
+     * `{at: "file", path}`, `{at: "volatile"}` or `{at: "events"}` (the events
+     * are {@link Source.sequence}). A relative path is resolved
      * against the session's own folder, which is what makes a session directory
      * movable; an absolute one names the user's own file, which a session must
      * never copy or rewrite.
@@ -985,6 +987,12 @@ export class Source {
     /** `{from, confirmed}` while a destructive edit is open over these samples. */
     editing?: Extra;
     extra: Extra;
+    /**
+     * **The events, when the source is a sequence of them**: the
+     * `EventSequence` itself, held rather than copied, so what an editor does
+     * to it is what the next save writes.
+     */
+    sequence?: EventSequence;
 
     constructor(fields: {
         location: Extra;
@@ -996,6 +1004,7 @@ export class Source {
         provenance?: unknown;
         editing?: Extra;
         extra?: Extra;
+        sequence?: EventSequence;
     }) {
         this.location = fields.location;
         this.lifetime = fields.lifetime ?? "session";
@@ -1006,6 +1015,7 @@ export class Source {
         this.provenance = fields.provenance;
         this.editing = fields.editing;
         this.extra = fields.extra ?? {};
+        this.sequence = fields.sequence;
     }
 
     /** Samples in a file. */
@@ -1023,6 +1033,15 @@ export class Source {
         return new Source({ location: { at: "volatile" }, lifetime });
     }
 
+    /**
+     * A sequence of events -- an `EventSequence` -- held in the session file
+     * itself. A region over it is a window onto its beats (in seconds, through
+     * its tempo map), and it draws the notes.
+     */
+    static events(sequence: EventSequence, lifetime = "session"): Source {
+        return new Source({ location: { at: "events" }, lifetime, sequence });
+    }
+
     /** Its shape, for a caller that knows it. */
     shaped(channels: number, frames: number, sampleRate: number): Source {
         this.channels = channels;
@@ -1037,9 +1056,12 @@ export class Source {
         return (this.location.path as string) || undefined;
     }
 
-    /** Whether the samples are somewhere a reader could find them. */
+    /**
+     * Whether the samples are somewhere a reader could find them. A sequence
+     * is in the file itself, so it always is.
+     */
     get isResolvable(): boolean {
-        return this.path !== undefined;
+        return this.sequence !== undefined || this.path !== undefined;
     }
 
     /** Whether a destructive edit is open and undecided over these samples. */
@@ -1049,7 +1071,10 @@ export class Source {
 
     write(): Extra {
         const out: Extra = {
-            location: this.location,
+            location:
+                this.sequence === undefined
+                    ? this.location
+                    : { at: "events", sequence: this.sequence.data() },
             lifetime: this.lifetime,
             generation: this.generation,
         };
@@ -1062,8 +1087,10 @@ export class Source {
     }
 
     static read(written: Extra): Source {
+        const { sequence, ...location } = (written.location as Extra) ?? { at: "volatile" };
         return new Source({
-            location: (written.location as Extra) ?? { at: "volatile" },
+            location,
+            sequence: location.at === "events" ? EventSequence.fromData(sequence ?? {}) : undefined,
             lifetime: String(written.lifetime ?? "session"),
             generation: num(written.generation),
             channels: written.channels as number | undefined,
@@ -1446,6 +1473,19 @@ export class Session {
     }
 
     /**
+     * The sources that are sequences of events: source id -> `EventSequence`,
+     * the handles the table holds. With what {@link Session.load} answers, the
+     * whole table a multitrack editor is opened with.
+     */
+    sequences(): Map<number, EventSequence> {
+        const out = new Map<number, EventSequence>();
+        for (const [id, source] of this.sources) {
+            if (source.sequence !== undefined) out.set(id, source.sequence);
+        }
+        return out;
+    }
+
+    /**
      * Sources whose samples are not written down anywhere -- what a save
      * consults before promising the file is complete.
      */
@@ -1568,7 +1608,8 @@ export class Session {
      * file's own, on **the server's** filesystem; when omitted, the folder of
      * the file the session was opened from or saved to, else the current one.
      * The answer maps source id to
-     * {@link Buffer} for every source that loaded; a source that cannot -- a
+     * {@link Buffer} for every source that loaded (a sequence of events takes
+     * none: {@link Session.sequences} hands those over); a source that cannot -- a
      * volatile one, one the table does not hold, a join over a take that did not
      * load -- is left out and named in a warning. Rejects when the server refuses
      * a read or a stitch (a file that is not there), after freeing what the load

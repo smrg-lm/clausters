@@ -21,6 +21,8 @@ import {
 } from "../src/gui/editing/index.ts";
 import { Sources } from "../src/gui/editing/multitrack.ts";
 import { Automation, Content, Lane, Multitrack, Region, Tempo, Track } from "../src/multitrack.ts";
+import { Event as SeqEvent } from "../src/seq/event.ts";
+import { EventSequence } from "../src/seq/sequence.ts";
 
 await loadCore();
 
@@ -309,6 +311,23 @@ test("a source nobody loaded draws an empty box", () => {
         clips(ed).every((b) => b[6] === -1),
         "negative and not zero: buffer 0 is a buffer",
     );
+});
+
+test("a region over a sequence draws its notes", () => {
+    // A source that is an `EventSequence` has no buffer, and the boxes over it
+    // draw its notes: in each box's own frames, named by the region.
+    const notes = new EventSequence([
+        [0.0, new SeqEvent({ midinote: 60, sustain: 0.5 })],
+        [1.0, new SeqEvent({ midinote: 64, sustain: 0.5 })],
+    ]);
+    const ed = new MultitrackEditor(multitrack(), { sampleRate: SR, sources: { 1: notes } });
+    assert.ok(clips(ed).every((b) => b[6] === -1), "no buffer behind it");
+    const flat = props(ed).notes as unknown[];
+    const drawn: unknown[][] = [];
+    for (let i = 0; i + 6 <= flat.length; i += 6) drawn.push(flat.slice(i, i + 6));
+    assert.deepEqual(drawn.map((n) => n[0]), ["12", "12", "13", "13", "22", "22"]);
+    assert.deepEqual(drawn[0].slice(1, 4), [0.0, 0.5 * SR, 60.0]);
+    assert.deepEqual(drawn[1].slice(1, 4), [SR, 0.5 * SR, 64.0]);
 });
 
 test("a tempo moves no box", () => {

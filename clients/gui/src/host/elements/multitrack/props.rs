@@ -421,8 +421,7 @@ pub(super) fn roll_body(notes: &[f64]) -> Notes {
     props.insert("notes".into(), Value::from(notes.to_vec()));
     props.insert("min".into(), Value::from(min));
     props.insert("max".into(), Value::from(max));
-    // A body has no chrome: no velocity lane, no marker lane, no ruler.
-    props.insert("velocity".into(), Value::from(false));
+    // A body has no chrome: no marker lane, no ruler.
     props.insert("osc_lane".into(), Value::from(false));
     props.insert("ruler".into(), Value::from("off"));
     // Read-only here, which is the line the whole widget is drawn on: the
@@ -533,6 +532,16 @@ impl Multitrack {
             }
             "rates" => {
                 self.rates = parse_rates(&parse::as_array_props("rates", v));
+                true
+            }
+            // **The notes the boxes over a sequence draw**, replaced whole
+            // like every other list here: an edit in a roll opened on one of
+            // them comes back as this, so the box follows the roll.
+            "notes" => {
+                self.rolls = parse_notes(&parse::as_array_props("notes", v))
+                    .into_iter()
+                    .map(|(name, notes)| (name, roll_body(&notes)))
+                    .collect();
                 true
             }
             // **The spans a join is drawn from**, replaced whole like every

@@ -313,6 +313,7 @@ apply → snapshot → free, and pays the serialization where it asked for it.
 | `clausters_document_sequence_free` | — | `n/a` — wasm frees by `Drop` |
 | `clausters_document_sequence_call` | `JsEventSequence.call` | `idiom` — C fills a buffer size-then-fill; wasm returns the string |
 | `clausters_apps_editing_open_notes` | `JsEditing.open_notes` | `idiom` — C takes the two handles and fills a buffer size-then-fill; wasm takes the sequence object and returns the string |
+| `clausters_apps_editing_bind_sequence` | `JsEditing.bind_sequence` | `idiom` — C takes the two handles and fills a buffer size-then-fill; wasm takes the sequence object and returns the string |
 | `clausters_document_apply` | `JsDocument.apply` | |
 | `clausters_document_resolve` | `JsDocument.resolve` | |
 | `clausters_document_snapshot` | `JsDocument.snapshot` | the one call still the size of the document, and asked for rather than paid per edit |

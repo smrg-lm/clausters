@@ -91,6 +91,13 @@ export class EditingCore {
     free(): void;
     [Symbol.dispose](): void;
     /**
+     * Binds a multitrack member's source to `sequence`, so a region over it
+     * draws the sequence's notes -- the C ABI's
+     * `clausters_apps_editing_bind_sequence`. `request` is `{"member",
+     * "source"}`; the answer is the member's corrected picture, or `{}`.
+     */
+    bindSequence(sequence: JsEventSequence, request: string): string;
+    /**
      * One verb, as `clausters_apps::editing::call_json` documents.
      */
     call(request: string): string;
@@ -1791,6 +1798,7 @@ export interface InitOutput {
     readonly editingIntake: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly editingLoad: (a: number, b: number) => [number, number];
     readonly editingStitch: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly editingcore_bindSequence: (a: number, b: number, c: number, d: number) => [number, number];
     readonly editingcore_call: (a: number, b: number, c: number) => [number, number];
     readonly editingcore_new: () => number;
     readonly editingcore_openNotes: (a: number, b: number, c: number, d: number) => [number, number];

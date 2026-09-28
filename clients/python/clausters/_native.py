@@ -382,6 +382,10 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_void_p, ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_apps_editing_open_notes.restype = ctypes.c_size_t
+    lib.clausters_apps_editing_bind_sequence.argtypes = [
+        ctypes.c_void_p, ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_apps_editing_bind_sequence.restype = ctypes.c_size_t
     lib.clausters_apps_samples_measures.argtypes = [
         u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
     ]
@@ -1982,7 +1986,8 @@ class EditingCore:
     Every verb crosses through `call`, as JSON: ``openMultitrack``,
     ``openAudio`` and ``openNotes`` open an editor under a key and answer its
     ``member`` (a notes editor over a sequence the caller holds opens through
-    `open_notes`, and edits that sequence),
+    `open_notes`, and edits that sequence; `bind_sequence` gives a multitrack
+    member a sequence to draw a source from),
     ``external`` takes in a structure the crate does not apply, ``event`` reads
     and records a member's message, ``step`` walks the history, ``record``
     takes an external member's entry, ``member`` reaches one editor's own verbs,
@@ -2019,6 +2024,19 @@ class EditingCore:
             return {}
         body = json.dumps(request).encode("utf-8")
         raw = size_then_fill(lib().clausters_apps_editing_open_notes,
+                             ctypes.c_void_p(self._handle), ctypes.c_void_p(sequence._handle),
+                             as_u8(body), len(body))
+        return json.loads(raw) if raw else {}
+
+    def bind_sequence(self, sequence: "SequenceHandle", member: int, source: int) -> dict:
+        """Bind a multitrack member's ``source`` to ``sequence``, so a region
+        over it draws the sequence's notes
+        (`clausters_apps_editing_bind_sequence`): the member's corrected
+        picture, or ``{}``."""
+        if not self._handle:
+            return {}
+        body = json.dumps({"member": int(member), "source": int(source)}).encode("utf-8")
+        raw = size_then_fill(lib().clausters_apps_editing_bind_sequence,
                              ctypes.c_void_p(self._handle), ctypes.c_void_p(sequence._handle),
                              as_u8(body), len(body))
         return json.loads(raw) if raw else {}

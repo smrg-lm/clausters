@@ -141,6 +141,16 @@ class Sources:
             out[int(source)] = entry
         return out
 
+    def sequences(self) -> dict:
+        """The sources that are **event sequences**: source id ->
+        `clausters.seq.EventSequence`. A region over one draws its notes, and a
+        notes editor opened over the same sequence edits what that region
+        draws; it has no buffer, so the tables above leave it out."""
+        from ...seq.sequence import EventSequence
+
+        return {int(source): held for source, held in self.buffers.items()
+                if isinstance(held, EventSequence)}
+
     def source(self, bufnum: int):
         """The source a buffer number came from, or ``None``."""
         for source, held in self.buffers.items():
@@ -359,6 +369,8 @@ class MultitrackEditor(Editor):
                 "link": link, "transport": server is not None, "title": title,
                 "w": int(self.size[0]), "h": int(self.size[1])},
             multitrack, domain)
+        for source, sequence in bridge.sources.sequences().items():
+            self._editing.bind_sequence(self._member, source, sequence)
         self._shown = None
         #: The transport row's ids, once the window has numbered them.
         self._controls = None

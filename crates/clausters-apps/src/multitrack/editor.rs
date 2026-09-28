@@ -166,6 +166,9 @@ pub struct MultitrackEditor {
     /// -- a join is replaced, never edited -- so they are kept as they were
     /// made, and a later join over a box that windows one reads through them.
     segments: HashMap<SourceId, Vec<clausters_document::session::Part>>,
+    /// **The event sequences its notes regions read**, shared with whoever
+    /// holds them -- a notes editor opened on one edits what these boxes draw.
+    sequences: HashMap<SourceId, crate::notes::Shared>,
     meters: Vec<Meter>,
     link: Option<i64>,
     transport: Transport,
@@ -194,6 +197,7 @@ impl MultitrackEditor {
             sources: HashMap::new(),
             lengths: HashMap::new(),
             segments: HashMap::new(),
+            sequences: HashMap::new(),
             meters: Vec::new(),
             link: None,
             transport: Transport::Absent,
@@ -270,6 +274,17 @@ impl MultitrackEditor {
         if let clausters_document::session::Location::Segments { parts } = made.source.location {
             self.segments.insert(made.id, parts);
         }
+    }
+
+    /// **Binds source `source` to a sequence** the caller shares: a region
+    /// over that source draws the sequence's notes, as it stands when drawn.
+    pub fn bind_sequence(&mut self, source: SourceId, sequence: crate::notes::Shared) {
+        self.sequences.insert(source, sequence);
+    }
+
+    /// The sequence bound to `source`, when one is.
+    pub fn sequence(&self, source: SourceId) -> Option<&crate::notes::Shared> {
+        self.sequences.get(&source)
     }
 
     /// Which buffer each source was read into.
@@ -482,6 +497,7 @@ impl MultitrackEditor {
             buffers: &self.sources,
             lengths: &self.lengths,
             segments: &self.segments,
+            sequences: &self.sequences,
         };
         let look = Look {
             rate: self.rate,
@@ -585,6 +601,7 @@ impl MultitrackEditor {
                 buffers: &self.sources,
                 lengths: &self.lengths,
                 segments: &self.segments,
+                sequences: &self.sequences,
             };
             let look = Look {
                 rate: self.rate,
@@ -715,6 +732,7 @@ struct Table<'a> {
     buffers: &'a HashMap<SourceId, i64>,
     lengths: &'a HashMap<SourceId, u64>,
     segments: &'a HashMap<SourceId, Vec<clausters_document::session::Part>>,
+    sequences: &'a HashMap<SourceId, crate::notes::Shared>,
 }
 
 impl projection::Buffers for Table<'_> {
@@ -727,6 +745,7 @@ impl projection::Buffers for Table<'_> {
     fn taken(&self) -> Vec<SourceId> {
         let mut taken = projection::Buffers::taken(self.buffers);
         taken.extend(self.segments.keys().copied());
+        taken.extend(self.sequences.keys().copied());
         taken
     }
 
@@ -740,6 +759,11 @@ impl projection::Buffers for Table<'_> {
 
     fn frames(&self, source: SourceId) -> Option<u64> {
         self.lengths.get(&source).copied()
+    }
+
+    fn sequence(&self, source: SourceId) -> Option<clausters_document::EventSequence> {
+        let shared = self.sequences.get(&source)?;
+        Some(shared.lock().unwrap_or_else(|e| e.into_inner()).clone())
     }
 }
 

@@ -174,6 +174,23 @@ def test_a_source_nobody_loaded_draws_an_empty_box():
         "negative and not zero: buffer 0 is a buffer"
 
 
+def test_a_region_over_a_sequence_draws_its_notes():
+    """A source that is an `EventSequence` has no buffer, and the boxes over it
+    draw its notes: in each box's own frames, named by the region."""
+    from clausters.seq import EventSequence
+    from clausters.seq.event import Event
+
+    notes = EventSequence([(0.0, Event(midinote=60, sustain=0.5)),
+                           (1.0, Event(midinote=64, sustain=0.5))])
+    ed = MultitrackEditor(multitrack(), sample_rate=SR, sources={1: notes})
+    assert all(b[6] == -1 for b in clips(ed)), "no buffer behind it"
+    flat = props(ed)["notes"]
+    drawn = [flat[i:i + 6] for i in range(0, len(flat), 6)]
+    assert [n[0] for n in drawn] == ["12", "12", "13", "13", "22", "22"]
+    assert drawn[0][1:4] == [0.0, pytest.approx(0.5 * SR), 60.0]
+    assert drawn[1][1:4] == [pytest.approx(SR), pytest.approx(0.5 * SR), 64.0]
+
+
 def test_a_tempo_moves_no_box():
     """The multitrack is in seconds: a box is drawn at its seconds times the
     rate, and a tempo the multitrack holds is a ruler's to read."""

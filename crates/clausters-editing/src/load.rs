@@ -202,8 +202,12 @@ pub fn plan(
             }
             Err(why) => {
                 // A join is not missing, it is not installed yet: it waits for
-                // the pass that has its parts.
-                if !matches!(source.location, Location::Segments { .. }) {
+                // the pass that has its parts. A sequence is not missing
+                // either: it is in the session, and takes no buffer.
+                if !matches!(
+                    source.location,
+                    Location::Segments { .. } | Location::Events { .. }
+                ) {
                     load.unresolved.push((id, why));
                 }
             }
@@ -629,6 +633,21 @@ mod tests {
         assert!(why[1].contains("volatile"), "{why:?}");
         assert!(why[2].contains("source table"), "{why:?}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **A sequence of events is neither read nor missing**: it is in the
+    /// session, so it takes no buffer and has nothing to report.
+    #[test]
+    fn a_sequence_of_events_takes_no_buffer_and_is_not_missing() {
+        let session = session(
+            &[4],
+            json!({"4": {"location": {"at": "events", "sequence": {"events": []}},
+                         "lifetime": "session"}}),
+        );
+        let load = plan(&session, Path::new("."), &|_| true, &mut counting(0));
+        assert!(load.takes.is_empty());
+        assert!(load.messages.is_empty());
+        assert!(load.unresolved.is_empty(), "{:?}", load.unresolved);
     }
 
     /// **A join is stitched after the reads it is over**, and a take only the
