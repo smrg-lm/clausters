@@ -529,8 +529,29 @@ opened it.
     draws, and a session's table holds one (`Source.events`). They sound from
     one event lane on the multitrack's transport (`PLAN.md`, `T8`), outside
     the tracks' strips: a note's own `out`, with the track's mute and solo and
-    the box's mute deciding what is placed. Left: the standalone host, and an
-    example that shows a notes region.)*
+    the box's mute deciding what is placed.)*
+    **Left, before the tick** *(listed 2026-09-28)*:
+    - ⬜ **The examples show a notes region**, in the ones that already exist
+      rather than a new one (the user: an application's parts go in its own
+      examples, or they scatter): `edit_multitrack` gains a track of notes, an
+      `EventSequence` among its `sources`, drawn in its box and sounding from
+      the transport's lane, in both clients with the same calls.
+    - ⬜ **The roll and the box over one sequence, by hand**: the same example
+      opens `edit(sequence, context=...)` in the multitrack's context, so an
+      edit in the roll redraws the box and is heard from the lane. Tested in
+      the crate and in the drawing; the whole path through real windows is
+      not.
+    - ⬜ **The session keeps it**: `edit_multitrack` saves the sequence with
+      `Source.events`, and `load_multitrack` reopens it with
+      `{**session.load(), **session.sequences()}`, in both clients.
+    - ⬜ **The standalone host** (`clausters-gui --session`) binds the
+      session's sequences: today it hands the multitrack none, so a notes
+      region draws empty and silent there.
+    - ⬜ **Decision: does a double click on a notes box open the roll?** The
+      crate enters no box ("a box is not entered to be edited", `X1.10`'s
+      rule for audio), so the example opens the roll from the script. Opening
+      it from the box would be the one exception to that rule, and is the
+      user's to decide.
   - ⬜ **X3.10 - Recording** into an `EventSequence` (`clausters-midi`).
   - ⬜ **X3.11 - CC lanes and per-note expression**, with M35.
   - ⬜ **X3.12 - The Hz domain.**
