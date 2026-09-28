@@ -103,7 +103,9 @@ class NotesDomain(Domain):
         held = [[_plain(item_data(item)), item] for _beat, item in structure
                 if item_data(item) is not None]
         rebuilt = []
-        for event in edited["state"]:
+        # The state is the crate's sequence: its events under "events", each
+        # with the id it now carries.
+        for event in edited["state"].get("events", []):
             data = event.get("data") or {}
             was = next((h for h in held if h[1] is not None and h[0] == data), None)
             if was is not None:

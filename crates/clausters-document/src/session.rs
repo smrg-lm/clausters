@@ -70,7 +70,11 @@ use crate::{Document, Lifetime, Opaque, SourceId, SourceRef};
 /// numbers keep their fields, so an older reader would read every one of them
 /// wrongly -- the counter's case exactly. [`migrate`] reads a format-2 file into
 /// this one.
-pub const FORMAT: u32 = 3;
+///
+/// **4** added [`Location::Events`]: a source that is a sequence of events,
+/// held in the file itself -- a multitrack's notes. A format-3 file reads
+/// unchanged; the counter moves for the reason **2** gives.
+pub const FORMAT: u32 = 4;
 
 /// The tempo a format-2 multitrack that stated none was read at, in beats per
 /// second: one, the default every reader of that format drew and played it
@@ -241,7 +245,7 @@ fn span_to_seconds(span: &mut Value, secs: &dyn Fn(f64) -> f64) {
 }
 
 /// Where samples actually is.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "at", rename_all = "lowercase")]
 pub enum Location {
     /// A file. Relative paths are resolved against the session's own folder,
@@ -286,6 +290,18 @@ pub enum Location {
     /// that element unresolved rather than pretending. [`Session::volatile`]
     /// is what a save consults before promising the file is complete.
     Volatile,
+    /// **A sequence of events, held here**: notes and messages in beats, with
+    /// the tempo map that times them ([`crate::events`]). A multitrack's region
+    /// over one is a window onto its beats, as a region over samples is one
+    /// onto their frames.
+    ///
+    /// In the file rather than beside it, unlike samples: a sequence is data
+    /// the size of a score, and a session that pointed at a `.mid` for it would
+    /// lose the ids, the lanes and every key a `.mid` cannot say.
+    Events {
+        /// The sequence.
+        sequence: Box<crate::events::EventSequence>,
+    },
 }
 
 /// One span of a [`Location::Segments`]: which source, which frames of it, and
@@ -426,9 +442,14 @@ impl Source {
         self.editing.as_ref().is_some_and(|e| !e.confirmed)
     }
 
-    /// Whether the samples are somewhere a reader could find them.
+    /// Whether the samples are somewhere a reader could find them. A sequence
+    /// is in the file itself, so it always is.
     pub fn is_resolvable(&self) -> bool {
-        matches!(&self.location, Location::File { path } if !path.is_empty())
+        match &self.location {
+            Location::File { path } => !path.is_empty(),
+            Location::Events { .. } => true,
+            _ => false,
+        }
     }
 }
 

@@ -40,7 +40,7 @@ The layers:
   encoder.
 - `clausters.seq` -- the sequencing layer: events, value patterns and ``Pbind``,
   the event-stream player, and timelines that play themselves. `Event`,
-  `rest` and `Timeline` are re-exported here; the ``P*`` patterns
+  `rest`, `Timeline` and `EventSequence` are re-exported here; the ``P*`` patterns
   are not, and stay under `clausters.seq`.
 - `clausters.defs` -- the definition layer and server resources: the
   ``signals``/`FaustDef` pair, the UGen-graph ``ugens``/`SynthDef` pair, the
@@ -104,6 +104,7 @@ from .base.stream import Routine
 from .responders import MidiFunc, OscFunc, midifunc, oscfunc
 from .seq.event import Event, rest
 from .seq.timeline import Timeline
+from .seq.sequence import EventSequence
 from .defs import (
     AddAction,
     Buffer,
@@ -166,6 +167,7 @@ __all__ = [
     "Event",
     "rest",
     "Timeline",
+    "EventSequence",
     # the free verbs
     "play",
     "render",

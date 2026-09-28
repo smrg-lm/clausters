@@ -2373,6 +2373,33 @@ impl JsDocument {
 // carry every spilled span on every call, which is the cost spilling exists to
 // avoid.
 
+/// JS face: a sequence of events (`clausters_document::EventSequence`), every
+/// verb through one JSON door, as the C ABI's `clausters_document_sequence_*`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub struct JsEventSequence(clausters_document::EventSequence);
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+impl JsEventSequence {
+    /// A sequence read from `json` (the sequence, or a bare list of events);
+    /// empty for an empty string.
+    #[wasm_bindgen(constructor)]
+    pub fn new(json: &str) -> Result<JsEventSequence, JsError> {
+        if json.is_empty() {
+            return Ok(Self(clausters_document::EventSequence::default()));
+        }
+        serde_json::from_str(json)
+            .map(Self)
+            .map_err(|e| JsError::new(&format!("not a sequence of events: {e}")))
+    }
+
+    /// One verb, as `clausters_document::events::call_json` answers it.
+    pub fn call(&mut self, request: &str) -> String {
+        clausters_document::events::call_json(&mut self.0, request)
+    }
+}
+
 /// One editing context's history, the JS face of
 /// [`clausters_document::History`].
 ///

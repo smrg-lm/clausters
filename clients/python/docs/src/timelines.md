@@ -131,6 +131,26 @@ stats = session.server.render()              # the offline render
 
 An **event pattern** is an item like any other, placed at its beat; a pattern of plain values is not, since it is the definition of a generator and does not play (see [Routines and clocks](routines-and-clocks.md)).
 
+## Event sequences: events as data
+
+A timeline holds **playables** — code that runs when it plays. An `EventSequence` holds **events**: concrete data, each with an id of its own, in beats, with the tempo map that times them. It is what a notes editor edits, and it lives in the document on the Rust side — the object a script holds is a handle to it, so an editor opened on it edits it in place and there is nothing to write back.
+
+```python
+from clausters import Event, EventSequence, TempoMap
+
+seq = EventSequence([(0.0, Event(midinote=60)), (1.0, Event(midinote=64))],
+                    tempo_map=TempoMap(2.0))
+for id, beat, event in seq.entries():
+    print(id, beat, event.midinote())     # 1 0.0 60.0, then 2 1.0 64.0
+
+first = seq.entries()[0][0]
+seq.move(first, 2.0)                      # by id: the other note keeps its data
+seq.set(first, "midinote", 62)            # one key, with its family's coherence
+seq.add(3.0, {"midinote": 67})            # its new id
+```
+
+An edit names its event **by id**, never by position: removing a note leaves every other note its own, and an id is never handed out twice. `apply` takes an edit in the sequence's vocabulary and answers the edit that puts it back, which is what an undo is. `data()` is the sequence as plain data — what a session stores, and what `EventSequence.from_data` reads.
+
 ## On a server's transport
 
 A timeline plays **either** on its own clock **or** on a server's transport, and the mode is a property of the timeline:

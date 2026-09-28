@@ -17,6 +17,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { loadCore } from "../src/base/core.ts";
+import { SESSION_FORMAT } from "../src/document.ts";
 
 import { Multitrack, Content, Fade, FrozenSource, Lane, LaneView, Region,
          Session, Source, Span, Tempo, Track, TrackView,
@@ -282,7 +283,7 @@ test("a format 2 session opens in seconds", async () => {
                 source: { source: 1, lifetime: "session" },
                 start: 0.0, duration: 2.0 } } }] }] }] } };
     const session = Session.read(old);
-    assert.equal(session.format, 3);
+    assert.equal(session.format, SESSION_FORMAT);
     assert.equal(session.multitrack.tempo[0]!.tempo, 2.0);
     const region = session.multitrack.tracks[0]!.lanes[0]!.regions[0]!;
     assert.deepEqual([region.position, region.length], [1.0, 2.0]);

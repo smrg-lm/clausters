@@ -2662,28 +2662,37 @@
         ]
       },
       "edited": {
-        "state": [
-          {
-            "at": 0.0,
-            "data": {
-              "pitch": 60
-            }
-          },
-          {
-            "at": 2.0
-          }
-        ],
-        "applied": true,
-        "current": {
+        "state": {
           "events": [
             {
               "at": 0.0,
               "data": {
                 "pitch": 60
-              }
+              },
+              "id": 1
+            },
+            {
+              "at": 2.0,
+              "id": 2
             }
           ],
-          "intent": "setevents"
+          "next_id": 2
+        },
+        "applied": true,
+        "current": {
+          "intent": "restore",
+          "sequence": {
+            "events": [
+              {
+                "at": 0.0,
+                "data": {
+                  "pitch": 60
+                },
+                "id": 1
+              }
+            ],
+            "next_id": 1
+          }
         }
       }
     },
@@ -2695,11 +2704,15 @@
         "events": []
       },
       "edited": {
-        "state": [],
+        "state": {
+          "events": []
+        },
         "applied": false,
         "current": {
-          "events": [],
-          "intent": "setevents"
+          "intent": "restore",
+          "sequence": {
+            "events": []
+          }
         }
       }
     },

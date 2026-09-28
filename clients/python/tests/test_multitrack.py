@@ -218,6 +218,7 @@ def test_every_lane_names_its_source_and_not_only_the_one_that_plays():
 
 # ---- the session: the multitrack, and where its samples are ----
 
+from clausters.document import SESSION_FORMAT  # noqa: E402
 from clausters.multitrack import FrozenSource, Session, Source  # noqa: E402
 
 
@@ -299,7 +300,7 @@ def test_a_format_2_session_opens_in_seconds():
                 "source": {"source": 1, "lifetime": "session"},
                 "start": 0.0, "duration": 2.0}}}]}]}]}}
     session = Session.read(old)
-    assert session.format == 3
+    assert session.format == SESSION_FORMAT
     assert session.multitrack.tempo[0].tempo == 2.0
     region = session.multitrack.tracks[0].lanes[0].regions[0]
     assert (region.position, region.length) == (1.0, 2.0)

@@ -9,6 +9,9 @@
 // - `timeline` -- `Timeline` (a static, editable, random-access sequence) and
 //   its own transport (play/pause/stop/locate/loop) and its own tempo map.
 // - `event` -- also `OscItem`/`MidiItem`, which make events of a raw message.
+// - `sequence` -- `EventSequence`: events as concrete data, each with an id, in
+//   beats with their tempo map -- what a notes editor edits and what a timeline
+//   renders into. A handle to the document's own structure.
 
 export { DEFAULTS, Event, MidiItem, NOTATION_KEYS, OscItem, rest } from "./event.ts";
 export type { EventDestination, EventProps } from "./event.ts";
@@ -31,4 +34,5 @@ export {
 } from "./pattern.ts";
 export type { Bindings } from "./pattern.ts";
 export { Entry, Timeline, itemData, itemFromData } from "./timeline.ts";
+export { EventSequence } from "./sequence.ts";
 export type { PlayDestination, TimelineItem } from "./timeline.ts";

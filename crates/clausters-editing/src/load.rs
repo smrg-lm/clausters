@@ -242,6 +242,8 @@ fn locate(
         // beside it, so it is installed once those are there. `stitch` is that
         // pass, and this one leaves it alone.
         Location::Segments { .. } => Err("a join is installed from its parts".to_string()),
+        // Not samples at all: the events are in the session itself.
+        Location::Events { .. } => Err("a sequence of events has no file".to_string()),
     }
 }
 

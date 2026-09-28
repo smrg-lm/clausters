@@ -155,7 +155,9 @@ export class NotesDomain extends Domain<Timeline> {
             if (data !== null) held.push([stable(plain(data)), item]);
         }
         const rebuilt: [number, unknown][] = [];
-        for (const event of edited.state as CrateEvent[]) {
+        // The state is the crate's sequence: its events under "events", each
+        // with the id it now carries.
+        for (const event of (edited.state as { events?: CrateEvent[] }).events ?? []) {
             const data = event.data ?? {};
             const key = stable(data);
             const was = held.findIndex(([heldKey, item]) => item !== null && heldKey === key);

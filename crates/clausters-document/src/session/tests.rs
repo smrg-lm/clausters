@@ -112,6 +112,37 @@ fn reopen(session: &Session) -> Session {
 }
 
 #[test]
+fn a_sequence_of_events_is_a_source_held_in_the_file() {
+    use crate::events::{Event, EventSequence};
+
+    let mut session = saved();
+    let sequence = EventSequence::new(vec![Event::new(
+        1.0,
+        serde_json::json!({"midinote": 60, "sustain": 0.5}),
+    )]);
+    let id = SourceId(900);
+    session.sources.insert(
+        id,
+        Source {
+            location: Location::Events {
+                sequence: Box::new(sequence.clone()),
+            },
+            ..Source::volatile(Lifetime::Session)
+        },
+    );
+    let back = reopen(&session);
+    assert_eq!(back, session);
+    assert!(
+        !back.volatile().contains(&id),
+        "its events are in the file, so nothing is missing"
+    );
+    let Location::Events { sequence: read } = &back.sources[&id].location else {
+        panic!("still a sequence");
+    };
+    assert_eq!(**read, sequence);
+}
+
+#[test]
 fn a_session_round_trips_whole() {
     let session = saved();
     assert_eq!(reopen(&session), session);

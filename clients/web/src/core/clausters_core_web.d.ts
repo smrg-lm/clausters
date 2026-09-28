@@ -356,6 +356,24 @@ export class Instance {
 }
 
 /**
+ * JS face: a sequence of events (`clausters_document::EventSequence`), every
+ * verb through one JSON door, as the C ABI's `clausters_document_sequence_*`.
+ */
+export class JsEventSequence {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * One verb, as `clausters_document::events::call_json` answers it.
+     */
+    call(request: string): string;
+    /**
+     * A sequence read from `json` (the sequence, or a bare list of events);
+     * empty for an empty string.
+     */
+    constructor(json: string);
+}
+
+/**
  * **One multitrack, as it is playing**: its instance, its applier and its
  * transport, answering every verb as steps (JSON).
  */
@@ -1692,6 +1710,7 @@ export interface InitOutput {
     readonly __wbg_history_free: (a: number, b: number) => void;
     readonly __wbg_idspaces_free: (a: number, b: number) => void;
     readonly __wbg_instance_free: (a: number, b: number) => void;
+    readonly __wbg_jseventsequence_free: (a: number, b: number) => void;
     readonly __wbg_multitrackplayback_free: (a: number, b: number) => void;
     readonly __wbg_pyramid_free: (a: number, b: number) => void;
     readonly __wbg_registry_free: (a: number, b: number) => void;
@@ -1773,6 +1792,8 @@ export interface InitOutput {
     readonly instance_teardown: (a: number) => [number, number];
     readonly interpretation: () => [number, number, number, number];
     readonly itemId: (a: number, b: number) => number;
+    readonly jseventsequence_call: (a: number, b: number, c: number) => [number, number];
+    readonly jseventsequence_new: (a: number, b: number) => [number, number, number];
     readonly level_resolve: (a: number, b: number) => [number, number];
     readonly level_set: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly lissajous: (a: number, b: number, c: number, d: number) => [number, number];

@@ -32,10 +32,7 @@ fn every_domain_the_crate_speaks_answers_its_own_sentence() {
     );
 
     let roll = crate::events::payload(&EventsIntent::SetEvents {
-        events: vec![Event {
-            at: 0.0,
-            data: crate::Opaque::none(),
-        }],
+        events: vec![Event::new(0.0, serde_json::Value::Null)],
     });
     assert_eq!(coalesce_key(EVENTS, &roll).as_deref(), Some("events"));
 }
@@ -126,23 +123,29 @@ mod editing_a_structure_the_crate_can_hold {
     }
 
     #[test]
-    fn a_timeline_of_events_is_held_the_same_way() {
+    fn a_sequence_of_events_is_held_the_same_way() {
+        // A bare list still reads, which is how a timeline's events were
+        // handed over before a sequence held anything beside them.
         let before = Opaque(serde_json::json!([{"at": 0.0}]));
         let payload = Opaque(serde_json::json!({
             "intent": "setevents",
             "events": [{"at": 0.0}, {"at": 2.0}],
         }));
-        let edited = edit(EVENTS, &before, &payload).expect("a timeline is held here");
+        let edited = edit(EVENTS, &before, &payload).expect("a sequence is held here");
         assert!(edited.applied);
         assert_eq!(
             edited.state,
-            Opaque(serde_json::json!([{"at": 0.0}, {"at": 2.0}]))
+            Opaque(serde_json::json!({
+                "events": [{"id": 1, "at": 0.0}, {"id": 2, "at": 2.0}],
+                "next_id": 2,
+            }))
         );
         assert_eq!(
             edited.current,
-            Some(Opaque(
-                serde_json::json!({"intent": "setevents", "events": [{"at": 0.0}]})
-            ))
+            Some(Opaque(serde_json::json!({
+                "intent": "restore",
+                "sequence": {"events": [{"id": 1, "at": 0.0}], "next_id": 1},
+            })))
         );
     }
 

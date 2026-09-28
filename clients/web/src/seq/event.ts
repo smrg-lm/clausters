@@ -386,6 +386,20 @@ export class Event {
 const SPELLED: Record<string, string> = { addAction: "add_action", hasGate: "has_gate" };
 
 /**
+ * An event read back from keys the document stored, in the reference client's
+ * spelling: each key this client spells otherwise ({@link SPELLED}) takes this
+ * client's name.
+ *
+ * @internal
+ */
+export function eventOfKeys(data: Record<string, unknown>): Event {
+    const props: EventProps = {};
+    const own = Object.fromEntries(Object.entries(SPELLED).map(([mine, theirs]) => [theirs, mine]));
+    for (const [key, value] of Object.entries(data)) props[own[key] ?? key] = value;
+    return new Event(props);
+}
+
+/**
  * A note's keys as its synth's messages, the core's render: `start` and
  * `release`, each a list of `[tag, value]` arguments with the address first,
  * and the `sustain` between them in beats.

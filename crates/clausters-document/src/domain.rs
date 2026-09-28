@@ -23,7 +23,7 @@
 use serde::Serialize;
 
 use crate::Opaque;
-use crate::events::{EVENTS, Events};
+use crate::events::{EVENTS, EventSequence};
 use crate::history::Editable;
 use crate::log::TREE;
 use crate::multitrack::Multitrack;
@@ -140,7 +140,7 @@ pub fn edit(domain: &str, state: &Opaque, payload: &Opaque) -> Option<Edited> {
             edited(&mut points, payload)
         }
         EVENTS => {
-            let mut events: Events = serde_json::from_value(state.0.clone()).ok()?;
+            let mut events: EventSequence = serde_json::from_value(state.0.clone()).ok()?;
             edited(&mut events, payload)
         }
         _ => None,

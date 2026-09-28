@@ -71,7 +71,9 @@ FIRST_VERSION = 1
 #: sources, which is a tagged variant an older reader must fail on rather than
 #: read as something else. **3** measures the multitrack in seconds where 2
 #: measured it in beats, and states a tempo in beats per second; an older file is
-#: migrated on reading (`clausters.multitrack.Session.read`).
+#: migrated on reading (`clausters.multitrack.Session.read`). **4** added a
+#: source that is a sequence of events held in the file itself, a tagged variant
+#: for the reason 2 gives.
 #:
 #: A literal rather than `clausters._native.session_format`, deliberately: a
 #: `clausters.multitrack.Session` is plain data and nothing else in that module
@@ -79,7 +81,7 @@ FIRST_VERSION = 1
 #: need a native load it has never needed. What keeps the two in step instead is
 #: a **test** that asks the crate and compares -- which is the check that did not
 #: exist when this said 1 and the crate had moved to 2.
-SESSION_FORMAT = 3
+SESSION_FORMAT = 4
 from ._native import document_apply as apply_intent
 from ._native import document_resolve as resolve_selection
 

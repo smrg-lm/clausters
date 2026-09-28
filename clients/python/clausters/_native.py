@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 72
+CORE_ABI_VERSION = 73
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -306,6 +306,15 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         u8p_early, ctypes.c_size_t,
     ]
     lib.clausters_editing_audio_playback_call.restype = ctypes.c_size_t
+    # A sequence of events (ABI v73): a handle and one JSON door.
+    lib.clausters_document_sequence_new.restype = ctypes.c_void_p
+    lib.clausters_document_sequence_new.argtypes = [u8p_early, ctypes.c_size_t]
+    lib.clausters_document_sequence_free.argtypes = [ctypes.c_void_p]
+    lib.clausters_document_sequence_free.restype = None
+    lib.clausters_document_sequence_call.argtypes = [
+        ctypes.c_void_p, u8p_early, ctypes.c_size_t, u8p_early, ctypes.c_size_t,
+    ]
+    lib.clausters_document_sequence_call.restype = ctypes.c_size_t
     lib.clausters_editing_playback_sync.argtypes = [
         ctypes.c_void_p, u8p_early, ctypes.c_size_t, ctypes.c_double,
         u8p_early, ctypes.c_size_t, ctypes.c_float, ctypes.c_void_p,
@@ -1736,6 +1745,38 @@ class AudioEditorPlayback:
                              ctypes.c_void_p(ids._handle))
         answer = json.loads(raw.decode("utf-8")) if raw else {"steps": []}
         if "error" in answer:
+            raise ValueError(answer["error"])
+        return answer
+
+
+class SequenceHandle:
+    """**A sequence of events** (`clausters_document_sequence_*`): the document's
+    `EventSequence`, held on the Rust side, every verb through `call`.
+    `clausters.seq.EventSequence` is the class a script uses."""
+
+    def __init__(self, data=None):
+        body = b"" if data is None else json.dumps(data).encode("utf-8")
+        self._handle = lib().clausters_document_sequence_new(
+            as_u8(body) if body else None, len(body))
+        if not self._handle:
+            raise ValueError("not a sequence of events")
+
+    def __del__(self):
+        self.free()
+
+    def free(self) -> None:
+        """Free the sequence."""
+        handle, self._handle = getattr(self, "_handle", None), None
+        if handle:
+            lib().clausters_document_sequence_free(ctypes.c_void_p(handle))
+
+    def call(self, verb: str, **args):
+        """One verb: its answer. Raises `ValueError` for a refusal."""
+        body = json.dumps({"verb": verb, **args}).encode("utf-8")
+        raw = size_then_fill(lib().clausters_document_sequence_call,
+                             ctypes.c_void_p(self._handle), as_u8(body), len(body))
+        answer = json.loads(raw.decode("utf-8"))
+        if isinstance(answer, dict) and "error" in answer:
             raise ValueError(answer["error"])
         return answer
 

@@ -487,7 +487,10 @@ pub use time::*;
 /// `_event_midi` and `_event_of_midi`: a note's synth messages, an event's
 /// MIDI messages, and MIDI bytes as the event that plays them back.
 /// **Additive**, and the counter moves for v31's reason.
-pub const CORE_ABI_VERSION: u32 = 72;
+/// **v73 a sequence of events.** `clausters_document_sequence_new`, `_free` and
+/// `_call`: the document's `EventSequence`, every verb through one JSON door.
+/// **Additive**, and the counter moves for v31's reason.
+pub const CORE_ABI_VERSION: u32 = 73;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

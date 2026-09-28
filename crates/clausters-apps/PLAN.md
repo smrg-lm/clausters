@@ -440,13 +440,21 @@ opened it.
     document's older `{"osc": ...}` / `{"midi": ...}` spelling still reads. The
     editing crate's intake writes a moved note through the core's coherence, so
     a note written with `freq` or by degree follows the drag.)*
-  - ⬜ **X3.2 - `EventSequence` in the document**, replacing today's
+  - ✅ **X3.2 - `EventSequence` in the document**, replacing today's
     `events::Events` (opaque `{at, data}`, identity by position): events with
     ids, beats and the tempo map, curve lanes with the existing `Automation` on
     a beat axis, a note's expression as `Automation` relative to its start (so
     M35 is provided for), unknown keys kept, a `Session` source a region can
     point at. The handle in both clients: a playable, written to `.mid`, opened
     by `edit`.
+    *(Shipped 2026-09-27: `clausters_document::events::EventSequence`, its
+    id-naming vocabulary (`add`, `remove`, `move`, `set` with the core's
+    coherence, `keys`, `setevents`, `tempo`, and `restore` as every edit's
+    inverse), `Location::Events` (session format 4), and
+    `clausters.seq.EventSequence` / `seq.EventSequence` over one JSON door. A
+    whole list without ids still reads and takes the ids of the events it
+    matches, so today's roll keeps working until X3.5. Playing a sequence,
+    writing it to `.mid` and opening it with `edit` are X3.3, X3.7 and X3.8.)*
   - ⬜ **X3.3 - The conversions**: `render_events`; `.mid` (write from the
     sequence; read); `Score` ↔ sequence.
   - ⬜ **X3.4 - The shared conversation turn** ("Each editor writes the

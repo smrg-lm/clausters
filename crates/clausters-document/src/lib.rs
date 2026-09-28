@@ -72,7 +72,7 @@ pub mod view;
 
 pub use clipboard::{Clipboard, Content};
 pub use domain::DOMAINS;
-pub use events::{Event, Events, EventsIntent};
+pub use events::{Event, EventSequence, EventsIntent};
 pub use history::{Applied, Editable, History, StructureId};
 pub use intent::{Against, Intent, Outcome, Rules, apply};
 pub use log::{
