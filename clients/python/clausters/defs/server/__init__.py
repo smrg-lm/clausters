@@ -451,10 +451,11 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
             )
 
     def play_event(self, event):
-        """Play a note `Event` as OSC: `/synth_new`
-        then `/node_free` (or `gate 0`) after the sustain. The OSC side of the
-        double dispatch -- a MIDI destination renders the same event as note
-        on/off. Returns the synth node id (or None for a rest).
+        """Play an `Event` as OSC: a note as `/synth_new` then `/node_free` (or
+        `gate 0`) after the sustain, an ``"osc"`` event as its message. The OSC
+        side of the double dispatch -- a MIDI destination renders the same event
+        as note on/off. Returns the synth node id (or None for a rest or a
+        message). A ``"midi"`` event is refused: it has no OSC spelling.
 
         Release is by ``gate 0`` when the event sets ``has_gate`` **or** the
         instrument is the built-in ``"default"`` (which carries a gated,
@@ -466,20 +467,22 @@ class Server(ServerQueries, ServerStreams, ServerTransport):
         clock it is wall-clock now, and the sustain reads as seconds
         (tempo 1.0) -- so a bare ``Event().play()`` sounds now and frees itself
         without a `TempoClock`."""
-        if event.get("type") == "rest":
+        kind = event.get("type", "note")
+        if kind == "rest":
             return None
+        if kind == "osc":
+            self.send_bundle((event["addr"], *(event.get("args") or ())))
+            return None
+        if kind == "midi":
+            raise ValueError("a midi event plays on a MIDI destination (a MidiServer), "
+                             "not on one that carries OSC")
         node_id = self._node_id()
-        s_new = ("/synth_new", event["instrument"], node_id, int(event["add_action"]),
-                 int(event["target"]), *event._control_args())
-        # The built-in "default" instrument carries a gated envelope that frees
-        # itself on release, so it is released by closing its gate even though
-        # the global `has_gate` default is False (which keeps gate-less custom
-        # defs freed directly). Any def can opt in per event with `has_gate`.
-        gate_release = event.get("has_gate") or event["instrument"] == "default"
-        release = (("/node_set", node_id, "gate", 0.0) if gate_release
-                   else ("/node_free", node_id))
-        self.send_bundle(s_new)
-        self.send_bundle(release, delay_beats=event.sustain())
+        # The messages are the core's render of the event, so every client
+        # starts and ends a note with the same ones.
+        synth = _native.event_synth(event.keys_data(), node_id)
+        self.send_bundle(_native.tagged_message(synth["start"]))
+        self.send_bundle(_native.tagged_message(synth["release"]),
+                         delay_beats=synth["sustain"])
         return node_id
 
     def send_bundle_after(self, delay_secs: float, *messages):

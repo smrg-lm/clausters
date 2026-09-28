@@ -32,6 +32,7 @@ import {
     rest,
 } from "../src/seq/index.ts";
 import type { EventDestination, PlayDestination } from "../src/seq/index.ts";
+import { synthRender } from "../src/seq/event.ts";
 import type { OscHandler } from "../src/base/receiver.ts";
 import type { Server } from "../src/defs/server/index.ts";
 import { play } from "../src/play.ts";
@@ -137,12 +138,14 @@ test("an explicit freq wins over midinote, which wins over degree", () => {
 });
 
 test("the control tail carries the derived pitch and the custom keys", () => {
-    const args = new Event({ instrument: "sine", degree: 0, amp: 0.3, cutoff: 800 })
-        .controlArgs()
+    const event = new Event({ instrument: "sine", degree: 0, amp: 0.3, cutoff: 800 });
+    const args = synthRender(event.keysData(), 1).start.slice(5)
         .map(([tag, value]) => `${tag}:${String(value)}`);
-    // Middle C in equal temperament, in f64: the core's exact pair, which is
-    // what lets a moved freq and midinote stay the same note.
-    assert.deepEqual(args.slice(0, 4), ["s:freq", "f:261.6255653005986", "s:amp", "f:0.3"]);
+    // The core's render, typed as the wire carries it: an f32 freq and amp,
+    // middle C in equal temperament.
+    assert.deepEqual(args.slice(0, 4), [
+        "s:freq", `f:${Math.fround(261.6255653005986)}`, "s:amp", `f:${Math.fround(0.3)}`,
+    ]);
     assert.ok(args.includes("s:cutoff"), "an unreserved numeric key is a control");
     assert.ok(!args.some((a) => a.includes("legato")), "a reserved key is not");
 });

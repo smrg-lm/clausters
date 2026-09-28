@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 71
+CORE_ABI_VERSION = 72
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -458,6 +458,12 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_core_event_delta.argtypes = [ctypes.c_double] * 3
     lib.clausters_core_event_sustain.restype = ctypes.c_double
     lib.clausters_core_event_sustain.argtypes = [ctypes.c_double] * 4
+    # Rendering an event (ABI v72): JSON in, size-then-fill out.
+    for name in ("event_synth", "event_midi", "event_of_midi"):
+        fn = getattr(lib, f"clausters_core_{name}")
+        fn.restype = ctypes.c_size_t
+        fn.argtypes = [ctypes.POINTER(ctypes.c_ubyte), ctypes.c_size_t,
+                       ctypes.POINTER(ctypes.c_ubyte), ctypes.c_size_t]
     # The shared-memory segment (ABI v21): a peer maps the file itself and asks
     # here for every offset, for the directory's seqlock and for the ring
     # framing -- the numbers this binding used to transcribe.
@@ -2958,6 +2964,38 @@ def event_delta(dur: float, stretch: float, delta=None) -> float:
     """Beats to the next event: ``delta`` when given, else ``dur * stretch``."""
     return lib().clausters_core_event_delta(float(dur), float(stretch),
                                             _NAN if delta is None else float(delta))
+
+
+def event_synth(keys: dict, node: int) -> dict:
+    """A note event's keys as its synth's messages: ``{"start", "release",
+    "sustain"}``, each message a list of ``[tag, value]`` arguments with the
+    address first (`tagged_message` reads one). `ValueError` for an event that
+    is not a note."""
+    return _json_call(lib().clausters_core_event_synth, {"event": keys, "node": int(node)},
+                      "event synth")
+
+
+def event_midi(keys: dict, channel: int = 0) -> list:
+    """An event's keys as the MIDI messages it plays, ``[(at_beats, bytes)]``;
+    ``channel`` is the destination's, used when the event states none.
+    `ValueError` for an OSC event or an unknown ``midicmd``."""
+    answer = _json_call(lib().clausters_core_event_midi,
+                        {"event": keys, "channel": int(channel)}, "event midi")
+    return [(float(at), bytes(data)) for at, data in answer["messages"]]
+
+
+def event_of_midi(message: bytes) -> dict:
+    """MIDI bytes as the keys of the event that plays them back."""
+    return _json_call(lib().clausters_core_event_of_midi, {"bytes": list(message)},
+                      "event of midi")
+
+
+def tagged_message(tagged) -> tuple:
+    """A rendered message's ``[tag, value]`` arguments as the ``(addr, *args)``
+    tuple a server sends, each value the Python type its tag names."""
+    kinds = {"s": str, "i": int, "f": float}
+    addr, *args = (kinds[tag](value) for tag, value in tagged)
+    return (addr, *args)
 
 
 def event_sustain(dur: float, legato: float, stretch: float, sustain=None) -> float:

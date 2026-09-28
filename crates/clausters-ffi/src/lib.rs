@@ -483,7 +483,11 @@ pub use time::*;
 /// alteration; the `clausters_core_pitch_*`, `_level_*`, `_split_degree`,
 /// `_midinote_to_degree`, `_event_delta` and `_event_sustain` doors are new.
 /// **Breaking**.
-pub const CORE_ABI_VERSION: u32 = 71;
+/// **v72 an event renders in the core.** `clausters_core_event_synth`,
+/// `_event_midi` and `_event_of_midi`: a note's synth messages, an event's
+/// MIDI messages, and MIDI bytes as the event that plays them back.
+/// **Additive**, and the counter moves for v31's reason.
+pub const CORE_ABI_VERSION: u32 = 72;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

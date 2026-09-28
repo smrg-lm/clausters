@@ -18,20 +18,7 @@ global ``has_gate`` default left False.
 from .. import _native
 from ..defs.node import Node
 
-#: Keys that drive timing/structure and are never sent as synth controls.
-#: ``node`` and ``server`` are the play-completed keys (see `Event.play`).
-_RESERVED = {
-    "type", "instrument", "dur", "legato", "stretch", "sustain", "delta",
-    "add_action", "target", "group", "server", "has_gate",
-    "midinote", "degree", "alter", "octave", "root", "scale", "node", "db",
-    # What the note says on a page. None of it is a synth control, and a
-    # `bool` is an `int` in Python -- so a `tie=True` that was not reserved
-    # would be sent as a control ``1.0`` and ignored in silence.
-    "articulations", "dynamic", "ornament", "grace", "stem",
-    "spelling", "accidental", "tie",
-}
-
-#: The reserved keys that say what the note is on a **page** rather than what it
+#: The keys that say what the note is on a **page** rather than what it
 #: does in the air, read by `clausters.gui.notation.sheet_from_notes` and
 #: written back by `clausters.gui.notation.to_timeline`. Every one is a musical
 #: fact -- ``articulations=["stacc"]``, not an instruction to shorten a drawn
@@ -82,9 +69,15 @@ class Event(dict):
     (``Event({"freq": 440, "amp": 0.2})``), or both merged, with keywords
     winning -- so unknown keys are simply stored. The keys
     split in two: a fixed **reserved** set drives timing and structure (``dur``,
-    ``legato``, ``stretch``, ``add_action``/``target``, the pitch keys, ...) and
-    is never sent to the synth; every other numeric key is forwarded as a synth
-    control.
+    ``legato``, ``stretch``, ``add_action``/``target``, the pitch and level
+    keys, the notation keys, ...) and is never sent to the synth; every other
+    numeric key is forwarded as a synth control. The set is the shared core's,
+    which renders the note's messages for every client.
+
+    **What an event is** is its ``type``: ``"note"`` (the default),
+    ``"rest"``, ``"osc"`` (a raw message, `OscItem`) or ``"midi"`` (a MIDI
+    message, `MidiItem`). Each destination renders the types it can say and
+    refuses the others by name.
 
     The derived quantities compute the values actually used: `midinote` and
     `freq` resolve pitch (an explicit ``freq`` wins, else ``midinote``, else
@@ -118,7 +111,9 @@ class Event(dict):
 
     def __init__(self, *args, **kwargs):
         given = dict(*args, **kwargs)
-        super().__init__(DEFAULTS)
+        # The defaults are a note's: a raw OSC or MIDI message is only its own
+        # keys.
+        super().__init__({} if given.get("type") in ("osc", "midi") else DEFAULTS)
         for key, value in given.items():
             if key not in _PITCH and key not in _LEVEL:
                 dict.__setitem__(self, key, value)
@@ -221,17 +216,18 @@ class Event(dict):
         return _native.event_sustain(self["dur"], self["legato"], self["stretch"],
                                      self.get("sustain"))
 
-    def _control_args(self) -> list:
-        args = ["freq", self.freq(), "amp", self.amp()]
-        if self.get("out") is not None:
-            args += ["out", float(self["out"])]
-        # any extra numeric keys (custom controls) are sent verbatim
+    def keys_data(self) -> dict:
+        """The event's keys as plain JSON-able data -- what the core renders it
+        from, and what a document stores. A value that is not data (the
+        ``server`` a played event holds) is left out."""
+        out = {}
         for key, value in self.items():
-            if key in _RESERVED or key in ("freq", "amp", "out"):
-                continue
-            if isinstance(value, (int, float)):
-                args += [key, float(value)]
-        return args
+            if isinstance(value, tuple):
+                value = list(value)
+            if value is None or isinstance(value, (bool, int, float, str, list, dict)):
+                if value is not None:
+                    out[key] = value
+        return out
 
     # ---- play ----
 
@@ -258,9 +254,10 @@ class Event(dict):
             from ..base.main import main
 
             destination = main.resolve_server()
-        midinote, freq = self.midinote(), self.freq()
-        delta, sustain = self.delta(), self.sustain()
-        self.update(midinote=midinote, freq=freq, delta=delta, sustain=sustain)
+        if self.get("type", "note") == "note":
+            midinote, freq = self.midinote(), self.freq()
+            delta, sustain = self.delta(), self.sustain()
+            self.update(midinote=midinote, freq=freq, delta=delta, sustain=sustain)
         self["node"] = destination.play_event(self)
         self["server"] = destination
         return self
@@ -282,10 +279,24 @@ class Event(dict):
         node, server = self.get("node"), self.get("server")
         if node is None or server is None:
             return
-        if self.get("has_gate") or self["instrument"] == "default":
-            Node(node, server).set({"gate": 0.0})
-        else:
-            Node(node, server).free()
+        # The gesture is the one the note's own render ends it with.
+        release = _native.event_synth(self.keys_data(), node)["release"]
+        server.send_msg(*_native.tagged_message(release))
+
+
+def OscItem(addr: str, *args) -> Event:  # noqa: N802 -- named as what it makes
+    """A raw OSC message ``(addr, *args)`` as an event of type ``"osc"``: played
+    on a `Server` it sends the message at the moment it plays, and a roll draws
+    it as a marker labelled with its address."""
+    return Event(type="osc", addr=str(addr), args=list(args))
+
+
+def MidiItem(message) -> Event:  # noqa: N802 -- named as what it makes
+    """Raw MIDI bytes as an event of type ``"midi"``: the channel-voice messages
+    by name (``midicmd`` ``"note_on"``, ``"cc"``, ``"bend"``, ...) with their
+    keys, anything else as ``"raw"`` with its ``bytes``. Played on a MIDI
+    destination it emits the same bytes."""
+    return Event(_native.event_of_midi(bytes(message)))
 
 
 def rest(dur: float = 1.0) -> Event:

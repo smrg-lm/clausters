@@ -53,7 +53,7 @@ function at(s: Session, secs: number, action: () => void): void {
 }
 
 const osc = (addr: string, beats: number[]) =>
-    beats.map((b) => [b, new OscItem(addr)] as [number, unknown]);
+    beats.map((b) => [b, OscItem(addr)] as [number, unknown]);
 
 test("a timeline plays on its own tempo", async () => {
     const { s, secs } = await nrt();
@@ -189,7 +189,7 @@ test("a routine past the located beat is not recovered", async () => {
         s.server.sendBundle([["/b"]]);
         yield 0;
     });
-    const tl = new Timeline([[1, pulse], [3, new OscItem("/a")]]);
+    const tl = new Timeline([[1, pulse], [3, OscItem("/a")]]);
     tl.play({ at: 2, destination: s.server });
     render(s);
     assert.deepEqual(secs("/b"), []);
@@ -276,7 +276,7 @@ async function editedAt(
 ): Promise<[number[], number[]]> {
     const { s, secs: heard } = await nrt();
     const tl = new Timeline();
-    const entries = [0, 1, 2, 3].map((b) => tl.add(b, new OscItem("/a")));
+    const entries = [0, 1, 2, 3].map((b) => tl.add(b, OscItem("/a")));
     tl.play({ destination: s.server });
     at(s, secs, () => edit(tl, entries));
     render(s);
@@ -285,7 +285,7 @@ async function editedAt(
 
 test("an item added behind the line replays nothing", async () => {
     // The pass is located by time: an insert before it shifts nothing it reads.
-    assert.deepEqual(await editedAt(1.5, (tl) => tl.add(0.5, new OscItem("/b"))),
+    assert.deepEqual(await editedAt(1.5, (tl) => tl.add(0.5, OscItem("/b"))),
         [[0, 1, 2, 3], []]);
 });
 
@@ -295,7 +295,7 @@ test("an item removed behind the line skips nothing", async () => {
 
 test("an item added ahead sounds on its own beat", async () => {
     // Before the beat the pass was sleeping to, so the edit has to wake it.
-    assert.deepEqual(await editedAt(1.5, (tl) => tl.add(1.75, new OscItem("/b"))),
+    assert.deepEqual(await editedAt(1.5, (tl) => tl.add(1.75, OscItem("/b"))),
         [[0, 1, 2, 3], [1.75]]);
 });
 
@@ -322,7 +322,7 @@ test("an edit on the beat just played does not play it again", async () => {
         }
 
         play(): void {
-            this.timeline.add(2, new OscItem("/b"));
+            this.timeline.add(2, OscItem("/b"));
         }
     }
 
@@ -369,7 +369,7 @@ test("an edit inside a child reaches the parent's pass", async () => {
     const parent = new Timeline();
     parent.add(1, child);
     parent.play({ destination: s.server });
-    at(s, 1.5, () => child.add(1, new OscItem("/b")));
+    at(s, 1.5, () => child.add(1, OscItem("/b")));
     render(s);
     assert.deepEqual(secs("/a"), [1, 3]);
     assert.deepEqual(secs("/b"), [2]);

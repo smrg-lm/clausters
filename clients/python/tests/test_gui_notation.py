@@ -739,7 +739,10 @@ def test_a_chord_is_one_slot_and_reads_the_marks_of_all_of_it():
 def test_a_notation_key_is_never_sent_to_the_synth():
     # A `bool` is an `int` in Python, so an unreserved `tie=True` would arrive
     # as a control 1.0 and be ignored in silence.
-    args = Event(midinote=60, tie=True, dynamic="mf", cutoff=800)._control_args()
+    from clausters import _native
+
+    event = Event(midinote=60, tie=True, dynamic="mf", cutoff=800)
+    args = _native.tagged_message(_native.event_synth(event.keys_data(), 1)["start"])
     assert "tie" not in args and "dynamic" not in args
     assert args[args.index("cutoff") + 1] == 800.0
 

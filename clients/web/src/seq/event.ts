@@ -15,6 +15,8 @@
 // `hasGate` default left false.
 
 import {
+    event_of_midi as coreEventOfMidi,
+    event_synth as coreEventSynth,
     event_delta as coreDelta,
     event_sustain as coreSustain,
     level_resolve as coreLevelResolve,
@@ -24,23 +26,10 @@ import {
     split_degree as coreSplitDegree,
 } from "../core/clausters_core_web.js";
 import { main } from "../base/main.ts";
-import type { OscArg } from "../base/osc.ts";
+import type { MsgArg, OscArg, TimedMessage } from "../base/osc.ts";
 
 /**
- * Keys that drive timing and structure, and are never sent as controls.
- * `node` and `server` are written back by `play`.
- */
-const RESERVED = new Set([
-    "type", "instrument", "dur", "legato", "stretch", "sustain", "delta",
-    "addAction", "target", "group", "server", "hasGate",
-    "midinote", "degree", "alter", "octave", "root", "scale", "node", "db",
-    // What the note says on a page. None of it is a synth control.
-    "articulations", "dynamic", "ornament", "grace", "stem",
-    "spelling", "accidental", "tie",
-]);
-
-/**
- * The reserved keys that say what the note is on a **page** rather than what it
+ * The keys that say what the note is on a **page** rather than what it
  * does in the air, read by `gui.notation.sheetFromNotes` and written back by
  * `gui.notation.toTimeline`. Every one is a musical fact --
  * `articulations: ["stacc"]`, not an instruction to shorten a drawn value --
@@ -117,8 +106,15 @@ export interface EventDestination {
  * A note event: parameters that know how to play themselves.
  *
  * The keys split in two: a fixed **reserved** set drives timing and structure
- * (`dur`, `legato`, `stretch`, `addAction`/`target`, the pitch keys, ...) and is
- * never sent to the synth; every other numeric key is forwarded as a control.
+ * (`dur`, `legato`, `stretch`, `addAction`/`target`, the pitch and level keys,
+ * the notation keys, ...) and is never sent to the synth; every other numeric
+ * key is forwarded as a control. The set is the shared core's, which renders
+ * the note's messages for every client.
+ *
+ * **What an event is** is its `type`: `"note"` (the default), `"rest"`,
+ * `"osc"` (a raw message, {@link OscItem}) or `"midi"` (a MIDI message,
+ * {@link MidiItem}). Each destination renders the types it can say and refuses
+ * the others by name.
  *
  * The derived quantities compute the values actually used: `midinote` and
  * `freq` resolve pitch (an explicit `freq` wins, else `midinote`, else
@@ -151,7 +147,9 @@ export class Event {
     readonly props: EventProps;
 
     constructor(props: EventProps = {}) {
-        this.props = { ...DEFAULTS };
+        // The defaults are a note's: a raw OSC or MIDI message is only its own
+        // keys.
+        this.props = props.type === "osc" || props.type === "midi" ? {} : { ...DEFAULTS };
         for (const [key, value] of Object.entries(props)) {
             if (!PITCH_KEYS.includes(key) && !LEVEL_KEYS.includes(key)) {
                 this.props[key] = value;
@@ -308,34 +306,19 @@ export class Event {
     }
 
     /**
-     * Whether this event releases by closing a gate. The built-in `"default"`
-     * instrument carries a gated, self-freeing envelope, so it does even
-     * though the global default is `false`.
+     * The event's keys as plain JSON-able data, in the reference client's
+     * spelling (`add_action`, `has_gate`) -- what the core renders it from, and
+     * what a document stores. A value that is not data (the `server` a played
+     * event holds) is left out.
      */
-    releasesByGate(): boolean {
-        return Boolean(this.props.hasGate) || this.props.instrument === "default";
-    }
-
-    /**
-     * The `name value ...` control tail this event sends to the synth: `freq`
-     * and `amp` always, `out` when set, then every other numeric key that is
-     * not reserved.
-     */
-    controlArgs(): OscArg[] {
-        const args: OscArg[] = [
-            ["s", "freq"], ["f", this.freq()],
-            ["s", "amp"], ["f", this.amp()],
-        ];
-        if (this.props.out !== undefined) {
-            args.push(["s", "out"], ["f", this.num("out")]);
-        }
+    keysData(): Record<string, unknown> {
+        const out: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(this.props)) {
-            if (RESERVED.has(key) || key === "freq" || key === "amp" || key === "out") {
-                continue;
-            }
-            if (typeof value === "number") args.push(["s", key], ["f", value]);
+            const plain = typeof value === "number" || typeof value === "string"
+                || typeof value === "boolean" || Array.isArray(value);
+            if (plain) out[SPELLED[key] ?? key] = value;
         }
-        return args;
+        return out;
     }
 
     // ---- play ----
@@ -358,9 +341,11 @@ export class Event {
     play(destination?: EventDestination): this {
         const target = destination
             ?? (main.resolveServer() as unknown as EventDestination);
-        const midinote = this.midinote();
-        const freq = this.freq();
-        this.set({ midinote, freq, delta: this.delta(), sustain: this.sustain() });
+        if ((this.props.type ?? "note") === "note") {
+            const midinote = this.midinote();
+            const freq = this.freq();
+            this.set({ midinote, freq, delta: this.delta(), sustain: this.sustain() });
+        }
         this.props.node = target.playEvent(this);
         this.props.server = target;
         return this;
@@ -388,12 +373,62 @@ export class Event {
         const node = this.props.node;
         const server = this.props.server as EventDestination | undefined;
         if (typeof node !== "number" || !server) return;
-        if (this.releasesByGate()) {
-            server.sendMsg("/node_set", ["i", node], ["s", "gate"], ["f", 0]);
-        } else {
-            server.sendMsg("/node_free", ["i", node]);
-        }
+        // The gesture is the one the note's own render ends it with.
+        const [addr, ...args] = taggedMessage(synthRender(this.keysData(), node).release);
+        server.sendMsg(addr, ...(args as OscArg[]));
     }
+}
+
+/**
+ * The keys the reference client spells with an underscore, as this client's
+ * idiom spells them: the core reads the reference spelling.
+ */
+const SPELLED: Record<string, string> = { addAction: "add_action", hasGate: "has_gate" };
+
+/**
+ * A note's keys as its synth's messages, the core's render: `start` and
+ * `release`, each a list of `[tag, value]` arguments with the address first,
+ * and the `sustain` between them in beats.
+ *
+ * @internal
+ */
+export function synthRender(
+    keys: Record<string, unknown>,
+    node: number,
+): { start: [string, unknown][]; release: [string, unknown][]; sustain: number } {
+    const answer = JSON.parse(coreEventSynth(JSON.stringify(keys), node));
+    if (answer.error) throw new Error(answer.error);
+    return answer;
+}
+
+/**
+ * A rendered message's `[tag, value]` arguments as the message a server sends:
+ * the address, then each argument tagged as the core typed it.
+ *
+ * @internal
+ */
+export function taggedMessage(tagged: [string, unknown][]): TimedMessage {
+    const [[, addr], ...args] = tagged;
+    return [String(addr), ...args.map(([tag, value]) => [tag, value] as unknown as MsgArg)];
+}
+
+/**
+ * A raw OSC message `(addr, ...args)` as an event of type `"osc"`: played on a
+ * `Server` it sends the message at the moment it plays, and a roll draws it as
+ * a marker labelled with its address.
+ */
+export function OscItem(addr: string, ...args: MsgArg[]): Event {
+    return new Event({ type: "osc", addr: String(addr), args });
+}
+
+/**
+ * Raw MIDI bytes as an event of type `"midi"`: the channel-voice messages by
+ * name (`midicmd` `"note_on"`, `"cc"`, `"bend"`, ...) with their keys, anything
+ * else as `"raw"` with its `bytes`. Played on a MIDI destination it emits the
+ * same bytes.
+ */
+export function MidiItem(message: ArrayLike<number>): Event {
+    return new Event(JSON.parse(coreEventOfMidi(Uint8Array.from(message))));
 }
 
 /**

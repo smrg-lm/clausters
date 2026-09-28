@@ -68,7 +68,7 @@ test("joining the halves gives the run back", () => {
 
 test("a run of notes measures in beats and has nothing to bridge", () => {
     const timeline = new Timeline();
-    for (const beat of [0.0, 1.0, 2.0, 3.0]) timeline.add(beat, new OscItem("/n", beat));
+    for (const beat of [0.0, 1.0, 2.0, 3.0]) timeline.add(beat, OscItem("/n", beat));
     const run = new NoteSegments([[timeline, 0.0, 4.0]]);
     assert.equal(run.unit, "beats");
     const [head, tail] = run.cut(1.5);
@@ -78,7 +78,7 @@ test("a run of notes measures in beats and has nothing to bridge", () => {
 
 test("a note window hides what it leaves out and places the rest at zero", () => {
     const timeline = new Timeline();
-    for (const beat of [0.0, 1.0, 2.0, 3.0]) timeline.add(beat, new OscItem("/n", beat));
+    for (const beat of [0.0, 1.0, 2.0, 3.0]) timeline.add(beat, OscItem("/n", beat));
     const [, tail] = new NoteSegments([[timeline, 0.0, 4.0]]).cut(1.5);
     // The window opens at beat 1.5, so the notes it holds are the last two and
     // they are placed from the run's own start -- and the ones it left out are

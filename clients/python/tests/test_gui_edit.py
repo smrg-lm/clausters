@@ -291,12 +291,12 @@ def test_a_marker_dragged_in_the_roll_moves_it_on_the_timeline():
     editor = edit(timeline, sample_rate=SR, open=False)
     _host, wid = opened(editor)
     assert editor.apply("/gui_event", [wid, 1, 0, "osc", 1.5 * BEAT, "/hit"])
-    at = [(beat, item) for beat, item in timeline if isinstance(item, OscItem)]
+    at = [(beat, item) for beat, item in timeline if item.get("type") == "osc"]
     assert at == [(1.5, at[0][1])], "the marker moved, and it is the same item"
-    assert at[0][1].args == (7,), "the message it sends is not the lane's to lose"
+    assert at[0][1]["args"] == [7], "the message it sends is not the lane's to lose"
     assert editor.undo_label == "edit the markers"
     assert editor.undo() is True
-    assert [beat for beat, item in timeline if isinstance(item, OscItem)] == [3.0]
+    assert [beat for beat, item in timeline if item.get("type") == "osc"] == [3.0]
 
 
 def test_a_marker_removed_in_the_roll_leaves_its_neighbours_theirs():
@@ -310,8 +310,8 @@ def test_a_marker_removed_in_the_roll_leaves_its_neighbours_theirs():
     editor = edit(timeline, sample_rate=SR, open=False)
     _host, wid = opened(editor)
     assert editor.apply("/gui_event", [wid, 1, 0, "osc", 0.0, "/a", 2 * BEAT, "/c"])
-    assert [(item.addr, item.args) for _beat, item in timeline] == \
-        [("/a", (1,)), ("/c", (3,))]
+    assert [(item["addr"], item["args"]) for _beat, item in timeline] == \
+        [("/a", [1]), ("/c", [3])]
 
 
 def test_a_marker_added_in_the_roll_is_refused_and_says_why():
@@ -343,8 +343,8 @@ def test_the_notes_gesture_does_not_move_the_markers():
     editor = edit(timeline, sample_rate=SR, open=False)
     _host, wid = opened(editor)
     editor.apply("/gui_event", [wid, 1, 0, "notes", 0.0, BEAT, 67, 100, 0])
-    assert [(beat, type(item).__name__) for beat, item in timeline] == \
-        [(0.0, "Event"), (3.0, "OscItem")]
+    assert [(beat, item.get("type", "note")) for beat, item in timeline] == \
+        [(0.0, "note"), (3.0, "osc")]
 
 
 # ---- the acceptance the track was opened with ----

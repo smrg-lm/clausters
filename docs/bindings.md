@@ -119,6 +119,9 @@ In wasm neither applies: a call returns the bytes or the string.
 | `clausters_core_velocity_of_amp` | `velocity_of_amp` | |
 | `clausters_core_event_delta` | `event_delta` | |
 | `clausters_core_event_sustain` | `event_sustain` | |
+| `clausters_core_event_synth` | `event_synth` | `idiom` — C reads `{"event", "node"}` as one JSON request and fills a buffer; wasm takes the event's JSON and the node as two arguments and returns the string |
+| `clausters_core_event_midi` | `event_midi` | `idiom` — the same request/argument split, with the channel |
+| `clausters_core_event_of_midi` | `event_of_midi` | `idiom` — C reads `{"bytes"}` as JSON; wasm takes the bytes as a `Uint8Array` |
 
 ## Randomness
 

@@ -80,7 +80,7 @@ the instrument, and everything else the author put on it.</div>
         [1.0, new Event({ midinote: 64, dur: 1.0 })],
         [2.0, new Event({ midinote: 67, dur: 2.0 })],
         [4.0, new Event({ midinote: 72, dur: 1.0, instrument: "default", amp: 0.4 })],
-        [3.0, new OscItem("/mark", 1, "cue")],
+        [3.0, OscItem("/mark", 1, "cue")],
       ]);
 
       let session = null;
@@ -89,8 +89,8 @@ the instrument, and everything else the author put on it.</div>
       function readBack() {
         const drawn = ["midinote", "dur", "sustain", "velocity", "type"];
         for (const [beat, item] of timeline) {
-          if (item instanceof OscItem) {
-            log(`  ${beat.toFixed(2)}  osc ${item.addr}   ${JSON.stringify([...item.args])}`);
+          if (item.get("type") === "osc") {
+            log(`  ${beat.toFixed(2)}  osc ${item.get("addr")}   ${JSON.stringify(item.get("args"))}`);
             continue;
           }
           const extra = Object.fromEntries(

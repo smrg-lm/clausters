@@ -30,6 +30,8 @@ import {
 import type { MidiInputPort, MidiMessage, MidiOutputPort } from "../src/base/midi.ts";
 import { MidiFunc, setDefaultMidiReceiver } from "../src/responders.ts";
 import { MidiItem, OscItem } from "../src/seq/timeline.ts";
+import { ScoreConnection } from "../src/base/connection.ts";
+import { Server } from "../src/defs/server/index.ts";
 import { Event } from "../src/seq/event.ts";
 import type { EventDestination } from "../src/seq/event.ts";
 import { Pbind, Pseq } from "../src/seq/pattern.ts";
@@ -167,7 +169,7 @@ test("a real-time server keeps no score", () => {
 test("a MidiServer answers no OSC, loudly", () => {
     const server = new MidiServer();
     assert.throws(() => server.sendMsg("/synth_new"), /carries no OSC/);
-    assert.throws(() => new OscItem("/x", 1).play(server), /carries no OSC/);
+    assert.throws(() => OscItem("/x", 1).play(server), /no MIDI spelling/);
 });
 
 // ---- the live interface ----
@@ -362,7 +364,7 @@ test("a MidiItem renders through a MidiServer and refuses an OSC one", async () 
         ticker: manualTicker(),
     }).start();
     clock.play(new Routine(function* () {
-        new MidiItem([0xb0, 74, 40]).play(server);
+        MidiItem([0xb0, 74, 40]).play(server);
     }));
     await flush();
 
@@ -370,8 +372,6 @@ test("a MidiItem renders through a MidiServer and refuses an OSC one", async () 
         server.score!.sorted().map(([beat, bytes]) => [beat, [...bytes]]),
         [[0, [0xb0, 74, 40]]],
     );
-    assert.throws(
-        () => new MidiItem([0x90, 60, 1]).play({} as never),
-        /needs a MIDI destination/,
-    );
+    const osc = new Server({ connection: new ScoreConnection() });
+    assert.throws(() => MidiItem([0x90, 60, 1]).play(osc), /plays on a MIDI destination/);
 });

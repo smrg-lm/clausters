@@ -64,6 +64,7 @@ import type { Timebase } from "../../base/timebase.ts";
 import { sampleClockFor } from "../clocksync.ts";
 import type { ServerSampleClock } from "../clocksync.ts";
 import type { TempoClock } from "../../base/clock.ts";
+import { synthRender, taggedMessage } from "../../seq/event.ts";
 import type { Event } from "../../seq/event.ts";
 import { CommandError, ReplyTimeout, ServerError } from "../../errors.ts";
 import { IdSpaces, requireCore } from "../../base/core.ts";
@@ -963,10 +964,11 @@ export class Server {
     }
 
     /**
-     * Plays a note `Event` as OSC: `/synth_new`, then its release (`gate 0` when
-     * the event releases by gate, else `/node_free`) after the sustain. The OSC
-     * side of the event's double dispatch. Returns the synth's node id, or
-     * `null` for a rest.
+     * Plays an `Event` as OSC: a note as `/synth_new`, then its release
+     * (`gate 0` when the event releases by gate, else `/node_free`) after the
+     * sustain; an `"osc"` event as its message. The OSC side of the event's
+     * double dispatch. Returns the synth's node id, or `null` for a rest or a
+     * message. A `"midi"` event is refused: it has no OSC spelling.
      *
      * One timing path, whatever the context. Both messages go out as timed
      * bundles at the ambient `Moment`: inside a routine that is its exact
@@ -976,21 +978,24 @@ export class Server {
      * all.
      */
     playEvent(event: Event): number | null {
-        if (event.get("type") === "rest") return null;
+        const kind = event.get("type") ?? "note";
+        if (kind === "rest") return null;
+        if (kind === "osc") {
+            const args = (event.get("args") ?? []) as MsgArg[];
+            this.sendBundle([[String(event.get("addr")), ...args]]);
+            return null;
+        }
+        if (kind === "midi") {
+            throw new TypeError(
+                "a midi event plays on a MIDI destination (a MidiServer), not on one that carries OSC",
+            );
+        }
         const node = this.nodes.alloc();
-        const sNew: TimedMessage = [
-            "/synth_new",
-            String(event.get("instrument")),
-            ["i", node],
-            ["i", Math.trunc(Number(event.get("addAction")))],
-            ["i", Math.trunc(Number(event.get("target")))],
-            ...event.controlArgs(),
-        ];
-        const release: TimedMessage = event.releasesByGate()
-            ? ["/node_set", ["i", node], "gate", ["f", 0]]
-            : ["/node_free", ["i", node]];
-        this.sendBundle([sNew]);
-        this.sendBundle([release], { delayBeats: event.sustain() });
+        // The messages are the core's render of the event, so every client
+        // starts and ends a note with the same ones.
+        const synth = synthRender(event.keysData(), node);
+        this.sendBundle([taggedMessage(synth.start)]);
+        this.sendBundle([taggedMessage(synth.release)], { delayBeats: synth.sustain });
         return node;
     }
 

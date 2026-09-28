@@ -429,10 +429,17 @@ opened it.
     ("A roll's edit sends every note at its velocity's amplitude", Found by use),
     and a timeline on a server transport hearing an edit (`C54`). Left: `C54`'s
     by-ear pass over `editors/edit_notes`, which is the user's.
-  - ⬜ **X3.1 - `Event` in the core**: families, coherence, `alter`, `type`,
+  - ✅ **X3.1 - `Event` in the core**: families, coherence, `alter`, `type`,
     render per destination; the C and wasm doors; both clients delegate and
     delete their own derivation (`midinote()`, `freq()`, `sustain()`, velocity ↔
     amp exist twice today, `seq/event.py`, `seq/event.ts`); parity vectors.
+    *(Shipped 2026-09-27: `clausters_core::event` and `event::render`. The
+    synth's messages, the MIDI messages and a MIDI message read back as an
+    event are the core's; `OscItem` and `MidiItem` are events of type `"osc"`
+    and `"midi"`, made by a function of that name in both clients, and a
+    document's older `{"osc": ...}` / `{"midi": ...}` spelling still reads. The
+    editing crate's intake writes a moved note through the core's coherence, so
+    a note written with `freq` or by degree follows the drag.)*
   - ⬜ **X3.2 - `EventSequence` in the document**, replacing today's
     `events::Events` (opaque `{at, data}`, identity by position): events with
     ids, beats and the tempo map, curve lanes with the existing `Automation` on

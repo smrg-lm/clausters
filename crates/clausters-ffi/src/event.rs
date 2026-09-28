@@ -4,10 +4,17 @@
 //! not hold: the pitch keys as `[freq, midinote, degree, alter, octave, root]`
 //! with the scale beside them, the level keys as `[amp, velocity, db]`. A key
 //! is named by its index in that order, `6` being the scale.
+//!
+//! Rendering an event crosses as JSON, size-then-fill: the event is its map of
+//! keys, and the answer is the messages its destination plays, or
+//! `{"error": ...}`.
 
 use clausters_core::event::{
-    self, Level, LevelKey, Pitch, PitchKey, Spelling, amp_of_velocity, velocity_of_amp,
+    self, Level, LevelKey, Pitch, PitchKey, Spelling, amp_of_velocity, render, velocity_of_amp,
 };
+use serde_json::{Map, Value, json};
+
+use crate::out::{fill, text};
 
 /// The scale a door was handed, empty when null.
 ///
@@ -227,6 +234,123 @@ pub extern "C" fn clausters_core_event_sustain(
     event::sustain(dur, legato, stretch, (!sustain.is_nan()).then_some(sustain))
 }
 
+/// Reads a JSON request, answers with `answer`'s JSON, size-then-fill. A
+/// request that does not read answers `{"error": ...}` too.
+///
+/// # Safety
+/// `request` must be null or readable for `len` bytes, `out` null or writable
+/// for `out_cap`.
+unsafe fn json_door(
+    request: *const u8,
+    len: usize,
+    out: *mut u8,
+    out_cap: usize,
+    answer: impl FnOnce(&Map<String, Value>) -> Value,
+) -> usize {
+    // SAFETY: forwarded from the caller.
+    let parsed = unsafe { text(request, len) }
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        .and_then(|v| v.as_object().cloned());
+    let reply = match parsed {
+        Some(req) => answer(&req),
+        None => json!({"error": "the request is not a JSON object"}),
+    };
+    // SAFETY: forwarded from the caller.
+    unsafe { fill(reply.to_string().as_bytes(), out, out_cap) }
+}
+
+fn event_of(req: &Map<String, Value>) -> Map<String, Value> {
+    req.get("event")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default()
+}
+
+/// A note event as the messages of its synth: `{"event": {...}, "node": n}`
+/// in, `{"start": [..], "release": [..], "sustain": beats}` out, each message a
+/// list of `[tag, value]` arguments with the address first
+/// (`clausters_core::event::render::synth`).
+///
+/// # Safety
+/// `request` must be readable for `len` bytes, `out` null or writable for
+/// `out_cap`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_event_synth(
+    request: *const u8,
+    len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from the caller.
+    unsafe {
+        json_door(request, len, out, out_cap, |req| {
+            let node = req.get("node").and_then(Value::as_i64).unwrap_or(0) as i32;
+            match render::synth(&event_of(req), node) {
+                Some(s) => s.to_json(),
+                None => json!({"error": "only a note renders a synth"}),
+            }
+        })
+    }
+}
+
+/// An event as the MIDI messages it plays: `{"event": {...}, "channel": c}` in,
+/// `{"messages": [[at, [bytes]], ...]}` out (`render::midi`).
+///
+/// # Safety
+/// `request` must be readable for `len` bytes, `out` null or writable for
+/// `out_cap`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_event_midi(
+    request: *const u8,
+    len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from the caller.
+    unsafe { json_door(request, len, out, out_cap, midi_answer) }
+}
+
+fn midi_answer(req: &Map<String, Value>) -> Value {
+    let channel = req.get("channel").and_then(Value::as_u64).unwrap_or(0) as u8;
+    match render::midi(&event_of(req), channel) {
+        Ok(messages) => json!({
+            "messages": messages.iter().map(|m| json!([m.at, m.bytes])).collect::<Vec<_>>()
+        }),
+        Err(error) => json!({ "error": error }),
+    }
+}
+
+/// MIDI bytes as the event that plays them back: `{"bytes": [..]}` in, the
+/// event's keys out (`render::from_midi`).
+///
+/// # Safety
+/// `request` must be readable for `len` bytes, `out` null or writable for
+/// `out_cap`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_event_of_midi(
+    request: *const u8,
+    len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    // SAFETY: forwarded from the caller.
+    unsafe {
+        json_door(request, len, out, out_cap, |req| {
+            let bytes: Vec<u8> = req
+                .get("bytes")
+                .and_then(Value::as_array)
+                .map(|b| {
+                    b.iter()
+                        .filter_map(Value::as_u64)
+                        .map(|v| v as u8)
+                        .collect()
+                })
+                .unwrap_or_default();
+            Value::Object(render::from_midi(&bytes))
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,5 +401,36 @@ mod tests {
         assert_eq!(out, [1.0, 1.0]);
         assert_eq!(clausters_core_event_sustain(1.0, 0.8, 1.0, f64::NAN), 0.8);
         assert_eq!(clausters_core_event_delta(1.0, 2.0, 0.25), 0.25);
+    }
+
+    fn call(
+        door: unsafe extern "C" fn(*const u8, usize, *mut u8, usize) -> usize,
+        req: &str,
+    ) -> Value {
+        let need = unsafe { door(req.as_ptr(), req.len(), std::ptr::null_mut(), 0) };
+        let mut buf = vec![0u8; need];
+        unsafe { door(req.as_ptr(), req.len(), buf.as_mut_ptr(), need) };
+        serde_json::from_slice(&buf).unwrap()
+    }
+
+    #[test]
+    fn the_render_doors() {
+        let s = call(
+            clausters_core_event_synth,
+            r#"{"event":{"midinote":69,"amp":0.5},"node":7}"#,
+        );
+        assert_eq!(s["start"][0], json!(["s", "/synth_new"]));
+        assert_eq!(s["start"][2], json!(["i", 7]));
+        assert_eq!(s["start"][6], json!(["f", 440.0]));
+        let m = call(
+            clausters_core_event_midi,
+            r#"{"event":{"midinote":60},"channel":2}"#,
+        );
+        assert_eq!(m["messages"][0], json!([0.0, [0x92, 60, 13]]));
+        let e = call(clausters_core_event_of_midi, r#"{"bytes":[176,7,99]}"#);
+        assert_eq!(e["midicmd"], "cc");
+        let bad = call(clausters_core_event_midi, r#"{"event":{"type":"osc"}}"#);
+        assert!(bad["error"].is_string());
+        assert!(call(clausters_core_event_synth, "nope")["error"].is_string());
     }
 }

@@ -1198,9 +1198,28 @@ export function engraveOptions(scale: number, page_width: number, extra?: string
 export function event_delta(dur: number, stretch: number, delta: number): number;
 
 /**
+ * JS face: an event as its MIDI messages, `{"messages": [[at, [bytes]]]}` or
+ * `{"error"}`.
+ */
+export function event_midi(event: string, channel: number): string;
+
+/**
+ * JS face: MIDI bytes as the event that plays them back, as JSON.
+ */
+export function event_of_midi(bytes: Uint8Array): string;
+
+/**
  * JS face: beats the event sounds (`sustain` NaN when not stated).
  */
 export function event_sustain(dur: number, legato: number, stretch: number, sustain: number): number;
+
+/**
+ * JS face: a note event as its synth's messages, `{"start", "release",
+ * "sustain"}` with `[tag, value]` arguments, or `{"error"}` for anything that
+ * is not a note. `event` is the event's keys as JSON, in the reference
+ * client's spelling.
+ */
+export function event_synth(event: string, node: number): string;
 
 /**
  * JS face: the `[audio, control]` widths GraphDef instances reserve at the
@@ -1716,7 +1735,10 @@ export interface InitOutput {
     readonly editingcore_new: () => number;
     readonly engraveOptions: (a: number, b: number, c: number, d: number) => [number, number];
     readonly event_delta: (a: number, b: number, c: number) => number;
+    readonly event_midi: (a: number, b: number, c: number) => [number, number];
+    readonly event_of_midi: (a: number, b: number) => [number, number];
     readonly event_sustain: (a: number, b: number, c: number, d: number) => number;
+    readonly event_synth: (a: number, b: number, c: number) => [number, number];
     readonly graph_bus_reserved: (a: number, b: number) => [number, number];
     readonly history_apply: (a: number, b: bigint, c: number, d: number, e: number) => [number, number, number, number];
     readonly history_canRedo: (a: number) => number;

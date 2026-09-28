@@ -29,9 +29,14 @@
 //! spelling is accepted and split into the two keys ([`split_degree`]), so
 //! the arithmetic a pattern does on degrees stays on integers.
 //!
+//! [`render`] turns an event's map into what its destination plays: a synth's
+//! messages, a MIDI port's, or nothing for a rest.
+//!
 //! The conversions are the core's own, reused: the equal-temperament pair
 //! [`scale::midi_to_hz`] / [`scale::hz_to_midi`] (exact inverses, which is what
 //! coherence needs), and the `ampdb` / `dbamp` unary operators the server runs.
+
+pub mod render;
 
 use crate::builtins::{UnaryOp, apply_unary};
 use crate::scale::{hz_to_midi, midi_to_hz};

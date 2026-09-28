@@ -224,7 +224,7 @@ test("a session switched inside a routine is the one in force", async () => {
 });
 
 test("a timeline's hidden clock belongs to the session it sounds in", async () => {
-    const tl = new Timeline([[0, new OscItem("/a")], [1, new OscItem("/a")]], { tempo: 2 });
+    const tl = new Timeline([[0, OscItem("/a")], [1, OscItem("/a")]], { tempo: 2 });
     const first = await Session.nrt();
     const firstEmits = recordEmits(first);
     first.use(() => {
@@ -243,7 +243,7 @@ test("a timeline's hidden clock belongs to the session it sounds in", async () =
 });
 
 test("a timeline sounding in one session is refused in another", async () => {
-    const tl = new Timeline([[0, new OscItem("/a")], [8, new OscItem("/a")]]);
+    const tl = new Timeline([[0, OscItem("/a")], [8, OscItem("/a")]]);
     const first = await Session.nrt();
     first.use(() => tl.play());
     const other = await Session.nrt();

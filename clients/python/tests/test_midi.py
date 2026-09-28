@@ -60,6 +60,26 @@ def test_explicit_freq_maps_to_a_note_number():
     assert on[1][2] == 127  # amp 1.0 -> max velocity
 
 
+def test_a_midi_item_is_an_event_that_plays_its_own_bytes():
+    from clausters.base import OscNrtInterface, Routine
+    from clausters.defs import Server
+    from clausters.seq import MidiItem, OscItem
+
+    item = MidiItem([0xB0, 74, 40])
+    assert (item["type"], item["midicmd"], item["cc"], item["value"]) == ("midi", "cc", 74, 40)
+
+    midi = MidiServer()
+    clock = TempoClock(tempo=1.0, timebase=LogicalTimebase())
+    clock.play(Routine(lambda: (yield from [item.play(midi)])))
+    clock.render()
+    assert [(b, list(m)) for b, m in midi.score.sorted()] == [(0.0, [0xB0, 74, 40])]
+
+    with pytest.raises(ValueError, match="no MIDI spelling"):
+        OscItem("/x", 1).play(midi)
+    with pytest.raises(ValueError, match="plays on a MIDI destination"):
+        MidiItem([0x90, 60, 1]).play(Server(interface=OscNrtInterface()))
+
+
 def _midi_or_skip():
     try:
         from clausters import _midi

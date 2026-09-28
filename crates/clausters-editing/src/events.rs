@@ -28,6 +28,9 @@ use std::collections::HashSet;
 
 use serde_json::{Map, Value, json};
 
+use clausters_core::event::amp_of_velocity;
+use clausters_core::event::render;
+
 use crate::intake::{Intake, groups, number, text};
 
 /// What the `pianoroll` widget sends and takes per note: start, duration,
@@ -43,30 +46,33 @@ const DEFAULT_VELOCITY: i64 = 100;
 /// The label the roll's marker lane draws an item with, or `None` when the item
 /// is not one of that lane's.
 ///
-/// An OSC marker labels with its address, because **a marker is the message it
-/// sends** and the address is the whole of what a roll can show of one; a MIDI
-/// item labels with a short tag.
+/// An OSC marker (an event of type `"osc"`) labels with its address, because
+/// **a marker is the message it sends** and the address is the whole of what a
+/// roll can show of one; a MIDI event labels with a short tag. The spelling a
+/// document used before a raw message was an event -- an `"osc"` or `"midi"`
+/// key of its own -- is still read.
 pub fn label_of(data: &Value) -> Option<String> {
     let data = data.as_object()?;
+    match data.get("type").and_then(Value::as_str) {
+        Some("osc") => return Some(data.get("addr").map(text).unwrap_or_default()),
+        Some("midi") => return Some("midi".to_string()),
+        Some(_) => return None,
+        None => {}
+    }
     if let Some(addr) = data.get("osc") {
         return Some(text(addr));
     }
     data.contains_key("midi").then(|| "midi".to_string())
 }
 
-/// The MIDI velocity a note is drawn at: an explicit `velocity`, else the
-/// linear `amp` mapped onto the velocity range, else the default.
+/// The MIDI velocity a note is drawn at: the core's reading of its level keys
+/// (an explicit `velocity`, else its amplitude's), or the default for data
+/// that is not an event at all.
 pub fn velocity_of(data: &Value) -> i64 {
-    let Some(data) = data.as_object() else {
-        return DEFAULT_VELOCITY;
-    };
-    if let Some(velocity) = data.get("velocity").and_then(Value::as_f64) {
-        return (velocity as i64).clamp(0, 127);
+    match data.as_object() {
+        Some(keys) => render::level_of(keys).velocity() as i64,
+        None => DEFAULT_VELOCITY,
     }
-    if let Some(amp) = data.get("amp").and_then(Value::as_f64) {
-        return (amp * 127.0).round().clamp(1.0, 127.0) as i64;
-    }
-    DEFAULT_VELOCITY
 }
 
 /// What an item of the timeline *is*, as the vocabulary holds it.
@@ -108,13 +114,16 @@ fn notes(state: &[Value], values: &[Value], units_per_beat: f64) -> Vec<Value> {
             // note's own event is copied and the drawn fields written over it --
             // which keeps the instrument and everything else the author put
             // there.
+            //
+            // The pitch and the level are written with their family's
+            // coherence, so a note written with `freq` or by degree follows
+            // the drag instead of sounding where it was.
             Some(was) => {
                 let mut params = data(was).as_object().cloned().unwrap_or_default();
-                params.insert("midinote".into(), json!(pitch));
+                render::set_key(&mut params, "midinote", json!(pitch));
                 params.insert("sustain".into(), json!(length));
                 if velocity != velocity_of(data(was)) {
-                    params.insert("velocity".into(), json!(velocity));
-                    params.insert("amp".into(), json!(amp_of(velocity)));
+                    render::set_key(&mut params, "velocity", json!(velocity));
                 }
                 params
             }
@@ -123,7 +132,7 @@ fn notes(state: &[Value], values: &[Value], units_per_beat: f64) -> Vec<Value> {
                 params.insert("midinote".into(), json!(pitch));
                 params.insert("dur".into(), json!(length));
                 params.insert("legato".into(), json!(1.0));
-                params.insert("amp".into(), json!(amp_of(velocity)));
+                params.insert("amp".into(), json!(amp_of_velocity(velocity as f64)));
                 params.insert("velocity".into(), json!(velocity));
                 params
             }
@@ -135,11 +144,6 @@ fn notes(state: &[Value], values: &[Value], units_per_beat: f64) -> Vec<Value> {
     }
     out.extend(kept(state, false));
     out
-}
-
-/// A velocity as the linear amplitude that goes with it.
-fn amp_of(velocity: i64) -> f64 {
-    (velocity as f64 / 127.0).clamp(0.0, 1.0)
 }
 
 /// The whole timeline after an `osc` gesture -- the notes untouched and the
@@ -229,7 +233,27 @@ mod tests {
     }
 
     fn marker(beat: f64, addr: &str) -> Value {
-        json!({ "at": beat, "data": { "osc": addr, "args": [1] } })
+        json!({ "at": beat, "data": { "type": "osc", "addr": addr, "args": [1] } })
+    }
+
+    /// A marker is an event of type `"osc"`; a document written before that
+    /// named it by a key of its own, and still reads.
+    #[test]
+    fn a_marker_labels_by_its_type_and_by_the_older_spelling() {
+        assert_eq!(
+            label_of(&json!({"type": "osc", "addr": "/a"})),
+            Some("/a".into())
+        );
+        assert_eq!(
+            label_of(&json!({"type": "midi", "midicmd": "cc"})),
+            Some("midi".into())
+        );
+        assert_eq!(label_of(&json!({"osc": "/b"})), Some("/b".into()));
+        assert_eq!(
+            label_of(&json!({"midi": [144, 60, 1]})),
+            Some("midi".into())
+        );
+        assert_eq!(label_of(&json!({"type": "note", "osc": "/c"})), None);
     }
 
     /// A note that only moved keeps everything the roll cannot draw.
@@ -262,7 +286,7 @@ mod tests {
         );
         let events = drawn.payloads[0]["events"].as_array().expect("events");
         assert_eq!(events.len(), 2);
-        assert_eq!(events[1]["data"]["osc"], json!("/cue"));
+        assert_eq!(events[1]["data"]["addr"], json!("/cue"));
 
         let dragged = intake(&state, "osc", &[json!(3.0), json!("/cue")], 1.0, true);
         let events = dragged.payloads[0]["events"].as_array().expect("events");

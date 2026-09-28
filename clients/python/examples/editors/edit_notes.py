@@ -113,8 +113,8 @@ def play():
 def read_back():
     """Every note as it now stands, with what the roll never drew."""
     for beat, item in timeline:
-        if isinstance(item, OscItem):
-            print(f"  {beat:5.2f}  osc {item.addr}   {list(item.args)}")
+        if item.get("type") == "osc":
+            print(f"  {beat:5.2f}  osc {item['addr']}   {list(item['args'])}")
             continue
         extra = {k: v for k, v in dict(item).items()
                  if k not in ("midinote", "dur", "sustain", "velocity", "type")}

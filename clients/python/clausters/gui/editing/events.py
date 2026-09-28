@@ -16,19 +16,19 @@ more than that, and an edit that rebuilt one from the five would drop the rest.
 
 from ... import _native
 from ...seq.event import Event as SeqEvent
-from ...seq.timeline import (MidiItem, OscItem, Timeline, item_data,
-                             item_from_data)
+from ...seq.timeline import Timeline, item_data, item_from_data
 from .domain import Domain
 from .editor import Editor
 from .view import View
 
 def _label_of(item) -> "str | None":
     """The label the roll's OSC lane draws for an item, or ``None`` when the
-    item is not one of that lane's -- an `OscItem` labels with its address, a
-    `MidiItem` with a short tag."""
-    if isinstance(item, OscItem):
-        return str(item.addr)
-    if isinstance(item, MidiItem):
+    item is not one of that lane's -- an ``"osc"`` event labels with its
+    address, a ``"midi"`` one with a short tag."""
+    kind = item.get("type") if isinstance(item, dict) else None
+    if kind == "osc":
+        return str(item.get("addr"))
+    if kind == "midi":
         return "midi"
     return None
 
@@ -187,8 +187,8 @@ def _notes(editor) -> list:
 
 def _osc(editor) -> list:
     """The timeline's OSC (and raw MIDI) items as ``(time_units, label)`` pairs
-    -- the roll's OSC lane. An `OscItem` labels with its address, a `MidiItem`
-    with a short tag.
+    -- the roll's OSC lane. An ``"osc"`` event labels with its address, a
+    ``"midi"`` one with a short tag.
 
     The label is the whole of what the lane can say -- the message's arguments
     are not drawn -- which is why a marker moved or removed there is matched
@@ -222,7 +222,7 @@ def _length(event) -> float:
 def _pitch(event):
     """The MIDI pitch of a timeline item, or ``None`` when it carries none -- an
     OSC marker, a rest, anything that is not an event."""
-    if not isinstance(event, SeqEvent) or event.get("type") == "rest":
+    if not isinstance(event, SeqEvent) or event.get("type", "note") != "note":
         return None
     try:
         return float(event.midinote())

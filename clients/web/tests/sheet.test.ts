@@ -55,7 +55,7 @@ import {
 import type { Sheet } from "../src/gui/notation/index.ts";
 import { edit } from "../src/gui/editing/edit.ts";
 import { Editing } from "../src/gui/editing/context.ts";
-import { Event } from "../src/seq/event.ts";
+import { Event, synthRender } from "../src/seq/event.ts";
 import { rest } from "../src/seq/event.ts";
 import { Timeline } from "../src/seq/timeline.ts";
 import * as notation from "../src/gui/notation/index.ts";
@@ -472,7 +472,7 @@ test("a chord is one slot and reads the marks of all of it", () => {
 
 test("a notation key is never sent to the synth", () => {
     const event = new Event({ midinote: 60, tie: true, dynamic: "mf", cutoff: 800 });
-    const args = JSON.stringify(event.controlArgs());
+    const args = JSON.stringify(synthRender(event.keysData(), 1).start);
     assert.ok(!args.includes("tie") && !args.includes("dynamic"), args);
     assert.ok(args.includes("cutoff"), args);
 });

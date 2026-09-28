@@ -2594,7 +2594,7 @@ export function bpf(
  * has a pitch, which is what its grid is a grid of, and a message has none --
  * the flag is a lossy view of one (its address as a label, its arguments not
  * drawn), so there is nothing there a hand could write. Add one with
- * `timeline.add(beat, new OscItem(addr, ...))` and it appears. An edit flows
+ * `timeline.add(beat, OscItem(addr, ...))` and it appears. An edit flows
  * back as a flat `"notes"` event. `midiIn` arms live MIDI painting in the
  * native host.
  *

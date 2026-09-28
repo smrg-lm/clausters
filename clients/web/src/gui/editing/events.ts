@@ -18,7 +18,7 @@
 
 import { EVENTS, domainEdit } from "../../document.ts";
 import { Event as SeqEvent } from "../../seq/event.ts";
-import { MidiItem, OscItem, Timeline, itemData, itemFromData } from "../../seq/timeline.ts";
+import { Timeline, itemData, itemFromData } from "../../seq/timeline.ts";
 import { flatNotes, flatOsc, window as guiWindow } from "../guidef.ts";
 import type { GuiNode } from "../guidef.ts";
 import type { PropValue } from "../host.ts";
@@ -56,12 +56,13 @@ function sorted(value: unknown): unknown {
 
 /**
  * The label the roll's OSC lane draws for an item, or `null` when the item is
- * not one of that lane's -- an `OscItem` labels with its address, a `MidiItem`
+ * not one of that lane's -- an `"osc"` event labels with its address, a `"midi"` one
  * with a short tag.
  */
 function labelOf(item: unknown): string | null {
-    if (item instanceof OscItem) return String(item.addr);
-    if (item instanceof MidiItem) return "midi";
+    const kind = item instanceof SeqEvent ? item.get("type") : undefined;
+    if (kind === "osc") return String((item as SeqEvent).get("addr"));
+    if (kind === "midi") return "midi";
     return null;
 }
 
@@ -237,7 +238,7 @@ export interface NotesEditorOptions extends GenericEditorOptions<Timeline> {
 
 /**
  * The timeline's OSC (and raw MIDI) items as `[timeUnits, label]` pairs -- the
- * roll's OSC lane. An `OscItem` labels with its address, a `MidiItem` with a
+ * roll's OSC lane. An `"osc"` event labels with its address, a `"midi"` one with a
  * short tag.
  *
  * The label is the whole of what the lane can say -- the message's arguments are
@@ -298,7 +299,7 @@ function lengthOf(event: SeqEvent): number {
  * marker, a rest, anything that is not an event.
  */
 function pitchOf(item: unknown): number | null {
-    if (!(item instanceof SeqEvent) || item.get("type") === "rest") return null;
+    if (!(item instanceof SeqEvent) || (item.get("type") ?? "note") !== "note") return null;
     try {
         return Number(item.midinote());
     } catch {

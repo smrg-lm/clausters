@@ -24,6 +24,7 @@
 
 import { Moment } from "./moment.ts";
 import { midiWriteClip, midiWriteSmf } from "./core.ts";
+import { event_midi as coreEventMidi } from "../core/clausters_core_web.js";
 import type { TempoClock } from "./clock.ts";
 import type { Event, EventDestination } from "../seq/event.ts";
 import type { OscArg, TimedMessage } from "./osc.ts";
@@ -317,8 +318,10 @@ export interface MidiServerOptions {
  *
  * A `Pbind` played on a clock with this as the destination renders each `Event`
  * as a note on/off pair, handed to the held interface (an NRT score or a live
- * port). Note number from `event.midinote()`, velocity from `amp` (0..1 ->
- * 0..127).
+ * port), and a `"midi"` event as the message its `midicmd` names. Note number
+ * from `event.midinote()`, velocity from `event.velocity()` -- an explicit
+ * `velocity`, else the amplitude's, never 0, which is a note-off -- and the
+ * channel the event's own `channel`, else this destination's.
  */
 export class MidiServer implements EventDestination {
     readonly interface: MidiInterface;
@@ -338,21 +341,20 @@ export class MidiServer implements EventDestination {
     }
 
     playEvent(event: Event): number | null {
-        if (event.get("type") === "rest") return null;
         const beat = Moment.current().beat;
-        const note = Math.round(event.midinote()) & 0x7f;
-        const amp = Math.min(1, Math.max(0, Number(event.get("amp") ?? 0)));
-        const velocity = Math.round(amp * 127) & 0x7f;
-        const ch = this.channel;
-        this.interface.emit(beat, [0x90 | ch, note, velocity]);
-        this.interface.emit(beat + event.sustain(), [0x80 | ch, note, 0]);
+        // The messages are the core's render: a note's on and off, a "midi"
+        // event's one message, nothing for a rest.
+        const answer = JSON.parse(coreEventMidi(JSON.stringify(event.keysData()), this.channel));
+        if (answer.error) throw new TypeError(answer.error);
+        for (const [at, bytes] of answer.messages as [number, number[]][]) {
+            this.interface.emit(beat + at, bytes);
+        }
         return null;
     }
 
     /**
      * Emits a raw MIDI message at the running routine's logical beat -- the MIDI
-     * counterpart of `Server.sendBundle` for a raw OSC message, and what
-     * `MidiItem` renders through.
+     * counterpart of `Server.sendBundle` for a raw OSC message.
      */
     sendMessage(message: ArrayLike<number>): null {
         this.interface.emit(Moment.current().beat, message);
@@ -361,8 +363,8 @@ export class MidiServer implements EventDestination {
 
     /**
      * The two OSC verbs a destination is asked for. A MIDI port carries no
-     * OSC, so both are errors rather than silent no-ops: an `OscItem` on a
-     * `MidiServer` is a mistake, and one that says so is better than one that
+     * OSC, so both are errors rather than silent no-ops: an `"osc"` event on
+     * a `MidiServer` is a mistake, and one that says so is better than one that
      * plays nothing.
      */
     sendMsg(addr: string, ..._args: OscArg[]): void {

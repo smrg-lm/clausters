@@ -52,7 +52,7 @@ There is no `set_tempo` on a timeline: that is a clock's gesture, and a timeline
 An item is **anything playable**:
 
 - an `Event` — it plays a note on a `Server` for OSC, or a `MidiServer` for MIDI, the same double dispatch the patterns use;
-- `OscItem` and `MidiItem`, which wrap a raw message, for a plain editable OSC or MIDI score;
+- a raw OSC message or raw MIDI bytes, which `OscItem` and `MidiItem` make events of — an event of `type` `"osc"` (its `addr` and `args`) or `"midi"` (the message its `midicmd` names: `note_on`, `cc`, `bend`, …, or `raw` with its `bytes`) — for a plain editable OSC or MIDI score. Being events, they are read as events are: `item["addr"]`, `item["type"]`;
 - an event pattern, or a `Routine`;
 - **another `Timeline`**.
 
@@ -61,6 +61,7 @@ from clausters.seq import OscItem, MidiItem
 
 tl.add(0.0, OscItem("/synth_new", "default", -1, 0, 0, "freq", 440.0))
 tl.add(1.0, MidiItem(b"\x90\x3c\x64"))     # note on, key 60, vel 100
+# {"type": "midi", "midicmd": "note_on", "channel": 0, "midinote": 60, "velocity": 100}
 ```
 
 Every item measures in **its timeline's beats**: an event's sustain, a pattern's durations and a routine's `yield`s are all read through the map of the timeline that holds them.

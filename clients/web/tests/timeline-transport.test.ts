@@ -110,7 +110,7 @@ function packets(score: { bytes(): Uint8Array }): Uint8Array[] {
 }
 
 const timeline = () =>
-    new Timeline([0, 1, 2, 3].map((b) => [b, new OscItem("/a")] as [number, unknown]), {
+    new Timeline([0, 1, 2, 3].map((b) => [b, OscItem("/a")] as [number, unknown]), {
         tempo: RATE,
     });
 
@@ -222,8 +222,8 @@ test("what the mode refuses", async () => {
 
 test("a child is planned in its own units", async () => {
     const server = new TransportServer();
-    const child = new Timeline([[0, new OscItem("/b")], [1, new OscItem("/b")]], { tempo: 4.0 });
-    const parent = new Timeline([[0, new OscItem("/a")]], { tempo: RATE });
+    const child = new Timeline([[0, OscItem("/b")], [1, OscItem("/b")]], { tempo: 4.0 });
+    const parent = new Timeline([[0, OscItem("/a")]], { tempo: RATE });
     parent.add(1, child);
     parent.transport = server;
     parent.play({ at: 0, destination: server });
@@ -346,7 +346,7 @@ test("an edit while rolling re-plans from where the transport is", async () => {
     server.calls = [];
     (server.connection as ScoreConnection).score.clear();
 
-    tl.add(2.3, new OscItem("/b")); // just behind the position
+    tl.add(2.3, OscItem("/b")); // just behind the position
     await tl.refresh();
 
     assert.deepEqual(server.calls[0], ["clear", "transport"]);
@@ -361,7 +361,7 @@ test("an edit before any play plans nothing", async () => {
     const server = new TransportServer();
     const tl = timeline();
     tl.transport = server;
-    tl.add(1.0, new OscItem("/b"));
+    tl.add(1.0, OscItem("/b"));
     await tl.refresh();
     assert.deepEqual(server.onsets(), []);
 });
@@ -377,7 +377,7 @@ test("an edit while paused rewrites the frozen queue", async () => {
     await tl.refresh();
     (server.connection as ScoreConnection).score.clear();
 
-    tl.add(2.5, new OscItem("/b"));
+    tl.add(2.5, OscItem("/b"));
     await tl.refresh();
     // From the paused position on, with the new item among them and the onset
     // at half a second, which the pause froze before it sounded; a resume
@@ -401,7 +401,7 @@ test("a re-cue keeps the release of what is sounding", async () => {
     rolledTo(server, 1.0); // sounding
     (server.connection as ScoreConnection).score.clear();
 
-    tl.add(3.0, new OscItem("/b"));
+    tl.add(3.0, OscItem("/b"));
     await tl.refresh();
     assert.deepEqual(server.onsets(), [1.5, 2]);
 

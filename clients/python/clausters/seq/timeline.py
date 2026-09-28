@@ -14,8 +14,8 @@ An *item* is anything that can render itself on a destination -- it has a
 a note on a `Server` or a `MidiServer` -- the same double dispatch the patterns
 use), so a timeline of `Event`s renders to OSC *or* MIDI by which destination
 the timeline plays on, exactly like the rest of the client. `OscItem` and
-`MidiItem` wrap a raw OSC message or MIDI bytes, so a timeline can also be a
-plain, editable OSC/MIDI score.
+`MidiItem` make events of a raw OSC message or of MIDI bytes (types ``"osc"``
+and ``"midi"``), so a timeline can also be a plain, editable OSC/MIDI score.
 
 This layer is **client-side** while a timeline plays on its own clock: each has
 its own local transport, and several clients phase-align through `quant`. On a
@@ -31,6 +31,7 @@ import threading
 from .. import _native
 from ..base.main import main
 from ..base.stream import Routine, StopStream
+from .event import MidiItem, OscItem  # noqa: F401 -- re-exported where they were
 
 
 class _Entry:
@@ -44,37 +45,6 @@ class _Entry:
         self.item = item
 
 
-class OscItem:
-    """A raw OSC message ``(addr, *args)`` as a timeline item: rendering it sends
-    the message at the timeline's current logical beat through a `Server`."""
-
-    def __init__(self, addr, *args):
-        self.addr = addr
-        self.args = args
-
-    def play(self, destination):
-        destination.send_bundle((self.addr, *self.args))
-
-
-class MidiItem:
-    """Raw MIDI bytes as a timeline item: rendering it emits the message at the
-    timeline's current logical beat through a `MidiServer`."""
-
-    def __init__(self, message):
-        self.message = bytes(message)
-
-    def play(self, destination):
-        destination.send_message(self.message)
-
-
-#: The key that names a raw OSC message in an item's data, and the one that
-#: names raw MIDI bytes. An `clausters.seq.event.Event` carries neither -- it is
-#: its own parameters -- so what an item *is* is told apart by which of the two
-#: keys is there, and by neither being there.
-OSC_KEY = "osc"
-MIDI_KEY = "midi"
-
-
 def item_data(item) -> "dict | None":
     """One timeline item as plain, JSON-able data -- or ``None`` for an item this
     has no description of.
@@ -86,29 +56,28 @@ def item_data(item) -> "dict | None":
     down* -- and answering it twice is how a marker comes back from one of them
     as a note.
 
-    An `Event` is a `dict` and travels as itself. An `OscItem` and a `MidiItem`
-    are not, and each names itself with its own key (`OSC_KEY`, `MIDI_KEY`),
-    which is what a reader tells them apart by.
+    An `Event` -- a note, a rest, an ``"osc"`` or a ``"midi"`` message --
+    travels as its keys, its ``type`` saying which it is.
     """
-    if isinstance(item, OscItem):
-        return {OSC_KEY: str(item.addr), "args": list(item.args)}
-    if isinstance(item, MidiItem):
-        return {MIDI_KEY: list(item.message)}
     if isinstance(item, dict):
         return dict(item)
     return None
 
 
 def item_from_data(data):
-    """The item `item_data` wrote: an `OscItem`, a `MidiItem`, or the
-    `clausters.seq.event.Event` anything else is."""
+    """The item `item_data` wrote: the `clausters.seq.event.Event` its keys
+    are.
+
+    A document written before a raw message was an event named it by a key
+    of its own -- ``{"osc": addr, "args": [...]}``, ``{"midi": [bytes]}`` --
+    and that spelling is still read."""
     from .event import Event
 
     data = dict(data or {})
-    if OSC_KEY in data:
-        return OscItem(str(data[OSC_KEY]), *(data.get("args") or ()))
-    if MIDI_KEY in data:
-        return MidiItem(bytes(int(b) & 0xFF for b in data[MIDI_KEY]))
+    if "osc" in data and "type" not in data:
+        return OscItem(str(data["osc"]), *(data.get("args") or ()))
+    if "midi" in data and "type" not in data:
+        return MidiItem(bytes(int(b) & 0xFF for b in data["midi"]))
     return Event(data)
 
 

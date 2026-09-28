@@ -13,8 +13,9 @@
 // An *item* is anything that can render itself on a destination -- it has a
 // `play(destination)` method. `Event` already is one, so a timeline of events
 // renders to whatever destination the timeline plays on, exactly like the rest
-// of the client. `OscItem` wraps a raw OSC message, so a timeline can also be a
-// plain, editable OSC score.
+// of the client. `OscItem` and `MidiItem` make events of a raw OSC message or of
+// MIDI bytes (types `"osc"` and `"midi"`), so a timeline can also be a plain,
+// editable OSC/MIDI score.
 //
 // This layer is **client-side** while a timeline plays on its own clock: each
 // has its own local transport, and several clients phase-align through `quant`.
@@ -29,7 +30,10 @@ import { quantDelay } from "../base/timebase.ts";
 import { currentRoutine, setCurrentRoutine } from "../base/context.ts";
 import { main } from "../base/main.ts";
 import { Routine, StopStream, Stream } from "../base/stream.ts";
-import { Event } from "./event.ts";
+import { Event, MidiItem, OscItem } from "./event.ts";
+
+// Re-exported where they were, as the reference client does.
+export { MidiItem, OscItem };
 import type { EventDestination } from "./event.ts";
 import { EventPattern, Pattern } from "./pattern.ts";
 import type { Server, TimedMessage } from "../defs/server/index.ts";
@@ -50,8 +54,8 @@ export interface PlayDestination extends EventDestination {
     ): void;
     /**
      * Raw MIDI at the timeline's beat, on a destination that carries MIDI
-     * (`MidiServer`). Optional because most destinations do not: an
-     * `OscItem` on a MIDI port and a `MidiItem` on an OSC server are both
+     * (`MidiServer`). Optional because most destinations do not: an `"osc"`
+     * event on a MIDI port and a `"midi"` one on an OSC server are both
      * mistakes, and each is reported by the destination that cannot answer.
      */
     sendMessage?(message: ArrayLike<number>): unknown;
@@ -72,56 +76,6 @@ export class Entry {
 }
 
 /**
- * A raw OSC message as a timeline item: rendering it sends the message at the
- * timeline's current logical beat.
- */
-export class OscItem {
-    readonly addr: string;
-    readonly args: readonly MsgArg[];
-
-    constructor(addr: string, ...args: MsgArg[]) {
-        this.addr = addr;
-        this.args = args;
-    }
-
-    play(destination: PlayDestination): void {
-        destination.sendBundle([[this.addr, ...this.args]]);
-    }
-}
-
-/**
- * Raw MIDI bytes as a timeline item: rendering it emits the message at the
- * timeline's current logical beat through a `MidiServer`.
- */
-export class MidiItem {
-    readonly message: Uint8Array;
-
-    constructor(message: ArrayLike<number>) {
-        this.message = Uint8Array.from(message);
-    }
-
-    play(destination: PlayDestination): void {
-        if (typeof destination.sendMessage !== "function") {
-            throw new TypeError(
-                "a MidiItem needs a MIDI destination (a MidiServer), " +
-                    "not one that carries OSC",
-            );
-        }
-        destination.sendMessage(this.message);
-    }
-}
-
-/**
- * The key that names a raw OSC message in an item's data, and the one that names
- * raw MIDI bytes. An `Event` carries neither -- it is its own parameters -- so
- * what an item *is* is told apart by which of the two keys is there, and by
- * neither being there.
- */
-export const OSC_KEY = "osc";
-/** @see {@link OSC_KEY} */
-export const MIDI_KEY = "midi";
-
-/**
  * One timeline item as plain, JSON-able data -- or `null` for an item this has no
  * description of.
  *
@@ -131,14 +85,10 @@ export const MIDI_KEY = "midi";
  * two are the same question -- *what is this item, written down* -- and answering
  * it twice is how a marker comes back from one of them as a note.
  *
- * An `Event` travels as its parameters. An {@link OscItem} and a
- * {@link MidiItem} are not parameters, and each names itself with its own key
- * (`OSC_KEY`, `MIDI_KEY`), which is what a reader tells them apart
- * by.
+ * An `Event` -- a note, a rest, an `"osc"` or a `"midi"` message -- travels as
+ * its parameters, its `type` saying which it is.
  */
 export function itemData(item: unknown): Record<string, unknown> | null {
-    if (item instanceof OscItem) return { [OSC_KEY]: String(item.addr), args: [...item.args] };
-    if (item instanceof MidiItem) return { [MIDI_KEY]: [...item.message] };
     const props = (item as { props?: unknown } | null)?.props;
     if (props !== undefined && props !== null && typeof props === "object") {
         return { ...(props as Record<string, unknown>) };
@@ -147,16 +97,20 @@ export function itemData(item: unknown): Record<string, unknown> | null {
     return null;
 }
 
-/** The item {@link itemData} wrote: an `OscItem`, a `MidiItem`, or the `Event` anything else is. */
+/**
+ * The item {@link itemData} wrote: the `Event` its keys are.
+ *
+ * A document written before a raw message was an event named it by a key of
+ * its own -- `{osc: addr, args: [...]}`, `{midi: [bytes]}` -- and that spelling
+ * is still read.
+ */
 export function itemFromData(data: Record<string, unknown> | null | undefined): unknown {
     const held = { ...(data ?? {}) };
-    if (OSC_KEY in held) {
-        const addr = String(held[OSC_KEY]);
-        const args = (held.args ?? []) as MsgArg[];
-        return new OscItem(addr, ...args);
+    if ("osc" in held && !("type" in held)) {
+        return OscItem(String(held.osc), ...((held.args ?? []) as MsgArg[]));
     }
-    if (MIDI_KEY in held) {
-        return new MidiItem((held[MIDI_KEY] ?? []) as ArrayLike<number>);
+    if ("midi" in held && !("type" in held)) {
+        return MidiItem((held.midi ?? []) as ArrayLike<number>);
     }
     return new Event(held);
 }

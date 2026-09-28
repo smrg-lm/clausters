@@ -7,10 +7,10 @@
 //   `Pseq`/`Prand`/`Pn` over event patterns only.
 // - `eventstream` -- `EventStreamPlayer`.
 // - `timeline` -- `Timeline` (a static, editable, random-access sequence) and
-//   its own transport (play/pause/stop/locate/loop) and its own tempo map, plus the `OscItem`/`MidiItem` raw-message
-//   item.
+//   its own transport (play/pause/stop/locate/loop) and its own tempo map.
+// - `event` -- also `OscItem`/`MidiItem`, which make events of a raw message.
 
-export { DEFAULTS, Event, NOTATION_KEYS, rest } from "./event.ts";
+export { DEFAULTS, Event, MidiItem, NOTATION_KEYS, OscItem, rest } from "./event.ts";
 export type { EventDestination, EventProps } from "./event.ts";
 export { EventStreamPlayer } from "./eventstream.ts";
 export {
@@ -30,5 +30,5 @@ export {
     asPattern,
 } from "./pattern.ts";
 export type { Bindings } from "./pattern.ts";
-export { Entry, MidiItem, OscItem, Timeline, itemData, itemFromData } from "./timeline.ts";
+export { Entry, Timeline, itemData, itemFromData } from "./timeline.ts";
 export type { PlayDestination, TimelineItem } from "./timeline.ts";

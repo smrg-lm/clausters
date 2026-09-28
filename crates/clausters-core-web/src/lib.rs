@@ -1272,6 +1272,47 @@ pub fn event_sustain(dur: f64, legato: f64, stretch: f64, sustain: f64) -> f64 {
     clausters_core::event::sustain(dur, legato, stretch, (!sustain.is_nan()).then_some(sustain))
 }
 
+/// JS face: a note event as its synth's messages, `{"start", "release",
+/// "sustain"}` with `[tag, value]` arguments, or `{"error"}` for anything that
+/// is not a note. `event` is the event's keys as JSON, in the reference
+/// client's spelling.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn event_synth(event: &str, node: i32) -> String {
+    let keys = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(event)
+        .unwrap_or_default();
+    match clausters_core::event::render::synth(&keys, node) {
+        Some(s) => s.to_json().to_string(),
+        None => serde_json::json!({"error": "only a note renders a synth"}).to_string(),
+    }
+}
+
+/// JS face: an event as its MIDI messages, `{"messages": [[at, [bytes]]]}` or
+/// `{"error"}`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn event_midi(event: &str, channel: u8) -> String {
+    let keys = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(event)
+        .unwrap_or_default();
+    match clausters_core::event::render::midi(&keys, channel) {
+        Ok(messages) => serde_json::json!({
+            "messages": messages
+                .iter()
+                .map(|m| serde_json::json!([m.at, m.bytes]))
+                .collect::<Vec<_>>()
+        })
+        .to_string(),
+        Err(error) => serde_json::json!({ "error": error }).to_string(),
+    }
+}
+
+/// JS face: MIDI bytes as the event that plays them back, as JSON.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn event_of_midi(bytes: &[u8]) -> String {
+    serde_json::Value::Object(clausters_core::event::render::from_midi(bytes)).to_string()
+}
+
 // ---- the sample-clock model ----
 //
 // How a client paced by its own monotonic clock still schedules on a remote

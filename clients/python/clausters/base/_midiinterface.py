@@ -18,6 +18,7 @@ in `MidiReceiver` at the bottom, the MIDI counterpart of
 
 import threading
 
+from .. import _native
 from .moment import Moment
 
 
@@ -152,9 +153,11 @@ class MidiServer:
     counterpart of the OSC `Server`. A
     `Pbind` played on a clock with this as the
     destination renders each `Event` as a note
-    on/off pair, handed to the held interface (NRT score or live port). Note
-    number from `event.midinote()`, velocity from `event.velocity()` -- an
-    explicit ``velocity``, else the amplitude's, never 0, which is a note-off."""
+    on/off pair, handed to the held interface (NRT score or live port), and a
+    ``"midi"`` event as the message its ``midicmd`` names. Note number from
+    `event.midinote()`, velocity from `event.velocity()` -- an explicit
+    ``velocity``, else the amplitude's, never 0, which is a note-off -- and the
+    channel the event's own ``channel``, else this destination's."""
 
     def __init__(self, interface=None, channel: int = 0, ppq: int = 480):
         self.interface = interface if interface is not None else MidiNrtInterface()
@@ -167,20 +170,16 @@ class MidiServer:
         return getattr(self.interface, "score", None)
 
     def play_event(self, event):
-        if event.get("type") == "rest":
-            return None
         beat = Moment.current().beat
-        note = int(round(event.midinote())) & 0x7F
-        velocity = event.velocity()
-        ch = self.channel
-        self.interface.emit(beat, bytes((0x90 | ch, note, velocity)))
-        self.interface.emit(beat + event.sustain(), bytes((0x80 | ch, note, 0)))
+        # The messages are the core's render: a note's on and off, a "midi"
+        # event's one message, nothing for a rest.
+        for at, message in _native.event_midi(event.keys_data(), self.channel):
+            self.interface.emit(beat + at, message)
         return None
 
     def send_message(self, message):
         """Emit a raw MIDI message at the running routine's logical beat -- the
-        MIDI counterpart of ``Server.send_bundle`` for a raw OSC message, used by
-        `clausters.seq.timeline.MidiItem`."""
+        MIDI counterpart of ``Server.send_bundle`` for a raw OSC message."""
         beat = Moment.current().beat
         self.interface.emit(beat, bytes(message))
         return None
